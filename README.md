@@ -8,10 +8,16 @@ Automatisk opptaker for gudstjenester og kirkelige arrangementer. Koble til en U
 
 ### Mac
 
-1. Last ned **`SundayRec-3.0.0-arm64.dmg`** (Apple Silicon / M1–M4) eller **`SundayRec-3.0.0.dmg`** (Intel) fra [siste versjon](https://github.com/richardfossland/sundayrec/releases/latest)
+1. Last ned **`SundayRec-3.1.0-arm64.dmg`** (Apple Silicon / M1–M4) eller **`SundayRec-3.1.0.dmg`** (Intel) fra [siste versjon](https://github.com/richardfossland/sundayrec/releases/latest)
 2. Åpne `.dmg`-filen
 3. Dra **SundayRec** til **Applications**-mappen
-4. Åpne appen — hvis macOS advarer om ukjent utvikler: høyreklikk → Åpne
+4. Hvis macOS sier «appen er skadet og kan ikke åpnes»: åpne **Terminal** og kjør:
+   ```
+   xattr -cr /Applications/SundayRec.app
+   ```
+   Åpne deretter appen normalt.
+
+> **Hvorfor skjer dette?** SundayRec er ikke signert med en Apple Developer-sertifikat. macOS blokkerer apper lastet ned fra internett som ikke er notarisert. Kommandoen over fjerner karanteneflagget og lar appen kjøre.
 
 ### Windows
 
