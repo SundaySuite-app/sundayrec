@@ -1,0 +1,114 @@
+import { powerSaveBlocker } from 'electron'
+import { execFileSync, execSync } from 'child_process'
+import type { BrowserWindow } from 'electron'
+import * as store from './store'
+import type { WakeResult } from '../types'
+
+let blocker: number | null = null
+
+function padN(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function formatPmsetDate(d: Date): string {
+  const yy = String(d.getFullYear()).slice(-2)
+  return `${padN(d.getMonth() + 1)}/${padN(d.getDate())}/${yy} ${padN(d.getHours())}:${padN(d.getMinutes())}:00`
+}
+
+function formatWinDateTime(d: Date): string {
+  return `${d.getFullYear()}-${padN(d.getMonth() + 1)}-${padN(d.getDate())}T${padN(d.getHours())}:${padN(d.getMinutes())}:00`
+}
+
+function updateBlocker(upcomingDates: Date[]): void {
+  const soonMs = 30 * 60 * 1000
+  const now    = Date.now()
+  const hasSoon = upcomingDates.some(d => {
+    const t = d.getTime()
+    return t > now && t - now < soonMs
+  })
+  if (hasSoon && (blocker === null || !powerSaveBlocker.isStarted(blocker))) {
+    blocker = powerSaveBlocker.start('prevent-display-sleep')
+  } else if (!hasSoon && blocker !== null && powerSaveBlocker.isStarted(blocker)) {
+    powerSaveBlocker.stop(blocker)
+    blocker = null
+  }
+}
+
+function scheduleMac(wakePoints: Date[]): WakeResult {
+  try {
+    execFileSync('pmset', ['schedule', 'cancelall'], { stdio: 'pipe', timeout: 3000 })
+  } catch {}
+
+  if (!wakePoints.length) return { ok: true, count: 0 }
+
+  let scheduled = 0
+  for (const d of wakePoints) {
+    try {
+      execFileSync('pmset', ['schedule', 'wake', formatPmsetDate(d)], { stdio: 'pipe', timeout: 5000 })
+      scheduled++
+    } catch {}
+  }
+  if (scheduled === wakePoints.length) return { ok: true, count: scheduled }
+
+  try {
+    const cmds = wakePoints
+      .map(d => `pmset schedule wake \\"${formatPmsetDate(d)}\\"`)
+      .join(' && ')
+    execFileSync('osascript', ['-e', `do shell script "${cmds}" with administrator privileges`], {
+      stdio: 'pipe', timeout: 30000
+    })
+    return { ok: true, count: wakePoints.length }
+  } catch (e) {
+    const msg = (e as Error).message || ''
+    if (msg.includes('User canceled')) return { ok: false, reason: 'cancelled' }
+    return { ok: false, reason: 'permission', message: msg }
+  }
+}
+
+function scheduleWindows(wakePoints: Date[]): WakeResult {
+  try {
+    execSync('schtasks /Delete /TN "\\SundayRec\\Wake" /F 2>NUL', { stdio: 'pipe', timeout: 5000 })
+  } catch {}
+
+  if (!wakePoints.length) return { ok: true, count: 0 }
+
+  const taskDefs = wakePoints.map((d, i) => {
+    const dt = formatWinDateTime(d)
+    return [
+      `$t${i} = New-ScheduledTaskTrigger -Once -At '${dt}'`,
+      `$s${i} = New-ScheduledTaskSettingsSet -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Minutes 1)`,
+      `$a${i} = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'`,
+      `Register-ScheduledTask -TaskName 'SundayRec-Wake-${i + 1}' -TaskPath '\\SundayRec' ` +
+        `-Action $a${i} -Trigger $t${i} -Settings $s${i} -RunLevel Highest -Force | Out-Null`
+    ].join('; ')
+  }).join('; ')
+
+  try {
+    execSync(`powershell -NoProfile -NonInteractive -Command "${taskDefs}"`, {
+      stdio: 'pipe', timeout: 20000
+    })
+    return { ok: true, count: wakePoints.length }
+  } catch (e) {
+    return { ok: false, reason: 'permission', message: (e as Error).message }
+  }
+}
+
+function scheduleOsWakes(upcomingDates: Date[]): WakeResult {
+  if (!store.get('wakeFromSleep')) return { ok: false, reason: 'disabled' }
+
+  const now = new Date()
+  const wakePoints = upcomingDates
+    .map(d => new Date(d.getTime() - 8 * 60 * 1000))
+    .filter(d => d > now)
+
+  if (process.platform === 'darwin') return scheduleMac(wakePoints)
+  if (process.platform === 'win32')  return scheduleWindows(wakePoints)
+  return { ok: false, reason: 'unsupported' }
+}
+
+export function reschedule(upcomingDates: Date[], win?: BrowserWindow): WakeResult {
+  updateBlocker(upcomingDates)
+  const result = scheduleOsWakes(upcomingDates)
+  win?.webContents.send('wake-schedule-result', result)
+  return result
+}

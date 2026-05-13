@@ -1,0 +1,270 @@
+import { app, BrowserWindow, ipcMain, Notification, dialog, shell, systemPreferences } from 'electron'
+import path from 'path'
+import fs from 'fs'
+import * as store from './store'
+import * as scheduler from './scheduler'
+import * as recorder from './recorder'
+import * as tray from './tray'
+import * as updater from './updater'
+import * as mailer from './mailer'
+import * as wake from './wake'
+import { execFileSync, execSync } from 'child_process'
+
+app.setName('SundayRec')
+
+if (!app.isPackaged && process.platform === 'darwin' && app.dock) {
+  app.dock.setIcon(path.join(__dirname, '../../assets/icon.png'))
+}
+
+const QUIT_LABELS: Record<string, [string, string, string, string]> = {
+  no: ['Stopp opptak og avslutt', 'Fortsett opptak', 'Opptak pågår', 'Opptaket vil bli lagret frem til nå hvis du avslutter.'],
+  en: ['Stop recording and quit', 'Continue recording', 'Recording in progress', 'The recording will be saved up to this point if you quit.'],
+  de: ['Aufnahme beenden und beenden', 'Aufnahme fortsetzen', 'Aufnahme läuft', 'Die Aufnahme wird bis jetzt gespeichert, wenn Sie beenden.'],
+  sv: ['Stoppa inspelning och avsluta', 'Fortsätt inspelning', 'Inspelning pågår', 'Inspelningen sparas fram till nu om du avslutar.'],
+  da: ['Stop optagelse og afslut', 'Fortsæt optagelse', 'Optagelse i gang', 'Optagelsen gemmes op til dette punkt, hvis du afslutter.'],
+  pl: ['Zatrzymaj nagrywanie i wyjdź', 'Kontynuuj nagrywanie', 'Nagrywanie w toku', 'Nagranie zostanie zapisane do tego momentu, jeśli wyjdziesz.'],
+  fr: ["Arrêter l'enregistrement et quitter", "Continuer l'enregistrement", 'Enregistrement en cours', "L'enregistrement sera sauvegardé jusqu'ici si vous quittez."]
+}
+
+let mainWindow: BrowserWindow
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 900,
+    height: 660,
+    minWidth: 820,
+    minHeight: 580,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    backgroundColor: '#0d0d11',
+    show: false
+  })
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
+  } else {
+    // electron-vite dev server
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173')
+  }
+
+  mainWindow.webContents.setBackgroundThrottling(false)
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!recorder.isActive()) scheduler.checkMissedRecordings()
+  })
+
+  mainWindow.once('ready-to-show', () => {
+    const isFirst = !store.get('hasLaunched')
+    if (isFirst) {
+      store.set('hasLaunched', true)
+      mainWindow.show()
+    } else if (store.get('showOnStartup')) {
+      mainWindow.show()
+    }
+  })
+
+  mainWindow.on('close', (e) => {
+    if (!(app as unknown as { isQuitting?: boolean }).isQuitting) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  })
+}
+
+app.whenReady().then(async () => {
+  if (!store.get('saveFolder')) {
+    store.set('saveFolder', path.join(app.getPath('documents'), 'SundayRec'))
+  }
+  if (!store.get('language')) {
+    const locale    = app.getLocale() || 'en'
+    const lang      = locale.slice(0, 2)
+    const supported = ['no', 'nb', 'nn', 'en', 'de', 'sv', 'da', 'pl', 'fr']
+    store.set('language', supported.includes(lang)
+      ? (lang === 'nb' || lang === 'nn' ? 'no' : lang)
+      : 'en')
+  }
+
+  if (process.platform === 'darwin') {
+    const status = await systemPreferences.askForMediaAccess('microphone')
+    if (!status) console.warn('Microphone access denied')
+  }
+
+  createWindow()
+  tray.create(mainWindow)
+  recorder.init()
+  recorder.recoverCrashedSession()
+  scheduler.init(mainWindow)
+  updater.init(mainWindow)
+  updater.check()
+  setupIPC()
+  cleanupOldRecordings()
+  wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
+
+  if (store.get('launchAtLogin')) {
+    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true })
+  }
+})
+
+let forceQuit = false
+app.on('before-quit', async (e) => {
+  if (forceQuit) { (app as unknown as { isQuitting?: boolean }).isQuitting = true; return }
+
+  if (recorder.isActive()) {
+    e.preventDefault()
+    const lang = store.get('language') ?? 'en'
+    const lbl  = QUIT_LABELS[lang] ?? QUIT_LABELS.en
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: [lbl[0], lbl[1]],
+      defaultId: 1, cancelId: 1,
+      message: lbl[2], detail: lbl[3]
+    })
+    if (response === 0) {
+      recorder.stopSession()
+      forceQuit = true
+      setTimeout(() => app.quit(), 4000)
+    }
+    return
+  }
+
+  // Warn if a scheduled recording is imminent
+  const upcoming = scheduler.getUpcomingDates(1)
+  const soonMs   = upcoming.length ? upcoming[0].getTime() - Date.now() : Infinity
+  if (soonMs > 0 && soonMs < 60 * 60000) {
+    e.preventDefault()
+    const mins = Math.round(soonMs / 60000)
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['Avslutt likevel', 'Avbryt'],
+      defaultId: 1, cancelId: 1,
+      message: 'Planlagt opptak nærmer seg',
+      detail: `Et opptak er planlagt om ${mins} minutt${mins === 1 ? '' : 'er'}. Hvis du avslutter vil opptaket ikke starte.\n\nStenk vinduet (✕) i stedet for å avslutte — da kjører appen stille i bakgrunnen.`
+    })
+    if (response === 0) { forceQuit = true; app.quit() }
+  } else {
+    (app as unknown as { isQuitting?: boolean }).isQuitting = true
+  }
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  else mainWindow.show()
+})
+
+function setupIPC(): void {
+  ipcMain.handle('get-settings', () => store.getAll())
+
+  ipcMain.handle('save-settings', (_, settings) => {
+    store.setAll(settings)
+    scheduler.reschedule()
+    app.setLoginItemSettings({ openAtLogin: !!settings.launchAtLogin, openAsHidden: true })
+    wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
+    return true
+  })
+
+  ipcMain.handle('schedule-os-wakes', () => wake.reschedule(scheduler.getUpcomingDates(), mainWindow))
+
+  ipcMain.handle('export-profile', () => store.exportProfile())
+  ipcMain.handle('import-profile', (_, json: string) => {
+    const ok = store.importProfile(json)
+    if (ok) scheduler.reschedule()
+    return ok
+  })
+  ipcMain.handle('reset-settings', () => {
+    store.reset()
+    store.set('saveFolder', path.join(app.getPath('documents'), 'SundayRec'))
+    scheduler.reschedule()
+    return true
+  })
+
+  ipcMain.handle('get-history', () => store.getHistory())
+  ipcMain.handle('delete-history-entry', (_, ts: number) => store.deleteHistoryEntry(ts))
+  ipcMain.handle('clear-history', () => store.clearHistory())
+
+  ipcMain.handle('get-next-recording', () => {
+    const next = scheduler.getNextRecording()
+    return next ? { date: next.date.toISOString() } : null
+  })
+
+  ipcMain.handle('get-disk-space', async () => {
+    try {
+      let folder = store.get('saveFolder') ?? app.getPath('documents')
+      if (!fs.existsSync(folder)) folder = app.getPath('documents')
+      if (process.platform === 'darwin' || process.platform === 'linux') {
+        const raw  = execFileSync('df', ['-Pk', folder]).toString()
+        const cols = raw.trim().split('\n')[1]?.trim().split(/\s+/)
+        const free = cols ? parseInt(cols[3]) : NaN
+        if (!isNaN(free)) return { freeBytes: free * 1024 }
+      }
+      if (process.platform === 'win32') {
+        const drive = folder.slice(0, 2)
+        const out   = execSync(`wmic logicaldisk where "DeviceID='${drive}'" get FreeSpace /value`).toString()
+        const m     = out.match(/FreeSpace=(\d+)/)
+        if (m) return { freeBytes: parseInt(m[1]) }
+      }
+    } catch {}
+    return { freeBytes: null }
+  })
+
+  ipcMain.handle('start-recording-now', (_, opts) => {
+    const settings = store.getAll()
+    return recorder.startSession({ ...settings, ...opts }, mainWindow)
+  })
+  ipcMain.handle('stop-recording-now', () => { recorder.stopSession(); return true })
+
+  ipcMain.handle('pick-folder', async () => {
+    if (!mainWindow.isVisible()) mainWindow.show()
+    mainWindow.focus()
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory', 'createDirectory'] })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('open-folder', (_, p: string) => shell.openPath(p))
+  ipcMain.handle('reveal-file', (_, p: string) => shell.showItemInFolder(p))
+
+  ipcMain.on('recording-started', (_, data: { name: string }) => {
+    tray.setRecording(true)
+    tray.setError(false)
+    if (store.get('notifyStart') !== false) notify('SundayRec', data.name || 'Opptak startet')
+  })
+
+  ipcMain.on('recording-stopped', () => tray.setRecording(false))
+
+  ipcMain.on('recording-error', (_, data: { error: string }) => {
+    tray.setRecording(false)
+    tray.setError(true)
+    notify('SundayRec — Feil', data.error)
+    const settings = store.getAll()
+    if (settings.emailOnError) mailer.sendError(settings, data.error)
+  })
+}
+
+function notify(title: string, body: string): void {
+  if (Notification.isSupported()) new Notification({ title, body }).show()
+}
+
+function cleanupOldRecordings(): void {
+  const days = store.get('autoDeleteDays')
+  if (!days || days <= 0) return
+  const cutoff = Date.now() - days * 86400000
+  const history = store.getHistory()
+  const remaining = history.filter(entry => {
+    if (entry.timestamp && entry.timestamp < cutoff && entry.path && entry.status === 'ok') {
+      fs.unlink(entry.path, () => {})
+      return false
+    }
+    return true
+  })
+  if (remaining.length !== history.length) {
+    store.set('recordingHistory', remaining)
+  }
+}

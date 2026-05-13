@@ -1,0 +1,279 @@
+/**
+ * Recorder — main process side.
+ *
+ * The actual MediaRecorder lives in the renderer (Chromium) so it has
+ * access to getUserMedia. Main orchestrates start/stop, receives audio
+ * chunks via IPC, writes a temp file, then runs ffmpeg for conversion.
+ *
+ * Crash recovery: on startSession we persist the temp file path to the
+ * store. If the app crashes and restarts, main can find the partial
+ * file and attempt to salvage it via ffmpeg.
+ */
+
+import path from 'path'
+import fs from 'fs'
+import os from 'os'
+import crypto from 'crypto'
+import { ipcMain, app, Notification, powerSaveBlocker } from 'electron'
+import type { BrowserWindow } from 'electron'
+import ffmpegStatic from 'ffmpeg-static'
+import ffmpeg from 'fluent-ffmpeg'
+import * as store from './store'
+import * as tray from './tray'
+import * as mailer from './mailer'
+import { churchCalendarName } from '../shared/church-calendar'
+import type { RecordingOpts, RecordingEntry, Settings } from '../types'
+
+let ffmpegPath = ffmpegStatic as string
+if (app.isPackaged) {
+  ffmpegPath = ffmpegPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep)
+}
+ffmpeg.setFfmpegPath(ffmpegPath)
+
+interface Session {
+  settings: RecordingOpts
+  tempPath: string
+  sessionId: string
+  writeStream: fs.WriteStream
+  startTime: number | null
+  confirmed: boolean
+  win: BrowserWindow
+  maxTimer: ReturnType<typeof setTimeout> | null
+}
+
+let activeSession: Session | null = null
+let recBlocker: number | null = null
+
+export function init(): void {
+  ipcMain.on('audio-chunk', (_, chunk: ArrayBuffer) => {
+    activeSession?.writeStream.write(Buffer.from(chunk))
+  })
+
+  ipcMain.on('recording-confirmed-start', (_, data: { startTime: number }) => {
+    if (!activeSession) return
+    activeSession.confirmed = true
+    activeSession.startTime = data.startTime || Date.now()
+  })
+
+  ipcMain.on('recording-chunks-done', () => {
+    if (activeSession) finishSession()
+  })
+}
+
+export function startSession(settings: RecordingOpts, win: BrowserWindow): { ok: true } | { error: string } {
+  if (activeSession) return { error: 'already_recording' }
+
+  const sessionId = crypto.randomUUID()
+  const tempPath  = path.join(os.tmpdir(), `sundayrec-${sessionId}.webm`)
+  const writeStream = fs.createWriteStream(tempPath)
+
+  activeSession = { settings, tempPath, sessionId, writeStream, startTime: null, confirmed: false, win, maxTimer: null }
+
+  // Persist recovery info so a crash restart can find the partial file
+  store.set('activeRecovery', { tempPath, startTime: Date.now(), sessionId })
+
+  if (settings.maxMinutes) {
+    activeSession.maxTimer = setTimeout(() => stopSession(), settings.maxMinutes * 60000)
+  }
+
+  if (recBlocker === null || !powerSaveBlocker.isStarted(recBlocker)) {
+    recBlocker = powerSaveBlocker.start('prevent-display-sleep')
+  }
+
+  return { ok: true }
+}
+
+export function stopSession(): void {
+  if (!activeSession) return
+  const { win, confirmed } = activeSession
+
+  if (!confirmed) {
+    const session = activeSession
+    activeSession = null
+    if (session.maxTimer) clearTimeout(session.maxTimer)
+    session.writeStream.end()
+    setTimeout(() => fs.unlink(session.tempPath, () => {}), 100)
+    store.set('activeRecovery', null)
+    stopRecBlocker()
+    return
+  }
+
+  win.webContents.send('stop-media-recorder')
+}
+
+function stopRecBlocker(): void {
+  if (recBlocker !== null && powerSaveBlocker.isStarted(recBlocker)) {
+    powerSaveBlocker.stop(recBlocker)
+  }
+  recBlocker = null
+}
+
+function finishSession(): void {
+  if (!activeSession) return
+  const session = activeSession
+  activeSession = null
+  if (session.maxTimer) clearTimeout(session.maxTimer)
+  stopRecBlocker()
+  store.set('activeRecovery', null)
+  session.writeStream.end(() => convertAndSave(session))
+}
+
+async function uniquePath(p: string): Promise<string> {
+  try { await fs.promises.access(p) } catch { return p }
+  const ext  = path.extname(p)
+  const base = p.slice(0, -ext.length)
+  let i = 2
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const candidate = `${base}_${i}${ext}`
+    try { await fs.promises.access(candidate) } catch { return candidate }
+    i++
+  }
+}
+
+async function convertAndSave(session: Session): Promise<void> {
+  const { settings, tempPath, startTime } = session
+  const durationSec = startTime ? Math.round((Date.now() - startTime) / 1000) : 0
+  const filename    = buildFilename(settings)
+  const outputPath  = await uniquePath(path.join(settings.saveFolder || defaultFolder(), filename))
+
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+
+  const cmd = ffmpeg(tempPath)
+    .audioCodec(codecFor(settings.format ?? 'mp3'))
+    .audioChannels(settings.channels === 'stereo' ? 2 : 1)
+    .audioFrequency(settings.sampleRate ?? 48000)
+
+  const bitrateStr = String(settings.bitrate ?? '192').replace(/k$/i, '')
+  if (settings.format === 'mp3') cmd.audioBitrate(bitrateStr + 'k')
+  if (settings.format === 'aac') cmd.audioBitrate(bitrateStr + 'k')
+
+  cmd
+    .output(outputPath)
+    .on('end', () => {
+      fs.unlinkSync(tempPath)
+      const entry: RecordingEntry = {
+        date:      new Date().toISOString().slice(0, 10),
+        startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
+        duration:  formatDuration(durationSec),
+        filename:  path.basename(outputPath),
+        path:      outputPath,
+        status:    'ok'
+      }
+      store.addHistory(entry)
+      session.win.webContents.send('recording-finished', entry)
+      const allSettings = store.getAll()
+      if (allSettings.notifyStop !== false) notify('SundayRec', `Fullført: ${filename}`)
+    })
+    .on('error', (err) => {
+      fs.unlink(tempPath, () => {})
+      const entry: RecordingEntry = {
+        date:      new Date().toISOString().slice(0, 10),
+        startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
+        duration:  '—',
+        filename:  '—',
+        status:    'error',
+        error:     err.message
+      }
+      store.addHistory(entry)
+      session.win.webContents.send('recording-error', { error: err.message })
+      tray.setRecording(false)
+      tray.setError(true)
+      notify('SundayRec — Feil', err.message)
+      const allSettings = store.getAll()
+      if (allSettings.emailOnError) mailer.sendError(allSettings, err.message)
+    })
+    .run()
+}
+
+export function recoverCrashedSession(): void {
+  const recovery = store.get('activeRecovery')
+  if (!recovery) return
+
+  store.set('activeRecovery', null)
+
+  if (!fs.existsSync(recovery.tempPath)) return
+
+  const stat = fs.statSync(recovery.tempPath)
+  if (stat.size < 10000) {
+    fs.unlink(recovery.tempPath, () => {})
+    return
+  }
+
+  const outputPath = path.join(defaultFolder(), `recovered_${new Date().toISOString().slice(0, 10)}.mp3`)
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+
+  ffmpeg(recovery.tempPath)
+    .audioCodec('libmp3lame')
+    .audioBitrate('192k')
+    .output(outputPath)
+    .on('end', () => {
+      fs.unlink(recovery.tempPath, () => {})
+      const durationSec = Math.round((Date.now() - recovery.startTime) / 1000)
+      store.addHistory({
+        date:      new Date().toISOString().slice(0, 10),
+        startTime: new Date(recovery.startTime).toTimeString().slice(0, 5),
+        duration:  formatDuration(durationSec),
+        filename:  path.basename(outputPath),
+        path:      outputPath,
+        status:    'ok'
+      })
+    })
+    .on('error', () => fs.unlink(recovery.tempPath, () => {}))
+    .run()
+}
+
+function notify(title: string, body: string): void {
+  if (Notification.isSupported()) new Notification({ title, body }).show()
+}
+
+function buildFilename(settings: RecordingOpts): string {
+  const now  = new Date()
+  const date = now.toISOString().slice(0, 10)
+  const ext  = settings.format ?? 'mp3'
+  const ts   = settings.splitTimestamp ? `_${settings.splitTimestamp}` : ''
+
+  if (settings.customName?.trim()) {
+    const safe = settings.customName.trim().replace(/[/\\:*?"<>|]/g, '_')
+    return `${safe}${ts}_${date}.${ext}`
+  }
+
+  switch (settings.filenamePattern) {
+    case 'church': {
+      const name = churchCalendarName(now)
+      return `${name}${ts}_${date}.${ext}`
+    }
+    case 'plain':
+      return `gudstjeneste${ts}_${date}.${ext}`
+    case 'datetime': {
+      const time = now.toTimeString().slice(0, 5).replace(':', '')
+      return `${date}_${time}.${ext}`
+    }
+    default:
+      return `${date}${ts}.${ext}`
+  }
+}
+
+function codecFor(format: string): string {
+  switch (format) {
+    case 'mp3':  return 'libmp3lame'
+    case 'flac': return 'flac'
+    case 'aac':  return 'aac'
+    case 'wav':  return 'pcm_s16le'
+    default:     return 'libmp3lame'
+  }
+}
+
+function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return h ? `${h}t ${m}m` : `${m}m`
+}
+
+function defaultFolder(): string {
+  return path.join(app.getPath('documents'), 'SundayRec')
+}
+
+export function isActive(): boolean {
+  return activeSession !== null && activeSession.confirmed
+}
