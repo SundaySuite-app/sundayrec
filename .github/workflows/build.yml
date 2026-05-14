@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  # ── macOS: sign + notarize ────────────────────────────────────────
+  # ── macOS: sign + notarize (skips signing gracefully if certs not configured) ──
   build-mac:
     runs-on: macos-latest
     steps:
@@ -25,7 +25,11 @@ jobs:
         run: npm ci
 
       - name: Build, sign, and notarize
-        run: npm run build:mac -- --publish always
+        run: |
+          if [ -z "$CSC_LINK" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+          npm run build:mac -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Developer ID Application certificate (.p12 base64-encoded)
@@ -36,7 +40,7 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-  # ── Windows: Azure Trusted Signing ───────────────────────────────
+  # ── Windows: Azure Trusted Signing (skips signing if credentials not configured) ──
   build-win:
     runs-on: windows-latest
     steps:
@@ -51,7 +55,14 @@ jobs:
         run: npm ci
 
       - name: Build and sign
-        run: npm run build:win -- --publish always
+        shell: pwsh
+        run: |
+          if (-not $env:AZURE_ENDPOINT) {
+            $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+            npm run build:win -- --publish always --c.win.signingHashAlgorithms=null
+          } else {
+            npm run build:win -- --publish always
+          }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Azure Trusted Signing — account info (non-secret, region endpoint + names)
