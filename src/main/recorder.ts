@@ -77,7 +77,7 @@ export function startSession(settings: RecordingOpts, win: BrowserWindow): { ok:
   }
 
   if (recBlocker === null || !powerSaveBlocker.isStarted(recBlocker)) {
-    recBlocker = powerSaveBlocker.start('prevent-display-sleep')
+    recBlocker = powerSaveBlocker.start('prevent-app-suspension')
   }
 
   return { ok: true }
@@ -153,7 +153,7 @@ async function convertAndSave(session: Session): Promise<void> {
     .on('end', () => {
       fs.unlinkSync(tempPath)
       const entry: RecordingEntry = {
-        date:      new Date().toISOString().slice(0, 10),
+        date:      new Date(session.startTime ?? Date.now()).toISOString().slice(0, 10),
         startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
         duration:  formatDuration(durationSec),
         filename:  path.basename(outputPath),
@@ -200,18 +200,35 @@ export function recoverCrashedSession(): void {
     return
   }
 
-  const outputPath = path.join(defaultFolder(), `recovered_${new Date().toISOString().slice(0, 10)}.mp3`)
+  const s = store.getAll()
+  const fmt = s.format ?? 'mp3'
+  const folder = s.saveFolder ?? defaultFolder()
+  const dateStr = new Date().toISOString().slice(0, 10)
+  let outputPath = path.join(folder, `recovered_${dateStr}.${fmt}`)
+  let suffix = 2
+  while (fs.existsSync(outputPath)) {
+    outputPath = path.join(folder, `recovered_${dateStr}_${suffix}.${fmt}`)
+    suffix++
+  }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
-  ffmpeg(recovery.tempPath)
-    .audioCodec('libmp3lame')
-    .audioBitrate('192k')
+  const cmd = ffmpeg(recovery.tempPath)
+    .audioCodec(codecFor(fmt))
+    .audioChannels(s.channels === 'stereo' ? 2 : 1)
+    .audioFrequency(s.sampleRate ?? 48000)
+
+  if (fmt === 'mp3' || fmt === 'aac') {
+    const br = String(s.bitrate ?? '192').replace(/k$/i, '')
+    cmd.audioBitrate(br + 'k')
+  }
+
+  cmd
     .output(outputPath)
     .on('end', () => {
       fs.unlink(recovery.tempPath, () => {})
       const durationSec = Math.round((Date.now() - recovery.startTime) / 1000)
       store.addHistory({
-        date:      new Date().toISOString().slice(0, 10),
+        date:      new Date(recovery.startTime).toISOString().slice(0, 10),
         startTime: new Date(recovery.startTime).toTimeString().slice(0, 5),
         duration:  formatDuration(durationSec),
         filename:  path.basename(outputPath),

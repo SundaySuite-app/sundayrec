@@ -31,6 +31,15 @@ export function flashSaved(btn: HTMLElement | null): void {
   setTimeout(() => { btn.textContent = orig; btn.style.background = origBg }, 1800)
 }
 
+export function flashMsg(btn: HTMLElement | null, msg: string, ok = true): void {
+  if (!btn) return
+  const orig   = btn.textContent ?? ''
+  const origBg = (btn as HTMLElement).style.background
+  btn.textContent = msg
+  btn.style.background = ok ? 'var(--green)' : 'var(--red)'
+  setTimeout(() => { btn.textContent = orig; btn.style.background = origBg }, 2500)
+}
+
 export function fmtDate(iso: string): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString(currentLang === 'no' ? 'nb-NO' : currentLang, {

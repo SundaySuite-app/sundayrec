@@ -95,7 +95,7 @@ async function loadDiskSpace(): Promise<void> {
   }
   const hours  = Math.floor(disk.freeBytes / (kbps * 125 * 3600))
   const recEst = fmtStorageHours(hours)
-  if (storageVal) storageVal.textContent = `${gb.toFixed(1)} GB ledig`
+  if (storageVal) storageVal.textContent = `${gb.toFixed(1)} GB ${t('home.storageFree', 'ledig')}`
   if (storageSub) storageSub.textContent = `${folderShort} · ca. ${recEst}`
 
   const diskMetaEl = document.getElementById('rec-disk')

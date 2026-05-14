@@ -16,6 +16,23 @@ if (!app.isPackaged && process.platform === 'darwin' && app.dock) {
   app.dock.setIcon(path.join(__dirname, '../../assets/icon.png'))
 }
 
+const IMMINENT_LABELS: Record<string, [string, string, string, string]> = {
+  no: ['Avslutt likevel', 'Avbryt', 'Planlagt opptak nærmer seg',
+       'Et opptak er planlagt om {mins} min. Lukk vinduet (✕) i stedet for å avslutte – da kjører appen i bakgrunnen.'],
+  en: ['Quit anyway', 'Cancel', 'Scheduled recording approaching',
+       'A recording is scheduled in {mins} min. Close the window (✕) instead of quitting – the app will run in the background.'],
+  de: ['Trotzdem beenden', 'Abbrechen', 'Geplante Aufnahme steht bevor',
+       'Eine Aufnahme ist in {mins} Min. geplant. Schließen Sie das Fenster (✕) statt zu beenden – die App läuft im Hintergrund weiter.'],
+  sv: ['Avsluta ändå', 'Avbryt', 'Schemalagd inspelning börjar snart',
+       'En inspelning är schemalagd om {mins} min. Stäng fönstret (✕) i stället – appen fortsätter i bakgrunden.'],
+  da: ['Afslut alligevel', 'Annuller', 'Planlagt optagelse nærmer sig',
+       'En optagelse er planlagt om {mins} min. Luk vinduet (✕) i stedet – appen kører videre i baggrunden.'],
+  pl: ['Wyjdź mimo to', 'Anuluj', 'Planowane nagranie zbliża się',
+       'Nagranie jest zaplanowane za {mins} min. Zamknij okno (✕) zamiast wychodzić – aplikacja będzie działać w tle.'],
+  fr: ['Quitter quand même', 'Annuler', 'Enregistrement planifié dans peu de temps',
+       "Un enregistrement est prévu dans {mins} min. Fermez la fenêtre (✕) plutôt que de quitter – l'application continue en arrière-plan."]
+}
+
 const QUIT_LABELS: Record<string, [string, string, string, string]> = {
   no: ['Stopp opptak og avslutt', 'Fortsett opptak', 'Opptak pågår', 'Opptaket vil bli lagret frem til nå hvis du avslutter.'],
   en: ['Stop recording and quit', 'Continue recording', 'Recording in progress', 'The recording will be saved up to this point if you quit.'],
@@ -138,12 +155,13 @@ app.on('before-quit', async (e) => {
   if (soonMs > 0 && soonMs < 60 * 60000) {
     e.preventDefault()
     const mins = Math.round(soonMs / 60000)
+    const imLbl = IMMINENT_LABELS[lang] ?? IMMINENT_LABELS.en
     const { response } = await dialog.showMessageBox({
       type: 'warning',
-      buttons: ['Avslutt likevel', 'Avbryt'],
+      buttons: [imLbl[0], imLbl[1]],
       defaultId: 1, cancelId: 1,
-      message: 'Planlagt opptak nærmer seg',
-      detail: `Et opptak er planlagt om ${mins} minutt${mins === 1 ? '' : 'er'}. Hvis du avslutter vil opptaket ikke starte.\n\nStenk vinduet (✕) i stedet for å avslutte — da kjører appen stille i bakgrunnen.`
+      message: imLbl[2],
+      detail: imLbl[3].replace('{mins}', String(mins))
     })
     if (response === 0) { forceQuit = true; app.quit() }
   } else {
@@ -216,10 +234,13 @@ function setupIPC(): void {
         if (!isNaN(free)) return { freeBytes: free * 1024 }
       }
       if (process.platform === 'win32') {
-        const drive = folder.slice(0, 2)
-        const out   = execSync(`wmic logicaldisk where "DeviceID='${drive}'" get FreeSpace /value`).toString()
-        const m     = out.match(/FreeSpace=(\d+)/)
-        if (m) return { freeBytes: parseInt(m[1]) }
+        const drive = folder.slice(0, 2).replace(/[^A-Za-z:]/, '')
+        const out   = execSync(
+          `powershell -NoProfile -Command "(Get-PSDrive -Name '${drive.slice(0,1)}').Free"`,
+          { timeout: 5000 }
+        ).toString().trim()
+        const free = parseInt(out)
+        if (!isNaN(free) && free >= 0) return { freeBytes: free }
       }
     } catch {}
     return { freeBytes: null }

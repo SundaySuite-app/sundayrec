@@ -87,10 +87,19 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
-      "entitlementsInherit": "assets/entitlements.mac.plist"
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "${env.APPLE_TEAM_ID}"
+      }
     },
     "win": {
       "icon": "assets/icon.ico",
+      "signingHashAlgorithms": ["sha256"],
+      "azureSignOptions": {
+        "endpoint": "${env.AZURE_ENDPOINT}",
+        "codeSigningAccountName": "${env.AZURE_CODE_SIGNING_ACCOUNT_NAME}",
+        "certificateProfileName": "${env.AZURE_CERT_PROFILE_NAME}"
+      },
       "target": [
         {
           "target": "nsis",

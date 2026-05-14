@@ -7,7 +7,7 @@ import { settings } from '../state'
 import { startCapture, stopCapture, getAudioDevices } from '../audio/capture'
 import type { CaptureSession } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
-import { fmtCountdown } from '../helpers'
+import { fmtCountdown, flashMsg } from '../helpers'
 import { stopVU as stopHomeVU } from './home-vu'
 import { stopMonitoring } from './audio-page'
 import { loadRecentHistory } from './home'
@@ -150,7 +150,11 @@ async function handleManualStart(): Promise<void> {
       hideOverlay()
     }
   } else {
-    alert(t('manual.startError', 'Kunne ikke starte opptak: ') + (res?.error ?? t('general.unknownError', 'ukjent feil')))
+    flashMsg(
+      document.getElementById('btn-manual-start'),
+      '✕ ' + (res?.error ?? t('general.unknownError', 'ukjent feil')),
+      false
+    )
   }
   if (btn) btn.disabled = false
 }
@@ -235,14 +239,16 @@ async function startMediaRecorder(opts: RecordingOpts): Promise<void> {
     }, 5000)
   }
 
-  // Hourly split
+  // Hourly split — triggers at the next clock-hour boundary (:00)
   if (opts.splitHourly) {
+    const now = new Date()
+    const msUntilNextHour = (60 - now.getMinutes()) * 60000 - now.getSeconds() * 1000 - now.getMilliseconds()
     splitTimer = setTimeout(() => {
       const ts = new Date().toTimeString().slice(0, 5).replace(':', '')
       autoRestartOpts = { ...opts, splitTimestamp: ts }
       splitTimer = null
       doStopRecording()
-    }, 60 * 60000)
+    }, msUntilNextHour)
   }
 
   window.api.notifyStarted({ name: opts.customName ?? opts.overrideName ?? t('recording.defaultName', 'Opptak') })

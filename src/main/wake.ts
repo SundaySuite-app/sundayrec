@@ -27,7 +27,7 @@ function updateBlocker(upcomingDates: Date[]): void {
     return t > now && t - now < soonMs
   })
   if (hasSoon && (blocker === null || !powerSaveBlocker.isStarted(blocker))) {
-    blocker = powerSaveBlocker.start('prevent-display-sleep')
+    blocker = powerSaveBlocker.start('prevent-app-suspension')
   } else if (!hasSoon && blocker !== null && powerSaveBlocker.isStarted(blocker)) {
     powerSaveBlocker.stop(blocker)
     blocker = null
@@ -67,7 +67,10 @@ function scheduleMac(wakePoints: Date[]): WakeResult {
 
 function scheduleWindows(wakePoints: Date[]): WakeResult {
   try {
-    execSync('schtasks /Delete /TN "\\SundayRec\\Wake" /F 2>NUL', { stdio: 'pipe', timeout: 5000 })
+    execSync(
+      `powershell -NoProfile -Command "Get-ScheduledTask -TaskPath '\\\\SundayRec\\\\*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false"`,
+      { stdio: 'pipe', timeout: 10000 }
+    )
   } catch {}
 
   if (!wakePoints.length) return { ok: true, count: 0 }

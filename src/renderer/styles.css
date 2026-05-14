@@ -609,9 +609,9 @@ select.form-input {
 .proc-disabled.active { opacity: 1; pointer-events: auto; }
 
 /* ── Calendar ──────────────────────────────────────────────────── */
-.cal-layout { display: flex; gap: 20px; align-items: flex-start; }
-.cal-card   { flex: 1; min-width: 0; }
-.cal-right  { width: 264px; flex-shrink: 0; }
+.cal-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.cal-card   { flex: 1; min-width: 340px; }
+.cal-right  { width: 264px; flex-shrink: 0; min-width: 0; }
 .cal-month-nav {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 16px;
@@ -649,7 +649,7 @@ select.form-input {
   border-radius: var(--rsm);
 }
 .cal-weekdays {
-  display: grid; grid-template-columns: repeat(7,1fr);
+  display: grid; grid-template-columns: repeat(7,1fr); column-gap: 2px;
   margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 8px;
 }
 .cal-weekdays span { text-align: center; font-size: 10px; font-weight: 700; color: var(--text3); padding: 2px 0; }

@@ -50,7 +50,7 @@ const defaults: Settings = {
 
   autoUpdate: true,
 
-  churchName: 'Alta Frikirke',
+  churchName: '',
   responsiblePerson: '',
 
   activeRecovery: null,

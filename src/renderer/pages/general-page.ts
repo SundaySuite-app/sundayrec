@@ -1,6 +1,6 @@
 import { t, loadLocale, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, setVal } from '../helpers'
+import { flashSaved, flashMsg, setVal } from '../helpers'
 
 export function setupGeneralPage(): void {
   document.getElementById('opt-email-error')?.addEventListener('change', toggleEmailSection)
@@ -22,11 +22,12 @@ export function setupGeneralPage(): void {
       if (!file) return
       const text = await file.text()
       const ok   = await window.api.importProfile(text)
+      const btn  = document.getElementById('btn-import')
       if (ok) {
         await window.loadSettings()
-        alert(t('general.importOk', 'Profil importert!'))
+        flashMsg(btn, '✓ ' + t('general.importOk', 'Profil importert!'), true)
       } else {
-        alert(t('general.importFail', 'Ugyldig profil-fil.'))
+        flashMsg(btn, '✕ ' + t('general.importFail', 'Ugyldig profil-fil.'), false)
       }
     }
     input.click()

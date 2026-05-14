@@ -1,6 +1,6 @@
 import { t, tArr, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { escHtml, isoDate } from '../helpers'
+import { escHtml, isoDate, flashMsg } from '../helpers'
 import { getChurchHolidays } from '../../shared/church-calendar'
 
 let calYear       = new Date().getFullYear()
@@ -184,7 +184,7 @@ async function saveSpecial(): Promise<void> {
   const name  = nameEl?.value.trim() || 'Gudstjeneste'
   const start = startEl?.value || '11:00'
   const stop  = stopEl?.value  || '12:00'
-  if (!date) { alert(t('calendar.errNoDate')); return }
+  if (!date) { flashMsg(document.getElementById('btn-add-special'), '✕ ' + t('calendar.errNoDate', 'Velg en dato først'), false); return }
   if (!settings.specialRecordings) settings.specialRecordings = []
   lastStart = start; lastStop = stop
 
