@@ -94,12 +94,6 @@
     },
     "win": {
       "icon": "assets/icon.ico",
-      "signingHashAlgorithms": ["sha256"],
-      "azureSignOptions": {
-        "endpoint": "${env.AZURE_ENDPOINT}",
-        "codeSigningAccountName": "${env.AZURE_CODE_SIGNING_ACCOUNT_NAME}",
-        "certificateProfileName": "${env.AZURE_CERT_PROFILE_NAME}"
-      },
       "target": [
         {
           "target": "nsis",
