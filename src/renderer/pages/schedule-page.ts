@@ -1,6 +1,6 @@
 import { t, tArr } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved } from '../helpers'
+import { flashSaved, escHtml } from '../helpers'
 import type { ScheduleSlot } from '../../types'
 
 let editingSlotIndex = -1
@@ -87,7 +87,7 @@ export function renderDayPickers(): void {
   if (!dp) return
   const sel = [...dp.querySelectorAll<HTMLElement>('.day-btn.selected')].map(b => +b.dataset.day!)
   dp.innerHTML = days.map((d, i) =>
-    `<button class="day-btn${sel.includes(i) ? ' selected' : ''}" data-day="${i}">${d}</button>`
+    `<button class="day-btn${sel.includes(i) ? ' selected' : ''}" data-day="${i}">${escHtml(d)}</button>`
   ).join('')
   dp.querySelectorAll('.day-btn').forEach(btn =>
     btn.addEventListener('click', () => btn.classList.toggle('selected'))
@@ -104,11 +104,11 @@ export function renderSlotsList(): void {
     return
   }
   list.innerHTML = slots.map((s, i) => {
-    const dayNames = (s.days ?? []).map(d => days[d] ?? '?').join(', ')
+    const dayNames = (s.days ?? []).map(d => escHtml(days[d] ?? '?')).join(', ')
     return `<div class="slot-row">
       <div class="slot-days">${dayNames || '—'}</div>
-      <div class="slot-time">${s.start} – ${s.stop}</div>
-      <a href="#" class="slot-edit" data-index="${i}">${t('schedule.edit','Rediger')}</a>
+      <div class="slot-time">${escHtml(s.start)} – ${escHtml(s.stop)}</div>
+      <a href="#" class="slot-edit" data-index="${i}">${escHtml(t('schedule.edit','Rediger'))}</a>
       <span class="slot-del" data-index="${i}" title="Slett">×</span>
     </div>`
   }).join('')
