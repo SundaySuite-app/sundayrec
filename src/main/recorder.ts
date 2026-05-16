@@ -113,7 +113,7 @@ export function stopSession(): void {
     activeSession = null
     if (session.maxTimer) clearTimeout(session.maxTimer)
     session.writeStream.end()
-    setTimeout(() => fs.unlink(session.tempPath, () => {}), 100)
+    setTimeout(() => unlinkTemp(session.tempPath), 100)
     store.set('activeRecovery', null)
     stopRecBlocker()
     notifyIdle()
@@ -171,7 +171,7 @@ async function convertAndSave(session: Session): Promise<void> {
   cmd
     .output(outputPath)
     .on('end', () => {
-      fs.unlink(tempPath, () => {})
+      unlinkTemp(tempPath)
       const recDate = new Date(session.startTime ?? Date.now())
       const entry: RecordingEntry = {
         date:      localDateStr(recDate),
@@ -191,7 +191,7 @@ async function convertAndSave(session: Session): Promise<void> {
       notifyIdle()
     })
     .on('error', (err) => {
-      fs.unlink(tempPath, () => {})
+      unlinkTemp(tempPath)
       const entry: RecordingEntry = {
         date:      localDateStr(new Date()),
         startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
@@ -223,7 +223,7 @@ export function recoverCrashedSession(): void {
 
   const stat = fs.statSync(recovery.tempPath)
   if (stat.size < 10000) {
-    fs.unlink(recovery.tempPath, () => {})
+    unlinkTemp(recovery.tempPath)
     return
   }
 
@@ -253,7 +253,7 @@ export function recoverCrashedSession(): void {
   cmd
     .output(outputPath)
     .on('end', () => {
-      fs.unlink(recovery.tempPath, () => {})
+      unlinkTemp(recovery.tempPath)
       const durationSec = Math.round((Date.now() - recovery.startTime) / 1000)
       const recDate = new Date(recovery.startTime)
       store.addHistory({
@@ -265,8 +265,14 @@ export function recoverCrashedSession(): void {
         status:    'ok'
       })
     })
-    .on('error', () => fs.unlink(recovery.tempPath, () => {}))
+    .on('error', () => unlinkTemp(recovery.tempPath))
     .run()
+}
+
+function unlinkTemp(p: string): void {
+  fs.promises.unlink(p).catch(err => {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Failed to delete temp file:', err)
+  })
 }
 
 function notify(title: string, body: string): void {
