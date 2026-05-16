@@ -328,5 +328,9 @@
     "finish": "✓ Ferdig — aktiver programmet",
     "usbHint": "Koble til USB-mikseren om den ikke vises her",
     "filenameExample": "Eksempel på filnavn:"
+  },
+  "time": {
+    "yr": "år", "mo": "mnd.", "wk": "u", "d": "d", "h": "t", "m": "m", "s": "s",
+    "years": "år", "months": "måneder", "weeks": "uker", "days": "dager"
   }
 }

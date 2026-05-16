@@ -24,6 +24,16 @@ import * as mailer from './mailer'
 import { localDateStr, buildFilename, codecFor, formatDuration } from './recorder-utils'
 import type { RecordingOpts, RecordingEntry, Settings } from '../types'
 
+const NOTIFY_LABELS: Record<string, { done: string; err: string }> = {
+  no: { done: 'Fullført',      err: 'SundayRec — Feil'    },
+  en: { done: 'Completed',     err: 'SundayRec — Error'   },
+  de: { done: 'Abgeschlossen', err: 'SundayRec — Fehler'  },
+  sv: { done: 'Klar',          err: 'SundayRec — Fel'     },
+  da: { done: 'Fuldført',      err: 'SundayRec — Fejl'    },
+  pl: { done: 'Ukończono',     err: 'SundayRec — Błąd'    },
+  fr: { done: 'Terminé',       err: 'SundayRec — Erreur'  },
+}
+
 let ffmpegPath = ffmpegStatic as string
 if (app.isPackaged) {
   ffmpegPath = ffmpegPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep)
@@ -174,7 +184,10 @@ async function convertAndSave(session: Session): Promise<void> {
       store.addHistory(entry)
       session.win.webContents.send('recording-finished', entry)
       const allSettings = store.getAll()
-      if (allSettings.notifyStop !== false) notify('SundayRec', `Fullført: ${filename}`)
+      if (allSettings.notifyStop !== false) {
+        const nl = NOTIFY_LABELS[allSettings.language ?? 'no'] ?? NOTIFY_LABELS.no
+        notify('SundayRec', `${nl.done}: ${filename}`)
+      }
       notifyIdle()
     })
     .on('error', (err) => {
@@ -191,8 +204,9 @@ async function convertAndSave(session: Session): Promise<void> {
       session.win.webContents.send('recording-error', { error: err.message })
       tray.setRecording(false)
       tray.setError(true)
-      notify('SundayRec — Feil', err.message)
       const allSettings = store.getAll()
+      const nl = NOTIFY_LABELS[allSettings.language ?? 'no'] ?? NOTIFY_LABELS.no
+      notify(nl.err, err.message)
       if (allSettings.emailOnError) mailer.sendError(allSettings, store.getSmtpPassword(), err.message)
       notifyIdle()
     })

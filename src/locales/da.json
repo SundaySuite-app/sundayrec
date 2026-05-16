@@ -328,5 +328,9 @@
     "finish": "✓ Færdig — aktiver appen",
     "usbHint": "Tilslut USB-mikseren hvis den ikke vises her",
     "filenameExample": "Filnavnseksempel:"
+  },
+  "time": {
+    "yr": "år", "mo": "mnd", "wk": "u", "d": "d", "h": "t", "m": "m", "s": "s",
+    "years": "år", "months": "måneder", "weeks": "uger", "days": "dage"
   }
 }

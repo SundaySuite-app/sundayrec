@@ -328,5 +328,9 @@
     "finish": "✓ Terminé — activer l'application",
     "usbHint": "Connectez la table de mixage USB si elle n'apparaît pas ici",
     "filenameExample": "Exemple de nom de fichier :"
+  },
+  "time": {
+    "yr": "an", "mo": "mois", "wk": "sem", "d": "j", "h": "h", "m": "min", "s": "s",
+    "years": "ans", "months": "mois", "weeks": "semaines", "days": "jours"
   }
 }

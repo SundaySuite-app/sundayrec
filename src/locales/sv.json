@@ -328,5 +328,9 @@
     "finish": "✓ Klar — aktivera appen",
     "usbHint": "Anslut USB-mixern om den inte visas här",
     "filenameExample": "Filnamnsexempel:"
+  },
+  "time": {
+    "yr": "år", "mo": "mån", "wk": "v", "d": "d", "h": "h", "m": "m", "s": "s",
+    "years": "år", "months": "månader", "weeks": "veckor", "days": "dagar"
   }
 }

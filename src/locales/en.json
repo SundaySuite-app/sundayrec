@@ -328,5 +328,9 @@
     "finish": "✓ Done — activate the app",
     "usbHint": "Connect the USB mixer if it does not appear here",
     "filenameExample": "Filename example:"
+  },
+  "time": {
+    "yr": "yr", "mo": "mo", "wk": "w", "d": "d", "h": "h", "m": "m", "s": "s",
+    "years": "years", "months": "months", "weeks": "weeks", "days": "days"
   }
 }

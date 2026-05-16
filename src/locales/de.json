@@ -328,5 +328,9 @@
     "finish": "✓ Fertig — App aktivieren",
     "usbHint": "USB-Mixer anschließen, wenn er hier nicht erscheint",
     "filenameExample": "Dateinamen-Beispiel:"
+  },
+  "time": {
+    "yr": "J", "mo": "Mo", "wk": "W", "d": "T", "h": "h", "m": "m", "s": "s",
+    "years": "Jahre", "months": "Monate", "weeks": "Wochen", "days": "Tage"
   }
 }

@@ -328,5 +328,9 @@
     "finish": "✓ Gotowe — aktywuj aplikację",
     "usbHint": "Podłącz mikser USB jeśli nie pojawia się tutaj",
     "filenameExample": "Przykład nazwy pliku:"
+  },
+  "time": {
+    "yr": "l", "mo": "mies", "wk": "tyg", "d": "d", "h": "g", "m": "min", "s": "s",
+    "years": "lat", "months": "miesięcy", "weeks": "tygodni", "days": "dni"
   }
 }
