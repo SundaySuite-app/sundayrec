@@ -5,7 +5,14 @@ const config: Config = {
   testEnvironment: 'node',
   roots: ['<rootDir>/tests'],
   moduleNameMapper: {
-    '^@shared/(.*)$': '<rootDir>/src/shared/$1'
+    '^@shared/(.*)$': '<rootDir>/src/shared/$1',
+    '^electron$': '<rootDir>/__mocks__/electron.ts',
+    '^electron-store$': '<rootDir>/__mocks__/electron-store.ts',
+  },
+  globals: {
+    'ts-jest': {
+      tsconfig: { esModuleInterop: true }
+    }
   }
 }
 
