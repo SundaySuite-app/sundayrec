@@ -4,7 +4,7 @@
  */
 import { t } from '../i18n'
 import { settings } from '../state'
-import { startCapture, stopCapture, getAudioDevices } from '../audio/capture'
+import { startCapture, stopCapture, getAudioDevices, reconnectStream } from '../audio/capture'
 import type { CaptureSession } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 import { fmtCountdown, flashMsg } from '../helpers'
@@ -188,15 +188,8 @@ async function startMediaRecorder(opts: RecordingOpts): Promise<void> {
 
   activeSession = await startCapture(resolvedOpts)
 
-  // Detect USB disconnect mid-recording
-  activeSession.stream.getAudioTracks().forEach(track => {
-    track.onended = () => {
-      if (isRecording) {
-        window.api.notifyError({ error: 'Lydkilden ble koblet fra under opptak' })
-        doStopRecording()
-      }
-    }
-  })
+  // Detect USB disconnect mid-recording — retry for 10 seconds before giving up
+  attachDisconnectHandler(activeSession, opts)
 
   // Connect recording VU
   const vuL   = document.getElementById('rec-vu-l')
@@ -285,6 +278,47 @@ async function stopMediaRecorder(): Promise<void> {
 async function doStopRecording(): Promise<void> {
   await stopMediaRecorder()
   hideOverlay()
+}
+
+function attachDisconnectHandler(session: CaptureSession, opts: RecordingOpts): void {
+  session.stream.getAudioTracks().forEach(track => {
+    track.onended = () => { if (isRecording) handleDisconnect(session, opts) }
+  })
+}
+
+async function handleDisconnect(session: CaptureSession, opts: RecordingOpts): Promise<void> {
+  if (!isRecording) return
+  showReconnectBanner()
+  let reconnected = false
+  for (let remaining = 10; remaining > 0 && isRecording; remaining--) {
+    updateReconnectBanner(remaining)
+    if (await reconnectStream(session)) {
+      reconnected = true
+      attachDisconnectHandler(session, opts)
+      break
+    }
+    await new Promise<void>(r => setTimeout(r, 1000))
+  }
+  hideReconnectBanner()
+  if (!reconnected && isRecording) {
+    window.api.notifyError({ error: 'Lydkilden ble koblet fra under opptak' })
+    doStopRecording()
+  }
+}
+
+function showReconnectBanner(): void {
+  const el = document.getElementById('rec-reconnect')
+  if (el) el.style.display = 'flex'
+}
+
+function hideReconnectBanner(): void {
+  const el = document.getElementById('rec-reconnect')
+  if (el) el.style.display = 'none'
+}
+
+function updateReconnectBanner(secsLeft: number): void {
+  const el = document.getElementById('rec-reconnect-countdown')
+  if (el) el.textContent = String(secsLeft)
 }
 
 function showOverlay(opts: RecordingOpts): void {

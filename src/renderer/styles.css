@@ -901,6 +901,16 @@ select.form-input {
   font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s;
 }
 .btn-extend:hover { background: rgba(124,109,255,.2); }
+.rec-reconnect {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 12px 24px; background: rgba(239,68,68,.15);
+  border-top: 1px solid rgba(239,68,68,.35); backdrop-filter: blur(4px);
+}
+.rec-reconnect-icon { font-size: 18px; }
+.rec-reconnect-text { font-size: 13px; font-weight: 600; color: #fca5a5; }
+.rec-reconnect-countdown { font-size: 22px; font-weight: 700; color: #fca5a5; font-variant-numeric: tabular-nums; line-height: 1; }
+.rec-reconnect-unit { font-size: 13px; color: #fca5a5; }
 .btn-cancel-sched {
   padding: 7px 16px; background: transparent; border: 1px solid var(--border);
   color: var(--text3); border-radius: var(--rsm);
