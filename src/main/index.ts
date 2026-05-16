@@ -279,7 +279,12 @@ function setupIPC(): void {
     tray.setError(true)
     notify('SundayRec — Feil', data.error)
     const settings = store.getAll()
-    if (settings.emailOnError) mailer.sendError(settings, data.error)
+    if (settings.emailOnError) mailer.sendError(settings, store.getSmtpPassword(), data.error)
+  })
+
+  ipcMain.handle('clear-smtp-password', () => {
+    store.setSmtpPassword('')
+    return true
   })
 }
 

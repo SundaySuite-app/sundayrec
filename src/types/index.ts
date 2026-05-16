@@ -93,7 +93,9 @@ export interface Settings {
   emailSmtp: string
   emailSmtpPort: number
   emailSmtpUser: string
-  emailSmtpPass: string
+  emailSmtpPass: string       // runtime only — always '' in store; real value in emailSmtpPassEnc
+  emailSmtpPassSet?: boolean  // populated by main before sending to renderer
+  emailSmtpPassEnc?: string   // internal: base64-encoded safeStorage ciphertext
 
   // Updates
   autoUpdate: boolean

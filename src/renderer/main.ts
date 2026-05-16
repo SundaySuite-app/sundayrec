@@ -33,6 +33,7 @@ declare global {
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
+      clearSmtpPassword:   () => Promise<boolean>
       checkForUpdates:     () => Promise<void>
       installUpdate:       () => void
       scheduleOsWakes:      () => Promise<unknown>

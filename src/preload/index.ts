@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('api', {
   openFolder:     (p: string) => ipcRenderer.invoke('open-folder', p),
   revealFile:     (p: string) => ipcRenderer.invoke('reveal-file', p),
 
+  clearSmtpPassword: ()      => ipcRenderer.invoke('clear-smtp-password'),
+
   checkForUpdates: ()        => ipcRenderer.invoke('check-for-updates'),
   installUpdate:   ()        => ipcRenderer.invoke('install-update'),
 

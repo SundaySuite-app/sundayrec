@@ -5,6 +5,14 @@ import { flashSaved, flashMsg, setVal } from '../helpers'
 export function setupGeneralPage(): void {
   document.getElementById('opt-email-error')?.addEventListener('change', toggleEmailSection)
 
+  document.getElementById('btn-clear-smtp-pass')?.addEventListener('click', async () => {
+    await window.api.clearSmtpPassword()
+    const passInput = document.getElementById('email-pass') as HTMLInputElement | null
+    const clearBtn  = document.getElementById('btn-clear-smtp-pass') as HTMLElement | null
+    if (passInput) { passInput.value = ''; passInput.placeholder = '' }
+    if (clearBtn)  clearBtn.style.display = 'none'
+  })
+
   document.getElementById('btn-export')?.addEventListener('click', async () => {
     const data = await window.api.exportProfile()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -100,7 +108,13 @@ export function applyGeneralSettingsToUI(): void {
   setVal('email-smtp',    settings.emailSmtp      ?? '')
   setVal('email-port',    settings.emailSmtpPort  ?? 587)
   setVal('email-user',    settings.emailSmtpUser  ?? '')
-  setVal('email-pass',    settings.emailSmtpPass  ?? '')
+  const passInput = document.getElementById('email-pass') as HTMLInputElement | null
+  const clearBtn  = document.getElementById('btn-clear-smtp-pass') as HTMLElement | null
+  if (passInput) {
+    passInput.value = ''
+    passInput.placeholder = settings.emailSmtpPassSet ? '••••••••' : ''
+  }
+  if (clearBtn) clearBtn.style.display = settings.emailSmtpPassSet ? 'inline' : 'none'
   toggleEmailSection()
 
   // Version display

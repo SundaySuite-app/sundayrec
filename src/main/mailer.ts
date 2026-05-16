@@ -7,7 +7,7 @@ function esc(str: unknown): string {
   )
 }
 
-export async function sendError(settings: Settings, errorMessage: string): Promise<void> {
+export async function sendError(settings: Settings, smtpPass: string, errorMessage: string): Promise<void> {
   if (!settings.emailAddress || !settings.emailSmtp) return
 
   const transporter = nodemailer.createTransport({
@@ -15,7 +15,7 @@ export async function sendError(settings: Settings, errorMessage: string): Promi
     port: settings.emailSmtpPort || 587,
     secure: settings.emailSmtpPort === 465,
     auth: settings.emailSmtpUser
-      ? { user: settings.emailSmtpUser, pass: settings.emailSmtpPass }
+      ? { user: settings.emailSmtpUser, pass: smtpPass }
       : undefined
   })
 
