@@ -2,7 +2,7 @@ import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, setVal, setRadio, updateSliderLabel } from '../helpers'
 import { getAudioDevices, detectDeviceChannels, buildInputRouter } from '../audio/capture'
-import type { DeviceChannels } from '../../types'
+import type { DeviceChannels, ChannelMode } from '../../types'
 
 let monitorStream: MediaStream   | null = null
 let monitorCtx:    AudioContext  | null = null
@@ -94,7 +94,7 @@ async function saveAudioSettings(): Promise<void> {
     deviceId,
     deviceChannels,
     inputVolume:    +((document.getElementById('input-volume')    as HTMLInputElement | null)?.value ?? 80),
-    channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as any,
+    channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as ChannelMode,
     sampleRate:     +((document.getElementById('sample-rate')    as HTMLInputElement | null)?.value ?? 48000),
     eqBass:         +((document.getElementById('eq-bass')         as HTMLInputElement | null)?.value ?? 0),
     eqMid:          +((document.getElementById('eq-mid')          as HTMLInputElement | null)?.value ?? 0),
