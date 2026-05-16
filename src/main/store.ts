@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import { safeStorage } from 'electron'
+import fs from 'fs'
 import type { Settings, RecordingEntry } from '../types'
 
 const defaults: Settings = {
@@ -144,6 +145,18 @@ export function deleteHistoryEntry(timestamp: number): void {
 
 export function clearHistory(): void {
   store.set('recordingHistory', [])
+}
+
+export function pruneHistory(): number {
+  const before = getHistory()
+  const after  = before.filter(entry => {
+    if (entry.status !== 'ok' || !entry.path) return true
+    return fs.existsSync(entry.path)
+  })
+  if (after.length !== before.length) {
+    store.set('recordingHistory', after)
+  }
+  return before.length - after.length
 }
 
 export function exportProfile(): Omit<Settings, 'recordingHistory' | 'activeRecovery'> {

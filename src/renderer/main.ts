@@ -27,6 +27,7 @@ declare global {
       getHistory:          () => Promise<unknown[]>
       deleteHistoryEntry:  (ts: number) => Promise<void>
       clearHistory:        () => Promise<void>
+      pruneHistory:        () => Promise<number>
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string } | boolean>
       stopRecordingNow:    () => Promise<boolean>

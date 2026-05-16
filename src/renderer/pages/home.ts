@@ -1,6 +1,6 @@
 import { t, currentLang } from '../i18n'
 import { settings } from '../state'
-import { fmtCountdown, fmtStorageHours, fmtDate, escHtml } from '../helpers'
+import { fmtCountdown, fmtStorageHours, fmtDate, escHtml, flashMsg } from '../helpers'
 import { startVU, stopVU } from './home-vu'
 import { getAudioDevices } from '../audio/capture'
 
@@ -11,6 +11,13 @@ export function setupHome(): void {
   document.getElementById('btn-go-audio-fmt')?.addEventListener('click',  e => { e.preventDefault(); window.showPage('files') })
   document.getElementById('btn-go-general-page')?.addEventListener('click', e => { e.preventDefault(); window.showPage('general') })
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => window.showPage('audio'))
+
+  document.getElementById('btn-prune-history')?.addEventListener('click', async e => {
+    e.preventDefault()
+    const removed = await window.api.pruneHistory()
+    await loadRecentHistory()
+    if (removed === 0) flashMsg(document.getElementById('btn-prune-history'), t('history.pruneNone', 'Ingen å rydde'), true)
+  })
 
   document.getElementById('btn-clear-history')?.addEventListener('click', async e => {
     e.preventDefault()

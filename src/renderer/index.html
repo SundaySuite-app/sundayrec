@@ -185,7 +185,10 @@
     <!-- Historikk section -->
     <div class="section-header">
       <h2 data-i18n="home.recentRecordings">Historikk</h2>
-      <a href="#" class="view-all" id="btn-clear-history" title="Slett alle opptak fra historikken">Slett alle</a>
+      <div style="display:flex;gap:14px;align-items:center">
+        <a href="#" class="view-all" id="btn-prune-history" data-i18n="history.pruneBtn" title="Fjern oppføringer uten tilhørende fil">Rydd opp</a>
+        <a href="#" class="view-all" id="btn-clear-history" title="Slett alle opptak fra historikken" data-i18n="history.clearBtn">Slett alle</a>
+      </div>
     </div>
     <table class="rec-table">
       <thead><tr>

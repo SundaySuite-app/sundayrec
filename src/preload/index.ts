@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('api', {
   getHistory:          ()    => ipcRenderer.invoke('get-history'),
   deleteHistoryEntry:  (ts: number) => ipcRenderer.invoke('delete-history-entry', ts),
   clearHistory:        ()    => ipcRenderer.invoke('clear-history'),
+  pruneHistory:        ()    => ipcRenderer.invoke('prune-history'),
 
   getDiskSpace:   ()         => ipcRenderer.invoke('get-disk-space'),
 

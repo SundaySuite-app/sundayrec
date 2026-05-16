@@ -122,6 +122,7 @@ app.whenReady().then(async () => {
   updater.check()
   setupIPC()
   cleanupOldRecordings()
+  store.pruneHistory()
   wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
 
   if (store.get('launchAtLogin')) {
@@ -224,6 +225,7 @@ function setupIPC(): void {
   ipcMain.handle('get-history', () => store.getHistory())
   ipcMain.handle('delete-history-entry', (_, ts: number) => store.deleteHistoryEntry(ts))
   ipcMain.handle('clear-history', () => store.clearHistory())
+  ipcMain.handle('prune-history', () => store.pruneHistory())
 
   ipcMain.handle('get-next-recording', () => {
     const next = scheduler.getNextRecording()
