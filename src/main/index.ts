@@ -55,7 +55,7 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     },
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#0d0d11',
@@ -191,6 +191,8 @@ function setupIPC(): void {
       setTimeout(() => { app.relaunch(); app.exit(0) }, 3000)
     })
   })
+
+  ipcMain.handle('get-app-version', () => app.getVersion())
 
   ipcMain.handle('get-settings', () => store.getAll())
 

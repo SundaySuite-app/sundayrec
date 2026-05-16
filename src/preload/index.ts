@@ -1,14 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import path from 'path'
-import fs from 'fs'
-
-let appVersion = '—'
-try {
-  const pkgPath = path.join(__dirname, '../../package.json')
-  appVersion = JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version || '—'
-} catch {}
-
-contextBridge.exposeInMainWorld('appVersion', appVersion)
 
 const ALLOWED_CHANNELS = [
   'schedule-start-recording',
@@ -53,6 +43,7 @@ contextBridge.exposeInMainWorld('api', {
   revealFile:     (p: string) => ipcRenderer.invoke('reveal-file', p),
 
   clearSmtpPassword: ()      => ipcRenderer.invoke('clear-smtp-password'),
+  getAppVersion:    ()       => ipcRenderer.invoke('get-app-version'),
 
   checkForUpdates: ()        => ipcRenderer.invoke('check-for-updates'),
   installUpdate:   ()        => ipcRenderer.invoke('install-update'),

@@ -34,6 +34,7 @@ declare global {
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
       clearSmtpPassword:   () => Promise<boolean>
+      getAppVersion:       () => Promise<string>
       checkForUpdates:     () => Promise<void>
       installUpdate:       () => void
       scheduleOsWakes:      () => Promise<unknown>
@@ -113,6 +114,9 @@ async function init(): Promise<void> {
   setupGeneralPage()
   setupRecording()
   setupClipReset()
+
+  // Fetch app version from main (sandbox-safe — no fs/path in preload)
+  window.appVersion = await window.api.getAppVersion().catch(() => '—')
 
   // Load settings, which triggers locale + UI apply
   await loadSettings()
