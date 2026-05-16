@@ -280,7 +280,8 @@
     "unknownError": "unknown error",
     "save": "💾 Save",
     "cancel": "Cancel",
-    "currentVersion": "Current version:"
+    "currentVersion": "Current version:",
+    "saved": "✓ Saved"
   },
   "manual": {
     "title": "Start manual recording",
@@ -303,7 +304,12 @@
     "confirmStop": "Yes, stop",
     "confirmCancel": "Continue recording",
     "defaultName": "Recording",
-    "savingAs": "Saving as:"
+    "savingAs": "Saving as:",
+    "disconnected": "Audio source was disconnected during recording",
+    "sigClipping": "CLIPPING",
+    "sigHigh": "HIGH",
+    "sigGood": "GOOD",
+    "sigWeak": "WEAK"
   },
   "wizard": {
     "step1": "Audio source",

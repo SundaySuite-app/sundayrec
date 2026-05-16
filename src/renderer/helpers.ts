@@ -1,4 +1,4 @@
-import { currentLang } from './i18n'
+import { t, currentLang } from './i18n'
 
 export function escHtml(str: unknown): string {
   return String(str ?? '').replace(/[&<>"']/g, m =>
@@ -26,7 +26,7 @@ export function flashSaved(btn: HTMLElement | null): void {
   if (!btn) return
   const orig   = btn.textContent ?? ''
   const origBg = (btn as HTMLElement).style.background
-  btn.textContent = '✓ Lagret'
+  btn.textContent = t('general.saved', '✓ Lagret')
   btn.style.background = 'var(--green)'
   setTimeout(() => { btn.textContent = orig; btn.style.background = origBg }, 1800)
 }

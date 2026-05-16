@@ -280,7 +280,8 @@
     "unknownError": "ukendt fejl",
     "save": "💾 Gem",
     "cancel": "Annuller",
-    "currentVersion": "Nuværende version:"
+    "currentVersion": "Nuværende version:",
+    "saved": "✓ Gemt"
   },
   "manual": {
     "title": "Start manuel optagelse",
@@ -303,7 +304,12 @@
     "confirmStop": "Ja, stop",
     "confirmCancel": "Fortsæt optagelse",
     "defaultName": "Optagelse",
-    "savingAs": "Gemmes som:"
+    "savingAs": "Gemmes som:",
+    "disconnected": "Lydkilden blev afbrudt under optagelse",
+    "sigClipping": "CLIPPING",
+    "sigHigh": "HØJT",
+    "sigGood": "GOD",
+    "sigWeak": "SVAG"
   },
   "wizard": {
     "step1": "Lydkilde",

@@ -280,7 +280,8 @@
     "unknownError": "erreur inconnue",
     "save": "💾 Enregistrer",
     "cancel": "Annuler",
-    "currentVersion": "Version actuelle :"
+    "currentVersion": "Version actuelle :",
+    "saved": "✓ Enregistré"
   },
   "manual": {
     "title": "Démarrer un enregistrement manuel",
@@ -303,7 +304,12 @@
     "confirmStop": "Oui, arrêter",
     "confirmCancel": "Continuer l'enregistrement",
     "defaultName": "Enregistrement",
-    "savingAs": "Enregistrement sous :"
+    "savingAs": "Enregistrement sous :",
+    "disconnected": "La source audio a été déconnectée pendant l'enregistrement",
+    "sigClipping": "SATURATION",
+    "sigHigh": "ÉLEVÉ",
+    "sigGood": "BON",
+    "sigWeak": "FAIBLE"
   },
   "wizard": {
     "step1": "Source audio",

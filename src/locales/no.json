@@ -280,7 +280,8 @@
     "unknownError": "ukjent feil",
     "save": "💾 Lagre",
     "cancel": "Avbryt",
-    "currentVersion": "Nåværende versjon:"
+    "currentVersion": "Nåværende versjon:",
+    "saved": "✓ Lagret"
   },
   "manual": {
     "title": "Start manuelt opptak",
@@ -303,7 +304,12 @@
     "confirmStop": "Ja, stopp",
     "confirmCancel": "Fortsett opptak",
     "defaultName": "Opptak",
-    "savingAs": "Lagres som:"
+    "savingAs": "Lagres som:",
+    "disconnected": "Lydkilden ble koblet fra under opptak",
+    "sigClipping": "KLIPPING",
+    "sigHigh": "HØYT",
+    "sigGood": "GOD",
+    "sigWeak": "SVAK"
   },
   "wizard": {
     "step1": "Lydkilde",

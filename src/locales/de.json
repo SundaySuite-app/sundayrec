@@ -280,7 +280,8 @@
     "unknownError": "unbekannter Fehler",
     "save": "💾 Speichern",
     "cancel": "Abbrechen",
-    "currentVersion": "Aktuelle Version:"
+    "currentVersion": "Aktuelle Version:",
+    "saved": "✓ Gespeichert"
   },
   "manual": {
     "title": "Manuelle Aufnahme starten",
@@ -303,7 +304,12 @@
     "confirmStop": "Ja, stoppen",
     "confirmCancel": "Aufnahme fortsetzen",
     "defaultName": "Aufnahme",
-    "savingAs": "Gespeichert als:"
+    "savingAs": "Gespeichert als:",
+    "disconnected": "Audioquelle während der Aufnahme getrennt",
+    "sigClipping": "CLIPPING",
+    "sigHigh": "HOCH",
+    "sigGood": "GUT",
+    "sigWeak": "SCHWACH"
   },
   "wizard": {
     "step1": "Audioquelle",

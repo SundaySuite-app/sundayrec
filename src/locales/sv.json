@@ -280,7 +280,8 @@
     "unknownError": "okänt fel",
     "save": "💾 Spara",
     "cancel": "Avbryt",
-    "currentVersion": "Aktuell version:"
+    "currentVersion": "Aktuell version:",
+    "saved": "✓ Sparat"
   },
   "manual": {
     "title": "Starta manuell inspelning",
@@ -303,7 +304,12 @@
     "confirmStop": "Ja, stoppa",
     "confirmCancel": "Fortsätt inspelning",
     "defaultName": "Inspelning",
-    "savingAs": "Sparas som:"
+    "savingAs": "Sparas som:",
+    "disconnected": "Ljudkällan kopplades från under inspelningen",
+    "sigClipping": "CLIPPING",
+    "sigHigh": "HÖGT",
+    "sigGood": "BRA",
+    "sigWeak": "SVAG"
   },
   "wizard": {
     "step1": "Ljudkälla",

@@ -218,10 +218,11 @@ export function recoverCrashedSession(): void {
   const folder = s.saveFolder ?? defaultFolder()
   const dateStr = localDateStr(new Date())
   let outputPath = path.join(folder, `recovered_${dateStr}.${fmt}`)
-  let suffix = 2
-  while (fs.existsSync(outputPath)) {
+  for (let suffix = 2; fs.existsSync(outputPath) && suffix < 10000; suffix++) {
     outputPath = path.join(folder, `recovered_${dateStr}_${suffix}.${fmt}`)
-    suffix++
+  }
+  if (fs.existsSync(outputPath)) {
+    outputPath = path.join(folder, `recovered_${dateStr}_${Date.now()}.${fmt}`)
   }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 

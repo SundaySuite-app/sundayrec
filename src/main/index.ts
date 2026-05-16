@@ -126,7 +126,7 @@ app.whenReady().then(async () => {
   setupIPC()
   cleanupOldRecordings()
   store.pruneHistory()
-  wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
+  void wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
 
   if (store.get('launchAtLogin')) {
     app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true })
@@ -207,7 +207,7 @@ function setupIPC(): void {
     store.setAll(settings)
     scheduler.reschedule()
     app.setLoginItemSettings({ openAtLogin: !!settings.launchAtLogin, openAsHidden: true })
-    wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
+    void wake.reschedule(scheduler.getUpcomingDates(), mainWindow)
     return true
   })
 

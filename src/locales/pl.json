@@ -280,7 +280,8 @@
     "unknownError": "nieznany błąd",
     "save": "💾 Zapisz",
     "cancel": "Anuluj",
-    "currentVersion": "Aktualna wersja:"
+    "currentVersion": "Aktualna wersja:",
+    "saved": "✓ Zapisano"
   },
   "manual": {
     "title": "Rozpocznij nagrywanie ręczne",
@@ -303,7 +304,12 @@
     "confirmStop": "Tak, zatrzymaj",
     "confirmCancel": "Kontynuuj nagrywanie",
     "defaultName": "Nagranie",
-    "savingAs": "Zapisywanie jako:"
+    "savingAs": "Zapisywanie jako:",
+    "disconnected": "Źródło dźwięku zostało odłączone podczas nagrywania",
+    "sigClipping": "CLIPPING",
+    "sigHigh": "WYSOKIE",
+    "sigGood": "DOBRE",
+    "sigWeak": "SŁABE"
   },
   "wizard": {
     "step1": "Źródło dźwięku",

@@ -7,7 +7,7 @@ import { settings } from '../state'
 import { startCapture, stopCapture, getAudioDevices, reconnectStream } from '../audio/capture'
 import type { CaptureSession } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
-import { fmtCountdown, flashMsg } from '../helpers'
+import { fmtCountdown, flashMsg, isoDate } from '../helpers'
 import { stopVU as stopHomeVU } from './home-vu'
 import { stopMonitoring } from './audio-page'
 import { loadRecentHistory } from './home'
@@ -302,7 +302,7 @@ async function handleDisconnect(session: CaptureSession, opts: RecordingOpts): P
   }
   hideReconnectBanner()
   if (!reconnected && isRecording) {
-    window.api.notifyError({ error: 'Lydkilden ble koblet fra under opptak' })
+    window.api.notifyError({ error: t('recording.disconnected', 'Lydkilden ble koblet fra under opptak') })
     doStopRecording()
   }
 }
@@ -340,7 +340,7 @@ function showOverlay(opts: RecordingOpts): void {
   const pathEl = document.getElementById('rec-savepath')
   if (pathEl && opts) {
     const folder = opts.saveFolder ?? settings.saveFolder ?? ''
-    const date   = new Date().toISOString().slice(0, 10)
+    const date   = isoDate(new Date())
     const ext    = opts.format ?? 'mp3'
     let name     = date
     if (opts.customName?.trim()) {
@@ -401,10 +401,10 @@ function updateRecSignalStatus(dbL: number, dbR: number): void {
   const lbl = document.getElementById('rec-sig-label')
   if (!dot || !lbl) return
   let cls = '', text = '—'
-  if      (db >= -3)  { cls = 'klipping'; text = 'KLIPPING' }
-  else if (db >= -12) { cls = 'hoyt';     text = 'HØYT'     }
-  else if (db >= -40) { cls = 'god';      text = 'GOD'      }
-  else if (db > -55)  { cls = 'svak';     text = 'SVAK'     }
+  if      (db >= -3)  { cls = 'klipping'; text = t('recording.sigClipping', 'KLIPPING') }
+  else if (db >= -12) { cls = 'hoyt';     text = t('recording.sigHigh',     'HØYT')     }
+  else if (db >= -40) { cls = 'god';      text = t('recording.sigGood',     'GOD')      }
+  else if (db > -55)  { cls = 'svak';     text = t('recording.sigWeak',     'SVAK')     }
   dot.className  = 'rec-sig-dot'   + (cls ? ' ' + cls : '')
   lbl.className  = 'rec-sig-label' + (cls ? ' ' + cls : '')
   lbl.textContent = text
