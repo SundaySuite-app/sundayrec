@@ -146,7 +146,8 @@ async function saveSlot(): Promise<void> {
   const days  = [...document.querySelectorAll<HTMLElement>('#day-picker .day-btn.selected')].map(b => +b.dataset.day!)
   const start = (document.getElementById('slot-start') as HTMLInputElement | null)?.value ?? ''
   const stop  = (document.getElementById('slot-stop')  as HTMLInputElement | null)?.value ?? ''
-  const maxV  = +(document.getElementById('slot-max')  as HTMLInputElement | null)?.value || null
+  const maxEl = document.getElementById('slot-max') as HTMLInputElement | null
+  const maxV  = maxEl ? (+maxEl.value || null) : null
   if (!days.length) { alert(t('schedule.errNoDays')); return }
   if (!start || !stop || start >= stop) { alert(t('schedule.errTimes')); return }
   const slot: ScheduleSlot = { days, start, stop, ...(maxV ? { max: maxV } : {}) }

@@ -109,9 +109,12 @@ async function openManualModal(): Promise<void> {
   const devSel  = document.getElementById('manual-device') as HTMLSelectElement | null
   const devices = await getAudioDevices()
   if (devSel) {
-    devSel.innerHTML = devices.map(d =>
-      `<option value="${d.deviceId}">${d.label || d.deviceId}</option>`
-    ).join('')
+    devSel.replaceChildren(...devices.map(d => {
+      const opt = document.createElement('option')
+      opt.value = d.deviceId
+      opt.textContent = d.label || d.deviceId
+      return opt
+    }))
     if (settings.deviceId) {
       devSel.value = settings.deviceId
       if (!devSel.value && devices.length) devSel.selectedIndex = 0
@@ -140,7 +143,7 @@ async function handleManualStart(): Promise<void> {
   const mm = document.getElementById('modal-manual'); if (mm) mm.style.display = 'none'
 
   const res = await window.api.startRecordingNow(opts)
-  if (res?.ok || res === true) {
+  if (res?.ok) {
     showOverlay(opts)
     try { await startMediaRecorder(opts) }
     catch (err) {
@@ -161,7 +164,7 @@ async function handleManualStart(): Promise<void> {
 
 export async function startRecordingWithOpts(opts: RecordingOpts): Promise<void> {
   const res = await window.api.startRecordingNow(opts)
-  if (!res?.ok && res !== true) return
+  if (!res?.ok) return
   showOverlay(opts)
   try { await startMediaRecorder(opts) }
   catch (err) {

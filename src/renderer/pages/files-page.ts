@@ -75,7 +75,7 @@ async function saveFilesSettings(): Promise<void> {
     filenamePattern: (document.querySelector('input[name="pattern"]:checked') as HTMLInputElement | null)?.value as any ?? 'date',
     format:          (document.querySelector('input[name="format"]:checked')  as HTMLInputElement | null)?.value as any ?? 'mp3',
     bitrate:         (document.querySelector('input[name="bitrate"]:checked') as HTMLInputElement | null)?.value ?? '192',
-    autoDeleteDays:  autoDelEl?.checked ? (+autoDelDays?.value || 90) : 0
+    autoDeleteDays:  autoDelEl?.checked ? (+(autoDelDays?.value ?? '') || 90) : 0
   })
   await window.api.saveSettings(settings)
   flashSaved(document.getElementById('btn-files-save'))

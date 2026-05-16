@@ -111,7 +111,7 @@ async function loadDiskSpace(): Promise<void> {
 
 export async function loadRecentHistory(): Promise<void> {
   const history = await window.api.getHistory()
-  renderHistoryRows(document.getElementById('history-tbody'), history ?? [], true)
+  renderHistoryRows(document.getElementById('history-tbody'), (history ?? []) as RecordingEntry[], true)
 }
 
 export function renderHistoryRows(tbody: HTMLElement | null, rows: RecordingEntry[], showReveal: boolean): void {

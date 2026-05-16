@@ -8,7 +8,10 @@ import * as tray from './tray'
 import * as updater from './updater'
 import * as mailer from './mailer'
 import * as wake from './wake'
-import { execFileSync, execSync } from 'child_process'
+import { execFileSync, execFile } from 'child_process'
+import { promisify } from 'util'
+
+const execFileAsync = promisify(execFile)
 
 app.setName('SundayRec')
 
@@ -86,7 +89,7 @@ function createWindow(): void {
   })
 
   mainWindow.on('close', (e) => {
-    if (!(app as unknown as { isQuitting?: boolean }).isQuitting) {
+    if (!quitting) {
       e.preventDefault()
       mainWindow.hide()
     }
@@ -131,8 +134,9 @@ app.whenReady().then(async () => {
 })
 
 let forceQuit = false
+let quitting  = false
 app.on('before-quit', async (e) => {
-  if (forceQuit) { (app as unknown as { isQuitting?: boolean }).isQuitting = true; return }
+  if (forceQuit) { quitting = true; return }
 
   const lang = store.get('language') ?? 'en'
 
@@ -170,7 +174,7 @@ app.on('before-quit', async (e) => {
     })
     if (response === 0) { forceQuit = true; app.quit() }
   } else {
-    (app as unknown as { isQuitting?: boolean }).isQuitting = true
+    quitting = true
   }
 })
 
@@ -186,7 +190,7 @@ app.on('activate', () => {
 function setupIPC(): void {
   ipcMain.handle('install-update', () => {
     forceQuit = true
-    ;(app as unknown as { isQuitting?: boolean }).isQuitting = true
+    quitting  = true
     setImmediate(() => {
       updater.doInstall()
       // Fallback: if quitAndInstall hasn't exited in 3s, force relaunch
@@ -243,12 +247,12 @@ function setupIPC(): void {
         if (!isNaN(free)) return { freeBytes: free * 1024 }
       }
       if (process.platform === 'win32') {
-        const drive = folder.slice(0, 2).replace(/[^A-Za-z:]/, '')
-        const out   = execSync(
-          `powershell -NoProfile -Command "(Get-PSDrive -Name '${drive.slice(0,1)}').Free"`,
-          { timeout: 5000 }
-        ).toString().trim()
-        const free = parseInt(out)
+        const driveLetter = folder[0].replace(/[^A-Za-z]/, 'C')
+        const { stdout } = await execFileAsync('powershell', [
+          '-NoProfile', '-Command',
+          `(Get-PSDrive -Name '${driveLetter}').Free`
+        ], { timeout: 5000 })
+        const free = parseInt(stdout.trim())
         if (!isNaN(free) && free >= 0) return { freeBytes: free }
       }
     } catch {}

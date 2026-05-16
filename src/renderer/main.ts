@@ -29,7 +29,7 @@ declare global {
       clearHistory:        () => Promise<void>
       pruneHistory:        () => Promise<number>
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
-      startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string } | boolean>
+      startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>

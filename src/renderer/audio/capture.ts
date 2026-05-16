@@ -170,7 +170,7 @@ export async function startCapture(opts: RecordingOpts): Promise<CaptureSession>
 
   mediaRecorder.start(1000)
 
-  return { stream, audioCtx, mediaRecorder, recStartTime, recBytes, vuAnalyserL, vuAnalyserR, inputRouter, gain, opts }
+  return { stream, audioCtx, mediaRecorder, recStartTime, recBytes, vuAnalyserL, vuAnalyserR, inputRouter: inputNode, gain, opts }
 }
 
 export async function reconnectStream(session: CaptureSession): Promise<boolean> {

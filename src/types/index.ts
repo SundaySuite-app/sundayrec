@@ -119,6 +119,8 @@ export interface RecordingOpts extends Partial<Settings> {
   splitTimestamp?: string
   maxMinutes?: number
   scheduledStopTime?: string
+  channelL?: number
+  channelR?: number
 }
 
 export interface DiskInfo {

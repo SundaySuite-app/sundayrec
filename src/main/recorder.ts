@@ -134,19 +134,17 @@ async function uniquePath(p: string): Promise<string> {
   try { await fs.promises.access(p) } catch { return p }
   const ext  = path.extname(p)
   const base = p.slice(0, -ext.length)
-  let i = 2
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  for (let i = 2; i < 10000; i++) {
     const candidate = `${base}_${i}${ext}`
     try { await fs.promises.access(candidate) } catch { return candidate }
-    i++
   }
+  return `${base}_${Date.now()}${ext}`
 }
 
 async function convertAndSave(session: Session): Promise<void> {
   const { settings, tempPath, startTime } = session
   const durationSec = startTime ? Math.round((Date.now() - startTime) / 1000) : 0
-  const filename    = buildFilename(settings)
+  const filename    = buildFilename(settings, startTime ?? undefined)
   const outputPath  = await uniquePath(path.join(settings.saveFolder || defaultFolder(), filename))
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true })
@@ -163,10 +161,11 @@ async function convertAndSave(session: Session): Promise<void> {
   cmd
     .output(outputPath)
     .on('end', () => {
-      fs.unlinkSync(tempPath)
+      fs.unlink(tempPath, () => {})
+      const recDate = new Date(session.startTime ?? Date.now())
       const entry: RecordingEntry = {
-        date:      new Date(session.startTime ?? Date.now()).toISOString().slice(0, 10),
-        startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
+        date:      localDateStr(recDate),
+        startTime: recDate.toTimeString().slice(0, 5),
         duration:  formatDuration(durationSec),
         filename:  path.basename(outputPath),
         path:      outputPath,
@@ -181,7 +180,7 @@ async function convertAndSave(session: Session): Promise<void> {
     .on('error', (err) => {
       fs.unlink(tempPath, () => {})
       const entry: RecordingEntry = {
-        date:      new Date().toISOString().slice(0, 10),
+        date:      localDateStr(new Date()),
         startTime: new Date(session.startTime ?? Date.now()).toTimeString().slice(0, 5),
         duration:  '—',
         filename:  '—',
@@ -217,7 +216,7 @@ export function recoverCrashedSession(): void {
   const s = store.getAll()
   const fmt = s.format ?? 'mp3'
   const folder = s.saveFolder ?? defaultFolder()
-  const dateStr = new Date().toISOString().slice(0, 10)
+  const dateStr = localDateStr(new Date())
   let outputPath = path.join(folder, `recovered_${dateStr}.${fmt}`)
   let suffix = 2
   while (fs.existsSync(outputPath)) {
@@ -241,9 +240,10 @@ export function recoverCrashedSession(): void {
     .on('end', () => {
       fs.unlink(recovery.tempPath, () => {})
       const durationSec = Math.round((Date.now() - recovery.startTime) / 1000)
+      const recDate = new Date(recovery.startTime)
       store.addHistory({
-        date:      new Date(recovery.startTime).toISOString().slice(0, 10),
-        startTime: new Date(recovery.startTime).toTimeString().slice(0, 5),
+        date:      localDateStr(recDate),
+        startTime: recDate.toTimeString().slice(0, 5),
         duration:  formatDuration(durationSec),
         filename:  path.basename(outputPath),
         path:      outputPath,
@@ -258,9 +258,13 @@ function notify(title: string, body: string): void {
   if (Notification.isSupported()) new Notification({ title, body }).show()
 }
 
-function buildFilename(settings: RecordingOpts): string {
-  const now  = new Date()
-  const date = now.toISOString().slice(0, 10)
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function buildFilename(settings: RecordingOpts, startMs?: number): string {
+  const now  = startMs ? new Date(startMs) : new Date()
+  const date = localDateStr(now)
   const ext  = settings.format ?? 'mp3'
   const ts   = settings.splitTimestamp ? `_${settings.splitTimestamp}` : ''
 

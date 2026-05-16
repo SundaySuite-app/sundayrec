@@ -93,7 +93,7 @@ function triggerStart(slot: ScheduleSlot | SpecialRecording, overrideName?: stri
     channelL,
     channelR,
     stopOnSilence:    s.stopOnSilence,
-    splitHourly:      s.splitHourly,
+    splitMinutes:     s.splitMinutes,
     maxMinutes:       (slot as ScheduleSlot).max,
     overrideName:     overrideName ?? null,
     scheduledStopTime: scheduledStopTime.toISOString()
