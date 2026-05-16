@@ -288,6 +288,7 @@ async function doStopRecording(): Promise<void> {
 }
 
 function attachDisconnectHandler(session: CaptureSession, opts: RecordingOpts): void {
+  if (!session.stream) return
   session.stream.getAudioTracks().forEach(track => {
     track.onended = () => { if (isRecording) handleDisconnect(session, opts) }
   })

@@ -199,7 +199,7 @@ export async function reconnectStream(session: CaptureSession): Promise<boolean>
     const newRouter = buildInputRouter(audioCtx, newSrc, newStream, chL, chR)
     inputRouter.disconnect()
     newRouter.connect(gain)
-    session.stream.getTracks().forEach(t => t.stop())
+    session.stream.getTracks().forEach(t => { t.onended = null; t.stop() })
     session.stream      = newStream
     session.inputRouter = newRouter
     return true
