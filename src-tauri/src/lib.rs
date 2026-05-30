@@ -10,9 +10,11 @@
 //! see `docs/MIGRATION-TAURI2.md` §4 "Arkitektur".
 //!
 //! Module map (most are placeholders until their phase):
+//!   audio     cpal backend — input-device enum + the VU metering engine
 //!   commands  thin Tauri IPC handlers (`entity_verb`)
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
 
+pub mod audio;
 pub mod commands;
 pub mod error;
 
@@ -29,11 +31,19 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        // The VU engine holds at most one running cpal session; commands reach
+        // it through managed state.
+        .manage(audio::vu::VuEngine::new())
         .setup(|_app| {
             tracing::info!("SundayRec backend ready");
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::app::app_info])
+        .invoke_handler(tauri::generate_handler![
+            commands::app::app_info,
+            commands::audio::list_input_devices,
+            commands::audio::start_vu,
+            commands::audio::stop_vu,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

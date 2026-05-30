@@ -66,7 +66,10 @@ mod tests {
 
     #[test]
     fn windows_startup_is_longer() {
-        assert_eq!(RecorderTimeouts::startup_ms(TimeoutPlatform::Windows), 10_000);
+        assert_eq!(
+            RecorderTimeouts::startup_ms(TimeoutPlatform::Windows),
+            10_000
+        );
         assert_eq!(RecorderTimeouts::startup_ms(TimeoutPlatform::Other), 5_000);
     }
 

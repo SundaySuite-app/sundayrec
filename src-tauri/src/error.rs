@@ -25,6 +25,10 @@ pub enum AppError {
     #[error("recording error: {0}")]
     Recording(String),
 
+    /// Audio device / capture-stream failure (cpal device enum, VU stream).
+    #[error("audio error: {0}")]
+    Audio(String),
+
     /// File-system / IO failure.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -45,6 +49,7 @@ impl AppError {
             AppError::NotFound { .. } => "not_found",
             AppError::Validation(_) => "validation",
             AppError::Recording(_) => "recording",
+            AppError::Audio(_) => "audio",
             AppError::Io(_) => "io",
             AppError::Json(_) => "json",
             AppError::Internal(_) => "internal",

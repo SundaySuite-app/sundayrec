@@ -5,3 +5,4 @@
 //! `Result<T, AppError>`. Naming convention: `entity_verb` (e.g. `app_info`).
 
 pub mod app;
+pub mod audio;

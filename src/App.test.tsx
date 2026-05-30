@@ -6,17 +6,24 @@ import App from "./App";
 import type { AppInfo } from "@/lib/bindings/AppInfo";
 
 // Mock the Tauri IPC bridge — there's no backend in the jsdom test runner.
+// App now also renders <VuMeter/>, which calls `list_input_devices` and
+// subscribes to the `vu://levels` event, so both APIs are stubbed here.
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(
-    async (): Promise<AppInfo> => ({
+  invoke: vi.fn(async (cmd: string): Promise<unknown> => {
+    if (cmd === "list_input_devices") return { host: "CoreAudio", inputs: [] };
+    return {
       name: "SundayRec",
       version: "0.1.0",
       tauri_version: "2.0.0",
       platform: "macos",
       arch: "aarch64",
       greeting: "Hello SundayRec — backend connected.",
-    }),
-  ),
+    } satisfies AppInfo;
+  }),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
 }));
 
 function renderApp() {

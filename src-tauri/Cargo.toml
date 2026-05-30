@@ -26,6 +26,10 @@ tauri-plugin-dialog = "2.7.1"
 # `process` plugin: relaunch/exit, used by the updater flow later.
 tauri-plugin-process = "2"
 
+# Native audio I/O (CoreAudio / WASAPI) — used by the VU metering engine to
+# read microphone levels in Rust, so the webview never needs `getUserMedia`.
+cpal = "0.15"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

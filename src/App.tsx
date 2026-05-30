@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { AppInfo } from "@/lib/bindings/AppInfo";
+import { VuMeter } from "@/features/vu/VuMeter";
 
 /** Phase 0 proof-of-life: round-trip `app_info` through the Tauri bridge and
  *  render the backend's identity. Replaced by the real home screen in Phase 8. */
@@ -24,12 +25,18 @@ function App() {
       )}
 
       {data && (
-        <div className="flex flex-col items-center gap-1">
-          <p className="text-lg">SundayRec — backend OK</p>
-          <p className="text-sm opacity-70">
-            v{data.version} · {data.platform} ({data.arch}) · Tauri{" "}
-            {data.tauri_version}
-          </p>
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-lg">SundayRec — backend OK</p>
+            <p className="text-sm opacity-70">
+              v{data.version} · {data.platform} ({data.arch}) · Tauri{" "}
+              {data.tauri_version}
+            </p>
+          </div>
+
+          {/* Spike A: live mic VU metered in Rust (cpal), pushed over a Tauri
+              event — proves the webview never needs getUserMedia. */}
+          <VuMeter />
         </div>
       )}
     </main>
