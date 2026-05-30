@@ -21,6 +21,26 @@ vi.mock("@tauri-apps/api/core", () => ({
     // F5.1: App mounts <SchedulePage/>, which reads settings + schedule status.
     if (cmd === "settings_get") return { slots: [], specialRecordings: [] };
     if (cmd === "scheduler_status") return { next: null, upcoming: [] };
+    // F5.2: App mounts <WakePanel/>, which reads capabilities + sleep config.
+    if (cmd === "wake_capabilities")
+      return {
+        platform: "mac-arm",
+        canWakeFromSleep: true,
+        canWakeFromOff: false,
+        needsAdmin: true,
+        knownIssues: [],
+        recommendations: [],
+      };
+    if (cmd === "wake_get_sleep_config")
+      return {
+        autopoweroff: null,
+        autopoweroffDelay: null,
+        standby: null,
+        standbyDelay: null,
+        hibernateMode: null,
+        wakeTimersEnabled: null,
+        error: null,
+      };
     return {
       name: "SundayRec",
       version: "0.1.0",

@@ -11,6 +11,7 @@ import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 import { DiagnosticsPanel } from "@/features/diagnostics/DiagnosticsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SchedulePage } from "@/features/schedule/SchedulePage";
+import { WakePanel } from "@/features/wake/WakePanel";
 import { HistoryPanel } from "@/features/history/HistoryPanel";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -104,6 +105,17 @@ function App() {
             </summary>
             <div className="mt-3">
               <SchedulePage />
+            </div>
+          </details>
+
+          {/* F5.2: Wake-from-sleep vertical — capabilities, sleep-config fix,
+              schedule + verify OS wake timers. */}
+          <details className="w-full max-w-md text-left">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("wake.title", "Vekking fra dvale")}
+            </summary>
+            <div className="mt-3">
+              <WakePanel />
             </div>
           </details>
 

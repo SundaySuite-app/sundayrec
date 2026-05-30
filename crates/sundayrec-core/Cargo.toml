@@ -22,3 +22,8 @@ ts-rs = { version = "11", features = ["serde-compat"] }
 # itself; callers pass `now: NaiveDateTime` in, exactly like the Electron
 # `scheduler.ts` takes `now: Date`. The `src-tauri` shell owns `Local::now()`.
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
+# Robust parsing of the OS power-tool text output the wake module (Fase 5.2)
+# consumes — `pmset -g sched`, `powercfg -waketimers`, `pmset -g batt`. These
+# date/time-bearing formats are regex-shaped in the Electron source; a hand
+# tokenizer would be fiddlier and buggier than the obvious pattern.
+regex = "1"

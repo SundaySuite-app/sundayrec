@@ -22,6 +22,7 @@
 //!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
 //!   - [`recorder`]     — the recorder state machine + session recovery/split policy (Fase 3)
 //!   - [`schedule`]     — scheduler recurrence/occurrence/missed-recording decisions (Fase 5)
+//!   - [`wake`]         — wake-from-sleep capability/parse/schedule-command decisions (Fase 5)
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
@@ -46,3 +47,4 @@ pub mod schedule;
 pub mod settings;
 pub mod silence;
 pub mod timeouts;
+pub mod wake;

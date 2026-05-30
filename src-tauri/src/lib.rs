@@ -26,6 +26,7 @@ pub mod recorder;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;
+pub mod wake;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -48,6 +49,9 @@ pub fn run() {
         // start/stop/reminder/preflight events (Fase 5). Started in setup once
         // the db pool is managed.
         .manage(scheduler::SchedulerEngine::new())
+        // The wake engine schedules OS wake-from-sleep timers (pmset/schtasks)
+        // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
+        .manage(wake::WakeEngine::new())
         // The preview engine holds at most one running ffmpeg MJPEG stream.
         .manage(media::preview::PreviewEngine::new())
         // The recorder engine holds at most one running unified ffmpeg capture
@@ -119,6 +123,11 @@ pub fn run() {
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,
+            commands::wake::wake_capabilities,
+            commands::wake::wake_get_sleep_config,
+            commands::wake::wake_fix_sleep,
+            commands::wake::wake_verify,
+            commands::wake::wake_reschedule,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

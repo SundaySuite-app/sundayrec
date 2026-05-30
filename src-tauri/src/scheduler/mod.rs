@@ -69,6 +69,9 @@ const HORIZON_DAYS: i64 = 8;
 /// How many days of upcoming starts the status command reports.
 const UPCOMING_DAYS: i64 = 14;
 
+/// How many days of upcoming starts wake scheduling considers.
+const WAKE_HORIZON_DAYS: i64 = 14;
+
 /// After firing an event the supervisor sleeps this long before recomputing, so
 /// a timer that fired a few ms early can't re-select the same event and
 /// double-fire it. Harmless at the scheduler's minute granularity.
@@ -174,6 +177,17 @@ async fn supervisor(
         let nxt = next_recording(&settings.slots, &kept, now);
         *next_cache.lock().expect("scheduler next lock") = nxt;
         let _ = app.emit(NEXT_EVENT, nxt.map(fmt_dt));
+
+        // Schedule OS wake-from-sleep timers for upcoming recordings (Fase 5.2).
+        // Non-admin (no prompt) from the supervisor — the WakeEngine dedups so an
+        // unchanged schedule is a cheap no-op. A user-initiated reschedule (which
+        // may prompt for admin) goes through the `wake_reschedule` command.
+        if settings.wake_from_sleep {
+            if let Some(wake) = app.try_state::<crate::wake::WakeEngine>() {
+                let upcoming = upcoming_dates(&settings.slots, &kept, now, WAKE_HORIZON_DAYS);
+                let _ = wake.reschedule(&upcoming, now, true, false).await;
+            }
+        }
 
         let events = upcoming_events(
             &settings.slots,
