@@ -19,6 +19,7 @@ pub mod audio;
 pub mod commands;
 pub mod error;
 pub mod media;
+pub mod recorder;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +39,9 @@ pub fn run() {
         .manage(audio::vu::VuEngine::new())
         // The preview engine holds at most one running ffmpeg MJPEG stream.
         .manage(media::preview::PreviewEngine::new())
+        // The recorder engine holds at most one running unified ffmpeg capture
+        // (Spike B). Commands reach it through managed state.
+        .manage(recorder::engine::RecorderEngine::new())
         .setup(|_app| {
             tracing::info!("SundayRec backend ready");
             Ok(())
@@ -50,6 +54,9 @@ pub fn run() {
             commands::media::ffmpeg_health,
             commands::media::start_preview,
             commands::media::stop_preview,
+            commands::recorder::list_recording_devices,
+            commands::recorder::start_recording,
+            commands::recorder::stop_recording,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

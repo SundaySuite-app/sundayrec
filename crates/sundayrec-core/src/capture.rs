@@ -1,0 +1,371 @@
+//! Unified ffmpeg capture-argument builder.
+//!
+//! Ported from the Electron `unified-recorder.ts` — but deliberately reduced to
+//! the **audio-focused unified capture** that proves the Spike-B plumbing, not
+//! the full production pipeline. See "What this spike simplifies vs Phase 3"
+//! below; the hardened *argument knowledge* (combined-input on mac, two clocks
+//! on Windows → drift filter, silencedetect in the chain) is what we carry
+//! forward, independent of the encoding details.
+//!
+//! ## What this builds
+//!
+//! ONE ffmpeg process that opens the camera AND the microphone and writes a
+//! single output file, with the audio passed through the core filter chain:
+//!
+//!   - **macOS** — a single `-f avfoundation -i "<videoIdx>:<audioIdx>"`. Camera
+//!     and mic come from one input → one hardware clock → no drift → NO
+//!     `aresample` filter.
+//!   - **Windows** — `-f dshow` with TWO `-i` (video `video=<name>`, then audio
+//!     `audio=<name>`). Two independent device clocks → they drift over a 90-min
+//!     service → the audio chain gets `aresample=async=1000:first_pts=0` from
+//!     [`crate::ffmpeg::unified_audio_drift_filter`].
+//!
+//! In BOTH cases the audio chain also carries `silencedetect` (from
+//! [`crate::ffmpeg::build_silence_detect_filter`]) so a muted mixer emits
+//! `silence_start` / `silence_end` markers the watcher reacts to. The output path
+//! is always the final argument.
+//!
+//! ## What this spike simplifies vs Phase 3
+//!
+//!   - **No `filter_complex` video graph.** Production splits the camera into a
+//!     full-quality recording stream + a low-rate MJPEG preview feed and encodes
+//!     H.264 with bitrate/maxrate/bufsize tuning. Here we keep video simple
+//!     (`-c:v libx264 -preset veryfast`, or copy when there is no video device)
+//!     because the spike's job is to prove the audio-progress-silence-stop
+//!     plumbing, not to tune the encoder.
+//!   - **No second/third output** (separate lossless audio master, MJPEG-to-
+//!     stdout preview). Single output file.
+//!   - **No preroll, no split-recording rotation.** Phase 3.
+//!   - **No per-device capture-format negotiation** (`MAC_CONFIGS`, dshow
+//!     `rtbufsize` matrix, framerate fallbacks) beyond a single sane default.
+//!
+//! Everything here is a pure `Vec<String>` builder — no process is spawned — so
+//! the argument shape is fully unit-tested without hardware.
+
+use crate::ffmpeg::{build_silence_detect_filter, unified_audio_drift_filter, Platform};
+
+/// Audio channel layout for the captured output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Channels {
+    Mono,
+    Stereo,
+}
+
+impl Channels {
+    fn count(self) -> u8 {
+        match self {
+            Channels::Mono => 1,
+            Channels::Stereo => 2,
+        }
+    }
+}
+
+/// Tunables for [`build_unified_capture_args`]. Kept small for the spike; Phase 3
+/// expands this into the full settings surface (bitrate, resolution, flip, …).
+#[derive(Debug, Clone)]
+pub struct CaptureOpts {
+    /// User opted into stop-on-silence (drives the silencedetect threshold).
+    pub stop_on_silence: bool,
+    /// User's silence threshold in dB, if set (clamped by the filter builder).
+    pub silence_threshold_db: Option<i32>,
+    /// Capture framerate (video), e.g. 30.
+    pub framerate: u32,
+    /// Output audio channel layout.
+    pub channels: Channels,
+}
+
+impl Default for CaptureOpts {
+    fn default() -> Self {
+        Self {
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            framerate: 30,
+            channels: Channels::Stereo,
+        }
+    }
+}
+
+/// Build the unified-capture ffmpeg argument vector.
+///
+/// `video_device`:
+///   - macOS: the avfoundation **index** as a string (e.g. `"0"`). Combined with
+///     the audio index into a single `"<vid>:<aud>"` input.
+///   - Windows: the dshow camera **name** (wrapped as `video=<name>`).
+///   - `None`: audio-only capture (no camera) — still a valid unified path the
+///     spike supports, useful on a box with a mic but no camera.
+///
+/// `audio_device`:
+///   - macOS: the avfoundation audio **index** as a string (e.g. `"1"`).
+///   - Windows: the dshow audio **name** (wrapped as `audio=<name>`).
+///
+/// `output_path` is always emitted as the final argument.
+pub fn build_unified_capture_args(
+    platform: Platform,
+    video_device: Option<&str>,
+    audio_device: &str,
+    output_path: &str,
+    opts: &CaptureOpts,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec!["-hide_banner".into()];
+
+    // Build the audio filter chain shared by every platform: optional drift
+    // correction first (Windows only), then silencedetect. Comma-join, dropping
+    // the empty drift slot on mac/linux.
+    let drift = unified_audio_drift_filter(platform);
+    let silence = build_silence_detect_filter(opts.stop_on_silence, opts.silence_threshold_db);
+    let af_chain = if drift.is_empty() {
+        silence
+    } else {
+        format!("{drift},{silence}")
+    };
+
+    let has_video = video_device.is_some();
+
+    match platform {
+        Platform::MacOS | Platform::Linux => {
+            // avfoundation combined input: "<videoIdx>:<audioIdx>" gives camera +
+            // mic on ONE input sharing one clock. Audio-only is ":<audioIdx>".
+            // (Linux has no avfoundation; we use the same combined-input shape so
+            // the dev box stays usable — it's not a shipping target.)
+            args.push("-f".into());
+            args.push("avfoundation".into());
+            args.push("-framerate".into());
+            args.push(opts.framerate.to_string());
+            args.push("-i".into());
+            match video_device {
+                Some(v) => args.push(format!("{v}:{audio_device}")),
+                None => args.push(format!(":{audio_device}")),
+            }
+        }
+        Platform::Windows => {
+            // dshow: two independent inputs in ONE process. Video first (input 0),
+            // audio second (input 1). Same process = same scheduler, but TWO
+            // device clocks → the drift filter in `af_chain` corrects the slide.
+            if let Some(v) = video_device {
+                args.push("-f".into());
+                args.push("dshow".into());
+                args.push("-framerate".into());
+                args.push(opts.framerate.to_string());
+                args.push("-i".into());
+                args.push(format!("video={v}"));
+            }
+            args.push("-f".into());
+            args.push("dshow".into());
+            args.push("-i".into());
+            args.push(format!("audio={audio_device}"));
+        }
+    }
+
+    // Audio filter chain (drift + silencedetect) on the captured audio.
+    args.push("-af".into());
+    args.push(af_chain);
+
+    // Codecs. Audio is always AAC at 48 kHz with the requested channel count.
+    // Video (when present) is a simple libx264 — the spike doesn't tune the
+    // encoder (no filter_complex / bitrate matrix; that's Phase 3).
+    if has_video {
+        args.push("-c:v".into());
+        args.push("libx264".into());
+        args.push("-preset".into());
+        args.push("veryfast".into());
+        args.push("-pix_fmt".into());
+        args.push("yuv420p".into());
+    }
+    args.push("-c:a".into());
+    args.push("aac".into());
+    args.push("-b:a".into());
+    args.push("192k".into());
+    args.push("-ar".into());
+    args.push("48000".into());
+    args.push("-ac".into());
+    args.push(opts.channels.count().to_string());
+
+    // Normalise leading timestamps so the file plays from t=0 in every player.
+    args.push("-avoid_negative_ts".into());
+    args.push("make_zero".into());
+    if has_video {
+        args.push("-movflags".into());
+        args.push("+faststart".into());
+    }
+
+    // Overwrite + output path — ALWAYS last.
+    args.push("-y".into());
+    args.push(output_path.into());
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has_pair(args: &[String], a: &str, b: &str) -> bool {
+        args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    fn count_i(args: &[String]) -> usize {
+        args.iter().filter(|a| a.as_str() == "-i").count()
+    }
+
+    #[test]
+    fn windows_has_aresample_drift_and_silencedetect() {
+        let args = build_unified_capture_args(
+            Platform::Windows,
+            Some("Logitech BRIO"),
+            "Soundcraft USB Audio",
+            "C:/recordings/out.mp4",
+            &CaptureOpts::default(),
+        );
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(
+            af.contains("aresample=async=1000:first_pts=0"),
+            "windows needs drift correction; got: {af}"
+        );
+        assert!(
+            af.contains("silencedetect="),
+            "silencedetect must be present"
+        );
+        // drift comes before silencedetect in the chain.
+        let drift_idx = af.find("aresample").unwrap();
+        let sil_idx = af.find("silencedetect").unwrap();
+        assert!(drift_idx < sil_idx);
+    }
+
+    #[test]
+    fn mac_has_silencedetect_but_not_aresample() {
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/tmp/out.mp4",
+            &CaptureOpts::default(),
+        );
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(
+            !af.contains("aresample"),
+            "mac shares one clock — no drift filter; got: {af}"
+        );
+        assert!(af.contains("silencedetect="));
+    }
+
+    #[test]
+    fn windows_uses_two_inputs_with_named_devices() {
+        let args = build_unified_capture_args(
+            Platform::Windows,
+            Some("Logitech BRIO"),
+            "Yamaha AG06",
+            "out.mp4",
+            &CaptureOpts::default(),
+        );
+        assert_eq!(count_i(&args), 2, "video + audio = two -i on windows");
+        assert!(args.iter().any(|a| a == "video=Logitech BRIO"));
+        assert!(args.iter().any(|a| a == "audio=Yamaha AG06"));
+    }
+
+    #[test]
+    fn mac_uses_single_combined_input() {
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "out.mp4",
+            &CaptureOpts::default(),
+        );
+        assert_eq!(count_i(&args), 1, "one combined avfoundation input on mac");
+        // combined "videoIdx:audioIdx"
+        assert!(args.iter().any(|a| a == "0:1"));
+        assert!(has_pair(&args, "-f", "avfoundation"));
+    }
+
+    #[test]
+    fn output_path_is_always_last() {
+        for (plat, vid, aud) in [
+            (Platform::Windows, Some("Cam"), "Mic"),
+            (Platform::MacOS, Some("0"), "1"),
+            (Platform::MacOS, None, "1"),
+        ] {
+            let args = build_unified_capture_args(
+                plat,
+                vid,
+                aud,
+                "FINAL_OUTPUT.mp4",
+                &CaptureOpts::default(),
+            );
+            assert_eq!(args.last().unwrap(), "FINAL_OUTPUT.mp4");
+            // and preceded by -y
+            let n = args.len();
+            assert_eq!(args[n - 2], "-y");
+        }
+    }
+
+    #[test]
+    fn mac_audio_only_has_leading_colon_input_and_no_video_codec() {
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "2",
+            "out.m4a",
+            &CaptureOpts::default(),
+        );
+        assert_eq!(count_i(&args), 1);
+        assert!(
+            args.iter().any(|a| a == ":2"),
+            "audio-only avfoundation input"
+        );
+        assert!(
+            !args.iter().any(|a| a == "-c:v"),
+            "no video codec when no camera"
+        );
+        assert!(has_pair(&args, "-c:a", "aac"));
+    }
+
+    #[test]
+    fn windows_audio_only_has_single_input() {
+        let args = build_unified_capture_args(
+            Platform::Windows,
+            None,
+            "USB Audio CODEC",
+            "out.m4a",
+            &CaptureOpts::default(),
+        );
+        assert_eq!(count_i(&args), 1, "audio-only windows = single dshow input");
+        assert!(args.iter().any(|a| a == "audio=USB Audio CODEC"));
+        assert!(!args.iter().any(|a| a == "-c:v"));
+    }
+
+    #[test]
+    fn stop_on_silence_threshold_flows_into_filter() {
+        let opts = CaptureOpts {
+            stop_on_silence: true,
+            silence_threshold_db: Some(-40),
+            ..CaptureOpts::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "out.mp4", &opts);
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .unwrap();
+        assert!(af.contains("silencedetect=noise=-40dB:duration=1"));
+    }
+
+    #[test]
+    fn channels_and_framerate_are_honoured() {
+        let opts = CaptureOpts {
+            channels: Channels::Mono,
+            framerate: 25,
+            ..CaptureOpts::default()
+        };
+        let args =
+            build_unified_capture_args(Platform::Windows, Some("Cam"), "Mic", "out.mp4", &opts);
+        assert!(has_pair(&args, "-ac", "1"), "mono → -ac 1");
+        assert!(has_pair(&args, "-framerate", "25"));
+    }
+}

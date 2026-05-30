@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/bindings/AppInfo";
 import { VuMeter } from "@/features/vu/VuMeter";
 import { CameraPreview } from "@/features/preview/CameraPreview";
+import { RecorderPanel } from "@/features/recorder/RecorderPanel";
 import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 
 /** Phase 0 proof-of-life: round-trip `app_info` through the Tauri bridge and
@@ -43,6 +44,10 @@ function App() {
           {/* Spike A: live camera preview as MJPEG frames decoded in Rust
               (ffmpeg) and painted into an <img> — no webview video codec. */}
           <CameraPreview />
+
+          {/* Spike B: unified ffmpeg recorder prototype — start/stop a capture
+              and watch live progress/silence/error events from the Rust engine. */}
+          <RecorderPanel />
 
           {/* Spike A: bundled ffmpeg sidecar health-check — proves the
               externalBin wiring the recorder + preview depend on. */}

@@ -9,16 +9,24 @@
 //! the `src-tauri` shell is a thin command/event layer on top.
 //!
 //! Modules:
-//!   - [`audio`]    — pure VU metering mat: block peak/RMS, dBFS, lock-free `PeakMeters`
-//!   - [`ffmpeg`]   — pure ffmpeg filter-string builders (drift, silencedetect)
-//!   - [`errors`]   — ffmpeg-stderr → stable error-code classification
-//!   - [`mjpeg`]    — MJPEG stdout reassembly (SOI/EOI frame splitter + JPEG dims)
-//!   - [`timeouts`] — recording-pipeline timeout constants (one source of truth)
-//!   - [`silence`]  — the silence-watcher *decision* state machine (no real timers)
+//!   - [`audio`]        — pure VU metering mat: block peak/RMS, dBFS, lock-free `PeakMeters`
+//!   - [`ffmpeg`]       — pure ffmpeg filter-string builders (drift, silencedetect)
+//!   - [`capture`]      — unified ffmpeg capture-argument builder (Spike B)
+//!   - [`errors`]       — ffmpeg-stderr → stable error-code classification
+//!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
+//!   - [`mjpeg`]        — MJPEG stdout reassembly (SOI/EOI frame splitter + JPEG dims)
+//!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
+//!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
+//!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
+//!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
 
 pub mod audio;
+pub mod capture;
+pub mod device_match;
 pub mod errors;
 pub mod ffmpeg;
 pub mod mjpeg;
+pub mod progress;
+pub mod reconnect;
 pub mod silence;
 pub mod timeouts;
