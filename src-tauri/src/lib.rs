@@ -79,6 +79,7 @@ pub fn run() {
             commands::recorder::list_recording_devices,
             commands::recorder::start_recording,
             commands::recorder::stop_recording,
+            commands::recorder::recording_status,
             commands::db::setting_get,
             commands::db::setting_set,
             commands::db::recordings_list,

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { RecordingProgress } from "@/lib/bindings/RecordingProgress";
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
 import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
+import type { RecorderStatePayload } from "@/lib/bindings/RecorderStatePayload";
 
 /**
  * Spike B recorder panel — a light UI proving the unified-capture plumbing.
@@ -26,6 +27,7 @@ export function RecorderPanel() {
   const [silence, setSilence] = useState<RecordingEvent | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [state, setState] = useState<RecorderStatePayload | null>(null);
   const launchError = useRef<string | null>(null);
   const [launchErr, setLaunchErr] = useState<string | null>(null);
 
@@ -45,11 +47,15 @@ export function RecorderPanel() {
     const unError = listen<RecordingEvent>("recording://error", (event) =>
       setError(event.payload),
     );
+    const unState = listen<RecorderStatePayload>("recording://state", (event) =>
+      setState(event.payload),
+    );
     return () => {
       void unStarted.then((off) => off());
       void unProgress.then((off) => off());
       void unSilence.then((off) => off());
       void unError.then((off) => off());
+      void unState.then((off) => off());
     };
   }, []);
 
@@ -69,6 +75,7 @@ export function RecorderPanel() {
     setSilence(null);
     setStartedAt(null);
     setElapsed(0);
+    setState(null);
     launchError.current = null;
     setLaunchErr(null);
   };
@@ -82,8 +89,11 @@ export function RecorderPanel() {
       output_path: "/tmp/sundayrec-spike.m4a",
       stop_on_silence: false,
       silence_threshold_db: null,
+      silence_timeout_minutes: 5,
       framerate: 30,
       stereo: true,
+      split_minutes: 0,
+      manual_max_minutes: 0,
     };
     try {
       await invoke("start_recording", { opts });
@@ -152,7 +162,11 @@ export function RecorderPanel() {
       {running && (
         <div className="flex flex-col gap-1 text-sm">
           <p className="opacity-80">
-            {started ? (
+            {state?.state === "reconnecting" ? (
+              <span className="text-amber-400" role="status">
+                ↻ Kobler til på nytt ({state.reconnect_count})
+              </span>
+            ) : started ? (
               <span className="text-emerald-400">● Tar opp</span>
             ) : (
               <span className="opacity-60">Starter … (venter på ffmpeg)</span>

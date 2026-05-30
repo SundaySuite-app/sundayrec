@@ -152,6 +152,20 @@ describe("RecorderPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a reconnecting notice when a state event reports it", async () => {
+    render(<RecorderPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Start opptak" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Stopp" })).toBeInTheDocument(),
+    );
+
+    emit("recording://state", { state: "reconnecting", reconnect_count: 3 });
+
+    await waitFor(() =>
+      expect(screen.getByText(/Kobler til på nytt \(3\)/)).toBeInTheDocument(),
+    );
+  });
+
   it("stops the recording", async () => {
     render(<RecorderPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Start opptak" }));

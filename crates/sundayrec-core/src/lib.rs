@@ -18,6 +18,7 @@
 //!   - [`mjpeg`]        — MJPEG stdout reassembly (SOI/EOI frame splitter + JPEG dims)
 //!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
 //!   - [`reconnect`]    — watchdog (stuck-progress) + reconnect back-off decisions
+//!   - [`recorder`]     — the recorder state machine + session recovery/split policy (Fase 3)
 //!   - [`timeouts`]     — recording-pipeline timeout constants (one source of truth)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
@@ -35,6 +36,7 @@ pub mod mjpeg;
 pub mod preflight;
 pub mod progress;
 pub mod reconnect;
+pub mod recorder;
 pub mod settings;
 pub mod silence;
 pub mod timeouts;

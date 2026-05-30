@@ -5,6 +5,6 @@
  */
 export type RecordingProgress = { 
 /**
- * Total bytes ffmpeg has written to the output container so far.
+ * Total bytes ffmpeg has written to the current segment so far.
  */
 bytes_written: number, };
