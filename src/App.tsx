@@ -10,6 +10,7 @@ import { CameraPreview } from "@/features/preview/CameraPreview";
 import { RecorderPanel } from "@/features/recorder/RecorderPanel";
 import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { HistoryPanel } from "@/features/history/HistoryPanel";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { changeLanguage } from "@/i18n";
@@ -44,13 +45,16 @@ function App() {
       <h1 className="text-2xl font-semibold">{t("app.name", "SundayRec")}</h1>
 
       {isLoading && (
-        <p className="opacity-70">{t("home.connecting", "Kobler til backend …")}</p>
+        <p className="opacity-70">
+          {t("home.connecting", "Kobler til backend …")}
+        </p>
       )}
 
       {isError && (
         <p className="text-red-400">
           {t("home.backendError", "Backend-feil")}:{" "}
-          {(error as Error)?.message ?? t("general.unknownError", "ukjent feil")}
+          {(error as Error)?.message ??
+            t("general.unknownError", "ukjent feil")}
         </p>
       )}
 
@@ -90,6 +94,17 @@ function App() {
             </summary>
             <div className="mt-3">
               <SettingsPage />
+            </div>
+          </details>
+
+          {/* F1.3: Recording history + native file dialogs vertical. Same
+              disclosure pattern until the real shell/nav lands in Phase 8. */}
+          <details className="w-full max-w-md text-left">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("nav.history", "Historikk")}
+            </summary>
+            <div className="mt-3">
+              <HistoryPanel />
             </div>
           </details>
         </div>

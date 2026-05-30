@@ -4,4 +4,8 @@
  * One recording-history row. `id`/`created_at` are assigned by
  * [`insert_recording`] when omitted.
  */
-export type RecordingRow = { id: string, file_path: string, device_name: string | null, started_at: number, duration_ms: number | null, byte_size: number, created_at: number, };
+export type RecordingRow = { id: string, file_path: string, device_name: string | null, started_at: number, duration_ms: number | null, byte_size: number | null, created_at: number, 
+/**
+ * Free-text user note (capped at [`NOTE_MAX_CHARS`] on write).
+ */
+note: string | null, };

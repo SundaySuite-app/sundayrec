@@ -101,10 +101,18 @@ pub struct RecordingRow {
     pub device_name: Option<String>,
     pub started_at: f64,
     pub duration_ms: Option<f64>,
-    #[ts(type = "number")]
+    // i64 would map to `bigint` in TS; force `number` (JS handles file sizes far
+    // below 2^53 fine) while preserving the column's nullability.
+    #[ts(type = "number | null")]
     pub byte_size: Option<i64>,
     pub created_at: f64,
+    /// Free-text user note (capped at [`NOTE_MAX_CHARS`] on write).
+    pub note: Option<String>,
 }
+
+/// Maximum length of a recording note, in characters. Ports the Electron
+/// build's 4 KB cap; longer notes are truncated by [`update_recording_note`].
+pub const NOTE_MAX_CHARS: usize = 4096;
 
 /// Insert a recording. If `id` is empty a fresh UUID v7 is assigned; if
 /// `created_at` is 0 it is stamped with [`now_ms`]. Returns the stored row.
@@ -117,8 +125,8 @@ pub async fn insert_recording(pool: &SqlitePool, mut row: RecordingRow) -> AppRe
     }
     sqlx::query(
         "INSERT INTO recording
-            (id, file_path, device_name, started_at, duration_ms, byte_size, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            (id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
     )
     .bind(&row.id)
     .bind(&row.file_path)
@@ -127,6 +135,7 @@ pub async fn insert_recording(pool: &SqlitePool, mut row: RecordingRow) -> AppRe
     .bind(row.duration_ms)
     .bind(row.byte_size)
     .bind(row.created_at)
+    .bind(&row.note)
     .execute(pool)
     .await?;
     Ok(row)
@@ -135,7 +144,7 @@ pub async fn insert_recording(pool: &SqlitePool, mut row: RecordingRow) -> AppRe
 /// List recordings, newest first.
 pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> {
     let rows = sqlx::query(
-        "SELECT id, file_path, device_name, started_at, duration_ms, byte_size, created_at
+        "SELECT id, file_path, device_name, started_at, duration_ms, byte_size, created_at, note
          FROM recording ORDER BY created_at DESC",
     )
     .fetch_all(pool)
@@ -150,6 +159,7 @@ pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> 
             duration_ms: r.get("duration_ms"),
             byte_size: r.get("byte_size"),
             created_at: r.get("created_at"),
+            note: r.get("note"),
         })
         .collect())
 }
@@ -157,6 +167,36 @@ pub async fn list_recordings(pool: &SqlitePool) -> AppResult<Vec<RecordingRow>> 
 /// Delete a recording-history row by id. No-op if it doesn't exist.
 pub async fn delete_recording(pool: &SqlitePool, id: &str) -> AppResult<()> {
     sqlx::query("DELETE FROM recording WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Delete every recording-history row. Used by the "clear history" action.
+pub async fn clear_recordings(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::query("DELETE FROM recording").execute(pool).await?;
+    Ok(())
+}
+
+/// Set (or clear, with `None`) a recording's free-text note. The note is capped
+/// at [`NOTE_MAX_CHARS`] characters — longer input is truncated on a char
+/// boundary, matching the Electron build's 4 KB note limit. No-op if the id
+/// doesn't exist.
+pub async fn update_recording_note(
+    pool: &SqlitePool,
+    id: &str,
+    note: Option<String>,
+) -> AppResult<()> {
+    let capped = note.map(|n| {
+        if n.chars().count() > NOTE_MAX_CHARS {
+            n.chars().take(NOTE_MAX_CHARS).collect()
+        } else {
+            n
+        }
+    });
+    sqlx::query("UPDATE recording SET note = ?1 WHERE id = ?2")
+        .bind(&capped)
         .bind(id)
         .execute(pool)
         .await?;
@@ -185,6 +225,7 @@ mod tests {
             duration_ms: Some(1234.0),
             byte_size: Some(4096),
             created_at: 0.0,
+            note: None,
         }
     }
 
@@ -284,6 +325,7 @@ mod tests {
             duration_ms: None,
             byte_size: None,
             created_at: 0.0,
+            note: None,
         };
         let stored = insert_recording(&pool, row).await.unwrap();
         let back = list_recordings(&pool).await.unwrap();
@@ -291,6 +333,89 @@ mod tests {
         assert_eq!(back[0].device_name, None);
         assert_eq!(back[0].duration_ms, None);
         assert_eq!(back[0].byte_size, None);
+        assert_eq!(back[0].note, None);
         assert_eq!(back[0].id, stored.id);
+    }
+
+    #[tokio::test]
+    async fn insert_round_trips_a_note() {
+        let (pool, _d) = temp_pool().await;
+        let mut row = sample("/tmp/noted.mp3", 7.0);
+        row.note = Some("kun preken".to_string());
+        let stored = insert_recording(&pool, row).await.unwrap();
+        let back = list_recordings(&pool).await.unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, stored.id);
+        assert_eq!(back[0].note.as_deref(), Some("kun preken"));
+    }
+
+    #[tokio::test]
+    async fn update_note_round_trips_and_clears() {
+        let (pool, _d) = temp_pool().await;
+        let stored = insert_recording(&pool, sample("/tmp/n.mp3", 1.0))
+            .await
+            .unwrap();
+        assert_eq!(list_recordings(&pool).await.unwrap()[0].note, None);
+
+        update_recording_note(&pool, &stored.id, Some("dårlig lyd".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            list_recordings(&pool).await.unwrap()[0].note.as_deref(),
+            Some("dårlig lyd")
+        );
+
+        // Passing None clears the note again.
+        update_recording_note(&pool, &stored.id, None)
+            .await
+            .unwrap();
+        assert_eq!(list_recordings(&pool).await.unwrap()[0].note, None);
+
+        // Updating a missing id is a no-op, not an error.
+        update_recording_note(&pool, "nope", Some("x".to_string()))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn update_note_caps_at_max_chars() {
+        let (pool, _d) = temp_pool().await;
+        let stored = insert_recording(&pool, sample("/tmp/big.mp3", 1.0))
+            .await
+            .unwrap();
+        // Use a multi-byte char to prove we cap on a char boundary, not bytes.
+        let long: String = "æ".repeat(NOTE_MAX_CHARS + 500);
+        update_recording_note(&pool, &stored.id, Some(long))
+            .await
+            .unwrap();
+        let back = list_recordings(&pool).await.unwrap();
+        let note = back[0].note.as_ref().expect("note present");
+        assert_eq!(note.chars().count(), NOTE_MAX_CHARS);
+        // A note at exactly the cap is stored verbatim.
+        let exact: String = "z".repeat(NOTE_MAX_CHARS);
+        update_recording_note(&pool, &stored.id, Some(exact.clone()))
+            .await
+            .unwrap();
+        assert_eq!(
+            list_recordings(&pool).await.unwrap()[0].note.as_deref(),
+            Some(exact.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_recordings_empties_the_table() {
+        let (pool, _d) = temp_pool().await;
+        insert_recording(&pool, sample("/tmp/a.mp3", 1.0))
+            .await
+            .unwrap();
+        insert_recording(&pool, sample("/tmp/b.mp3", 2.0))
+            .await
+            .unwrap();
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 2);
+
+        clear_recordings(&pool).await.unwrap();
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        // Clearing an empty table is a no-op.
+        clear_recordings(&pool).await.unwrap();
     }
 }

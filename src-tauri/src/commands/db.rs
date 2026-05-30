@@ -26,3 +26,26 @@ pub async fn setting_set(db: State<'_, Db>, key: String, value: String) -> AppRe
 pub async fn recordings_list(db: State<'_, Db>) -> AppResult<Vec<RecordingRow>> {
     store::list_recordings(&db.pool).await
 }
+
+/// Delete one recording-history row by id.
+#[tauri::command]
+pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {
+    store::delete_recording(&db.pool, &id).await
+}
+
+/// Delete the entire recording history.
+#[tauri::command]
+pub async fn recordings_clear(db: State<'_, Db>) -> AppResult<()> {
+    store::clear_recordings(&db.pool).await
+}
+
+/// Set (or clear, with `null`) a recording's free-text note (capped at 4096
+/// chars in the store).
+#[tauri::command]
+pub async fn recording_update_note(
+    db: State<'_, Db>,
+    id: String,
+    note: Option<String>,
+) -> AppResult<()> {
+    store::update_recording_note(&db.pool, &id, note).await
+}

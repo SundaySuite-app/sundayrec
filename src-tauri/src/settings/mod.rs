@@ -7,6 +7,8 @@
 //! `sundayrec-core` (and carry the tests). This module only reads/writes that
 //! one row and threads the core's `from_json_merged` → `validate` pipeline.
 
+use std::path::Path;
+
 use sqlx::SqlitePool;
 use sundayrec_core::settings::Settings;
 
@@ -56,6 +58,26 @@ pub async fn export(pool: &SqlitePool) -> AppResult<String> {
 pub async fn import(pool: &SqlitePool, json: &str) -> AppResult<Settings> {
     let merged = Settings::from_json_merged(json);
     save(pool, merged).await
+}
+
+/// Export the current settings as pretty JSON and write them to `path`. The
+/// renderer picks the destination through the native save dialog (F1.3); this
+/// thin wrapper only does the file I/O so the dialog plumbing stays in JS.
+/// An I/O failure surfaces as [`AppError::Io`](crate::error::AppError::Io).
+pub async fn export_to_path(pool: &SqlitePool, path: &Path) -> AppResult<()> {
+    let json = export(pool).await?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
+
+/// Read a settings JSON file from `path` and import it (merge over defaults →
+/// validate → persist), returning the stored value. The renderer picks the
+/// source through the native open dialog (F1.3). A read failure surfaces as
+/// [`AppError::Io`](crate::error::AppError::Io); malformed-but-readable JSON is
+/// tolerated by the merge (unknown/missing fields take their defaults).
+pub async fn import_from_path(pool: &SqlitePool, path: &Path) -> AppResult<Settings> {
+    let json = std::fs::read_to_string(path)?;
+    import(pool, &json).await
 }
 
 #[cfg(test)]
@@ -168,5 +190,41 @@ mod tests {
         let imported = import(&pool, r#"{ "language": "fr" }"#).await.unwrap();
         assert_eq!(imported.language, Some("fr".to_string()));
         assert_eq!(imported.input_volume, 100);
+    }
+
+    #[tokio::test]
+    async fn export_to_path_then_import_from_path_round_trips() {
+        let (pool, _d) = temp_pool().await;
+        let s = Settings {
+            language: Some("de".to_string()),
+            format: FileFormat::Flac,
+            input_volume: 150,
+            ..Default::default()
+        };
+        save(&pool, s.clone()).await.unwrap();
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("settings.json");
+        export_to_path(&pool, &file).await.unwrap();
+
+        // The file is real, pretty JSON.
+        let on_disk = std::fs::read_to_string(&file).unwrap();
+        assert!(on_disk.contains("\"language\""));
+        assert!(on_disk.contains('\n'), "expected pretty (multi-line) JSON");
+
+        // Fresh database — import the file back.
+        let (pool2, _d2) = temp_pool().await;
+        let imported = import_from_path(&pool2, &file).await.unwrap();
+        assert_eq!(imported, s);
+        assert_eq!(load(&pool2).await.unwrap(), s);
+    }
+
+    #[tokio::test]
+    async fn import_from_path_errors_on_missing_file() {
+        let (pool, _d) = temp_pool().await;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("does-not-exist.json");
+        let err = import_from_path(&pool, &missing).await.unwrap_err();
+        assert_eq!(err.code(), "io");
     }
 }

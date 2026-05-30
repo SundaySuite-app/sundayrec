@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
@@ -133,9 +134,48 @@ export function SettingsPage() {
     [patch],
   );
 
+  // Native folder picker → persist save_folder immediately (no debounce; the
+  // user explicitly chose a folder). The backend echoes the stored Settings.
+  const pickFolder = useCallback(async () => {
+    const picked = await open({ directory: true, multiple: false });
+    if (typeof picked === "string") {
+      saveMutation.mutate({ ...(draft as Settings), saveFolder: picked });
+    }
+  }, [draft, saveMutation]);
+
+  // Export settings to a JSON file the user picks via the native save dialog.
+  const exportToFile = useCallback(async () => {
+    const path = await save({
+      defaultPath: "sundayrec-settings.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (path) {
+      await invoke("settings_export_to_file", { path });
+    }
+  }, []);
+
+  // Import settings from a JSON file picked via the native open dialog, then
+  // refresh the cache (and live language) from the stored value.
+  const importFromFile = useCallback(async () => {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof path === "string") {
+      const imported = await invoke<Settings>("settings_import_from_file", {
+        path,
+      });
+      queryClient.setQueryData(SETTINGS_QUERY_KEY, imported);
+      setDraft(imported);
+      if (imported.language) void changeLanguage(imported.language);
+    }
+  }, [queryClient]);
+
   if (isLoading || !draft) {
     return (
-      <p className="opacity-70">{t("home.connecting", "Kobler til backend …")}</p>
+      <p className="opacity-70">
+        {t("home.connecting", "Kobler til backend …")}
+      </p>
     );
   }
 
@@ -149,7 +189,8 @@ export function SettingsPage() {
   }
 
   const currentLng: SupportedLng =
-    draft.language && (SUPPORTED_LNGS as readonly string[]).includes(draft.language)
+    draft.language &&
+    (SUPPORTED_LNGS as readonly string[]).includes(draft.language)
       ? (draft.language as SupportedLng)
       : "no";
 
@@ -160,7 +201,10 @@ export function SettingsPage() {
     >
       {/* ── Language ─────────────────────────────────────────────────────── */}
       <Section title={t("general.appLanguage", "Språk")}>
-        <Field label={t("general.language", "Språk")} htmlFor="settings-language">
+        <Field
+          label={t("general.language", "Språk")}
+          htmlFor="settings-language"
+        >
           <select
             id="settings-language"
             className={inputClass}
@@ -179,7 +223,10 @@ export function SettingsPage() {
 
       {/* ── Audio ────────────────────────────────────────────────────────── */}
       <Section title={t("audio.title", "Lydkilde")}>
-        <Field label={t("audio.channels", "Kanaler")} htmlFor="settings-channels">
+        <Field
+          label={t("audio.channels", "Kanaler")}
+          htmlFor="settings-channels"
+        >
           <select
             id="settings-channels"
             className={inputClass}
@@ -227,7 +274,10 @@ export function SettingsPage() {
 
       {/* ── Output ───────────────────────────────────────────────────────── */}
       <Section title={t("files.format", "Format & Kvalitet")}>
-        <Field label={t("files.fileFormat", "Filformat")} htmlFor="settings-format">
+        <Field
+          label={t("files.fileFormat", "Filformat")}
+          htmlFor="settings-format"
+        >
           <select
             id="settings-format"
             className={inputClass}
@@ -241,7 +291,10 @@ export function SettingsPage() {
           </select>
         </Field>
 
-        <Field label={t("files.pattern", "Navnmønster")} htmlFor="settings-pattern">
+        <Field
+          label={t("files.pattern", "Navnmønster")}
+          htmlFor="settings-pattern"
+        >
           <select
             id="settings-pattern"
             className={inputClass}
@@ -277,6 +330,26 @@ export function SettingsPage() {
             onChange={(e) => patch({ autoDeleteDays: Number(e.target.value) })}
           />
         </Field>
+      </Section>
+
+      {/* ── Storage folder ───────────────────────────────────────────────── */}
+      <Section title={t("files.saveFolder", "Lagringsmappe")}>
+        <div className="flex items-center justify-between gap-3">
+          <span
+            className="min-w-0 flex-1 truncate text-sm opacity-80"
+            title={draft.saveFolder ?? undefined}
+          >
+            {draft.saveFolder ??
+              t("home.defaultFolder", "Dokumenter/SundayRec")}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            onClick={() => void pickFolder()}
+          >
+            {t("files.browse", "Velg mappe")}
+          </button>
+        </div>
       </Section>
 
       {/* ── Recording behaviour ──────────────────────────────────────────── */}
@@ -372,9 +445,31 @@ export function SettingsPage() {
         </Field>
       </Section>
 
+      {/* ── Import / export ──────────────────────────────────────────────── */}
+      <Section title={t("general.export", "Eksporter innstillinger")}>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            onClick={() => void exportToFile()}
+          >
+            {t("general.export", "Eksporter innstillinger")}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            onClick={() => void importFromFile()}
+          >
+            {t("general.import", "Importer fra fil")}
+          </button>
+        </div>
+      </Section>
+
       <div className="flex items-center justify-between">
         {saveMutation.isPending && (
-          <span className="text-xs opacity-50">{t("general.save", "Lagre")}…</span>
+          <span className="text-xs opacity-50">
+            {t("general.save", "Lagre")}…
+          </span>
         )}
         {saveMutation.isSuccess && !saveMutation.isPending && (
           <span className="text-xs text-emerald-400">

@@ -12,7 +12,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (cmd: string): Promise<unknown> => {
     if (cmd === "list_input_devices") return { host: "CoreAudio", inputs: [] };
     if (cmd === "ffmpeg_health")
-      return { available: true, version: "ffmpeg version 6.0", path: "/x/ffmpeg" };
+      return {
+        available: true,
+        version: "ffmpeg version 6.0",
+        path: "/x/ffmpeg",
+      };
+    if (cmd === "recordings_list") return [];
     return {
       name: "SundayRec",
       version: "0.1.0",

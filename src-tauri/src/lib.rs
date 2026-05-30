@@ -79,11 +79,16 @@ pub fn run() {
             commands::db::setting_get,
             commands::db::setting_set,
             commands::db::recordings_list,
+            commands::db::recordings_delete,
+            commands::db::recordings_clear,
+            commands::db::recording_update_note,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
             commands::settings::settings_export,
             commands::settings::settings_import,
+            commands::settings::settings_export_to_file,
+            commands::settings::settings_import_from_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

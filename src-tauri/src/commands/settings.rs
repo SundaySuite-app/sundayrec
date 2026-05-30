@@ -5,6 +5,8 @@
 //! persisted [`Settings`] so the renderer's cache reflects exactly what the
 //! backend stored (post-clamping), with no second round-trip.
 
+use std::path::PathBuf;
+
 use tauri::State;
 
 use crate::db::Db;
@@ -41,4 +43,18 @@ pub async fn settings_export(db: State<'_, Db>) -> AppResult<String> {
 #[tauri::command]
 pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Settings> {
     settings::import(&db.pool, &json).await
+}
+
+/// Write the current settings as pretty JSON to `path` (the renderer picks the
+/// destination through the native save dialog).
+#[tauri::command]
+pub async fn settings_export_to_file(db: State<'_, Db>, path: String) -> AppResult<()> {
+    settings::export_to_path(&db.pool, &PathBuf::from(path)).await
+}
+
+/// Read a settings JSON file from `path` (picked through the native open
+/// dialog), import it, and return the stored value.
+#[tauri::command]
+pub async fn settings_import_from_file(db: State<'_, Db>, path: String) -> AppResult<Settings> {
+    settings::import_from_path(&db.pool, &PathBuf::from(path)).await
 }
