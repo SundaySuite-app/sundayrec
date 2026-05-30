@@ -1,0 +1,18 @@
+[package]
+name = "sundayrec-core"
+version = "0.1.0"
+description = "Pure, GUI-free domain core for SundayRec — recorder logic, ffmpeg argument building, error classification, silence state machine. No Tauri dependency."
+authors = ["Richard Fossland"]
+edition = "2021"
+
+# This crate intentionally depends on NOTHING from Tauri. It holds the
+# behaviour ported from the Electron `recorder-utils.ts` etc. as plain,
+# deterministic Rust so it can be exercised entirely under `cargo test`.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Generates the TypeScript bindings the frontend consumes. `serde-compat`
+# makes ts-rs honour serde attributes (rename_all, etc.). Run the export with
+# `cargo test export_bindings -p sundayrec-core`.
+ts-rs = { version = "11", features = ["serde-compat"] }

@@ -1,0 +1,36 @@
+[package]
+name = "sundayrec"
+version = "0.1.0"
+description = "Recording for church services — part of the Sunday suite (Tauri 2 rebuild of the Electron app)"
+authors = ["Richard Fossland"]
+edition = "2021"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary to make the lib name
+# unique and avoid conflicting with the bin name. This is only an issue on
+# Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "sundayrec_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Pure, GUI-free domain core — the recorder behaviour distilled from Electron.
+sundayrec-core = { path = "../crates/sundayrec-core" }
+
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+# Native file dialogs (open/save recordings) — needed from early phases.
+tauri-plugin-dialog = "2.7.1"
+# `process` plugin: relaunch/exit, used by the updater flow later.
+tauri-plugin-process = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Type generation for the frontend (run with `cargo test export_bindings`).
+ts-rs = { version = "11", features = ["serde-compat"] }

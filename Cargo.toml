@@ -1,0 +1,8 @@
+[workspace]
+# Clean separation between the Tauri shell (`src-tauri`) and the pure,
+# GUI-free domain core (`crates/sundayrec-core`). The core is unit-testable
+# without a webview or a display, which is exactly where the recorder logic
+# (ffmpeg argument hardening, error classification, silence state machine)
+# belongs — see docs/MIGRATION-TAURI2.md, "Tverrgående standarder".
+members = ["src-tauri", "crates/sundayrec-core"]
+resolver = "2"
