@@ -159,9 +159,7 @@ describe("RecorderPanel", () => {
       expect(screen.getByRole("button", { name: "Stopp" })).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Stopp" }));
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("stop_recording"),
-    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("stop_recording"));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Start opptak" }),

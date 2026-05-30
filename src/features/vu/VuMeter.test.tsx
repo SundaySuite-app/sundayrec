@@ -106,7 +106,10 @@ describe("VuMeter", () => {
     expect(screen.getByText("-1.0 dB")).toBeInTheDocument();
 
     // Silence (backend sends null for -∞) should empty the meter.
-    emitLevels({ peak_dbfs: [null as unknown as number], rms_dbfs: [null as unknown as number] });
+    emitLevels({
+      peak_dbfs: [null as unknown as number],
+      rms_dbfs: [null as unknown as number],
+    });
     await waitFor(() => {
       const meter = screen.getByRole("meter");
       expect(meter.getAttribute("aria-valuenow")).toBe("0");
@@ -121,12 +124,12 @@ describe("VuMeter", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Start VU" }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("start_vu", expect.anything()));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_vu", expect.anything()),
+    );
 
     emitLevels({ peak_dbfs: [-6, -12], rms_dbfs: [-9, -15] });
-    await waitFor(() =>
-      expect(screen.getAllByRole("meter")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByRole("meter")).toHaveLength(2));
   });
 
   it("stops the engine and clears the meter", async () => {
@@ -141,9 +144,7 @@ describe("VuMeter", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Stopp" }));
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("stop_vu"),
-    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("stop_vu"));
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Start VU" }),

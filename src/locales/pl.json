@@ -188,15 +188,7 @@
     "max": "MAKS",
     "noLimit": "Brak",
     "edit": "Edytuj",
-    "days": [
-      "Pn",
-      "Wt",
-      "Śr",
-      "Cz",
-      "Pt",
-      "So",
-      "Nd"
-    ],
+    "days": ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"],
     "wakeTitle": "Wybudź komputer z uśpienia",
     "wakeDesc": "Uruchamia się automatycznie kilka minut przed rozpoczęciem nagrywania",
     "wakeBtn": "Zaplanuj wybudzenie",
@@ -362,15 +354,7 @@
       "Listopad",
       "Grudzień"
     ],
-    "weekdays": [
-      "Pn",
-      "Wt",
-      "Śr",
-      "Cz",
-      "Pt",
-      "So",
-      "Nd"
-    ],
+    "weekdays": ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"],
     "legendWeekly": "Nagranie cotygodniowe",
     "legendSpecial": "Nagranie specjalne",
     "legendHoliday": "Święto kościelne",

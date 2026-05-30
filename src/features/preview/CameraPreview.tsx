@@ -114,8 +114,8 @@ export function CameraPreview() {
 
       {!running && (
         <p className="text-xs opacity-50">
-          Trykk «Start preview» — bildene dekodes i Rust (ffmpeg → MJPEG), ikke i
-          webviewen.
+          Trykk «Start preview» — bildene dekodes i Rust (ffmpeg → MJPEG), ikke
+          i webviewen.
         </p>
       )}
     </section>

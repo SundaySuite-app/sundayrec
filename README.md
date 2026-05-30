@@ -5,8 +5,8 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust +
 React 19 + Tailwind v4 + ts-rs).
 
 The Electron app (`../../sundayrec`) is the **behavioural specification**, not a
-template. We reuse the *knowledge* — hardened ffmpeg arguments, device parsers,
-error classification, silence/watchdog logic — but rebuild the *structure*
+template. We reuse the _knowledge_ — hardened ffmpeg arguments, device parsers,
+error classification, silence/watchdog logic — but rebuild the _structure_
 cleanly in Rust. See [`docs/MIGRATION-TAURI2.md`](docs/MIGRATION-TAURI2.md) for
 the living, phase-by-phase plan.
 

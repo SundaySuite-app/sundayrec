@@ -39,13 +39,11 @@ export function RecorderPanel() {
       "recording://progress",
       (event) => setBytes(event.payload.bytes_written),
     );
-    const unSilence = listen<RecordingEvent>(
-      "recording://silence",
-      (event) => setSilence(event.payload),
+    const unSilence = listen<RecordingEvent>("recording://silence", (event) =>
+      setSilence(event.payload),
     );
-    const unError = listen<RecordingEvent>(
-      "recording://error",
-      (event) => setError(event.payload),
+    const unError = listen<RecordingEvent>("recording://error", (event) =>
+      setError(event.payload),
     );
     return () => {
       void unStarted.then((off) => off());

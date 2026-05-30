@@ -188,15 +188,7 @@
     "max": "MAX",
     "noLimit": "Ingen",
     "edit": "Redigera",
-    "days": [
-      "Mån",
-      "Tis",
-      "Ons",
-      "Tor",
-      "Fre",
-      "Lör",
-      "Sön"
-    ],
+    "days": ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"],
     "wakeTitle": "Väck datorn ur viloläge",
     "wakeDesc": "Startar automatiskt några minuter innan inspelningen börjar",
     "wakeBtn": "Schemalägg väckning",
@@ -362,15 +354,7 @@
       "November",
       "December"
     ],
-    "weekdays": [
-      "Mån",
-      "Tis",
-      "Ons",
-      "Tor",
-      "Fre",
-      "Lör",
-      "Sön"
-    ],
+    "weekdays": ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"],
     "legendWeekly": "Veckoinspelning",
     "legendSpecial": "Specialinspelning",
     "legendHoliday": "Kyrklig helg",

@@ -168,9 +168,7 @@ describe("SettingsPage", () => {
       name: "Gjenopprett standard",
     });
     fireEvent.click(resetBtn);
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("settings_reset"),
-    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("settings_reset"));
   });
 
   it("language change switches i18n and persists to settings.language", async () => {

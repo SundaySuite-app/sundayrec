@@ -13,9 +13,7 @@ import {
  */
 export function LanguageSwitcher() {
   const { i18n, t } = useTranslation();
-  const current = (
-    SUPPORTED_LNGS as readonly string[]
-  ).includes(i18n.language)
+  const current = (SUPPORTED_LNGS as readonly string[]).includes(i18n.language)
     ? (i18n.language as SupportedLng)
     : "no";
 

@@ -21,12 +21,12 @@ provide**. This doc is the checklist.
 
 ## Phase status
 
-| Capability                         | State                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------- |
-| Build macOS + Windows on tag       | ✅ wired (`release.yml`)                                              |
-| macOS signing + notarization       | 🔑 activates when the Apple secrets below are added                   |
-| Windows signing                    | ⏳ deferred (unsigned installer works; SmartScreen warns)             |
-| Auto-update (`latest.json`)        | ⏳ Phase 9 — needs the updater plugin + keypair (steps below)         |
+| Capability                   | State                                                         |
+| ---------------------------- | ------------------------------------------------------------- |
+| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                      |
+| macOS signing + notarization | 🔑 activates when the Apple secrets below are added           |
+| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)     |
+| Auto-update (`latest.json`)  | ⏳ Phase 9 — needs the updater plugin + keypair (steps below) |
 
 Until the Apple secrets are added, the workflow still runs and produces
 **unsigned** installers (tauri-action skips signing when the secrets are
@@ -64,10 +64,10 @@ The updater is off until Phase 9. When you get there:
    and configure the `endpoints` to the GitHub `latest` release.
 4. Add these secrets and flip `includeUpdaterJson: true` in `release.yml`:
 
-| Secret                               | Value                                                                                                      |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `TAURI_SIGNING_PRIVATE_KEY`          | Contents of `~/.tauri/sundayrec_updater.key`: `cat ~/.tauri/sundayrec_updater.key \| pbcopy`, then paste.  |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password you set for that key (empty string if generated without one).                                 |
+| Secret                               | Value                                                                                                     |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | Contents of `~/.tauri/sundayrec_updater.key`: `cat ~/.tauri/sundayrec_updater.key \| pbcopy`, then paste. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password you set for that key (empty string if generated without one).                                |
 
 > Keep the private key safe — losing it means existing installs can no longer
 > auto-update (they'd need a manual reinstall with a new key).

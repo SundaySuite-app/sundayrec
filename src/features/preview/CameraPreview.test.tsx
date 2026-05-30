@@ -17,7 +17,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 // Capture the `preview://frame` handler so the test can push fake frames.
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (name: string, handler: (event: { payload: PreviewFrame }) => void) => {
+  listen: (
+    name: string,
+    handler: (event: { payload: PreviewFrame }) => void,
+  ) => {
     if (name === "preview://frame") h.frameHandler = handler;
     return Promise.resolve(() => {
       h.frameHandler = null;
@@ -83,7 +86,9 @@ describe("CameraPreview", () => {
   it("updates the <img> when a newer frame arrives", async () => {
     render(<CameraPreview />);
     fireEvent.click(screen.getByRole("button", { name: "Start preview" }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("start_preview", expect.anything()));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_preview", expect.anything()),
+    );
 
     emitFrame({ data: "AAA", width: 640, height: 480, seq: 1 });
     await waitFor(() =>

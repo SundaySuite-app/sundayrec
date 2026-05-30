@@ -188,15 +188,7 @@
     "max": "MAX",
     "noLimit": "Aucune",
     "edit": "Modifier",
-    "days": [
-      "Lun",
-      "Mar",
-      "Mer",
-      "Jeu",
-      "Ven",
-      "Sam",
-      "Dim"
-    ],
+    "days": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
     "wakeTitle": "Sortir l’ordinateur de veille",
     "wakeDesc": "Démarre automatiquement quelques minutes avant le début de l’enregistrement",
     "wakeBtn": "Planifier le réveil",
@@ -362,15 +354,7 @@
       "Novembre",
       "Décembre"
     ],
-    "weekdays": [
-      "Lun",
-      "Mar",
-      "Mer",
-      "Jeu",
-      "Ven",
-      "Sam",
-      "Dim"
-    ],
+    "weekdays": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
     "legendWeekly": "Enregistrement hebdomadaire",
     "legendSpecial": "Enregistrement spécial",
     "legendHoliday": "Fête liturgique",

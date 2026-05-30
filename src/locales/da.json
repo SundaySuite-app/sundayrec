@@ -188,15 +188,7 @@
     "max": "MAKS",
     "noLimit": "Ingen",
     "edit": "Rediger",
-    "days": [
-      "Man",
-      "Tir",
-      "Ons",
-      "Tor",
-      "Fre",
-      "Lør",
-      "Søn"
-    ],
+    "days": ["Man", "Tir", "Ons", "Tor", "Fre", "Lør", "Søn"],
     "wakeTitle": "Væk computeren fra dvale",
     "wakeDesc": "Starter automatisk få minutter før optagelsen begynder",
     "wakeBtn": "Planlæg opvågning",
@@ -362,15 +354,7 @@
       "November",
       "December"
     ],
-    "weekdays": [
-      "Man",
-      "Tir",
-      "Ons",
-      "Tor",
-      "Fre",
-      "Lør",
-      "Søn"
-    ],
+    "weekdays": ["Man", "Tir", "Ons", "Tor", "Fre", "Lør", "Søn"],
     "legendWeekly": "Ugentlig optagelse",
     "legendSpecial": "Særlig optagelse",
     "legendHoliday": "Kirkelig helligdag",

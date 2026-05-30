@@ -67,8 +67,7 @@ function resolveInitialLng(): SupportedLng {
     // localStorage may be unavailable (e.g. private mode / SSR); fall through.
   }
 
-  const nav =
-    typeof navigator !== "undefined" ? navigator.language : undefined;
+  const nav = typeof navigator !== "undefined" ? navigator.language : undefined;
   const prefix = nav?.split("-")[0]?.toLowerCase();
   if (isSupported(prefix)) return prefix;
 

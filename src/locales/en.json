@@ -188,15 +188,7 @@
     "max": "MAX",
     "noLimit": "None",
     "edit": "Edit",
-    "days": [
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun"
-    ],
+    "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     "wakeTitle": "Wake the computer from sleep",
     "wakeDesc": "Starts automatically a few minutes before the recording begins",
     "wakeBtn": "Schedule wake-up",
@@ -362,15 +354,7 @@
       "November",
       "December"
     ],
-    "weekdays": [
-      "Mon",
-      "Tue",
-      "Wed",
-      "Thu",
-      "Fri",
-      "Sat",
-      "Sun"
-    ],
+    "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     "legendWeekly": "Weekly recording",
     "legendSpecial": "Special recording",
     "legendHoliday": "Church holiday",

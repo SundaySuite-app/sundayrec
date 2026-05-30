@@ -43,9 +43,7 @@ describe("LanguageSwitcher", () => {
       "Français",
       "Polski",
     ]) {
-      expect(
-        screen.getByRole("option", { name }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("option", { name })).toBeInTheDocument();
     }
   });
 
