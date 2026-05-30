@@ -16,3 +16,13 @@ thiserror = "2"
 # makes ts-rs honour serde attributes (rename_all, etc.). Run the export with
 # `cargo test export_bindings -p sundayrec-core`.
 ts-rs = { version = "11", features = ["serde-compat"] }
+# HTTP-date parsing for the cloud `Retry-After` header (Fase 6).
+# `default-features = false` (NO `clock`) keeps this crate PURE — it never reads
+# the wall clock itself; callers pass `now_ms` in.
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
+# PKCE for the OAuth flow (Fase 6): the code-challenge is the base64url-encoded
+# SHA-256 of the verifier (RFC 7636). Pure, no I/O — the `src-tauri` shell
+# generates the random verifier; this crate only does the deterministic
+# challenge derivation and the base64url-encoding used across the cloud module.
+sha2 = "0.10"
+base64 = "0.22"

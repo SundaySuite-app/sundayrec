@@ -25,9 +25,11 @@
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
+//!   - [`cloud`]        — Google cloud-backup backbone: OAuth/PKCE, retry mat, upload-queue, Drive resumable bits (Fase 6)
 
 pub mod audio;
 pub mod capture;
+pub mod cloud;
 pub mod device_enum;
 pub mod device_match;
 pub mod diagnostics;
