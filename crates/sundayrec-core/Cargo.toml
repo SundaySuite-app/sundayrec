@@ -16,14 +16,18 @@ thiserror = "2"
 # makes ts-rs honour serde attributes (rename_all, etc.). Run the export with
 # `cargo test export_bindings -p sundayrec-core`.
 ts-rs = { version = "11", features = ["serde-compat"] }
-# Civil date/time arithmetic for the scheduler (Fase 5): weekday-of, "next
-# occurrence at HH:MM on weekday N", missed-recording look-back. `default-features
-# = false` (NO `clock`) keeps this crate PURE — it never reads the wall clock
-# itself; callers pass `now: NaiveDateTime` in, exactly like the Electron
-# `scheduler.ts` takes `now: Date`. The `src-tauri` shell owns `Local::now()`.
+# Civil date/time arithmetic for the scheduler (Fase 5) AND HTTP-date parsing
+# of the cloud `Retry-After` header (Fase 6). `default-features = false` (NO
+# `clock`) keeps this crate PURE — it never reads the wall clock itself; callers
+# pass `now: NaiveDateTime` / `now_ms` in (mirrors Electron `scheduler.ts`). The
+# `src-tauri` shell owns `Local::now()`.
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
 # Robust parsing of the OS power-tool text output the wake module (Fase 5.2)
-# consumes — `pmset -g sched`, `powercfg -waketimers`, `pmset -g batt`. These
-# date/time-bearing formats are regex-shaped in the Electron source; a hand
-# tokenizer would be fiddlier and buggier than the obvious pattern.
+# consumes — `pmset -g sched`, `powercfg -waketimers`, `pmset -g batt`.
 regex = "1"
+# PKCE for the OAuth flow (Fase 6): the code-challenge is the base64url-encoded
+# SHA-256 of the verifier (RFC 7636). Pure, no I/O — the `src-tauri` shell
+# generates the random verifier; this crate only does the deterministic
+# challenge derivation and the base64url-encoding used across the cloud module.
+sha2 = "0.10"
+base64 = "0.22"
