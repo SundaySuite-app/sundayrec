@@ -13,10 +13,12 @@
 //!   audio     cpal backend — input-device enum + the VU metering engine
 //!   commands  thin Tauri IPC handlers (`entity_verb`)
 //!   error     centralised `AppError` (serialises to `{ code, message }`)
+//!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
 pub mod audio;
 pub mod commands;
 pub mod error;
+pub mod media;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -43,6 +45,7 @@ pub fn run() {
             commands::audio::list_input_devices,
             commands::audio::start_vu,
             commands::audio::stop_vu,
+            commands::media::ffmpeg_health,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

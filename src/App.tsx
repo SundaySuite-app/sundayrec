@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { AppInfo } from "@/lib/bindings/AppInfo";
 import { VuMeter } from "@/features/vu/VuMeter";
+import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 
 /** Phase 0 proof-of-life: round-trip `app_info` through the Tauri bridge and
  *  render the backend's identity. Replaced by the real home screen in Phase 8. */
@@ -37,6 +38,10 @@ function App() {
           {/* Spike A: live mic VU metered in Rust (cpal), pushed over a Tauri
               event — proves the webview never needs getUserMedia. */}
           <VuMeter />
+
+          {/* Spike A: bundled ffmpeg sidecar health-check — proves the
+              externalBin wiring the recorder + preview depend on. */}
+          <FfmpegHealth />
         </div>
       )}
     </main>
