@@ -550,4 +550,164 @@ mod tests {
         assert_eq!(format_ext(FileFormat::Flac), "flac");
         assert_eq!(format_ext(FileFormat::Aac), "aac");
     }
+
+    // ── Scheduler decision contract (time-injected) ─────────────────────────
+    //
+    // The supervisor (`fire`) + `check_missed` thread these pure core decisions
+    // to pick the next start, late-start an active slot/special, and surface what
+    // was missed. The supervisor itself needs an `AppHandle` (a live recorder +
+    // notifier), so these exercise the SAME decisions the shell threads, with an
+    // injected `now` — no clock, no app, no device.
+    use std::collections::HashSet;
+    use sundayrec_core::schedule::{
+        active_within, missed_recordings, next_recording, upcoming_events, ScheduleSlot,
+        ScheduledEventKind, SpecialRecording, TriggerKind, MISSED_WINDOW_MS,
+    };
+
+    fn dt(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    /// A Sunday 11:00–12:00 weekly slot (weekday 6 = Sunday in the Mon=0 frame).
+    fn sunday_slot() -> ScheduleSlot {
+        ScheduleSlot {
+            days: vec![6],
+            start: "11:00".into(),
+            stop: "12:00".into(),
+            max: None,
+        }
+    }
+
+    fn special(date: &str, start: &str, stop: &str, name: &str) -> SpecialRecording {
+        SpecialRecording {
+            id: Some(format!("sp-{date}")),
+            date: date.into(),
+            name: name.into(),
+            start: start.into(),
+            stop: stop.into(),
+            device_id: None,
+        }
+    }
+
+    #[test]
+    fn next_start_picks_the_nearest_future_occurrence() {
+        // 2026-06-03 is a Wednesday at 09:00 → the next Sunday 11:00 start is
+        // 2026-06-07 11:00.
+        let now = dt("2026-06-03 09:00");
+        let next = next_recording(&[sunday_slot()], &[], now).unwrap();
+        assert_eq!(fmt_dt(next), "2026-06-07T11:00:00");
+    }
+
+    #[test]
+    fn late_start_triggers_a_slot_inside_the_missed_window() {
+        // 30 min past the Sunday 11:00 start (window is 60 min) → still triggerable.
+        let now = dt("2026-06-07 11:30");
+        let triggers = active_within(&[sunday_slot()], &[], now, MISSED_WINDOW_MS);
+        assert_eq!(triggers.len(), 1);
+        assert_eq!(triggers[0].kind, TriggerKind::Slot(0));
+    }
+
+    #[test]
+    fn no_late_start_once_past_the_missed_window() {
+        // 90 min past start → beyond the 60-min late-start window, so the
+        // supervisor would NOT late-start it (it becomes a missed candidate).
+        let now = dt("2026-06-07 12:30");
+        assert!(active_within(&[sunday_slot()], &[], now, MISSED_WINDOW_MS).is_empty());
+    }
+
+    #[test]
+    fn missed_check_reports_a_stale_uncovered_occurrence() {
+        // 2 h past the Sunday start: outside the late-start window, recent enough
+        // to matter, no history covering it, not currently triggered → missed.
+        let now = dt("2026-06-07 13:00");
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &HashSet::new());
+        assert_eq!(missed.len(), 1);
+        assert_eq!(missed[0].when, dt("2026-06-07 11:00"));
+    }
+
+    #[test]
+    fn missed_check_suppressed_when_history_covers_the_occurrence() {
+        // A recording within ±30 min of the scheduled start means it DID run.
+        let now = dt("2026-06-07 13:00");
+        let history = [dt("2026-06-07 11:05")];
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &history, &HashSet::new());
+        assert!(missed.is_empty(), "covered by history → not missed");
+    }
+
+    #[test]
+    fn missed_check_suppressed_when_already_triggered() {
+        // If the supervisor already late-started this occurrence (its key is in the
+        // triggered set), it must not ALSO be logged as missed (no double-count).
+        let now = dt("2026-06-07 13:00");
+        let triggers = active_within(
+            &[sunday_slot()],
+            &[],
+            dt("2026-06-07 11:30"),
+            MISSED_WINDOW_MS,
+        );
+        let keys: HashSet<String> = triggers.into_iter().map(|t| t.key).collect();
+        assert!(!keys.is_empty(), "precondition: the slot was triggerable");
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &keys);
+        assert!(missed.is_empty(), "already triggered → not missed");
+    }
+
+    #[test]
+    fn overlapping_slot_and_special_both_late_start() {
+        // A weekly slot AND a dated special both start at the same time: the
+        // supervisor late-starts each independently (two distinct triggers, two
+        // distinct dedup keys).
+        let now = dt("2026-06-07 11:20");
+        let sp = special("2026-06-07", "11:00", "12:00", "Konfirmasjon");
+        let triggers = active_within(
+            &[sunday_slot()],
+            std::slice::from_ref(&sp),
+            now,
+            MISSED_WINDOW_MS,
+        );
+        assert_eq!(triggers.len(), 2, "slot + special both active");
+        let kinds: Vec<TriggerKind> = triggers.iter().map(|t| t.kind).collect();
+        assert!(kinds.contains(&TriggerKind::Slot(0)));
+        assert!(kinds.contains(&TriggerKind::Special(0)));
+        let keys: HashSet<&str> = triggers.iter().map(|t| t.key.as_str()).collect();
+        assert_eq!(keys.len(), 2, "distinct dedup keys");
+    }
+
+    #[test]
+    fn special_wins_when_it_is_the_nearest_future_start() {
+        // A dated special on Wednesday beats the next Sunday slot.
+        let now = dt("2026-06-03 08:00");
+        let sp = special("2026-06-03", "10:00", "11:00", "Begravelse");
+        let next = next_recording(&[sunday_slot()], std::slice::from_ref(&sp), now).unwrap();
+        assert_eq!(fmt_dt(next), "2026-06-03T10:00:00");
+    }
+
+    #[test]
+    fn upcoming_events_emit_a_reminder_lead_before_the_start() {
+        // With a 15-min reminder lead the supervisor fires a Reminder event 15 min
+        // before the Sunday 11:00 Start.
+        let now = dt("2026-06-03 09:00");
+        let events = upcoming_events(&[sunday_slot()], &[], now, 15, 8);
+        let reminder = events
+            .iter()
+            .find(|e| e.kind == ScheduledEventKind::Reminder)
+            .expect("a reminder event");
+        assert_eq!(fmt_dt(reminder.at), "2026-06-07T10:45:00");
+        // The Start fires at the slot time itself.
+        let start = events
+            .iter()
+            .find(|e| e.kind == ScheduledEventKind::Start)
+            .expect("a start event");
+        assert_eq!(fmt_dt(start.at), "2026-06-07T11:00:00");
+        // The reminder precedes the start.
+        assert!(reminder.at < start.at);
+    }
+
+    #[test]
+    fn missed_check_ignores_an_occurrence_older_than_24h() {
+        // Last Sunday's slot, checked the FOLLOWING Sunday before its start: older
+        // than the 24 h log window → not reported (avoids week-old noise).
+        let now = dt("2026-06-14 10:00");
+        let missed = missed_recordings(&[sunday_slot()], &[], now, &[], &HashSet::new());
+        assert!(missed.is_empty(), "older than 24h → not logged");
+    }
 }
