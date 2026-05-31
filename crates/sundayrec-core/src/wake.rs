@@ -305,6 +305,77 @@ pub fn classify_test_wake_delta(delta_sec: i64) -> TestWakeVerdict {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//   Wake-failure / test-wake history
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Newest-first cap on the failure log. Matches the Electron `WAKE_FAILURE_MAX`
+/// (`store.ts`) — older entries are trimmed.
+pub const WAKE_FAILURE_MAX: usize = 20;
+
+/// The kind of wake outcome a [`WakeFailureEntry`] records. Serialised to the
+/// EXACT Electron strings (`'missed' | 'test_ok' | 'test_fail'`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureKind.ts")]
+#[serde(rename_all = "snake_case")]
+pub enum WakeFailureKind {
+    /// A scheduled recording's wake never produced a run.
+    Missed,
+    /// A manual test-wake fired within tolerance.
+    TestOk,
+    /// A manual test-wake fired too late (or didn't fire).
+    TestFail,
+}
+
+/// One wake-failure or test-wake outcome. Mirrors the renderer
+/// `WakeFailureEntry` (camelCase) field-for-field so saved rows carry across.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureEntry.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct WakeFailureEntry {
+    /// Unix ms when the outcome was recorded.
+    #[ts(type = "number")]
+    pub timestamp: i64,
+    /// ISO string — the time the wake was supposed to fire.
+    pub scheduled_at: String,
+    /// What kind of outcome this is.
+    pub kind: WakeFailureKind,
+    /// Human-readable label (slot name, "Spesialopptak", "Test-wake").
+    pub label: String,
+    /// Free-form reason (e.g. `no_resume`, `too_late`, `on_battery`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Actual delta in seconds between expected and observed (test-wake only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number | null")]
+    pub delta_sec: Option<i64>,
+}
+
+/// Map a test-wake delta to the [`WakeFailureKind`] + a reason, mirroring the
+/// Electron `testWake` resume handler: within tolerance ⇒ `test_ok`, too late ⇒
+/// `test_fail`/`too_late`. A `None` delta means no resume was observed at all
+/// ⇒ `test_fail`/`no_resume`.
+pub fn test_wake_outcome(delta_sec: Option<i64>) -> (WakeFailureKind, Option<String>) {
+    match delta_sec {
+        None => (WakeFailureKind::TestFail, Some("no_resume".into())),
+        Some(d) => match classify_test_wake_delta(d) {
+            TestWakeVerdict::Ok => (WakeFailureKind::TestOk, None),
+            TestWakeVerdict::TooLate => (WakeFailureKind::TestFail, Some("too_late".into())),
+        },
+    }
+}
+
+/// Prepend `entry` to `history` (newest-first) and trim to [`WAKE_FAILURE_MAX`].
+/// Pure mirror of the Electron `addWakeFailureEntry` (`unshift` + `slice(0,MAX)`).
+pub fn cap_failure_history(
+    mut history: Vec<WakeFailureEntry>,
+    entry: WakeFailureEntry,
+) -> Vec<WakeFailureEntry> {
+    history.insert(0, entry);
+    history.truncate(WAKE_FAILURE_MAX);
+    history
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //   Observed-wake parsing + tolerance match
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -678,6 +749,50 @@ mod tests {
         assert_eq!(classify_test_wake_delta(30), TestWakeVerdict::Ok);
         assert_eq!(classify_test_wake_delta(31), TestWakeVerdict::TooLate);
         assert_eq!(classify_test_wake_delta(-5), TestWakeVerdict::Ok); // woke early
+    }
+
+    #[test]
+    fn test_wake_outcome_maps_delta() {
+        assert_eq!(test_wake_outcome(Some(10)), (WakeFailureKind::TestOk, None));
+        assert_eq!(
+            test_wake_outcome(Some(120)),
+            (WakeFailureKind::TestFail, Some("too_late".into()))
+        );
+        assert_eq!(
+            test_wake_outcome(None),
+            (WakeFailureKind::TestFail, Some("no_resume".into()))
+        );
+    }
+
+    fn fail_entry(ts: i64) -> WakeFailureEntry {
+        WakeFailureEntry {
+            timestamp: ts,
+            scheduled_at: "2026-06-01T10:00:00Z".into(),
+            kind: WakeFailureKind::TestOk,
+            label: "Test-wake".into(),
+            reason: None,
+            delta_sec: Some(2),
+        }
+    }
+
+    #[test]
+    fn cap_failure_history_prepends_newest_first() {
+        let h = vec![fail_entry(1), fail_entry(2)];
+        let out = cap_failure_history(h, fail_entry(3));
+        assert_eq!(out[0].timestamp, 3); // newest first
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn cap_failure_history_trims_to_max() {
+        let mut h = Vec::new();
+        for i in 0..WAKE_FAILURE_MAX {
+            h.push(fail_entry(i as i64));
+        }
+        let out = cap_failure_history(h, fail_entry(999));
+        assert_eq!(out.len(), WAKE_FAILURE_MAX);
+        assert_eq!(out[0].timestamp, 999); // newest kept
+        assert_eq!(out.last().unwrap().timestamp, (WAKE_FAILURE_MAX - 2) as i64); // oldest trimmed
     }
 
     #[test]

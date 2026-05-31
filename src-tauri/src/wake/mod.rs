@@ -268,6 +268,81 @@ async fn schedule_windows(points: &[NaiveDateTime]) -> WakeResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//   Test-wake (manual diagnostic)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The outcome of scheduling a manual test-wake. Mirrors the Electron
+/// `testWake`'s return: on success a `jobId` the renderer can cancel, plus the
+/// scheduled wall-clock time the resume handler will compare against.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/lib/bindings/TestWakeResult.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct TestWakeResult {
+    pub ok: bool,
+    /// Opaque id the renderer passes to `wake_cancel_test`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// ISO-like local string of the scheduled wake.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheduled_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// Schedule a single OS wake `seconds_ahead` from now and return a job id. Port
+/// of the Electron `testWake(secondsAhead)` scheduling half. The resume
+/// *listening* (which records a `test_ok`/`test_fail` outcome via the failure
+/// history) is OS-level and GUI-driven — the pure verdict lives in
+/// [`sundayrec_core::wake::test_wake_outcome`].
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns `pmset`/`schtasks`; the actual wake can't be
+/// proven in the gate (the machine has to sleep, then wake). See SMOKE-TEST.md.
+pub async fn schedule_test_wake(seconds_ahead: i64) -> TestWakeResult {
+    let secs = seconds_ahead.clamp(5, 3600);
+    let target = (Utc::now() + chrono::Duration::seconds(secs)).naive_local();
+    let result = schedule_os_wakes(std::slice::from_ref(&target), true).await;
+    if result.ok {
+        TestWakeResult {
+            ok: true,
+            job_id: Some(format!("test-wake-{}", target.and_utc().timestamp_millis())),
+            scheduled_at: Some(fmt_local(&target)),
+            reason: None,
+        }
+    } else {
+        TestWakeResult {
+            ok: false,
+            job_id: None,
+            scheduled_at: None,
+            reason: result.reason,
+        }
+    }
+}
+
+/// Cancel any pending SundayRec test-wake (best-effort). Mirrors the Electron
+/// `cancelTestWake` — clears our scheduled wakes. ⚠️ HARDWARE-UNVERIFIED.
+pub async fn cancel_test_wake() -> bool {
+    match current_platform() {
+        WakePlatform::MacArm | WakePlatform::MacIntel => {
+            run("pmset", &["schedule", "cancelall", "SundayRec"], 3000)
+                .await
+                .is_ok()
+        }
+        WakePlatform::Win => run(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "Get-ScheduledTask -TaskPath '\\SundayRec\\*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false",
+            ],
+            10000,
+        )
+        .await
+        .is_ok(),
+        _ => false,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //   Sleep config + fixes
 // ─────────────────────────────────────────────────────────────────────────────
 

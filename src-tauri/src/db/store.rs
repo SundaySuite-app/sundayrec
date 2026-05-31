@@ -203,6 +203,88 @@ pub async fn update_recording_note(
     Ok(())
 }
 
+// ── Wake-failure / test-wake history ─────────────────────────────────────────
+
+use sundayrec_core::wake::{WakeFailureEntry, WakeFailureKind, WAKE_FAILURE_MAX};
+
+/// Map a stored kind string to the core enum (defensive — the CHECK constraint
+/// already guarantees one of the three).
+fn parse_failure_kind(s: &str) -> WakeFailureKind {
+    match s {
+        "test_ok" => WakeFailureKind::TestOk,
+        "test_fail" => WakeFailureKind::TestFail,
+        _ => WakeFailureKind::Missed,
+    }
+}
+
+/// The kebab/snake string the column stores for a kind (matches the core's
+/// serde `snake_case`).
+fn failure_kind_str(k: WakeFailureKind) -> &'static str {
+    match k {
+        WakeFailureKind::Missed => "missed",
+        WakeFailureKind::TestOk => "test_ok",
+        WakeFailureKind::TestFail => "test_fail",
+    }
+}
+
+/// The wake-failure history, newest-first, capped at [`WAKE_FAILURE_MAX`].
+pub async fn list_wake_failures(pool: &SqlitePool) -> AppResult<Vec<WakeFailureEntry>> {
+    let rows = sqlx::query(
+        "SELECT ts, scheduled_at, kind, label, reason, delta_sec
+         FROM wake_failure ORDER BY ts DESC LIMIT ?1",
+    )
+    .bind(WAKE_FAILURE_MAX as i64)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| WakeFailureEntry {
+            timestamp: r.get::<f64, _>("ts") as i64,
+            scheduled_at: r.get("scheduled_at"),
+            kind: parse_failure_kind(&r.get::<String, _>("kind")),
+            label: r.get("label"),
+            reason: r.get("reason"),
+            delta_sec: r.get::<Option<i64>, _>("delta_sec"),
+        })
+        .collect())
+}
+
+/// Append a wake-failure / test-wake outcome, then trim to [`WAKE_FAILURE_MAX`]
+/// (mirrors the Electron `addWakeFailureEntry` newest-first cap).
+pub async fn insert_wake_failure(pool: &SqlitePool, entry: &WakeFailureEntry) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO wake_failure (id, ts, scheduled_at, kind, label, reason, delta_sec)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )
+    .bind(new_id())
+    .bind(entry.timestamp as f64)
+    .bind(&entry.scheduled_at)
+    .bind(failure_kind_str(entry.kind))
+    .bind(&entry.label)
+    .bind(&entry.reason)
+    .bind(entry.delta_sec)
+    .execute(pool)
+    .await?;
+    // Trim anything beyond the newest WAKE_FAILURE_MAX rows.
+    sqlx::query(
+        "DELETE FROM wake_failure WHERE id NOT IN (
+            SELECT id FROM wake_failure ORDER BY ts DESC LIMIT ?1
+         )",
+    )
+    .bind(WAKE_FAILURE_MAX as i64)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Clear the entire wake-failure history.
+pub async fn clear_wake_failures(pool: &SqlitePool) -> AppResult<()> {
+    sqlx::query("DELETE FROM wake_failure")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +317,53 @@ mod tests {
         // Both tables must exist and be queryable on a fresh database.
         assert!(get_all_settings(&pool).await.unwrap().is_empty());
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    fn wake_fail(ts: i64, kind: WakeFailureKind) -> WakeFailureEntry {
+        WakeFailureEntry {
+            timestamp: ts,
+            scheduled_at: "2026-06-01T10:00:00Z".into(),
+            kind,
+            label: "Test-wake".into(),
+            reason: Some("too_late".into()),
+            delta_sec: Some(42),
+        }
+    }
+
+    #[tokio::test]
+    async fn wake_failure_roundtrip_newest_first() {
+        let (pool, _d) = temp_pool().await;
+        assert!(list_wake_failures(&pool).await.unwrap().is_empty());
+
+        insert_wake_failure(&pool, &wake_fail(100, WakeFailureKind::TestOk))
+            .await
+            .unwrap();
+        insert_wake_failure(&pool, &wake_fail(200, WakeFailureKind::Missed))
+            .await
+            .unwrap();
+
+        let list = list_wake_failures(&pool).await.unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].timestamp, 200); // newest first
+        assert_eq!(list[0].kind, WakeFailureKind::Missed);
+        assert_eq!(list[1].delta_sec, Some(42));
+
+        clear_wake_failures(&pool).await.unwrap();
+        assert!(list_wake_failures(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn wake_failure_trims_to_max() {
+        let (pool, _d) = temp_pool().await;
+        for i in 0..(WAKE_FAILURE_MAX as i64 + 5) {
+            insert_wake_failure(&pool, &wake_fail(i, WakeFailureKind::TestFail))
+                .await
+                .unwrap();
+        }
+        let list = list_wake_failures(&pool).await.unwrap();
+        assert_eq!(list.len(), WAKE_FAILURE_MAX);
+        // The newest (highest ts) survive; the oldest were trimmed.
+        assert_eq!(list[0].timestamp, WAKE_FAILURE_MAX as i64 + 4);
     }
 
     #[tokio::test]

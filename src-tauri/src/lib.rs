@@ -267,6 +267,10 @@ pub fn run() {
             commands::wake::wake_fix_sleep,
             commands::wake::wake_verify,
             commands::wake::wake_reschedule,
+            commands::wake::wake_test,
+            commands::wake::wake_cancel_test,
+            commands::wake::wake_failure_history,
+            commands::wake::wake_clear_failure_history,
             // PU-5 whisper transcription (model registry pure; transcribe gated).
             commands::whisper::whisper_list_models,
             commands::whisper::whisper_model_status,

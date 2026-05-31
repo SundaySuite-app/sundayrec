@@ -15,12 +15,16 @@ use tauri::State;
 use sundayrec_core::schedule::upcoming_dates;
 use sundayrec_core::wake::{detect_capabilities, wake_points, WakeCapabilities, WAKE_LEAD_MINUTES};
 
+use sundayrec_core::wake::WakeFailureEntry;
+
+use crate::db::store;
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::settings;
 use crate::wake::{
-    current_platform, fix_mac_sleep, fix_win_wake_timers, get_sleep_config, verify_scheduled_wakes,
-    WakeEngine, WakeFixResult, WakeResult, WakeStatus,
+    cancel_test_wake, current_platform, fix_mac_sleep, fix_win_wake_timers, get_sleep_config,
+    schedule_test_wake, verify_scheduled_wakes, TestWakeResult, WakeEngine, WakeFixResult,
+    WakeResult, WakeStatus,
 };
 
 /// How many days of upcoming starts wake scheduling/verification considers.
@@ -73,6 +77,33 @@ pub async fn wake_reschedule(
     Ok(engine
         .reschedule(&upcoming, now, s.wake_from_sleep, true)
         .await)
+}
+
+/// Schedule a manual test-wake `seconds_ahead` from now (default 60 s). Returns
+/// a job id the UI can cancel. HARDWARE-UNVERIFIED — the wake itself needs the
+/// machine to sleep then wake; only the scheduling spawn is wired here.
+#[tauri::command]
+pub async fn wake_test(seconds_ahead: Option<i64>) -> TestWakeResult {
+    schedule_test_wake(seconds_ahead.unwrap_or(60)).await
+}
+
+/// Cancel a pending test-wake (best-effort). Returns whether the cancel ran.
+#[tauri::command]
+pub async fn wake_cancel_test() -> bool {
+    cancel_test_wake().await
+}
+
+/// The wake-failure / test-wake history, newest-first (capped at 20). DB-backed.
+#[tauri::command]
+pub async fn wake_failure_history(db: State<'_, Db>) -> AppResult<Vec<WakeFailureEntry>> {
+    store::list_wake_failures(&db.pool).await
+}
+
+/// Clear the wake-failure history. Returns `true` once cleared.
+#[tauri::command]
+pub async fn wake_clear_failure_history(db: State<'_, Db>) -> AppResult<bool> {
+    store::clear_wake_failures(&db.pool).await?;
+    Ok(true)
 }
 
 /// The wake points we expect the OS to have scheduled, derived from the current
