@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS privacy usage descriptions (TCC).
+
+  SundayRec captures the microphone (cpal VU metering + ffmpeg avfoundation
+  audio) and the camera (ffmpeg avfoundation video preview + recording). On
+  macOS the OS *kills the app at first capture* if these strings are absent, so
+  they are a hard prerequisite for any smoke test — see docs/SMOKE-TEST.md.
+
+  Tauri 2 merges this file into the running app for BOTH `tauri dev` and
+  `tauri build` on macOS (it is read from `src-tauri/Info.plist`). Keep it
+  minimal: only the keys we actually need.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SundayRec records the microphone so you can capture the audio of your church service.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>SundayRec uses the camera to preview and record the video of your church service.</string>
+  </dict>
+</plist>
