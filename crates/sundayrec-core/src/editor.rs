@@ -505,6 +505,171 @@ pub fn export_timeout_ms(duration: f64) -> u64 {
     MAX_EDIT_MS.max(scaled)
 }
 
+// ── ffprobe / decode argv (the I/O seam runs these; the args are tested) ────────
+
+/// ffprobe arguments that print the duration / channel-count / sample-format of
+/// the first audio stream plus whether a video stream exists, as compact CSV.
+/// The seam parses the single output line via [`parse_probe_line`]. Mirrors the
+/// Electron `probeMediaStreams` intent (which scanned `-i` stderr), but uses
+/// ffprobe's structured `-show_entries` so the parse is robust, not regex-on-log.
+pub fn ffprobe_load_args(input_path: &str) -> Vec<String> {
+    [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:stream=codec_type,channels,sample_fmt",
+        "-of",
+        "default=noprint_wrappers=1:nokey=0",
+        input_path,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// What a load-probe resolved about a recording. Mirrors the Electron
+/// `MediaStreamInfo` plus the duration the editor needs to plan cuts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProbeResult {
+    pub duration_sec: f64,
+    pub has_video: bool,
+    pub has_audio: bool,
+    pub channels: Option<u32>,
+    pub sample_fmt: Option<String>,
+}
+
+/// Parse the `key=value` lines ffprobe prints for [`ffprobe_load_args`]. ffprobe
+/// emits one block per stream plus the format block, so we take the first audio
+/// stream's channels/sample_fmt and OR the video presence across all streams.
+pub fn parse_probe_output(stdout: &str) -> ProbeResult {
+    let mut duration_sec = 0.0;
+    let mut has_video = false;
+    let mut has_audio = false;
+    let mut channels: Option<u32> = None;
+    let mut sample_fmt: Option<String> = None;
+    // ffprobe prints stream blocks then the format block; a `codec_type=audio`
+    // line opens an audio stream whose subsequent `channels=`/`sample_fmt=`
+    // belong to it. Track the current stream kind to attribute fields.
+    let mut current_audio = false;
+    for line in stdout.lines() {
+        let line = line.trim();
+        let Some((key, val)) = line.split_once('=') else {
+            continue;
+        };
+        match key {
+            "codec_type" => {
+                current_audio = val == "audio";
+                if val == "audio" {
+                    has_audio = true;
+                } else if val == "video" {
+                    has_video = true;
+                }
+            }
+            "channels" if current_audio && channels.is_none() => {
+                channels = val.parse::<u32>().ok();
+            }
+            "sample_fmt"
+                if current_audio && sample_fmt.is_none() && val != "N/A" && !val.is_empty() =>
+            {
+                sample_fmt = Some(val.to_string());
+            }
+            "duration" => {
+                if let Ok(d) = val.parse::<f64>() {
+                    if d.is_finite() && d > 0.0 {
+                        duration_sec = d;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    ProbeResult {
+        duration_sec,
+        has_video,
+        has_audio,
+        channels,
+        sample_fmt,
+    }
+}
+
+/// ffmpeg arguments to extract the audio of `input_path` as an 8 kHz mono WAV to
+/// `out_path`, for renderer-side waveform/peaks. Mirrors `extractAudioForPeaks`'s
+/// `-vn -ac 1 -ar 8000 -f wav` exactly (8 kHz keeps the buffer tiny — plenty for
+/// peaks). The seam streams this to a temp WAV then decodes it.
+pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
+    [
+        "-nostdin",
+        "-hide_banner",
+        "-i",
+        input_path,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "8000",
+        "-f",
+        "wav",
+        "-y",
+        out_path,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// ffmpeg arguments to decode `input_path` to 16 kHz mono signed-16 PCM on stdout
+/// for the [`crate::audio_analysis`] classifier (it expects 16 kHz). `-f s16le`
+/// to a pipe so the seam reads raw samples without a WAV header. Mirrors the
+/// analysis-decode the Electron `audio-analysis.ts` ran.
+pub fn analysis_decode_args(input_path: &str) -> Vec<String> {
+    [
+        "-nostdin",
+        "-hide_banner",
+        "-i",
+        input_path,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-f",
+        "s16le",
+        "-",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// Number of f32 peak buckets we down-sample the decoded mono PCM into for the
+/// renderer waveform. Matches the Electron renderer's ~2000-bar waveform.
+pub const PEAK_BUCKETS: usize = 2000;
+
+/// Down-sample `samples` to `buckets` peak amplitudes (max-abs per bucket), the
+/// shape the renderer waveform draws. Pure + tested. An empty input yields an
+/// empty vec; fewer samples than buckets yields one peak per sample.
+pub fn downsample_peaks(samples: &[f32], buckets: usize) -> Vec<f32> {
+    if samples.is_empty() || buckets == 0 {
+        return Vec::new();
+    }
+    let buckets = buckets.min(samples.len());
+    let per = samples.len() as f64 / buckets as f64;
+    let mut out = Vec::with_capacity(buckets);
+    for b in 0..buckets {
+        let lo = (b as f64 * per).floor() as usize;
+        let hi = (((b + 1) as f64 * per).ceil() as usize).min(samples.len());
+        let mut peak = 0.0_f32;
+        for &s in &samples[lo..hi.max(lo + 1).min(samples.len())] {
+            let a = s.abs();
+            if a > peak {
+                peak = a;
+            }
+        }
+        out.push(peak);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -918,5 +1083,96 @@ mod tests {
     fn export_timeout_scales_for_long_recordings() {
         // 4 h = 14400 s → 0.6× = 8640 s = 8_640_000 ms > 600_000 floor.
         assert_eq!(export_timeout_ms(14400.0), 8_640_000);
+    }
+
+    // ── probe / decode argv ────────────────────────────────────────────────────
+
+    #[test]
+    fn ffprobe_load_args_target_first_audio_and_format_duration() {
+        let args = ffprobe_load_args("/rec/a.mp4");
+        assert!(args.contains(&"-show_entries".to_string()));
+        assert!(args.iter().any(|a| a.contains("format=duration")));
+        assert!(args.iter().any(|a| a.contains("codec_type")));
+        // the input path is the final argument
+        assert_eq!(args.last().unwrap(), "/rec/a.mp4");
+    }
+
+    #[test]
+    fn parse_probe_output_reads_audio_video_and_duration() {
+        // ffprobe prints a stream block per stream then the format block.
+        let out = "codec_type=video\n\
+                   codec_type=audio\nchannels=2\nsample_fmt=fltp\n\
+                   duration=123.456\n";
+        let p = parse_probe_output(out);
+        assert!(p.has_video);
+        assert!(p.has_audio);
+        assert_eq!(p.channels, Some(2));
+        assert_eq!(p.sample_fmt.as_deref(), Some("fltp"));
+        assert_eq!(p.duration_sec, 123.456);
+    }
+
+    #[test]
+    fn parse_probe_output_audio_only_has_no_video() {
+        let out = "codec_type=audio\nchannels=1\nsample_fmt=s16\nduration=60.0\n";
+        let p = parse_probe_output(out);
+        assert!(!p.has_video);
+        assert!(p.has_audio);
+        assert_eq!(p.channels, Some(1));
+    }
+
+    #[test]
+    fn parse_probe_output_ignores_na_sample_fmt_and_bad_duration() {
+        let out = "codec_type=audio\nchannels=2\nsample_fmt=N/A\nduration=N/A\n";
+        let p = parse_probe_output(out);
+        assert_eq!(p.sample_fmt, None);
+        assert_eq!(p.duration_sec, 0.0);
+        assert_eq!(p.channels, Some(2));
+    }
+
+    #[test]
+    fn peaks_extract_args_match_electron_8khz_mono_wav() {
+        let args = peaks_extract_args("/rec/a.mp4", "/tmp/p.wav");
+        let joined = args.join(" ");
+        assert!(joined.contains("-vn"));
+        assert!(joined.contains("-ac 1"));
+        assert!(joined.contains("-ar 8000"));
+        assert!(joined.contains("-f wav"));
+        assert_eq!(args.last().unwrap(), "/tmp/p.wav");
+    }
+
+    #[test]
+    fn analysis_decode_args_pipe_16khz_s16le() {
+        let args = analysis_decode_args("/rec/a.mp4");
+        let joined = args.join(" ");
+        assert!(joined.contains("-ar 16000"));
+        assert!(joined.contains("-f s16le"));
+        // raw stream to stdout
+        assert_eq!(args.last().unwrap(), "-");
+    }
+
+    // ── peak down-sampling ──────────────────────────────────────────────────────
+
+    #[test]
+    fn downsample_peaks_empty_input_is_empty() {
+        assert!(downsample_peaks(&[], 100).is_empty());
+        assert!(downsample_peaks(&[0.5], 0).is_empty());
+    }
+
+    #[test]
+    fn downsample_peaks_takes_max_abs_per_bucket() {
+        // 4 samples → 2 buckets: bucket 0 = max(|-0.3|,|0.7|)=0.7, bucket 1 = 0.9.
+        let s = [-0.3, 0.7, 0.9, -0.1];
+        let peaks = downsample_peaks(&s, 2);
+        assert_eq!(peaks.len(), 2);
+        assert!((peaks[0] - 0.7).abs() < 1e-6);
+        assert!((peaks[1] - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn downsample_peaks_caps_buckets_at_sample_count() {
+        let s = [0.2, 0.4, 0.6];
+        // more buckets than samples → one peak per sample.
+        let peaks = downsample_peaks(&s, 100);
+        assert_eq!(peaks.len(), 3);
     }
 }
