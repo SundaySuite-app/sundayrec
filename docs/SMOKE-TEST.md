@@ -239,6 +239,65 @@ cargo build -p sundayrec --features publish
 
 ---
 
+## 10b. (Optional) Whisper transcription [HW] — `--features whisper`
+
+The model registry (id/url/size/SHA/quality), the whisper-cli/whisper-rs argv +
+thread heuristic, the ffmpeg 16 kHz-mono convert argv, the progress/exit parse,
+the JSON-sidecar → `TranscriptData` normalise, and the long-recording
+chunk-plan + segment-merge are all unit-tested in `sundayrec-core::whisper`. The
+model download (SHA-verified), the ffmpeg conversion, and the actual inference
+are **HARDWARE-UNVERIFIED** behind the default-off `whisper` feature (pulls
+`whisper-rs`, which compiles libwhisper from C/C++ source — needs CMake + a
+C/C++ toolchain).
+
+```bash
+cargo build -p sundayrec --features whisper   # CMake builds libwhisper
+```
+
+1. `whisper_list_models` / `whisper_model_status` work in **any** build (the
+   registry + on-disk size check are pure). Download a model into the app-data
+   `whisper-models/` dir.
+2. With the feature ON, run `whisper_transcribe` on a short recording.
+   - **Expected:** ffmpeg converts to 16 kHz mono, whisper-rs runs, and a
+     `TranscriptData` (seconds-based segments) comes back. A `feature_disabled`
+     validation error means the build doesn't have `--features whisper`.
+
+> [HW] The C/C++ build, the model download, and inference are unproven in the
+> gate — only the `sundayrec-core::whisper` decisions are unit-tested.
+
+---
+
+## 10c. (Optional) Live cue bridge [INFRA] — `--features bridge`
+
+Bridge Integration #2: SundayRec SUBSCRIBES to SundayStage's Supabase Realtime
+cue channel `church:{churchId}:service:{serviceId}` and folds each inbound
+`LiveEvent` (cue.advanced / now_playing / service.live / service.ended) into
+chapter markers + live/ended state. The channel-name derivation, the `LiveEvent`
+shape, the monotonic-`seq` gap/replay handling, and the event→chapter fold are
+unit-tested in `sundayrec-core::integrations::live_bridge`. The renderer can
+exercise the mapping with **no feature** via `live_bridge_map_event` (folds one
+raw `LiveEvent` JSON → a chapter). The native WebSocket subscribe is
+**INFRA-UNVERIFIED** behind the default-off `bridge` feature.
+
+```bash
+cargo build -p sundayrec --features bridge
+```
+
+1. `live_bridge_channel("ch1","svc1")` → `church:ch1:service:svc1`;
+   `live_bridge_map_event` returns `chapter_added`/`went_live`/`ended`/`cue_only`
+   for the matching event types — works in any build.
+2. With the feature ON + SundayStage publishing on a live Supabase project, the
+   native `bridge_live::subscribe` connects (Phoenix `phx_join`) and folds
+   broadcasts; chapters accrue on the running recording.
+   - **Expected:** with `RUST_LOG=sundayrec=debug`, each folded event logs its
+     effect + seq; a `feature_disabled` error means the build lacks `--features
+     bridge`.
+
+> [INFRA] The Realtime handshake + broadcast decode need a live Supabase project
+> + the Stage app publishing — never run in the gate. Only the core fold is tested.
+
+---
+
 ## 11. OS wake-timers + scheduled launch [HW] (already wired, no feature)
 
 The scheduler→recorder launch and the `pmset`/`schtasks`/`powercfg` shell-outs

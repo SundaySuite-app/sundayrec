@@ -16,6 +16,11 @@
 //!   media     bundled ffmpeg sidecar — resolution + tokio spawn primitive
 
 pub mod audio;
+// Bridge Integration #2 — the Rec-side live cue-bridge consumer. The
+// channel-name + LiveEvent→chapter fold live in `sundayrec_core`; this seam
+// owns the Supabase Realtime subscribe behind the default-off `bridge` feature
+// (INFRA-UNVERIFIED). The pure decode/channel helpers compile either way.
+pub mod bridge_live;
 pub mod cloud;
 pub mod commands;
 pub mod db;
@@ -41,6 +46,11 @@ pub mod settings;
 #[cfg(feature = "tray")]
 pub mod tray;
 pub mod wake;
+// PU-5 whisper transcription — default-off `whisper` feature (HARDWARE-UNVERIFIED).
+// The model registry/argv/normalise are `sundayrec_core::whisper`; this seam runs
+// inference (whisper-rs). The pure list/status entry points compile without it;
+// `transcribe` returns `feature_disabled` when off.
+pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -158,6 +168,20 @@ pub fn run() {
             commands::wake::wake_fix_sleep,
             commands::wake::wake_verify,
             commands::wake::wake_reschedule,
+            // PU-5 whisper transcription (model registry pure; transcribe gated).
+            commands::whisper::whisper_list_models,
+            commands::whisper::whisper_model_status,
+            commands::whisper::whisper_transcribe,
+            // PU-6 episode prep + review queue + Stage import.
+            commands::review::prep_build_episode,
+            commands::review::review_queue_list,
+            commands::review::review_mark_published,
+            commands::review::review_mark_discarded,
+            commands::review::review_process_reminders,
+            commands::review::stage_import_manifest,
+            // Bridge #2 — live cue → chapter mapping (renderer-driven).
+            commands::bridge_live::live_bridge_channel,
+            commands::bridge_live::live_bridge_map_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

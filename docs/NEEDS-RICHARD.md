@@ -51,3 +51,52 @@ gate cannot provide. None block the default build or the gate.
   the migration tracks (smoke §11).
 - **Missed-recording persistence** still waits on a `status`/`error` column on
   the `recording` table (see the `scheduler/mod.rs` honest-gaps note).
+
+## PU-5 — Whisper transcription (`--features whisper`)
+
+- **A C/C++ toolchain + CMake.** The `whisper` feature pulls `whisper-rs`, which
+  compiles libwhisper from source. The default build + the CI gate carry no
+  whisper dep; `whisper_transcribe` returns `feature_disabled` there. Only the
+  `sundayrec-core::whisper` decisions (model registry, argv/thread heuristic,
+  convert argv, progress/exit parse, JSON-sidecar normalise, chunk/merge,
+  language map) are unit-tested.
+- **A downloaded model + a real recording.** The model download (the registry
+  has the URLs + SHAs; the download/SHA-verify itself is not yet wired — the
+  Electron `downloadModel` redirect-follow + hash check is the remaining glue),
+  the ffmpeg 16 kHz-mono conversion, and the inference are HARDWARE-UNVERIFIED
+  (smoke §10b). A whisper-cli sidecar path (instead of the `whisper-rs`
+  in-process binding) could be offered as an alternative — the argv builder
+  already matches the Electron `whisper-cli` invocation.
+
+## PU-6 — Episode prep + review queue + Stage import (no feature flag)
+
+- **The audio-analysis stack.** `prep_build_episode` assembles an `EpisodePrep`
+  from analysis segments it is GIVEN — the ffmpeg/FFT `audio-analysis.ts` that
+  produces those segments is NOT ported yet, so the caller (or a later analysis
+  seam) must supply them. The sermon-detection + attention-reason + status
+  decisions ARE the unit-tested core.
+- **Reminder dispatch.** `review_process_reminders` returns the actions the
+  scheduler should fire (notify/email/webhook/auto-discard) as a decision; the
+  actual notification dispatch + the auto-discard history note should be wired to
+  the existing PU-1 email seam + the scheduler's native notifications. The queue
+  is persisted as a JSON blob under the `reviewQueue` settings key (mirrors the
+  Electron `electron-store` shape) so no schema migration is needed.
+- **Sidecar writes.** `stage_import_manifest` returns the mapped chapters +
+  `ServiceLink`; writing them into the recording's `.meta.json` + `.service.json`
+  sidecars (the Electron `applyStageManifest` fs step) is the remaining glue.
+
+## Bridge Integration #2 — Live cue bridge (`--features bridge`)
+
+- **A live Supabase project + SundayStage publishing.** The Rec side SUBSCRIBES
+  to `church:{churchId}:service:{serviceId}` and folds inbound `LiveEvent`s into
+  chapter markers + live/ended state. The channel-name + the `LiveEvent` union +
+  the `apply_event` fold (with monotonic-`seq` gap/replay handling) are
+  unit-tested in `sundayrec-core::integrations::live_bridge`, and the renderer
+  can drive the mapping with `live_bridge_map_event` (no feature). The native
+  WebSocket subscribe (`bridge_live::subscribe`, behind `--features bridge`) is
+  INFRA-UNVERIFIED — the Phoenix handshake/`phx_join`/broadcast decode need a
+  live backend (smoke §10c).
+- **Emit + persist glue.** The subscribe loop currently logs each folded
+  `BridgeEffect`; wiring `ChapterAdded` into the running recording's metadata +
+  emitting a Tauri event for the UI is the remaining glue. The Supabase URL +
+  anon key also need to flow from settings (the integration `connection` config).

@@ -25,6 +25,18 @@ email = ["dep:lettre"]
 tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
 # PU-3: write/upload the podcast RSS feed (reuses `reqwest` + the cloud worker).
 publish = []
+# PU-5: whisper.cpp transcription. Pulls `whisper-rs` (binds libwhisper) for the
+# actual inference; the model registry/argv/normalise decisions are in
+# `sundayrec-core::whisper`. DEFAULT-OFF — the C/C++ build + model download are
+# HARDWARE-UNVERIFIED, so the shipping build + CI gate stay lean. When the
+# feature is OFF, the seam still compiles and `transcribe_*` returns a clear
+# "feature disabled" error (same idiom as SundayPaper's `pdf` feature).
+whisper = ["dep:whisper-rs", "dep:tempfile"]
+# Bridge Integration #2: subscribe to the SundayStage live cue channel over
+# Supabase Realtime. Reuses `reqwest` (the WebSocket client is the only extra),
+# so the wire is INFRA-UNVERIFIED. The LiveEvent→chapter mapping is the
+# unit-tested `sundayrec-core::integrations::live_bridge`.
+bridge = ["dep:tokio-tungstenite", "dep:futures-util"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -119,6 +131,21 @@ lettre = { version = "0.11", default-features = false, features = [
 ], optional = true }
 # PU-2 deep-link scheme registration (`sundayrec://…`) for the OAuth/import flow.
 tauri-plugin-deep-link = { version = "2", optional = true }
+# PU-5 whisper.cpp bindings (transcription). Pulled only under `--features
+# whisper`; the build compiles libwhisper from source (a C/C++ toolchain),
+# HARDWARE-UNVERIFIED, so it stays out of the default build + CI gate.
+whisper-rs = { version = "0.14", optional = true }
+# Bridge #2 WebSocket client for the Supabase Realtime subscription. rustls (no
+# system OpenSSL); pulled only under `--features bridge`. INFRA-UNVERIFIED.
+tokio-tungstenite = { version = "0.24", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "connect",
+], optional = true }
+# Sink/Stream combinators for the Realtime WebSocket loop (bridge feature only).
+futures-util = { version = "0.3", optional = true }
+# PU-5 whisper seam writes the 16 kHz WAV to a temp dir before inference. Pulled
+# only under `--features whisper` (also a dev-dep below for the storage tests).
+tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
 # Throwaway temp databases for the storage tests — no app, no device.

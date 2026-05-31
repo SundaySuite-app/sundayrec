@@ -7,11 +7,14 @@
 pub mod app;
 pub mod audio;
 pub mod bridge;
+pub mod bridge_live;
 pub mod cloud;
 pub mod db;
 pub mod diagnostics;
 pub mod media;
 pub mod recorder;
+pub mod review;
 pub mod scheduler;
 pub mod settings;
 pub mod wake;
+pub mod whisper;
