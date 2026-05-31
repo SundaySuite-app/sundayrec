@@ -1057,5 +1057,26 @@
     "result": "Transkripsjon",
     "segmentCount": "({{n}} segmenter)",
     "empty": "Ingen tale funnet i opptaket."
+  },
+  "integrations": {
+    "title": "Integrasjoner",
+    "peersTitle": "Sunday-appene",
+    "peerPlan": "Planlegging og frivillige",
+    "peerSong": "Salmer og setlister",
+    "peerStage": "Live storskjerm og cues",
+    "peerEdit": "Teksting av opptak",
+    "peerStudio": "Podkast- og jingle-redigering",
+    "handoffHint": "Send et ferdig opptak til SundayEdit eller SundayStudio fra Historikk.",
+    "connectionTitle": "Tilkobling",
+    "churchId": "Menighets-ID",
+    "serviceId": "Gudstjeneste-ID (live)",
+    "songApiUrl": "SundaySong API-URL",
+    "planApiUrl": "SundayPlan API-URL",
+    "save": "Lagre tilkobling",
+    "saved": "Tilkobling lagret.",
+    "bridgeTitle": "Live cue-bro (SundayStage)",
+    "bridgeDisabled": "Den innebygde live-broen er ikke bygd inn i denne versjonen. Du kan likevel lagre tilkoblingen og teste kanalnavnet.",
+    "testChannel": "Vis kanalnavn",
+    "channelError": "Fyll inn både menighets-ID og gudstjeneste-ID."
   }
 }

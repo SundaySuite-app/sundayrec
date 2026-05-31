@@ -11,6 +11,16 @@ use sundayrec_core::integrations::live_bridge::{self, BridgeEffect, LiveBridgeSt
 use crate::bridge_live;
 use crate::error::AppResult;
 
+/// Whether this build carries the native Realtime subscribe (the default-off
+/// `bridge` feature). Works in every build: the renderer-driven fold
+/// (`live_bridge_map_event`) is always available, but the live WebSocket
+/// subscribe needs `--features bridge`. The panel uses this to show a calm
+/// "native bridge not built into this build" hint rather than a dead button.
+#[tauri::command]
+pub fn live_bridge_status() -> bool {
+    cfg!(feature = "bridge")
+}
+
 /// The renderer-facing outcome of folding one live event.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

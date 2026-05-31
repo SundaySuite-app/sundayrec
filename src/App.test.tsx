@@ -25,6 +25,10 @@ vi.mock("@tauri-apps/api/core", () => ({
       return { featureBuilt: false, gmailConnected: false };
     // PU-6: App mounts <ReviewPanel/>, which reads the prep/review queue.
     if (cmd === "review_queue_list") return [];
+    // Integrations: App mounts <IntegrationsPanel/>, which reads the bridge
+    // feature flag + the persisted connection settings blob.
+    if (cmd === "live_bridge_status") return false;
+    if (cmd === "setting_get") return null;
     // Fase 6: App mounts <CloudBackupPanel/>, which reads connection + queue.
     if (cmd === "cloud_connection_status") return [];
     if (cmd === "cloud_queue_status") return [];

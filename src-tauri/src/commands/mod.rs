@@ -15,6 +15,7 @@ pub mod editor;
 pub mod email;
 pub mod media;
 pub mod ndi;
+pub mod publish;
 pub mod recorder;
 pub mod review;
 pub mod scheduler;

@@ -16,6 +16,7 @@ import { HistoryPanel } from "@/features/history/HistoryPanel";
 import { EditorPanel } from "@/features/editor/EditorPanel";
 import { TranscribePanel } from "@/features/transcribe/TranscribePanel";
 import { ReviewPanel } from "@/features/review/ReviewPanel";
+import { IntegrationsPanel } from "@/features/integrations/IntegrationsPanel";
 import { CloudBackupPanel } from "@/features/cloud/CloudBackupPanel";
 import { EmailSettingsPanel } from "@/features/email/EmailSettingsPanel";
 import { StreamingPanel } from "@/features/streaming/StreamingPanel";
@@ -213,6 +214,20 @@ function App() {
             </summary>
             <div className="mt-3">
               <StreamingPanel />
+            </div>
+          </details>
+
+          {/* PU-? Sunday-suite integrations — the peer apps + the shared
+              connection (churchId/serviceId/API URLs) + the live cue-bridge
+              listener. The native Realtime subscribe is behind the default-off
+              `bridge` feature, so the panel shows a calm "not built into this
+              build" hint there. Same disclosure pattern. */}
+          <details className="w-full max-w-md text-left">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("integrations.title", "Integrasjoner")}
+            </summary>
+            <div className="mt-3">
+              <IntegrationsPanel />
             </div>
           </details>
 

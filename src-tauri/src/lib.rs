@@ -208,6 +208,7 @@ pub fn run() {
             commands::review::review_process_reminders,
             commands::review::stage_import_manifest,
             // Bridge #2 — live cue → chapter mapping (renderer-driven).
+            commands::bridge_live::live_bridge_status,
             commands::bridge_live::live_bridge_channel,
             commands::bridge_live::live_bridge_map_event,
             // R3 live streaming (tee/overlay argv pure; spawn gated by `streaming`).
@@ -219,6 +220,10 @@ pub fn run() {
             // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
             commands::ndi::ndi_list_sources,
             commands::ndi::ndi_start_receiver,
+            // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
+            commands::publish::publish_feed_status,
+            commands::publish::publish_feed_preview,
+            commands::publish::publish_generate_feed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
