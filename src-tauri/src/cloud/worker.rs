@@ -28,7 +28,7 @@ const UPLOAD_INIT_URL: &str =
 const IDLE_SLEEP: Duration = Duration::from_secs(3600);
 
 /// The result of trying to mint an access token for a service.
-enum TokenOutcome {
+pub(crate) enum TokenOutcome {
     Ok(String),
     /// Refresh token revoked — pause the entry (`reauth-required`).
     NeedsReauth,
@@ -37,7 +37,7 @@ enum TokenOutcome {
 }
 
 /// Exchange the stored refresh token for a fresh access token.
-async fn access_token(service: CloudService, config: &GoogleOAuthConfig) -> TokenOutcome {
+pub(crate) async fn access_token(service: CloudService, config: &GoogleOAuthConfig) -> TokenOutcome {
     let refresh = match crate::secrets::get(secret_provider_for(service)) {
         Some(r) if !r.trim().is_empty() => r,
         _ => return TokenOutcome::NeedsReauth,

@@ -167,9 +167,103 @@ pub fn build_init_body(name: &str, description: &str, folder_id: Option<&str>) -
     serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string())
 }
 
+// ── Folder listing (backup-destination picker) ───────────────────────────────
+
+/// A Drive folder the user can pick as a backup destination. Mirrors the
+/// Electron `listFolders` `{ id, name }` shape.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/DriveFolder.ts")]
+pub struct DriveFolder {
+    pub id: String,
+    pub name: String,
+}
+
+/// The Drive `files.list` URL for the immediate child folders of `parent_id`
+/// (default `"root"`). Direct port of the Electron `listFolders` query: folders
+/// only, not trashed, ordered by name, returning `files(id,name)`. The query
+/// component is percent-encoded so it's a ready-to-GET URL.
+pub fn build_folder_list_url(parent_id: &str) -> String {
+    let parent = if parent_id.is_empty() {
+        "root"
+    } else {
+        parent_id
+    };
+    let q = format!(
+        "'{parent}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    );
+    format!(
+        "https://www.googleapis.com/drive/v3/files?q={}&fields=files(id,name)&orderBy=name",
+        encode_query_component(&q)
+    )
+}
+
+/// Percent-encode a query-component value (RFC 3986 unreserved pass through,
+/// everything else `%XX`; spaces as `%20`). Kept local so the URL builder is pure.
+fn encode_query_component(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from_digit((b >> 4) as u32, 16).unwrap().to_ascii_uppercase());
+                out.push(char::from_digit((b & 0x0f) as u32, 16).unwrap().to_ascii_uppercase());
+            }
+        }
+    }
+    out
+}
+
+/// Parse a Drive `files.list` JSON response body into the folder list. Mirrors
+/// the Electron `j.files ?? []`: a missing/empty `files` array yields an empty
+/// vec; malformed JSON yields an empty vec (the caller treats it as "no folders").
+pub fn parse_folder_list(json: &str) -> Vec<DriveFolder> {
+    #[derive(serde::Deserialize)]
+    struct Resp {
+        #[serde(default)]
+        files: Vec<DriveFolder>,
+    }
+    serde_json::from_str::<Resp>(json)
+        .map(|r| r.files)
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_list_url_default_root() {
+        let url = build_folder_list_url("");
+        assert!(url.contains("%27root%27%20in%20parents"));
+        assert!(url.contains("vnd.google-apps.folder"));
+        assert!(url.contains("trashed%3Dfalse"));
+        assert!(url.contains("fields=files(id,name)"));
+        assert!(url.contains("orderBy=name"));
+    }
+
+    #[test]
+    fn folder_list_url_specific_parent() {
+        let url = build_folder_list_url("abc123");
+        assert!(url.contains("%27abc123%27%20in%20parents"));
+    }
+
+    #[test]
+    fn parse_folders_happy() {
+        let body = r#"{"files":[{"id":"1","name":"Opptak"},{"id":"2","name":"Arkiv"}]}"#;
+        let got = parse_folder_list(body);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0], DriveFolder { id: "1".into(), name: "Opptak".into() });
+    }
+
+    #[test]
+    fn parse_folders_empty_or_missing() {
+        assert!(parse_folder_list(r#"{"files":[]}"#).is_empty());
+        assert!(parse_folder_list(r#"{}"#).is_empty());
+        assert!(parse_folder_list("not json").is_empty());
+    }
 
     #[test]
     fn chunk_plan_full_then_partial_final() {

@@ -24,10 +24,12 @@ pub mod worker;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use sundayrec_core::cloud::drive::{build_folder_list_url, parse_folder_list, DriveFolder};
 use sundayrec_core::cloud::queue::{self, QueueEntry, QueueEntryView};
 use sundayrec_core::cloud::{CloudConnectionStatus, CloudService};
 
-use crate::error::AppResult;
+use crate::cloud::config::GoogleOAuthConfig;
+use crate::error::{AppError, AppResult};
 use crate::secrets::SecretProvider;
 
 /// Unix milliseconds as i64 — matches the core queue's timestamp fields.
@@ -130,6 +132,149 @@ pub async fn disconnect(pool: &sqlx::SqlitePool, service: CloudService) -> AppRe
     Ok(())
 }
 
+/// Whether the Google OAuth client is configured for this build (a non-secret,
+/// installed-app client id is present). The cloud panel uses this to show a calm
+/// "cloud-backup isn't set up in this build" hint instead of a failed connect.
+/// Network-free.
+pub fn is_configured() -> bool {
+    GoogleOAuthConfig::resolve().is_some()
+}
+
+/// Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort one. The
+/// per-service [`tokio::sync::Notify`] is fired by `cancel`; the loopback
+/// `connect` flow races its callback wait against it. Managed as Tauri state.
+#[derive(Default)]
+pub struct ConnectGuard {
+    notify: std::sync::Mutex<std::collections::HashMap<&'static str, std::sync::Arc<tokio::sync::Notify>>>,
+}
+
+impl ConnectGuard {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register (or reuse) the cancel signal for a service's pending connect.
+    pub fn register(&self, service: CloudService) -> std::sync::Arc<tokio::sync::Notify> {
+        let key = service_key(service);
+        let mut map = self.notify.lock().expect("connect-guard mutex");
+        map.entry(key)
+            .or_insert_with(|| std::sync::Arc::new(tokio::sync::Notify::new()))
+            .clone()
+    }
+
+    /// Fire the cancel signal for a service's pending connect, if any. Returns
+    /// whether a pending connect was registered.
+    pub fn cancel(&self, service: CloudService) -> bool {
+        let key = service_key(service);
+        let map = self.notify.lock().expect("connect-guard mutex");
+        match map.get(key) {
+            Some(n) => {
+                n.notify_waiters();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Drop a service's signal once its connect finished (success or cancel).
+    pub fn clear(&self, service: CloudService) {
+        let key = service_key(service);
+        self.notify
+            .lock()
+            .expect("connect-guard mutex")
+            .remove(key);
+    }
+}
+
+/// A stable &'static key for a service (the kebab-case wire id).
+fn service_key(service: CloudService) -> &'static str {
+    match service {
+        CloudService::GoogleDrive => "google-drive",
+        CloudService::Youtube => "youtube",
+        CloudService::Gmail => "gmail",
+    }
+}
+
+/// A backup-destination folder the user picked. Mirrors the Electron token's
+/// `{ folderId, folderName, folderPath? }`. Persisted as a JSON setting so it
+/// survives restarts (the Tauri token vault holds only the refresh token).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/bindings/CloudFolder.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct CloudFolder {
+    pub folder_id: String,
+    pub folder_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_path: Option<String>,
+}
+
+/// The settings-bag key the chosen destination folder is stored under, namespaced
+/// per service (kebab-case, matching the core's serialised service id).
+fn folder_setting_key(service: CloudService) -> String {
+    let svc = serde_json::to_value(service)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "google-drive".into());
+    format!("cloud.folder.{svc}")
+}
+
+/// Persist the chosen backup-destination folder for `service`. Mirrors the
+/// Electron `setFolder` (which wrote `folderId`/`folderName`/`folderPath` onto
+/// the token). Network-free.
+pub async fn set_folder(
+    pool: &sqlx::SqlitePool,
+    service: CloudService,
+    folder: &CloudFolder,
+) -> AppResult<()> {
+    let json = serde_json::to_string(folder)
+        .map_err(|e| AppError::Internal(format!("serialise folder: {e}")))?;
+    crate::db::store::set_setting(pool, &folder_setting_key(service), &json).await
+}
+
+/// Read the chosen backup-destination folder for `service`, if any. Network-free.
+pub async fn get_folder(
+    pool: &sqlx::SqlitePool,
+    service: CloudService,
+) -> AppResult<Option<CloudFolder>> {
+    let raw = crate::db::store::get_setting(pool, &folder_setting_key(service)).await?;
+    Ok(raw.and_then(|s| serde_json::from_str::<CloudFolder>(&s).ok()))
+}
+
+/// List the immediate child folders of `parent_id` (default `"root"`) on Drive,
+/// so the user can pick a backup destination. The URL + JSON parse are the
+/// unit-tested core; this mints an access token and GETs.
+///
+/// ⚠️ NETWORK-UNVERIFIED — needs a connected account + the network. A missing
+/// token surfaces as a clear `not_connected` error; a transient failure as
+/// `cloud_transient`.
+pub async fn list_folders(
+    service: CloudService,
+    parent_id: Option<String>,
+    config: &GoogleOAuthConfig,
+) -> AppResult<Vec<DriveFolder>> {
+    let token = match worker::access_token(service, config).await {
+        worker::TokenOutcome::Ok(t) => t,
+        worker::TokenOutcome::NeedsReauth => {
+            return Err(AppError::Validation("not_connected".into()))
+        }
+        worker::TokenOutcome::Transient(e) => {
+            return Err(AppError::Internal(format!("cloud_transient: {e}")))
+        }
+    };
+    let url = build_folder_list_url(parent_id.as_deref().unwrap_or("root"));
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(&token)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("list folders request: {e}")))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| AppError::Internal(format!("list folders body: {e}")))?;
+    Ok(parse_folder_list(&text))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +345,41 @@ mod tests {
             .unwrap();
         remove_entry(&pool, &id).await.unwrap();
         assert!(queue_status(&pool).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn folder_key_is_per_service_kebab() {
+        assert_eq!(
+            folder_setting_key(CloudService::GoogleDrive),
+            "cloud.folder.google-drive"
+        );
+        assert_eq!(folder_setting_key(CloudService::Youtube), "cloud.folder.youtube");
+    }
+
+    #[tokio::test]
+    async fn folder_roundtrip_and_absent() {
+        let (pool, _d) = temp_pool().await;
+        assert!(get_folder(&pool, CloudService::GoogleDrive)
+            .await
+            .unwrap()
+            .is_none());
+
+        let folder = CloudFolder {
+            folder_id: "f123".into(),
+            folder_name: "Opptak".into(),
+            folder_path: Some("/Opptak".into()),
+        };
+        set_folder(&pool, CloudService::GoogleDrive, &folder)
+            .await
+            .unwrap();
+        assert_eq!(
+            get_folder(&pool, CloudService::GoogleDrive).await.unwrap(),
+            Some(folder)
+        );
+        // Per-service: setting Drive doesn't leak into YouTube.
+        assert!(get_folder(&pool, CloudService::Youtube)
+            .await
+            .unwrap()
+            .is_none());
     }
 }

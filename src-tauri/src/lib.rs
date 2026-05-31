@@ -127,6 +127,9 @@ pub fn run() {
         // the UI can cancel a long render by id. The pure JobRegistry inside is
         // tested in core; the real ffmpeg children are held feature-on.
         .manage(editor::MasterEngine::new())
+        // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
+        // pending consent before the 300 s timeout.
+        .manage(cloud::ConnectGuard::new())
         .setup(|app| {
             use tauri::Manager;
 
@@ -220,7 +223,12 @@ pub fn run() {
             commands::db::recording_update_note,
             commands::db::recordings_prune,
             commands::cloud::cloud_connection_status,
+            commands::cloud::cloud_is_configured,
             commands::cloud::cloud_connect,
+            commands::cloud::cloud_cancel_connect,
+            commands::cloud::cloud_list_folders,
+            commands::cloud::cloud_set_folder,
+            commands::cloud::cloud_get_folder,
             commands::cloud::cloud_process_queue_now,
             commands::cloud::cloud_queue_status,
             commands::cloud::cloud_enqueue_backup,

@@ -28,10 +28,15 @@ const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);
 use super::config::GoogleOAuthConfig;
 
 /// Run the full connect flow for `service`, storing its refresh token on success.
+///
+/// `cancel` (when given) lets the renderer abort a pending consent via
+/// `cloud_cancel_connect`: the callback wait races it, and firing the notify
+/// returns a clear `cancelled` error instead of hanging until the 300 s timeout.
 pub async fn connect(
     app: &AppHandle,
     service: CloudService,
     config: &GoogleOAuthConfig,
+    cancel: Option<std::sync::Arc<tokio::sync::Notify>>,
 ) -> AppResult<()> {
     let verifier = make_verifier();
     let challenge = oauth::pkce_challenge(&verifier);
@@ -59,9 +64,23 @@ pub async fn connect(
         .open_url(auth_url, None::<&str>)
         .map_err(|e| AppError::Internal(format!("open browser: {e}")))?;
 
-    let code = tokio::time::timeout(CONSENT_TIMEOUT, await_callback(&listener, &state))
-        .await
-        .map_err(|_| AppError::Internal("OAuth consent timed out".into()))??;
+    // Race the consent callback against (a) the overall timeout and (b) a
+    // renderer-initiated cancel. A cancel returns a clear `cancelled` error.
+    let callback = await_callback(&listener, &state);
+    let code = match cancel {
+        Some(notify) => {
+            tokio::select! {
+                biased;
+                _ = notify.notified() => return Err(AppError::Validation("cancelled".into())),
+                r = tokio::time::timeout(CONSENT_TIMEOUT, callback) => {
+                    r.map_err(|_| AppError::Internal("OAuth consent timed out".into()))??
+                }
+            }
+        }
+        None => tokio::time::timeout(CONSENT_TIMEOUT, callback)
+            .await
+            .map_err(|_| AppError::Internal("OAuth consent timed out".into()))??,
+    };
 
     let body = oauth::build_token_exchange_body(
         &config.client_id,
