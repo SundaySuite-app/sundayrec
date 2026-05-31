@@ -176,6 +176,22 @@ describe("HistoryPanel", () => {
     );
   });
 
+  it("hands a recording to SundayEdit over the bridge", async () => {
+    renderPanel();
+    await waitFor(() =>
+      expect(screen.getByText("2026-05-30.mp3")).toBeInTheDocument(),
+    );
+    const editButtons = screen.getAllByRole("button", {
+      name: "Åpne i SundayEdit",
+    });
+    fireEvent.click(editButtons[0]);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("open_in_sundayedit", {
+        path: "/recordings/2026-05-30.mp3",
+      }),
+    );
+  });
+
   it("shows a friendly error when reveal fails", async () => {
     reveal.mockRejectedValue(new Error("no such path"));
     renderPanel();

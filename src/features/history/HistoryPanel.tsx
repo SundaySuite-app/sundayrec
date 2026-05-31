@@ -112,6 +112,17 @@ function HistoryRow({
           </button>
           <button
             type="button"
+            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+            onClick={() => {
+              void invoke("open_in_sundayedit", { path: row.file_path }).catch(
+                () => {},
+              );
+            }}
+          >
+            {t("history.openInEdit", "Åpne i SundayEdit")}
+          </button>
+          <button
+            type="button"
             className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
             aria-label={t("history.deleteEntry", "Slett oppføring")}
             onClick={() => onDelete(row.id)}

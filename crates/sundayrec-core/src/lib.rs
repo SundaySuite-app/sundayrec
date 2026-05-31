@@ -40,6 +40,7 @@ pub mod diagnostics;
 pub mod errors;
 pub mod ffmpeg;
 pub mod filename;
+pub mod link;
 pub mod mjpeg;
 pub mod preflight;
 pub mod preroll;

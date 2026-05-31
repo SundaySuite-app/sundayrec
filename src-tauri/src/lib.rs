@@ -126,6 +126,8 @@ pub fn run() {
             commands::cloud::cloud_remove_upload,
             commands::cloud::cloud_clear_failed,
             commands::cloud::cloud_disconnect,
+            commands::bridge::open_in_sundayedit,
+            commands::bridge::open_in_sundaystudio,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,

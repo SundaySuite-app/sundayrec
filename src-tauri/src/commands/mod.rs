@@ -6,6 +6,7 @@
 
 pub mod app;
 pub mod audio;
+pub mod bridge;
 pub mod cloud;
 pub mod db;
 pub mod diagnostics;
