@@ -233,4 +233,109 @@ mod tests {
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].service, CloudService::Youtube);
     }
+
+    #[tokio::test]
+    async fn clear_all_empties_the_queue() {
+        let (pool, _d) = temp_pool().await;
+        upsert_entry(&pool, &entry("a", CloudService::GoogleDrive, "/a.mp4"))
+            .await
+            .unwrap();
+        upsert_entry(&pool, &entry("b", CloudService::Youtube, "/b.mp4"))
+            .await
+            .unwrap();
+        clear_all(&pool).await.unwrap();
+        assert!(load_queue(&pool).await.unwrap().is_empty());
+        // Clearing an already-empty queue is a no-op.
+        clear_all(&pool).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn load_orders_by_enqueued_at_then_id() {
+        let (pool, _d) = temp_pool().await;
+        // Insert out of enqueue order; load must return oldest-enqueued first.
+        let mut later = entry("z-id", CloudService::GoogleDrive, "/later.mp4");
+        later.enqueued_at = 5_000;
+        let mut earlier = entry("a-id", CloudService::Youtube, "/earlier.mp4");
+        earlier.enqueued_at = 1_000;
+        upsert_entry(&pool, &later).await.unwrap();
+        upsert_entry(&pool, &earlier).await.unwrap();
+
+        let back = load_queue(&pool).await.unwrap();
+        assert_eq!(back[0].id, "a-id", "oldest enqueued first");
+        assert_eq!(back[1].id, "z-id");
+
+        // Same enqueued_at → stable tiebreak by id.
+        let mut a = entry("b1", CloudService::Gmail, "/x1.mp4");
+        a.enqueued_at = 9_000;
+        let mut b = entry("b2", CloudService::Gmail, "/x2.mp4");
+        b.enqueued_at = 9_000;
+        upsert_entry(&pool, &b).await.unwrap();
+        upsert_entry(&pool, &a).await.unwrap();
+        let back = load_queue(&pool).await.unwrap();
+        let tail: Vec<&str> = back.iter().rev().take(2).map(|e| e.id.as_str()).collect();
+        // The two enqueued_at=9000 rows are last, ordered b1 before b2.
+        assert_eq!(tail, vec!["b2", "b1"]);
+    }
+
+    #[tokio::test]
+    async fn entry_timestamp_none_round_trips_as_null() {
+        let (pool, _d) = temp_pool().await;
+        let mut e = entry("a", CloudService::GoogleDrive, "/a.mp4");
+        e.entry_timestamp = None;
+        upsert_entry(&pool, &e).await.unwrap();
+        let back = load_queue(&pool).await.unwrap();
+        assert_eq!(back[0].entry_timestamp, None);
+        assert_eq!(back, vec![e]);
+    }
+
+    #[tokio::test]
+    async fn every_service_round_trips_through_the_db_enum_mapping() {
+        let (pool, _d) = temp_pool().await;
+        for (i, service) in [
+            CloudService::GoogleDrive,
+            CloudService::Youtube,
+            CloudService::Gmail,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            upsert_entry(
+                &pool,
+                &entry(&format!("id-{i}"), service, &format!("/{i}.mp4")),
+            )
+            .await
+            .unwrap();
+        }
+        let back = load_queue(&pool).await.unwrap();
+        let services: Vec<CloudService> = back.iter().map(|e| e.service).collect();
+        assert!(services.contains(&CloudService::GoogleDrive));
+        assert!(services.contains(&CloudService::Youtube));
+        assert!(services.contains(&CloudService::Gmail));
+    }
+
+    #[tokio::test]
+    async fn every_status_round_trips_through_the_db_enum_mapping() {
+        let (pool, _d) = temp_pool().await;
+        for (i, status) in [
+            UploadStatus::Pending,
+            UploadStatus::Uploading,
+            UploadStatus::Failed,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut e = entry(
+                &format!("id-{i}"),
+                CloudService::GoogleDrive,
+                &format!("/{i}.mp4"),
+            );
+            e.status = status;
+            upsert_entry(&pool, &e).await.unwrap();
+        }
+        let back = load_queue(&pool).await.unwrap();
+        let statuses: Vec<UploadStatus> = back.iter().map(|e| e.status).collect();
+        assert!(statuses.contains(&UploadStatus::Pending));
+        assert!(statuses.contains(&UploadStatus::Uploading));
+        assert!(statuses.contains(&UploadStatus::Failed));
+    }
 }

@@ -145,7 +145,9 @@ pub fn is_configured() -> bool {
 /// `connect` flow races its callback wait against it. Managed as Tauri state.
 #[derive(Default)]
 pub struct ConnectGuard {
-    notify: std::sync::Mutex<std::collections::HashMap<&'static str, std::sync::Arc<tokio::sync::Notify>>>,
+    notify: std::sync::Mutex<
+        std::collections::HashMap<&'static str, std::sync::Arc<tokio::sync::Notify>>,
+    >,
 }
 
 impl ConnectGuard {
@@ -179,10 +181,7 @@ impl ConnectGuard {
     /// Drop a service's signal once its connect finished (success or cancel).
     pub fn clear(&self, service: CloudService) {
         let key = service_key(service);
-        self.notify
-            .lock()
-            .expect("connect-guard mutex")
-            .remove(key);
+        self.notify.lock().expect("connect-guard mutex").remove(key);
     }
 }
 
@@ -353,7 +352,10 @@ mod tests {
             folder_setting_key(CloudService::GoogleDrive),
             "cloud.folder.google-drive"
         );
-        assert_eq!(folder_setting_key(CloudService::Youtube), "cloud.folder.youtube");
+        assert_eq!(
+            folder_setting_key(CloudService::Youtube),
+            "cloud.folder.youtube"
+        );
     }
 
     #[tokio::test]
@@ -381,5 +383,126 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn clear_failed_drops_only_failed_entries() {
+        let (pool, _d) = temp_pool().await;
+        let ok = enqueue_backup(&pool, CloudService::GoogleDrive, "/rec/ok.mp4".into(), None)
+            .await
+            .unwrap();
+        let bad = enqueue_backup(
+            &pool,
+            CloudService::GoogleDrive,
+            "/rec/bad.mp4".into(),
+            None,
+        )
+        .await
+        .unwrap();
+        // Force `bad` permanently failed via the store.
+        let mut entries = store::load_queue(&pool).await.unwrap();
+        for e in entries.iter_mut() {
+            if e.id == bad {
+                e.status = UploadStatus::Failed;
+            }
+        }
+        for e in &entries {
+            store::upsert_entry(&pool, e).await.unwrap();
+        }
+
+        assert_eq!(clear_failed(&pool).await.unwrap(), 1);
+        let left = queue_status(&pool).await.unwrap();
+        assert_eq!(left.len(), 1);
+        // The non-failed entry survives; the failed one is gone.
+        let surviving = store::load_queue(&pool).await.unwrap();
+        assert_eq!(surviving.len(), 1);
+        assert_eq!(surviving[0].id, ok);
+    }
+
+    #[tokio::test]
+    async fn retry_unknown_id_is_a_noop() {
+        let (pool, _d) = temp_pool().await;
+        enqueue_backup(&pool, CloudService::GoogleDrive, "/rec/a.mp4".into(), None)
+            .await
+            .unwrap();
+        // Resetting an id that isn't in the queue must not error or change rows.
+        retry_entry(&pool, "ghost").await.unwrap();
+        assert_eq!(queue_status(&pool).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn queue_status_reports_every_enqueued_entry() {
+        let (pool, _d) = temp_pool().await;
+        enqueue_backup(&pool, CloudService::GoogleDrive, "/rec/a.mp4".into(), None)
+            .await
+            .unwrap();
+        enqueue_backup(&pool, CloudService::Youtube, "/rec/b.mov".into(), None)
+            .await
+            .unwrap();
+        let view = queue_status(&pool).await.unwrap();
+        assert_eq!(view.len(), 2);
+        let names: Vec<&str> = view.iter().map(|v| v.filename.as_str()).collect();
+        assert!(names.contains(&"a.mp4"));
+        assert!(names.contains(&"b.mov"));
+    }
+
+    #[test]
+    fn secret_provider_for_maps_each_service_to_its_slot() {
+        assert_eq!(
+            secret_provider_for(CloudService::GoogleDrive),
+            SecretProvider::GoogleDrive
+        );
+        assert_eq!(
+            secret_provider_for(CloudService::Youtube),
+            SecretProvider::YouTube
+        );
+        assert_eq!(
+            secret_provider_for(CloudService::Gmail),
+            SecretProvider::Gmail
+        );
+    }
+
+    #[test]
+    fn service_key_is_the_kebab_wire_id() {
+        assert_eq!(service_key(CloudService::GoogleDrive), "google-drive");
+        assert_eq!(service_key(CloudService::Youtube), "youtube");
+        assert_eq!(service_key(CloudService::Gmail), "gmail");
+    }
+
+    #[test]
+    fn services_constant_lists_the_three_google_services() {
+        assert_eq!(SERVICES.len(), 3);
+        assert!(SERVICES.contains(&CloudService::GoogleDrive));
+        assert!(SERVICES.contains(&CloudService::Youtube));
+        assert!(SERVICES.contains(&CloudService::Gmail));
+    }
+
+    #[test]
+    fn cloud_folder_serialises_camel_case_and_omits_absent_path() {
+        let with_path = CloudFolder {
+            folder_id: "f1".into(),
+            folder_name: "Opptak".into(),
+            folder_path: Some("/Opptak".into()),
+        };
+        let json = serde_json::to_string(&with_path).unwrap();
+        assert!(json.contains("\"folderId\""), "got: {json}");
+        assert!(json.contains("\"folderName\""), "got: {json}");
+        assert!(json.contains("\"folderPath\""), "got: {json}");
+        let back: CloudFolder = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, with_path);
+
+        // A None path is omitted entirely (skip_serializing_if).
+        let no_path = CloudFolder {
+            folder_id: "f2".into(),
+            folder_name: "Root".into(),
+            folder_path: None,
+        };
+        let json = serde_json::to_string(&no_path).unwrap();
+        assert!(
+            !json.contains("folderPath"),
+            "absent path omitted, got: {json}"
+        );
+        let back: CloudFolder = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, no_path);
     }
 }
