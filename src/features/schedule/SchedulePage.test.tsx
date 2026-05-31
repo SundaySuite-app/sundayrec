@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { SchedulePage } from "./SchedulePage";
@@ -168,6 +174,87 @@ describe("SchedulePage", () => {
       expect(saved).toBeTruthy();
       const savedSettings = (saved![1] as { settings: Settings }).settings;
       expect(savedSettings.slots[0].days).toEqual([]);
+    });
+  });
+
+  it("deletes a weekly slot and reschedules with the empty list", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("slot-0")).toBeTruthy());
+
+    // The weekly slot row carries a "Fjern" (remove) button.
+    const slot = screen.getByTestId("slot-0");
+    const remove = within(slot).getByText("Fjern");
+    fireEvent.click(remove);
+
+    // The row disappears and the persisted slot list is now empty.
+    await waitFor(() =>
+      expect(screen.queryByTestId("slot-0")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => {
+      const saved = [...invoke.mock.calls]
+        .reverse()
+        .find((c) => c[0] === "settings_save");
+      const savedSettings = (saved![1] as { settings: Settings }).settings;
+      expect(savedSettings.slots).toEqual([]);
+    });
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.some((c) => c[0] === "scheduler_reschedule"),
+      ).toBe(true),
+    );
+  });
+
+  it("edits a slot's start to a later time (late-start) and persists it", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("slot-0")).toBeTruthy());
+
+    // Move the Sunday slot start from 11:00 to 18:00 (e.g. an evening service).
+    const slot = screen.getByTestId("slot-0");
+    const start = within(slot).getByLabelText("Start") as HTMLInputElement;
+    fireEvent.change(start, { target: { value: "18:00" } });
+
+    await waitFor(() => {
+      const saved = [...invoke.mock.calls]
+        .reverse()
+        .find((c) => c[0] === "settings_save");
+      const savedSettings = (saved![1] as { settings: Settings }).settings;
+      expect(savedSettings.slots[0].start).toBe("18:00");
+      // Stop is untouched, so the slot remains valid (start < stop is the
+      // scheduler's concern, exercised in the core scheduler tests).
+      expect(savedSettings.slots[0].stop).toBe("12:00");
+    });
+  });
+
+  it("adds a dated special recording overlapping a weekly slot's day", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId("slot-0")).toBeTruthy());
+
+    // The second "Legg til" is the special-recording one.
+    fireEvent.click(screen.getAllByText("Legg til")[1]);
+    await waitFor(() => expect(screen.getByTestId("special-0")).toBeTruthy());
+
+    // Pick a Sunday that already has a weekly slot — an intentional overlap the
+    // scheduler must resolve (special wins). The panel just persists both.
+    const special = screen.getByTestId("special-0");
+    fireEvent.change(within(special).getByLabelText("Dato"), {
+      target: { value: "2026-06-07" },
+    });
+    fireEvent.change(within(special).getByLabelText("Navn"), {
+      target: { value: "Konfirmasjon" },
+    });
+
+    await waitFor(() => {
+      const saved = [...invoke.mock.calls]
+        .reverse()
+        .find((c) => c[0] === "settings_save");
+      const savedSettings = (saved![1] as { settings: Settings }).settings;
+      // Both the weekly slot and the overlapping special are persisted.
+      expect(savedSettings.slots).toHaveLength(1);
+      expect(savedSettings.specialRecordings).toHaveLength(1);
+      expect(savedSettings.specialRecordings[0]).toMatchObject({
+        date: "2026-06-07",
+        name: "Konfirmasjon",
+      });
     });
   });
 });

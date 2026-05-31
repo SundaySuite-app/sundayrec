@@ -275,6 +275,131 @@ describe("DevicePicker", () => {
     );
   });
 
+  it("surfaces a start_vu enumeration error without crashing", async () => {
+    invoke.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "list_input_devices":
+          return Promise.resolve(CPAL_INPUTS);
+        case "list_devices":
+          return Promise.resolve(INVENTORY);
+        case "settings_get":
+        case "settings_save":
+          return Promise.resolve(makeSettings());
+        case "start_vu":
+          // The backend could not open the chosen input device.
+          return Promise.reject(new Error("device not found: no such mic"));
+        default:
+          return Promise.resolve(null);
+      }
+    });
+    renderPicker();
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Test lyd" }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/device not found: no such mic/),
+      ).toBeInTheDocument(),
+    );
+    // The VU did not enter the "running" state, so the Start button is back.
+    expect(
+      screen.getByRole("button", { name: "Test lyd" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders one VU bar per channel for a multi-sample-rate stereo mic", async () => {
+    renderPicker();
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+    // The Soundcraft is stereo with two advertised sample rates (44.1k/48k).
+    fireEvent.change(screen.getByLabelText("Tilgjengelige enheter"), {
+      target: { value: "Soundcraft Signature 12" },
+    });
+    // Let the mic choice persist before starting so start_vu sees it.
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "settings_save",
+        expect.objectContaining({
+          settings: expect.objectContaining({
+            deviceName: "Soundcraft Signature 12",
+          }),
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Test lyd" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_vu", {
+        deviceName: "Soundcraft Signature 12",
+      }),
+    );
+    // A stereo payload paints two channel meters.
+    h.vuHandler?.({ payload: { peak_dbfs: [-6, -12], rms_dbfs: [-9, -15] } });
+    await waitFor(() => expect(screen.getAllByRole("meter")).toHaveLength(2));
+  });
+
+  it("addresses a dshow camera (index null) by name in start_preview", async () => {
+    // Windows-style inventory: avfoundation index is null, so the recorder
+    // addresses the camera by its dshow name instead.
+    const dshowInventory: DeviceInventory = {
+      audio_inputs: [],
+      video_inputs: [
+        { name: "USB Capture HDMI", format: "dshow", index: null },
+      ],
+    };
+    invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      switch (cmd) {
+        case "list_input_devices":
+          return Promise.resolve(CPAL_INPUTS);
+        case "list_devices":
+          return Promise.resolve(dshowInventory);
+        case "settings_get":
+          return Promise.resolve(storedSettings);
+        case "settings_save":
+          storedSettings = (args as { settings: Settings }).settings;
+          return Promise.resolve(storedSettings);
+        default:
+          return Promise.resolve(null);
+      }
+    });
+    renderPicker();
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByLabelText("Video på"));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "USB Capture HDMI" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("VELG KAMERA"), {
+      target: { value: "USB Capture HDMI" },
+    });
+    // Wait for the camera choice to persist (index null → no videoDeviceIndex)
+    // so the selection has propagated before we start the preview.
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "settings_save",
+        expect.objectContaining({
+          settings: expect.objectContaining({
+            videoDeviceName: "USB Capture HDMI",
+            videoDeviceIndex: null,
+          }),
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "🔄 Oppdater" }));
+    // Falls back to the device name (not an index) for addressing.
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_preview", {
+        device: "USB Capture HDMI",
+        fps: null,
+      }),
+    );
+  });
+
   it("handles an empty device inventory gracefully", async () => {
     invoke.mockImplementation((cmd: string) => {
       switch (cmd) {

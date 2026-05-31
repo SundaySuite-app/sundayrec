@@ -132,6 +132,67 @@ describe("VuMeter", () => {
     await waitFor(() => expect(screen.getAllByRole("meter")).toHaveLength(2));
   });
 
+  it("clamps a positive (over-0 dBFS) peak to a full 100% bar", async () => {
+    render(<VuMeter />);
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start VU" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_vu", expect.anything()),
+    );
+
+    // A pathological over-0 dBFS value must not overflow the 0..100 bar.
+    emitLevels({ peak_dbfs: [3.5], rms_dbfs: [1] });
+    await waitFor(() => {
+      const meter = screen.getByRole("meter");
+      expect(meter.getAttribute("aria-valuenow")).toBe("100");
+    });
+  });
+
+  it("clamps a sub-floor (≤ -60 dBFS) peak to an empty 0% bar", async () => {
+    render(<VuMeter />);
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start VU" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_vu", expect.anything()),
+    );
+
+    // Anything at/under the -60 dB floor reads as empty (not negative).
+    emitLevels({ peak_dbfs: [-72], rms_dbfs: [-80] });
+    await waitFor(() => {
+      const meter = screen.getByRole("meter");
+      expect(meter.getAttribute("aria-valuenow")).toBe("0");
+    });
+  });
+
+  it("colours the bar by the clip/warn/safe thresholds", async () => {
+    render(<VuMeter />);
+    await waitFor(() =>
+      expect(screen.getByText("CoreAudio")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start VU" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("start_vu", expect.anything()),
+    );
+    const fill = () =>
+      screen.getByRole("meter").firstElementChild as HTMLElement;
+
+    // ≥ -3 dB → red (near clipping).
+    emitLevels({ peak_dbfs: [-2], rms_dbfs: [-5] });
+    await waitFor(() => expect(fill().className).toContain("bg-red-500"));
+
+    // -12..-3 dB → amber (hot but safe).
+    emitLevels({ peak_dbfs: [-8], rms_dbfs: [-11] });
+    await waitFor(() => expect(fill().className).toContain("bg-amber-400"));
+
+    // < -12 dB → green (comfortable).
+    emitLevels({ peak_dbfs: [-30], rms_dbfs: [-34] });
+    await waitFor(() => expect(fill().className).toContain("bg-emerald-500"));
+  });
+
   it("stops the engine and clears the meter", async () => {
     render(<VuMeter />);
     await waitFor(() =>
