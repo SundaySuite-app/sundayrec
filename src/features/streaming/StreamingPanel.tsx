@@ -7,6 +7,7 @@ import type { StreamStatus } from "@/lib/bindings/StreamStatus";
 import type { StreamResolution } from "@/lib/bindings/StreamResolution";
 import type { StreamDestinationView } from "@/lib/bindings/StreamDestinationView";
 import type { OverlayConfig } from "@/lib/bindings/OverlayConfig";
+import type { OverlaySource } from "@/lib/bindings/OverlaySource";
 import { STREAM_STATUS_KEY } from "./queryKey";
 
 /** The resolutions the backend renders, in display order. */
@@ -52,9 +53,14 @@ export function StreamingPanel() {
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
 
-  // Optional lower-third text overlay.
+  // Optional lower-third overlay. It can be a text title/subtitle or an image
+  // path; `overlayEnabled` is the explicit on/off toggle (R4) so a configured
+  // overlay can be parked without losing the text/path the user typed.
+  const [overlayEnabled, setOverlayEnabled] = useState(false);
+  const [overlayKind, setOverlayKind] = useState<"text" | "image">("text");
   const [overlayTitle, setOverlayTitle] = useState("");
   const [overlaySubtitle, setOverlaySubtitle] = useState("");
+  const [overlayImage, setOverlayImage] = useState("");
 
   const [resolution, setResolution] = useState<StreamResolution>("p720");
   const [framerate, setFramerate] = useState<number>(30);
@@ -94,25 +100,37 @@ export function StreamingPanel() {
 
   const startMutation = useMutation({
     mutationFn: () => {
-      const overlays: OverlayConfig[] = overlayTitle.trim()
-        ? [
-            {
-              id: "lower-third",
-              name: "Lower third",
-              enabled: true,
-              source: {
+      // Build the lower-third only when the toggle is on AND the chosen source
+      // actually has content (a title for text, a path for image). Otherwise we
+      // push no overlays so the encode stays clean.
+      const source: OverlaySource | null =
+        overlayKind === "image"
+          ? overlayImage.trim()
+            ? { kind: "image", path: overlayImage.trim() }
+            : null
+          : overlayTitle.trim()
+            ? {
                 kind: "text",
                 title: overlayTitle.trim(),
                 subtitle: overlaySubtitle.trim() || null,
+              }
+            : null;
+      const overlays: OverlayConfig[] =
+        overlayEnabled && source
+          ? [
+              {
+                id: "lower-third",
+                name: "Lower third",
+                enabled: true,
+                source,
+                position: "bl",
+                customX: null,
+                customY: null,
+                scale: 0.3,
+                opacity: 1,
               },
-              position: "bl",
-              customX: null,
-              customY: null,
-              scale: 0.3,
-              opacity: 1,
-            },
-          ]
-        : [];
+            ]
+          : [];
       return invoke<StreamStatus>("stream_start", {
         destinations: dests.map(({ keyInput: _k, ...d }) => d),
         resolution,
@@ -257,23 +275,57 @@ export function StreamingPanel() {
 
       {/* ── Lower third ─────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            checked={overlayEnabled}
+            onChange={(e) => setOverlayEnabled(e.target.checked)}
+            aria-label={t("streaming.overlayToggle", "Vis tekstplakat")}
+          />
           {t("streaming.lowerThird", "Tekstplakat (nedre tredjedel)")}
-        </h2>
-        <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
-          placeholder={t("streaming.lowerThirdTitle", "Tittel")}
-          value={overlayTitle}
-          onChange={(e) => setOverlayTitle(e.target.value)}
-          aria-label={t("streaming.lowerThirdTitle", "Tittel")}
-        />
-        <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
-          placeholder={t("streaming.lowerThirdSubtitle", "Undertittel")}
-          value={overlaySubtitle}
-          onChange={(e) => setOverlaySubtitle(e.target.value)}
-          aria-label={t("streaming.lowerThirdSubtitle", "Undertittel")}
-        />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          {t("streaming.overlayKind", "Type")}
+          <select
+            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            value={overlayKind}
+            onChange={(e) =>
+              setOverlayKind(e.target.value as "text" | "image")
+            }
+            aria-label={t("streaming.overlayKind", "Type")}
+          >
+            <option value="text">{t("streaming.overlayText", "Tekst")}</option>
+            <option value="image">
+              {t("streaming.overlayImage", "Bilde")}
+            </option>
+          </select>
+        </label>
+        {overlayKind === "text" ? (
+          <>
+            <input
+              className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+              placeholder={t("streaming.lowerThirdTitle", "Tittel")}
+              value={overlayTitle}
+              onChange={(e) => setOverlayTitle(e.target.value)}
+              aria-label={t("streaming.lowerThirdTitle", "Tittel")}
+            />
+            <input
+              className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+              placeholder={t("streaming.lowerThirdSubtitle", "Undertittel")}
+              value={overlaySubtitle}
+              onChange={(e) => setOverlaySubtitle(e.target.value)}
+              aria-label={t("streaming.lowerThirdSubtitle", "Undertittel")}
+            />
+          </>
+        ) : (
+          <input
+            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            placeholder={t("streaming.lowerThirdImage", "Sti til bilde (PNG)")}
+            value={overlayImage}
+            onChange={(e) => setOverlayImage(e.target.value)}
+            aria-label={t("streaming.lowerThirdImage", "Sti til bilde (PNG)")}
+          />
+        )}
       </div>
 
       {/* ── Destinations ────────────────────────────────────────────── */}

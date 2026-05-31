@@ -137,6 +137,8 @@ describe("StreamingPanel", () => {
   it("starts the stream over IPC including a text lower-third overlay", async () => {
     renderPanel();
     await screen.findByText("Av");
+    // Toggle the overlay on, then type the title.
+    fireEvent.click(screen.getByLabelText("Vis tekstplakat"));
     fireEvent.change(screen.getByLabelText("Tittel"), {
       target: { value: "Pastor Ola" },
     });
@@ -155,6 +157,89 @@ describe("StreamingPanel", () => {
           ],
         }),
       ),
+    );
+  });
+
+  it("sends an image lower-third when the overlay kind is image", async () => {
+    renderPanel();
+    await screen.findByText("Av");
+    fireEvent.click(screen.getByLabelText("Vis tekstplakat"));
+    fireEvent.change(screen.getByLabelText("Type"), {
+      target: { value: "image" },
+    });
+    fireEvent.change(screen.getByLabelText("Sti til bilde (PNG)"), {
+      target: { value: "/tmp/lower.png" },
+    });
+    fireEvent.click(screen.getByText("Start"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "stream_start",
+        expect.objectContaining({
+          overlays: [
+            expect.objectContaining({
+              source: { kind: "image", path: "/tmp/lower.png" },
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("omits the overlay when the toggle is off even if a title is typed", async () => {
+    renderPanel();
+    await screen.findByText("Av");
+    // Title typed but the toggle is left OFF.
+    fireEvent.change(screen.getByLabelText("Tittel"), {
+      target: { value: "Pastor Ola" },
+    });
+    fireEvent.click(screen.getByText("Start"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith(
+        "stream_start",
+        expect.objectContaining({ overlays: [] }),
+      ),
+    );
+  });
+
+  it("removes a destination and best-effort clears its key over IPC", async () => {
+    renderPanel();
+    await screen.findByText("Av");
+    await addDestination();
+    fireEvent.click(screen.getByText("Fjern"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("stream_delete_key", {
+        destId: expect.stringMatching(/^dest-/),
+      }),
+    );
+    expect(screen.queryByText("rtmp://a/live2")).not.toBeInTheDocument();
+  });
+
+  it("deletes a saved key over IPC and offers the input again", async () => {
+    renderPanel();
+    await screen.findByText("Av");
+    await addDestination();
+    fireEvent.change(screen.getByLabelText("Strømnøkkel for YouTube"), {
+      target: { value: "valid-stream-key" },
+    });
+    fireEvent.click(screen.getByText("Lagre nøkkel"));
+    await screen.findByText("•••• (lagret)");
+    fireEvent.click(screen.getByText("Slett nøkkel"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("stream_delete_key", {
+        destId: expect.stringMatching(/^dest-/),
+      }),
+    );
+    // Back to the unsaved state → the key input + Save button return.
+    expect(await screen.findByText("Lagre nøkkel")).toBeInTheDocument();
+  });
+
+  it("stops the stream over IPC when live", async () => {
+    routeInvoke({ status: LIVE });
+    renderPanel();
+    await screen.findByText("Sender direkte");
+    fireEvent.click(screen.getByText("Stopp"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("stream_stop"),
     );
   });
 

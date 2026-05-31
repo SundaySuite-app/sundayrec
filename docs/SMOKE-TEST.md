@@ -394,8 +394,9 @@ npm run tauri dev -- --features streaming         # drive the Direktesending dis
      rejected with a clear message) and stored in the OS keychain; the row shows
      a "•••• (lagret)" badge. **Slett nøkkel** removes it.
 3. (streaming build) With at least one enabled destination that has a saved key,
-   pick a resolution + framerate, optionally add a lower-third (text title ±
-   subtitle, or a logo image), and click **Start**.
+   pick a resolution + framerate, optionally tick **Vis tekstplakat** and choose
+   a lower-third **Type** (Tekst = title ± subtitle, or Bilde = a logo image
+   path); with the toggle off no overlay is sent. Click **Start**.
    - **Expected:** one ffmpeg opens the camera/mic, composites the overlay, and
      pushes to every enabled destination; **Status** shows `active` + a live
      bitrate/fps. A second **Start** is refused (`stream_already_active`).
