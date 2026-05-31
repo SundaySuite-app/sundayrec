@@ -164,6 +164,68 @@ pub fn installed_status(id: &str, exists: bool, on_disk_size: Option<u64>) -> In
     }
 }
 
+/// Progress event for a model download. Mirrors `whisper-models.ts`
+/// `ModelDownloadProgress` (camelCase on the wire) so the renderer's progress
+/// bar reads the same fields it did under Electron.
+// mirrors src/main/whisper-models.ts ModelDownloadProgress
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/ModelDownloadProgress.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct ModelDownloadProgress {
+    /// The model id this progress belongs to.
+    pub id: String,
+    /// Bytes received so far.
+    #[ts(type = "number")]
+    pub bytes_downloaded: u64,
+    /// Total expected bytes (the `content-length`, falling back to the registry
+    /// `size_bytes`).
+    #[ts(type = "number")]
+    pub bytes_total: u64,
+    /// Completion fraction in `0.0..=1.0`, or `None` when the total is unknown.
+    pub fraction: Option<f64>,
+}
+
+/// Compute a download-progress event from the running byte counts. Mirrors the
+/// Electron `onProgress({...})` shaping: `bytes_total` falls back to the
+/// registry size when the header total is 0/unknown, and `fraction` is
+/// `downloaded / total` clamped to `0.0..=1.0` (or `None` when total is 0).
+/// Pure — the actual byte stream is the shell's.
+pub fn download_progress(
+    id: &str,
+    bytes_downloaded: u64,
+    header_total: u64,
+    registry_size: u64,
+) -> ModelDownloadProgress {
+    let total = if header_total > 0 {
+        header_total
+    } else {
+        registry_size
+    };
+    let fraction = if total > 0 {
+        Some((bytes_downloaded as f64 / total as f64).clamp(0.0, 1.0))
+    } else {
+        None
+    };
+    ModelDownloadProgress {
+        id: id.to_string(),
+        bytes_downloaded,
+        bytes_total: total,
+        fraction,
+    }
+}
+
+/// Decide whether a freshly-downloaded model passes its integrity check: the
+/// computed SHA-256 (lowercase hex) must equal the registry's expected hash.
+/// Mirrors the Electron `verifyHash` comparison (`digest === expected.toLower`).
+/// An unknown id can never verify (there's no expected hash to match). Pure —
+/// the hashing of the file bytes is the shell's.
+pub fn verify_model_hash(id: &str, computed_sha256_hex: &str) -> bool {
+    match model_meta(id) {
+        Some(meta) => computed_sha256_hex.eq_ignore_ascii_case(&meta.sha256),
+        None => false,
+    }
+}
+
 /// Pick the default model: the one marked `Best` IF the user's free disk has
 /// room for it (size + a small margin); otherwise the smallest `High` that fits;
 /// otherwise just the smallest model. Ports the `whisper-models.ts` doc-comment
@@ -664,6 +726,45 @@ pub fn export_transcript(data: &TranscriptData, format: TranscriptExportFormat) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── download progress + integrity ────────────────────────────────────────
+
+    #[test]
+    fn download_progress_uses_header_total_when_present() {
+        let p = download_progress("ggml-base", 50, 100, 999);
+        assert_eq!(p.bytes_total, 100);
+        assert_eq!(p.bytes_downloaded, 50);
+        assert_eq!(p.fraction, Some(0.5));
+        assert_eq!(p.id, "ggml-base");
+    }
+
+    #[test]
+    fn download_progress_falls_back_to_registry_size_when_header_zero() {
+        let p = download_progress("ggml-base", 25, 0, 100);
+        assert_eq!(p.bytes_total, 100);
+        assert_eq!(p.fraction, Some(0.25));
+    }
+
+    #[test]
+    fn download_progress_clamps_overshoot_and_handles_zero_total() {
+        // Overshoot (downloaded > total) clamps to 1.0.
+        assert_eq!(
+            download_progress("x", 150, 100, 100).fraction,
+            Some(1.0)
+        );
+        // Both totals zero → unknown fraction.
+        assert_eq!(download_progress("x", 10, 0, 0).fraction, None);
+    }
+
+    #[test]
+    fn verify_model_hash_matches_registry_case_insensitively() {
+        let sha = &model_meta("ggml-base").unwrap().sha256;
+        assert!(verify_model_hash("ggml-base", sha));
+        assert!(verify_model_hash("ggml-base", &sha.to_uppercase()));
+        assert!(!verify_model_hash("ggml-base", "deadbeef"));
+        // Unknown id can never verify.
+        assert!(!verify_model_hash("nope", sha));
+    }
 
     // ── registry ───────────────────────────────────────────────────────────
 

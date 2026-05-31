@@ -48,6 +48,70 @@ pub fn model_status(models_dir: &std::path::Path, id: &str) -> InstalledStatus {
     whisper::installed_status(id, exists, size)
 }
 
+/// The on-disk file for a model id (`<models_dir>/<id>.bin`).
+fn model_file(models_dir: &std::path::Path, id: &str) -> std::path::PathBuf {
+    models_dir.join(format!("{id}.bin"))
+}
+
+/// Delete a downloaded model file. Returns whether a file was removed (a missing
+/// file is `false`, not an error — mirrors the Electron `deleteModel` unlink in a
+/// try/catch). Works in every build (it's just fs); the model registry is the
+/// only thing the renderer needs to know which ids exist.
+pub fn delete_model(models_dir: &std::path::Path, id: &str) -> bool {
+    std::fs::remove_file(model_file(models_dir, id)).is_ok()
+}
+
+/// Tracks in-flight model downloads so `whisper_cancel_download` can abort one.
+/// The per-model [`tokio::sync::Notify`] is fired by `cancel`; the download loop
+/// races each chunk read against it. Managed as Tauri state. Mirrors the Electron
+/// `modelDownloads` map of abort callbacks (one entry per active model id).
+#[derive(Default)]
+pub struct DownloadGuard {
+    notify: std::sync::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<tokio::sync::Notify>>,
+    >,
+}
+
+impl DownloadGuard {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a download for `id`, returning its cancel signal. Returns `None`
+    /// when a download for that id is already in flight (mirrors the Electron
+    /// `already_downloading` guard — the map can't hold two for one id).
+    pub fn register(&self, id: &str) -> Option<std::sync::Arc<tokio::sync::Notify>> {
+        let mut map = self.notify.lock().expect("download-guard mutex");
+        if map.contains_key(id) {
+            return None;
+        }
+        let n = std::sync::Arc::new(tokio::sync::Notify::new());
+        map.insert(id.to_string(), n.clone());
+        Some(n)
+    }
+
+    /// Fire the cancel signal for `id`'s in-flight download, if any. Returns
+    /// whether a download was registered to cancel.
+    pub fn cancel(&self, id: &str) -> bool {
+        let map = self.notify.lock().expect("download-guard mutex");
+        match map.get(id) {
+            Some(n) => {
+                n.notify_waiters();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Drop `id`'s signal once its download finished (success, error, or cancel).
+    pub fn clear(&self, id: &str) {
+        self.notify
+            .lock()
+            .expect("download-guard mutex")
+            .remove(id);
+    }
+}
+
 /// Transcribe `input_path` with `model_id` + `opts`. The pure decisions come
 /// from `sundayrec-core::whisper`; the I/O is feature-gated.
 ///
@@ -170,6 +234,116 @@ pub async fn transcribe(
     Ok(whisper::normalize_output(&raw, model_id, &opts, now_ms))
 }
 
+/// Download a model into `models_dir`. The progress shaping + SHA-256 integrity
+/// decision are the unit-tested `sundayrec-core::whisper`; this streams the
+/// bytes, emits `whisper://model-progress` events through `app`, and races each
+/// chunk read against `cancel`. NETWORK-UNVERIFIED behind `--features whisper`;
+/// returns `feature_disabled` in the default build.
+#[cfg(not(feature = "whisper"))]
+pub async fn download_model(
+    _app: &tauri::AppHandle,
+    _models_dir: &std::path::Path,
+    _id: &str,
+    _cancel: std::sync::Arc<tokio::sync::Notify>,
+) -> AppResult<()> {
+    Err(AppError::Validation(
+        "feature_disabled: model download requires a build with `--features whisper`".into(),
+    ))
+}
+
+/// Download `id` into `models_dir`, emitting progress + verifying integrity.
+/// NETWORK-UNVERIFIED: the HTTPS stream + the on-disk write are wired but unproven.
+#[cfg(feature = "whisper")]
+pub async fn download_model(
+    app: &tauri::AppHandle,
+    models_dir: &std::path::Path,
+    id: &str,
+    cancel: std::sync::Arc<tokio::sync::Notify>,
+) -> AppResult<()> {
+    use sha2::{Digest, Sha256};
+    use tauri::Emitter;
+    use tokio::io::AsyncWriteExt;
+
+    // 0. The core knows the URL, expected size + SHA for this id.
+    let meta = model_meta(id)
+        .ok_or_else(|| AppError::Validation(format!("unknown_model: {id}")))?;
+    std::fs::create_dir_all(models_dir)?;
+    let dest = model_file(models_dir, id);
+    let partial = dest.with_extension("bin.partial");
+
+    // 1. Open the stream (reqwest follows redirects: HF 302 → CloudFront).
+    let resp = reqwest::Client::new()
+        .get(&meta.url)
+        .send()
+        .await
+        .map_err(|e| AppError::Internal(format!("model download request: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::Internal(format!(
+            "Download failed: HTTP {}",
+            resp.status().as_u16()
+        )));
+    }
+    let header_total = resp.content_length().unwrap_or(0);
+
+    // 2. Stream chunks to the .partial file, hashing as we go + emitting progress.
+    //    Each chunk-await races the cancel signal so a cancel aborts promptly.
+    let mut file = tokio::fs::File::create(&partial)
+        .await
+        .map_err(|e| AppError::Internal(format!("create partial: {e}")))?;
+    let mut hasher = Sha256::new();
+    let mut downloaded: u64 = 0;
+    let mut stream = resp;
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            () = cancel.notified() => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&partial).await;
+                return Err(AppError::Validation("cancelled".into()));
+            }
+            c = stream.chunk() => c.map_err(|e| AppError::Internal(format!("download chunk: {e}")))?,
+        };
+        let Some(bytes) = chunk else { break };
+        hasher.update(&bytes);
+        file.write_all(&bytes)
+            .await
+            .map_err(|e| AppError::Internal(format!("write chunk: {e}")))?;
+        downloaded += bytes.len() as u64;
+        let progress =
+            whisper::download_progress(id, downloaded, header_total, meta.size_bytes);
+        let _ = app.emit("whisper://model-progress", &progress);
+    }
+    file.flush()
+        .await
+        .map_err(|e| AppError::Internal(format!("flush: {e}")))?;
+    drop(file);
+
+    // 3. Verify integrity (the core compares against the registry SHA), then
+    //    atomically promote .partial → .bin. A mismatch deletes the partial.
+    let computed = hex_lower(&hasher.finalize());
+    if !whisper::verify_model_hash(id, &computed) {
+        let _ = tokio::fs::remove_file(&partial).await;
+        return Err(AppError::Internal(
+            "Download integrity check failed (SHA-256 mismatch). Try again.".into(),
+        ));
+    }
+    tokio::fs::rename(&partial, &dest)
+        .await
+        .map_err(|e| AppError::Internal(format!("promote model file: {e}")))?;
+    Ok(())
+}
+
+/// Lowercase-hex encode a byte digest (no extra dep — `sha2` gives raw bytes).
+#[cfg(feature = "whisper")]
+fn hex_lower(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
 /// Read a 16 kHz mono 16-bit PCM WAV into normalised f32 samples. Minimal RIFF
 /// parser — the conversion step guarantees this exact format.
 #[cfg(feature = "whisper")]
@@ -215,6 +389,32 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let st = model_status(dir.path(), "ggml-base");
         assert!(!st.installed);
+    }
+
+    #[test]
+    fn delete_model_removes_an_existing_file_and_is_false_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("ggml-base.bin");
+        std::fs::write(&f, b"x").unwrap();
+        assert!(delete_model(dir.path(), "ggml-base"));
+        assert!(!f.exists());
+        // Second delete: nothing to remove → false, not an error.
+        assert!(!delete_model(dir.path(), "ggml-base"));
+    }
+
+    #[test]
+    fn download_guard_rejects_a_second_in_flight_and_cancel_finds_it() {
+        let guard = DownloadGuard::new();
+        let first = guard.register("ggml-base");
+        assert!(first.is_some(), "first register must succeed");
+        // A second register for the same id while in flight is refused.
+        assert!(guard.register("ggml-base").is_none());
+        // Cancel finds the registered download; a different id does not.
+        assert!(guard.cancel("ggml-base"));
+        assert!(!guard.cancel("ggml-small"));
+        // After clear, a fresh register succeeds again.
+        guard.clear("ggml-base");
+        assert!(guard.register("ggml-base").is_some());
     }
 
     #[cfg(not(feature = "whisper"))]

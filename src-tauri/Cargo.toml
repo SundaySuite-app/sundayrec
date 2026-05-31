@@ -39,7 +39,7 @@ editor = []
 # HARDWARE-UNVERIFIED, so the shipping build + CI gate stay lean. When the
 # feature is OFF, the seam still compiles and `transcribe_*` returns a clear
 # "feature disabled" error (same idiom as SundayPaper's `pdf` feature).
-whisper = ["dep:whisper-rs", "dep:tempfile"]
+whisper = ["dep:whisper-rs", "dep:tempfile", "dep:sha2"]
 # R3: live RTMP streaming (multi-destination tee + lower-third overlays). NO new
 # native dep — ffmpeg is a sidecar — so the gate only compiles the spawn seam
 # in/out. DEFAULT-OFF: the camera open + RTMP push are NETWORK/HARDWARE-
@@ -175,6 +175,9 @@ futures-util = { version = "0.3", optional = true }
 # PU-5 whisper seam writes the 16 kHz WAV to a temp dir before inference. Pulled
 # only under `--features whisper` (also a dev-dep below for the storage tests).
 tempfile = { version = "3", optional = true }
+# PU-5 whisper model-download integrity check (SHA-256). Already in the tree via
+# `keyring`; pulled directly only under `--features whisper` for the download seam.
+sha2 = { version = "0.10", optional = true }
 # R7 auto-update plugin (pull API). Pulled only under `--features updater`; a
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.

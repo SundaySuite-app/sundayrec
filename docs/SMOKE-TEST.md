@@ -304,9 +304,18 @@ C/C++ toolchain).
 cargo build -p sundayrec --features whisper   # CMake builds libwhisper
 ```
 
-1. `whisper_list_models` / `whisper_model_status` work in **any** build (the
-   registry + on-disk size check are pure). Download a model into the app-data
-   `whisper-models/` dir.
+1. `whisper_list_models` / `whisper_model_status` / `whisper_delete_model` /
+   `whisper_cancel_download` work in **any** build (the registry, on-disk size
+   check, fs delete, and the cancel signal are pure/fs). Download a model into
+   the app-data `whisper-models/` dir with `whisper_download_model`.
+   - **Expected:** `whisper://model-progress` events stream `{ id,
+     bytesDownloaded, bytesTotal, fraction }` (the shaping is the unit-tested
+     `download_progress`); a second download for the same id while one is in
+     flight returns `already_downloading`; `whisper_cancel_download` aborts the
+     stream and removes the `.partial`; on completion the SHA-256 is verified
+     against the registry (`verify_model_hash`) before the `.bin` is promoted.
+     `feature_disabled` means the build lacks `--features whisper`.
+     // NETWORK-UNVERIFIED (the HTTPS stream + write are wired but unproven).
 2. With the feature ON, run `whisper_transcribe` on a short recording.
    - **Expected:** ffmpeg converts to 16 kHz mono, whisper-rs runs, and a
      `TranscriptData` (seconds-based segments) comes back. A `feature_disabled`

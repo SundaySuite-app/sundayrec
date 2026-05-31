@@ -14,7 +14,7 @@ use sundayrec_core::whisper::{
 
 use crate::db::store::now_ms;
 use crate::error::{AppError, AppResult};
-use crate::whisper as seam;
+use crate::whisper::{self as seam, DownloadGuard};
 
 /// The curated whisper model registry, in display order.
 #[tauri::command]
@@ -27,6 +27,42 @@ pub fn whisper_list_models() -> Vec<WhisperModelMeta> {
 pub fn whisper_model_status(app: tauri::AppHandle, id: String) -> AppResult<InstalledStatus> {
     let dir = whisper_models_dir(&app)?;
     Ok(seam::model_status(&dir, &id))
+}
+
+/// Download a model, streaming `whisper://model-progress` events. Registers the
+/// download with the [`DownloadGuard`] so `whisper_cancel_download` can abort it;
+/// a second download for the same id while one is in flight returns
+/// `already_downloading` (mirrors the Electron guard). NETWORK-UNVERIFIED behind
+/// `--features whisper`; returns `feature_disabled` in the default build.
+#[tauri::command]
+pub async fn whisper_download_model(
+    app: tauri::AppHandle,
+    guard: State<'_, DownloadGuard>,
+    id: String,
+) -> AppResult<()> {
+    let dir = whisper_models_dir(&app)?;
+    let Some(cancel) = guard.register(&id) else {
+        return Err(AppError::Validation("already_downloading".into()));
+    };
+    let result = seam::download_model(&app, &dir, &id, cancel).await;
+    guard.clear(&id);
+    result
+}
+
+/// Abort an in-flight model download for `id` (the user pressed cancel). Returns
+/// whether a download was registered to cancel. Works in every build (it's just
+/// the cancel signal; the download path itself is feature-gated).
+#[tauri::command]
+pub fn whisper_cancel_download(guard: State<'_, DownloadGuard>, id: String) -> bool {
+    guard.cancel(&id)
+}
+
+/// Delete a downloaded model file. Returns whether a file was removed (a missing
+/// file is `false`, not an error). Mirrors the Electron `whisper-delete-model`.
+#[tauri::command]
+pub fn whisper_delete_model(app: tauri::AppHandle, id: String) -> AppResult<bool> {
+    let dir = whisper_models_dir(&app)?;
+    Ok(seam::delete_model(&dir, &id))
 }
 
 /// Transcribe a recording. HARDWARE-UNVERIFIED behind `--features whisper`;

@@ -130,6 +130,9 @@ pub fn run() {
         // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
         // pending consent before the 300 s timeout.
         .manage(cloud::ConnectGuard::new())
+        // Tracks in-flight whisper model downloads so `whisper_cancel_download`
+        // can abort one (one entry per active model id).
+        .manage(whisper::DownloadGuard::new())
         .setup(|app| {
             use tauri::Manager;
 
@@ -286,6 +289,9 @@ pub fn run() {
             // PU-5 whisper transcription (model registry pure; transcribe gated).
             commands::whisper::whisper_list_models,
             commands::whisper::whisper_model_status,
+            commands::whisper::whisper_download_model,
+            commands::whisper::whisper_cancel_download,
+            commands::whisper::whisper_delete_model,
             commands::whisper::whisper_transcribe,
             commands::whisper::whisper_export_transcript,
             // PU-6 episode prep + review queue + Stage import.
