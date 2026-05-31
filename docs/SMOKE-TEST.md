@@ -163,6 +163,105 @@ npm run tauri dev
 
 ---
 
+## 8. (Optional) Email alerts [NET] — `--features email`
+
+The error/test mailer is behind the **default-off `email`** cargo feature, so
+the shipping build + the CI gate carry no SMTP/Gmail dep. The localized
+templates (7 langs), the throttle/dedup gate, and the RFC 2822/base64url message
+assembly are unit-tested in `sundayrec-core::email`; the **send** is
+NETWORK-UNVERIFIED. Build with the feature to exercise it:
+
+```bash
+cargo build -p sundayrec --features email
+# Gmail path reuses the cloud OAuth token (connect Gmail first, §7-style);
+# SMTP path needs a host/port/credentials.
+```
+
+1. **Test message** via the Gmail path (Gmail OAuth connected).
+   - **Expected:** a "✓ SundayRec — email works" message arrives; the raw
+     message was base64url-encoded and POSTed to `gmail.googleapis.com`.
+2. **Error alert throttle.** Trigger two identical recording errors within
+   10 minutes.
+   - **Expected:** only the first mails; the second is suppressed by the core
+     `AlertGate` (10-min window per `(recipient, message)`).
+3. **SMTP fallback.** Configure an SMTP host (587 STARTTLS or 465 implicit TLS)
+   and send a test.
+   - **Expected:** `lettre` connects + delivers; HTML + plaintext parts both
+     present in the received mail.
+
+> [NET] The Gmail POST + the SMTP handshake are NETWORK-UNVERIFIED — wired and
+> compiling under `--features email`, never run against a real account/server in
+> the gate.
+
+---
+
+## 9. (Optional) Menubar tray + deep links [GUI] — `--features tray`
+
+The tray menu-model (localized items, actions, tooltip, icon precedence) and the
+inbound `sundayrec://` deep-link parser are unit-tested in
+`sundayrec-core::{tray, link}`; the native menubar item + scheme registration
+are **GUI-UNVERIFIED** behind the default-off `tray` feature.
+
+```bash
+cargo build -p sundayrec --features tray
+```
+
+1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
+   - **Expected:** the menu shows status → open → start/stop → folder → check
+     system → diagnostics → quit, in the UI language. A review-queue callout
+     appears only when episodes await review.
+2. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
+3. Open a `sundayrec://import?path=…` URL from the OS.
+   - **Expected:** the running instance receives it and `parse_deep_link` routes
+     it (Import / OAuthCallback).
+
+> [GUI] The `tauri::tray` item + `tauri-plugin-deep-link` scheme handler are
+> GUI-UNVERIFIED — they need a real desktop session.
+
+---
+
+## 10. (Optional) Podcast RSS publish [NET] — `--features publish`
+
+The RSS 2.0 + iTunes XML builder is unit-tested in `sundayrec-core::feed`; the
+write-to-disk + upload-to-Drive + share orchestration is NETWORK-UNVERIFIED
+behind the default-off `publish` feature.
+
+```bash
+cargo build -p sundayrec --features publish
+```
+
+1. After a cloud upload (§7), enable podcast publishing.
+   - **Expected:** a `podcast.xml` is written next to the save folder, uploaded
+     to Drive, made public, and the feed URL is cached for the UI to show
+     ("submit this URL to Spotify/Apple").
+
+> [NET] File/HTTP publish is NETWORK-UNVERIFIED — only the XML shaping is tested.
+
+---
+
+## 11. OS wake-timers + scheduled launch [HW] (already wired, no feature)
+
+The scheduler→recorder launch and the `pmset`/`schtasks`/`powercfg` shell-outs
+are wired in `src-tauri/src/{scheduler,wake}` (no feature flag — they were part
+of Fase 5). The next-fire / catch-up / skip _decisions_ are unit-tested in
+`sundayrec-core::{schedule, wake}`; the live clock-tick, the admin/UAC prompts,
+and whether the machine truly wakes are HARDWARE-UNVERIFIED.
+
+1. Add a slot a couple of minutes ahead; leave the app running.
+   - **Expected:** at the slot time the recorder starts unattended; the tray /
+     UI "next recording" updates; a reminder notification fires `reminder_minutes`
+     before.
+2. Enable wake-from-sleep, reschedule (accept the admin prompt), sleep the Mac
+   just before a slot.
+   - **Expected:** `pmset -g sched` lists a SundayRec wake; the machine wakes and
+     records. (Sleeping + measuring the resume is not automated — see the
+     `wake/mod.rs` "honestly deferred" note.)
+
+> [HW] Wall-clock timing + the real OS wake can only be confirmed on a Mac/Windows
+> box with the power tools available.
+
+---
+
 ## What "passed" means
 
 A green smoke test = §2–§6 all behave as the **Expected** lines say on a real

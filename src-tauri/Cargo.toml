@@ -12,6 +12,20 @@ edition = "2021"
 name = "sundayrec_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Optional Electron-parity seams (PU-1/2/3). All DEFAULT-OFF so the shipping
+# build and the headless CI gate carry no extra native deps; enable per feature
+# (`--features email`) once the network/GUI path is being smoke-tested on a real
+# rig. Each gates its impure I/O over the unit-tested `sundayrec-core` decisions.
+[features]
+default = []
+# PU-1: SMTP/Gmail error+test alerts. Pulls `lettre` for the SMTP transport (the
+# Gmail-API path reuses the already-present `reqwest`).
+email = ["dep:lettre"]
+# PU-2: native menubar tray + `sundayrec://` scheme handler.
+tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
+# PU-3: write/upload the podcast RSS feed (reuses `reqwest` + the cloud worker).
+publish = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -93,6 +107,18 @@ reqwest = { version = "0.12", default-features = false, features = [
     "http2",
     "json",
 ] }
+
+# ── Optional Electron-parity seam deps (default-off, see [features]) ──────────
+# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; the Gmail-API
+# path needs none of this (it reuses `reqwest`), so lettre is pulled only when
+# the `email` feature is on. `optional = true` keeps it out of the default build.
+lettre = { version = "0.11", default-features = false, features = [
+    "tokio1-rustls-tls",
+    "smtp-transport",
+    "builder",
+], optional = true }
+# PU-2 deep-link scheme registration (`sundayrec://…`) for the OAuth/import flow.
+tauri-plugin-deep-link = { version = "2", optional = true }
 
 [dev-dependencies]
 # Throwaway temp databases for the storage tests — no app, no device.

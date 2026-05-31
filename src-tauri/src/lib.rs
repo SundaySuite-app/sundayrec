@@ -20,6 +20,10 @@ pub mod cloud;
 pub mod commands;
 pub mod db;
 pub mod diagnostics;
+// PU-1 email alerts — default-off `email` feature (NETWORK-UNVERIFIED). The pure
+// templates/throttle/MIME live in `sundayrec_core::email`; this seam sends.
+#[cfg(feature = "email")]
+pub mod email;
 pub mod error;
 pub mod media;
 pub mod preflight;
