@@ -291,10 +291,11 @@ cargo build -p sundayrec --features bridge
    broadcasts; chapters accrue on the running recording.
    - **Expected:** with `RUST_LOG=sundayrec=debug`, each folded event logs its
      effect + seq; a `feature_disabled` error means the build lacks `--features
-     bridge`.
+bridge`.
 
 > [INFRA] The Realtime handshake + broadcast decode need a live Supabase project
-> + the Stage app publishing — never run in the gate. Only the core fold is tested.
+>
+> - the Stage app publishing — never run in the gate. Only the core fold is tested.
 
 ---
 
@@ -340,21 +341,32 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
 ```
 
 1. Record (or import) a short service so it shows in History, open the
-   **Redigering** disclosure, and pick the recording.
-   - **Expected:** the duration + stream info paint (ffprobe load); no
-     `feature_disabled` hint.
-2. Click **Bølgeform**, **Finn segmenter**, **Mål lydstyrke** in turn.
-   - **Expected:** a peak count appears; segments list with one **Preken**
-     (sermon) block highlighted gold; a loudness reading like `-23.4 LUFS → -16`.
-3. Choose a format + a mastering preset and click **Eksporter**.
+   **Redigering** disclosure, and pick the recording (or use **Åpne lydfil…**
+   to pick any audio/video file via the native dialog).
+   - **Expected:** the duration + stream info paint (ffprobe load); the waveform
+     `<svg>` band auto-renders from the peaks (// GUI-UNVERIFIED paint — the
+     peaks→geometry mapping `waveform.ts::waveformPath` is unit-tested) and a
+     peak count appears; no `feature_disabled` hint.
+2. Click **Finn segmenter** and **Mål lydstyrke**.
+   - **Expected:** segments list with one **Preken** (sermon) block highlighted
+     gold; a loudness reading like `-23.4 LUFS → -16`.
+3. Click **Legg til kutt** one or more times, nudge the start/end (seconds)
+   inputs, and remove one with **✕**.
+   - **Expected:** red cut bands overlay the waveform at the marked spots
+     (// GUI-UNVERIFIED); region rows show `m:ss–m:ss`; removed rows disappear.
+4. Choose a format + a mastering target (**Ingen / Podkast −16 / Strømming −14
+   / Naturlig / Musikk + tale**) and click **Eksporter**.
    - **Expected:** a `*_redigert.<fmt>` file lands next to the source; on
-     playback the cuts are applied and (with a preset) the loudness is
-     normalised. No preset + a single keep-segment takes the fast `-af` path.
+     playback the marked regions are removed and (with a target) the loudness is
+     normalised. No target + no cuts takes the fast `-af`/copy path.
 
 > [HW] The ffprobe/decode/measure/render runs only execute under `--features
-> editor` against real media — never in the gate. Only the core argv-building,
-> filter-graph, loudnorm parse, and VAD/sermon decisions are unit-tested. The
-> default build deliberately returns `feature_disabled` for every editor command.
+editor` against real media — never in the gate. Only the core argv-building,
+> filter-graph, loudnorm parse, and VAD/sermon decisions, plus the renderer's
+> peaks→SVG mapping and the load→peaks→regions→export data flow (vitest, invoke
+> mocked), are unit-tested. The waveform/cut-band paint is // GUI-UNVERIFIED.
+> The default build deliberately returns `feature_disabled` for every editor
+> command, and the panel shows a calm hint.
 
 ---
 

@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
@@ -8,23 +9,67 @@ import type { EditorMediaInfo } from "@/lib/bindings/EditorMediaInfo";
 import type { EditorPeaks } from "@/lib/bindings/EditorPeaks";
 import type { EditorSegment } from "@/lib/bindings/EditorSegment";
 import type { EditorLoudness } from "@/lib/bindings/EditorLoudness";
+import type { EditorCutRegion } from "@/lib/bindings/EditorCutRegion";
 import type { EditorExportRequest } from "@/lib/bindings/EditorExportRequest";
 import type { EditorExportResult } from "@/lib/bindings/EditorExportResult";
 import { EDITOR_RECORDINGS_KEY } from "./queryKey";
+import { waveformPath } from "./waveform";
 
-/** The five mastering presets the core ships (ids kept in sync with
- *  `sundayrec_core::mastering::master_presets`); `none` skips mastering. */
-const MASTER_PRESETS = [
-  "none",
-  "speech-natural",
-  "speech-clear",
-  "speech-punchy",
-  "music-speech",
+/**
+ * A mastering target the user picks. We surface friendly publishing-target
+ * labels (None / Podcast −16 LUFS / Streaming −14 LUFS) but map each to the
+ * core preset id it drives (kept in sync with
+ * `sundayrec_core::mastering::master_presets`); `none` skips mastering.
+ */
+type MasterTarget = {
+  /** Stable value used in the <select>; "none" means skip mastering. */
+  readonly value: string;
+  /** The core preset id this drives (`null` for "none"). */
+  readonly presetId: string | null;
+  /** i18n key + Norwegian fallback for the option label. */
+  readonly key: string;
+  readonly fallback: string;
+};
+
+const MASTER_TARGETS: readonly MasterTarget[] = [
+  {
+    value: "none",
+    presetId: null,
+    key: "editor.masterNone",
+    fallback: "Ingen (uendret)",
+  },
+  {
+    value: "speech-clear",
+    presetId: "speech-clear",
+    key: "editor.masterPodcast",
+    fallback: "Podkast (−16 LUFS)",
+  },
+  {
+    value: "speech-punchy",
+    presetId: "speech-punchy",
+    key: "editor.masterStreaming",
+    fallback: "Strømming (−14 LUFS)",
+  },
+  {
+    value: "speech-natural",
+    presetId: "speech-natural",
+    key: "editor.masterNatural",
+    fallback: "Naturlig (−19 LUFS)",
+  },
+  {
+    value: "music-speech",
+    presetId: "music-speech",
+    key: "editor.masterMusic",
+    fallback: "Musikk + tale (−16 LUFS)",
+  },
 ] as const;
 
 /** The export formats the seam renders. */
 const FORMATS = ["mp3", "aac", "wav", "flac", "mp4"] as const;
 type Format = (typeof FORMATS)[number];
+
+/** A pending cut/trim region in the renderer, before it's sent as a cut-plan. */
+type Region = { id: number; start: number; end: number };
 
 /** The basename of a path, for display (works for both `/` and `\`). */
 function fileName(path: string): string {
@@ -40,26 +85,39 @@ function isFeatureDisabled(err: unknown): boolean {
   return msg.includes("feature_disabled");
 }
 
+/** Whole seconds → `m:ss`, for the region rows + axis ticks. */
+function clock(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
 /**
- * R1 editor panel. Pick a recording from history, load it (ffprobe
- * duration/streams), pull the waveform peaks + content segments + a loudness
- * measurement, and export the (whole-file, for now) recording to a chosen
- * format with an optional mastering preset.
+ * R2 editor panel. Pick a recording (history list or native file dialog), load
+ * it (ffprobe duration/streams), pull the waveform peaks + content segments + a
+ * loudness measurement, mark cut/trim regions to remove, choose a mastering
+ * target + export format, and export — showing progress/result.
  *
- * The cut-region timeline UI is the renderer's job in a later phase; this panel
- * proves the full IPC surface end-to-end (load → peaks → segments → analyze →
- * export). The ffmpeg work is behind the default-off `editor` feature, so in the
- * shipping build the commands reject with `feature_disabled`; the panel renders
- * that as a "not built into this build" hint rather than an error.
+ * The waveform is drawn as a simple SVG polyline from the peaks array; the
+ * `<svg>` paint itself is // GUI-UNVERIFIED but the peaks→geometry mapping
+ * (`waveformPath`) and the whole load→peaks→regions→export data flow are tested.
  *
- * Pure IPC + render; exercised in tests with `invoke` mocked.
+ * The ffmpeg work is behind the default-off `editor` feature, so in the shipping
+ * build the commands reject with `feature_disabled`; the panel renders that as a
+ * "not built into this build" hint rather than an error.
  */
 export function EditorPanel() {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
   const [format, setFormat] = useState<Format>("mp3");
-  const [preset, setPreset] = useState<(typeof MASTER_PRESETS)[number]>("none");
+  const [target, setTarget] = useState<string>("none");
+  const [regions, setRegions] = useState<Region[]>([]);
   const [disabled, setDisabled] = useState(false);
+
+  const presetId = useMemo(
+    () => MASTER_TARGETS.find((m) => m.value === target)?.presetId ?? null,
+    [target],
+  );
 
   const recordings = useQuery<RecordingRow[]>({
     queryKey: EDITOR_RECORDINGS_KEY,
@@ -88,7 +146,7 @@ export function EditorPanel() {
     mutationFn: (path: string) =>
       invoke<EditorLoudness>("editor_mastering_analyze", {
         inputPath: path,
-        presetId: preset === "none" ? "speech-clear" : preset,
+        presetId: presetId ?? "speech-clear",
       }),
     onError: (e) => setDisabled(isFeatureDisabled(e)),
   });
@@ -102,38 +160,98 @@ export function EditorPanel() {
     (path: string) => {
       setSelected(path);
       setDisabled(false);
+      setRegions([]);
+      peaksMutation.reset();
+      segmentsMutation.reset();
+      analyzeMutation.reset();
       exportMutation.reset();
-      // Probe immediately so the user sees duration/streams on pick.
+      // Probe immediately so the user sees duration/streams on pick, and pull
+      // the waveform so they have something to mark cut regions against.
       loadMutation.mutate(path);
+      peaksMutation.mutate(path);
     },
-    [loadMutation, exportMutation],
+    [
+      loadMutation,
+      peaksMutation,
+      segmentsMutation,
+      analyzeMutation,
+      exportMutation,
+    ],
   );
+
+  // Native file picker — edit any audio/video on disk, not only history rows.
+  const onPickFile = useCallback(async () => {
+    const picked = await open({
+      multiple: false,
+      filters: [
+        {
+          name: t("editor.mediaFilter", "Lyd/video"),
+          extensions: ["mp3", "m4a", "aac", "wav", "flac", "mp4", "mkv", "mov"],
+        },
+      ],
+    });
+    if (typeof picked === "string") onSelect(picked);
+  }, [onSelect, t]);
+
+  const duration = loadMutation.data?.durationSec ?? 0;
+
+  // ── Region (cut/trim) editing ───────────────────────────────────────────
+  const addRegion = useCallback(() => {
+    setRegions((rs) => {
+      // Seed a 10 s region after the last one (or at the start), clamped to the
+      // file duration when known. The user nudges start/end with the inputs.
+      const last = rs[rs.length - 1];
+      const start = last
+        ? Math.min(last.end + 1, Math.max(0, duration - 1))
+        : 0;
+      const end = duration > 0 ? Math.min(start + 10, duration) : start + 10;
+      const id = (last?.id ?? 0) + 1;
+      return [...rs, { id, start, end }];
+    });
+  }, [duration]);
+
+  const updateRegion = useCallback(
+    (id: number, patch: Partial<Pick<Region, "start" | "end">>) => {
+      setRegions((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    },
+    [],
+  );
+
+  const removeRegion = useCallback((id: number) => {
+    setRegions((rs) => rs.filter((r) => r.id !== id));
+  }, []);
+
+  const clearRegions = useCallback(() => setRegions([]), []);
 
   const onExport = useCallback(() => {
     if (!selected) return;
-    const info = loadMutation.data;
     const folder = selected.replace(/[/\\][^/\\]*$/, "");
+    // The cut-plan: only well-formed regions (end > start) become CutRegions.
+    const cutRegions: EditorCutRegion[] = regions
+      .filter((r) => r.end > r.start)
+      .map((r) => ({ start: r.start, end: r.end }));
     const request: EditorExportRequest = {
       inputPath: selected,
-      cutRegions: [],
-      duration: info?.durationSec ?? 0,
+      cutRegions,
+      duration,
       format,
       outputFolder: folder,
       bitrate: null,
       bitDepth: null,
-      masterPreset: preset === "none" ? null : preset,
+      masterPreset: presetId,
     };
     exportMutation.mutate(request);
-  }, [selected, loadMutation.data, format, preset, exportMutation]);
+  }, [selected, duration, regions, format, presetId, exportMutation]);
 
   const rows = recordings.data ?? [];
   const info = loadMutation.data;
+  const peaks = peaksMutation.data;
   const loudness = analyzeMutation.data;
 
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
-      aria-label={t("editor.title", "Redigering")}
+      aria-label={t("editor.title", "Rediger lydfil")}
     >
       {disabled && (
         <p className="rounded border border-amber-700 p-2 text-xs text-amber-300">
@@ -146,9 +264,18 @@ export function EditorPanel() {
 
       {/* ── Recording picker ───────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
-          {t("editor.pickTitle", "Velg opptak")}
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium">
+            {t("editor.pickTitle", "Velg opptak")}
+          </h2>
+          <button
+            type="button"
+            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+            onClick={() => void onPickFile()}
+          >
+            {t("editor.openFile", "Åpne lydfil…")}
+          </button>
+        </div>
         {rows.length === 0 ? (
           <p className="opacity-60">
             {t("editor.noRecordings", "Ingen opptak ennå")}
@@ -189,6 +316,53 @@ export function EditorPanel() {
             </p>
           )}
 
+          {/* ── Waveform ─────────────────────────────────────────────────
+              GUI-UNVERIFIED: the SVG paint can't be exercised headless, but the
+              peaks→geometry mapping (`waveformPath`) and the data presence are
+              tested. Cut regions are overlaid as red bands over the waveform. */}
+          <div className="flex flex-col gap-1">
+            {peaks && peaks.peaks.length > 0 ? (
+              <svg
+                role="img"
+                aria-label={t("editor.waveform", "Bølgeform")}
+                viewBox="0 0 1000 80"
+                preserveAspectRatio="none"
+                className="h-20 w-full rounded border border-zinc-800 bg-zinc-900"
+              >
+                <polygon
+                  points={waveformPath(peaks.peaks, 1000, 80)}
+                  className="fill-emerald-600/70"
+                />
+                {duration > 0 &&
+                  regions
+                    .filter((r) => r.end > r.start)
+                    .map((r) => (
+                      <rect
+                        key={r.id}
+                        x={(r.start / duration) * 1000}
+                        y={0}
+                        width={((r.end - r.start) / duration) * 1000}
+                        height={80}
+                        className="fill-red-500/30 stroke-red-400"
+                      />
+                    ))}
+              </svg>
+            ) : (
+              <p className="text-xs opacity-60">
+                {peaksMutation.isPending
+                  ? t("editor.loading", "Laster inn lydfil…")
+                  : t("editor.noWaveform", "Ingen bølgeform ennå")}
+              </p>
+            )}
+            {peaks && (
+              <p className="text-xs opacity-70">
+                {t("editor.peaksCount", "{{n}} bølgeform-punkter", {
+                  n: peaks.peaks.length,
+                })}
+              </p>
+            )}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -216,14 +390,6 @@ export function EditorPanel() {
             </button>
           </div>
 
-          {peaksMutation.data && (
-            <p className="text-xs opacity-70">
-              {t("editor.peaksCount", "{{n}} bølgeform-punkter", {
-                n: peaksMutation.data.peaks.length,
-              })}
-            </p>
-          )}
-
           {segmentsMutation.data && segmentsMutation.data.length > 0 && (
             <ul className="flex flex-col gap-1 text-xs">
               {segmentsMutation.data.map((s, i) => (
@@ -248,6 +414,85 @@ export function EditorPanel() {
             </p>
           )}
 
+          {/* ── Cut/trim regions ─────────────────────────────────────────
+              Pure region state; on export each well-formed region becomes a
+              `EditorCutRegion` in the cut-plan the core removes. */}
+          <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-medium">
+                {t("editor.cutsTitle", "Kuttede regioner")}
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                  onClick={addRegion}
+                >
+                  {t("editor.addCut", "Legg til kutt")}
+                </button>
+                {regions.length > 0 && (
+                  <button
+                    type="button"
+                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                    onClick={clearRegions}
+                  >
+                    {t("editor.cutsNone", "Fjern alle kutt")}
+                  </button>
+                )}
+              </div>
+            </div>
+            {regions.length === 0 ? (
+              <p className="text-xs opacity-60">
+                {t("editor.dragHint", "Klikk og dra for å markere et kutt")}
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {regions.map((r) => (
+                  <li
+                    key={r.id}
+                    className="flex items-center gap-2 text-xs"
+                    aria-label={t("editor.cutRegion", "Kutt")}
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={r.start}
+                      aria-label={t("editor.cutStart", "Start (sekunder)")}
+                      className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
+                      onChange={(e) =>
+                        updateRegion(r.id, { start: Number(e.target.value) })
+                      }
+                    />
+                    <span className="opacity-50">→</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={r.end}
+                      aria-label={t("editor.cutEnd", "Slutt (sekunder)")}
+                      className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
+                      onChange={(e) =>
+                        updateRegion(r.id, { end: Number(e.target.value) })
+                      }
+                    />
+                    <span className="opacity-50">
+                      {clock(r.start)}–{clock(r.end)}
+                    </span>
+                    <button
+                      type="button"
+                      className="ml-auto rounded border border-zinc-700 px-2 py-0.5 hover:bg-zinc-800"
+                      aria-label={t("editor.deleteCut", "Fjern kutt")}
+                      onClick={() => removeRegion(r.id)}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {/* ── Export ───────────────────────────────────────────────── */}
           <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
             <div className="flex items-center gap-2">
@@ -271,15 +516,13 @@ export function EditorPanel() {
               </label>
               <select
                 className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-xs"
-                value={preset}
-                onChange={(e) =>
-                  setPreset(e.target.value as (typeof MASTER_PRESETS)[number])
-                }
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
                 aria-label={t("editor.preset", "Mastering")}
               >
-                {MASTER_PRESETS.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                {MASTER_TARGETS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {t(m.key, m.fallback)}
                   </option>
                 ))}
               </select>
@@ -290,12 +533,19 @@ export function EditorPanel() {
               disabled={exportMutation.isPending}
               onClick={onExport}
             >
-              {t("editor.export", "Eksporter")}
+              {exportMutation.isPending
+                ? t("editor.saving", "Lagrer…")
+                : t("editor.export", "Eksporter")}
             </button>
             {exportMutation.data && (
               <p className="text-xs text-emerald-300">
                 {t("editor.exported", "Lagret")}:{" "}
                 {fileName(exportMutation.data.outputPath)}
+              </p>
+            )}
+            {exportMutation.isError && !disabled && (
+              <p className="text-xs text-red-400">
+                {t("editor.saveError", "✕ Feil ved lagring")}
               </p>
             )}
           </div>

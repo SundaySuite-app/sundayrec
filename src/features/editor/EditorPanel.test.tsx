@@ -3,19 +3,24 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { EditorPanel } from "./EditorPanel";
+import { waveformPath } from "./waveform";
 import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 import type { EditorMediaInfo } from "@/lib/bindings/EditorMediaInfo";
 import type { EditorSegment } from "@/lib/bindings/EditorSegment";
 import type { EditorLoudness } from "@/lib/bindings/EditorLoudness";
 import i18n from "@/i18n";
 
-// --- Tauri bridge mock ------------------------------------------------------
+// --- Tauri bridge mocks -----------------------------------------------------
 
-const h = vi.hoisted(() => ({ invoke: vi.fn() }));
+const h = vi.hoisted(() => ({ invoke: vi.fn(), open: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => h.invoke(...args),
 }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: (...args: unknown[]) => h.open(...args),
+}));
 const invoke = h.invoke;
+const openDialog = h.open;
 
 const RECORDINGS: RecordingRow[] = [
   {
@@ -85,14 +90,38 @@ function renderPanel() {
   );
 }
 
+/** Pick the first history recording and wait for its load probe to resolve. */
+async function pickAndLoad() {
+  fireEvent.click(await screen.findByText("2026-05-31.mp4"));
+  await screen.findByText(/3600\.0s/);
+}
+
 beforeEach(() => {
   invoke.mockReset();
+  openDialog.mockReset();
   routeInvoke();
   i18n.changeLanguage("no");
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("waveformPath", () => {
+  it("returns an empty string for no peaks", () => {
+    expect(waveformPath([], 100, 40)).toBe("");
+  });
+
+  it("maps peaks to a mirrored polygon spanning the width", () => {
+    const pts = waveformPath([0, 1], 100, 40);
+    // Two points → top edge L→R then bottom edge R→L (4 coord pairs).
+    const coords = pts.split(" ");
+    expect(coords).toHaveLength(4);
+    // First top point at x=0, centre line (peak 0 → mid 20).
+    expect(coords[0]).toBe("0.0,20.0");
+    // Second top point at x=width, peak 1 → top edge (mid - mid = 0).
+    expect(coords[1]).toBe("100.0,0.0");
+  });
 });
 
 describe("EditorPanel", () => {
@@ -112,23 +141,49 @@ describe("EditorPanel", () => {
     expect(await screen.findByText(/3600\.0s/)).toBeInTheDocument();
   });
 
-  it("requests peaks over IPC", async () => {
+  it("auto-pulls peaks on pick and renders the waveform", async () => {
     renderPanel();
-    fireEvent.click(await screen.findByText("2026-05-31.mp4"));
-    fireEvent.click(await screen.findByText("Bølgeform"));
+    await pickAndLoad();
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("editor_peaks", {
         inputPath: "/rec/2026-05-31.mp4",
       }),
     );
-    // 3 peak points reported back.
+    // The waveform <svg> is rendered (role=img) and the count reported.
+    expect(await screen.findByLabelText("Bølgeform")).toBeInTheDocument();
     expect(await screen.findByText(/3 bølgeform-punkter/)).toBeInTheDocument();
+  });
+
+  it("opens a file via the native dialog and loads it", async () => {
+    openDialog.mockResolvedValue("/disk/sermon.wav");
+    renderPanel();
+    fireEvent.click(await screen.findByText("Åpne lydfil…"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("editor_load_recording", {
+        inputPath: "/disk/sermon.wav",
+      }),
+    );
+  });
+
+  it("adds and removes cut regions", async () => {
+    renderPanel();
+    await pickAndLoad();
+    // No regions yet → drag hint shown.
+    expect(
+      screen.getByText("Klikk og dra for å markere et kutt"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Legg til kutt"));
+    fireEvent.click(screen.getByText("Legg til kutt"));
+    expect(screen.getAllByLabelText("Kutt")).toHaveLength(2);
+    // Remove the first region.
+    fireEvent.click(screen.getAllByLabelText("Fjern kutt")[0]!);
+    expect(screen.getAllByLabelText("Kutt")).toHaveLength(1);
   });
 
   it("detects segments and highlights the sermon block", async () => {
     renderPanel();
-    fireEvent.click(await screen.findByText("2026-05-31.mp4"));
-    fireEvent.click(await screen.findByText("Finn segmenter"));
+    await pickAndLoad();
+    fireEvent.click(screen.getByText("Finn segmenter"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("editor_segments", {
         inputPath: "/rec/2026-05-31.mp4",
@@ -137,10 +192,10 @@ describe("EditorPanel", () => {
     expect(await screen.findByText(/Preken/)).toBeInTheDocument();
   });
 
-  it("measures loudness against a preset", async () => {
+  it("measures loudness against the default preset", async () => {
     renderPanel();
-    fireEvent.click(await screen.findByText("2026-05-31.mp4"));
-    fireEvent.click(await screen.findByText("Mål lydstyrke"));
+    await pickAndLoad();
+    fireEvent.click(screen.getByText("Mål lydstyrke"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("editor_mastering_analyze", {
         inputPath: "/rec/2026-05-31.mp4",
@@ -150,11 +205,15 @@ describe("EditorPanel", () => {
     expect(await screen.findByText(/-23\.4 LUFS/)).toBeInTheDocument();
   });
 
-  it("exports with the chosen format + preset over IPC", async () => {
+  it("exports with the chosen format, mastering target, and cut-plan", async () => {
     renderPanel();
-    fireEvent.click(await screen.findByText("2026-05-31.mp4"));
-    // Wait for the load probe so duration is populated in the request.
-    await screen.findByText(/3600\.0s/);
+    await pickAndLoad();
+    // Pick the Podcast target → core preset id `speech-clear`.
+    fireEvent.change(screen.getByLabelText("Mastering"), {
+      target: { value: "speech-clear" },
+    });
+    // Add a cut region (seeded 0→10 against the 3600 s file).
+    fireEvent.click(screen.getByText("Legg til kutt"));
     fireEvent.click(screen.getByText("Eksporter"));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("editor_export", {
@@ -162,14 +221,29 @@ describe("EditorPanel", () => {
           inputPath: "/rec/2026-05-31.mp4",
           format: "mp3",
           duration: 3600,
-          masterPreset: null,
+          masterPreset: "speech-clear",
           outputFolder: "/rec",
+          cutRegions: [{ start: 0, end: 10 }],
         }),
       }),
     );
     expect(
       await screen.findByText(/2026-05-31_redigert\.mp3/),
     ).toBeInTheDocument();
+  });
+
+  it("exports with no mastering (target none) and no cuts by default", async () => {
+    renderPanel();
+    await pickAndLoad();
+    fireEvent.click(screen.getByText("Eksporter"));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("editor_export", {
+        request: expect.objectContaining({
+          masterPreset: null,
+          cutRegions: [],
+        }),
+      }),
+    );
   });
 
   it("shows a calm hint when the editor feature is disabled", async () => {
