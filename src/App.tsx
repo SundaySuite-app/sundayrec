@@ -17,6 +17,7 @@ import { EditorPanel } from "@/features/editor/EditorPanel";
 import { TranscribePanel } from "@/features/transcribe/TranscribePanel";
 import { ReviewPanel } from "@/features/review/ReviewPanel";
 import { IntegrationsPanel } from "@/features/integrations/IntegrationsPanel";
+import { SuiteHandoffPanel } from "@/features/integrations/SuiteHandoffPanel";
 import { PublishPanel } from "@/features/publish/PublishPanel";
 import { CloudBackupPanel } from "@/features/cloud/CloudBackupPanel";
 import { EmailSettingsPanel } from "@/features/email/EmailSettingsPanel";
@@ -242,8 +243,12 @@ function App() {
             <summary className="cursor-pointer text-sm font-medium">
               {t("integrations.title", "Integrasjoner")}
             </summary>
-            <div className="mt-3">
+            <div className="mt-3 flex flex-col gap-6">
               <IntegrationsPanel />
+              {/* P2b per-recording hand-offs: SundaySong API key + usage submit
+                  and the Verbatim/SundayEdit deep-link send (typed commands;
+                  HTTP/launch NETWORK-UNVERIFIED). */}
+              <SuiteHandoffPanel />
             </div>
           </details>
 

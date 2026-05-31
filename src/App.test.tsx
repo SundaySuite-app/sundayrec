@@ -29,6 +29,9 @@ vi.mock("@tauri-apps/api/core", () => ({
     // feature flag + the persisted connection settings blob.
     if (cmd === "live_bridge_status") return false;
     if (cmd === "setting_get") return null;
+    // P2b: App also mounts <SuiteHandoffPanel/>, which reads the Song API-key
+    // presence on mount.
+    if (cmd === "integrations_song_has_apikey") return false;
     // PU-3: App mounts <PublishPanel/>, which reads the publish feature status.
     if (cmd === "publish_feed_status")
       return { featureBuilt: false, episodeCount: 0 };
