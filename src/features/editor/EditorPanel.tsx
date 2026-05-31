@@ -15,7 +15,18 @@ import type { EditorExportResult } from "@/lib/bindings/EditorExportResult";
 import type { EditorMasterPreviewRequest } from "@/lib/bindings/EditorMasterPreviewRequest";
 import type { EditorMasterPreviewResult } from "@/lib/bindings/EditorMasterPreviewResult";
 import { EDITOR_RECORDINGS_KEY } from "./queryKey";
-import { waveformPath } from "./waveform";
+import { EditorCanvas } from "./EditorCanvas";
+import {
+  addCut,
+  clearAll,
+  deleteCut,
+  emptyCutState,
+  replaceCuts,
+  resizeCut,
+  commitResize,
+  type CutState,
+  type Segment,
+} from "./editorGeometry";
 
 /** The `.cuts-draft.json` sidecar shape — the autosaved cut-plan + a timestamp,
  *  mirroring the Electron `{ cuts, ts }`. Persisting this is the editor's
@@ -75,9 +86,6 @@ const MASTER_TARGETS: readonly MasterTarget[] = [
 const FORMATS = ["mp3", "aac", "wav", "flac", "mp4"] as const;
 type Format = (typeof FORMATS)[number];
 
-/** A pending cut/trim region in the renderer, before it's sent as a cut-plan. */
-type Region = { id: number; start: number; end: number };
-
 /** The basename of a path, for display (works for both `/` and `\`). */
 function fileName(path: string): string {
   const parts = path.split(/[/\\]/);
@@ -118,7 +126,11 @@ export function EditorPanel() {
   const [selected, setSelected] = useState<string | null>(null);
   const [format, setFormat] = useState<Format>("mp3");
   const [target, setTarget] = useState<string>("none");
-  const [regions, setRegions] = useState<Region[]>([]);
+  // The cut state is the canvas's tested history machine — the single source of
+  // truth for the cut-plan (drag-on-waveform, handle-resize, undo) AND the
+  // numeric aria-fallback rows below. The playhead is canvas-driven seek.
+  const [cutState, setCutState] = useState<CutState>(() => emptyCutState());
+  const [playheadSec, setPlayheadSec] = useState(0);
   const [disabled, setDisabled] = useState(false);
   // A cut-plan found in the recording's `.cuts-draft.json` sidecar on pick —
   // surfaced as a "restore" banner so the user opts in rather than us silently
@@ -182,7 +194,8 @@ export function EditorPanel() {
     (path: string) => {
       setSelected(path);
       setDisabled(false);
-      setRegions([]);
+      setCutState(emptyCutState());
+      setPlayheadSec(0);
       setDraftToRestore(null);
       dirty.current = false;
       peaksMutation.reset();
@@ -225,9 +238,9 @@ export function EditorPanel() {
   useEffect(() => {
     if (!selected || !dirty.current) return;
     const draft: CutsDraft = {
-      cuts: regions
-        .filter((r) => r.end > r.start)
-        .map((r) => ({ start: r.start, end: r.end })),
+      cuts: cutState.cuts
+        .filter((c) => c.end > c.start)
+        .map((c) => ({ start: c.start, end: c.end })),
       ts: Date.now(),
     };
     void invoke<boolean>("editor_write_sidecar", {
@@ -237,18 +250,19 @@ export function EditorPanel() {
     }).catch(() => {
       /* autosave is best-effort, exactly like the Electron handler */
     });
-  }, [regions, selected]);
+  }, [cutState, selected]);
 
-  // Restore the cuts found in the sidecar into editable regions.
+  // The canvas drives all cut edits (drag, resize, undo) through the tested
+  // history machine; we flag the session dirty so the autosave effect fires.
+  const onCutStateChange = useCallback((next: CutState) => {
+    dirty.current = true;
+    setCutState(next);
+  }, []);
+
+  // Restore the cuts found in the sidecar into editable cuts (one history step).
   const onRestoreDraft = useCallback(() => {
     if (!draftToRestore) return;
-    setRegions(
-      draftToRestore.cuts.map((c, i) => ({
-        id: i + 1,
-        start: c.start,
-        end: c.end,
-      })),
-    );
+    setCutState((s) => replaceCuts(s, draftToRestore.cuts));
     dirty.current = true;
     setDraftToRestore(null);
   }, [draftToRestore]);
@@ -271,38 +285,53 @@ export function EditorPanel() {
 
   const duration = loadMutation.data?.durationSec ?? 0;
 
-  // ── Region (cut/trim) editing ───────────────────────────────────────────
+  // ── Cut (trim region) editing — numeric aria fallback ───────────────────
+  // The primary path is drag-on-canvas; these mirror the same edits onto the
+  // tested cut-history machine so the numeric inputs (kept for accessibility /
+  // headless) stay an equal first-class editor of the cut-plan.
   const addRegion = useCallback(() => {
     dirty.current = true;
-    setRegions((rs) => {
-      // Seed a 10 s region after the last one (or at the start), clamped to the
+    setCutState((s) => {
+      // Seed a 10 s region after the last cut (or at the start), clamped to the
       // file duration when known. The user nudges start/end with the inputs.
-      const last = rs[rs.length - 1];
+      const last = s.cuts[s.cuts.length - 1];
       const start = last
         ? Math.min(last.end + 1, Math.max(0, duration - 1))
         : 0;
       const end = duration > 0 ? Math.min(start + 10, duration) : start + 10;
-      const id = (last?.id ?? 0) + 1;
-      return [...rs, { id, start, end }];
+      return addCut(s, start, end, duration || end);
     });
   }, [duration]);
 
   const updateRegion = useCallback(
-    (id: number, patch: Partial<Pick<Region, "start" | "end">>) => {
+    (idx: number, patch: { start?: number; end?: number }) => {
       dirty.current = true;
-      setRegions((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      setCutState((s) => {
+        let next = s;
+        if (patch.start != null)
+          next = resizeCut(
+            next,
+            idx,
+            "start",
+            patch.start,
+            duration || Infinity,
+          );
+        if (patch.end != null)
+          next = resizeCut(next, idx, "end", patch.end, duration || Infinity);
+        return commitResize(next);
+      });
     },
-    [],
+    [duration],
   );
 
-  const removeRegion = useCallback((id: number) => {
+  const removeRegion = useCallback((idx: number) => {
     dirty.current = true;
-    setRegions((rs) => rs.filter((r) => r.id !== id));
+    setCutState((s) => deleteCut(s, idx));
   }, []);
 
   const clearRegions = useCallback(() => {
     dirty.current = true;
-    setRegions([]);
+    setCutState((s) => clearAll(s));
   }, []);
 
   // ── Mastering preview ────────────────────────────────────────────────────
@@ -320,10 +349,10 @@ export function EditorPanel() {
   const onExport = useCallback(() => {
     if (!selected) return;
     const folder = selected.replace(/[/\\][^/\\]*$/, "");
-    // The cut-plan: only well-formed regions (end > start) become CutRegions.
-    const cutRegions: EditorCutRegion[] = regions
-      .filter((r) => r.end > r.start)
-      .map((r) => ({ start: r.start, end: r.end }));
+    // The cut-plan: only well-formed cuts (end > start) become CutRegions.
+    const cutRegions: EditorCutRegion[] = cutState.cuts
+      .filter((c) => c.end > c.start)
+      .map((c) => ({ start: c.start, end: c.end }));
     const request: EditorExportRequest = {
       inputPath: selected,
       cutRegions,
@@ -345,12 +374,19 @@ export function EditorPanel() {
         }).catch(() => {});
       },
     });
-  }, [selected, duration, regions, format, presetId, exportMutation]);
+  }, [selected, duration, cutState, format, presetId, exportMutation]);
 
   const rows = recordings.data ?? [];
   const info = loadMutation.data;
   const peaks = peaksMutation.data;
   const loudness = analyzeMutation.data;
+  // Detected segments feed the canvas snap-to-boundary + colour bands. The
+  // `EditorSegment` binding already carries the `kind` the geometry expects.
+  const segments: Segment[] = (segmentsMutation.data ?? []).map((s) => ({
+    start: s.start,
+    end: s.end,
+    kind: s.kind,
+  }));
 
   return (
     <section
@@ -448,37 +484,25 @@ export function EditorPanel() {
             </p>
           )}
 
-          {/* ── Waveform ─────────────────────────────────────────────────
-              GUI-UNVERIFIED: the SVG paint can't be exercised headless, but the
-              peaks→geometry mapping (`waveformPath`) and the data presence are
-              tested. Cut regions are overlaid as red bands over the waveform. */}
+          {/* ── Interactive waveform canvas ──────────────────────────────
+              The interaction depth Electron has (drag-on-waveform): drag to
+              mark a cut, drag a handle to resize (snap to detected segment
+              boundaries unless shift), click the ruler to seek, wheel to pan,
+              ⌘+wheel to zoom, plus a minimap. The SVG paint is GUI-UNVERIFIED,
+              but every pointer handler drives the tested `editorGeometry`
+              model, so the resulting cut-plan / viewport / playhead are
+              asserted in vitest via fireEvent. */}
           <div className="flex flex-col gap-1">
             {peaks && peaks.peaks.length > 0 ? (
-              <svg
-                role="img"
-                aria-label={t("editor.waveform", "Bølgeform")}
-                viewBox="0 0 1000 80"
-                preserveAspectRatio="none"
-                className="h-20 w-full rounded border border-zinc-800 bg-zinc-900"
-              >
-                <polygon
-                  points={waveformPath(peaks.peaks, 1000, 80)}
-                  className="fill-emerald-600/70"
-                />
-                {duration > 0 &&
-                  regions
-                    .filter((r) => r.end > r.start)
-                    .map((r) => (
-                      <rect
-                        key={r.id}
-                        x={(r.start / duration) * 1000}
-                        y={0}
-                        width={((r.end - r.start) / duration) * 1000}
-                        height={80}
-                        className="fill-red-500/30 stroke-red-400"
-                      />
-                    ))}
-              </svg>
+              <EditorCanvas
+                peaks={peaks.peaks}
+                duration={duration}
+                segments={segments}
+                cutState={cutState}
+                onCutStateChange={onCutStateChange}
+                playheadSec={playheadSec}
+                onSeek={setPlayheadSec}
+              />
             ) : (
               <p className="text-xs opacity-60">
                 {peaksMutation.isPending
@@ -546,8 +570,10 @@ export function EditorPanel() {
             </p>
           )}
 
-          {/* ── Cut/trim regions ─────────────────────────────────────────
-              Pure region state; on export each well-formed region becomes a
+          {/* ── Cut/trim regions — numeric aria fallback ─────────────────
+              The canvas above is the primary editor; this numeric list is the
+              accessible / headless equal — both read and write the same tested
+              cut-history machine, and on export each well-formed cut becomes an
               `EditorCutRegion` in the cut-plan the core removes. */}
           <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
             <div className="flex items-center justify-between">
@@ -562,7 +588,7 @@ export function EditorPanel() {
                 >
                   {t("editor.addCut", "Legg til kutt")}
                 </button>
-                {regions.length > 0 && (
+                {cutState.cuts.length > 0 && (
                   <button
                     type="button"
                     className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
@@ -573,15 +599,15 @@ export function EditorPanel() {
                 )}
               </div>
             </div>
-            {regions.length === 0 ? (
+            {cutState.cuts.length === 0 ? (
               <p className="text-xs opacity-60">
                 {t("editor.dragHint", "Klikk og dra for å markere et kutt")}
               </p>
             ) : (
               <ul className="flex flex-col gap-1">
-                {regions.map((r) => (
+                {cutState.cuts.map((c, idx) => (
                   <li
-                    key={r.id}
+                    key={idx}
                     className="flex items-center gap-2 text-xs"
                     aria-label={t("editor.cutRegion", "Kutt")}
                   >
@@ -589,11 +615,11 @@ export function EditorPanel() {
                       type="number"
                       min={0}
                       step={1}
-                      value={r.start}
+                      value={c.start}
                       aria-label={t("editor.cutStart", "Start (sekunder)")}
                       className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
                       onChange={(e) =>
-                        updateRegion(r.id, { start: Number(e.target.value) })
+                        updateRegion(idx, { start: Number(e.target.value) })
                       }
                     />
                     <span className="opacity-50">→</span>
@@ -601,21 +627,21 @@ export function EditorPanel() {
                       type="number"
                       min={0}
                       step={1}
-                      value={r.end}
+                      value={c.end}
                       aria-label={t("editor.cutEnd", "Slutt (sekunder)")}
                       className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
                       onChange={(e) =>
-                        updateRegion(r.id, { end: Number(e.target.value) })
+                        updateRegion(idx, { end: Number(e.target.value) })
                       }
                     />
                     <span className="opacity-50">
-                      {clock(r.start)}–{clock(r.end)}
+                      {clock(c.start)}–{clock(c.end)}
                     </span>
                     <button
                       type="button"
                       className="ml-auto rounded border border-zinc-700 px-2 py-0.5 hover:bg-zinc-800"
                       aria-label={t("editor.deleteCut", "Fjern kutt")}
-                      onClick={() => removeRegion(r.id)}
+                      onClick={() => removeRegion(idx)}
                     >
                       ✕
                     </button>

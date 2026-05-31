@@ -98,10 +98,12 @@ function renderPanel() {
   );
 }
 
-/** Pick the first history recording and wait for its load probe to resolve. */
+/** Pick the first history recording and wait for its load probe to resolve.
+ *  Targets the info line specifically — the canvas now also reports a
+ *  remaining-duration readout that can read the same "3600.0s" with no cuts. */
 async function pickAndLoad() {
   fireEvent.click(await screen.findByText("2026-05-31.mp4"));
-  await screen.findByText(/3600\.0s/);
+  await screen.findByText(/Varighet.*3600\.0s/);
 }
 
 beforeEach(() => {
@@ -146,7 +148,7 @@ describe("EditorPanel", () => {
         inputPath: "/rec/2026-05-31.mp4",
       }),
     );
-    expect(await screen.findByText(/3600\.0s/)).toBeInTheDocument();
+    expect(await screen.findByText(/Varighet.*3600\.0s/)).toBeInTheDocument();
   });
 
   it("auto-pulls peaks on pick and renders the waveform", async () => {
