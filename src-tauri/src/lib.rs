@@ -27,6 +27,10 @@ pub mod email;
 pub mod error;
 pub mod media;
 pub mod preflight;
+// PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
+// The XML shaping is `sundayrec_core::feed`; this seam maps history + writes/uploads.
+#[cfg(feature = "publish")]
+pub mod publish;
 pub mod recorder;
 pub mod scheduler;
 pub mod secrets;
