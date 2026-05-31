@@ -7,6 +7,9 @@
 
 use tauri::{AppHandle, State};
 
+use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
+use sundayrec_core::device_match::FfmpegDevice;
+
 use crate::audio::device_enum::{enumerate_ffmpeg_devices, DeviceInventory};
 use crate::audio::devices::{list_input_devices as enumerate_inputs, AudioDeviceList};
 use crate::audio::vu::VuEngine;
@@ -28,6 +31,36 @@ pub fn list_input_devices() -> AppResult<AudioDeviceList> {
 #[tauri::command]
 pub async fn list_devices() -> AppResult<DeviceInventory> {
     enumerate_ffmpeg_devices().await
+}
+
+/// List ONLY the camera (video) devices ffmpeg can see, for the settings camera
+/// dropdown. Mirrors the Electron `list-video-devices` / the video half of the
+/// device picker. Reuses the same `ffmpeg -list_devices` enumeration as
+/// [`list_devices`] and returns its `video_inputs`.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — needs real cameras + the ffmpeg sidecar; only the
+/// pure parse helpers in `sundayrec_core::device_enum` are unit-tested.
+#[tauri::command]
+pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
+    Ok(enumerate_ffmpeg_devices().await?.video_inputs)
+}
+
+/// Combined audio-probe for the settings device dropdown: enumerate the audio
+/// inputs once and shape them into the flat name lists the panel renders, in a
+/// single round-trip. Mirrors the Electron `diagnose-audio` handler.
+///
+/// The WASAPI loopback bridge (a Windows-native-recorder feature) is not ported,
+/// so `wasapi` is empty and `wasapi_available` is `false`; the shaping is the
+/// unit-tested [`build_audio_diagnostics`]. On a spawn failure the audio list is
+/// empty (the panel shows "no devices found" rather than erroring), matching the
+/// Electron `.catch(() => [])`.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — the enumeration needs real devices + the ffmpeg
+/// sidecar; the shaping is pure + tested.
+#[tauri::command]
+pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
+    let inv = enumerate_ffmpeg_devices().await.unwrap_or_default();
+    Ok(build_audio_diagnostics(&inv.audio_inputs, &[], false))
 }
 
 /// Start the VU engine on `device_name` (or the host default when `None`).

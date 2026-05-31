@@ -22,6 +22,46 @@
 //! irrelevant to capture there).
 
 use crate::device_match::FfmpegDevice;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+/// The shaped result of the settings "diagnose audio" probe (mirrors the Electron
+/// `diagnose-audio` handler in `src/main/ipc/audio-devices.ts`). The renderer
+/// renders one populated dropdown from this in a single round-trip.
+///
+/// `dshow` carries the DirectShow/avfoundation audio-input names, `wasapi` the
+/// WASAPI loopback names (empty off Windows), and `wasapi_available` whether the
+/// loopback bridge is usable on this host. The shaping is pure — turning parsed
+/// [`FfmpegDevice`] lists into the flat name lists the panel wants — so it is
+/// unit-tested without spawning ffmpeg.
+// mirrors src/main/ipc/audio-devices.ts diagnose-audio
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
+#[ts(export, export_to = "../../../src/lib/bindings/AudioDiagnostics.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDiagnostics {
+    /// DirectShow (Windows) / avfoundation (macOS) audio-input device names.
+    pub dshow: Vec<String>,
+    /// WASAPI loopback device names (empty off Windows).
+    pub wasapi: Vec<String>,
+    /// Whether the WASAPI loopback bridge is available on this host.
+    pub wasapi_available: bool,
+}
+
+/// Shape the audio-diagnostics result from the device lists the shell gathered.
+/// Pure: maps `FfmpegDevice` lists to their `name`s and carries the loopback
+/// availability flag. Mirrors the Electron handler's `.map(d => d.name)` + the
+/// `wasapiAvailable` probe result.
+pub fn build_audio_diagnostics(
+    dshow: &[FfmpegDevice],
+    wasapi: &[FfmpegDevice],
+    wasapi_available: bool,
+) -> AudioDiagnostics {
+    AudioDiagnostics {
+        dshow: dshow.iter().map(|d| d.name.clone()).collect(),
+        wasapi: wasapi.iter().map(|d| d.name.clone()).collect(),
+        wasapi_available,
+    }
+}
 
 /// Push `name` as a dshow/wasapi device (addressed by name, no index) unless a
 /// device with that exact name is already present. Mirrors the Electron
@@ -332,6 +372,32 @@ fn video_words(s: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Audio diagnostics shaping ─────────────────────────────────────────────
+
+    #[test]
+    fn build_audio_diagnostics_flattens_names_and_carries_availability() {
+        let dshow = vec![
+            FfmpegDevice::new("Microphone (USB Audio CODEC)", "dshow", None),
+            FfmpegDevice::new("Line In (Realtek)", "dshow", None),
+        ];
+        let wasapi = vec![FfmpegDevice::new("Speakers (loopback)", "wasapi", None)];
+        let diag = build_audio_diagnostics(&dshow, &wasapi, true);
+        assert_eq!(
+            diag.dshow,
+            vec!["Microphone (USB Audio CODEC)", "Line In (Realtek)"]
+        );
+        assert_eq!(diag.wasapi, vec!["Speakers (loopback)"]);
+        assert!(diag.wasapi_available);
+    }
+
+    #[test]
+    fn build_audio_diagnostics_empty_when_no_devices() {
+        let diag = build_audio_diagnostics(&[], &[], false);
+        assert!(diag.dshow.is_empty());
+        assert!(diag.wasapi.is_empty());
+        assert!(!diag.wasapi_available);
+    }
 
     // ── WASAPI (all four formats) ─────────────────────────────────────────────
 

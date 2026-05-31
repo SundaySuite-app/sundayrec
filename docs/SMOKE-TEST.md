@@ -601,6 +601,25 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
 
 ---
 
+## §P2b — Remaining Electron→Tauri IPC parity
+
+These close the last handlers the Electron `src/main/ipc/*` exposed that the
+earlier phases hadn't reached. Pure decisions live in `sundayrec-core` (unit-
+tested); the I/O seams are annotated and, where they touch new hardware/network,
+gated behind a default-off feature.
+
+### Audio diagnostics (no feature) — `list_video_devices` + `diagnose_audio`
+
+Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
+`ffmpeg -list_devices` enumeration; the diagnostics shaping
+(`build_audio_diagnostics`) is pure + tested.
+
+1. Open **Generelt** → the camera dropdown / device probe.
+   - **Expected:** `list_video_devices` returns the connected cameras and
+     `diagnose_audio` returns the audio-input names (WASAPI loopback is not
+     ported → `wasapi` empty, `wasapiAvailable` false). A missing ffmpeg / no
+     devices yields empty lists, not an error. // HARDWARE-UNVERIFIED.
+
 ## What "passed" means
 
 A green smoke test = §2–§6 all behave as the **Expected** lines say on a real
