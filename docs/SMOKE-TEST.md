@@ -245,7 +245,28 @@ cargo build -p sundayrec --features publish
      to Drive, made public, and the feed URL is cached for the UI to show
      ("submit this URL to Spotify/Apple").
 
-> [NET] File/HTTP publish is NETWORK-UNVERIFIED — only the XML shaping is tested.
+The **Publisering** panel (R6) drives this: `publish_feed_status` (every build)
+reports the candidate episode count + whether `--features publish` is compiled
+in; **Forhåndsvis feed** renders the feed XML in memory from the recording
+history + the channel metadata from settings (`publish_feed_preview`, pure
+shaping — every build); **Generer feed nå** (`publish_generate_feed`) writes
+`<saveFolder>/podcast.xml` behind the feature (NETWORK-UNVERIFIED; the Drive
+upload + share-URL glue is still deferred — see docs/NEEDS-RICHARD.md PU-3).
+
+```bash
+npm run tauri dev -- --features publish   # drive the Publisering disclosure
+```
+
+2. (default build) Open **Publisering**, click **Generer feed nå**.
+   - **Expected:** a calm "ikke bygd inn i denne versjonen" hint (GUI-UNVERIFIED).
+     **Forhåndsvis feed** still renders the XML.
+3. (`--features publish`, with a save folder set) **Generer feed nå**.
+   - **Expected:** `podcast.xml` appears in the save folder and its path is shown.
+     Without a save folder a `no_config` hint is shown.
+
+> [NET] File/HTTP publish is NETWORK-UNVERIFIED — only the XML shaping is tested;
+> the per-recording share URLs aren't persisted yet so the preview uses the local
+> file path as a placeholder `audio_url` (see `commands::publish` + NEEDS-RICHARD).
 
 ---
 
@@ -320,6 +341,22 @@ cargo build -p sundayrec --features bridge
    - **Expected:** with `RUST_LOG=sundayrec=debug`, each folded event logs its
      effect + seq; a `feature_disabled` error means the build lacks `--features
 bridge`.
+
+The **Integrasjoner** panel (R6) drives this: it lists the Sunday-suite peer
+apps, persists the shared connection (churchId / serviceId / Song + Plan API
+URLs) to the `integrations` settings key, and resolves the Realtime channel name
+via `live_bridge_channel` (pure — every build). `live_bridge_status` reports
+whether the native subscribe is compiled in; in the default build the panel
+shows a calm "den innebygde live-broen er ikke bygd inn" hint (GUI-UNVERIFIED).
+
+```bash
+npm run tauri dev -- --features bridge   # drive the Integrasjoner disclosure
+```
+
+3. (any build) Open **Integrasjoner**, fill churchId + serviceId, **Vis
+   kanalnavn**.
+   - **Expected:** `church:<id>:service:<id>` is shown; blank ids show a hint.
+     The amber "native bridge off" banner is present only in the default build.
 
 > [INFRA] The Realtime handshake + broadcast decode need a live Supabase project
 >

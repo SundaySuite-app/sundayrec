@@ -915,7 +915,16 @@
     "streamFramerate": "BILDERATE",
     "streamConfirmDelete": "Slette denne destinasjonen?",
     "streamNoneYet": "Ingen destinasjoner enda.",
-    "enabled": "Aktivert"
+    "enabled": "Aktivert",
+    "title": "Publisering",
+    "featureDisabled": "Publisering til disk/sky er ikke bygd inn i denne versjonen. Du kan likevel forhåndsvise feeden.",
+    "candidateCount": "{{n}} opptak i feeden",
+    "previewFeed": "Forhåndsvis feed",
+    "noFolder": "Velg en lagringsmappe i innstillingene først.",
+    "generateFailed": "Klarte ikke generere feeden.",
+    "writtenTo": "Skrevet til: {{path}}",
+    "previewTitle": "Forhåndsvisning ({{n}} episoder)",
+    "feedXml": "Feed-XML"
   },
   "live": {
     "title": "Direkte sending",

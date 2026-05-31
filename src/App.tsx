@@ -17,6 +17,7 @@ import { EditorPanel } from "@/features/editor/EditorPanel";
 import { TranscribePanel } from "@/features/transcribe/TranscribePanel";
 import { ReviewPanel } from "@/features/review/ReviewPanel";
 import { IntegrationsPanel } from "@/features/integrations/IntegrationsPanel";
+import { PublishPanel } from "@/features/publish/PublishPanel";
 import { CloudBackupPanel } from "@/features/cloud/CloudBackupPanel";
 import { EmailSettingsPanel } from "@/features/email/EmailSettingsPanel";
 import { StreamingPanel } from "@/features/streaming/StreamingPanel";
@@ -214,6 +215,20 @@ function App() {
             </summary>
             <div className="mt-3">
               <StreamingPanel />
+            </div>
+          </details>
+
+          {/* PU-3: podcast publishing / RSS — preview the generated feed XML
+              (pure shaping, every build) and generate it to disk. The write/
+              upload is behind the default-off `publish` feature, so the panel
+              shows a calm "not built into this build" hint there. Same
+              disclosure pattern until the real shell/nav lands in Phase 8. */}
+          <details className="w-full max-w-md text-left">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("publish.title", "Publisering")}
+            </summary>
+            <div className="mt-3">
+              <PublishPanel />
             </div>
           </details>
 

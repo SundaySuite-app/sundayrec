@@ -29,6 +29,9 @@ vi.mock("@tauri-apps/api/core", () => ({
     // feature flag + the persisted connection settings blob.
     if (cmd === "live_bridge_status") return false;
     if (cmd === "setting_get") return null;
+    // PU-3: App mounts <PublishPanel/>, which reads the publish feature status.
+    if (cmd === "publish_feed_status")
+      return { featureBuilt: false, episodeCount: 0 };
     // Fase 6: App mounts <CloudBackupPanel/>, which reads connection + queue.
     if (cmd === "cloud_connection_status") return [];
     if (cmd === "cloud_queue_status") return [];
