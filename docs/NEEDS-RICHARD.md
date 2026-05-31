@@ -1,20 +1,24 @@
-# Needs Richard — Electron-parity seams (PU-1…PU-4)
+# Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
 fully unit-tested; the impure seams compile behind **default-off** cargo
-features (`email`, `tray`, `publish`) or are already wired (scheduler/wake). The
-items below need a real account / desktop session / device that the headless
-gate cannot provide. None block the default build or the gate.
+features (`email`, `tray`, `publish`, `editor`, `whisper`, `streaming`, `ndi`,
+`bridge`, `updater`) or are already wired (scheduler/wake). The items below need
+a real account / desktop session / device / signing identity that the headless
+gate cannot provide. None block the default build or the gate. The consolidated
+"what only Richard can provide" checklist is at the bottom of this file.
 
 ## PU-1 — Email alerts (`--features email`)
 
 - **A Gmail OAuth connection or SMTP credentials.** The Gmail path reuses the
   cloud OAuth refresh token (connect Gmail first); the SMTP path needs a host,
-  port, user, and app-password. There is no UI to enter SMTP settings yet — the
-  Tauri `Settings` struct still defers the `email*` fields to Fase 6, so the
-  seam (`src-tauri/src/email/mod.rs`) takes its transport config as explicit
-  parameters. Wiring the Settings fields + a `send_test_email` command is the
-  remaining glue once the email card lands in the UI.
+  port, user, and app-password. **(R7 update)** the `email*` Settings fields
+  (`emailOnError`/`emailAddress`/`emailSmtp`/`emailSmtpPort`/`emailSmtpUser`) now
+  exist in the typed model + the **Generelt → E-postvarsler** UI, and the
+  `email_send_test` command takes the transport config. The SMTP **password** is
+  intentionally NOT in the settings bag — it lives in the OS keychain via the
+  `email` seam (mirrors the Electron `setSmtpPassword`); a keychain-write command
+  for the SMTP password from the UI is the small remaining glue.
 - **Deliverability check.** Confirm a real "✓ email works" message arrives and
   the throttle suppresses a 2nd identical alert within 10 min (smoke §8).
 
@@ -22,15 +26,43 @@ gate cannot provide. None block the default build or the gate.
 
 - **A desktop session.** The native menubar/tray item and the `sundayrec://`
   scheme registration (`tauri-plugin-deep-link`) need a real GUI to verify.
+  **(R7 update)** the tray is now actually **installed** in `setup()` under
+  `--features tray`: `tray::install` builds the `TrayIcon` from the unit-tested
+  core menu model, wires `on_menu_event` → `handle_menu_event` (Stop calls
+  `RecorderEngine::stop()` directly; start/preflight/diagnostics/review emit
+  `tray://action`; show/quit are in-process), and registers the deep-link plugin
+  routing inbound URLs through `dispatch_deep_link`. Build proven with
+  `cargo build -p sundayrec --features tray` + clippy `-D warnings`.
 - **Tray icon assets.** The Electron app shipped `tray-idle/recording/error`
-  PNGs (+ macOS `Template` + Windows dark variants) under `assets/`. The Tauri
-  build needs equivalent assets bundled and a `tray.rs` shell that maps
-  `sundayrec_core::tray::{build_menu, icon_for, tooltip}` to `tauri::menu` +
-  `tauri::tray::TrayIconBuilder` and wires each `TrayAction` to its command/
-  event. The model + routing are unit-tested; the menubar shell is the glue.
+  PNGs (+ macOS `Template` + Windows dark variants) under `assets/`. **(R7)** the
+  shell currently reuses the app's **default window icon** for the tray; the
+  per-state idle/recording/error assets still need bundling + a swap on
+  `TrayState` change (`sundayrec_core::tray::icon_for` already picks the base).
 - **Scheme registration in `tauri.conf.json`** (`plugins.deep-link.desktop.schemes
-= ["sundayrec"]`) + the macOS `Info.plist` `CFBundleURLTypes` entry, then the
-  `lib.rs` `setup` hook calling `parse_deep_link` on each inbound URL.
+= ["sundayrec"]`) + the macOS `Info.plist` `CFBundleURLTypes` entry are still
+  needed for the OS to _deliver_ `sundayrec://` URLs to the running app (the
+  `on_open_url` listener is wired; the scheme must be registered with the OS).
+
+## R7 — Auto-update (`--features updater`)
+
+- **A SIGNED release + an updater keypair.** The `updater` feature compiles the
+  seam (`src-tauri/src/update/mod.rs`) + registers `tauri-plugin-updater`; the
+  status model + dev-check guard + percent math + semver "is newer" decision are
+  the unit-tested `sundayrec-core::update`. A **real** update needs:
+  1. `npm run tauri signer generate -- -w ~/.tauri/sundayrec_updater.key`
+     (do this ONCE; back the key up — losing it means users can't auto-update
+     and need a manual reinstall with a new key).
+  2. The **public** key in `tauri.conf.json` under `plugins.updater.pubkey`, and
+     an `endpoints` array pointing at the `latest.json` the release CI publishes.
+  3. The release CI secrets `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) and
+     `includeUpdaterJson: true` — see docs/DISTRIBUTION.md "Auto-update signing".
+- The feed fetch, signature verify, download and relaunch are NETWORK/GUI-
+  UNVERIFIED — they only run in a release build against the signed feed
+  (smoke §R7). A dev build short-circuits the check (no signed release exists).
+- The `tauri.conf.json` does NOT yet carry the `plugins.updater` block (no
+  pubkey/endpoints) — add it alongside the keypair so the release build resolves
+  the feed. Until then the `updater` feature compiles + the panel works, but a
+  real check has nowhere to point.
 
 ## PU-3 — Podcast RSS publish (`--features publish`)
 
@@ -97,7 +129,7 @@ gate cannot provide. None block the default build or the gate.
   HARDWARE-UNVERIFIED — they need real media (smoke §12). Build proven to
   compile with `cargo build -p sundayrec --features editor`.
 - **Deferred to a later editor phase (parity gaps, not bugs):**
-  - **Cut-region timeline UI.** The R1 panel exports the *whole* file
+  - **Cut-region timeline UI.** The R1 panel exports the _whole_ file
     (`cutRegions: []`) — it proves the full IPC surface end-to-end. The
     drag-to-mark cut UI + waveform-overlaid timeline (the Electron
     `renderer/pages/editor/*`) is the renderer work for the next phase; the
@@ -150,10 +182,10 @@ gate cannot provide. None block the default build or the gate.
   restarted ffmpeg up to 3× on an unexpected crash (USB drop / brief RTMP
   disconnect over a 90-min sermon) and parsed `frame=…fps=…bitrate=…` from
   stderr at ~1 Hz to drive the UI stats + per-destination `connecting/live/
-  failed` state. The R3 seam spawns + kills cleanly and reports `active`; wiring
+failed` state. The R3 seam spawns + kills cleanly and reports `active`; wiring
   the stderr-parse → `StreamStatus` updates (emit a `streaming://stats` event)
   and the crash auto-restart loop is the remaining glue once the panel shows a
-  live stats row. The watchdog/restart *decisions* should be lifted into the
+  live stats row. The watchdog/restart _decisions_ should be lifted into the
   core first (mirrors the recorder's reconnect policy), then wired here.
 - **`alsoRecord` history row.** The "Start direktesending + opptak" local MP4 is
   built into the argv (the 3-way split branch), but registering the finished
@@ -191,3 +223,60 @@ gate cannot provide. None block the default build or the gate.
   (`RecorderTimeouts::NDI_STOP_TIMEOUT_MS`) so a libndi deadlock can't block
   stream-stop. Bundle the SDK in `tauri.conf.json` (`externalBin`/resources) the
   way the Electron app `asarUnpack`-ed `vendor/grandiose`.
+
+---
+
+## Summary — what only Richard can provide
+
+The code is feature-complete and gate-green; everything below needs an account,
+a key, a signing identity, or a physical rig that the headless gate cannot have.
+None of it blocks the default build or the gate.
+
+### A real recording/streaming rig (HARDWARE-UNVERIFIED)
+
+- **Record** (smoke §3–§6): a Mac/Windows box with a real mic + camera; prove
+  the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
+  permission prompts. Reconnect/split/preroll/two-process-fallback paths are
+  wired but unproven on a device.
+- **Stream** (`--features streaming`, smoke §R3): a real camera + a real RTMP
+  endpoint + a stream key; auto-recovery + live stats are still glue.
+- **Whisper** (`--features whisper`, smoke §10b): a C/C++ toolchain + CMake, a
+  downloaded model (download/SHA-verify glue still pending), and a real recording.
+- **Cloud upload** (smoke §7): a connected Google Drive + network — the resumable
+  worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
+- **OS wake-timers** (smoke §11): a real box for the `pmset`/`schtasks`/`powercfg`
+  shell-outs + admin/UAC prompts + a true sleep/wake cycle.
+- **NDI** (`--features ndi`): the NDI SDK runtime + an FFI binding + a LAN NDI
+  source — the seam is a deliberate STUB until the SDK is vendored (see above).
+
+### Keys & secrets
+
+- **Google OAuth client** (Drive/YouTube/Gmail + cloud-Gmail email path):
+  `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) — see
+  docs/GOOGLE-OAUTH-SETUP.md. A binary `client_id` is NOT the same as the `.env`
+  one; confirm the console client is a **Desktop app** type.
+- **SMTP credentials** (`--features email`, SMTP path): host/port/user +
+  app-password. The password is stored in the OS keychain, never the settings
+  bag; the host/port/user now have a UI (R7).
+- **Anthropic API key** (`ANTHROPIC_API_KEY`): NOT currently consumed by
+  SundayRec — there is no LLM seam in this app (the AI rerank/translate work
+  lives in SundaySong). Listed here only so it isn't assumed to be wired; if a
+  future SundayRec feature wants Claude, follow the `getEmbedder()`/`getLlmClient()`
+  fetch-seam pattern from the suite (free tier works without a key).
+
+### Signing, notarization & auto-update
+
+- **Apple Developer ID + notarization** (macOS release): the Developer ID
+  Application cert (`APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` /
+  `APPLE_SIGNING_IDENTITY`) + an App-Store-Connect API key or
+  `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID` for `notarytool`. Without these the
+  release CI builds an unsigned `.app`/`.dmg` (Gatekeeper-blocked on download).
+- **Windows code-signing cert** (Windows release): for a non-SmartScreen-warned
+  installer.
+- **Updater keypair** (`--features updater`, R7): `~/.tauri/sundayrec_updater.key`
+  (private, backed up) + the public key in `tauri.conf.json` `plugins.updater`
+  - the `TAURI_SIGNING_PRIVATE_KEY` CI secret + `includeUpdaterJson: true`. See
+    the R7 section above and docs/DISTRIBUTION.md "Auto-update signing".
+- All of these are **account/secret/identity** work, NOT code — the release
+  pipeline (`release.yml`, updater plugin, signing hooks) is wired to consume
+  them the moment they're provided.

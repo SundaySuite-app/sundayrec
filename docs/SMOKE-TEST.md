@@ -52,7 +52,11 @@ npm run build          # tsc + vite frontend build
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: 332 Rust tests + the vitest suite + clippy `-D warnings`.
+gate is green: **749 Rust tests** (594 core + 155 src-tauri) + **125 vitest** +
+clippy `-D warnings`. Every default-off feature also compiles in isolation —
+`cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
+`editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
+exception, verified by inspection).
 
 ---
 
@@ -212,21 +216,36 @@ inbound `sundayrec://` deep-link parser are unit-tested in
 `sundayrec-core::{tray, link}`; the native menubar item + scheme registration
 are **GUI-UNVERIFIED** behind the default-off `tray` feature.
 
+As of **R7** the tray is actually **installed** in `setup()` under
+`--features tray` (`tray::install` builds the `TrayIcon` from the core menu
+model, wires `on_menu_event` → `handle_menu_event`, and registers the
+`tauri-plugin-deep-link` scheme handler that routes inbound URLs through
+`tray::dispatch_deep_link`). The menu **start/stop/show** actions are wired to
+the backend: **Stop** calls `RecorderEngine::stop()` directly; **start** /
+preflight / diagnostics / review-queue emit `tray://action` for the renderer to
+turn into the matching `invoke(...)`; **show**/**quit** are handled in-process.
+
 ```bash
 cargo build -p sundayrec --features tray
+npm run tauri dev -- --features tray
 ```
 
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
    - **Expected:** the menu shows status → open → start/stop → folder → check
      system → diagnostics → quit, in the UI language. A review-queue callout
      appears only when episodes await review.
-2. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
-3. Open a `sundayrec://import?path=…` URL from the OS.
-   - **Expected:** the running instance receives it and `parse_deep_link` routes
-     it (Import / OAuthCallback).
+2. Click **Stopp opptak** while recording.
+   - **Expected:** the recording stops (the `RecorderEngine::stop()` path) and a
+     new history row appears, even with the window unfocused.
+3. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
+4. Open a `sundayrec://import?path=…` URL from the OS.
+   - **Expected:** the running instance receives it (`on_open_url`) and
+     `dispatch_deep_link` brings the window forward + emits `deeplink://import`.
 
-> [GUI] The `tauri::tray` item + `tauri-plugin-deep-link` scheme handler are
-> GUI-UNVERIFIED — they need a real desktop session.
+> [GUI] The `tauri::tray` item install, the menu paint, and the
+> `tauri-plugin-deep-link` scheme delivery are GUI-UNVERIFIED — they need a real
+> desktop session. The dedicated tray icon assets aren't bundled yet (the app's
+> default window icon is reused) — see docs/NEEDS-RICHARD.md PU-2.
 
 ---
 
@@ -481,11 +500,81 @@ cargo build -p sundayrec --features ndi          # must compile (gate verifies t
 > [NEEDS-RICHARD] The NDI SDK is NOT bundled in this repo. Even WITH
 > `--features ndi` the seam is a STUB: `ndi_list_sources` returns empty and
 > `ndi_start_receiver` returns `ndi_not_bundled: NDI SDK not bundled — see
-> docs/NEEDS-RICHARD.md`. The default build returns `feature_disabled`. The pure
+docs/NEEDS-RICHARD.md`. The default build returns `feature_disabled`. The pure
 > source-discovery / FourCC→pixfmt / rawvideo input-arg logic
 > (`sundayrec_core::ndi`) IS unit-tested. Wiring the real libndi FFI + the
 > loopback-TCP frame pump needs the SDK runtime + an NDI source on the LAN — see
 > the NEEDS-RICHARD doc.
+
+---
+
+## §PU-6 — Episode prep + human-review queue (no feature)
+
+The prep/review decisions (which recordings need attention + why, the
+sermon-detection summary, the reminder sweep cadence) are unit-tested in
+`sundayrec-core::{prep, review_queue}`; the queue is persisted in SQLite. No
+feature flag — this was part of PU-6. The **Gjennomgang** panel (R6) drives it.
+
+1. After a recording (§5) is queued for review, open the **Gjennomgang**
+   disclosure.
+   - **Expected:** the recording appears with its detected sermon block + the
+     "attention" reasons (e.g. short duration, silence flagged).
+2. Click **Godkjenn** (approve) or **Forkast** (discard) on a row.
+   - **Expected:** the row leaves the queue (`review_mark_published` /
+     `review_mark_discarded`); relaunching the app keeps the change.
+3. Run the reminder sweep (`review_process_reminders`).
+   - **Expected:** entries past their reminder window surface a notification.
+
+> The data flow + IPC (vitest, invoke mocked) and the core decisions are tested;
+> the on-screen render is // GUI-UNVERIFIED.
+
+---
+
+## §R7 — Auto-update (`--features updater`) + settings completeness
+
+### Auto-update
+
+The status model (the localized `idle`/`checking`/`upToDate`/`available`/
+`downloading`/`readyToInstall`/`error` phases), the dev-check guard, the
+download-percent math, and the semver "is newer" decision are unit-tested in
+`sundayrec-core::update`. The feed fetch + signature verify + install + relaunch
+are **NETWORK/GUI-UNVERIFIED** behind the default-off `updater` feature, and a
+**real** update additionally needs a SIGNED release + the updater public key in
+`tauri.conf.json` — see docs/NEEDS-RICHARD.md.
+
+```bash
+cargo build -p sundayrec --features updater   # must compile (gate verifies this)
+npm run tauri dev -- --features updater          # drive the Oppdateringer disclosure
+```
+
+1. Open the **Oppdateringer** disclosure. In the **default build** (no
+   `--features updater`) click **Se etter oppdateringer nå**.
+   - **Expected:** a calm "Automatisk oppdatering er ikke bygget inn i denne
+     versjonen." hint (the command returns `feature_disabled`). // GUI-UNVERIFIED.
+2. (`--features updater`, dev build) **Se etter oppdateringer nå**.
+   - **Expected:** the status reports **Du er oppdatert** — a dev build
+     short-circuits the check (the `should_check` guard), so no error from a
+     missing feed. // NETWORK-UNVERIFIED.
+3. (`--features updater`, **release** build pointed at a real signed feed) check
+   → **Last ned** → **↺ Start på nytt og installer**.
+   - **Expected:** the panel walks `available` → `downloading {pct}` →
+     `readyToInstall`; the relaunch applies the staged update. Needs the signed
+     release + pubkey (NEEDS-RICHARD). // NETWORK/GUI-UNVERIFIED.
+
+### Settings completeness (no feature)
+
+R7 closed the gap between the Electron `store.ts` `Settings` and the Tauri model:
+church profile (`churchName`/`responsiblePerson`), notification toggles
+(`notifyStart`/`notifyStop`), and email config (`emailOnError`/`emailAddress`/
+`emailSmtp`/`emailSmtpPort`/`emailSmtpUser` — the SMTP **password** stays in the
+OS keychain via the `email` seam, never in the settings bag) plus the editor
+intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
+1..=65535) in `sundayrec-core::settings`.
+
+1. Open **Generelt**, scroll to the **Menighet** / **Varsler** / **E-postvarsler**
+   sections.
+   - **Expected:** every field round-trips through `settings_save` (debounced)
+     into SQLite and survives a relaunch; the port clamps to 1..=65535.
 
 ---
 
