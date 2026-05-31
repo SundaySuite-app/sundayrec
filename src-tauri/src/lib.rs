@@ -94,6 +94,11 @@ pub fn run() {
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
+    // PU-2: register the `sundayrec://` deep-link plugin only under `--features
+    // tray` (the scheme handler feeds `tray::dispatch_deep_link`). GUI-UNVERIFIED.
+    #[cfg(feature = "tray")]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
+
     builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
@@ -150,6 +155,36 @@ pub fn run() {
             // fires start/stop/reminder/preflight on the wall clock.
             app.state::<scheduler::SchedulerEngine>()
                 .start(app.handle().clone());
+
+            // PU-2: install the menubar tray (default-off `tray` feature). The
+            // menu shape is the unit-tested core model; start/stop/show are
+            // wired to commands via `handle_menu_event`. We keep the returned
+            // `TrayIcon` alive by leaking it for the process lifetime (it lives
+            // as long as the app; dropping it would remove the tray). The deep-
+            // link plugin (`sundayrec://`) is registered for the OAuth/import
+            // hand-off. GUI-UNVERIFIED.
+            #[cfg(feature = "tray")]
+            {
+                use sundayrec_core::tray::{TrayLang, TrayState};
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let lang = TrayLang::from_code(None); // hydrated by the renderer later
+                match tray::install(app.handle(), &TrayState::default(), lang) {
+                    Ok(icon) => {
+                        // Hold the handle for the whole process lifetime.
+                        std::mem::forget(icon);
+                    }
+                    Err(e) => tracing::warn!("tray install failed: {e}"),
+                }
+
+                // Route inbound `sundayrec://…` links through the unit-tested
+                // core parser + the shell dispatcher. GUI-UNVERIFIED.
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let _ = tray::dispatch_deep_link(&handle, url.as_str());
+                    }
+                });
+            }
 
             tracing::info!("SundayRec backend ready (db at {})", db_path.display());
             Ok(())

@@ -92,10 +92,19 @@ pub fn build_menu<R: Runtime>(
     Ok(menu)
 }
 
-/// Emit the [`TRAY_ACTION_EVENT`] for `action` (or perform it directly for the
-/// ones the backend owns: window show + quit). The renderer listens for the
-/// rest (start/stop/preflight/diagnostics/review-queue), matching how Electron's
-/// `tray.ts` mixed `app.quit()`/`win.show()` with `webContents.send(...)`.
+/// Emit the [`TRAY_ACTION_EVENT`] for `action`, or perform it directly for the
+/// ones the backend owns end-to-end:
+///   - **show** (`OpenWindow`/`ShowOnError`) → bring the window forward;
+///   - **stop** (`StopRecording`) → call the recorder engine's `stop()` directly
+///     (the same path as the `stop_recording` command), so a tray "Stopp opptak"
+///     works even with no window focused;
+///   - **quit** → exit.
+///
+/// Everything else (start — which needs the renderer's device/settings context,
+/// preflight, diagnostics, review-queue) is emitted as [`TRAY_ACTION_EVENT`] for
+/// the renderer to turn into the matching `invoke(...)`. This mirrors how the
+/// Electron `tray.ts` mixed `app.quit()`/`win.show()` + a direct stop with
+/// `webContents.send(...)` for the rest.
 pub fn emit_action<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
     match action {
         TrayAction::OpenWindow | TrayAction::ShowOnError => {
@@ -103,6 +112,13 @@ pub fn emit_action<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
                 let _ = win.show();
                 let _ = win.set_focus();
             }
+        }
+        TrayAction::StopRecording => {
+            // Wire straight to the recorder command's effect — `RecorderEngine`
+            // is managed state, and `stop()` is safe when nothing is running.
+            app.state::<crate::recorder::engine::RecorderEngine>().stop();
+            // Still surface the event so the renderer can refresh its UI state.
+            let _ = app.emit(TRAY_ACTION_EVENT, action_id(action));
         }
         TrayAction::Quit => app.exit(0),
         TrayAction::None => {}
@@ -143,6 +159,35 @@ pub fn dispatch_deep_link<R: Runtime>(app: &AppHandle<R>, url: &str) -> Option<D
         }
     }
     Some(action)
+}
+
+/// Build + install the menubar tray icon with the current [`TrayState`] menu
+/// and wire its `on_menu_event` to [`handle_menu_event`]. Called once from the
+/// app `setup` under the `tray` feature.
+///
+/// The icon image is the app's default window icon (the dedicated tray assets
+/// aren't bundled yet — see docs/NEEDS-RICHARD.md PU-2); the menu *shape* is the
+/// unit-tested [`build_model`] projection. Returns the [`TrayIcon`] so the shell
+/// can keep it alive (dropping it removes the tray). GUI-UNVERIFIED.
+pub fn install<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &TrayState,
+    lang: TrayLang,
+) -> tauri::Result<tauri::tray::TrayIcon<R>> {
+    use tauri::tray::TrayIconBuilder;
+
+    let menu = build_menu(app, state, lang)?;
+    let mut builder = TrayIconBuilder::new()
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| handle_menu_event(app, event.id.as_ref()));
+
+    // Reuse the app's default icon until dedicated tray assets land.
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+
+    builder.build(app)
 }
 
 #[cfg(test)]
