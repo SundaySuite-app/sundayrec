@@ -187,6 +187,56 @@ slots: Array<ScheduleSlot>,
  */
 specialRecordings: Array<SpecialRecording>, 
 /**
+ * Congregation/church name. Drives the `church` filename pattern and the
+ * localized "church" labels. Empty string = unset (matches the Electron
+ * `''` default, not `null`). See `store.ts` `churchName: ''`.
+ */
+churchName: string, 
+/**
+ * Person responsible for recordings (shown in diagnostics + email alerts).
+ * Empty string = unset (Electron `responsiblePerson: ''`).
+ */
+responsiblePerson: string, 
+/**
+ * Fire a native notification when a scheduled recording starts? Default true.
+ */
+notifyStart: boolean, 
+/**
+ * Fire a native notification when a recording stops? Default true.
+ */
+notifyStop: boolean, 
+/**
+ * Send an email when a recording fails / a scheduled one is missed?
+ */
+emailOnError: boolean, 
+/**
+ * Recipient address for alert emails. Empty = unset (Electron `''`).
+ */
+emailAddress: string, 
+/**
+ * SMTP host (blank = use the Gmail transport instead). Electron `emailSmtp`.
+ */
+emailSmtp: string, 
+/**
+ * SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
+ */
+emailSmtpPort: number, 
+/**
+ * SMTP username. Empty = unset (Electron `emailSmtpUser: ''`). The PASSWORD
+ * is intentionally absent — it is stored in the OS keychain by the `email`
+ * seam, never persisted to the settings bag.
+ */
+emailSmtpUser: string, 
+/**
+ * Path to an intro clip prepended on export, or `None`. Electron used
+ * `undefined`; we keep it `Option` so an unset value stays absent.
+ */
+editorIntroPath: string | null, 
+/**
+ * Path to an outro clip appended on export, or `None`.
+ */
+editorOutroPath: string | null, 
+/**
  * Download and install updates automatically? Default true.
  */
 autoUpdate: boolean, 

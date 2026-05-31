@@ -59,6 +59,17 @@ const DEFAULTS: Settings = {
   protectRecording: true,
   slots: [],
   specialRecordings: [],
+  churchName: "",
+  responsiblePerson: "",
+  notifyStart: true,
+  notifyStop: true,
+  emailOnError: false,
+  emailAddress: "",
+  emailSmtp: "",
+  emailSmtpPort: 587,
+  emailSmtpUser: "",
+  editorIntroPath: null,
+  editorOutroPath: null,
   autoUpdate: true,
   askOpenEditor: true,
 };
@@ -194,6 +205,48 @@ describe("SettingsPage", () => {
       await vi.advanceTimersByTimeAsync(600);
       expect(invoke).toHaveBeenCalledWith("settings_save", {
         settings: expect.objectContaining({ language: "en" }),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("debounce-saves the R7 church-profile field", async () => {
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      await vi.waitFor(() =>
+        expect(screen.getByLabelText("Menighetsnavn")).toBeInTheDocument(),
+      );
+
+      fireEvent.change(screen.getByLabelText("Menighetsnavn"), {
+        target: { value: "Domkirken" },
+      });
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(invoke).toHaveBeenCalledWith("settings_save", {
+        settings: expect.objectContaining({ churchName: "Domkirken" }),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("debounce-saves the R7 email-on-error toggle", async () => {
+    vi.useFakeTimers();
+    try {
+      renderPage();
+      await vi.waitFor(() =>
+        expect(
+          screen.getByLabelText("Send e-post ved feil"),
+        ).toBeInTheDocument(),
+      );
+
+      fireEvent.click(screen.getByLabelText("Send e-post ved feil"));
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(invoke).toHaveBeenCalledWith("settings_save", {
+        settings: expect.objectContaining({ emailOnError: true }),
       });
     } finally {
       vi.useRealTimers();

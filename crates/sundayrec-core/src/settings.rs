@@ -235,6 +235,54 @@ pub struct Settings {
     #[serde(default)]
     pub special_recordings: Vec<SpecialRecording>,
 
+    // ── Church profile (R7 — Electron `churchName`/`responsiblePerson`) ────────
+    /// Congregation/church name. Drives the `church` filename pattern and the
+    /// localized "church" labels. Empty string = unset (matches the Electron
+    /// `''` default, not `null`). See `store.ts` `churchName: ''`.
+    #[serde(default)]
+    pub church_name: String,
+    /// Person responsible for recordings (shown in diagnostics + email alerts).
+    /// Empty string = unset (Electron `responsiblePerson: ''`).
+    #[serde(default)]
+    pub responsible_person: String,
+
+    // ── Notifications (R7 — Electron `notifyStart`/`notifyStop`) ───────────────
+    /// Fire a native notification when a scheduled recording starts? Default true.
+    #[serde(default = "default_true")]
+    pub notify_start: bool,
+    /// Fire a native notification when a recording stops? Default true.
+    #[serde(default = "default_true")]
+    pub notify_stop: bool,
+
+    // ── Email alerts (R7 — Electron `email*`; the SMTP pass lives in the OS ────
+    //    keychain, NEVER here — mirrors `store.ts` `setSmtpPassword`) ───────────
+    /// Send an email when a recording fails / a scheduled one is missed?
+    #[serde(default)]
+    pub email_on_error: bool,
+    /// Recipient address for alert emails. Empty = unset (Electron `''`).
+    #[serde(default)]
+    pub email_address: String,
+    /// SMTP host (blank = use the Gmail transport instead). Electron `emailSmtp`.
+    #[serde(default)]
+    pub email_smtp: String,
+    /// SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
+    #[serde(default = "default_smtp_port")]
+    pub email_smtp_port: i32,
+    /// SMTP username. Empty = unset (Electron `emailSmtpUser: ''`). The PASSWORD
+    /// is intentionally absent — it is stored in the OS keychain by the `email`
+    /// seam, never persisted to the settings bag.
+    #[serde(default)]
+    pub email_smtp_user: String,
+
+    // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
+    /// Path to an intro clip prepended on export, or `None`. Electron used
+    /// `undefined`; we keep it `Option` so an unset value stays absent.
+    #[serde(default)]
+    pub editor_intro_path: Option<String>,
+    /// Path to an outro clip appended on export, or `None`.
+    #[serde(default)]
+    pub editor_outro_path: Option<String>,
+
     // ── Misc ─────────────────────────────────────────────────────────────────
     /// Download and install updates automatically? Default true.
     #[serde(default = "default_true")]
@@ -292,6 +340,9 @@ fn default_silence_timeout_minutes() -> i32 {
 fn default_true() -> bool {
     true
 }
+fn default_smtp_port() -> i32 {
+    587
+}
 
 impl Default for Settings {
     /// The Electron `defaults` object (`store.ts` lines 6+), field-for-field.
@@ -346,6 +397,21 @@ impl Default for Settings {
             slots: Vec::new(),
             special_recordings: Vec::new(),
 
+            church_name: String::new(),
+            responsible_person: String::new(),
+
+            notify_start: true,
+            notify_stop: true,
+
+            email_on_error: false,
+            email_address: String::new(),
+            email_smtp: String::new(),
+            email_smtp_port: default_smtp_port(),
+            email_smtp_user: String::new(),
+
+            editor_intro_path: None,
+            editor_outro_path: None,
+
             auto_update: true,
             ask_open_editor: true,
         }
@@ -399,6 +465,11 @@ impl Settings {
         self.manual_max_minutes = clamp_i32(self.manual_max_minutes, 0, 1440);
         self.pre_roll_seconds = clamp_i32(self.pre_roll_seconds, 0, 60);
         self.reminder_minutes = clamp_i32(self.reminder_minutes, 0, 60);
+
+        // Email (R7). The SMTP port is the only numeric email field; clamp it to
+        // a valid TCP port (Electron left it un-clamped, but a 0/negative port
+        // would be a hard ffmpeg/lettre error — clamp defensively).
+        self.email_smtp_port = clamp_i32(self.email_smtp_port, 1, 65_535);
     }
 
     /// Validated copy — convenience for callers that prefer a value.
@@ -476,9 +547,56 @@ mod tests {
         // Schedule (Fase 5)
         assert!(s.slots.is_empty());
         assert!(s.special_recordings.is_empty());
+        // Church profile (R7) — Electron `''` not `null`.
+        assert_eq!(s.church_name, "");
+        assert_eq!(s.responsible_person, "");
+        // Notifications (R7)
+        assert!(s.notify_start);
+        assert!(s.notify_stop);
+        // Email (R7)
+        assert!(!s.email_on_error);
+        assert_eq!(s.email_address, "");
+        assert_eq!(s.email_smtp, "");
+        assert_eq!(s.email_smtp_port, 587);
+        assert_eq!(s.email_smtp_user, "");
+        // Editor intro/outro (R7)
+        assert_eq!(s.editor_intro_path, None);
+        assert_eq!(s.editor_outro_path, None);
         // Misc
         assert!(s.auto_update);
         assert!(s.ask_open_editor);
+    }
+
+    #[test]
+    fn validate_clamps_smtp_port() {
+        let mut over = Settings {
+            email_smtp_port: 999_999,
+            ..Default::default()
+        };
+        over.validate();
+        assert_eq!(over.email_smtp_port, 65_535);
+
+        let mut under = Settings {
+            email_smtp_port: 0,
+            ..Default::default()
+        };
+        under.validate();
+        assert_eq!(under.email_smtp_port, 1);
+    }
+
+    #[test]
+    fn r7_fields_merge_from_partial_json() {
+        // A partial blob carrying only the new R7 keys fills the rest from
+        // defaults (Electron `store.get(key, default)` semantics).
+        let s = Settings::from_json_merged(
+            r#"{"churchName":"Domkirken","emailOnError":true,"emailAddress":"a@b.no"}"#,
+        );
+        assert_eq!(s.church_name, "Domkirken");
+        assert!(s.email_on_error);
+        assert_eq!(s.email_address, "a@b.no");
+        // Untouched field keeps its default.
+        assert_eq!(s.email_smtp_port, 587);
+        assert!(s.notify_start);
     }
 
     #[test]

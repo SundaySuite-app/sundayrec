@@ -461,6 +461,132 @@ export function SettingsPage() {
         </Field>
       </Section>
 
+      {/* ── Church profile (R7) ──────────────────────────────────────────── */}
+      <Section title={t("general.churchProfile", "Menighet")}>
+        <Field
+          label={t("general.churchName", "Menighetsnavn")}
+          htmlFor="settings-church-name"
+        >
+          <input
+            id="settings-church-name"
+            type="text"
+            className={`${inputClass} w-48`}
+            value={draft.churchName}
+            onChange={(e) => patch({ churchName: e.target.value })}
+          />
+        </Field>
+
+        <Field
+          label={t("general.responsiblePerson", "Ansvarlig person")}
+          htmlFor="settings-responsible-person"
+        >
+          <input
+            id="settings-responsible-person"
+            type="text"
+            className={`${inputClass} w-48`}
+            value={draft.responsiblePerson}
+            onChange={(e) => patch({ responsiblePerson: e.target.value })}
+          />
+        </Field>
+      </Section>
+
+      {/* ── Notifications (R7) ────────────────────────────────────────────── */}
+      <Section title={t("notify.title", "Varsler")}>
+        <Field
+          label={t("notify.onStart", "Varsle ved opptaksstart")}
+          htmlFor="settings-notify-start"
+        >
+          <input
+            id="settings-notify-start"
+            type="checkbox"
+            checked={draft.notifyStart}
+            onChange={(e) => patch({ notifyStart: e.target.checked })}
+          />
+        </Field>
+
+        <Field
+          label={t("notify.onStop", "Varsle ved opptaksstopp")}
+          htmlFor="settings-notify-stop"
+        >
+          <input
+            id="settings-notify-stop"
+            type="checkbox"
+            checked={draft.notifyStop}
+            onChange={(e) => patch({ notifyStop: e.target.checked })}
+          />
+        </Field>
+      </Section>
+
+      {/* ── Email alerts (R7) — config only; the test-send + SMTP password ──
+          live in the EmailSettingsPanel (the password is keychain-stored). ── */}
+      <Section title={t("email.alertsTitle", "E-postvarsler")}>
+        <Field
+          label={t("email.onError", "Send e-post ved feil")}
+          htmlFor="settings-email-on-error"
+        >
+          <input
+            id="settings-email-on-error"
+            type="checkbox"
+            checked={draft.emailOnError}
+            onChange={(e) => patch({ emailOnError: e.target.checked })}
+          />
+        </Field>
+
+        <Field
+          label={t("email.address", "Mottakeradresse")}
+          htmlFor="settings-email-address"
+        >
+          <input
+            id="settings-email-address"
+            type="email"
+            className={`${inputClass} w-48`}
+            value={draft.emailAddress}
+            onChange={(e) => patch({ emailAddress: e.target.value })}
+          />
+        </Field>
+
+        <Field
+          label={t("email.smtpHost", "SMTP-vert")}
+          htmlFor="settings-email-smtp"
+        >
+          <input
+            id="settings-email-smtp"
+            type="text"
+            className={`${inputClass} w-48`}
+            value={draft.emailSmtp}
+            onChange={(e) => patch({ emailSmtp: e.target.value })}
+          />
+        </Field>
+
+        <Field
+          label={t("email.smtpPort", "SMTP-port")}
+          htmlFor="settings-email-smtp-port"
+        >
+          <input
+            id="settings-email-smtp-port"
+            type="number"
+            min={1}
+            max={65535}
+            className={`${inputClass} w-24`}
+            value={draft.emailSmtpPort}
+            onChange={(e) => patch({ emailSmtpPort: Number(e.target.value) })}
+          />
+        </Field>
+
+        <Field
+          label={t("email.smtpUser", "SMTP-bruker")}
+          htmlFor="settings-email-smtp-user"
+        >
+          <input
+            id="settings-email-smtp-user"
+            type="text"
+            className={`${inputClass} w-48`}
+            value={draft.emailSmtpUser}
+            onChange={(e) => patch({ emailSmtpUser: e.target.value })}
+          />
+        </Field>
+      </Section>
+
       {/* ── Import / export ──────────────────────────────────────────────── */}
       <Section title={t("general.export", "Eksporter innstillinger")}>
         <div className="flex gap-2">
