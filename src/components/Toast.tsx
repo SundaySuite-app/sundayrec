@@ -60,7 +60,10 @@ type ToastAction =
  * is dropped and the new one appended (so the freshest message wins and the
  * banner does not stack), exactly like the Electron remove-then-add.
  */
-export function toastReducer(state: ToastState, action: ToastAction): ToastState {
+export function toastReducer(
+  state: ToastState,
+  action: ToastAction,
+): ToastState {
   switch (action.type) {
     case "push": {
       const id = state.seq + 1;
@@ -79,7 +82,10 @@ export function toastReducer(state: ToastState, action: ToastAction): ToastState
       };
     }
     case "dismiss":
-      return { ...state, toasts: state.toasts.filter((tt) => tt.key !== action.key) };
+      return {
+        ...state,
+        toasts: state.toasts.filter((tt) => tt.key !== action.key),
+      };
     case "clear":
       return { ...state, toasts: [] };
   }
@@ -116,26 +122,23 @@ export function useToast(): ToastApi {
     dispatch({ type: "dismiss", key });
   }, []);
 
-  const push = useCallback<ToastApi["push"]>(
-    ({ key, severity, message }) => {
-      const k = key ?? `${severity}:${message}`;
-      // Cancel any pending dismiss for this key before re-arming.
-      const prior = timers.current.get(k);
-      if (prior) clearTimeout(prior);
-      dispatch({ type: "push", key: k, severity, message });
-      const delay = DISMISS_MS[severity];
-      if (delay !== null) {
-        const handle = setTimeout(() => {
-          timers.current.delete(k);
-          dispatch({ type: "dismiss", key: k });
-        }, delay);
-        timers.current.set(k, handle);
-      } else {
+  const push = useCallback<ToastApi["push"]>(({ key, severity, message }) => {
+    const k = key ?? `${severity}:${message}`;
+    // Cancel any pending dismiss for this key before re-arming.
+    const prior = timers.current.get(k);
+    if (prior) clearTimeout(prior);
+    dispatch({ type: "push", key: k, severity, message });
+    const delay = DISMISS_MS[severity];
+    if (delay !== null) {
+      const handle = setTimeout(() => {
         timers.current.delete(k);
-      }
-    },
-    [],
-  );
+        dispatch({ type: "dismiss", key: k });
+      }, delay);
+      timers.current.set(k, handle);
+    } else {
+      timers.current.delete(k);
+    }
+  }, []);
 
   const clear = useCallback(() => {
     for (const handle of timers.current.values()) clearTimeout(handle);
@@ -201,8 +204,7 @@ export function ToastHost({ children }: { children?: ReactNode }) {
         key: "recording-error",
         severity: "error",
         message:
-          event.payload.message ||
-          t("status.recordingError", "Opptaksfeil"),
+          event.payload.message || t("status.recordingError", "Opptaksfeil"),
       }),
     );
     const unSilence = listen<RecordingEvent>("recording://silence", (event) =>
@@ -220,8 +222,7 @@ export function ToastHost({ children }: { children?: ReactNode }) {
         push({
           key: "recording-finished",
           severity: "info",
-          message:
-            event.payload?.message || t("history.complete", "Fullført"),
+          message: event.payload?.message || t("history.complete", "Fullført"),
         }),
     );
     return () => {

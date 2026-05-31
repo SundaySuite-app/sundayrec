@@ -1,0 +1,441 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+
+import type { Settings } from "@/lib/bindings/Settings";
+import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
+import type { VuLevels } from "@/lib/bindings/VuLevels";
+import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
+
+/**
+ * First-run onboarding wizard — mirrors the Electron `onboarding.ts` flow,
+ * trimmed to the four steps this phase targets:
+ *   1. welcome,
+ *   2. pick an audio device,
+ *   3. test the audio (live VU off `start_vu`/`vu://levels`),
+ *   4. ready.
+ *
+ * Progress dots, a skip-all action, and a per-step skip are all present. On
+ * finish (or skip) it persists `onboardingDone: true` via `settings_save` and
+ * dismisses. It only shows on first run (`!settings.onboardingDone`); once the
+ * setting flips it renders nothing. Step routing, the device selection, and
+ * the VU wiring are exercised in tests with `invoke`/`listen` mocked — only
+ * the pixel paint is GUI-UNVERIFIED.
+ */
+
+const STEP_COUNT = 4;
+
+/** Floor for the live-test meter — quieter than this reads as "waiting". */
+const FLOOR_DBFS = -60;
+
+/** Classify a peak dBFS into a localized signal verdict. */
+export function classifySignal(
+  db: number | null,
+): "waiting" | "weak" | "good" | "loud" | "clip" {
+  if (db === null || !Number.isFinite(db) || db <= FLOOR_DBFS) return "waiting";
+  if (db >= -3) return "clip";
+  if (db >= -12) return "loud";
+  if (db >= -40) return "good";
+  return "weak";
+}
+
+export function OnboardingFlow() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const { data: settings, isLoading } = useQuery<Settings>({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => invoke<Settings>("settings_get"),
+  });
+
+  const [step, setStep] = useState(1);
+  const [dismissed, setDismissed] = useState(false);
+  const [pickedName, setPickedName] = useState<string | null>(null);
+  const [seeded, setSeeded] = useState(false);
+
+  // Seed the picked device from the persisted setting once settings arrive.
+  useEffect(() => {
+    if (settings && !seeded) {
+      setPickedName(settings.deviceName ?? null);
+      setSeeded(true);
+    }
+  }, [settings, seeded]);
+
+  const visible =
+    !isLoading && !!settings && !settings.onboardingDone && !dismissed;
+
+  const finish = useCallback(async () => {
+    setDismissed(true);
+    void invoke("stop_vu").catch(() => {});
+    if (!settings) return;
+    const next: Settings = {
+      ...settings,
+      onboardingDone: true,
+      ...(pickedName ? { deviceName: pickedName } : {}),
+    };
+    try {
+      const saved = await invoke<Settings>("settings_save", { settings: next });
+      queryClient.setQueryData(SETTINGS_QUERY_KEY, saved);
+    } catch {
+      // Persisting onboardingDone failed — the wizard is already dismissed for
+      // this session; it will reappear next launch, which is acceptable.
+    }
+  }, [settings, pickedName, queryClient]);
+
+  if (!visible) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("wizard.title", "Oppsett")}
+    >
+      <div className="flex w-full max-w-md flex-col gap-5 rounded-2xl border border-zinc-700 bg-zinc-950 p-6">
+        {/* Progress dots */}
+        <div className="flex justify-center gap-2" aria-hidden>
+          {Array.from({ length: STEP_COUNT }).map((_, i) => {
+            const n = i + 1;
+            return (
+              <span
+                key={n}
+                data-dot={n}
+                data-state={n === step ? "active" : n < step ? "done" : "todo"}
+                className={`h-2 w-2 rounded-full ${
+                  n === step
+                    ? "bg-amber-400"
+                    : n < step
+                      ? "bg-emerald-500"
+                      : "bg-zinc-700"
+                }`}
+              />
+            );
+          })}
+        </div>
+
+        {step === 1 && (
+          <StepWelcome
+            onNext={() => setStep(2)}
+            onSkipAll={() => void finish()}
+          />
+        )}
+        {step === 2 && (
+          <StepDevice
+            picked={pickedName}
+            onPick={setPickedName}
+            onNext={() => setStep(3)}
+            onSkip={() => setStep(3)}
+          />
+        )}
+        {step === 3 && (
+          <StepAudioTest
+            deviceName={pickedName}
+            onNext={() => setStep(4)}
+            onSkip={() => setStep(4)}
+          />
+        )}
+        {step === 4 && <StepReady onDone={() => void finish()} />}
+      </div>
+    </div>
+  );
+}
+
+// ── Step 1: Welcome ──────────────────────────────────────────────────────────
+
+function StepWelcome({
+  onNext,
+  onSkipAll,
+}: {
+  onNext: () => void;
+  onSkipAll: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-4 text-center">
+      <h2 className="text-xl font-semibold">
+        {t("wizard.welcomeTitle", "Velkommen til SundayRec")}
+      </h2>
+      <p className="text-sm opacity-70">
+        {t(
+          "wizard.welcomeBody",
+          "La oss sette opp programmet, slik at alt er klart til søndagen.",
+        )}
+      </p>
+      <div className="mt-1 flex flex-col gap-2">
+        <button
+          type="button"
+          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+          onClick={onNext}
+        >
+          {t("wizard.start", "Kom i gang →")}
+        </button>
+        <button
+          type="button"
+          className="text-sm opacity-60 hover:opacity-100"
+          onClick={onSkipAll}
+        >
+          {t("wizard.skipAll", "Hopp over — sett opp manuelt")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 2: Pick device ──────────────────────────────────────────────────────
+
+function StepDevice({
+  picked,
+  onPick,
+  onNext,
+  onSkip,
+}: {
+  picked: string | null;
+  onPick: (name: string) => void;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const { t } = useTranslation();
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: devices } = useQuery<AudioDeviceList>({
+    queryKey: ["onboarding", "input-devices"],
+    queryFn: () => invoke<AudioDeviceList>("list_input_devices"),
+  });
+
+  // Pre-select a non-built-in device (the church-mixer case) if none is set.
+  useEffect(() => {
+    if (picked || !devices?.inputs.length) return;
+    const preferred =
+      devices.inputs.find(
+        (d) => !/built-in|innebygd|default|standard/i.test(d.name),
+      ) ?? devices.inputs[0];
+    if (preferred) onPick(preferred.name);
+  }, [devices, picked, onPick]);
+
+  const inputs = devices?.inputs ?? [];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-center">
+        <h2 className="text-xl font-semibold">
+          {t("wizard.deviceTitle", "Hvilken lydenhet bruker dere?")}
+        </h2>
+        <p className="text-sm opacity-70">
+          {t(
+            "wizard.deviceBody",
+            "Velg mikseren eller lydkortet som er koblet til datamaskinen.",
+          )}
+        </p>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      {inputs.length === 0 ? (
+        <p className="text-sm opacity-60">
+          {t("wizard.noDevices", "Ingen lydenheter funnet.")}
+        </p>
+      ) : (
+        <ul className="flex max-h-56 flex-col gap-2 overflow-y-auto">
+          {inputs.map((d) => {
+            const selected = d.name === picked;
+            return (
+              <li key={d.name}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  className={`w-full rounded-lg border px-3 py-2 text-left ${
+                    selected
+                      ? "border-amber-500 bg-amber-950/30"
+                      : "border-zinc-700 hover:bg-zinc-900"
+                  }`}
+                  onClick={() => onPick(d.name)}
+                >
+                  <span className="block text-sm font-medium">{d.name}</span>
+                  <span className="block text-xs opacity-60">
+                    {d.is_default
+                      ? t("wizard.deviceDefault", "Systemets standard")
+                      : t("wizard.deviceMixer", "Mikser / lydkort")}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+          onClick={() => {
+            if (!picked) {
+              setError(
+                t(
+                  "wizard.pickDeviceFirst",
+                  "Velg en lydenhet før du fortsetter",
+                ),
+              );
+              return;
+            }
+            onNext();
+          }}
+        >
+          {t("wizard.useDevice", "Bruk valgt enhet →")}
+        </button>
+        <button
+          type="button"
+          className="text-sm opacity-60 hover:opacity-100"
+          onClick={onSkip}
+        >
+          {t("wizard.skipStep", "Hopp over dette steget")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 3: Audio test (live VU) ─────────────────────────────────────────────
+
+function StepAudioTest({
+  deviceName,
+  onNext,
+  onSkip,
+}: {
+  deviceName: string | null;
+  onNext: () => void;
+  onSkip: () => void;
+}) {
+  const { t } = useTranslation();
+  const [levels, setLevels] = useState<VuLevels | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Subscribe to the metering event for the step's lifetime.
+  useEffect(() => {
+    const unlisten = listen<VuLevels>("vu://levels", (e) =>
+      setLevels(e.payload),
+    );
+    return () => void unlisten.then((off) => off());
+  }, []);
+
+  // Start the VU engine on enter; stop it on leave.
+  useEffect(() => {
+    let cancelled = false;
+    invoke("start_vu", { deviceName: deviceName ?? null }).catch((e) => {
+      if (!cancelled)
+        setError(String((e as { message?: string })?.message ?? e));
+    });
+    return () => {
+      cancelled = true;
+      void invoke("stop_vu").catch(() => {});
+    };
+  }, [deviceName]);
+
+  const peak = useMemo(() => {
+    const peaks = levels?.peak_dbfs ?? [];
+    return peaks.length ? Math.max(...peaks) : null;
+  }, [levels]);
+
+  const verdict = classifySignal(peak);
+  const VERDICT_TEXT: Record<typeof verdict, string> = {
+    waiting: t("wizard.waiting", "Venter på lyd…"),
+    weak: t("home.signalWeak", "Svakt"),
+    good: t("home.signalGood", "Bra"),
+    loud: t("home.signalLoud", "Høyt"),
+    clip: t("home.signalClipping", "Klipper!"),
+  };
+  const fraction =
+    peak === null || peak <= FLOOR_DBFS
+      ? 0
+      : Math.min(1, Math.max(0, (peak - FLOOR_DBFS) / -FLOOR_DBFS));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="text-center">
+        <h2 className="text-xl font-semibold">
+          {t("wizard.testTitle", "Test at lyden fungerer")}
+        </h2>
+        <p className="text-sm opacity-70">
+          {t(
+            "wizard.testBody",
+            "Si noe i mikrofonen — sjekk at indikatoren beveger seg.",
+          )}
+        </p>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <div className="flex flex-col gap-1">
+        <div
+          className="h-4 overflow-hidden rounded bg-zinc-800"
+          role="meter"
+          aria-label={t("home.audioLevel", "Lydnivå — live")}
+          aria-valuenow={Math.round(fraction * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div
+            data-verdict={verdict}
+            className={`h-full transition-[width] duration-75 ${
+              verdict === "clip"
+                ? "bg-red-500"
+                : verdict === "loud"
+                  ? "bg-amber-400"
+                  : verdict === "good"
+                    ? "bg-emerald-500"
+                    : "bg-zinc-600"
+            }`}
+            style={{ width: `${Math.round(fraction * 100)}%` }}
+          />
+        </div>
+        <p className="text-center text-sm" data-verdict={verdict}>
+          {VERDICT_TEXT[verdict]}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+          onClick={onNext}
+        >
+          {t("wizard.audioWorks", "Lyden fungerer →")}
+        </button>
+        <button
+          type="button"
+          className="text-sm opacity-60 hover:opacity-100"
+          onClick={onSkip}
+        >
+          {t("wizard.skipStep", "Hopp over dette steget")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Step 4: Ready ────────────────────────────────────────────────────────────
+
+function StepReady({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-4 text-center">
+      <h2 className="text-xl font-semibold">
+        {t("wizard.readyTitle", "Alt er klart!")}
+      </h2>
+      <p className="text-sm opacity-70">
+        {t(
+          "wizard.readyBody",
+          "SundayRec er klar til å ta opp gudstjenester. Du kan endre alle innstillinger i menyen når som helst.",
+        )}
+      </p>
+      <button
+        type="button"
+        className="mt-1 rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+        onClick={onDone}
+      >
+        {t("wizard.open", "Åpne SundayRec →")}
+      </button>
+    </div>
+  );
+}

@@ -34,7 +34,8 @@ const h = vi.hoisted(() => {
   };
 });
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: (...args: unknown[]) => (h.listen as (...a: unknown[]) => unknown)(...args),
+  listen: (...args: unknown[]) =>
+    (h.listen as (...a: unknown[]) => unknown)(...args),
 }));
 
 beforeEach(() => {
@@ -61,24 +62,58 @@ describe("toastReducer", () => {
       message: "hi",
     });
     expect(s.toasts).toHaveLength(1);
-    expect(s.toasts[0]).toMatchObject({ key: "a", severity: "warn", message: "hi", id: 1 });
+    expect(s.toasts[0]).toMatchObject({
+      key: "a",
+      severity: "warn",
+      message: "hi",
+      id: 1,
+    });
   });
 
   it("coalesces a re-pushed key (replaces, does not stack)", () => {
-    let s = toastReducer(empty, { type: "push", key: "a", severity: "warn", message: "first" });
-    s = toastReducer(s, { type: "push", key: "a", severity: "error", message: "second" });
+    let s = toastReducer(empty, {
+      type: "push",
+      key: "a",
+      severity: "warn",
+      message: "first",
+    });
+    s = toastReducer(s, {
+      type: "push",
+      key: "a",
+      severity: "error",
+      message: "second",
+    });
     expect(s.toasts).toHaveLength(1);
-    expect(s.toasts[0]).toMatchObject({ message: "second", severity: "error", id: 2 });
+    expect(s.toasts[0]).toMatchObject({
+      message: "second",
+      severity: "error",
+      id: 2,
+    });
   });
 
   it("keeps distinct keys side by side", () => {
-    let s = toastReducer(empty, { type: "push", key: "a", severity: "warn", message: "x" });
-    s = toastReducer(s, { type: "push", key: "b", severity: "info", message: "y" });
+    let s = toastReducer(empty, {
+      type: "push",
+      key: "a",
+      severity: "warn",
+      message: "x",
+    });
+    s = toastReducer(s, {
+      type: "push",
+      key: "b",
+      severity: "info",
+      message: "y",
+    });
     expect(s.toasts.map((t) => t.key)).toEqual(["a", "b"]);
   });
 
   it("dismisses by key", () => {
-    let s = toastReducer(empty, { type: "push", key: "a", severity: "warn", message: "x" });
+    let s = toastReducer(empty, {
+      type: "push",
+      key: "a",
+      severity: "warn",
+      message: "x",
+    });
     s = toastReducer(s, { type: "dismiss", key: "a" });
     expect(s.toasts).toHaveLength(0);
   });
@@ -95,7 +130,9 @@ describe("DISMISS_MS contract", () => {
 describe("useToast", () => {
   it("auto-dismisses a warn after its delay", () => {
     const { result } = renderHook(() => useToast());
-    act(() => result.current.push({ key: "w", severity: "warn", message: "weak" }));
+    act(() =>
+      result.current.push({ key: "w", severity: "warn", message: "weak" }),
+    );
     expect(result.current.toasts).toHaveLength(1);
     act(() => vi.advanceTimersByTime(8000));
     expect(result.current.toasts).toHaveLength(0);
@@ -103,7 +140,9 @@ describe("useToast", () => {
 
   it("keeps an error toast until dismissed", () => {
     const { result } = renderHook(() => useToast());
-    act(() => result.current.push({ key: "e", severity: "error", message: "boom" }));
+    act(() =>
+      result.current.push({ key: "e", severity: "error", message: "boom" }),
+    );
     act(() => vi.advanceTimersByTime(60000));
     expect(result.current.toasts).toHaveLength(1);
     act(() => result.current.dismiss("e"));
@@ -112,10 +151,14 @@ describe("useToast", () => {
 
   it("re-arms the timer when a key is re-pushed (coalesce)", () => {
     const { result } = renderHook(() => useToast());
-    act(() => result.current.push({ key: "w", severity: "warn", message: "a" }));
+    act(() =>
+      result.current.push({ key: "w", severity: "warn", message: "a" }),
+    );
     act(() => vi.advanceTimersByTime(5000));
     // Re-push the same key — the old 8s timer is cancelled, a new one armed.
-    act(() => result.current.push({ key: "w", severity: "warn", message: "b" }));
+    act(() =>
+      result.current.push({ key: "w", severity: "warn", message: "b" }),
+    );
     act(() => vi.advanceTimersByTime(5000));
     // 10s total elapsed but only 5s since the re-push → still visible.
     expect(result.current.toasts).toHaveLength(1);
@@ -136,7 +179,9 @@ describe("ToastHost backend wiring", () => {
 
   it("surfaces a recording error as a sticky alert", async () => {
     render(<ToastHost />);
-    act(() => h.emit("recording://error", { code: "device", message: "Mic borte" }));
+    act(() =>
+      h.emit("recording://error", { code: "device", message: "Mic borte" }),
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent("Mic borte");
     // Errors never auto-dismiss.
     act(() => vi.advanceTimersByTime(60000));
@@ -145,10 +190,14 @@ describe("ToastHost backend wiring", () => {
 
   it("surfaces a silence event as a warning and auto-dismisses it", async () => {
     render(<ToastHost />);
-    act(() => h.emit("recording://silence", { code: "silence", message: "Stille" }));
+    act(() =>
+      h.emit("recording://silence", { code: "silence", message: "Stille" }),
+    );
     expect(await screen.findByText("Stille")).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(8000));
-    await waitFor(() => expect(screen.queryByText("Stille")).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText("Stille")).not.toBeInTheDocument(),
+    );
   });
 
   it("surfaces a recording-finished summary as an info toast", async () => {
@@ -159,8 +208,12 @@ describe("ToastHost backend wiring", () => {
 
   it("coalesces repeated silence warnings into one banner", async () => {
     render(<ToastHost />);
-    act(() => h.emit("recording://silence", { code: "silence", message: "Stille 1" }));
-    act(() => h.emit("recording://silence", { code: "silence", message: "Stille 2" }));
+    act(() =>
+      h.emit("recording://silence", { code: "silence", message: "Stille 1" }),
+    );
+    act(() =>
+      h.emit("recording://silence", { code: "silence", message: "Stille 2" }),
+    );
     await screen.findByText("Stille 2");
     expect(screen.queryByText("Stille 1")).not.toBeInTheDocument();
     expect(screen.getAllByRole("status")).toHaveLength(1);
@@ -168,7 +221,9 @@ describe("ToastHost backend wiring", () => {
 
   it("dismisses a toast when the close button is clicked", async () => {
     render(<ToastHost />);
-    act(() => h.emit("recording://error", { code: "x", message: "Klikk vekk" }));
+    act(() =>
+      h.emit("recording://error", { code: "x", message: "Klikk vekk" }),
+    );
     await screen.findByText("Klikk vekk");
     fireEvent.click(screen.getByLabelText("Lukk"));
     expect(screen.queryByText("Klikk vekk")).not.toBeInTheDocument();
@@ -181,7 +236,11 @@ describe("ToastHost backend wiring", () => {
         <button
           type="button"
           onClick={() =>
-            api.push({ key: "export", severity: "info", message: "Eksport ferdig" })
+            api.push({
+              key: "export",
+              severity: "info",
+              message: "Eksport ferdig",
+            })
           }
         >
           go

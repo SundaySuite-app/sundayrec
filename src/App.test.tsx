@@ -38,8 +38,13 @@ vi.mock("@tauri-apps/api/core", () => ({
     // Fase 6: App mounts <CloudBackupPanel/>, which reads connection + queue.
     if (cmd === "cloud_connection_status") return [];
     if (cmd === "cloud_queue_status") return [];
-    // F5.1: App mounts <SchedulePage/>, which reads settings + schedule status.
-    if (cmd === "settings_get") return { slots: [], specialRecordings: [] };
+    // F5.1/P5: App mounts the home + schedule views, which read settings +
+    // schedule status. `onboardingDone` is set so the first-run wizard does
+    // not block the shell in these tests.
+    if (cmd === "settings_get")
+      return { slots: [], specialRecordings: [], onboardingDone: true };
+    if (cmd === "settings_save")
+      return { slots: [], specialRecordings: [], onboardingDone: true };
     if (cmd === "scheduler_status") return { next: null, upcoming: [] };
     // F5.2: App mounts <WakePanel/>, which reads capabilities + sleep config.
     if (cmd === "wake_capabilities")
@@ -88,21 +93,45 @@ function renderApp() {
 }
 
 describe("App", () => {
-  it("renders the SundayRec title", () => {
+  it("mounts the shell with the SundayRec sidebar once app_info resolves", async () => {
     renderApp();
-    expect(
-      screen.getByRole("heading", { name: "SundayRec" }),
-    ).toBeInTheDocument();
+    // The shell sidebar carries the app name + a home nav button.
+    await waitFor(() =>
+      expect(
+        document.querySelector('button[data-view="home"]'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("SundayRec")).toBeInTheDocument();
   });
 
-  it("shows backend-OK with version once app_info resolves", async () => {
+  it("keeps every feature panel reachable from the sidebar", async () => {
     renderApp();
     await waitFor(() =>
-      expect(screen.getByText("SundayRec — backend OK")).toBeInTheDocument(),
+      expect(
+        document.querySelector('button[data-view="home"]'),
+      ).toBeInTheDocument(),
     );
-    // The version/platform line is split across text nodes by JSX whitespace,
-    // so assert on the rendered document text rather than a single node.
-    expect(document.body.textContent).toContain("v0.1.0");
-    expect(document.body.textContent).toContain("macos");
+    // Every Phase-0 panel must remain reachable through the new shell.
+    for (const view of [
+      "home",
+      "schedule",
+      "history",
+      "review",
+      "editor",
+      "transcribe",
+      "publish",
+      "streaming",
+      "cloud",
+      "email",
+      "integrations",
+      "diagnostics",
+      "wake",
+      "settings",
+      "update",
+    ]) {
+      expect(
+        document.querySelector(`button[data-view="${view}"]`),
+      ).toBeInTheDocument();
+    }
   });
 });

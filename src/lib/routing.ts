@@ -42,7 +42,8 @@ export const DEFAULT_VIEW: ViewName = "home";
 /** Narrowing guard — accepts only a known {@link ViewName}. */
 export function isViewName(value: unknown): value is ViewName {
   return (
-    typeof value === "string" && (VIEW_NAMES as readonly string[]).includes(value)
+    typeof value === "string" &&
+    (VIEW_NAMES as readonly string[]).includes(value)
   );
 }
 
