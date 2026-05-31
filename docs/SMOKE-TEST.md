@@ -617,6 +617,38 @@ earlier phases hadn't reached. Pure decisions live in `sundayrec-core` (unit-
 tested); the I/O seams are annotated and, where they touch new hardware/network,
 gated behind a default-off feature.
 
+### Sunday-suite integrations (no feature) — 11 handlers
+
+Mirrors `src/main/ipc/integrations.ts`. Typed opt-in settings + the Song/Plan/
+Verbatim hand-offs. The mappers (settings shallow-merge, usage-payload shaping +
+idempotency key, plan metadata/schedule, verbatim deep link + SRT/VTT parse,
+sidecar paths) are unit-tested in `sundayrec-core::integrations`; the HTTP
+submissions + the `verbatim://` launch reuse the always-present `reqwest`/opener
+(no new dep, no feature) and are **NETWORK-UNVERIFIED**.
+
+1. `integrations_get_settings` / `integrations_set_settings` round-trip the
+   opt-in blob under the `integrations` kv key.
+   - **Expected:** a partial patch (e.g. `{ enabled: true }`) merges shallowly —
+     it never clobbers a stored `connection` it didn't send (`merge_patch_json`).
+2. `integrations_song_set_apikey` / `integrations_song_has_apikey` use the
+   keychain (`integrations.song_api_key` slot), never the settings blob.
+3. With `song.enabled` + a `.service.json` sidecar present,
+   `integrations_song_submit_usage` POSTs one payload per song to
+   `<songApiUrl>/v1/usage/log` (409 = duplicate counts as submitted).
+   - **Expected:** `disabled` when the song flow is off; `no_service_link` /
+     `no_songs` with a hint when the sidecar/setlist is missing. // NETWORK-UNVERIFIED.
+4. `integrations_plan_fetch_services` reads `<planApiUrl>/rest/v1/service`,
+   enriching each with `meta` (title/speaker) + `schedule` (local 2-h window);
+   `integrations_plan_update_service` PATCHes `was_streamed_flag`/`recording_url`.
+   - **Expected:** `plan_not_ready` until `plan.enabled` + a `planApiUrl` are set;
+     `no_church_id` without one. // NETWORK-UNVERIFIED.
+5. `integrations_verbatim_send` opens `verbatim://import?…`; `..._import` parses a
+   Verbatim SRT/VTT into the recording's `.transcript.json`.
+   - **Expected:** `verbatim_not_installed` when no scheme handler;
+     `no_captions_parsed` when the subtitle file yields no segments. // NETWORK-UNVERIFIED.
+
+(SundayStage manifest import is `stage_import_manifest`, covered by §PU-6.)
+
 ### Audio diagnostics (no feature) — `list_video_devices` + `diagnose_audio`
 
 Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing

@@ -301,6 +301,18 @@ pub fn run() {
             commands::review::review_mark_discarded,
             commands::review::review_process_reminders,
             commands::review::stage_import_manifest,
+            // P2b Sunday-suite integrations — typed settings + Song/Plan/Verbatim
+            // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
+            commands::integrations::integrations_get_settings,
+            commands::integrations::integrations_set_settings,
+            commands::integrations::integrations_get_service_link,
+            commands::integrations::integrations_song_set_apikey,
+            commands::integrations::integrations_song_has_apikey,
+            commands::integrations::integrations_song_submit_usage,
+            commands::integrations::integrations_plan_fetch_services,
+            commands::integrations::integrations_plan_update_service,
+            commands::integrations::integrations_verbatim_send,
+            commands::integrations::integrations_verbatim_import,
             // Bridge #2 — live cue → chapter mapping (renderer-driven).
             commands::bridge_live::live_bridge_status,
             commands::bridge_live::live_bridge_channel,

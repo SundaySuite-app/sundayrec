@@ -13,6 +13,7 @@ pub mod db;
 pub mod diagnostics;
 pub mod editor;
 pub mod email;
+pub mod integrations;
 pub mod media;
 pub mod ndi;
 pub mod publish;

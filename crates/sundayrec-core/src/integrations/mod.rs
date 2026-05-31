@@ -27,7 +27,44 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub mod live_bridge;
+pub mod plan;
+pub mod settings;
+pub mod song;
 pub mod stage;
+pub mod verbatim;
+
+/// The service-link sidecar path for a recording: the file beside it with the
+/// extension swapped for `.service.json` (e.g. `/rec/2026-05-31.mp3` →
+/// `/rec/2026-05-31.service.json`). Mirrors the Electron `serviceLinkPath`. Pure
+/// string work — the actual read/write is the shell's. Returns the input
+/// unchanged when it has no extension to swap (defensive; recordings always do).
+pub fn service_link_path(recording_path: &str) -> String {
+    swap_extension(recording_path, ".service.json")
+}
+
+/// The transcript sidecar path (`<name>.transcript.json`) for a recording, used
+/// by the Verbatim caption import. Mirrors the Electron `importVerbatimCaptions`
+/// path build (`base + '.transcript.json'`).
+pub fn transcript_sidecar_path(recording_path: &str) -> String {
+    swap_extension(recording_path, ".transcript.json")
+}
+
+/// Replace a path's final extension with `suffix` (which includes the leading
+/// dot), keeping the directory. A path with no `.` in its basename just gets the
+/// suffix appended.
+fn swap_extension(path: &str, suffix: &str) -> String {
+    // Split off the directory so a `.` in a parent dir isn't mistaken for the ext.
+    let slash = path.rfind(['/', '\\']);
+    let (dir, base) = match slash {
+        Some(i) => (&path[..=i], &path[i + 1..]),
+        None => ("", path),
+    };
+    let stem = match base.rfind('.') {
+        Some(i) => &base[..i],
+        None => base,
+    };
+    format!("{dir}{stem}{suffix}")
+}
 
 /// A song used in a service, with the cross-suite identifiers we may know.
 /// Mirrors the renderer `SongUsage` (camelCase) and the platform contract.
@@ -91,4 +128,35 @@ pub struct ChapterMarker {
     #[ts(type = "number")]
     pub time: i64,
     pub title: String,
+}
+
+#[cfg(test)]
+mod sidecar_path_tests {
+    use super::*;
+
+    #[test]
+    fn service_link_path_swaps_extension_and_keeps_dir() {
+        assert_eq!(
+            service_link_path("/rec/2026-05-31.mp3"),
+            "/rec/2026-05-31.service.json"
+        );
+        // Windows-style separator + multi-dot dir.
+        assert_eq!(
+            service_link_path("C:\\My.Recordings\\svc.mkv"),
+            "C:\\My.Recordings\\svc.service.json"
+        );
+    }
+
+    #[test]
+    fn transcript_sidecar_path_swaps_to_transcript_json() {
+        assert_eq!(
+            transcript_sidecar_path("/rec/sermon.wav"),
+            "/rec/sermon.transcript.json"
+        );
+    }
+
+    #[test]
+    fn no_extension_just_appends() {
+        assert_eq!(service_link_path("/rec/noext"), "/rec/noext.service.json");
+    }
 }

@@ -30,6 +30,9 @@ pub enum SecretProvider {
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
     SmtpPassword,
+    /// SundaySong / SundayPlan API key (bearer). Encrypted in the keychain, never
+    /// in the integration-settings blob — mirrors the Electron `setSongApiKey`.
+    SongApiKey,
 }
 
 impl SecretProvider {
@@ -41,17 +44,19 @@ impl SecretProvider {
             SecretProvider::Gmail => "oauth.gmail",
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
+            SecretProvider::SongApiKey => "integrations.song_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 5] {
+    pub fn all() -> [SecretProvider; 6] {
         [
             SecretProvider::GoogleDrive,
             SecretProvider::YouTube,
             SecretProvider::Gmail,
             SecretProvider::StreamKey,
             SecretProvider::SmtpPassword,
+            SecretProvider::SongApiKey,
         ]
     }
 }
