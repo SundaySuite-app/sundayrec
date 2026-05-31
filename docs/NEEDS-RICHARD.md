@@ -224,6 +224,27 @@ failed` state. The R3 seam spawns + kills cleanly and reports `active`; wiring
   stream-stop. Bundle the SDK in `tauri.conf.json` (`externalBin`/resources) the
   way the Electron app `asarUnpack`-ed `vendor/grandiose`.
 
+## P6 — Transcript search backend wiring (no feature flag)
+
+The transcript search **logic** is pure + gate-tested
+(`src/features/search/searchIndex.ts`: build-index / substring-scan / context /
+group / stats, 13 tests). What remains is the thin glue Richard's rig will need
+to make it live:
+
+- **A `transcript_list_all` command** (mirrors the Electron
+  `window.api.transcriptListAll`): enumerate every `<name>.transcript.json`
+  sidecar in the known recording folders and return `{ filePath, transcript }`
+  tuples for `buildIndex` to consume. The sidecar read/parse path already exists
+  in the editor seam; this is an aggregation over the save folder.
+- **A search panel + a `search` view** in the shell: the panel feeds the IPC
+  result to `searchTranscripts`, renders the grouped hits, and on click hands the
+  file + seek-time to the editor (the Electron `openEditorWithFile(fp, atSec)`
+  contract). Pure search is done; only the IPC list command + the render/route
+  are outstanding (GUI-deferred; smoke §6b).
+
+No new account, key, or device is required for this — it is in-repo glue, listed
+here so the search feature is not assumed fully wired end-to-end.
+
 ---
 
 ## Summary — what only Richard can provide

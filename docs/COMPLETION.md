@@ -19,8 +19,8 @@ companion to `SMOKE-TEST.md` (the hardware-in-the-loop checklist) and
   carry none of them; a feature-disabled command returns a clear `feature_disabled`
   error and the matching panel shows a calm "not built into this build" hint.
 - **Gate-green:** `npm run check` (eslint + tsc + vitest + clippy `-D warnings` +
-  `cargo test --workspace`) passes — **749 Rust tests** (594 core + 155 src-tauri)
-  - **125 vitest**. Each default-off feature also compiles in isolation
+  `cargo test --workspace`) passes — **918 Rust tests** (687 core + 231 src-tauri)
+  - **296 vitest**. Each default-off feature also compiles in isolation
     (`cargo build -p sundayrec --features <flag>`), the `whisper` C++ build being the
     single by-inspection exception.
 
@@ -87,12 +87,80 @@ suite that mocks `invoke` and asserts render + IPC calls.
   all 7 locales; every other new R-phase string follows the established
   inline-`t(key, "Norsk fallback")` idiom (the panels work without catalog entries).
 
+## P6 additions (frontend-tests + i18n parity + transcript/history search)
+
+- **i18n PARITY (canonical):** the editor / streaming / transcribe / email /
+  integrations / review / publish / update / home / onboarding keys added across
+  the R-feature phases existed only in `no.json` (they worked at runtime via the
+  inline `t(key, "fallback")` idiom). They are now **translated into
+  en/sv/da/de/fr/pl** — English is the canonical fallback — so every shipped
+  catalog exposes the **same 979-key leaf set**, plus the new P6 `search.*` keys.
+  A build-failing guard (`src/i18n/parity.test.ts`) asserts all 7 catalogs share
+  the exact flattened key set (no missing, no extra); drift now fails the gate
+  instead of silently degrading some languages to raw key strings.
+- **Transcript search (pure):** `src/features/search/searchIndex.ts` mirrors the
+  Electron `search-page.ts` contract as a side-effect-free module — build an
+  in-memory index over transcript sidecars (newest-first), capped
+  case-insensitive substring scan, structured before/match/after highlight
+  context, per-recording grouping in recency order, aggregate stats. 13 unit
+  tests. The IPC sidecar-load + render is the only GUI-deferred part.
+- **History depth (pure + UI):** `src/features/history/historyFilter.ts` mirrors
+  the Electron `home.ts` `filterAndRenderHistory` + `updateHistoryStats` +
+  audio/video pairing, ported to the Tauri `RecordingRow` shape (full-text over
+  filename/date/note, pair-by-`started_at`+video-tag, count/duration/last stats).
+  15 unit tests + a live search box & stats line wired into `HistoryPanel`
+  (+4 panel tests).
+- **Thin-panel coverage deepened:** DevicePicker (+enum-error / multi-sample-rate
+  stereo / dshow-index-null video fallback), SchedulePage (+slot-delete /
+  late-start edit / special-overlap), VuMeter (+positive-clamp / sub-floor-clamp
+  / clip-warn-safe colour thresholds).
+
+## Electron-parity matrix (P6)
+
+How the Tauri rebuild lines up against the Electron renderer pages
+(`src/renderer/pages/*`) and main modules (`src/main/*`). **Matches** = behaviour
+
+- depth mirrored and gate-tested; **GUI-unverified** = handlers/data/IPC are
+  tested but pixel paint / native shell is not; **rig-deferred** = needs a real
+  device/account/key (see NEEDS-RICHARD.md + SMOKE-TEST.md).
+
+| Electron surface                              | Tauri parity                                              | Status                 |
+| --------------------------------------------- | --------------------------------------------------------- | ---------------------- |
+| `home.ts` countdown/hero/review-card          | `features/home/HomePage` (fmtCountdown/Next/Bytes tested) | Matches                |
+| `home.ts` recent-history + stats              | `historyFilter` + `HistoryPanel` stats line               | Matches                |
+| `home.ts` `filterAndRenderHistory`            | `filterHistory` (filename/date/note)                      | Matches                |
+| `home.ts` audio+video pairing                 | `pairAudioVideo` (started_at + video-tag)                 | Matches                |
+| `home.ts` silent preflight banner             | `DiagnosticsPanel` (manual run)                           | GUI-unverified         |
+| `home.ts` video preview (`startVideoPreview`) | `DevicePicker` MJPEG preview                              | rig-deferred [HW]      |
+| `search-page.ts` transcript index/search      | `features/search/searchIndex` (pure)                      | Matches (load: GUI)    |
+| `search-page.ts` thumbnail attach             | (not ported — decorative)                                 | GUI-unverified         |
+| `schedule-page.ts` weekly/special edit        | `SchedulePage` (add/delete/toggle/late-start/overlap)     | Matches                |
+| `schedule-page.ts` next/upcoming list         | `SchedulePage` reads `scheduler_status`                   | Matches                |
+| `calendar-page.ts` wake-before badge          | `home`/`wake` (wakesBefore key + WakePanel)               | rig-deferred [HW]      |
+| `home-vu.ts` live VU                          | `VuMeter` (clamp + threshold colour tested)               | rig-deferred [HW]      |
+| `audio-page.ts` device enumerate              | `DevicePicker` (cpal mic + ffmpeg cam, dshow fallback)    | rig-deferred [HW]      |
+| `files-page.ts` format/preroll/podcast        | `SettingsPage` + `PublishPanel`                           | Matches / NET-def      |
+| `editor-page.ts` waveform/cuts/master         | `EditorPanel` + `editing` machine                         | rig-deferred [HW]      |
+| `editor-transcript.ts` transcribe             | `TranscribePanel`                                         | rig-deferred [HW]      |
+| `integrations-page.ts` peers/bridge           | `IntegrationsPanel` + `SuiteHandoffPanel`                 | Matches / INFRA-def    |
+| `publish-page.ts` feed preview/generate       | `PublishPanel` (feed XML tested)                          | Matches / NET-def      |
+| `review-queue-home.ts` queue card             | `ReviewPanel` + home review card                          | Matches                |
+| `live-page.ts` / `live-overlays.ts` RTMP      | `StreamingPanel` (argv tested)                            | rig-deferred [HW/NET]  |
+| `onboarding.ts` first-run wizard              | `OnboardingFlow`                                          | GUI-unverified         |
+| email/SMTP test                               | `EmailSettingsPanel`                                      | rig-deferred [NET]     |
+| auto-update toast/flow                        | `UpdatePanel`                                             | rig-deferred [NET/GUI] |
+
+i18n now spans **all 7 catalogs identically** — the parity guard is the gate-level
+proof, replacing the earlier "panels work without catalog entries" footnote.
+
 ## The code-complete vs needs-rig boundary
 
 **Code-complete + verified in the gate (no rig needed):**
 
-- Every `sundayrec-core` decision (the entire 594-test core).
-- Every command's IPC surface + the panel data-flow (the 125 vitest).
+- Every `sundayrec-core` decision (the entire 687-test core).
+- Every command's IPC surface + the panel data-flow (the 296 vitest), including
+  the pure transcript search index, history filter/pairing/stats, and the i18n
+  7-catalog parity guard.
 - Every default-off feature _compiles_ (build + clippy `-D warnings`), so the
   feature-gated seams are wired correctly even though their effects are unproven.
 - The full settings round-trip, history persistence, diagnostics report, schedule

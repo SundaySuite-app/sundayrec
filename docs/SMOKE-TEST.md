@@ -52,7 +52,7 @@ npm run build          # tsc + vite frontend build
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: **749 Rust tests** (594 core + 155 src-tauri) + **125 vitest** +
+gate is green: **918 Rust tests** (687 core + 231 src-tauri) + **296 vitest** +
 clippy `-D warnings`. Every default-off feature also compiles in isolation —
 `cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
 `editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
@@ -134,6 +134,28 @@ verify here — there should be **no** repeated cloud log spam.
 2. Use "reveal in folder" / open.
    - **Expected:** the OS file manager opens at the recording (via the `opener`
      plugin — capability `opener:allow-open-path` is granted).
+
+---
+
+## 6b. History search + transcript search [HW]
+
+The filter/grouping/stats math and the substring search are pure and
+gate-tested (`historyFilter` / `searchIndex`); what a rig confirms is that the
+search box wiring and the IPC sidecar-load behave on real data.
+
+1. Record two or three sessions (repeat §5) so History has several rows.
+2. In **History**, type into the search box.
+   - **Expected:** the list filters live by filename, date, or note text
+     (case-insensitive); the stats line ("N opptak · Xt Ym totalt · sist …")
+     stays computed over the **full** history, not the filtered subset (Electron
+     `home.ts` parity). A query that matches nothing shows a no-hits message
+     (`search.noHits`), distinct from the genuinely-empty state.
+3. If you also ran §10b (Whisper), open the transcript search surface and search
+   for a word you spoke.
+   - **Expected:** hits group by recording, newest-first, each with a ~60-char
+     before/match/after context window; clicking a hit seeks the editor to that
+     segment's start time. (The index build + sidecar load is the only
+     GUI-deferred part — `searchIndex` itself is gate-tested.)
 
 ---
 
@@ -309,7 +331,7 @@ cargo build -p sundayrec --features whisper   # CMake builds libwhisper
    check, fs delete, and the cancel signal are pure/fs). Download a model into
    the app-data `whisper-models/` dir with `whisper_download_model`.
    - **Expected:** `whisper://model-progress` events stream `{ id,
-     bytesDownloaded, bytesTotal, fraction }` (the shaping is the unit-tested
+bytesDownloaded, bytesTotal, fraction }` (the shaping is the unit-tested
      `download_progress`); a second download for the same id while one is in
      flight returns `already_downloading`; `whisper_cancel_download` aborts the
      stream and removes the `.partial`; on completion the SHA-256 is verified
