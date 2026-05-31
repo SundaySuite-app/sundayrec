@@ -33,6 +33,10 @@
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
 //!   - [`cloud`]        — Google cloud-backup backbone: OAuth/PKCE, retry mat, upload-queue, Drive resumable bits (Fase 6)
+//!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
+//!   - [`prep`]         — episode-prep assembly: sermon detection + attention reasons + EpisodePrep build (PU-6)
+//!   - [`review_queue`] — the human-review queue state machine + reminder timeline (PU-6)
+//!   - [`integrations`] — Sunday-suite hand-offs: Stage manifest→chapters/setlist + the live cue-bridge consumer (PU-6 + Bridge #2)
 
 pub mod audio;
 pub mod capture;
@@ -45,13 +49,16 @@ pub mod errors;
 pub mod feed;
 pub mod ffmpeg;
 pub mod filename;
+pub mod integrations;
 pub mod link;
 pub mod mjpeg;
 pub mod preflight;
+pub mod prep;
 pub mod preroll;
 pub mod progress;
 pub mod reconnect;
 pub mod recorder;
+pub mod review_queue;
 pub mod schedule;
 pub mod settings;
 pub mod silence;
@@ -59,3 +66,4 @@ pub mod timeouts;
 pub mod tray;
 pub mod two_process;
 pub mod wake;
+pub mod whisper;
