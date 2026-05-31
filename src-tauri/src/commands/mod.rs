@@ -11,6 +11,7 @@ pub mod bridge_live;
 pub mod cloud;
 pub mod db;
 pub mod diagnostics;
+pub mod editor;
 pub mod media;
 pub mod recorder;
 pub mod review;

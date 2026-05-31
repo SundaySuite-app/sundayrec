@@ -25,6 +25,11 @@ pub mod cloud;
 pub mod commands;
 pub mod db;
 pub mod diagnostics;
+// R1 non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/export
+// over the unit-tested `sundayrec_core::{editor,mastering,audio_analysis}`. The
+// DTOs + `feature_disabled` stubs compile in the default build; the impure ffmpeg
+// runs are gated behind the default-off `editor` feature (HARDWARE-UNVERIFIED).
+pub mod editor;
 // PU-1 email alerts — default-off `email` feature (NETWORK-UNVERIFIED). The pure
 // templates/throttle/MIME live in `sundayrec_core::email`; this seam sends.
 #[cfg(feature = "email")]
@@ -160,6 +165,12 @@ pub fn run() {
             commands::settings::settings_import_from_file,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
+            // R1 non-destructive editor (DTOs pure; ffmpeg runs gated by `editor`).
+            commands::editor::editor_load_recording,
+            commands::editor::editor_peaks,
+            commands::editor::editor_segments,
+            commands::editor::editor_mastering_analyze,
+            commands::editor::editor_export,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,

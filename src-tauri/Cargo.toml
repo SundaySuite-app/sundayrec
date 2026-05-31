@@ -25,6 +25,14 @@ email = ["dep:lettre"]
 tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
 # PU-3: write/upload the podcast RSS feed (reuses `reqwest` + the cloud worker).
 publish = []
+# R1: non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/
+# export over the unit-tested `sundayrec-core::{editor,mastering,audio_analysis}`
+# decisions. NO new native dep (ffmpeg is a sidecar; WAV/PCM parsed by hand), so
+# the feature gate only compiles the I/O seam in/out. DEFAULT-OFF: the ffmpeg
+# runs are HARDWARE-UNVERIFIED (need real media), and the shipping/CI gate stays
+# lean. When OFF the commands return a clear `feature_disabled` error (same idiom
+# as `whisper`).
+editor = []
 # PU-5: whisper.cpp transcription. Pulls `whisper-rs` (binds libwhisper) for the
 # actual inference; the model registry/argv/normalise decisions are in
 # `sundayrec-core::whisper`. DEFAULT-OFF — the C/C++ build + model download are
