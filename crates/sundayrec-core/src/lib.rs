@@ -74,6 +74,7 @@ pub mod preroll;
 pub mod progress;
 pub mod reconnect;
 pub mod recorder;
+pub mod recovery;
 pub mod review_queue;
 pub mod schedule;
 pub mod settings;

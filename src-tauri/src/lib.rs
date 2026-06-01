@@ -153,6 +153,18 @@ pub fn run() {
             // Idles cleanly when Google OAuth isn't configured (no spinning).
             cloud::worker::spawn(pool.clone(), cloud::config::GoogleOAuthConfig::resolve());
 
+            // Crash recovery: if a previous run was interrupted mid-recording, its
+            // orphaned segment fragments are finalised into playable files +
+            // history rows on this launch (best-effort, in the background so it
+            // never delays startup). A clean recording leaves no manifest.
+            {
+                let recover_app = app.handle().clone();
+                let recover_pool = pool.clone();
+                tauri::async_runtime::spawn(async move {
+                    recorder::recovery::scan_and_recover(recover_app, recover_pool).await;
+                });
+            }
+
             app.manage(db::Db::new(pool));
 
             // The pre-roll engine (F3.2) writes its rolling temp captures under

@@ -83,6 +83,7 @@ use sundayrec_core::preflight::{low_disk_should_stop, min_disk_headroom_bytes};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
+use sundayrec_core::recovery::{DeliverableManifest, SessionManifest};
 use sundayrec_core::settings::ChannelMode;
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
 use sundayrec_core::timeouts::RecorderTimeouts;
@@ -516,6 +517,9 @@ async fn run_session(
     last_state: Arc<Mutex<RecorderState>>,
 ) {
     let start_ms = now_ms();
+    // Unique per recording (singleton engine → start_ms never repeats); also the
+    // crash-recovery manifest's filename.
+    let session_id = start_ms.to_string();
     let mut session = RecordingSession::new(opts.output_path.clone(), start_ms);
     // How many deliverables have already been finalised (concat + history row).
     // Each split closes one; session end finalises the rest. The pre-roll clip is
@@ -546,6 +550,16 @@ async fn run_session(
     set_state(&app, &last_state, RecorderState::Recording, 0);
 
     loop {
+        // Persist the crash-recovery manifest reflecting the CURRENT deliverable /
+        // fragment layout (it grows across splits + reconnects). If the app dies
+        // before the clean delete at session end, the startup scan finalises these
+        // fragments instead of losing the recording. Best-effort; never blocks.
+        crate::recorder::recovery::write_manifest(
+            &app,
+            &session_manifest(&session_id, &session, &audio, &preroll_clip, start_ms),
+        )
+        .await;
+
         // ── Run ONE segment to completion ───────────────────────────────────
         // Per-deliverable `byte_size` is read from the finalised file on disk
         // (after concat), so we no longer accumulate a session-wide byte total;
@@ -841,6 +855,9 @@ async fn run_session(
         &audio,
     )
     .await;
+    // Clean finish: every deliverable is finalised + history-rowed, so the
+    // recovery manifest is no longer needed.
+    crate::recorder::recovery::delete_manifest(&app, &session_id).await;
     set_state(
         &app,
         &last_state,
@@ -848,6 +865,27 @@ async fn run_session(
         session.reconnect_count(),
     );
     tracing::info!("recorder: session stopped cleanly");
+}
+
+/// Snapshot the live session into a persistable crash-recovery manifest.
+fn session_manifest(
+    session_id: &str,
+    session: &RecordingSession,
+    audio: &FfmpegDevice,
+    preroll_clip: &Option<PrerollClip>,
+    start_ms: u64,
+) -> SessionManifest {
+    SessionManifest {
+        session_id: session_id.to_string(),
+        device_name: audio.name.clone(),
+        session_start_ms: start_ms,
+        preroll_clip_path: preroll_clip.as_ref().map(|c| c.raw_path.clone()),
+        deliverables: session
+            .deliverables()
+            .iter()
+            .map(DeliverableManifest::from_deliverable)
+            .collect(),
+    }
 }
 
 /// Coalesces the live per-channel peak levels parsed from ffmpeg's `ametadata`

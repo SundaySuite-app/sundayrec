@@ -18,4 +18,5 @@
 pub mod concat;
 pub mod engine;
 pub mod preroll;
+pub mod recovery;
 pub mod two_process;
