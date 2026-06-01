@@ -121,6 +121,12 @@ function useRecordingSession(video: boolean) {
       if (cancelled) return;
       setSavePath(opts.output_path || null);
       setDeviceLabel(opts.audio_device_name || null);
+      // Release the Home VU's cpal mic BEFORE the recorder opens avfoundation —
+      // macOS lets only one client own the input, and the VU teardown on screen
+      // change is fire-and-forget. `stop_vu` is idempotent (no-op when idle) and
+      // blocks in Rust until the stream is dropped, so awaiting it here removes
+      // the contention window that could stall device enumeration.
+      await invoke("stop_vu").catch(() => {});
       try {
         await invoke("start_recording", { opts });
         running.current = true;

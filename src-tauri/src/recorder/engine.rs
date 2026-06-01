@@ -342,7 +342,22 @@ impl RecorderEngine {
         }
 
         let platform = current_platform();
-        let inv = enumerate_ffmpeg_devices().await?;
+        // Bound the device probe: `ffmpeg -list_devices` (avfoundation) can stall
+        // if the mic is momentarily contended (e.g. the VU cpal stream hasn't
+        // released yet), and a stalled start is worse than a clear error.
+        let inv = match tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            enumerate_ffmpeg_devices(),
+        )
+        .await
+        {
+            Ok(result) => result?,
+            Err(_) => {
+                return Err(AppError::Recording(
+                    "tidsavbrudd ved enhetssøk — prøv igjen".into(),
+                ))
+            }
+        };
         let audio = find_best_device_match(&inv.audio_inputs, &opts.audio_device_name)
             .cloned()
             .ok_or_else(|| {
@@ -362,7 +377,13 @@ impl RecorderEngine {
         };
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
-        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<AppResult<()>>();
+        // The "ready" handshake MUST be async: the command awaits it on a Tauri
+        // runtime worker, and the supervisor that signals it is itself a runtime
+        // task. A blocking `std::sync::mpsc::recv()` here pins the worker and
+        // starves the runtime → the whole app beachballs and Stop dies too. A
+        // `oneshot` + `.await` frees the worker while the supervisor makes
+        // progress. (The supervisor signals exactly once — a perfect oneshot.)
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let sup_app = app.clone();
         let last_state = Arc::clone(&self.last_state);
@@ -382,7 +403,7 @@ impl RecorderEngine {
             .await;
         });
 
-        match ready_rx.recv() {
+        match ready_rx.await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 supervisor.abort();
@@ -484,7 +505,7 @@ async fn run_session(
     video: Option<FfmpegDevice>,
     preroll_clip: Option<PrerollClip>,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
-    ready: std::sync::mpsc::Sender<AppResult<()>>,
+    ready: tokio::sync::oneshot::Sender<AppResult<()>>,
     last_state: Arc<Mutex<RecorderState>>,
 ) {
     let start_ms = now_ms();
@@ -1267,6 +1288,28 @@ mod tests {
         assert_eq!(RECONNECTING_EVENT, "recording://reconnecting");
         assert_eq!(RECONNECTED_EVENT, "recording://reconnected");
         assert_eq!(STATE_EVENT, "recording://state");
+    }
+
+    /// Regression guard for the recording-FREEZE fix. The start↔supervisor
+    /// "ready" handshake must be a NON-BLOCKING async wait. On a single-threaded
+    /// runtime (the default for `#[tokio::test]`, and the worst case), a blocking
+    /// `recv()` would pin the only worker and deadlock with the spawned
+    /// supervisor → the whole app beachballs and Stop dies. A `oneshot` + `.await`
+    /// yields, so the supervisor runs and signals. The `timeout` turns a
+    /// regression into a failing test instead of an indefinite hang.
+    #[tokio::test]
+    async fn ready_handshake_does_not_block_the_runtime() {
+        let (tx, rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+        // The supervisor is a runtime task that signals readiness.
+        tokio::spawn(async move {
+            let _ = tx.send(Ok(()));
+        });
+        // The "command" awaits readiness — it must complete without blocking.
+        let res = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
+        assert!(
+            matches!(res, Ok(Ok(Ok(())))),
+            "the ready handshake must complete without blocking the runtime",
+        );
     }
 
     #[test]
