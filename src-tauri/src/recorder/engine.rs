@@ -1192,12 +1192,25 @@ async fn run_segment(
     let mut silence_stop: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
     let mut silence_warn: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
 
+    // STARTUP WATCHDOG: ffmpeg has opened the device(s) but if it never produces
+    // its first `size=` progress within this window, the start FAILED (a wedged
+    // output, an unavailable device, a bad arg). Instead of hanging on "STARTING"
+    // forever, we kill it, surface a clear error, and give up. Disarmed the moment
+    // the first progress (`Started`) is observed.
+    let mut started_seen = false;
+    let startup_sleep =
+        tokio::time::sleep(Duration::from_millis(RecorderTimeouts::STARTUP_TIMEOUT_MS));
+    tokio::pin!(startup_sleep);
+
     let outcome = loop {
         tokio::select! {
             // Reader events.
             msg = msg_rx.recv() => {
                 match msg {
-                    Some(ReaderMsg::Started) => { let _ = app.emit(STARTED_EVENT, ()); }
+                    Some(ReaderMsg::Started) => {
+                        started_seen = true;
+                        let _ = app.emit(STARTED_EVENT, ());
+                    }
                     Some(ReaderMsg::Progress(b)) => {
                         segment_bytes.store(b, Ordering::Relaxed);
                         let _ = app.emit(PROGRESS_EVENT, RecordingProgress { bytes_written: b });
@@ -1236,6 +1249,21 @@ async fn run_segment(
                 graceful_q(&mut stdin).await;
                 let _ = child.wait().await;
                 break SegmentOutcome::GracefulStop;
+            }
+            // Startup watchdog: no first progress in time → the start failed.
+            _ = &mut startup_sleep, if !started_seen => {
+                emit_error(
+                    app,
+                    "start_timeout",
+                    "Opptaket startet ikke i tide — sjekk at kamera/mikrofon er tilkoblet og at appen har tilgang (Systeminnstillinger → Personvern).",
+                );
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                // A fatal code so the supervisor gives up cleanly instead of
+                // reconnect-looping a start that won't fix itself.
+                break SegmentOutcome::UnexpectedExit {
+                    last_error: Some(RecordingErrorCode::DeviceNotFound),
+                };
             }
             // Watchdog poll.
             _ = wd_tick.tick() => {
@@ -1895,14 +1923,17 @@ mod tests {
             "/tmp/av.mp4",
         );
         assert!(args.iter().any(|a| a == "0:1"), "got: {args:?}");
-        // A video session encodes a video stream.
+        // A video session encodes a video stream + the A/V-sync CFR lock.
         assert!(args.iter().any(|a| a == "-c:v"), "got: {args:?}");
-        // The mp4 file output is `-y /tmp/av.mp4`, now followed by the live MJPEG
-        // preview second output (`… -f mjpeg pipe:1`), so the mp4 path is no longer
-        // literally last — but `-y` immediately precedes it and `pipe:1` is the tail.
-        let y = args.iter().position(|a| a == "-y").expect("a -y");
-        assert_eq!(args[y + 1], "/tmp/av.mp4", "got: {args:?}");
-        assert_eq!(args.last().unwrap(), "pipe:1", "got: {args:?}");
+        assert!(
+            args.windows(2).any(|w| w == ["-fps_mode", "cfr"]),
+            "video is CFR-locked; got: {args:?}"
+        );
+        // The mp4 is the SOLE, final output (the fragile MJPEG preview tee was
+        // removed): `-y /tmp/av.mp4` is the tail, no `pipe:1`.
+        assert_eq!(args.last().unwrap(), "/tmp/av.mp4", "got: {args:?}");
+        assert_eq!(args[args.len() - 2], "-y", "got: {args:?}");
+        assert!(!args.iter().any(|a| a == "pipe:1"), "got: {args:?}");
     }
 
     #[test]

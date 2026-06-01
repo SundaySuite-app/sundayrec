@@ -344,22 +344,6 @@ pub fn build_unified_capture_args(
         args.push(af_chain);
     }
 
-    // For a VIDEO recording we add a SECOND output (a downscaled, low-fps,
-    // audio-less MJPEG to stdout) AFTER the mp4. With two outputs ffmpeg's
-    // implicit stream selection becomes ambiguous, so we make the FIRST (mp4)
-    // output map BOTH streams EXPLICITLY (`-map 0:v -map 0:a`). On macOS video +
-    // audio share one combined input (input 0), so `0:v`/`0:a` address them; on
-    // Windows video is input 0 and audio input 1, but `0:v` still names the video
-    // stream and (since dshow's audio carries no video) `0:a` still resolves to
-    // the audio. (The audio-ONLY path adds no mapping and no second output — it is
-    // byte-for-byte unchanged.)
-    if has_video {
-        args.push("-map".into());
-        args.push("0:v".into());
-        args.push("-map".into());
-        args.push("0:a".into());
-    }
-
     // Codecs. The audio codec is chosen from the OUTPUT extension (see
     // `codec_for_extension`) so the encoded stream matches the chosen container —
     // mp3→libmp3lame, wav→pcm_s16le, flac→flac, m4a/mp4/aac→aac. (Previously this
@@ -401,34 +385,17 @@ pub fn build_unified_capture_args(
         args.push("+faststart".into());
     }
 
-    // The mp4 file output — for a video recording this is the FIRST of two
-    // outputs (the MJPEG preview to stdout follows); for audio-only it is the sole
-    // output. ALWAYS preceded by `-y` (overwrite).
+    // The output file — ALWAYS the single, final output (preceded by `-y`).
+    //
+    // NOTE: an earlier build appended a SECOND output (a low-fps MJPEG to `pipe:1`)
+    // to drive a live preview WHILE recording. That made the recording fragile —
+    // if the engine ever fell behind draining stdout the pipe filled and ffmpeg
+    // BLOCKED on the write, freezing the whole capture (the "stuck on STARTING,
+    // 0 bytes, camera on" symptom). The recording's reliability is worth far more
+    // than an in-recording preview, so the recorder is a SINGLE clean output again.
+    // (A deadlock-proof in-recording preview can return later via a file sink.)
     args.push("-y".into());
     args.push(output_path.into());
-
-    // SECOND output (video recordings only): a best-effort live PREVIEW stream.
-    // The SAME recording ffmpeg also emits a tiny, downscaled, low-fps, audio-less
-    // MJPEG to stdout so the UI can show a live image WHILE recording (macOS gives
-    // the camera a single owner, so a separate preview process can't open it).
-    // This is appended AFTER the complete mp4 output above, so the mp4 is fully
-    // specified and finalises normally regardless of the preview. The supervisor
-    // reads `pipe:1` and splits frames; a stdout read failure only ends the
-    // preview, never the recording.
-    if has_video {
-        args.push("-map".into());
-        args.push("0:v".into());
-        args.push("-an".into());
-        args.push("-vf".into());
-        args.push("scale=480:-2,fps=8".into());
-        args.push("-c:v".into());
-        args.push("mjpeg".into());
-        args.push("-q:v".into());
-        args.push("10".into());
-        args.push("-f".into());
-        args.push("mjpeg".into());
-        args.push("pipe:1".into());
-    }
     args
 }
 
@@ -706,12 +673,12 @@ mod tests {
         assert_eq!(args[n - 2], "-y");
     }
 
-    /// The MJPEG-preview second output is added ONLY for video recordings, after a
-    /// COMPLETE mp4 output. The file output's `-y <path>` is the last-but-one
-    /// output (immediately preceding the `pipe:1` preview run); the preview ends
-    /// the arg vector with `… -f mjpeg pipe:1`.
+    /// A VIDEO recording is a SINGLE clean output ending in the mp4 path — NO
+    /// second MJPEG/`pipe:1` output (that fragile preview tee was removed because a
+    /// stalled stdout drain could block + freeze the whole capture). libx264 + the
+    /// CFR sync lock are present; the args end with `-y <path>`.
     #[test]
-    fn video_appends_mjpeg_preview_second_output_after_complete_mp4() {
+    fn video_is_single_clean_output_with_cfr_and_no_pipe() {
         for (plat, vid, aud) in [
             (Platform::Windows, Some("Cam"), "Mic"),
             (Platform::MacOS, Some("0"), "1"),
@@ -723,71 +690,22 @@ mod tests {
                 "FINAL_OUTPUT.mp4",
                 &CaptureOpts::default(),
             );
-            // The mp4 file output is still complete: preceded by -y, followed by
-            // the second (preview) output — so it is NOT last, but `-y <path>` are
-            // still adjacent and in order.
-            let y = args
-                .iter()
-                .position(|a| a == "-y")
-                .expect("the mp4 output has a -y");
-            assert_eq!(args[y + 1], "FINAL_OUTPUT.mp4", "got: {args:?}");
-            // The preview second output is the tail.
-            assert_eq!(args.last().unwrap(), "pipe:1", "got: {args:?}");
-            // The mp4 path comes BEFORE pipe:1 (file output is fully specified
-            // first; the preview is the LAST output).
-            let path_idx = args.iter().position(|a| a == "FINAL_OUTPUT.mp4").unwrap();
-            let pipe_idx = args.iter().position(|a| a == "pipe:1").unwrap();
-            assert!(
-                path_idx < pipe_idx,
-                "mp4 output before the preview; got: {args:?}"
+            // The file is the SOLE, final output.
+            assert_eq!(
+                args.last().unwrap(),
+                "FINAL_OUTPUT.mp4",
+                "mp4 is the only output; got: {args:?}"
             );
+            assert_eq!(args[args.len() - 2], "-y", "preceded by -y; got: {args:?}");
+            // No second-output preview plumbing anywhere.
+            assert!(
+                !args.iter().any(|a| a == "pipe:1" || a == "mjpeg"),
+                "no stdout/MJPEG preview output; got: {args:?}"
+            );
+            // Video codec + the A/V-sync CFR lock are still there.
+            assert!(has_pair(&args, "-c:v", "libx264"), "got: {args:?}");
+            assert!(has_pair(&args, "-fps_mode", "cfr"), "got: {args:?}");
         }
-    }
-
-    /// The video MJPEG preview second output: maps only video, drops audio, scales
-    /// down + caps fps, encodes mjpeg to stdout. The mp4 output maps BOTH streams
-    /// explicitly so the two outputs are unambiguous.
-    #[test]
-    fn video_mjpeg_preview_args_are_present_and_well_formed() {
-        let args = build_unified_capture_args(
-            Platform::MacOS,
-            Some("0"),
-            "1",
-            "/tmp/sermon.mp4",
-            &CaptureOpts::default(),
-        );
-        // Explicit mapping on the mp4 output (video + audio).
-        assert!(
-            has_pair(&args, "-map", "0:v"),
-            "mp4 maps video; got: {args:?}"
-        );
-        assert!(
-            has_pair(&args, "-map", "0:a"),
-            "mp4 maps audio; got: {args:?}"
-        );
-        // The preview tail: -an (no audio), the scale+fps filter, mjpeg to pipe:1.
-        assert!(
-            args.iter().any(|a| a == "-an"),
-            "preview drops audio; got: {args:?}"
-        );
-        assert!(
-            has_pair(&args, "-vf", "scale=480:-2,fps=8"),
-            "preview downscales + caps fps; got: {args:?}"
-        );
-        assert!(
-            has_pair(&args, "-c:v", "mjpeg"),
-            "preview encodes mjpeg; got: {args:?}"
-        );
-        assert!(
-            has_pair(&args, "-f", "mjpeg"),
-            "preview muxes mjpeg; got: {args:?}"
-        );
-        assert_eq!(args.last().unwrap(), "pipe:1", "preview writes to stdout");
-        // The recording video codec (libx264) is still present for the mp4.
-        assert!(
-            has_pair(&args, "-c:v", "libx264"),
-            "mp4 still libx264; got: {args:?}"
-        );
     }
 
     /// SAFETY GUARD: the AUDIO-ONLY path (the common church case) must carry NO

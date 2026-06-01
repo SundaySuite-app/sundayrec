@@ -32,6 +32,13 @@ impl RecorderTimeouts {
         }
     }
 
+    /// Startup watchdog: ffmpeg has spawned but must produce its FIRST progress
+    /// (`size=`) within this window, or the start is treated as failed (a wedged
+    /// output, an unavailable/permission-blocked device). Without this the UI
+    /// could hang on "STARTING" forever. 12 s is generous for camera warm-up +
+    /// avfoundation negotiation yet quick enough to surface a real failure.
+    pub const STARTUP_TIMEOUT_MS: u64 = 12_000;
+
     /// Stuck-encoder check: if bytes haven't advanced in this long, the
     /// watchdog fires. Generous because a 90-min sermon can briefly pause
     /// writes during keyframe processing on slow disks.
