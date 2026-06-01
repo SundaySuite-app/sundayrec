@@ -497,6 +497,141 @@ mod tests {
         eprintln!("levels chain: encoded + ffprobed OK ({dur:.3} s, {len} bytes)");
     }
 
+    /// DUAL-OUTPUT (recording + live MJPEG preview) REAL-FFMPEG TEST. The video
+    /// recording path adds a SECOND ffmpeg output — a downscaled MJPEG to stdout —
+    /// so the UI can show a live image WHILE the mp4 records (see
+    /// `build_unified_capture_args`). A wrong second-output arg that makes ffmpeg
+    /// refuse to start would break recording, so this drives the EXACT dual-output
+    /// shape against two `-f lavfi` sources (testsrc video + sine audio, combined
+    /// into one process — standing in for the avfoundation/dshow capture inputs)
+    /// and asserts BOTH: (a) a valid, non-zero mp4 is written, AND (b) real MJPEG
+    /// bytes (a JPEG SOI `FF D8`) appear on stdout. This RUNS (does not skip) when
+    /// the bundled sidecar is present. HARDWARE-FREE: lavfi needs no devices.
+    #[tokio::test]
+    async fn dual_output_records_mp4_and_emits_mjpeg_preview_or_skips() {
+        use sundayrec_core::mjpeg::MjpegFrameSplitter;
+        use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
+        use tokio::io::AsyncReadExt;
+
+        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("dual.mp4");
+        let out_s = out.to_string_lossy().into_owned();
+
+        // Two `-f lavfi` inputs in ONE process: input 0 = video (testsrc), input 1
+        // = audio (sine). `0:v` / `1:a` address them. The mp4 output maps both and
+        // encodes a short clip; the SECOND output mirrors the EXACT preview tail
+        // from `build_unified_capture_args` (downscale + fps cap + mjpeg → pipe:1).
+        // `-t 1` BEFORE each `-i` caps the INPUT duration, so BOTH outputs (the
+        // mp4 AND the infinite-by-default MJPEG preview) terminate at 1 s — an
+        // output-side `-t` would only bound the first output and leave the preview
+        // streaming forever from the endless lavfi sources.
+        let args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-t".into(),
+            "1".into(),
+            "-i".into(),
+            "testsrc=size=320x240:rate=15".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-t".into(),
+            "1".into(),
+            "-i".into(),
+            "sine=frequency=440:sample_rate=48000".into(),
+            // First output: the mp4 (both streams mapped explicitly).
+            "-map".into(),
+            "0:v".into(),
+            "-map".into(),
+            "1:a".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            "-preset".into(),
+            "veryfast".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-c:a".into(),
+            "aac".into(),
+            "-movflags".into(),
+            "+faststart".into(),
+            "-y".into(),
+            out_s.clone(),
+            // Second output: the live MJPEG preview to stdout (the very args the
+            // recorder appends for a video recording).
+            "-map".into(),
+            "0:v".into(),
+            "-an".into(),
+            "-vf".into(),
+            "scale=480:-2,fps=8".into(),
+            "-c:v".into(),
+            "mjpeg".into(),
+            "-q:v".into(),
+            "10".into(),
+            "-f".into(),
+            "mjpeg".into(),
+            "pipe:1".into(),
+        ];
+
+        let mut child = tokio::process::Command::new(&ffmpeg)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("ffmpeg should spawn the dual-output command");
+
+        // Drain stdout (the MJPEG preview) WHILE ffmpeg runs so its pipe never
+        // fills and stalls the process, and split out whole JPEG frames.
+        let mut stdout = child.stdout.take().expect("piped stdout");
+        let mut splitter = MjpegFrameSplitter::new();
+        let mut first_frame: Option<Vec<u8>> = None;
+        let mut read_buf = vec![0u8; 64 * 1024];
+        loop {
+            match stdout.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    for frame in splitter.push(&read_buf[..n]) {
+                        if first_frame.is_none() {
+                            first_frame = Some(frame);
+                        }
+                    }
+                }
+                Err(e) => panic!("reading the MJPEG preview stdout failed: {e}"),
+            }
+        }
+
+        let status = child.wait().await.expect("ffmpeg should be waitable");
+        assert!(
+            status.success(),
+            "the dual-output command must start AND finish cleanly (a bad \
+             second-output arg would break recording)"
+        );
+
+        // (a) A valid, non-zero mp4 was written despite the second output.
+        let len = std::fs::metadata(&out).expect("mp4 output exists").len();
+        assert!(
+            len >= MIN_VALID_OUTPUT_BYTES,
+            "dual-output mp4 too small: {len} bytes"
+        );
+
+        // (b) Real MJPEG bytes appeared on stdout — at least one whole JPEG frame
+        // starting with the SOI marker `FF D8`.
+        let frame = first_frame.expect("at least one MJPEG preview frame on stdout");
+        assert_eq!(
+            &frame[..2],
+            &[0xFF, 0xD8],
+            "the preview frame must start with the JPEG SOI marker"
+        );
+        eprintln!(
+            "dual-output: wrote a {len}-byte mp4 AND emitted a {}-byte MJPEG preview frame",
+            frame.len()
+        );
+    }
+
     #[test]
     fn ffmpeg_version_and_health_against_real_binary_or_skip() {
         let _guard = ENV_LOCK.lock().unwrap();

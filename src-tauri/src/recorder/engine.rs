@@ -72,6 +72,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts};
@@ -79,6 +80,7 @@ use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::levels::{parse_ametadata_peak, ChannelLevels, SILENCE_FLOOR_DB};
+use sundayrec_core::mjpeg::MjpegFrameSplitter;
 use sundayrec_core::preflight::{low_disk_should_stop, min_disk_headroom_bytes};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
@@ -114,6 +116,10 @@ pub const RECONNECTED_EVENT: &str = "recording://reconnected";
 pub const STATE_EVENT: &str = "recording://state";
 /// Event channel: live per-channel peak audio levels (drives the L/R meters).
 pub const LEVELS_EVENT: &str = "recording://levels";
+/// Event channel: a live camera-preview JPEG frame emitted by the RECORDING
+/// ffmpeg's second (MJPEG-to-stdout) output. Best-effort — the recording is
+/// never affected by a preview frame failing. Video recordings only.
+pub const RECORDING_FRAME_EVENT: &str = "recording://frame";
 
 /// Options for [`RecorderEngine::start`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -181,6 +187,22 @@ pub struct RecordingLevels {
     pub peak_db_left: f64,
     /// Peak level (dBFS) of the right channel, or `null` for mono sources.
     pub peak_db_right: Option<f64>,
+}
+
+/// One live camera-preview frame emitted to the renderer over
+/// [`RECORDING_FRAME_EVENT`] while recording video. `data` is a base64-encoded
+/// JPEG (drop it straight into `src="data:image/jpeg;base64,…"`); it comes from
+/// the RECORDING ffmpeg's second MJPEG-to-stdout output, so it needs no second
+/// camera process (macOS gives the camera a single owner). Mirrors the preview's
+/// `PreviewFrame` shape (base64 payload + monotonic seq), trimmed to what the
+/// recording tile needs.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../src/lib/bindings/RecordingFrame.ts")]
+pub struct RecordingFrame {
+    /// Base64-encoded JPEG bytes (no data-URL prefix).
+    pub data: String,
+    /// Monotonic frame counter since this segment's preview started (1-based).
+    pub seq: u32,
 }
 
 impl From<ChannelLevels> for RecordingLevels {
@@ -1013,6 +1035,54 @@ async fn run_segment(
     };
     let mut stdin = child.stdin.take();
 
+    // Live camera preview (video recordings only, best-effort). The RECORDING
+    // ffmpeg's SECOND output is a downscaled, low-fps, audio-less MJPEG written to
+    // stdout (see `build_unified_capture_args`); we read it here in PARALLEL to the
+    // stderr reader, split whole JPEG frames with the pure `MjpegFrameSplitter`,
+    // and emit each as a `recording://frame` event. This NEVER blocks the segment
+    // select! (it's its own task) and any read error simply ENDS the preview — the
+    // mp4 recording is untouched. For audio-only (no stdout consumer expected) we
+    // skip it entirely. The task is aborted on segment end alongside the stderr
+    // reader.
+    let frame_reader = if opts.video_device_name.is_some() {
+        child.stdout.take().map(|stdout| {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let b64 = base64::engine::general_purpose::STANDARD;
+                let mut splitter = MjpegFrameSplitter::new();
+                let mut stdout = BufReader::new(stdout);
+                let mut buf = vec![0u8; 64 * 1024];
+                let mut seq: u32 = 0;
+                loop {
+                    let n = match stdout.read(&mut buf).await {
+                        Ok(0) => break, // stdout closed → preview stream ended
+                        Ok(n) => n,
+                        Err(e) => {
+                            // A stdout read error only ends the PREVIEW — never the
+                            // recording (which writes its own mp4 output).
+                            tracing::warn!("recorder preview stdout read error: {e}");
+                            break;
+                        }
+                    };
+                    for frame in splitter.push(&buf[..n]) {
+                        seq = seq.wrapping_add(1);
+                        let payload = RecordingFrame {
+                            data: b64.encode(&frame),
+                            seq,
+                        };
+                        // A failed emit means the window/listener is gone — stop
+                        // pumping frames (the recording is unaffected).
+                        if app.emit(RECORDING_FRAME_EVENT, payload).is_err() {
+                            break;
+                        }
+                    }
+                }
+            })
+        })
+    } else {
+        None
+    };
+
     // Reader task: stream stderr → ReaderMsg over a channel so the supervisor's
     // select! owns all decisions. The reader holds NO state machine; it only
     // classifies lines with the pure core helpers.
@@ -1238,6 +1308,11 @@ async fn run_segment(
 
     // Make sure the reader task is done (it sends Exit then returns).
     reader.abort();
+    // Stop the live-preview frame reader too (best-effort; it may already have
+    // ended when ffmpeg closed stdout). Aborting drops the stdout handle.
+    if let Some(frame_reader) = frame_reader {
+        frame_reader.abort();
+    }
     outcome
 }
 
@@ -1630,6 +1705,21 @@ mod tests {
         assert_eq!(RECONNECTING_EVENT, "recording://reconnecting");
         assert_eq!(RECONNECTED_EVENT, "recording://reconnected");
         assert_eq!(STATE_EVENT, "recording://state");
+        assert_eq!(LEVELS_EVENT, "recording://levels");
+        assert_eq!(RECORDING_FRAME_EVENT, "recording://frame");
+    }
+
+    #[test]
+    fn recording_frame_serde_roundtrip() {
+        let f = RecordingFrame {
+            data: "AQID".into(),
+            seq: 7,
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(json.contains("\"data\""), "got: {json}");
+        assert!(json.contains("\"seq\""), "got: {json}");
+        let back: RecordingFrame = serde_json::from_str(&json).unwrap();
+        assert_eq!(f, back);
     }
 
     /// Regression guard for the recording-FREEZE fix. The start↔supervisor
@@ -1807,7 +1897,12 @@ mod tests {
         assert!(args.iter().any(|a| a == "0:1"), "got: {args:?}");
         // A video session encodes a video stream.
         assert!(args.iter().any(|a| a == "-c:v"), "got: {args:?}");
-        assert_eq!(args.last().unwrap(), "/tmp/av.mp4");
+        // The mp4 file output is `-y /tmp/av.mp4`, now followed by the live MJPEG
+        // preview second output (`… -f mjpeg pipe:1`), so the mp4 path is no longer
+        // literally last — but `-y` immediately precedes it and `pipe:1` is the tail.
+        let y = args.iter().position(|a| a == "-y").expect("a -y");
+        assert_eq!(args[y + 1], "/tmp/av.mp4", "got: {args:?}");
+        assert_eq!(args.last().unwrap(), "pipe:1", "got: {args:?}");
     }
 
     #[test]

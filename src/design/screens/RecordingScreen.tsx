@@ -31,6 +31,7 @@ import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { RecordingProgress } from "@/lib/bindings/RecordingProgress";
 import type { RecordingLevels } from "@/lib/bindings/RecordingLevels";
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
+import type { RecordingFrame } from "@/lib/bindings/RecordingFrame";
 import type { RecorderStatePayload } from "@/lib/bindings/RecorderStatePayload";
 import type { Settings } from "@/lib/bindings/Settings";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
@@ -553,6 +554,59 @@ function RecFooter({
   );
 }
 
+/**
+ * The live camera image shown WHILE recording video. The recording ffmpeg emits
+ * a downscaled MJPEG preview on its second output (it can't be a separate
+ * process — macOS gives the camera a single owner), and the backend forwards
+ * each JPEG frame over `recording://frame` as base64. We render the latest frame
+ * as an `<img>` (object-fit cover, the dark `sr-media` look) and fall back to the
+ * placeholder meta line until the first frame lands. The listener is cleaned up
+ * on unmount.
+ */
+const LiveCameraImage = memo(function LiveCameraImage({
+  placeholder,
+}: {
+  placeholder: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    const un = listen<RecordingFrame>("recording://frame", (e) =>
+      setSrc(`data:image/jpeg;base64,${e.payload.data}`),
+    );
+    return () => {
+      void un.then((off) => off());
+    };
+  }, []);
+
+  return (
+    <div
+      className="sr-media"
+      style={{
+        aspectRatio: "16 / 9",
+        borderRadius: 0,
+        border: "none",
+        overflow: "hidden",
+        padding: 0,
+      }}
+    >
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      ) : (
+        placeholder
+      )}
+    </div>
+  );
+});
+
 export function RecordingScreen({
   video = false,
   onStop,
@@ -647,19 +701,12 @@ export function RecordingScreen({
                   {formatMb(bytes)}
                 </span>
               </div>
-              <div
-                className="sr-media"
-                style={{
-                  aspectRatio: "16 / 9",
-                  borderRadius: 0,
-                  border: "none",
-                }}
-              >
-                {t(
+              <LiveCameraImage
+                placeholder={t(
                   "recordingScreen.cameraRecordingMeta",
                   "kamera tar opp · 720p · 30 fps",
                 )}
-              </div>
+              />
             </div>
           )}
           <RecHeader
