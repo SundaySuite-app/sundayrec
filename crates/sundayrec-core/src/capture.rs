@@ -199,6 +199,13 @@ pub struct CaptureOpts {
     /// chain — its ~94 lines/s of stderr can starve the capture reader on a
     /// loaded machine, so the user can turn the meters off for max stability.
     pub live_levels: bool,
+    /// For a VIDEO recording, a file path the recorder ALSO writes a low-fps,
+    /// auto-overwriting JPEG to (`-update 1`), so the UI can show a live preview
+    /// WHILE recording. A FILE sink (NOT a stdout pipe) is deadlock-proof: ffmpeg
+    /// never blocks on a file write, so a slow/absent UI reader can NEVER freeze
+    /// the capture (the bug that froze recording when this was a pipe). `None`
+    /// (and all audio-only recordings) add no second output.
+    pub preview_jpg: Option<String>,
 }
 
 impl Default for CaptureOpts {
@@ -211,6 +218,7 @@ impl Default for CaptureOpts {
             sample_rate: None,
             bitrate_kbps: 192,
             live_levels: true,
+            preview_jpg: None,
         }
     }
 }
@@ -385,17 +393,34 @@ pub fn build_unified_capture_args(
         args.push("+faststart".into());
     }
 
-    // The output file — ALWAYS the single, final output (preceded by `-y`).
-    //
-    // NOTE: an earlier build appended a SECOND output (a low-fps MJPEG to `pipe:1`)
-    // to drive a live preview WHILE recording. That made the recording fragile —
-    // if the engine ever fell behind draining stdout the pipe filled and ffmpeg
-    // BLOCKED on the write, freezing the whole capture (the "stuck on STARTING,
-    // 0 bytes, camera on" symptom). The recording's reliability is worth far more
-    // than an in-recording preview, so the recorder is a SINGLE clean output again.
-    // (A deadlock-proof in-recording preview can return later via a file sink.)
+    // The mp4/audio file — the PRIMARY output (preceded by `-y`). For audio-only
+    // (and video without a preview path) this is the sole output.
     args.push("-y".into());
     args.push(output_path.into());
+
+    // DEADLOCK-PROOF live preview (video recordings only). A SECOND output writes
+    // a small, downscaled, low-fps JPEG that ffmpeg auto-overwrites (`-update 1`)
+    // so the UI can poll it for a live image WHILE recording. This is a FILE sink,
+    // NOT a stdout pipe: ffmpeg never blocks on a file write, so an absent/slow UI
+    // reader can NEVER back-pressure and freeze the capture (the bug that froze
+    // recording when this was `pipe:1`). The primary mp4 above is already complete,
+    // so the preview output is purely additive and the recording finalises
+    // normally regardless of it. The `-map 0:v` selects only the camera; the
+    // primary output keeps default stream selection (video + audio), which ffmpeg
+    // resolves unambiguously (verified).
+    if has_video {
+        if let Some(preview) = &opts.preview_jpg {
+            args.push("-map".into());
+            args.push("0:v".into());
+            args.push("-an".into());
+            args.push("-vf".into());
+            args.push("scale=480:-2,fps=4".into());
+            args.push("-update".into());
+            args.push("1".into());
+            args.push("-y".into());
+            args.push(preview.clone());
+        }
+    }
     args
 }
 
@@ -705,7 +730,46 @@ mod tests {
             // Video codec + the A/V-sync CFR lock are still there.
             assert!(has_pair(&args, "-c:v", "libx264"), "got: {args:?}");
             assert!(has_pair(&args, "-fps_mode", "cfr"), "got: {args:?}");
+            // No preview output unless one is requested.
+            assert!(!args.iter().any(|a| a == "-update"), "got: {args:?}");
         }
+    }
+
+    /// With a preview path set, a VIDEO recording appends a SECOND output: a
+    /// downscaled, low-fps, audio-less JPEG written to a FILE (`-update 1`, NOT a
+    /// pipe — deadlock-proof). The mp4 stays the primary output; the preview tails.
+    #[test]
+    fn video_with_preview_appends_deadlock_proof_jpeg_file_output() {
+        let opts = CaptureOpts {
+            preview_jpg: Some("/tmp/preview.jpg".into()),
+            ..CaptureOpts::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/rec/g.mp4", &opts);
+        // The preview is the FINAL output, written to the file (NOT a pipe).
+        assert_eq!(args.last().unwrap(), "/tmp/preview.jpg", "got: {args:?}");
+        assert!(
+            !args.iter().any(|a| a == "pipe:1"),
+            "preview is a file, never a pipe; got: {args:?}"
+        );
+        assert!(
+            has_pair(&args, "-update", "1"),
+            "auto-overwrite; got: {args:?}"
+        );
+        assert!(
+            has_pair(&args, "-vf", "scale=480:-2,fps=4"),
+            "got: {args:?}"
+        );
+        assert!(args.iter().any(|a| a == "-an"), "preview drops audio");
+        // The mp4 is still complete + comes before the preview.
+        let mp4 = args.iter().position(|a| a == "/rec/g.mp4").unwrap();
+        let jpg = args.iter().position(|a| a == "/tmp/preview.jpg").unwrap();
+        assert!(mp4 < jpg, "mp4 finalises before the preview; got: {args:?}");
+        // AUDIO-only ignores the preview path entirely.
+        let audio = build_unified_capture_args(Platform::MacOS, None, "1", "/rec/a.wav", &opts);
+        assert!(
+            !audio.iter().any(|a| a == "-update"),
+            "audio-only has no preview"
+        );
     }
 
     /// SAFETY GUARD: the AUDIO-ONLY path (the common church case) must carry NO

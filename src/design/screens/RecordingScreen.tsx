@@ -31,7 +31,6 @@ import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { RecordingProgress } from "@/lib/bindings/RecordingProgress";
 import type { RecordingLevels } from "@/lib/bindings/RecordingLevels";
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
-import type { RecordingFrame } from "@/lib/bindings/RecordingFrame";
 import type { RecorderStatePayload } from "@/lib/bindings/RecorderStatePayload";
 import type { Settings } from "@/lib/bindings/Settings";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
@@ -552,13 +551,12 @@ function RecFooter({
 }
 
 /**
- * The live camera image shown WHILE recording video. The recording ffmpeg emits
- * a downscaled MJPEG preview on its second output (it can't be a separate
- * process — macOS gives the camera a single owner), and the backend forwards
- * each JPEG frame over `recording://frame` as base64. We render the latest frame
- * as an `<img>` (object-fit cover, the dark `sr-media` look) and fall back to the
- * placeholder meta line until the first frame lands. The listener is cleaned up
- * on unmount.
+ * The live camera image shown WHILE recording video. The recording ffmpeg writes
+ * a downscaled, low-fps JPEG to a fixed temp file (a deadlock-proof FILE sink —
+ * NOT a stdout pipe, which could freeze the capture), and we POLL the backend
+ * `recording_preview_frame` command (~4×/s) for the latest base64 frame. A `null`
+ * result (no frame yet / a momentary partial write) keeps the last good frame, so
+ * the tile never flickers. Falls back to the placeholder until the first frame.
  */
 const LiveCameraImage = memo(function LiveCameraImage({
   placeholder,
@@ -567,11 +565,20 @@ const LiveCameraImage = memo(function LiveCameraImage({
 }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    const un = listen<RecordingFrame>("recording://frame", (e) =>
-      setSrc(`data:image/jpeg;base64,${e.payload.data}`),
-    );
+    let alive = true;
+    const poll = async () => {
+      try {
+        const b64 = await invoke<string | null>("recording_preview_frame");
+        if (alive && b64) setSrc(`data:image/jpeg;base64,${b64}`);
+      } catch {
+        // Keep the last good frame on a transient read failure.
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 250);
     return () => {
-      void un.then((off) => off());
+      alive = false;
+      clearInterval(id);
     };
   }, []);
 

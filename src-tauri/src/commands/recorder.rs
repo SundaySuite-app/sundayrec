@@ -29,6 +29,25 @@ pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
     enumerate().await
 }
 
+/// The latest in-recording camera preview frame, base64-encoded, or `None` if no
+/// frame is available yet. For a VIDEO recording the recording ffmpeg writes a
+/// low-fps JPEG to a fixed temp file (`-update 1`, a deadlock-proof FILE sink —
+/// never a pipe, so it can't freeze the capture). The renderer polls this ~4×/s
+/// while recording and shows the result in the camera tile. The JPEG SOI guard
+/// (`FF D8`) drops a partial/empty read so the UI keeps its last good frame
+/// instead of flickering.
+#[tauri::command]
+pub async fn recording_preview_frame() -> Option<String> {
+    use base64::Engine as _;
+    let path = crate::recorder::engine::recording_preview_path();
+    match tokio::fs::read(&path).await {
+        Ok(bytes) if bytes.len() > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 => {
+            Some(base64::engine::general_purpose::STANDARD.encode(&bytes))
+        }
+        _ => None,
+    }
+}
+
 /// Plan the full [`RecordingOpts`] for a manual "Start opptak nå" from the
 /// persisted settings — the SAME save-folder + liturgical-filename + audio
 /// processing logic the scheduler uses, so a manually-started recording lands
