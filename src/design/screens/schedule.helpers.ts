@@ -7,6 +7,7 @@
  */
 import type { ScheduleSlot } from "@/lib/bindings/ScheduleSlot";
 import type { SpecialRecording } from "@/lib/bindings/SpecialRecording";
+import type { LiturgicalDay } from "@/lib/bindings/LiturgicalDay";
 
 /** Short Norwegian weekday names, 0 = Monday … 6 = Sunday (backend order). */
 export const WEEKDAY_SHORT = [
@@ -187,6 +188,34 @@ export function buildMonthEvents(
       }
     }
     if (evs.length > 0) out[day] = evs;
+  }
+  return out;
+}
+
+/**
+ * Merge liturgical feast days (from the `liturgical_month` command, keyed on the
+ * displayed `year`/0-based `month`) into an existing day→events map as blue
+ * "hoy"-kind pills. Pure: returns a new map, leaving `base` untouched, so the
+ * existing weekly/special events are preserved. `feasts` is matched by parsing
+ * the day-of-month out of each `LiturgicalDay.date` (`YYYY-MM-DD`); entries that
+ * don't belong to `year`/`month` (or are malformed) are ignored. A nullish or
+ * empty `feasts` returns `base` unchanged — so an erroring/empty backend (dev,
+ * test) adds no pills and never crashes.
+ */
+export function mergeFeastEvents(
+  base: Record<number, DayEvent[]>,
+  feasts: LiturgicalDay[] | undefined,
+  year: number,
+  month: number,
+): Record<number, DayEvent[]> {
+  if (!feasts || feasts.length === 0) return base;
+  const prefix = `${year}-${pad2(month + 1)}-`;
+  const out: Record<number, DayEvent[]> = { ...base };
+  for (const f of feasts) {
+    if (!f.date.startsWith(prefix)) continue;
+    const day = Number(f.date.slice(prefix.length));
+    if (!Number.isInteger(day) || day < 1 || day > 31) continue;
+    out[day] = [...(out[day] ?? []), { t: f.name, k: "hoy" }];
   }
   return out;
 }

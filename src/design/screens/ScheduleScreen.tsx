@@ -21,6 +21,7 @@ import {
   emptySpecial,
   formatSpecialDate,
   isoDate,
+  mergeFeastEvents,
   nextOccurrence,
   slotDayLabel,
   slotTimeRange,
@@ -32,6 +33,7 @@ import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import type { ScheduleSlot } from "@/lib/bindings/ScheduleSlot";
 import type { SpecialRecording } from "@/lib/bindings/SpecialRecording";
 import type { WakeCapabilities } from "@/lib/bindings/WakeCapabilities";
+import type { LiturgicalDay } from "@/lib/bindings/LiturgicalDay";
 
 const SCHEDULER_STATUS_KEY = ["scheduler_status"] as const;
 
@@ -315,6 +317,21 @@ export function ScheduleScreen() {
   });
   const year = haveLive ? view.year : realNow.getFullYear();
   const month = haveLive ? view.month : realNow.getMonth();
+
+  // "Kirkehøytider" toggle: when on, fetch the displayed month's liturgical
+  // feast days and merge them into the calendar as blue "hoy" pills. Keyed on
+  // the displayed (year, month) so paging refetches; errors/empty → no pills.
+  const [showHolidays, setShowHolidays] = useState(false);
+  const { data: feasts } = useQuery<LiturgicalDay[]>({
+    queryKey: ["liturgical_month", year, month],
+    queryFn: () =>
+      invoke<LiturgicalDay[]>("liturgical_month", {
+        year,
+        // Backend month is 1-based; `month` is 0-based (Date.getMonth()).
+        month: month + 1,
+      }),
+    enabled: showHolidays,
+  });
   const todayDate = realNow.getDate();
   const viewingThisMonth =
     year === realNow.getFullYear() && month === realNow.getMonth();
@@ -330,7 +347,12 @@ export function ScheduleScreen() {
 
   const liveWeeks = haveLive ? buildWeeksFor(year, month) : null;
   const liveEvents = haveLive
-    ? buildMonthEvents(year, month, slots, specials)
+    ? mergeFeastEvents(
+        buildMonthEvents(year, month, slots, specials),
+        showHolidays ? feasts : undefined,
+        year,
+        month,
+      )
     : null;
   const weeks = liveWeeks ?? buildSampleWeeks();
   const monthName = t(
@@ -398,11 +420,15 @@ export function ScheduleScreen() {
             >
               {monthLabel}
             </div>
-            {/* No holiday source wired yet — purely visual. TODO: feed church
-                feast days into buildMonthEvents (kind "hoy") when available. */}
+            {/* Toggle church feast days ("Kirkehøytider") on/off. When on, the
+                displayed month's liturgical days are merged in as blue pills. */}
             <button
-              className="sr-btn ghost sm"
-              style={{ color: "var(--sr-gold-bright)" }}
+              className={"sr-btn sm" + (showHolidays ? " gold" : " ghost")}
+              style={
+                showHolidays ? undefined : { color: "var(--sr-gold-bright)" }
+              }
+              aria-pressed={showHolidays}
+              onClick={() => setShowHolidays((v) => !v)}
             >
               <Icon name="sparkle" size={14} />
               {t("scheduleScreen.churchFeasts", "Kirkehøytider")}

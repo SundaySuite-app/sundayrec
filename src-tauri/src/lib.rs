@@ -229,6 +229,7 @@ pub fn run() {
             commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
+            commands::calendar::liturgical_month,
             commands::cloud::cloud_connection_status,
             commands::cloud::cloud_is_configured,
             commands::cloud::cloud_connect,
