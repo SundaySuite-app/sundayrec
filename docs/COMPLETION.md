@@ -182,3 +182,98 @@ proof, replacing the earlier "panels work without catalog entries" footnote.
 
 None of the needs-rig items block the default build or the gate; the pipeline is
 wired to consume each one the moment it's provided.
+
+## Redesign (src/design) + new wiring
+
+The Electron-style `<details>` disclosure shell described above (and its early
+flat-nav successor) has been **replaced** by a macOS-native redesign handed off
+from Claude Design and rebuilt against the `sr-*` design system
+(`src/design/{tokens.css,atoms.tsx,Icon.tsx,hooks.ts}`). `src/App.tsx` now mounts
+`MainLayout` and routes every everyday view to a redesigned `src/design` screen;
+the remaining feature panels stay reachable via the ⌘K palette / settings hub.
+
+### The new shell + 7 screens
+
+`MainLayout` is the new macOS sidebar shell (nav + status footer + ⌘K palette).
+The seven redesigned screens (`src/design/screens/*.tsx`, ~7.8k LOC) are:
+
+| Screen                               | View tag    | Drives                                                                                                                                         |
+| ------------------------------------ | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hjem** (`HomeScreen`)              | `home`      | `scheduler_status`, `settings_get`/`settings_save`, recent history                                                                             |
+| **Tidsplan** (`ScheduleScreen`)      | `schedule`  | `settings_get`/`save`, `scheduler_status`/`reschedule`, `wake_capabilities`, `liturgical_month`                                                |
+| **Direkte** (`LiveScreen`)           | `streaming` | `stream_status`/`start`/`stop`, `stream_set_key`/`delete_key`                                                                                  |
+| **Rediger** (`EditScreen`)           | `editor`    | `recordings_list`, `editor_load_recording`/`peaks`/`segments`, `editor_mastering_analyze`/`master_preview`/`export`, whisper transcribe/export |
+| **Søk** (`SearchScreen`)             | `search`    | `recordings_list`, **`transcripts_list`**, `open_in_sundayedit`                                                                                |
+| **Innstillinger** (`SettingsScreen`) | `settings`  | `settings_get`/`save`, `plan_recording_opts` (preview save path)                                                                               |
+| **Opptaksmodus** (`RecordingScreen`) | overlay     | `plan_recording_opts` → `start_recording`/`stop_recording`, the `recording://{started,progress,silence,levels,error,state}` events             |
+
+These are **wired to real IPC** (not mocks): each screen calls the same Tauri
+commands/events the removed legacy panels used, via TanStack-Query + `invoke` +
+the shared data hooks in `src/design/hooks.ts` (device enum, VU engine, MJPEG
+preview, disk probe). NOTE: the header comment in `App.tsx` still calls the
+screens "presentational … live data is rewired in a later pass" — that comment is
+**stale**; the wiring landed in commits `8dda14d`/`c91959d`/`63f3387`/`0abf6d7`/
+`a59f199`/`43f78de`.
+
+### New backend commands + event
+
+- **`transcripts_list`** (`src-tauri/src/commands/db.rs:64`) — lists every
+  recording's parsed `<name>.transcript.json` sidecar as `{ basePath, transcript }`
+  for the Søk full-text index; reuses the editor sidecar reader + history listing,
+  skips un-transcribed/unparseable rows. Read-only, no new dep.
+- **`plan_recording_opts`** (`src-tauri/src/commands/recorder.rs:39`) — plans the
+  full `RecordingOpts` for a manual "Start opptak nå" from persisted settings
+  (same save-folder + liturgical-filename + audio processing as the scheduler), so
+  a manually-started recording lands in the right folder/name; the returned
+  `output_path` is the real save path shown in Opptaksmodus + previewed in
+  Innstillinger.
+- **`liturgical_month`** (`src-tauri/src/commands/calendar.rs:29`) — the
+  Norwegian feast days ("Kirkehøytider") for a `(year, month)`, over the pure
+  `sundayrec_core::church_calendar` computus, so the Tidsplan calendar renders
+  feast markers. Pure/sync; 3 unit tests in-file.
+- **`recording://levels`** event (`src-tauri/src/recorder/engine.rs:113`,
+  `LEVELS_EVENT`) — live per-channel peak audio levels (dBFS) parsed from the
+  recorder's OWN ffmpeg `astats` telemetry (no second mic open), driving the L/R
+  meters in Opptaksmodus. The parser is the pure, unit-tested
+  `sundayrec_core::levels` (207 LOC) → `RecordingLevels` payload.
+
+### New Settings fields
+
+Added to the typed `sundayrec-core::settings` model (with defaults + validation;
+`src/design/screens/SettingsScreen.tsx` surfaces them in Innstillinger):
+`video_resolution` (default `"720p"`), `video_framerate` (default `30`, validate
+clamps 1–120), `output_mode` (default `"combined"`), `keep_separate_audio`
+(default false), `av_sync` (default true), `eq_enabled` (default false),
+`webhook_url` (default empty), `webhook_on_warning` (default false).
+
+### Other redesign work
+
+- **Full 7-language i18n of the screens** (`61da534`): every screen's UI chrome
+  routes through `t()` under dedicated namespaces (`homeScreen`, `scheduleScreen`,
+  `liveScreen`, `editScreen`, `searchScreen`, `settingsScreen`, `recordingScreen`)
+  — 381 new keys translated into all 7 catalogs (no/en/de/sv/da/fr/pl), every
+  catalog now identical at 1360 keys so the strict parity guard
+  (`src/i18n/parity.test.ts`) still passes.
+- **Editor trim → cut-regions + interactive waveform**: the "Trim — start & slutt"
+  fields convert to `editor_export` `cutRegions` (`buildTrimCuts`, `0abf6d7`) so
+  export/master honour the trim; the waveform gained zoom/pan/scrub (`a59f199`).
+- **Legacy screen components removed** (`9299398`): now that the design screens
+  carry interaction tests and `App` routes every view to them, the superseded
+  dead cluster was deleted — HomePage, SchedulePage + ScheduleCalendar, SearchPage,
+  SettingsPage, EditorPanel + EditorCanvas, StreamingPanel, and the early
+  VuMeter/CameraPreview/RecorderPanel spikes (+ their tests). Shared modules they
+  relied on (searchIndex, editorGeometry, waveform, per-feature queryKeys) stay,
+  still imported by the design screens.
+
+### Test posture (redesign)
+
+- The 7 `src/design` screens each have a **mocked-IPC interaction test**
+  (`*.test.tsx`, `d027257`) asserting render + the IPC calls they fire.
+- The new Rust parsers/builders are **unit-tested**: `sundayrec_core::levels`
+  (astats parse), `church_calendar` (computus), `settings` validation/clamps, and
+  `liturgical_month` (3 in-file tests).
+- **Hardware/network paths remain rig-unverified** — the actual recording capture,
+  VU/preview, streaming, whisper inference, wake-timers and cloud upload still need
+  a real device/account/key (see NEEDS-RICHARD.md + SMOKE-TEST.md). The redesign
+  changed the renderer + added thin command/event seams; it did **not** flip any
+  of those `HARDWARE/NETWORK-UNVERIFIED` annotations to verified.

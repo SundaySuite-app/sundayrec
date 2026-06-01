@@ -8,6 +8,58 @@ a real account / desktop session / device / signing identity that the headless
 gate cannot provide. None block the default build or the gate. The consolidated
 "what only Richard can provide" checklist is at the bottom of this file.
 
+## ⭐ Release blockers — current checklist (only Richard can do these)
+
+A precise, up-to-date list of the account/key/identity work standing between the
+code-complete state and a **signed, auto-updating, public release**. See
+`docs/RELEASE-AUDIT.md` for the pipeline audit and `docs/DISTRIBUTION.md` /
+`docs/GOOGLE-OAUTH-SETUP.md` for the step-by-step. Status is from the project
+notes (2026-06-01); confirm before acting.
+
+1. **GitHub Actions billing block** — CI (`ci.yml`) and the release build
+   (`release.yml`) **cannot run** while the account's Actions billing/spending
+   limit is blocked. This gates every other release step (the build itself runs
+   on Actions). Fix payment / raise the spending limit, then re-run the release
+   workflow on a tag. _(Local `tauri build` is the fallback while blocked — see
+   RELEASE-AUDIT.md.)_
+
+2. **Apple Developer ID signing — re-export the `.p12`.** Per the project notes
+   the Desktop `.p12` on the Desktop has the **wrong password**; re-export the
+   "Developer ID Application" cert from **Keychain Access** with a known password,
+   then set the secrets: `APPLE_CERTIFICATE` (base64 of the `.p12`),
+   `APPLE_CERTIFICATE_PASSWORD` (the new password), `APPLE_SIGNING_IDENTITY`
+   (`Developer ID Application: … (784GN847G4)` — Team ID 784GN847G4 is on file).
+   Plugs into `release.yml` env (lines 80–82). Without it the build is unsigned
+   (Gatekeeper-blocked on download). See DISTRIBUTION.md "macOS code signing".
+
+3. **Notarization credentials.** `notarytool` needs `APPLE_ID` (account email),
+   `APPLE_PASSWORD`, and `APPLE_TEAM_ID` (`784GN847G4`). ⚠️ The
+   **app-specific password was leaked in chat** — **revoke it** at
+   appleid.apple.com → Sign-In and Security → App-Specific Passwords, **generate a
+   new one**, and store it only as the `APPLE_PASSWORD` GitHub secret. Plugs into
+   `release.yml` env (lines 83–85).
+
+4. **Tauri updater keypair + `plugins.updater` config.** Auto-update is **not
+   wired** yet: `tauri.conf.json` has **no `plugins.updater` block** and
+   `release.yml` sets `includeUpdaterJson: false`. To enable:
+   (a) `npm run tauri signer generate -- -w ~/.tauri/sundayrec_updater.key` (ONCE;
+   back it up — losing it breaks auto-update for installed users);
+   (b) add the **public** key + an `endpoints` array to `tauri.conf.json`
+   `plugins.updater`;
+   (c) add the `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) secrets (env already
+   wired in `release.yml` lines 76–77) and flip `includeUpdaterJson: true`.
+   See the R7 section below + DISTRIBUTION.md "Auto-update signing".
+
+5. **Google OAuth console client (Desktop app type).** Cloud connect/upload +
+   the cloud-Gmail email path need a Google OAuth client of type **Desktop app**
+   (a binary `client_id` is NOT the `.env` one — confirm the console client type
+   and the redirect). Provide `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) per
+   `docs/GOOGLE-OAUTH-SETUP.md`. Not a build blocker, but blocks the cloud/email
+   features at runtime.
+
+The per-feature seam detail follows below; this checklist is the release-gating
+subset.
+
 ## PU-1 — Email alerts (`--features email`)
 
 - **A Gmail OAuth connection or SMTP credentials.** The Gmail path reuses the
