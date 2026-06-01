@@ -135,8 +135,25 @@ pub fn build_unified_capture_args(
             // the dev box stays usable — it's not a shipping target.)
             args.push("-f".into());
             args.push("avfoundation".into());
-            args.push("-framerate".into());
-            args.push(opts.framerate.to_string());
+            // avfoundation's internal capture buffer is tiny; under any scheduling
+            // jitter it silently DROPS samples → the recording sounds choppy
+            // ("hakkete"). A deeper input queue absorbs the jitter. This is the
+            // single most important fix for glitchy macOS capture.
+            args.push("-thread_queue_size".into());
+            args.push("1024".into());
+            if has_video {
+                // `-framerate` is a VIDEO option — only meaningful with a camera.
+                // Applying it to an audio-only input confuses ffmpeg's input clock
+                // and contributes to the choppiness, so we omit it for audio-only.
+                args.push("-framerate".into());
+                args.push(opts.framerate.to_string());
+            } else {
+                // Audio-only: avfoundation reports a wild initial timestamp (the
+                // log showed `time=-577014:…`); regenerate clean PTS so the first
+                // frames aren't malformed.
+                args.push("-fflags".into());
+                args.push("+genpts".into());
+            }
             args.push("-i".into());
             match video_device {
                 Some(v) => args.push(format!("{v}:{audio_device}")),
@@ -335,6 +352,45 @@ mod tests {
         // Channel count still flows through, and sample rate is fixed at 48 kHz.
         assert!(has_pair(&mk("/tmp/x.mp3"), "-ac", "2"));
         assert!(has_pair(&mk("/tmp/x.mp3"), "-ar", "48000"));
+    }
+
+    #[test]
+    fn mac_audio_only_buffers_input_and_drops_framerate() {
+        // Anti-choppiness: audio-only capture needs a deep input queue + clean
+        // PTS, and must NOT carry `-framerate` (a video option that worsens
+        // avfoundation audio timing).
+        let a = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "0",
+            "/tmp/x.mp3",
+            &CaptureOpts::default(),
+        );
+        assert!(has_pair(&a, "-thread_queue_size", "1024"));
+        assert!(has_pair(&a, "-fflags", "+genpts"));
+        assert!(
+            !a.iter().any(|x| x == "-framerate"),
+            "audio-only must not set -framerate"
+        );
+    }
+
+    #[test]
+    fn mac_video_keeps_framerate_and_input_buffer() {
+        // With a camera the buffer is still present and `-framerate` IS set
+        // (video needs it); no genpts on the video path.
+        let a = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/tmp/x.mp4",
+            &CaptureOpts::default(),
+        );
+        assert!(has_pair(&a, "-thread_queue_size", "1024"));
+        assert!(has_pair(&a, "-framerate", "30"));
+        assert!(
+            !a.iter().any(|x| x == "+genpts"),
+            "the video path uses -framerate, not genpts"
+        );
     }
 
     #[test]

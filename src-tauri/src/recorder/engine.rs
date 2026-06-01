@@ -905,7 +905,10 @@ async fn run_segment(
     // Reader task: stream stderr → ReaderMsg over a channel so the supervisor's
     // select! owns all decisions. The reader holds NO state machine; it only
     // classifies lines with the pure core helpers.
-    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(64);
+    // A roomy buffer so a momentary slow consumer (event dispatch) never
+    // back-pressures the stderr reader → ffmpeg's stderr pipe never fills →
+    // ffmpeg never stalls on a blocked write and drops audio samples.
+    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(256);
     let reader = tauri::async_runtime::spawn(async move {
         let mut startup = StartupResolver::new();
         let mut last_error: Option<RecordingErrorCode> = None;
