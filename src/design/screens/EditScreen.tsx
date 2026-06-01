@@ -20,7 +20,7 @@
  * preserved verbatim; only hardcoded sample values are swapped for live data
  * and the action buttons are wired.
  */
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -29,6 +29,14 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Icon } from "../Icon";
 import { Badge, Card, Collapsible, Meter, SegOpt, Toggle } from "../atoms";
 import { waveformPath } from "@/features/editor/waveform";
+import {
+  clampMain,
+  fitAll,
+  panBy,
+  xToSec,
+  zoomBy,
+  type Viewport,
+} from "@/features/editor/editorGeometry";
 import { EDITOR_RECORDINGS_KEY } from "@/features/editor/queryKey";
 import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 import type { EditorMediaInfo } from "@/lib/bindings/EditorMediaInfo";
@@ -43,15 +51,15 @@ import type { WhisperModelMeta } from "@/lib/bindings/WhisperModelMeta";
 import type { TranscriptData } from "@/lib/bindings/TranscriptData";
 import type { TranscriptExportFormat } from "@/lib/bindings/TranscriptExportFormat";
 import {
-  axisTicks,
   buildTrimCuts,
   clock,
   fileExt,
   fileName,
   formatHms,
   mediaMeta,
-  peaksToBars,
+  peaksWindow,
   variantForMedia,
+  viewportTicks,
   WAVE_BARS,
 } from "./editor.helpers";
 
@@ -98,6 +106,10 @@ function useEditorModel() {
   // Parsed + turned into cut regions at export time (see runExport).
   const [trimStart, setTrimStart] = useState("");
   const [trimEnd, setTrimEnd] = useState("");
+  // Interactive timeline: the visible window + the playhead position. Reset to
+  // fit-all / 0 whenever a file loads or closes (the duration changes below).
+  const [viewport, setViewport] = useState<Viewport>(() => fitAll(0));
+  const [playheadSec, setPlayheadSec] = useState(0);
 
   const recordings = useQuery<RecordingRow[]>({
     queryKey: EDITOR_RECORDINGS_KEY,
@@ -249,6 +261,34 @@ function useEditorModel() {
     [selected, loadMutation.data, presetId, trimStart, trimEnd, exportMutation],
   );
 
+  // Whenever the loaded file's duration changes (open / close / re-probe), refit
+  // the viewport to the whole file and park the playhead at the start.
+  const duration = loadMutation.data?.durationSec ?? 0;
+  useEffect(() => {
+    setViewport(fitAll(duration));
+    setPlayheadSec(0);
+  }, [duration]);
+
+  // Interactive timeline gestures, all routed through the pure geometry model.
+  const zoom = useCallback(
+    (factor: number, anchorSec?: number) => {
+      setViewport((vp) => zoomBy(vp, factor, duration, anchorSec));
+    },
+    [duration],
+  );
+  const pan = useCallback(
+    (deltaSec: number) => {
+      setViewport((vp) => panBy(vp, deltaSec, duration));
+    },
+    [duration],
+  );
+  const scrub = useCallback(
+    (sec: number) => {
+      setPlayheadSec(clampMain(sec, duration));
+    },
+    [duration],
+  );
+
   return {
     selected,
     presetId,
@@ -257,6 +297,11 @@ function useEditorModel() {
     setTrimStart,
     trimEnd,
     setTrimEnd,
+    viewport,
+    playheadSec,
+    zoom,
+    pan,
+    scrub,
     rows: recordings.data ?? [],
     info: loadMutation.data ?? null,
     peaks: peaksMutation.data ?? null,
@@ -342,31 +387,126 @@ function useTranscribeModel(selected: string | null) {
   };
 }
 
-/** Real waveform: peaks downsampled to the design's fixed bar count, with a
- *  centre polyline (from the shared `waveformPath` helper) overlaid so the
- *  exact peaks→geometry math is reused. Falls back to a neutral placeholder
- *  when no file/peaks are loaded. Segment colouring of the bars (intro/outro
- *  bands) is preserved from the design as a visual default — real segment
- *  banding on the bars is a // TODO (segments power snap/analyze, not paint). */
+/** Fraction of WAVE_BARS painted as the (blue) intro/outro bands. Purely visual,
+ *  fixed at any zoom so the design's three-band look never moves. */
+const INTRO_FRAC = 0.15;
+/** The sample second the ★ "antatt preken" marker is pinned to (mapped THROUGH
+ *  the viewport so it pans/zooms with the rest). 16 % into the file. */
+const SERMON_FRAC = 0.16;
+
+/** Interactive waveform: the design's fixed gold-bar timeline, now live + driven
+ *  by the shared `editorGeometry` viewport model. Bars are the peaks WINDOWED to
+ *  the visible `[viewport.start, viewport.end]` then downsampled to WAVE_BARS, so
+ *  zoom/pan reveal real detail. A centre polyline (the shared `waveformPath`
+ *  helper) is overlaid so the exact peaks→geometry math is reused. The white
+ *  playhead, the ★ preken marker and the ruler ticks all map through the
+ *  viewport. Pointer-drag scrubs the playhead; wheel pans (shift / horizontal)
+ *  or zooms-around-cursor. Falls back to the neutral placeholder when no peaks.
+ *  Intro/outro band colouring stays FIXED fractions of WAVE_BARS — visual only. */
 function Waveform({
   peaks,
   durationSec,
+  viewport,
+  playheadSec,
+  onScrub,
+  onZoom,
+  onPan,
 }: {
   peaks: number[] | null;
   durationSec: number;
+  viewport: Viewport;
+  playheadSec: number;
+  onScrub: (sec: number) => void;
+  onZoom: (factor: number, anchorSec?: number) => void;
+  onPan: (deltaSec: number) => void;
 }) {
   const { t } = useTranslation();
+  const barsRef = useRef<HTMLDivElement | null>(null);
+  const pressed = useRef(false);
+  const span = viewport.end - viewport.start;
+  // Bars: window the peaks to the visible range, then downsample to WAVE_BARS.
   const bars = useMemo(
-    () => (peaks && peaks.length > 0 ? peaksToBars(peaks, WAVE_BARS) : null),
-    [peaks],
+    () =>
+      peaks && peaks.length > 0
+        ? peaksWindow(
+            peaks,
+            viewport.start,
+            viewport.end,
+            durationSec,
+            WAVE_BARS,
+          )
+        : [],
+    [peaks, viewport.start, viewport.end, durationSec],
   );
-  const introEnd = 22;
-  const outroStart = 128;
-  const ticks = axisTicks(durationSec);
+  const hasBars = bars.length > 0;
+  const introEnd = Math.round(WAVE_BARS * INTRO_FRAC);
+  const outroStart = WAVE_BARS - introEnd;
+  const ticks = viewportTicks(viewport.start, viewport.end);
   // Reuse the tested peaks→SVG geometry for an overlaid centre band.
   const polyPath = useMemo(
-    () => (bars ? waveformPath(bars, 1000, 100) : ""),
-    [bars],
+    () => (hasBars ? waveformPath(bars, 1000, 100) : ""),
+    [bars, hasBars],
+  );
+
+  // Playhead position as a 0..1 fraction of the viewport (rendered only if in
+  // view). The ★ marker is positioned the same way through the viewport.
+  const playFrac = span > 0 ? (playheadSec - viewport.start) / span : -1;
+  const sermonSec = SERMON_FRAC * durationSec;
+  const sermonFrac = span > 0 ? (sermonSec - viewport.start) / span : -1;
+
+  // Map a pointer's clientX into a main-file second via the bars container box.
+  const xToSecFromEvent = useCallback(
+    (clientX: number): number | null => {
+      const el = barsRef.current;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0) return null;
+      return xToSec(clientX - rect.left, viewport, rect.width);
+    },
+    [viewport],
+  );
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!hasBars) return;
+      const sec = xToSecFromEvent(e.clientX);
+      if (sec == null) return;
+      pressed.current = true;
+      barsRef.current?.setPointerCapture?.(e.pointerId);
+      onScrub(sec);
+    },
+    [hasBars, xToSecFromEvent, onScrub],
+  );
+
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!pressed.current) return;
+      const sec = xToSecFromEvent(e.clientX);
+      if (sec != null) onScrub(sec);
+    },
+    [xToSecFromEvent, onScrub],
+  );
+
+  const onPointerEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    pressed.current = false;
+    barsRef.current?.releasePointerCapture?.(e.pointerId);
+  }, []);
+
+  const onWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      if (!hasBars) return;
+      const el = barsRef.current;
+      const width = el ? el.getBoundingClientRect().width : 0;
+      if (width <= 0) return;
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        onPan(((e.deltaX || e.deltaY) / width) * span);
+      } else {
+        const anchor = xToSecFromEvent(e.clientX) ?? undefined;
+        onZoom(e.deltaY > 0 ? 1.1 : 0.9, anchor);
+      }
+    },
+    [hasBars, span, xToSecFromEvent, onPan, onZoom],
   );
 
   return (
@@ -395,6 +535,12 @@ function Waveform({
         </span>
       </div>
       <div
+        ref={barsRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onWheel={onWheel}
         style={{
           display: "flex",
           alignItems: "center",
@@ -405,9 +551,11 @@ function Waveform({
           borderRadius: "var(--sr-r-xs)",
           position: "relative",
           overflow: "hidden",
+          cursor: hasBars ? "ew-resize" : "pointer",
+          touchAction: "none",
         }}
       >
-        {bars ? (
+        {hasBars ? (
           bars.map((h, i) => {
             const main = i >= introEnd && i < outroStart;
             return (
@@ -457,33 +605,45 @@ function Waveform({
             <polygon points={polyPath} fill="var(--sr-gold-bright)" />
           </svg>
         )}
-        <div
-          style={{
-            position: "absolute",
-            left: "16%",
-            top: 0,
-            bottom: 0,
-            width: 2,
-            background: "#fff",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "17%",
-            top: 6,
-            fontSize: 10,
-            color: "var(--sr-gold-bright)",
-            background: "var(--sr-ink-900)",
-            padding: "2px 6px",
-            borderRadius: 4,
-            border: "1px solid var(--sr-gold-line)",
-          }}
-        >
-          {t("editScreen.assumedSermon", "★ Antatt preken — {{minutes}} min", {
-            minutes: 28,
-          })}
-        </div>
+        {/* White playhead — only when it falls inside the current viewport. */}
+        {playFrac >= 0 && playFrac <= 1 && (
+          <div
+            style={{
+              position: "absolute",
+              left: `${playFrac * 100}%`,
+              top: 0,
+              bottom: 0,
+              width: 2,
+              background: "#fff",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+        {/* ★ "antatt preken" marker, pinned to a sample second through the vp. */}
+        {sermonFrac >= 0 && sermonFrac <= 1 && (
+          <div
+            style={{
+              position: "absolute",
+              left: `${sermonFrac * 100}%`,
+              top: 6,
+              fontSize: 10,
+              color: "var(--sr-gold-bright)",
+              background: "var(--sr-ink-900)",
+              padding: "2px 6px",
+              borderRadius: 4,
+              border: "1px solid var(--sr-gold-line)",
+              pointerEvents: "none",
+            }}
+          >
+            {t(
+              "editScreen.assumedSermon",
+              "★ Antatt preken — {{minutes}} min",
+              {
+                minutes: 28,
+              },
+            )}
+          </div>
+        )}
       </div>
       <div
         className="sr-row"
@@ -495,8 +655,8 @@ function Waveform({
           fontFamily: "var(--sr-mono)",
         }}
       >
-        {ticks.map((t, i) => (
-          <span key={i}>{t}</span>
+        {ticks.map((tick, i) => (
+          <span key={i}>{tick}</span>
         ))}
       </div>
     </div>
@@ -690,7 +850,9 @@ function EditAudio({ m }: { m: EditorModel }) {
                 marginLeft: 4,
               }}
             >
-              {dur > 0 ? `0:00 / ${clock(dur)}` : "5:08 / 32:14"}
+              {dur > 0
+                ? `${clock(m.playheadSec)} / ${clock(dur)}`
+                : "5:08 / 32:14"}
             </span>
           </div>
         </div>
@@ -698,18 +860,31 @@ function EditAudio({ m }: { m: EditorModel }) {
 
       {/* Waveform */}
       <div className="sr-card pad" style={{ marginBottom: 14 }}>
-        <Waveform peaks={m.peaks?.peaks ?? null} durationSec={dur} />
+        <Waveform
+          peaks={m.peaks?.peaks ?? null}
+          durationSec={dur}
+          viewport={m.viewport}
+          playheadSec={m.playheadSec}
+          onScrub={m.scrub}
+          onZoom={m.zoom}
+          onPan={m.pan}
+        />
         <div
           className="sr-row"
           style={{ gap: 7, marginTop: 14, flexWrap: "wrap" }}
         >
-          {/* TODO: zoom/pan + drag-trim + playhead scrubbing — the shared
-              editorGeometry model exists; wiring its pointer handlers into
-              this fixed-bar design is a follow-up increment. */}
-          <button className="sr-btn ghost sm" style={{ padding: 8 }}>
+          <button
+            className="sr-btn ghost sm"
+            style={{ padding: 8 }}
+            onClick={() => m.zoom(0.5)}
+          >
             <Icon name="zoomIn" size={15} />
           </button>
-          <button className="sr-btn ghost sm" style={{ padding: 8 }}>
+          <button
+            className="sr-btn ghost sm"
+            style={{ padding: 8 }}
+            onClick={() => m.zoom(2)}
+          >
             <Icon name="zoomOut" size={15} />
           </button>
           <div className="sr-grow" />
@@ -1101,7 +1276,15 @@ function EditVideo({ m }: { m: EditorModel }) {
         }}
       >
         <div className="sr-card" style={{ padding: 14 }}>
-          <Waveform peaks={m.peaks?.peaks ?? null} durationSec={dur} />
+          <Waveform
+            peaks={m.peaks?.peaks ?? null}
+            durationSec={dur}
+            viewport={m.viewport}
+            playheadSec={m.playheadSec}
+            onScrub={m.scrub}
+            onZoom={m.zoom}
+            onPan={m.pan}
+          />
           <div
             className="sr-row"
             style={{ gap: 7, marginTop: 14, flexWrap: "wrap" }}
@@ -1123,13 +1306,23 @@ function EditVideo({ m }: { m: EditorModel }) {
                 marginLeft: 4,
               }}
             >
-              {dur > 0 ? `0:00 / ${clock(dur)}` : "5:08 / 32:14"}
+              {dur > 0
+                ? `${clock(m.playheadSec)} / ${clock(dur)}`
+                : "5:08 / 32:14"}
             </span>
             <div className="sr-grow" />
-            <button className="sr-btn ghost sm" style={{ padding: 8 }}>
+            <button
+              className="sr-btn ghost sm"
+              style={{ padding: 8 }}
+              onClick={() => m.zoom(0.5)}
+            >
               <Icon name="zoomIn" size={15} />
             </button>
-            <button className="sr-btn ghost sm" style={{ padding: 8 }}>
+            <button
+              className="sr-btn ghost sm"
+              style={{ padding: 8 }}
+              onClick={() => m.zoom(2)}
+            >
               <Icon name="zoomOut" size={15} />
             </button>
           </div>

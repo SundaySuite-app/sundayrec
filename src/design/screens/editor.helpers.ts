@@ -152,3 +152,47 @@ export function axisTicks(durationSec: number, count = 7): string[] {
     clock((durationSec * i) / (count - 1)),
   );
 }
+
+/**
+ * Evenly spaced `M:SS` ruler labels across the CURRENT viewport range
+ * `[startSec, endSec]`, so the time axis reflects what's actually visible after
+ * zoom/pan rather than the whole file. Falls back to the static mockup ticks
+ * for an empty/degenerate range. `count` matches the mockup's seven ticks.
+ */
+export function viewportTicks(
+  startSec: number,
+  endSec: number,
+  count = 7,
+): string[] {
+  if (!(endSec > startSec)) {
+    return ["0:00", "5:00", "10:00", "15:00", "20:00", "25:00", "30:00"];
+  }
+  return Array.from({ length: count }, (_v, i) =>
+    clock(startSec + ((endSec - startSec) * i) / (count - 1)),
+  );
+}
+
+/**
+ * Window the raw peaks to the visible `[startSec, endSec]` range (by time
+ * fraction of the full `durationSec`), then downsample to `bars` bar heights via
+ * {@link peaksToBars}. Lets the fixed-bar waveform zoom/pan over real data
+ * without touching the shared peaks→geometry maths. Empty peaks / zero duration
+ * → `[]`, so the caller falls back to the neutral placeholder.
+ */
+export function peaksWindow(
+  peaks: number[],
+  startSec: number,
+  endSec: number,
+  durationSec: number,
+  bars = WAVE_BARS,
+): number[] {
+  if (peaks.length === 0 || !(durationSec > 0) || !(endSec > startSec)) {
+    return [];
+  }
+  const lo = Math.max(0, Math.floor((startSec / durationSec) * peaks.length));
+  const hi = Math.min(
+    peaks.length,
+    Math.max(lo + 1, Math.ceil((endSec / durationSec) * peaks.length)),
+  );
+  return peaksToBars(peaks.slice(lo, hi), bars);
+}
