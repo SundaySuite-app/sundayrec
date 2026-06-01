@@ -33,6 +33,56 @@ pub async fn recordings_list(db: State<'_, Db>) -> AppResult<Vec<RecordingRow>> 
     store::list_recordings(&db.pool).await
 }
 
+/// One transcript sidecar paired with the source recording's base path (no
+/// extension), shaped exactly for the renderer's `TranscriptSidecar` search
+/// interface (`{ basePath, transcript }`). Serialised-only — the renderer owns
+/// the matching TS interface, so no ts-rs binding is needed.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSidecarDto {
+    /// Source recording base path with its media extension stripped.
+    pub base_path: String,
+    /// The parsed `<name>.transcript.json` contents.
+    pub transcript: sundayrec_core::whisper::TranscriptData,
+}
+
+/// Strip the final extension from a path (`/rec/sermon.mp3` → `/rec/sermon`).
+fn strip_media_ext(path: &str) -> String {
+    let p = std::path::Path::new(path);
+    if p.extension().is_some() {
+        p.with_extension("").to_string_lossy().into_owned()
+    } else {
+        path.to_string()
+    }
+}
+
+/// List every recording's parsed transcript sidecar (`<name>.transcript.json`)
+/// for the "Søk i prekener" full-text index. Recordings that have not been
+/// transcribed (no sidecar, or an unparseable one) are silently skipped.
+/// Read-only — reuses the editor sidecar reader + the history listing.
+#[tauri::command]
+pub async fn transcripts_list(db: State<'_, Db>) -> AppResult<Vec<TranscriptSidecarDto>> {
+    let rows = store::list_recordings(&db.pool).await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let Some(value) =
+            crate::editor::read_sidecar(&row.file_path, crate::editor::EditorSidecar::Transcript)?
+        else {
+            continue;
+        };
+        let Ok(transcript) =
+            serde_json::from_value::<sundayrec_core::whisper::TranscriptData>(value)
+        else {
+            continue;
+        };
+        out.push(TranscriptSidecarDto {
+            base_path: strip_media_ext(&row.file_path),
+            transcript,
+        });
+    }
+    Ok(out)
+}
+
 /// Delete one recording-history row by id.
 #[tauri::command]
 pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {

@@ -16,7 +16,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 import { HISTORY_QUERY_KEY } from "@/features/history/queryKey";
@@ -80,10 +80,10 @@ function SearchHit({
 }
 
 /**
- * Load the transcript sidecars to index. The recordings list tells us which
- * recordings exist; pairing each with its parsed sidecar needs a backend read
- * command that does not exist yet (same seam as {@link SearchPage}), so this
- * returns no sidecars today but keeps the recording count for the empty-state.
+ * Load the transcript sidecars to index. `transcripts_list` returns every
+ * recording's parsed `<name>.transcript.json` (shaped as `{ basePath,
+ * transcript }`); the recordings list still drives the empty-state count so the
+ * UI can distinguish "no recordings" from "recordings, none transcribed yet".
  */
 function useTranscriptSidecars(): {
   sidecars: TranscriptSidecar[];
@@ -93,8 +93,12 @@ function useTranscriptSidecars(): {
     queryKey: HISTORY_QUERY_KEY,
     queryFn: () => invoke<RecordingRow[]>("recordings_list"),
   });
+  const transcripts = useQuery<TranscriptSidecar[]>({
+    queryKey: ["transcripts_list"],
+    queryFn: () => invoke<TranscriptSidecar[]>("transcripts_list"),
+  });
   const rows = recordings.data ?? [];
-  const sidecars = useMemo<TranscriptSidecar[]>(() => [], []);
+  const sidecars = transcripts.data ?? [];
   return { sidecars, recordingCount: rows.length };
 }
 
@@ -128,15 +132,17 @@ export function SearchScreen() {
     [groups],
   );
 
+  const queryClient = useQueryClient();
   const [reindexing, setReindexing] = useState(false);
   const refreshIndex = useCallback(() => {
     setReindexing(true);
-    // Mirror SearchPage's reindex: refresh the recordings list the index is
-    // derived from. Best-effort; never throws in dev/test.
-    void invoke<RecordingRow[]>("recordings_list")
-      .catch(() => [])
-      .finally(() => setReindexing(false));
-  }, []);
+    // Re-pull both the recordings list and the transcript sidecars the index is
+    // built from. Best-effort; never throws in dev/test.
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: HISTORY_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: ["transcripts_list"] }),
+    ]).finally(() => setReindexing(false));
+  }, [queryClient]);
 
   return (
     <div className="sr-content cozy">
