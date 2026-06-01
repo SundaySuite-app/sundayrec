@@ -126,13 +126,22 @@ export function UpdatePanel() {
 
   // A small per-phase status dot to make the lifecycle legible at a glance.
   const dotClass: Record<UpdateStatus["phase"], string> = {
-    idle: "bg-text3",
-    checking: "bg-accent animate-pulse",
-    upToDate: "bg-emerald-400",
-    available: "bg-accent",
-    downloading: "bg-accent animate-pulse",
-    readyToInstall: "bg-emerald-400",
-    error: "bg-red-400",
+    idle: "",
+    checking: "animate-pulse",
+    upToDate: "",
+    available: "",
+    downloading: "animate-pulse",
+    readyToInstall: "",
+    error: "",
+  };
+  const dotColor: Record<UpdateStatus["phase"], string> = {
+    idle: "var(--sr-text-3)",
+    checking: "var(--sr-gold)",
+    upToDate: "var(--sr-green)",
+    available: "var(--sr-gold)",
+    downloading: "var(--sr-gold)",
+    readyToInstall: "var(--sr-green)",
+    error: "var(--sr-red)",
   };
 
   const installedLabel = installed.data ?? "—";
@@ -144,13 +153,14 @@ export function UpdatePanel() {
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-3"
+      className="sr-card pad flex w-full max-w-md flex-col gap-3"
       aria-label={t("general.updates", "Oppdateringer")}
     >
       <div className="flex items-center gap-2">
         <span
           aria-hidden="true"
           className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass[phase]}`}
+          style={{ background: dotColor[phase] }}
         />
         <p className="text-sm text-text2">{statusLine()}</p>
       </div>
@@ -158,7 +168,7 @@ export function UpdatePanel() {
       {/* Release-notes / version block. When an update is in play we show the
           installed → available comparison; otherwise just the installed line
           with an up-to-date / available summary. */}
-      <div className="rounded-lg border border-border bg-surface2 p-3 text-sm">
+      <div className="rounded-lg border border-border bg-surface2 p-3 text-sm sr-num">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-text3">
             {t("update.installedVersion", "Installert versjon")}
@@ -218,7 +228,7 @@ export function UpdatePanel() {
         <button
           type="button"
           disabled={checking}
-          className="rounded-lg border border-border bg-surface2 px-3 py-2 text-sm font-medium text-text2 hover:bg-surface3 disabled:opacity-50"
+          className="sr-btn ghost disabled:opacity-50"
           onClick={() => checkMutation.mutate()}
         >
           {checking
@@ -230,7 +240,7 @@ export function UpdatePanel() {
           <button
             type="button"
             disabled={downloading}
-            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+            className="sr-btn gold disabled:opacity-50"
             onClick={() => downloadMutation.mutate()}
           >
             {t("update.downloadNow", "Last ned og installer")}
@@ -240,7 +250,11 @@ export function UpdatePanel() {
         {phase === "readyToInstall" && (
           <button
             type="button"
-            className="rounded-lg border border-emerald-700 px-3 py-2 text-sm font-medium text-emerald-300 hover:bg-emerald-950"
+            className="sr-btn"
+            style={{
+              color: "var(--sr-green)",
+              borderColor: "var(--sr-green)",
+            }}
             onClick={() => relaunchMutation.mutate()}
           >
             {t("update.restartInstall", "↺ Start på nytt og installer")}

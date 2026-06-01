@@ -1,0 +1,179 @@
+/**
+ * Shared data hooks for the redesigned screens.
+ *
+ * These wrap the existing Tauri IPC contract (the same commands/events the
+ * legacy feature panels use) so every redesigned screen drives real data
+ * without each one re-implementing device enumeration, the VU engine, the MJPEG
+ * preview, or the disk probe. The backend's `start_vu`/`start_preview` engines
+ * are singletons, so a hook starts the engine on mount and stops it on unmount
+ * — only one screen consuming a given engine is visible at a time.
+ */
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
+import type { DeviceInventory } from "@/lib/bindings/DeviceInventory";
+import type { FfmpegDevice } from "@/lib/bindings/FfmpegDevice";
+import type { VuLevels } from "@/lib/bindings/VuLevels";
+import type { PreviewFrame } from "@/lib/bindings/PreviewFrame";
+import type { DiskSpace } from "@/lib/bindings/DiskSpace";
+
+/** dBFS at the bottom of a meter — anything quieter reads as empty. */
+export const FLOOR_DBFS = -60;
+
+/** Map a dBFS value (≤ 0; `null` = silence) to a 0..1 meter fraction. */
+export function dbfsToFraction(db: number | null | undefined): number {
+  if (db == null || !Number.isFinite(db) || db <= FLOOR_DBFS) return 0;
+  if (db >= 0) return 1;
+  return (db - FLOOR_DBFS) / -FLOOR_DBFS;
+}
+
+/** Number of lit segments (of `total`) for a dBFS level on a segmented meter. */
+export function dbfsToLit(
+  db: number | null | undefined,
+  total: number,
+): number {
+  return Math.round(dbfsToFraction(db) * total);
+}
+
+/** Format a dBFS reading for display (e.g. `-35.9` or `-∞`). */
+export function formatDbfs(db: number | null | undefined): string {
+  if (db == null || !Number.isFinite(db)) return "−∞";
+  return db.toFixed(1);
+}
+
+/** Enumerate the system's audio input devices once on mount. */
+export function useInputDevices(): AudioDeviceList | null {
+  const [devices, setDevices] = useState<AudioDeviceList | null>(null);
+  useEffect(() => {
+    let alive = true;
+    invoke<AudioDeviceList>("list_input_devices")
+      .then((d) => alive && setDevices(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return devices;
+}
+
+/**
+ * Live VU levels. While `active`, runs the Rust `start_vu` engine for
+ * `deviceName` (null = system default) and reports the latest `vu://levels`
+ * snapshot; stops the engine when inactive or unmounted.
+ */
+export function useVuLevels(
+  active: boolean,
+  deviceName?: string | null,
+): VuLevels | null {
+  const [levels, setLevels] = useState<VuLevels | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<VuLevels>("vu://levels", (e) =>
+      setLevels(e.payload),
+    );
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    void invoke("start_vu", { deviceName: deviceName ?? null }).catch(() => {});
+    return () => {
+      void invoke("stop_vu").catch(() => {});
+      setLevels(null);
+    };
+  }, [active, deviceName]);
+
+  return active ? levels : null;
+}
+
+/**
+ * Live camera preview. While `active`, runs the Rust MJPEG `start_preview`
+ * engine and returns the latest frame as a ready-to-use `data:` URL plus its
+ * dimensions; stops the engine when inactive or unmounted.
+ */
+export function useCameraPreview(
+  active: boolean,
+  device?: string | null,
+): { dataUrl: string | null; width: number | null; height: number | null } {
+  const [frame, setFrame] = useState<PreviewFrame | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen<PreviewFrame>("preview://frame", (e) =>
+      setFrame(e.payload),
+    );
+    return () => {
+      void unlisten.then((off) => off());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    void invoke("start_preview", { device: device ?? null, fps: null }).catch(
+      () => {},
+    );
+    return () => {
+      void invoke("stop_preview").catch(() => {});
+      setFrame(null);
+    };
+  }, [active, device]);
+
+  if (!active || !frame) return { dataUrl: null, width: null, height: null };
+  return {
+    dataUrl: `data:image/jpeg;base64,${frame.data}`,
+    width: frame.width,
+    height: frame.height,
+  };
+}
+
+/**
+ * Enumerate ffmpeg-visible video (camera) devices once on mount, via the same
+ * `list_devices` inventory the legacy `DevicePicker` uses. The addressable
+ * token for `start_preview`/recording is the avfoundation index (macOS) when
+ * known, else the dshow name (Windows) — see {@link videoDeviceArg}.
+ */
+export function useVideoDevices(): FfmpegDevice[] {
+  const [devices, setDevices] = useState<FfmpegDevice[]>([]);
+  useEffect(() => {
+    let alive = true;
+    invoke<DeviceInventory>("list_devices")
+      .then((inv) => alive && setDevices(inv.video_inputs ?? []))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return devices;
+}
+
+/** The addressable token for a video device (avfoundation index, else name). */
+export function videoDeviceArg(d: FfmpegDevice): string {
+  return d.index !== null ? String(d.index) : d.name;
+}
+
+/** Free bytes on the save-folder volume (`null` while loading/unavailable). */
+export function useDiskSpace(): number | null {
+  const [freeBytes, setFreeBytes] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    invoke<DiskSpace>("get_disk_space")
+      .then((d) => alive && setFreeBytes(d.freeBytes))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return freeBytes;
+}
+
+/** Format a byte count as a human GB/MB string (e.g. `569 GB`). */
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return "—";
+  const gb = bytes / 1_000_000_000;
+  if (gb >= 10) return `${Math.round(gb)} GB`;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${Math.round(bytes / 1_000_000)} MB`;
+}

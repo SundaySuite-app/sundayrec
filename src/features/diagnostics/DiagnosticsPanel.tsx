@@ -26,15 +26,18 @@ import type { PreflightFinding } from "@/lib/bindings/PreflightFinding";
 function captureLabel(
   ok: boolean | null,
   t: (k: string, d: string) => string,
-): { text: string; className: string } {
+): { text: string; color: string } {
   if (ok === null)
     return {
       text: t("diagnostics.notTested", "ikke testet"),
-      className: "text-text3",
+      color: "var(--sr-text-3)",
     };
   if (ok)
-    return { text: t("diagnostics.ok", "OK ✓"), className: "text-emerald-400" };
-  return { text: t("diagnostics.failed", "Feil ✗"), className: "text-red-400" };
+    return { text: t("diagnostics.ok", "OK ✓"), color: "var(--sr-green)" };
+  return {
+    text: t("diagnostics.failed", "Feil ✗"),
+    color: "var(--sr-red-bright)",
+  };
 }
 
 export function DiagnosticsPanel() {
@@ -72,10 +75,10 @@ export function DiagnosticsPanel() {
       aria-label={t("diagnostics.title", "Diagnose")}
     >
       {/* ── Preflight: ready-to-record ──────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <button
           type="button"
-          className="self-start rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="sr-btn gold self-start disabled:opacity-50"
           disabled={preflight.isPending}
           onClick={() => preflight.mutate()}
         >
@@ -85,14 +88,14 @@ export function DiagnosticsPanel() {
         </button>
 
         {preflight.isError && (
-          <p className="text-xs text-red-400">
+          <p className="text-xs" style={{ color: "var(--sr-red-bright)" }}>
             {(preflight.error as Error)?.message ??
               t("general.unknownError", "Ukjent feil")}
           </p>
         )}
 
         {findings && findings.length === 0 && (
-          <p className="text-sm text-emerald-400">
+          <p className="text-sm" style={{ color: "var(--sr-green)" }}>
             {t("diagnostics.allClear", "Alt klart for opptak ✓")}
           </p>
         )}
@@ -102,9 +105,13 @@ export function DiagnosticsPanel() {
             {findings.map((f, i) => (
               <li
                 key={i}
-                className={`text-sm ${
-                  f.severity === "error" ? "text-red-400" : "text-accent"
-                }`}
+                className="text-sm"
+                style={{
+                  color:
+                    f.severity === "error"
+                      ? "var(--sr-red-bright)"
+                      : "var(--sr-gold-bright)",
+                }}
               >
                 {f.severity === "error" ? "✗" : "⚠"} {f.message}
               </li>
@@ -114,11 +121,11 @@ export function DiagnosticsPanel() {
       </div>
 
       {/* ── Diagnostics report ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3 disabled:opacity-50"
+            className="sr-btn ghost sm disabled:opacity-50"
             disabled={diagnostics.isPending}
             onClick={() => diagnostics.mutate()}
           >
@@ -130,7 +137,7 @@ export function DiagnosticsPanel() {
           {report && (
             <button
               type="button"
-              className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
+              className="sr-btn ghost sm"
               onClick={() => void onCopy()}
             >
               {copied
@@ -141,7 +148,7 @@ export function DiagnosticsPanel() {
         </div>
 
         {diagnostics.isError && (
-          <p className="text-xs text-red-400">
+          <p className="text-xs" style={{ color: "var(--sr-red-bright)" }}>
             {(diagnostics.error as Error)?.message ??
               t("general.unknownError", "Ukjent feil")}
           </p>
@@ -150,10 +157,10 @@ export function DiagnosticsPanel() {
         {report && (
           <>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-              <span className={audio?.className}>
+              <span style={{ color: audio?.color }}>
                 {t("diagnostics.audioCapture", "Lyd")}: {audio?.text}
               </span>
-              <span className={video?.className}>
+              <span style={{ color: video?.color }}>
                 {t("diagnostics.videoCapture", "Video")}: {video?.text}
               </span>
               {report.savedTo && (

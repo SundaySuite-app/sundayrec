@@ -87,8 +87,7 @@ export function EmailSettingsPanel() {
     (kind === "gmail" ||
       (host.trim().length > 0 && pass.length > 0 && from.trim().length > 0));
 
-  const inputClass =
-    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+  const inputClass = "sr-input";
 
   return (
     <section
@@ -96,7 +95,14 @@ export function EmailSettingsPanel() {
       aria-label={t("email.title", "E-postvarsler")}
     >
       {(disabled || status.data?.featureBuilt === false) && (
-        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
+        <p
+          className="rounded-lg p-3 text-sm"
+          style={{
+            background: "var(--sr-gold-tint-2)",
+            color: "var(--sr-gold-bright)",
+            border: "1px solid var(--sr-gold-line)",
+          }}
+        >
           {t(
             "email.featureDisabled",
             "E-postvarsler er ikke bygd inn i denne versjonen. Innstillingene kan likevel lagres.",
@@ -105,11 +111,11 @@ export function EmailSettingsPanel() {
       )}
 
       {/* ── Transport ───────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+      <div className="sr-card pad flex flex-col gap-2">
         <label className="flex items-center gap-2 text-sm text-text2">
           {t("email.method", "Sendemetode")}
           <select
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text"
+            className="sr-select"
             value={kind}
             onChange={(e) => setTransport(e.target.value as EmailTransportKind)}
             aria-label={t("email.method", "Sendemetode")}
@@ -134,19 +140,26 @@ export function EmailSettingsPanel() {
 
       {/* ── SMTP fields ─────────────────────────────────────────────── */}
       {kind === "smtp" && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <div className="sr-card pad flex flex-col gap-2">
           <input
             className={inputClass}
-            placeholder={t("email.smtpHost", "SMTP-tjener (f.eks. smtp.gmail.com)")}
+            placeholder={t(
+              "email.smtpHost",
+              "SMTP-tjener (f.eks. smtp.gmail.com)",
+            )}
             value={host}
             onChange={(e) => setHost(e.target.value)}
-            aria-label={t("email.smtpHost", "SMTP-tjener (f.eks. smtp.gmail.com)")}
+            aria-label={t(
+              "email.smtpHost",
+              "SMTP-tjener (f.eks. smtp.gmail.com)",
+            )}
           />
           <label className="flex items-center gap-2 text-sm text-text2">
             {t("email.smtpPort", "Port")}
             <input
               type="number"
-              className={`w-24 ${inputClass}`}
+              className={inputClass}
+              style={{ width: "6rem" }}
               value={port}
               onChange={(e) => setPort(Number(e.target.value))}
               aria-label={t("email.smtpPort", "Port")}
@@ -178,7 +191,7 @@ export function EmailSettingsPanel() {
       )}
 
       {/* ── Recipient + test ────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+      <div className="sr-card pad flex flex-col gap-2">
         <input
           type="email"
           className={inputClass}
@@ -190,19 +203,27 @@ export function EmailSettingsPanel() {
         <button
           type="button"
           disabled={!canTest || testMutation.isPending}
-          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="sr-btn gold sm self-start disabled:opacity-50"
           onClick={onTest}
         >
           {t("email.sendTest", "Send testvarsel")}
         </button>
 
         {testMutation.isSuccess && (
-          <p className="text-xs text-emerald-300" role="status">
+          <p
+            className="text-xs"
+            style={{ color: "var(--sr-green)" }}
+            role="status"
+          >
             {t("email.testSent", "Testvarsel sendt.")}
           </p>
         )}
         {testMutation.isError && !disabled && (
-          <p className="text-xs text-red-400" role="alert">
+          <p
+            className="text-xs"
+            style={{ color: "var(--sr-red-bright)" }}
+            role="alert"
+          >
             {isNoConfig(testMutation.error)
               ? t("email.noConfig", "Fyll inn mottaker og e-postoppsett.")
               : t("email.testFailed", "Klarte ikke sende testvarsel.")}

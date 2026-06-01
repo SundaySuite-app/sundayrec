@@ -1,0 +1,590 @@
+/**
+ * Home — the opptakssenter ("recording centre"), the screen ~80% of use
+ * happens on. Ported from the design handoff (`sr-home.jsx`). A `video` toggle
+ * switches between the camera-preview layout and the audio-only big-meter
+ * layout; the big record button calls `onRecord` so the shell can enter the
+ * focused recording mode. Live data (devices, levels, disk) is wired later.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { Icon } from "../Icon";
+import { Badge, DeviceCard, Meter, ReadyChip, Toggle } from "../atoms";
+import {
+  dbfsToLit,
+  formatBytes,
+  formatDbfs,
+  useCameraPreview,
+  useDiskSpace,
+  useInputDevices,
+  useVideoDevices,
+  useVuLevels,
+  videoDeviceArg,
+} from "../hooks";
+import {
+  bigMeterLit,
+  channelPeak,
+  defaultInputName,
+  DISK_LOW_BYTES,
+  diskUsedPercent,
+  formatNextDate,
+  inputMeta,
+  storageEstimateLabel,
+} from "./home.helpers";
+import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
+import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
+import type { Settings } from "@/lib/bindings/Settings";
+
+function TrustBanner() {
+  const { data: status } = useQuery<ScheduleStatus>({
+    queryKey: ["scheduler_status"],
+    queryFn: () => invoke<ScheduleStatus>("scheduler_status"),
+  });
+  const nextDate = formatNextDate(status?.next);
+  const nextTime = status?.next
+    ? (() => {
+        const d = new Date(status.next as string);
+        return Number.isNaN(d.getTime())
+          ? null
+          : d.toLocaleTimeString("nb-NO", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+      })()
+    : null;
+
+  return (
+    <div className="sr-banner ready" style={{ marginBottom: 16 }}>
+      <div className="sr-banner-ico">
+        <Icon name="check" size={24} strokeWidth={2.4} />
+      </div>
+      <div className="sr-grow">
+        <div className="sr-label" style={{ color: "var(--sr-green)" }}>
+          Klar for opptak
+        </div>
+        <div
+          style={{
+            fontSize: 19,
+            fontWeight: 650,
+            letterSpacing: "-0.01em",
+            marginTop: 2,
+          }}
+        >
+          Alt er klart
+        </div>
+      </div>
+      <div
+        style={{
+          textAlign: "right",
+          borderLeft: "1px solid var(--sr-line)",
+          paddingLeft: 22,
+        }}
+      >
+        <div className="sr-label">Neste opptak</div>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            color: "var(--sr-gold)",
+            marginTop: 2,
+          }}
+        >
+          {nextDate ?? "Alt er klart"}
+        </div>
+        {nextTime && (
+          <div
+            style={{ fontSize: 12.5, color: "var(--sr-text-3)", marginTop: 2 }}
+          >
+            kl. {nextTime}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecordRow({
+  video,
+  onRecord,
+  onToggleVideo,
+}: {
+  video: boolean;
+  onRecord?: () => void;
+  onToggleVideo: () => void;
+}) {
+  return (
+    <div
+      className="sr-row"
+      style={{ gap: 12, marginBottom: 16, alignItems: "stretch" }}
+    >
+      <button
+        className="sr-record"
+        style={{ flex: "1 1 auto" }}
+        onClick={onRecord}
+      >
+        <span className="dot" />
+        Start opptak nå
+      </button>
+      <button
+        className="sr-card"
+        onClick={onToggleVideo}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "0 18px",
+          flex: "0 0 auto",
+          cursor: "pointer",
+          color: "inherit",
+        }}
+      >
+        <Icon
+          name="video"
+          size={18}
+          style={{ color: video ? "var(--sr-gold)" : "var(--sr-text-3)" }}
+        />
+        <span
+          style={{
+            fontSize: 13.5,
+            fontWeight: 600,
+            color: video ? "var(--sr-text)" : "var(--sr-text-2)",
+          }}
+        >
+          {video ? "Video på" : "Video av"}
+        </span>
+        <Toggle on={video} />
+      </button>
+    </div>
+  );
+}
+
+// Large live L/R meter row used when video is off.
+function BigMeterRow({
+  ch,
+  on,
+  readout = "−55.9",
+}: {
+  ch: string;
+  on: number;
+  readout?: string;
+}) {
+  return (
+    <div className="sr-row" style={{ gap: 12 }}>
+      <span
+        className="sr-mono"
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: "var(--sr-text-3)",
+          width: 14,
+        }}
+      >
+        {ch}
+      </span>
+      <div
+        className="sr-grow"
+        style={{ display: "flex", gap: 2.5, height: 30, position: "relative" }}
+      >
+        {Array.from({ length: 40 }).map((_, i) => {
+          const c =
+            i < on
+              ? i > 35
+                ? "var(--sr-red)"
+                : i > 30
+                  ? "var(--sr-gold)"
+                  : "var(--sr-green)"
+              : "var(--sr-ink-700)";
+          return (
+            <span key={i} style={{ flex: 1, background: c, borderRadius: 2 }} />
+          );
+        })}
+        <span
+          style={{
+            position: "absolute",
+            left: "40%",
+            top: -3,
+            bottom: -3,
+            width: 2,
+            background: "rgba(255,255,255,0.7)",
+          }}
+        />
+      </div>
+      <span
+        className="sr-mono sr-num"
+        style={{
+          fontSize: 13,
+          color: "var(--sr-text-3)",
+          width: 48,
+          textAlign: "right",
+        }}
+      >
+        {readout}
+      </span>
+    </div>
+  );
+}
+
+export function HomeScreen({
+  onRecord,
+}: {
+  onRecord?: (video: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const { data: settings } = useQuery<Settings>({
+    queryKey: SETTINGS_QUERY_KEY,
+    queryFn: () => invoke<Settings>("settings_get"),
+  });
+
+  // Persist a settings patch (mirrors features/devices/DevicePicker.tsx).
+  const saveSettings = useMutation({
+    mutationFn: (next: Settings) =>
+      invoke<Settings>("settings_save", { settings: next }),
+    onSuccess: (saved) => queryClient.setQueryData(SETTINGS_QUERY_KEY, saved),
+  });
+
+  const [video, setVideo] = useState(true);
+  const [videoSeeded, setVideoSeeded] = useState(false);
+
+  // Initialise the local video toggle from persisted settings (once), then let
+  // the user toggle freely.
+  useEffect(() => {
+    if (!videoSeeded && settings) {
+      setVideo(settings.videoEnabled);
+      setVideoSeeded(true);
+    }
+  }, [settings, videoSeeded]);
+
+  // Live audio levels (always running while Home is visible).
+  const levels = useVuLevels(true);
+  const peakL = channelPeak(levels, 0);
+  const peakR = channelPeak(levels, 1);
+  const peakMax =
+    peakL == null && peakR == null
+      ? null
+      : Math.max(peakL ?? -Infinity, peakR ?? -Infinity);
+
+  // Camera devices + persisted selection.
+  const videoDevices = useVideoDevices();
+  const selectedCamera = useMemo(() => {
+    const name = settings?.videoDeviceName ?? null;
+    return videoDevices.find((d) => d.name === name) ?? null;
+  }, [videoDevices, settings?.videoDeviceName]);
+  const cameraToken = selectedCamera ? videoDeviceArg(selectedCamera) : null;
+
+  const onCameraChange = (name: string) => {
+    if (!settings) return;
+    const cam = videoDevices.find((d) => d.name === name) ?? null;
+    saveSettings.mutate({
+      ...settings,
+      videoDeviceName: cam ? cam.name : null,
+      videoDeviceIndex: cam && cam.index !== null ? cam.index : null,
+    });
+  };
+
+  // Live camera preview (only while video is on) — uses the chosen camera.
+  const preview = useCameraPreview(video, cameraToken);
+
+  // Device + disk data.
+  const devices = useInputDevices();
+  const micName = defaultInputName(devices);
+  const micMeta = inputMeta(devices);
+  const hasInput = (devices?.inputs.length ?? 0) > 0;
+  const hasVideoDevice = videoDevices.length > 0;
+  const freeBytes = useDiskSpace();
+  const diskV = freeBytes != null ? `${formatBytes(freeBytes)} ledig` : null;
+  const diskOk = freeBytes != null && freeBytes > DISK_LOW_BYTES;
+
+  // Network readiness (live).
+  const [online, setOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, []);
+
+  // Storage estimate + bar derived from real free space.
+  const storageMeta = storageEstimateLabel(freeBytes, video);
+  const diskPct = diskUsedPercent(freeBytes);
+  const cameraName = selectedCamera?.name ?? null;
+
+  return (
+    <div className="sr-content wide">
+      <TrustBanner />
+      <RecordRow
+        video={video}
+        onRecord={() => onRecord?.(video)}
+        onToggleVideo={() => setVideo((v) => !v)}
+      />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 332px",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
+        {video ? (
+          /* Camera preview */
+          <div className="sr-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div
+              className="sr-row"
+              style={{
+                gap: 10,
+                padding: "11px 13px",
+                borderBottom: "1px solid var(--sr-line)",
+              }}
+            >
+              <Icon
+                name="camera"
+                size={17}
+                style={{ color: "var(--sr-text-3)" }}
+              />
+              <select
+                className="sr-select"
+                aria-label="Velg kamera"
+                value={cameraName ?? ""}
+                onChange={(e) => onCameraChange(e.target.value)}
+                style={{
+                  width: 260,
+                  padding: "7px 32px 7px 11px",
+                  fontSize: 13,
+                }}
+              >
+                {videoDevices.length === 0 ? (
+                  <option value="">FaceTime HD-kamera</option>
+                ) : (
+                  <>
+                    {cameraName == null && (
+                      <option value="">Velg kamera</option>
+                    )}
+                    {videoDevices.map((d) => (
+                      <option key={d.name} value={d.name}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+              <button className="sr-btn ghost sm" style={{ padding: 7 }}>
+                <Icon name="refresh" size={15} />
+              </button>
+              <div className="sr-grow" />
+              <Badge kind="err" dot>
+                ● Live
+              </Badge>
+            </div>
+            <div
+              className="sr-media"
+              style={{ aspectRatio: "16 / 9", borderRadius: 0, border: "none" }}
+            >
+              {preview.dataUrl ? (
+                <img
+                  src={preview.dataUrl}
+                  alt="kamera-forhåndsvisning"
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              ) : (
+                "kamera-forhåndsvisning · 16:9"
+              )}
+            </div>
+            <div
+              className="sr-row"
+              style={{
+                gap: 12,
+                padding: "12px 14px",
+                borderTop: "1px solid var(--sr-line)",
+              }}
+            >
+              <span className="sr-label" style={{ flex: "0 0 auto" }}>
+                Lydnivå
+              </span>
+              <div className="sr-grow">
+                <Meter on={peakL != null ? dbfsToLit(peakL, 14) : 5} />
+              </div>
+              <span
+                className="sr-mono sr-num"
+                style={{ fontSize: 12, color: "var(--sr-text-3)" }}
+              >
+                {peakL != null ? formatDbfs(peakL) : "−35.9"} dBFS
+              </span>
+            </div>
+          </div>
+        ) : (
+          /* Live level meter (replaces camera preview) */
+          <div className="sr-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div
+              className="sr-row"
+              style={{
+                gap: 10,
+                padding: "13px 16px",
+                borderBottom: "1px solid var(--sr-line)",
+              }}
+            >
+              <Icon
+                name="wave"
+                size={17}
+                style={{ color: "var(--sr-text-3)" }}
+              />
+              <span
+                className="sr-grow"
+                style={{ fontSize: 14.5, fontWeight: 600 }}
+              >
+                Lydnivå — live
+              </span>
+              <span
+                className="sr-mono sr-num"
+                style={{ fontSize: 12.5, color: "var(--sr-text-3)" }}
+              >
+                Maks:{" "}
+                {peakMax != null && Number.isFinite(peakMax)
+                  ? formatDbfs(peakMax)
+                  : "−38.1"}{" "}
+                dBFS
+              </span>
+            </div>
+            <div className="sr-col" style={{ gap: 16, padding: "26px 22px" }}>
+              <BigMeterRow
+                ch="L"
+                on={peakL != null ? bigMeterLit(peakL) : 16}
+                readout={peakL != null ? formatDbfs(peakL) : "−55.9"}
+              />
+              <BigMeterRow
+                ch="R"
+                on={peakR != null ? bigMeterLit(peakR) : 16}
+                readout={peakR != null ? formatDbfs(peakR) : "−55.9"}
+              />
+              <div
+                className="sr-row"
+                style={{
+                  justifyContent: "space-between",
+                  fontSize: 11,
+                  color: "var(--sr-text-dim)",
+                  fontFamily: "var(--sr-mono)",
+                  padding: "0 26px",
+                }}
+              >
+                <span>Stille</span>
+                <span>−24</span>
+                <span>−12</span>
+                <span>−6</span>
+                <span>Maks</span>
+              </div>
+            </div>
+            <div
+              className="sr-row"
+              style={{
+                padding: "13px 16px",
+                borderTop: "1px solid var(--sr-line)",
+              }}
+            >
+              <a
+                className="sr-grow"
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("shell:navigate", {
+                      detail: "diagnostics",
+                    }),
+                  )
+                }
+                style={{
+                  fontSize: 13.5,
+                  color: "var(--sr-gold)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Test og sjekk system →
+              </a>
+              <span style={{ fontSize: 12.5, color: "var(--sr-text-3)" }}>
+                Opptak blir kun lyd · WAV
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Right rail */}
+        <div className="sr-stack-3">
+          <div className="sr-card pad" style={{ padding: 16 }}>
+            <div className="sr-label" style={{ marginBottom: 11 }}>
+              Klar til opptak
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+              <ReadyChip ok={hasInput} label="Lyd" />
+              {video && (
+                <ReadyChip ok={hasVideoDevice && video} label="Kamera" />
+              )}
+              <ReadyChip ok={diskOk} label="Disk" />
+              <ReadyChip ok={online} label="Nett" />
+            </div>
+          </div>
+          <DeviceCard
+            icon="mic"
+            k="Lydkilde"
+            v={micName ?? "MacBook Pro-mikrofon"}
+            meta={micMeta ?? "Innebygd · stereo · 48 kHz"}
+            badge={
+              <Badge kind="ok" dot>
+                Tilkoblet
+              </Badge>
+            }
+          />
+          {video ? (
+            <>
+              <DeviceCard
+                icon="camera"
+                k="Kamera"
+                v={cameraName ?? "FaceTime HD-kamera"}
+                meta={cameraName ? "Kilde konfigurert" : "Velg kamera"}
+              />
+              <DeviceCard
+                icon="gear"
+                k="Videokvalitet"
+                v="720p · 30 fps"
+                meta="Kombinert MP4"
+              />
+              <DeviceCard
+                icon="disk"
+                k="Lagring"
+                v={diskV ?? "569 GB ledig"}
+                meta={storageMeta ?? "~38 timer opptak igjen"}
+                progress={diskPct ?? undefined}
+              />
+            </>
+          ) : (
+            <>
+              <DeviceCard
+                icon="file"
+                k="Format"
+                v="WAV"
+                meta="Stereo · 48 kHz · høyest kvalitet"
+              />
+              <DeviceCard
+                icon="disk"
+                k="Lagring"
+                v={diskV ?? "569 GB ledig"}
+                meta={storageMeta ?? "~95 timer kun-lyd igjen"}
+                progress={diskPct ?? undefined}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

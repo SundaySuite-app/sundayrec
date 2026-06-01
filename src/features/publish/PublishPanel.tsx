@@ -158,7 +158,7 @@ export function PublishPanel() {
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-4"
+      className="sr-card pad flex w-full max-w-md flex-col gap-4"
       aria-label={t("publish.title", "Publisering")}
     >
       <p className="text-xs text-text2">
@@ -169,7 +169,14 @@ export function PublishPanel() {
       </p>
 
       {(disabled || (status.data && !featureBuilt)) && (
-        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
+        <p
+          className="rounded-lg p-3 text-sm"
+          style={{
+            background: "var(--sr-gold-tint-2)",
+            color: "var(--sr-gold-bright)",
+            border: "1px solid var(--sr-gold-line)",
+          }}
+        >
           {t(
             "publish.featureDisabled",
             "Publisering til disk/sky er ikke bygd inn i denne versjonen. Du kan likevel forhåndsvise feeden.",
@@ -197,7 +204,7 @@ export function PublishPanel() {
             value={title}
             disabled={!metaReady}
             placeholder={t("publish.podcastTitlePh", "Navn på menigheten")}
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text disabled:opacity-50"
+            className="sr-input disabled:opacity-50"
             onChange={(e) => patchSetting({ churchName: e.target.value })}
           />
         </label>
@@ -209,8 +216,10 @@ export function PublishPanel() {
             value={author}
             disabled={!metaReady}
             placeholder={t("publish.podcastAuthorPh", "Ansvarlig person")}
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text disabled:opacity-50"
-            onChange={(e) => patchSetting({ responsiblePerson: e.target.value })}
+            className="sr-input disabled:opacity-50"
+            onChange={(e) =>
+              patchSetting({ responsiblePerson: e.target.value })
+            }
           />
         </label>
 
@@ -223,7 +232,7 @@ export function PublishPanel() {
               "publish.podcastDescriptionPh",
               "Kort beskrivelse av podkasten",
             )}
-            className="resize-none rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text"
+            className="sr-input resize-none"
             onChange={(e) => setDescription(e.target.value)}
           />
         </label>
@@ -241,7 +250,7 @@ export function PublishPanel() {
             )}
             <button
               type="button"
-              className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
+              className="sr-btn ghost sm"
               onClick={() => void pickImage()}
             >
               {imagePath
@@ -249,9 +258,7 @@ export function PublishPanel() {
                 : t("publish.pickImage", "Velg bilde")}
             </button>
           </div>
-          {imagePath && (
-            <p className="break-all text-text3">{imagePath}</p>
-          )}
+          {imagePath && <p className="break-all text-text3">{imagePath}</p>}
         </div>
       </fieldset>
 
@@ -260,7 +267,7 @@ export function PublishPanel() {
         <button
           type="button"
           disabled={previewMutation.isPending}
-          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+          className="sr-btn ghost sm disabled:opacity-50"
           onClick={onPreview}
         >
           {t("publish.previewFeed", "Forhåndsvis feed")}
@@ -268,7 +275,7 @@ export function PublishPanel() {
         <button
           type="button"
           disabled={generateMutation.isPending}
-          className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="sr-btn gold sm disabled:opacity-50"
           onClick={onGenerate}
         >
           {t("publish.regenerateFeed", "Generer feed nå")}
@@ -276,15 +283,22 @@ export function PublishPanel() {
       </div>
 
       {generateMutation.isError && !disabled && (
-        <p className="text-xs text-red-400" role="alert">
+        <p
+          className="text-xs"
+          style={{ color: "var(--sr-red-bright)" }}
+          role="alert"
+        >
           {isNoConfig(generateMutation.error)
-            ? t("publish.noFolder", "Velg en lagringsmappe i innstillingene først.")
+            ? t(
+                "publish.noFolder",
+                "Velg en lagringsmappe i innstillingene først.",
+              )
             : t("publish.generateFailed", "Klarte ikke generere feeden.")}
         </p>
       )}
 
       {preview && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <div className="sr-card pad flex flex-col gap-2">
           <p className="text-xs text-text2">
             {preview.localPath
               ? t("publish.writtenTo", "Skrevet til: {{path}}", {
@@ -295,14 +309,17 @@ export function PublishPanel() {
                 })}
           </p>
           {preview.feedUrl && (
-            <p className="break-all text-xs text-emerald-300">
+            <p
+              className="break-all text-xs"
+              style={{ color: "var(--sr-green)" }}
+            >
               {t("publish.feedUrlLabel", "FEED-URL")}: {preview.feedUrl}
             </p>
           )}
           {feedTarget && (
             <button
               type="button"
-              className="self-start rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
+              className="sr-btn ghost sm self-start"
               onClick={() => void copyFeedUrl()}
             >
               {copied

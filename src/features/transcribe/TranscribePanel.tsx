@@ -20,16 +20,7 @@ const EXPORT_FORMATS: readonly TranscriptExportFormat[] = [
 
 /** The languages offered, mirroring `sundayrec_core::whisper::language_options`
  *  (`auto` + the suite's seven). Labels are localised via i18n. */
-const LANGUAGES = [
-  "auto",
-  "no",
-  "en",
-  "sv",
-  "da",
-  "de",
-  "fr",
-  "pl",
-] as const;
+const LANGUAGES = ["auto", "no", "en", "sv", "da", "de", "fr", "pl"] as const;
 
 /** True when an IPC rejection is the default-build "whisper feature off" error,
  *  so the panel shows a calm hint rather than a red error. The seam returns
@@ -166,16 +157,22 @@ export function TranscribePanel() {
     [t],
   );
 
-  const selectClass =
-    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text";
+  const selectClass = "sr-select";
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-4"
+      className="sr-card pad flex w-full max-w-md flex-col gap-4"
       aria-label={t("transcribe.title", "Transkribering")}
     >
       {disabled && (
-        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
+        <p
+          className="rounded-lg p-3 text-sm"
+          style={{
+            background: "var(--sr-gold-tint-2)",
+            color: "var(--sr-gold-bright)",
+            border: "1px solid var(--sr-gold-line)",
+          }}
+        >
           {t(
             "transcribe.featureDisabled",
             "Transkribering er ikke bygd inn i denne versjonen.",
@@ -254,7 +251,7 @@ export function TranscribePanel() {
       <button
         type="button"
         disabled={!canTranscribe || transcribeMutation.isPending}
-        className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+        className="sr-btn gold sm self-start disabled:opacity-50"
         onClick={onTranscribe}
       >
         {transcribeMutation.isPending
@@ -263,14 +260,18 @@ export function TranscribePanel() {
       </button>
 
       {transcribeMutation.isError && !disabled && (
-        <p className="text-xs text-red-400" role="alert">
+        <p
+          className="text-xs"
+          style={{ color: "var(--sr-red-bright)" }}
+          role="alert"
+        >
           {t("transcribe.failed", "Transkribering feilet.")}
         </p>
       )}
 
       {/* ── Transcript + export ─────────────────────────────────────── */}
       {transcript && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <div className="sr-card pad flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-medium text-text">
               {t("transcribe.result", "Transkripsjon")}{" "}
@@ -285,7 +286,7 @@ export function TranscribePanel() {
                 <button
                   key={fmt}
                   type="button"
-                  className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+                  className="sr-btn ghost sm"
                   onClick={() => exportMutation.mutate(fmt)}
                 >
                   {fmt.toUpperCase()}

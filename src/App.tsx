@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -9,11 +9,8 @@ import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import { DevicePicker } from "@/features/devices/DevicePicker";
 import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 import { DiagnosticsPanel } from "@/features/diagnostics/DiagnosticsPanel";
-import { SettingsPage } from "@/features/settings/SettingsPage";
-import { SchedulePage } from "@/features/schedule/SchedulePage";
 import { WakePanel } from "@/features/wake/WakePanel";
 import { HistoryPanel } from "@/features/history/HistoryPanel";
-import { EditorPanel } from "@/features/editor/EditorPanel";
 import { TranscribePanel } from "@/features/transcribe/TranscribePanel";
 import { ReviewPanel } from "@/features/review/ReviewPanel";
 import { IntegrationsPanel } from "@/features/integrations/IntegrationsPanel";
@@ -21,12 +18,9 @@ import { SuiteHandoffPanel } from "@/features/integrations/SuiteHandoffPanel";
 import { PublishPanel } from "@/features/publish/PublishPanel";
 import { CloudBackupPanel } from "@/features/cloud/CloudBackupPanel";
 import { EmailSettingsPanel } from "@/features/email/EmailSettingsPanel";
-import { StreamingPanel } from "@/features/streaming/StreamingPanel";
 import { UpdatePanel } from "@/features/update/UpdatePanel";
-import { HomePage } from "@/features/home/HomePage";
-import { SearchPage } from "@/features/search/SearchPage";
 import { OnboardingFlow } from "@/features/onboarding/OnboardingFlow";
-import { MainLayout, SHELL_NAVIGATE_EVENT } from "@/components/MainLayout";
+import { MainLayout } from "@/components/MainLayout";
 import { ToastHost } from "@/components/Toast";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
@@ -34,19 +28,36 @@ import { REVIEW_QUEUE_KEY } from "@/features/review/queryKey";
 import { changeLanguage } from "@/i18n";
 import type { ViewName } from "@/lib/routing";
 
+// Redesigned screens (Claude Design handoff → `src/design`). These are the
+// five everyday pages + the settings hub, rebuilt against the `sr-*` design
+// system. They are presentational for now; live data is rewired in a later
+// pass ("vi fikser funksjonalitet senere").
+import { HomeScreen } from "@/design/screens/HomeScreen";
+import { ScheduleScreen } from "@/design/screens/ScheduleScreen";
+import { LiveScreen } from "@/design/screens/LiveScreen";
+import { EditScreen } from "@/design/screens/EditScreen";
+import { SearchScreen } from "@/design/screens/SearchScreen";
+import { SettingsScreen } from "@/design/screens/SettingsScreen";
+import { RecordingScreen } from "@/design/screens/RecordingScreen";
+
 const SCHEDULE_STATUS_KEY = ["scheduler_status"] as const;
 const RECORDINGS_LIST_KEY = ["recordings", "list"] as const;
 
 /**
  * The application root. Confirms the Tauri bridge (`app_info`), hydrates i18n
  * from the persisted `Settings`, shows the first-run onboarding wizard, and
- * mounts the real shell (`MainLayout`) with every feature panel wired to a
- * view — replacing the Phase-0 `<details>` stack. Every panel that existed
- * before remains reachable; the shell sidebar is the new entry point.
+ * mounts the redesigned shell (`MainLayout`). The everyday pages are the new
+ * `src/design` screens; the remaining panels stay reachable via the ⌘K palette
+ * and the settings hub while their own redesign is pending.
  */
 function App() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+
+  // The focused recording mode (sidebar hidden) is a full-window overlay; the
+  // Home record button enters it. Real recording is wired later — for now it
+  // shows the redesigned "tar opp" screen and the stop button returns home.
+  const [recording, setRecording] = useState<null | { video: boolean }>(null);
 
   const { data, isLoading, isError, error } = useQuery<AppInfo>({
     queryKey: ["app_info"],
@@ -104,42 +115,30 @@ function App() {
     );
   }
 
-  // The view→component map, organised after the original Electron layout: the
-  // five everyday pages live in the sidebar; the rest are embedded where they
-  // belong (Tidsplan folds in wake-from-sleep, Rediger folds in transcription,
-  // and the Settings hub's tabs absorb publish/cloud/email/update/integrations/
-  // diagnostics). The standalone entries remain so the ⌘K palette and the home
-  // cards (history/review) can still reach them.
+  // Focused recording mode replaces the whole window (sidebar hidden), exactly
+  // as the redesign specifies.
+  if (recording) {
+    return (
+      <RecordingScreen
+        video={recording.video}
+        onStop={() => setRecording(null)}
+      />
+    );
+  }
+
+  // The view→component map. The five everyday pages + Settings are the
+  // redesigned `src/design` screens; the rest keep their existing components
+  // (reached via the ⌘K palette / contextual cards) until they are redesigned.
   const views: Record<ViewName, React.ReactNode> = {
-    home: <HomePageView />,
-    // Tidsplan = month calendar + weekly slots + a collapsible "Vekk maskin
-    // fra dvale" panel, exactly as the old app grouped them.
-    schedule: (
-      <div className="flex w-full max-w-4xl flex-col gap-6">
-        <SchedulePage />
-        <details className="rounded-xl border border-border bg-surface">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text">
-            {t("wake.title", "Vekk maskin fra dvale")}
-          </summary>
-          <div className="border-t border-border p-4">
-            <WakePanel />
-          </div>
-        </details>
-      </div>
-    ),
+    home: <HomeScreen onRecord={(video) => setRecording({ video })} />,
+    schedule: <ScheduleScreen />,
     history: <HistoryPanel />,
     review: <ReviewPanel />,
-    search: <SearchPage />,
-    // Rediger = the editor with transcription as a section below it.
-    editor: (
-      <div className="flex w-full max-w-4xl flex-col gap-6">
-        <EditorPanel />
-        <TranscribePanel />
-      </div>
-    ),
+    search: <SearchScreen />,
+    editor: <EditScreen />,
     transcribe: <TranscribePanel />,
     publish: <PublishPanel />,
-    streaming: <StreamingPanel />,
+    streaming: <LiveScreen />,
     cloud: <CloudBackupPanel />,
     email: <EmailSettingsPanel />,
     integrations: (
@@ -156,7 +155,7 @@ function App() {
       </div>
     ),
     wake: <WakePanel />,
-    settings: <SettingsPage />,
+    settings: <SettingsScreen />,
     update: <UpdatePanel />,
   };
 
@@ -199,34 +198,25 @@ function SidebarStatus() {
     : t("home.readyTitle", "Alt er klart");
 
   return (
-    <div className="flex flex-col gap-0.5 text-[11px] text-text3">
-      <span className="flex items-center gap-1.5">
+    <>
+      <div className="sr-status-row">
         <span
           aria-hidden
-          className={`inline-block h-1.5 w-1.5 rounded-full ${
-            next ? "bg-accent" : "bg-emerald-500"
-          }`}
+          className="bdot"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: next ? "var(--sr-gold)" : "var(--sr-green)",
+          }}
         />
-        <span className="truncate" title={nextLabel}>
+        <span className="sr-status-label" title={nextLabel}>
           {nextLabel}
         </span>
-      </span>
-      {info?.version && <span>v{info.version}</span>}
-    </div>
+      </div>
+      {info?.version && <div className="sr-status-ver">v{info.version}</div>}
+    </>
   );
-}
-
-/** The home view, wired so its cards can drive the shell navigation. */
-function HomePageView() {
-  // HomePage navigation is delegated to the layout via a custom event so the
-  // home cards (review/history/schedule) can switch views without threading a
-  // callback through MainLayout's view map.
-  const navigate = useCallback((view: ViewName) => {
-    window.dispatchEvent(
-      new CustomEvent(SHELL_NAVIGATE_EVENT, { detail: view }),
-    );
-  }, []);
-  return <HomePage onNavigate={navigate} />;
 }
 
 export default App;

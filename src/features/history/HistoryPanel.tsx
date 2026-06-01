@@ -89,7 +89,7 @@ function HistoryRow({
   }, [row.file_path, onRevealError]);
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left">
+    <li className="sr-card pad flex flex-col gap-2 text-left">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-medium text-text" title={row.file_path}>
@@ -106,14 +106,14 @@ function HistoryRow({
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+            className="sr-btn ghost sm"
             onClick={() => void reveal()}
           >
             {t("history.revealInFolder", "Vis i mappe")}
           </button>
           <button
             type="button"
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+            className="sr-btn ghost sm"
             onClick={() => {
               void invoke("open_in_sundayedit", { path: row.file_path }).catch(
                 () => {},
@@ -124,7 +124,11 @@ function HistoryRow({
           </button>
           <button
             type="button"
-            className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+            className="sr-btn ghost sm"
+            style={{
+              color: "var(--sr-red-bright)",
+              borderColor: "var(--sr-red-deep)",
+            }}
             aria-label={t("history.deleteEntry", "Slett oppføring")}
             onClick={() => onDelete(row.id)}
           >
@@ -134,7 +138,7 @@ function HistoryRow({
       </div>
       <input
         type="text"
-        className="w-full rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3"
+        className="sr-input"
         aria-label={t("history.editNote", "Rediger notat")}
         placeholder={t("history.notePlaceholder", "Skriv notat…")}
         value={note}
@@ -228,7 +232,7 @@ export function HistoryPanel() {
 
   if (isError) {
     return (
-      <p className="text-red-400">
+      <p style={{ color: "var(--sr-red-bright)" }}>
         {t("history.loadError", "Kunne ikke laste historikken")}
       </p>
     );
@@ -240,13 +244,17 @@ export function HistoryPanel() {
       aria-label={t("history.title", "Historikk")}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-text">
+        <h2 className="sr-pagetitle text-base">
           {t("history.title", "Historikk")}
         </h2>
         {allRows.length > 0 && (
           <button
             type="button"
-            className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+            className="sr-btn ghost sm"
+            style={{
+              color: "var(--sr-red-bright)",
+              borderColor: "var(--sr-red-deep)",
+            }}
             onClick={onClear}
           >
             {t("history.clearBtn", "Slett alle")}
@@ -258,7 +266,7 @@ export function HistoryPanel() {
         <>
           <input
             type="search"
-            className="w-full rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3"
+            className="sr-input"
             aria-label={t("history.searchPlaceholder", "Søk i historikk…")}
             placeholder={t("history.searchPlaceholder", "Søk i historikk…")}
             value={query}

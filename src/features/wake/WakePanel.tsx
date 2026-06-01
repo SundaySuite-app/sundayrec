@@ -69,7 +69,7 @@ export function WakePanel() {
     <div className="flex flex-col gap-4 text-left" data-testid="wake-panel">
       {/* Capabilities */}
       {caps && (
-        <section className="rounded-xl border border-border bg-surface p-6">
+        <section className="sr-card pad-lg">
           <h3 className="text-sm font-medium text-text">
             {t("wake.capabilities", "Maskinens muligheter")}
           </h3>
@@ -99,10 +99,14 @@ export function WakePanel() {
       {/* Sleep config warning + fix */}
       {sleep && sleepNeedsFix(sleep) && (
         <section
-          className="rounded-xl border border-accent/60 bg-accent p-4"
+          className="rounded-xl p-4"
+          style={{
+            background: "var(--sr-gold-tint)",
+            border: "1px solid var(--sr-gold-line)",
+          }}
           data-testid="wake-sleep-warning"
         >
-          <p className="text-sm text-bg">
+          <p className="text-sm" style={{ color: "var(--sr-gold-bright)" }}>
             {t(
               "wake.sleepWarning",
               "Strøminnstillingene kan hindre maskinen i å våkne for planlagte opptak.",
@@ -110,7 +114,7 @@ export function WakePanel() {
           </p>
           <button
             type="button"
-            className="mt-2 rounded-lg border border-accent px-3 py-1 text-xs text-bg hover:bg-accent/80"
+            className="sr-btn gold sm mt-2"
             disabled={fixMutation.isPending}
             onClick={() => fixMutation.mutate()}
           >
@@ -118,7 +122,7 @@ export function WakePanel() {
           </button>
           {fixMutation.data && (
             <p
-              className="mt-1 text-xs text-bg/70"
+              className="mt-1 text-xs text-text2"
               data-testid="wake-fix-result"
             >
               {fixMutation.data.ok
@@ -134,7 +138,7 @@ export function WakePanel() {
       <section className="flex flex-wrap gap-2">
         <button
           type="button"
-          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
+          className="sr-btn ghost sm"
           disabled={rescheduleMutation.isPending}
           onClick={() => rescheduleMutation.mutate()}
         >
@@ -142,7 +146,7 @@ export function WakePanel() {
         </button>
         <button
           type="button"
-          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
+          className="sr-btn ghost sm"
           disabled={verifyMutation.isPending}
           onClick={() => verifyMutation.mutate()}
         >
@@ -166,7 +170,7 @@ export function WakePanel() {
       {/* Verification result */}
       {verifyMutation.data && (
         <section
-          className="rounded-xl border border-border bg-surface p-4 text-xs"
+          className="sr-card pad text-xs"
           data-testid="wake-verify-result"
         >
           {verifyMutation.data.hasMismatch ? (
@@ -177,7 +181,7 @@ export function WakePanel() {
               )}
             </p>
           ) : (
-            <p className="text-emerald-300">
+            <p style={{ color: "var(--sr-green)" }}>
               {t(
                 "wake.allScheduled",
                 "Alle forventede vekkinger er registrert.",

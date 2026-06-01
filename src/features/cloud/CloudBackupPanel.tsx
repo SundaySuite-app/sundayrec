@@ -16,12 +16,12 @@ const SERVICE_LABEL: Record<CloudService, string> = {
   gmail: "Gmail",
 };
 
-/** Tailwind classes for each upload-status badge. */
+/** sr-badge variant for each upload-status badge. */
 const STATUS_BADGE: Record<UploadStatus, string> = {
-  pending: "border-border text-text2",
-  uploading: "border-sky-700 text-sky-300",
-  failed: "border-red-800 text-red-300",
-  "reauth-required": "border-accent/60 text-accent",
+  pending: "sr-badge muted",
+  uploading: "sr-badge ok",
+  failed: "sr-badge err",
+  "reauth-required": "sr-badge warn",
 };
 
 /**
@@ -159,12 +159,12 @@ export function CloudBackupPanel() {
       aria-label={t("cloud.title", "Sky-backup")}
     >
       {/* ── Connections ─────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("cloud.connectionsTitle", "Tilkoblinger")}
         </h2>
         {conn.isError ? (
-          <p className="text-red-400">
+          <p style={{ color: "var(--sr-red-bright)" }}>
             {t("cloud.connError", "Kunne ikke lese tilkoblingsstatus")}
           </p>
         ) : (
@@ -178,13 +178,7 @@ export function CloudBackupPanel() {
                   <span className="font-medium text-text">
                     {SERVICE_LABEL[s.service]}
                   </span>
-                  <span
-                    className={`rounded border px-1.5 py-0.5 text-xs ${
-                      s.connected
-                        ? "border-emerald-700 text-emerald-300"
-                        : "border-border text-text3"
-                    }`}
-                  >
+                  <span className={`sr-badge ${s.connected ? "ok" : "muted"}`}>
                     {s.connected
                       ? t("cloud.connected", "Tilkoblet")
                       : t("cloud.disconnected", "Ikke tilkoblet")}
@@ -193,7 +187,7 @@ export function CloudBackupPanel() {
                 {s.connected ? (
                   <button
                     type="button"
-                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+                    className="sr-btn ghost sm"
                     onClick={() => onDisconnect(s.service)}
                   >
                     {t("cloud.disconnect", "Koble fra")}
@@ -202,7 +196,7 @@ export function CloudBackupPanel() {
                   <button
                     type="button"
                     disabled={connectMutation.isPending}
-                    className="rounded-lg bg-accent px-2 py-1 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+                    className="sr-btn gold sm disabled:opacity-50"
                     onClick={() => connectMutation.mutate(s.service)}
                   >
                     {t("cloud.connect", "Koble til")}
@@ -215,7 +209,7 @@ export function CloudBackupPanel() {
       </div>
 
       {/* ── Upload queue ────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-text">
             {t("cloud.queueTitle", "Opplastingskø")}
@@ -223,7 +217,11 @@ export function CloudBackupPanel() {
           {hasFailed && (
             <button
               type="button"
-              className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+              className="sr-btn ghost sm"
+              style={{
+                color: "var(--sr-red-bright)",
+                borderColor: "var(--sr-red-deep)",
+              }}
               onClick={() => clearFailedMutation.mutate()}
             >
               {t("cloud.clearFailed", "Fjern feilede")}
@@ -253,7 +251,7 @@ export function CloudBackupPanel() {
             {failedCount > 0 && (
               <>
                 <span aria-hidden>·</span>
-                <span className="text-red-400">
+                <span style={{ color: "var(--sr-red-bright)" }}>
                   {t("cloud.summaryFailed", "{{n}} feilet", { n: failedCount })}
                 </span>
               </>
@@ -280,14 +278,20 @@ export function CloudBackupPanel() {
                   : null;
               const pct =
                 total !== null && uploaded !== null
-                  ? Math.max(0, Math.min(100, Math.round((uploaded / total) * 100)))
+                  ? Math.max(
+                      0,
+                      Math.min(100, Math.round((uploaded / total) * 100)),
+                    )
                   : null;
               return (
                 <li
                   key={e.id}
-                  className={`flex flex-col gap-1 rounded-lg border bg-surface2 p-3 text-left ${
-                    isFailed ? "border-red-800" : "border-border"
-                  }`}
+                  className="flex flex-col gap-1 rounded-lg border bg-surface2 p-3 text-left"
+                  style={{
+                    borderColor: isFailed
+                      ? "var(--sr-red-deep)"
+                      : "var(--border)",
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -310,9 +314,7 @@ export function CloudBackupPanel() {
                         )}
                       </p>
                     </div>
-                    <span
-                      className={`shrink-0 rounded border px-1.5 py-0.5 text-xs ${STATUS_BADGE[e.status]}`}
-                    >
+                    <span className={`shrink-0 ${STATUS_BADGE[e.status]}`}>
                       {statusLabel(e.status)}
                     </span>
                   </div>
@@ -325,7 +327,10 @@ export function CloudBackupPanel() {
                       aria-valuenow={pct}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                      aria-label={t("cloud.uploadProgress", "Opplastingsframgang")}
+                      aria-label={t(
+                        "cloud.uploadProgress",
+                        "Opplastingsframgang",
+                      )}
                     >
                       <div
                         className="h-full rounded-full bg-accent transition-[width]"
@@ -336,7 +341,8 @@ export function CloudBackupPanel() {
 
                   {e.lastError && (
                     <p
-                      className="truncate text-xs text-red-400"
+                      className="truncate text-xs"
+                      style={{ color: "var(--sr-red-bright)" }}
                       title={e.lastError}
                     >
                       {e.lastError}
@@ -347,7 +353,11 @@ export function CloudBackupPanel() {
                       e.status === "reauth-required") && (
                       <button
                         type="button"
-                        className="rounded-lg border border-red-800 bg-surface2 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+                        className="sr-btn ghost sm"
+                        style={{
+                          color: "var(--sr-red-bright)",
+                          borderColor: "var(--sr-red-deep)",
+                        }}
                         onClick={() => retryMutation.mutate(e.id)}
                       >
                         {t("cloud.retry", "Prøv igjen")}
@@ -355,7 +365,7 @@ export function CloudBackupPanel() {
                     )}
                     <button
                       type="button"
-                      className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+                      className="sr-btn ghost sm"
                       onClick={() => removeMutation.mutate(e.id)}
                     >
                       {t("cloud.remove", "Fjern")}

@@ -11,6 +11,7 @@ import {
   type ViewName,
 } from "@/lib/routing";
 import { CommandPalette } from "@/components/CommandPalette";
+import { Icon, type IconName } from "@/design/Icon";
 
 /**
  * Custom DOM event a child view dispatches to ask the shell to switch views
@@ -20,20 +21,18 @@ import { CommandPalette } from "@/components/CommandPalette";
 export const SHELL_NAVIGATE_EVENT = "shell:navigate";
 
 /**
- * The real app shell (replaces the Phase-0 `<details>` stack in `App.tsx`).
- *
- * A persistent sidebar lists every top-level view (mirrors the Electron
- * `.nav-link` rail in `index.html`); clicking one drives the pure
- * {@link nextNav} reducer and swaps the content pane. The sidebar order +
- * grouping mirrors the Electron navigation: the everyday views first, then
- * the production/distribution verticals, then system/settings.
+ * The app shell — the macOS desktop window from the redesign (`sr-shell.jsx` +
+ * `tokens.css`). A titlebar (traffic lights + active-section title), a branded
+ * sidebar with icon nav + a pinned Settings gear + the live status footer, and
+ * a centred content pane (`.sr-content`, the fix for "flyter ut når vinduet
+ * skaleres"). The redesigned screens render their own `.sr-content`; the shell
+ * only provides the window chrome.
  *
  * The view→component mapping is injected by the caller (`App.tsx`) so this
- * file stays free of feature imports and the panel wiring lives in one place.
- * `onTransition` receives the {@link nextNav} effect tags (leave/enter) so the
- * caller can run view lifecycle (start/stop VU, refresh queries) — the layout
- * itself performs no IPC. Navigation state + clicks are unit-tested with the
- * views passed as stub nodes.
+ * file stays free of feature imports. `onTransition` receives the
+ * {@link nextNav} effect tags so the caller can run view lifecycle; the layout
+ * itself performs no IPC. Navigation + the `data-view` button contract are
+ * unit-tested with stub views.
  */
 
 /** Sidebar label key + fallback for each view (Norwegian source of truth). */
@@ -56,6 +55,17 @@ const NAV_LABELS: Record<ViewName, { key: string; fallback: string }> = {
   update: { key: "general.updates", fallback: "Oppdateringer" },
 };
 
+/** Line-icon per sidebar view (matches `SR_NAV` in the design's `sr-shell`). */
+const NAV_ICON: Record<(typeof SIDEBAR_VIEWS)[number] | "settings", IconName> =
+  {
+    home: "home",
+    schedule: "calendar",
+    streaming: "live",
+    editor: "edit",
+    search: "search",
+    settings: "gear",
+  };
+
 export interface MainLayoutProps {
   /** A node for every view (caller wires features → components). */
   views: Record<ViewName, ReactNode>;
@@ -67,7 +77,7 @@ export interface MainLayoutProps {
   }) => void;
   /** Starting view (defaults to home). */
   initialView?: ViewName;
-  /** Top-of-sidebar slot (e.g. the language switcher). */
+  /** Titlebar slot (e.g. the language switcher). */
   header?: ReactNode;
   /** Bottom-of-sidebar slot (e.g. the live next-recording status line). */
   footer?: ReactNode;
@@ -110,77 +120,96 @@ export function MainLayout({
     return () => window.removeEventListener(SHELL_NAVIGATE_EVENT, handler);
   }, [showView]);
 
+  const navItemClass = (view: ViewName) =>
+    "sr-navitem" + (nav.current === view ? " is-active" : "");
+
   return (
-    <div className="flex min-h-screen bg-bg text-text">
-      {/* ── Sidebar nav ──────────────────────────────────────────────── */}
-      <nav
-        className="flex w-56 shrink-0 flex-col gap-2 border-r border-border bg-bg p-3"
-        aria-label={t("app.name", "SundayRec")}
-      >
-        <div className="mb-2 flex items-center justify-between px-1">
-          <span className="text-sm font-semibold">
-            {t("app.name", "SundayRec")}
-          </span>
-          {header}
+    <div className="sr-win">
+      {/* ── Titlebar ─────────────────────────────────────────────────────── */}
+      <div className="sr-titlebar">
+        <div className="sr-lights">
+          <span className="sr-light r" />
+          <span className="sr-light y" />
+          <span className="sr-light g" />
         </div>
-
-        {/* Flat primary nav — the five everyday pages (Electron-parity). */}
-        <div className="flex flex-col gap-0.5">
-          {SIDEBAR_VIEWS.map((view) => {
-            const label = NAV_LABELS[view];
-            const active = nav.current === view;
-            return (
-              <button
-                key={view}
-                type="button"
-                data-view={view}
-                aria-current={active ? "page" : undefined}
-                className={`rounded px-2 py-1.5 text-left text-sm transition-colors ${
-                  active
-                    ? "border-l-2 border-accent bg-surface2 font-medium text-accent"
-                    : "text-text2 hover:bg-surface hover:text-text"
-                }`}
-                onClick={() => showView(view)}
-              >
-                {t(label.key, label.fallback)}
-              </button>
-            );
-          })}
+        <div className="sr-wintitle">
+          {t(NAV_LABELS[nav.current].key, NAV_LABELS[nav.current].fallback)}
         </div>
-
-        {/* Spacer pushes Settings + status to the bottom. */}
-        <div className="flex-1" />
-
-        {/* Settings gear — the tabbed hub holding everything else. */}
-        <button
-          type="button"
-          data-view="settings"
-          aria-current={nav.current === "settings" ? "page" : undefined}
-          className={`flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors ${
-            nav.current === "settings"
-              ? "border-l-2 border-accent bg-surface2 font-medium text-accent"
-              : "text-text2 hover:bg-surface hover:text-text"
-          }`}
-          onClick={() => showView("settings")}
-        >
-          <span aria-hidden>⚙</span>
-          {t(NAV_LABELS.settings.key, NAV_LABELS.settings.fallback)}
-        </button>
-
-        {/* Live status (next recording + version) — always visible. */}
-        {footer && <div className="px-2 pt-1">{footer}</div>}
-      </nav>
-
-      {/* ── Content pane ─────────────────────────────────────────────── */}
-      <main
-        className="flex flex-1 flex-col items-center gap-6 overflow-y-auto p-8"
-        aria-label={t(
-          NAV_LABELS[nav.current].key,
-          NAV_LABELS[nav.current].fallback,
+        {header && (
+          <div style={{ marginLeft: "auto", zIndex: 6 }}>{header}</div>
         )}
-      >
-        {views[nav.current]}
-      </main>
+      </div>
+
+      {/* ── App body = sidebar + main ────────────────────────────────────── */}
+      <div className="sr-app">
+        <aside className="sr-sidebar" aria-label={t("app.name", "SundayRec")}>
+          <div className="sr-brand">
+            <div
+              className="sr-brand-mark"
+              style={{ backgroundImage: "url(/sundayrec-logo.jpg)" }}
+            />
+            <div className="sr-brand-name">{t("app.name", "SundayRec")}</div>
+          </div>
+
+          {/* Flat primary nav — the five everyday pages (Electron-parity). */}
+          <nav className="sr-nav">
+            {SIDEBAR_VIEWS.map((view) => {
+              const label = NAV_LABELS[view];
+              const active = nav.current === view;
+              return (
+                <button
+                  key={view}
+                  type="button"
+                  data-view={view}
+                  aria-current={active ? "page" : undefined}
+                  className={navItemClass(view)}
+                  onClick={() => showView(view)}
+                >
+                  <Icon
+                    name={NAV_ICON[view]}
+                    size={19}
+                    fill={view === "streaming" && active}
+                  />
+                  <span>{t(label.key, label.fallback)}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Spacer pushes Settings + status to the bottom. */}
+          <div className="sr-sidebar-spacer" />
+
+          <div className="sr-sidebar-foot">
+            {/* Settings gear — the tabbed hub holding everything else. */}
+            <button
+              type="button"
+              data-view="settings"
+              aria-current={nav.current === "settings" ? "page" : undefined}
+              className={navItemClass("settings")}
+              onClick={() => showView("settings")}
+            >
+              <Icon name={NAV_ICON.settings} size={19} />
+              <span>
+                {t(NAV_LABELS.settings.key, NAV_LABELS.settings.fallback)}
+              </span>
+            </button>
+
+            {/* Live status (next recording + version) — always visible. */}
+            {footer && <div className="sr-status">{footer}</div>}
+          </div>
+        </aside>
+
+        {/* ── Content pane ───────────────────────────────────────────────── */}
+        <main
+          className="sr-main"
+          aria-label={t(
+            NAV_LABELS[nav.current].key,
+            NAV_LABELS[nav.current].fallback,
+          )}
+        >
+          <div className="sr-scroll">{views[nav.current]}</div>
+        </main>
+      </div>
 
       {/* Global ⌘K command palette — available on every view. */}
       <CommandPalette />

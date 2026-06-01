@@ -75,20 +75,17 @@ export function SuiteHandoffPanel() {
 
   const onSubmitUsage = useCallback(() => {
     setSubmitResult(null);
-    if (recordingPath.trim())
-      submitUsageMutation.mutate(recordingPath.trim());
+    if (recordingPath.trim()) submitUsageMutation.mutate(recordingPath.trim());
   }, [recordingPath, submitUsageMutation]);
 
   const onVerbatimSend = useCallback(() => {
     setSendResult(null);
-    if (recordingPath.trim())
-      verbatimSendMutation.mutate(recordingPath.trim());
+    if (recordingPath.trim()) verbatimSendMutation.mutate(recordingPath.trim());
   }, [recordingPath, verbatimSendMutation]);
 
   const connected = hasApiKey.data ?? false;
 
-  const inputClass =
-    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+  const inputClass = "sr-input";
 
   return (
     <section
@@ -96,17 +93,11 @@ export function SuiteHandoffPanel() {
       aria-label={t("handoff.title", "Suite-overlevering")}
     >
       {/* ── SundaySong API key ──────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("handoff.songKeyTitle", "SundaySong API-nøkkel")}
         </h2>
-        <span
-          className={`self-start rounded-lg border px-1.5 py-0.5 text-xs ${
-            connected
-              ? "border-emerald-700 text-emerald-300"
-              : "border-border text-text3"
-          }`}
-        >
+        <span className={`sr-badge self-start ${connected ? "ok" : "muted"}`}>
           {connected
             ? t("handoff.keyStored", "Nøkkel lagret")
             : t("handoff.keyMissing", "Ingen nøkkel")}
@@ -122,7 +113,7 @@ export function SuiteHandoffPanel() {
         <button
           type="button"
           disabled={!apiKey.trim() || saveKeyMutation.isPending}
-          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="sr-btn gold sm self-start disabled:opacity-50"
           onClick={onSaveKey}
         >
           {t("handoff.saveKey", "Lagre nøkkel")}
@@ -130,7 +121,7 @@ export function SuiteHandoffPanel() {
       </div>
 
       {/* ── Per-recording hand-off ──────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+      <div className="sr-card pad flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("handoff.recordingTitle", "Opptak")}
         </h2>
@@ -145,7 +136,7 @@ export function SuiteHandoffPanel() {
           <button
             type="button"
             disabled={!recordingPath.trim() || submitUsageMutation.isPending}
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+            className="sr-btn ghost sm disabled:opacity-50"
             onClick={onSubmitUsage}
           >
             {t("handoff.submitUsage", "Send bruk til SundaySong")}
@@ -153,7 +144,7 @@ export function SuiteHandoffPanel() {
           <button
             type="button"
             disabled={!recordingPath.trim() || verbatimSendMutation.isPending}
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+            className="sr-btn ghost sm disabled:opacity-50"
             onClick={onVerbatimSend}
           >
             {t("handoff.verbatimSend", "Åpne i SundayEdit")}
@@ -161,7 +152,12 @@ export function SuiteHandoffPanel() {
         </div>
         {submitResult && (
           <p
-            className={`text-xs ${submitResult.ok ? "text-emerald-300" : "text-accent"}`}
+            className="text-xs"
+            style={{
+              color: submitResult.ok
+                ? "var(--sr-green)"
+                : "var(--sr-gold-bright)",
+            }}
             role="status"
           >
             {submitResult.ok
@@ -175,7 +171,12 @@ export function SuiteHandoffPanel() {
         )}
         {sendResult && (
           <p
-            className={`text-xs ${sendResult.ok ? "text-emerald-300" : "text-accent"}`}
+            className="text-xs"
+            style={{
+              color: sendResult.ok
+                ? "var(--sr-green)"
+                : "var(--sr-gold-bright)",
+            }}
             role="status"
           >
             {sendResult.ok

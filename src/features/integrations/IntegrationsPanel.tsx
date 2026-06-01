@@ -131,8 +131,7 @@ export function IntegrationsPanel() {
 
   const nativeBridge = bridgeBuilt.data ?? false;
 
-  const inputClass =
-    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+  const inputClass = "sr-input";
 
   return (
     <section
@@ -140,7 +139,7 @@ export function IntegrationsPanel() {
       aria-label={t("integrations.title", "Integrasjoner")}
     >
       {/* ── Peer apps ───────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("integrations.peersTitle", "Sunday-appene")}
         </h2>
@@ -164,7 +163,7 @@ export function IntegrationsPanel() {
       </div>
 
       {/* ── Connection ──────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("integrations.connectionTitle", "Tilkobling")}
         </h2>
@@ -199,25 +198,36 @@ export function IntegrationsPanel() {
         <button
           type="button"
           disabled={saveMutation.isPending}
-          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="sr-btn gold sm self-start disabled:opacity-50"
           onClick={onSave}
         >
           {t("integrations.save", "Lagre tilkobling")}
         </button>
         {saveMutation.isSuccess && (
-          <p className="text-xs text-emerald-300" role="status">
+          <p
+            className="text-xs"
+            style={{ color: "var(--sr-green)" }}
+            role="status"
+          >
             {t("integrations.saved", "Tilkobling lagret.")}
           </p>
         )}
       </div>
 
       {/* ── Live cue-bridge ─────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+      <div className="sr-card pad-lg flex flex-col gap-2">
         <h2 className="text-sm font-medium text-text">
           {t("integrations.bridgeTitle", "Live cue-bro (SundayStage)")}
         </h2>
         {!nativeBridge && (
-          <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
+          <p
+            className="rounded-lg p-3 text-sm"
+            style={{
+              background: "var(--sr-gold-tint-2)",
+              color: "var(--sr-gold-bright)",
+              border: "1px solid var(--sr-gold-line)",
+            }}
+          >
             {t(
               "integrations.bridgeDisabled",
               "Den innebygde live-broen er ikke bygd inn i denne versjonen. Du kan likevel lagre tilkoblingen og teste kanalnavnet.",
@@ -227,18 +237,26 @@ export function IntegrationsPanel() {
         <button
           type="button"
           disabled={!churchId.trim() || !serviceId.trim()}
-          className="self-start rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+          className="sr-btn ghost sm self-start disabled:opacity-50"
           onClick={() => void onTestChannel()}
         >
           {t("integrations.testChannel", "Vis kanalnavn")}
         </button>
         {channel && (
-          <p className="break-all text-xs text-emerald-300" role="status">
+          <p
+            className="break-all text-xs"
+            style={{ color: "var(--sr-green)" }}
+            role="status"
+          >
             {channel}
           </p>
         )}
         {channelError && (
-          <p className="text-xs text-red-400" role="alert">
+          <p
+            className="text-xs"
+            style={{ color: "var(--sr-red-bright)" }}
+            role="alert"
+          >
             {t(
               "integrations.channelError",
               "Fyll inn både menighets-ID og gudstjeneste-ID.",

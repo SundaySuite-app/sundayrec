@@ -9,13 +9,13 @@ import type { EpisodePrepStatus } from "@/lib/bindings/EpisodePrepStatus";
 import type { EditorPeaks } from "@/lib/bindings/EditorPeaks";
 import { REVIEW_QUEUE_KEY } from "./queryKey";
 
-/** Tailwind classes for each prep-status badge. */
+/** sr-badge variant for each prep-status badge. */
 const STATUS_BADGE: Record<EpisodePrepStatus, string> = {
-  analyzing: "border-border text-text2",
-  ready: "border-emerald-700 text-emerald-300",
-  "needs-attention": "border-accent/60 text-accent",
-  published: "border-sky-700 text-sky-300",
-  discarded: "border-border text-text3",
+  analyzing: "sr-badge muted",
+  ready: "sr-badge ok",
+  "needs-attention": "sr-badge warn",
+  published: "sr-badge muted",
+  discarded: "sr-badge muted",
 };
 
 /** The leaf filename of a recording path (no directory, keeps the extension). */
@@ -92,11 +92,13 @@ export function ReviewPanel() {
   }, [queryClient]);
 
   const publishMutation = useMutation({
-    mutationFn: (id: string) => invoke<boolean>("review_mark_published", { id }),
+    mutationFn: (id: string) =>
+      invoke<boolean>("review_mark_published", { id }),
     onSuccess: invalidate,
   });
   const discardMutation = useMutation({
-    mutationFn: (id: string) => invoke<boolean>("review_mark_discarded", { id }),
+    mutationFn: (id: string) =>
+      invoke<boolean>("review_mark_discarded", { id }),
     onSuccess: invalidate,
   });
   const remindersMutation = useMutation({
@@ -207,17 +209,20 @@ export function ReviewPanel() {
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
-      aria-label={t("review.queueTitle", "Klare for gjennomgang og publisering")}
+      aria-label={t(
+        "review.queueTitle",
+        "Klare for gjennomgang og publisering",
+      )}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-text">
+        <h2 className="sr-pagetitle text-base">
           {t("review.queueTitle", "Klare for gjennomgang og publisering")}
         </h2>
         {entries.length > 0 && (
           <button
             type="button"
             disabled={remindersMutation.isPending}
-            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+            className="sr-btn ghost sm disabled:opacity-50"
             onClick={() => remindersMutation.mutate()}
           >
             {t("review.runReminders", "Kjør påminnelser")}
@@ -227,7 +232,13 @@ export function ReviewPanel() {
 
       {/* Bulk action bar — shown once any entries are selected. */}
       {selectedCount > 0 && (
-        <div className="flex items-center justify-between rounded-xl border border-accent/40 bg-surface2 px-3 py-2">
+        <div
+          className="flex items-center justify-between rounded-xl px-3 py-2"
+          style={{
+            background: "var(--sr-gold-tint)",
+            border: "1px solid var(--sr-gold-line)",
+          }}
+        >
           <span className="text-xs text-text2">
             {t("review.selectedCount", "{{count}} valgt", {
               count: selectedCount,
@@ -237,7 +248,7 @@ export function ReviewPanel() {
             <button
               type="button"
               disabled={publishMutation.isPending}
-              className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+              className="sr-btn gold sm disabled:opacity-50"
               onClick={onBulkPublish}
             >
               {t("review.bulkPublish", "Publiser valgte")}
@@ -245,7 +256,7 @@ export function ReviewPanel() {
             <button
               type="button"
               disabled={discardMutation.isPending}
-              className="rounded-lg border border-border bg-surface3 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+              className="sr-btn ghost sm disabled:opacity-50"
               onClick={onBulkDiscard}
             >
               {t("review.bulkDiscard", "Forkast valgte")}
@@ -255,7 +266,7 @@ export function ReviewPanel() {
       )}
 
       {queue.isError ? (
-        <p className="text-red-400">
+        <p style={{ color: "var(--sr-red-bright)" }}>
           {t("review.loadError", "Kunne ikke lese gjennomgangskøen")}
         </p>
       ) : active.length === 0 ? (
@@ -270,11 +281,13 @@ export function ReviewPanel() {
             const isSelected = selected.has(e.id);
             const isPreviewing = previewId === e.id;
             const peaks =
-              isPreviewing && peaksMutation.data ? peaksMutation.data.peaks : null;
+              isPreviewing && peaksMutation.data
+                ? peaksMutation.data.peaks
+                : null;
             return (
               <li
                 key={e.id}
-                className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4 text-left"
+                className="sr-card pad flex flex-col gap-2 text-left"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-2">
@@ -305,9 +318,7 @@ export function ReviewPanel() {
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-xs ${STATUS_BADGE[e.prep.status]}`}
-                  >
+                  <span className={`shrink-0 ${STATUS_BADGE[e.prep.status]}`}>
                     {statusLabel(e.prep.status)}
                   </span>
                 </div>
@@ -350,7 +361,7 @@ export function ReviewPanel() {
                 <div className="flex flex-wrap gap-2 self-end">
                   <button
                     type="button"
-                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
+                    className="sr-btn ghost sm"
                     onClick={() => onPreview(e)}
                   >
                     {isPreviewing
@@ -360,7 +371,7 @@ export function ReviewPanel() {
                   <button
                     type="button"
                     disabled={publishMutation.isPending}
-                    className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+                    className="sr-btn gold sm disabled:opacity-50"
                     onClick={() => publishMutation.mutate(e.id)}
                   >
                     {t("review.publishBtn", "✓ Godkjenn og publiser")}
@@ -368,7 +379,7 @@ export function ReviewPanel() {
                   <button
                     type="button"
                     disabled={discardMutation.isPending}
-                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
+                    className="sr-btn ghost sm disabled:opacity-50"
                     onClick={() => onDiscard(e.id)}
                   >
                     {t("review.discardBtn", "✗ Ikke publiser denne uka")}
