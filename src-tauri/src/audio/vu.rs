@@ -58,16 +58,21 @@ impl VuEngine {
 
     /// Start metering the given input device (or the host default when `None`).
     /// Idempotent in effect: any previous session is stopped first.
-    pub fn start(&self, app: AppHandle, device_name: Option<String>) -> AppResult<()> {
+    pub async fn start(&self, app: AppHandle, device_name: Option<String>) -> AppResult<()> {
         self.stop();
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_for_worker = Arc::clone(&stop);
 
         // The cpal `Stream` is `!Send`, so it must be built AND owned entirely on
-        // this worker thread. We surface a build error back to the caller through
-        // a one-shot channel so `start_vu` can report "device gone" etc.
-        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<AppResult<()>>();
+        // this worker thread. Readiness comes back over a `tokio::oneshot` we
+        // `.await` (NOT a blocking `recv()`): building the cpal input stream can
+        // stall when the mic is momentarily contended (e.g. just after a
+        // recording releases it), and a blocking wait there pins a Tauri runtime
+        // worker → the whole app beachballs. The async await frees the worker
+        // while the cpal thread finishes building. (The worker is a std::thread,
+        // so it can send on the oneshot from any thread.)
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let worker = std::thread::Builder::new()
             .name("sundayrec-vu".into())
@@ -77,7 +82,7 @@ impl VuEngine {
             .map_err(|e| AppError::Audio(format!("spawning VU thread: {e}")))?;
 
         // Wait for the worker to report whether the stream built + started.
-        match ready_rx.recv() {
+        match ready_rx.await {
             Ok(Ok(())) => {
                 *self.session.lock().expect("vu mutex") = Some(VuSession { stop, worker });
                 Ok(())
@@ -112,7 +117,7 @@ fn run_vu_worker(
     app: AppHandle,
     device_name: Option<String>,
     stop: Arc<AtomicBool>,
-    ready_tx: std::sync::mpsc::Sender<AppResult<()>>,
+    ready_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
 ) {
     let built = build_vu_stream(device_name.as_deref());
     let (stream, meters) = match built {

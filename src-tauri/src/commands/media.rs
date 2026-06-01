@@ -22,13 +22,13 @@ pub fn ffmpeg_health() -> FfmpegHealth {
 /// at `fps` (default 15). Streams `preview://frame` events until `stop_preview`.
 /// Stops any previous preview first.
 #[tauri::command]
-pub fn start_preview(
+pub async fn start_preview(
     app: AppHandle,
     engine: State<'_, PreviewEngine>,
     device: Option<String>,
     fps: Option<u32>,
 ) -> AppResult<()> {
-    engine.start(app, device, fps)
+    engine.start(app, device, fps).await
 }
 
 /// Stop the camera preview. Safe to call when nothing is running.

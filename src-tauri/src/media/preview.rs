@@ -175,7 +175,12 @@ impl PreviewEngine {
     /// Start previewing `device` (or the first camera when `None`) at `fps`
     /// (defaulting to [`DEFAULT_FPS`]). Stops any previous session first. Returns
     /// once ffmpeg has spawned, so a failure to launch surfaces to the caller.
-    pub fn start(&self, app: AppHandle, device: Option<String>, fps: Option<u32>) -> AppResult<()> {
+    pub async fn start(
+        &self,
+        app: AppHandle,
+        device: Option<String>,
+        fps: Option<u32>,
+    ) -> AppResult<()> {
         self.stop();
 
         let args = build_preview_args(
@@ -187,14 +192,17 @@ impl PreviewEngine {
 
         // Confirm ffmpeg actually spawned before reporting success, so the UI
         // gets a real error (e.g. camera permission denied) instead of a silent
-        // dead preview.
-        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<AppResult<()>>();
+        // dead preview. Readiness is awaited over a `tokio::oneshot` — a blocking
+        // `recv()` here on the async command worker would starve the runtime that
+        // the spawned `run_preview` task needs to make progress → deadlock →
+        // beachball (the camera preview never appears).
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let task = tauri::async_runtime::spawn(async move {
             run_preview(app, args, ready_tx).await;
         });
 
-        match ready_rx.recv() {
+        match ready_rx.await {
             Ok(Ok(())) => {
                 *self.session.lock().expect("preview mutex") = Some(PreviewSession { task });
                 Ok(())
@@ -230,7 +238,7 @@ impl PreviewEngine {
 async fn run_preview(
     app: AppHandle,
     args: Vec<String>,
-    ready: std::sync::mpsc::Sender<AppResult<()>>,
+    ready: tokio::sync::oneshot::Sender<AppResult<()>>,
 ) {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // `child` stays owned in this scope for the task's whole life, so dropping

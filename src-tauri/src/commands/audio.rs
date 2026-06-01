@@ -66,12 +66,12 @@ pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
 /// Start the VU engine on `device_name` (or the host default when `None`).
 /// Streams `vu://levels` events until `stop_vu`. Stops any previous session.
 #[tauri::command]
-pub fn start_vu(
+pub async fn start_vu(
     app: AppHandle,
     engine: State<'_, VuEngine>,
     device_name: Option<String>,
 ) -> AppResult<()> {
-    engine.start(app, device_name)
+    engine.start(app, device_name).await
 }
 
 /// Stop the VU engine. Safe to call when nothing is running.
