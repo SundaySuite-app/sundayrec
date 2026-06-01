@@ -85,7 +85,7 @@ use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
 use sundayrec_core::timeouts::RecorderTimeouts;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use ts_rs::TS;
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices;
@@ -836,6 +836,51 @@ async fn run_session(
     tracing::info!("recorder: session stopped cleanly");
 }
 
+/// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader) and
+/// forward the appropriate [`ReaderMsg`]. astats prints its per-channel block
+/// over several lines, so those are buffered in `astats_buf` and flushed when a
+/// non-astats line (or a fresh `Channel: 1` readout) ends the block. Pure-helper
+/// driven — the reader owns no state machine. Extracted so the byte-splitting
+/// reader and its trailing-line flush share one classifier.
+async fn classify_stderr_line(
+    line: &str,
+    startup: &mut StartupResolver,
+    astats_buf: &mut String,
+    msg_tx: &tokio::sync::mpsc::Sender<ReaderMsg>,
+    last_error: &mut Option<RecordingErrorCode>,
+) {
+    let is_astats = is_astats_line(line);
+    // Flush a completed astats block when this line ends it: a new readout starts
+    // (`Channel: 1` after we already buffered something) or a non-astats line
+    // interrupts the block.
+    let starts_new_block = is_astats && starts_astats_readout(line);
+    if !astats_buf.is_empty() && (!is_astats || starts_new_block) {
+        if let Some(lv) = parse_levels(astats_buf) {
+            let _ = msg_tx.send(ReaderMsg::Levels(lv)).await;
+        }
+        astats_buf.clear();
+    }
+    if is_astats {
+        astats_buf.push_str(line);
+        astats_buf.push('\n');
+        return;
+    }
+    if let Some(b) = parse_size_kb(line) {
+        if startup.observe_progress() {
+            let _ = msg_tx.send(ReaderMsg::Started).await;
+        }
+        let _ = msg_tx.send(ReaderMsg::Progress(b)).await;
+    } else if let Some(ev) = SilenceEvent::from_stderr(line) {
+        let _ = msg_tx.send(ReaderMsg::Silence(ev)).await;
+    } else if looks_like_error(line) {
+        let code = classify_recording_error(line);
+        if code != RecordingErrorCode::DeviceError {
+            *last_error = Some(code);
+            let _ = msg_tx.send(ReaderMsg::Error(code, line.to_string())).await;
+        }
+    }
+}
+
 /// Run ONE ffmpeg segment to completion. Owns the child, spawns its stderr
 /// reader, and runs the `select!` over reader events + the stop request + the
 /// timer ticks (watchdog poll, split, manual-max, silence stop/warn). Returns
@@ -863,55 +908,62 @@ async fn run_segment(
     let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(64);
     let reader = tauri::async_runtime::spawn(async move {
         let mut startup = StartupResolver::new();
-        let mut lines = BufReader::new(stderr).lines();
         let mut last_error: Option<RecordingErrorCode> = None;
         // astats prints its per-channel block over SEVERAL lines (a `Channel: N`
         // header line, then a `Peak level dB:` line, per channel). The pure
         // `parse_levels` parser needs the whole block, so we accumulate astats
-        // lines here and flush the buffer through it at a block boundary: a fresh
-        // `Channel: 1` header (next readout) or any non-astats line (end of the
-        // block). A new block always begins with `Channel: 1`.
+        // lines and flush them through it at a block boundary (handled in
+        // `classify_stderr_line`).
         let mut astats_buf = String::new();
+
+        // CRITICAL: ffmpeg writes its `size=…` progress line with CARRIAGE
+        // RETURNS (`\r`) and NO trailing newline until the process exits, so a
+        // newline-based reader (`.lines()`/`next_line()`) blocks forever and
+        // never observes progress → the UI is stuck at "Starter …" while ffmpeg
+        // records fine. Read raw bytes and split on EITHER `\r` or `\n` so every
+        // progress update + every banner/astats line is delivered live.
+        let mut stderr = BufReader::new(stderr);
+        let mut chunk = [0u8; 4096];
+        let mut line_buf: Vec<u8> = Vec::with_capacity(256);
         loop {
-            match lines.next_line().await {
-                Ok(Some(line)) => {
-                    let is_astats = is_astats_line(&line);
-                    // Flush a completed astats block when this line ends it: either
-                    // a new readout starts (`Channel: 1` after we already buffered
-                    // something) or a non-astats line interrupts the block.
-                    let starts_new_block = is_astats && starts_astats_readout(&line);
-                    if !astats_buf.is_empty() && (!is_astats || starts_new_block) {
-                        if let Some(lv) = parse_levels(&astats_buf) {
-                            let _ = msg_tx.send(ReaderMsg::Levels(lv)).await;
-                        }
-                        astats_buf.clear();
-                    }
-                    if is_astats {
-                        astats_buf.push_str(&line);
-                        astats_buf.push('\n');
-                        continue;
-                    }
-                    if let Some(b) = parse_size_kb(&line) {
-                        if startup.observe_progress() {
-                            let _ = msg_tx.send(ReaderMsg::Started).await;
-                        }
-                        let _ = msg_tx.send(ReaderMsg::Progress(b)).await;
-                    } else if let Some(ev) = SilenceEvent::from_stderr(&line) {
-                        let _ = msg_tx.send(ReaderMsg::Silence(ev)).await;
-                    } else if looks_like_error(&line) {
-                        let code = classify_recording_error(&line);
-                        if code != RecordingErrorCode::DeviceError {
-                            last_error = Some(code);
-                            let _ = msg_tx.send(ReaderMsg::Error(code, line.clone())).await;
-                        }
-                    }
-                }
-                Ok(None) => break, // stderr closed → ffmpeg exited
+            let n = match stderr.read(&mut chunk).await {
+                Ok(0) => break, // stderr closed → ffmpeg exited
+                Ok(n) => n,
                 Err(e) => {
                     tracing::warn!("recorder stderr read error: {e}");
                     break;
                 }
+            };
+            for &b in &chunk[..n] {
+                if b == b'\r' || b == b'\n' {
+                    if !line_buf.is_empty() {
+                        let line = String::from_utf8_lossy(&line_buf).into_owned();
+                        line_buf.clear();
+                        classify_stderr_line(
+                            &line,
+                            &mut startup,
+                            &mut astats_buf,
+                            &msg_tx,
+                            &mut last_error,
+                        )
+                        .await;
+                    }
+                } else {
+                    line_buf.push(b);
+                }
             }
+        }
+        // A final progress chunk may arrive without a terminator — classify it.
+        if !line_buf.is_empty() {
+            let line = String::from_utf8_lossy(&line_buf).into_owned();
+            classify_stderr_line(
+                &line,
+                &mut startup,
+                &mut astats_buf,
+                &msg_tx,
+                &mut last_error,
+            )
+            .await;
         }
         // Flush any trailing astats block before signalling exit.
         if !astats_buf.is_empty() {
