@@ -225,6 +225,19 @@ describe("SchedulePage", () => {
     });
   });
 
+  it("renders the colour-coded month calendar with a legend", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("schedule-calendar")).toBeTruthy(),
+    );
+    // The legend labels the three marker kinds (some labels also appear as
+    // section headers, so allow multiple matches).
+    const cal = screen.getByTestId("schedule-calendar");
+    expect(within(cal).getByText("Ukentlig opptak")).toBeTruthy();
+    expect(within(cal).getByText("Spesialopptak")).toBeTruthy();
+    expect(within(cal).getByText("Kirketid")).toBeTruthy();
+  });
+
   it("adds a dated special recording overlapping a weekly slot's day", async () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId("slot-0")).toBeTruthy());

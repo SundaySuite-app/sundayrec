@@ -8,6 +8,7 @@ import type { ScheduleSlot } from "@/lib/bindings/ScheduleSlot";
 import type { SpecialRecording } from "@/lib/bindings/SpecialRecording";
 import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
+import { ScheduleCalendar } from "./ScheduleCalendar";
 
 const SCHEDULE_STATUS_KEY = ["scheduler_status"] as const;
 
@@ -156,6 +157,9 @@ export function SchedulePage() {
           </ul>
         )}
       </section>
+
+      {/* Colour-coded month calendar (additive view; editing stays below). */}
+      <ScheduleCalendar slots={slots} specials={specials} />
 
       {/* Weekly slots */}
       <section className="flex flex-col gap-3">
