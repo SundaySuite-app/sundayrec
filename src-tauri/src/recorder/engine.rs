@@ -93,7 +93,7 @@ use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::spawn_ffmpeg;
-use crate::recorder::concat::finalize_deliverable;
+use crate::recorder::concat::{finalize_deliverable, output_is_valid};
 use crate::recorder::preroll::PrerollClip;
 
 /// Event channel: a progress heartbeat (bytes written so far).
@@ -568,6 +568,7 @@ async fn run_session(
                 // its fragments + write its history row) BEFORE opening the next.
                 let close_ms = now_ms();
                 finalize_pending(
+                    &app,
                     &pool,
                     &session,
                     &mut finalized,
@@ -592,6 +593,7 @@ async fn run_session(
                             session.reconnect_count(),
                         );
                         finalize_pending(
+                            &app,
                             &pool,
                             &session,
                             &mut finalized,
@@ -672,6 +674,7 @@ async fn run_session(
                             session.reconnect_count(),
                         );
                         finalize_pending(
+                            &app,
                             &pool,
                             &session,
                             &mut finalized,
@@ -773,6 +776,7 @@ async fn run_session(
                                                     session.reconnect_count(),
                                                 );
                                                 finalize_pending(
+                                                    &app,
                                                     &pool,
                                                     &session,
                                                     &mut finalized,
@@ -794,6 +798,7 @@ async fn run_session(
                                             session.reconnect_count(),
                                         );
                                         finalize_pending(
+                                            &app,
                                             &pool,
                                             &session,
                                             &mut finalized,
@@ -822,6 +827,7 @@ async fn run_session(
         session.reconnect_count(),
     );
     finalize_pending(
+        &app,
         &pool,
         &session,
         &mut finalized,
@@ -1197,6 +1203,7 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
 /// Called at every split (closing one deliverable) and once at session end (the
 /// last). Idempotent: a second call with nothing pending is a no-op.
 async fn finalize_pending(
+    app: &AppHandle,
     pool: &Option<SqlitePool>,
     session: &RecordingSession,
     finalized: &mut usize,
@@ -1214,7 +1221,7 @@ async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        finalize_one(pool, d, index, deliverable_end, preroll_clip, audio).await;
+        finalize_one(app, pool, d, index, deliverable_end, preroll_clip, audio).await;
     }
     *finalized = total;
 }
@@ -1228,7 +1235,12 @@ async fn finalize_pending(
 /// A concat failure leaves the fragment files on disk and falls back to the
 /// primary path for the history row (no audio lost). A `None` pool is a no-op for
 /// the DB write. A DB error is logged, never propagated.
+///
+/// If the finished file is missing / zero-byte / undecodable, NO history row is
+/// written (a phantom "recording" that won't play is worse than none) and an
+/// `empty_output` error is surfaced to the UI.
 async fn finalize_one(
+    app: &AppHandle,
     pool: &Option<SqlitePool>,
     deliverable: &sundayrec_core::recorder::Deliverable,
     index: usize,
@@ -1253,6 +1265,20 @@ async fn finalize_one(
             deliverable.primary_path.clone()
         }
     };
+
+    // Guard: never record a missing / zero-byte / undecodable file in history.
+    if !output_is_valid(std::path::Path::new(&final_path)).await {
+        tracing::error!(
+            file = %final_path,
+            "recorder: finished file is missing/empty/undecodable — not writing history row"
+        );
+        emit_error(
+            app,
+            "empty_output",
+            "Opptaket ble tomt eller skadet — ingen fil ble lagret.",
+        );
+        return;
+    }
 
     // Best-effort: the finished file's actual size on disk.
     let byte_size = tokio::fs::metadata(&final_path)

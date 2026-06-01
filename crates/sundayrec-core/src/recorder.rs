@@ -581,6 +581,19 @@ pub fn build_concat_args(list_path: &str, out_path: &str) -> Vec<String> {
     ]
 }
 
+/// Minimum plausible byte size for a FINISHED audio output. Below this the file
+/// is an empty/truncated container (a 0-byte concat output, a header-only mux that
+/// never got its samples) and must NOT be allowed to replace a good primary or be
+/// written to history as a "recording". A real take of even half a second always
+/// clears this; the threshold only catches degenerate failures. (Decodability is
+/// checked separately in the I/O layer via ffprobe; this is the pure size gate.)
+pub const MIN_VALID_OUTPUT_BYTES: u64 = 1024;
+
+/// Is `byte_size` a plausibly-valid finished output (clears [`MIN_VALID_OUTPUT_BYTES`])?
+pub fn is_plausible_output(byte_size: u64) -> bool {
+    byte_size >= MIN_VALID_OUTPUT_BYTES
+}
+
 /// Whether a concat is actually needed for a deliverable: `true` when there is
 /// more than one fragment OR a pre-roll clip must be prepended. With a single
 /// fragment and no pre-roll the primary file is already the finished deliverable,
@@ -1043,6 +1056,17 @@ mod tests {
         // >1 fragment → must stitch.
         assert!(concat_needed(&two, false));
         assert!(concat_needed(&two, true));
+    }
+
+    #[test]
+    fn is_plausible_output_threshold() {
+        assert!(!is_plausible_output(0), "0-byte output is never valid");
+        assert!(!is_plausible_output(MIN_VALID_OUTPUT_BYTES - 1));
+        assert!(is_plausible_output(MIN_VALID_OUTPUT_BYTES));
+        assert!(
+            is_plausible_output(50 * 1024 * 1024),
+            "a real take clears it"
+        );
     }
 
     #[test]

@@ -41,11 +41,12 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use sundayrec_core::recorder::{
-    build_concat_args, build_concat_list, concat_inputs, concat_needed, Deliverable,
+    build_concat_args, build_concat_list, concat_inputs, concat_needed, is_plausible_output,
+    Deliverable,
 };
 
 use crate::error::{AppError, AppResult};
-use crate::media::ffmpeg::ffmpeg_path;
+use crate::media::ffmpeg::{ffmpeg_path, ffprobe_path};
 
 /// Hard limit on the concat-copy ffmpeg run. A stream-copy of even a multi-hour
 /// service is fast; anything past this means ffmpeg is wedged. Ports the Electron
@@ -81,12 +82,24 @@ pub async fn finalize_deliverable(
 ) -> AppResult<String> {
     let primary = deliverable.primary_path.clone();
 
-    if !concat_needed(&deliverable.fragments, preroll_clip_path.is_some()) {
+    // Pre-roll existence guard: a stale/missing/empty clip path must NOT take the
+    // whole recording down with a failed concat. Drop it and fall back to no
+    // pre-roll (the recording itself is untouched).
+    let preroll = match preroll_clip_path {
+        Some(p) if output_exists_nonempty(Path::new(p)).await => Some(p),
+        Some(p) => {
+            tracing::warn!(clip = %p, "concat: pre-roll clip missing/empty — finalising without it");
+            None
+        }
+        None => None,
+    };
+
+    if !concat_needed(&deliverable.fragments, preroll.is_some()) {
         // Single fragment, no pre-roll → the primary file is already complete.
         return Ok(primary);
     }
 
-    let inputs = concat_inputs(&deliverable.fragments, preroll_clip_path);
+    let inputs = concat_inputs(&deliverable.fragments, preroll);
     let primary_path = PathBuf::from(&primary);
     let (list_path, tmp_path) = scratch_paths(&primary_path);
 
@@ -111,10 +124,21 @@ pub async fn finalize_deliverable(
         return Err(e);
     }
 
-    // 3. Atomically replace the primary file with the muxed temp.
+    // 3. VALIDATE the muxed temp BEFORE it can replace the primary. A 0-byte /
+    //    header-only / silently-skipped concat must never overwrite a good
+    //    recording — keep the primary + fragments on disk and surface the error.
+    if !output_is_valid(&tmp_path).await {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        let _ = tokio::fs::remove_file(&list_path).await;
+        return Err(AppError::Recording(format!(
+            "concat: produced an invalid/zero-byte output for {primary}; kept the primary + fragments"
+        )));
+    }
+
+    // 4. Atomically replace the primary file with the muxed temp.
     atomic_replace(&tmp_path, &primary_path).await?;
 
-    // 4. Delete the now-merged fragment files (fragments[1..]) + the list.
+    // 5. Delete the now-merged fragment files (fragments[1..]) + the list.
     //    `fragments[0]` == primary_path, which now holds the merged result.
     for frag in deliverable.fragments.iter().skip(1) {
         let _ = tokio::fs::remove_file(frag).await;
@@ -127,6 +151,47 @@ pub async fn finalize_deliverable(
         "recorder: finalised deliverable (concat -c copy)"
     );
     Ok(primary)
+}
+
+/// `true` if `path` exists and is past the pure size gate (non-empty enough to be
+/// a real file). Cheap metadata-only check used to validate the pre-roll clip.
+async fn output_exists_nonempty(path: &Path) -> bool {
+    matches!(tokio::fs::metadata(path).await, Ok(m) if is_plausible_output(m.len()))
+}
+
+/// Best-effort validity check for a FINISHED output: it must exist, clear the pure
+/// size gate ([`is_plausible_output`]), and — when ffprobe is available — report at
+/// least one audio stream. A missing / un-spawnable / slow ffprobe degrades to the
+/// size check alone, so this NEVER blocks a real recording on a box without the
+/// ffprobe sidecar (ffprobe is advisory; the size gate is the hard guarantee).
+///
+/// ⚠️ HARDWARE-UNVERIFIED — may spawn ffprobe + touches the filesystem.
+pub(crate) async fn output_is_valid(path: &Path) -> bool {
+    if !output_exists_nonempty(path).await {
+        return false;
+    }
+    let probe = tokio::process::Command::new(ffprobe_path())
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    match tokio::time::timeout(Duration::from_secs(15), probe).await {
+        Ok(Ok(out)) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).contains("audio")
+        }
+        // ffprobe missing / failed / timed out → trust the size gate (advisory).
+        _ => true,
+    }
 }
 
 /// Build the scratch paths next to the primary file: the concat-list `.txt` and
@@ -241,6 +306,53 @@ mod tests {
         let (list, tmp) = scratch_paths(Path::new("/rec/sermon"));
         assert_eq!(list, Path::new("/rec/sermon_merge.txt"));
         assert_eq!(tmp, Path::new("/rec/sermon_merge_tmp"));
+    }
+
+    #[tokio::test]
+    async fn output_exists_nonempty_rejects_missing_and_zero_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope.m4a");
+        assert!(!output_exists_nonempty(&missing).await, "missing → invalid");
+
+        let empty = dir.path().join("empty.m4a");
+        tokio::fs::write(&empty, b"").await.unwrap();
+        assert!(!output_exists_nonempty(&empty).await, "0-byte → invalid");
+
+        let tiny = dir.path().join("tiny.m4a");
+        tokio::fs::write(&tiny, vec![0u8; 16]).await.unwrap();
+        assert!(!output_exists_nonempty(&tiny).await, "below gate → invalid");
+
+        let ok = dir.path().join("ok.m4a");
+        tokio::fs::write(&ok, vec![0u8; 4096]).await.unwrap();
+        assert!(output_exists_nonempty(&ok).await, "≥ gate → valid");
+    }
+
+    #[tokio::test]
+    async fn output_is_valid_rejects_missing_and_zero_byte() {
+        // The size gate is the hard guarantee (ffprobe is advisory and skipped /
+        // tolerant when the sidecar is absent), so missing + zero-byte are caught
+        // regardless of the environment.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!output_is_valid(&dir.path().join("missing.m4a")).await);
+        let empty = dir.path().join("empty.m4a");
+        tokio::fs::write(&empty, b"").await.unwrap();
+        assert!(!output_is_valid(&empty).await);
+    }
+
+    #[tokio::test]
+    async fn preroll_missing_clip_falls_back_to_no_preroll() {
+        // A single fragment + a STALE pre-roll path → the pre-roll is dropped, so
+        // no concat is needed and the primary is returned untouched (the recording
+        // is never lost to a missing clip).
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("g.mp3");
+        tokio::fs::write(&primary, vec![0u8; 4096]).await.unwrap();
+        let primary_s = primary.to_string_lossy().into_owned();
+        let d = deliverable(&primary_s, &[&primary_s]);
+        let out = finalize_deliverable(&d, Some("/nope/stale_preroll.mp3"))
+            .await
+            .unwrap();
+        assert_eq!(out, primary_s, "primary returned untouched");
     }
 
     #[tokio::test]
