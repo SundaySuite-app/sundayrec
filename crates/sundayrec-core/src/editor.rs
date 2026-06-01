@@ -806,10 +806,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SafeReplacePlan {
     /// One atomic `rename(temp → target)` (POSIX).
-    Rename {
-        temp: String,
-        target: String,
-    },
+    Rename { temp: String, target: String },
     /// `rename(target → bak)`, `rename(temp → target)`, `unlink(bak)` (Windows).
     BackupSwap {
         temp: String,

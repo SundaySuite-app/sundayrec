@@ -322,9 +322,10 @@ fn drawtext_anchor(ov: &OverlayConfig, opts: BuildOverlayOpts<'_>) -> (String, S
     // Horizontal column from the preset.
     let x = match ov.position {
         OverlayPosition::Tl | OverlayPosition::Cl | OverlayPosition::Bl => margin.to_string(),
-        OverlayPosition::Tc | OverlayPosition::C | OverlayPosition::Bc | OverlayPosition::Fullscreen => {
-            "(w-text_w)/2".to_string()
-        }
+        OverlayPosition::Tc
+        | OverlayPosition::C
+        | OverlayPosition::Bc
+        | OverlayPosition::Fullscreen => "(w-text_w)/2".to_string(),
         OverlayPosition::Tr | OverlayPosition::Cr | OverlayPosition::Br => {
             format!("w-text_w-{margin}")
         }
@@ -334,9 +335,10 @@ fn drawtext_anchor(ov: &OverlayConfig, opts: BuildOverlayOpts<'_>) -> (String, S
     // ~78% height; centres at the middle; tops at the margin.
     let y = match ov.position {
         OverlayPosition::Tl | OverlayPosition::Tc | OverlayPosition::Tr => margin.to_string(),
-        OverlayPosition::Cl | OverlayPosition::C | OverlayPosition::Cr | OverlayPosition::Fullscreen => {
-            "(h-text_h)/2".to_string()
-        }
+        OverlayPosition::Cl
+        | OverlayPosition::C
+        | OverlayPosition::Cr
+        | OverlayPosition::Fullscreen => "(h-text_h)/2".to_string(),
         OverlayPosition::Bl | OverlayPosition::Bc | OverlayPosition::Br => "h*0.78".to_string(),
         OverlayPosition::Custom => "h*0.78".to_string(),
     };
@@ -494,9 +496,7 @@ mod tests {
         let p = build_overlay_pipeline(&[img("logo", "/x/logo.png", OverlayPosition::Br)], opts());
         assert_eq!(
             p.input_args,
-            vec![
-                "-loop", "1", "-framerate", "30", "-i", "/x/logo.png"
-            ]
+            vec!["-loop", "1", "-framerate", "30", "-i", "/x/logo.png"]
         );
         assert_eq!(p.extra_input_count, 1);
         assert_eq!(p.output_label, "vov0");
@@ -555,7 +555,7 @@ mod tests {
         // second overlay uses input index 2.
         assert!(p.filter_chain.contains("[2:v]scale="));
         // compose chains base → vov0 → vov1.
-        assert!(p.filter_chain.contains("[0:v][ov1]overlay=") );
+        assert!(p.filter_chain.contains("[0:v][ov1]overlay="));
         assert!(p.filter_chain.contains("[vov0][ov2]overlay="));
     }
 
@@ -563,7 +563,12 @@ mod tests {
     #[test]
     fn text_overlay_adds_no_input_and_uses_drawtext() {
         let p = build_overlay_pipeline(
-            &[text("lt", "Pastor Ola", Some("Søndagsgudstjeneste"), OverlayPosition::Bl)],
+            &[text(
+                "lt",
+                "Pastor Ola",
+                Some("Søndagsgudstjeneste"),
+                OverlayPosition::Bl,
+            )],
             opts(),
         );
         // text consumes no -i input.
@@ -571,7 +576,9 @@ mod tests {
         assert_eq!(p.extra_input_count, 0);
         assert_eq!(p.output_label, "vov0");
         assert!(p.filter_chain.contains("drawtext=text='Pastor Ola'"));
-        assert!(p.filter_chain.contains("drawtext=text='Søndagsgudstjeneste'"));
+        assert!(p
+            .filter_chain
+            .contains("drawtext=text='Søndagsgudstjeneste'"));
         // bottom-left → x = margin (22), title y = lower third.
         assert!(p.filter_chain.contains(":x=22:y=h*0.78"));
         // box behind text for legibility.
@@ -581,8 +588,10 @@ mod tests {
 
     #[test]
     fn text_without_subtitle_emits_single_drawtext() {
-        let p =
-            build_overlay_pipeline(&[text("lt", "Velkommen", None, OverlayPosition::Bc)], opts());
+        let p = build_overlay_pipeline(
+            &[text("lt", "Velkommen", None, OverlayPosition::Bc)],
+            opts(),
+        );
         let count = p.filter_chain.matches("drawtext=").count();
         assert_eq!(count, 1);
         // bottom-centre → x centred on text width.

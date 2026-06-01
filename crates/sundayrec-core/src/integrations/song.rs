@@ -90,7 +90,11 @@ mod tests {
     use super::*;
     use crate::integrations::{ServiceLinkSource, SongUsage};
 
-    fn link_with(setlist: Vec<SongUsage>, date: Option<&str>, streamed: Option<bool>) -> ServiceLink {
+    fn link_with(
+        setlist: Vec<SongUsage>,
+        date: Option<&str>,
+        streamed: Option<bool>,
+    ) -> ServiceLink {
         ServiceLink {
             source: ServiceLinkSource::Stage,
             service_id: None,
@@ -123,9 +127,16 @@ mod tests {
     #[test]
     fn empty_without_church_or_date_or_setlist() {
         let s = vec![song("Amazing Grace", None, None)];
-        assert!(build_usage_payloads(&link_with(s.clone(), Some("2026-05-31"), None), &conn(None)).is_empty());
+        assert!(
+            build_usage_payloads(&link_with(s.clone(), Some("2026-05-31"), None), &conn(None))
+                .is_empty()
+        );
         assert!(build_usage_payloads(&link_with(s, None, None), &conn(Some("c1"))).is_empty());
-        assert!(build_usage_payloads(&link_with(vec![], Some("2026-05-31"), None), &conn(Some("c1"))).is_empty());
+        assert!(build_usage_payloads(
+            &link_with(vec![], Some("2026-05-31"), None),
+            &conn(Some("c1"))
+        )
+        .is_empty());
     }
 
     #[test]

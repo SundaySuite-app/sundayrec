@@ -17,7 +17,10 @@ use ts_rs::TS;
 /// Mirrors `IntegrationSettings.connection` (camelCase). No secrets here.
 // mirrors src/types/index.ts IntegrationSettings.connection
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/IntegrationConnection.ts")]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/IntegrationConnection.ts"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrationConnection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,8 +109,7 @@ pub fn merge_settings(
 /// settings handler uses, so a partial patch (e.g. just `{ enabled: true }`)
 /// keeps the stored `connection`.
 pub fn merge_patch_json(current: &str, patch: &str) -> String {
-    let cur: serde_json::Value =
-        serde_json::from_str(current).unwrap_or(serde_json::Value::Null);
+    let cur: serde_json::Value = serde_json::from_str(current).unwrap_or(serde_json::Value::Null);
     let pat: serde_json::Value = serde_json::from_str(patch).unwrap_or(serde_json::Value::Null);
     match (cur, pat) {
         (serde_json::Value::Object(mut c), serde_json::Value::Object(p)) => {
@@ -155,8 +157,7 @@ mod tests {
     fn merge_patch_json_overwrites_sent_keys() {
         let current = r#"{"connection":{"churchId":"old"}}"#;
         let patch = r#"{"connection":{"churchId":"new"}}"#;
-        let v: serde_json::Value =
-            serde_json::from_str(&merge_patch_json(current, patch)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&merge_patch_json(current, patch)).unwrap();
         assert_eq!(v["connection"]["churchId"], serde_json::json!("new"));
     }
 
@@ -193,9 +194,6 @@ mod tests {
         assert!(merged.enabled);
         assert!(merged.song.unwrap().enabled);
         // connection survived (patch sent None).
-        assert_eq!(
-            merged.connection.unwrap().church_id,
-            Some("c1".to_string())
-        );
+        assert_eq!(merged.connection.unwrap().church_id, Some("c1".to_string()));
     }
 }

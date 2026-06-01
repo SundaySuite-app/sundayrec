@@ -86,9 +86,7 @@ impl StreamDestination {
     /// key — mirrors the Electron `d.enabled && d.rtmpUrl && d.streamKey` filter
     /// used everywhere a destination list is consumed.
     pub fn is_pushable(&self) -> bool {
-        self.enabled
-            && !self.rtmp_url.trim().is_empty()
-            && !self.stream_key.trim().is_empty()
+        self.enabled && !self.rtmp_url.trim().is_empty() && !self.stream_key.trim().is_empty()
     }
 }
 
@@ -133,7 +131,10 @@ impl StreamOptions {
 
     /// The pushable destinations, in order.
     pub fn pushable(&self) -> Vec<&StreamDestination> {
-        self.destinations.iter().filter(|d| d.is_pushable()).collect()
+        self.destinations
+            .iter()
+            .filter(|d| d.is_pushable())
+            .collect()
     }
 }
 
@@ -317,8 +318,18 @@ pub fn build_output_args(
     // ── live encode branch ──
     args.extend(
         [
-            "-map", "[v_stream]", "-map", &audio_map, "-c:v", "libx264", "-preset", "veryfast",
-            "-tune", "zerolatency", "-pix_fmt", "yuv420p",
+            "-map",
+            "[v_stream]",
+            "-map",
+            &audio_map,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-tune",
+            "zerolatency",
+            "-pix_fmt",
+            "yuv420p",
         ]
         .iter()
         .map(|s| s.to_string()),
@@ -574,7 +585,10 @@ mod tests {
             "rtmp://x/live/a%20b"
         );
         // Slash inside a key is encoded so it can't escape the path segment.
-        assert_eq!(joined_rtmp_url("rtmp://x/live", "a/b"), "rtmp://x/live/a%2Fb");
+        assert_eq!(
+            joined_rtmp_url("rtmp://x/live", "a/b"),
+            "rtmp://x/live/a%2Fb"
+        );
     }
 
     #[test]
@@ -586,9 +600,15 @@ mod tests {
     #[test]
     fn single_destination_uses_flv_not_tee() {
         let o = opts(vec![dest("yt", "rtmp://x/live2", "secretkey", true)]);
-        let built =
-            build_output_args(&o, "/tmp/preview.jpg", AudioInputLayout::BundledInputZero, 0, "0:v", "")
-                .unwrap();
+        let built = build_output_args(
+            &o,
+            "/tmp/preview.jpg",
+            AudioInputLayout::BundledInputZero,
+            0,
+            "0:v",
+            "",
+        )
+        .unwrap();
         let joined = built.args.join(" ");
         assert!(joined.contains("-f flv rtmp://x/live2/secretkey"));
         assert!(!joined.contains("tee"));
@@ -615,9 +635,15 @@ mod tests {
             dest("fb", "rtmp://b.facebook/rtmp", "fbkey", true),
             dest("off", "rtmp://c/live", "ckey", false),
         ]);
-        let built =
-            build_output_args(&o, "/tmp/p.jpg", AudioInputLayout::BundledInputZero, 0, "0:v", "")
-                .unwrap();
+        let built = build_output_args(
+            &o,
+            "/tmp/p.jpg",
+            AudioInputLayout::BundledInputZero,
+            0,
+            "0:v",
+            "",
+        )
+        .unwrap();
         let joined = built.args.join(" ");
         assert!(joined.contains("-f tee"));
         // Both enabled destinations present with onfail=ignore; disabled one absent.
@@ -630,8 +656,15 @@ mod tests {
     #[test]
     fn no_pushable_destinations_is_an_error() {
         let o = opts(vec![dest("off", "rtmp://x/live", "key123", false)]);
-        let err = build_output_args(&o, "/tmp/p.jpg", AudioInputLayout::BundledInputZero, 0, "0:v", "")
-            .unwrap_err();
+        let err = build_output_args(
+            &o,
+            "/tmp/p.jpg",
+            AudioInputLayout::BundledInputZero,
+            0,
+            "0:v",
+            "",
+        )
+        .unwrap_err();
         assert_eq!(err, StreamArgError::NoDestinations);
     }
 
@@ -688,9 +721,15 @@ mod tests {
             dest("yt", "rtmp://a/live", "ytsupersecret", true),
             dest("fb", "rtmp://b/rtmp", "fbsupersecret", true),
         ]);
-        let built =
-            build_output_args(&o, "/tmp/p.jpg", AudioInputLayout::BundledInputZero, 0, "0:v", "")
-                .unwrap();
+        let built = build_output_args(
+            &o,
+            "/tmp/p.jpg",
+            AudioInputLayout::BundledInputZero,
+            0,
+            "0:v",
+            "",
+        )
+        .unwrap();
         let logline = built.loggable.join(" ");
         assert!(!logline.contains("ytsupersecret"));
         assert!(!logline.contains("fbsupersecret"));

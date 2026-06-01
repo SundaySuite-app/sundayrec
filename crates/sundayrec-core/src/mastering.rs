@@ -348,7 +348,11 @@ pub fn clamp_preview_duration(requested: f64) -> f64 {
 /// Clamp a preview *start* second to `>= 0`, defaulting a non-finite request to
 /// 0 — mirrors `buildPreview`'s `Math.max(0, Number.isFinite(startSec) ? startSec : 0)`.
 pub fn clamp_preview_start(requested: f64) -> f64 {
-    let s = if requested.is_finite() { requested } else { 0.0 };
+    let s = if requested.is_finite() {
+        requested
+    } else {
+        0.0
+    };
     s.max(0.0)
 }
 
@@ -359,7 +363,13 @@ pub fn clamp_preview_start(requested: f64) -> f64 {
 /// `start`/`dur` are formatted to 3 decimals as the TS `.toFixed(3)` did. The
 /// seam supplies the clamped values (via [`clamp_preview_start`]/
 /// [`clamp_preview_duration`]) and the temp `out_path`.
-pub fn preview_args(input_path: &str, preset: &MasterPreset, start: f64, dur: f64, out_path: &str) -> Vec<String> {
+pub fn preview_args(
+    input_path: &str,
+    preset: &MasterPreset,
+    start: f64,
+    dur: f64,
+    out_path: &str,
+) -> Vec<String> {
     [
         "-nostdin",
         "-hide_banner",
@@ -630,7 +640,9 @@ mod tests {
         assert!(args.contains(&"15.000".to_string()));
         assert_eq!(args.last().unwrap(), "/tmp/prev.mp3");
         // Single-pass preview chain (no print_format), libmp3lame encode.
-        assert!(args.iter().any(|a| a.contains("loudnorm") && !a.contains("print_format")));
+        assert!(args
+            .iter()
+            .any(|a| a.contains("loudnorm") && !a.contains("print_format")));
         assert!(args.contains(&"libmp3lame".to_string()));
     }
 
@@ -638,8 +650,12 @@ mod tests {
 
     #[test]
     fn preview_temp_name_matches_prefix_and_mp3() {
-        assert!(is_preview_temp_name("sundayrec-master-preview-deadbeef.mp3"));
-        assert!(!is_preview_temp_name("sundayrec-master-preview-deadbeef.wav"));
+        assert!(is_preview_temp_name(
+            "sundayrec-master-preview-deadbeef.mp3"
+        ));
+        assert!(!is_preview_temp_name(
+            "sundayrec-master-preview-deadbeef.wav"
+        ));
         assert!(!is_preview_temp_name("other.mp3"));
     }
 

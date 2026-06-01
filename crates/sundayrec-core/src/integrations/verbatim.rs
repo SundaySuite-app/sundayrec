@@ -240,11 +240,7 @@ mod tests {
 
     #[test]
     fn subtitles_to_transcript_sets_model_and_duration() {
-        let t = subtitles_to_transcript(
-            "00:00:00,000 --> 00:00:10,000\nText",
-            Some("no"),
-            42,
-        );
+        let t = subtitles_to_transcript("00:00:00,000 --> 00:00:10,000\nText", Some("no"), 42);
         assert_eq!(t.model, "verbatim");
         assert_eq!(t.language, "no");
         assert_eq!(t.duration, 10.0);

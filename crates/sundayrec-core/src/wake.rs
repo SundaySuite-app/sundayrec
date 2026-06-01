@@ -792,7 +792,8 @@ mod tests {
         let out = cap_failure_history(h, fail_entry(999));
         assert_eq!(out.len(), WAKE_FAILURE_MAX);
         assert_eq!(out[0].timestamp, 999); // newest kept
-        assert_eq!(out.last().unwrap().timestamp, (WAKE_FAILURE_MAX - 2) as i64); // oldest trimmed
+        assert_eq!(out.last().unwrap().timestamp, (WAKE_FAILURE_MAX - 2) as i64);
+        // oldest trimmed
     }
 
     #[test]

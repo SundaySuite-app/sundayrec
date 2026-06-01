@@ -127,7 +127,12 @@ fn path_under(path: &str, save_dir: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn cand(id: &str, path: Option<&str>, started: Option<i64>, uploaded: &[&str]) -> PruneCandidate {
+    fn cand(
+        id: &str,
+        path: Option<&str>,
+        started: Option<i64>,
+        uploaded: &[&str],
+    ) -> PruneCandidate {
         PruneCandidate {
             id: id.into(),
             file_path: path.map(Into::into),
@@ -161,7 +166,9 @@ mod tests {
     #[test]
     fn disabled_when_days_negative() {
         let c = [cand("a", Some(&under("x.mp4")), Some(0), &[])];
-        assert!(decide_prune(&c, -1, i64::MAX, SAVE, &[]).delete_ids.is_empty());
+        assert!(decide_prune(&c, -1, i64::MAX, SAVE, &[])
+            .delete_ids
+            .is_empty());
     }
 
     #[test]
@@ -181,7 +188,11 @@ mod tests {
 
     #[test]
     fn keeps_file_outside_save_dir() {
-        let outside = if cfg!(windows) { "D:\\Other\\a.mp4" } else { "/other/a.mp4" };
+        let outside = if cfg!(windows) {
+            "D:\\Other\\a.mp4"
+        } else {
+            "/other/a.mp4"
+        };
         let c = [cand("ext", Some(outside), Some(1_000), &[])];
         let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
         assert!(d.delete_ids.is_empty());
@@ -232,7 +243,12 @@ mod tests {
         let c = [
             cand("del", Some(&under("a.mp4")), Some(1_000), &["google-drive"]),
             cand("wait", Some(&under("b.mp4")), Some(1_000), &[]),
-            cand("recent", Some(&under("c.mp4")), Some(9_000), &["google-drive"]),
+            cand(
+                "recent",
+                Some(&under("c.mp4")),
+                Some(9_000),
+                &["google-drive"],
+            ),
         ];
         let d = decide_prune(&c, 30, 2_000, SAVE, &["google-drive".into()]);
         assert_eq!(d.delete_ids, vec!["del".to_string()]);

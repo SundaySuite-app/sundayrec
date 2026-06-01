@@ -169,7 +169,10 @@ pub fn installed_status(id: &str, exists: bool, on_disk_size: Option<u64>) -> In
 /// bar reads the same fields it did under Electron.
 // mirrors src/main/whisper-models.ts ModelDownloadProgress
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ModelDownloadProgress.ts")]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/ModelDownloadProgress.ts"
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelDownloadProgress {
     /// The model id this progress belongs to.
@@ -748,10 +751,7 @@ mod tests {
     #[test]
     fn download_progress_clamps_overshoot_and_handles_zero_total() {
         // Overshoot (downloaded > total) clamps to 1.0.
-        assert_eq!(
-            download_progress("x", 150, 100, 100).fraction,
-            Some(1.0)
-        );
+        assert_eq!(download_progress("x", 150, 100, 100).fraction, Some(1.0));
         // Both totals zero → unknown fraction.
         assert_eq!(download_progress("x", 10, 0, 0).fraction, None);
     }

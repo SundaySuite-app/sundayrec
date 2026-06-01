@@ -208,8 +208,16 @@ fn encode_query_component(s: &str) -> String {
             }
             _ => {
                 out.push('%');
-                out.push(char::from_digit((b >> 4) as u32, 16).unwrap().to_ascii_uppercase());
-                out.push(char::from_digit((b & 0x0f) as u32, 16).unwrap().to_ascii_uppercase());
+                out.push(
+                    char::from_digit((b >> 4) as u32, 16)
+                        .unwrap()
+                        .to_ascii_uppercase(),
+                );
+                out.push(
+                    char::from_digit((b & 0x0f) as u32, 16)
+                        .unwrap()
+                        .to_ascii_uppercase(),
+                );
             }
         }
     }
@@ -255,7 +263,13 @@ mod tests {
         let body = r#"{"files":[{"id":"1","name":"Opptak"},{"id":"2","name":"Arkiv"}]}"#;
         let got = parse_folder_list(body);
         assert_eq!(got.len(), 2);
-        assert_eq!(got[0], DriveFolder { id: "1".into(), name: "Opptak".into() });
+        assert_eq!(
+            got[0],
+            DriveFolder {
+                id: "1".into(),
+                name: "Opptak".into()
+            }
+        );
     }
 
     #[test]

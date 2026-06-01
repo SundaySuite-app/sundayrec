@@ -98,9 +98,7 @@ pub fn build_webhook_body(url: &str, payload: &WebhookPayload) -> Option<String>
         let human = human_message(payload);
         // Both Slack (`text`) and Discord (`content`) keys present → one body
         // works for either. Serialised manually so the escaping is correct.
-        Some(
-            serde_json::json!({ "text": human, "content": human }).to_string(),
-        )
+        Some(serde_json::json!({ "text": human, "content": human }).to_string())
     } else {
         serde_json::to_string(payload).ok()
     }
