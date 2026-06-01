@@ -212,6 +212,7 @@ pub fn run() {
             commands::media::start_preview,
             commands::media::stop_preview,
             commands::recorder::list_recording_devices,
+            commands::recorder::plan_recording_opts,
             commands::recorder::start_recording,
             commands::recorder::stop_recording,
             commands::recorder::recording_status,

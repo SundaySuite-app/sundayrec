@@ -18,6 +18,7 @@ import type { Settings } from "@/lib/bindings/Settings";
 import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { FileFormat } from "@/lib/bindings/FileFormat";
 import type { FilenamePattern } from "@/lib/bindings/FilenamePattern";
+import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
 import { LANGUAGE_NAMES, SUPPORTED_LNGS, changeLanguage } from "@/i18n";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import { useVideoDevices } from "@/design/hooks";
@@ -404,6 +405,29 @@ function TabVideo({ s, update }: TabProps) {
   );
 }
 
+/**
+ * Live filename preview — asks the backend planner (`plan_recording_opts`) for
+ * the path the next recording would get and shows its basename, so the user
+ * sees the real result of the pattern/format choice (incl. liturgical names).
+ * Re-keyed on pattern+format (both persisted before this re-runs); falls back
+ * to a sample name when the planner is unavailable (dev/test).
+ */
+function FilenamePreview({ s }: { s: Settings }) {
+  const { data } = useQuery<RecordingOpts>({
+    queryKey: ["plan_recording_opts", s.filenamePattern, s.format],
+    queryFn: () =>
+      invoke<RecordingOpts>("plan_recording_opts", {
+        customName: null,
+        maxMinutes: null,
+      }),
+    retry: false,
+  });
+  const name = data?.output_path
+    ? (data.output_path.split(/[/\\]/).pop() ?? data.output_path)
+    : "Pinsegudstjeneste_2026-05-24.wav";
+  return <div className="sr-input mono">{name}</div>;
+}
+
 function TabFiler({ s, update }: TabProps) {
   return (
     <>
@@ -453,8 +477,7 @@ function TabFiler({ s, update }: TabProps) {
         </div>
         <div className="sr-field" style={{ marginTop: 14 }}>
           <span className="sr-label">Forhåndsvisning</span>
-          {/* TODO: live preview is computed backend-side — kept static. */}
-          <div className="sr-input mono">Pinsegudstjeneste_2026-05-24.wav</div>
+          <FilenamePreview s={s} />
         </div>
       </Card>
       <Card title="Format & kvalitet" pad>

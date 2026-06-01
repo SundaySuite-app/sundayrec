@@ -29,6 +29,23 @@ pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
     enumerate().await
 }
 
+/// Plan the full [`RecordingOpts`] for a manual "Start opptak nå" from the
+/// persisted settings — the SAME save-folder + liturgical-filename + audio
+/// processing logic the scheduler uses, so a manually-started recording lands
+/// in the right folder with the right name. The returned `output_path` is the
+/// real save path (shown in the recording UI's "Lagres som …" line); the
+/// renderer passes the opts straight to `start_recording`.
+#[tauri::command]
+pub async fn plan_recording_opts(
+    app: AppHandle,
+    db: State<'_, Db>,
+    custom_name: Option<String>,
+    max_minutes: Option<u32>,
+) -> AppResult<RecordingOpts> {
+    let s = settings::load(&db.pool).await.unwrap_or_default();
+    crate::scheduler::build_opts(&app, &s, custom_name.as_deref(), max_minutes.unwrap_or(0))
+}
+
 /// Start a unified recording for `opts`. Streams the `recording://*` events
 /// (including `recording://state`) until `stop_recording`. Stops any previous
 /// recording first. On completion a single history row is written for the

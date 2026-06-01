@@ -283,7 +283,7 @@ async fn fire(
 /// settings. Resolves the save folder (creating it), names the file via the
 /// core [`build_filename`], and maps the audio-processing settings the slim
 /// Tauri `RecordingOpts` carries.
-fn build_opts(
+pub(crate) fn build_opts(
     app: &AppHandle,
     settings: &Settings,
     custom_name: Option<&str>,

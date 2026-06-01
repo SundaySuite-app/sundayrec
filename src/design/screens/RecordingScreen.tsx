@@ -42,6 +42,7 @@ function useRecordingSession(video: boolean) {
   const [silence, setSilence] = useState<RecordingEvent | null>(null);
   const [error, setError] = useState<RecordingEvent | null>(null);
   const [state, setState] = useState<RecorderStatePayload | null>(null);
+  const [savePath, setSavePath] = useState<string | null>(null);
   const running = useRef(false);
   const queryClient = useQueryClient();
 
@@ -74,29 +75,46 @@ function useRecordingSession(video: boolean) {
 
   // Start the recorder on mount; stop it if the overlay unmounts while live.
   useEffect(() => {
-    // Device names + recorder prefs come from the persisted settings (read
-    // from the warm React-Query cache so this one-shot start doesn't re-run on
-    // settings changes). TODO: output_path still needs the backend save-folder/
-    // filename pipeline (B-2) — empty here means the backend picks a default.
-    const s = queryClient.getQueryData<Settings>(SETTINGS_QUERY_KEY);
-    const opts: RecordingOpts = {
-      audio_device_name: s?.deviceName ?? "",
-      video_device_name: video ? (s?.videoDeviceName ?? "") : null,
-      output_path: "",
-      stop_on_silence: s?.stopOnSilence ?? false,
-      silence_threshold_db: s?.silenceThreshold ?? null,
-      silence_timeout_minutes: s?.silenceTimeoutMinutes ?? 5,
-      framerate: 30,
-      stereo: (s?.channels ?? "stereo") === "stereo",
-      split_minutes: s?.splitMinutes ?? 0,
-      manual_max_minutes: s?.manualMaxMinutes ?? 0,
-    };
-    void invoke("start_recording", { opts })
-      .then(() => {
+    let cancelled = false;
+    void (async () => {
+      // Prefer the backend planner: the SAME save-folder + liturgical-filename
+      // + processing logic the scheduler uses, so a manual recording lands in
+      // the right place with a real `output_path`. Fall back to opts built from
+      // the persisted-settings cache if the planner is unavailable (dev/test).
+      let opts: RecordingOpts;
+      try {
+        opts = await invoke<RecordingOpts>("plan_recording_opts", {
+          customName: null,
+          maxMinutes: null,
+        });
+      } catch {
+        const s = queryClient.getQueryData<Settings>(SETTINGS_QUERY_KEY);
+        opts = {
+          audio_device_name: s?.deviceName ?? "",
+          video_device_name: video ? (s?.videoDeviceName ?? "") : null,
+          output_path: "",
+          stop_on_silence: s?.stopOnSilence ?? false,
+          silence_threshold_db: s?.silenceThreshold ?? null,
+          silence_timeout_minutes: s?.silenceTimeoutMinutes ?? 5,
+          framerate: 30,
+          stereo: (s?.channels ?? "stereo") === "stereo",
+          split_minutes: s?.splitMinutes ?? 0,
+          manual_max_minutes: s?.manualMaxMinutes ?? 0,
+        };
+      }
+      // Honour the Home video toggle even if it differs from the persisted flag.
+      if (!video) opts = { ...opts, video_device_name: null };
+      if (cancelled) return;
+      setSavePath(opts.output_path || null);
+      try {
+        await invoke("start_recording", { opts });
         running.current = true;
-      })
-      .catch(() => {});
+      } catch {
+        // ignore — dev/test has no recorder backend
+      }
+    })();
     return () => {
+      cancelled = true;
       if (running.current) void invoke("stop_recording").catch(() => {});
     };
   }, [video, queryClient]);
@@ -121,7 +139,7 @@ function useRecordingSession(video: boolean) {
     }
   }, []);
 
-  return { started, bytes, elapsed, silence, error, state, stop };
+  return { started, bytes, elapsed, silence, error, state, savePath, stop };
 }
 
 /** Seconds → HH:MM:SS, matching the design's big counter. */
@@ -314,11 +332,13 @@ function RecFooter({
   time,
   size,
   diskFree,
+  savePath,
   onStop,
 }: {
   time: string;
   size: string;
   diskFree: string;
+  savePath: string | null;
   onStop?: () => void;
 }) {
   return (
@@ -392,7 +412,8 @@ function RecFooter({
           border: "1px solid var(--sr-line)",
         }}
       >
-        Lagres som: /Users/richardfossland/Music/SundayRec/2026-06-01.wav
+        Lagres som:{" "}
+        {savePath ?? "/Users/richardfossland/Music/SundayRec/2026-06-01.wav"}
       </div>
     </>
   );
@@ -405,7 +426,7 @@ export function RecordingScreen({
   video?: boolean;
   onStop?: () => void;
 }) {
-  const { started, bytes, elapsed, silence, error, state, stop } =
+  const { started, bytes, elapsed, silence, error, state, savePath, stop } =
     useRecordingSession(video);
   const diskFree = useDiskSpace();
 
@@ -503,6 +524,7 @@ export function RecordingScreen({
             time={formatClock(elapsed)}
             size={formatMb(bytes)}
             diskFree={diskFree != null ? `${formatBytes(diskFree)}` : "569 GB"}
+            savePath={savePath}
             onStop={handleStop}
           />
           {error && (
