@@ -310,6 +310,108 @@ mod tests {
         );
     }
 
+    /// END-TO-END FORMAT MATRIX: for every {format} × {mono,stereo} the recorder
+    /// supports, encode a real 0.5 s tone through the SAME `audio_encode_args` seam
+    /// the recorder uses, then ffprobe the result to prove it is a NON-ZERO,
+    /// DECODABLE file with the EXPECTED codec / sample-rate / channel count. This
+    /// is the verification the "must work across formats, flawlessly" requirement
+    /// demands — pure arg-builder unit tests can't catch a codec that ffmpeg
+    /// rejects at mux time. Skips cleanly when the sidecars aren't fetched (CI).
+    #[test]
+    fn format_matrix_produces_valid_files_or_skips() {
+        use sundayrec_core::capture::audio_encode_args;
+        use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+
+        // ffprobe's codec_name for each container's encoder.
+        let expected_codec = |ext: &str| match ext {
+            "mp3" => "mp3",
+            "wav" => "pcm_s16le",
+            "flac" => "flac",
+            _ => "aac",
+        };
+
+        for ext in ["mp3", "wav", "flac", "aac"] {
+            for chans in [1u8, 2u8] {
+                let out = dir.path().join(format!("m_{chans}.{ext}"));
+                let out_s = out.to_string_lossy().into_owned();
+
+                // 0.5 s 440 Hz tone → the recorder's real encode args → file.
+                let mut args: Vec<String> = vec![
+                    "-hide_banner".into(),
+                    "-f".into(),
+                    "lavfi".into(),
+                    "-i".into(),
+                    "sine=frequency=440:duration=0.5:sample_rate=48000".into(),
+                    "-t".into(),
+                    "0.5".into(),
+                ];
+                args.extend(audio_encode_args(ext, chans, 48_000, 192));
+                args.push("-y".into());
+                args.push(out_s.clone());
+
+                let status = std::process::Command::new(&ffmpeg)
+                    .args(&args)
+                    .output()
+                    .expect("ffmpeg should run");
+                assert!(
+                    status.status.success(),
+                    "ffmpeg failed for {ext}/{chans}ch: {}",
+                    String::from_utf8_lossy(&status.stderr)
+                );
+
+                // Non-zero past the same gate the finalizer enforces.
+                let len = std::fs::metadata(&out).expect("output exists").len();
+                assert!(
+                    len >= MIN_VALID_OUTPUT_BYTES,
+                    "{ext}/{chans}ch output too small: {len} bytes"
+                );
+
+                // ffprobe the real stream: codec_name, sample_rate, channels.
+                let probe = std::process::Command::new(&ffprobe)
+                    .args([
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "a:0",
+                        "-show_entries",
+                        "stream=codec_name,sample_rate,channels",
+                        "-of",
+                        "csv=p=0",
+                    ])
+                    .arg(&out)
+                    .output()
+                    .expect("ffprobe should run");
+                assert!(probe.status.success(), "ffprobe failed for {ext}/{chans}ch");
+                let line = String::from_utf8_lossy(&probe.stdout);
+                let fields: Vec<&str> = line.trim().split(',').collect();
+                assert_eq!(
+                    fields.first().copied(),
+                    Some(expected_codec(ext)),
+                    "{ext}/{chans}ch wrong codec; ffprobe: {line}"
+                );
+                assert_eq!(
+                    fields.get(1).copied(),
+                    Some("48000"),
+                    "{ext}/{chans}ch wrong sample rate; ffprobe: {line}"
+                );
+                assert_eq!(
+                    fields.get(2).and_then(|c| c.parse::<u8>().ok()),
+                    Some(chans),
+                    "{ext}/{chans}ch wrong channel count; ffprobe: {line}"
+                );
+            }
+        }
+        eprintln!("format matrix: all 4 formats × mono/stereo encoded + ffprobed OK");
+    }
+
     #[test]
     fn ffmpeg_version_and_health_against_real_binary_or_skip() {
         let _guard = ENV_LOCK.lock().unwrap();
