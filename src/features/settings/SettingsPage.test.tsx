@@ -101,6 +101,8 @@ beforeEach(async () => {
         return Promise.resolve((args?.settings as Settings) ?? DEFAULTS);
       case "settings_reset":
         return Promise.resolve(DEFAULTS);
+      case "list_devices":
+        return Promise.resolve({ audio_inputs: [], video_inputs: [] });
       default:
         return Promise.reject(new Error(`unexpected command: ${cmd}`));
     }
@@ -114,14 +116,19 @@ afterEach(async () => {
 describe("SettingsPage", () => {
   it("loads and renders the persisted settings", async () => {
     renderPage();
+    // Lydkilde is the default tab — INNGANGSVOLUM is visible immediately.
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("INNGANGSVOLUM") as HTMLInputElement).value,
+      ).toBe("100"),
+    );
+    // Switch to the Alt tab to verify FILFORMAT loaded correctly.
+    fireEvent.click(screen.getByRole("button", { name: "Alt" }));
     await waitFor(() =>
       expect(
         (screen.getByLabelText("FILFORMAT") as HTMLSelectElement).value,
       ).toBe("mp3"),
     );
-    expect(
-      (screen.getByLabelText("INNGANGSVOLUM") as HTMLInputElement).value,
-    ).toBe("100");
   });
 
   it("debounce-saves an edited field with the updated value", async () => {
@@ -159,6 +166,11 @@ describe("SettingsPage", () => {
     vi.useFakeTimers();
     try {
       renderPage();
+      // Navigate to the Alt tab where FILFORMAT lives.
+      await vi.waitFor(() =>
+        expect(screen.getByRole("button", { name: "Alt" })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Alt" }));
       await vi.waitFor(() =>
         expect(
           (screen.getByLabelText("FILFORMAT") as HTMLSelectElement).value,
@@ -180,6 +192,9 @@ describe("SettingsPage", () => {
 
   it("reset calls settings_reset", async () => {
     renderPage();
+    // Gjenopprett standard is in the System tab.
+    await screen.findByRole("button", { name: "System" });
+    fireEvent.click(screen.getByRole("button", { name: "System" }));
     const resetBtn = await screen.findByRole("button", {
       name: "Gjenopprett standard",
     });
@@ -215,6 +230,11 @@ describe("SettingsPage", () => {
     vi.useFakeTimers();
     try {
       renderPage();
+      // Menighetsnavn is in the System tab.
+      await vi.waitFor(() =>
+        expect(screen.getByRole("button", { name: "System" })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "System" }));
       await vi.waitFor(() =>
         expect(screen.getByLabelText("Menighetsnavn")).toBeInTheDocument(),
       );
@@ -236,6 +256,11 @@ describe("SettingsPage", () => {
     vi.useFakeTimers();
     try {
       renderPage();
+      // Send e-post ved feil is in the Notater tab.
+      await vi.waitFor(() =>
+        expect(screen.getByRole("button", { name: "Notater" })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Notater" }));
       await vi.waitFor(() =>
         expect(
           screen.getByLabelText("Send e-post ved feil"),

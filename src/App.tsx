@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import type { AppInfo } from "@/lib/bindings/AppInfo";
 import type { Settings } from "@/lib/bindings/Settings";
 import { DevicePicker } from "@/features/devices/DevicePicker";
-import { RecorderPanel } from "@/features/recorder/RecorderPanel";
 import { FfmpegHealth } from "@/features/diagnostics/FfmpegHealth";
 import { DiagnosticsPanel } from "@/features/diagnostics/DiagnosticsPanel";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -127,7 +126,6 @@ function App() {
         <DiagnosticsPanel />
         <FfmpegHealth />
         <DevicePicker />
-        <RecorderPanel />
       </div>
     ),
     wake: <WakePanel />,
