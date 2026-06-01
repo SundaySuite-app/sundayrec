@@ -55,9 +55,16 @@ pub async fn start_recording(
     app: AppHandle,
     engine: State<'_, RecorderEngine>,
     preroll: State<'_, PrerollEngine>,
+    preview: State<'_, crate::media::preview::PreviewEngine>,
     db: State<'_, Db>,
     opts: RecordingOpts,
 ) -> AppResult<()> {
+    // Release the camera preview BEFORE the engine opens the camera. On macOS a
+    // camera has a single owner: while the HOME-screen preview's ffmpeg child
+    // still holds it, the recorder's avfoundation video input can't open it and
+    // video silently fails to record. This awaits the preview's full release
+    // (process exit), mirroring how the pre-roll/VU mic is freed below.
+    preview.stop_and_release().await;
     // Pre-roll harvest (F3.2): if the rolling capture loop is running, stop it and
     // grab the trimmed clip of audio captured BEFORE this press, so the recorder
     // can prepend it. Honours the persisted `pre_roll_seconds` window. Harvesting

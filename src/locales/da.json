@@ -1214,7 +1214,9 @@
     "rateAuto": "Auto",
     "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
     "signalLevel": "Signal level",
-    "signalLabel": "Signal:"
+    "signalLabel": "Signal:",
+    "separateAudioTitle": "Optag en separat lydfil",
+    "separateAudioSub": "Ud over videofilen gemmes en separat lydfil i det valgte format."
   },
   "liveScreen": {
     "title": "Direkte udsendelse",
@@ -1398,7 +1400,8 @@
       "srAutoSub": "Device's own rate — no conversion",
       "sr96Sub": "Studio · high resolution",
       "showLevelsTitle": "Show level meter while recording",
-      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine.",
+      "processingMoved": "Lydbehandling (EQ, kompressor, limiter) sker nu i redigering — optagelsen er altid rå."
     },
     "video": {
       "enableTitle": "Aktivér videooptagelse",

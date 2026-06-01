@@ -1214,7 +1214,9 @@
     "rateAuto": "Auto",
     "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
     "signalLevel": "Signal level",
-    "signalLabel": "Signal:"
+    "signalLabel": "Signal:",
+    "separateAudioTitle": "Record a separate audio file",
+    "separateAudioSub": "In addition to the video file, a separate audio file is saved in the chosen format."
   },
   "liveScreen": {
     "title": "Live stream",
@@ -1398,7 +1400,8 @@
       "srAutoSub": "Device's own rate — no conversion",
       "sr96Sub": "Studio · high resolution",
       "showLevelsTitle": "Show level meter while recording",
-      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine.",
+      "processingMoved": "Audio processing (EQ, compressor, limiter) now happens in editing — the recording is always raw."
     },
     "video": {
       "enableTitle": "Enable video recording",

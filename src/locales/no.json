@@ -1214,7 +1214,9 @@
     "rateAuto": "Auto",
     "formatMetaDynamic": "Stereo · {{rate}} · høyest kvalitet",
     "signalLevel": "Signalnivå",
-    "signalLabel": "Signal:"
+    "signalLabel": "Signal:",
+    "separateAudioTitle": "Ta opp separat lydfil",
+    "separateAudioSub": "I tillegg til videofilen lagres en egen lydfil i valgt format."
   },
   "liveScreen": {
     "title": "Direkte sending",
@@ -1398,7 +1400,8 @@
       "srAutoSub": "Enhetens egen rate — ingen konvertering",
       "sr96Sub": "Studio · høyoppløst",
       "showLevelsTitle": "Vis nivåmåler under opptak",
-      "showLevelsDesc": "L/R-måleren vises mens du tar opp. Slå av for maksimal opptaksstabilitet på en travel maskin."
+      "showLevelsDesc": "L/R-måleren vises mens du tar opp. Slå av for maksimal opptaksstabilitet på en travel maskin.",
+      "processingMoved": "Lydbehandling (EQ, kompressor, limiter) gjøres nå i redigering — opptaket er alltid rått."
     },
     "video": {
       "enableTitle": "Aktiver videoopptak",

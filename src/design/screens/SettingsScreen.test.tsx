@@ -46,6 +46,8 @@ vi.mock("@tauri-apps/api/core", () => ({
           split_minutes: 0,
           manual_max_minutes: 0,
           live_levels: true,
+          keep_separate_audio: false,
+          separate_audio_format: "wav",
         } satisfies RecordingOpts;
       return null;
     },

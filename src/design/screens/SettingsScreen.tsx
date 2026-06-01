@@ -383,7 +383,7 @@ function TabLydkilde({ s, update }: TabProps) {
         </div>
       </Card>
       <Card
-        title={t("settingsScreen.audio.processingTitle", "Lyd-prosessering")}
+        title={t("settingsScreen.audio.processingTitle", "Nivåmåler")}
         icon="eq"
         desc={t(
           "settingsScreen.audio.processingDesc",
@@ -393,7 +393,10 @@ function TabLydkilde({ s, update }: TabProps) {
       >
         {/* NOTE: `inputVolume` (input gain %) is a real Settings field but the
             redesign has no gain slider on this tab, so it stays at its
-            persisted/default value — left static. */}
+            persisted/default value — left static. EQ/compressor/limiter are
+            real Settings fields too (the editor reads them) but their recording
+            toggles were removed — processing now happens in Rediger, the
+            recording is always raw. */}
         <SettingRow
           title={t(
             "settingsScreen.audio.showLevelsTitle",
@@ -410,51 +413,18 @@ function TabLydkilde({ s, update }: TabProps) {
             />
           }
         />
-        <SettingRow
-          title={t(
-            "settingsScreen.audio.eqTitle",
-            "Equalizer (bass / mid / diskant)",
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "var(--sr-text-3)",
+            marginTop: 12,
+          }}
+        >
+          {t(
+            "settingsScreen.audio.processingMoved",
+            "Lydbehandling (EQ, kompressor, limiter) gjøres nå i redigering — opptaket er alltid rått.",
           )}
-          desc={t(
-            "settingsScreen.audio.eqDesc",
-            "Lett tonejustering på vei inn.",
-          )}
-          control={
-            <LiveToggle
-              on={s.eqEnabled}
-              onChange={(next) => update({ eqEnabled: next })}
-            />
-          }
-        />
-        <SettingRow
-          title={t("settingsScreen.audio.compTitle", "Kompressor")}
-          desc={t(
-            "settingsScreen.audio.compDesc",
-            "Jevner ut svingninger i stemmestyrke.",
-          )}
-          control={
-            <LiveToggle
-              on={s.compEnabled}
-              onChange={(next) => update({ compEnabled: next })}
-            />
-          }
-        />
-        <SettingRow
-          title={t(
-            "settingsScreen.audio.limiterTitle",
-            "Limiter (klippe-vern)",
-          )}
-          desc={t(
-            "settingsScreen.audio.limiterDesc",
-            "Hindrer at plutselig høy lyd overstyrer.",
-          )}
-          control={
-            <LiveToggle
-              on={s.limiterEnabled}
-              onChange={(next) => update({ limiterEnabled: next })}
-            />
-          }
-        />
+        </div>
       </Card>
     </>
   );

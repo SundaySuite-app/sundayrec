@@ -153,6 +153,11 @@ pub struct Settings {
     /// Also keep the standalone high-quality audio file next to a combined MP4?
     #[serde(default)]
     pub keep_separate_audio: bool,
+    /// Container/codec for the standalone audio file extracted alongside a video
+    /// recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
+    /// safe choice for a "keep the clean audio" sidecar).
+    #[serde(default = "default_separate_audio_format")]
+    pub separate_audio_format: FileFormat,
     /// Use a single ffmpeg process for A/V to eliminate sync drift? Default true.
     #[serde(default = "default_true")]
     pub av_sync: bool,
@@ -412,6 +417,9 @@ fn default_video_framerate() -> i32 {
 fn default_output_mode() -> String {
     "combined".to_string()
 }
+fn default_separate_audio_format() -> FileFormat {
+    FileFormat::Wav
+}
 
 impl Default for Settings {
     /// The Electron `defaults` object (`store.ts` lines 6+), field-for-field.
@@ -431,6 +439,7 @@ impl Default for Settings {
             video_framerate: default_video_framerate(),
             output_mode: default_output_mode(),
             keep_separate_audio: false,
+            separate_audio_format: default_separate_audio_format(),
             av_sync: true,
 
             channels: default_channels(),
@@ -623,6 +632,7 @@ mod tests {
         assert_eq!(s.video_framerate, 30);
         assert_eq!(s.output_mode, "combined");
         assert!(!s.keep_separate_audio);
+        assert_eq!(s.separate_audio_format, FileFormat::Wav);
         assert!(s.av_sync);
         // Audio processing
         assert!(!s.eq_enabled);

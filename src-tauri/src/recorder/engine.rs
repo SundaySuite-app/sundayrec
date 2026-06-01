@@ -149,6 +149,14 @@ pub struct RecordingOpts {
     /// Emit the live L/R level meters (`astats`) during capture? When `false`,
     /// the levels filter is dropped to keep capture maximally stable.
     pub live_levels: bool,
+    /// For a VIDEO recording, also extract a standalone audio sidecar file next to
+    /// the finished video. No-op for audio-only recordings (the main file already
+    /// is the audio).
+    pub keep_separate_audio: bool,
+    /// The extension/container for the separate audio sidecar (e.g. `"wav"`),
+    /// chosen from `Settings::separate_audio_format`. Drives the extract codec via
+    /// the shared `audio_encode_args` seam.
+    pub separate_audio_format: String,
 }
 
 /// A progress heartbeat sent to the renderer.
@@ -600,6 +608,7 @@ async fn run_session(
                     close_ms,
                     &preroll_clip,
                     &audio,
+                    &opts,
                 )
                 .await;
 
@@ -625,6 +634,7 @@ async fn run_session(
                             now_ms(),
                             &preroll_clip,
                             &audio,
+                            &opts,
                         )
                         .await;
                         return;
@@ -706,6 +716,7 @@ async fn run_session(
                             now_ms(),
                             &preroll_clip,
                             &audio,
+                            &opts,
                         )
                         .await;
                         tracing::error!("recorder: giving up — fail-stop");
@@ -808,6 +819,7 @@ async fn run_session(
                                                     now_ms(),
                                                     &preroll_clip,
                                                     &audio,
+                                                    &opts,
                                                 )
                                                 .await;
                                                 return;
@@ -830,6 +842,7 @@ async fn run_session(
                                             now_ms(),
                                             &preroll_clip,
                                             &audio,
+                                            &opts,
                                         )
                                         .await;
                                         return;
@@ -859,6 +872,7 @@ async fn run_session(
         now_ms(),
         &preroll_clip,
         &audio,
+        &opts,
     )
     .await;
     // Clean finish: every deliverable is finalised + history-rowed, so the
@@ -1280,6 +1294,7 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
 ///
 /// Called at every split (closing one deliverable) and once at session end (the
 /// last). Idempotent: a second call with nothing pending is a no-op.
+#[allow(clippy::too_many_arguments)]
 async fn finalize_pending(
     app: &AppHandle,
     pool: &Option<SqlitePool>,
@@ -1288,6 +1303,7 @@ async fn finalize_pending(
     end_ms: u64,
     preroll_clip: &Option<PrerollClip>,
     audio: &FfmpegDevice,
+    opts: &RecordingOpts,
 ) {
     let deliverables = session.deliverables();
     let total = deliverables.len();
@@ -1299,7 +1315,17 @@ async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        finalize_one(app, pool, d, index, deliverable_end, preroll_clip, audio).await;
+        finalize_one(
+            app,
+            pool,
+            d,
+            index,
+            deliverable_end,
+            preroll_clip,
+            audio,
+            opts,
+        )
+        .await;
     }
     *finalized = total;
 }
@@ -1317,6 +1343,7 @@ async fn finalize_pending(
 /// If the finished file is missing / zero-byte / undecodable, NO history row is
 /// written (a phantom "recording" that won't play is worse than none) and an
 /// `empty_output` error is surfaced to the UI.
+#[allow(clippy::too_many_arguments)]
 async fn finalize_one(
     app: &AppHandle,
     pool: &Option<SqlitePool>,
@@ -1325,6 +1352,7 @@ async fn finalize_one(
     end_ms: u64,
     preroll_clip: &Option<PrerollClip>,
     audio: &FfmpegDevice,
+    opts: &RecordingOpts,
 ) {
     // Pre-roll is prepended ONLY to the first deliverable's first fragment.
     let preroll_path = if index == 0 {
@@ -1369,7 +1397,7 @@ async fn finalize_one(
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
     let row = RecordingRow {
         id: String::new(),
-        file_path: final_path,
+        file_path: final_path.clone(),
         device_name: Some(audio.name.clone()),
         started_at: started_at as f64,
         duration_ms: Some(duration_ms),
@@ -1379,6 +1407,142 @@ async fn finalize_one(
     };
     if let Err(e) = insert_recording(pool, row).await {
         tracing::error!("recorder: failed to write history row: {e}");
+    }
+
+    // FIX 3 — separate audio sidecar. For a VIDEO recording the finished file is a
+    // video container; when the user opted into `keep_separate_audio` we extract a
+    // standalone audio file next to it and write a SECOND history row. Guarded on
+    // the recording actually having video (audio-only recordings are already the
+    // audio, so there's nothing to extract).
+    if opts.keep_separate_audio && opts.video_device_name.is_some() {
+        extract_separate_audio(pool, &final_path, started_at, duration_ms, opts, audio).await;
+    }
+}
+
+/// Build the one-shot ffmpeg args that extract a standalone audio file from a
+/// finished video container: `ffmpeg -i <src> -vn -map 0:a:0 <audio_encode_args>
+/// -y <dst>`. The encode args come from the SHARED [`audio_encode_args`] seam
+/// (codec from the sidecar extension, channels from `channel_mode`, sample-rate +
+/// bitrate from the recording's opts) so the sidecar matches the recording's
+/// chosen audio settings. Pure so the argument shape is unit-tested without a
+/// process.
+fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<String> {
+    let sep_ext = opts.separate_audio_format.trim_start_matches('.');
+    let channels = match opts.channel_mode {
+        ChannelMode::Stereo => 2,
+        _ => 1,
+    };
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-i".into(),
+        src.to_string(),
+        // Drop video, take only the first audio stream.
+        "-vn".into(),
+        "-map".into(),
+        "0:a:0".into(),
+    ];
+    args.extend(sundayrec_core::capture::audio_encode_args(
+        sep_ext,
+        channels,
+        opts.sample_rate,
+        opts.bitrate_kbps,
+    ));
+    args.push("-y".into());
+    args.push(dst.to_string());
+    args
+}
+
+/// Extract a standalone audio sidecar from a finished VIDEO recording and write a
+/// second history row for it. Runs a one-shot ffmpeg `-vn -map 0:a:0` through the
+/// SAME `audio_encode_args` seam the recorder uses (so channels/sample-rate/bitrate
+/// match the recording's settings), writing `<stem>.<format>` via `make_unique_path`
+/// so it never clobbers an existing file. Validated with the same `output_is_valid`
+/// gate as the main file; a failed/empty extract is logged and skipped, never fatal.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg against a real finished file.
+async fn extract_separate_audio(
+    pool: &SqlitePool,
+    final_path: &str,
+    started_at: u64,
+    duration_ms: f64,
+    opts: &RecordingOpts,
+    audio: &FfmpegDevice,
+) {
+    let src = std::path::Path::new(final_path);
+    let dir = src.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "recording".to_string());
+    let sep_ext = opts.separate_audio_format.trim_start_matches('.');
+    let want = dir
+        .join(format!("{stem}.{sep_ext}"))
+        .to_string_lossy()
+        .into_owned();
+    // Never overwrite: bump to `_2`, `_3`, … if the sibling already exists.
+    let sep_path =
+        sundayrec_core::filename::make_unique_path(&want, |p| std::path::Path::new(p).exists());
+
+    let args = build_separate_audio_args(final_path, &sep_path, opts);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    tracing::info!(?arg_refs, "recorder: extracting separate audio sidecar");
+    let mut child = match tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args(&arg_refs)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("recorder: failed to spawn separate-audio extract: {e}");
+            return;
+        }
+    };
+    // A `-c copy`-class extract of even a long service is fast; reuse a generous
+    // bound so a wedged ffmpeg can't hang the finalise forever.
+    match tokio::time::timeout(Duration::from_secs(15 * 60), child.wait()).await {
+        Ok(Ok(status)) if status.success() => {}
+        Ok(Ok(status)) => {
+            tracing::error!("recorder: separate-audio extract exited with {status}");
+            return;
+        }
+        Ok(Err(e)) => {
+            tracing::error!("recorder: separate-audio extract await failed: {e}");
+            return;
+        }
+        Err(_) => {
+            let _ = child.start_kill();
+            tracing::error!("recorder: separate-audio extract exceeded the watchdog — killed");
+            return;
+        }
+    }
+
+    if !output_is_valid(std::path::Path::new(&sep_path)).await {
+        tracing::error!(
+            file = %sep_path,
+            "recorder: separate audio file is missing/empty/undecodable — no history row"
+        );
+        return;
+    }
+
+    let byte_size = tokio::fs::metadata(&sep_path)
+        .await
+        .map(|m| m.len() as i64)
+        .ok();
+    let row = RecordingRow {
+        id: String::new(),
+        file_path: sep_path,
+        device_name: Some(audio.name.clone()),
+        started_at: started_at as f64,
+        duration_ms: Some(duration_ms),
+        byte_size,
+        created_at: 0.0,
+        note: Some("Separat lydfil".to_string()),
+    };
+    if let Err(e) = insert_recording(pool, row).await {
+        tracing::error!("recorder: failed to write separate-audio history row: {e}");
     }
 }
 
@@ -1452,6 +1616,8 @@ mod tests {
             split_minutes: 0,
             manual_max_minutes: 0,
             live_levels: true,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
         }
     }
 
@@ -1811,6 +1977,8 @@ mod tests {
             split_minutes: 30,
             manual_max_minutes: 120,
             live_levels: true,
+            keep_separate_audio: true,
+            separate_audio_format: "wav".into(),
         };
         let json = serde_json::to_string(&o).unwrap();
         // The wire shape is the struct's default snake_case keys (no rename_all).
@@ -1822,6 +1990,46 @@ mod tests {
         assert_eq!(back.silence_threshold_db, o.silence_threshold_db);
         assert_eq!(back.split_minutes, o.split_minutes);
         assert_eq!(back.manual_max_minutes, o.manual_max_minutes);
+    }
+
+    #[test]
+    fn separate_audio_args_extract_audio_only_to_chosen_format() {
+        // A stereo wav sidecar from an mp4: drop video, take audio stream 0, encode
+        // to pcm_s16le (wav), stereo, native rate (no -ar), output last after -y.
+        let mut o = opts();
+        o.video_device_name = Some("FaceTime HD".into());
+        o.channel_mode = ChannelMode::Stereo;
+        o.sample_rate = None;
+        o.separate_audio_format = "wav".into();
+        let args = build_separate_audio_args("/tmp/service.mp4", "/tmp/service.wav", &o);
+        // Source in, video dropped, first audio stream mapped.
+        assert!(args.windows(2).any(|w| w == ["-i", "/tmp/service.mp4"]));
+        assert!(args.iter().any(|a| a == "-vn"), "must drop video");
+        assert!(args.windows(2).any(|w| w == ["-map", "0:a:0"]));
+        // wav → pcm_s16le, no bitrate, stereo, native (no -ar).
+        assert!(args.windows(2).any(|w| w == ["-c:a", "pcm_s16le"]));
+        assert!(!args.iter().any(|a| a == "-b:a"), "pcm takes no bitrate");
+        assert!(args.windows(2).any(|w| w == ["-ac", "2"]));
+        assert!(!args.iter().any(|a| a == "-ar"), "native rate omits -ar");
+        // Overwrite + output path always last.
+        let n = args.len();
+        assert_eq!(args[n - 2], "-y");
+        assert_eq!(args.last().unwrap(), "/tmp/service.wav");
+    }
+
+    #[test]
+    fn separate_audio_args_honour_format_channels_and_rate() {
+        // An mp3 mono sidecar at a forced 44.1 kHz with a 256k bitrate.
+        let mut o = opts();
+        o.channel_mode = ChannelMode::MonoMix;
+        o.sample_rate = Some(44_100);
+        o.bitrate_kbps = 256;
+        o.separate_audio_format = ".mp3".into(); // leading dot tolerated
+        let args = build_separate_audio_args("/tmp/x.mp4", "/tmp/x.mp3", &o);
+        assert!(args.windows(2).any(|w| w == ["-c:a", "libmp3lame"]));
+        assert!(args.windows(2).any(|w| w == ["-b:a", "256k"]));
+        assert!(args.windows(2).any(|w| w == ["-ac", "1"]), "mono → -ac 1");
+        assert!(args.windows(2).any(|w| w == ["-ar", "44100"]));
     }
 
     #[test]

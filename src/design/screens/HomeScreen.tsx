@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import { Icon } from "../Icon";
-import { Badge, DeviceCard, Meter, ReadyChip, Toggle } from "../atoms";
+import { Badge, DeviceCard, Meter, ReadyChip, SegOpt, Toggle } from "../atoms";
 import {
   dbfsToLit,
   formatBytes,
@@ -32,12 +32,14 @@ import {
   diskUsedPercent,
   formatNextDate,
   inputMeta,
+  metersForChannelMode,
   storageEstimateLabel,
 } from "./home.helpers";
 import { sampleRateKhzLabel } from "./settings.helpers";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import type { Settings } from "@/lib/bindings/Settings";
+import type { FileFormat } from "@/lib/bindings/FileFormat";
 
 function TrustBanner() {
   const { t } = useTranslation();
@@ -294,6 +296,91 @@ function BigMeterRow({
   );
 }
 
+/**
+ * Video-mode "Separat lydfil" card. When recording video the user can opt to
+ * ALSO write a standalone audio file (in a chosen format) next to the video.
+ * Wired to the now-real `keepSeparateAudio` / `separateAudioFormat` settings —
+ * a click persists the patch through the passed `onUpdate` so it sticks.
+ */
+function SeparateAudioCard({
+  on,
+  format,
+  onUpdate,
+}: {
+  on: boolean;
+  format: FileFormat;
+  onUpdate: (patch: Partial<Settings>) => void;
+}) {
+  const { t } = useTranslation();
+  const FORMATS: FileFormat[] = ["mp3", "wav", "flac", "aac"];
+  return (
+    <div className="sr-card pad" style={{ padding: 16 }}>
+      <div className="sr-row" style={{ gap: 12, alignItems: "flex-start" }}>
+        <Icon name="mic" size={17} style={{ color: "var(--sr-text-3)" }} />
+        <div className="sr-grow">
+          <div style={{ fontSize: 13.5, fontWeight: 650 }}>
+            {t("homeScreen.separateAudioTitle", "Ta opp separat lydfil")}
+          </div>
+          <div
+            style={{ fontSize: 12, color: "var(--sr-text-3)", marginTop: 3 }}
+          >
+            {t(
+              "homeScreen.separateAudioSub",
+              "I tillegg til videofilen lagres en egen lydfil i valgt format.",
+            )}
+          </div>
+        </div>
+        <span
+          role="switch"
+          aria-checked={on}
+          aria-label={t(
+            "homeScreen.separateAudioTitle",
+            "Ta opp separat lydfil",
+          )}
+          tabIndex={0}
+          style={{
+            display: "inline-flex",
+            cursor: "pointer",
+            flex: "0 0 auto",
+          }}
+          onClick={() => onUpdate({ keepSeparateAudio: !on })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onUpdate({ keepSeparateAudio: !on });
+            }
+          }}
+        >
+          <Toggle on={on} />
+        </span>
+      </div>
+      {on && (
+        <div className="sr-seg cols-4" style={{ marginTop: 14 }}>
+          {FORMATS.map((f) => (
+            <div
+              key={f}
+              role="radio"
+              aria-checked={format === f}
+              aria-label={f.toUpperCase()}
+              tabIndex={0}
+              style={{ cursor: "pointer", display: "contents" }}
+              onClick={() => onUpdate({ separateAudioFormat: f })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onUpdate({ separateAudioFormat: f });
+                }
+              }}
+            >
+              <SegOpt sel={format === f} title={f.toUpperCase()} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function HomeScreen({
   onRecord,
 }: {
@@ -312,6 +399,16 @@ export function HomeScreen({
       invoke<Settings>("settings_save", { settings: next }),
     onSuccess: (saved) => queryClient.setQueryData(SETTINGS_QUERY_KEY, saved),
   });
+
+  // Merge a partial change into the current settings and persist it
+  // optimistically (mirrors SettingsScreen's `update`). No-op when settings
+  // haven't loaded yet.
+  const updateSettings = (patch: Partial<Settings>) => {
+    if (!settings) return;
+    const next = { ...settings, ...patch };
+    queryClient.setQueryData(SETTINGS_QUERY_KEY, next);
+    saveSettings.mutate(next);
+  };
 
   const [video, setVideo] = useState(true);
   const [videoSeeded, setVideoSeeded] = useState(false);
@@ -363,7 +460,8 @@ export function HomeScreen({
   // Device + disk data.
   const devices = useInputDevices();
   const micName = defaultInputName(devices);
-  const micMeta = inputMeta(devices);
+  const channelMode = settings?.channels ?? "stereo";
+  const micMeta = inputMeta(devices, channelMode);
   const hasInput = (devices?.inputs.length ?? 0) > 0;
   const hasVideoDevice = videoDevices.length > 0;
   const freeBytes = useDiskSpace();
@@ -520,8 +618,24 @@ export function HomeScreen({
               <span className="sr-label" style={{ flex: "0 0 auto" }}>
                 {t("homeScreen.audioLevel", "Lydnivå")}
               </span>
-              <div className="sr-grow">
+              {/* Confirm the chosen channel count: STEREO selection shows two
+                  bars, mono one. The cpal VU engine reports a single peak, so
+                  when only one level is available both bars reflect it; if the
+                  engine ever carries a real R channel (peakR) we use it. */}
+              <div
+                className="sr-grow sr-col"
+                style={{ gap: metersForChannelMode(channelMode) === 2 ? 5 : 0 }}
+              >
                 <Meter on={peakL != null ? dbfsToLit(peakL, 14) : 5} />
+                {metersForChannelMode(channelMode) === 2 && (
+                  <Meter
+                    on={
+                      (peakR ?? peakL) != null
+                        ? dbfsToLit(peakR ?? peakL, 14)
+                        : 5
+                    }
+                  />
+                )}
               </div>
               <span
                 className="sr-mono sr-num"
@@ -707,6 +821,11 @@ export function HomeScreen({
                 v="720p · 30 fps"
                 meta={t("homeScreen.combinedMp4", "Kombinert MP4")}
                 onEdit={() => navigateToSettings("video")}
+              />
+              <SeparateAudioCard
+                on={settings?.keepSeparateAudio ?? false}
+                format={settings?.separateAudioFormat ?? "wav"}
+                onUpdate={updateSettings}
               />
               <DeviceCard
                 icon="disk"

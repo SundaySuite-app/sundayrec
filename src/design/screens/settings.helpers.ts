@@ -68,6 +68,7 @@ export const DEFAULT_SETTINGS: Settings = {
   videoFramerate: 30,
   outputMode: "combined",
   keepSeparateAudio: false,
+  separateAudioFormat: "wav",
   avSync: true,
   channels: "stereo",
   sampleRate: 48000,

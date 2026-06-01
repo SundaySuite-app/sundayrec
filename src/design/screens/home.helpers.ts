@@ -3,6 +3,7 @@
  * component so the JSX stays focused on the (unchanged) design markup.
  */
 import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
+import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { VuLevels } from "@/lib/bindings/VuLevels";
 
 /** Pick the human-readable name of the default/first input device, if any. */
@@ -14,16 +15,43 @@ export function defaultInputName(
   return (def ?? devices.inputs[0]).name;
 }
 
-/** Meta line for the mic device card (`Innebygd · stereo · 48 kHz`). */
-export function inputMeta(devices: AudioDeviceList | null): string | null {
+/**
+ * The layout label ("stereo" / "mono") for the CHOSEN recording channel mode —
+ * NOT the device's native hardware channel count. A MacBook mic is
+ * hardware-mono, but if the user picked Stereo the recording is stereo, so the
+ * card must reflect the user's choice.
+ */
+export function channelModeLayout(mode: ChannelMode): "stereo" | "mono" {
+  return mode === "stereo" ? "stereo" : "mono";
+}
+
+/**
+ * Meta line for the mic device card (`stereo · 48 kHz`). The layout reflects
+ * the chosen recording channel `mode`, not the device's native channels; the
+ * sample-rate part still comes from the device's reported rates.
+ */
+export function inputMeta(
+  devices: AudioDeviceList | null,
+  mode: ChannelMode,
+): string | null {
   if (!devices || devices.inputs.length === 0) return null;
   const def = devices.inputs.find((d) => d.is_default) ?? devices.inputs[0];
-  const layout = def.channels >= 2 ? "stereo" : "mono";
+  const layout = channelModeLayout(mode);
   const rate = def.sample_rates.includes(48000)
     ? 48000
     : (def.sample_rates[def.sample_rates.length - 1] ?? null);
   const rateLabel = rate ? `${Math.round(rate / 1000)} kHz` : null;
   return [layout, rateLabel].filter(Boolean).join(" · ");
+}
+
+/**
+ * How many meter bars to show for a channel mode: STEREO → 2, any mono → 1.
+ * Used by the Home audio-level meter to confirm the chosen channel count
+ * (the cpal VU engine reports a single peak, so a stereo selection shows two
+ * bars both reflecting the available level).
+ */
+export function metersForChannelMode(mode: ChannelMode): 1 | 2 {
+  return mode === "stereo" ? 2 : 1;
 }
 
 /** Peak dBFS for a channel, falling back to the mono channel when absent. */

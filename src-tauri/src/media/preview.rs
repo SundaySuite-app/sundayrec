@@ -205,14 +205,29 @@ pub fn build_preview_args(
     }
 }
 
-/// The shared output tail: encode to MJPEG and write to stdout (`pipe:1`).
+/// The shared output tail: downscale, then encode to MJPEG and write to stdout
+/// (`pipe:1`).
+///
+/// The INPUT mode negotiation (the `-video_size`/`-framerate` matrix above) is
+/// what actually makes the camera open, so it is left untouched. But the camera
+/// is opened at up to 1280x720 (or 1080p), and shipping those full frames as
+/// base64 over the Tauri IPC was ~3 MB/s and made the preview laggy. We DOWNSCALE
+/// the OUTPUT to ~640px wide (`-vf scale=640:-2`, the `-2` keeps the height even
+/// and the aspect ratio) BEFORE the mjpeg encode, and raise `-q:v` (lower quality)
+/// — together this cuts the per-frame base64 payload roughly 4×. The recorder
+/// captures full quality on its own separate path, so the preview shrink is free.
 fn mjpeg_output() -> Vec<String> {
     vec![
+        // Downscale the preview output to ~640px wide; `-2` = even height,
+        // aspect-preserved. Independent of the INPUT capture size.
+        "-vf".into(),
+        "scale=640:-2".into(),
         "-f".into(),
         "mjpeg".into(),
-        // Modest quality — a preview, not the recording. 2..31, lower = better.
+        // A preview, not the recording — bias toward smaller frames over crispness.
+        // 2..31, lower = better; 10 (up from 8) trims the payload further.
         "-q:v".into(),
-        "8".into(),
+        "10".into(),
         "pipe:1".into(),
     ]
 }
@@ -333,6 +348,35 @@ impl PreviewEngine {
             // Aborting drops the future → drops the ffmpeg `Child` →
             // `kill_on_drop` terminates the process.
             session.task.abort();
+        }
+    }
+
+    /// Stop the current preview AND wait until the camera is actually released.
+    ///
+    /// The recorder must call this BEFORE it opens the camera: on macOS a camera
+    /// has a single owner, so as long as the preview's ffmpeg child still holds
+    /// the device the recorder's avfoundation video input can't open it and video
+    /// silently fails to capture. The synchronous [`Self::stop`] aborts the reader
+    /// task and lets `kill_on_drop` fire, but `kill_on_drop` sends the kill
+    /// asynchronously and does NOT wait — so the recorder could race the camera's
+    /// release. Here we abort the task and AWAIT its `JoinHandle`: the task only
+    /// finishes once its future (and the owned ffmpeg `Child`) has been fully
+    /// dropped, which mirrors how the VU/pre-roll stop blocks until the mic is
+    /// free. A short settle then gives the OS a beat to reclaim the device node.
+    ///
+    /// ⚠️ HARDWARE-UNVERIFIED — the actual camera-release timing needs a real rig.
+    pub async fn stop_and_release(&self) {
+        let session = self.session.lock().expect("preview mutex").take();
+        if let Some(session) = session {
+            session.task.abort();
+            // Await the aborted task: it resolves once the future — and the owned
+            // ffmpeg `Child` inside it — is dropped, so `kill_on_drop` has fired.
+            // A `JoinError::Cancelled` here is expected and ignored.
+            let _ = session.task.await;
+            // Give the OS a brief beat to release the camera device node before
+            // the recorder opens it (avfoundation can lag a hair behind the
+            // process exit).
+            tokio::time::sleep(Duration::from_millis(250)).await;
         }
     }
 }
@@ -711,9 +755,39 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["-r", "15"]));
         // video-only input: "<device>:none"
         assert!(args.iter().any(|a| a == "1:none"));
-        // MJPEG to stdout
+        // MJPEG to stdout, downscaled to a light preview payload.
+        assert!(args.windows(2).any(|w| w == ["-vf", "scale=640:-2"]));
         assert!(args.windows(2).any(|w| w == ["-f", "mjpeg"]));
         assert_eq!(args.last().unwrap(), "pipe:1");
+    }
+
+    #[test]
+    fn preview_output_is_downscaled_on_every_platform() {
+        // The OUTPUT scale filter shrinks the base64/IPC payload ~4× regardless of
+        // the (large) INPUT capture size; it must be present on every platform.
+        let mac = build_preview_args(Platform::MacOS, Some("0"), 15, 30, Some("1280x720"));
+        assert!(mac.windows(2).any(|w| w == ["-vf", "scale=640:-2"]));
+        let win = build_preview_args(Platform::Windows, Some("Cam"), 15, 30, None);
+        assert!(win.windows(2).any(|w| w == ["-vf", "scale=640:-2"]));
+        let linux = build_preview_args(Platform::Linux, None, 15, 30, None);
+        assert!(linux.windows(2).any(|w| w == ["-vf", "scale=640:-2"]));
+    }
+
+    #[test]
+    fn bare_framerate_fallback_input_has_no_video_size_but_output_is_scaled() {
+        // The escape-hatch INPUT must NOT pin a `-video_size` (that's what lets a
+        // picky camera open), but the OUTPUT is still downscaled. The two must not
+        // be confused: `-video_size` absent on input, `scale=640:-2` present on
+        // output.
+        let args = build_preview_args(Platform::MacOS, Some("0"), 15, 30, None);
+        assert!(
+            !args.iter().any(|a| a == "-video_size"),
+            "bare-framerate fallback must not pin an input video size"
+        );
+        assert!(
+            args.windows(2).any(|w| w == ["-vf", "scale=640:-2"]),
+            "output must still be downscaled"
+        );
     }
 
     #[test]

@@ -60,4 +60,16 @@ manual_max_minutes: number,
  * Emit the live L/R level meters (`astats`) during capture? When `false`,
  * the levels filter is dropped to keep capture maximally stable.
  */
-live_levels: boolean, };
+live_levels: boolean, 
+/**
+ * For a VIDEO recording, also extract a standalone audio sidecar file next to
+ * the finished video. No-op for audio-only recordings (the main file already
+ * is the audio).
+ */
+keep_separate_audio: boolean, 
+/**
+ * The extension/container for the separate audio sidecar (e.g. `"wav"`),
+ * chosen from `Settings::separate_audio_format`. Drives the extract codec via
+ * the shared `audio_encode_args` seam.
+ */
+separate_audio_format: string, };

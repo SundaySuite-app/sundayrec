@@ -69,6 +69,12 @@ outputMode: string,
  */
 keepSeparateAudio: boolean, 
 /**
+ * Container/codec for the standalone audio file extracted alongside a video
+ * recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
+ * safe choice for a "keep the clean audio" sidecar).
+ */
+separateAudioFormat: FileFormat, 
+/**
  * Use a single ffmpeg process for A/V to eliminate sync drift? Default true.
  */
 avSync: boolean, 

@@ -27,6 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
+import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { RecordingProgress } from "@/lib/bindings/RecordingProgress";
 import type { RecordingLevels } from "@/lib/bindings/RecordingLevels";
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
@@ -58,6 +59,7 @@ function useRecordingSession(video: boolean) {
   const [savePath, setSavePath] = useState<string | null>(null);
   const [deviceLabel, setDeviceLabel] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [channelMode, setChannelMode] = useState<ChannelMode>("stereo");
   const running = useRef(false);
   const queryClient = useQueryClient();
 
@@ -122,6 +124,10 @@ function useRecordingSession(video: boolean) {
           split_minutes: s?.splitMinutes ?? 0,
           manual_max_minutes: s?.manualMaxMinutes ?? 0,
           live_levels: s?.showLiveLevels ?? true,
+          keep_separate_audio: s?.keepSeparateAudio ?? false,
+          // FileFormat is already the lowercase extension string the recorder
+          // wants ("mp3" | "wav" | "flac" | "aac"), so pass it through directly.
+          separate_audio_format: s?.separateAudioFormat ?? "wav",
         };
       }
       // Honour the Home video toggle even if it differs from the persisted flag.
@@ -129,6 +135,9 @@ function useRecordingSession(video: boolean) {
       if (cancelled) return;
       setSavePath(opts.output_path || null);
       setDeviceLabel(opts.audio_device_name || null);
+      // The chosen channel layout drives the pre-telemetry meter fallback
+      // (stereo → two meters, mono → one) before the first `levels` event.
+      setChannelMode(opts.channel_mode);
       // Release the Home VU's cpal mic BEFORE the recorder opens avfoundation —
       // macOS lets only one client own the input, and the VU teardown on screen
       // change is fire-and-forget. `stop_vu` is idempotent (no-op when idle) and
@@ -180,6 +189,7 @@ function useRecordingSession(video: boolean) {
     savePath,
     deviceLabel,
     startError,
+    channelMode,
     stop,
   };
 }
@@ -198,43 +208,10 @@ function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/**
- * Peak-hold for a segmented meter: snaps UP to `value` instantly (fast attack)
- * and falls back SLOWLY (slow release) so the marker lingers on the loudest
- * recent level — the classic VU peak tick. `value` and the result are in
- * lit-segment units; it decays ~`decayPerSec` segments/second.
- */
-function usePeakHold(value: number, decayPerSec = 26): number {
-  const [held, setHeld] = useState(value);
-  const heldRef = useRef(value);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-  useEffect(() => {
-    let raf = 0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.1);
-      last = now;
-      const v = valueRef.current;
-      const prev = heldRef.current;
-      // Instant attack toward a louder reading; slow linear release otherwise.
-      const next = v >= prev ? v : Math.max(v, prev - decayPerSec * dt);
-      if (next !== prev) {
-        heldRef.current = next;
-        setHeld(next);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [decayPerSec]);
-  return held;
-}
-
 // Live meter with a dB scale beneath (matches the real app). Driven by the
 // backend `recording://levels` event — `on` is the lit-segment count from
-// `dbfsToLit(peakDb, 44)`. The white tick is a peak-hold marker that tracks the
-// loudest recent level and decays slowly back down.
+// `dbfsToLit(peakDb, 44)`. The segmented bar is the level itself (no peak-hold
+// tick).
 //
 // Memoized: a `recording://levels` event re-renders only the metering block, so
 // an unchanged `on` (same lit-segment count between frames) skips this entirely
@@ -246,7 +223,6 @@ const RecMeter = memo(function RecMeter({
   ch: string;
   on: number;
 }) {
-  const peak = usePeakHold(on);
   return (
     <div className="sr-row" style={{ gap: 14 }}>
       <span
@@ -277,20 +253,6 @@ const RecMeter = memo(function RecMeter({
             <span key={i} style={{ flex: 1, background: c, borderRadius: 2 }} />
           );
         })}
-        {peak > 0.5 && (
-          <span
-            style={{
-              position: "absolute",
-              left: `${Math.min((peak / 44) * 100, 100)}%`,
-              top: -4,
-              bottom: -4,
-              width: 2,
-              background: "rgba(255,255,255,0.85)",
-              // Smooth the per-frame release without lagging the instant attack.
-              transition: "left 50ms linear",
-            }}
-          />
-        )}
       </div>
     </div>
   );
@@ -369,13 +331,25 @@ function RecHeader({
 }
 
 /**
- * The level-driven block: the live signal label (Svak/OK/Bra/Høy), the L/R
- * dBFS readouts, and the two L/R meters. It owns the `recording://levels`
+ * The level-driven block: the live signal label (Svak/OK/Bra/Høy), the dBFS
+ * readouts, and the level meters. It owns the `recording://levels`
  * subscription itself so the high-frequency level stream re-renders ONLY this
  * subtree — the timer, file-size and header above never re-render per frame
  * (WS-4). Memoized so a parent re-render (e.g. the 1 Hz clock) doesn't churn it.
+ *
+ * Channel confirmation: a STEREO recording renders two meters (L + R); a MONO
+ * recording renders a single meter. The recorder signals this via the levels
+ * payload — `peak_db_right` is `null` for mono, a real value for stereo. Before
+ * the first level event arrives we fall back to the chosen `channelMode` from
+ * settings so the user sees the right channel count immediately.
  */
-const MeterSection = memo(function MeterSection({ video }: { video: boolean }) {
+const MeterSection = memo(function MeterSection({
+  video,
+  channelMode,
+}: {
+  video: boolean;
+  channelMode: ChannelMode;
+}) {
   const { t } = useTranslation();
   const [levels, setLevels] = useState<RecordingLevels | null>(null);
   useEffect(() => {
@@ -393,6 +367,12 @@ const MeterSection = memo(function MeterSection({ video }: { video: boolean }) {
   const peakDbLeft = levels?.peak_db_left ?? SAMPLE_DBFS;
   const peakDbRight = levels?.peak_db_right ?? peakDbLeft;
   const peakMax = Math.max(peakDbLeft, peakDbRight);
+
+  // STEREO when the recorder reports a real right-channel level. Before the
+  // first telemetry event the right peak is null, so fall back to the chosen
+  // channel layout (stereo settings → two meters, anything mono → one).
+  const stereo =
+    levels != null ? levels.peak_db_right != null : channelMode === "stereo";
 
   // Dynamic signal label from the louder of L/R (WS-4).
   const signalKey = levelLabel(peakMax);
@@ -435,24 +415,26 @@ const MeterSection = memo(function MeterSection({ video }: { video: boolean }) {
             className="sr-mono sr-num"
             style={{ fontSize: 13, color: "var(--sr-text-3)" }}
           >
-            L{" "}
+            {stereo ? "L" : ""}{" "}
             <span
               style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
             >
               {formatDbfs(peakDbLeft)}
             </span>
           </span>
-          <span
-            className="sr-mono sr-num"
-            style={{ fontSize: 13, color: "var(--sr-text-3)" }}
-          >
-            R{" "}
+          {stereo && (
             <span
-              style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
+              className="sr-mono sr-num"
+              style={{ fontSize: 13, color: "var(--sr-text-3)" }}
             >
-              {formatDbfs(peakDbRight)}
+              R{" "}
+              <span
+                style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
+              >
+                {formatDbfs(peakDbRight)}
+              </span>
             </span>
-          </span>
+          )}
           <span
             className="sr-mono"
             style={{ fontSize: 12, color: "var(--sr-text-dim)" }}
@@ -465,8 +447,8 @@ const MeterSection = memo(function MeterSection({ video }: { video: boolean }) {
         className={video ? "sr-stack-3" : "sr-stack-4"}
         style={{ marginTop: video ? 4 : 8 }}
       >
-        <RecMeter ch="L" on={dbfsToLit(peakDbLeft, 44)} />
-        <RecMeter ch="R" on={dbfsToLit(peakDbRight, 44)} />
+        <RecMeter ch={stereo ? "L" : ""} on={dbfsToLit(peakDbLeft, 44)} />
+        {stereo && <RecMeter ch="R" on={dbfsToLit(peakDbRight, 44)} />}
       </div>
       <RecScale />
     </>
@@ -585,6 +567,7 @@ export function RecordingScreen({
     savePath,
     deviceLabel,
     startError,
+    channelMode,
     stop,
   } = useRecordingSession(video);
   const diskFree = useDiskSpace();
@@ -683,7 +666,7 @@ export function RecordingScreen({
           {/* Isolated level-driven block: signal label + L/R dB + meters. Owns
               the `recording://levels` subscription so high-frequency level
               updates re-render ONLY this subtree (WS-4). */}
-          <MeterSection video={video} />
+          <MeterSection video={video} channelMode={channelMode} />
           {startError && (
             <div
               className="sr-mono"
