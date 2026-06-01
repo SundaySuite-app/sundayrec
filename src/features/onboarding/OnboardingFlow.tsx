@@ -93,7 +93,7 @@ export function OnboardingFlow() {
       aria-modal="true"
       aria-label={t("wizard.title", "Oppsett")}
     >
-      <div className="flex w-full max-w-md flex-col gap-5 rounded-2xl border border-border bg-surface p-6">
+      <div className="flex w-full max-w-md flex-col gap-5 rounded-2xl border border-border bg-surface p-6 shadow-[var(--sr-shadow-lg)]">
         {/* Progress dots */}
         <div className="flex justify-center gap-2" aria-hidden>
           {Array.from({ length: STEP_COUNT }).map((_, i) => {
@@ -103,11 +103,11 @@ export function OnboardingFlow() {
                 key={n}
                 data-dot={n}
                 data-state={n === step ? "active" : n < step ? "done" : "todo"}
-                className={`h-2 w-2 rounded-full ${
+                className={`h-2 w-2 rounded-full transition-colors ${
                   n === step
                     ? "bg-accent"
                     : n < step
-                      ? "bg-emerald-500"
+                      ? "bg-[var(--sr-green)]"
                       : "bg-surface3"
                 }`}
               />
@@ -166,7 +166,7 @@ function StepWelcome({
       <div className="mt-1 flex flex-col gap-2">
         <button
           type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
+          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
           onClick={onNext}
         >
           {t("wizard.start", "Kom i gang →")}
@@ -230,7 +230,7 @@ function StepDevice({
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-[var(--sr-red-bright)]">{error}</p>}
 
       {inputs.length === 0 ? (
         <p className="text-sm text-text3">
@@ -245,10 +245,10 @@ function StepDevice({
                 <button
                   type="button"
                   aria-pressed={selected}
-                  className={`w-full rounded-lg border px-3 py-2 text-left ${
+                  className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                     selected
-                      ? "border-accent bg-accent/20 text-text"
-                      : "border-border text-text2 hover:bg-surface2"
+                      ? "border-accent-border bg-accent-bg text-text"
+                      : "border-border text-text2 hover:bg-surface2 hover:text-text"
                   }`}
                   onClick={() => onPick(d.name)}
                 >
@@ -268,7 +268,7 @@ function StepDevice({
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
+          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2 disabled:opacity-50"
           onClick={() => {
             if (!picked) {
               setError(
@@ -364,7 +364,7 @@ function StepAudioTest({
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-[var(--sr-red-bright)]">{error}</p>}
 
       <div className="flex flex-col gap-1">
         <div
@@ -379,11 +379,11 @@ function StepAudioTest({
             data-verdict={verdict}
             className={`h-full transition-[width] duration-75 ${
               verdict === "clip"
-                ? "bg-red-500"
+                ? "bg-[var(--sr-red)]"
                 : verdict === "loud"
                   ? "bg-accent"
                   : verdict === "good"
-                    ? "bg-emerald-500"
+                    ? "bg-[var(--sr-green)]"
                     : "bg-surface3"
             }`}
             style={{ width: `${Math.round(fraction * 100)}%` }}
@@ -397,7 +397,7 @@ function StepAudioTest({
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
+          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
           onClick={onNext}
         >
           {t("wizard.audioWorks", "Lyden fungerer →")}
@@ -431,7 +431,7 @@ function StepReady({ onDone }: { onDone: () => void }) {
       </p>
       <button
         type="button"
-        className="mt-1 rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
+        className="mt-1 rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
         onClick={onDone}
       >
         {t("wizard.open", "Åpne SundayRec →")}

@@ -171,9 +171,16 @@ export function useToastApi(): ToastApi {
 }
 
 const SEVERITY_CLASS: Record<ToastSeverity, string> = {
-  info: "border-emerald-700 bg-emerald-950/80 text-emerald-100",
-  warn: "border-amber-600 bg-amber-950/80 text-amber-100",
-  error: "border-red-700 bg-red-950/80 text-red-100",
+  info: "border-[rgba(52,199,123,0.5)] bg-surface text-text",
+  warn: "border-accent-border bg-surface text-text",
+  error: "border-[rgba(229,72,77,0.5)] bg-surface text-text",
+};
+
+/** Icon tint per severity, matching the navy+gold token palette. */
+const SEVERITY_ICON_CLASS: Record<ToastSeverity, string> = {
+  info: "text-[var(--sr-green)]",
+  warn: "text-accent",
+  error: "text-[var(--sr-red-bright)]",
 };
 
 const SEVERITY_ICON: Record<ToastSeverity, string> = {
@@ -244,16 +251,19 @@ export function ToastHost({ children }: { children?: ReactNode }) {
           <div
             key={tt.id}
             role={tt.severity === "error" ? "alert" : "status"}
-            className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg ${SEVERITY_CLASS[tt.severity]}`}
+            className={`pointer-events-auto flex items-start gap-2 rounded-xl border px-3.5 py-2.5 text-sm shadow-[var(--sr-shadow-md)] ${SEVERITY_CLASS[tt.severity]}`}
           >
-            <span aria-hidden className="mt-0.5 shrink-0">
+            <span
+              aria-hidden
+              className={`mt-0.5 shrink-0 ${SEVERITY_ICON_CLASS[tt.severity]}`}
+            >
               {SEVERITY_ICON[tt.severity]}
             </span>
             <span className="flex-1">{tt.message}</span>
             <button
               type="button"
               aria-label={t("general.close", "Lukk")}
-              className="shrink-0 opacity-70 hover:opacity-100"
+              className="shrink-0 text-text3 transition-colors hover:text-text"
               onClick={() => api.dismiss(tt.key)}
             >
               ×

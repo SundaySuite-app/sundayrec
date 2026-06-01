@@ -145,14 +145,14 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[15vh]"
       onClick={close}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t("palette.title", "Kommandopalett")}
-        className="w-full max-w-md overflow-hidden rounded-lg border border-border bg-surface shadow-xl"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-surface shadow-[var(--sr-shadow-lg)]"
         onClick={(e) => e.stopPropagation()}
       >
         <input
@@ -164,9 +164,15 @@ export function CommandPalette() {
             setActive(0);
           }}
           onKeyDown={onInputKeyDown}
-          placeholder={t("palette.placeholder", "Gå til … (skriv for å filtrere)")}
-          aria-label={t("palette.placeholder", "Gå til … (skriv for å filtrere)")}
-          className="w-full border-b border-border bg-bg px-4 py-3 text-sm text-text placeholder:text-text3 focus:outline-none"
+          placeholder={t(
+            "palette.placeholder",
+            "Gå til … (skriv for å filtrere)",
+          )}
+          aria-label={t(
+            "palette.placeholder",
+            "Gå til … (skriv for å filtrere)",
+          )}
+          className="w-full border-b border-border bg-surface2 px-4 py-3.5 text-sm text-text placeholder:text-[var(--sr-text-dim)] focus:outline-none"
         />
         <ul className="max-h-72 overflow-y-auto py-1">
           {results.length === 0 ? (
@@ -182,10 +188,10 @@ export function CommandPalette() {
                   aria-selected={i === active}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => run(cmd.view)}
-                  className={`flex w-full px-4 py-2 text-left text-sm transition-colors ${
+                  className={`flex w-full px-4 py-2.5 text-left text-sm transition-colors ${
                     i === active
-                      ? "bg-surface2 text-accent"
-                      : "text-text2 hover:bg-surface2"
+                      ? "border-l-2 border-accent bg-accent-bg pl-[14px] font-medium text-accent2"
+                      : "border-l-2 border-transparent text-text2 hover:bg-surface2 hover:text-text"
                   }`}
                 >
                   {cmd.label}
