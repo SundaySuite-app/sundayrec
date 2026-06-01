@@ -87,21 +87,24 @@ export function SuiteHandoffPanel() {
 
   const connected = hasApiKey.data ?? false;
 
+  const inputClass =
+    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
       aria-label={t("handoff.title", "Suite-overlevering")}
     >
       {/* ── SundaySong API key ──────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+        <h2 className="text-sm font-medium text-text">
           {t("handoff.songKeyTitle", "SundaySong API-nøkkel")}
         </h2>
         <span
-          className={`self-start rounded border px-1.5 py-0.5 text-xs ${
+          className={`self-start rounded-lg border px-1.5 py-0.5 text-xs ${
             connected
               ? "border-emerald-700 text-emerald-300"
-              : "border-zinc-600 text-zinc-400"
+              : "border-border text-text3"
           }`}
         >
           {connected
@@ -110,7 +113,7 @@ export function SuiteHandoffPanel() {
         </span>
         <input
           type="password"
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("handoff.songKey", "API-nøkkel")}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
@@ -119,7 +122,7 @@ export function SuiteHandoffPanel() {
         <button
           type="button"
           disabled={!apiKey.trim() || saveKeyMutation.isPending}
-          className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           onClick={onSaveKey}
         >
           {t("handoff.saveKey", "Lagre nøkkel")}
@@ -127,12 +130,12 @@ export function SuiteHandoffPanel() {
       </div>
 
       {/* ── Per-recording hand-off ──────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <h2 className="text-sm font-medium text-text">
           {t("handoff.recordingTitle", "Opptak")}
         </h2>
         <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("handoff.recordingPath", "Sti til opptak")}
           value={recordingPath}
           onChange={(e) => setRecordingPath(e.target.value)}
@@ -142,7 +145,7 @@ export function SuiteHandoffPanel() {
           <button
             type="button"
             disabled={!recordingPath.trim() || submitUsageMutation.isPending}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
             onClick={onSubmitUsage}
           >
             {t("handoff.submitUsage", "Send bruk til SundaySong")}
@@ -150,7 +153,7 @@ export function SuiteHandoffPanel() {
           <button
             type="button"
             disabled={!recordingPath.trim() || verbatimSendMutation.isPending}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
             onClick={onVerbatimSend}
           >
             {t("handoff.verbatimSend", "Åpne i SundayEdit")}
@@ -158,7 +161,7 @@ export function SuiteHandoffPanel() {
         </div>
         {submitResult && (
           <p
-            className={`text-xs ${submitResult.ok ? "text-emerald-300" : "text-amber-300"}`}
+            className={`text-xs ${submitResult.ok ? "text-emerald-300" : "text-accent"}`}
             role="status"
           >
             {submitResult.ok
@@ -172,7 +175,7 @@ export function SuiteHandoffPanel() {
         )}
         {sendResult && (
           <p
-            className={`text-xs ${sendResult.ok ? "text-emerald-300" : "text-amber-300"}`}
+            className={`text-xs ${sendResult.ok ? "text-emerald-300" : "text-accent"}`}
             role="status"
           >
             {sendResult.ok

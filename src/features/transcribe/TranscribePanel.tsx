@@ -166,13 +166,16 @@ export function TranscribePanel() {
     [t],
   );
 
+  const selectClass =
+    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text";
+
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
       aria-label={t("transcribe.title", "Transkribering")}
     >
       {disabled && (
-        <p className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
           {t(
             "transcribe.featureDisabled",
             "Transkribering er ikke bygd inn i denne versjonen.",
@@ -181,15 +184,15 @@ export function TranscribePanel() {
       )}
 
       {/* ── Recording picker ────────────────────────────────────────── */}
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-text">
         {t("transcribe.recording", "Opptak")}
         {rows.length === 0 ? (
-          <span className="opacity-60">
+          <span className="text-text3">
             {t("transcribe.noRecordings", "Ingen opptak ennå")}
           </span>
         ) : (
           <select
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={selectClass}
             value={effectivePath}
             onChange={(e) => setRecordingPath(e.target.value)}
             aria-label={t("transcribe.recording", "Opptak")}
@@ -204,10 +207,10 @@ export function TranscribePanel() {
       </label>
 
       {/* ── Model picker ────────────────────────────────────────────── */}
-      <label className="flex flex-col gap-1 text-sm">
+      <label className="flex flex-col gap-1 text-sm text-text">
         {t("transcribe.model", "Modell")}
         <select
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={selectClass}
           value={effectiveModel}
           onChange={(e) => setModelId(e.target.value)}
           aria-label={t("transcribe.model", "Modell")}
@@ -222,10 +225,10 @@ export function TranscribePanel() {
 
       {/* ── Language + translate ────────────────────────────────────── */}
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-text2">
           {t("transcribe.language", "Språk")}
           <select
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={selectClass}
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
             aria-label={t("transcribe.language", "Språk")}
@@ -237,7 +240,7 @@ export function TranscribePanel() {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm text-text2">
           <input
             type="checkbox"
             checked={translate}
@@ -251,7 +254,7 @@ export function TranscribePanel() {
       <button
         type="button"
         disabled={!canTranscribe || transcribeMutation.isPending}
-        className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+        className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
         onClick={onTranscribe}
       >
         {transcribeMutation.isPending
@@ -267,11 +270,11 @@ export function TranscribePanel() {
 
       {/* ── Transcript + export ─────────────────────────────────────── */}
       {transcript && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium">
+            <h2 className="text-sm font-medium text-text">
               {t("transcribe.result", "Transkripsjon")}{" "}
-              <span className="opacity-60">
+              <span className="text-text3">
                 {t("transcribe.segmentCount", "({{n}} segmenter)", {
                   n: segmentCount,
                 })}
@@ -282,7 +285,7 @@ export function TranscribePanel() {
                 <button
                   key={fmt}
                   type="button"
-                  className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                   onClick={() => exportMutation.mutate(fmt)}
                 >
                   {fmt.toUpperCase()}
@@ -291,17 +294,17 @@ export function TranscribePanel() {
             </div>
           </div>
           {segmentCount === 0 ? (
-            <p className="opacity-60">
+            <p className="text-text3">
               {t("transcribe.empty", "Ingen tale funnet i opptaket.")}
             </p>
           ) : (
             <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
               {transcript.segments.map((s, i) => (
                 <li key={i} className="flex gap-2 text-sm">
-                  <span className="shrink-0 tabular-nums opacity-50">
+                  <span className="shrink-0 tabular-nums text-text3">
                     {clock(s.start)}
                   </span>
-                  <span>{s.text}</span>
+                  <span className="text-text">{s.text}</span>
                 </li>
               ))}
             </ul>

@@ -28,8 +28,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <fieldset className="flex flex-col gap-3 rounded-lg border border-zinc-700 p-4">
-      <legend className="px-1 text-sm font-medium">{title}</legend>
+    <fieldset className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4">
+      <legend className="px-1 text-sm font-medium text-text">{title}</legend>
       {children}
     </fieldset>
   );
@@ -47,7 +47,7 @@ function Field({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <label htmlFor={htmlFor} className="text-sm opacity-80">
+      <label htmlFor={htmlFor} className="text-sm text-text2">
         {label}
       </label>
       {children}
@@ -56,7 +56,7 @@ function Field({
 }
 
 const inputClass =
-  "rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm";
+  "rounded border border-border bg-surface2 px-2 py-1 text-sm text-text";
 
 /**
  * The settings page. Loads the persisted `Settings` over IPC, renders a grouped
@@ -173,7 +173,7 @@ export function SettingsPage() {
 
   if (isLoading || !draft) {
     return (
-      <p className="opacity-70">
+      <p className="text-text2">
         {t("home.connecting", "Kobler til backend …")}
       </p>
     );
@@ -336,7 +336,7 @@ export function SettingsPage() {
       <Section title={t("files.saveFolder", "Lagringsmappe")}>
         <div className="flex items-center justify-between gap-3">
           <span
-            className="min-w-0 flex-1 truncate text-sm opacity-80"
+            className="min-w-0 flex-1 truncate text-sm text-text2"
             title={draft.saveFolder ?? undefined}
           >
             {draft.saveFolder ??
@@ -344,7 +344,7 @@ export function SettingsPage() {
           </span>
           <button
             type="button"
-            className="shrink-0 rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            className="shrink-0 rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
             onClick={() => void pickFolder()}
           >
             {t("files.browse", "Velg mappe")}
@@ -592,14 +592,14 @@ export function SettingsPage() {
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
             onClick={() => void exportToFile()}
           >
             {t("general.export", "Eksporter innstillinger")}
           </button>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
             onClick={() => void importFromFile()}
           >
             {t("general.import", "Importer fra fil")}
@@ -609,7 +609,7 @@ export function SettingsPage() {
 
       <div className="flex items-center justify-between">
         {saveMutation.isPending && (
-          <span className="text-xs opacity-50">
+          <span className="text-xs text-text3">
             {t("general.save", "Lagre")}…
           </span>
         )}
@@ -620,7 +620,7 @@ export function SettingsPage() {
         )}
         <button
           type="button"
-          className="ml-auto rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+          className="ml-auto rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
           onClick={() => resetMutation.mutate()}
         >
           {t("general.restore", "Gjenopprett standard")}

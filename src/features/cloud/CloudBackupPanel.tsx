@@ -18,10 +18,10 @@ const SERVICE_LABEL: Record<CloudService, string> = {
 
 /** Tailwind classes for each upload-status badge. */
 const STATUS_BADGE: Record<UploadStatus, string> = {
-  pending: "border-zinc-600 text-zinc-300",
+  pending: "border-border text-text2",
   uploading: "border-sky-700 text-sky-300",
   failed: "border-red-800 text-red-300",
-  "reauth-required": "border-amber-700 text-amber-300",
+  "reauth-required": "border-accent/60 text-accent",
 };
 
 /**
@@ -120,8 +120,8 @@ export function CloudBackupPanel() {
       aria-label={t("cloud.title", "Sky-backup")}
     >
       {/* ── Connections ─────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+        <h2 className="text-sm font-medium text-text">
           {t("cloud.connectionsTitle", "Tilkoblinger")}
         </h2>
         {conn.isError ? (
@@ -133,17 +133,17 @@ export function CloudBackupPanel() {
             {statuses.map((s) => (
               <li
                 key={s.service}
-                className="flex items-center justify-between gap-3 rounded-lg border border-zinc-700 p-3"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface2 p-3"
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-medium">
+                  <span className="font-medium text-text">
                     {SERVICE_LABEL[s.service]}
                   </span>
                   <span
                     className={`rounded border px-1.5 py-0.5 text-xs ${
                       s.connected
                         ? "border-emerald-700 text-emerald-300"
-                        : "border-zinc-600 text-zinc-400"
+                        : "border-border text-text3"
                     }`}
                   >
                     {s.connected
@@ -154,7 +154,7 @@ export function CloudBackupPanel() {
                 {s.connected ? (
                   <button
                     type="button"
-                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                     onClick={() => onDisconnect(s.service)}
                   >
                     {t("cloud.disconnect", "Koble fra")}
@@ -163,7 +163,7 @@ export function CloudBackupPanel() {
                   <button
                     type="button"
                     disabled={connectMutation.isPending}
-                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+                    className="rounded-lg bg-accent px-2 py-1 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
                     onClick={() => connectMutation.mutate(s.service)}
                   >
                     {t("cloud.connect", "Koble til")}
@@ -176,15 +176,15 @@ export function CloudBackupPanel() {
       </div>
 
       {/* ── Upload queue ────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-sm font-medium text-text">
             {t("cloud.queueTitle", "Opplastingskø")}
           </h2>
           {hasFailed && (
             <button
               type="button"
-              className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+              className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
               onClick={() => clearFailedMutation.mutate()}
             >
               {t("cloud.clearFailed", "Fjern feilede")}
@@ -192,7 +192,7 @@ export function CloudBackupPanel() {
           )}
         </div>
         {entries.length === 0 ? (
-          <p className="opacity-60">
+          <p className="text-text3">
             {t("cloud.queueEmpty", "Ingen køede opplastinger")}
           </p>
         ) : (
@@ -200,14 +200,14 @@ export function CloudBackupPanel() {
             {entries.map((e) => (
               <li
                 key={e.id}
-                className="flex flex-col gap-1 rounded-lg border border-zinc-700 p-3 text-left"
+                className="flex flex-col gap-1 rounded-lg border border-border bg-surface2 p-3 text-left"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-medium" title={e.filename}>
+                    <p className="truncate font-medium text-text" title={e.filename}>
                       {e.filename}
                     </p>
-                    <p className="text-xs opacity-70">
+                    <p className="text-xs text-text2">
                       {SERVICE_LABEL[e.service]} ·{" "}
                       {t("cloud.attempts", "{{n}} forsøk", { n: e.attempts })}
                     </p>
@@ -231,7 +231,7 @@ export function CloudBackupPanel() {
                     e.status === "reauth-required") && (
                     <button
                       type="button"
-                      className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                      className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                       onClick={() => retryMutation.mutate(e.id)}
                     >
                       {t("cloud.retry", "Prøv igjen")}
@@ -239,7 +239,7 @@ export function CloudBackupPanel() {
                   )}
                   <button
                     type="button"
-                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                     onClick={() => removeMutation.mutate(e.id)}
                   >
                     {t("cloud.remove", "Fjern")}

@@ -129,15 +129,15 @@ export function RecorderPanel() {
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-3 rounded-lg border border-zinc-700 p-4"
+      className="flex w-full max-w-md flex-col gap-3 rounded-xl border border-border bg-surface p-6"
       aria-label="Opptak"
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">Opptak (Spike B)</h2>
+        <h2 className="text-sm font-medium text-text">Opptak (Spike B)</h2>
         {running ? (
           <button
             type="button"
-            className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
+            className="rounded-lg bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
             onClick={() => void stop()}
           >
             Stopp
@@ -145,7 +145,7 @@ export function RecorderPanel() {
         ) : (
           <button
             type="button"
-            className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500"
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90"
             onClick={() => void start()}
           >
             Start opptak
@@ -161,18 +161,18 @@ export function RecorderPanel() {
 
       {running && (
         <div className="flex flex-col gap-1 text-sm">
-          <p className="opacity-80">
+          <p className="text-text2">
             {state?.state === "reconnecting" ? (
-              <span className="text-amber-400" role="status">
+              <span className="text-accent" role="status">
                 ↻ Kobler til på nytt ({state.reconnect_count})
               </span>
             ) : started ? (
               <span className="text-emerald-400">● Tar opp</span>
             ) : (
-              <span className="opacity-60">Starter … (venter på ffmpeg)</span>
+              <span className="text-text3">Starter … (venter på ffmpeg)</span>
             )}
           </p>
-          <p className="tabular-nums">
+          <p className="tabular-nums text-text">
             {mb} MB skrevet · {mmss}
           </p>
         </div>
@@ -180,7 +180,7 @@ export function RecorderPanel() {
 
       {silence && (
         <p
-          className="rounded bg-amber-900/40 px-2 py-1 text-xs text-amber-300"
+          className="rounded-lg bg-accent/20 px-2 py-1 text-xs text-accent"
           role="status"
         >
           ⚠ Stillhet: {silence.message}
@@ -189,7 +189,7 @@ export function RecorderPanel() {
 
       {error && (
         <p
-          className="rounded bg-red-900/40 px-2 py-1 text-xs text-red-300"
+          className="rounded-lg bg-red-900/40 px-2 py-1 text-xs text-red-300"
           role="alert"
         >
           Feil ({error.code}): {error.message}
@@ -197,7 +197,7 @@ export function RecorderPanel() {
       )}
 
       {!running && !error && (
-        <p className="text-xs opacity-50">
+        <p className="text-xs text-text3">
           Trykk «Start opptak» — ffmpeg fanger lyd (og evt. kamera) i Rust;
           framdrift, stillhet og feil strømmes som hendelser.
         </p>

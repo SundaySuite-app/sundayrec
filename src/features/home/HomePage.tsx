@@ -147,26 +147,26 @@ export function HomePage({
     <div className="flex w-full max-w-2xl flex-col gap-6">
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <section
-        className="flex flex-col gap-2 rounded-xl border border-zinc-700 p-6"
+        className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6"
         aria-label={t("nav.home", "Hjem")}
       >
-        <p className="text-xs uppercase tracking-wide opacity-60">
+        <p className="text-xs uppercase tracking-wide text-text3">
           {t("home.nextRecording", "NESTE OPPTAK")}
         </p>
         {next ? (
           <>
-            <h1 className="text-2xl font-semibold">{fmtNext(next)}</h1>
+            <h1 className="text-2xl font-semibold text-text">{fmtNext(next)}</h1>
             {countdown && (
-              <p className="text-lg tabular-nums text-amber-300">
+              <p className="text-lg tabular-nums text-accent">
                 {countdown}{" "}
-                <span className="text-sm opacity-70">
+                <span className="text-sm text-text2">
                   {t("home.untilStart", "til oppstart")}
                 </span>
               </p>
             )}
           </>
         ) : (
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-2xl font-semibold text-text">
             {hasSchedule
               ? t("home.readyTitle", "Alt er klart")
               : t(
@@ -178,7 +178,7 @@ export function HomePage({
         {!hasSchedule && (
           <button
             type="button"
-            className="mt-1 self-start rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800"
+            className="mt-1 self-start rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
             onClick={() => onNavigate?.("schedule")}
           >
             {t("nav.schedule", "Tidsplan")} →
@@ -192,16 +192,16 @@ export function HomePage({
       {/* ── Review queue card ────────────────────────────────────────── */}
       {pending.length > 0 && (
         <section
-          className="flex items-center justify-between gap-3 rounded-xl border border-amber-700 bg-amber-950/30 p-4"
+          className="flex items-center justify-between gap-3 rounded-xl border border-accent/40 bg-accent p-4"
           aria-label={t("review.title", "Gjennomgang")}
         >
           <div>
-            <p className="font-medium">
+            <p className="font-medium text-text">
               {t("home.reviewQueueCount", "{{n}} episoder klare", {
                 n: pending.length,
               })}
             </p>
-            <p className="text-sm opacity-70">
+            <p className="text-sm text-text2">
               {t(
                 "home.reviewQueueHint",
                 "Venter på gjennomgang før publisering",
@@ -210,7 +210,7 @@ export function HomePage({
           </div>
           <button
             type="button"
-            className="shrink-0 rounded border border-amber-700 px-3 py-1 text-sm text-amber-200 hover:bg-amber-900/40"
+            className="shrink-0 rounded-lg border border-accent px-3 py-1 text-sm text-accent hover:bg-accent"
             onClick={() => onNavigate?.("review")}
           >
             {t("home.reviewOpen", "Åpne →")}
@@ -220,36 +220,36 @@ export function HomePage({
 
       {/* ── Recent history ───────────────────────────────────────────── */}
       <section
-        className="flex flex-col gap-3 rounded-xl border border-zinc-700 p-4"
+        className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4"
         aria-label={t("home.recentRecordings", "Siste opptak")}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-sm font-medium text-text">
             {t("home.recentRecordings", "Siste opptak")}
           </h2>
           <button
             type="button"
-            className="text-sm opacity-70 hover:opacity-100"
+            className="text-sm text-text2 hover:text-text"
             onClick={() => onNavigate?.("history")}
           >
             {t("home.viewAll", "Se alle →")}
           </button>
         </div>
         {recent.length === 0 ? (
-          <p className="opacity-60">
+          <p className="text-text3">
             {t("history.empty", "Ingen opptak ennå")}
           </p>
         ) : (
-          <ul className="flex flex-col divide-y divide-zinc-800">
+          <ul className="flex flex-col divide-y divide-border">
             {recent.map((r) => (
               <li
                 key={r.id}
                 className="flex items-center justify-between gap-3 py-2 text-sm"
               >
-                <span className="min-w-0 truncate" title={r.file_path}>
+                <span className="min-w-0 truncate text-text" title={r.file_path}>
                   {r.file_path.split(/[\\/]/).pop() || r.file_path}
                 </span>
-                <span className="shrink-0 tabular-nums opacity-70">
+                <span className="shrink-0 tabular-nums text-text2">
                   {fmtStarted(r.started_at)} · {fmtDuration(r.duration_ms)} ·{" "}
                   {fmtBytes(r.byte_size)}
                 </span>

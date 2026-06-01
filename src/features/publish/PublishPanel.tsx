@@ -78,7 +78,7 @@ export function PublishPanel() {
       className="flex w-full max-w-md flex-col gap-4"
       aria-label={t("publish.title", "Publisering")}
     >
-      <p className="text-xs opacity-70">
+      <p className="text-xs text-text2">
         {t(
           "publish.podcastIntro",
           "Genererer en RSS-feed automatisk etter hvert opptak. Send feed-URL-en én gang til Spotify for Podcasters og Apple Podcasts Connect — nye gudstjenester dukker opp av seg selv.",
@@ -86,7 +86,7 @@ export function PublishPanel() {
       </p>
 
       {(disabled || (status.data && !featureBuilt)) && (
-        <p className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
           {t(
             "publish.featureDisabled",
             "Publisering til disk/sky er ikke bygd inn i denne versjonen. Du kan likevel forhåndsvise feeden.",
@@ -95,7 +95,7 @@ export function PublishPanel() {
       )}
 
       {/* ── Status ──────────────────────────────────────────────────── */}
-      <p className="text-sm opacity-80">
+      <p className="text-sm text-text2">
         {t("publish.candidateCount", "{{n}} opptak i feeden", {
           n: episodeCount,
         })}
@@ -106,7 +106,7 @@ export function PublishPanel() {
         <button
           type="button"
           disabled={previewMutation.isPending}
-          className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
           onClick={onPreview}
         >
           {t("publish.previewFeed", "Forhåndsvis feed")}
@@ -114,7 +114,7 @@ export function PublishPanel() {
         <button
           type="button"
           disabled={generateMutation.isPending}
-          className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           onClick={onGenerate}
         >
           {t("publish.regenerateFeed", "Generer feed nå")}
@@ -130,8 +130,8 @@ export function PublishPanel() {
       )}
 
       {preview && (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs opacity-70">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+          <p className="text-xs text-text2">
             {preview.localPath
               ? t("publish.writtenTo", "Skrevet til: {{path}}", {
                   path: preview.localPath,
@@ -146,7 +146,7 @@ export function PublishPanel() {
             </p>
           )}
           <pre
-            className="max-h-64 overflow-auto rounded-lg border border-zinc-700 bg-zinc-900/50 p-3 text-left text-[11px] leading-tight"
+            className="max-h-64 overflow-auto rounded-lg border border-border bg-surface2 p-3 text-left text-[11px] leading-tight text-text"
             aria-label={t("publish.feedXml", "Feed-XML")}
           >
             {preview.xml}

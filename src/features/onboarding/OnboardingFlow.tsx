@@ -88,12 +88,12 @@ export function OnboardingFlow() {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-bg/80 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={t("wizard.title", "Oppsett")}
     >
-      <div className="flex w-full max-w-md flex-col gap-5 rounded-2xl border border-zinc-700 bg-zinc-950 p-6">
+      <div className="flex w-full max-w-md flex-col gap-5 rounded-2xl border border-border bg-surface p-6">
         {/* Progress dots */}
         <div className="flex justify-center gap-2" aria-hidden>
           {Array.from({ length: STEP_COUNT }).map((_, i) => {
@@ -105,10 +105,10 @@ export function OnboardingFlow() {
                 data-state={n === step ? "active" : n < step ? "done" : "todo"}
                 className={`h-2 w-2 rounded-full ${
                   n === step
-                    ? "bg-amber-400"
+                    ? "bg-accent"
                     : n < step
                       ? "bg-emerald-500"
-                      : "bg-zinc-700"
+                      : "bg-surface3"
                 }`}
               />
             );
@@ -154,10 +154,10 @@ function StepWelcome({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4 text-center">
-      <h2 className="text-xl font-semibold">
+      <h2 className="text-xl font-semibold text-text">
         {t("wizard.welcomeTitle", "Velkommen til SundayRec")}
       </h2>
-      <p className="text-sm opacity-70">
+      <p className="text-sm text-text2">
         {t(
           "wizard.welcomeBody",
           "La oss sette opp programmet, slik at alt er klart til søndagen.",
@@ -166,14 +166,14 @@ function StepWelcome({
       <div className="mt-1 flex flex-col gap-2">
         <button
           type="button"
-          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
           onClick={onNext}
         >
           {t("wizard.start", "Kom i gang →")}
         </button>
         <button
           type="button"
-          className="text-sm opacity-60 hover:opacity-100"
+          className="text-sm text-text3 hover:text-text2"
           onClick={onSkipAll}
         >
           {t("wizard.skipAll", "Hopp over — sett opp manuelt")}
@@ -219,10 +219,10 @@ function StepDevice({
   return (
     <div className="flex flex-col gap-4">
       <div className="text-center">
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-xl font-semibold text-text">
           {t("wizard.deviceTitle", "Hvilken lydenhet bruker dere?")}
         </h2>
-        <p className="text-sm opacity-70">
+        <p className="text-sm text-text2">
           {t(
             "wizard.deviceBody",
             "Velg mikseren eller lydkortet som er koblet til datamaskinen.",
@@ -233,7 +233,7 @@ function StepDevice({
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {inputs.length === 0 ? (
-        <p className="text-sm opacity-60">
+        <p className="text-sm text-text3">
           {t("wizard.noDevices", "Ingen lydenheter funnet.")}
         </p>
       ) : (
@@ -247,13 +247,13 @@ function StepDevice({
                   aria-pressed={selected}
                   className={`w-full rounded-lg border px-3 py-2 text-left ${
                     selected
-                      ? "border-amber-500 bg-amber-950/30"
-                      : "border-zinc-700 hover:bg-zinc-900"
+                      ? "border-accent bg-accent/20 text-text"
+                      : "border-border text-text2 hover:bg-surface2"
                   }`}
                   onClick={() => onPick(d.name)}
                 >
                   <span className="block text-sm font-medium">{d.name}</span>
-                  <span className="block text-xs opacity-60">
+                  <span className="block text-xs text-text3">
                     {d.is_default
                       ? t("wizard.deviceDefault", "Systemets standard")
                       : t("wizard.deviceMixer", "Mikser / lydkort")}
@@ -268,7 +268,7 @@ function StepDevice({
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           onClick={() => {
             if (!picked) {
               setError(
@@ -286,7 +286,7 @@ function StepDevice({
         </button>
         <button
           type="button"
-          className="text-sm opacity-60 hover:opacity-100"
+          className="text-sm text-text3 hover:text-text2"
           onClick={onSkip}
         >
           {t("wizard.skipStep", "Hopp over dette steget")}
@@ -353,10 +353,10 @@ function StepAudioTest({
   return (
     <div className="flex flex-col gap-4">
       <div className="text-center">
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-xl font-semibold text-text">
           {t("wizard.testTitle", "Test at lyden fungerer")}
         </h2>
-        <p className="text-sm opacity-70">
+        <p className="text-sm text-text2">
           {t(
             "wizard.testBody",
             "Si noe i mikrofonen — sjekk at indikatoren beveger seg.",
@@ -368,7 +368,7 @@ function StepAudioTest({
 
       <div className="flex flex-col gap-1">
         <div
-          className="h-4 overflow-hidden rounded bg-zinc-800"
+          className="h-4 overflow-hidden rounded-lg bg-surface2"
           role="meter"
           aria-label={t("home.audioLevel", "Lydnivå — live")}
           aria-valuenow={Math.round(fraction * 100)}
@@ -381,15 +381,15 @@ function StepAudioTest({
               verdict === "clip"
                 ? "bg-red-500"
                 : verdict === "loud"
-                  ? "bg-amber-400"
+                  ? "bg-accent"
                   : verdict === "good"
                     ? "bg-emerald-500"
-                    : "bg-zinc-600"
+                    : "bg-surface3"
             }`}
             style={{ width: `${Math.round(fraction * 100)}%` }}
           />
         </div>
-        <p className="text-center text-sm" data-verdict={verdict}>
+        <p className="text-center text-sm text-text" data-verdict={verdict}>
           {VERDICT_TEXT[verdict]}
         </p>
       </div>
@@ -397,14 +397,14 @@ function StepAudioTest({
       <div className="flex flex-col gap-2">
         <button
           type="button"
-          className="rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+          className="rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
           onClick={onNext}
         >
           {t("wizard.audioWorks", "Lyden fungerer →")}
         </button>
         <button
           type="button"
-          className="text-sm opacity-60 hover:opacity-100"
+          className="text-sm text-text3 hover:text-text2"
           onClick={onSkip}
         >
           {t("wizard.skipStep", "Hopp over dette steget")}
@@ -420,10 +420,10 @@ function StepReady({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4 text-center">
-      <h2 className="text-xl font-semibold">
+      <h2 className="text-xl font-semibold text-text">
         {t("wizard.readyTitle", "Alt er klart!")}
       </h2>
-      <p className="text-sm opacity-70">
+      <p className="text-sm text-text2">
         {t(
           "wizard.readyBody",
           "SundayRec er klar til å ta opp gudstjenester. Du kan endre alle innstillinger i menyen når som helst.",
@@ -431,7 +431,7 @@ function StepReady({ onDone }: { onDone: () => void }) {
       </p>
       <button
         type="button"
-        className="mt-1 rounded bg-amber-500 px-4 py-2 font-medium text-zinc-950 hover:bg-amber-400"
+        className="mt-1 rounded-lg bg-accent px-4 py-2 font-medium text-bg hover:bg-accent/90"
         onClick={onDone}
       >
         {t("wizard.open", "Åpne SundayRec →")}

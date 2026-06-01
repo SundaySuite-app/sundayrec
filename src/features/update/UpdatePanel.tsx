@@ -109,10 +109,10 @@ export function UpdatePanel() {
       className="flex w-full max-w-md flex-col gap-3"
       aria-label={t("general.updates", "Oppdateringer")}
     >
-      <p className="text-sm opacity-80">{statusLine()}</p>
+      <p className="text-sm text-text2">{statusLine()}</p>
 
       {featureMissing && (
-        <p className="rounded border border-zinc-700 bg-zinc-900 p-2 text-xs opacity-70">
+        <p className="rounded-lg border border-border bg-surface2 p-2 text-xs text-text3">
           {t(
             "update.notBuilt",
             "Automatisk oppdatering er ikke bygget inn i denne versjonen.",
@@ -124,7 +124,7 @@ export function UpdatePanel() {
         <button
           type="button"
           disabled={checking}
-          className="rounded border border-zinc-700 px-3 py-1 text-sm hover:bg-zinc-800 disabled:opacity-50"
+          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3 disabled:opacity-50"
           onClick={() => checkMutation.mutate()}
         >
           {t("general.checkNow", "Se etter oppdateringer")}
@@ -134,7 +134,7 @@ export function UpdatePanel() {
           <button
             type="button"
             disabled={downloading}
-            className="rounded border border-sky-700 px-3 py-1 text-sm text-sky-300 hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
             onClick={() => downloadMutation.mutate()}
           >
             {t("update.downloadNow", "Last ned")}
@@ -144,7 +144,7 @@ export function UpdatePanel() {
         {phase === "readyToInstall" && (
           <button
             type="button"
-            className="rounded border border-emerald-700 px-3 py-1 text-sm text-emerald-300 hover:bg-zinc-800"
+            className="rounded-lg border border-emerald-700 px-3 py-1 text-sm text-emerald-300 hover:bg-emerald-950"
             onClick={() => relaunchMutation.mutate()}
           >
             {t("update.restartInstall", "↺ Start på nytt og installer")}

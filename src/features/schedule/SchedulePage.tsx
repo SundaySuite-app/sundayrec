@@ -23,7 +23,7 @@ const WEEKDAY_KEYS = [
 ] as const;
 
 const inputClass =
-  "rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm";
+  "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text";
 
 function emptySlot(): ScheduleSlot {
   return { days: [6], start: "11:00", stop: "12:00", max: null };
@@ -139,17 +139,17 @@ export function SchedulePage() {
   return (
     <div className="flex flex-col gap-5 text-left" data-testid="schedule-page">
       {/* Next / upcoming summary */}
-      <section className="rounded-lg border border-zinc-700 p-4">
-        <h3 className="text-sm font-medium">
+      <section className="rounded-xl border border-border bg-surface p-6">
+        <h3 className="text-sm font-medium text-text">
           {t("schedule.next", "Neste opptak")}
         </h3>
-        <p className="mt-1 text-sm opacity-80" data-testid="next-recording">
+        <p className="mt-1 text-sm text-text2" data-testid="next-recording">
           {status?.next
             ? fmt(status.next)
             : t("schedule.none", "Ingen planlagte opptak")}
         </p>
         {status && status.upcoming.length > 0 && (
-          <ul className="mt-2 list-disc pl-5 text-xs opacity-70">
+          <ul className="mt-2 list-disc pl-5 text-xs text-text3">
             {status.upcoming.slice(0, 5).map((u) => (
               <li key={u}>{fmt(u)}</li>
             ))}
@@ -160,12 +160,12 @@ export function SchedulePage() {
       {/* Weekly slots */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
+          <h3 className="text-sm font-medium text-text">
             {t("schedule.weekly", "Ukentlige opptak")}
           </h3>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-1 text-xs"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
             onClick={() => persist([...slots, emptySlot()], specials)}
           >
             {t("schedule.addSlot", "Legg til")}
@@ -173,7 +173,7 @@ export function SchedulePage() {
         </div>
 
         {slots.length === 0 && (
-          <p className="text-xs opacity-60">
+          <p className="text-xs text-text3">
             {t("schedule.noSlots", "Ingen ukentlige opptak ennå.")}
           </p>
         )}
@@ -182,7 +182,7 @@ export function SchedulePage() {
           <fieldset
             key={i}
             data-testid={`slot-${i}`}
-            className="flex flex-col gap-2 rounded border border-zinc-700 p-3"
+            className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4"
           >
             <div className="flex flex-wrap gap-1">
               {WEEKDAY_KEYS.map(([key, fallback], day) => (
@@ -192,8 +192,8 @@ export function SchedulePage() {
                   aria-pressed={slot.days.includes(day)}
                   className={`h-7 w-8 rounded text-xs ${
                     slot.days.includes(day)
-                      ? "bg-emerald-700"
-                      : "border border-zinc-700"
+                      ? "bg-accent text-bg"
+                      : "border border-border text-text2 hover:bg-surface2"
                   }`}
                   onClick={() => toggleDay(i, day)}
                 >
@@ -209,7 +209,7 @@ export function SchedulePage() {
                 value={slot.start}
                 onChange={(e) => updateSlot(i, { start: e.target.value })}
               />
-              <span className="opacity-60">–</span>
+              <span className="text-text3">–</span>
               <input
                 type="time"
                 aria-label={t("schedule.stop", "Stopp")}
@@ -232,7 +232,7 @@ export function SchedulePage() {
               />
               <button
                 type="button"
-                className="ml-auto text-xs text-red-400"
+                className="ml-auto text-xs text-red-400 hover:text-red-300"
                 onClick={() =>
                   persist(
                     slots.filter((_, idx) => idx !== i),
@@ -250,12 +250,12 @@ export function SchedulePage() {
       {/* Special (dated) recordings */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">
+          <h3 className="text-sm font-medium text-text">
             {t("schedule.special", "Spesialopptak")}
           </h3>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-1 text-xs"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
             onClick={() => persist(slots, [...specials, emptySpecial()])}
           >
             {t("schedule.addSpecial", "Legg til")}
@@ -266,7 +266,7 @@ export function SchedulePage() {
           <fieldset
             key={i}
             data-testid={`special-${i}`}
-            className="flex flex-wrap items-center gap-2 rounded border border-zinc-700 p-3"
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-4"
           >
             <input
               type="date"
@@ -290,7 +290,7 @@ export function SchedulePage() {
               value={sp.start}
               onChange={(e) => updateSpecial(i, { start: e.target.value })}
             />
-            <span className="opacity-60">–</span>
+            <span className="text-text3">–</span>
             <input
               type="time"
               aria-label={t("schedule.stop", "Stopp")}
@@ -300,7 +300,7 @@ export function SchedulePage() {
             />
             <button
               type="button"
-              className="text-xs text-red-400"
+              className="text-xs text-red-400 hover:text-red-300"
               onClick={() =>
                 persist(
                   slots,

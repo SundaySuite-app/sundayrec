@@ -394,7 +394,7 @@ export function EditorPanel() {
       aria-label={t("editor.title", "Rediger lydfil")}
     >
       {disabled && (
-        <p className="rounded border border-amber-700 p-2 text-xs text-amber-300">
+        <p className="rounded-lg border border-accent/60 bg-accent p-2 text-xs text-accent">
           {t(
             "editor.featureDisabled",
             "Redigering er ikke bygget inn i denne versjonen.",
@@ -404,8 +404,8 @@ export function EditorPanel() {
 
       {/* ── Restore-draft banner (reopen-ability) ──────────────────────── */}
       {draftToRestore && (
-        <div className="flex items-center gap-2 rounded border border-sky-700 bg-sky-950/40 p-2 text-xs">
-          <span className="flex-1">
+        <div className="flex items-center gap-2 rounded-lg border border-sky-700 bg-sky-950/40 p-2 text-xs">
+          <span className="flex-1 text-text">
             {t(
               "editor.draftFound",
               "Fant lagrede kutt fra forrige økt ({{n}}).",
@@ -414,14 +414,14 @@ export function EditorPanel() {
           </span>
           <button
             type="button"
-            className="rounded border border-sky-600 px-2 py-0.5 hover:bg-sky-900"
+            className="rounded-lg border border-sky-600 px-2 py-0.5 text-sky-300 hover:bg-sky-900"
             onClick={onRestoreDraft}
           >
             {t("editor.draftRestore", "Gjenopprett")}
           </button>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-0.5 hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-2 py-0.5 text-text2 hover:bg-surface3"
             aria-label={t("editor.draftDismiss", "Forkast")}
             onClick={onDismissDraft}
           >
@@ -431,21 +431,21 @@ export function EditorPanel() {
       )}
 
       {/* ── Recording picker ───────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-sm font-medium text-text">
             {t("editor.pickTitle", "Velg opptak")}
           </h2>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
             onClick={() => void onPickFile()}
           >
             {t("editor.openFile", "Åpne lydfil…")}
           </button>
         </div>
         {rows.length === 0 ? (
-          <p className="opacity-60">
+          <p className="text-text3">
             {t("editor.noRecordings", "Ingen opptak ennå")}
           </p>
         ) : (
@@ -454,10 +454,10 @@ export function EditorPanel() {
               <li key={r.id}>
                 <button
                   type="button"
-                  className={`w-full truncate rounded border px-2 py-1 text-left text-xs hover:bg-zinc-800 ${
+                  className={`w-full truncate rounded-lg border px-2 py-1 text-left text-xs hover:bg-surface2 ${
                     selected === r.file_path
-                      ? "border-emerald-700"
-                      : "border-zinc-700"
+                      ? "border-accent text-accent"
+                      : "border-border text-text2"
                   }`}
                   onClick={() => onSelect(r.file_path)}
                   title={r.file_path}
@@ -474,7 +474,7 @@ export function EditorPanel() {
       {selected && (
         <div className="flex flex-col gap-3">
           {info && (
-            <p className="text-xs opacity-80">
+            <p className="text-xs text-text2">
               {t("editor.duration", "Varighet")}: {info.durationSec.toFixed(1)}s
               {" · "}
               {info.hasVideo
@@ -504,14 +504,14 @@ export function EditorPanel() {
                 onSeek={setPlayheadSec}
               />
             ) : (
-              <p className="text-xs opacity-60">
+              <p className="text-xs text-text3">
                 {peaksMutation.isPending
                   ? t("editor.loading", "Laster inn lydfil…")
                   : t("editor.noWaveform", "Ingen bølgeform ennå")}
               </p>
             )}
             {peaks && (
-              <p className="text-xs opacity-70">
+              <p className="text-xs text-text2">
                 {t("editor.peaksCount", "{{n}} bølgeform-punkter", {
                   n: peaks.peaks.length,
                 })}
@@ -522,7 +522,7 @@ export function EditorPanel() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+              className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
               disabled={peaksMutation.isPending}
               onClick={() => peaksMutation.mutate(selected)}
             >
@@ -530,7 +530,7 @@ export function EditorPanel() {
             </button>
             <button
               type="button"
-              className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+              className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
               disabled={segmentsMutation.isPending}
               onClick={() => segmentsMutation.mutate(selected)}
             >
@@ -538,7 +538,7 @@ export function EditorPanel() {
             </button>
             <button
               type="button"
-              className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+              className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
               disabled={analyzeMutation.isPending}
               onClick={() => analyzeMutation.mutate(selected)}
             >
@@ -551,10 +551,10 @@ export function EditorPanel() {
               {segmentsMutation.data.map((s, i) => (
                 <li
                   key={`${s.start}-${i}`}
-                  className={`rounded border px-2 py-1 ${
+                  className={`rounded-lg border px-2 py-1 ${
                     s.kind === "sermon"
-                      ? "border-amber-600 text-amber-300"
-                      : "border-zinc-700"
+                      ? "border-accent/60 text-accent"
+                      : "border-border text-text2"
                   }`}
                 >
                   {s.label} · {s.start.toFixed(0)}–{s.end.toFixed(0)}s
@@ -564,7 +564,7 @@ export function EditorPanel() {
           )}
 
           {loudness && (
-            <p className="text-xs opacity-80">
+            <p className="text-xs text-text2">
               {t("editor.loudness", "Lydstyrke")}: {loudness.inputI.toFixed(1)}{" "}
               LUFS → {loudness.targetLufs.toFixed(0)} LUFS
             </p>
@@ -575,15 +575,15 @@ export function EditorPanel() {
               accessible / headless equal — both read and write the same tested
               cut-history machine, and on export each well-formed cut becomes an
               `EditorCutRegion` in the cut-plan the core removes. */}
-          <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-medium">
+              <h3 className="text-xs font-medium text-text">
                 {t("editor.cutsTitle", "Kuttede regioner")}
               </h3>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                  className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                   onClick={addRegion}
                 >
                   {t("editor.addCut", "Legg til kutt")}
@@ -591,7 +591,7 @@ export function EditorPanel() {
                 {cutState.cuts.length > 0 && (
                   <button
                     type="button"
-                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
                     onClick={clearRegions}
                   >
                     {t("editor.cutsNone", "Fjern alle kutt")}
@@ -600,7 +600,7 @@ export function EditorPanel() {
               </div>
             </div>
             {cutState.cuts.length === 0 ? (
-              <p className="text-xs opacity-60">
+              <p className="text-xs text-text3">
                 {t("editor.dragHint", "Klikk og dra for å markere et kutt")}
               </p>
             ) : (
@@ -617,29 +617,29 @@ export function EditorPanel() {
                       step={1}
                       value={c.start}
                       aria-label={t("editor.cutStart", "Start (sekunder)")}
-                      className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
+                      className="w-16 rounded-lg border border-border bg-surface2 px-1 py-0.5 text-text"
                       onChange={(e) =>
                         updateRegion(idx, { start: Number(e.target.value) })
                       }
                     />
-                    <span className="opacity-50">→</span>
+                    <span className="text-text3">→</span>
                     <input
                       type="number"
                       min={0}
                       step={1}
                       value={c.end}
                       aria-label={t("editor.cutEnd", "Slutt (sekunder)")}
-                      className="w-16 rounded border border-zinc-700 bg-transparent px-1 py-0.5"
+                      className="w-16 rounded-lg border border-border bg-surface2 px-1 py-0.5 text-text"
                       onChange={(e) =>
                         updateRegion(idx, { end: Number(e.target.value) })
                       }
                     />
-                    <span className="opacity-50">
+                    <span className="text-text3">
                       {clock(c.start)}–{clock(c.end)}
                     </span>
                     <button
                       type="button"
-                      className="ml-auto rounded border border-zinc-700 px-2 py-0.5 hover:bg-zinc-800"
+                      className="ml-auto rounded-lg border border-border bg-surface2 px-2 py-0.5 text-text2 hover:bg-surface3"
                       aria-label={t("editor.deleteCut", "Fjern kutt")}
                       onClick={() => removeRegion(idx)}
                     >
@@ -652,13 +652,13 @@ export function EditorPanel() {
           </div>
 
           {/* ── Export ───────────────────────────────────────────────── */}
-          <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs opacity-70">
+              <label className="text-xs text-text2">
                 {t("editor.format", "Format")}
               </label>
               <select
-                className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-xs"
+                className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text"
                 value={format}
                 onChange={(e) => setFormat(e.target.value as Format)}
                 aria-label={t("editor.format", "Format")}
@@ -669,11 +669,11 @@ export function EditorPanel() {
                   </option>
                 ))}
               </select>
-              <label className="text-xs opacity-70">
+              <label className="text-xs text-text2">
                 {t("editor.preset", "Mastering")}
               </label>
               <select
-                className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-xs"
+                className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text"
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 aria-label={t("editor.preset", "Mastering")}
@@ -690,7 +690,7 @@ export function EditorPanel() {
               <div className="flex flex-col gap-1">
                 <button
                   type="button"
-                  className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+                  className="self-start rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
                   disabled={previewMutation.isPending}
                   onClick={onPreview}
                 >
@@ -710,7 +710,7 @@ export function EditorPanel() {
             )}
             <button
               type="button"
-              className="self-start rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              className="self-start rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
               disabled={exportMutation.isPending}
               onClick={onExport}
             >

@@ -10,11 +10,11 @@ import { REVIEW_QUEUE_KEY } from "./queryKey";
 
 /** Tailwind classes for each prep-status badge. */
 const STATUS_BADGE: Record<EpisodePrepStatus, string> = {
-  analyzing: "border-zinc-600 text-zinc-300",
+  analyzing: "border-border text-text2",
   ready: "border-emerald-700 text-emerald-300",
-  "needs-attention": "border-amber-700 text-amber-300",
+  "needs-attention": "border-accent/60 text-accent",
   published: "border-sky-700 text-sky-300",
-  discarded: "border-zinc-700 text-zinc-500",
+  discarded: "border-border text-text3",
 };
 
 /** The leaf filename of a recording path (no directory, keeps the extension). */
@@ -117,14 +117,14 @@ export function ReviewPanel() {
       aria-label={t("review.queueTitle", "Klare for gjennomgang og publisering")}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">
+        <h2 className="text-sm font-medium text-text">
           {t("review.queueTitle", "Klare for gjennomgang og publisering")}
         </h2>
         {entries.length > 0 && (
           <button
             type="button"
             disabled={remindersMutation.isPending}
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
             onClick={() => remindersMutation.mutate()}
           >
             {t("review.runReminders", "Kjør påminnelser")}
@@ -137,7 +137,7 @@ export function ReviewPanel() {
           {t("review.loadError", "Kunne ikke lese gjennomgangskøen")}
         </p>
       ) : active.length === 0 ? (
-        <p className="opacity-60">
+        <p className="text-text3">
           {t("review.queueEmpty", "Ingen episoder venter på gjennomgang.")}
         </p>
       ) : (
@@ -148,17 +148,17 @@ export function ReviewPanel() {
             return (
               <li
                 key={e.id}
-                className="flex flex-col gap-2 rounded-lg border border-zinc-700 p-3 text-left"
+                className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4 text-left"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p
-                      className="truncate font-medium"
+                      className="truncate font-medium text-text"
                       title={e.prep.recordingPath}
                     >
                       {fileName(e.prep.recordingPath)}
                     </p>
-                    <p className="text-xs opacity-70">
+                    <p className="text-xs text-text2">
                       {minutes != null
                         ? t(
                             "review.sermonMinutes",
@@ -169,7 +169,7 @@ export function ReviewPanel() {
                     </p>
                   </div>
                   <span
-                    className={`shrink-0 rounded border px-1.5 py-0.5 text-xs ${STATUS_BADGE[e.prep.status]}`}
+                    className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-xs ${STATUS_BADGE[e.prep.status]}`}
                   >
                     {statusLabel(e.prep.status)}
                   </span>
@@ -178,7 +178,7 @@ export function ReviewPanel() {
                 {reasons.length > 0 && (
                   <ul className="flex flex-col gap-0.5">
                     {reasons.map((r) => (
-                      <li key={r} className="text-xs text-amber-300">
+                      <li key={r} className="text-xs text-accent">
                         • {r}
                       </li>
                     ))}
@@ -189,7 +189,7 @@ export function ReviewPanel() {
                   <button
                     type="button"
                     disabled={publishMutation.isPending}
-                    className="rounded border border-emerald-700 px-2 py-1 text-xs text-emerald-300 hover:bg-emerald-950 disabled:opacity-50"
+                    className="rounded-lg bg-accent px-3 py-1 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
                     onClick={() => publishMutation.mutate(e.id)}
                   >
                     {t("review.publishBtn", "✓ Godkjenn og publiser")}
@@ -197,7 +197,7 @@ export function ReviewPanel() {
                   <button
                     type="button"
                     disabled={discardMutation.isPending}
-                    className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+                    className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
                     onClick={() => onDiscard(e.id)}
                   >
                     {t("review.discardBtn", "✗ Ikke publiser denne uka")}

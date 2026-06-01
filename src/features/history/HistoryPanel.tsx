@@ -89,31 +89,31 @@ function HistoryRow({
   }, [row.file_path, onRevealError]);
 
   return (
-    <li className="flex flex-col gap-2 rounded-lg border border-zinc-700 p-3 text-left">
+    <li className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 text-left">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-medium" title={row.file_path}>
+          <p className="truncate font-medium text-text" title={row.file_path}>
             {fileName(row.file_path)}
           </p>
-          <p className="text-xs opacity-70">
+          <p className="text-xs text-text2">
             {formatDate(row.created_at, lang)} ·{" "}
             {formatDuration(row.duration_ms)} · {formatSize(row.byte_size)}
           </p>
-          <p className="text-xs opacity-50">
+          <p className="text-xs text-text3">
             {row.device_name ?? t("history.unknownDevice", "Ukjent enhet")}
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
             onClick={() => void reveal()}
           >
             {t("history.revealInFolder", "Vis i mappe")}
           </button>
           <button
             type="button"
-            className="rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3"
             onClick={() => {
               void invoke("open_in_sundayedit", { path: row.file_path }).catch(
                 () => {},
@@ -124,7 +124,7 @@ function HistoryRow({
           </button>
           <button
             type="button"
-            className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+            className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
             aria-label={t("history.deleteEntry", "Slett oppføring")}
             onClick={() => onDelete(row.id)}
           >
@@ -134,7 +134,7 @@ function HistoryRow({
       </div>
       <input
         type="text"
-        className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
+        className="w-full rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3"
         aria-label={t("history.editNote", "Rediger notat")}
         placeholder={t("history.notePlaceholder", "Skriv notat…")}
         value={note}
@@ -220,7 +220,7 @@ export function HistoryPanel() {
 
   if (isLoading) {
     return (
-      <p className="opacity-70">
+      <p className="text-text2">
         {t("home.connecting", "Kobler til backend …")}
       </p>
     );
@@ -240,13 +240,13 @@ export function HistoryPanel() {
       aria-label={t("history.title", "Historikk")}
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">
+        <h2 className="text-sm font-medium text-text">
           {t("history.title", "Historikk")}
         </h2>
         {allRows.length > 0 && (
           <button
             type="button"
-            className="rounded border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
+            className="rounded-lg border border-red-800 px-2 py-1 text-xs text-red-300 hover:bg-red-950"
             onClick={onClear}
           >
             {t("history.clearBtn", "Slett alle")}
@@ -258,14 +258,14 @@ export function HistoryPanel() {
         <>
           <input
             type="search"
-            className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
+            className="w-full rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3"
             aria-label={t("history.searchPlaceholder", "Søk i historikk…")}
             placeholder={t("history.searchPlaceholder", "Søk i historikk…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           {stats.count > 0 && (
-            <p className="text-xs opacity-60" data-testid="history-stats">
+            <p className="text-xs text-text3" data-testid="history-stats">
               {stats.count} {t("history.totalCount", "opptak")} ·{" "}
               {formatDuration(stats.totalDurationMs)}{" "}
               {t("history.totalDuration", "totalt")}
@@ -282,7 +282,7 @@ export function HistoryPanel() {
       )}
 
       {revealError && (
-        <p className="text-xs text-amber-400" role="alert">
+        <p className="text-xs text-accent" role="alert">
           {t(
             "history.revealError",
             "Kunne ikke åpne mappen — filen finnes kanskje ikke lenger",
@@ -291,7 +291,7 @@ export function HistoryPanel() {
       )}
 
       {rows.length === 0 ? (
-        <p className="opacity-60">
+        <p className="text-text3">
           {allRows.length > 0 && query.trim() !== ""
             ? t("search.noHits", "Ingen treff for")
             : t("history.empty", "Ingen opptak ennå")}

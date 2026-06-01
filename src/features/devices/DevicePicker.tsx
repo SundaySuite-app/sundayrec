@@ -40,7 +40,7 @@ function dbfsToFraction(db: number | null): number {
 function barColor(db: number | null): string {
   if (db === null || db <= FLOOR_DBFS) return "bg-emerald-500";
   if (db >= -3) return "bg-red-500";
-  if (db >= -12) return "bg-amber-400";
+  if (db >= -12) return "bg-accent";
   return "bg-emerald-500";
 }
 
@@ -51,11 +51,11 @@ function ChannelBar({ db, label }: { db: number | null; label: string }) {
     db === null || !Number.isFinite(db) ? "-∞" : `${db.toFixed(1)} dB`;
   return (
     <div className="flex items-center gap-2">
-      <span className="w-6 text-right text-xs tabular-nums opacity-70">
+      <span className="w-6 text-right text-xs tabular-nums text-text2">
         {label}
       </span>
       <div
-        className="h-3 flex-1 overflow-hidden rounded bg-zinc-800"
+        className="h-3 flex-1 overflow-hidden rounded-lg bg-surface2"
         role="meter"
         aria-label={`Kanal ${label} nivå`}
         aria-valuenow={pct}
@@ -67,7 +67,7 @@ function ChannelBar({ db, label }: { db: number | null; label: string }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="w-16 text-right text-xs tabular-nums opacity-70">
+      <span className="w-16 text-right text-xs tabular-nums text-text2">
         {dbLabel}
       </span>
     </div>
@@ -239,21 +239,21 @@ export function DevicePicker() {
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-zinc-700 p-4"
+      className="flex w-full max-w-md flex-col gap-4 rounded-xl border border-border bg-surface p-6"
       aria-label={t("audio.title", "Lydkilde")}
     >
       {/* ── Microphone ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-sm font-medium text-text">
             {t("audio.title", "Lydkilde")}
           </h2>
-          <span className="text-xs opacity-50">{cpalInputs?.host ?? "…"}</span>
+          <span className="text-xs text-text3">{cpalInputs?.host ?? "…"}</span>
         </div>
 
         <div className="flex items-center gap-2">
           <select
-            className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
+            className="flex-1 rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text"
             aria-label={t("audio.available", "Tilgjengelige enheter")}
             value={micName}
             disabled={vuRunning}
@@ -271,7 +271,7 @@ export function DevicePicker() {
           {vuRunning ? (
             <button
               type="button"
-              className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
+              className="rounded-lg bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
               onClick={() => void stopVu()}
             >
               {t("audio.monitorStop", "Stopp")}
@@ -279,7 +279,7 @@ export function DevicePicker() {
           ) : (
             <button
               type="button"
-              className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500"
+              className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90"
               onClick={() => void startVu()}
             >
               {t("audio.testBtn", "Start VU")}
@@ -299,12 +299,12 @@ export function DevicePicker() {
       </div>
 
       {/* ── Camera ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+      <div className="flex flex-col gap-2 border-t border-border pt-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-sm font-medium text-text">
             {t("video.cameraTitle", "Kamera")}
           </h2>
-          <label className="flex items-center gap-2 text-xs opacity-80">
+          <label className="flex items-center gap-2 text-xs text-text2">
             <input
               type="checkbox"
               aria-label={t("home.videoOn", "Video på")}
@@ -321,7 +321,7 @@ export function DevicePicker() {
           <>
             <div className="flex items-center gap-2">
               <select
-                className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm"
+                className="flex-1 rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text"
                 aria-label={t("video.pickCamera", "Velg kamera")}
                 value={videoName}
                 disabled={previewRunning}
@@ -338,7 +338,7 @@ export function DevicePicker() {
               {previewRunning ? (
                 <button
                   type="button"
-                  className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
+                  className="rounded-lg bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-500"
                   onClick={() => void stopPreview()}
                 >
                   {t("audio.monitorStop", "Stopp")}
@@ -346,7 +346,7 @@ export function DevicePicker() {
               ) : (
                 <button
                   type="button"
-                  className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500"
+                  className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90"
                   onClick={() => void startPreview()}
                 >
                   {t("home.refresh", "Start preview")}
@@ -354,7 +354,7 @@ export function DevicePicker() {
               )}
             </div>
 
-            <div className="relative aspect-video overflow-hidden rounded bg-zinc-900">
+            <div className="relative aspect-video overflow-hidden rounded-lg bg-surface2">
               {frame ? (
                 <img
                   className="h-full w-full object-contain"
@@ -362,14 +362,14 @@ export function DevicePicker() {
                   alt={t("video.cameraTitle", "Kamera")}
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs opacity-50">
+                <div className="flex h-full w-full items-center justify-center text-xs text-text3">
                   {previewRunning
                     ? t("home.checking", "Venter på første bilde …")
                     : t("home.videoPreviewPrompt", "Velg kamera og start")}
                 </div>
               )}
               {dims && (
-                <span className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] tabular-nums opacity-80">
+                <span className="absolute bottom-1 right-1 rounded-lg bg-black/60 px-1.5 py-0.5 text-[10px] tabular-nums text-text2">
                   {dims}
                 </span>
               )}
@@ -378,7 +378,7 @@ export function DevicePicker() {
         )}
 
         {videoEnabled && videoDevices.length === 0 && (
-          <p className="text-xs opacity-50">
+          <p className="text-xs text-text3">
             {t("home.cameraNoResponse", "Ingen kamera funnet")}
           </p>
         )}

@@ -69,25 +69,25 @@ export function WakePanel() {
     <div className="flex flex-col gap-4 text-left" data-testid="wake-panel">
       {/* Capabilities */}
       {caps && (
-        <section className="rounded-lg border border-zinc-700 p-4">
-          <h3 className="text-sm font-medium">
+        <section className="rounded-xl border border-border bg-surface p-6">
+          <h3 className="text-sm font-medium text-text">
             {t("wake.capabilities", "Maskinens muligheter")}
           </h3>
-          <p className="mt-1 text-xs opacity-70" data-testid="wake-platform">
+          <p className="mt-1 text-xs text-text2" data-testid="wake-platform">
             {caps.platform} · {t("wake.fromSleep", "Fra dvale")}:{" "}
             {caps.canWakeFromSleep ? "✅" : "❌"} ·{" "}
             {t("wake.fromOff", "Fra avslått")}:{" "}
             {caps.canWakeFromOff ? "✅" : "❌"}
           </p>
           {caps.knownIssues.length > 0 && (
-            <ul className="mt-2 list-disc pl-5 text-xs text-amber-300">
+            <ul className="mt-2 list-disc pl-5 text-xs text-accent">
               {caps.knownIssues.map((k) => (
                 <li key={k}>{k}</li>
               ))}
             </ul>
           )}
           {caps.recommendations.length > 0 && (
-            <ul className="mt-2 list-disc pl-5 text-xs opacity-70">
+            <ul className="mt-2 list-disc pl-5 text-xs text-text2">
               {caps.recommendations.map((r) => (
                 <li key={r}>{r}</li>
               ))}
@@ -99,10 +99,10 @@ export function WakePanel() {
       {/* Sleep config warning + fix */}
       {sleep && sleepNeedsFix(sleep) && (
         <section
-          className="rounded-lg border border-amber-700 bg-amber-950/30 p-4"
+          className="rounded-xl border border-accent/60 bg-accent p-4"
           data-testid="wake-sleep-warning"
         >
-          <p className="text-sm text-amber-200">
+          <p className="text-sm text-bg">
             {t(
               "wake.sleepWarning",
               "Strøminnstillingene kan hindre maskinen i å våkne for planlagte opptak.",
@@ -110,7 +110,7 @@ export function WakePanel() {
           </p>
           <button
             type="button"
-            className="mt-2 rounded border border-amber-600 px-3 py-1 text-xs"
+            className="mt-2 rounded-lg border border-accent px-3 py-1 text-xs text-bg hover:bg-accent/80"
             disabled={fixMutation.isPending}
             onClick={() => fixMutation.mutate()}
           >
@@ -118,7 +118,7 @@ export function WakePanel() {
           </button>
           {fixMutation.data && (
             <p
-              className="mt-1 text-xs opacity-70"
+              className="mt-1 text-xs text-bg/70"
               data-testid="wake-fix-result"
             >
               {fixMutation.data.ok
@@ -134,7 +134,7 @@ export function WakePanel() {
       <section className="flex flex-wrap gap-2">
         <button
           type="button"
-          className="rounded border border-zinc-700 px-3 py-1 text-xs"
+          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
           disabled={rescheduleMutation.isPending}
           onClick={() => rescheduleMutation.mutate()}
         >
@@ -142,7 +142,7 @@ export function WakePanel() {
         </button>
         <button
           type="button"
-          className="rounded border border-zinc-700 px-3 py-1 text-xs"
+          className="rounded-lg border border-border bg-surface2 px-3 py-1 text-xs text-text2 hover:bg-surface3"
           disabled={verifyMutation.isPending}
           onClick={() => verifyMutation.mutate()}
         >
@@ -151,7 +151,7 @@ export function WakePanel() {
       </section>
 
       {rescheduleMutation.data && (
-        <p className="text-xs opacity-70" data-testid="wake-schedule-result">
+        <p className="text-xs text-text2" data-testid="wake-schedule-result">
           {rescheduleMutation.data.ok
             ? t("wake.scheduled", "Planlagt {count} vekkinger.").replace(
                 "{count}",
@@ -166,11 +166,11 @@ export function WakePanel() {
       {/* Verification result */}
       {verifyMutation.data && (
         <section
-          className="rounded-lg border border-zinc-700 p-4 text-xs"
+          className="rounded-xl border border-border bg-surface p-4 text-xs"
           data-testid="wake-verify-result"
         >
           {verifyMutation.data.hasMismatch ? (
-            <p className="text-amber-300">
+            <p className="text-accent">
               {t(
                 "wake.mismatch",
                 "Noen forventede vekkinger mangler i operativsystemet.",
@@ -184,14 +184,14 @@ export function WakePanel() {
               )}
             </p>
           )}
-          <p className="mt-2 opacity-70">
+          <p className="mt-2 text-text2">
             {t("wake.expected", "Forventet")}:{" "}
             {verifyMutation.data.expectedWakes.length} ·{" "}
             {t("wake.observed", "Observert")}:{" "}
             {verifyMutation.data.observedWakes.length}
           </p>
           {verifyMutation.data.onBattery === true && (
-            <p className="mt-1 text-amber-300">
+            <p className="mt-1 text-accent">
               {t(
                 "wake.onBattery",
                 "På batteri — wake er mindre pålitelig uten strøm.",
@@ -199,7 +199,7 @@ export function WakePanel() {
             </p>
           )}
           {verifyMutation.data.observedWakes.length > 0 && (
-            <ul className="mt-2 list-disc pl-5 opacity-70">
+            <ul className="mt-2 list-disc pl-5 text-text2">
               {verifyMutation.data.observedWakes.slice(0, 5).map((o) => (
                 <li key={`${o.scheduledAt}-${o.ownerLabel}`}>
                   {fmt(o.scheduledAt)} — {o.ownerLabel}

@@ -87,13 +87,16 @@ export function EmailSettingsPanel() {
     (kind === "gmail" ||
       (host.trim().length > 0 && pass.length > 0 && from.trim().length > 0));
 
+  const inputClass =
+    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
       aria-label={t("email.title", "E-postvarsler")}
     >
       {(disabled || status.data?.featureBuilt === false) && (
-        <p className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+        <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
           {t(
             "email.featureDisabled",
             "E-postvarsler er ikke bygd inn i denne versjonen. Innstillingene kan likevel lagres.",
@@ -102,11 +105,11 @@ export function EmailSettingsPanel() {
       )}
 
       {/* ── Transport ───────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-2 text-sm">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <label className="flex items-center gap-2 text-sm text-text2">
           {t("email.method", "Sendemetode")}
           <select
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className="rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text"
             value={kind}
             onChange={(e) => setTransport(e.target.value as EmailTransportKind)}
             aria-label={t("email.method", "Sendemetode")}
@@ -120,7 +123,7 @@ export function EmailSettingsPanel() {
           </select>
         </label>
         {kind === "gmail" && !gmailConnected && (
-          <p className="text-xs text-amber-400">
+          <p className="text-xs text-accent">
             {t(
               "email.gmailHint",
               "Koble til Google under Sky-backup for å sende via Gmail uten SMTP.",
@@ -131,26 +134,26 @@ export function EmailSettingsPanel() {
 
       {/* ── SMTP fields ─────────────────────────────────────────────── */}
       {kind === "smtp" && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
           <input
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={inputClass}
             placeholder={t("email.smtpHost", "SMTP-tjener (f.eks. smtp.gmail.com)")}
             value={host}
             onChange={(e) => setHost(e.target.value)}
             aria-label={t("email.smtpHost", "SMTP-tjener (f.eks. smtp.gmail.com)")}
           />
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm text-text2">
             {t("email.smtpPort", "Port")}
             <input
               type="number"
-              className="w-24 rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+              className={`w-24 ${inputClass}`}
               value={port}
               onChange={(e) => setPort(Number(e.target.value))}
               aria-label={t("email.smtpPort", "Port")}
             />
           </label>
           <input
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={inputClass}
             placeholder={t("email.smtpUser", "Brukernavn (e-postadresse)")}
             value={user}
             onChange={(e) => setUser(e.target.value)}
@@ -158,14 +161,14 @@ export function EmailSettingsPanel() {
           />
           <input
             type="password"
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={inputClass}
             placeholder={t("email.smtpPass", "Passord / app-passord")}
             value={pass}
             onChange={(e) => setPass(e.target.value)}
             aria-label={t("email.smtpPass", "Passord / app-passord")}
           />
           <input
-            className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+            className={inputClass}
             placeholder={t("email.smtpFrom", "Avsender-adresse")}
             value={from}
             onChange={(e) => setFrom(e.target.value)}
@@ -175,10 +178,10 @@ export function EmailSettingsPanel() {
       )}
 
       {/* ── Recipient + test ────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
         <input
           type="email"
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("email.recipient", "Mottaker (e-postadresse)")}
           value={recipient}
           onChange={(e) => setRecipient(e.target.value)}
@@ -187,7 +190,7 @@ export function EmailSettingsPanel() {
         <button
           type="button"
           disabled={!canTest || testMutation.isPending}
-          className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           onClick={onTest}
         >
           {t("email.sendTest", "Send testvarsel")}

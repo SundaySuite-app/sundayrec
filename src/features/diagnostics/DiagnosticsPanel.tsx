@@ -30,7 +30,7 @@ function captureLabel(
   if (ok === null)
     return {
       text: t("diagnostics.notTested", "ikke testet"),
-      className: "opacity-60",
+      className: "text-text3",
     };
   if (ok)
     return { text: t("diagnostics.ok", "OK ✓"), className: "text-emerald-400" };
@@ -72,10 +72,10 @@ export function DiagnosticsPanel() {
       aria-label={t("diagnostics.title", "Diagnose")}
     >
       {/* ── Preflight: ready-to-record ──────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
         <button
           type="button"
-          className="self-start rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+          className="self-start rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           disabled={preflight.isPending}
           onClick={() => preflight.mutate()}
         >
@@ -103,7 +103,7 @@ export function DiagnosticsPanel() {
               <li
                 key={i}
                 className={`text-sm ${
-                  f.severity === "error" ? "text-red-400" : "text-amber-400"
+                  f.severity === "error" ? "text-red-400" : "text-accent"
                 }`}
               >
                 {f.severity === "error" ? "✗" : "⚠"} {f.message}
@@ -114,11 +114,11 @@ export function DiagnosticsPanel() {
       </div>
 
       {/* ── Diagnostics report ──────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2 border-t border-zinc-800 pt-3">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded bg-zinc-700 px-3 py-1 text-sm font-medium text-white hover:bg-zinc-600 disabled:opacity-50"
+            className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3 disabled:opacity-50"
             disabled={diagnostics.isPending}
             onClick={() => diagnostics.mutate()}
           >
@@ -130,7 +130,7 @@ export function DiagnosticsPanel() {
           {report && (
             <button
               type="button"
-              className="rounded border border-zinc-600 px-3 py-1 text-sm hover:bg-zinc-800"
+              className="rounded-lg border border-border bg-surface2 px-3 py-1 text-sm text-text2 hover:bg-surface3"
               onClick={() => void onCopy()}
             >
               {copied
@@ -157,13 +157,13 @@ export function DiagnosticsPanel() {
                 {t("diagnostics.videoCapture", "Video")}: {video?.text}
               </span>
               {report.savedTo && (
-                <span className="opacity-60" title={report.savedTo}>
+                <span className="text-text3" title={report.savedTo}>
                   {t("diagnostics.savedTo", "Lagret")} ✓
                 </span>
               )}
             </div>
 
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded bg-zinc-900 p-3 text-left text-xs">
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface2 p-3 text-left text-xs text-text">
               {report.markdown}
             </pre>
           </>

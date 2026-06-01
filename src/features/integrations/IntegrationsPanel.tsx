@@ -131,28 +131,31 @@ export function IntegrationsPanel() {
 
   const nativeBridge = bridgeBuilt.data ?? false;
 
+  const inputClass =
+    "rounded-lg border border-border bg-surface2 px-2 py-1 text-sm text-text placeholder:text-text3";
+
   return (
     <section
       className="flex w-full max-w-md flex-col gap-4"
       aria-label={t("integrations.title", "Integrasjoner")}
     >
       {/* ── Peer apps ───────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+        <h2 className="text-sm font-medium text-text">
           {t("integrations.peersTitle", "Sunday-appene")}
         </h2>
         <ul className="flex flex-col gap-2">
           {PEERS.map((p) => (
             <li
               key={p.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-zinc-700 p-3"
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface2 p-3"
             >
-              <span className="font-medium">{p.label}</span>
-              <span className="text-xs opacity-70">{t(p.note, p.label)}</span>
+              <span className="font-medium text-text">{p.label}</span>
+              <span className="text-xs text-text2">{t(p.note, p.label)}</span>
             </li>
           ))}
         </ul>
-        <p className="text-xs opacity-60">
+        <p className="text-xs text-text3">
           {t(
             "integrations.handoffHint",
             "Send et ferdig opptak til SundayEdit eller SundayStudio fra Historikk.",
@@ -161,33 +164,33 @@ export function IntegrationsPanel() {
       </div>
 
       {/* ── Connection ──────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+        <h2 className="text-sm font-medium text-text">
           {t("integrations.connectionTitle", "Tilkobling")}
         </h2>
         <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("integrations.churchId", "Menighets-ID")}
           value={churchId}
           onChange={(e) => setChurchId(e.target.value)}
           aria-label={t("integrations.churchId", "Menighets-ID")}
         />
         <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("integrations.serviceId", "Gudstjeneste-ID (live)")}
           value={serviceId}
           onChange={(e) => setServiceId(e.target.value)}
           aria-label={t("integrations.serviceId", "Gudstjeneste-ID (live)")}
         />
         <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("integrations.songApiUrl", "SundaySong API-URL")}
           value={songApiUrl}
           onChange={(e) => setSongApiUrl(e.target.value)}
           aria-label={t("integrations.songApiUrl", "SundaySong API-URL")}
         />
         <input
-          className="rounded border border-zinc-700 bg-transparent px-2 py-1 text-sm"
+          className={inputClass}
           placeholder={t("integrations.planApiUrl", "SundayPlan API-URL")}
           value={planApiUrl}
           onChange={(e) => setPlanApiUrl(e.target.value)}
@@ -196,7 +199,7 @@ export function IntegrationsPanel() {
         <button
           type="button"
           disabled={saveMutation.isPending}
-          className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="self-start rounded-lg bg-accent px-4 py-2 text-xs font-medium text-bg hover:bg-accent/90 disabled:opacity-50"
           onClick={onSave}
         >
           {t("integrations.save", "Lagre tilkobling")}
@@ -209,12 +212,12 @@ export function IntegrationsPanel() {
       </div>
 
       {/* ── Live cue-bridge ─────────────────────────────────────────── */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-6">
+        <h2 className="text-sm font-medium text-text">
           {t("integrations.bridgeTitle", "Live cue-bro (SundayStage)")}
         </h2>
         {!nativeBridge && (
-          <p className="rounded-lg border border-amber-700 bg-amber-950/40 p-3 text-sm text-amber-200">
+          <p className="rounded-lg border border-accent/60 bg-accent p-3 text-sm text-bg">
             {t(
               "integrations.bridgeDisabled",
               "Den innebygde live-broen er ikke bygd inn i denne versjonen. Du kan likevel lagre tilkoblingen og teste kanalnavnet.",
@@ -224,7 +227,7 @@ export function IntegrationsPanel() {
         <button
           type="button"
           disabled={!churchId.trim() || !serviceId.trim()}
-          className="self-start rounded border border-zinc-700 px-2 py-1 text-xs hover:bg-zinc-800 disabled:opacity-50"
+          className="self-start rounded-lg border border-border bg-surface2 px-2 py-1 text-xs text-text2 hover:bg-surface3 disabled:opacity-50"
           onClick={() => void onTestChannel()}
         >
           {t("integrations.testChannel", "Vis kanalnavn")}
