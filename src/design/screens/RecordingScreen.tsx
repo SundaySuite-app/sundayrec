@@ -102,6 +102,9 @@ function useRecordingSession(video: boolean) {
         opts = await invoke<RecordingOpts>("plan_recording_opts", {
           customName: null,
           maxMinutes: null,
+          // Honour the Home video toggle (not persisted) so a video recording is
+          // planned as `.mp4`, not the audio `.wav` format.
+          video,
         });
       } catch {
         const s = queryClient.getQueryData<Settings>(SETTINGS_QUERY_KEY);

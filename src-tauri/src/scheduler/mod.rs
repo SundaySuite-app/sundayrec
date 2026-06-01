@@ -241,7 +241,7 @@ async fn fire(
                 ),
                 TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
             };
-            match build_opts(app, settings, custom_name.as_deref(), max_minutes) {
+            match build_opts(app, settings, custom_name.as_deref(), max_minutes, None) {
                 Ok(opts) => {
                     let engine = app.state::<RecorderEngine>();
                     if let Err(e) = engine
@@ -288,12 +288,30 @@ pub(crate) fn build_opts(
     settings: &Settings,
     custom_name: Option<&str>,
     max_minutes: u32,
+    // `Some(b)` overrides the persisted `video_enabled` (the Home video toggle is
+    // local UI state that isn't persisted); `None` uses the setting (scheduler).
+    video_override: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let folder = resolve_save_folder(app, settings);
     std::fs::create_dir_all(&folder)?;
 
+    // Video is on when the user wants it (override, else the setting) AND a camera
+    // is actually configured. When video is on the main file MUST be a video
+    // container (mp4) — an audio container like .wav can't hold a video stream, so
+    // ffmpeg would drop the camera and silently record audio-only (the ".wav
+    // instead of .mp4 / no video" bug). The chosen audio `format` /
+    // `separate_audio_format` then only governs the SEPARATE audio sidecar;
+    // audio-only recordings still use it.
+    let camera_configured =
+        settings.video_device_name.is_some() || settings.video_device_index.is_some();
+    let video_on = video_override.unwrap_or(settings.video_enabled) && camera_configured;
+    let main_ext = if video_on {
+        "mp4"
+    } else {
+        format_ext(settings.format)
+    };
     let fname = build_filename(&FilenameParams {
-        format: format_ext(settings.format),
+        format: main_ext,
         pattern: settings.filename_pattern,
         custom_name,
         // church-calendar name not ported yet → falls back to "gudstjeneste".
@@ -311,7 +329,7 @@ pub(crate) fn build_opts(
 
     Ok(RecordingOpts {
         audio_device_name: settings.device_name.clone().unwrap_or_default(),
-        video_device_name: if settings.video_enabled {
+        video_device_name: if video_on {
             settings.video_device_name.clone()
         } else {
             None
@@ -427,7 +445,7 @@ pub async fn check_missed(
             ),
             TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
         };
-        if let Ok(opts) = build_opts(app, &settings, custom_name.as_deref(), max_minutes) {
+        if let Ok(opts) = build_opts(app, &settings, custom_name.as_deref(), max_minutes, None) {
             let engine = app.state::<RecorderEngine>();
             let _ = engine
                 .start(app.clone(), Some(pool.clone()), opts, None)

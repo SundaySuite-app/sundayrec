@@ -436,7 +436,7 @@ mod tests {
         assert!(af.contains("silencedetect="));
         assert!(
             af.contains(
-                "astats=metadata=1:reset=50:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+                "astats=metadata=1:reset=10:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
             ),
             "live per-channel levels astats+ametadata must be present; got: {af}"
         );

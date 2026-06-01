@@ -41,9 +41,18 @@ pub async fn plan_recording_opts(
     db: State<'_, Db>,
     custom_name: Option<String>,
     max_minutes: Option<u32>,
+    // The Home video toggle (local UI state, not persisted) — overrides the
+    // `video_enabled` setting so a manual video recording lands as `.mp4`.
+    video: Option<bool>,
 ) -> AppResult<RecordingOpts> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    crate::scheduler::build_opts(&app, &s, custom_name.as_deref(), max_minutes.unwrap_or(0))
+    crate::scheduler::build_opts(
+        &app,
+        &s,
+        custom_name.as_deref(),
+        max_minutes.unwrap_or(0),
+        video,
+    )
 }
 
 /// Start a unified recording for `opts`. Streams the `recording://*` events

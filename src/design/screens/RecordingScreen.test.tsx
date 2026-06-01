@@ -94,6 +94,7 @@ describe("RecordingScreen", () => {
       expect(invoke).toHaveBeenCalledWith("plan_recording_opts", {
         customName: null,
         maxMinutes: null,
+        video: false,
       }),
     );
     await waitFor(() =>

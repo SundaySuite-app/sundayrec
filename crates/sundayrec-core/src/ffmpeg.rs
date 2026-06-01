@@ -80,11 +80,12 @@ pub fn build_silence_detect_filter(
 /// chain NEVER alters the recorded file.
 ///
 /// - `metadata=1` makes astats publish the measurements as frame metadata.
-/// - `reset=50` re-measures every 50 frames (~0.5 s at 48 kHz/1024-sample
-///   frames) → a responsive-enough attack at ~1/5 the stderr volume of the old
-///   `reset=10`. The smaller meter cadence is deliberate: at `reset=10` astats
-///   printed ~94 lines/s, which could back-pressure the stderr reader and starve
-///   the capture (choppy audio). The slow RELEASE (peak-hold) is done in the UI.
+/// - `reset=10` re-measures every 10 frames (~0.2 s). `ametadata` prints once per
+///   frame REGARDLESS of `reset` (measured: ~47 lines/s/channel at any reset), so
+///   `reset` does NOT change the stderr volume — it only sets the peak WINDOW. A
+///   large window (the old `reset=50`, ~1 s) made the meter hold peaks and decay
+///   sluggishly ("the meter lags"); `reset=10` keeps the peak responsive. The
+///   choppy-audio fix is the native sample rate, not this value.
 /// - `measure_perchannel=Peak_level` restricts the measurement to ONLY the
 ///   per-channel peak we need (keeps stderr small and the parser unambiguous).
 /// - `ametadata=mode=print:file=/dev/stderr` is what makes the meter LIVE:
@@ -95,7 +96,7 @@ pub fn build_silence_detect_filter(
 ///   `/dev/stderr` is a unix path — the recorder is macOS-focused; Windows would
 ///   need a different sink (deferred).
 pub fn build_levels_detect_filter() -> String {
-    "astats=metadata=1:reset=50:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+    "astats=metadata=1:reset=10:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
         .to_string()
 }
 
@@ -107,7 +108,7 @@ mod tests {
     fn levels_filter_is_perchannel_peak_passthrough() {
         assert_eq!(
             build_levels_detect_filter(),
-            "astats=metadata=1:reset=50:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+            "astats=metadata=1:reset=10:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
         );
     }
 
@@ -116,7 +117,7 @@ mod tests {
         let f = build_levels_detect_filter();
         assert!(f.starts_with("astats="), "must be an astats filter");
         assert!(f.contains("metadata=1"), "needs metadata output");
-        assert!(f.contains("reset=50"), "needs a short, responsive window");
+        assert!(f.contains("reset=10"), "needs a short, responsive window");
         assert!(
             f.contains("measure_perchannel=Peak_level"),
             "needs per-channel peak"
