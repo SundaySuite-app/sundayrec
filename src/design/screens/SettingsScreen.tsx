@@ -10,7 +10,7 @@
  * over IPC (`settings_get` / `settings_save`), reusing the exact query key and
  * command names from `features/settings/SettingsPage.tsx`.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,8 @@ import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { FileFormat } from "@/lib/bindings/FileFormat";
 import type { FilenamePattern } from "@/lib/bindings/FilenamePattern";
 import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
+import type { SampleRate } from "@/lib/bindings/SampleRate";
+import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
 import { LANGUAGE_NAMES, SUPPORTED_LNGS, changeLanguage } from "@/i18n";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import { useVideoDevices } from "@/design/hooks";
@@ -28,6 +30,7 @@ import { useVideoDevices } from "@/design/hooks";
 import { Icon } from "../Icon";
 import { Badge, Card, DeviceRow, SegOpt, SettingRow, Toggle } from "../atoms";
 import { DEFAULT_SETTINGS, pickFolder } from "./settings.helpers";
+import { consumePendingSettingsTab, isSettingsTabId } from "./settingsTab";
 
 /** Ask the shell to switch to a different view (same CustomEvent MainLayout
  *  listens for). Used to send the "test / check" buttons to the Diagnose view,
@@ -147,81 +150,147 @@ function LiveSegOpt({
   );
 }
 
+/**
+ * Real audio-device picker (WS-1). Enumerates the system's input devices via
+ * `list_input_devices` and renders one clickable card per device. Clicking a
+ * card persists the choice as `deviceName` (the field the recorder fuzzy-matches
+ * against), so the selection actually sticks instead of falling back to the
+ * built-in mic. The "Oppdater" button re-runs enumeration so devices plugged in
+ * after launch become visible.
+ */
+function AudioDevicePicker({ s, update }: TabProps) {
+  const { t } = useTranslation();
+  // Local enumeration with an explicit refetch (so "Oppdater" can re-run it —
+  // the shared `useInputDevices` hook only enumerates once on mount).
+  const [list, setList] = useState<AudioDeviceList | null>(null);
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    invoke<AudioDeviceList>("list_input_devices")
+      .then((d) => alive && setList(d))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [nonce]);
+
+  const inputs = list?.inputs ?? [];
+  // The persisted choice. Empty/unset selects the host default device.
+  const selectedName = s.deviceName ?? null;
+
+  return (
+    <Card
+      title={t("settingsScreen.audio.devicesTitle", "Tilgjengelige enheter")}
+      icon="mic"
+      desc={t(
+        "settingsScreen.audio.devicesDesc",
+        "Velg mikseren eller lydkortet som tar opp lyden i kirken. USB-mikser anbefales fremfor innebygd mikrofon.",
+      )}
+      pad
+    >
+      <div className="sr-stack-3" style={{ marginTop: 16 }}>
+        {inputs.length === 0 ? (
+          <div style={{ fontSize: 13, color: "var(--sr-text-3)" }}>
+            {t(
+              "settingsScreen.audio.noDevicesFound",
+              "Ingen lydenheter funnet. Koble til lydkortet og trykk Oppdater.",
+            )}
+          </div>
+        ) : (
+          inputs.map((d) => {
+            // Match against the persisted name; when nothing is stored yet the
+            // host's default device is the effective selection.
+            const sel =
+              selectedName != null ? d.name === selectedName : d.is_default;
+            const layout =
+              d.channels >= 2
+                ? t("settingsScreen.audio.deviceStereo", "stereo")
+                : t("settingsScreen.audio.deviceMono", "mono");
+            const meta = [
+              d.is_default
+                ? t("settingsScreen.audio.deviceDefault", "Standard")
+                : null,
+              layout,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <div
+                key={d.name}
+                role="radio"
+                aria-checked={sel}
+                aria-label={d.name}
+                tabIndex={0}
+                style={{ cursor: "pointer" }}
+                onClick={() => update({ deviceName: d.name })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    update({ deviceName: d.name });
+                  }
+                }}
+              >
+                <DeviceRow
+                  icon="mic"
+                  name={d.name}
+                  meta={meta}
+                  sel={sel}
+                  badge={
+                    d.is_default ? (
+                      <Badge kind="ok" dot>
+                        {t("settingsScreen.audio.badgeConnected", "Tilkoblet")}
+                      </Badge>
+                    ) : undefined
+                  }
+                />
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div className="sr-row" style={{ marginTop: 16 }}>
+        <span
+          className="sr-grow"
+          style={{ fontSize: 13, color: "var(--sr-text-3)" }}
+        >
+          {t(
+            "settingsScreen.audio.deviceHelp",
+            "Ser du ikke riktig enhet? Sjekk at lydkortet er koblet til.",
+          )}
+        </span>
+        <button
+          className="sr-btn ghost sm"
+          onClick={() => setNonce((n) => n + 1)}
+          type="button"
+        >
+          <Icon name="refresh" size={14} />
+          {t("settingsScreen.audio.refresh", "Oppdater")}
+        </button>
+        <button
+          className="sr-btn ghost sm"
+          onClick={() => navigateTo("diagnostics")}
+          type="button"
+        >
+          <Icon name="speaker" size={14} />
+          {t("settingsScreen.audio.testAudio", "Test lyd")}
+        </button>
+        <button
+          className="sr-btn ghost sm"
+          onClick={() => navigateTo("diagnostics")}
+          type="button"
+        >
+          {t("settingsScreen.audio.diagnose", "Diagnose")}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 function TabLydkilde({ s, update }: TabProps) {
   const { t } = useTranslation();
   return (
     <>
-      <Card
-        title={t("settingsScreen.audio.devicesTitle", "Tilgjengelige enheter")}
-        icon="mic"
-        desc={t(
-          "settingsScreen.audio.devicesDesc",
-          "Velg mikseren eller lydkortet som tar opp lyden i kirken. USB-mikser anbefales fremfor innebygd mikrofon.",
-        )}
-        pad
-      >
-        {/* TODO: device list — no single Settings field; real device picker
-            lives in features/devices/DevicePicker. Static rows kept as-is. */}
-        <div className="sr-stack-3" style={{ marginTop: 16 }}>
-          <DeviceRow
-            icon="mic"
-            name="USB-mikser — Behringer"
-            meta="USB / ekstern · stereo"
-            sel
-            badge={
-              <Badge kind="ok" dot>
-                {t("settingsScreen.audio.badgeConnected", "Tilkoblet")}
-              </Badge>
-            }
-          />
-          <DeviceRow
-            icon="mic"
-            name="MacBook Pro-mikrofon (innebygd)"
-            meta="Intern · mono"
-            badge={
-              <Badge kind="warn">
-                {t("settingsScreen.audio.badgeNotRecommended", "Ikke anbefalt")}
-              </Badge>
-            }
-          />
-          <DeviceRow
-            icon="mic"
-            name="Mikrofonen på iPhone"
-            meta="USB / ekstern"
-            badge={
-              <Badge kind="ok" dot>
-                {t("settingsScreen.audio.badgeConnected", "Tilkoblet")}
-              </Badge>
-            }
-          />
-        </div>
-        <div className="sr-row" style={{ marginTop: 16 }}>
-          <span
-            className="sr-grow"
-            style={{ fontSize: 13, color: "var(--sr-text-3)" }}
-          >
-            {t(
-              "settingsScreen.audio.deviceHelp",
-              "Ser du ikke riktig enhet? Sjekk at lydkortet er koblet til.",
-            )}
-          </span>
-          <button
-            className="sr-btn ghost sm"
-            onClick={() => navigateTo("diagnostics")}
-            type="button"
-          >
-            <Icon name="speaker" size={14} />
-            {t("settingsScreen.audio.testAudio", "Test lyd")}
-          </button>
-          <button
-            className="sr-btn ghost sm"
-            onClick={() => navigateTo("diagnostics")}
-            type="button"
-          >
-            {t("settingsScreen.audio.diagnose", "Diagnose")}
-          </button>
-        </div>
-      </Card>
+      <AudioDevicePicker s={s} update={update} />
       <Card
         title={t("settingsScreen.audio.checkTitle", "Sjekk at alt fungerer")}
         icon="shield"
@@ -282,19 +351,34 @@ function TabLydkilde({ s, update }: TabProps) {
         title={t("settingsScreen.audio.sampleRateTitle", "Samplingsrate")}
         pad
       >
-        <div className="sr-seg cols-2" style={{ marginTop: 4 }}>
+        <div className="sr-seg cols-4" style={{ marginTop: 4 }}>
           <LiveSegOpt
-            sel={s.sampleRate === 44100}
-            title="44 100 Hz"
-            sub={t("settingsScreen.audio.sr44Sub", "Musikk, CD og podkast")}
-            onSelect={() => update({ sampleRate: 44100 })}
+            sel={s.sampleRateMode === "auto"}
+            title={t("settingsScreen.audio.srAuto", "Auto")}
+            badge={t("settingsScreen.recommended", "Anbefalt")}
+            sub={t(
+              "settingsScreen.audio.srAutoSub",
+              "Enhetens egen rate — ingen konvertering",
+            )}
+            onSelect={() => update({ sampleRateMode: "auto" as SampleRate })}
           />
           <LiveSegOpt
-            sel={s.sampleRate === 48000}
+            sel={s.sampleRateMode === "r44100"}
+            title="44 100 Hz"
+            sub={t("settingsScreen.audio.sr44Sub", "Musikk, CD og podkast")}
+            onSelect={() => update({ sampleRateMode: "r44100" as SampleRate })}
+          />
+          <LiveSegOpt
+            sel={s.sampleRateMode === "r48000"}
             title="48 000 Hz"
-            badge={t("settingsScreen.recommended", "Anbefalt")}
             sub={t("settingsScreen.audio.sr48Sub", "Video, Zoom og TV-utstyr")}
-            onSelect={() => update({ sampleRate: 48000 })}
+            onSelect={() => update({ sampleRateMode: "r48000" as SampleRate })}
+          />
+          <LiveSegOpt
+            sel={s.sampleRateMode === "r96000"}
+            title="96 000 Hz"
+            sub={t("settingsScreen.audio.sr96Sub", "Studio · høyoppløst")}
+            onSelect={() => update({ sampleRateMode: "r96000" as SampleRate })}
           />
         </div>
       </Card>
@@ -310,6 +394,22 @@ function TabLydkilde({ s, update }: TabProps) {
         {/* NOTE: `inputVolume` (input gain %) is a real Settings field but the
             redesign has no gain slider on this tab, so it stays at its
             persisted/default value — left static. */}
+        <SettingRow
+          title={t(
+            "settingsScreen.audio.showLevelsTitle",
+            "Vis nivåmåler under opptak",
+          )}
+          desc={t(
+            "settingsScreen.audio.showLevelsDesc",
+            "L/R-måleren vises mens du tar opp. Slå av for maksimal opptaksstabilitet på en travel maskin.",
+          )}
+          control={
+            <LiveToggle
+              on={s.showLiveLevels}
+              onChange={(next) => update({ showLiveLevels: next })}
+            />
+          }
+        />
         <SettingRow
           title={t(
             "settingsScreen.audio.eqTitle",
@@ -1633,8 +1733,28 @@ function TabSuite() {
 
 export function SettingsScreen() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<TabId>("lydkilde");
+  // Honour a deep-link target tab (WS-6): a navigation that set a pending tab
+  // (e.g. Home format card → "filer") opens that tab on mount. Consumed once so
+  // a later plain visit defaults to "lydkilde".
+  const [tab, setTab] = useState<TabId>(
+    () => consumePendingSettingsTab() ?? "lydkilde",
+  );
   const queryClient = useQueryClient();
+
+  // If the screen is already mounted when a deep-link lands (the shell keeps
+  // views alive), switch to the requested tab on the navigation event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const target =
+        detail && typeof detail === "object" && "tab" in detail
+          ? (detail as { tab?: unknown }).tab
+          : null;
+      if (isSettingsTabId(target)) setTab(target);
+    };
+    window.addEventListener("shell:navigate", handler);
+    return () => window.removeEventListener("shell:navigate", handler);
+  }, []);
 
   // Load persisted settings over the same cache key as `SettingsPage`. In the
   // dev/test env `settings_get` may reject — we fall back to static defaults

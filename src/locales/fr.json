@@ -1210,7 +1210,11 @@
     "formatMeta": "Stéréo · 48 kHz · qualité maximale",
     "diskFree": "{{size}} libre",
     "storageHoursVideo": "~{{hours}} heures d'enregistrement restantes",
-    "storageHoursAudio": "~{{hours}} heures d'audio seul restantes"
+    "storageHoursAudio": "~{{hours}} heures d'audio seul restantes",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
+    "signalLevel": "Signal level",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Diffusion en direct",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Enregistrement en cours",
     "statusStarting": "Démarrage …",
     "statusReconnecting": "Reconnexion",
-    "signalWeak": "FAIBLE",
+    "signalWeak": "Faible",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Caméra",
@@ -1267,7 +1271,9 @@
     "stopButton": "Appuyez pour arrêter l'enregistrement",
     "savedAs": "Enregistré sous :",
     "errorPrefix": "Erreur ({{code}})",
-    "startFailed": "Impossible de démarrer l'enregistrement :"
+    "startFailed": "Impossible de démarrer l'enregistrement :",
+    "signalGood": "Bon",
+    "signalLoud": "Fort"
   },
   "scheduleScreen": {
     "pageTitle": "Planning",
@@ -1382,7 +1388,17 @@
       "compTitle": "Compresseur",
       "compDesc": "Lisse les variations du niveau de la voix.",
       "limiterTitle": "Limiteur (protection contre l'écrêtage)",
-      "limiterDesc": "Empêche les sons forts soudains de saturer."
+      "limiterDesc": "Empêche les sons forts soudains de saturer.",
+      "noDevicesFound": "No audio devices found. Connect your audio interface and press Refresh.",
+      "refresh": "Refresh",
+      "deviceDefault": "Default",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Device's own rate — no conversion",
+      "sr96Sub": "Studio · high resolution",
+      "showLevelsTitle": "Show level meter while recording",
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
     },
     "video": {
       "enableTitle": "Activer l'enregistrement vidéo",

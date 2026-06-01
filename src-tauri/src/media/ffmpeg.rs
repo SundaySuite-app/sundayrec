@@ -353,7 +353,7 @@ mod tests {
                     "-t".into(),
                     "0.5".into(),
                 ];
-                args.extend(audio_encode_args(ext, chans, 48_000, 192));
+                args.extend(audio_encode_args(ext, chans, Some(48_000), 192));
                 args.push("-y".into());
                 args.push(out_s.clone());
 
@@ -410,6 +410,91 @@ mod tests {
             }
         }
         eprintln!("format matrix: all 4 formats × mono/stereo encoded + ffprobed OK");
+    }
+
+    /// LEVELS-CHAIN REGRESSION: encode a 2 s tone through the FULL live-levels
+    /// `astats` filter + the recorder's real `audio_encode_args` with a NATIVE
+    /// (`None`) sample rate, then ffprobe the result. This catches arg/filter
+    /// regressions — a malformed `-af` chain, a filter ffmpeg rejects, or a
+    /// `None`-sample-rate path that produces a zero/short file. For the lavfi
+    /// `sine` source the "native" rate is the requested 48000, so omitting `-ar`
+    /// still yields a 48000 Hz file. NOTE: this proves the args are VALID and the
+    /// output is whole; it cannot prove the audio is glitch-free — that needs real
+    /// hardware. Skips cleanly when the sidecars aren't fetched (CI).
+    #[test]
+    fn levels_chain_records_glitch_free_or_skips() {
+        use sundayrec_core::capture::audio_encode_args;
+        use sundayrec_core::ffmpeg::build_levels_detect_filter;
+        use sundayrec_core::recorder::MIN_VALID_OUTPUT_BYTES;
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("levels.wav");
+        let out_s = out.to_string_lossy().into_owned();
+
+        let mut args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:duration=2:sample_rate=48000".into(),
+            "-af".into(),
+            build_levels_detect_filter(),
+            "-t".into(),
+            "2".into(),
+        ];
+        // None exercises the native-rate path (omit -ar); 2 stereo channels.
+        args.extend(audio_encode_args("wav", 2, None, 192));
+        args.push("-y".into());
+        args.push(out_s.clone());
+
+        let status = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .output()
+            .expect("ffmpeg should run");
+        assert!(
+            status.status.success(),
+            "ffmpeg failed for the levels chain: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+
+        let len = std::fs::metadata(&out).expect("output exists").len();
+        assert!(
+            len >= MIN_VALID_OUTPUT_BYTES,
+            "levels-chain output too small: {len} bytes"
+        );
+
+        // Duration ≈ 2.0 s (±0.15) proves the chain didn't truncate the stream.
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&out)
+            .output()
+            .expect("ffprobe should run");
+        assert!(
+            probe.status.success(),
+            "ffprobe failed for the levels chain"
+        );
+        let dur: f64 = String::from_utf8_lossy(&probe.stdout)
+            .trim()
+            .parse()
+            .expect("ffprobe should report a numeric duration");
+        assert!(
+            (dur - 2.0).abs() <= 0.15,
+            "levels-chain duration off: {dur} s (expected ≈ 2.0)"
+        );
+        eprintln!("levels chain: encoded + ffprobed OK ({dur:.3} s, {len} bytes)");
     }
 
     #[test]

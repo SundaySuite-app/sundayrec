@@ -39,9 +39,11 @@ framerate: number,
  */
 channel_mode: ChannelMode, 
 /**
- * Output sample rate in Hz (clamped to the validated 8–192 kHz range).
+ * Capture sample rate in Hz, or `None` to capture at the device's NATIVE
+ * rate (omit `-ar` — the anti-resample / anti-choppiness fix). Resolved from
+ * `Settings::sample_rate_mode` via `resolved_sample_rate()`.
  */
-sample_rate: number, 
+sample_rate: number | null, 
 /**
  * Output bitrate in kbps for lossy codecs (mp3/aac); ignored by wav/flac.
  */
@@ -53,4 +55,9 @@ split_minutes: number,
 /**
  * Auto-stop the whole session after N minutes (0 = off).
  */
-manual_max_minutes: number, };
+manual_max_minutes: number, 
+/**
+ * Emit the live L/R level meters (`astats`) during capture? When `false`,
+ * the levels filter is dropped to keep capture maximally stable.
+ */
+live_levels: boolean, };

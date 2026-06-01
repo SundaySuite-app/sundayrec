@@ -30,6 +30,22 @@ export function dbfsToFraction(db: number | null | undefined): number {
   return (db - FLOOR_DBFS) / -FLOOR_DBFS;
 }
 
+/**
+ * Coarse signal-strength bucket for a live dBFS peak, used to drive the
+ * dynamic "Svak / OK / Bra / Høy" label. Thresholds: `< -24` weak,
+ * `-24..<-12` ok, `-12..<-6` good, `>= -6` loud. A null/non-finite reading
+ * (silence / no telemetry yet) reads as `weak`.
+ */
+export function levelLabel(
+  db: number | null | undefined,
+): "weak" | "ok" | "good" | "loud" {
+  if (db == null || !Number.isFinite(db)) return "weak";
+  if (db < -24) return "weak";
+  if (db < -12) return "ok";
+  if (db < -6) return "good";
+  return "loud";
+}
+
 /** Number of lit segments (of `total`) for a dBFS level on a segmented meter. */
 export function dbfsToLit(
   db: number | null | undefined,

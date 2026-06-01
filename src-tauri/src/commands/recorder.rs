@@ -94,7 +94,14 @@ pub async fn start_recording(
                 preroll
                     .harvest(
                         secs as u32,
-                        opts.sample_rate.max(8_000),
+                        // The recording may capture at the device's NATIVE rate
+                        // (`opts.sample_rate == None`). The harvest fn needs a
+                        // concrete u32 to re-encode the few-second pre-roll clip
+                        // for the lossless `-c copy` prepend; with Auto we don't
+                        // know the device rate here, so pin a fixed 48 kHz clip —
+                        // a short fixed-rate clip concatenated in front is
+                        // acceptable. Forced rates pass through unchanged.
+                        opts.sample_rate.unwrap_or(48_000),
                         channels,
                         codec.ffmpeg_name(),
                         bitrate,

@@ -117,6 +117,41 @@ pub fn build_filename(p: &FilenameParams) -> String {
     }
 }
 
+/// Make `base_path` unique against a caller-supplied existence predicate so a
+/// second recording on the same day NEVER overwrites the first. If `base_path`
+/// doesn't already exist it is returned unchanged; otherwise `_2`, `_3`, … is
+/// inserted BEFORE the extension (`rec.mp3` → `rec_2.mp3`) until `exists`
+/// returns false. Paths with no extension get the suffix appended directly
+/// (`rec` → `rec_2`). Pure: the `exists` closure is the only I/O seam, so the
+/// collision logic is fully unit-tested.
+pub fn make_unique_path(base_path: &str, exists: impl Fn(&str) -> bool) -> String {
+    if !exists(base_path) {
+        return base_path.to_string();
+    }
+    // Split the path into "stem" + ".ext", parsing the extension from the
+    // BASENAME only (a dotted directory must not be mistaken for an extension) —
+    // the same rule `ext_of`/`build_filename` use. The dot index is relative to
+    // the whole path so the directory is preserved verbatim.
+    let last_sep = base_path.rfind(['/', '\\']);
+    let name_start = last_sep.map(|i| i + 1).unwrap_or(0);
+    let dot_in_name = base_path[name_start..]
+        .rfind('.')
+        .map(|rel| name_start + rel);
+    let (stem, ext) = match dot_in_name {
+        Some(dot) => (&base_path[..dot], &base_path[dot..]), // ext keeps its '.'
+        None => (base_path, ""),
+    };
+
+    let mut n = 2;
+    loop {
+        let candidate = format!("{stem}_{n}{ext}");
+        if !exists(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +287,47 @@ mod tests {
             ..base_like(dt("2026-12-24 16:00"))
         };
         assert_eq!(build_filename(&blank), "2026-12-24.mp3");
+    }
+
+    #[test]
+    fn make_unique_path_no_collision_returns_unchanged() {
+        let taken: &[&str] = &[];
+        let out = make_unique_path("/recs/a_2026-06-07.mp3", |p| taken.contains(&p));
+        assert_eq!(out, "/recs/a_2026-06-07.mp3");
+    }
+
+    #[test]
+    fn make_unique_path_single_collision_inserts_2() {
+        let taken = ["/recs/a.mp3"];
+        let out = make_unique_path("/recs/a.mp3", |p| taken.contains(&p));
+        assert_eq!(out, "/recs/a_2.mp3");
+    }
+
+    #[test]
+    fn make_unique_path_double_collision_inserts_3() {
+        let taken = ["/recs/a.mp3", "/recs/a_2.mp3"];
+        let out = make_unique_path("/recs/a.mp3", |p| taken.contains(&p));
+        assert_eq!(out, "/recs/a_3.mp3");
+    }
+
+    #[test]
+    fn make_unique_path_handles_no_extension() {
+        let taken = ["/recs/a"];
+        let out = make_unique_path("/recs/a", |p| taken.contains(&p));
+        assert_eq!(out, "/recs/a_2");
+    }
+
+    #[test]
+    fn make_unique_path_dotted_directory_not_mistaken_for_extension() {
+        // A dot in a DIRECTORY name must not be treated as the file extension;
+        // the basename here has no extension → suffix appended to the whole path.
+        let taken = ["/my.recs/a"];
+        let out = make_unique_path("/my.recs/a", |p| taken.contains(&p));
+        assert_eq!(out, "/my.recs/a_2");
+        // With an extension present, the dotted dir is still preserved.
+        let taken2 = ["/my.recs/a.wav"];
+        let out2 = make_unique_path("/my.recs/a.wav", |p| taken2.contains(&p));
+        assert_eq!(out2, "/my.recs/a_2.wav");
     }
 
     /// A `Date`-pattern, mp3, no-extras params at `now` — test convenience.

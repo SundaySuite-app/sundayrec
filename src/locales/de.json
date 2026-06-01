@@ -1210,7 +1210,11 @@
     "formatMeta": "Stereo · 48 kHz · höchste Qualität",
     "diskFree": "{{size}} frei",
     "storageHoursVideo": "~{{hours}} Stunden Aufnahme übrig",
-    "storageHoursAudio": "~{{hours}} Stunden Nur-Audio übrig"
+    "storageHoursAudio": "~{{hours}} Stunden Nur-Audio übrig",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
+    "signalLevel": "Signal level",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Livestream",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Nimmt jetzt auf",
     "statusStarting": "Startet …",
     "statusReconnecting": "Verbindung wird wiederhergestellt",
-    "signalWeak": "SCHWACH",
+    "signalWeak": "Schwach",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Kamera",
@@ -1267,7 +1271,9 @@
     "stopButton": "Zum Beenden der Aufnahme drücken",
     "savedAs": "Gespeichert als:",
     "errorPrefix": "Fehler ({{code}})",
-    "startFailed": "Aufnahme konnte nicht gestartet werden:"
+    "startFailed": "Aufnahme konnte nicht gestartet werden:",
+    "signalGood": "Gut",
+    "signalLoud": "Laut"
   },
   "scheduleScreen": {
     "pageTitle": "Zeitplan",
@@ -1382,7 +1388,17 @@
       "compTitle": "Kompressor",
       "compDesc": "Gleicht Schwankungen in der Stimmlautstärke aus.",
       "limiterTitle": "Limiter (Übersteuerungsschutz)",
-      "limiterDesc": "Verhindert, dass plötzlich laute Töne übersteuern."
+      "limiterDesc": "Verhindert, dass plötzlich laute Töne übersteuern.",
+      "noDevicesFound": "No audio devices found. Connect your audio interface and press Refresh.",
+      "refresh": "Refresh",
+      "deviceDefault": "Default",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Device's own rate — no conversion",
+      "sr96Sub": "Studio · high resolution",
+      "showLevelsTitle": "Show level meter while recording",
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
     },
     "video": {
       "enableTitle": "Videoaufnahme aktivieren",

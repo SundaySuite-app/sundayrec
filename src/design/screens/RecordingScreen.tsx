@@ -20,7 +20,7 @@
  * Still backend-owned: the output path / real device come from the save-folder
  * + filename pipeline — here we pass best-effort opts and fail soft.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -35,7 +35,14 @@ import type { Settings } from "@/lib/bindings/Settings";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 
 import { Icon } from "../Icon";
-import { useDiskSpace, formatBytes, dbfsToLit, formatDbfs } from "../hooks";
+import {
+  useDiskSpace,
+  formatBytes,
+  dbfsToLit,
+  formatDbfs,
+  levelLabel,
+} from "../hooks";
+import { resolvedSampleRate } from "./settings.helpers";
 
 /**
  * Drive a recording session: start on mount, stop on unmount/stop, and surface
@@ -46,8 +53,6 @@ function useRecordingSession(video: boolean) {
   const [bytes, setBytes] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
-  const [silence, setSilence] = useState<RecordingEvent | null>(null);
-  const [levels, setLevels] = useState<RecordingLevels | null>(null);
   const [error, setError] = useState<RecordingEvent | null>(null);
   const [state, setState] = useState<RecorderStatePayload | null>(null);
   const [savePath, setSavePath] = useState<string | null>(null);
@@ -65,12 +70,9 @@ function useRecordingSession(video: boolean) {
     const unProgress = listen<RecordingProgress>("recording://progress", (e) =>
       setBytes(e.payload.bytes_written),
     );
-    const unSilence = listen<RecordingEvent>("recording://silence", (e) =>
-      setSilence(e.payload),
-    );
-    const unLevels = listen<RecordingLevels>("recording://levels", (e) =>
-      setLevels(e.payload),
-    );
+    // The recorder still emits `recording://silence`; the focused overlay no
+    // longer surfaces it directly (the live signal label now reflects level), so
+    // we intentionally don't subscribe to it here.
     const unError = listen<RecordingEvent>("recording://error", (e) =>
       setError(e.payload),
     );
@@ -80,8 +82,6 @@ function useRecordingSession(video: boolean) {
     return () => {
       void unStarted.then((off) => off());
       void unProgress.then((off) => off());
-      void unSilence.then((off) => off());
-      void unLevels.then((off) => off());
       void unError.then((off) => off());
       void unState.then((off) => off());
     };
@@ -112,13 +112,16 @@ function useRecordingSession(video: boolean) {
           silence_timeout_minutes: s?.silenceTimeoutMinutes ?? 5,
           framerate: 30,
           channel_mode: s?.channels ?? "stereo",
-          sample_rate: Math.min(Math.max(s?.sampleRate ?? 48000, 8000), 192000),
+          // Resolve the sample-rate POLICY (auto → null = native rate, no
+          // resample) — the recorder no longer reads the legacy `sampleRate`.
+          sample_rate: resolvedSampleRate(s?.sampleRateMode ?? "auto"),
           bitrate_kbps: Math.min(
             Math.max(Number.parseInt(s?.bitrate ?? "192", 10) || 192, 32),
             320,
           ),
           split_minutes: s?.splitMinutes ?? 0,
           manual_max_minutes: s?.manualMaxMinutes ?? 0,
+          live_levels: s?.showLiveLevels ?? true,
         };
       }
       // Honour the Home video toggle even if it differs from the persisted flag.
@@ -172,8 +175,6 @@ function useRecordingSession(video: boolean) {
     started,
     bytes,
     elapsed,
-    silence,
-    levels,
     error,
     state,
     savePath,
@@ -234,7 +235,17 @@ function usePeakHold(value: number, decayPerSec = 26): number {
 // backend `recording://levels` event — `on` is the lit-segment count from
 // `dbfsToLit(peakDb, 44)`. The white tick is a peak-hold marker that tracks the
 // loudest recent level and decays slowly back down.
-function RecMeter({ ch, on }: { ch: string; on: number }) {
+//
+// Memoized: a `recording://levels` event re-renders only the metering block, so
+// an unchanged `on` (same lit-segment count between frames) skips this entirely
+// — keeping the needle snappy without thrashing the rest of the screen.
+const RecMeter = memo(function RecMeter({
+  ch,
+  on,
+}: {
+  ch: string;
+  on: number;
+}) {
   const peak = usePeakHold(on);
   return (
     <div className="sr-row" style={{ gap: 14 }}>
@@ -283,7 +294,7 @@ function RecMeter({ ch, on }: { ch: string; on: number }) {
       </div>
     </div>
   );
-}
+});
 
 function RecScale() {
   return (
@@ -307,15 +318,9 @@ function RecScale() {
 
 function RecHeader({
   status,
-  weak,
-  dbLeft,
-  dbRight,
   device,
 }: {
   status: "starting" | "recording" | "reconnecting";
-  weak: boolean;
-  dbLeft: number;
-  dbRight: number;
   device: string;
 }) {
   const { t } = useTranslation();
@@ -359,64 +364,114 @@ function RecHeader({
           </div>
         </div>
       </div>
-      <div className="sr-row" style={{ gap: 8, marginTop: 1 }}>
-        <span
-          style={{
-            width: 9,
-            height: 9,
-            borderRadius: "50%",
-            background: weak ? "var(--sr-gold)" : "var(--sr-green)",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 14,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
-            color: "var(--sr-text-2)",
-          }}
-        >
-          {weak
-            ? t("recordingScreen.signalWeak", "SVAK")
-            : t("recordingScreen.signalOk", "OK")}
-        </span>
-      </div>
-      <div
-        className="sr-row"
-        style={{ gap: 18, marginLeft: 28, alignItems: "baseline" }}
-      >
-        <span
-          className="sr-mono sr-num"
-          style={{ fontSize: 13, color: "var(--sr-text-3)" }}
-        >
-          L{" "}
-          <span
-            style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
-          >
-            {formatDbfs(dbLeft)}
-          </span>
-        </span>
-        <span
-          className="sr-mono sr-num"
-          style={{ fontSize: 13, color: "var(--sr-text-3)" }}
-        >
-          R{" "}
-          <span
-            style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
-          >
-            {formatDbfs(dbRight)}
-          </span>
-        </span>
-        <span
-          className="sr-mono"
-          style={{ fontSize: 12, color: "var(--sr-text-dim)" }}
-        >
-          {t("recordingScreen.dbfs", "dBFS")}
-        </span>
-      </div>
     </div>
   );
 }
+
+/**
+ * The level-driven block: the live signal label (Svak/OK/Bra/Høy), the L/R
+ * dBFS readouts, and the two L/R meters. It owns the `recording://levels`
+ * subscription itself so the high-frequency level stream re-renders ONLY this
+ * subtree — the timer, file-size and header above never re-render per frame
+ * (WS-4). Memoized so a parent re-render (e.g. the 1 Hz clock) doesn't churn it.
+ */
+const MeterSection = memo(function MeterSection({ video }: { video: boolean }) {
+  const { t } = useTranslation();
+  const [levels, setLevels] = useState<RecordingLevels | null>(null);
+  useEffect(() => {
+    const un = listen<RecordingLevels>("recording://levels", (e) =>
+      setLevels(e.payload),
+    );
+    return () => {
+      void un.then((off) => off());
+    };
+  }, []);
+
+  // Before the first readout arrives, fall back to a neutral sample so the
+  // meters aren't blank.
+  const SAMPLE_DBFS = -40.6;
+  const peakDbLeft = levels?.peak_db_left ?? SAMPLE_DBFS;
+  const peakDbRight = levels?.peak_db_right ?? peakDbLeft;
+  const peakMax = Math.max(peakDbLeft, peakDbRight);
+
+  // Dynamic signal label from the louder of L/R (WS-4).
+  const signalKey = levelLabel(peakMax);
+  const signalLabel = {
+    weak: t("recordingScreen.signalWeak", "Svak"),
+    ok: t("recordingScreen.signalOk", "OK"),
+    good: t("recordingScreen.signalGood", "Bra"),
+    loud: t("recordingScreen.signalLoud", "Høy"),
+  }[signalKey];
+  const signalGreen = signalKey === "ok" || signalKey === "good";
+
+  return (
+    <>
+      <div
+        className="sr-row"
+        style={{ alignItems: "flex-start", marginBottom: 16, marginTop: -6 }}
+      >
+        <div className="sr-grow sr-row" style={{ gap: 8 }}>
+          <span
+            style={{
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              background: signalGreen ? "var(--sr-green)" : "var(--sr-gold)",
+            }}
+          />
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              color: "var(--sr-text-2)",
+            }}
+          >
+            {signalLabel}
+          </span>
+        </div>
+        <div className="sr-row" style={{ gap: 18, alignItems: "baseline" }}>
+          <span
+            className="sr-mono sr-num"
+            style={{ fontSize: 13, color: "var(--sr-text-3)" }}
+          >
+            L{" "}
+            <span
+              style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
+            >
+              {formatDbfs(peakDbLeft)}
+            </span>
+          </span>
+          <span
+            className="sr-mono sr-num"
+            style={{ fontSize: 13, color: "var(--sr-text-3)" }}
+          >
+            R{" "}
+            <span
+              style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
+            >
+              {formatDbfs(peakDbRight)}
+            </span>
+          </span>
+          <span
+            className="sr-mono"
+            style={{ fontSize: 12, color: "var(--sr-text-dim)" }}
+          >
+            {t("recordingScreen.dbfs", "dBFS")}
+          </span>
+        </div>
+      </div>
+      <div
+        className={video ? "sr-stack-3" : "sr-stack-4"}
+        style={{ marginTop: video ? 4 : 8 }}
+      >
+        <RecMeter ch="L" on={dbfsToLit(peakDbLeft, 44)} />
+        <RecMeter ch="R" on={dbfsToLit(peakDbRight, 44)} />
+      </div>
+      <RecScale />
+    </>
+  );
+});
 
 function RecFooter({
   time,
@@ -525,8 +580,6 @@ export function RecordingScreen({
     started,
     bytes,
     elapsed,
-    silence,
-    levels,
     error,
     state,
     savePath,
@@ -542,12 +595,6 @@ export function RecordingScreen({
       : started
         ? "recording"
         : "starting";
-
-  // Per-channel peak dBFS from the recorder's astats telemetry. Before the first
-  // readout arrives, fall back to a neutral sample so the meters aren't blank.
-  const SAMPLE_DBFS = -40.6;
-  const peakDbLeft = levels?.peak_db_left ?? SAMPLE_DBFS;
-  const peakDbRight = levels?.peak_db_right ?? peakDbLeft;
 
   const handleStop = useCallback(() => {
     void stop().finally(() => onStop?.());
@@ -631,19 +678,12 @@ export function RecordingScreen({
           )}
           <RecHeader
             status={status}
-            weak={silence !== null}
-            dbLeft={peakDbLeft}
-            dbRight={peakDbRight}
             device={deviceLabel || "Standard lydinngang"}
           />
-          <div
-            className={video ? "sr-stack-3" : "sr-stack-4"}
-            style={{ marginTop: video ? 4 : 8 }}
-          >
-            <RecMeter ch="L" on={dbfsToLit(peakDbLeft, 44)} />
-            <RecMeter ch="R" on={dbfsToLit(peakDbRight, 44)} />
-          </div>
-          <RecScale />
+          {/* Isolated level-driven block: signal label + L/R dB + meters. Owns
+              the `recording://levels` subscription so high-frequency level
+              updates re-render ONLY this subtree (WS-4). */}
+          <MeterSection video={video} />
           {startError && (
             <div
               className="sr-mono"

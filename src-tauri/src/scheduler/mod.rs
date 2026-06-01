@@ -302,6 +302,12 @@ pub(crate) fn build_opts(
         now: Local::now().naive_local(),
     });
     let output_path = folder.join(fname).to_string_lossy().into_owned();
+    // Never overwrite a same-day recording: bump to `_2`, `_3`, … if the chosen
+    // filename already exists on disk (pure suffix logic in core; `Path::exists`
+    // is the only I/O seam).
+    let output_path = sundayrec_core::filename::make_unique_path(&output_path, |p| {
+        std::path::Path::new(p).exists()
+    });
 
     Ok(RecordingOpts {
         audio_device_name: settings.device_name.clone().unwrap_or_default(),
@@ -316,10 +322,13 @@ pub(crate) fn build_opts(
         silence_timeout_minutes: settings.silence_timeout_minutes.max(1) as u32,
         framerate: settings.video_framerate.clamp(1, 120) as u32,
         channel_mode: settings.channels,
-        sample_rate: settings.sample_rate.clamp(8_000, 192_000) as u32,
+        // Auto (native) → None (omit -ar, no resample → no choppiness); explicit
+        // modes → Some(hz). The legacy `sample_rate: i32` field is NOT used.
+        sample_rate: settings.resolved_sample_rate(),
         bitrate_kbps: settings.bitrate_kbps(),
         split_minutes: settings.split_minutes.max(0) as u32,
         manual_max_minutes: max_minutes,
+        live_levels: settings.show_live_levels,
     })
 }
 

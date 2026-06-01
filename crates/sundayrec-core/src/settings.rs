@@ -49,6 +49,25 @@ pub enum ChannelMode {
     MonoMix,
 }
 
+/// Capture sample-rate policy. `Auto` (the default) captures at the device's
+/// NATIVE rate — the recorder omits `-ar` entirely so ffmpeg never resamples
+/// (forcing a 48 kHz `-ar` on a 44.1 kHz USB mixer dropped samples → choppy
+/// audio). The explicit rates force that rate via `-ar`. Serialised camelCase
+/// (`"auto" | "r44100" | "r48000" | "r96000"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/SampleRate.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum SampleRate {
+    /// Capture at the device's native rate (omit `-ar`).
+    Auto,
+    /// Force 44.1 kHz.
+    R44100,
+    /// Force 48 kHz.
+    R48000,
+    /// Force 96 kHz.
+    R96000,
+}
+
 /// Output audio container/codec. Serialised lowercase to match the Electron
 /// union (`'mp3' | 'wav' | 'flac' | 'aac'`, see `types/index.ts:2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -142,9 +161,16 @@ pub struct Settings {
     /// Input channel layout.
     #[serde(default = "default_channels")]
     pub channels: ChannelMode,
-    /// Sample rate in Hz. Valid 8000..=192000, default 48000.
+    /// Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
+    /// back-compat with exported/old profiles; the RECORDER no longer reads it —
+    /// it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
     #[serde(default = "default_sample_rate")]
     pub sample_rate: i32,
+    /// How the capture sample rate is chosen. `Auto` (default) captures at the
+    /// device's native rate (no resample → no choppiness); the explicit variants
+    /// force a rate. This is what the recorder actually consults.
+    #[serde(default = "default_sample_rate_mode")]
+    pub sample_rate_mode: SampleRate,
     /// Input gain as a percentage. Valid 0..=200, default 100.
     #[serde(default = "default_input_volume")]
     pub input_volume: i32,
@@ -221,6 +247,12 @@ pub struct Settings {
     /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
     #[serde(default)]
     pub pre_roll_seconds: i32,
+    /// Show the live L/R level meters during recording? Default true. When off,
+    /// the recorder drops the `astats` levels filter from its ffmpeg chain — the
+    /// meter's per-frame stderr can starve capture on a loaded machine, so turning
+    /// the meters off trades the display for maximum capture stability.
+    #[serde(default = "default_true")]
+    pub show_live_levels: bool,
     /// Reminder notification N minutes before a scheduled recording.
     /// Valid 0..=60, 0 = off.
     #[serde(default)]
@@ -329,6 +361,9 @@ fn default_channels() -> ChannelMode {
 fn default_sample_rate() -> i32 {
     48_000
 }
+fn default_sample_rate_mode() -> SampleRate {
+    SampleRate::Auto
+}
 fn default_input_volume() -> i32 {
     100
 }
@@ -400,6 +435,7 @@ impl Default for Settings {
 
             channels: default_channels(),
             sample_rate: default_sample_rate(),
+            sample_rate_mode: default_sample_rate_mode(),
             input_volume: default_input_volume(),
             eq_enabled: false,
             eq_bass: 0,
@@ -426,6 +462,7 @@ impl Default for Settings {
             trim_silence: false,
             manual_max_minutes: 0,
             pre_roll_seconds: 0,
+            show_live_levels: true,
             reminder_minutes: 0,
 
             launch_at_login: false,
@@ -537,6 +574,20 @@ impl Settings {
             .unwrap_or(192)
     }
 
+    /// The capture sample rate the recorder should use, derived from
+    /// [`Settings::sample_rate_mode`]. `Auto` → `None` (omit `-ar`, capture at the
+    /// device's native rate → no resample → no choppiness); the explicit variants
+    /// → `Some(hz)`. This is the recorder's source of truth, NOT the legacy
+    /// `sample_rate: i32` field (kept only for back-compat).
+    pub fn resolved_sample_rate(&self) -> Option<u32> {
+        match self.sample_rate_mode {
+            SampleRate::Auto => None,
+            SampleRate::R44100 => Some(44_100),
+            SampleRate::R48000 => Some(48_000),
+            SampleRate::R96000 => Some(96_000),
+        }
+    }
+
     /// Parse a (possibly partial or older) settings JSON blob, MERGING it over
     /// the defaults: any missing or unknown field falls back to its default,
     /// matching the Electron `store.get(key, default)` semantics. A malformed
@@ -577,6 +628,7 @@ mod tests {
         assert!(!s.eq_enabled);
         assert_eq!(s.channels, ChannelMode::Stereo);
         assert_eq!(s.sample_rate, 48_000);
+        assert_eq!(s.sample_rate_mode, SampleRate::Auto);
         assert_eq!(s.input_volume, 100);
         assert_eq!(s.eq_bass, 0);
         assert_eq!(s.eq_mid, 0);
@@ -602,6 +654,7 @@ mod tests {
         assert!(!s.trim_silence);
         assert_eq!(s.manual_max_minutes, 0);
         assert_eq!(s.pre_roll_seconds, 0);
+        assert!(s.show_live_levels);
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
@@ -696,6 +749,53 @@ mod tests {
         assert_eq!(mk("16").bitrate_kbps(), 32, "clamps below the floor");
         assert_eq!(mk("").bitrate_kbps(), 192, "empty → safe default");
         assert_eq!(mk("abc").bitrate_kbps(), 192, "garbage → safe default");
+    }
+
+    #[test]
+    fn resolved_sample_rate_maps_modes() {
+        let mk = |m: SampleRate| Settings {
+            sample_rate_mode: m,
+            ..Default::default()
+        };
+        assert_eq!(mk(SampleRate::Auto).resolved_sample_rate(), None);
+        assert_eq!(mk(SampleRate::R44100).resolved_sample_rate(), Some(44_100));
+        assert_eq!(mk(SampleRate::R48000).resolved_sample_rate(), Some(48_000));
+        assert_eq!(mk(SampleRate::R96000).resolved_sample_rate(), Some(96_000));
+        // Default settings = Auto = native (None).
+        assert_eq!(Settings::default().resolved_sample_rate(), None);
+    }
+
+    #[test]
+    fn sample_rate_mode_serde_matches_camel_case() {
+        assert_eq!(
+            serde_json::to_string(&SampleRate::Auto).unwrap(),
+            "\"auto\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SampleRate::R44100).unwrap(),
+            "\"r44100\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SampleRate::R48000).unwrap(),
+            "\"r48000\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SampleRate::R96000).unwrap(),
+            "\"r96000\""
+        );
+        let back: SampleRate = serde_json::from_str("\"r96000\"").unwrap();
+        assert_eq!(back, SampleRate::R96000);
+    }
+
+    #[test]
+    fn sample_rate_mode_merges_from_partial_json_and_defaults_to_auto() {
+        let s = Settings::from_json_merged(r#"{"sampleRateMode":"r44100"}"#);
+        assert_eq!(s.sample_rate_mode, SampleRate::R44100);
+        assert_eq!(s.resolved_sample_rate(), Some(44_100));
+        // An older blob without the key defaults to Auto (native).
+        let legacy = Settings::from_json_merged(r#"{"sampleRate":44100}"#);
+        assert_eq!(legacy.sample_rate_mode, SampleRate::Auto);
+        assert_eq!(legacy.resolved_sample_rate(), None);
     }
 
     #[test]
@@ -921,6 +1021,8 @@ mod tests {
         assert!(obj.contains_key("videoDeviceName"));
         assert!(obj.contains_key("videoDeviceIndex"));
         assert!(obj.contains_key("sampleRate"));
+        assert!(obj.contains_key("sampleRateMode"));
+        assert!(obj.contains_key("showLiveLevels"));
         assert!(obj.contains_key("inputVolume"));
         assert!(obj.contains_key("filenamePattern"));
         assert!(obj.contains_key("stopOnSilence"));

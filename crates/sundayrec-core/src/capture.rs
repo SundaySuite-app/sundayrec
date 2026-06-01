@@ -47,6 +47,13 @@ use crate::ffmpeg::{
 };
 use crate::settings::ChannelMode;
 
+/// Depth of avfoundation's input `-thread_queue_size` on mac/linux. A TUNABLE
+/// KNOB: avfoundation's internal capture buffer is tiny, so under scheduling
+/// jitter it silently DROPS samples → choppy ("hakkete") audio. A deeper queue
+/// absorbs the jitter. Raised from the old `1024` to `4096` after a USB Behringer
+/// mixer recorded choppy at the smaller depth.
+const MAC_INPUT_QUEUE: &str = "4096";
+
 /// The audio codec selected from an output container extension. The ONE place
 /// extension→codec is decided, so the main recorder and the pre-roll harvest can
 /// never disagree (a mismatch there muxes an AAC pre-roll onto an mp3/wav/flac
@@ -107,13 +114,19 @@ pub fn codec_for_extension(extension: &str) -> AudioCodec {
     }
 }
 
-/// The full `-c:a … [-b:a …k] -ar … -ac …` argument run for an output extension.
-/// Codec comes from [`codec_for_extension`]; `sample_rate`/`bitrate_kbps` come
+/// The full `-c:a … [-b:a …k] [-ar …] -ac …` argument run for an output
+/// extension. Codec comes from [`codec_for_extension`]; `bitrate_kbps` comes
 /// from validated settings. `-b:a` is omitted for the lossless codecs.
+///
+/// `sample_rate` is `Option<u32>`: `Some(sr)` emits `-ar sr` (forced rate);
+/// `None` OMITS `-ar` entirely so ffmpeg captures at the device's NATIVE rate.
+/// This is the anti-choppiness fix — forcing `-ar 48000` on a 44.1 kHz USB
+/// mixer triggers an internal resample that drops samples ("hakkete"). The
+/// omission mirrors the existing `-b:a` conditional for the lossless codecs.
 pub fn audio_encode_args(
     extension: &str,
     channels: u8,
-    sample_rate: u32,
+    sample_rate: Option<u32>,
     bitrate_kbps: u32,
 ) -> Vec<String> {
     let codec = codec_for_extension(extension);
@@ -122,8 +135,10 @@ pub fn audio_encode_args(
         a.push("-b:a".into());
         a.push(format!("{bitrate_kbps}k"));
     }
-    a.push("-ar".into());
-    a.push(sample_rate.to_string());
+    if let Some(sr) = sample_rate {
+        a.push("-ar".into());
+        a.push(sr.to_string());
+    }
     a.push("-ac".into());
     a.push(channels.to_string());
     a
@@ -173,10 +188,17 @@ pub struct CaptureOpts {
     pub framerate: u32,
     /// Output channel layout / downmix mode.
     pub channel_mode: ChannelMode,
-    /// Output sample rate in Hz (already clamped by the caller).
-    pub sample_rate: u32,
+    /// Output sample rate in Hz, or `None` to capture at the device's NATIVE
+    /// rate (omit `-ar`). `None` is the default — forcing a rate that doesn't
+    /// match the device resamples and drops samples (the choppiness root cause).
+    pub sample_rate: Option<u32>,
     /// Output bitrate in kbps for lossy codecs (ignored by PCM/FLAC).
     pub bitrate_kbps: u32,
+    /// Emit the live per-channel `astats` levels filter (drives the L/R meters)?
+    /// `true` by default. When `false` the filter is dropped from the `-af`
+    /// chain — its ~94 lines/s of stderr can starve the capture reader on a
+    /// loaded machine, so the user can turn the meters off for max stability.
+    pub live_levels: bool,
 }
 
 impl Default for CaptureOpts {
@@ -186,8 +208,9 @@ impl Default for CaptureOpts {
             silence_threshold_db: None,
             framerate: 30,
             channel_mode: ChannelMode::Stereo,
-            sample_rate: 48_000,
+            sample_rate: None,
             bitrate_kbps: 192,
+            live_levels: true,
         }
     }
 }
@@ -227,7 +250,14 @@ pub fn build_unified_capture_args(
     let drift = unified_audio_drift_filter(platform);
     let pan = channel_map_filter(opts.channel_mode).unwrap_or_default();
     let silence = build_silence_detect_filter(opts.stop_on_silence, opts.silence_threshold_db);
-    let levels = build_levels_detect_filter();
+    // The live-levels astats pass is OPTIONAL: when the user turns the meters off
+    // (`live_levels = false`) we drop it from the chain so its per-frame stderr
+    // can't starve the capture. drift + pan + silencedetect always stay.
+    let levels = if opts.live_levels {
+        build_levels_detect_filter()
+    } else {
+        String::new()
+    };
     let af_chain = [drift.to_string(), pan, silence, levels]
         .into_iter()
         .filter(|f| !f.is_empty())
@@ -249,7 +279,7 @@ pub fn build_unified_capture_args(
             // ("hakkete"). A deeper input queue absorbs the jitter. This is the
             // single most important fix for glitchy macOS capture.
             args.push("-thread_queue_size".into());
-            args.push("1024".into());
+            args.push(MAC_INPUT_QUEUE.into());
             if has_video {
                 // `-framerate` is a VIDEO option — only meaningful with a camera.
                 // Applying it to an audio-only input confuses ffmpeg's input clock
@@ -406,7 +436,7 @@ mod tests {
         assert!(af.contains("silencedetect="));
         assert!(
             af.contains(
-                "astats=metadata=1:reset=10:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+                "astats=metadata=1:reset=50:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
             ),
             "live per-channel levels astats+ametadata must be present; got: {af}"
         );
@@ -437,9 +467,13 @@ mod tests {
         assert!(has_pair(&mk("/tmp/x.aac"), "-c:a", "aac"));
         // Unknown extension → AAC fallback (never crashes the builder).
         assert!(has_pair(&mk("/tmp/x.weird"), "-c:a", "aac"));
-        // Channel count still flows through, and sample rate is fixed at 48 kHz.
+        // Channel count still flows through. The default sample rate is Auto
+        // (native) → NO `-ar` flag at all (the anti-resample / anti-choppiness fix).
         assert!(has_pair(&mk("/tmp/x.mp3"), "-ac", "2"));
-        assert!(has_pair(&mk("/tmp/x.mp3"), "-ar", "48000"));
+        assert!(
+            !mk("/tmp/x.mp3").iter().any(|a| a == "-ar"),
+            "default (Auto) sample rate must omit -ar"
+        );
     }
 
     #[test]
@@ -454,7 +488,7 @@ mod tests {
             "/tmp/x.mp3",
             &CaptureOpts::default(),
         );
-        assert!(has_pair(&a, "-thread_queue_size", "1024"));
+        assert!(has_pair(&a, "-thread_queue_size", "4096"));
         assert!(has_pair(&a, "-fflags", "+genpts"));
         assert!(
             !a.iter().any(|x| x == "-framerate"),
@@ -477,7 +511,7 @@ mod tests {
             "/tmp/x.mp4",
             &CaptureOpts::default(),
         );
-        assert!(has_pair(&a, "-thread_queue_size", "1024"));
+        assert!(has_pair(&a, "-thread_queue_size", "4096"));
         assert!(has_pair(&a, "-framerate", "30"));
         // The camera must be opened with a supported capture mode (avfoundation
         // rejects a bare framerate → "Input/output error", zero frames).
@@ -645,24 +679,40 @@ mod tests {
     #[test]
     fn audio_encode_args_emit_bitrate_only_for_lossy() {
         // mp3/aac carry -b:a; pcm/flac must NOT (ffmpeg rejects it).
-        let mp3 = audio_encode_args("mp3", 2, 48_000, 192);
+        let mp3 = audio_encode_args("mp3", 2, Some(48_000), 192);
         assert!(has_pair(&mp3, "-c:a", "libmp3lame"));
         assert!(has_pair(&mp3, "-b:a", "192k"));
-        let aac = audio_encode_args("m4a", 2, 48_000, 256);
+        let aac = audio_encode_args("m4a", 2, Some(48_000), 256);
         assert!(has_pair(&aac, "-c:a", "aac"));
         assert!(has_pair(&aac, "-b:a", "256k"));
-        let wav = audio_encode_args("wav", 1, 48_000, 192);
+        let wav = audio_encode_args("wav", 1, Some(48_000), 192);
         assert!(has_pair(&wav, "-c:a", "pcm_s16le"));
         assert!(!wav.iter().any(|a| a == "-b:a"));
-        let flac = audio_encode_args("flac", 2, 48_000, 192);
+        let flac = audio_encode_args("flac", 2, Some(48_000), 192);
         assert!(has_pair(&flac, "-c:a", "flac"));
         assert!(!flac.iter().any(|a| a == "-b:a"));
     }
 
     #[test]
+    fn audio_encode_args_omits_ar_when_native() {
+        // `None` = capture at the device's native rate → NO `-ar` flag at all
+        // (the anti-resample fix). The rest of the run is unchanged.
+        let mp3 = audio_encode_args("mp3", 2, None, 192);
+        assert!(has_pair(&mp3, "-c:a", "libmp3lame"));
+        assert!(has_pair(&mp3, "-b:a", "192k"));
+        assert!(has_pair(&mp3, "-ac", "2"));
+        assert!(!mp3.iter().any(|a| a == "-ar"), "native rate omits -ar");
+        // Lossless + native: no -b:a AND no -ar.
+        let wav = audio_encode_args("wav", 1, None, 192);
+        assert!(has_pair(&wav, "-c:a", "pcm_s16le"));
+        assert!(!wav.iter().any(|a| a == "-b:a"));
+        assert!(!wav.iter().any(|a| a == "-ar"));
+    }
+
+    #[test]
     fn sample_rate_and_bitrate_flow_into_args() {
         let opts = CaptureOpts {
-            sample_rate: 44_100,
+            sample_rate: Some(44_100),
             bitrate_kbps: 256,
             ..CaptureOpts::default()
         };
@@ -671,13 +721,73 @@ mod tests {
         assert!(has_pair(&mp3, "-b:a", "256k"), "bitrate reaches ffmpeg");
         // FLAC ignores the bitrate but still honours the sample rate.
         let flac_opts = CaptureOpts {
-            sample_rate: 96_000,
+            sample_rate: Some(96_000),
             ..CaptureOpts::default()
         };
         let flac =
             build_unified_capture_args(Platform::MacOS, None, "1", "/tmp/x.flac", &flac_opts);
         assert!(has_pair(&flac, "-ar", "96000"));
         assert!(!flac.iter().any(|a| a == "-b:a"));
+    }
+
+    #[test]
+    fn auto_sample_rate_omits_ar_in_full_capture_args() {
+        // The default CaptureOpts now means "native rate" → the full builder must
+        // not emit `-ar` (forcing a rate on a 44.1 kHz mixer caused choppiness).
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "1",
+            "/tmp/x.mp3",
+            &CaptureOpts::default(),
+        );
+        assert!(
+            !args.iter().any(|a| a == "-ar"),
+            "Auto (native) sample rate must omit -ar; got: {args:?}"
+        );
+    }
+
+    #[test]
+    fn live_levels_off_drops_astats_keeps_rest() {
+        let opts = CaptureOpts {
+            live_levels: false,
+            stop_on_silence: true,
+            channel_mode: ChannelMode::MonoMix,
+            ..CaptureOpts::default()
+        };
+        // Windows so drift is present too — every NON-levels filter must survive.
+        let args =
+            build_unified_capture_args(Platform::Windows, Some("Cam"), "Mic", "out.mp4", &opts);
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(!af.contains("astats"), "levels must be dropped; got: {af}");
+        assert!(af.contains("aresample"), "drift must remain; got: {af}");
+        assert!(af.contains("pan="), "pan must remain; got: {af}");
+        assert!(
+            af.contains("silencedetect"),
+            "silencedetect must remain; got: {af}"
+        );
+    }
+
+    #[test]
+    fn live_levels_on_includes_astats() {
+        // Default has live_levels = true → the astats pass is present.
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            None,
+            "1",
+            "/tmp/x.mp3",
+            &CaptureOpts::default(),
+        );
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(af.contains("astats=metadata=1"));
     }
 
     #[test]

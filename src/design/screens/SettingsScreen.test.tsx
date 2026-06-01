@@ -12,8 +12,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { act } from "@testing-library/react";
+
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsScreen } from "./SettingsScreen";
+import { setPendingSettingsTab } from "./settingsTab";
 import { DEFAULT_SETTINGS } from "./settings.helpers";
 import type { Settings } from "@/lib/bindings/Settings";
 import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
@@ -42,6 +45,7 @@ vi.mock("@tauri-apps/api/core", () => ({
           bitrate_kbps: 192,
           split_minutes: 0,
           manual_max_minutes: 0,
+          live_levels: true,
         } satisfies RecordingOpts;
       return null;
     },
@@ -134,6 +138,40 @@ describe("SettingsScreen", () => {
         }),
       ),
     );
+  });
+
+  it("opens the deep-linked tab from a pending tab on mount (WS-6)", async () => {
+    // Simulate a deep-link: a navigation set the pending tab before mount.
+    setPendingSettingsTab("filer");
+    renderSettings();
+
+    // The Filer tab is shown immediately (its "Lagringsmappe" card), and the
+    // default Lydkilde "Kanaler" card is NOT.
+    await waitFor(() =>
+      expect(screen.getByText("Lagringsmappe")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Kanaler")).not.toBeInTheDocument();
+  });
+
+  it("switches tabs when a shell:navigate event carries a tab (WS-6)", async () => {
+    renderSettings();
+    await waitFor(() =>
+      expect(screen.getByText("Kanaler")).toBeInTheDocument(),
+    );
+
+    // A live deep-link (screen already mounted) switches to the Video tab.
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("shell:navigate", {
+          detail: { view: "settings", tab: "video" },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("Aktiver videoopptak")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Kanaler")).not.toBeInTheDocument();
   });
 
   it("previews the planned filename on the Filer tab via plan_recording_opts", async () => {

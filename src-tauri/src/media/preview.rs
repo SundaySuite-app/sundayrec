@@ -44,11 +44,41 @@ pub const PREVIEW_EVENT: &str = "preview://frame";
 /// placeholder with a real message instead of a silently-blank preview.
 pub const PREVIEW_ERROR_EVENT: &str = "preview://error";
 
-/// How long after ffmpeg spawns we wait for the first frame before declaring the
-/// preview dead. macOS camera negotiation + the first MJPEG frame comfortably
-/// fits in a couple of seconds; 6s leaves slack for a slow USB camera while still
-/// failing fast enough that the user isn't left staring at a blank box.
+/// How long after ffmpeg spawns we wait for the first frame before declaring a
+/// single (non-mode-retry) attempt dead. Used on non-macOS, where there is no
+/// mode matrix to walk. macOS camera negotiation + the first MJPEG frame
+/// comfortably fits in a couple of seconds; 6s leaves slack for a slow USB camera
+/// while still failing fast enough that the user isn't left staring at a blank box.
 const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(6);
+
+/// Per-attempt first-frame deadline when walking the macOS mode matrix. Short on
+/// purpose: with five modes a single 6 s window per mode would feel glacial, so we
+/// give each mode ~2 s — long enough for avfoundation to negotiate and emit a
+/// frame if the mode is supported, short enough that five misses still resolve in
+/// ~10 s. A mode that is going to work almost always produces its first frame well
+/// inside this.
+const MODE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Ordered avfoundation capture modes to try for a macOS preview, most-likely-good
+/// first. avfoundation produces ZERO frames if the requested `-video_size`/
+/// `-framerate` pair is not a mode the device advertises (the silent dead
+/// preview), and different cameras advertise different modes (the FaceTime HD,
+/// for instance, often offers 1920x1080@30 but not 720p). So rather than betting
+/// on one hardcoded mode we walk this matrix and keep the first that yields a
+/// frame.
+///
+/// The final `(None, 30)` entry is the escape hatch: a bare `-framerate 30` with
+/// NO `-video_size`, for devices that reject every explicit size and only work
+/// when ffmpeg is left to pick the native mode.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — which mode actually wins depends on the real camera.
+const MAC_PREVIEW_MODES: &[(Option<&str>, u32)] = &[
+    (Some("1280x720"), 30),
+    (Some("1920x1080"), 30),
+    (Some("1280x720"), 25),
+    (Some("640x480"), 30),
+    (None, 30),
+];
 
 /// Default preview frame-rate. Low on purpose: a preview only needs to look
 /// live, and a low rate keeps both the camera negotiation and the base64/IPC
@@ -90,44 +120,50 @@ pub struct PreviewError {
 /// Pure and deterministic so the argument shape is unit-tested without a camera.
 /// `device` is the platform's camera identifier (an avfoundation index/name on
 /// macOS, a dshow device name on Windows); `None` falls back to the first
-/// device. `size` (`"WxH"`) requests a resolution; `None` lets the device pick
-/// its native mode.
+/// device. `output_fps` is the throttled preview rate emitted to the renderer.
 ///
-/// NOTE: this is the single-config spike form. The Electron build carried a
-/// per-device retry matrix (`MAC_CONFIGS`, framerate/format fallbacks) — that
-/// robustness layer is reintroduced in Phase 2, on top of this primitive.
+/// `input_fps` and `size` come from the capture mode being attempted (on macOS,
+/// an entry of [`MAC_PREVIEW_MODES`]): `input_fps` is the framerate requested on
+/// the INPUT, and `size` (`"WxH"`) the resolution. `size == None` means "do NOT
+/// pin a video size" — emit only `-framerate {input_fps}` and let ffmpeg pick the
+/// device's native mode (the matrix's last-resort escape hatch).
 pub fn build_preview_args(
     platform: Platform,
     device: Option<&str>,
-    fps: u32,
+    output_fps: u32,
+    input_fps: u32,
     size: Option<&str>,
 ) -> Vec<String> {
-    let fps = fps.to_string();
+    let output_fps = output_fps.to_string();
+    let input_fps = input_fps.to_string();
     match platform {
         Platform::MacOS => {
             // avfoundation: `-i "<video>:<audio>"`; `:none` captures video only.
             let dev = device.unwrap_or("0");
-            // The FaceTime HD camera (and most avfoundation devices) REJECT a bare
-            // `-framerate {fps}`: it must be paired with a SUPPORTED video size, or
-            // negotiation fails with "Selected framerate is not supported by the
-            // device" → "Input/output error" → zero frames (the silent dead
-            // preview). Request a known-good capture mode (1280x720@30, a mode the
-            // device advertises) on the INPUT, then drop the OUTPUT rate to the low
-            // preview `fps` with `-r` so the stream stays light over IPC.
+            // avfoundation produces ZERO frames if the requested `-framerate`/
+            // `-video_size` pair is not a mode the device advertises → negotiation
+            // fails ("Selected framerate is not supported" / "Input/output error")
+            // → the silent dead preview. The caller walks `MAC_PREVIEW_MODES` and
+            // feeds us one mode at a time; we request it on the INPUT, then drop
+            // the OUTPUT rate to the low preview `output_fps` with `-r` so the
+            // stream stays light over IPC.
             let mut args = vec![
                 "-f".into(),
                 "avfoundation".into(),
                 "-framerate".into(),
-                "30".into(),
-                "-video_size".into(),
-                size.unwrap_or("1280x720").into(),
-                "-i".into(),
-                format!("{dev}:none"),
-                // Throttle the OUTPUT to the preview rate (the camera still captures
-                // at its supported 30 fps above).
-                "-r".into(),
-                fps,
+                input_fps,
             ];
+            // `size == None` = the bare-framerate escape hatch: no `-video_size`.
+            if let Some(s) = size {
+                args.push("-video_size".into());
+                args.push(s.into());
+            }
+            args.push("-i".into());
+            args.push(format!("{dev}:none"));
+            // Throttle the OUTPUT to the preview rate (the camera still captures at
+            // its supported input rate above).
+            args.push("-r".into());
+            args.push(output_fps);
             args.extend(mjpeg_output());
             args
         }
@@ -141,7 +177,7 @@ pub fn build_preview_args(
                 "-rtbufsize".into(),
                 "100M".into(),
                 "-framerate".into(),
-                fps,
+                input_fps,
             ];
             if let Some(s) = size {
                 args.push("-video_size".into());
@@ -156,7 +192,7 @@ pub fn build_preview_args(
             // v4l2 — best-effort; Linux is not a shipping target but keeps the
             // match exhaustive and the dev box usable.
             let dev = device.unwrap_or("/dev/video0");
-            let mut args = vec!["-f".into(), "v4l2".into(), "-framerate".into(), fps];
+            let mut args = vec!["-f".into(), "v4l2".into(), "-framerate".into(), input_fps];
             if let Some(s) = size {
                 args.push("-video_size".into());
                 args.push(s.into());
@@ -226,25 +262,50 @@ impl PreviewEngine {
         // `-i` accepts on macOS — it needs the device *index*. Feeding ffmpeg the
         // raw name produced an invalid input and zero frames (the silent dead
         // preview). We enumerate + fuzzy-match to the avfoundation index here.
-        let resolved = resolve_preview_device(device).await;
+        //
+        // Trust change: a *specifically requested* camera that no longer matches
+        // (or an enumeration failure) is NOT silently swapped for the default
+        // camera — we surface a real error so the user knows their pick is gone.
+        let device_token = match resolve_preview_device(device).await {
+            ResolvedDevice::Index(idx) => idx,
+            ResolvedDevice::NoMatch(name) => {
+                let message = format!(
+                    "Fant ikke kameraet «{name}». Sjekk at det er tilkoblet og at \
+                     appen har kameratilgang."
+                );
+                let _ = app.emit(
+                    PREVIEW_ERROR_EVENT,
+                    PreviewError {
+                        message: message.clone(),
+                    },
+                );
+                return Err(AppError::Recording(message));
+            }
+            ResolvedDevice::EnumFailed => {
+                let message = "Kunne ikke lese kameraliste.".to_string();
+                let _ = app.emit(
+                    PREVIEW_ERROR_EVENT,
+                    PreviewError {
+                        message: message.clone(),
+                    },
+                );
+                return Err(AppError::Recording(message));
+            }
+        };
 
-        let args = build_preview_args(
-            current_platform(),
-            resolved.as_deref(),
-            fps.unwrap_or(DEFAULT_FPS),
-            None,
-        );
+        let platform = current_platform();
+        let output_fps = fps.unwrap_or(DEFAULT_FPS);
 
-        // Confirm ffmpeg actually spawned before reporting success, so the UI
-        // gets a real error (e.g. camera permission denied) instead of a silent
-        // dead preview. Readiness is awaited over a `tokio::oneshot` — a blocking
-        // `recv()` here on the async command worker would starve the runtime that
-        // the spawned `run_preview` task needs to make progress → deadlock →
-        // beachball (the camera preview never appears).
+        // Confirm ffmpeg actually produced a frame before reporting success, so
+        // the UI gets a real error (e.g. camera permission denied) instead of a
+        // silent dead preview. Readiness is awaited over a `tokio::oneshot` — a
+        // blocking `recv()` here on the async command worker would starve the
+        // runtime that the spawned `run_preview` task needs to make progress →
+        // deadlock → beachball (the camera preview never appears).
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
 
         let task = tauri::async_runtime::spawn(async move {
-            run_preview(app, args, ready_tx).await;
+            run_preview(app, platform, device_token, output_fps, ready_tx).await;
         });
 
         match ready_rx.await {
@@ -276,6 +337,66 @@ impl PreviewEngine {
     }
 }
 
+/// The outcome of resolving a stored camera identifier into the token ffmpeg's
+/// `-i` accepts.
+///
+/// The distinction matters because the old "always fall back to index 0" policy
+/// silently previewed the WRONG camera when a specifically-requested device was
+/// unplugged or the name no longer matched — no feedback, just the default camera
+/// pretending to be the one the user picked. We now keep the failure explicit so
+/// the caller can surface a real error instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ResolvedDevice {
+    /// A usable device token: an avfoundation *index* (macOS) or a dshow *name*
+    /// (Windows). This is what `build_preview_args` consumes.
+    Index(String),
+    /// A SPECIFIC camera name was requested but matched nothing in the device
+    /// list. Carries the requested name for the user-facing message.
+    NoMatch(String),
+    /// Device enumeration itself failed, so no match could even be attempted.
+    EnumFailed,
+}
+
+/// Pure decision: given the requested `device` token and an *already-enumerated*
+/// device list (or `None` for "enumeration failed"), decide the resolution.
+/// Factored out of [`resolve_preview_device`] so the trust logic is unit-tested
+/// without touching ffmpeg.
+///
+///   * `None` / empty request → default camera, `Index("0")` (legitimate "use the
+///     default camera"; not a failure).
+///   * an all-digit string (already an index, e.g. `"0"`) → `Index(name)` verbatim.
+///   * `devices == None` (enumeration failed) for a specific name → `EnumFailed`.
+///   * a specific name that matches → `Index(idx-or-name)`.
+///   * a specific name that does NOT match → `NoMatch(name)` (NOT a silent `"0"`).
+fn decide_resolved_device(
+    device: Option<&str>,
+    devices: Option<&[sundayrec_core::device_match::FfmpegDevice]>,
+) -> ResolvedDevice {
+    // No request, or an empty one → the default camera. avfoundation's `"0"`.
+    let name = match device {
+        Some(n) if !n.is_empty() => n,
+        _ => return ResolvedDevice::Index("0".into()),
+    };
+
+    // Already a pure index — leave it untouched, no enumeration needed.
+    if name.chars().all(|c| c.is_ascii_digit()) {
+        return ResolvedDevice::Index(name.to_string());
+    }
+
+    let Some(devices) = devices else {
+        return ResolvedDevice::EnumFailed;
+    };
+
+    match find_best_video_device_match(devices, name) {
+        // avfoundation index when known; dshow falls back to the name.
+        Some(dev) => ResolvedDevice::Index(
+            dev.index
+                .map_or_else(|| dev.name.clone(), |i| i.to_string()),
+        ),
+        None => ResolvedDevice::NoMatch(name.to_string()),
+    }
+}
+
 /// Resolve a stored camera identifier into the token ffmpeg's `-i` accepts: on
 /// macOS the avfoundation *index*, on Windows/dshow the device *name*. Mirrors
 /// the recorder (`RecorderEngine::start`): enumerate, fuzzy-match with
@@ -283,38 +404,28 @@ impl PreviewEngine {
 /// index-or-name token.
 ///
 /// Pass-through cases (no enumeration needed):
-///   * `None` → `None` (the arg builder falls back to avfoundation `"0"`).
+///   * `None` / empty → `Index("0")` (the legitimate default camera).
 ///   * an all-digit string (already an index, e.g. `"0"`) → unchanged.
 ///
-/// Resilient by design: enumeration failure or a non-matching name falls back to
-/// index `"0"` (the default camera) rather than erroring — a wrong-but-present
-/// preview is recoverable, and the no-frames watchdog will surface a real error
-/// if `"0"` also yields nothing.
-async fn resolve_preview_device(device: Option<String>) -> Option<String> {
-    let name = device?;
-    // Already a pure index — leave it. (Also covers an empty string defensively.)
-    if name.is_empty() || name.chars().all(|c| c.is_ascii_digit()) {
-        return Some(name);
+/// Trust change (vs the old "always index 0" fallback): a *specifically requested*
+/// camera that no longer matches, or an enumeration failure, returns
+/// [`ResolvedDevice::NoMatch`] / [`ResolvedDevice::EnumFailed`] so the caller can
+/// surface a real error rather than silently previewing the WRONG camera.
+async fn resolve_preview_device(device: Option<String>) -> ResolvedDevice {
+    // Pass-through cases never need enumeration; decide directly so we don't spawn
+    // ffmpeg for `None`/index requests.
+    if device
+        .as_deref()
+        .is_none_or(|n| n.is_empty() || (!n.is_empty() && n.chars().all(|c| c.is_ascii_digit())))
+    {
+        return decide_resolved_device(device.as_deref(), None);
     }
 
     match enumerate_ffmpeg_devices().await {
-        Ok(inv) => match find_best_video_device_match(&inv.video_inputs, &name) {
-            // avfoundation index when known; dshow falls back to the name.
-            Some(dev) => Some(
-                dev.index
-                    .map_or_else(|| dev.name.clone(), |i| i.to_string()),
-            ),
-            None => {
-                tracing::warn!(
-                    requested = %name,
-                    "preview: no camera matched stored name; falling back to index 0"
-                );
-                Some("0".into())
-            }
-        },
+        Ok(inv) => decide_resolved_device(device.as_deref(), Some(&inv.video_inputs)),
         Err(e) => {
-            tracing::warn!("preview: device enumeration failed ({e}); falling back to index 0");
-            Some("0".into())
+            tracing::warn!("preview: device enumeration failed ({e})");
+            decide_resolved_device(device.as_deref(), None)
         }
     }
 }
@@ -325,7 +436,7 @@ async fn resolve_preview_device(device: Option<String>) -> Option<String> {
 /// trip it, so a benign warning never kills a working preview.
 fn classify_camera_error(line: &str) -> Option<&'static str> {
     let l = line.to_lowercase();
-    if l.contains("permission") || l.contains("not authorized") || l.contains("denied") {
+    if is_permission_fatal_line(&l) {
         Some("Kameratilgang nektet. Gi appen tilgang til kameraet i Systemvalg.")
     } else if l.contains("input/output error")
         || l.contains("could not open")
@@ -340,51 +451,168 @@ fn classify_camera_error(line: &str) -> Option<&'static str> {
     }
 }
 
-/// The reader task body: spawn ffmpeg, signal readiness, then pump stdout
-/// through the frame splitter and emit each completed JPEG to the renderer.
+/// Whether an (already-lowercased) stderr line indicates a PERMISSION/access
+/// failure. A permission error is fatal for the whole mode matrix: retrying other
+/// capture modes cannot grant camera access, so the caller must short-circuit
+/// immediately instead of grinding through every mode's deadline.
+fn is_permission_fatal_line(lowercased: &str) -> bool {
+    lowercased.contains("permission")
+        || lowercased.contains("not authorized")
+        || lowercased.contains("denied")
+}
+
+/// Whether the message produced by [`classify_camera_error`] is the fatal
+/// permission variant (vs a retry-eligible open/format error).
+fn is_permission_fatal(msg: &str) -> bool {
+    msg == "Kameratilgang nektet. Gi appen tilgang til kameraet i Systemvalg."
+}
+
+/// The capture modes to try for `platform`, in attempt order, as
+/// `(input_fps, size)` pairs fed to [`build_preview_args`].
 ///
-/// ⚠️ HARDWARE-UNVERIFIED — opens a real camera; see the module header.
+/// macOS walks the full [`MAC_PREVIEW_MODES`] negotiation matrix (the camera may
+/// not advertise the first mode we ask for). Every other platform makes a single
+/// attempt with its native single config: `(output_fps, None)` lets the
+/// arg-builder use the device's native mode (Windows/Linux do not have the
+/// avfoundation "must pin a supported size" constraint).
+fn preview_modes_for(platform: Platform, output_fps: u32) -> Vec<(u32, Option<&'static str>)> {
+    match platform {
+        Platform::MacOS => MAC_PREVIEW_MODES
+            .iter()
+            .map(|&(size, fps)| (fps, size))
+            .collect(),
+        _ => vec![(output_fps, None)],
+    }
+}
+
+/// The outcome of one [`attempt_preview_mode`] try.
+enum AttemptOutcome {
+    /// A frame arrived and the stream was pumped to completion (stop/exit/
+    /// listener-gone). The whole preview is done; do not try further modes.
+    Streamed,
+    /// No frame arrived within the per-attempt deadline, or ffmpeg exited early
+    /// without producing one. Carries the last classified (retry-eligible) error
+    /// seen on stderr, if any, so the caller can surface the REAL reason if every
+    /// mode fails. Try the next mode.
+    NoFrame { last_err: Option<&'static str> },
+    /// A PERMISSION error was seen: retrying other modes cannot help. Short-circuit
+    /// the whole matrix and surface this immediately.
+    Fatal(&'static str),
+}
+
+/// The reader task body: walk the platform's capture-mode matrix, and for the
+/// FIRST mode that yields a frame, signal readiness once and pump frames to the
+/// renderer until the stream ends. If no mode produces a frame, surface the real
+/// classified error. A permission error short-circuits the matrix.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — opens a real camera and depends on which avfoundation
+/// mode the device actually advertises; see the module header. The spawn/retry
+/// path is wired but unexercised by the (hardware-free) test suite.
 async fn run_preview(
     app: AppHandle,
-    args: Vec<String>,
+    platform: Platform,
+    device_token: String,
+    output_fps: u32,
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
 ) {
+    let modes = preview_modes_for(platform, output_fps);
+    // The per-attempt deadline: short on macOS (we have several modes to walk),
+    // generous on a single-attempt platform (no matrix to grind through).
+    let attempt_timeout = if matches!(platform, Platform::MacOS) {
+        MODE_ATTEMPT_TIMEOUT
+    } else {
+        FIRST_FRAME_TIMEOUT
+    };
+
+    // `ready` is consumed exactly once — Ok on the first frame from any mode, or
+    // Err after every mode fails. We thread it through as `Option` so a borrow
+    // across attempts is safe.
+    let mut ready = Some(ready);
+    let mut last_err: Option<&'static str> = None;
+
+    for (input_fps, size) in modes {
+        let args = build_preview_args(platform, Some(&device_token), output_fps, input_fps, size);
+        match attempt_preview_mode(&app, &args, attempt_timeout, &mut ready).await {
+            AttemptOutcome::Streamed => return, // a mode worked; we're done.
+            AttemptOutcome::Fatal(msg) => {
+                // Permission denied — no mode will help. Surface and stop.
+                let _ = app.emit(
+                    PREVIEW_ERROR_EVENT,
+                    PreviewError {
+                        message: msg.into(),
+                    },
+                );
+                if let Some(tx) = ready.take() {
+                    let _ = tx.send(Err(AppError::Recording(msg.into())));
+                }
+                return;
+            }
+            AttemptOutcome::NoFrame { last_err: e } => {
+                if e.is_some() {
+                    last_err = e;
+                }
+                // Try the next mode.
+            }
+        }
+    }
+
+    // Every mode failed. Surface the REAL classified last error if we captured
+    // one, else a generic "no stream" message — never a blank dead preview.
+    let message = last_err
+        .unwrap_or("Ingen videostrøm fra kameraet. Sjekk tilkobling og tilgang.")
+        .to_string();
+    tracing::warn!("preview: all capture modes failed ({message})");
+    let _ = app.emit(
+        PREVIEW_ERROR_EVENT,
+        PreviewError {
+            message: message.clone(),
+        },
+    );
+    if let Some(tx) = ready.take() {
+        let _ = tx.send(Err(AppError::Recording(message)));
+    }
+}
+
+/// One capture-mode attempt: spawn ffmpeg with `args`, wait up to `attempt_timeout`
+/// for the first frame, and — if it arrives — signal `ready` Ok (once) and pump
+/// frames to the renderer until the stream ends.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — opens a real camera; see the module header.
+async fn attempt_preview_mode(
+    app: &AppHandle,
+    args: &[String],
+    attempt_timeout: Duration,
+    ready: &mut Option<tokio::sync::oneshot::Sender<AppResult<()>>>,
+) -> AttemptOutcome {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    // `child` stays owned in this scope for the task's whole life, so dropping
-    // the task (on stop/abort) drops the child and `kill_on_drop` fires.
+    // `child` stays owned for this attempt; dropping it (on return) drops the
+    // child and `kill_on_drop` fires, so a failed mode leaves no orphan ffmpeg.
     let mut child = match spawn_ffmpeg(&arg_refs).await {
         Ok(c) => c,
         Err(e) => {
-            let _ = ready.send(Err(e));
-            return;
+            tracing::warn!("preview: ffmpeg spawn failed: {e}");
+            return AttemptOutcome::NoFrame { last_err: None };
         }
     };
 
     let Some(mut stdout) = child.stdout.take() else {
-        let _ = ready.send(Err(AppError::Recording(
-            "ffmpeg preview produced no stdout".into(),
-        )));
-        return;
+        return AttemptOutcome::NoFrame { last_err: None };
     };
 
-    // We're live.
-    let _ = ready.send(Ok(()));
-
-    // Drain stderr in the background so we can (a) classify a fatal camera error
-    // into a user-facing `preview://error`, and (b) not let a full stderr pipe
-    // stall ffmpeg. Non-blocking and best-effort. The first classified error
-    // wins and is forwarded back to the reader loop so it can surface it once and
-    // stop. We also keep the raw lines in the logs for diagnostics.
-    let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<&'static str>(1);
+    // Drain stderr in the background so we can (a) classify a fatal/retry-eligible
+    // camera error and (b) not let a full stderr pipe stall ffmpeg. The first
+    // classified error of each severity wins; we forward it back so the reader
+    // loop can short-circuit (permission) or remember it (retry-eligible).
+    let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<(&'static str, bool)>(2);
     if let Some(stderr) = child.stderr.take() {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 tracing::debug!(target: "preview_ffmpeg", "{line}");
                 if let Some(msg) = classify_camera_error(&line) {
-                    // Best-effort: if the channel is full/closed the first error
-                    // already won, so dropping this one is fine.
-                    let _ = err_tx.try_send(msg);
+                    let fatal = is_permission_fatal(msg);
+                    // Best-effort: a full/closed channel means an error already won.
+                    let _ = err_tx.try_send((msg, fatal));
                 }
             }
         });
@@ -394,42 +622,43 @@ async fn run_preview(
     let mut splitter = MjpegFrameSplitter::new();
     let mut read_buf = vec![0u8; 64 * 1024];
     let mut seq: u64 = 0;
-    // The no-frames watchdog: if no frame arrives before this fires, the camera
-    // is dead/blocked even though ffmpeg "spawned". We then emit `preview://error`
-    // so the UI shows a message instead of a silently-blank box. Disarmed (set to
-    // `None`) once the first frame lands.
-    let mut first_frame_deadline = Some(Box::pin(tokio::time::sleep(FIRST_FRAME_TIMEOUT)));
+    let mut last_err: Option<&'static str> = None;
+    // The per-attempt first-frame deadline. Disarmed (`None`) once the first frame
+    // lands; from then on the stream is live and we pump until it ends.
+    let mut first_frame_deadline = Some(Box::pin(tokio::time::sleep(attempt_timeout)));
 
     loop {
         let n = tokio::select! {
-            // A classified stderr error: surface it immediately and stop.
-            Some(msg) = err_rx.recv() => {
-                let _ = app.emit(
-                    PREVIEW_ERROR_EVENT,
-                    PreviewError { message: msg.into() },
-                );
-                return;
+            // A classified stderr error. Permission → fatal, short-circuit the
+            // whole matrix. Otherwise remember it and let the deadline/exit decide
+            // (so a benign-looking line doesn't abort a mode that's still warming).
+            Some((msg, fatal)) = err_rx.recv() => {
+                if fatal {
+                    return AttemptOutcome::Fatal(msg);
+                }
+                last_err = Some(msg);
+                continue;
             }
-            // No first frame within the timeout: the preview is dead.
+            // No first frame within the deadline: this mode is dead. Try the next.
             () = async { first_frame_deadline.as_mut().unwrap().as_mut().await },
                 if first_frame_deadline.is_some() =>
             {
-                tracing::warn!("preview: no frame within {FIRST_FRAME_TIMEOUT:?}");
-                let _ = app.emit(
-                    PREVIEW_ERROR_EVENT,
-                    PreviewError {
-                        message: "Ingen videostrøm fra kameraet. Sjekk tilkobling og tilgang."
-                            .into(),
-                    },
-                );
-                return;
+                tracing::warn!("preview: no frame within {attempt_timeout:?} for this mode");
+                return AttemptOutcome::NoFrame { last_err };
             }
             read = stdout.read(&mut read_buf) => match read {
-                Ok(0) => break, // ffmpeg closed stdout — stream ended
+                // ffmpeg closed stdout. If we already delivered a frame (deadline
+                // disarmed), the live stream simply ended (stop/unplug) → done.
+                // If not, this mode never produced a frame → try the next.
+                Ok(0) if first_frame_deadline.is_none() => return AttemptOutcome::Streamed,
+                Ok(0) => return AttemptOutcome::NoFrame { last_err },
                 Ok(n) => n,
                 Err(e) => {
                     tracing::warn!("preview stdout read error: {e}");
-                    break;
+                    if first_frame_deadline.is_none() {
+                        return AttemptOutcome::Streamed;
+                    }
+                    return AttemptOutcome::NoFrame { last_err };
                 }
             },
         };
@@ -440,8 +669,13 @@ async fn run_preview(
                 None => (None, None),
             };
             seq += 1;
-            // First frame in: disarm the no-frames watchdog.
-            first_frame_deadline = None;
+            // First frame in: we're live. Disarm the deadline and signal Ok once.
+            if first_frame_deadline.is_some() {
+                first_frame_deadline = None;
+                if let Some(tx) = ready.take() {
+                    let _ = tx.send(Ok(()));
+                }
+            }
             let payload = PreviewFrame {
                 data: b64.encode(&frame),
                 width,
@@ -450,23 +684,27 @@ async fn run_preview(
             };
             // A failed emit means the window/listener is gone — end the stream.
             if app.emit(PREVIEW_EVENT, payload).is_err() {
-                return;
+                return AttemptOutcome::Streamed;
             }
         }
     }
-    // `child` drops here → `kill_on_drop` ensures ffmpeg is gone.
+    // Unreachable: every loop exit is an explicit `return`. `child` drops on
+    // return → `kill_on_drop` ensures ffmpeg is gone.
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use sundayrec_core::device_match::FfmpegDevice;
+
     #[test]
     fn mac_args_capture_video_only_to_mjpeg_stdout() {
-        let args = build_preview_args(Platform::MacOS, Some("1"), 15, None);
+        // output_fps=15, input mode = 1280x720@30 (the first matrix entry).
+        let args = build_preview_args(Platform::MacOS, Some("1"), 15, 30, Some("1280x720"));
         assert!(args.windows(2).any(|w| w == ["-f", "avfoundation"]));
-        // The INPUT requests a supported capture mode (avfoundation rejects a bare
-        // framerate without a paired video size → "Input/output error", no frames).
+        // The INPUT requests the mode's framerate + size (avfoundation rejects a
+        // bare framerate without a paired video size → "Input/output error").
         assert!(args.windows(2).any(|w| w == ["-framerate", "30"]));
         assert!(args.windows(2).any(|w| w == ["-video_size", "1280x720"]));
         // The OUTPUT is throttled to the low preview rate with `-r`.
@@ -480,24 +718,60 @@ mod tests {
 
     #[test]
     fn mac_args_default_device_is_zero() {
-        let args = build_preview_args(Platform::MacOS, None, 15, None);
+        let args = build_preview_args(Platform::MacOS, None, 15, 30, Some("1280x720"));
         assert!(args.iter().any(|a| a == "0:none"));
     }
 
     #[test]
-    fn mac_args_always_request_supported_video_size() {
-        // Even with no explicit size, macOS MUST pin a supported mode on the input,
-        // or the camera negotiation fails and the preview is silently blank.
-        let args = build_preview_args(Platform::MacOS, Some("0"), 15, None);
-        assert!(args.windows(2).any(|w| w == ["-video_size", "1280x720"]));
-        // An explicit size still overrides the default.
-        let args = build_preview_args(Platform::MacOS, Some("0"), 30, Some("1920x1080"));
-        assert!(args.windows(2).any(|w| w == ["-video_size", "1920x1080"]));
+    fn mac_args_each_sized_mode_emits_its_size_and_framerate() {
+        // Every (Some(size), fps) mode must emit BOTH `-video_size {size}` and
+        // `-framerate {fps}` on the input.
+        for &(size, fps) in MAC_PREVIEW_MODES {
+            let args = build_preview_args(Platform::MacOS, Some("0"), 15, fps, size);
+            assert!(
+                args.windows(2)
+                    .any(|w| w == ["-framerate", &fps.to_string()]),
+                "mode {size:?}@{fps} must emit its input framerate"
+            );
+            match size {
+                Some(s) => assert!(
+                    args.windows(2).any(|w| w == ["-video_size", s]),
+                    "sized mode {s} must emit -video_size {s}"
+                ),
+                None => assert!(
+                    !args.iter().any(|a| a == "-video_size"),
+                    "the (None) escape-hatch mode must NOT emit -video_size"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn mac_args_none_size_fallback_omits_video_size() {
+        // The escape-hatch mode: bare -framerate, no -video_size, for devices that
+        // reject every explicit size.
+        let args = build_preview_args(Platform::MacOS, Some("0"), 15, 30, None);
+        assert!(args.windows(2).any(|w| w == ["-framerate", "30"]));
+        assert!(
+            !args.iter().any(|a| a == "-video_size"),
+            "None size must not pin a video size"
+        );
+    }
+
+    #[test]
+    fn mac_preview_modes_matrix_is_well_formed() {
+        assert!(!MAC_PREVIEW_MODES.is_empty(), "matrix must be non-empty");
+        // The last entry is the bare-framerate escape hatch (no video size).
+        assert_eq!(
+            MAC_PREVIEW_MODES.last().unwrap().0,
+            None,
+            "the last mode must have None size (the escape hatch)"
+        );
     }
 
     #[test]
     fn windows_args_use_dshow_named_device_with_rtbufsize() {
-        let args = build_preview_args(Platform::Windows, Some("Logitech BRIO"), 30, None);
+        let args = build_preview_args(Platform::Windows, Some("Logitech BRIO"), 30, 30, None);
         assert!(args.windows(2).any(|w| w == ["-f", "dshow"]));
         assert!(args.windows(2).any(|w| w == ["-rtbufsize", "100M"]));
         // dshow names the camera as `video=<name>`
@@ -522,9 +796,80 @@ mod tests {
         assert_eq!(PREVIEW_ERROR_EVENT, "preview://error");
     }
 
+    fn cam(name: &str, index: Option<u32>) -> FfmpegDevice {
+        FfmpegDevice::new(name, "avfoundation", index)
+    }
+
+    #[test]
+    fn decide_none_or_empty_request_is_default_index() {
+        // No request and an empty request both mean "the default camera" → "0",
+        // a legitimate default, NOT a failure.
+        assert_eq!(
+            decide_resolved_device(None, None),
+            ResolvedDevice::Index("0".into())
+        );
+        assert_eq!(
+            decide_resolved_device(Some(""), None),
+            ResolvedDevice::Index("0".into())
+        );
+    }
+
+    #[test]
+    fn decide_numeric_index_passthrough() {
+        // A pure index is already what avfoundation accepts — verbatim, no list
+        // consulted (pass `None` to prove enumeration isn't required).
+        assert_eq!(
+            decide_resolved_device(Some("0"), None),
+            ResolvedDevice::Index("0".into())
+        );
+        assert_eq!(
+            decide_resolved_device(Some("2"), None),
+            ResolvedDevice::Index("2".into())
+        );
+    }
+
+    #[test]
+    fn decide_matching_name_resolves_to_index() {
+        let devices = vec![
+            cam("FaceTime HD Camera", Some(0)),
+            cam("Logitech BRIO", Some(1)),
+        ];
+        assert_eq!(
+            decide_resolved_device(Some("FaceTime HD Camera"), Some(&devices)),
+            ResolvedDevice::Index("0".into())
+        );
+        assert_eq!(
+            decide_resolved_device(Some("Logitech BRIO"), Some(&devices)),
+            ResolvedDevice::Index("1".into())
+        );
+    }
+
+    #[test]
+    fn decide_non_matching_specific_name_is_no_match_not_index_zero() {
+        // The trust change: a specific camera that no longer matches must NOT
+        // silently become the default index "0".
+        let devices = vec![cam("FaceTime HD Camera", Some(0))];
+        assert_eq!(
+            decide_resolved_device(Some("Blackmagic UltraStudio"), Some(&devices)),
+            ResolvedDevice::NoMatch("Blackmagic UltraStudio".into())
+        );
+    }
+
+    #[test]
+    fn decide_enumeration_failure_for_specific_name_is_enum_failed() {
+        // A specific name + a failed enumeration (`None`) → EnumFailed, not "0".
+        assert_eq!(
+            decide_resolved_device(Some("FaceTime HD Camera"), None),
+            ResolvedDevice::EnumFailed
+        );
+    }
+
     #[tokio::test]
     async fn resolve_passes_through_none() {
-        assert_eq!(resolve_preview_device(None).await, None);
+        assert_eq!(
+            resolve_preview_device(None).await,
+            ResolvedDevice::Index("0".into())
+        );
     }
 
     #[tokio::test]
@@ -533,11 +878,11 @@ mod tests {
         // verbatim and must NOT touch ffmpeg enumeration.
         assert_eq!(
             resolve_preview_device(Some("0".into())).await,
-            Some("0".into())
+            ResolvedDevice::Index("0".into())
         );
         assert_eq!(
             resolve_preview_device(Some("2".into())).await,
-            Some("2".into())
+            ResolvedDevice::Index("2".into())
         );
     }
 
@@ -561,5 +906,30 @@ mod tests {
         // Routine ffmpeg banner / progress lines must NOT trip the error path.
         assert!(classify_camera_error("frame=  120 fps= 15 q=8.0 size=…").is_none());
         assert!(classify_camera_error("Stream #0:0: Video: mjpeg").is_none());
+    }
+
+    #[test]
+    fn permission_error_is_fatal_open_error_is_retry_eligible() {
+        // A permission/access stderr line → the fatal variant: retrying capture
+        // modes can't grant access, so it must short-circuit the matrix.
+        let perm = classify_camera_error("permission to capture video was denied").unwrap();
+        assert!(is_permission_fatal(perm), "permission error must be fatal");
+
+        // An open/format error → retry-eligible (a different mode might succeed).
+        let open = classify_camera_error("Error opening input: Input/output error").unwrap();
+        assert!(
+            !is_permission_fatal(open),
+            "open/format error must be retry-eligible"
+        );
+    }
+
+    #[test]
+    fn preview_modes_macos_is_the_full_matrix_other_platforms_single() {
+        // macOS walks the whole negotiation matrix.
+        let mac = preview_modes_for(Platform::MacOS, 15);
+        assert_eq!(mac.len(), MAC_PREVIEW_MODES.len());
+        // Other platforms make exactly one attempt at the requested rate.
+        assert_eq!(preview_modes_for(Platform::Windows, 15), vec![(15, None)]);
+        assert_eq!(preview_modes_for(Platform::Linux, 20), vec![(20, None)]);
     }
 }

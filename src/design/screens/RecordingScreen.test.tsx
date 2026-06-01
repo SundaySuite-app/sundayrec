@@ -39,6 +39,7 @@ const PLANNED = vi.hoisted(
     bitrate_kbps: 192,
     split_minutes: 0,
     manual_max_minutes: 0,
+    live_levels: true,
   }),
 );
 

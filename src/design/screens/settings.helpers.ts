@@ -10,6 +10,36 @@
 import { open } from "@tauri-apps/plugin-dialog";
 
 import type { Settings } from "@/lib/bindings/Settings";
+import type { SampleRate } from "@/lib/bindings/SampleRate";
+
+/**
+ * Resolve a {@link SampleRate} policy to a concrete Hz value, or `null` for
+ * `"auto"` (capture at the device's native rate — the recorder omits `-ar`).
+ * Mirrors the backend `Settings::resolved_sample_rate`.
+ */
+export function resolvedSampleRate(mode: SampleRate): number | null {
+  switch (mode) {
+    case "r44100":
+      return 44100;
+    case "r48000":
+      return 48000;
+    case "r96000":
+      return 96000;
+    case "auto":
+    default:
+      return null;
+  }
+}
+
+/** Short kHz label for a sample-rate policy (e.g. `"48 kHz"`), or a localized
+ *  "Auto" label when the mode is `"auto"`. */
+export function sampleRateKhzLabel(
+  mode: SampleRate,
+  autoLabel: string,
+): string {
+  const hz = resolvedSampleRate(mode);
+  return hz ? `${Math.round(hz / 1000)} kHz` : autoLabel;
+}
 
 /**
  * Open a native folder picker and return the chosen absolute path, or `null`
@@ -41,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   avSync: true,
   channels: "stereo",
   sampleRate: 48000,
+  sampleRateMode: "auto",
   inputVolume: 100,
   eqEnabled: false,
   eqBass: 0,
@@ -65,6 +96,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trimSilence: false,
   manualMaxMinutes: 0,
   preRollSeconds: 5,
+  showLiveLevels: true,
   reminderMinutes: 10,
   launchAtLogin: true,
   showOnStartup: true,

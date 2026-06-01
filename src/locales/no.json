@@ -1210,7 +1210,11 @@
     "formatMeta": "Stereo · 48 kHz · høyest kvalitet",
     "diskFree": "{{size}} ledig",
     "storageHoursVideo": "~{{hours}} timer opptak igjen",
-    "storageHoursAudio": "~{{hours}} timer kun-lyd igjen"
+    "storageHoursAudio": "~{{hours}} timer kun-lyd igjen",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · høyest kvalitet",
+    "signalLevel": "Signalnivå",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Direkte sending",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Tar opp nå",
     "statusStarting": "Starter …",
     "statusReconnecting": "Kobler til på nytt",
-    "signalWeak": "SVAK",
+    "signalWeak": "Svak",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Kamera",
@@ -1267,7 +1271,9 @@
     "stopButton": "Trykk for å stoppe opptaket",
     "savedAs": "Lagres som:",
     "errorPrefix": "Feil ({{code}})",
-    "startFailed": "Kunne ikke starte opptaket:"
+    "startFailed": "Kunne ikke starte opptaket:",
+    "signalGood": "Bra",
+    "signalLoud": "Høy"
   },
   "scheduleScreen": {
     "pageTitle": "Tidsplan",
@@ -1382,7 +1388,17 @@
       "compTitle": "Kompressor",
       "compDesc": "Jevner ut svingninger i stemmestyrke.",
       "limiterTitle": "Limiter (klippe-vern)",
-      "limiterDesc": "Hindrer at plutselig høy lyd overstyrer."
+      "limiterDesc": "Hindrer at plutselig høy lyd overstyrer.",
+      "noDevicesFound": "Ingen lydenheter funnet. Koble til lydkortet og trykk Oppdater.",
+      "refresh": "Oppdater",
+      "deviceDefault": "Standard",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Enhetens egen rate — ingen konvertering",
+      "sr96Sub": "Studio · høyoppløst",
+      "showLevelsTitle": "Vis nivåmåler under opptak",
+      "showLevelsDesc": "L/R-måleren vises mens du tar opp. Slå av for maksimal opptaksstabilitet på en travel maskin."
     },
     "video": {
       "enableTitle": "Aktiver videoopptak",

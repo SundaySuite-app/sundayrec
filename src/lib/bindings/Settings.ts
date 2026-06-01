@@ -2,6 +2,7 @@
 import type { ChannelMode } from "./ChannelMode";
 import type { FileFormat } from "./FileFormat";
 import type { FilenamePattern } from "./FilenamePattern";
+import type { SampleRate } from "./SampleRate";
 import type { ScheduleSlot } from "./ScheduleSlot";
 import type { SpecialRecording } from "./SpecialRecording";
 
@@ -76,9 +77,17 @@ avSync: boolean,
  */
 channels: ChannelMode, 
 /**
- * Sample rate in Hz. Valid 8000..=192000, default 48000.
+ * Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
+ * back-compat with exported/old profiles; the RECORDER no longer reads it —
+ * it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
  */
 sampleRate: number, 
+/**
+ * How the capture sample rate is chosen. `Auto` (default) captures at the
+ * device's native rate (no resample → no choppiness); the explicit variants
+ * force a rate. This is what the recorder actually consults.
+ */
+sampleRateMode: SampleRate, 
 /**
  * Input gain as a percentage. Valid 0..=200, default 100.
  */
@@ -175,6 +184,13 @@ manualMaxMinutes: number,
  * Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
  */
 preRollSeconds: number, 
+/**
+ * Show the live L/R level meters during recording? Default true. When off,
+ * the recorder drops the `astats` levels filter from its ffmpeg chain — the
+ * meter's per-frame stderr can starve capture on a loaded machine, so turning
+ * the meters off trades the display for maximum capture stability.
+ */
+showLiveLevels: boolean, 
 /**
  * Reminder notification N minutes before a scheduled recording.
  * Valid 0..=60, 0 = off.

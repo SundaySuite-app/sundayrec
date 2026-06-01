@@ -1210,7 +1210,11 @@
     "formatMeta": "Stereo · 48 kHz · högsta kvalitet",
     "diskFree": "{{size}} ledigt",
     "storageHoursVideo": "~{{hours}} timmar inspelning kvar",
-    "storageHoursAudio": "~{{hours}} timmar endast ljud kvar"
+    "storageHoursAudio": "~{{hours}} timmar endast ljud kvar",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
+    "signalLevel": "Signal level",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Direktsändning",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Spelar in nu",
     "statusStarting": "Startar …",
     "statusReconnecting": "Återansluter",
-    "signalWeak": "SVAG",
+    "signalWeak": "Svag",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Kamera",
@@ -1267,7 +1271,9 @@
     "stopButton": "Tryck för att stoppa inspelningen",
     "savedAs": "Sparas som:",
     "errorPrefix": "Fel ({{code}})",
-    "startFailed": "Kunde inte starta inspelningen:"
+    "startFailed": "Kunde inte starta inspelningen:",
+    "signalGood": "Bra",
+    "signalLoud": "Hög"
   },
   "scheduleScreen": {
     "pageTitle": "Tidsplan",
@@ -1382,7 +1388,17 @@
       "compTitle": "Kompressor",
       "compDesc": "Jämnar ut variationer i röststyrka.",
       "limiterTitle": "Limiter (klippskydd)",
-      "limiterDesc": "Förhindrar att plötsligt högt ljud överstyr."
+      "limiterDesc": "Förhindrar att plötsligt högt ljud överstyr.",
+      "noDevicesFound": "No audio devices found. Connect your audio interface and press Refresh.",
+      "refresh": "Refresh",
+      "deviceDefault": "Default",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Device's own rate — no conversion",
+      "sr96Sub": "Studio · high resolution",
+      "showLevelsTitle": "Show level meter while recording",
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
     },
     "video": {
       "enableTitle": "Aktivera videoinspelning",

@@ -136,14 +136,19 @@ pub struct RecordingOpts {
     pub framerate: u32,
     /// Output channel layout / downmix mode (stereo, mono-L, mono-R, mono-mix).
     pub channel_mode: ChannelMode,
-    /// Output sample rate in Hz (clamped to the validated 8–192 kHz range).
-    pub sample_rate: u32,
+    /// Capture sample rate in Hz, or `None` to capture at the device's NATIVE
+    /// rate (omit `-ar` — the anti-resample / anti-choppiness fix). Resolved from
+    /// `Settings::sample_rate_mode` via `resolved_sample_rate()`.
+    pub sample_rate: Option<u32>,
     /// Output bitrate in kbps for lossy codecs (mp3/aac); ignored by wav/flac.
     pub bitrate_kbps: u32,
     /// Rotate to a fresh segment every N minutes (0 = off).
     pub split_minutes: u32,
     /// Auto-stop the whole session after N minutes (0 = off).
     pub manual_max_minutes: u32,
+    /// Emit the live L/R level meters (`astats`) during capture? When `false`,
+    /// the levels filter is dropped to keep capture maximally stable.
+    pub live_levels: bool,
 }
 
 /// A progress heartbeat sent to the renderer.
@@ -233,6 +238,7 @@ pub fn build_record_args(
         channel_mode: opts.channel_mode,
         sample_rate: opts.sample_rate,
         bitrate_kbps: opts.bitrate_kbps,
+        live_levels: opts.live_levels,
     };
     build_unified_capture_args(
         platform,
@@ -901,8 +907,9 @@ struct LevelMeter {
 }
 
 impl LevelMeter {
-    /// ~20 UI updates/s — smooth without flooding the event bridge.
-    const EMIT_EVERY: Duration = Duration::from_millis(50);
+    /// ~30 UI updates/s — snappy needle without flooding the event bridge (the
+    /// UI's rAF peak-hold smooths the release between these).
+    const EMIT_EVERY: Duration = Duration::from_millis(33);
 
     fn new() -> Self {
         Self {
@@ -1440,10 +1447,11 @@ mod tests {
             silence_timeout_minutes: 5,
             framerate: 30,
             channel_mode: ChannelMode::Stereo,
-            sample_rate: 48_000,
+            sample_rate: Some(48_000),
             bitrate_kbps: 192,
             split_minutes: 0,
             manual_max_minutes: 0,
+            live_levels: true,
         }
     }
 
@@ -1798,10 +1806,11 @@ mod tests {
             silence_timeout_minutes: 7,
             framerate: 25,
             channel_mode: ChannelMode::MonoL,
-            sample_rate: 44_100,
+            sample_rate: Some(44_100),
             bitrate_kbps: 256,
             split_minutes: 30,
             manual_max_minutes: 120,
+            live_levels: true,
         };
         let json = serde_json::to_string(&o).unwrap();
         // The wire shape is the struct's default snake_case keys (no rename_all).

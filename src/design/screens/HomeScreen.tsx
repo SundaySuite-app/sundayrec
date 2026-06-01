@@ -16,6 +16,7 @@ import {
   dbfsToLit,
   formatBytes,
   formatDbfs,
+  levelLabel,
   useCameraPreview,
   useDiskSpace,
   useInputDevices,
@@ -33,6 +34,7 @@ import {
   inputMeta,
   storageEstimateLabel,
 } from "./home.helpers";
+import { sampleRateKhzLabel } from "./settings.helpers";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import type { Settings } from "@/lib/bindings/Settings";
@@ -167,10 +169,14 @@ function RecordRow({
 }
 
 /** Navigate the shell to the Innstillinger view (used by the device cards'
- *  "Endre" button so the user can actually change the device). */
-function navigateToSettings() {
+ *  "Endre" button so the user can actually change the device). The optional
+ *  `tab` deep-links straight to the matching settings tab (WS-6) — audio card →
+ *  "lydkilde", format card → "filer", camera/video card → "video". */
+function navigateToSettings(tab?: string) {
   window.dispatchEvent(
-    new CustomEvent("shell:navigate", { detail: "settings" }),
+    new CustomEvent("shell:navigate", {
+      detail: tab ? { view: "settings", tab } : "settings",
+    }),
   );
 }
 
@@ -388,6 +394,29 @@ export function HomeScreen({
   const storageMeta = storageEstimateLabel(freeBytes, video, t);
   const diskPct = diskUsedPercent(freeBytes);
   const cameraName = selectedCamera?.name ?? null;
+
+  // Format-card meta reflects the real sample-rate policy: "Auto" (native rate,
+  // no conversion) or the chosen kHz — instead of a hardcoded "48 kHz" (WS-2).
+  const rateLabel = sampleRateKhzLabel(
+    settings?.sampleRateMode ?? "auto",
+    t("homeScreen.rateAuto", "Auto"),
+  );
+  const formatMeta = t(
+    "homeScreen.formatMetaDynamic",
+    "Stereo · {{rate}} · høyest kvalitet",
+    { rate: rateLabel },
+  );
+
+  // Dynamic signal-strength label (Svak / OK / Bra / Høy) driven by the live
+  // peak, updating as levels stream in (WS-4).
+  const signalKey = levelLabel(peakMax);
+  const signalLabel = {
+    weak: t("recordingScreen.signalWeak", "Svak"),
+    ok: t("recordingScreen.signalOk", "OK"),
+    good: t("recordingScreen.signalGood", "Bra"),
+    loud: t("recordingScreen.signalLoud", "Høy"),
+  }[signalKey];
+  const signalGreen = signalKey === "ok" || signalKey === "good";
 
   return (
     <div className="sr-content wide">
@@ -620,6 +649,32 @@ export function HomeScreen({
                 label={t("homeScreen.chipNetwork", "Nett")}
               />
             </div>
+            {/* Live signal-strength chip — updates as levels stream in (WS-4). */}
+            <div
+              className="sr-row"
+              aria-label={t("homeScreen.signalLevel", "Signalnivå")}
+              style={{ gap: 7, marginTop: 11 }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background: signalGreen
+                    ? "var(--sr-green)"
+                    : "var(--sr-gold)",
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: "var(--sr-text-2)",
+                }}
+              >
+                {t("homeScreen.signalLabel", "Signal:")} {signalLabel}
+              </span>
+            </div>
           </div>
           <DeviceCard
             icon="mic"
@@ -631,7 +686,7 @@ export function HomeScreen({
                 {t("homeScreen.connected", "Tilkoblet")}
               </Badge>
             }
-            onEdit={navigateToSettings}
+            onEdit={() => navigateToSettings("lydkilde")}
           />
           {video ? (
             <>
@@ -644,14 +699,14 @@ export function HomeScreen({
                     ? t("homeScreen.sourceConfigured", "Kilde konfigurert")
                     : t("homeScreen.selectCamera", "Velg kamera")
                 }
-                onEdit={navigateToSettings}
+                onEdit={() => navigateToSettings("video")}
               />
               <DeviceCard
                 icon="gear"
                 k={t("homeScreen.cardVideoQuality", "Videokvalitet")}
                 v="720p · 30 fps"
                 meta={t("homeScreen.combinedMp4", "Kombinert MP4")}
-                onEdit={navigateToSettings}
+                onEdit={() => navigateToSettings("video")}
               />
               <DeviceCard
                 icon="disk"
@@ -659,7 +714,7 @@ export function HomeScreen({
                 v={diskV ?? "569 GB ledig"}
                 meta={storageMeta ?? "~38 timer opptak igjen"}
                 progress={diskPct ?? undefined}
-                onEdit={navigateToSettings}
+                onEdit={() => navigateToSettings("filer")}
               />
             </>
           ) : (
@@ -668,11 +723,8 @@ export function HomeScreen({
                 icon="file"
                 k={t("homeScreen.cardFormat", "Format")}
                 v="WAV"
-                meta={t(
-                  "homeScreen.formatMeta",
-                  "Stereo · 48 kHz · høyest kvalitet",
-                )}
-                onEdit={navigateToSettings}
+                meta={formatMeta}
+                onEdit={() => navigateToSettings("filer")}
               />
               <DeviceCard
                 icon="disk"
@@ -680,7 +732,7 @@ export function HomeScreen({
                 v={diskV ?? "569 GB ledig"}
                 meta={storageMeta ?? "~95 timer kun-lyd igjen"}
                 progress={diskPct ?? undefined}
-                onEdit={navigateToSettings}
+                onEdit={() => navigateToSettings("filer")}
               />
             </>
           )}

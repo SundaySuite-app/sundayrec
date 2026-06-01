@@ -1210,7 +1210,11 @@
     "formatMeta": "Stereo · 48 kHz · najwyższa jakość",
     "diskFree": "{{size}} wolne",
     "storageHoursVideo": "~{{hours}} godz. nagrywania pozostało",
-    "storageHoursAudio": "~{{hours}} godz. tylko dźwięku pozostało"
+    "storageHoursAudio": "~{{hours}} godz. tylko dźwięku pozostało",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
+    "signalLevel": "Signal level",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Transmisja na żywo",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Trwa nagrywanie",
     "statusStarting": "Uruchamianie …",
     "statusReconnecting": "Ponowne łączenie",
-    "signalWeak": "SŁABY",
+    "signalWeak": "Słaby",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Kamera",
@@ -1267,7 +1271,9 @@
     "stopButton": "Naciśnij, aby zatrzymać nagrywanie",
     "savedAs": "Zapisywane jako:",
     "errorPrefix": "Błąd ({{code}})",
-    "startFailed": "Nie udało się rozpocząć nagrywania:"
+    "startFailed": "Nie udało się rozpocząć nagrywania:",
+    "signalGood": "Dobry",
+    "signalLoud": "Głośny"
   },
   "scheduleScreen": {
     "pageTitle": "Harmonogram",
@@ -1382,7 +1388,17 @@
       "compTitle": "Kompresor",
       "compDesc": "Wyrównuje wahania głośności głosu.",
       "limiterTitle": "Limiter (ochrona przed przesterowaniem)",
-      "limiterDesc": "Zapobiega przesterowaniu przy nagłych głośnych dźwiękach."
+      "limiterDesc": "Zapobiega przesterowaniu przy nagłych głośnych dźwiękach.",
+      "noDevicesFound": "No audio devices found. Connect your audio interface and press Refresh.",
+      "refresh": "Refresh",
+      "deviceDefault": "Default",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Device's own rate — no conversion",
+      "sr96Sub": "Studio · high resolution",
+      "showLevelsTitle": "Show level meter while recording",
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
     },
     "video": {
       "enableTitle": "Włącz nagrywanie wideo",

@@ -12,6 +12,7 @@ import {
 } from "@/lib/routing";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Icon, type IconName } from "@/design/Icon";
+import { setPendingSettingsTab } from "@/design/screens/settingsTab";
 
 /**
  * Custom DOM event a child view dispatches to ask the shell to switch views
@@ -111,10 +112,22 @@ export function MainLayout({
 
   // Let descendant views request a navigation via a DOM event (see
   // SHELL_NAVIGATE_EVENT) — the home cards use this to jump to review/history.
+  // The detail is either a plain view-name string (back-compat) or an object
+  // `{ view, tab }` that deep-links a settings sub-tab (WS-6): we stash the tab
+  // for the mounting SettingsScreen before switching views.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (isViewName(detail)) showView(detail);
+      if (isViewName(detail)) {
+        showView(detail);
+        return;
+      }
+      if (detail && typeof detail === "object" && isViewName(detail.view)) {
+        if (detail.view === "settings" && typeof detail.tab === "string") {
+          setPendingSettingsTab(detail.tab);
+        }
+        showView(detail.view);
+      }
     };
     window.addEventListener(SHELL_NAVIGATE_EVENT, handler);
     return () => window.removeEventListener(SHELL_NAVIGATE_EVENT, handler);

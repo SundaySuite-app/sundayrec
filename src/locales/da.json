@@ -1210,7 +1210,11 @@
     "formatMeta": "Stereo · 48 kHz · højeste kvalitet",
     "diskFree": "{{size}} ledig",
     "storageHoursVideo": "~{{hours}} timers optagelse tilbage",
-    "storageHoursAudio": "~{{hours}} timers kun-lyd tilbage"
+    "storageHoursAudio": "~{{hours}} timers kun-lyd tilbage",
+    "rateAuto": "Auto",
+    "formatMetaDynamic": "Stereo · {{rate}} · highest quality",
+    "signalLevel": "Signal level",
+    "signalLabel": "Signal:"
   },
   "liveScreen": {
     "title": "Direkte udsendelse",
@@ -1257,7 +1261,7 @@
     "statusRecording": "Optager nu",
     "statusStarting": "Starter …",
     "statusReconnecting": "Genopretter forbindelse",
-    "signalWeak": "SVAG",
+    "signalWeak": "Svag",
     "signalOk": "OK",
     "dbfs": "dBFS",
     "camera": "Kamera",
@@ -1267,7 +1271,9 @@
     "stopButton": "Tryk for at stoppe optagelsen",
     "savedAs": "Gemmes som:",
     "errorPrefix": "Fejl ({{code}})",
-    "startFailed": "Kunne ikke starte optagelsen:"
+    "startFailed": "Kunne ikke starte optagelsen:",
+    "signalGood": "God",
+    "signalLoud": "Høj"
   },
   "scheduleScreen": {
     "pageTitle": "Tidsplan",
@@ -1382,7 +1388,17 @@
       "compTitle": "Kompressor",
       "compDesc": "Udjævner udsving i stemmestyrke.",
       "limiterTitle": "Limiter (klipbeskyttelse)",
-      "limiterDesc": "Forhindrer, at pludselig høj lyd overstyrer."
+      "limiterDesc": "Forhindrer, at pludselig høj lyd overstyrer.",
+      "noDevicesFound": "No audio devices found. Connect your audio interface and press Refresh.",
+      "refresh": "Refresh",
+      "deviceDefault": "Default",
+      "deviceStereo": "stereo",
+      "deviceMono": "mono",
+      "srAuto": "Auto",
+      "srAutoSub": "Device's own rate — no conversion",
+      "sr96Sub": "Studio · high resolution",
+      "showLevelsTitle": "Show level meter while recording",
+      "showLevelsDesc": "The L/R meter shows while recording. Turn off for maximum capture stability on a busy machine."
     },
     "video": {
       "enableTitle": "Aktivér videooptagelse",
