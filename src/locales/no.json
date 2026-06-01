@@ -136,7 +136,11 @@
     "revealInFolder": "Vis i mappe",
     "revealError": "Kunne ikke åpne mappen — filen finnes kanskje ikke lenger",
     "loadError": "Kunne ikke laste historikken",
-    "confirmDelete": "Slett dette opptaket fra historikken?"
+    "confirmDelete": "Slett dette opptaket fra historikken?",
+    "loadErrorDesc": "Noe gikk galt da listen skulle hentes. Prøv igjen.",
+    "retry": "Prøv igjen",
+    "emptyDesc": "Når du har tatt opp din første gudstjeneste dukker den opp her — med varighet, størrelse og notater.",
+    "noMatchDesc": "Ingen opptak passer søket «{{query}}». Prøv et annet ord."
   },
   "review": {
     "queueTitle": "Klare for gjennomgang og publisering",
@@ -1382,7 +1386,11 @@
     "openAt": "Åpne på {{time}}",
     "emptyNoTranscripts": "Ingen transkripsjoner ennå — åpne et opptak i Rediger og klikk Transkriber for å bygge opp et søkbart arkiv.",
     "emptyNoRecordings": "Ingen transkripsjoner ennå — transkriber et opptak først.",
-    "noHits": "Ingen treff for «{{query}}»."
+    "noHits": "Ingen treff for «{{query}}».",
+    "idleTitle": "Klar til å søke",
+    "idleDesc": "Skriv et ord eller en frase for å finne det i prekenene dine — vi hopper rett til riktig sted i opptaket.",
+    "emptyNoTranscriptsTitle": "Ingen søkbare opptak ennå",
+    "noHitsTitle": "Ingen treff"
   },
   "settingsScreen": {
     "pageTitle": "Innstillinger",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID fra SundaySong / SundayPlan",
       "saveConnection": "Lagre tilkobling"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Opptaket er lagret",
+    "openInEditor": "Åpne i redigering"
   }
 }

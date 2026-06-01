@@ -120,6 +120,20 @@ pub const LEVELS_EVENT: &str = "recording://levels";
 /// ffmpeg's second (MJPEG-to-stdout) output. Best-effort — the recording is
 /// never affected by a preview frame failing. Video recordings only.
 pub const RECORDING_FRAME_EVENT: &str = "recording://frame";
+/// Event channel: a recording finished cleanly. Carries the final file path so
+/// the UI can offer "open in editor" — the record→edit hand-off.
+pub const FINISHED_EVENT: &str = "recording://finished";
+
+/// Payload for [`FINISHED_EVENT`] — where the finished recording landed, so the
+/// UI's "open in editor" action can load it straight into the editor.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/lib/bindings/RecordingFinished.ts")]
+pub struct RecordingFinished {
+    /// Absolute path to the finished recording file.
+    pub file_path: String,
+    /// Whether it is a video (mp4) recording.
+    pub has_video: bool,
+}
 
 /// Options for [`RecorderEngine::start`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -900,6 +914,22 @@ async fn run_session(
     // Clean finish: every deliverable is finalised + history-rowed, so the
     // recovery manifest is no longer needed.
     crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+    // Record→edit hand-off: tell the UI where the finished file landed so it can
+    // offer "open in editor". Only when the main file actually exists + is
+    // non-empty (a recording that produced nothing skips the suggestion).
+    if tokio::fs::metadata(&opts.output_path)
+        .await
+        .map(|m| m.len() > 0)
+        .unwrap_or(false)
+    {
+        let _ = app.emit(
+            FINISHED_EVENT,
+            RecordingFinished {
+                file_path: opts.output_path.clone(),
+                has_video: opts.video_device_name.is_some(),
+            },
+        );
+    }
     set_state(
         &app,
         &last_state,

@@ -34,7 +34,7 @@ import {
 import { clock, formatHitDate, snippetWithBrackets } from "./search.helpers";
 
 import { Icon } from "../Icon";
-import { Badge } from "../atoms";
+import { Badge, Btn, EmptyState } from "../atoms";
 
 function highlight(s: string): string {
   // The mockup marks query hits with [brackets]; render them as gold <mark>.
@@ -184,16 +184,16 @@ export function SearchScreen() {
             }}
           />
         </label>
-        <button
-          className="sr-btn ghost"
+        <Btn
+          variant="ghost"
+          icon="refresh"
+          loading={reindexing}
           onClick={refreshIndex}
-          disabled={reindexing}
         >
-          <Icon name="refresh" size={15} />
           {reindexing
             ? t("searchScreen.reindexing", "Oppdaterer…")
             : t("searchScreen.reindex", "Oppdater indeks")}
-        </button>
+        </Btn>
       </div>
       <div
         style={{ fontSize: 12.5, color: "var(--sr-text-3)", marginBottom: 12 }}
@@ -212,24 +212,58 @@ export function SearchScreen() {
               "Skriv minst to tegn for å søke i transkripsjonene.",
             )}
       </div>
-      {!hasQuery ? null : groups.length === 0 ? (
-        <div
-          className="sr-card pad"
-          style={{ fontSize: 13.5, color: "var(--sr-text-3)" }}
-        >
-          {stats.transcriptCount === 0
-            ? recordingCount > 0
-              ? t(
-                  "searchScreen.emptyNoTranscripts",
-                  "Ingen transkripsjoner ennå — åpne et opptak i Rediger og klikk Transkriber for å bygge opp et søkbart arkiv.",
-                )
-              : t(
-                  "searchScreen.emptyNoRecordings",
-                  "Ingen transkripsjoner ennå — transkriber et opptak først.",
-                )
-            : t("searchScreen.noHits", "Ingen treff for «{{query}}».", {
-                query: trimmed,
-              })}
+      {!hasQuery ? (
+        /* Idle state — guide the user before they've typed a query. */
+        <div className="sr-card">
+          <EmptyState
+            icon="search"
+            title={
+              stats.transcriptCount > 0
+                ? t("searchScreen.idleTitle", "Klar til å søke")
+                : t(
+                    "searchScreen.emptyNoTranscriptsTitle",
+                    "Ingen søkbare opptak ennå",
+                  )
+            }
+            desc={
+              stats.transcriptCount > 0
+                ? t(
+                    "searchScreen.idleDesc",
+                    "Skriv et ord eller en frase for å finne det i prekenene dine — vi hopper rett til riktig sted i opptaket.",
+                  )
+                : recordingCount > 0
+                  ? t(
+                      "searchScreen.emptyNoTranscripts",
+                      "Ingen transkripsjoner ennå — åpne et opptak i Rediger og klikk Transkriber for å bygge opp et søkbart arkiv.",
+                    )
+                  : t(
+                      "searchScreen.emptyNoRecordings",
+                      "Ingen transkripsjoner ennå — transkriber et opptak først.",
+                    )
+            }
+          />
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="sr-card">
+          <EmptyState
+            icon="search"
+            title={t("searchScreen.noHitsTitle", "Ingen treff")}
+            desc={
+              stats.transcriptCount === 0
+                ? recordingCount > 0
+                  ? t(
+                      "searchScreen.emptyNoTranscripts",
+                      "Ingen transkripsjoner ennå — åpne et opptak i Rediger og klikk Transkriber for å bygge opp et søkbart arkiv.",
+                    )
+                  : t(
+                      "searchScreen.emptyNoRecordings",
+                      "Ingen transkripsjoner ennå — transkriber et opptak først.",
+                    )
+                : t("searchScreen.noHits", "Ingen treff for «{{query}}».", {
+                    query: trimmed,
+                  })
+            }
+          />
         </div>
       ) : (
         <div className="sr-stack-3">

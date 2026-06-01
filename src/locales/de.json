@@ -136,7 +136,11 @@
     "revealInFolder": "Im Ordner anzeigen",
     "revealError": "Ordner konnte nicht geöffnet werden — die Datei existiert möglicherweise nicht mehr",
     "loadError": "Verlauf konnte nicht geladen werden",
-    "confirmDelete": "Diese Aufnahme aus dem Verlauf löschen?"
+    "confirmDelete": "Diese Aufnahme aus dem Verlauf löschen?",
+    "loadErrorDesc": "Beim Laden der Liste ist etwas schiefgelaufen. Bitte erneut versuchen.",
+    "retry": "Erneut versuchen",
+    "emptyDesc": "Sobald du deinen ersten Gottesdienst aufgenommen hast, erscheint er hier — mit Dauer, Größe und Notizen.",
+    "noMatchDesc": "Keine Aufnahmen passen zu „{{query}}“. Versuche ein anderes Wort."
   },
   "review": {
     "queueTitle": "Bereit zur Prüfung und Veröffentlichung",
@@ -1382,7 +1386,11 @@
     "openAt": "Öffnen bei {{time}}",
     "emptyNoTranscripts": "Noch keine Transkripte — öffnen Sie eine Aufnahme im Editor und klicken Sie auf Transkribieren, um ein durchsuchbares Archiv aufzubauen.",
     "emptyNoRecordings": "Noch keine Transkripte — transkribieren Sie zuerst eine Aufnahme.",
-    "noHits": "Keine Treffer für „{{query}}“."
+    "noHits": "Keine Treffer für „{{query}}“.",
+    "idleTitle": "Bereit zum Suchen",
+    "idleDesc": "Gib ein Wort oder einen Satz ein, um es in deinen Predigten zu finden — wir springen direkt an die richtige Stelle in der Aufnahme.",
+    "emptyNoTranscriptsTitle": "Noch keine durchsuchbaren Aufnahmen",
+    "noHitsTitle": "Keine Treffer"
   },
   "settingsScreen": {
     "pageTitle": "Einstellungen",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID von SundaySong / SundayPlan",
       "saveConnection": "Verbindung speichern"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Aufnahme gespeichert",
+    "openInEditor": "Im Editor öffnen"
   }
 }

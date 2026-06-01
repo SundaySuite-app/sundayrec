@@ -131,13 +131,20 @@ function RecordRow({
         className="sr-record"
         style={{ flex: "1 1 auto" }}
         onClick={onRecord}
+        aria-label={t("homeScreen.startRecordingNow", "Start opptak nå")}
       >
         <span className="dot" />
         {t("homeScreen.startRecordingNow", "Start opptak nå")}
       </button>
       <button
-        className="sr-card"
+        className="sr-card sr-videotoggle"
         onClick={onToggleVideo}
+        aria-pressed={video}
+        aria-label={
+          video
+            ? t("homeScreen.videoOn", "Video på")
+            : t("homeScreen.videoOff", "Video av")
+        }
         style={{
           display: "flex",
           alignItems: "center",
@@ -146,6 +153,7 @@ function RecordRow({
           flex: "0 0 auto",
           cursor: "pointer",
           color: "inherit",
+          transition: "border-color 0.12s, background 0.12s",
         }}
       >
         <Icon
@@ -530,6 +538,11 @@ export function HomeScreen({
   }[signalKey];
   const signalGreen = signalKey === "ok" || signalKey === "good";
 
+  // Translated label for every device card's edit button (was a hardcoded
+  // "Endre"); reuses the shared `home.changeSettings` string already shipped in
+  // all seven catalogs.
+  const changeLabel = t("home.changeSettings", "Endre");
+
   return (
     <div className="sr-content wide">
       <TrustBanner />
@@ -815,6 +828,7 @@ export function HomeScreen({
               </Badge>
             }
             onEdit={() => navigateToSettings("lydkilde")}
+            editLabel={changeLabel}
           />
           {video ? (
             <>
@@ -828,6 +842,7 @@ export function HomeScreen({
                     : t("homeScreen.selectCamera", "Velg kamera")
                 }
                 onEdit={() => navigateToSettings("video")}
+                editLabel={changeLabel}
               />
               <DeviceCard
                 icon="gear"
@@ -835,6 +850,7 @@ export function HomeScreen({
                 v={videoQualityV}
                 meta={videoQualityMeta}
                 onEdit={() => navigateToSettings("video")}
+                editLabel={changeLabel}
               />
               <SeparateAudioCard
                 on={settings?.keepSeparateAudio ?? false}
@@ -848,6 +864,7 @@ export function HomeScreen({
                 meta={storageMeta ?? "~38 timer opptak igjen"}
                 progress={diskPct ?? undefined}
                 onEdit={() => navigateToSettings("filer")}
+                editLabel={changeLabel}
               />
             </>
           ) : (
@@ -858,6 +875,7 @@ export function HomeScreen({
                 v={(settings?.format ?? "wav").toUpperCase()}
                 meta={formatMeta}
                 onEdit={() => navigateToSettings("filer")}
+                editLabel={changeLabel}
               />
               <DeviceCard
                 icon="disk"
@@ -866,6 +884,7 @@ export function HomeScreen({
                 meta={storageMeta ?? "~95 timer kun-lyd igjen"}
                 progress={diskPct ?? undefined}
                 onEdit={() => navigateToSettings("filer")}
+                editLabel={changeLabel}
               />
             </>
           )}

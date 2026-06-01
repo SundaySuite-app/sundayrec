@@ -515,16 +515,12 @@ function RecFooter({
           </div>
         </div>
         <button
-          className="sr-btn danger"
+          className="sr-recstop"
           onClick={onStop}
-          style={{
-            background: "transparent",
-            color: "var(--sr-red-bright)",
-            border: "1.5px solid var(--sr-red)",
-            padding: "15px 26px",
-            fontSize: 15,
-            borderRadius: "var(--sr-r-md)",
-          }}
+          aria-label={t(
+            "recordingScreen.stopButton",
+            "Trykk for å stoppe opptaket",
+          )}
         >
           <span
             style={{

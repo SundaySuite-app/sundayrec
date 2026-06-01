@@ -7,6 +7,8 @@ import { useTranslation } from "react-i18next";
 import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 import { HISTORY_QUERY_KEY } from "./queryKey";
 import { filterHistory, historyStats } from "./historyFilter";
+import { Icon } from "@/design/Icon";
+import { Btn, EmptyState, Skeleton } from "@/design/atoms";
 
 /** Debounce (ms) before a note edit is auto-saved — matches the settings feel. */
 const NOTE_DEBOUNCE_MS = 600;
@@ -89,31 +91,49 @@ function HistoryRow({
   }, [row.file_path, onRevealError]);
 
   return (
-    <li className="sr-card pad flex flex-col gap-2 text-left">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate font-medium text-text" title={row.file_path}>
+    <li
+      className="sr-card pad"
+      style={{ display: "flex", flexDirection: "column", gap: 12 }}
+    >
+      <div className="sr-row" style={{ alignItems: "flex-start", gap: 13 }}>
+        <div
+          className="sr-device-ico"
+          style={{ flex: "0 0 36px", color: "var(--sr-gold)" }}
+        >
+          <Icon
+            name={row.file_path.endsWith(".mp4") ? "video" : "wave"}
+            size={18}
+          />
+        </div>
+        <div className="sr-grow" style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={row.file_path}
+          >
             {fileName(row.file_path)}
-          </p>
-          <p className="text-xs text-text2">
+          </div>
+          <div className="sr-device-meta sr-num">
             {formatDate(row.created_at, lang)} ·{" "}
             {formatDuration(row.duration_ms)} · {formatSize(row.byte_size)}
-          </p>
-          <p className="text-xs text-text3">
+          </div>
+          <div className="sr-device-meta">
             {row.device_name ?? t("history.unknownDevice", "Ukjent enhet")}
-          </p>
+          </div>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            className="sr-btn ghost sm"
-            onClick={() => void reveal()}
-          >
+        <div className="sr-row" style={{ flex: "0 0 auto", gap: 8 }}>
+          <Btn variant="ghost" sm icon="folder" onClick={() => void reveal()}>
             {t("history.revealInFolder", "Vis i mappe")}
-          </button>
-          <button
-            type="button"
-            className="sr-btn ghost sm"
+          </Btn>
+          <Btn
+            variant="ghost"
+            sm
+            icon="edit"
             onClick={() => {
               void invoke("open_in_sundayedit", { path: row.file_path }).catch(
                 () => {},
@@ -121,19 +141,10 @@ function HistoryRow({
             }}
           >
             {t("history.openInEdit", "Åpne i SundayEdit")}
-          </button>
-          <button
-            type="button"
-            className="sr-btn ghost sm"
-            style={{
-              color: "var(--sr-red-bright)",
-              borderColor: "var(--sr-red-deep)",
-            }}
-            aria-label={t("history.deleteEntry", "Slett oppføring")}
-            onClick={() => onDelete(row.id)}
-          >
+          </Btn>
+          <Btn variant="ghost danger" sm onClick={() => onDelete(row.id)}>
             {t("history.deleteEntry", "Slett oppføring")}
-          </button>
+          </Btn>
         </div>
       </div>
       <input
@@ -224,56 +235,106 @@ export function HistoryPanel() {
 
   if (isLoading) {
     return (
-      <p className="text-text2">
-        {t("home.connecting", "Kobler til backend …")}
-      </p>
+      <section
+        className="sr-stack-3"
+        style={{ width: "100%", maxWidth: 480 }}
+        aria-label={t("history.title", "Historikk")}
+        aria-busy="true"
+      >
+        <h2 className="sr-pagetitle" style={{ fontSize: 16 }}>
+          {t("history.title", "Historikk")}
+        </h2>
+        {/* Skeleton rows — the layout holds its shape so nothing jumps when the
+            real list arrives. */}
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="sr-card pad sr-stack-3">
+            <Skeleton w="55%" h={14} />
+            <Skeleton w="40%" h={11} />
+            <Skeleton h={36} style={{ borderRadius: "var(--sr-r-sm)" }} />
+          </div>
+        ))}
+      </section>
     );
   }
 
   if (isError) {
     return (
-      <p style={{ color: "var(--sr-red-bright)" }}>
-        {t("history.loadError", "Kunne ikke laste historikken")}
-      </p>
+      <section
+        className="sr-card pad"
+        style={{ width: "100%", maxWidth: 480 }}
+        aria-label={t("history.title", "Historikk")}
+      >
+        <EmptyState
+          icon="warn"
+          title={t("history.loadError", "Kunne ikke laste historikken")}
+          desc={t(
+            "history.loadErrorDesc",
+            "Noe gikk galt da listen skulle hentes. Prøv igjen.",
+          )}
+          action={
+            <Btn
+              variant="ghost"
+              sm
+              icon="refresh"
+              onClick={() => void invalidate()}
+            >
+              {t("history.retry", "Prøv igjen")}
+            </Btn>
+          }
+        />
+      </section>
     );
   }
 
   return (
     <section
-      className="flex w-full max-w-md flex-col gap-3"
+      className="sr-stack-3"
+      style={{ width: "100%", maxWidth: 480 }}
       aria-label={t("history.title", "Historikk")}
     >
-      <div className="flex items-center justify-between">
-        <h2 className="sr-pagetitle text-base">
+      <div className="sr-row" style={{ justifyContent: "space-between" }}>
+        <h2 className="sr-pagetitle" style={{ fontSize: 16 }}>
           {t("history.title", "Historikk")}
         </h2>
         {allRows.length > 0 && (
-          <button
-            type="button"
-            className="sr-btn ghost sm"
-            style={{
-              color: "var(--sr-red-bright)",
-              borderColor: "var(--sr-red-deep)",
-            }}
-            onClick={onClear}
-          >
+          <Btn variant="ghost danger" sm onClick={onClear}>
             {t("history.clearBtn", "Slett alle")}
-          </button>
+          </Btn>
         )}
       </div>
 
       {allRows.length > 0 && (
         <>
-          <input
-            type="search"
-            className="sr-input"
-            aria-label={t("history.searchPlaceholder", "Søk i historikk…")}
-            placeholder={t("history.searchPlaceholder", "Søk i historikk…")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <label className="sr-row sr-input" style={{ gap: 10 }}>
+            <Icon
+              name="search"
+              size={16}
+              style={{ color: "var(--sr-text-3)", flex: "0 0 auto" }}
+            />
+            <input
+              type="search"
+              aria-label={t("history.searchPlaceholder", "Søk i historikk…")}
+              placeholder={t("history.searchPlaceholder", "Søk i historikk…")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="sr-grow"
+              style={{
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                color: "var(--sr-text)",
+                fontSize: "inherit",
+                fontFamily: "inherit",
+                minWidth: 0,
+              }}
+            />
+          </label>
           {stats.count > 0 && (
-            <p className="text-xs text-text3" data-testid="history-stats">
+            <p
+              className="sr-device-meta sr-num"
+              style={{ margin: 0 }}
+              data-testid="history-stats"
+            >
               {stats.count} {t("history.totalCount", "opptak")} ·{" "}
               {formatDuration(stats.totalDurationMs)}{" "}
               {t("history.totalDuration", "totalt")}
@@ -290,7 +351,10 @@ export function HistoryPanel() {
       )}
 
       {revealError && (
-        <p className="text-xs text-accent" role="alert">
+        <p
+          role="alert"
+          style={{ fontSize: 12.5, color: "var(--sr-red-bright)", margin: 0 }}
+        >
           {t(
             "history.revealError",
             "Kunne ikke åpne mappen — filen finnes kanskje ikke lenger",
@@ -299,13 +363,41 @@ export function HistoryPanel() {
       )}
 
       {rows.length === 0 ? (
-        <p className="text-text3">
-          {allRows.length > 0 && query.trim() !== ""
-            ? t("search.noHits", "Ingen treff for")
-            : t("history.empty", "Ingen opptak ennå")}
-        </p>
+        allRows.length > 0 && query.trim() !== "" ? (
+          <div className="sr-card">
+            <EmptyState
+              icon="search"
+              title={t("search.noHits", "Ingen treff for")}
+              desc={t(
+                "history.noMatchDesc",
+                "Ingen opptak passer søket «{{query}}». Prøv et annet ord.",
+                { query: query.trim() },
+              )}
+            />
+          </div>
+        ) : (
+          <div className="sr-card">
+            <EmptyState
+              icon="wave"
+              title={t("history.empty", "Ingen opptak ennå")}
+              desc={t(
+                "history.emptyDesc",
+                "Når du har tatt opp din første gudstjeneste dukker den opp her — med varighet, størrelse og notater.",
+              )}
+            />
+          </div>
+        )
       ) : (
-        <ul className="flex flex-col gap-2">
+        <ul
+          style={{
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {rows.map((row) => (
             <HistoryRow
               key={row.id}

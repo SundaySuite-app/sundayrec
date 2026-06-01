@@ -136,7 +136,11 @@
     "revealInFolder": "Afficher dans le dossier",
     "revealError": "Impossible d'ouvrir le dossier — le fichier n'existe peut-être plus",
     "loadError": "Impossible de charger l'historique",
-    "confirmDelete": "Supprimer cet enregistrement de l'historique ?"
+    "confirmDelete": "Supprimer cet enregistrement de l'historique ?",
+    "loadErrorDesc": "Une erreur s'est produite lors du chargement de la liste. Réessayez.",
+    "retry": "Réessayer",
+    "emptyDesc": "Dès que vous aurez enregistré votre premier office, il apparaîtra ici — avec durée, taille et notes.",
+    "noMatchDesc": "Aucun enregistrement ne correspond à « {{query}} ». Essayez un autre mot."
   },
   "review": {
     "queueTitle": "Prêts pour relecture et publication",
@@ -1382,7 +1386,11 @@
     "openAt": "Ouvrir à {{time}}",
     "emptyNoTranscripts": "Aucune transcription pour l'instant — ouvrez un enregistrement dans Éditer et cliquez sur Transcrire pour constituer une archive consultable.",
     "emptyNoRecordings": "Aucune transcription pour l'instant — transcrivez d'abord un enregistrement.",
-    "noHits": "Aucun résultat pour « {{query}} »."
+    "noHits": "Aucun résultat pour « {{query}} ».",
+    "idleTitle": "Prêt à rechercher",
+    "idleDesc": "Saisissez un mot ou une phrase pour le retrouver dans vos sermons — nous allons directement au bon endroit de l'enregistrement.",
+    "emptyNoTranscriptsTitle": "Aucun enregistrement consultable",
+    "noHitsTitle": "Aucun résultat"
   },
   "settingsScreen": {
     "pageTitle": "Paramètres",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID de SundaySong / SundayPlan",
       "saveConnection": "Enregistrer la connexion"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Enregistrement sauvegardé",
+    "openInEditor": "Ouvrir dans l'éditeur"
   }
 }

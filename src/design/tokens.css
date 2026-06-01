@@ -359,6 +359,23 @@
   margin: 0;
 }
 
+/* Keyboard focus ring — one consistent, on-brand gold halo for every
+   interactive element reached by keyboard. Pointer clicks don't trigger it
+   (:focus-visible), so it never flashes on mouse use. */
+.sr-win :focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--sr-ink-950),
+    0 0 0 4px var(--sr-gold-line);
+  border-radius: var(--sr-r-sm);
+}
+/* Inputs already carry a border that the focus border-color recolors; give them
+   the same halo so the affordance is uniform across the app. */
+.sr-win .sr-input:focus-visible,
+.sr-win .sr-select:focus-visible {
+  border-color: var(--sr-gold-line);
+}
+
 /* Buttons */
 .sr-btn {
   display: inline-flex;
@@ -410,12 +427,33 @@
   border-color: var(--sr-red);
   color: #fff;
 }
+.sr-btn.danger:hover {
+  background: var(--sr-red-bright);
+  border-color: var(--sr-red-bright);
+}
+/* Quiet/destructive ghost — a ghost button that reads as destructive on hover
+   without shouting in its resting state (per-row "Slett", "Slett alle"). */
+.sr-btn.ghost.danger {
+  background: transparent;
+  color: var(--sr-red-bright);
+  border-color: var(--sr-red-deep);
+}
+.sr-btn.ghost.danger:hover {
+  background: var(--sr-red-tint);
+  border-color: var(--sr-red);
+}
 .sr-btn.sm {
   padding: 6px 12px;
   font-size: 12.5px;
 }
 .sr-btn.block {
   width: 100%;
+}
+.sr-btn:disabled,
+.sr-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* The big record button (Home / Live) */
@@ -436,11 +474,54 @@
   cursor: pointer;
   box-shadow: var(--sr-glow-red);
 }
+.sr-record {
+  transition:
+    filter 0.12s,
+    transform 0.04s,
+    box-shadow 0.12s;
+}
+.sr-record:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    0 0 0 1px rgba(229, 72, 77, 0.5),
+    0 10px 34px rgba(229, 72, 77, 0.42);
+}
+.sr-record:active {
+  transform: translateY(1px);
+}
 .sr-record .dot {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: #fff;
+}
+/* Soft "ready" pulse on the record dot so the primary action feels alive
+   without being distracting. */
+@keyframes sr-recordpulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 6px rgba(255, 255, 255, 0);
+  }
+}
+.sr-record .dot {
+  animation: sr-recordpulse 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-record .dot {
+    animation: none;
+  }
+}
+
+/* Home video toggle (a card that behaves like a switch) */
+.sr-videotoggle:hover {
+  background: var(--sr-ink-750);
+  border-color: var(--sr-line-strong);
+}
+.sr-videotoggle[aria-pressed="true"] {
+  border-color: var(--sr-gold-line);
 }
 .sr-record.secondary {
   background: var(--sr-ink-800);
@@ -450,6 +531,39 @@
   font-size: 14px;
   font-weight: 600;
   padding: 13px;
+}
+
+/* Stop button on the focused recording overlay — an outlined destructive
+   action that fills on hover so it reads as "the thing that ends the take". */
+.sr-recstop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 15px 26px;
+  border-radius: var(--sr-r-md);
+  background: transparent;
+  color: var(--sr-red-bright);
+  border: 1.5px solid var(--sr-red);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    transform 0.04s;
+}
+.sr-recstop:hover {
+  background: var(--sr-red);
+  color: #fff;
+}
+.sr-recstop:hover span {
+  background: #fff;
+}
+.sr-recstop:active {
+  transform: translateY(1px);
 }
 
 /* Toggle switch */
@@ -828,6 +942,94 @@
 }
 .sr-num {
   font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================================
+   Loading & empty states  —  no blank flashes, no janky reflow
+   ============================================================================ */
+
+/* Spinner — a subtle gold ring for inline "working…" affordances. */
+@keyframes sr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sr-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--sr-line-strong);
+  border-top-color: var(--sr-gold);
+  animation: sr-spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+
+/* Skeleton shimmer — placeholder blocks that breathe while data loads, sized to
+   the content they replace so the layout doesn't jump when the real rows land. */
+@keyframes sr-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.sr-skel {
+  border-radius: var(--sr-r-xs);
+  background: linear-gradient(
+    100deg,
+    var(--sr-ink-750) 30%,
+    var(--sr-ink-700) 50%,
+    var(--sr-ink-750) 70%
+  );
+  background-size: 200% 100%;
+  animation: sr-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sr-spinner,
+  .sr-skel {
+    animation: none;
+  }
+}
+
+/* Empty state — a calm, centered placeholder with an icon, headline and hint.
+   Used by every list (history, search) so "nothing here yet" feels friendly and
+   intentional, not broken. */
+.sr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 40px 28px;
+}
+.sr-empty-ico {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sr-line-faint);
+  border: 1px solid var(--sr-line);
+  color: var(--sr-text-3);
+  margin-bottom: 6px;
+}
+.sr-empty-ico svg {
+  width: 24px;
+  height: 24px;
+}
+.sr-empty-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--sr-text);
+}
+.sr-empty-desc {
+  font-size: 13.5px;
+  color: var(--sr-text-3);
+  line-height: 1.5;
+  max-width: 42ch;
 }
 
 /* ============================================================================

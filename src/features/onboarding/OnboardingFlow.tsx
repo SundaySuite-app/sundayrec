@@ -8,6 +8,8 @@ import type { Settings } from "@/lib/bindings/Settings";
 import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
 import type { VuLevels } from "@/lib/bindings/VuLevels";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
+import { Btn } from "@/design/atoms";
+import { Icon } from "@/design/Icon";
 
 /**
  * First-run onboarding wizard — mirrors the Electron `onboarding.ts` flow,
@@ -153,7 +155,22 @@ function StepWelcome({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4 text-center">
+    <div className="flex flex-col items-center gap-4 text-center">
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--sr-gold-tint)",
+          border: "1px solid var(--sr-gold-line)",
+          color: "var(--sr-gold)",
+        }}
+      >
+        <Icon name="mic" size={26} />
+      </div>
       <h2 className="text-xl font-semibold text-text">
         {t("wizard.welcomeTitle", "Velkommen til SundayRec")}
       </h2>
@@ -163,17 +180,13 @@ function StepWelcome({
           "La oss sette opp programmet, slik at alt er klart til søndagen.",
         )}
       </p>
-      <div className="mt-1 flex flex-col gap-2">
-        <button
-          type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
-          onClick={onNext}
-        >
+      <div className="mt-1 flex w-full flex-col gap-2">
+        <Btn variant="gold" block onClick={onNext}>
           {t("wizard.start", "Kom i gang →")}
-        </button>
+        </Btn>
         <button
           type="button"
-          className="text-sm text-text3 hover:text-text2"
+          className="text-sm text-text3 transition-colors hover:text-text2"
           onClick={onSkipAll}
         >
           {t("wizard.skipAll", "Hopp over — sett opp manuelt")}
@@ -233,7 +246,16 @@ function StepDevice({
       {error && <p className="text-sm text-[var(--sr-red-bright)]">{error}</p>}
 
       {inputs.length === 0 ? (
-        <p className="text-sm text-text3">
+        <p
+          className="text-sm text-text3"
+          style={{
+            textAlign: "center",
+            padding: "16px 12px",
+            borderRadius: "var(--sr-r-sm)",
+            background: "var(--sr-line-faint)",
+            border: "1px solid var(--sr-line)",
+          }}
+        >
           {t("wizard.noDevices", "Ingen lydenheter funnet.")}
         </p>
       ) : (
@@ -265,10 +287,10 @@ function StepDevice({
         </ul>
       )}
 
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2 disabled:opacity-50"
+      <div className="flex w-full flex-col gap-2">
+        <Btn
+          variant="gold"
+          block
           onClick={() => {
             if (!picked) {
               setError(
@@ -283,10 +305,10 @@ function StepDevice({
           }}
         >
           {t("wizard.useDevice", "Bruk valgt enhet →")}
-        </button>
+        </Btn>
         <button
           type="button"
-          className="text-sm text-text3 hover:text-text2"
+          className="text-sm text-text3 transition-colors hover:text-text2"
           onClick={onSkip}
         >
           {t("wizard.skipStep", "Hopp over dette steget")}
@@ -394,17 +416,13 @@ function StepAudioTest({
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          className="rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
-          onClick={onNext}
-        >
+      <div className="flex w-full flex-col gap-2">
+        <Btn variant="gold" block onClick={onNext}>
           {t("wizard.audioWorks", "Lyden fungerer →")}
-        </button>
+        </Btn>
         <button
           type="button"
-          className="text-sm text-text3 hover:text-text2"
+          className="text-sm text-text3 transition-colors hover:text-text2"
           onClick={onSkip}
         >
           {t("wizard.skipStep", "Hopp over dette steget")}
@@ -419,7 +437,22 @@ function StepAudioTest({
 function StepReady({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4 text-center">
+    <div className="flex flex-col items-center gap-4 text-center">
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--sr-green-tint)",
+          border: "1px solid rgba(52,199,123,0.4)",
+          color: "var(--sr-green)",
+        }}
+      >
+        <Icon name="check" size={28} strokeWidth={2.4} />
+      </div>
       <h2 className="text-xl font-semibold text-text">
         {t("wizard.readyTitle", "Alt er klart!")}
       </h2>
@@ -429,13 +462,11 @@ function StepReady({ onDone }: { onDone: () => void }) {
           "SundayRec er klar til å ta opp gudstjenester. Du kan endre alle innstillinger i menyen når som helst.",
         )}
       </p>
-      <button
-        type="button"
-        className="mt-1 rounded-lg bg-accent px-4 py-2 font-semibold text-[#1a1306] transition-colors hover:bg-accent2"
-        onClick={onDone}
-      >
-        {t("wizard.open", "Åpne SundayRec →")}
-      </button>
+      <div className="mt-1 w-full">
+        <Btn variant="gold" block onClick={onDone}>
+          {t("wizard.open", "Åpne SundayRec →")}
+        </Btn>
+      </div>
     </div>
   );
 }

@@ -136,7 +136,11 @@
     "revealInFolder": "Pokaż w folderze",
     "revealError": "Nie udało się otworzyć folderu — plik mógł zostać usunięty",
     "loadError": "Nie udało się wczytać historii",
-    "confirmDelete": "Usunąć to nagranie z historii?"
+    "confirmDelete": "Usunąć to nagranie z historii?",
+    "loadErrorDesc": "Coś poszło nie tak podczas wczytywania listy. Spróbuj ponownie.",
+    "retry": "Spróbuj ponownie",
+    "emptyDesc": "Gdy nagrasz swoje pierwsze nabożeństwo, pojawi się tutaj — z czasem trwania, rozmiarem i notatkami.",
+    "noMatchDesc": "Żadne nagrania nie pasują do „{{query}}”. Spróbuj innego słowa."
   },
   "review": {
     "queueTitle": "Gotowe do przeglądu i publikacji",
@@ -1382,7 +1386,11 @@
     "openAt": "Otwórz w {{time}}",
     "emptyNoTranscripts": "Brak transkrypcji — otwórz nagranie w Edytuj i kliknij Transkrybuj, aby zbudować przeszukiwalne archiwum.",
     "emptyNoRecordings": "Brak transkrypcji — najpierw przetranskrybuj nagranie.",
-    "noHits": "Brak wyników dla „{{query}}”."
+    "noHits": "Brak wyników dla „{{query}}”.",
+    "idleTitle": "Gotowe do wyszukiwania",
+    "idleDesc": "Wpisz słowo lub frazę, aby znaleźć je w swoich kazaniach — przejdziemy prosto do właściwego miejsca w nagraniu.",
+    "emptyNoTranscriptsTitle": "Brak nagrań do przeszukania",
+    "noHitsTitle": "Brak wyników"
   },
   "settingsScreen": {
     "pageTitle": "Ustawienia",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID z SundaySong / SundayPlan",
       "saveConnection": "Zapisz połączenie"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Nagranie zapisane",
+    "openInEditor": "Otwórz w edytorze"
   }
 }

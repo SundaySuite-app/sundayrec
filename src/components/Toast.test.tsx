@@ -16,6 +16,7 @@ import {
   useToastApi,
 } from "./Toast";
 import i18n from "@/i18n";
+import { consumePendingEditorFile } from "@/design/screens/editorOpen";
 
 // --- Tauri event bridge mock -------------------------------------------------
 // Capture the registered listeners so tests can fire backend events by name.
@@ -42,6 +43,8 @@ beforeEach(() => {
   h.handlers.clear();
   h.listen.mockClear();
   i18n.changeLanguage("no");
+  // Drain any pending editor hand-off stashed by a prior test.
+  consumePendingEditorFile();
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
@@ -200,10 +203,57 @@ describe("ToastHost backend wiring", () => {
     );
   });
 
-  it("surfaces a recording-finished summary as an info toast", async () => {
+  it("surfaces a recording-finished toast with the open-in-editor action", async () => {
     render(<ToastHost />);
-    act(() => h.emit("recording://finished", { message: "Fullført — 1t 30m" }));
-    expect(await screen.findByText("Fullført — 1t 30m")).toBeInTheDocument();
+    act(() =>
+      h.emit("recording://finished", {
+        file_path: "/recordings/2026-06-01_pinse.mp4",
+        has_video: true,
+      }),
+    );
+    // The friendly "saved" message + the CTA button are both rendered.
+    expect(await screen.findByText("✓ Opptaket er lagret")).toBeInTheDocument();
+    expect(screen.getByText("Åpne i redigering")).toBeInTheDocument();
+  });
+
+  it("clicking 'Åpne i redigering' stashes the file + navigates to the editor", async () => {
+    // Spy on the shell:navigate + editor:open-file events the action dispatches.
+    const events: Array<{ type: string; detail: unknown }> = [];
+    const onNav = (e: Event) =>
+      events.push({ type: e.type, detail: (e as CustomEvent).detail });
+    window.addEventListener("shell:navigate", onNav);
+    window.addEventListener("editor:open-file", onNav);
+
+    render(<ToastHost />);
+    act(() =>
+      h.emit("recording://finished", {
+        file_path: "/recordings/sermon.mp4",
+        has_video: true,
+      }),
+    );
+    fireEvent.click(await screen.findByText("Åpne i redigering"));
+
+    // The pending file was stashed for the mounting editor…
+    expect(consumePendingEditorFile()).toBe("/recordings/sermon.mp4");
+    // …a navigation to the editor view was requested…
+    expect(events).toContainEqual({
+      type: "shell:navigate",
+      detail: { view: "editor" },
+    });
+    // …an already-mounted editor was notified live…
+    expect(events).toContainEqual({
+      type: "editor:open-file",
+      detail: "/recordings/sermon.mp4",
+    });
+    // …and the toast dismissed itself.
+    await waitFor(() =>
+      expect(
+        screen.queryByText("✓ Opptaket er lagret"),
+      ).not.toBeInTheDocument(),
+    );
+
+    window.removeEventListener("shell:navigate", onNav);
+    window.removeEventListener("editor:open-file", onNav);
   });
 
   it("coalesces repeated silence warnings into one banner", async () => {

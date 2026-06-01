@@ -12,6 +12,12 @@ import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
+import type { RecordingFinished } from "@/lib/bindings/RecordingFinished";
+import { SHELL_NAVIGATE_EVENT } from "@/components/MainLayout";
+import {
+  EDITOR_OPEN_FILE_EVENT,
+  setPendingEditorFile,
+} from "@/design/screens/editorOpen";
 
 /**
  * Toast layer — mirrors the Electron `showBackendWarning()` /
@@ -29,6 +35,13 @@ import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
 
 export type ToastSeverity = "info" | "warn" | "error";
 
+/** An optional call-to-action button rendered inside a toast (e.g. the
+ *  recording-finished "Åpne i redigering" hand-off). */
+export interface ToastAction {
+  readonly label: string;
+  readonly onClick: () => void;
+}
+
 export interface Toast {
   /** Stable identity — same `key` coalesces (replaces) an existing toast. */
   readonly key: string;
@@ -36,6 +49,8 @@ export interface Toast {
   readonly message: string;
   /** Monotonic id for React list keys (distinct from the coalesce `key`). */
   readonly id: number;
+  /** Optional CTA button (label + handler). */
+  readonly action?: ToastAction;
 }
 
 /** Auto-dismiss delay in ms by severity. `error` is sticky (Electron parity). */
@@ -50,8 +65,14 @@ interface ToastState {
   readonly seq: number;
 }
 
-type ToastAction =
-  | { type: "push"; key: string; severity: ToastSeverity; message: string }
+type ToastDispatch =
+  | {
+      type: "push";
+      key: string;
+      severity: ToastSeverity;
+      message: string;
+      action?: ToastAction;
+    }
   | { type: "dismiss"; key: string }
   | { type: "clear" };
 
@@ -62,7 +83,7 @@ type ToastAction =
  */
 export function toastReducer(
   state: ToastState,
-  action: ToastAction,
+  action: ToastDispatch,
 ): ToastState {
   switch (action.type) {
     case "push": {
@@ -77,6 +98,7 @@ export function toastReducer(
             severity: action.severity,
             message: action.message,
             id,
+            action: action.action,
           },
         ],
       };
@@ -98,6 +120,7 @@ export interface ToastApi {
     key?: string;
     severity: ToastSeverity;
     message: string;
+    action?: ToastAction;
   }) => void;
   dismiss: (key: string) => void;
   clear: () => void;
@@ -122,23 +145,26 @@ export function useToast(): ToastApi {
     dispatch({ type: "dismiss", key });
   }, []);
 
-  const push = useCallback<ToastApi["push"]>(({ key, severity, message }) => {
-    const k = key ?? `${severity}:${message}`;
-    // Cancel any pending dismiss for this key before re-arming.
-    const prior = timers.current.get(k);
-    if (prior) clearTimeout(prior);
-    dispatch({ type: "push", key: k, severity, message });
-    const delay = DISMISS_MS[severity];
-    if (delay !== null) {
-      const handle = setTimeout(() => {
+  const push = useCallback<ToastApi["push"]>(
+    ({ key, severity, message, action }) => {
+      const k = key ?? `${severity}:${message}`;
+      // Cancel any pending dismiss for this key before re-arming.
+      const prior = timers.current.get(k);
+      if (prior) clearTimeout(prior);
+      dispatch({ type: "push", key: k, severity, message, action });
+      const delay = DISMISS_MS[severity];
+      if (delay !== null) {
+        const handle = setTimeout(() => {
+          timers.current.delete(k);
+          dispatch({ type: "dismiss", key: k });
+        }, delay);
+        timers.current.set(k, handle);
+      } else {
         timers.current.delete(k);
-        dispatch({ type: "dismiss", key: k });
-      }, delay);
-      timers.current.set(k, handle);
-    } else {
-      timers.current.delete(k);
-    }
-  }, []);
+      }
+    },
+    [],
+  );
 
   const clear = useCallback(() => {
     for (const handle of timers.current.values()) clearTimeout(handle);
@@ -203,7 +229,7 @@ const SEVERITY_ICON: Record<ToastSeverity, string> = {
 export function ToastHost({ children }: { children?: ReactNode }) {
   const api = useToast();
   const { t } = useTranslation();
-  const { push } = api;
+  const { push, dismiss } = api;
 
   useEffect(() => {
     const unError = listen<RecordingEvent>("recording://error", (event) =>
@@ -223,21 +249,48 @@ export function ToastHost({ children }: { children?: ReactNode }) {
           t("home.testSignalSilent", "⚠️ Stillhet — mikser av?"),
       }),
     );
-    const unFinished = listen<{ message?: string } | null>(
+    const unFinished = listen<RecordingFinished>(
       "recording://finished",
-      (event) =>
+      (event) => {
+        const filePath = event.payload?.file_path;
         push({
           key: "recording-finished",
           severity: "info",
-          message: event.payload?.message || t("history.complete", "Fullført"),
-        }),
+          message: t("recordingFinished.saved", "✓ Opptaket er lagret"),
+          // Offer the record → edit hand-off only when we know where the file
+          // landed (always, in the new payload — but stay null-safe).
+          action: filePath
+            ? {
+                label: t("recordingFinished.openInEditor", "Åpne i redigering"),
+                onClick: () => {
+                  // Stash for a not-yet-mounted editor (consumed on its mount)…
+                  setPendingEditorFile(filePath);
+                  // …and notify an already-mounted editor to load it now.
+                  window.dispatchEvent(
+                    new CustomEvent(EDITOR_OPEN_FILE_EVENT, {
+                      detail: filePath,
+                    }),
+                  );
+                  // The shell understands the `{ view }` object form (see
+                  // MainLayout's SHELL_NAVIGATE_EVENT handler).
+                  window.dispatchEvent(
+                    new CustomEvent(SHELL_NAVIGATE_EVENT, {
+                      detail: { view: "editor" },
+                    }),
+                  );
+                  dismiss("recording-finished");
+                },
+              }
+            : undefined,
+        });
+      },
     );
     return () => {
       void unError.then((off) => off());
       void unSilence.then((off) => off());
       void unFinished.then((off) => off());
     };
-  }, [push, t]);
+  }, [push, dismiss, t]);
 
   return (
     <ToastContext.Provider value={api}>
@@ -260,6 +313,15 @@ export function ToastHost({ children }: { children?: ReactNode }) {
               {SEVERITY_ICON[tt.severity]}
             </span>
             <span className="flex-1">{tt.message}</span>
+            {tt.action && (
+              <button
+                type="button"
+                className="shrink-0 rounded-md border border-accent-border px-2 py-1 text-xs font-semibold text-accent transition-colors hover:bg-[rgba(240,187,71,0.12)]"
+                onClick={tt.action.onClick}
+              >
+                {tt.action.label}
+              </button>
+            )}
             <button
               type="button"
               aria-label={t("general.close", "Lukk")}

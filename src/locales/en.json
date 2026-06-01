@@ -136,7 +136,11 @@
     "revealInFolder": "Show in folder",
     "revealError": "Could not open the folder — the file may no longer exist",
     "loadError": "Could not load history",
-    "confirmDelete": "Delete this recording from history?"
+    "confirmDelete": "Delete this recording from history?",
+    "loadErrorDesc": "Something went wrong while loading the list. Please try again.",
+    "retry": "Try again",
+    "emptyDesc": "Once you've recorded your first service it shows up here — with duration, size and notes.",
+    "noMatchDesc": "No recordings match “{{query}}”. Try a different word."
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
@@ -1382,7 +1386,11 @@
     "openAt": "Open at {{time}}",
     "emptyNoTranscripts": "No transcripts yet — open a recording in Edit and click Transcribe to build a searchable archive.",
     "emptyNoRecordings": "No transcripts yet — transcribe a recording first.",
-    "noHits": "No results for “{{query}}”."
+    "noHits": "No results for “{{query}}”.",
+    "idleTitle": "Ready to search",
+    "idleDesc": "Type a word or phrase to find it in your sermons — we jump straight to the right spot in the recording.",
+    "emptyNoTranscriptsTitle": "No searchable recordings yet",
+    "noHitsTitle": "No matches"
   },
   "settingsScreen": {
     "pageTitle": "Settings",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID from SundaySong / SundayPlan",
       "saveConnection": "Save connection"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Recording saved",
+    "openInEditor": "Open in editor"
   }
 }

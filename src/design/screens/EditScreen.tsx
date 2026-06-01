@@ -75,6 +75,7 @@ import {
   viewportTicks,
   WAVE_BARS,
 } from "./editor.helpers";
+import { consumePendingEditorFile, EDITOR_OPEN_FILE_EVENT } from "./editorOpen";
 
 /** True when an IPC rejection is a default-build "feature off" error, so we can
  *  stay quiet rather than crash — mirrors EditorPanel/TranscribePanel. */
@@ -2751,6 +2752,28 @@ export function EditScreen() {
     undoTrim,
     canUndoTrim,
   ]);
+
+  // Record → edit hand-off. On mount, consume any file path stashed by the
+  // recording-finished toast and auto-load it through the SAME path as a manual
+  // open (m.onSelect → editor_load_recording + peaks). While the editor is
+  // already mounted, a second finished recording arrives via the live
+  // EDITOR_OPEN_FILE_EVENT and loads in place. (See `./editorOpen`.)
+  const { onSelect } = m;
+  useEffect(() => {
+    const pending = consumePendingEditorFile();
+    if (pending) onSelect(pending);
+
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (typeof detail === "string" && detail.length > 0) {
+        // Clear any pending stash so re-mounting later doesn't reopen it.
+        consumePendingEditorFile();
+        onSelect(detail);
+      }
+    };
+    window.addEventListener(EDITOR_OPEN_FILE_EVENT, onOpen);
+    return () => window.removeEventListener(EDITOR_OPEN_FILE_EVENT, onOpen);
+  }, [onSelect]);
 
   return (
     <div className={"sr-content" + (mode === "video" ? " wide" : "")}>

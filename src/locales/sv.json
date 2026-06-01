@@ -136,7 +136,11 @@
     "revealInFolder": "Visa i mapp",
     "revealError": "Kunde inte öppna mappen — filen finns kanske inte längre",
     "loadError": "Kunde inte läsa historiken",
-    "confirmDelete": "Ta bort denna inspelning från historiken?"
+    "confirmDelete": "Ta bort denna inspelning från historiken?",
+    "loadErrorDesc": "Något gick fel när listan skulle hämtas. Försök igen.",
+    "retry": "Försök igen",
+    "emptyDesc": "När du har spelat in din första gudstjänst dyker den upp här — med längd, storlek och anteckningar.",
+    "noMatchDesc": "Inga inspelningar matchar «{{query}}». Prova ett annat ord."
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",
@@ -1382,7 +1386,11 @@
     "openAt": "Öppna vid {{time}}",
     "emptyNoTranscripts": "Inga transkriptioner ännu — öppna en inspelning i Redigera och klicka på Transkribera för att bygga upp ett sökbart arkiv.",
     "emptyNoRecordings": "Inga transkriptioner ännu — transkribera en inspelning först.",
-    "noHits": "Inga träffar för ”{{query}}”."
+    "noHits": "Inga träffar för ”{{query}}”.",
+    "idleTitle": "Redo att söka",
+    "idleDesc": "Skriv ett ord eller en fras för att hitta det i dina predikningar — vi hoppar direkt till rätt ställe i inspelningen.",
+    "emptyNoTranscriptsTitle": "Inga sökbara inspelningar ännu",
+    "noHitsTitle": "Inga träffar"
   },
   "settingsScreen": {
     "pageTitle": "Inställningar",
@@ -1572,5 +1580,9 @@
       "churchIdHint": "UUID från SundaySong / SundayPlan",
       "saveConnection": "Spara anslutning"
     }
+  },
+  "recordingFinished": {
+    "saved": "✓ Inspelningen är sparad",
+    "openInEditor": "Öppna i redigering"
   }
 }

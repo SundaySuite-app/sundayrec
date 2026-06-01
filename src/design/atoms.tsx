@@ -36,16 +36,20 @@ export function Badge({
 }
 
 /* ── Button ─────────────────────────────────────────────────────────────── */
-export type BtnVariant = "ghost" | "gold" | "danger";
+export type BtnVariant = "ghost" | "gold" | "danger" | "ghost danger";
 export function Btn({
   variant,
   sm,
   block,
   icon,
   iconFill,
+  loading,
+  disabled,
   children,
   style,
   onClick,
+  ariaLabel,
+  title,
   type = "button",
 }: {
   variant?: BtnVariant;
@@ -53,19 +57,89 @@ export function Btn({
   block?: boolean;
   icon?: IconName;
   iconFill?: boolean;
+  /** Show an inline spinner in place of the leading icon and disable the button. */
+  loading?: boolean;
+  disabled?: boolean;
   children?: ReactNode;
   style?: CSSProperties;
   onClick?: () => void;
+  /** Required for icon-only buttons (no visible text label). */
+  ariaLabel?: string;
+  title?: string;
   type?: "button" | "submit";
 }) {
   const cls = ["sr-btn", variant, sm && "sm", block && "block"]
     .filter(Boolean)
     .join(" ");
   return (
-    <button className={cls} style={style} onClick={onClick} type={type}>
-      {icon && <Icon name={icon} size={sm ? 14 : 16} fill={iconFill} />}
+    <button
+      className={cls}
+      style={style}
+      onClick={onClick}
+      type={type}
+      disabled={disabled || loading}
+      aria-label={ariaLabel}
+      aria-busy={loading || undefined}
+      title={title}
+    >
+      {loading ? (
+        <span
+          className="sr-spinner"
+          style={{ width: sm ? 14 : 16, height: sm ? 14 : 16 }}
+        />
+      ) : (
+        icon && <Icon name={icon} size={sm ? 14 : 16} fill={iconFill} />
+      )}
       {children}
     </button>
+  );
+}
+
+/* ── Spinner ────────────────────────────────────────────────────────────── */
+export function Spinner({ size = 16 }: { size?: number }) {
+  return <span className="sr-spinner" style={{ width: size, height: size }} />;
+}
+
+/* ── Skeleton block (loading placeholder) ───────────────────────────────── */
+export function Skeleton({
+  w,
+  h = 12,
+  style,
+}: {
+  w?: number | string;
+  h?: number | string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className="sr-skel"
+      style={{ display: "block", width: w ?? "100%", height: h, ...style }}
+      aria-hidden
+    />
+  );
+}
+
+/* ── Empty state (friendly "nothing here yet" placeholder) ──────────────── */
+export function EmptyState({
+  icon,
+  title,
+  desc,
+  action,
+}: {
+  icon: IconName;
+  title: ReactNode;
+  desc?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="sr-empty">
+      <div className="sr-empty-ico">
+        <Icon name={icon} size={24} />
+      </div>
+      <div className="sr-empty-title">{title}</div>
+      {desc && <div className="sr-empty-desc">{desc}</div>}
+      {action && <div style={{ marginTop: 10 }}>{action}</div>}
+    </div>
   );
 }
 
@@ -180,6 +254,7 @@ export function DeviceCard({
   badge,
   progress,
   onEdit,
+  editLabel = "Endre",
 }: {
   icon: IconName;
   k: ReactNode;
@@ -187,9 +262,11 @@ export function DeviceCard({
   meta?: ReactNode;
   badge?: ReactNode;
   progress?: number;
-  /** When provided, renders the "Endre" button and calls this on click.
+  /** When provided, renders the edit button and calls this on click.
    *  Omit it for a purely informational card (no dead button). */
   onEdit?: () => void;
+  /** Visible + accessible label for the edit button (defaults to "Endre"). */
+  editLabel?: string;
 }) {
   return (
     <div className="sr-device">
@@ -227,8 +304,9 @@ export function DeviceCard({
           style={{ flex: "0 0 auto" }}
           onClick={onEdit}
           type="button"
+          aria-label={editLabel}
         >
-          Endre
+          {editLabel}
         </button>
       )}
     </div>
