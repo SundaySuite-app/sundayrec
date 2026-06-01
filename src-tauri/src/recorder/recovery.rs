@@ -156,3 +156,242 @@ async fn recover_session(pool: &SqlitePool, manifest: &SessionManifest) -> usize
     }
     count
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::store::{list_recordings, open_pool};
+    use sundayrec_core::recovery::{
+        has_recoverable_audio, recoverable_deliverables, DeliverableManifest,
+    };
+
+    /// A fully-migrated pool over a temp-dir database file (mirrors the db/settings
+    /// test helper). Kept alongside its `TempDir` so the file lives for the test.
+    async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pool = open_pool(&dir.path().join("test.sqlite"))
+            .await
+            .expect("open_pool");
+        (pool, dir)
+    }
+
+    /// Write an above-gate fake fragment file so `output_is_valid`'s size gate
+    /// accepts it (ffprobe is advisory and tolerant when the sidecar is absent).
+    async fn write_fragment(path: &Path) {
+        tokio::fs::write(path, vec![0u8; 64 * 1024])
+            .await
+            .expect("write fragment");
+    }
+
+    /// A manifest whose two single-fragment deliverables live under `dir`. No
+    /// reconnects / pre-roll, so the recovery finalize path is a no-op concat
+    /// (single fragment → returned untouched) and never spawns ffmpeg.
+    fn manifest_in(dir: &Path) -> SessionManifest {
+        let a = dir.join("sermon.m4a").to_string_lossy().into_owned();
+        let b = dir.join("sermon_2.m4a").to_string_lossy().into_owned();
+        SessionManifest {
+            session_id: "1700000000000-sermon".into(),
+            device_name: "Soundcraft USB".into(),
+            session_start_ms: 1_700_000_000_000,
+            preroll_clip_path: None,
+            deliverables: vec![
+                DeliverableManifest {
+                    primary_path: a.clone(),
+                    fragments: vec![a],
+                    started_at_ms: 1_700_000_000_000,
+                },
+                DeliverableManifest {
+                    primary_path: b.clone(),
+                    fragments: vec![b],
+                    started_at_ms: 1_700_000_600_000,
+                },
+            ],
+        }
+    }
+
+    #[tokio::test]
+    async fn recover_session_writes_history_rows_for_surviving_fragments() {
+        let (pool, _db) = temp_pool().await;
+        let dir = tempfile::tempdir().unwrap();
+        let m = manifest_in(dir.path());
+        // Both deliverables' files exist on disk.
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        let recovered = recover_session(&pool, &m).await;
+        assert_eq!(recovered, 2, "both surviving deliverables recovered");
+
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 2);
+        // Every recovered row carries the device + the recovery note, and a size.
+        for r in &rows {
+            assert_eq!(r.device_name.as_deref(), Some("Soundcraft USB"));
+            assert_eq!(
+                r.note.as_deref(),
+                Some("Gjenopprettet etter uventet avslutning")
+            );
+            assert!(r.byte_size.unwrap_or(0) > 0, "byte_size stamped from disk");
+        }
+        // The FIRST deliverable's duration is known (the next one's start − its own);
+        // the LAST is unknown (None) since we can't know when the crash hit.
+        let mut by_start = rows.clone();
+        by_start.sort_by(|a, b| a.started_at.partial_cmp(&b.started_at).unwrap());
+        assert_eq!(
+            by_start[0].duration_ms,
+            Some(600_000.0),
+            "split gives a duration"
+        );
+        assert_eq!(
+            by_start[1].duration_ms, None,
+            "last deliverable duration unknown"
+        );
+    }
+
+    #[tokio::test]
+    async fn recover_session_picks_up_only_the_surviving_deliverable() {
+        let (pool, _db) = temp_pool().await;
+        let dir = tempfile::tempdir().unwrap();
+        let m = manifest_in(dir.path());
+        // Only the SECOND deliverable's file survived; the first is missing.
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        // The pure decision agrees: exactly one deliverable is recoverable.
+        let rec = recoverable_deliverables(&m, |p| Path::new(p).exists());
+        assert_eq!(rec.len(), 1);
+
+        let recovered = recover_session(&pool, &m).await;
+        assert_eq!(
+            recovered, 1,
+            "only the deliverable with a survivor recovers"
+        );
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].file_path, m.deliverables[1].primary_path);
+    }
+
+    #[tokio::test]
+    async fn recover_session_recovers_nothing_when_all_fragments_are_missing() {
+        let (pool, _db) = temp_pool().await;
+        let dir = tempfile::tempdir().unwrap();
+        let m = manifest_in(dir.path());
+        // Write NO files — every fragment path is missing.
+        assert!(!has_recoverable_audio(&m, |p| Path::new(p).exists()));
+
+        let recovered = recover_session(&pool, &m).await;
+        assert_eq!(recovered, 0, "nothing on disk → nothing to recover");
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn recover_session_on_empty_manifest_is_a_noop() {
+        let (pool, _db) = temp_pool().await;
+        let m = SessionManifest {
+            session_id: "empty".into(),
+            device_name: "dev".into(),
+            session_start_ms: 0,
+            preroll_clip_path: None,
+            deliverables: vec![],
+        };
+        assert_eq!(recover_session(&pool, &m).await, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    /// Mirror of `scan_and_recover`'s manifest read → parse → cleanup loop, exercised
+    /// directly against a real recovery directory (the production fn needs an
+    /// `AppHandle` only to LOCATE that directory; the loop body is what matters).
+    async fn scan_dir(pool: &SqlitePool, dir: &Path) -> usize {
+        let mut entries = tokio::fs::read_dir(dir).await.unwrap();
+        let mut recovered = 0usize;
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(body) = tokio::fs::read_to_string(&path).await else {
+                continue;
+            };
+            match SessionManifest::from_json(&body) {
+                Ok(manifest) => {
+                    recovered += recover_session(pool, &manifest).await;
+                    let _ = tokio::fs::remove_file(&path).await;
+                    if let Some(clip) = &manifest.preroll_clip_path {
+                        let _ = tokio::fs::remove_file(clip).await;
+                    }
+                }
+                Err(_) => {
+                    let _ = tokio::fs::remove_file(&path).await;
+                }
+            }
+        }
+        recovered
+    }
+
+    #[tokio::test]
+    async fn scan_loop_recovers_a_valid_manifest_then_deletes_it() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+
+        // Write a real fragment + a manifest JSON pointing at it.
+        let m = manifest_in(rec.path());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let manifest_file = recovery.path().join("session.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 2);
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 2);
+        assert!(!manifest_file.exists(), "manifest cleared after recovery");
+    }
+
+    #[tokio::test]
+    async fn scan_loop_skips_and_clears_a_corrupt_manifest() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let bad = recovery.path().join("corrupt.json");
+        tokio::fs::write(&bad, b"{ not valid json ]]] ")
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 0, "a corrupt manifest recovers nothing");
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(
+            !bad.exists(),
+            "corrupt manifest is deleted, not left to retry"
+        );
+    }
+
+    #[tokio::test]
+    async fn scan_loop_with_all_fragments_missing_recovers_nothing_and_clears_litter() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        // A manifest whose fragments are all MISSING (no files written) is pure
+        // litter: nothing recovers, and the manifest is still cleaned up.
+        let m = manifest_in(rec.path());
+        let manifest_file = recovery.path().join("orphan.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 0);
+        assert!(list_recordings(&pool).await.unwrap().is_empty());
+        assert!(!manifest_file.exists(), "litter manifest cleared");
+    }
+
+    #[tokio::test]
+    async fn scan_loop_ignores_non_json_files() {
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let stray = recovery.path().join("notes.txt");
+        tokio::fs::write(&stray, b"hello").await.unwrap();
+
+        assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
+        assert!(stray.exists(), "non-json files are left untouched");
+    }
+}

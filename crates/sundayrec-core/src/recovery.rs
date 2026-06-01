@@ -192,4 +192,91 @@ mod tests {
         assert!(recoverable_deliverables(&m, |_| false).is_empty());
         assert!(!has_recoverable_audio(&m, |_| false));
     }
+
+    #[test]
+    fn mixed_present_and_missing_keeps_only_recoverable_deliverables() {
+        // First deliverable: primary gone, _r1 survives → recovered (re-pointed).
+        // Second deliverable: its only fragment is gone → dropped.
+        let m = manifest();
+        let rec = recoverable_deliverables(&m, |p| p == "/rec/sermon_r1.mp3");
+        assert_eq!(rec.len(), 1, "only the deliverable with a survivor is kept");
+        assert_eq!(rec[0].primary_path, "/rec/sermon_r1.mp3");
+        assert_eq!(rec[0].fragments, vec!["/rec/sermon_r1.mp3".to_string()]);
+        // started_at_ms is carried from the original deliverable, not the fragment.
+        assert_eq!(rec[0].started_at_ms, 1_700_000_000_000);
+        assert!(has_recoverable_audio(&m, |p| p == "/rec/sermon_r1.mp3"));
+    }
+
+    #[test]
+    fn middle_fragment_missing_keeps_surviving_fragments_in_order() {
+        // A 3-fragment deliverable loses its MIDDLE fragment: the surviving two are
+        // kept in their original order and the primary stays the first survivor.
+        let m = SessionManifest {
+            session_id: "s".into(),
+            device_name: "dev".into(),
+            session_start_ms: 0,
+            preroll_clip_path: None,
+            deliverables: vec![DeliverableManifest {
+                primary_path: "/rec/a.mp3".into(),
+                fragments: vec![
+                    "/rec/a.mp3".into(),
+                    "/rec/a_r1.mp3".into(),
+                    "/rec/a_r2.mp3".into(),
+                ],
+                started_at_ms: 10,
+            }],
+        };
+        let rec = recoverable_deliverables(&m, |p| p != "/rec/a_r1.mp3");
+        assert_eq!(rec.len(), 1);
+        assert_eq!(
+            rec[0].fragments,
+            vec!["/rec/a.mp3".to_string(), "/rec/a_r2.mp3".to_string()],
+            "the gap is closed but order is preserved"
+        );
+        assert_eq!(
+            rec[0].primary_path, "/rec/a.mp3",
+            "primary unchanged when the first fragment survived"
+        );
+    }
+
+    #[test]
+    fn empty_manifest_has_nothing_to_recover() {
+        let m = SessionManifest {
+            session_id: "empty".into(),
+            device_name: "dev".into(),
+            session_start_ms: 0,
+            preroll_clip_path: None,
+            deliverables: vec![],
+        };
+        assert!(recoverable_deliverables(&m, |_| true).is_empty());
+        assert!(!has_recoverable_audio(&m, |_| true));
+    }
+
+    #[test]
+    fn deliverable_with_no_fragments_is_dropped_even_when_everything_exists() {
+        // A zero-fragment deliverable can never yield a survivor (no first() →
+        // filtered out) regardless of the existence predicate.
+        let m = SessionManifest {
+            session_id: "s".into(),
+            device_name: "dev".into(),
+            session_start_ms: 0,
+            preroll_clip_path: None,
+            deliverables: vec![DeliverableManifest {
+                primary_path: "/rec/ghost.mp3".into(),
+                fragments: vec![],
+                started_at_ms: 0,
+            }],
+        };
+        assert!(recoverable_deliverables(&m, |_| true).is_empty());
+        assert!(!has_recoverable_audio(&m, |_| true));
+    }
+
+    #[test]
+    fn preroll_clip_existence_does_not_affect_recoverability() {
+        // Recoverability is decided purely by fragment survival; the pre-roll clip
+        // is the I/O layer's concern. A present pre-roll with no surviving fragments
+        // is still "nothing to recover".
+        let m = manifest();
+        assert!(!has_recoverable_audio(&m, |p| p == "/rec/_preroll.mp3"));
+    }
 }

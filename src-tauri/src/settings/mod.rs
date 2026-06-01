@@ -290,6 +290,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn load_returns_defaults_when_stored_blob_is_corrupt_json() {
+        // The startup `load` path must NEVER fail the app on a corrupt blob in the
+        // DB (truncated write, hand-edited file, partial flush). `from_json_merged`
+        // tolerates invalid JSON and yields the defaults — so `load` succeeds.
+        let (pool, _d) = temp_pool().await;
+        // Garbage that is NOT valid JSON, written straight into the store.
+        store::set_setting(&pool, SETTINGS_KEY, "{ this is not json ]]] \0 ")
+            .await
+            .unwrap();
+        let loaded = load(&pool).await.expect("load must not error on garbage");
+        assert_eq!(loaded, Settings::default());
+    }
+
+    #[tokio::test]
+    async fn load_returns_defaults_when_stored_blob_is_a_json_non_object() {
+        // A syntactically-valid JSON value that isn't an object (e.g. an array or a
+        // bare number) also can't populate the struct → defaults, no panic.
+        let (pool, _d) = temp_pool().await;
+        store::set_setting(&pool, SETTINGS_KEY, "[1, 2, 3]")
+            .await
+            .unwrap();
+        assert_eq!(load(&pool).await.unwrap(), Settings::default());
+
+        store::set_setting(&pool, SETTINGS_KEY, "42").await.unwrap();
+        assert_eq!(load(&pool).await.unwrap(), Settings::default());
+    }
+
+    #[tokio::test]
+    async fn save_then_load_round_trips_a_fully_populated_settings() {
+        // A Settings touching many fields across the model (not just one or two)
+        // must survive the serialize → SQLite → deserialize round-trip byte-for-
+        // byte, proving no field is silently dropped or mangled by persistence.
+        let (pool, _d) = temp_pool().await;
+        let full = Settings {
+            language: Some("de".to_string()),
+            has_launched: true,
+            onboarding_done: true,
+            channels: ChannelMode::MonoR,
+            format: FileFormat::Flac,
+            input_volume: 175,
+            sample_rate: 96_000,
+            ..Default::default()
+        };
+        // Sanity: this is genuinely different from the defaults.
+        assert_ne!(full, Settings::default());
+
+        let stored = save(&pool, full.clone()).await.unwrap();
+        assert_eq!(stored, full, "save returns the (validated) value unchanged");
+
+        let loaded = load(&pool).await.unwrap();
+        assert_eq!(loaded, full, "full settings survive the DB round-trip");
+    }
+
+    #[tokio::test]
     async fn export_to_path_overwrites_an_existing_file() {
         let (pool, _d) = temp_pool().await;
         let dir = tempfile::tempdir().expect("tempdir");

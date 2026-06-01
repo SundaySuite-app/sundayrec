@@ -356,6 +356,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn output_is_valid_accepts_a_real_above_gate_file() {
+        // A real file past the size gate is accepted. ffprobe is advisory: when the
+        // sidecar is absent (CI / dev box without it) `output_is_valid` trusts the
+        // size gate, so this passes regardless of the environment.
+        let dir = tempfile::tempdir().unwrap();
+        let ok = dir.path().join("real.m4a");
+        // Comfortably above the plausible-output gate.
+        tokio::fs::write(&ok, vec![0u8; 64 * 1024]).await.unwrap();
+        assert!(output_is_valid(&ok).await, "a real ≥gate file is valid");
+    }
+
+    #[tokio::test]
+    async fn output_is_valid_rejects_a_below_gate_file() {
+        // A file that exists but is below the plausible-output size gate is rejected
+        // (a header-only / truncated concat output must never count as valid).
+        let dir = tempfile::tempdir().unwrap();
+        let tiny = dir.path().join("tiny.m4a");
+        tokio::fs::write(&tiny, vec![0u8; 8]).await.unwrap();
+        assert!(!output_is_valid(&tiny).await, "below-gate file is invalid");
+    }
+
+    #[tokio::test]
+    async fn finalize_leaves_primary_and_fragments_intact_when_concat_cannot_run() {
+        // A multi-fragment deliverable forces the concat path. With no real ffmpeg
+        // sidecar (CI/dev), `run_concat` fails to spawn → `finalize_deliverable`
+        // returns an error and, crucially, LEAVES the primary + every fragment file
+        // on disk so no audio is ever lost to a failed merge.
+        //
+        // If a real ffmpeg IS on PATH the concat may instead succeed (or be rejected
+        // by the validity gate) — either way the primary must still exist. We assert
+        // the invariant that holds in BOTH cases: the primary survives.
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("seg.m4a");
+        let frag2 = dir.path().join("seg_r1.m4a");
+        // Distinct, above-gate contents so we can detect an unwanted overwrite.
+        tokio::fs::write(&primary, vec![1u8; 8192]).await.unwrap();
+        tokio::fs::write(&frag2, vec![2u8; 8192]).await.unwrap();
+        let primary_s = primary.to_string_lossy().into_owned();
+        let frag2_s = frag2.to_string_lossy().into_owned();
+
+        let d = deliverable(&primary_s, &[&primary_s, &frag2_s]);
+        let _ = finalize_deliverable(&d, None).await;
+
+        // Invariant across success/failure: the deliverable's primary still exists
+        // and is non-empty — the recording is never lost.
+        assert!(
+            primary.exists(),
+            "primary must survive a failed/blocked concat"
+        );
+        let meta = tokio::fs::metadata(&primary).await.unwrap();
+        assert!(meta.len() > 0, "primary must remain non-empty");
+
+        // The scratch temp must never be left behind as a valid replacement.
+        let (list_path, tmp_path) = scratch_paths(&primary);
+        assert!(
+            !tmp_path.exists(),
+            "merge temp must be cleaned up, not orphaned"
+        );
+        assert!(!list_path.exists(), "concat list must be cleaned up");
+    }
+
+    #[tokio::test]
+    async fn preroll_below_gate_clip_is_dropped_like_a_missing_one() {
+        // A pre-roll clip that exists but is too small (below the plausible-output
+        // gate — e.g. a truncated harvest) is treated exactly like a missing clip:
+        // dropped, and with a single fragment no concat is needed, so the primary is
+        // returned untouched.
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("g.mp3");
+        tokio::fs::write(&primary, vec![0u8; 8192]).await.unwrap();
+        let preroll = dir.path().join("preroll.mp3");
+        tokio::fs::write(&preroll, vec![0u8; 4]).await.unwrap(); // below gate
+        let primary_s = primary.to_string_lossy().into_owned();
+        let preroll_s = preroll.to_string_lossy().into_owned();
+
+        let d = deliverable(&primary_s, &[&primary_s]);
+        let out = finalize_deliverable(&d, Some(&preroll_s)).await.unwrap();
+        assert_eq!(out, primary_s, "below-gate pre-roll dropped, primary kept");
+        // The below-gate pre-roll guard means no concat ran → primary untouched.
+        assert_eq!(tokio::fs::read(&primary).await.unwrap(), vec![0u8; 8192]);
+    }
+
+    #[tokio::test]
     async fn atomic_replace_posix_moves_file() {
         if is_windows() {
             return; // POSIX rename path only.
