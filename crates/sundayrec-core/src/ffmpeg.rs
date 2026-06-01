@@ -67,9 +67,58 @@ pub fn build_silence_detect_filter(
     }
 }
 
+/// Build the live per-channel peak-level `astats` filter string.
+///
+/// WHY: the "Opptaksmodus" UI shows L/R level meters. Rather than open a SECOND
+/// audio stream (which would grab the mic twice — see the old RecordingScreen
+/// note), we have the recorder's OWN ffmpeg emit periodic per-channel peak
+/// levels to stderr, which [`crate::levels::parse_levels`] reads and the engine
+/// forwards to the UI.
+///
+/// `astats` is a **pass-through** filter: it copies its input to its output
+/// untouched and only writes telemetry to stderr — so adding it to the `-af`
+/// chain NEVER alters the recorded file.
+///
+/// - `metadata=1` makes astats print the measurements as ffmpeg metadata lines
+///   (the `[Parsed_astats_… @ …] Channel: N` / `Peak level dB: …` blocks).
+/// - `reset=48` re-measures every 48 frames. ffmpeg's default audio frame is
+///   1024 samples, so at 48 kHz that's ~48*1024/48000 ≈ 1.02 s — roughly one
+///   readout per second, which is plenty for a smooth meter without flooding
+///   stderr.
+/// - `measure_overall=none` + `measure_perchannel=Peak_level` restrict the
+///   output to ONLY the per-channel peak we need (keeps stderr small and the
+///   parser unambiguous).
+pub fn build_levels_detect_filter() -> String {
+    "astats=metadata=1:reset=48:measure_overall=none:measure_perchannel=Peak_level".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn levels_filter_is_perchannel_peak_passthrough() {
+        assert_eq!(
+            build_levels_detect_filter(),
+            "astats=metadata=1:reset=48:measure_overall=none:measure_perchannel=Peak_level"
+        );
+    }
+
+    #[test]
+    fn levels_filter_requests_metadata_and_periodic_reset() {
+        let f = build_levels_detect_filter();
+        assert!(f.starts_with("astats="), "must be an astats filter");
+        assert!(f.contains("metadata=1"), "needs metadata output");
+        assert!(f.contains("reset=48"), "needs ~1s periodic reset");
+        assert!(
+            f.contains("measure_perchannel=Peak_level"),
+            "needs per-channel peak"
+        );
+        assert!(
+            f.contains("measure_overall=none"),
+            "no overall stats (keep stderr small)"
+        );
+    }
 
     #[test]
     fn windows_gets_aresample_drift_correction() {

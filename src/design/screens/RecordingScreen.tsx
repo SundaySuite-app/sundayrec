@@ -6,14 +6,19 @@
  *
  * Wiring: on mount it starts the Rust recorder (`start_recording`) and streams
  * the live signals it emits — `recording://started/progress/silence/error/
- * state` — into the timer, file-size, status and disk readouts. The stop button
- * calls `stop_recording` and returns to the shell via `onStop`.
+ * state/levels` — into the timer, file-size, status, disk and L/R-meter
+ * readouts. The stop button calls `stop_recording` and returns to the shell via
+ * `onStop`.
  *
- * Deliberately NOT wired yet (TODO, "fikser funksjonalitet senere"): the L/R
- * meters stay visual rather than running a second `start_vu` cpal stream
- * alongside the recorder's capture (that would open the mic twice); and the
- * output path / real device come from the save-folder + filename pipeline,
- * which lives in the backend — here we pass best-effort opts and fail soft.
+ * The L/R meters are driven by the backend `recording://levels` event: the
+ * recorder's OWN ffmpeg carries an `astats` pass-through filter that emits
+ * periodic per-channel peak levels (it never alters the recorded file). That
+ * means we do NOT open a second mic stream just to meter — the levels come from
+ * the capture already running. Until the first readout arrives we fall back to a
+ * neutral sample so the meters aren't blank.
+ *
+ * Still backend-owned: the output path / real device come from the save-folder
+ * + filename pipeline — here we pass best-effort opts and fail soft.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,13 +28,14 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import type { RecordingOpts } from "@/lib/bindings/RecordingOpts";
 import type { RecordingProgress } from "@/lib/bindings/RecordingProgress";
+import type { RecordingLevels } from "@/lib/bindings/RecordingLevels";
 import type { RecordingEvent } from "@/lib/bindings/RecordingEvent";
 import type { RecorderStatePayload } from "@/lib/bindings/RecorderStatePayload";
 import type { Settings } from "@/lib/bindings/Settings";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
 
 import { Icon } from "../Icon";
-import { useDiskSpace, formatBytes } from "../hooks";
+import { useDiskSpace, formatBytes, dbfsToLit, formatDbfs } from "../hooks";
 
 /**
  * Drive a recording session: start on mount, stop on unmount/stop, and surface
@@ -41,6 +47,7 @@ function useRecordingSession(video: boolean) {
   const [elapsed, setElapsed] = useState(0);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [silence, setSilence] = useState<RecordingEvent | null>(null);
+  const [levels, setLevels] = useState<RecordingLevels | null>(null);
   const [error, setError] = useState<RecordingEvent | null>(null);
   const [state, setState] = useState<RecorderStatePayload | null>(null);
   const [savePath, setSavePath] = useState<string | null>(null);
@@ -59,6 +66,9 @@ function useRecordingSession(video: boolean) {
     const unSilence = listen<RecordingEvent>("recording://silence", (e) =>
       setSilence(e.payload),
     );
+    const unLevels = listen<RecordingLevels>("recording://levels", (e) =>
+      setLevels(e.payload),
+    );
     const unError = listen<RecordingEvent>("recording://error", (e) =>
       setError(e.payload),
     );
@@ -69,6 +79,7 @@ function useRecordingSession(video: boolean) {
       void unStarted.then((off) => off());
       void unProgress.then((off) => off());
       void unSilence.then((off) => off());
+      void unLevels.then((off) => off());
       void unError.then((off) => off());
       void unState.then((off) => off());
     };
@@ -140,7 +151,17 @@ function useRecordingSession(video: boolean) {
     }
   }, []);
 
-  return { started, bytes, elapsed, silence, error, state, savePath, stop };
+  return {
+    started,
+    bytes,
+    elapsed,
+    silence,
+    levels,
+    error,
+    state,
+    savePath,
+    stop,
+  };
 }
 
 /** Seconds → HH:MM:SS, matching the design's big counter. */
@@ -157,8 +178,9 @@ function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Live meter with a dB scale beneath (matches the real app). Visual for now —
-// see the module note on why a second VU stream isn't opened here.
+// Live meter with a dB scale beneath (matches the real app). Driven by the
+// backend `recording://levels` event — `on` is the lit-segment count from
+// `dbfsToLit(peakDb, 44)`.
 function RecMeter({ ch, on }: { ch: string; on: number }) {
   return (
     <div className="sr-row" style={{ gap: 14 }}>
@@ -228,9 +250,13 @@ function RecScale() {
 function RecHeader({
   status,
   weak,
+  dbLeft,
+  dbRight,
 }: {
   status: "starting" | "recording" | "reconnecting";
   weak: boolean;
+  dbLeft: number;
+  dbRight: number;
 }) {
   const { t } = useTranslation();
   const label =
@@ -307,7 +333,7 @@ function RecHeader({
           <span
             style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
           >
-            −40.6
+            {formatDbfs(dbLeft)}
           </span>
         </span>
         <span
@@ -318,7 +344,7 @@ function RecHeader({
           <span
             style={{ fontSize: 24, color: "var(--sr-text)", marginLeft: 4 }}
           >
-            −40.6
+            {formatDbfs(dbRight)}
           </span>
         </span>
         <span
@@ -436,8 +462,17 @@ export function RecordingScreen({
   onStop?: () => void;
 }) {
   const { t } = useTranslation();
-  const { started, bytes, elapsed, silence, error, state, savePath, stop } =
-    useRecordingSession(video);
+  const {
+    started,
+    bytes,
+    elapsed,
+    silence,
+    levels,
+    error,
+    state,
+    savePath,
+    stop,
+  } = useRecordingSession(video);
   const diskFree = useDiskSpace();
 
   const status: "starting" | "recording" | "reconnecting" =
@@ -446,6 +481,12 @@ export function RecordingScreen({
       : started
         ? "recording"
         : "starting";
+
+  // Per-channel peak dBFS from the recorder's astats telemetry. Before the first
+  // readout arrives, fall back to a neutral sample so the meters aren't blank.
+  const SAMPLE_DBFS = -40.6;
+  const peakDbLeft = levels?.peak_db_left ?? SAMPLE_DBFS;
+  const peakDbRight = levels?.peak_db_right ?? peakDbLeft;
 
   const handleStop = useCallback(() => {
     void stop().finally(() => onStop?.());
@@ -526,13 +567,18 @@ export function RecordingScreen({
               </div>
             </div>
           )}
-          <RecHeader status={status} weak={silence !== null} />
+          <RecHeader
+            status={status}
+            weak={silence !== null}
+            dbLeft={peakDbLeft}
+            dbRight={peakDbRight}
+          />
           <div
             className={video ? "sr-stack-3" : "sr-stack-4"}
             style={{ marginTop: video ? 4 : 8 }}
           >
-            <RecMeter ch="L" on={15} />
-            <RecMeter ch="R" on={15} />
+            <RecMeter ch="L" on={dbfsToLit(peakDbLeft, 44)} />
+            <RecMeter ch="R" on={dbfsToLit(peakDbRight, 44)} />
           </div>
           <RecScale />
           <RecFooter

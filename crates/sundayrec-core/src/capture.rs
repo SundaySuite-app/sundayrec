@@ -42,7 +42,9 @@
 //! Everything here is a pure `Vec<String>` builder — no process is spawned — so
 //! the argument shape is fully unit-tested without hardware.
 
-use crate::ffmpeg::{build_silence_detect_filter, unified_audio_drift_filter, Platform};
+use crate::ffmpeg::{
+    build_levels_detect_filter, build_silence_detect_filter, unified_audio_drift_filter, Platform,
+};
 
 /// Audio channel layout for the captured output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,15 +111,19 @@ pub fn build_unified_capture_args(
     let mut args: Vec<String> = vec!["-hide_banner".into()];
 
     // Build the audio filter chain shared by every platform: optional drift
-    // correction first (Windows only), then silencedetect. Comma-join, dropping
-    // the empty drift slot on mac/linux.
+    // correction first (Windows only), then silencedetect, then the per-channel
+    // peak-levels astats pass-through (drives the live UI meters). Comma-join
+    // only the NON-EMPTY filters (the drift slot is empty on mac/linux). `astats`
+    // is pass-through — it never alters the recorded audio, only emits telemetry
+    // to stderr.
     let drift = unified_audio_drift_filter(platform);
     let silence = build_silence_detect_filter(opts.stop_on_silence, opts.silence_threshold_db);
-    let af_chain = if drift.is_empty() {
-        silence
-    } else {
-        format!("{drift},{silence}")
-    };
+    let levels = build_levels_detect_filter();
+    let af_chain = [drift.to_string(), silence, levels]
+        .into_iter()
+        .filter(|f| !f.is_empty())
+        .collect::<Vec<_>>()
+        .join(",");
 
     let has_video = video_device.is_some();
 
@@ -156,9 +162,13 @@ pub fn build_unified_capture_args(
         }
     }
 
-    // Audio filter chain (drift + silencedetect) on the captured audio.
-    args.push("-af".into());
-    args.push(af_chain);
+    // Audio filter chain (drift + silencedetect + peak-levels astats) on the
+    // captured audio. Only emit `-af` when the chain is non-empty — in practice
+    // levels is always present, so `-af` is always emitted.
+    if !af_chain.is_empty() {
+        args.push("-af".into());
+        args.push(af_chain);
+    }
 
     // Codecs. Audio is always AAC at 48 kHz with the requested channel count.
     // Video (when present) is a simple libx264 — the spike doesn't tune the
@@ -228,10 +238,16 @@ mod tests {
             af.contains("silencedetect="),
             "silencedetect must be present"
         );
-        // drift comes before silencedetect in the chain.
+        assert!(
+            af.contains("astats=metadata=1"),
+            "per-channel levels astats must be present; got: {af}"
+        );
+        // chain order: drift, then silencedetect, then levels.
         let drift_idx = af.find("aresample").unwrap();
         let sil_idx = af.find("silencedetect").unwrap();
+        let lvl_idx = af.find("astats").unwrap();
         assert!(drift_idx < sil_idx);
+        assert!(sil_idx < lvl_idx);
     }
 
     #[test]
@@ -253,6 +269,41 @@ mod tests {
             "mac shares one clock — no drift filter; got: {af}"
         );
         assert!(af.contains("silencedetect="));
+        assert!(
+            af.contains(
+                "astats=metadata=1:reset=48:measure_overall=none:measure_perchannel=Peak_level"
+            ),
+            "per-channel levels astats must be present; got: {af}"
+        );
+        // On mac/linux the chain has no empty leading slot — it starts with
+        // silencedetect (no stray leading comma).
+        assert!(!af.starts_with(','), "no empty drift slot leaking a comma");
+    }
+
+    #[test]
+    fn levels_filter_is_present_and_output_path_unchanged() {
+        // The levels filter is added on every platform; the file output args
+        // (`-y <path>` last, codecs, container) must be untouched by it.
+        let args = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/tmp/sermon.mp4",
+            &CaptureOpts::default(),
+        );
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(af.contains("astats=metadata=1"));
+        // Output is still `-y /tmp/sermon.mp4` as the final two args.
+        assert_eq!(args.last().unwrap(), "/tmp/sermon.mp4");
+        let n = args.len();
+        assert_eq!(args[n - 2], "-y");
+        // Codecs unchanged by the added telemetry filter.
+        assert!(has_pair(&args, "-c:a", "aac"));
+        assert!(has_pair(&args, "-c:v", "libx264"));
     }
 
     #[test]

@@ -78,6 +78,7 @@ use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts, Channels}
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
 use sundayrec_core::ffmpeg::Platform;
+use sundayrec_core::levels::{parse_levels, ChannelLevels};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
@@ -108,6 +109,8 @@ pub const RECONNECTING_EVENT: &str = "recording://reconnecting";
 pub const RECONNECTED_EVENT: &str = "recording://reconnected";
 /// Event channel: the recorder state changed (the [`RecorderState`] payload).
 pub const STATE_EVENT: &str = "recording://state";
+/// Event channel: live per-channel peak audio levels (drives the L/R meters).
+pub const LEVELS_EVENT: &str = "recording://levels";
 
 /// Options for [`RecorderEngine::start`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -143,6 +146,30 @@ pub struct RecordingProgress {
     /// Total bytes ffmpeg has written to the current segment so far.
     #[ts(type = "number")]
     pub bytes_written: u64,
+}
+
+/// Live per-channel peak audio levels (dBFS) sent to the renderer, parsed from
+/// the recorder's own ffmpeg `astats` telemetry. Drives the L/R meters in the
+/// "Opptaksmodus" overlay. `peak_db_right` is `None` for mono sources.
+///
+/// Field names mirror [`RecordingProgress`] (no serde rename) → the generated TS
+/// binding is `peak_db_left` / `peak_db_right`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../src/lib/bindings/RecordingLevels.ts")]
+pub struct RecordingLevels {
+    /// Peak level (dBFS) of the left / only channel.
+    pub peak_db_left: f64,
+    /// Peak level (dBFS) of the right channel, or `null` for mono sources.
+    pub peak_db_right: Option<f64>,
+}
+
+impl From<ChannelLevels> for RecordingLevels {
+    fn from(lv: ChannelLevels) -> Self {
+        Self {
+            peak_db_left: lv.peak_db_left,
+            peak_db_right: lv.peak_db_right,
+        }
+    }
 }
 
 /// A classified recorder error / silence / reconnect notice sent to the renderer.
@@ -240,6 +267,8 @@ enum ReaderMsg {
     Started,
     /// A silence marker.
     Silence(SilenceEvent),
+    /// A per-channel peak-levels readout (drives the live L/R meters).
+    Levels(ChannelLevels),
     /// A classified error line (not the catch-all `DeviceError`).
     Error(RecordingErrorCode, String),
     /// ffmpeg's stderr closed → the process exited. Carries the classified
@@ -815,9 +844,32 @@ async fn run_segment(
         let mut startup = StartupResolver::new();
         let mut lines = BufReader::new(stderr).lines();
         let mut last_error: Option<RecordingErrorCode> = None;
+        // astats prints its per-channel block over SEVERAL lines (a `Channel: N`
+        // header line, then a `Peak level dB:` line, per channel). The pure
+        // `parse_levels` parser needs the whole block, so we accumulate astats
+        // lines here and flush the buffer through it at a block boundary: a fresh
+        // `Channel: 1` header (next readout) or any non-astats line (end of the
+        // block). A new block always begins with `Channel: 1`.
+        let mut astats_buf = String::new();
         loop {
             match lines.next_line().await {
                 Ok(Some(line)) => {
+                    let is_astats = is_astats_line(&line);
+                    // Flush a completed astats block when this line ends it: either
+                    // a new readout starts (`Channel: 1` after we already buffered
+                    // something) or a non-astats line interrupts the block.
+                    let starts_new_block = is_astats && starts_astats_readout(&line);
+                    if !astats_buf.is_empty() && (!is_astats || starts_new_block) {
+                        if let Some(lv) = parse_levels(&astats_buf) {
+                            let _ = msg_tx.send(ReaderMsg::Levels(lv)).await;
+                        }
+                        astats_buf.clear();
+                    }
+                    if is_astats {
+                        astats_buf.push_str(&line);
+                        astats_buf.push('\n');
+                        continue;
+                    }
                     if let Some(b) = parse_size_kb(&line) {
                         if startup.observe_progress() {
                             let _ = msg_tx.send(ReaderMsg::Started).await;
@@ -838,6 +890,12 @@ async fn run_segment(
                     tracing::warn!("recorder stderr read error: {e}");
                     break;
                 }
+            }
+        }
+        // Flush any trailing astats block before signalling exit.
+        if !astats_buf.is_empty() {
+            if let Some(lv) = parse_levels(&astats_buf) {
+                let _ = msg_tx.send(ReaderMsg::Levels(lv)).await;
             }
         }
         let _ = msg_tx.send(ReaderMsg::Exit { last_error }).await;
@@ -904,6 +962,9 @@ async fn run_segment(
                                 SilenceAction::CancelWarn => { silence_warn = None; }
                             }
                         }
+                    }
+                    Some(ReaderMsg::Levels(lv)) => {
+                        let _ = app.emit(LEVELS_EVENT, RecordingLevels::from(lv));
                     }
                     Some(ReaderMsg::Error(code, line)) => {
                         // Surface the classified error; do NOT end the segment —
@@ -1124,6 +1185,25 @@ fn now_ms() -> u64 {
 }
 
 /// Heuristic: does this stderr line look like an error worth classifying?
+/// Is this stderr line part of an `astats` per-channel measurement block? We key
+/// on the two markers the levels parser consumes (`Channel:` header and
+/// `Peak level dB:` value). The reader buffers these into one block to feed the
+/// pure [`parse_levels`] (which needs the whole block to pair L/R).
+fn is_astats_line(line: &str) -> bool {
+    (line.contains("Channel:") || line.contains("Peak level dB:")) && line.contains("astats")
+}
+
+/// Does this astats line start a fresh readout (a `Channel: 1` header)? Used to
+/// detect a block boundary when readouts are emitted back-to-back.
+fn starts_astats_readout(line: &str) -> bool {
+    if let Some(idx) = line.find("Channel:") {
+        let tail = line[idx + "Channel:".len()..].trim();
+        let token: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return token == "1";
+    }
+    false
+}
+
 fn looks_like_error(line: &str) -> bool {
     let l = line.to_lowercase();
     l.contains("error")
@@ -1436,6 +1516,51 @@ mod tests {
         ));
         assert!(!looks_like_error("Output #0, mp4, to '/tmp/rec.mp4':"));
         assert!(!looks_like_error("  Metadata:"));
+    }
+
+    #[test]
+    fn astats_line_detection_and_block_start() {
+        let header = "[Parsed_astats_0 @ 0x7f8b1c00] Channel: 1";
+        let peak = "[Parsed_astats_0 @ 0x7f8b1c00] Peak level dB: -12.500000";
+        let ch2 = "[Parsed_astats_0 @ 0x7f8b1c00] Channel: 2";
+        assert!(is_astats_line(header));
+        assert!(is_astats_line(peak));
+        assert!(starts_astats_readout(header), "Channel: 1 starts a readout");
+        assert!(!starts_astats_readout(ch2), "Channel: 2 is mid-block");
+        assert!(!starts_astats_readout(peak), "a peak line is not a header");
+        // Non-astats lines are not classified as astats.
+        assert!(!is_astats_line(
+            "frame= 30 fps=30 size=512kB time=00:00:01.00"
+        ));
+        assert!(!is_astats_line("[silencedetect] silence_start: 12.3"));
+    }
+
+    #[test]
+    fn recording_levels_serde_uses_snake_case() {
+        let lv = RecordingLevels {
+            peak_db_left: -12.5,
+            peak_db_right: Some(-9.3),
+        };
+        let json = serde_json::to_string(&lv).unwrap();
+        assert!(json.contains("\"peak_db_left\""), "got: {json}");
+        assert!(json.contains("\"peak_db_right\""), "got: {json}");
+        // Mono → right is null.
+        let mono = RecordingLevels {
+            peak_db_left: -20.0,
+            peak_db_right: None,
+        };
+        let json = serde_json::to_string(&mono).unwrap();
+        assert!(json.contains("\"peak_db_right\":null"), "got: {json}");
+    }
+
+    #[test]
+    fn recording_levels_from_channel_levels() {
+        let lv = RecordingLevels::from(ChannelLevels {
+            peak_db_left: -6.0,
+            peak_db_right: Some(-7.0),
+        });
+        assert_eq!(lv.peak_db_left, -6.0);
+        assert_eq!(lv.peak_db_right, Some(-7.0));
     }
 
     #[test]

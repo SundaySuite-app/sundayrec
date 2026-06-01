@@ -30,6 +30,7 @@
 //!   - [`two_process`]  — two-process audio+video fallback: per-process capture args + A/V mux/offset (Fase 3.3b)
 //!   - [`update`]       — auto-update status model + dev-check guard + semver "is newer" (R7)
 //!   - [`silence`]      — the silence-watcher *decision* state machine (no real timers)
+//!   - [`levels`]       — pure parser for `astats` per-channel peak-level stderr → live UI meters (B-5)
 //!   - [`settings`]     — the typed/validated settings model + defaults (Fase 1)
 //!   - [`preflight`]    — the "ready-to-record" finding decisions (Fase 2)
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
@@ -61,6 +62,7 @@ pub mod ffmpeg;
 pub mod filename;
 pub mod history;
 pub mod integrations;
+pub mod levels;
 pub mod link;
 pub mod mastering;
 pub mod mjpeg;
