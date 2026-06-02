@@ -172,9 +172,7 @@ describe("PublishPanel", () => {
     await screen.findByText("3 opptak i feeden");
     fireEvent.click(screen.getByText("Generer feed nå"));
     expect(
-      await screen.findByText(
-        "Velg en lagringsmappe i innstillingene først.",
-      ),
+      await screen.findByText("Velg en lagringsmappe i innstillingene først."),
     ).toBeInTheDocument();
   });
 

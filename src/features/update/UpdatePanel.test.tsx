@@ -80,9 +80,7 @@ describe("UpdatePanel", () => {
     renderPanel();
     // The available line + the release-notes comparison both show the version.
     expect((await screen.findAllByText(/4\.99\.0/)).length).toBeGreaterThan(0);
-    fireEvent.click(
-      screen.getByRole("button", { name: /Last ned/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Last ned/ }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("update_download_install"),
     );
@@ -102,7 +100,9 @@ describe("UpdatePanel", () => {
   it("shows 'Du har nyeste versjon' with the installed version when up to date", async () => {
     routeInvoke({ phase: "upToDate" });
     renderPanel();
-    expect(await screen.findByText("Du har nyeste versjon")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Du har nyeste versjon"),
+    ).toBeInTheDocument();
     expect(screen.getByText("4.98.0")).toBeInTheDocument();
   });
 
@@ -119,9 +119,7 @@ describe("UpdatePanel", () => {
     renderPanel();
     const btn = await screen.findByText("↺ Start på nytt og installer");
     fireEvent.click(btn);
-    await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("update_relaunch"),
-    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("update_relaunch"));
   });
 
   it("shows a calm 'not built in' hint when the feature is disabled", async () => {

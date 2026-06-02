@@ -363,7 +363,9 @@ export function LiveScreen() {
               <Stat
                 k={t("liveScreen.statBitrate", "Bitrate")}
                 v={
-                  degraded ? `${bitrate} / ${targetBitrate} kbps` : `${bitrate} kbps`
+                  degraded
+                    ? `${bitrate} / ${targetBitrate} kbps`
+                    : `${bitrate} kbps`
                 }
                 accent={degraded ? "var(--sr-gold)" : undefined}
               />

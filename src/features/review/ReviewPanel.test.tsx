@@ -11,7 +11,8 @@ import i18n from "@/i18n";
 const h = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => h.invoke(...args),
-  convertFileSrc: (path: string) => `asset://localhost/${encodeURIComponent(path)}`,
+  convertFileSrc: (path: string) =>
+    `asset://localhost/${encodeURIComponent(path)}`,
 }));
 const invoke = h.invoke;
 
@@ -70,7 +71,10 @@ function routeInvoke(queue = QUEUE) {
       case "review_process_reminders":
         return Promise.resolve([]);
       case "editor_peaks":
-        return Promise.resolve({ peaks: [0.1, 0.5, 0.9, 0.3], sampleRate: 8000 });
+        return Promise.resolve({
+          peaks: [0.1, 0.5, 0.9, 0.3],
+          sampleRate: 8000,
+        });
       default:
         return Promise.resolve(undefined);
     }
@@ -183,7 +187,9 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByText("Publiser valgte"));
 
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("review_mark_published", { id: "q1" }),
+      expect(invoke).toHaveBeenCalledWith("review_mark_published", {
+        id: "q1",
+      }),
     );
     expect(invoke).toHaveBeenCalledWith("review_mark_published", { id: "q2" });
   });
@@ -197,7 +203,9 @@ describe("ReviewPanel", () => {
     fireEvent.click(screen.getByText("Forkast valgte"));
 
     await waitFor(() =>
-      expect(invoke).toHaveBeenCalledWith("review_mark_discarded", { id: "q1" }),
+      expect(invoke).toHaveBeenCalledWith("review_mark_discarded", {
+        id: "q1",
+      }),
     );
     confirmSpy.mockRestore();
   });
