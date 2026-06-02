@@ -13,15 +13,16 @@ make it as good or better, take bold choices, fix backend later.**
 The Electron editor and the Tauri editor get their waveform from fundamentally
 different places:
 
-| | Electron (works) | Tauri (broken) |
-|---|---|---|
-| Peak data | Computed **in the renderer** — `decodeAudioData()` → pure-JS 100 Hz peak loop (`editor/peaks.ts`) | Backend `editor_peaks` ffmpeg command returns `[]`/`null` → empty state |
-| Playback | Web Audio `AudioBufferSourceNode` from the same in-memory buffer, schedules keep-segments to skip cuts | HTML `<audio>` element, no cut-skip |
-| Dependency | **None** — self-sufficient once bytes are read | Hard dependency on an ffmpeg sidecar that fails silently |
+|            | Electron (works)                                                                                       | Tauri (broken)                                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Peak data  | Computed **in the renderer** — `decodeAudioData()` → pure-JS 100 Hz peak loop (`editor/peaks.ts`)      | Backend `editor_peaks` ffmpeg command returns `[]`/`null` → empty state |
+| Playback   | Web Audio `AudioBufferSourceNode` from the same in-memory buffer, schedules keep-segments to skip cuts | HTML `<audio>` element, no cut-skip                                     |
+| Dependency | **None** — self-sufficient once bytes are read                                                         | Hard dependency on an ffmpeg sidecar that fails silently                |
 
 The Tauri app's `assetProtocol.scope` is `["**"]`, so `convertFileSrc(path)` + `fetch()`
-+ `decodeAudioData()` reproduces the Electron approach exactly — **no backend needed
-for the waveform or playback.** Export stays on the existing Rust `editor_export` seam.
+
+- `decodeAudioData()` reproduces the Electron approach exactly — **no backend needed
+  for the waveform or playback.** Export stays on the existing Rust `editor_export` seam.
 
 ## Architecture (the tough call)
 
