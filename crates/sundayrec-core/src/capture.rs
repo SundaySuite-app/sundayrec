@@ -175,6 +175,109 @@ fn ext_of(output_path: &str) -> &str {
         .unwrap_or_default()
 }
 
+/// A camera capture mode as the device advertises it: a resolution plus the
+/// frame rates supported at that resolution. Parsed from avfoundation's
+/// "Supported modes" block (see [`parse_avfoundation_modes`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraMode {
+    pub width: u32,
+    pub height: u32,
+    /// Supported frame rates at this resolution (rounded to whole fps).
+    pub framerates: Vec<u32>,
+}
+
+/// The resolved camera INPUT mode to pin on avfoundation's `-video_size` /
+/// `-framerate` — a size + frame rate the device ACTUALLY advertises.
+///
+/// This exists because avfoundation REJECTS any size/rate the camera doesn't
+/// list: a FaceTime HD camera advertises only 15/30 fps, so `-framerate 25` (the
+/// common PAL default) — and even the bare-default 29.97 — fail with "Selected
+/// framerate … is not supported" → the camera never opens → the recording dies.
+/// We pin a REAL advertised mode on the input, and conform to the user's target
+/// fps separately in the encoder (`-r/-fps_mode cfr`), so the two are decoupled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoCaptureMode {
+    pub width: u32,
+    pub height: u32,
+    pub input_fps: u32,
+}
+
+/// Parse avfoundation's "Supported modes:" stderr block into [`CameraMode`]s.
+/// ffmpeg prints, after rejecting a size/rate:
+/// ```text
+/// [avfoundation @ ..] Supported modes:
+/// [avfoundation @ ..]   1920x1080@[15.000000 30.000000]fps
+/// ```
+/// We scan each line for `<w>x<h>@[<f> <f> …]`, tolerant of the log prefix and
+/// fractional rates (rounded). Modes are returned in the order listed.
+pub fn parse_avfoundation_modes(stderr: &str) -> Vec<CameraMode> {
+    let mut out = Vec::new();
+    for line in stderr.lines() {
+        let Some(at) = line.find("@[") else { continue };
+        let Some(rel_close) = line[at..].find(']') else {
+            continue;
+        };
+        // Size token: the `<w>x<h>` immediately before '@'.
+        let size_tok = line[..at].rsplit([' ', '\t']).next().unwrap_or("");
+        let Some((w, h)) = size_tok.split_once('x') else {
+            continue;
+        };
+        let (Ok(width), Ok(height)) = (w.trim().parse::<u32>(), h.trim().parse::<u32>()) else {
+            continue;
+        };
+        let inner = &line[at + 2..at + rel_close];
+        let framerates: Vec<u32> = inner
+            .split_whitespace()
+            .filter_map(|t| t.parse::<f64>().ok())
+            .map(|f| f.round() as u32)
+            .filter(|f| *f > 0)
+            .collect();
+        if !framerates.is_empty() {
+            out.push(CameraMode {
+                width,
+                height,
+                framerates,
+            });
+        }
+    }
+    out
+}
+
+/// Pick the best INPUT mode for a target size + frame rate from the device's
+/// advertised modes. Prefers the resolution whose area is closest to the target
+/// (a landscape target won't pick a portrait mode of similar area), then the
+/// frame rate closest to the target (ties → the higher rate, since conforming
+/// DOWN in the encoder is clean). `None` when no modes parsed → caller keeps the
+/// legacy guess.
+pub fn resolve_camera_mode(
+    modes: &[CameraMode],
+    target_w: u32,
+    target_h: u32,
+    target_fps: u32,
+) -> Option<VideoCaptureMode> {
+    let target_landscape = target_w >= target_h;
+    let target_area = i64::from(target_w) * i64::from(target_h);
+    let best = modes.iter().min_by_key(|m| {
+        let area = i64::from(m.width) * i64::from(m.height);
+        let orient_penalty = u8::from((m.width >= m.height) != target_landscape);
+        (orient_penalty, (area - target_area).abs())
+    })?;
+    let input_fps = pick_input_framerate(&best.framerates, target_fps)?;
+    Some(VideoCaptureMode {
+        width: best.width,
+        height: best.height,
+        input_fps,
+    })
+}
+
+/// The advertised frame rate closest to `target`; ties prefer the HIGHER rate.
+fn pick_input_framerate(framerates: &[u32], target: u32) -> Option<u32> {
+    framerates
+        .iter()
+        .copied()
+        .min_by_key(|f| ((i64::from(*f) - i64::from(target)).abs(), -i64::from(*f)))
+}
+
 /// Tunables for [`build_unified_capture_args`] — the audio settings surface that
 /// actually reaches ffmpeg (format/codec is derived from the output extension).
 #[derive(Debug, Clone)]
@@ -205,6 +308,11 @@ pub struct CaptureOpts {
     /// the capture (the bug that froze recording when this was a pipe). `None`
     /// (and all audio-only recordings) add no second output.
     pub preview_jpg: Option<String>,
+    /// The probed camera INPUT mode to pin (`-video_size`/`-framerate`). `None`
+    /// keeps the legacy 720p@`framerate` guess — but that guess fails on a camera
+    /// that doesn't advertise that exact mode, which is why the recorder probes
+    /// and fills this in. The OUTPUT still conforms to `framerate` via `-r`.
+    pub video_input: Option<VideoCaptureMode>,
 }
 
 impl Default for CaptureOpts {
@@ -218,6 +326,7 @@ impl Default for CaptureOpts {
             bitrate_kbps: 192,
             live_levels: true,
             preview_jpg: None,
+            video_input: None,
         }
     }
 }
@@ -299,18 +408,21 @@ pub fn build_unified_capture_args(
             args.push("-thread_queue_size".into());
             args.push(MAC_INPUT_QUEUE.into());
             if has_video {
-                // `-framerate` is a VIDEO option — only meaningful with a camera.
-                // Applying it to an audio-only input confuses ffmpeg's input clock
-                // and contributes to the choppiness, so we omit it for audio-only.
+                // avfoundation REJECTS any size/framerate the camera doesn't
+                // advertise — including the bare default 29.97 and the common PAL
+                // 25 — with "Selected framerate is not supported" → the camera
+                // never opens. So we pin a REAL advertised mode (probed at start;
+                // `video_input`), falling back to 720p@`framerate` only when the
+                // probe yielded nothing. `-framerate` is a VIDEO option, omitted
+                // for audio-only where it would confuse the input clock.
+                let (in_w, in_h, in_fps) = match opts.video_input {
+                    Some(m) => (m.width, m.height, m.input_fps),
+                    None => (1280, 720, opts.framerate),
+                };
                 args.push("-framerate".into());
-                args.push(opts.framerate.to_string());
-                // avfoundation REJECTS a bare framerate without a paired, supported
-                // video size ("Selected framerate is not supported by the device" →
-                // "Input/output error" → zero frames). Pin a known-good capture mode
-                // (1280x720, advertised by the FaceTime HD camera) so the camera
-                // actually opens for recording, same as the preview does.
+                args.push(in_fps.to_string());
                 args.push("-video_size".into());
-                args.push("1280x720".into());
+                args.push(format!("{in_w}x{in_h}"));
             } else {
                 // Audio-only: avfoundation reports a wild initial timestamp (the
                 // log showed `time=-577014:…`); regenerate clean PTS so the first
@@ -429,6 +541,74 @@ mod tests {
 
     fn has_pair(args: &[String], a: &str, b: &str) -> bool {
         args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    // ── camera mode probe parsing + resolution (the framerate fix) ──
+    const FACETIME_MODES: &str = "\
+[avfoundation @ 0x1] Selected framerate (25.000000) is not supported by the device.
+[avfoundation @ 0x1] Supported modes:
+[avfoundation @ 0x1]   1920x1080@[15.000000 30.000000]fps
+[avfoundation @ 0x1]   1280x720@[15.000000 30.000000]fps
+[avfoundation @ 0x1]   1080x1920@[15.000000 30.000000]fps
+[avfoundation @ 0x1]   640x480@[15.000000 30.000000]fps";
+
+    #[test]
+    fn parses_the_avfoundation_modes_block() {
+        let modes = parse_avfoundation_modes(FACETIME_MODES);
+        assert_eq!(modes.len(), 4);
+        assert_eq!(modes[1].width, 1280);
+        assert_eq!(modes[1].height, 720);
+        assert_eq!(modes[1].framerates, vec![15, 30]);
+        // The non-mode lines (the error + header) are ignored.
+        assert!(parse_avfoundation_modes("frame= 10 fps= 30").is_empty());
+    }
+
+    #[test]
+    fn resolves_to_a_real_mode_for_25fps_target() {
+        // The actual bug: target 25 fps on a camera that only does 15/30.
+        let modes = parse_avfoundation_modes(FACETIME_MODES);
+        let r = resolve_camera_mode(&modes, 1280, 720, 25).unwrap();
+        assert_eq!((r.width, r.height), (1280, 720)); // closest size to target
+        assert_eq!(r.input_fps, 30); // closest supported rate to 25 (ties→higher)
+    }
+
+    #[test]
+    fn resolve_prefers_landscape_and_nearest_size() {
+        let modes = parse_avfoundation_modes(FACETIME_MODES);
+        // A 720p landscape target must NOT pick the 1080x1920 portrait mode.
+        let r = resolve_camera_mode(&modes, 1280, 720, 30).unwrap();
+        assert!(r.width >= r.height, "picked a portrait mode: {r:?}");
+        assert_eq!(r.input_fps, 30);
+        // Exact-rate target → exact rate.
+        assert_eq!(
+            resolve_camera_mode(&modes, 1280, 720, 15)
+                .unwrap()
+                .input_fps,
+            15
+        );
+    }
+
+    #[test]
+    fn resolve_is_none_when_no_modes_parsed() {
+        assert_eq!(resolve_camera_mode(&[], 1280, 720, 30), None);
+    }
+
+    #[test]
+    fn video_input_overrides_the_legacy_720p_guess() {
+        let opts = CaptureOpts {
+            video_input: Some(VideoCaptureMode {
+                width: 1920,
+                height: 1080,
+                input_fps: 30,
+            }),
+            ..Default::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/v.mp4", &opts);
+        // Input pins the PROBED mode…
+        assert!(has_pair(&args, "-framerate", "30"));
+        assert!(has_pair(&args, "-video_size", "1920x1080"));
+        // …while the OUTPUT still conforms to the user's target (default 30 here).
+        assert!(has_pair(&args, "-fps_mode", "cfr"));
     }
 
     fn count_i(args: &[String]) -> usize {

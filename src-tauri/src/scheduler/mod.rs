@@ -437,6 +437,8 @@ pub(crate) fn build_opts(
         live_levels: true,
         keep_separate_audio: settings.keep_separate_audio,
         separate_audio_format: format_ext(settings.separate_audio_format).to_string(),
+        // Resolved server-side by the recorder's camera-mode probe at start.
+        video_input: None,
     })
 }
 

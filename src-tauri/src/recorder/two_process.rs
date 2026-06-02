@@ -43,6 +43,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
+use sundayrec_core::capture::VideoCaptureMode;
 use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::two_process::{
@@ -136,8 +137,16 @@ pub async fn run_two_process_session(
         sundayrec_core::settings::ChannelMode::Stereo => 2,
         _ => 1,
     };
-    let video_args =
-        build_video_capture_args(platform, &device_token(&video), &video_temp, opts.framerate);
+    // The camera INPUT mode resolved by the engine's probe — pins a size/rate the
+    // device advertises so avfoundation opens the camera. Falls back to a safe
+    // 720p@30 (NOT the user's possibly-unsupported target) if the probe found
+    // nothing; the output is conformed separately.
+    let mode = opts.video_input.unwrap_or(VideoCaptureMode {
+        width: 1280,
+        height: 720,
+        input_fps: 30,
+    });
+    let video_args = build_video_capture_args(platform, &device_token(&video), &video_temp, mode);
     let audio_args =
         build_audio_capture_args(platform, &device_token(&audio), &audio_temp, channels);
 
@@ -161,24 +170,32 @@ pub async fn run_two_process_session(
         "recorder: two-process fallback recording (no split / no reconnect)"
     );
 
-    // Stream each child's stderr to the log so a failing capture is diagnosable
-    // (the simple fallback does NOT classify per-line errors into the reconnect
-    // policy — there is no reconnect here).
+    // Stream each child's stderr to the log so a failing capture is diagnosable,
+    // AND keep the video stderr TAIL so a capture failure can report the REAL
+    // reason (the camera not opening) instead of a confusing downstream
+    // "mux_failed".
+    let video_tail = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
     let video_stderr = video_child.stderr.take();
     let audio_stderr = audio_child.stderr.take();
-    let video_log = video_stderr.map(|s| tauri::async_runtime::spawn(drain_stderr(s, "video")));
-    let audio_log = audio_stderr.map(|s| tauri::async_runtime::spawn(drain_stderr(s, "audio")));
+    let vt = video_tail.clone();
+    let video_log = video_stderr.map(|s| tauri::async_runtime::spawn(drain_stderr(s, "video", vt)));
+    let audio_log = audio_stderr.map(|s| {
+        let sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        tauri::async_runtime::spawn(drain_stderr(s, "audio", sink))
+    });
 
     let mut video_stdin = video_child.stdin.take();
     let mut audio_stdin = audio_child.stdin.take();
 
     // Record until the user requests a stop (or either child dies — a death here
     // ends the session; reconnect is out of scope for the simple fallback).
+    let mut video_died_early = false;
     tokio::select! {
         _ = stop_rx.recv() => {
             tracing::info!("recorder: two-process — graceful stop requested");
         }
         status = video_child.wait() => {
+            video_died_early = true;
             tracing::warn!(?status, "recorder: two-process — video process exited early");
         }
         status = audio_child.wait() => {
@@ -197,6 +214,19 @@ pub async fn run_two_process_session(
     }
     if let Some(h) = audio_log {
         h.abort();
+    }
+
+    // If the VIDEO capture died on its own (not a user stop), the camera almost
+    // certainly never opened → its temp is empty and a mux would fail with the
+    // opaque "mux_failed". Surface the actual reason from the camera's stderr and
+    // stop here; the audio temp is intact, so point history at it (nothing lost).
+    if video_died_early {
+        let tail = video_tail.lock().map(|g| g.clone()).unwrap_or_default();
+        let reason = sundayrec_core::two_process::summarize_camera_failure(&tail);
+        tracing::error!("recorder: two-process video capture failed: {reason}");
+        emit_error(&app, "video_capture_failed", &reason);
+        write_history(&pool, &audio_temp, &audio, &opts).await;
+        return Ok(());
     }
 
     // Decide the head-alignment from each file's wall-clock start_time, then mux.
@@ -324,15 +354,31 @@ async fn graceful_q(stdin: &mut Option<tokio::process::ChildStdin>) {
     }
 }
 
-/// Drain a child's stderr to the trace log so a failing capture is diagnosable.
-async fn drain_stderr<R>(stderr: R, which: &'static str)
-where
+/// Drain a child's stderr to the trace log so a failing capture is diagnosable,
+/// and keep the last ~2 KB in `tail` (the failure reason lives near the end) so
+/// the caller can report WHY a capture died.
+async fn drain_stderr<R>(
+    stderr: R,
+    which: &'static str,
+    tail: std::sync::Arc<std::sync::Mutex<String>>,
+) where
     R: tokio::io::AsyncRead + Unpin,
 {
     use tokio::io::AsyncBufReadExt;
     let mut lines = BufReader::new(stderr).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         tracing::trace!(target: "two_process_ffmpeg", which, "{line}");
+        if let Ok(mut t) = tail.lock() {
+            t.push_str(&line);
+            t.push('\n');
+            if t.len() > 2048 {
+                let mut cut = t.len() - 2048;
+                while cut < t.len() && !t.is_char_boundary(cut) {
+                    cut += 1;
+                }
+                *t = t.split_off(cut);
+            }
+        }
     }
 }
 

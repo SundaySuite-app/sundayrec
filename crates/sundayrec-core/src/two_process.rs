@@ -40,6 +40,25 @@ use crate::ffmpeg::Platform;
 /// genuine mid-recording disconnect that the reconnect machinery handles.
 pub const STARTUP_FAILURE_MS: i64 = 3000;
 
+/// Turn a failed video-capture ffmpeg's stderr tail into a clear, actionable
+/// Norwegian reason — so a camera that won't open reports WHY (e.g. an
+/// unsupported bilderate) instead of the confusing downstream "mux_failed" the
+/// user used to see. Pure + tested; the caller captures the tail and emits this.
+pub fn summarize_camera_failure(stderr_tail: &str) -> String {
+    let l = stderr_tail.to_lowercase();
+    if l.contains("not supported") || l.contains("framerate") || l.contains("video_size") {
+        "Kameraet støtter ikke valgt bilderate/oppløsning. Prøv en annen \
+         videoinnstilling."
+            .into()
+    } else if l.contains("permission") || l.contains("denied") || l.contains("not authorized") {
+        "Kameratilgang nektet. Gi appen tilgang til kameraet i Systeminnstillinger.".into()
+    } else if l.contains("in use") || l.contains("busy") || l.contains("-11804") {
+        "Kameraet er i bruk av et annet program. Lukk det og prøv igjen.".into()
+    } else {
+        "Kameraet kunne ikke åpnes for opptak. Sjekk at det er tilkoblet og ledig.".into()
+    }
+}
+
 /// Decide whether a failed unified capture should fall back to the two-process
 /// path. True only for a VIDEO session whose FIRST segment died almost
 /// immediately (`elapsed_ms < STARTUP_FAILURE_MS`) without producing output
@@ -146,22 +165,28 @@ pub fn build_video_capture_args(
     platform: Platform,
     video_device: &str,
     output_path: &str,
-    framerate: u32,
+    mode: crate::capture::VideoCaptureMode,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
         "-use_wallclock_as_timestamps".into(),
         "1".into(),
     ];
+    let size = format!("{}x{}", mode.width, mode.height);
 
     match platform {
         Platform::MacOS | Platform::Linux => {
             // avfoundation video-only: "<videoIdx>:none" opens the camera with NO
-            // audio device on this process (audio is the other ffmpeg).
+            // audio device on this process (audio is the other ffmpeg). Pin a REAL
+            // advertised mode (size + rate) — a bare or unsupported framerate makes
+            // avfoundation refuse to open the camera, which is exactly what broke
+            // video recording (the device only does 15/30, not the requested 25).
             args.push("-f".into());
             args.push("avfoundation".into());
             args.push("-framerate".into());
-            args.push(framerate.to_string());
+            args.push(mode.input_fps.to_string());
+            args.push("-video_size".into());
+            args.push(size);
             args.push("-i".into());
             args.push(format!("{video_device}:none"));
         }
@@ -172,7 +197,7 @@ pub fn build_video_capture_args(
             args.push("-rtbufsize".into());
             args.push("200M".into());
             args.push("-framerate".into());
-            args.push(framerate.to_string());
+            args.push(mode.input_fps.to_string());
             args.push("-i".into());
             args.push(format!("video={video_device}"));
         }
@@ -505,11 +530,37 @@ mod tests {
     // ── video-only capture args — mac vs win ─────────────────────────────────
 
     #[test]
+    fn summarize_camera_failure_maps_the_common_reasons() {
+        assert!(summarize_camera_failure(
+            "Selected framerate (25.000000) is not supported by the device."
+        )
+        .contains("bilderate"));
+        assert!(
+            summarize_camera_failure("permission to capture video was denied").contains("nektet")
+        );
+        assert!(summarize_camera_failure("device is in use by another process").contains("i bruk"));
+        // Unknown failure → the safe generic message.
+        assert!(summarize_camera_failure("some other error").contains("kunne ikke åpnes"));
+    }
+
+    fn mode(w: u32, h: u32, fps: u32) -> crate::capture::VideoCaptureMode {
+        crate::capture::VideoCaptureMode {
+            width: w,
+            height: h,
+            input_fps: fps,
+        }
+    }
+
+    #[test]
     fn video_capture_mac_uses_idx_none_and_wallclock() {
-        let args = build_video_capture_args(Platform::MacOS, "0", "/tmp/v.mp4", 30);
+        let args =
+            build_video_capture_args(Platform::MacOS, "0", "/tmp/v.mp4", mode(1280, 720, 30));
         assert!(has_pair(&args, "-use_wallclock_as_timestamps", "1"));
         assert!(has_pair(&args, "-f", "avfoundation"));
         assert!(args.iter().any(|a| a == "0:none"), "got: {args:?}");
+        // Pins the probed mode — the fix for "framerate not supported".
+        assert!(has_pair(&args, "-framerate", "30"));
+        assert!(has_pair(&args, "-video_size", "1280x720"));
         assert!(has_pair(&args, "-c:v", "libx264"));
         // No audio codec on a video-only process.
         assert!(!args.iter().any(|a| a == "-c:a"));
@@ -518,10 +569,15 @@ mod tests {
 
     #[test]
     fn video_capture_windows_uses_named_video_input() {
-        let args = build_video_capture_args(Platform::Windows, "Logitech BRIO", "C:/v.mp4", 25);
+        let args = build_video_capture_args(
+            Platform::Windows,
+            "Logitech BRIO",
+            "C:/v.mp4",
+            mode(1280, 720, 30),
+        );
         assert!(has_pair(&args, "-f", "dshow"));
         assert!(args.iter().any(|a| a == "video=Logitech BRIO"));
-        assert!(has_pair(&args, "-framerate", "25"));
+        assert!(has_pair(&args, "-framerate", "30"));
         assert!(!args.iter().any(|a| a == "-c:a"));
     }
 

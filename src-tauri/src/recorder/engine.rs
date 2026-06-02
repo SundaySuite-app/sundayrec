@@ -74,7 +74,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts};
+use sundayrec_core::capture::{
+    build_unified_capture_args, parse_avfoundation_modes, resolve_camera_mode, CameraMode,
+    CaptureOpts,
+};
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
 use sundayrec_core::ffmpeg::Platform;
@@ -172,6 +175,13 @@ pub struct RecordingOpts {
     /// chosen from `Settings::separate_audio_format`. Drives the extract codec via
     /// the shared `audio_encode_args` seam.
     pub separate_audio_format: String,
+    /// The camera INPUT mode the recorder probed at start (a size + framerate the
+    /// device actually advertises). NOT sent by the frontend — it's resolved
+    /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
+    /// → audio-only, or the probe yielded nothing (legacy 720p guess).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub video_input: Option<sundayrec_core::capture::VideoCaptureMode>,
 }
 
 /// A progress heartbeat sent to the renderer.
@@ -260,6 +270,9 @@ pub fn build_record_args(
         // Video recordings ALSO write a low-fps preview JPEG (deadlock-proof file
         // sink) the UI polls for a live image while recording.
         preview_jpg: video.map(|_| recording_preview_path().to_string_lossy().into_owned()),
+        // The probed camera mode (resolved in `start`); pins a size/rate the
+        // device actually advertises so avfoundation opens the camera.
+        video_input: opts.video_input,
     };
     build_unified_capture_args(
         platform,
@@ -276,6 +289,57 @@ pub fn build_record_args(
 /// fine — at most one recording runs at a time.
 pub fn recording_preview_path() -> std::path::PathBuf {
     std::env::temp_dir().join("sundayrec-recording-preview.jpg")
+}
+
+/// Probe a camera's advertised capture modes. avfoundation only lists a device's
+/// modes when you request an UNSUPPORTED one, so we ask for `-framerate 1` and
+/// parse the "Supported modes" block it prints to stderr. macOS-only (avfoundation
+/// is the only backend with this hard rejection); other platforms return empty so
+/// the legacy 720p guess is used. Bounded by a short timeout so a wedged device
+/// open can't delay the recording start.
+///
+/// ⚠️ HARDWARE-UNVERIFIED in the test suite (opens the real camera).
+async fn probe_camera_modes(token: &str, platform: Platform) -> Vec<CameraMode> {
+    if !matches!(platform, Platform::MacOS) {
+        return Vec::new();
+    }
+    use tokio::io::AsyncReadExt;
+    let input = format!("{token}:none");
+    let spawn = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args([
+            "-hide_banner",
+            "-f",
+            "avfoundation",
+            "-framerate",
+            "1",
+            "-i",
+        ])
+        .arg(&input)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn();
+    let mut child = match spawn {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("recorder: camera-mode probe spawn failed: {e}");
+            return Vec::new();
+        }
+    };
+    let Some(mut stderr) = child.stderr.take() else {
+        return Vec::new();
+    };
+    let mut buf = String::new();
+    let read = async {
+        let _ = stderr.read_to_string(&mut buf).await;
+    };
+    // ffmpeg exits ~immediately (the bad framerate errors out); 6 s is a generous
+    // ceiling for a slow USB device-open.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(6), read).await;
+    let _ = child.start_kill();
+    let _ = child.wait().await;
+    parse_avfoundation_modes(&buf)
 }
 
 /// The addressable token for a device: the avfoundation index (mac) when known,
@@ -440,6 +504,32 @@ impl RecorderEngine {
             }
             _ => None,
         };
+
+        // For a video session, PROBE the camera's advertised modes and resolve a
+        // size/rate it actually supports — avfoundation refuses an unsupported
+        // one (the bug: a camera that does only 15/30 rejecting the requested 25,
+        // so the camera never opened and the recording died with a downstream
+        // "mux_failed"). The OUTPUT still conforms to the user's target fps.
+        let mut opts = opts;
+        if let Some(v) = &video {
+            let modes = probe_camera_modes(&device_token(v), platform).await;
+            match resolve_camera_mode(&modes, 1280, 720, opts.framerate.max(1)) {
+                Some(m) => {
+                    tracing::info!(
+                        width = m.width,
+                        height = m.height,
+                        input_fps = m.input_fps,
+                        target_fps = opts.framerate,
+                        "recorder: resolved camera capture mode from probe"
+                    );
+                    opts.video_input = Some(m);
+                }
+                None => tracing::warn!(
+                    modes = modes.len(),
+                    "recorder: camera-mode probe found nothing — using legacy 720p guess"
+                ),
+            }
+        }
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
@@ -1719,6 +1809,7 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
+            video_input: None,
         }
     }
 
@@ -2108,6 +2199,7 @@ mod tests {
             live_levels: true,
             keep_separate_audio: true,
             separate_audio_format: "wav".into(),
+            video_input: None,
         };
         let json = serde_json::to_string(&o).unwrap();
         // The wire shape is the struct's default snake_case keys (no rename_all).
