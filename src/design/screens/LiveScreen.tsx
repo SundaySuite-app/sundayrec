@@ -273,6 +273,12 @@ export function LiveScreen() {
   const bitrate = active ? (st?.bitrateKbps ?? 0) : 0;
   const fps = active ? (st?.fps ?? 0) : 0;
   const dropped = active ? (st?.dropped ?? 0) : 0;
+  // Adaptive bitrate: the supervisor steps the target encode bitrate DOWN a tier
+  // under sustained network stress (step > 0). Surface it so a degraded stream is
+  // visible, not silent.
+  const bitrateStep = active ? (st?.bitrateStep ?? 0) : 0;
+  const targetBitrate = active ? (st?.targetBitrateKbps ?? 0) : 0;
+  const degraded = bitrateStep > 0;
   // Live per-destination health (name → ok), so a half-dead multi-destination
   // stream shows the dead one red instead of all-green. Defaults to "ok" for a
   // destination not yet reported on.
@@ -356,7 +362,10 @@ export function LiveScreen() {
               <Stat k={t("liveScreen.statTime", "Tid")} v={uptime} />
               <Stat
                 k={t("liveScreen.statBitrate", "Bitrate")}
-                v={`${bitrate} kbps`}
+                v={
+                  degraded ? `${bitrate} / ${targetBitrate} kbps` : `${bitrate} kbps`
+                }
+                accent={degraded ? "var(--sr-gold)" : undefined}
               />
               <Stat k={t("liveScreen.statFps", "FPS")} v={String(fps)} />
               <Stat

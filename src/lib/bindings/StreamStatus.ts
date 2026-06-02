@@ -30,4 +30,17 @@ lastLine: string,
 /**
  * Per-destination liveness, in pushable order. Empty when idle.
  */
-destinations: Array<DestinationHealth>, };
+destinations: Array<DestinationHealth>, 
+/**
+ * The video bitrate (kbps) ffmpeg is currently *targeting*. Starts at the
+ * configured/auto bitrate and drops a tier each time the adaptive-bitrate
+ * supervisor steps down under sustained network stress. Distinct from
+ * `bitrateKbps` (the measured live rate). 0 when idle.
+ */
+targetBitrateKbps: number, 
+/**
+ * Which adaptive-bitrate degradation tier the stream is on: 0 = full
+ * quality, 1/2 = stepped down under stress. Lets the UI show "Redusert
+ * kvalitet" instead of a silently-degraded stream.
+ */
+bitrateStep: number, };

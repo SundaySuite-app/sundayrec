@@ -41,9 +41,10 @@ use sundayrec_core::overlay::OverlayConfig;
 use sundayrec_core::overlay::{build_overlay_pipeline, BuildOverlayOpts};
 #[cfg(feature = "streaming")]
 use sundayrec_core::streaming::{
-    all_destinations_failed, build_output_args, is_stream_connection_error, is_tee_slave_failure,
-    parse_progress_line, reconnect_backoff_secs, tee_slave_failure_index, StreamArgError,
-    StreamProgress, STREAM_RECONNECT_MAX_FAILURES,
+    all_destinations_failed, build_output_args, degraded_bitrate_kbps, is_stream_connection_error,
+    is_tee_slave_failure, parse_progress_line, reconnect_backoff_secs, should_restart_to_readd,
+    should_step_down, tee_slave_failure_index, StreamArgError, StreamProgress,
+    STREAM_MAX_BITRATE_STEPS, STREAM_RECONNECT_MAX_FAILURES,
 };
 use sundayrec_core::streaming::{
     validate_rtmp_url, validate_stream_key, AudioInputLayout, StreamDestination, StreamKeyError,
@@ -104,6 +105,15 @@ pub struct StreamStatus {
     pub last_line: String,
     /// Per-destination liveness, in pushable order. Empty when idle.
     pub destinations: Vec<DestinationHealth>,
+    /// The video bitrate (kbps) ffmpeg is currently *targeting*. Starts at the
+    /// configured/auto bitrate and drops a tier each time the adaptive-bitrate
+    /// supervisor steps down under sustained network stress. Distinct from
+    /// `bitrateKbps` (the measured live rate). 0 when idle.
+    pub target_bitrate_kbps: u32,
+    /// Which adaptive-bitrate degradation tier the stream is on: 0 = full
+    /// quality, 1/2 = stepped down under stress. Lets the UI show "Redusert
+    /// kvalitet" instead of a silently-degraded stream.
+    pub bitrate_step: u32,
 }
 
 impl StreamStatus {
@@ -116,6 +126,8 @@ impl StreamStatus {
             dropped: 0,
             last_line: String::new(),
             destinations: Vec::new(),
+            target_bitrate_kbps: 0,
+            bitrate_step: 0,
         }
     }
 }
@@ -343,23 +355,27 @@ pub async fn start(
     )
     .map_err(|e: StreamArgError| AppError::Validation(format!("stream_args:{e:?}")))?;
 
-    // Assemble the full argv: banner + camera input + overlay inputs + (Windows)
-    // separate audio input + the core output args.
-    let mut args: Vec<String> = vec![
+    // Assemble the bitrate-FREE input prefix: banner + camera input + overlay
+    // inputs + (Windows) separate audio input. The adaptive-bitrate supervisor
+    // reuses this verbatim and only rebuilds the core output args per tier.
+    let mut prefix: Vec<String> = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
         "info".into(),
         "-nostdin".into(),
     ];
-    args.extend(video_input_args(
+    prefix.extend(video_input_args(
         platform,
         opts.resolution,
         opts.framerate,
         &video_token,
         mac_audio_token.as_deref(),
     ));
-    args.extend(overlay.input_args);
-    args.extend(audio_only_input_args(platform, win_audio_name.as_deref()));
+    prefix.extend(overlay.input_args);
+    prefix.extend(audio_only_input_args(platform, win_audio_name.as_deref()));
+
+    // The full step-0 argv = prefix + the core output args we just built.
+    let mut args: Vec<String> = prefix.clone();
     args.extend(built.args);
 
     // Log the KEY-REDACTED argv only — never the real one.
@@ -374,6 +390,17 @@ pub async fn start(
     // any later unexpected exit (network drop) until `stop` or the give-up cap.
     let first = spawn_stream(&args)
         .map_err(|e| AppError::Recording(format!("stream ffmpeg spawn: {e}")))?;
+
+    // Capture everything needed to rebuild the argv at a lower bitrate tier.
+    let rebuild = RebuildInputs {
+        prefix,
+        snapshot_path,
+        audio_layout: audio_layout_for(platform),
+        overlay_count: overlay.extra_input_count,
+        overlay_label: overlay.output_label,
+        overlay_chain: overlay.filter_chain,
+        opts: opts.clone(),
+    };
 
     // Per-destination health, in the SAME order as the tee slaves (= pushable
     // order) so a `Slave muxer #N failed` line maps straight to a destination.
@@ -392,6 +419,9 @@ pub async fn start(
                 ok: true,
             })
             .collect(),
+        // The stream starts at full quality (step 0 = the configured/auto bitrate).
+        target_bitrate_kbps: rebuild.base_bitrate(),
+        bitrate_step: 0,
     };
     engine.set_status(status.clone());
 
@@ -405,7 +435,7 @@ pub async fn start(
     let notify_t = notify.clone();
     let task = tauri::async_runtime::spawn(async move {
         supervise(
-            args, dest_names, status_arc, stop_t, notify_t, now_ms, first,
+            rebuild, dest_names, status_arc, stop_t, notify_t, now_ms, first,
         )
         .await;
     });
@@ -428,6 +458,55 @@ fn spawn_stream(args: &[String]) -> std::io::Result<tokio::process::Child> {
         .spawn()
 }
 
+/// Everything needed to REBUILD the full ffmpeg argv at a chosen video bitrate,
+/// so the adaptive-bitrate supervisor can respawn at a lower tier without
+/// re-resolving devices/overlays. The "prefix" (banner + camera/overlay/audio
+/// inputs) is fixed across tiers; only the core output args (the encode bitrate +
+/// tee/preview) are rebuilt. Holding the resolved [`StreamOptions`] keeps the
+/// rebuild pure: we just override `video_bitrate_kbps` per tier.
+#[cfg(feature = "streaming")]
+struct RebuildInputs {
+    /// Banner + input args (camera, overlay inputs, Windows audio) — bitrate-free.
+    prefix: Vec<String>,
+    /// The resolved stream options (destinations, resolution, framerate, …). The
+    /// configured/auto video bitrate here is the step-0 base.
+    opts: StreamOptions,
+    snapshot_path: String,
+    audio_layout: AudioInputLayout,
+    overlay_count: u32,
+    overlay_label: String,
+    overlay_chain: String,
+}
+
+#[cfg(feature = "streaming")]
+impl RebuildInputs {
+    /// The configured/auto video bitrate (kbps) — the step-0 base the ladder
+    /// degrades from.
+    fn base_bitrate(&self) -> u32 {
+        self.opts.video_bitrate()
+    }
+
+    /// Build the FULL argv targeting `video_bitrate_kbps`. Pure over `self`: it
+    /// clones the options, overrides the video bitrate, and re-runs the core
+    /// output builder, prepending the fixed input prefix. The audio bitrate is
+    /// left untouched (voice intelligibility > the few kbps saved).
+    fn build(&self, video_bitrate_kbps: u32) -> Result<Vec<String>, StreamArgError> {
+        let mut opts = self.opts.clone();
+        opts.video_bitrate_kbps = Some(video_bitrate_kbps);
+        let built = build_output_args(
+            &opts,
+            &self.snapshot_path,
+            self.audio_layout,
+            self.overlay_count,
+            &self.overlay_label,
+            &self.overlay_chain,
+        )?;
+        let mut args = self.prefix.clone();
+        args.extend(built.args);
+        Ok(args)
+    }
+}
+
 /// How one ffmpeg run ended.
 #[cfg(feature = "streaming")]
 enum RunEnd {
@@ -440,16 +519,63 @@ enum RunEnd {
     /// supervisor must reconnect AND count this toward the give-up cap, because
     /// the still-flowing "progress" would otherwise reset the counter and thrash.
     AllDestinationsFailed,
+    /// A PARTIAL destination loss waited out its grace period (survivors still
+    /// up). We killed the child so the supervisor can do a FULL reconnect that
+    /// re-attempts the dropped destination — a brief blip on survivors in
+    /// exchange for re-adding the dead one. Counts toward the give-up cap so a
+    /// permanently-dead destination can't thrash.
+    RehealRestart,
 }
+
+/// What one ffmpeg run produced, beyond how it ended: used by the adaptive-bitrate
+/// trigger to measure a sustained dropped-frame rate over the run's wall-clock
+/// duration.
+#[cfg(feature = "streaming")]
+struct RunOutcome {
+    /// Whether any progress line was seen (a live stream → resets failure count).
+    produced: bool,
+    /// How the run ended.
+    end: RunEnd,
+    /// Frames dropped during THIS run (delta, not cumulative).
+    dropped_delta: u32,
+    /// Wall-clock seconds the run lasted (≥ 1 so it's a usable rate denominator).
+    duration_secs: u32,
+}
+
+/// How long a measurement window for the adaptive-bitrate step-down trigger runs
+/// (seconds). Reconnects accumulate across runs within this window; it resets once
+/// elapsed so a step-down reflects *sustained* stress, not a single old hiccup.
+#[cfg(feature = "streaming")]
+const ADAPTIVE_WINDOW_SECS: u64 = 60;
+
+/// Dropped-frame rate (frames per second) over a run that counts as sustained
+/// stress for the adaptive-bitrate step-down. A flowing 25–30 fps stream dropping
+/// > 2 fps steadily can't carry the current bitrate.
+#[cfg(feature = "streaming")]
+const ADAPTIVE_DROP_PER_SEC: f64 = 2.0;
+
+/// Reconnects within one adaptive window that count as sustained stress even
+/// without per-frame drops — a link that keeps collapsing is overloaded.
+#[cfg(feature = "streaming")]
+const ADAPTIVE_RECONNECT_THRESHOLD: u32 = 3;
 
 /// The supervisor loop: keep an ffmpeg running for the stream, parsing its stderr
 /// for live stats and reconnecting on unexpected exits with capped backoff, until
 /// `stop` is set or [`STREAM_RECONNECT_MAX_FAILURES`] consecutive zero-progress
 /// attempts give up. A run that produced frames resets the failure count, so a
 /// stream that merely hiccups recovers indefinitely.
+///
+/// It also drives the two resilience features whose *decisions* live in the core:
+///   - **adaptive bitrate** — sustained drops/reconnects over an
+///     [`ADAPTIVE_WINDOW_SECS`] window step the encode bitrate DOWN a tier
+///     ([`should_step_down`] + [`degraded_bitrate_kbps`]); respawns rebuild the
+///     argv at the lower tier. We never step back up — favouring stability.
+///   - **per-destination reheal** — a partial loss that waits out its grace
+///     period restarts to re-add the dropped destination
+///     ([`should_restart_to_readd`], evaluated inside `run_one`).
 #[cfg(feature = "streaming")]
 async fn supervise(
-    args: Vec<String>,
+    rebuild: RebuildInputs,
     dest_names: Vec<String>,
     status: Arc<Mutex<StreamStatus>>,
     stop: Arc<std::sync::atomic::AtomicBool>,
@@ -458,47 +584,76 @@ async fn supervise(
     first: tokio::process::Child,
 ) {
     use std::sync::atomic::Ordering;
+    use std::time::Instant;
 
+    let base_bitrate = rebuild.base_bitrate();
     let mut next_child = Some(first);
     let mut failures: u32 = 0;
+    // Adaptive-bitrate state: the current degradation tier + a rolling window's
+    // reconnect tally. Step 0 = the configured/auto bitrate (the first child,
+    // already spawned at base).
+    let mut bitrate_step: u32 = 0;
+    let mut window_start = Instant::now();
+    let mut reconnects_in_window: u32 = 0;
 
     loop {
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        // Obtain a child: the pre-spawned first one, else a fresh respawn.
+        // Obtain a child: the pre-spawned first one, else a fresh respawn built at
+        // the CURRENT bitrate tier (adaptive step-downs take effect on respawn).
         let mut child = match next_child.take() {
             Some(c) => c,
-            None => match spawn_stream(&args) {
-                Ok(c) => {
-                    // A fresh ffmpeg re-attempts EVERY destination → all live again.
-                    mark_reconnected(&status, started_at, &dest_names);
-                    c
-                }
-                Err(e) => {
-                    failures += 1;
-                    if failures >= STREAM_RECONNECT_MAX_FAILURES {
-                        mark_dead(&status, &format!("Strøm stoppet (kunne ikke starte): {e}"));
+            None => {
+                let target = degraded_bitrate_kbps(base_bitrate, bitrate_step);
+                let args = match rebuild.build(target) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        // Should never happen post-launch (destinations validated),
+                        // but treat a rebuild failure as a fatal give-up.
+                        mark_dead(&status, &format!("Strøm stoppet (intern feil): {e:?}"));
                         break;
                     }
-                    if !wait_backoff(failures, &status, &notify, &stop).await {
-                        break;
+                };
+                match spawn_stream(&args) {
+                    Ok(c) => {
+                        // A fresh ffmpeg re-attempts EVERY destination → all live again.
+                        mark_reconnected(&status, started_at, &dest_names);
+                        update_bitrate_tier(&status, target, bitrate_step);
+                        c
                     }
-                    continue;
+                    Err(e) => {
+                        failures += 1;
+                        if failures >= STREAM_RECONNECT_MAX_FAILURES {
+                            mark_dead(&status, &format!("Strøm stoppet (kunne ikke starte): {e}"));
+                            break;
+                        }
+                        if !wait_backoff(failures, &status, &notify, &stop).await {
+                            break;
+                        }
+                        continue;
+                    }
                 }
-            },
+            }
         };
 
-        let (produced, end) = run_one(&mut child, &status, &notify).await;
-        // A total-destination failure ALWAYS counts toward giving up (the void
-        // stream keeps "producing", so we can't trust `produced` to reset).
+        let outcome = run_one(&mut child, &status, &notify, failures).await;
+        let RunOutcome {
+            produced,
+            end,
+            dropped_delta,
+            duration_secs,
+        } = outcome;
+        // A total-destination failure or a grace-period reheal ALWAYS counts
+        // toward giving up (the void/partial stream can keep "producing", so we
+        // can't trust `produced` to reset the counter).
         let mut force_failure = false;
         match end {
             RunEnd::Stopped => {
                 graceful_stop(&mut child).await;
                 break;
             }
-            RunEnd::AllDestinationsFailed => {
+            RunEnd::AllDestinationsFailed | RunEnd::RehealRestart => {
                 let _ = child.wait().await;
                 force_failure = true;
             }
@@ -512,11 +667,12 @@ async fn supervise(
 
         // An unexpected exit. A run that streamed frames to a live destination
         // resets the counter (a recoverable hiccup); a zero-frame exit — or a
-        // total-destination loss — counts toward giving up.
+        // total-destination loss / reheal restart — counts toward giving up.
         if produced && !force_failure {
             failures = 0;
         } else {
             failures += 1;
+            reconnects_in_window += 1;
         }
         if failures >= STREAM_RECONNECT_MAX_FAILURES {
             mark_dead(
@@ -525,6 +681,33 @@ async fn supervise(
             );
             break;
         }
+
+        // Adaptive bitrate: roll the measurement window, then ask the core whether
+        // sustained stress (a high dropped-frame rate this run, or repeated
+        // reconnects this window) warrants stepping DOWN one tier. We never step
+        // back up — staying down is the stable choice for a live service.
+        if window_start.elapsed().as_secs() >= ADAPTIVE_WINDOW_SECS {
+            window_start = Instant::now();
+            reconnects_in_window = 0;
+        }
+        if should_step_down(
+            bitrate_step,
+            dropped_delta,
+            reconnects_in_window,
+            duration_secs.max(1),
+            ADAPTIVE_DROP_PER_SEC,
+            ADAPTIVE_RECONNECT_THRESHOLD,
+        ) {
+            bitrate_step = (bitrate_step + 1).min(STREAM_MAX_BITRATE_STEPS);
+            // Fresh window after a step so the next decision measures the NEW tier.
+            window_start = Instant::now();
+            reconnects_in_window = 0;
+            set_line(
+                &status,
+                "Redusert kvalitet for å holde strømmen stabil på et tregt nettverk.",
+            );
+        }
+
         if !wait_backoff(failures.max(1), &status, &notify, &stop).await {
             break;
         }
@@ -541,22 +724,55 @@ async fn supervise(
     }
 }
 
-/// Read one ffmpeg run's stderr to completion (or until `notify` asks us to
-/// stop), updating live stats. Returns whether any progress line was seen and how
-/// the run ended.
+/// How often the reheal timer ticks to re-evaluate the grace period for a partial
+/// destination loss. Coarse — the grace is ~25 s, so a 2 s tick is plenty precise
+/// and costs nothing while the stream is healthy.
+#[cfg(feature = "streaming")]
+const REHEAL_TICK_SECS: u64 = 2;
+
+/// Read one ffmpeg run's stderr to completion (or until `notify` asks us to stop),
+/// updating live stats. Returns a [`RunOutcome`]: whether any progress was seen,
+/// how the run ended, and the dropped-frame delta + duration the adaptive-bitrate
+/// trigger measures.
+///
+/// While reading it also runs the per-destination REHEAL timer: once a partial
+/// loss (one destination down, survivors up) has waited out its grace period
+/// ([`should_restart_to_readd`], bounded by the current `failures` count), it kills
+/// the child and returns [`RunEnd::RehealRestart`] so the supervisor does a full
+/// reconnect that re-attempts the dropped destination.
 #[cfg(feature = "streaming")]
 async fn run_one(
     child: &mut tokio::process::Child,
     status: &Arc<Mutex<StreamStatus>>,
     notify: &tokio::sync::Notify,
-) -> (bool, RunEnd) {
+    failures: u32,
+) -> RunOutcome {
+    use std::time::{Duration, Instant};
     use tokio::io::{AsyncBufReadExt, BufReader};
 
+    let started = Instant::now();
+    let dropped_at_start = lock_recover(status).dropped;
+
+    // Snapshot the dropped delta + elapsed seconds at any exit point.
+    let outcome = |produced: bool, end: RunEnd| {
+        let now_dropped = lock_recover(status).dropped;
+        RunOutcome {
+            produced,
+            end,
+            dropped_delta: now_dropped.saturating_sub(dropped_at_start),
+            duration_secs: started.elapsed().as_secs() as u32,
+        }
+    };
+
     let Some(stderr) = child.stderr.take() else {
-        return (false, RunEnd::Exited);
+        return outcome(false, RunEnd::Exited);
     };
     let mut lines = BufReader::new(stderr).lines();
     let mut produced = false;
+    // When the FIRST partial destination loss happened this run (None = none yet).
+    let mut partial_since: Option<Instant> = None;
+    let mut reheal_tick = tokio::time::interval(Duration::from_secs(REHEAL_TICK_SECS));
+    reheal_tick.tick().await; // consume the immediate first tick
 
     loop {
         tokio::select! {
@@ -572,23 +788,59 @@ async fn run_one(
                         // into the void: kill + reconnect to re-attempt them all.
                         if mark_destination_failed(status, idx) {
                             let _ = child.start_kill();
-                            return (produced, RunEnd::AllDestinationsFailed);
+                            return outcome(produced, RunEnd::AllDestinationsFailed);
                         }
+                        // Partial loss: start (or keep) the grace-period clock so the
+                        // reheal timer can re-add this destination after the grace.
+                        partial_since.get_or_insert_with(Instant::now);
                     } else if is_tee_slave_failure(&l) {
                         // A slave failed without a parseable index (e.g. an open-time
                         // error, whose raw line carries the URL+key — never logged).
                         set_line(status, "En strøm-destinasjon koblet fra — sjekk status per destinasjon.");
+                        partial_since.get_or_insert_with(Instant::now);
                     } else if is_stream_connection_error(&l) {
                         // NEVER store the raw line — an RTMP error can echo the URL
                         // (and thus the stream key). A fixed message is safe + clear.
                         set_line(status, "Nettverksfeil oppdaget — overvåker forbindelsen…");
                     }
                 }
-                _ => return (produced, RunEnd::Exited), // EOF → ffmpeg exiting
+                _ => return outcome(produced, RunEnd::Exited), // EOF → ffmpeg exiting
             },
-            _ = notify.notified() => return (produced, RunEnd::Stopped),
+            _ = reheal_tick.tick() => {
+                // Per-destination reheal: if a partial loss has waited out its grace
+                // period (and we're under the give-up cap), restart to re-add it.
+                if let Some(since) = partial_since {
+                    let (any_down, survivors_up) = destination_health_summary(status);
+                    if should_restart_to_readd(
+                        any_down,
+                        survivors_up,
+                        since.elapsed().as_secs(),
+                        failures,
+                        STREAM_RECONNECT_MAX_FAILURES,
+                    ) {
+                        set_line(status, "Kobler til igjen for å gjenopprette en frakoblet destinasjon…");
+                        let _ = child.start_kill();
+                        return outcome(produced, RunEnd::RehealRestart);
+                    }
+                    // No destination still down (it re-healed inside the tee) → clear.
+                    if !any_down {
+                        partial_since = None;
+                    }
+                }
+            }
+            _ = notify.notified() => return outcome(produced, RunEnd::Stopped),
         }
     }
+}
+
+/// Snapshot `(any_down, survivors_up)` from the per-destination health, for the
+/// reheal decision. Pure read of the shared status.
+#[cfg(feature = "streaming")]
+fn destination_health_summary(status: &Arc<Mutex<StreamStatus>>) -> (bool, bool) {
+    let s = lock_recover(status);
+    let any_down = s.destinations.iter().any(|d| !d.ok);
+    let survivors_up = s.destinations.iter().any(|d| d.ok);
+    (any_down, survivors_up)
 }
 
 /// Try to stop ffmpeg gracefully so a local recording (the `also_record` branch)
@@ -662,6 +914,16 @@ fn set_line(status: &Arc<Mutex<StreamStatus>>, line: &str) {
     lock_recover(status).last_line = line.to_string();
 }
 
+/// Record which adaptive-bitrate tier the live encoder is now targeting, so the
+/// UI can show "Redusert kvalitet" instead of a silently-degraded stream. Set on
+/// every (re)spawn that may have stepped down.
+#[cfg(feature = "streaming")]
+fn update_bitrate_tier(status: &Arc<Mutex<StreamStatus>>, target_kbps: u32, step: u32) {
+    let mut s = lock_recover(status);
+    s.target_bitrate_kbps = target_kbps;
+    s.bitrate_step = step;
+}
+
 /// Mark the stream live again after a successful respawn — a fresh ffmpeg
 /// re-attempts every destination, so all are live again.
 #[cfg(feature = "streaming")]
@@ -706,6 +968,8 @@ fn mark_dead(status: &Arc<Mutex<StreamStatus>>, line: &str) {
     s.fps = 0;
     s.bitrate_kbps = 0;
     s.started_at = None;
+    s.target_bitrate_kbps = 0;
+    s.bitrate_step = 0;
     s.last_line = line.to_string();
 }
 

@@ -599,6 +599,114 @@ pub fn all_destinations_failed(health: &[bool]) -> bool {
     !health.is_empty() && health.iter().all(|&ok| !ok)
 }
 
+// ── Adaptive bitrate (sustained-stress step-down) ───────────────────────────────
+//
+// libx264 can't change its target bitrate on a live encoder, so "adaptive" means
+// DETECT sustained network stress, then RESPAWN ffmpeg encoding at a lower tier.
+// All the *deciding* — the ladder, the floor, the trigger — is pure + tested here;
+// the supervisor only rebuilds the argv at the chosen bitrate.
+
+/// How many times we'll step the bitrate DOWN before holding. Three tiers
+/// (100% → ~70% → ~50%) is enough to ride out a congested uplink without an
+/// endless respawn cascade — beyond this the network, not the bitrate, is the
+/// problem and stepping further just thrashes the encoder.
+pub const STREAM_MAX_BITRATE_STEPS: u32 = 2;
+
+/// The lowest live video bitrate (kbps) we'll ever drop to. Below this a stream
+/// is barely watchable, so there's no point degrading further — we'd rather hold
+/// here and let the reconnect machinery handle a genuinely dead link.
+pub const STREAM_MIN_BITRATE_KBPS: u32 = 800;
+
+/// The target video bitrate (kbps) for degradation `step` from `base`:
+///   - step 0 → 100 % (the configured/auto bitrate),
+///   - step 1 → ~70 %,
+///   - step 2 → ~50 %,
+///   - any higher step is clamped to step 2 (we never go below ~50 %).
+///
+/// The result is floored at [`STREAM_MIN_BITRATE_KBPS`] and never exceeds `base`,
+/// so a tiny base (already ≤ the floor) simply stays put. Audio bitrate is left
+/// untouched by the caller — voice intelligibility matters more than the few
+/// kbps it would save.
+pub fn degraded_bitrate_kbps(base: u32, step: u32) -> u32 {
+    let pct = match step {
+        0 => 100,
+        1 => 70,
+        _ => 50, // step 2 and (defensively) anything beyond the bound
+    };
+    let target = (base as u64 * pct / 100) as u32;
+    target.clamp(STREAM_MIN_BITRATE_KBPS.min(base), base)
+}
+
+/// Whether sustained stress over a measurement window justifies stepping the
+/// bitrate DOWN one tier. Two independent triggers, either of which fires:
+///   - a sustained DROPPED-FRAME rate: `dropped_in_window` frames lost over a
+///     window of `window_secs` seconds exceeds `drop_per_sec_threshold` fps. A
+///     handful of drops on a hiccup is normal; a steady stream of them means the
+///     uplink can't carry the current bitrate.
+///   - REPEATED reconnects: `reconnects_in_window` connection drops in the same
+///     window at/above `reconnect_threshold` — a link that keeps collapsing is
+///     overloaded even if ffmpeg isn't reporting per-frame drops.
+///
+/// Returns `false` once `current_step` has reached [`STREAM_MAX_BITRATE_STEPS`]
+/// (we've degraded as far as policy allows) or the window is degenerate
+/// (`window_secs == 0`). Pure: the supervisor accumulates the counts and calls
+/// this on each window boundary.
+pub fn should_step_down(
+    current_step: u32,
+    dropped_in_window: u32,
+    reconnects_in_window: u32,
+    window_secs: u32,
+    drop_per_sec_threshold: f64,
+    reconnect_threshold: u32,
+) -> bool {
+    if current_step >= STREAM_MAX_BITRATE_STEPS || window_secs == 0 {
+        return false;
+    }
+    let drop_rate = dropped_in_window as f64 / window_secs as f64;
+    drop_rate > drop_per_sec_threshold || reconnects_in_window >= reconnect_threshold
+}
+
+// ── Per-destination reheal (restart-to-readd) ──────────────────────────────────
+//
+// True zero-blip reheal would need one ffmpeg per destination — over-engineering
+// for a church recorder. Instead: when ONE destination drops but survivors are
+// still up, we wait a grace period, then trigger a FULL reconnect to re-attempt
+// the dead one (accepting a brief blip on the survivors). Bounded by the same
+// give-up counter so a permanently-dead destination can't thrash.
+
+/// Grace period (seconds) to wait after a PARTIAL destination loss before
+/// triggering a full reconnect to re-add the dropped destination. Long enough
+/// that a destination flapping for a second or two re-heals itself inside the
+/// tee (no blip on survivors), short enough that a real drop is re-added within
+/// half a minute.
+pub const STREAM_REHEAL_GRACE_SECS: u64 = 25;
+
+/// Whether a partial destination loss has waited out its grace period and should
+/// now trigger a full restart to re-add the dropped destination(s).
+///
+/// - `any_down` — at least one destination is currently marked failed,
+/// - `survivors_up` — at least one destination is still live (a TOTAL loss is
+///   handled by [`all_destinations_failed`] + an immediate reconnect, not here),
+/// - `secs_since_failure` — how long the oldest still-down destination has been
+///   down,
+/// - `failures` — the current consecutive-failure count; once it reaches
+///   `max_failures` we stop re-healing so a permanently-dead destination can't
+///   thrash the survivors with periodic blips.
+///
+/// Pure: the supervisor tracks the timestamp + counter and calls this each tick.
+pub fn should_restart_to_readd(
+    any_down: bool,
+    survivors_up: bool,
+    secs_since_failure: u64,
+    failures: u32,
+    max_failures: u32,
+) -> bool {
+    any_down
+        && survivors_up
+        && failures < max_failures
+        && secs_since_failure >= STREAM_REHEAL_GRACE_SECS
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -995,5 +1103,127 @@ mod tests {
         assert!(!all_destinations_failed(&[true, true]));
         // Empty is never "all failed".
         assert!(!all_destinations_failed(&[]));
+    }
+
+    // ── adaptive bitrate: tier ladder ──
+    #[test]
+    fn degraded_bitrate_walks_the_70_50_ladder() {
+        // 720p auto = 4500 kbps.
+        assert_eq!(degraded_bitrate_kbps(4500, 0), 4500); // 100 %
+        assert_eq!(degraded_bitrate_kbps(4500, 1), 3150); // 70 %
+        assert_eq!(degraded_bitrate_kbps(4500, 2), 2250); // 50 %
+                                                          // Beyond the bound is clamped to the lowest tier (never below ~50 %).
+        assert_eq!(degraded_bitrate_kbps(4500, 3), 2250);
+        assert_eq!(degraded_bitrate_kbps(4500, 99), 2250);
+    }
+
+    #[test]
+    fn degraded_bitrate_never_drops_below_the_floor() {
+        // 1080p auto = 6000; 50 % = 3000, well above the 800 floor.
+        assert_eq!(degraded_bitrate_kbps(6000, 2), 3000);
+        // A low base whose 50 % would dip under the floor is held at the floor.
+        // 1500 (480p) × 50 % = 750 < 800 → floored to 800.
+        assert_eq!(degraded_bitrate_kbps(1500, 2), STREAM_MIN_BITRATE_KBPS);
+        assert!(degraded_bitrate_kbps(1500, 2) >= STREAM_MIN_BITRATE_KBPS);
+    }
+
+    #[test]
+    fn degraded_bitrate_handles_base_at_or_below_floor() {
+        // A base already at/under the floor never grows and never goes below itself.
+        assert_eq!(degraded_bitrate_kbps(800, 0), 800);
+        assert_eq!(degraded_bitrate_kbps(800, 2), 800);
+        assert_eq!(degraded_bitrate_kbps(500, 0), 500);
+        assert_eq!(degraded_bitrate_kbps(500, 2), 500);
+    }
+
+    #[test]
+    fn degraded_bitrate_step0_is_always_the_base() {
+        for base in [800u32, 1500, 2500, 4500, 6000, 9000] {
+            assert_eq!(degraded_bitrate_kbps(base, 0), base);
+        }
+    }
+
+    // ── adaptive bitrate: step-down trigger ──
+    #[test]
+    fn step_down_fires_on_sustained_drop_rate() {
+        // 60 dropped frames over a 10 s window = 6 fps dropped > 2.0 threshold.
+        assert!(should_step_down(0, 60, 0, 10, 2.0, 3));
+        // A handful of drops (a hiccup) does NOT trigger: 5 / 10 s = 0.5 fps.
+        assert!(!should_step_down(0, 5, 0, 10, 2.0, 3));
+    }
+
+    #[test]
+    fn step_down_fires_on_repeated_reconnects() {
+        // 3 reconnects in the window at threshold 3 → overloaded link.
+        assert!(should_step_down(0, 0, 3, 30, 2.0, 3));
+        assert!(!should_step_down(0, 0, 2, 30, 2.0, 3));
+    }
+
+    #[test]
+    fn step_down_stops_at_the_max_step() {
+        // Already at the bound → never steps further, even under heavy stress.
+        assert!(!should_step_down(
+            STREAM_MAX_BITRATE_STEPS,
+            1000,
+            99,
+            10,
+            2.0,
+            3
+        ));
+        const { assert!(STREAM_MAX_BITRATE_STEPS >= 1) };
+    }
+
+    #[test]
+    fn step_down_ignores_degenerate_window() {
+        // A zero-length window can't yield a rate — never divides by zero, never fires.
+        assert!(!should_step_down(0, 1000, 0, 0, 2.0, 3));
+    }
+
+    // ── per-destination reheal: restart-to-readd decision ──
+    #[test]
+    fn reheal_waits_out_the_grace_then_restarts() {
+        // A down destination with survivors, past the grace, under the cap → restart.
+        assert!(should_restart_to_readd(
+            true,
+            true,
+            STREAM_REHEAL_GRACE_SECS,
+            0,
+            20
+        ));
+        assert!(should_restart_to_readd(
+            true,
+            true,
+            STREAM_REHEAL_GRACE_SECS + 5,
+            3,
+            20
+        ));
+    }
+
+    #[test]
+    fn reheal_holds_until_grace_elapses() {
+        assert!(!should_restart_to_readd(
+            true,
+            true,
+            STREAM_REHEAL_GRACE_SECS - 1,
+            0,
+            20
+        ));
+    }
+
+    #[test]
+    fn reheal_needs_a_down_destination_and_a_survivor() {
+        // Nothing down → nothing to re-add.
+        assert!(!should_restart_to_readd(false, true, 999, 0, 20));
+        // No survivor → that's a TOTAL loss, handled by the immediate-reconnect
+        // path, not the grace-period reheal.
+        assert!(!should_restart_to_readd(true, false, 999, 0, 20));
+    }
+
+    #[test]
+    fn reheal_stops_thrashing_at_the_failure_cap() {
+        // A permanently-dead destination can't keep blipping survivors forever.
+        assert!(!should_restart_to_readd(true, true, 999, 20, 20));
+        assert!(!should_restart_to_readd(true, true, 999, 21, 20));
+        const { assert!(STREAM_REHEAL_GRACE_SECS >= 15) };
     }
 }
