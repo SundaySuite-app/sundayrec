@@ -289,6 +289,11 @@ export function DeviceCard({
         {badge && <div style={{ marginTop: 6 }}>{badge}</div>}
         {progress != null && (
           <div
+            role="progressbar"
+            aria-valuenow={Math.round(progress)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={typeof k === "string" ? k : undefined}
             style={{
               marginTop: 9,
               height: 5,

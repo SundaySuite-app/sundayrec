@@ -1238,7 +1238,9 @@
     "signalLevel": "Signal level",
     "signalLabel": "Signal:",
     "separateAudioTitle": "Nagraj osobny plik audio",
-    "separateAudioSub": "Oprócz pliku wideo zapisywany jest osobny plik audio w wybranym formacie."
+    "separateAudioSub": "Oprócz pliku wideo zapisywany jest osobny plik audio w wybranym formacie.",
+    "separateAudioFormat": "Format audio",
+    "cameraNoSignal": "Brak obrazu"
   },
   "liveScreen": {
     "title": "Transmisja na żywo",

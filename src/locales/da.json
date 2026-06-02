@@ -1238,7 +1238,9 @@
     "signalLevel": "Signal level",
     "signalLabel": "Signal:",
     "separateAudioTitle": "Optag en separat lydfil",
-    "separateAudioSub": "Ud over videofilen gemmes en separat lydfil i det valgte format."
+    "separateAudioSub": "Ud over videofilen gemmes en separat lydfil i det valgte format.",
+    "separateAudioFormat": "Lydformat",
+    "cameraNoSignal": "Intet billede"
   },
   "liveScreen": {
     "title": "Direkte udsendelse",

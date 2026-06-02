@@ -231,7 +231,7 @@ function CameraSelectHeader({
 function BigMeterRow({
   ch,
   on,
-  readout = "−55.9",
+  readout = "—",
 }: {
   ch: string;
   on: number;
@@ -352,15 +352,22 @@ function SeparateAudioCard({
         </span>
       </div>
       {on && (
-        <div className="sr-seg cols-4" style={{ marginTop: 14 }}>
+        <div
+          className="sr-seg cols-4"
+          style={{ marginTop: 14 }}
+          role="radiogroup"
+          aria-label={t("homeScreen.separateAudioFormat", "Lydformat")}
+        >
           {FORMATS.map((f) => (
+            // A real box (NOT display:contents) so the gold focus ring has
+            // something to draw on; `sr-r-sm` matches SegOpt's corner radius.
             <div
               key={f}
               role="radio"
               aria-checked={format === f}
               aria-label={f.toUpperCase()}
               tabIndex={0}
-              style={{ cursor: "pointer", display: "contents" }}
+              style={{ cursor: "pointer", borderRadius: "var(--sr-r-sm)" }}
               onClick={() => onUpdate({ separateAudioFormat: f })}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -580,9 +587,17 @@ export function HomeScreen({
                 <Icon name="refresh" size={15} />
               </button>
               <div className="sr-grow" />
-              <Badge kind="err" dot>
-                {t("homeScreen.liveBadge", "● Live")}
-              </Badge>
+              {/* "Live" only when frames are actually flowing — otherwise the
+                  badge would claim Live over a blank/erroring preview. */}
+              {preview.dataUrl ? (
+                <Badge kind="err" dot>
+                  {t("homeScreen.liveBadge", "● Live")}
+                </Badge>
+              ) : (
+                <Badge kind="muted">
+                  {t("homeScreen.cameraNoSignal", "Ingen bilde")}
+                </Badge>
+              )}
             </div>
             <div
               className="sr-media"
@@ -642,13 +657,13 @@ export function HomeScreen({
                 className="sr-grow sr-col"
                 style={{ gap: metersForChannelMode(channelMode) === 2 ? 5 : 0 }}
               >
-                <Meter on={peakL != null ? dbfsToLit(peakL, 14) : 5} />
+                <Meter on={peakL != null ? dbfsToLit(peakL, 14) : 0} />
                 {metersForChannelMode(channelMode) === 2 && (
                   <Meter
                     on={
                       (peakR ?? peakL) != null
                         ? dbfsToLit(peakR ?? peakL, 14)
-                        : 5
+                        : 0
                     }
                   />
                 )}
@@ -657,7 +672,7 @@ export function HomeScreen({
                 className="sr-mono sr-num"
                 style={{ fontSize: 12, color: "var(--sr-text-3)" }}
               >
-                {peakL != null ? formatDbfs(peakL) : "−35.9"} dBFS
+                {peakL != null ? `${formatDbfs(peakL)} dBFS` : "—"}
               </span>
             </div>
           </div>
@@ -689,21 +704,20 @@ export function HomeScreen({
               >
                 {t("homeScreen.maxLabel", "Maks:")}{" "}
                 {peakMax != null && Number.isFinite(peakMax)
-                  ? formatDbfs(peakMax)
-                  : "−38.1"}{" "}
-                dBFS
+                  ? `${formatDbfs(peakMax)} dBFS`
+                  : "—"}
               </span>
             </div>
             <div className="sr-col" style={{ gap: 16, padding: "26px 22px" }}>
               <BigMeterRow
                 ch="L"
-                on={peakL != null ? bigMeterLit(peakL) : 16}
-                readout={peakL != null ? formatDbfs(peakL) : "−55.9"}
+                on={peakL != null ? bigMeterLit(peakL) : 0}
+                readout={peakL != null ? formatDbfs(peakL) : "—"}
               />
               <BigMeterRow
                 ch="R"
-                on={peakR != null ? bigMeterLit(peakR) : 16}
-                readout={peakR != null ? formatDbfs(peakR) : "−55.9"}
+                on={peakR != null ? bigMeterLit(peakR) : 0}
+                readout={peakR != null ? formatDbfs(peakR) : "—"}
               />
               <div
                 className="sr-row"
@@ -729,20 +743,24 @@ export function HomeScreen({
                 borderTop: "1px solid var(--sr-line)",
               }}
             >
-              <a
+              <button
+                type="button"
                 className="sr-grow"
-                role="button"
-                tabIndex={0}
                 onClick={() => navigateTo("diagnostics")}
                 style={{
+                  fontFamily: "inherit",
                   fontSize: 13.5,
                   color: "var(--sr-gold)",
                   fontWeight: 600,
                   cursor: "pointer",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  textAlign: "left",
                 }}
               >
                 {t("homeScreen.testAndCheckSystem", "Test og sjekk system →")}
-              </a>
+              </button>
               <span style={{ fontSize: 12.5, color: "var(--sr-text-3)" }}>
                 {t("homeScreen.audioOnlyWav", "Opptak blir kun lyd · WAV")}
               </span>
@@ -773,10 +791,14 @@ export function HomeScreen({
                 label={t("homeScreen.chipNetwork", "Nett")}
               />
             </div>
-            {/* Live signal-strength chip — updates as levels stream in (WS-4). */}
+            {/* Live signal-strength chip — updates as levels stream in (WS-4).
+                `aria-live` announces the categorical change (svak/ok/bra/høy);
+                it's not the fast dBFS numbers, so it won't spam a screen reader. */}
             <div
               className="sr-row"
               aria-label={t("homeScreen.signalLevel", "Signalnivå")}
+              aria-live="polite"
+              aria-atomic="true"
               style={{ gap: 7, marginTop: 11 }}
             >
               <span
@@ -803,12 +825,14 @@ export function HomeScreen({
           <DeviceCard
             icon="mic"
             k={t("homeScreen.cardAudioSource", "Lydkilde")}
-            v={audioSourceV ?? "MacBook Pro-mikrofon"}
-            meta={micMeta ?? "Innebygd · stereo · 48 kHz"}
+            v={audioSourceV ?? "—"}
+            meta={micMeta ?? undefined}
             badge={
-              <Badge kind="ok" dot>
-                {t("homeScreen.connected", "Tilkoblet")}
-              </Badge>
+              hasInput ? (
+                <Badge kind="ok" dot>
+                  {t("homeScreen.connected", "Tilkoblet")}
+                </Badge>
+              ) : undefined
             }
             onEdit={() => navigateToSettings("lydkilde", "device")}
             editLabel={changeLabel}
@@ -818,7 +842,7 @@ export function HomeScreen({
               <DeviceCard
                 icon="camera"
                 k={t("homeScreen.chipCamera", "Kamera")}
-                v={cameraName ?? "FaceTime HD-kamera"}
+                v={cameraName ?? "—"}
                 meta={
                   cameraName
                     ? t("homeScreen.sourceConfigured", "Kilde konfigurert")
@@ -843,8 +867,8 @@ export function HomeScreen({
               <DeviceCard
                 icon="disk"
                 k={t("homeScreen.cardStorage", "Lagring")}
-                v={diskV ?? "569 GB ledig"}
-                meta={storageMeta ?? "~38 timer opptak igjen"}
+                v={diskV ?? "—"}
+                meta={storageMeta ?? undefined}
                 progress={diskPct ?? undefined}
                 onEdit={() => navigateToSettings("filer", "folder")}
                 editLabel={changeLabel}
@@ -863,8 +887,8 @@ export function HomeScreen({
               <DeviceCard
                 icon="disk"
                 k={t("homeScreen.cardStorage", "Lagring")}
-                v={diskV ?? "569 GB ledig"}
-                meta={storageMeta ?? "~95 timer kun-lyd igjen"}
+                v={diskV ?? "—"}
+                meta={storageMeta ?? undefined}
                 progress={diskPct ?? undefined}
                 onEdit={() => navigateToSettings("filer", "folder")}
                 editLabel={changeLabel}

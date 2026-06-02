@@ -1238,7 +1238,9 @@
     "signalLevel": "Signal level",
     "signalLabel": "Signal:",
     "separateAudioTitle": "Enregistrer un fichier audio séparé",
-    "separateAudioSub": "En plus du fichier vidéo, un fichier audio séparé est enregistré dans le format choisi."
+    "separateAudioSub": "En plus du fichier vidéo, un fichier audio séparé est enregistré dans le format choisi.",
+    "separateAudioFormat": "Format audio",
+    "cameraNoSignal": "Aucune image"
   },
   "liveScreen": {
     "title": "Diffusion en direct",

@@ -1238,7 +1238,9 @@
     "signalLevel": "Signal level",
     "signalLabel": "Signal:",
     "separateAudioTitle": "Separate Audiodatei aufnehmen",
-    "separateAudioSub": "Zusätzlich zur Videodatei wird eine separate Audiodatei im gewählten Format gespeichert."
+    "separateAudioSub": "Zusätzlich zur Videodatei wird eine separate Audiodatei im gewählten Format gespeichert.",
+    "separateAudioFormat": "Audioformat",
+    "cameraNoSignal": "Kein Bild"
   },
   "liveScreen": {
     "title": "Livestream",
