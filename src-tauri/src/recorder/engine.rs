@@ -69,7 +69,7 @@
 //!   - **NDI, streaming, lossless master:** later phases.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -97,6 +97,13 @@ use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::spawn_ffmpeg;
 use crate::recorder::concat::{finalize_deliverable, output_is_valid};
 use crate::recorder::preroll::PrerollClip;
+
+/// Lock a mutex, recovering its inner value if a prior holder panicked rather
+/// than propagating the poison. A poisoned recorder mutex must NOT cascade into
+/// a crash mid-recording — the worst possible moment — so we always recover.
+fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Event channel: a progress heartbeat (bytes written so far).
 pub const PROGRESS_EVENT: &str = "recording://progress";
@@ -354,7 +361,7 @@ impl RecorderEngine {
     /// The last state the engine emitted (best-effort; the supervisor updates it
     /// on every transition). Used by the `recording_status` command.
     pub fn current_state(&self) -> RecorderState {
-        *self.last_state.lock().expect("recorder state mutex")
+        *lock_recover(&self.last_state)
     }
 
     /// Start a recording. Resolves the device, then launches the supervisor task
@@ -461,7 +468,7 @@ impl RecorderEngine {
             }
         }
 
-        *self.session.lock().expect("recorder mutex") = Some(RecorderSession {
+        *lock_recover(&self.session) = Some(RecorderSession {
             supervisor,
             stop_tx,
         });
@@ -474,7 +481,7 @@ impl RecorderEngine {
     /// the supervisor winds itself down. A detached grace-timer aborts it only
     /// if it's still alive after a generous window (a hung ffmpeg).
     pub fn stop(&self) {
-        let session = self.session.lock().expect("recorder mutex").take();
+        let session = lock_recover(&self.session).take();
         if let Some(session) = session {
             let _ = session.stop_tx.try_send(());
             let supervisor = session.supervisor;
@@ -498,7 +505,7 @@ fn set_state(
     reconnect_count: u32,
 ) {
     {
-        let mut guard = last_state.lock().expect("recorder state mutex");
+        let mut guard = lock_recover(last_state);
         match guard.transition(to) {
             Some(next) => *guard = next,
             None => {

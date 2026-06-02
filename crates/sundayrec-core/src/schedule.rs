@@ -69,6 +69,49 @@ pub const HISTORY_COVER_MS: i64 = 30 * 60_000;
 /// user gets an alert in time to act. (`scheduler.ts` `PREFLIGHT_LEAD_MIN`.)
 pub const PREFLIGHT_LEAD_MIN: i32 = 30;
 
+// ── Scheduler-supervisor safeguards ──────────────────────────────────────────
+//
+// These bound the impure supervisor loop so a scheduled recording CANNOT be
+// silently missed or run away. They are pure so the decisions are unit-tested.
+
+/// The longest the supervisor sleeps before re-checking the WALL clock. A naive
+/// `sleep(days)` is fragile: a tokio timer can drift or under-count across macOS
+/// system-sleep, and a clock change (NTP/DST) during a multi-day wait makes the
+/// recording fire late or never. Capping the wait means we re-evaluate against
+/// the real clock at least this often, so the FINAL sleep before a recording is
+/// always short + precise. 5 minutes balances responsiveness vs. churn.
+pub const MAX_SUPERVISOR_SLEEP_MS: u64 = 5 * 60 * 1000;
+
+/// Cap a computed wait (ms) so the supervisor re-checks the clock periodically.
+pub fn capped_supervisor_sleep_ms(wait_ms: u64) -> u64 {
+    wait_ms.min(MAX_SUPERVISOR_SLEEP_MS)
+}
+
+/// Whether a sleep of `capped_supervisor_sleep_ms(wait_ms)` will cover the WHOLE
+/// remaining wait — i.e. the event is due when that sleep ends (so we should
+/// fire), vs. a periodic re-check (so we should loop + recompute). Avoids needing
+/// a second clock read after the sleep.
+pub fn supervisor_should_fire(wait_ms: u64) -> bool {
+    wait_ms <= MAX_SUPERVISOR_SLEEP_MS
+}
+
+/// A hard max-duration BACKSTOP (minutes) for a scheduled recording: even if the
+/// scheduled Stop event is missed (the app/supervisor died after the start, the
+/// machine slept through it), the recording can't run forever and fill the disk.
+/// Longer than any realistic service; the user's chosen slot max wins when set.
+pub const SCHEDULED_MAX_BACKSTOP_MINUTES: u32 = 240;
+
+/// The manual-max a scheduled recording is started with: the user's slot `max`
+/// when they set one (> 0), else the [`SCHEDULED_MAX_BACKSTOP_MINUTES`] safety net
+/// so a missed Stop can never leave a recording running indefinitely.
+pub fn scheduled_max_minutes(slot_max: u32) -> u32 {
+    if slot_max > 0 {
+        slot_max
+    } else {
+        SCHEDULED_MAX_BACKSTOP_MINUTES
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //   Types — serde-compatible with the Electron `types/index.ts` interfaces
 // ─────────────────────────────────────────────────────────────────────────────
@@ -702,6 +745,38 @@ mod tests {
 
     fn dt(s: &str) -> NaiveDateTime {
         NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    #[test]
+    fn supervisor_sleep_is_capped_and_fire_decision_matches() {
+        // Far away: capped, do NOT fire (loop + recompute against the clock).
+        let week = 7 * 24 * 60 * 60 * 1000;
+        assert_eq!(capped_supervisor_sleep_ms(week), MAX_SUPERVISOR_SLEEP_MS);
+        assert!(!supervisor_should_fire(week));
+        // Within the cap: sleep the exact wait, then fire.
+        assert_eq!(capped_supervisor_sleep_ms(1234), 1234);
+        assert!(supervisor_should_fire(1234));
+        // Exactly at the cap boundary: one sleep covers it → fire.
+        assert_eq!(
+            capped_supervisor_sleep_ms(MAX_SUPERVISOR_SLEEP_MS),
+            MAX_SUPERVISOR_SLEEP_MS
+        );
+        assert!(supervisor_should_fire(MAX_SUPERVISOR_SLEEP_MS));
+        // Just over the cap: re-check, don't fire yet.
+        assert!(!supervisor_should_fire(MAX_SUPERVISOR_SLEEP_MS + 1));
+        // Due now: fire immediately.
+        assert_eq!(capped_supervisor_sleep_ms(0), 0);
+        assert!(supervisor_should_fire(0));
+    }
+
+    #[test]
+    fn scheduled_max_minutes_enforces_a_backstop() {
+        // The user's max wins when set.
+        assert_eq!(scheduled_max_minutes(90), 90);
+        assert_eq!(scheduled_max_minutes(1), 1);
+        // No max (0 = "unlimited") → the safety backstop, never 0 (no infinite run).
+        assert_eq!(scheduled_max_minutes(0), SCHEDULED_MAX_BACKSTOP_MINUTES);
+        const { assert!(SCHEDULED_MAX_BACKSTOP_MINUTES >= 180) };
     }
 
     // 2026-06-07 is a Sunday; 2026-06-08 a Monday. We anchor weekday tests here.

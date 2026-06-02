@@ -51,8 +51,9 @@ use ts_rs::TS;
 
 use sundayrec_core::filename::{build_filename, FilenameParams};
 use sundayrec_core::schedule::{
-    active_within, missed_recordings, next_recording, prune_specials, upcoming_dates,
-    upcoming_events, ScheduledEvent, ScheduledEventKind, TriggerKind, MISSED_WINDOW_MS,
+    active_within, capped_supervisor_sleep_ms, missed_recordings, next_recording, prune_specials,
+    scheduled_max_minutes, supervisor_should_fire, upcoming_dates, upcoming_events, ScheduledEvent,
+    ScheduledEventKind, TriggerKind, MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::{FileFormat, Settings};
 
@@ -126,6 +127,12 @@ impl SchedulerEngine {
 
     /// Spawn the supervisor loop (idempotent). Called once at setup with the app
     /// handle, through which the supervisor reaches the db pool + recorder engine.
+    ///
+    /// SAFEGUARD: the supervisor runs inside a SUPERVISING wrapper that re-spawns
+    /// it if it ever ends — a panic unwinds the inner task and its `JoinHandle`
+    /// resolves, so we restart it after a short delay. A silently-dead scheduler
+    /// would miss EVERY future recording, which for a church recorder is the worst
+    /// possible failure; this makes that self-healing.
     pub fn start(&self, app: AppHandle) {
         {
             let mut started = lock_recover(&self.started);
@@ -137,7 +144,22 @@ impl SchedulerEngine {
         let notify = self.notify.clone();
         let next = self.next.clone();
         tauri::async_runtime::spawn(async move {
-            supervisor(app, notify, next).await;
+            loop {
+                // The supervisor loops forever; if its task handle EVER resolves
+                // (a panic, or an unexpected return) the scheduler is effectively
+                // dead — restart it.
+                let handle = tauri::async_runtime::spawn(supervisor(
+                    app.clone(),
+                    notify.clone(),
+                    next.clone(),
+                ));
+                let _ = handle.await;
+                tracing::error!(
+                    "scheduler supervisor ENDED unexpectedly (panic?) — restarting in 5 s; \
+                     a dead scheduler would miss every scheduled recording"
+                );
+                tokio::time::sleep(StdDuration::from_secs(5)).await;
+            }
         });
     }
 
@@ -232,11 +254,22 @@ async fn supervisor(
         let wait_ms = (ev.at - Local::now().naive_local())
             .num_milliseconds()
             .max(0) as u64;
+        // SAFEGUARD: never `sleep` a multi-day wait in one go — a tokio timer can
+        // drift / under-count across macOS system-sleep, and a clock change (NTP /
+        // DST) mid-wait would make the recording fire late or never. Cap the sleep
+        // so we re-evaluate against the real wall clock at least every few minutes;
+        // only FIRE when this sleep covers the WHOLE remaining wait (otherwise it's
+        // a periodic re-check → loop + recompute).
+        let sleep_ms = capped_supervisor_sleep_ms(wait_ms);
+        let fire_now = supervisor_should_fire(wait_ms);
 
         tokio::select! {
-            _ = tokio::time::sleep(StdDuration::from_millis(wait_ms)) => {
-                fire(&app, &pool, &settings, &kept, &ev).await;
-                tokio::time::sleep(FIRE_GUARD).await;
+            _ = tokio::time::sleep(StdDuration::from_millis(sleep_ms)) => {
+                if fire_now {
+                    fire(&app, &pool, &settings, &kept, &ev).await;
+                    tokio::time::sleep(FIRE_GUARD).await;
+                }
+                // else: periodic re-check — recompute against the fresh clock.
             }
             _ = notify.notified() => {
                 // Settings changed — fall through to recompute.
@@ -255,7 +288,22 @@ async fn fire(
 ) {
     match ev.kind {
         ScheduledEventKind::Start => {
-            let (custom_name, max_minutes) = match ev.source {
+            let engine = app.state::<RecorderEngine>();
+            // SAFEGUARD: never clobber a recording already in progress (a manual
+            // take, or an earlier scheduled one still finalising). Skip + tell the
+            // user, leaving the running recording untouched.
+            if engine.current_state().is_active() {
+                tracing::warn!(
+                    "scheduler: a recording is already active — skipping the scheduled start"
+                );
+                notify_user(
+                    app,
+                    "SundayRec",
+                    "Planlagt opptak hoppet over — et opptak pågår allerede.",
+                );
+                return;
+            }
+            let (custom_name, slot_max) = match ev.source {
                 TriggerKind::Slot(i) => (
                     None,
                     settings
@@ -267,24 +315,47 @@ async fn fire(
                 ),
                 TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
             };
+            // SAFEGUARD: a scheduled recording ALWAYS carries a max-duration
+            // backstop, so even a missed Stop event can't leave it recording until
+            // the disk fills.
+            let max_minutes = scheduled_max_minutes(slot_max);
             match build_opts(app, settings, custom_name.as_deref(), max_minutes, None) {
                 Ok(opts) => {
-                    let engine = app.state::<RecorderEngine>();
-                    if let Err(e) = engine
-                        .start(app.clone(), Some(pool.clone()), opts, None)
-                        .await
+                    // SAFEGUARD: bound the start. A stuck device-open must not wedge
+                    // the supervisor (which would then miss EVERY later recording).
+                    match tokio::time::timeout(
+                        StdDuration::from_secs(30),
+                        engine.start(app.clone(), Some(pool.clone()), opts, None),
+                    )
+                    .await
                     {
-                        tracing::error!("scheduler: scheduled start failed: {e}");
-                        notify_user(
-                            app,
-                            "SundayRec",
-                            &format!("Planlagt opptak startet ikke: {e}"),
-                        );
-                    } else {
-                        tracing::info!("scheduler: started scheduled recording");
+                        Ok(Ok(())) => tracing::info!("scheduler: started scheduled recording"),
+                        Ok(Err(e)) => {
+                            tracing::error!("scheduler: scheduled start failed: {e}");
+                            notify_user(
+                                app,
+                                "SundayRec",
+                                &format!("Planlagt opptak startet ikke: {e}"),
+                            );
+                        }
+                        Err(_) => {
+                            tracing::error!("scheduler: scheduled start TIMED OUT after 30s");
+                            notify_user(
+                                app,
+                                "SundayRec",
+                                "Planlagt opptak startet ikke (tidsavbrudd) — sjekk kamera/mikrofon.",
+                            );
+                        }
                     }
                 }
-                Err(e) => tracing::error!("scheduler: could not build opts: {e}"),
+                Err(e) => {
+                    tracing::error!("scheduler: could not build opts: {e}");
+                    notify_user(
+                        app,
+                        "SundayRec",
+                        &format!("Planlagt opptak kunne ikke forberedes: {e}"),
+                    );
+                }
             }
         }
         ScheduledEventKind::Stop => {
