@@ -229,15 +229,10 @@ pub struct RecorderStatePayload {
     pub reconnect_count: u32,
 }
 
-/// Map the running OS to the core [`Platform`] enum.
+/// Map the running OS to the core [`Platform`] enum. Public for the recorder's
+/// consumers (e.g. `test_recording`); the logic lives in [`crate::util`].
 pub fn current_platform() -> Platform {
-    if cfg!(target_os = "windows") {
-        Platform::Windows
-    } else if cfg!(target_os = "macos") {
-        Platform::MacOS
-    } else {
-        Platform::Linux
-    }
+    crate::util::detect_platform()
 }
 
 /// Build the ffmpeg record arguments for `opts` against a resolved audio device
@@ -1989,17 +1984,6 @@ mod tests {
             !joined.contains("-45dB"),
             "the user threshold must be ignored when stop-on-silence is off"
         );
-    }
-
-    #[test]
-    fn current_platform_matches_the_build_target() {
-        let p = current_platform();
-        #[cfg(target_os = "macos")]
-        assert_eq!(p, Platform::MacOS);
-        #[cfg(target_os = "windows")]
-        assert_eq!(p, Platform::Windows);
-        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-        assert_eq!(p, Platform::Linux);
     }
 
     #[test]

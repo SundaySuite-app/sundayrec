@@ -36,7 +36,7 @@ use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::spawn_ffmpeg;
 use crate::media::permissions;
-use crate::util::lock_recover;
+use crate::util::{detect_platform, lock_recover};
 
 /// The Tauri event channel the renderer listens on for preview frames.
 pub const PREVIEW_EVENT: &str = "preview://frame";
@@ -292,17 +292,6 @@ fn mjpeg_output() -> Vec<String> {
     ]
 }
 
-/// The platform we're running on, mapped to the core [`Platform`] enum.
-fn current_platform() -> Platform {
-    if cfg!(target_os = "windows") {
-        Platform::Windows
-    } else if cfg!(target_os = "macos") {
-        Platform::MacOS
-    } else {
-        Platform::Linux
-    }
-}
-
 /// A running preview session: the spawned reader task. Aborting it drops the
 /// ffmpeg child (`kill_on_drop`) and stops capture.
 struct PreviewSession {
@@ -386,7 +375,7 @@ impl PreviewEngine {
             }
         };
 
-        let platform = current_platform();
+        let platform = detect_platform();
         let output_fps = fps.unwrap_or(DEFAULT_FPS);
 
         // Confirm ffmpeg actually produced a frame before reporting success, so

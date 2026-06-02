@@ -60,7 +60,7 @@ use ts_rs::TS;
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::media::ffmpeg::{ffmpeg_path, spawn_ffmpeg};
-use crate::util::lock_recover;
+use crate::util::{detect_platform, lock_recover};
 
 /// Hard ceiling on the harvest trim re-encode. The trim is a short, bounded
 /// ffmpeg run (re-encoding at most ~90 s of already-captured WAV), so it should
@@ -171,7 +171,7 @@ impl PrerollEngine {
         let active = Arc::clone(&self.active);
         let handle_slot = Arc::clone(&self.handle);
         let tmp_dir = self.tmp_dir.clone();
-        let platform = current_platform();
+        let platform = detect_platform();
 
         let task = tauri::async_runtime::spawn(async move {
             capture_loop(active, handle_slot, tmp_dir, platform, settings).await;
@@ -461,17 +461,6 @@ fn segment_id() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("{nanos:x}")
-}
-
-/// Map the running OS to the core [`Platform`] enum.
-fn current_platform() -> Platform {
-    if cfg!(target_os = "windows") {
-        Platform::Windows
-    } else if cfg!(target_os = "macos") {
-        Platform::MacOS
-    } else {
-        Platform::Linux
-    }
 }
 
 /// Build [`PrerollSettings`] from the persisted core settings, returning `None`

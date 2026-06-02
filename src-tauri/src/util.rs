@@ -2,6 +2,21 @@
 
 use std::sync::{Mutex, MutexGuard};
 
+use sundayrec_core::ffmpeg::Platform;
+
+/// The platform we're running on, mapped to the core [`Platform`] enum. A
+/// compile-time `cfg!` check, consolidated here so the recorder, preroll, and
+/// preview seams stop each carrying an identical copy.
+pub fn detect_platform() -> Platform {
+    if cfg!(target_os = "windows") {
+        Platform::Windows
+    } else if cfg!(target_os = "macos") {
+        Platform::MacOS
+    } else {
+        Platform::Linux
+    }
+}
+
 /// Lock a [`Mutex`], recovering its inner value if a previous holder panicked
 /// rather than propagating the poison.
 ///
@@ -37,5 +52,17 @@ mod tests {
         assert!(m.lock().is_err(), "precondition: the mutex is poisoned");
         *lock_recover(&m) = 42;
         assert_eq!(*lock_recover(&m), 42);
+    }
+
+    #[test]
+    fn detect_platform_matches_the_build_target() {
+        let p = detect_platform();
+        if cfg!(target_os = "windows") {
+            assert_eq!(p, Platform::Windows);
+        } else if cfg!(target_os = "macos") {
+            assert_eq!(p, Platform::MacOS);
+        } else {
+            assert_eq!(p, Platform::Linux);
+        }
     }
 }
