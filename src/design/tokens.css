@@ -1056,3 +1056,141 @@ button.sr-navitem {
   width: 100%;
   background: transparent;
 }
+
+/* ============================================================================
+   Motion & polish  —  cohesive transitions, navigation animations, deep-link
+   flash. Everything here respects prefers-reduced-motion.
+   ============================================================================ */
+
+/* ---- Smooth, on-brand scrolling -------------------------------------------
+   A thin gold-on-navy scrollbar instead of the default chrome, and smooth
+   programmatic scrolling so `scrollIntoView` (deep-link flash) glides. */
+.sr-scroll {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--sr-ink-700) transparent;
+}
+.sr-scroll::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+.sr-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sr-scroll::-webkit-scrollbar-thumb {
+  background: var(--sr-ink-700);
+  border-radius: var(--sr-r-pill);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.15s;
+}
+.sr-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--sr-line-strong);
+  background-clip: padding-box;
+}
+
+/* ---- View enter — each navigation eases its content in ---------------------
+   MainLayout keys the pane by view, so a fresh `sr-view` mounts on every jump
+   and replays this rise-and-fade. Keeps moving around the app continuous. */
+@keyframes sr-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sr-view {
+  animation: sr-view-in 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  height: 100%;
+}
+
+/* ---- Tab pane enter — switching settings tabs eases the new pane in -------- */
+@keyframes sr-tabpane-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sr-tabpane {
+  animation: sr-tabpane-in 0.2s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* ---- Deep-link flash — "this is the setting you came to change" ------------
+   A Home card's "Endre" scrolls the matching Card to centre and adds .sr-flash
+   for ~1.3 s: a gold halo that blooms then fades, with a brief tinted fill so
+   the eye lands on it immediately. */
+@keyframes sr-flash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 187, 71, 0);
+    background-color: var(--sr-ink-800);
+  }
+  12% {
+    box-shadow:
+      0 0 0 3px var(--sr-gold-line),
+      0 10px 34px rgba(240, 187, 71, 0.28);
+    background-color: var(--sr-gold-tint);
+  }
+  55% {
+    box-shadow:
+      0 0 0 2px var(--sr-gold-line),
+      0 8px 26px rgba(240, 187, 71, 0.18);
+    background-color: var(--sr-gold-tint);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 187, 71, 0);
+    background-color: var(--sr-ink-800);
+  }
+}
+.sr-flash {
+  animation: sr-flash 1.3s cubic-bezier(0.2, 0.7, 0.3, 1);
+  /* When centred, keep a little breathing room from the pane edges. */
+  scroll-margin: 90px;
+}
+
+/* ---- Tactility — gentle lift on the interactive option/device surfaces ----- */
+.sr-seg-opt {
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    transform 0.1s,
+    box-shadow 0.12s;
+}
+.sr-seg-opt:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--sr-shadow-sm);
+}
+.sr-seg-opt:active {
+  transform: translateY(0);
+}
+.sr-device {
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    box-shadow 0.12s;
+}
+
+/* ---- Press feedback on tabs (match the buttons' tactile dip) --------------- */
+.sr-tab:active {
+  transform: translateY(0.5px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-scroll {
+    scroll-behavior: auto;
+  }
+  .sr-view,
+  .sr-tabpane,
+  .sr-flash {
+    animation: none;
+  }
+  .sr-seg-opt:hover {
+    transform: none;
+  }
+}

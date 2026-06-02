@@ -212,6 +212,7 @@ export function Card({
   pad = true,
   cls = "",
   style,
+  anchor,
 }: {
   title?: ReactNode;
   icon?: IconName;
@@ -221,9 +222,17 @@ export function Card({
   pad?: boolean;
   cls?: string;
   style?: CSSProperties;
+  /** Deep-link target id. When a Home card sends the user to a specific
+   *  setting, the matching Card carries `data-sr-anchor` so the screen can
+   *  scroll it to center and flash it (see SettingsScreen's flash effect). */
+  anchor?: string;
 }) {
   return (
-    <section className={"sr-card " + (pad ? "pad " : "") + cls} style={style}>
+    <section
+      className={"sr-card " + (pad ? "pad " : "") + cls}
+      style={style}
+      data-sr-anchor={anchor}
+    >
       {(title || action) && (
         <div className="sr-card-head">
           <div>

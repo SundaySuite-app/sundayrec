@@ -231,6 +231,30 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Kanaler")).not.toBeInTheDocument();
   });
 
+  it("opens the tab AND flashes the deep-linked setting when the event carries an anchor", async () => {
+    renderSettings();
+    await waitFor(() =>
+      expect(screen.getByText("Kanaler")).toBeInTheDocument(),
+    );
+
+    // A Home card's "Endre" → the Filer tab, pointed at the Format card.
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("shell:navigate", {
+          detail: { view: "settings", tab: "filer", anchor: "format" },
+        }),
+      );
+    });
+
+    // The Format & kvalitet card mounts and receives the transient flash class
+    // so the user's eye lands on exactly what the card was about.
+    await waitFor(() => {
+      const el = document.querySelector('[data-sr-anchor="format"]');
+      expect(el).not.toBeNull();
+      expect(el?.classList.contains("sr-flash")).toBe(true);
+    });
+  });
+
   it("previews the planned filename on the Filer tab via plan_recording_opts", async () => {
     renderSettings();
     await waitFor(() =>

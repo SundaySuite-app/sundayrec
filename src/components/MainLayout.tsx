@@ -12,7 +12,10 @@ import {
 } from "@/lib/routing";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Icon, type IconName } from "@/design/Icon";
-import { setPendingSettingsTab } from "@/design/screens/settingsTab";
+import {
+  setPendingSettingsTab,
+  setPendingSettingsAnchor,
+} from "@/design/screens/settingsTab";
 
 /**
  * Custom DOM event a child view dispatches to ask the shell to switch views
@@ -125,6 +128,11 @@ export function MainLayout({
       if (detail && typeof detail === "object" && isViewName(detail.view)) {
         if (detail.view === "settings" && typeof detail.tab === "string") {
           setPendingSettingsTab(detail.tab);
+          // An optional `anchor` deep-links to ONE setting inside the tab: the
+          // SettingsScreen scrolls it to centre and flashes it on arrival.
+          setPendingSettingsAnchor(
+            typeof detail.anchor === "string" ? detail.anchor : null,
+          );
         }
         showView(detail.view);
       }
@@ -221,7 +229,15 @@ export function MainLayout({
             NAV_LABELS[nav.current].fallback,
           )}
         >
-          <div className="sr-scroll">{views[nav.current]}</div>
+          {/* Keyed by view so each navigation re-mounts the pane and plays the
+              `sr-view` enter animation — moving around the app eases in rather
+              than hard-cutting. (Views are single-slot already, so the key adds
+              no extra unmount cost.) */}
+          <div className="sr-scroll">
+            <div className="sr-view" key={nav.current}>
+              {views[nav.current]}
+            </div>
+          </div>
         </main>
       </div>
 

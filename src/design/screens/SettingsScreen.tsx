@@ -10,7 +10,7 @@
  * over IPC (`settings_get` / `settings_save`), reusing the exact query key and
  * command names from `features/settings/SettingsPage.tsx`.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +32,35 @@ import { useVideoDevices } from "@/design/hooks";
 import { Icon } from "../Icon";
 import { Badge, Card, DeviceRow, SegOpt, SettingRow, Toggle } from "../atoms";
 import { DEFAULT_SETTINGS, pickFolder } from "./settings.helpers";
-import { consumePendingSettingsTab, isSettingsTabId } from "./settingsTab";
+import {
+  consumePendingSettingsAnchor,
+  consumePendingSettingsTab,
+  isSettingsTabId,
+} from "./settingsTab";
+
+/**
+ * Scroll a deep-linked setting to the centre of the window and flash it for
+ * ~1.3 s. Runs after the tab's content has rendered (one `requestAnimationFrame`
+ * past commit). No-ops cleanly if the anchor isn't on screen, and is safe in
+ * jsdom (where `scrollIntoView` is an optional no-op). Returns a cleanup that
+ * cancels the pending frame + removes the flash class.
+ */
+function flashSettingAnchor(anchor: string): () => void {
+  let timer = 0;
+  const raf = requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>(
+      `[data-sr-anchor="${anchor}"]`,
+    );
+    if (!el) return;
+    el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    el.classList.add("sr-flash");
+    timer = window.setTimeout(() => el.classList.remove("sr-flash"), 1300);
+  });
+  return () => {
+    cancelAnimationFrame(raf);
+    if (timer) window.clearTimeout(timer);
+  };
+}
 
 /** Ask the shell to switch to a different view (same CustomEvent MainLayout
  *  listens for). Used to send the "test / check" buttons to the Diagnose view,
@@ -182,6 +210,7 @@ function AudioDevicePicker({ s, update }: TabProps) {
 
   return (
     <Card
+      anchor="device"
       title={t("settingsScreen.audio.devicesTitle", "Tilgjengelige enheter")}
       icon="mic"
       desc={t(
@@ -446,6 +475,7 @@ function TabVideo({ s, update }: TabProps) {
         />
       </Card>
       <Card
+        anchor="camera"
         title={t("settingsScreen.video.cameraTitle", "Kamera")}
         icon="camera"
         pad
@@ -474,7 +504,11 @@ function TabVideo({ s, update }: TabProps) {
           )}
         </div>
       </Card>
-      <Card title={t("settingsScreen.video.qualityTitle", "Kvalitet")} pad>
+      <Card
+        anchor="quality"
+        title={t("settingsScreen.video.qualityTitle", "Kvalitet")}
+        pad
+      >
         <div className="sr-label" style={{ marginBottom: 10 }}>
           {t("settingsScreen.video.resolutionLabel", "Oppløsning")}
         </div>
@@ -594,6 +628,7 @@ function TabFiler({ s, update }: TabProps) {
   return (
     <>
       <Card
+        anchor="folder"
         title={t("settingsScreen.files.folderTitle", "Lagringsmappe")}
         icon="folder"
         desc={t(
@@ -661,6 +696,7 @@ function TabFiler({ s, update }: TabProps) {
         </div>
       </Card>
       <Card
+        anchor="format"
         title={t(
           "settingsScreen.files.formatQualityTitle",
           "Format & kvalitet",
@@ -1672,20 +1708,42 @@ export function SettingsScreen() {
   );
   const queryClient = useQueryClient();
 
+  // Pending deep-link anchor (the specific setting to highlight on arrival).
+  // Seeded from the mount-time hand-off, then re-armed by live nav events. A
+  // ref holds the value; a nonce forces the flash effect to re-run even when the
+  // target tab didn't change (you were already on it).
+  const flashRef = useRef<string | null>(consumePendingSettingsAnchor());
+  const [flashNonce, setFlashNonce] = useState(0);
+
   // If the screen is already mounted when a deep-link lands (the shell keeps
-  // views alive), switch to the requested tab on the navigation event.
+  // views alive), switch to the requested tab — and re-arm the flash — on the
+  // navigation event.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      const target =
-        detail && typeof detail === "object" && "tab" in detail
-          ? (detail as { tab?: unknown }).tab
-          : null;
+      if (!detail || typeof detail !== "object") return;
+      const target = "tab" in detail ? (detail as { tab?: unknown }).tab : null;
       if (isSettingsTabId(target)) setTab(target);
+      const anchor =
+        "anchor" in detail ? (detail as { anchor?: unknown }).anchor : null;
+      if (typeof anchor === "string" && anchor.length > 0) {
+        flashRef.current = anchor;
+        setFlashNonce((n) => n + 1);
+      }
     };
     window.addEventListener("shell:navigate", handler);
     return () => window.removeEventListener("shell:navigate", handler);
   }, []);
+
+  // After the active tab's content renders, run any pending flash once. Keyed on
+  // [tab, flashNonce] so it fires both on mount (initial tab) and whenever a live
+  // event re-arms it. `flashRef` is cleared as it's consumed so it never repeats.
+  useEffect(() => {
+    const anchor = flashRef.current;
+    if (!anchor) return;
+    flashRef.current = null;
+    return flashSettingAnchor(anchor);
+  }, [tab, flashNonce]);
 
   // Load persisted settings over the same cache key as `SettingsPage`. In the
   // dev/test env `settings_get` may reject — we fall back to static defaults
@@ -1744,7 +1802,8 @@ export function SettingsScreen() {
           ))}
         </div>
       </div>
-      <div className="sr-stack-4">
+      {/* Keyed by tab so switching tabs eases the new pane in (sr-tabpane). */}
+      <div className="sr-stack-4 sr-tabpane" key={tab}>
         {tab === "lydkilde" && <TabLydkilde s={s} update={update} />}
         {tab === "video" && <TabVideo s={s} update={update} />}
         {tab === "filer" && <TabFiler s={s} update={update} />}

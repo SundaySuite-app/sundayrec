@@ -45,3 +45,23 @@ export function consumePendingSettingsTab(): SettingsTabId | null {
   pendingSettingsTab = null;
   return tab;
 }
+
+/**
+ * Deep-link target *anchor* — a specific setting within a tab (e.g. the Home
+ * audio card sends `"device"`). The mounting `SettingsScreen` consumes it,
+ * scrolls the matching `[data-sr-anchor]` element to the centre of the window
+ * and flashes it for ~1.3 s so the user sees exactly what to change.
+ */
+let pendingSettingsAnchor: string | null = null;
+
+/** Record a deep-link target anchor (alongside its tab). Empty → cleared. */
+export function setPendingSettingsAnchor(anchor: string | null): void {
+  pendingSettingsAnchor = anchor && anchor.length > 0 ? anchor : null;
+}
+
+/** Read AND clear the pending anchor (consumed once, on mount). */
+export function consumePendingSettingsAnchor(): string | null {
+  const anchor = pendingSettingsAnchor;
+  pendingSettingsAnchor = null;
+  return anchor;
+}

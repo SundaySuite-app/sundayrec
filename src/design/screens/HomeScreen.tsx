@@ -181,11 +181,16 @@ function RecordRow({
 /** Navigate the shell to the Innstillinger view (used by the device cards'
  *  "Endre" button so the user can actually change the device). The optional
  *  `tab` deep-links straight to the matching settings tab (WS-6) — audio card →
- *  "lydkilde", format card → "filer", camera/video card → "video". */
-function navigateToSettings(tab?: string) {
+ *  "lydkilde", format card → "filer", camera/video card → "video". An optional
+ *  `anchor` further points at ONE setting inside the tab, which the settings
+ *  screen scrolls to centre and flashes for ~1.3 s so the user sees exactly
+ *  what the card was about. */
+function navigateToSettings(tab?: string, anchor?: string) {
   window.dispatchEvent(
     new CustomEvent("shell:navigate", {
-      detail: tab ? { view: "settings", tab } : "settings",
+      detail: tab
+        ? { view: "settings", tab, ...(anchor ? { anchor } : {}) }
+        : "settings",
     }),
   );
 }
@@ -827,7 +832,7 @@ export function HomeScreen({
                 {t("homeScreen.connected", "Tilkoblet")}
               </Badge>
             }
-            onEdit={() => navigateToSettings("lydkilde")}
+            onEdit={() => navigateToSettings("lydkilde", "device")}
             editLabel={changeLabel}
           />
           {video ? (
@@ -841,7 +846,7 @@ export function HomeScreen({
                     ? t("homeScreen.sourceConfigured", "Kilde konfigurert")
                     : t("homeScreen.selectCamera", "Velg kamera")
                 }
-                onEdit={() => navigateToSettings("video")}
+                onEdit={() => navigateToSettings("video", "camera")}
                 editLabel={changeLabel}
               />
               <DeviceCard
@@ -849,7 +854,7 @@ export function HomeScreen({
                 k={t("homeScreen.cardVideoQuality", "Videokvalitet")}
                 v={videoQualityV}
                 meta={videoQualityMeta}
-                onEdit={() => navigateToSettings("video")}
+                onEdit={() => navigateToSettings("video", "quality")}
                 editLabel={changeLabel}
               />
               <SeparateAudioCard
@@ -863,7 +868,7 @@ export function HomeScreen({
                 v={diskV ?? "569 GB ledig"}
                 meta={storageMeta ?? "~38 timer opptak igjen"}
                 progress={diskPct ?? undefined}
-                onEdit={() => navigateToSettings("filer")}
+                onEdit={() => navigateToSettings("filer", "folder")}
                 editLabel={changeLabel}
               />
             </>
@@ -874,7 +879,7 @@ export function HomeScreen({
                 k={t("homeScreen.cardFormat", "Format")}
                 v={(settings?.format ?? "wav").toUpperCase()}
                 meta={formatMeta}
-                onEdit={() => navigateToSettings("filer")}
+                onEdit={() => navigateToSettings("filer", "format")}
                 editLabel={changeLabel}
               />
               <DeviceCard
@@ -883,7 +888,7 @@ export function HomeScreen({
                 v={diskV ?? "569 GB ledig"}
                 meta={storageMeta ?? "~95 timer kun-lyd igjen"}
                 progress={diskPct ?? undefined}
-                onEdit={() => navigateToSettings("filer")}
+                onEdit={() => navigateToSettings("filer", "folder")}
                 editLabel={changeLabel}
               />
             </>
