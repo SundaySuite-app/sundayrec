@@ -740,19 +740,20 @@ where
     F: Fn(f64, f64),
 {
     use sundayrec_core::mastering::{
-        build_apply_pass_filters, master_codec_args, parse_progress_time,
+        append_dither_for_ext, build_apply_pass_filters, master_codec_args, parse_progress_time,
     };
     use tokio::io::AsyncReadExt;
 
     // 1. Measure (pass 1) for the linear-mode apply chain.
     let measured = measure_loudness(&req.input_path, preset).await?;
-    let filters = build_apply_pass_filters(preset, &measured);
 
     // 2. Apply (pass 2): the preset+measured loudnorm, codec from the output ext.
     let ext = std::path::Path::new(&req.output_path)
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| "mp3".into());
+    // Dither the float→16-bit step for a WAV master (no-op otherwise).
+    let filters = append_dither_for_ext(build_apply_pass_filters(preset, &measured), &ext);
     let mut args: Vec<String> = vec![
         "-nostdin".into(),
         "-hide_banner".into(),

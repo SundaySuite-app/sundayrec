@@ -299,6 +299,23 @@ pub fn master_codec_args(ext: &str, bitrate: Option<u32>) -> Vec<String> {
     }
 }
 
+/// When mastering to a 16-bit PCM target (WAV), append a triangular-dither
+/// resample so the internal float → 16-bit conversion doesn't fold quantization
+/// distortion into the quiet passages a sermon is full of (pauses, soft speech).
+/// This is what Audacity does on export to a lower bit depth.
+///
+/// No-op for lossy targets (dithering before MP3/AAC is pointless) and for
+/// formats whose bit depth we don't pin here. Crucially it uses `aresample`'s
+/// `dither_method`, which is part of core swresample and present in EVERY ffmpeg
+/// build — unlike `resampler=soxr`, which depends on an optional `--enable-libsoxr`
+/// and so is unsafe to bake into a path we can't probe.
+pub fn append_dither_for_ext(filters: String, ext: &str) -> String {
+    match ext {
+        "wav" => format!("{filters},aresample=osf=s16:dither_method=triangular"),
+        _ => filters,
+    }
+}
+
 // ── Progress parsing ───────────────────────────────────────────────────────────
 
 /// Parse a current-time (seconds) from an ffmpeg `-progress` line, accepting
@@ -538,6 +555,18 @@ mod tests {
         let f = build_measure_pass_filters(&p);
         assert!(f.starts_with(&p.filters));
         assert!(f.ends_with(",loudnorm=I=-16:LRA=8:TP=-1:print_format=json"));
+    }
+
+    #[test]
+    fn dither_appended_only_for_16bit_wav() {
+        // WAV (pcm_s16le) → a triangular-dither resample is appended.
+        let wav = append_dither_for_ext("chain".into(), "wav");
+        assert_eq!(wav, "chain,aresample=osf=s16:dither_method=triangular");
+        // Lossy / non-16-bit targets are untouched (dithering before a lossy codec
+        // is pointless; FLAC stays as-is).
+        assert_eq!(append_dither_for_ext("chain".into(), "mp3"), "chain");
+        assert_eq!(append_dither_for_ext("chain".into(), "aac"), "chain");
+        assert_eq!(append_dither_for_ext("chain".into(), "flac"), "chain");
     }
 
     #[test]
