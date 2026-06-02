@@ -67,6 +67,7 @@ pub mod tray;
 // The DTO + `UpdateEngine` compile in every build; `update_check`/
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
+pub mod util;
 pub mod wake;
 // PU-5 whisper transcription — default-off `whisper` feature (HARDWARE-UNVERIFIED).
 // The model registry/argv/normalise are `sundayrec_core::whisper`; this seam runs

@@ -20,7 +20,7 @@
 //! server, deliverability) is only provable on a real account + network — see
 //! docs/SMOKE-TEST.md. The default build excludes this module entirely.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use sundayrec_core::cloud::{oauth, CloudService, GOOGLE_TOKEN_URL};
 use sundayrec_core::email::{
@@ -31,6 +31,7 @@ use sundayrec_core::email::{
 use crate::cloud::config::GoogleOAuthConfig;
 use crate::cloud::{now_ms, secret_provider_for};
 use crate::error::{AppError, AppResult};
+use crate::util::lock_recover;
 
 /// Gmail `messages.send` endpoint (base64url raw message in the JSON body).
 const GMAIL_SEND_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
@@ -49,14 +50,6 @@ pub enum Transport {
         pass: String,
         from: String,
     },
-}
-
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked. The gate
-/// holds only throttle bookkeeping (no invariant a panic could half-break), so
-/// recovering the poisoned guard is strictly safer than `.expect()`-ing — a
-/// panic on one alert must not crash every later error-alert decision.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Managed-state wrapper around the pure [`AlertGate`] so the Tauri layer can

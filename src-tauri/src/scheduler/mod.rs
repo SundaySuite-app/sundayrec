@@ -39,7 +39,7 @@
 //! - **Wake-from-sleep.** Actually waking the machine (pmset/schtasks/powercfg) is
 //!   Fase 5.2; this slice schedules and fires while the app is running/awake.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
 use chrono::{Local, NaiveDateTime, TimeZone};
@@ -61,6 +61,7 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::recorder::engine::{RecorderEngine, RecordingOpts};
 use crate::settings;
+use crate::util::lock_recover;
 
 /// How far ahead the supervisor enumerates events before sleeping. A weekly slot
 /// recurs at most every 7 days, so 8 always captures the next occurrence of
@@ -83,17 +84,6 @@ const FIRE_GUARD: StdDuration = StdDuration::from_secs(1);
 pub const NEXT_EVENT: &str = "scheduler://next";
 /// Emitted when [`check_missed`] finds scheduled recordings that never ran.
 pub const MISSED_EVENT: &str = "scheduler://missed";
-
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked.
-///
-/// These mutexes guard simple bookkeeping (a started flag, the cached next
-/// start) with no invariant a panic could leave half-broken, so taking the
-/// poisoned inner guard is correct and strictly safer than `.expect()`-ing —
-/// one panicked thread must not cascade into every later lock and crash the
-/// whole supervisor. Identical to `.lock().unwrap()` on the happy path.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //   Engine (Tauri-managed state)
@@ -661,25 +651,6 @@ fn reminder_body(lang: Option<&str>, minutes: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lock_recover_returns_inner_after_poison() {
-        // A thread that panics while holding the lock poisons it. `lock_recover`
-        // must still hand back the (unchanged) inner value instead of panicking,
-        // so one bad thread can't cascade-crash the whole supervisor.
-        let m = Arc::new(Mutex::new(7i32));
-        let m2 = Arc::clone(&m);
-        let _ = std::thread::spawn(move || {
-            let _g = m2.lock().unwrap();
-            panic!("poison the lock");
-        })
-        .join();
-        assert!(m.lock().is_err(), "precondition: the mutex is poisoned");
-        // Recovers rather than panics, and the bookkeeping value is intact.
-        assert_eq!(*lock_recover(&m), 7);
-        *lock_recover(&m) = 9;
-        assert_eq!(*lock_recover(&m), 9);
-    }
 
     #[test]
     fn fmt_dt_is_zoneless_local_iso() {

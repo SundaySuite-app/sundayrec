@@ -31,6 +31,7 @@ use sundayrec_core::cloud::{CloudConnectionStatus, CloudService};
 use crate::cloud::config::GoogleOAuthConfig;
 use crate::error::{AppError, AppResult};
 use crate::secrets::SecretProvider;
+use crate::util::lock_recover;
 
 /// A `reqwest` client with bounded connect + per-request timeouts. A bare
 /// `Client::new()` has NO timeout, so a half-open TCP connection or a server that
@@ -179,7 +180,7 @@ impl ConnectGuard {
     /// Register (or reuse) the cancel signal for a service's pending connect.
     pub fn register(&self, service: CloudService) -> std::sync::Arc<tokio::sync::Notify> {
         let key = service_key(service);
-        let mut map = self.notify.lock().expect("connect-guard mutex");
+        let mut map = lock_recover(&self.notify);
         map.entry(key)
             .or_insert_with(|| std::sync::Arc::new(tokio::sync::Notify::new()))
             .clone()
@@ -189,7 +190,7 @@ impl ConnectGuard {
     /// whether a pending connect was registered.
     pub fn cancel(&self, service: CloudService) -> bool {
         let key = service_key(service);
-        let map = self.notify.lock().expect("connect-guard mutex");
+        let map = lock_recover(&self.notify);
         match map.get(key) {
             Some(n) => {
                 n.notify_waiters();
@@ -202,7 +203,7 @@ impl ConnectGuard {
     /// Drop a service's signal once its connect finished (success or cancel).
     pub fn clear(&self, service: CloudService) {
         let key = service_key(service);
-        self.notify.lock().expect("connect-guard mutex").remove(key);
+        lock_recover(&self.notify).remove(key);
     }
 }
 

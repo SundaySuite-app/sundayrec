@@ -20,7 +20,7 @@
 //!     engine state lives behind a `Mutex` in Tauri-managed state.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -30,20 +30,10 @@ use sundayrec_core::audio::{PeakMeters, VuLevels};
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
+use crate::util::lock_recover;
 
 /// The Tauri event channel the renderer listens on for live VU snapshots.
 pub const VU_EVENT: &str = "vu://levels";
-
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked.
-///
-/// The session mutex guards only an `Option<VuSession>` (a stop flag + a join
-/// handle) — no invariant a panic could half-break — so taking the poisoned
-/// inner guard is correct and strictly safer than `.expect()`-ing: a panic in
-/// one path must not cascade into every later start/stop and crash the app.
-/// Identical to `.lock().unwrap()` on the happy path.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// How often the sampler reads the meters and emits a snapshot (~30 fps).
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(33);
@@ -314,21 +304,5 @@ mod tests {
     #[test]
     fn event_name_is_stable() {
         assert_eq!(VU_EVENT, "vu://levels");
-    }
-
-    #[test]
-    fn lock_recover_returns_inner_after_poison() {
-        // A poisoned session mutex must still hand back its inner guard so a
-        // single panicked thread can't crash every later start/stop.
-        let m = Arc::new(Mutex::new(0u8));
-        let m2 = Arc::clone(&m);
-        let _ = std::thread::spawn(move || {
-            let _g = m2.lock().unwrap();
-            panic!("poison");
-        })
-        .join();
-        assert!(m.lock().is_err(), "precondition: poisoned");
-        *lock_recover(&m) = 5;
-        assert_eq!(*lock_recover(&m), 5);
     }
 }

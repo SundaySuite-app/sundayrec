@@ -30,7 +30,7 @@
 //! need a real camera, a real RTMP endpoint and a key. Only the
 //! `sundayrec-core` decisions are unit-tested. See docs/SMOKE-TEST.md §R3.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -50,17 +50,7 @@ use sundayrec_core::streaming::{
 };
 
 use crate::error::{AppError, AppResult};
-
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked.
-///
-/// These mutexes guard simple bookkeeping (the last-known `StreamStatus`, the
-/// running child handle) with no invariant a panic could half-break, so taking
-/// the poisoned inner guard is correct and strictly safer than `.expect()`-ing:
-/// a panic in the spawn path must not cascade into every later status read and
-/// crash the app. Identical to `.lock().unwrap()` on the happy path.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
+use crate::util::lock_recover;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -664,23 +654,6 @@ mod tests {
 
     fn res() -> StreamResolution {
         StreamResolution::P720
-    }
-
-    #[test]
-    fn lock_recover_returns_inner_after_poison() {
-        use std::sync::{Arc, Mutex};
-        // A poisoned status/child mutex must still hand back its inner guard so a
-        // single panicked thread can't crash every later status read.
-        let m = Arc::new(Mutex::new(1u8));
-        let m2 = Arc::clone(&m);
-        let _ = std::thread::spawn(move || {
-            let _g = m2.lock().unwrap();
-            panic!("poison");
-        })
-        .join();
-        assert!(m.lock().is_err(), "precondition: poisoned");
-        *lock_recover(&m) = 42;
-        assert_eq!(*lock_recover(&m), 42);
     }
 
     // ── camera input args ──

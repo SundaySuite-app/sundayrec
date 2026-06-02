@@ -26,7 +26,7 @@
 //! ([`sundayrec_core::wake::classify_test_wake_delta`]) is ready for when a
 //! power-monitor capability lands.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::Duration as StdDuration;
 
 use chrono::{NaiveDateTime, Utc};
@@ -42,13 +42,7 @@ use sundayrec_core::wake::{
     WakeRescheduleAction, WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
 };
 
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked. The wake
-/// engine's only mutex guards a single dedup key (no half-broken invariant a
-/// panic could leave), so taking the poisoned inner guard is strictly safer than
-/// crashing the supervisor that drives reschedules. See the scheduler's twin.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
+use crate::util::lock_recover;
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

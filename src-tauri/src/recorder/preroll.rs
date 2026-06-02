@@ -45,7 +45,7 @@
 //! on a rig before pre-roll is declared done.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,7 @@ use ts_rs::TS;
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::media::ffmpeg::{ffmpeg_path, spawn_ffmpeg};
+use crate::util::lock_recover;
 
 /// Hard ceiling on the harvest trim re-encode. The trim is a short, bounded
 /// ffmpeg run (re-encoding at most ~90 s of already-captured WAV), so it should
@@ -68,17 +69,6 @@ use crate::media::ffmpeg::{ffmpeg_path, spawn_ffmpeg};
 /// rather than hanging the whole recording start, which awaits this harvest.
 /// 30 s is far beyond any legitimate trim while still failing fast.
 const HARVEST_TRIM_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Lock a `Mutex`, recovering the guard if a previous holder panicked.
-///
-/// These mutexes guard simple bookkeeping (the live capture handle, the loop
-/// task handle) with no invariant a panic could half-break, so taking the
-/// poisoned inner guard is correct and strictly safer than `.expect()`-ing: a
-/// panic in one path must not cascade into every later start/stop/harvest and
-/// crash the app. Identical to `.lock().unwrap()` on the happy path.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
 
 /// Settings the pre-roll loop needs to address + format a capture.
 #[derive(Debug, Clone)]
@@ -615,22 +605,6 @@ mod tests {
         // ffmpeg can't hang the recording start that awaits harvest).
         assert!(HARVEST_TRIM_TIMEOUT >= Duration::from_secs(10));
         assert!(HARVEST_TRIM_TIMEOUT <= Duration::from_secs(120));
-    }
-
-    #[test]
-    fn lock_recover_returns_inner_after_poison() {
-        // A poisoned handle/task mutex must still hand back its inner guard so a
-        // single panicked thread can't crash every later start/stop/harvest.
-        let m = Arc::new(Mutex::new(0u8));
-        let m2 = Arc::clone(&m);
-        let _ = std::thread::spawn(move || {
-            let _g = m2.lock().unwrap();
-            panic!("poison");
-        })
-        .join();
-        assert!(m.lock().is_err(), "precondition: poisoned");
-        *lock_recover(&m) = 11;
-        assert_eq!(*lock_recover(&m), 11);
     }
 
     #[tokio::test]

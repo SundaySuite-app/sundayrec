@@ -69,7 +69,7 @@
 //!   - **NDI, streaming, lossless master:** later phases.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -97,13 +97,7 @@ use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::spawn_ffmpeg;
 use crate::recorder::concat::{finalize_deliverable, output_is_valid};
 use crate::recorder::preroll::PrerollClip;
-
-/// Lock a mutex, recovering its inner value if a prior holder panicked rather
-/// than propagating the poison. A poisoned recorder mutex must NOT cascade into
-/// a crash mid-recording — the worst possible moment — so we always recover.
-fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
+use crate::util::lock_recover;
 
 /// Event channel: a progress heartbeat (bytes written so far).
 pub const PROGRESS_EVENT: &str = "recording://progress";

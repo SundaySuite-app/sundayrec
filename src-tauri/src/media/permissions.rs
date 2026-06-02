@@ -186,7 +186,10 @@ mod tests {
 
         let cam = blocked_message(MediaKind::Camera, AuthStatus::Denied).unwrap();
         assert!(cam.contains("Kamera"), "names the camera pane: {cam}");
-        assert!(cam.contains("Personvern"), "points at System Settings: {cam}");
+        assert!(
+            cam.contains("Personvern"),
+            "points at System Settings: {cam}"
+        );
 
         let mic = blocked_message(MediaKind::Microphone, AuthStatus::Restricted).unwrap();
         assert!(mic.contains("Mikrofon"), "names the microphone pane: {mic}");

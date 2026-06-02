@@ -881,14 +881,18 @@ mod tests {
         assert!(is_stream_connection_error(
             "[flv @ 0x..] Connection reset by peer"
         ));
-        assert!(is_stream_connection_error("av_interleaved_write_frame(): Broken pipe"));
+        assert!(is_stream_connection_error(
+            "av_interleaved_write_frame(): Broken pipe"
+        ));
         assert!(is_stream_connection_error("Error in the pull function"));
         assert!(is_stream_connection_error("Connection timed out"));
         // A benign deprecation/info line must NOT trigger a reconnect.
         assert!(!is_stream_connection_error(
             "[libx264] using cpu capabilities: ARMv8 NEON"
         ));
-        assert!(!is_stream_connection_error("frame= 10 fps= 30 bitrate= 400kbits/s"));
+        assert!(!is_stream_connection_error(
+            "frame= 10 fps= 30 bitrate= 400kbits/s"
+        ));
     }
 
     #[test]
