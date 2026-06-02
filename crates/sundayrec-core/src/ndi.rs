@@ -50,6 +50,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::ffmpeg::Platform;
+
 /// A source advertising on the network, as surfaced to the UI. Mirrors the
 /// Electron `NdiSourceInfo`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -85,10 +87,20 @@ impl NdiPixFmt {
 
 /// NDI FourCC codes we recognise (subset of libndi's set). Used by [`pick_pix_fmt`]
 /// to choose the ffmpeg pixel format from what a frame actually delivered.
+///
+/// FourCC = `a | b<<8 | c<<16 | d<<24` over the ASCII chars (the libndi / Windows
+/// `MAKEFOURCC` convention), so the little-endian byte order spells the code.
+/// These MUST be exact — a real NDI sender stamps the value into the frame header
+/// and a receiver decodes the colour plane from it.
 pub mod fourcc {
-    pub const UYVY: u32 = 0x5959_5655; // 'UYVY'
-    pub const BGRA: u32 = 0x4152_4742; // 'BGRA'
-    pub const BGRX: u32 = 0x5852_4742; // 'BGRX'
+    pub const UYVY: u32 = 0x5956_5955; // bytes U Y V Y
+    pub const BGRA: u32 = 0x4152_4742; // bytes B G R A
+    pub const BGRX: u32 = 0x5852_4742; // bytes B G R X
+
+    /// Decode a FourCC back to its 4 ASCII bytes (LSB-first) — for tests/debug.
+    pub const fn to_ascii(code: u32) -> [u8; 4] {
+        code.to_le_bytes()
+    }
 }
 
 /// Pick the ffmpeg pixel format from the delivered frame's FourCC, falling back
@@ -320,6 +332,113 @@ pub fn ffmpeg_supports_ndi_output(muxers_output: &str) -> bool {
     })
 }
 
+// ── NDI output (transmit) — the runtime-dlopen SENDER path ───────────────────
+//
+// The `libndi_newtek` ffmpeg muxer above needs an ffmpeg built `--enable-libndi`,
+// which the bundled sidecar is NOT. The robust alternative (what OBS-class apps
+// ship) is to talk to the NDI runtime DIRECTLY: have ffmpeg decode the camera to
+// raw UYVY422 frames, then hand each frame to `libndi` over FFI. The `src-tauri`
+// `ndi/sender` seam dlopens `libndi` at runtime; these are its pure helpers.
+
+/// Bytes in one packed UYVY422 frame: 2 bytes per pixel (4 bytes per 2-pixel
+/// macropixel). The sender hands libndi exactly this many bytes per frame, so
+/// the math must match the `-pix_fmt uyvy422` ffmpeg produces — a mismatch would
+/// misalign the colour plane (or read past the buffer).
+pub fn uyvy_frame_bytes(width: u32, height: u32) -> usize {
+    width as usize * height as usize * 2
+}
+
+/// Ordered candidate paths to `dlopen` for the NDI runtime, given the platform
+/// and any `NDI_RUNTIME_DIR_V*` directories the SDK sets in the environment.
+///
+/// The NDI SDK convention is to read `NDI_RUNTIME_DIR_V6` / `V5` and load the
+/// library from there; we also try the conventional install locations and the
+/// bare library name (letting the dynamic loader's search path resolve it). The
+/// caller tries each in order and keeps the first that loads.
+pub fn libndi_library_candidates(platform: Platform, env_dirs: &[String]) -> Vec<String> {
+    let (file, fallbacks): (&str, &[&str]) = match platform {
+        Platform::MacOS => (
+            "libndi.dylib",
+            &[
+                "/usr/local/lib/libndi.dylib",
+                "/usr/local/lib/libndi.4.dylib",
+                "libndi.dylib",
+            ],
+        ),
+        Platform::Windows => (
+            "Processing.NDI.Lib.x64.dll",
+            &["Processing.NDI.Lib.x64.dll"],
+        ),
+        Platform::Linux => (
+            "libndi.so",
+            &[
+                "/usr/lib/libndi.so",
+                "/usr/lib/libndi.so.5",
+                "/usr/local/lib/libndi.so",
+                "libndi.so",
+            ],
+        ),
+    };
+    let mut out: Vec<String> = Vec::new();
+    // The SDK-pointed runtime dirs win — most precise.
+    for dir in env_dirs.iter().filter(|d| !d.trim().is_empty()) {
+        let sep = if dir.ends_with('/') || dir.ends_with('\\') {
+            ""
+        } else {
+            "/"
+        };
+        out.push(format!("{dir}{sep}{file}"));
+    }
+    for f in fallbacks {
+        out.push((*f).to_string());
+    }
+    // De-dup while preserving order.
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|c| seen.insert(c.clone()));
+    out
+}
+
+/// ffmpeg args to decode `device_token`'s camera into raw packed UYVY422 frames
+/// on stdout, scaled to EXACTLY `width`×`height` at `fps` — the stream the dlopen
+/// NDI sender pumps frame-by-frame. Audio is dropped (NDI audio is a later step).
+/// `scale` guarantees the frame byte count equals [`uyvy_frame_bytes`] even if the
+/// camera ignores the requested size, so the sender can never read a short/long
+/// frame.
+pub fn build_ndi_rawframe_args(
+    platform: Platform,
+    device_token: &str,
+    width: u32,
+    height: u32,
+    fps: u32,
+) -> Vec<String> {
+    let size = format!("{width}x{height}");
+    let (fmt, input): (&str, String) = match platform {
+        Platform::MacOS => ("avfoundation", device_token.to_string()),
+        Platform::Windows => ("dshow", format!("video={}", device_token.trim_matches('"'))),
+        Platform::Linux => ("v4l2", device_token.to_string()),
+    };
+    vec![
+        "-hide_banner".into(),
+        "-nostdin".into(),
+        "-f".into(),
+        fmt.into(),
+        "-framerate".into(),
+        fps.to_string(),
+        "-video_size".into(),
+        size,
+        "-i".into(),
+        input,
+        "-an".into(),
+        "-vf".into(),
+        format!("scale={width}:{height},fps={fps}"),
+        "-pix_fmt".into(),
+        "uyvy422".into(),
+        "-f".into(),
+        "rawvideo".into(),
+        "pipe:1".into(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +451,63 @@ mod tests {
             height: h,
             framerate: fr,
         }
+    }
+
+    #[test]
+    fn fourcc_constants_decode_to_their_ascii_codes() {
+        // The exact bytes matter: a real sender stamps these into the frame header.
+        assert_eq!(&fourcc::to_ascii(fourcc::UYVY), b"UYVY");
+        assert_eq!(&fourcc::to_ascii(fourcc::BGRA), b"BGRA");
+        assert_eq!(&fourcc::to_ascii(fourcc::BGRX), b"BGRX");
+    }
+
+    #[test]
+    fn uyvy_frame_bytes_is_two_per_pixel() {
+        assert_eq!(uyvy_frame_bytes(1280, 720), 1280 * 720 * 2);
+        assert_eq!(uyvy_frame_bytes(1920, 1080), 1920 * 1080 * 2);
+        assert_eq!(uyvy_frame_bytes(0, 0), 0);
+    }
+
+    #[test]
+    fn libndi_candidates_prefer_env_dirs_then_fallbacks_no_dupes() {
+        let c = libndi_library_candidates(
+            Platform::MacOS,
+            &["/opt/ndi/lib".into(), "  ".into(), "/usr/local/lib".into()],
+        );
+        // Env dirs first (blank skipped), joined with the platform file.
+        assert_eq!(c[0], "/opt/ndi/lib/libndi.dylib");
+        assert_eq!(c[1], "/usr/local/lib/libndi.dylib");
+        // Fallbacks follow; the bare name is present for the loader search path.
+        assert!(c.iter().any(|x| x == "libndi.dylib"));
+        // No duplicate (the env "/usr/local/lib" path == the fallback path).
+        let mut sorted = c.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), c.len(), "candidates must be unique: {c:?}");
+    }
+
+    #[test]
+    fn libndi_candidates_are_platform_specific() {
+        assert!(libndi_library_candidates(Platform::Windows, &[])
+            .iter()
+            .any(|c| c.contains("Processing.NDI.Lib")));
+        assert!(libndi_library_candidates(Platform::Linux, &[])
+            .iter()
+            .any(|c| c.ends_with("libndi.so")));
+    }
+
+    #[test]
+    fn rawframe_args_pin_size_drop_audio_and_emit_uyvy_rawvideo() {
+        let a = build_ndi_rawframe_args(Platform::MacOS, "0", 1280, 720, 30);
+        let j = a.join(" ");
+        assert!(j.contains("-f avfoundation"));
+        assert!(j.contains("-video_size 1280x720"));
+        assert!(j.contains("-an"), "NDI raw pump is video-only for now");
+        assert!(j.contains("scale=1280:720,fps=30"));
+        assert!(j.contains("-pix_fmt uyvy422 -f rawvideo pipe:1"));
+        // Windows wraps the device in video=… (quotes stripped).
+        let w = build_ndi_rawframe_args(Platform::Windows, "\"Cam\"", 640, 480, 25);
+        assert!(w.iter().any(|x| x == "video=Cam"));
     }
 
     // ── pixel-format selection ──

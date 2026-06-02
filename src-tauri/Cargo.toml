@@ -58,8 +58,12 @@ streaming = []
 # it as an overlay. DEFAULT-OFF. The NDI SDK is NOT bundled here — the seam is a
 # STUB returning a clear "NDI SDK not bundled — see NEEDS-RICHARD" error; the
 # pure source-discovery/pixfmt/input-arg logic lives in `sundayrec-core::ndi`.
-# Enabling the feature only compiles the stub seam in/out (no native dep yet).
-ndi = []
+# Enabling the feature compiles the real transmit SENDER: it dlopens the NDI
+# runtime (`libndi`) at runtime via `libloading`, so the app still builds WITHOUT
+# the NDI SDK and returns a clear error when the runtime isn't installed. The
+# receive side remains a stub. SDK/HARDWARE-UNVERIFIED (no libndi or NDI receiver
+# in CI) — validate on a real NDI rig before shipping the feature.
+ndi = ["dep:libloading"]
 # Bridge Integration #2: subscribe to the SundayStage live cue channel over
 # Supabase Realtime. Reuses `reqwest` (the WebSocket client is the only extra),
 # so the wire is INFRA-UNVERIFIED. The LiveEvent→chapter mapping is the
@@ -183,6 +187,11 @@ tokio-tungstenite = { version = "0.24", default-features = false, features = [
 ], optional = true }
 # Sink/Stream combinators for the Realtime WebSocket loop (bridge feature only).
 futures-util = { version = "0.3", optional = true }
+# R3 NDI transmit: dlopen the NDI runtime (`libndi`) at RUNTIME so the app builds
+# WITHOUT the NDI SDK and runs cleanly when the runtime is absent. Pulled only
+# under `--features ndi`. No SDK headers needed — the FFI ABI is declared by hand
+# in `src/ndi/sender.rs` to match libndi's public C API.
+libloading = { version = "0.8", optional = true }
 # PU-5 whisper seam writes the 16 kHz WAV to a temp dir before inference. Pulled
 # only under `--features whisper` (also a dev-dep below for the storage tests).
 tempfile = { version = "3", optional = true }

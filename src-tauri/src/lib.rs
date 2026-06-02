@@ -120,6 +120,9 @@ pub fn run() {
         // R3: the live-stream engine holds at most one running RTMP ffmpeg.
         // Compiles in every build; only the spawn is feature-gated.
         .manage(streaming::StreamEngine::new())
+        // R3 NDI: the transmit engine holds at most one running NDI output
+        // (camera → libndi). Compiles in every build; the sender is feature-gated.
+        .manage(ndi::NdiOutputEngine::new())
         // R7: the update engine holds the live check/download status the
         // renderer polls. Compiles in every build; the network/install seam is
         // gated behind the default-off `updater` feature.
@@ -348,6 +351,9 @@ pub fn run() {
             // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
             commands::ndi::ndi_list_sources,
             commands::ndi::ndi_start_receiver,
+            commands::ndi::ndi_output_runtime_available,
+            commands::ndi::ndi_output_start,
+            commands::ndi::ndi_output_stop,
             // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
             commands::publish::publish_feed_status,
             commands::publish::publish_feed_preview,
