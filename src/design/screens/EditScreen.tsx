@@ -51,6 +51,15 @@ export function EditScreen() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [showRecents, setShowRecents] = useState(false);
 
+  // Metadata (title/speaker/description) — persisted to the per-recording
+  // `.meta` sidecar. `hydrating` suppresses the debounced write while we apply
+  // values just read from disk (so a load never echoes straight back out).
+  const [title, setTitle] = useState("");
+  const [speaker, setSpeaker] = useState("");
+  const [description, setDescription] = useState("");
+  const hydrating = useRef(false);
+  const metaPath = snap.filePath || null;
+
   // Recent recordings (the user's own history) for the quick-open list.
   const recordings = useQuery<RecordingRow[]>({
     queryKey: ["recordings", "list"],
@@ -77,6 +86,58 @@ export function EditScreen() {
     ro.observe(wrap);
     return () => ro.disconnect();
   }, [engine]);
+
+  // Hydrate metadata from the `.meta` sidecar whenever a new file loads. Falls
+  // back to the engine-derived title (filename, cleaned up) when absent.
+  useEffect(() => {
+    if (!metaPath) {
+      setTitle("");
+      setSpeaker("");
+      setDescription("");
+      return;
+    }
+    let cancelled = false;
+    hydrating.current = true;
+    invoke<{ title?: string; speaker?: string; description?: string } | null>(
+      "editor_read_sidecar",
+      {
+        mediaPath: metaPath,
+        sidecar: "meta",
+      },
+    )
+      .catch(() => null)
+      .then((meta) => {
+        if (cancelled) return;
+        setTitle(
+          meta?.title ??
+            snap.fileName.replace(/\.[^.]+$/, "").replace(/_/g, " "),
+        );
+        setSpeaker(meta?.speaker ?? "");
+        setDescription(meta?.description ?? "");
+        // Release the hydrate guard after the state settles.
+        requestAnimationFrame(() => {
+          hydrating.current = false;
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Re-hydrate only when the file changes, not on fileName churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metaPath]);
+
+  // Debounced persist of metadata edits to the `.meta` sidecar.
+  useEffect(() => {
+    if (!metaPath || hydrating.current) return;
+    const id = window.setTimeout(() => {
+      invoke<boolean>("editor_write_sidecar", {
+        mediaPath: metaPath,
+        sidecar: "meta",
+        value: { title, speaker, description },
+      }).catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(id);
+  }, [metaPath, title, speaker, description]);
 
   // Keyboard shortcuts (Electron parity): Space play · Shift+Space preview ·
   // Tab next cut · Shift+Tab prev cut · ⌘Z undo · ⌘⇧Z redo. Suppressed while
@@ -521,6 +582,43 @@ export function EditScreen() {
                 />
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Metadata ─────────────────────────────────────────────────── */}
+      {snap.hasFile && (
+        <Card title="Metadata" icon="list" desc="Tittel, taler, beskrivelse">
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className="sr-label">TITTEL</span>
+              <input
+                className="sr-input"
+                value={title}
+                placeholder="F.eks. Pinsegudstjeneste, 24. mai"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className="sr-label">TALER</span>
+              <input
+                className="sr-input"
+                value={speaker}
+                placeholder="Talerens navn"
+                onChange={(e) => setSpeaker(e.target.value)}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className="sr-label">BESKRIVELSE</span>
+              <textarea
+                className="sr-input"
+                value={description}
+                rows={3}
+                placeholder="Kort beskrivelse av episoden"
+                onChange={(e) => setDescription(e.target.value)}
+                style={{ resize: "vertical" }}
+              />
+            </label>
           </div>
         </Card>
       )}
