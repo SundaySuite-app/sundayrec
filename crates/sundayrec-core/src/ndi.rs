@@ -12,6 +12,40 @@
 //! tested. The libndi binding + the TCP server itself need the NDI runtime + a
 //! rig, so they live in the `src-tauri` seam behind the default-off `ndi`
 //! feature (a STUB until the SDK is bundled — see docs/NEEDS-RICHARD.md).
+//!
+//! # NDI *output* (transmit) — the seam and what's still missing
+//!
+//! Besides receiving, SundayRec can *advertise its own program feed as an NDI
+//! source* so a downstream switcher (vMix/OBS/ProPresenter) can pull it over the
+//! LAN. ffmpeg transmits NDI through the **`libndi_newtek` muxer** (`-f
+//! libndi_newtek`), which is NOT compiled into the bundled sidecar. Making
+//! output actually transmit requires BOTH of the following, neither of which
+//! ships today:
+//!
+//! 1. **The NDI runtime/SDK** installed on the machine (the NewTek/Vizrt NDI
+//!    runtime provides `libndi.*`, which the muxer dlopens at run time).
+//! 2. **An ffmpeg built with `--enable-libndi`** so the `libndi_newtek` muxer
+//!    exists. The bundled sidecar is a stock build WITHOUT it; confirm with
+//!    [`ffmpeg_supports_ndi_output`] over `ffmpeg -hide_banner -muxers`.
+//!
+//! Until both are present, the output path MUST refuse to spawn (the `src-tauri`
+//! seam returns the same "NDI SDK not bundled" error as the receiver). What is
+//! PURE and hardened *here* — so the eventual wiring is small and correct — is:
+//!   - source-name **validation/sanitisation** ([`validate_ndi_source_name`],
+//!     [`sanitize_ndi_source_name`]) — NDI names must be non-empty, bounded, and
+//!     free of control chars, which corrupt the advertised metadata;
+//!   - the **output config** ([`NdiOutputOptions`], serde + ts-rs for the UI);
+//!   - the **output-arg builder** ([`build_ndi_output_args`]) producing the
+//!     correct `-f libndi_newtek -pix_fmt uyvy422 …` argv;
+//!   - the **muxer-detection parser** ([`ffmpeg_supports_ndi_output`]) so the
+//!     seam can give a precise "rebuild ffmpeg with `--enable-libndi`" message
+//!     instead of a raw ffmpeg failure.
+//!
+//! Wiring checklist (when the SDK + ffmpeg land): in the `src-tauri` `ndi` seam,
+//! (a) run `ffmpeg -muxers` once and gate on [`ffmpeg_supports_ndi_output`];
+//! (b) validate the user's source name with [`validate_ndi_source_name`];
+//! (c) append [`build_ndi_output_args`] as the LAST ffmpeg output (NDI is an
+//! additional sink, alongside RTMP/file — it never replaces them).
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -135,6 +169,157 @@ pub fn match_source<'a>(sources: &'a [NdiSource], wanted: &str) -> Option<&'a Nd
     sources.iter().find(|s| s.name.to_lowercase().contains(&lw))
 }
 
+// ── NDI output (transmit) — source-name validation ───────────────────────────
+
+/// The maximum length we allow for an advertised NDI source name. NDI itself
+/// carries the name as a UTF-8 string with no hard public limit, but switchers
+/// truncate long names and the name rides in the mDNS/discovery metadata, so we
+/// keep it comfortably bounded. 128 chars is far longer than any real label and
+/// well under any practical wire limit.
+pub const NDI_SOURCE_NAME_MAX_LEN: usize = 128;
+
+/// Why an NDI source name was rejected. Stable (snake_case) so the renderer can
+/// map to a localized message without parsing free text — mirrors the
+/// [`crate::streaming::StreamKeyError`] idiom.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/NdiSourceNameError.ts")]
+#[serde(rename_all = "snake_case")]
+pub enum NdiSourceNameError {
+    /// Empty or whitespace-only after trimming.
+    Empty,
+    /// Longer than [`NDI_SOURCE_NAME_MAX_LEN`] characters (after trimming).
+    TooLong,
+    /// Contained a control character (newline, NUL, …) — these corrupt the
+    /// advertised discovery metadata and confuse receivers.
+    HasControlChar,
+}
+
+/// Validate a user-chosen NDI source name. Pure — no network, no SDK. Rejects
+/// the three things that break NDI advertisement: empty names (nothing to
+/// discover), over-long names (truncated/garbled in switchers), and embedded
+/// control characters (corrupt the discovery string). We deliberately do NOT
+/// restrict the printable charset: NDI names routinely contain spaces,
+/// parentheses and non-ASCII letters (e.g. `"KIRKE-PC (Hovedkamera)"`).
+pub fn validate_ndi_source_name(name: &str) -> Result<(), NdiSourceNameError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(NdiSourceNameError::Empty);
+    }
+    // Control chars anywhere (including inside, not just the trimmed edges) are
+    // always a corruption risk in the advertised string.
+    if name.chars().any(|c| c.is_control()) {
+        return Err(NdiSourceNameError::HasControlChar);
+    }
+    if trimmed.chars().count() > NDI_SOURCE_NAME_MAX_LEN {
+        return Err(NdiSourceNameError::TooLong);
+    }
+    Ok(())
+}
+
+/// Best-effort coercion of an arbitrary string into a *valid* NDI source name:
+/// strip control chars, collapse the result's surrounding whitespace, and
+/// truncate to [`NDI_SOURCE_NAME_MAX_LEN`] characters. Returns `None` only when
+/// nothing usable survives (e.g. the input was empty or all control chars).
+///
+/// Useful at the UI boundary to suggest a cleaned name rather than rejecting the
+/// user outright. The result is guaranteed to pass [`validate_ndi_source_name`].
+pub fn sanitize_ndi_source_name(name: &str) -> Option<String> {
+    let cleaned: String = name.chars().filter(|c| !c.is_control()).collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Truncate on a char boundary, not a byte boundary.
+    let out: String = trimmed.chars().take(NDI_SOURCE_NAME_MAX_LEN).collect();
+    Some(out)
+}
+
+// ── NDI output (transmit) — config + arg builder ─────────────────────────────
+
+/// Options for advertising SundayRec's program feed as an NDI output. The
+/// renderer-facing mirror surfaced to the UI; the `src-tauri` seam consumes it
+/// to build the ffmpeg output args (once an NDI-capable ffmpeg is present).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/NdiOutputOptions.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct NdiOutputOptions {
+    /// The advertised source name other machines discover. Validate with
+    /// [`validate_ndi_source_name`] before use.
+    pub source_name: String,
+    /// The pixel format frames are transmitted in. `uyvy422` is the standard,
+    /// bandwidth-friendly 4:2:2 NDI format; `bgra` carries alpha (rarely needed
+    /// for a program feed).
+    pub pix_fmt: NdiPixFmt,
+}
+
+impl Default for NdiOutputOptions {
+    fn default() -> Self {
+        Self {
+            source_name: "SundayRec".to_string(),
+            // UYVY 4:2:2 is the conventional NDI program-feed format — half the
+            // bandwidth of BGRA and what receivers expect by default.
+            pix_fmt: NdiPixFmt::Uyvy422,
+        }
+    }
+}
+
+/// Build the ffmpeg `-f libndi_newtek …` OUTPUT args for an NDI sink. Pure — it
+/// only builds the argv; it never spawns ffmpeg and never touches the SDK.
+///
+/// The output of `libndi_newtek` is the **source name** (not a path), so the
+/// name is the final positional argument. We force the pixel format because NDI
+/// transmits a specific raw format; leaving it to ffmpeg's default risks a
+/// format the muxer rejects. `-flags +global_header` is harmless for the
+/// rawish NDI stream and matches the muxer's documented usage.
+///
+/// IMPORTANT: this argv is *correct* but will FAIL on the bundled sidecar, which
+/// lacks the `libndi_newtek` muxer. Gate on [`ffmpeg_supports_ndi_output`]
+/// first. The caller is expected to have validated `opts.source_name` with
+/// [`validate_ndi_source_name`]; this builder uses the name verbatim.
+pub fn build_ndi_output_args(opts: &NdiOutputOptions) -> Vec<String> {
+    vec![
+        "-pix_fmt".into(),
+        opts.pix_fmt.ffmpeg_token().into(),
+        "-f".into(),
+        "libndi_newtek".into(),
+        opts.source_name.clone(),
+    ]
+}
+
+// ── NDI output (transmit) — ffmpeg capability detection ──────────────────────
+
+/// The muxer name ffmpeg uses for NDI output. Present only when ffmpeg was built
+/// `--enable-libndi`.
+pub const NDI_MUXER_NAME: &str = "libndi_newtek";
+
+/// Parse `ffmpeg -muxers` output and report whether the `libndi_newtek` muxer is
+/// available — i.e. whether *this* ffmpeg can transmit NDI at all. Pure: the
+/// caller runs `ffmpeg -hide_banner -muxers` and passes the captured stdout.
+///
+/// `ffmpeg -muxers` prints a header block, a ` --` separator line, then one
+/// muxer per line as:
+/// ```text
+///  E libndi_newtek   Network Device Interface (NDI) output
+/// ```
+/// where the leading flag column is ` E` (muxers are encode-only). We match the
+/// muxer *token* in the second whitespace-delimited column so a coincidental
+/// mention of the name inside a description never yields a false positive.
+pub fn ffmpeg_supports_ndi_output(muxers_output: &str) -> bool {
+    muxers_output.lines().any(|line| {
+        let mut cols = line.split_whitespace();
+        // First column is the flag(s) (e.g. "E"); the muxer name is the second.
+        match (cols.next(), cols.next()) {
+            (Some(flags), Some(name)) => {
+                // The flag column for a real muxer row is short and contains 'E'
+                // (encode). This skips the header/separator lines, which either
+                // have no second column or don't carry an 'E' flag column.
+                flags.len() <= 3 && flags.contains('E') && name == NDI_MUXER_NAME
+            }
+            _ => false,
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +411,172 @@ mod tests {
         assert!(match_source(&sources, "OBS").is_none());
         // blank
         assert!(match_source(&sources, "  ").is_none());
+    }
+
+    // ── source-name validation ──
+    #[test]
+    fn validate_name_accepts_realistic_names() {
+        assert!(validate_ndi_source_name("SundayRec").is_ok());
+        assert!(validate_ndi_source_name("KIRKE-PC (Hovedkamera)").is_ok());
+        // Non-ASCII letters are fine (NDI names are UTF-8).
+        assert!(validate_ndi_source_name("Søndagsmøte – Programfeed").is_ok());
+    }
+
+    #[test]
+    fn validate_name_rejects_empty_and_blank() {
+        assert_eq!(validate_ndi_source_name(""), Err(NdiSourceNameError::Empty));
+        assert_eq!(
+            validate_ndi_source_name("   "),
+            Err(NdiSourceNameError::Empty)
+        );
+    }
+
+    #[test]
+    fn validate_name_rejects_control_chars() {
+        assert_eq!(
+            validate_ndi_source_name("Studio\nFeed"),
+            Err(NdiSourceNameError::HasControlChar)
+        );
+        assert_eq!(
+            validate_ndi_source_name("Studio\u{0}Feed"),
+            Err(NdiSourceNameError::HasControlChar)
+        );
+        assert_eq!(
+            validate_ndi_source_name("Tab\tHere"),
+            Err(NdiSourceNameError::HasControlChar)
+        );
+    }
+
+    #[test]
+    fn validate_name_rejects_over_long() {
+        let long = "a".repeat(NDI_SOURCE_NAME_MAX_LEN + 1);
+        assert_eq!(
+            validate_ndi_source_name(&long),
+            Err(NdiSourceNameError::TooLong)
+        );
+        // Exactly at the limit is OK.
+        let exact = "a".repeat(NDI_SOURCE_NAME_MAX_LEN);
+        assert!(validate_ndi_source_name(&exact).is_ok());
+    }
+
+    // ── source-name sanitisation ──
+    #[test]
+    fn sanitize_strips_control_chars_and_trims() {
+        assert_eq!(
+            sanitize_ndi_source_name("  Studio\nFeed  ").as_deref(),
+            Some("StudioFeed")
+        );
+    }
+
+    #[test]
+    fn sanitize_returns_none_for_unrecoverable_input() {
+        assert_eq!(sanitize_ndi_source_name(""), None);
+        assert_eq!(sanitize_ndi_source_name("   "), None);
+        assert_eq!(sanitize_ndi_source_name("\n\t\u{0}"), None);
+    }
+
+    #[test]
+    fn sanitize_truncates_to_max_len_on_char_boundary() {
+        // Multi-byte chars must be truncated by char count, not byte index.
+        let input = "é".repeat(NDI_SOURCE_NAME_MAX_LEN + 50);
+        let out = sanitize_ndi_source_name(&input).unwrap();
+        assert_eq!(out.chars().count(), NDI_SOURCE_NAME_MAX_LEN);
+        // And the result is always valid.
+        assert!(validate_ndi_source_name(&out).is_ok());
+    }
+
+    #[test]
+    fn sanitize_output_always_validates() {
+        for raw in ["  ok name  ", "weird\u{7}name", "plain"] {
+            if let Some(clean) = sanitize_ndi_source_name(raw) {
+                assert!(validate_ndi_source_name(&clean).is_ok());
+            }
+        }
+    }
+
+    // ── output config defaults ──
+    #[test]
+    fn output_options_default_is_uyvy_named_sundayrec() {
+        let d = NdiOutputOptions::default();
+        assert_eq!(d.source_name, "SundayRec");
+        assert_eq!(d.pix_fmt, NdiPixFmt::Uyvy422);
+        // The default must itself be a valid name.
+        assert!(validate_ndi_source_name(&d.source_name).is_ok());
+    }
+
+    // ── output arg builder ──
+    #[test]
+    fn output_args_have_libndi_muxer_and_name_last() {
+        let opts = NdiOutputOptions {
+            source_name: "KIRKE-PC (Program)".into(),
+            pix_fmt: NdiPixFmt::Uyvy422,
+        };
+        let args = build_ndi_output_args(&opts);
+        assert_eq!(
+            args,
+            vec![
+                "-pix_fmt",
+                "uyvy422",
+                "-f",
+                "libndi_newtek",
+                "KIRKE-PC (Program)",
+            ]
+        );
+        // The muxer must be selected and the source name is the final positional.
+        assert!(args.windows(2).any(|w| w == ["-f", "libndi_newtek"]));
+        assert_eq!(args.last().unwrap(), "KIRKE-PC (Program)");
+    }
+
+    #[test]
+    fn output_args_honour_alpha_pix_fmt() {
+        let opts = NdiOutputOptions {
+            source_name: "AlphaFeed".into(),
+            pix_fmt: NdiPixFmt::Bgra,
+        };
+        let args = build_ndi_output_args(&opts);
+        assert!(args.windows(2).any(|w| w == ["-pix_fmt", "bgra"]));
+    }
+
+    // ── ffmpeg -muxers capability detection ──
+    const MUXERS_WITH_NDI: &str = "\
+Muxers:
+ D. = Demuxing supported
+ .E = Muxing supported
+ --
+  E mp4             MP4 (MPEG-4 Part 14)
+  E libndi_newtek   Network Device Interface (NDI) output
+  E flv             FLV (Flash Video)
+";
+
+    const MUXERS_WITHOUT_NDI: &str = "\
+Muxers:
+ --
+  E mp4             MP4 (MPEG-4 Part 14)
+  E flv             FLV (Flash Video)
+  E tee             Multiple muxer tee
+";
+
+    #[test]
+    fn detects_ndi_muxer_when_present() {
+        assert!(ffmpeg_supports_ndi_output(MUXERS_WITH_NDI));
+    }
+
+    #[test]
+    fn reports_no_ndi_muxer_when_absent() {
+        assert!(!ffmpeg_supports_ndi_output(MUXERS_WITHOUT_NDI));
+        assert!(!ffmpeg_supports_ndi_output(""));
+    }
+
+    #[test]
+    fn detection_ignores_name_in_description_only() {
+        // The token appears only in a description column, not as the muxer name.
+        let tricky = "  E flv             writes a libndi_newtek-like container\n";
+        assert!(!ffmpeg_supports_ndi_output(tricky));
+    }
+
+    #[test]
+    fn detection_skips_header_and_separator_lines() {
+        let only_headers = "Muxers:\n D. = Demuxing supported\n --\n";
+        assert!(!ffmpeg_supports_ndi_output(only_headers));
     }
 }

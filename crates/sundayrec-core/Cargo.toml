@@ -8,6 +8,16 @@ edition = "2021"
 # This crate intentionally depends on NOTHING from Tauri. It holds the
 # behaviour ported from the Electron `recorder-utils.ts` etc. as plain,
 # deterministic Rust so it can be exercised entirely under `cargo test`.
+
+# Feature flags. `ndi` is a NO-OP here: the pure NDI logic in `src/ndi.rs`
+# (source-name validation, the `libndi_newtek` output-arg builder, the
+# `ffmpeg -muxers` capability parser) is ALWAYS compiled because it has no
+# hardware/SDK dependency. The flag exists only to mirror the `src-tauri` `ndi`
+# feature so `--features ndi` is accepted symmetrically across the workspace;
+# the actual SDK/runtime gate lives in the `src-tauri` seam. See `src/ndi.rs`.
+[features]
+ndi = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
