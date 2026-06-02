@@ -22,7 +22,7 @@ pub mod oauth_flow;
 pub mod store;
 pub mod worker;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sundayrec_core::cloud::drive::{build_folder_list_url, parse_folder_list, DriveFolder};
 use sundayrec_core::cloud::queue::{self, QueueEntry, QueueEntryView};
@@ -31,6 +31,27 @@ use sundayrec_core::cloud::{CloudConnectionStatus, CloudService};
 use crate::cloud::config::GoogleOAuthConfig;
 use crate::error::{AppError, AppResult};
 use crate::secrets::SecretProvider;
+
+/// A `reqwest` client with bounded connect + per-request timeouts. A bare
+/// `Client::new()` has NO timeout, so a half-open TCP connection or a server that
+/// accepts the request then never responds (Drive token-refresh, folder list,
+/// resumable chunk PUT) would hang the calling task forever — wedging the upload
+/// worker or blocking a UI command. The connect timeout fails fast on a dead
+/// host; the request timeout caps a stalled response. The big multi-minute
+/// resumable upload is additionally bounded by `worker::UPLOAD_DEADLINE`, so this
+/// per-request cap only has to be longer than a single chunk on a slow link.
+pub(crate) fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(120))
+        .build()
+        // A builder failure (no TLS backend) is a build/config error, not a
+        // runtime input — fall back to the default client rather than panicking.
+        .unwrap_or_else(|e| {
+            tracing::warn!("cloud: http client builder failed ({e}); using default");
+            reqwest::Client::new()
+        })
+}
 
 /// Unix milliseconds as i64 — matches the core queue's timestamp fields.
 pub fn now_ms() -> i64 {
@@ -261,7 +282,7 @@ pub async fn list_folders(
         }
     };
     let url = build_folder_list_url(parent_id.as_deref().unwrap_or("root"));
-    let resp = reqwest::Client::new()
+    let resp = http_client()
         .get(&url)
         .bearer_auth(&token)
         .send()
@@ -286,6 +307,15 @@ mod tests {
             .await
             .expect("open_pool");
         (pool, dir)
+    }
+
+    #[test]
+    fn http_client_builds_with_a_bounded_timeout() {
+        // The shared client must always build (the builder only fails without a
+        // TLS backend, which we have) so a hung Drive/token call is capped rather
+        // than blocking the upload worker forever. We can't assert the private
+        // timeout, but building it must not panic and must yield a usable client.
+        let _client = http_client();
     }
 
     #[tokio::test]

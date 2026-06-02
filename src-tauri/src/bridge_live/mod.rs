@@ -89,9 +89,14 @@ pub async fn subscribe(
         api_key
     );
 
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&ws_url)
-        .await
-        .map_err(|e| AppError::Internal(format!("realtime connect: {e}")))?;
+    // Bound the WebSocket handshake: a dead/unreachable host must fail fast rather
+    // than block the subscribe task forever (the connect has no built-in timeout).
+    let connect = tokio_tungstenite::connect_async(&ws_url);
+    let (mut ws, _resp) =
+        match tokio::time::timeout(std::time::Duration::from_secs(20), connect).await {
+            Ok(r) => r.map_err(|e| AppError::Internal(format!("realtime connect: {e}")))?,
+            Err(_) => return Err(AppError::Internal("realtime connect timed out".into())),
+        };
 
     // Phoenix channel join frame (Supabase Realtime speaks the Phoenix protocol).
     let join = serde_json::json!({

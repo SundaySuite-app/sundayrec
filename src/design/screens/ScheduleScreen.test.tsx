@@ -146,4 +146,23 @@ describe("ScheduleScreen", () => {
       expect(screen.getByText(/\d{4}$/).textContent).toBe(labelBefore),
     );
   });
+
+  it("wake card navigates to the wake view (was a dead chevron)", async () => {
+    renderSchedule();
+
+    const navSpy = vi.fn();
+    window.addEventListener("shell:navigate", navSpy);
+
+    const wakeBtn = screen
+      .getByText("Vekk maskin fra dvale")
+      .closest("button")!;
+    expect(wakeBtn).toBeInTheDocument();
+    fireEvent.click(wakeBtn);
+
+    expect(navSpy).toHaveBeenCalledTimes(1);
+    const detail = (navSpy.mock.calls[0][0] as CustomEvent).detail;
+    expect(detail).toBe("wake");
+
+    window.removeEventListener("shell:navigate", navSpy);
+  });
 });

@@ -10,6 +10,7 @@
  */
 import type { EditorMediaInfo } from "@/lib/bindings/EditorMediaInfo";
 import type { EditorCutRegion } from "@/lib/bindings/EditorCutRegion";
+import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 
 /** The number of bars the design's `Waveform` renders. */
 export const WAVE_BARS = 150;
@@ -139,6 +140,35 @@ export function clock(sec: number): string {
 export function fileName(path: string): string {
   const parts = path.split(/[/\\]/);
   return parts[parts.length - 1] || path;
+}
+
+/**
+ * The secondary line for a recent-recording row in the editor's open picker:
+ * a short local date/time from `started_at` (ms epoch) plus the duration when
+ * known (e.g. `17. mai 11:02 · 32 min`). Missing/zero duration is simply
+ * dropped. Pure — `started_at` of 0/NaN falls back to just the basename caller-
+ * side, so this only formats the meta line.
+ */
+export function recordingPickerMeta(row: RecordingRow): string {
+  const parts: string[] = [];
+  if (Number.isFinite(row.started_at) && row.started_at > 0) {
+    const d = new Date(row.started_at);
+    if (!Number.isNaN(d.getTime())) {
+      parts.push(
+        d.toLocaleString("nb-NO", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
+    }
+  }
+  if (row.duration_ms != null && row.duration_ms > 0) {
+    const mins = Math.round(row.duration_ms / 60000);
+    parts.push(mins >= 1 ? `${mins} min` : "< 1 min");
+  }
+  return parts.join(" · ");
 }
 
 /**

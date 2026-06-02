@@ -871,6 +871,13 @@
   border-radius: var(--sr-r-pill);
 }
 .sr-tab {
+  /* Reset native <button> chrome so a button.sr-tab looks identical to the
+     historical div.sr-tab (used by EditScreen's ModeSwitch). */
+  appearance: none;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  line-height: 1.2;
   padding: 8px 16px;
   border-radius: var(--sr-r-pill);
   font-size: 13.5px;
@@ -881,6 +888,10 @@
   transition:
     background 0.12s,
     color 0.12s;
+}
+.sr-tab:focus-visible {
+  outline: 2px solid var(--sr-gold);
+  outline-offset: 1px;
 }
 .sr-tab:hover {
   color: var(--sr-text);

@@ -1,46 +1,45 @@
 //! Unified ffmpeg capture-argument builder.
 //!
-//! Ported from the Electron `unified-recorder.ts` — but deliberately reduced to
-//! the **audio-focused unified capture** that proves the Spike-B plumbing, not
-//! the full production pipeline. See "What this spike simplifies vs Phase 3"
-//! below; the hardened *argument knowledge* (combined-input on mac, two clocks
-//! on Windows → drift filter, silencedetect in the chain) is what we carry
-//! forward, independent of the encoding details.
+//! Ported + hardened from the Electron `unified-recorder.ts`. ONE ffmpeg process
+//! opens the camera AND the microphone and writes the recording, with the audio
+//! passed through the core filter chain. This is a pure `Vec<String>` builder —
+//! no process is spawned — so the whole argument shape is unit-tested without
+//! hardware. The engine (`src-tauri/src/recorder/engine.rs`) drives it.
 //!
-//! ## What this builds
+//! ## Inputs
+//!   - **macOS** — a single `-f avfoundation -i "<videoIdx>:<audioIdx>"` (or
+//!     `:<audioIdx>` audio-only). A deep `-thread_queue_size` ([`MAC_INPUT_QUEUE`])
+//!     absorbs avfoundation's scheduling jitter (the anti-choppiness fix);
+//!     audio-only adds `-fflags +genpts`.
+//!   - **Windows** — `-f dshow` with separate video/audio `-i` (two device clocks).
 //!
-//! ONE ffmpeg process that opens the camera AND the microphone and writes a
-//! single output file, with the audio passed through the core filter chain:
+//! ## Audio chain (`-af`), in order: drift → channel `pan` → silencedetect → astats
+//!   - **Native sample rate** by default: [`audio_encode_args`] omits `-ar` so the
+//!     device's own rate is kept (forcing 48 kHz on a 44.1 kHz mixer resampled and
+//!     dropped samples — the choppiness root cause). Explicit rates still force one.
+//!   - **Channel modes** ([`channel_map_filter`]): stereo, or a `pan` downmix for
+//!     MonoL / MonoR / MonoMix (real channel selection, not a bare `-ac 1`).
+//!   - **`silencedetect`** ([`crate::ffmpeg::build_silence_detect_filter`]) so a
+//!     muted mixer emits markers the watcher reacts to.
+//!   - **Live `astats` levels** ([`crate::ffmpeg::build_levels_detect_filter`],
+//!     droppable via [`CaptureOpts::live_levels`]) drive the L/R meters.
+//!   - Codec is chosen from the OUTPUT extension ([`codec_for_extension`]) so the
+//!     stream always matches its container (mp3/wav/flac/aac).
 //!
-//!   - **macOS** — a single `-f avfoundation -i "<videoIdx>:<audioIdx>"`. Camera
-//!     and mic come from one input → one hardware clock → no drift → NO
-//!     `aresample` filter.
-//!   - **Windows** — `-f dshow` with TWO `-i` (video `video=<name>`, then audio
-//!     `audio=<name>`). Two independent device clocks → they drift over a 90-min
-//!     service → the audio chain gets `aresample=async=1000:first_pts=0` from
-//!     [`crate::ffmpeg::unified_audio_drift_filter`].
+//! ## Video + A/V sync (when a camera is present)
+//!   - `-c:v libx264 -preset veryfast` + **`-r <fps> -fps_mode cfr`**: conforms the
+//!     (variable-frame-rate) camera to TRUE constant frame rate locked to the audio
+//!     clock, and the audio chain gets `aresample=async=1000:first_pts=0` — together
+//!     these keep lip-sync over a whole service (cameras drop fps in low light; a
+//!     USB mixer's clock differs from the camera's).
+//!   - **Deadlock-proof live preview** ([`CaptureOpts::preview_jpg`]): a SECOND
+//!     output writes a low-fps JPEG to a FILE (`-update 1`) the UI polls. A file
+//!     sink — never a stdout pipe — so a slow/absent reader can NEVER back-pressure
+//!     and freeze the capture (the bug an earlier pipe version had).
 //!
-//! In BOTH cases the audio chain also carries `silencedetect` (from
-//! [`crate::ffmpeg::build_silence_detect_filter`]) so a muted mixer emits
-//! `silence_start` / `silence_end` markers the watcher reacts to. The output path
-//! is always the final argument.
-//!
-//! ## What this spike simplifies vs Phase 3
-//!
-//!   - **No `filter_complex` video graph.** Production splits the camera into a
-//!     full-quality recording stream + a low-rate MJPEG preview feed and encodes
-//!     H.264 with bitrate/maxrate/bufsize tuning. Here we keep video simple
-//!     (`-c:v libx264 -preset veryfast`, or copy when there is no video device)
-//!     because the spike's job is to prove the audio-progress-silence-stop
-//!     plumbing, not to tune the encoder.
-//!   - **No second/third output** (separate lossless audio master, MJPEG-to-
-//!     stdout preview). Single output file.
-//!   - **No preroll, no split-recording rotation.** Phase 3.
-//!   - **No per-device capture-format negotiation** (`MAC_CONFIGS`, dshow
-//!     `rtbufsize` matrix, framerate fallbacks) beyond a single sane default.
-//!
-//! Everything here is a pure `Vec<String>` builder — no process is spawned — so
-//! the argument shape is fully unit-tested without hardware.
+//! Split-recording rotation + reconnect-fragment naming + pre-roll prepend are the
+//! recorder/`recorder.rs`/`preroll.rs` concern; this builder shapes one segment's
+//! args. The output path is always the primary output (the preview JPEG tails it).
 
 use crate::ffmpeg::{
     build_levels_detect_filter, build_silence_detect_filter, unified_audio_drift_filter, Platform,

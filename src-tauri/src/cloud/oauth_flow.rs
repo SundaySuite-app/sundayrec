@@ -172,7 +172,10 @@ async fn respond(stream: &mut tokio::net::TcpStream, message: &str) -> std::io::
 /// POST an `application/x-www-form-urlencoded` body and return the response text,
 /// erroring on a non-2xx status (the body is included for diagnostics).
 async fn post_form(url: &str, body: String) -> AppResult<String> {
-    let client = reqwest::Client::new();
+    // Bounded connect + request timeouts: the CONSENT_TIMEOUT above only caps the
+    // browser-callback wait, not this token exchange, so without a per-request
+    // bound a hung token endpoint would block the connect command forever.
+    let client = super::http_client();
     let resp = client
         .post(url)
         .header("content-type", "application/x-www-form-urlencoded")

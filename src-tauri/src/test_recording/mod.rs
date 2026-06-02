@@ -12,6 +12,8 @@
 //! the spawn/stat path needs a real mic + the sidecar binary; only the core
 //! decisions are proven in the gate. See docs/SMOKE-TEST.md.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use ts_rs::TS;
@@ -21,7 +23,28 @@ use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::test_recording::{
     build_astats_args, build_test_args, classify_ffmpeg_error, classify_signal,
     parse_strongest_rms, size_is_plausible, TestRecordingError, TestRecordingSignal,
+    TEST_DURATION_SEC,
 };
+
+/// Wait for a spawned ffmpeg `child` to exit, bounded by `timeout`. The capture
+/// is self-limited by ffmpeg's `-t`, but if the device can't be opened (mic
+/// contended, permission stuck) ffmpeg can hang at startup and `wait()` would
+/// block the "Test mikrofon" command forever — so on timeout we kill the child
+/// and report it as a non-success exit (which the caller classifies). Returns the
+/// exit status, or `None` if it timed out / errored.
+async fn wait_bounded(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+) -> Option<std::process::ExitStatus> {
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(status) => status.ok(),
+        Err(_) => {
+            tracing::warn!("test recording: ffmpeg exceeded {timeout:?}; killing");
+            let _ = child.kill().await;
+            None
+        }
+    }
+}
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::error::AppResult;
@@ -91,17 +114,28 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
     let out = tmp_dir.join(format!("test_{}.mp3", crate::db::store::now_ms() as u64));
     let out_str = out.to_string_lossy().into_owned();
 
-    // 1. Run the capture. Drain stderr so we can classify a failure.
+    // The capture is `-t TEST_DURATION_SEC`; allow a generous margin for device
+    // open + encode flush before we treat a non-exit as a hang and kill it.
+    let capture_deadline = Duration::from_secs(TEST_DURATION_SEC as u64 + 15);
+
+    // 1. Run the capture. Drain stderr concurrently so a hung device-open can't
+    //    wedge the read (stderr only closes when ffmpeg exits) — the bounded wait
+    //    kills the child on timeout, which unblocks the drain.
     let args = build_test_args(&format, &device, &out_str);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = spawn_ffmpeg(&arg_refs).await?;
-    let mut stderr_buf = String::new();
-    if let Some(mut stderr) = child.stderr.take() {
-        let mut bytes = Vec::new();
-        let _ = stderr.read_to_end(&mut bytes).await;
-        stderr_buf = String::from_utf8_lossy(&bytes).into_owned();
-    }
-    let status = child.wait().await.ok();
+    let stderr_drain = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            let _ = stderr.read_to_end(&mut bytes).await;
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    });
+    let status = wait_bounded(&mut child, capture_deadline).await;
+    let stderr_buf = match stderr_drain {
+        Some(h) => h.await.unwrap_or_default(),
+        None => String::new(),
+    };
 
     if !status.map(|s| s.success()).unwrap_or(false) {
         return Ok(TestRecordingResult {
@@ -129,13 +163,20 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
     let astats_refs: Vec<&str> = astats_args.iter().map(String::as_str).collect();
     let signal = match spawn_ffmpeg(&astats_refs).await {
         Ok(mut c) => {
-            let mut buf = String::new();
-            if let Some(mut stderr) = c.stderr.take() {
-                let mut bytes = Vec::new();
-                let _ = stderr.read_to_end(&mut bytes).await;
-                buf = String::from_utf8_lossy(&bytes).into_owned();
-            }
-            let _ = c.wait().await;
+            let drain = c.stderr.take().map(|mut stderr| {
+                tokio::spawn(async move {
+                    let mut bytes = Vec::new();
+                    let _ = stderr.read_to_end(&mut bytes).await;
+                    String::from_utf8_lossy(&bytes).into_owned()
+                })
+            });
+            // astats reads a finite file and exits, but bound it anyway so a
+            // wedged sidecar can't hang the test command.
+            wait_bounded(&mut c, Duration::from_secs(30)).await;
+            let buf = match drain {
+                Some(h) => h.await.unwrap_or_default(),
+                None => String::new(),
+            };
             classify_signal(parse_strongest_rms(&buf))
         }
         Err(_) => classify_signal(None),
@@ -150,4 +191,35 @@ pub async fn run_test_recording(audio_device_name: &str) -> AppResult<TestRecord
         size_bytes: Some(size),
         signal: Some(signal),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn wait_bounded_returns_status_for_a_quick_child() {
+        // A process that exits immediately yields its status well inside the bound.
+        let mut child = tokio::process::Command::new("true")
+            .spawn()
+            .expect("spawn `true`");
+        let status = wait_bounded(&mut child, Duration::from_secs(5)).await;
+        assert!(status.map(|s| s.success()).unwrap_or(false));
+    }
+
+    #[tokio::test]
+    async fn wait_bounded_kills_and_returns_none_on_timeout() {
+        // A long-sleeping child must be killed once the deadline passes (modelling
+        // a hung device-open) and report `None` rather than blocking forever.
+        let mut child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn `sleep`");
+        let status = wait_bounded(&mut child, Duration::from_millis(150)).await;
+        assert!(
+            status.is_none(),
+            "a hung capture must time out and be killed"
+        );
+    }
 }

@@ -16,6 +16,7 @@ import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
+import type { AppInfo } from "@/lib/bindings/AppInfo";
 import type { Settings } from "@/lib/bindings/Settings";
 import type { ChannelMode } from "@/lib/bindings/ChannelMode";
 import type { FileFormat } from "@/lib/bindings/FileFormat";
@@ -1202,6 +1203,13 @@ function TabSystem({ s, update }: TabProps) {
   // Update check: null = not run, "checking", or a human-readable result line.
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  // Real installed version (shared `app_info` cache) instead of a hardcoded one.
+  const { data: appInfo } = useQuery<AppInfo>({
+    queryKey: ["app_info"],
+    queryFn: () => invoke<AppInfo>("app_info"),
+    retry: false,
+  });
+  const versionLabel = appInfo?.version ? `v${appInfo.version}` : "—";
 
   const onCheckUpdates = () => {
     setChecking(true);
@@ -1366,7 +1374,7 @@ function TabSystem({ s, update }: TabProps) {
       >
         <div className="sr-row" style={{ marginTop: 4 }}>
           <span className="sr-grow sr-row" style={{ gap: 10 }}>
-            <Badge kind="muted">v5.0.0</Badge>
+            <Badge kind="muted">{versionLabel}</Badge>
             <span
               className="sr-row"
               style={{ gap: 7, fontSize: 13, color: "var(--sr-green)" }}
@@ -1721,15 +1729,18 @@ export function SettingsScreen() {
         </div>
       </div>
       <div style={{ marginBottom: 22, overflow: "auto" }}>
-        <div className="sr-tabs">
+        <div className="sr-tabs" role="tablist">
           {TABS.map(([id, label]) => (
-            <div
+            <button
               key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
               className={"sr-tab" + (tab === id ? " is-active" : "")}
               onClick={() => setTab(id)}
             >
               {t(`settingsScreen.${TAB_LABEL_KEYS[id]}`, label)}
-            </div>
+            </button>
           ))}
         </div>
       </div>

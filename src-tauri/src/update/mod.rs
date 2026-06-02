@@ -39,13 +39,21 @@
 //! configured. Only the `sundayrec_core::update` decisions are unit-tested. See
 //! docs/SMOKE-TEST.md §R7 and docs/NEEDS-RICHARD.md.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use tauri::AppHandle;
 
 use sundayrec_core::update::UpdateStatus;
 
 use crate::error::{AppError, AppResult};
+
+/// Lock a `Mutex`, recovering the guard if a previous holder panicked. The status
+/// mutex guards a single enum (no half-broken invariant), so recovering the
+/// poisoned guard is strictly safer than letting a poison silently freeze the
+/// update status forever (a swallowed `if let Ok` would no-op every later `set`).
+fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Holds the latest [`UpdateStatus`] so the renderer can poll it (`update_status`)
 /// while a check/download runs. At most one check/download is meaningful at a
@@ -70,17 +78,12 @@ impl UpdateEngine {
 
     /// The current status (cheap clone for the renderer).
     pub fn status(&self) -> UpdateStatus {
-        self.status
-            .lock()
-            .map(|s| s.clone())
-            .unwrap_or(UpdateStatus::Idle)
+        lock_recover(&self.status).clone()
     }
 
     /// Overwrite the status (used as the check/download progresses).
     pub fn set(&self, next: UpdateStatus) {
-        if let Ok(mut s) = self.status.lock() {
-            *s = next;
-        }
+        *lock_recover(&self.status) = next;
     }
 }
 

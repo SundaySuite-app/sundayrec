@@ -209,6 +209,55 @@ describe("EditScreen", () => {
     );
   });
 
+  it("lists the user's own recordings and opens the chosen one", async () => {
+    // Override `recordings_list` for this test so the picker has rows.
+    const rows = [
+      {
+        id: "rec-1",
+        file_path: "/recordings/2026-05-17_pinse.wav",
+        device_name: null,
+        started_at: Date.UTC(2026, 4, 17, 9, 2),
+        duration_ms: 32 * 60_000,
+        byte_size: null,
+        created_at: 0,
+        note: null,
+      },
+    ];
+    invoke.mockImplementation(async (cmd: string, _args?: unknown) => {
+      if (cmd === "recordings_list") return rows;
+      if (cmd === "editor_load_recording") {
+        return {
+          durationSec: 1934,
+          hasVideo: false,
+          hasAudio: true,
+          channels: 2,
+          sampleFmt: "s16",
+        };
+      }
+      if (cmd === "editor_peaks")
+        return { peaks: [0.1, 0.5], sampleRate: 8000 };
+      if (cmd === "editor_read_sidecar") return null;
+      if (cmd === "whisper_list_models") return [];
+      return null;
+    });
+
+    renderEdit();
+
+    // The picker button is shown (recordings exist).
+    const trigger = await screen.findByText("Siste opptak");
+    fireEvent.click(trigger);
+
+    // The recording's basename appears as a selectable option; click it.
+    const option = await screen.findByText("2026-05-17_pinse.wav");
+    fireEvent.click(option);
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("editor_load_recording", {
+        inputPath: "/recordings/2026-05-17_pinse.wav",
+      }),
+    );
+  });
+
   it("commits the mastered result via editor_master_apply", async () => {
     renderEdit();
     fireEvent.click(screen.getByText("Åpne annen fil"));

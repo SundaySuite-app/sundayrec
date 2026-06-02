@@ -196,7 +196,22 @@ async fn supervisor(
         if settings.wake_from_sleep {
             if let Some(wake) = app.try_state::<crate::wake::WakeEngine>() {
                 let upcoming = upcoming_dates(&settings.slots, &kept, now, WAKE_HORIZON_DAYS);
-                let _ = wake.reschedule(&upcoming, now, true, false).await;
+                let res = wake.reschedule(&upcoming, now, true, false).await;
+                // Best-effort from the supervisor (non-admin, no prompt), but a
+                // failure that ISN'T just "needs admin"/"disabled" is worth a
+                // breadcrumb — a silently un-scheduled wake means a missed record.
+                if !res.ok
+                    && !matches!(
+                        res.reason.as_deref(),
+                        Some("permission") | Some("disabled") | Some("cancelled")
+                    )
+                {
+                    tracing::warn!(
+                        "scheduler: background wake reschedule failed: {:?} {:?}",
+                        res.reason,
+                        res.message
+                    );
+                }
             }
         }
 
@@ -457,11 +472,22 @@ pub async fn check_missed(
             ),
             TriggerKind::Special(i) => (specials.get(i).map(|s| s.name.clone()), 0u32),
         };
-        if let Ok(opts) = build_opts(app, &settings, custom_name.as_deref(), max_minutes, None) {
-            let engine = app.state::<RecorderEngine>();
-            let _ = engine
-                .start(app.clone(), Some(pool.clone()), opts, None)
-                .await;
+        match build_opts(app, &settings, custom_name.as_deref(), max_minutes, None) {
+            Ok(opts) => {
+                let engine = app.state::<RecorderEngine>();
+                if let Err(e) = engine
+                    .start(app.clone(), Some(pool.clone()), opts, None)
+                    .await
+                {
+                    tracing::error!("scheduler: late-start of missed recording failed: {e}");
+                    notify_user(
+                        app,
+                        "SundayRec",
+                        &format!("Forsinket oppstart av planlagt opptak feilet: {e}"),
+                    );
+                }
+            }
+            Err(e) => tracing::error!("scheduler: could not build opts for late-start: {e}"),
         }
     }
 

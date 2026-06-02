@@ -80,7 +80,7 @@ impl DownloadGuard {
     /// when a download for that id is already in flight (mirrors the Electron
     /// `already_downloading` guard — the map can't hold two for one id).
     pub fn register(&self, id: &str) -> Option<std::sync::Arc<tokio::sync::Notify>> {
-        let mut map = self.notify.lock().expect("download-guard mutex");
+        let mut map = guard_lock(&self.notify);
         if map.contains_key(id) {
             return None;
         }
@@ -92,7 +92,7 @@ impl DownloadGuard {
     /// Fire the cancel signal for `id`'s in-flight download, if any. Returns
     /// whether a download was registered to cancel.
     pub fn cancel(&self, id: &str) -> bool {
-        let map = self.notify.lock().expect("download-guard mutex");
+        let map = guard_lock(&self.notify);
         match map.get(id) {
             Some(n) => {
                 n.notify_waiters();
@@ -104,8 +104,17 @@ impl DownloadGuard {
 
     /// Drop `id`'s signal once its download finished (success, error, or cancel).
     pub fn clear(&self, id: &str) {
-        self.notify.lock().expect("download-guard mutex").remove(id);
+        guard_lock(&self.notify).remove(id);
     }
+}
+
+/// Lock the download-guard mutex, recovering the guard if a previous holder
+/// panicked. It guards a simple `id → cancel-signal` map (no invariant a panic
+/// could half-break), so taking the poisoned inner guard is correct and strictly
+/// safer than `.expect()`-ing — a panic in one download path must not cascade and
+/// crash the app on every later register/cancel/clear.
+fn guard_lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Transcribe `input_path` with `model_id` + `opts`. The pure decisions come
@@ -267,8 +276,17 @@ pub async fn download_model(
     let dest = model_file(models_dir, id);
     let partial = dest.with_extension("bin.partial");
 
-    // 1. Open the stream (reqwest follows redirects: HF 302 → CloudFront).
-    let resp = reqwest::Client::new()
+    // 1. Open the stream (reqwest follows redirects: HF 302 → CloudFront). A
+    //    CONNECT timeout fails fast on a dead/unreachable host; we deliberately do
+    //    NOT set an overall request timeout — a model is 148 MB–1.5 GB and a slow
+    //    connection can legitimately take many minutes (the user can cancel via the
+    //    download guard). `reqwest::Client::new()` had no bound at all, so a host
+    //    that accepted the TCP connection but never responded would hang forever.
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| AppError::Internal(format!("http client: {e}")))?;
+    let resp = client
         .get(&meta.url)
         .send()
         .await

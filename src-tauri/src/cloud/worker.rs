@@ -57,7 +57,7 @@ pub(crate) async fn access_token(
     };
     let body =
         oauth::build_refresh_body(&config.client_id, config.client_secret.as_deref(), &refresh);
-    let client = reqwest::Client::new();
+    let client = super::http_client();
     let resp = match client
         .post(GOOGLE_TOKEN_URL)
         .header("content-type", "application/x-www-form-urlencoded")
@@ -103,7 +103,14 @@ async fn upload_file(access_token: &str, file_path: &str) -> AppResult<()> {
         .map_err(|e| AppError::Internal(format!("stat {file_path}: {e}")))?
         .len();
 
-    let client = reqwest::Client::new();
+    // A connect timeout fails fast on a dead host. We deliberately DON'T set a
+    // whole-request timeout here: a single resumable chunk on a slow-but-healthy
+    // link can legitimately run minutes, and the overall attempt is already
+    // bounded by `UPLOAD_DEADLINE` in `process_once`.
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
 
     // 1. Initiate the resumable session; the server returns the upload URI.
     let init = client

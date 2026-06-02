@@ -30,6 +30,8 @@ vi.mock("@tauri-apps/api/core", () => ({
     async (cmd: string, args?: Record<string, unknown>): Promise<unknown> => {
       if (cmd === "settings_get") return DEFAULT_SETTINGS;
       if (cmd === "settings_save") return (args?.settings as Settings) ?? null;
+      if (cmd === "app_info")
+        return { name: "SundayRec", version: "4.99.1", platform: "macos" };
       if (cmd === "list_devices") return { video_inputs: [] };
       // The Sunday-suite tab reads/writes the opt-in integrations bag. Start
       // disabled; `integrations_set_settings` echoes a merged bag so the
@@ -128,6 +130,21 @@ describe("SettingsScreen", () => {
 
     // ...and the Lydkilde-only "Kanaler" card is gone.
     expect(screen.queryByText("Kanaler")).not.toBeInTheDocument();
+  });
+
+  it("shows the real installed version on the System tab (not a hardcoded one)", async () => {
+    renderSettings();
+    await waitFor(() =>
+      expect(screen.getByText("Kanaler")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByText("System"));
+
+    // The version badge reflects the live app_info.version, not the old
+    // hardcoded "v5.0.0".
+    await waitFor(() =>
+      expect(screen.getByText("v4.99.1")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("v5.0.0")).not.toBeInTheDocument();
   });
 
   it("persists a control change via settings_save (channel SegOpt on Lydkilde)", async () => {

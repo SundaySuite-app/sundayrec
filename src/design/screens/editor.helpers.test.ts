@@ -6,9 +6,11 @@ import {
   formatHms,
   moveTrimEdge,
   parseHms,
+  recordingPickerMeta,
   secToViewFrac,
   MIN_TRIM_GAP,
 } from "./editor.helpers";
+import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 
 describe("parseHms / formatHms (existing seam, guarded)", () => {
   it("parses HH:MM:SS / MM:SS / SS and round-trips through formatHms", () => {
@@ -120,5 +122,47 @@ describe("effectiveTrim → buildTrimCuts integration", () => {
     const cuts = buildTrimCuts("00:00:30", "00:25:00", dur);
     expect(cuts[0]).toEqual({ start: 0, end: win.start });
     expect(cuts).toContainEqual({ start: win.end, end: dur });
+  });
+});
+
+describe("recordingPickerMeta (recent-recordings open picker)", () => {
+  const base: RecordingRow = {
+    id: "r1",
+    file_path: "/recordings/2026-05-17_pinse.wav",
+    device_name: null,
+    started_at: 0,
+    duration_ms: null,
+    byte_size: null,
+    created_at: 0,
+    note: null,
+  };
+
+  it("formats date + rounded duration when both are present", () => {
+    const meta = recordingPickerMeta({
+      ...base,
+      started_at: Date.UTC(2026, 4, 17, 9, 2),
+      duration_ms: 32 * 60_000,
+    });
+    expect(meta).toContain("·");
+    expect(meta).toMatch(/32 min$/);
+  });
+
+  it("drops the duration when unknown/zero", () => {
+    expect(recordingPickerMeta({ ...base, duration_ms: 0 })).toBe("");
+    const dateOnly = recordingPickerMeta({
+      ...base,
+      started_at: Date.UTC(2026, 4, 17, 9, 2),
+    });
+    expect(dateOnly).not.toContain("·");
+    expect(dateOnly.length).toBeGreaterThan(0);
+  });
+
+  it("renders sub-minute recordings as '< 1 min'", () => {
+    const meta = recordingPickerMeta({ ...base, duration_ms: 4_000 });
+    expect(meta).toBe("< 1 min");
+  });
+
+  it("returns an empty string when nothing is known", () => {
+    expect(recordingPickerMeta(base)).toBe("");
   });
 });

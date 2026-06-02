@@ -1153,8 +1153,26 @@ export function ScheduleScreen() {
         </button>
       </div>
 
-      {/* Wake from sleep */}
-      <div className="sr-card pad" style={{ marginTop: 12 }}>
+      {/* Wake from sleep — opens the full wake panel (test/verify/registrer the
+          OS wake timers). A right-chevron signals navigation, not expand. */}
+      <button
+        type="button"
+        className="sr-card pad"
+        style={{
+          marginTop: 12,
+          width: "100%",
+          textAlign: "left",
+          cursor: "pointer",
+          color: "inherit",
+          background: "transparent",
+        }}
+        onClick={() =>
+          window.dispatchEvent(
+            new CustomEvent("shell:navigate", { detail: "wake" }),
+          )
+        }
+        aria-label={t("scheduleScreen.wakeOpen", "Åpne vekking fra dvale")}
+      >
         <div className="sr-row">
           <Icon name="power" size={18} style={{ color: "var(--sr-text-3)" }} />
           <div className="sr-grow">
@@ -1173,9 +1191,9 @@ export function ScheduleScreen() {
               ? t("scheduleScreen.active", "Aktiv")
               : t("scheduleScreen.inactive", "Inaktiv")}
           </Badge>
-          <Icon name="chevD" size={18} style={{ color: "var(--sr-text-3)" }} />
+          <Icon name="chevR" size={18} style={{ color: "var(--sr-text-3)" }} />
         </div>
-      </div>
+      </button>
 
       {/* Add-special editor — a minimal modal built from sr-card so it matches
           the design. Persists on save, no-ops gracefully without live data. */}

@@ -182,6 +182,48 @@ pub fn key_of(dates: &[NaiveDateTime]) -> String {
         .join("|")
 }
 
+/// What the wake engine should do for a reschedule, given the previously-applied
+/// wake-point key (`None` if nothing was ever applied), the freshly-computed key
+/// for `new_points`, and whether the user explicitly initiated this (`forced`).
+///
+/// The decision is split out as a pure function so the dedup + stale-timer logic
+/// can be tested without spawning `pmset`/`schtasks`. The crucial correctness
+/// point: when the new set is *empty* we must still apply (to cancel any stale OS
+/// wakes the previous key registered) and record the empty key — otherwise a
+/// later re-add of the same time would dedup against a key whose OS timers were
+/// already cancelled and silently never re-register.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeRescheduleAction {
+    /// Nothing to do — the OS already holds exactly this set; don't re-prompt.
+    SkipUnchanged,
+    /// Run the OS scheduling (cancel-then-register) and, on success, store `key`.
+    Apply,
+}
+
+/// Decide whether to re-run OS wake scheduling. `forced` (a user-initiated
+/// reschedule) always applies. An unchanged *non-empty* set is skipped. A changed
+/// set, or any empty set whose previously-applied key was non-empty (i.e. we have
+/// stale OS timers to clear), always applies.
+pub fn decide_reschedule(
+    last_key: Option<&str>,
+    new_key: &str,
+    new_is_empty: bool,
+    forced: bool,
+) -> WakeRescheduleAction {
+    if forced {
+        return WakeRescheduleAction::Apply;
+    }
+    // Identical to the last applied set ⇒ the OS is already correct.
+    if last_key == Some(new_key) {
+        return WakeRescheduleAction::SkipUnchanged;
+    }
+    // An empty set with no prior (or already-empty) key has nothing to clear.
+    if new_is_empty && (last_key.is_none() || last_key == Some("")) {
+        return WakeRescheduleAction::SkipUnchanged;
+    }
+    WakeRescheduleAction::Apply
+}
+
 /// `pmset schedule wake` time format: `MM/DD/YY HH:MM:00`. Port of `formatPmsetDate`.
 pub fn format_pmset_date(d: NaiveDateTime) -> String {
     format!(
@@ -698,6 +740,40 @@ mod tests {
         let wp2 = wake_points(&up, now, WAKE_LEAD_MINUTES);
         assert_eq!(key_of(&wp1), key_of(&wp2));
         assert!(!wp1.is_empty());
+    }
+
+    #[test]
+    fn decide_reschedule_skips_only_truly_unchanged() {
+        use WakeRescheduleAction::*;
+        // Unchanged non-empty set → skip.
+        assert_eq!(
+            decide_reschedule(Some("123"), "123", false, false),
+            SkipUnchanged
+        );
+        // Changed set → apply.
+        assert_eq!(decide_reschedule(Some("123"), "456", false, false), Apply);
+        // Forced (user-initiated) always applies, even when unchanged.
+        assert_eq!(decide_reschedule(Some("123"), "123", false, true), Apply);
+    }
+
+    #[test]
+    fn decide_reschedule_clears_stale_when_set_goes_empty() {
+        use WakeRescheduleAction::*;
+        // The schedule emptied out but the OS still holds the old "123" wake →
+        // we MUST apply so the cancel-then-register clears the stale timer.
+        assert_eq!(decide_reschedule(Some("123"), "", true, false), Apply);
+        // Already-empty (nothing to clear) → skip, no needless pmset call.
+        assert_eq!(decide_reschedule(Some(""), "", true, false), SkipUnchanged);
+        assert_eq!(decide_reschedule(None, "", true, false), SkipUnchanged);
+    }
+
+    #[test]
+    fn decide_reschedule_reapplies_after_empty_then_readd() {
+        use WakeRescheduleAction::*;
+        // Regression for the silent-no-op race: after the set went empty and we
+        // recorded the empty key, re-adding the original time must re-register
+        // (the OS timer was cancelled when the set emptied).
+        assert_eq!(decide_reschedule(Some(""), "123", false, false), Apply);
     }
 
     #[test]

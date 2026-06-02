@@ -20,7 +20,7 @@
 //! server, deliverability) is only provable on a real account + network — see
 //! docs/SMOKE-TEST.md. The default build excludes this module entirely.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use sundayrec_core::cloud::{oauth, CloudService, GOOGLE_TOKEN_URL};
 use sundayrec_core::email::{
@@ -51,6 +51,14 @@ pub enum Transport {
     },
 }
 
+/// Lock a `Mutex`, recovering the guard if a previous holder panicked. The gate
+/// holds only throttle bookkeeping (no invariant a panic could half-break), so
+/// recovering the poisoned guard is strictly safer than `.expect()`-ing — a
+/// panic on one alert must not crash every later error-alert decision.
+fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Managed-state wrapper around the pure [`AlertGate`] so the Tauri layer can
 /// share one throttle window across the app's lifetime.
 #[derive(Default)]
@@ -65,18 +73,12 @@ impl AlertGateState {
 
     /// Decide whether to send (delegates to the core gate at `now_ms`).
     pub fn decide(&self, recipient: &str, error_message: &str, now: i64) -> AlertDecision {
-        self.inner
-            .lock()
-            .expect("alert gate lock")
-            .decide(recipient, error_message, now)
+        lock_recover(&self.inner).decide(recipient, error_message, now)
     }
 
     /// Record a dispatched alert, opening the throttle window.
     pub fn record_sent(&self, recipient: &str, error_message: &str, now: i64) {
-        self.inner
-            .lock()
-            .expect("alert gate lock")
-            .record_sent(recipient, error_message, now)
+        lock_recover(&self.inner).record_sent(recipient, error_message, now)
     }
 }
 
@@ -178,7 +180,8 @@ async fn send_via_gmail(
     );
     let raw = base64url(mime.as_bytes());
 
-    let client = reqwest::Client::new();
+    // Bounded client: a hung Gmail endpoint must not block the error-alert path.
+    let client = crate::cloud::http_client();
     let resp = client
         .post(GMAIL_SEND_URL)
         .bearer_auth(&token)
@@ -206,7 +209,7 @@ async fn gmail_access_token(config: &GoogleOAuthConfig) -> AppResult<String> {
         .ok_or_else(|| AppError::Internal("gmail-not-authenticated".into()))?;
     let body =
         oauth::build_refresh_body(&config.client_id, config.client_secret.as_deref(), &refresh);
-    let client = reqwest::Client::new();
+    let client = crate::cloud::http_client();
     let resp = client
         .post(GOOGLE_TOKEN_URL)
         .header("content-type", "application/x-www-form-urlencoded")

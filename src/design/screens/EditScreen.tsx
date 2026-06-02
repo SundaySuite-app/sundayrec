@@ -70,6 +70,7 @@ import {
   mediaMeta,
   moveTrimEdge,
   peaksWindow,
+  recordingPickerMeta,
   secToViewFrac,
   variantForMedia,
   viewportTicks,
@@ -1222,17 +1223,13 @@ function Waveform({
         }}
       >
         <span style={{ color: "#9CC4E8", fontWeight: 600 }}>
-          {t("editScreen.waveIntro", "Intro · {{seconds}}s", {
-            seconds: "30.8",
-          })}
+          {t("editScreen.waveIntro", "Intro")}
         </span>
         <span style={{ color: "var(--sr-gold)", fontWeight: 600 }}>
           {t("editScreen.waveMain", "Hovedopptak")}
         </span>
         <span style={{ color: "#9CC4E8", fontWeight: 600 }}>
-          {t("editScreen.waveOutro", "Outro · {{seconds}}s", {
-            seconds: "30.8",
-          })}
+          {t("editScreen.waveOutro", "Outro")}
         </span>
       </div>
       <div
@@ -1432,19 +1429,25 @@ function ModeSwitch({
       className="sr-row"
       style={{ justifyContent: "flex-end", marginBottom: 12 }}
     >
-      <div className="sr-tabs">
-        <div
+      <div className="sr-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "audio"}
           className={"sr-tab" + (mode === "audio" ? " is-active" : "")}
           onClick={() => onChange("audio")}
         >
           {t("editScreen.modeAudio", "Lydfil")}
-        </div>
-        <div
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "video"}
           className={"sr-tab" + (mode === "video" ? " is-active" : "")}
           onClick={() => onChange("video")}
         >
           {t("editScreen.modeVideo", "Videofil")}
-        </div>
+        </button>
       </div>
     </div>
   );
@@ -1885,6 +1888,136 @@ function VideoFramePreview({ m }: { m: EditorModel }) {
   );
 }
 
+/** A "recent recordings" picker for the file bar: lists the user's own
+ *  recordings (from `recordings_list`) and loads the chosen one through the same
+ *  `m.onSelect` path a manual open / the record→edit hand-off use. Shown so the
+ *  editor isn't reachable only via the native open dialog. Closes on outside
+ *  click / Escape; renders nothing when there are no recordings yet. */
+function RecentRecordingsPicker({ m }: { m: EditorModel }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const rows = m.rows;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div ref={ref} style={{ position: "relative", flex: "0 0 auto" }}>
+      <button
+        className="sr-btn ghost sm"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="list" size={14} />
+        {t("editScreen.recentRecordings", "Siste opptak")}
+        <Icon name={open ? "chevD" : "chevR"} size={13} />
+      </button>
+      {open && (
+        <ul
+          role="listbox"
+          aria-label={t("editScreen.recentRecordings", "Siste opptak")}
+          className="sr-card"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            right: 0,
+            zIndex: 20,
+            width: 320,
+            maxHeight: 340,
+            overflowY: "auto",
+            padding: 6,
+            listStyle: "none",
+            margin: 0,
+            boxShadow: "var(--sr-shadow-lg)",
+          }}
+        >
+          {rows.map((row) => {
+            const label = fileName(row.file_path);
+            const meta = recordingPickerMeta(row);
+            const isSel = m.selected === row.file_path;
+            return (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isSel}
+                  className="sr-row"
+                  onClick={() => {
+                    m.onSelect(row.file_path);
+                    setOpen(false);
+                  }}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    gap: 10,
+                    padding: "8px 10px",
+                    borderRadius: "var(--sr-r-sm)",
+                    background: isSel ? "var(--sr-gold-tint)" : "transparent",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Icon
+                    name="file"
+                    size={15}
+                    style={{
+                      color: isSel ? "var(--sr-gold)" : "var(--sr-text-3)",
+                      flex: "0 0 auto",
+                    }}
+                  />
+                  <span className="sr-grow" style={{ minWidth: 0 }}>
+                    <span
+                      className="sr-mono"
+                      style={{
+                        display: "block",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    {meta && (
+                      <span
+                        style={{ fontSize: 11.5, color: "var(--sr-text-3)" }}
+                      >
+                        {meta}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function EditAudio({ m }: { m: EditorModel }) {
   const { t } = useTranslation();
   const [format, setFormat] = useState("mp3");
@@ -1937,6 +2070,7 @@ function EditAudio({ m }: { m: EditorModel }) {
               {meta}
             </div>
           </div>
+          <RecentRecordingsPicker m={m} />
           <button
             className="sr-btn ghost sm"
             onClick={() => void m.onPickFile()}
@@ -2369,6 +2503,7 @@ function EditVideo({ m }: { m: EditorModel }) {
             <Icon name="video" size={12} style={{ marginRight: 3 }} />
             {t("editScreen.videoAndAudio", "Video + lyd")}
           </Badge>
+          <RecentRecordingsPicker m={m} />
           <button
             className="sr-btn ghost sm"
             onClick={() => void m.onPickFile()}

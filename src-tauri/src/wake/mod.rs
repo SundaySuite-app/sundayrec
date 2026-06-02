@@ -26,21 +26,29 @@
 //! ([`sundayrec_core::wake::classify_test_wake_delta`]) is ready for when a
 //! power-monitor capability lands.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration as StdDuration;
 
-use chrono::{NaiveDateTime, TimeZone, Utc};
+use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use ts_rs::TS;
 
 use sundayrec_core::wake::{
-    build_win_task_defs, classify_win_error, compare_expected_to_observed, format_pmset_date,
-    key_of, parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched, parse_pmset_standby,
-    parse_powercfg_waketimers, parse_win_wake_timers, parse_wmic_battery_status, wake_points,
-    SleepConfig, WakeErrorReason, WakePlatform, WinErrorKind, WAKE_LEAD_MINUTES,
-    WAKE_MATCH_TOLERANCE_MS,
+    build_win_task_defs, classify_win_error, compare_expected_to_observed, decide_reschedule,
+    format_pmset_date, key_of, parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched,
+    parse_pmset_standby, parse_powercfg_waketimers, parse_win_wake_timers,
+    parse_wmic_battery_status, wake_points, SleepConfig, WakeErrorReason, WakePlatform,
+    WakeRescheduleAction, WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
 };
+
+/// Lock a `Mutex`, recovering the guard if a previous holder panicked. The wake
+/// engine's only mutex guards a single dedup key (no half-broken invariant a
+/// panic could leave), so taking the poisoned inner guard is strictly safer than
+/// crashing the supervisor that drives reschedules. See the scheduler's twin.
+fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -147,19 +155,22 @@ impl WakeEngine {
         let points = wake_points(upcoming, now, WAKE_LEAD_MINUTES);
         let key = key_of(&points);
 
-        if !allow_admin && !points.is_empty() {
-            if let Ok(last) = self.last_key.lock() {
-                if last.as_deref() == Some(key.as_str()) {
-                    return WakeResult::ok(points.len() as u32, points.first().map(fmt_local));
-                }
-            }
+        // Dedup / stale-clear decision (pure, tested in core). We read the last
+        // applied key, then decide; a poisoned lock is recovered rather than
+        // panicking the supervisor thread that calls this.
+        let last_key = lock_recover(&self.last_key).clone();
+        if let WakeRescheduleAction::SkipUnchanged =
+            decide_reschedule(last_key.as_deref(), &key, points.is_empty(), allow_admin)
+        {
+            return WakeResult::ok(points.len() as u32, points.first().map(fmt_local));
         }
 
         let result = schedule_os_wakes(&points, allow_admin).await;
-        if result.ok && !points.is_empty() {
-            if let Ok(mut last) = self.last_key.lock() {
-                *last = Some(key);
-            }
+        if result.ok {
+            // Record the applied set — INCLUDING the empty key after a clear, so a
+            // later re-add of the same time is recognised as a real change and
+            // re-registers (rather than dedup'ing against a now-cancelled timer).
+            *lock_recover(&self.last_key) = Some(key);
         }
         result
     }
@@ -568,15 +579,4 @@ async fn run(program: &str, args: &[&str], timeout_ms: u64) -> Result<String, St
             stderr.into_owned()
         })
     }
-}
-
-/// Convert a stored epoch-ms (UI/JS) into the local-wall frame — kept for
-/// symmetry with the scheduler, currently unused by wake (expected wakes come
-/// from the scheduler's `NaiveDateTime`s directly).
-#[allow(dead_code)]
-fn epoch_ms_to_local(ms: i64) -> Option<NaiveDateTime> {
-    chrono::Local
-        .timestamp_millis_opt(ms)
-        .single()
-        .map(|d| d.naive_local())
 }
