@@ -133,6 +133,9 @@ pub struct EditorExportRequest {
     pub intro_path: Option<String>,
     /// Optional outro clip appended to the audio on export (non-mp4 only).
     pub outro_path: Option<String>,
+    /// Optional peak-normalization gain (dB) applied as a `volume` filter — what
+    /// the editor's "Normalize" button computes. `None`/`0` is a no-op.
+    pub gain_db: Option<f64>,
 }
 
 /// The outcome of an export: where the file landed.
@@ -886,7 +889,7 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
 
     // 2. Optional mastering: measure (pass 1) → apply chain (pass 2 filters).
     //    When no preset, the processing chain is empty (plain trim).
-    let proc_filters: Vec<String> = match &req.master_preset {
+    let mut proc_filters: Vec<String> = match &req.master_preset {
         Some(id) => {
             let preset = get_preset_by_id(id)
                 .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?;
@@ -896,6 +899,14 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
         }
         None => Vec::new(),
     };
+    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
+    // filter ahead of any mastering chain. The waveform/preview already reflect
+    // this gain; this makes the rendered file match.
+    if let Some(g) = req.gain_db {
+        if g.is_finite() && g.abs() > f64::EPSILON {
+            proc_filters.insert(0, format!("volume={g:.2}dB"));
+        }
+    }
 
     // 3. Core picks the collision-free output path.
     let base = Path::new(&req.input_path)
@@ -1135,6 +1146,7 @@ mod tests {
             master_preset: None,
             intro_path: None,
             outro_path: None,
+            gain_db: None,
         };
         assert!(export(&req)
             .await
@@ -1362,6 +1374,7 @@ mod tests {
                 master_preset: None,
                 intro_path: None,
                 outro_path: None,
+                gain_db: None,
             };
 
             let rt = tokio::runtime::Runtime::new().unwrap();

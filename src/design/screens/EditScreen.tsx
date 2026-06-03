@@ -392,6 +392,8 @@ export function EditScreen() {
       // Intro/outro are audio-only and only when the toggle is on.
       introPath: snap.includeIntroOutro && format !== "mp4" ? introPath : null,
       outroPath: snap.includeIntroOutro && format !== "mp4" ? outroPath : null,
+      // Apply the peak-normalize gain to the rendered file too (not just preview).
+      gainDb: snap.audioGainDb !== 0 ? snap.audioGainDb : null,
     };
     try {
       const res = await invoke<EditorExportResult>("editor_export", {
@@ -414,6 +416,7 @@ export function EditScreen() {
     snap.filePath,
     snap.duration,
     snap.includeIntroOutro,
+    snap.audioGainDb,
     format,
     masterPreset,
     introPath,

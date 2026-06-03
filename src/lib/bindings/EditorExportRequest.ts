@@ -34,4 +34,9 @@ introPath: string | null,
 /**
  * Optional outro clip appended to the audio on export (non-mp4 only).
  */
-outroPath: string | null, };
+outroPath: string | null, 
+/**
+ * Optional peak-normalization gain (dB) applied as a `volume` filter — what
+ * the editor's "Normalize" button computes. `None`/`0` is a no-op.
+ */
+gainDb: number | null, };
