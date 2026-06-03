@@ -10,6 +10,7 @@ export default tseslint.config(
     // ts-rs writes these; dist/target are build output.
     ignores: [
       "dist",
+      "target",
       "src-tauri/target",
       "src-tauri/gen",
       "src/lib/bindings/**",
