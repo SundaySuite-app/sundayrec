@@ -74,7 +74,11 @@ impl AuthStatus {
         matches!(self, AuthStatus::Denied | AuthStatus::Restricted)
     }
 
-    /// Map the raw `AVAuthorizationStatus` integer (0..=3) to the enum.
+    /// Map the raw `AVAuthorizationStatus` integer (0..=3) to the enum. Only the
+    /// macOS `status()` path calls this, but the pure mapping is unit-tested on
+    /// every platform — so allow it to be "unused" off macOS rather than gating
+    /// the function (and its test) behind `cfg(macos)`.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn from_raw(raw: isize) -> Self {
         match raw {
             0 => AuthStatus::NotDetermined,

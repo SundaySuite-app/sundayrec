@@ -39,10 +39,21 @@ jobs:
           # macos-latest is Apple Silicon (arm64) — native build so the fetched
           # ffmpeg sidecar matches. Intel/universal is a follow-up (needs both
           # ffmpeg arches + a universal target).
+          #
+          # `--no-default-features --features editor` ships the recorder + editor
+          # but NOT whisper transcription: whisper-rs-sys bundles a whisper.cpp
+          # whose ggml fails to build on the M1 (arm64) GitHub runner — it emits
+          # the i8mm intrinsic `vmmlaq_s32` while cmake detects i8mm as
+          # unsupported on M1 ("always_inline ... requires target feature
+          # 'i8mm'"). Transcription is an optional, hardware-unverified feature
+          # and its commands degrade to a clear `feature_disabled` error, so it's
+          # dropped from the installer until the whisper.cpp arm build is sorted.
+          # The leading `--` forwards the rest to cargo (tauri-action runs
+          # `tauri build <args>`, and tauri-cli only passes args after `--` on).
           - platform: macos-latest
-            args: ""
+            args: "-- --no-default-features --features editor"
           - platform: windows-latest
-            args: ""
+            args: "-- --no-default-features --features editor"
 
     runs-on: ${{ matrix.platform }}
     steps:
