@@ -454,11 +454,20 @@ const api: Record<string, unknown> = {
           title: (m.title as string) || null,
           speaker: (m.speaker as string) || null,
           description: (m.description as string) || null,
+          vocalChainPreset: (o.vocalChainPreset as string) || null,
+          channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
         },
       },
       { ok: false },
     );
   },
+  // Analyse stereo channel balance → { code, imbalanceDb, peakLeftDb,
+  // peakRightDb, recommended }. Throws-free: empty diagnosis on failure.
+  editorDiagnoseChannels: async (fp: string) =>
+    call("editor_diagnose_channels", { inputPath: fp }, null),
+  // One-click "best result": diagnose + recommended preset bundle.
+  editorAutoProcess: async (fp: string) =>
+    call("editor_auto_process", { inputPath: fp }, null),
   editorCancelExport: async () => true,
   editorPickOutputFolder: async () => pickPath({ directory: true }),
   // Sidecars (meta / cutsDraft / transcript) are clean JSON key-value via

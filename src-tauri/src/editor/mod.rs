@@ -158,6 +158,10 @@ pub struct EditorExportRequest {
     /// runs BEFORE the mastering loudnorm (tone/dynamics first, loudness last).
     #[serde(default)]
     pub processing: Option<EditorProcessing>,
+    /// Channel repair to apply. Overrides the repair carried by `processing`/the
+    /// preset, and applies on its own (without any vocal chain) when set alone.
+    #[serde(default)]
+    pub channel_repair: Option<EditorChannelRepair>,
 }
 
 /// One chapter marker (a title at a time, in seconds). The renderer-facing mirror
@@ -1289,12 +1293,26 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
     // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
-    let chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
+    let mut chain = req.processing.as_ref().map(|p| p.to_core()).or_else(|| {
         req.vocal_chain_preset
             .as_deref()
             .and_then(sundayrec_core::processing::vocal_chain_preset_by_id)
             .map(|p| p.chain)
     });
+    // A top-level channel repair overrides the chain's repair, and applies on its
+    // own (in an otherwise-empty chain) when no vocal processing was requested.
+    if let Some(cr) = req.channel_repair.as_ref().map(|r| r.to_core()) {
+        match &mut chain {
+            Some(c) => c.channel_repair = cr,
+            None => {
+                let mut empty = sundayrec_core::processing::VocalChain::default();
+                empty.highpass.enabled = false;
+                empty.compressor.enabled = false;
+                empty.channel_repair = cr;
+                chain = Some(empty);
+            }
+        }
+    }
     if let Some(chain) = chain {
         let mut parts = chain.build_filters();
         if !parts.is_empty() {
@@ -1823,6 +1841,7 @@ mod tests {
                 description: None,
                 vocal_chain_preset: None,
                 processing: None,
+                channel_repair: None,
             };
 
             let rt = tokio::runtime::Runtime::new().unwrap();

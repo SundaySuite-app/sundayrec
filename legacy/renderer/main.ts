@@ -125,6 +125,8 @@ declare global {
       editorSaveMeta:         (filePath: string, metadata: unknown) => Promise<boolean>
       editorDetectSegments:   (filePath: string) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
       editorDetectChapters:   (lines: { start: number; text: string }[]) => Promise<{ time: number; title: string }[]>
+      editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
+      editorAutoProcess:      (filePath: string) => Promise<{ diagnosis: { code: string; recommended: { mode: string; leftDb: number; rightDb: number } }; vocalChainPreset: string; masterPreset: string; summary: string } | null>
       editorReadCutsDraft:    (filePath: string) => Promise<unknown>
       editorSaveCutsDraft:    (filePath: string, cuts: unknown) => Promise<void>
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>

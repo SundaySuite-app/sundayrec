@@ -50,11 +50,106 @@ export function openExportModal(): void {
     ioSummary.textContent = parts.length ? parts.join(' · ') : ''
     ioRow.style.display   = parts.length ? '' : 'none'
   }
+  // Audio-enhancement section (channel repair + vocal chain + one-click auto)
+  setupEnhanceSection()
+
   // Render publishing section
   void renderPublishOptions()
 
   const exportModal = $('editor-export-modal')
   if (exportModal) exportModal.style.display = 'flex'
+}
+
+let enhanceWired = false
+
+/** Show + wire the "Lydforbedring" section in the export modal. Syncs the
+ *  selects from E, wires one-click auto, per-control changes, and the channel
+ *  diagnose button. Listeners are attached once; values re-sync on every open. */
+function setupEnhanceSection(): void {
+  const section = $('export-enhance-section')
+  if (!section) return
+  section.style.display = ''
+
+  const vocalSel  = $('enhance-vocal-chain')    as HTMLSelectElement | null
+  const chanSel   = $('enhance-channel-repair') as HTMLSelectElement | null
+  const summary   = $('enhance-summary')
+  const diagLine  = $('enhance-channel-diag')
+
+  // Sync current state into the controls.
+  if (vocalSel) vocalSel.value = E.vocalChainPreset
+  if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+
+  if (enhanceWired) return
+  enhanceWired = true
+
+  vocalSel?.addEventListener('change', () => {
+    E.vocalChainPreset = vocalSel.value
+  })
+  chanSel?.addEventListener('change', () => {
+    E.channelRepairMode = chanSel.value
+    // Picking an explicit mode clears any auto-balance gains.
+    E.channelRepairLeftDb = 0
+    E.channelRepairRightDb = 0
+  })
+
+  // One-click: analyse + apply the recommended best-result bundle.
+  $('btn-auto-enhance')?.addEventListener('click', async () => {
+    if (!E.filePath) return
+    const btn = $('btn-auto-enhance') as HTMLButtonElement | null
+    if (btn) { btn.disabled = true; btn.textContent = t('editor.autoEnhancing', '✨ Analyserer…') }
+    const res = (await window.api.editorAutoProcess(E.filePath)) as {
+      diagnosis: { recommended: { mode: string; leftDb: number; rightDb: number }; code: string }
+      vocalChainPreset: string
+      masterPreset: string
+      summary: string
+    } | null
+    if (btn) { btn.disabled = false; btn.textContent = t('editor.autoEnhance', '✨ Automatisk lydforbedring (ett klikk)') }
+    if (!res) {
+      if (summary) { summary.textContent = t('editor.autoEnhanceFail', 'Kunne ikke analysere lyden (krever editor-bygg).'); (summary as HTMLElement).style.display = '' }
+      return
+    }
+    // Apply the recommendation to export state + controls.
+    E.vocalChainPreset = res.vocalChainPreset
+    E.masterPreset     = res.masterPreset
+    const rec = res.diagnosis.recommended
+    E.channelRepairMode    = rec.mode === 'none' ? '' : rec.mode
+    E.channelRepairLeftDb  = rec.leftDb
+    E.channelRepairRightDb = rec.rightDb
+    if (vocalSel) vocalSel.value = E.vocalChainPreset
+    if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+    if (summary) { summary.textContent = res.summary; (summary as HTMLElement).style.display = '' }
+  })
+
+  // Diagnose channels: show the analysis + apply the recommended repair.
+  $('btn-diagnose-channels')?.addEventListener('click', async () => {
+    if (!E.filePath || !diagLine) return
+    const btn = $('btn-diagnose-channels') as HTMLButtonElement | null
+    if (btn) { btn.disabled = true; btn.textContent = t('editor.diagnosing', 'Analyserer…') }
+    const d = (await window.api.editorDiagnoseChannels(E.filePath)) as {
+      code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null
+      recommended: { mode: string; leftDb: number; rightDb: number }
+    } | null
+    if (btn) { btn.disabled = false; btn.textContent = t('editor.diagnoseChannels', 'Diagnostiser') }
+    if (!d) { diagLine.textContent = t('editor.diagnoseFail', 'Kunne ikke analysere kanaler.'); (diagLine as HTMLElement).style.display = ''; return }
+    const codeText: Record<string, string> = {
+      balanced:  t('editor.chanBalanced', 'Kanalene er balanserte ✓'),
+      imbalance: t('editor.chanImbalance', 'Ulik styrke mellom kanalene'),
+      dead_left: t('editor.chanDeadLeft', 'Venstre kanal er stille (sjekk kabel)'),
+      dead_right:t('editor.chanDeadRight', 'Høyre kanal er stille (sjekk kabel)'),
+      both_dead: t('editor.chanBothDead', 'Begge kanaler er svært svake'),
+      mono:      t('editor.chanMono', 'Mono-opptak'),
+    }
+    const lvl = d.peakRightDb === null
+      ? `${d.peakLeftDb.toFixed(1)} dB`
+      : `V ${d.peakLeftDb.toFixed(1)} / H ${d.peakRightDb.toFixed(1)} dB`
+    diagLine.textContent = `${codeText[d.code] ?? d.code} · ${lvl}`
+    ;(diagLine as HTMLElement).style.display = ''
+    // Apply the recommended repair.
+    E.channelRepairMode    = d.recommended.mode === 'none' ? '' : d.recommended.mode
+    E.channelRepairLeftDb  = d.recommended.leftDb
+    E.channelRepairRightDb = d.recommended.rightDb
+    if (chanSel) chanSel.value = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+  })
 }
 
 // Publishing options state (mirrored from DOM into module on toggle)
@@ -306,6 +401,11 @@ export async function runExport(): Promise<void> {
 
   let result: { ok: boolean; outputPath?: string; error?: string }
 
+  // Audio-enhancement fields (channel repair + vocal chain + mastering preset).
+  const channelRepair = E.channelRepairMode
+    ? { mode: E.channelRepairMode, leftDb: E.channelRepairLeftDb, rightDb: E.channelRepairRightDb }
+    : undefined
+
   if (E.isVideoFile) {
     result = await window.api.editorExportVideo({
       inputPath:    E.filePath,
@@ -317,6 +417,9 @@ export async function runExport(): Promise<void> {
       introPath:  (E.includeIntroOutro && E.videoIntroPath) ? E.videoIntroPath : undefined,
       outroPath:  (E.includeIntroOutro && E.videoOutroPath) ? E.videoOutroPath : undefined,
       metadata:   E.meta,
+      masterPreset:     E.masterPreset || undefined,
+      vocalChainPreset: E.vocalChainPreset || undefined,
+      channelRepair,
     })
   } else {
     result = await window.api.editorExportFile({
@@ -332,6 +435,9 @@ export async function runExport(): Promise<void> {
       introPath:  (E.includeIntroOutro && settings.editorIntroPath) ? settings.editorIntroPath : undefined,
       outroPath:  (E.includeIntroOutro && settings.editorOutroPath) ? settings.editorOutroPath : undefined,
       metadata:   E.meta,
+      masterPreset:     E.masterPreset || undefined,
+      vocalChainPreset: E.vocalChainPreset || undefined,
+      channelRepair,
     })
   }
 

@@ -2464,6 +2464,32 @@
       <span id="export-io-summary" class="export-proc-summary"></span>
     </div>
 
+    <!-- Audio enhancement (channel repair + vocal chain + one-click auto) -->
+    <div class="export-publish-section" id="export-enhance-section" style="display:none">
+      <div class="export-section-label" data-i18n="editor.enhanceTitle">Lydforbedring</div>
+      <button class="btn-primary btn-sm" id="btn-auto-enhance" style="margin-bottom:8px" data-i18n="editor.autoEnhance">✨ Automatisk lydforbedring (ett klikk)</button>
+      <div id="enhance-summary" class="export-proc-summary" style="display:none;margin-bottom:8px;opacity:.85"></div>
+      <label class="export-field-label" data-i18n="editor.vocalChain" style="display:block;margin-bottom:4px">Stemmebehandling</label>
+      <select id="enhance-vocal-chain" class="export-select" style="margin-bottom:8px;width:100%">
+        <option value="">Ingen</option>
+        <option value="voice-light">Stemme — lett</option>
+        <option value="voice-podcast">Podkast-stemme (anbefalt)</option>
+        <option value="voice-noisy-room">Støyete rom</option>
+      </select>
+      <label class="export-field-label" data-i18n="editor.channelRepair" style="display:block;margin-bottom:4px">Kanalreparasjon</label>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+        <select id="enhance-channel-repair" class="export-select" style="flex:1">
+          <option value="">Ingen</option>
+          <option value="swapLr">Bytt venstre/høyre</option>
+          <option value="duplicateLeft">Bruk venstre kanal (begge)</option>
+          <option value="duplicateRight">Bruk høyre kanal (begge)</option>
+          <option value="monoMix">Bland til mono</option>
+        </select>
+        <button class="btn-ghost btn-sm" id="btn-diagnose-channels" data-i18n="editor.diagnoseChannels">Diagnostiser</button>
+      </div>
+      <div id="enhance-channel-diag" class="export-proc-summary" style="display:none;opacity:.75"></div>
+    </div>
+
     <!-- Publishing options -->
     <div class="export-publish-section" id="export-publish-section">
       <div class="export-section-label" data-i18n="editor.exportPublish">Publisering</div>

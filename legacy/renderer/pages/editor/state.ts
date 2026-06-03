@@ -102,6 +102,13 @@ export const E = {
   // 0 = no normalization. Positive values amplify, negative attenuate.
   audioGainDb: 0,
 
+  // Audio enhancement (sent to editor_export). Empty strings = off.
+  vocalChainPreset: '',          // '' | voice-light | voice-podcast | voice-noisy-room
+  masterPreset: '',              // '' | speech-natural | speech-clear | speech-punchy | music-speech
+  channelRepairMode: '',         // '' | swapLr | duplicateLeft | duplicateRight | monoMix | gainDb
+  channelRepairLeftDb: 0,        // only for gainDb (auto-balance)
+  channelRepairRightDb: 0,       // only for gainDb (auto-balance)
+
   // Loop playback
   isLooping: false,
   loopStartSec: 0,
