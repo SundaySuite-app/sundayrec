@@ -378,6 +378,13 @@ const MeterSection = memo(function MeterSection({
   const peakDbRight = levels?.peak_db_right ?? peakDbLeft;
   const peakMax = Math.max(peakDbLeft, peakDbRight);
 
+  // Latching clip indicator — once the signal touches the ceiling it stays lit
+  // (clipping is easy to miss in the moment) until the user clicks to clear it.
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    if (peakMax >= -0.3) setClipped(true);
+  }, [peakMax]);
+
   // STEREO when the recorder reports a real right-channel level. Before the
   // first telemetry event the right peak is null, so fall back to the chosen
   // channel layout (stereo settings → two meters, anything mono → one).
@@ -419,6 +426,26 @@ const MeterSection = memo(function MeterSection({
           >
             {signalLabel}
           </span>
+          {clipped && (
+            <button
+              type="button"
+              onClick={() => setClipped(false)}
+              title={t("recordingScreen.clipReset", "Klikk for å nullstille")}
+              style={{
+                cursor: "pointer",
+                border: "1px solid var(--sr-red)",
+                background: "var(--sr-red-tint)",
+                color: "var(--sr-red-bright)",
+                borderRadius: 6,
+                padding: "1px 8px",
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+              }}
+            >
+              {t("recordingScreen.clip", "KLIPP")}
+            </button>
+          )}
         </div>
         <div className="sr-row" style={{ gap: 18, alignItems: "baseline" }}>
           <span

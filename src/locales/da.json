@@ -1350,7 +1350,9 @@
     "signalGood": "God",
     "signalLoud": "Høj",
     "reconnectTitle": "Lydkilden blev frakoblet",
-    "reconnectDesc": "Genopretter forbindelsen automatisk — optagelsen fortsætter, når enheden er tilbage."
+    "reconnectDesc": "Genopretter forbindelsen automatisk — optagelsen fortsætter, når enheden er tilbage.",
+    "clip": "KLIP",
+    "clipReset": "Klik for at nulstille"
   },
   "scheduleScreen": {
     "pageTitle": "Tidsplan",

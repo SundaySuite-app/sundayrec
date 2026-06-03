@@ -1350,7 +1350,9 @@
     "signalGood": "Bon",
     "signalLoud": "Fort",
     "reconnectTitle": "La source audio a été déconnectée",
-    "reconnectDesc": "Reconnexion automatique — l’enregistrement reprend dès le retour de l’appareil."
+    "reconnectDesc": "Reconnexion automatique — l’enregistrement reprend dès le retour de l’appareil.",
+    "clip": "SAT.",
+    "clipReset": "Cliquez pour réinitialiser"
   },
   "scheduleScreen": {
     "pageTitle": "Planning",

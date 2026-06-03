@@ -1350,7 +1350,9 @@
     "signalGood": "Gut",
     "signalLoud": "Laut",
     "reconnectTitle": "Die Audioquelle wurde getrennt",
-    "reconnectDesc": "Verbindung wird automatisch wiederhergestellt — die Aufnahme läuft weiter, sobald das Gerät zurück ist."
+    "reconnectDesc": "Verbindung wird automatisch wiederhergestellt — die Aufnahme läuft weiter, sobald das Gerät zurück ist.",
+    "clip": "CLIP",
+    "clipReset": "Zum Zurücksetzen klicken"
   },
   "scheduleScreen": {
     "pageTitle": "Zeitplan",

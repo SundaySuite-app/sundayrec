@@ -1350,7 +1350,9 @@
     "signalGood": "Dobry",
     "signalLoud": "Głośny",
     "reconnectTitle": "Źródło dźwięku zostało odłączone",
-    "reconnectDesc": "Automatyczne ponowne łączenie — nagrywanie wznawia się po powrocie urządzenia."
+    "reconnectDesc": "Automatyczne ponowne łączenie — nagrywanie wznawia się po powrocie urządzenia.",
+    "clip": "PRZEST.",
+    "clipReset": "Kliknij, aby zresetować"
   },
   "scheduleScreen": {
     "pageTitle": "Harmonogram",

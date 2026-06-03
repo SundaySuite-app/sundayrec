@@ -1350,7 +1350,9 @@
     "signalGood": "Bra",
     "signalLoud": "Hög",
     "reconnectTitle": "Ljudkällan kopplades från",
-    "reconnectDesc": "Återansluter automatiskt — inspelningen fortsätter när enheten är tillbaka."
+    "reconnectDesc": "Återansluter automatiskt — inspelningen fortsätter när enheten är tillbaka.",
+    "clip": "KLIPP",
+    "clipReset": "Klicka för att återställa"
   },
   "scheduleScreen": {
     "pageTitle": "Tidsplan",

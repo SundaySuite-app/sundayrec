@@ -1350,7 +1350,9 @@
     "signalGood": "Good",
     "signalLoud": "Loud",
     "reconnectTitle": "The audio source disconnected",
-    "reconnectDesc": "Reconnecting automatically — recording resumes when the device is back."
+    "reconnectDesc": "Reconnecting automatically — recording resumes when the device is back.",
+    "clip": "CLIP",
+    "clipReset": "Click to reset"
   },
   "scheduleScreen": {
     "pageTitle": "Schedule",
