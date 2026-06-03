@@ -212,6 +212,56 @@ const whisperStatusStub = {
   available: false,
 };
 
+// ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
+type RecordingRow = {
+  id: string;
+  file_path: string;
+  device_name: string | null;
+  started_at: number;
+  duration_ms: number | null;
+  byte_size: number | null;
+  created_at: number;
+  note: string | null;
+};
+
+// Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
+// so deleteHistoryEntry(timestamp) can call recordings_delete(id).
+const historyIdByTs = new Map<number, string>();
+
+const basename = (p: string): string => p.split(/[\\/]/).pop() || p;
+
+/** Seconds → the old "Xt Ym" / "Ym" duration string the history table parses. */
+function fmtDurXtYm(sec: number): string {
+  const totalMin = Math.round(sec / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}t ${m}m` : `${m}m`;
+}
+
+function rowToEntry(r: RecordingRow): Record<string, unknown> {
+  const path = r.file_path ?? "";
+  const filename = basename(path);
+  const durationSec = r.duration_ms != null ? Math.round(r.duration_ms / 1000) : 0;
+  const ts = r.created_at ?? r.started_at ?? 0;
+  if (r.id) historyIdByTs.set(ts, r.id);
+  return {
+    timestamp: ts,
+    date: new Date(ts).toISOString(),
+    startTime: "",
+    path,
+    filename,
+    name: filename,
+    status: "ok", // recordings_list only holds completed recordings
+    durationSec,
+    duration: fmtDurXtYm(durationSec),
+    sizeBytes: r.byte_size ?? null,
+    fileSizeBytes: r.byte_size ?? null,
+    note: r.note ?? undefined,
+    cloudUploaded: [],
+    cloudUrls: {},
+  };
+}
+
 const api: Record<string, unknown> = {
   // ── Settings ────────────────────────────────────────────────────────────
   getSettings: async () => loadSettings(),
@@ -224,14 +274,29 @@ const api: Record<string, unknown> = {
   },
 
   // ── Schedule / next recording ───────────────────────────────────────────
-  getNextRecording: async () => null,
+  // scheduler_status → { next: ISO string | null }; old getNextRecording returns
+  // { date } | null.
+  getNextRecording: async () => {
+    const s = await call<{ next: string | null }>("scheduler_status", undefined, {
+      next: null,
+    });
+    return s.next ? { date: s.next } : null;
+  },
 
-  // ── History ─────────────────────────────────────────────────────────────
-  getHistory: async () => [],
-  deleteHistoryEntry: async () => true,
-  clearHistory: async () => true,
-  pruneHistory: async () => 0,
-  updateHistoryNote: async () => true,
+  // ── History (recordings_list → RecordingEntry[]) ─────────────────────────
+  getHistory: async () => {
+    historyIdByTs.clear();
+    const rows = await call<RecordingRow[]>("recordings_list", undefined, []);
+    return rows.map(rowToEntry);
+  },
+  deleteHistoryEntry: async (ts: number) => {
+    const id = historyIdByTs.get(ts);
+    if (!id) return false;
+    return call("recordings_delete", { id }, false).then(() => true);
+  },
+  clearHistory: async () => call("recordings_clear", undefined, false).then(() => true),
+  pruneHistory: async () => call("recordings_prune", undefined, 0),
+  updateHistoryNote: async () => true, // TODO Phase 3: no recordings_update_note command yet
 
   // ── Disk / recording ────────────────────────────────────────────────────
   // get_disk_space returns { freeBytes } (camelCase) — exactly what home.ts reads.
