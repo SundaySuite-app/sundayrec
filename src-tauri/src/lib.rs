@@ -221,6 +221,7 @@ pub fn run() {
             commands::audio::list_input_devices,
             commands::audio::list_devices,
             commands::audio::list_video_devices,
+            commands::audio::get_camera_capabilities,
             commands::audio::diagnose_audio,
             commands::audio::start_vu,
             commands::audio::stop_vu,

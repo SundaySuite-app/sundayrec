@@ -187,6 +187,7 @@ declare global {
       reviewQueueUpdateMasterPreset:  (id: string, presetId: string) => Promise<boolean>
       reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
+      getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
       videoPreviewStart: (opts: unknown) => Promise<boolean>
       videoPreviewStop:  () => Promise<void>
       editorSetVideoPath:      (filePath: string) => Promise<boolean>

@@ -395,6 +395,11 @@ const api: Record<string, unknown> = {
   },
   videoPreviewStart: async () => true,
   videoPreviewStop: async () => true,
+  // Probe what the selected camera can actually capture, to gate the
+  // resolution/fps UI. `token` is the device index (avfoundation) or name.
+  // Returns null on failure → caller offers everything.
+  getCameraCapabilities: async (token: string) =>
+    call("get_camera_capabilities", { deviceToken: token }, null),
 
   // ── Wake from sleep (wake_* commands) ───────────────────────────────────
   scheduleOsWakes: async () => call("wake_reschedule", undefined, { ok: true }),

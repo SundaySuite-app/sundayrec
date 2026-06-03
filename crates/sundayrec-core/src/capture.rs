@@ -262,6 +262,67 @@ pub fn parse_avfoundation_modes(stderr: &str) -> Vec<CameraMode> {
     out
 }
 
+/// A summary of what a camera can actually capture, derived from its advertised
+/// [`CameraMode`]s. Used to GATE the UI so the user can only pick resolutions /
+/// frame rates the device supports — a camera can't record a mode that isn't in
+/// its descriptor (avfoundation/dshow reject it and the camera never opens).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CameraCapabilities {
+    /// Largest advertised width/height (the camera's native ceiling).
+    pub max_width: u32,
+    pub max_height: u32,
+    /// Highest advertised frame rate across all modes.
+    pub max_fps: u32,
+    /// Which resolution TAGS (`480p`/`720p`/`1080p`/`2160p`) the camera can
+    /// deliver — i.e. it advertises a mode at least that tall (we can downscale a
+    /// larger native mode, but never upscale to a fake higher resolution).
+    pub supported_resolutions: Vec<String>,
+    /// The standard UI frame-rate options (24/25/30/50/60) the camera can reach
+    /// natively (≤ its advertised max — we never offer frame-duplicated "fake" fps).
+    pub supported_framerates: Vec<u32>,
+}
+
+/// The resolution tags the UI offers, paired with their pixel height.
+const RES_TAGS: &[(&str, u32)] = &[
+    ("480p", 480),
+    ("720p", 720),
+    ("1080p", 1080),
+    ("2160p", 2160),
+];
+/// The frame-rate options the UI offers.
+const FPS_OPTIONS: &[u32] = &[24, 25, 30, 50, 60];
+
+/// Summarise a device's advertised modes into [`CameraCapabilities`] for UI
+/// gating. Empty input (no modes parsed) yields an all-zero summary with empty
+/// lists — the caller should then fall back to offering everything (better to let
+/// the user try than to block on a failed probe).
+pub fn summarize_camera_capabilities(modes: &[CameraMode]) -> CameraCapabilities {
+    let max_width = modes.iter().map(|m| m.width).max().unwrap_or(0);
+    let max_height = modes.iter().map(|m| m.height).max().unwrap_or(0);
+    let max_fps = modes
+        .iter()
+        .flat_map(|m| m.framerates.iter().copied())
+        .max()
+        .unwrap_or(0);
+    let supported_resolutions = RES_TAGS
+        .iter()
+        .filter(|(_, h)| max_height >= *h)
+        .map(|(tag, _)| (*tag).to_string())
+        .collect();
+    let supported_framerates = FPS_OPTIONS
+        .iter()
+        .copied()
+        .filter(|f| *f <= max_fps)
+        .collect();
+    CameraCapabilities {
+        max_width,
+        max_height,
+        max_fps,
+        supported_resolutions,
+        supported_framerates,
+    }
+}
+
 /// Pick the best INPUT mode for a target size + frame rate from the device's
 /// advertised modes. Prefers the resolution whose area is closest to the target
 /// (a landscape target won't pick a portrait mode of similar area), then the
@@ -909,6 +970,53 @@ mod tests {
         // Codecs unchanged by the added telemetry filter.
         assert!(has_pair(&args, "-c:a", "aac"));
         assert!(has_pair(&args, "-c:v", "libx264"));
+    }
+
+    #[test]
+    fn capabilities_gate_resolution_and_fps_to_advertised() {
+        // A 1080p@[30] camera: 480p/720p/1080p supported (downscale), NOT 4K;
+        // fps options ≤30 (24/25/30), not 50/60.
+        let modes = vec![
+            CameraMode {
+                width: 1280,
+                height: 720,
+                framerates: vec![30],
+            },
+            CameraMode {
+                width: 1920,
+                height: 1080,
+                framerates: vec![15, 30],
+            },
+        ];
+        let cap = summarize_camera_capabilities(&modes);
+        assert_eq!(cap.max_width, 1920);
+        assert_eq!(cap.max_height, 1080);
+        assert_eq!(cap.max_fps, 30);
+        assert_eq!(cap.supported_resolutions, vec!["480p", "720p", "1080p"]);
+        assert_eq!(cap.supported_framerates, vec![24, 25, 30]);
+    }
+
+    #[test]
+    fn capabilities_4k60_camera_supports_everything() {
+        let modes = vec![CameraMode {
+            width: 3840,
+            height: 2160,
+            framerates: vec![24, 30, 60],
+        }];
+        let cap = summarize_camera_capabilities(&modes);
+        assert_eq!(
+            cap.supported_resolutions,
+            vec!["480p", "720p", "1080p", "2160p"]
+        );
+        assert_eq!(cap.supported_framerates, vec![24, 25, 30, 50, 60]);
+    }
+
+    #[test]
+    fn capabilities_empty_modes_is_all_zero() {
+        let cap = summarize_camera_capabilities(&[]);
+        assert_eq!(cap.max_height, 0);
+        assert!(cap.supported_resolutions.is_empty());
+        assert!(cap.supported_framerates.is_empty());
     }
 
     #[test]

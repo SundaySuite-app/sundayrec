@@ -41,6 +41,11 @@ export function setupVideoPage(): void {
     await refreshVideoDevices()
   })
 
+  // When the camera changes, gate resolution/fps to what it can actually do.
+  document.getElementById('video-device-select')?.addEventListener('change', () => {
+    void applyCameraCapabilities()
+  })
+
   // video-mode radio buttons — update keep-audio visibility
   document.querySelectorAll<HTMLInputElement>('input[name="video-mode"]').forEach(el => {
     el.addEventListener('change', updateKeepAudioVisibility)
@@ -186,6 +191,68 @@ export function applyVideoSettingsToUI(): void {
   const splitHint    = document.getElementById('video-split-hint')
   if (splitWarning) splitWarning.style.display = hasSplit ? '' : 'none'
   if (splitHint)    splitHint.style.display    = hasSplit ? 'none' : ''
+
+  // Gate resolution/fps to the selected camera's advertised modes.
+  void applyCameraCapabilities()
+}
+
+/**
+ * Probe the selected camera and DISABLE the resolution cards / fps options it
+ * can't deliver — a camera only records modes in its hardware descriptor, so
+ * offering 4K/60 on a 720p webcam would just fail to open. On a failed probe
+ * (or a platform that doesn't list modes) we leave everything enabled (let the
+ * user try) rather than blocking. If the currently-selected resolution/fps is
+ * not supported, we fall back to the best supported one and show a hint.
+ */
+export async function applyCameraCapabilities(): Promise<void> {
+  const selectEl = document.getElementById('video-device-select') as HTMLSelectElement | null
+  const warnEl = document.getElementById('video-res-warning')
+  const token = selectEl?.value
+  // Re-enable everything first (clean slate before re-gating).
+  const resInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="video-resolution"]'))
+  const fpsEl = document.getElementById('video-fps-select') as HTMLSelectElement | null
+  resInputs.forEach(r => { (r.closest('.option-card') as HTMLElement | null)?.classList.remove('is-disabled'); r.disabled = false })
+  if (fpsEl) Array.from(fpsEl.options).forEach(o => { o.disabled = false })
+  if (warnEl) warnEl.style.display = 'none'
+  if (!token) return
+
+  let cap: { supportedResolutions: string[]; supportedFramerates: number[]; maxHeight: number; maxFps: number } | null = null
+  try {
+    cap = await window.api.getCameraCapabilities(token)
+  } catch {
+    cap = null
+  }
+  // Empty/failed probe → offer everything (don't block on a probe miss).
+  if (!cap || cap.supportedResolutions.length === 0) return
+
+  // Disable unsupported resolution cards.
+  for (const r of resInputs) {
+    const ok = cap.supportedResolutions.includes(r.value)
+    r.disabled = !ok
+    ;(r.closest('.option-card') as HTMLElement | null)?.classList.toggle('is-disabled', !ok)
+  }
+  // Disable unsupported fps options.
+  if (fpsEl) {
+    for (const o of Array.from(fpsEl.options)) {
+      o.disabled = !cap.supportedFramerates.includes(parseInt(o.value))
+    }
+  }
+
+  // If the current pick is now unsupported, fall back to the best supported.
+  const checked = resInputs.find(r => r.checked)
+  if (checked && checked.disabled) {
+    const best = [...cap.supportedResolutions].pop() // highest supported (list is ascending)
+    const fallback = resInputs.find(r => r.value === best)
+    if (fallback) { fallback.checked = true }
+    if (warnEl) {
+      warnEl.textContent = t('video.resUnsupported', `Kameraet støtter ikke valgt oppløsning — satt til ${best}. Maks: ${cap.maxHeight}p / ${cap.maxFps} fps.`)
+      warnEl.style.display = ''
+    }
+  }
+  if (fpsEl && fpsEl.selectedOptions[0]?.disabled) {
+    const bestFps = [...cap.supportedFramerates].pop()
+    if (bestFps != null) fpsEl.value = String(bestFps)
+  }
 }
 
 async function saveVideoSettings(): Promise<void> {
