@@ -52,13 +52,24 @@ videoDeviceName: string | null,
  */
 videoDeviceIndex: number | null, 
 /**
- * Capture resolution tag: `"480p"` | `"720p"` | `"1080p"`. Default `"720p"`.
+ * Capture resolution tag: `"480p"` | `"720p"` | `"1080p"` | `"2160p"` (4K).
+ * Default `"720p"`.
  */
 videoResolution: string, 
 /**
  * Capture frame rate (fps). Valid 1..=120, default 30.
  */
 videoFramerate: number, 
+/**
+ * Recording video container: `"mp4"` (default) | `"mov"`. Both are
+ * QuickTime/ISO containers that take H.264/H.265 + AAC and `+faststart`.
+ */
+videoContainer: string, 
+/**
+ * Recording video codec: `"h264"` (default, universal) | `"h265"` (HEVC,
+ * ~half the size; for live 4K a hardware encoder is recommended).
+ */
+videoCodec: string, 
 /**
  * Mirror the camera horizontally (preview + recording). Default false.
  * Electron `videoFlip` — handy for front-facing / mirrored stage cameras.

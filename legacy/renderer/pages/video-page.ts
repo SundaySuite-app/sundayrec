@@ -149,6 +149,12 @@ export function applyVideoSettingsToUI(): void {
   const fpsEl = document.getElementById('video-fps-select') as HTMLSelectElement | null
   if (fpsEl) fpsEl.value = String(fps)
 
+  // Container + codec
+  const containerEl = document.getElementById('video-container-select') as HTMLSelectElement | null
+  if (containerEl) containerEl.value = settings.videoContainer ?? 'mp4'
+  const codecEl = document.getElementById('video-codec-select') as HTMLSelectElement | null
+  if (codecEl) codecEl.value = settings.videoCodec ?? 'h264'
+
   // Output mode
   const separate   = settings.videoSeparate ?? false
   const modeEl     = document.querySelector<HTMLInputElement>(`input[name="video-mode"][value="${separate ? 'separate' : 'combined'}"]`)
@@ -194,8 +200,12 @@ async function saveVideoSettings(): Promise<void> {
     ? (selectEl.selectedOptions[0]?.dataset.name ?? selectEl.selectedOptions[0]?.textContent ?? null)
     : null
 
-  const res = (document.querySelector<HTMLInputElement>('input[name="video-resolution"]:checked')?.value ?? '720p') as '1080p' | '720p' | '480p'
+  const res = (document.querySelector<HTMLInputElement>('input[name="video-resolution"]:checked')?.value ?? '720p') as '2160p' | '1080p' | '720p' | '480p'
   const fps = fpsEl ? parseInt(fpsEl.value) : 30
+  const containerEl = document.getElementById('video-container-select') as HTMLSelectElement | null
+  const codecEl = document.getElementById('video-codec-select') as HTMLSelectElement | null
+  const videoContainer = (containerEl?.value ?? 'mp4') as 'mp4' | 'mov'
+  const videoCodec = (codecEl?.value ?? 'h264') as 'h264' | 'h265'
 
   const autoMode = document.getElementById('opt-video-bitrate-auto') as HTMLInputElement | null
   const bitrate  = (autoMode?.checked) ? 0 : parseInt(bitrateInput?.value ?? '0') || 0
@@ -216,6 +226,8 @@ async function saveVideoSettings(): Promise<void> {
     videoDeviceName:   deviceName,
     videoResolution:   res,
     videoFramerate:    fps,
+    videoContainer,
+    videoCodec,
     videoBitrate:      bitrate,
     videoSeparate:     separate,
     videoKeepAudio:    keepAudio,

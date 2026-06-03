@@ -289,14 +289,15 @@ pub fn resolve_camera_mode(
     })
 }
 
-/// Map a settings resolution tag (`"480p"`/`"720p"`/`"1080p"`) to its (width,
-/// height). Used as the camera-mode probe TARGET so a 1080p setting actually
-/// records 1080p (when the camera advertises it), not the old hardcoded 720p.
-/// Unknown tags fall back to 720p.
+/// Map a settings resolution tag (`"480p"`/`"720p"`/`"1080p"`/`"2160p"`) to its
+/// (width, height). Used as the camera-mode probe TARGET so a 1080p setting
+/// actually records 1080p (when the camera advertises it), not the old hardcoded
+/// 720p. `"2160p"` is 4K UHD (3840×2160). Unknown tags fall back to 720p.
 pub fn resolution_dims(tag: &str) -> (u32, u32) {
     match tag.trim().to_ascii_lowercase().as_str() {
         "480p" => (854, 480),
         "1080p" => (1920, 1080),
+        "2160p" | "4k" => (3840, 2160),
         // "720p" + anything unknown → 720p.
         _ => (1280, 720),
     }
@@ -351,6 +352,10 @@ pub struct CaptureOpts {
     /// that doesn't advertise that exact mode, which is why the recorder probes
     /// and fills this in. The OUTPUT still conforms to `framerate` via `-r`.
     pub video_input: Option<VideoCaptureMode>,
+    /// Video output codec — H.264 (default, universal) or H.265/HEVC (~half the
+    /// size). For live 4K H.265, software `libx265` may not keep up on a modest
+    /// CPU; a hardware encoder (videotoolbox) is the recommended follow-up.
+    pub video_codec: crate::editor::VideoCodec,
 }
 
 impl Default for CaptureOpts {
@@ -367,6 +372,7 @@ impl Default for CaptureOpts {
             live_levels: true,
             preview_jpg: None,
             video_input: None,
+            video_codec: crate::editor::VideoCodec::H264,
         }
     }
 }
@@ -520,7 +526,16 @@ pub fn build_unified_capture_args(
     // simple libx264.
     if has_video {
         args.push("-c:v".into());
-        args.push("libx264".into());
+        match opts.video_codec {
+            crate::editor::VideoCodec::H264 => args.push("libx264".into()),
+            crate::editor::VideoCodec::H265 => {
+                args.push("libx265".into());
+                // `hvc1` tag so QuickTime/Apple players accept the HEVC stream in
+                // an mp4/mov container.
+                args.push("-tag:v".into());
+                args.push("hvc1".into());
+            }
+        }
         args.push("-preset".into());
         args.push("veryfast".into());
         args.push("-pix_fmt".into());
@@ -547,7 +562,9 @@ pub fn build_unified_capture_args(
     // Normalise leading timestamps so the file plays from t=0 in every player.
     args.push("-avoid_negative_ts".into());
     args.push("make_zero".into());
-    if has_video {
+    // `+faststart` (progressive playback) is only valid for the ISO/QuickTime
+    // containers — mp4/mov/m4v. A Matroska (.mkv) recording would reject it.
+    if has_video && matches!(ext_of(output_path), "mp4" | "mov" | "m4v") {
         args.push("-movflags".into());
         args.push("+faststart".into());
     }
@@ -892,6 +909,55 @@ mod tests {
         // Codecs unchanged by the added telemetry filter.
         assert!(has_pair(&args, "-c:a", "aac"));
         assert!(has_pair(&args, "-c:v", "libx264"));
+    }
+
+    #[test]
+    fn resolution_dims_includes_4k() {
+        assert_eq!(resolution_dims("480p"), (854, 480));
+        assert_eq!(resolution_dims("720p"), (1280, 720));
+        assert_eq!(resolution_dims("1080p"), (1920, 1080));
+        assert_eq!(resolution_dims("2160p"), (3840, 2160));
+        assert_eq!(resolution_dims("4k"), (3840, 2160));
+        assert_eq!(resolution_dims("garbage"), (1280, 720));
+    }
+
+    #[test]
+    fn h265_recording_uses_libx265_with_hvc1_tag() {
+        let opts = CaptureOpts {
+            video_codec: crate::editor::VideoCodec::H265,
+            ..CaptureOpts::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mp4", &opts);
+        assert!(has_pair(&args, "-c:v", "libx265"));
+        assert!(has_pair(&args, "-tag:v", "hvc1"));
+        // faststart still emitted for mp4.
+        assert!(has_pair(&args, "-movflags", "+faststart"));
+    }
+
+    #[test]
+    fn mov_recording_keeps_faststart_but_mkv_drops_it() {
+        let mov = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/tmp/s.mov",
+            &CaptureOpts::default(),
+        );
+        assert!(
+            has_pair(&mov, "-movflags", "+faststart"),
+            "mov supports faststart"
+        );
+        let mkv = build_unified_capture_args(
+            Platform::MacOS,
+            Some("0"),
+            "1",
+            "/tmp/s.mkv",
+            &CaptureOpts::default(),
+        );
+        assert!(
+            !mkv.iter().any(|a| a == "+faststart"),
+            "mkv must not get faststart"
+        );
     }
 
     #[test]

@@ -248,11 +248,15 @@ export interface Settings {
   videoEnabled?: boolean
   videoDeviceName?: string | null
   videoDeviceIndex?: number | null
-  videoResolution?: '1080p' | '720p' | '480p'
+  videoResolution?: '2160p' | '1080p' | '720p' | '480p'
   /** Video bitrate in kbps. Valid: 500–50000. 0 = auto based on resolution */
   videoBitrate?: number        // kbps (0 = auto based on resolution)
-  /** Video framerate in fps. Valid: 10–60. Default: 30 */
+  /** Video framerate in fps. Valid: 1–120. Default: 30 */
   videoFramerate?: number      // fps, default 30
+  /** Recording video container: 'mp4' (default) | 'mov'. */
+  videoContainer?: 'mp4' | 'mov'
+  /** Recording video codec: 'h264' (default) | 'h265' (HEVC). */
+  videoCodec?: 'h264' | 'h265'
   videoSeparate?: boolean      // true = keep audio + video as separate files; false = mux into combined MP4
   videoKeepAudio?: boolean     // when combined MP4: also keep the separate high-quality audio file (default true)
   videoFlip?: boolean          // mirror the camera horizontally (e.g. front-facing cameras)

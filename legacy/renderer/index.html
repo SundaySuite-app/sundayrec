@@ -1483,7 +1483,7 @@
         <div class="card">
           <div class="card-title" data-i18n="video.qualityTitle">Kvalitet</div>
           <label class="form-label" data-i18n="video.resolution">OPPLØSNING</label>
-          <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr 1fr">
             <label class="option-card">
               <input type="radio" name="video-resolution" value="480p" />
               <div class="option-card-name">480p</div>
@@ -1500,12 +1500,33 @@
               <div class="option-card-name">1080p</div>
               <div class="option-card-desc">~7 GB / t</div>
             </label>
+            <label class="option-card" id="video-res-2160p">
+              <input type="radio" name="video-resolution" value="2160p" />
+              <div class="option-card-name">4K</div>
+              <div class="option-card-desc">~22 GB / t</div>
+            </label>
           </div>
+          <div id="video-res-warning" class="form-hint" style="display:none;color:var(--warning,#d08700);margin-top:4px"></div>
 
           <label class="form-label mt" data-i18n="video.framerate">BILDERATE</label>
           <select class="form-input" id="video-fps-select" style="max-width:200px">
+            <option value="24">24 fps</option>
             <option value="25">25 fps</option>
             <option value="30" selected data-i18n="video.fps30Recommended">30 fps (Anbefalt)</option>
+            <option value="50">50 fps</option>
+            <option value="60">60 fps</option>
+          </select>
+
+          <label class="form-label mt" data-i18n="video.container">FORMAT</label>
+          <select class="form-input" id="video-container-select" style="max-width:200px">
+            <option value="mp4" selected>MP4</option>
+            <option value="mov">MOV (QuickTime)</option>
+          </select>
+
+          <label class="form-label mt" data-i18n="video.codec">VIDEO-KODEK</label>
+          <select class="form-input" id="video-codec-select" style="max-width:280px">
+            <option value="h264" selected data-i18n="video.codecH264">H.264 (universell)</option>
+            <option value="h265" data-i18n="video.codecH265">H.265 / HEVC (mindre fil)</option>
           </select>
 
           <label class="form-label mt" data-i18n="video.bitrate">BITHASTIGHET</label>
