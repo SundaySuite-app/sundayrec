@@ -53,7 +53,14 @@ geometry, intro/outro slots, ruler, playhead, cut overlays.
 - ✅ **Phase 3 (part)** `2aae94f` segment detection + auto-trim-to-sermon · `48bbdab` mastering presets + LUFS analysis
 - ✅ **Review pass** `336712c` removed dead modules (waveform/editorGeometry/editor.helpers) + fixed a loadFile race, cut-list key, placeholder contrast
 - ✅ **Phase 5 i18n** `8744851` screen + `2533c96` canvas labels — editor fully translated in all 7 locales (parity-guarded)
-- ⏳ **Remaining**: intro/outro (display+playback done in engine; **export support pending backend** — deferred); video variant (needs `<video>` + frame scrub).
+- ✅ **Intro/outro** `280b4a2` — frontend pick/decode/display/preview + backend ffmpeg concat through the export seam
+- ✅ **Video variant** `d1509a1` — `<video>`-driven playback, backend peaks for the waveform, preview cut-skip + frame scrub
+- ✅ **Normalize→export** `bc36d74` — the peak gain now applies to the rendered file, not just the preview
+
+**The editor port is feature-complete.** Everything below the line is HARDWARE-UNVERIFIED
+(jsdom/tests can't run ffmpeg, Web Audio playback, or `<video>`): a rig smoke-test is the
+only outstanding step — open a real recording in **Rediger**, verify waveform / play / cut /
+preview / normalize / intro-outro / mastering / export for both an audio and a video file.
 
 ## Phases
 
