@@ -83,17 +83,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # ── Updater signing (Phase 9 — unused until includeUpdaterJson:true) ──
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # ── macOS code signing + notarization ───────────────────────────────
-          # Absent secrets → tauri-action produces an unsigned build (no failure).
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Signing is intentionally NOT wired here yet: this is an UNSIGNED
+          # prerelease. Even an *empty* APPLE_CERTIFICATE env makes tauri-action
+          # run `security import` and fail ("failed to import keychain
+          # certificate"), so the APPLE_* / TAURI_SIGNING_* vars are omitted
+          # entirely. To enable signing later, add the secrets back here (see
+          # docs/DISTRIBUTION.md) and flip includeUpdaterJson when the updater
+          # keypair lands.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "SundayRec ${{ github.ref_name }}"
