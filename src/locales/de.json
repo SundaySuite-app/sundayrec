@@ -1286,7 +1286,9 @@
     "mixerOfflineLabel": "Audioquelle fehlt",
     "mixerOfflineNone": "Kein Audiomischer verbunden",
     "mixerOfflineGone": "Die gewählte Audioquelle ist getrennt",
-    "mixerOfflineFix": "Audioquelle wählen"
+    "mixerOfflineFix": "Audioquelle wählen",
+    "clip": "CLIP",
+    "clipReset": "Übersteuerung erkannt — zum Zurücksetzen klicken"
   },
   "liveScreen": {
     "title": "Livestream",

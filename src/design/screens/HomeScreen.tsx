@@ -5,7 +5,7 @@
  * layout; the big record button calls `onRecord` so the shell can enter the
  * focused recording mode. Live data (devices, levels, disk) is wired later.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -343,13 +343,18 @@ function CameraSelectHeader({
 }
 
 // Large live L/R meter row used when video is off.
+// `peak` is the held peak-hold segment index (1..40) that floats above the
+// current level as a brighter/gold marker (matching the old Electron meters);
+// 0 hides it.
 function BigMeterRow({
   ch,
   on,
+  peak = 0,
   readout = "—",
 }: {
   ch: string;
   on: number;
+  peak?: number;
   readout?: string;
 }) {
   return (
@@ -370,8 +375,14 @@ function BigMeterRow({
         style={{ display: "flex", gap: 2.5, height: 30, position: "relative" }}
       >
         {Array.from({ length: 40 }).map((_, i) => {
-          const c =
-            i < on
+          // The held-peak marker: a single brighter segment that floats above
+          // the lit level when the held peak sits past the current reading.
+          const isPeak = peak > 0 && i === peak - 1 && peak > on;
+          const c = isPeak
+            ? i > 35
+              ? "var(--sr-red)"
+              : "var(--sr-gold)"
+            : i < on
               ? i > 35
                 ? "var(--sr-red)"
                 : i > 30
@@ -379,7 +390,15 @@ function BigMeterRow({
                   : "var(--sr-green)"
               : "var(--sr-ink-700)";
           return (
-            <span key={i} style={{ flex: 1, background: c, borderRadius: 2 }} />
+            <span
+              key={i}
+              style={{
+                flex: 1,
+                background: c,
+                borderRadius: 2,
+                ...(isPeak ? { boxShadow: "0 0 4px var(--sr-gold)" } : null),
+              }}
+            />
           );
         })}
         <span
@@ -839,6 +858,45 @@ export function HomeScreen({
       ? null
       : Math.max(peakL ?? -Infinity, peakR ?? -Infinity);
 
+  // Peak-hold: keep the highest lit segment per channel and let it decay after a
+  // short hold window so the brightest recent peak floats above the live level
+  // (matches the old Electron meters). Cheap — a ref holding {seg, ts} per
+  // channel, decayed against the render-loop timestamp (no per-frame timers).
+  const litL = peakL != null ? bigMeterLit(peakL) : 0;
+  const litR = peakR != null ? bigMeterLit(peakR) : 0;
+  const peakHoldRef = useRef<
+    [{ seg: number; ts: number }, { seg: number; ts: number }]
+  >([
+    { seg: 0, ts: 0 },
+    { seg: 0, ts: 0 },
+  ]);
+  const holdPeak = (idx: 0 | 1, lit: number): number => {
+    const HOLD_MS = 1200; // hold the peak ~1.2 s, then let it fall to the level
+    const now = Date.now();
+    const slot = peakHoldRef.current[idx];
+    if (lit >= slot.seg || now - slot.ts >= HOLD_MS) {
+      slot.seg = lit;
+      slot.ts = now;
+    }
+    return slot.seg;
+  };
+  const peakSegL = holdPeak(0, litL);
+  const peakSegR = holdPeak(1, litR);
+
+  // Latching CLIP indicator: once any channel peak hits >= −0.3 dBFS the badge
+  // sticks (a real clip is rare and worth not missing) until the user clicks to
+  // reset — mirrors the recording screen's clip badge.
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const CLIP_DBFS = -0.3;
+    if (
+      (peakL != null && peakL >= CLIP_DBFS) ||
+      (peakR != null && peakR >= CLIP_DBFS)
+    ) {
+      setClipped(true);
+    }
+  }, [peakL, peakR]);
+
   // Camera devices + persisted selection.
   const videoDevices = useVideoDevices();
   const selectedCamera = useMemo(() => {
@@ -1113,6 +1171,35 @@ export function HomeScreen({
               >
                 {t("homeScreen.audioLevelLive", "Lydnivå — live")}
               </span>
+              {clipped && (
+                <button
+                  type="button"
+                  onClick={() => setClipped(false)}
+                  title={t(
+                    "homeScreen.clipReset",
+                    "Klipp oppdaget — klikk for å nullstille",
+                  )}
+                  aria-label={t(
+                    "homeScreen.clipReset",
+                    "Klipp oppdaget — klikk for å nullstille",
+                  )}
+                  style={{
+                    fontFamily: "var(--sr-mono)",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    letterSpacing: "0.04em",
+                    color: "#fff",
+                    background: "var(--sr-red)",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "2px 7px",
+                    marginRight: 8,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("homeScreen.clip", "KLIPP")}
+                </button>
+              )}
               <span
                 className="sr-mono sr-num"
                 style={{ fontSize: 12.5, color: "var(--sr-text-3)" }}
@@ -1126,12 +1213,14 @@ export function HomeScreen({
             <div className="sr-col" style={{ gap: 16, padding: "26px 22px" }}>
               <BigMeterRow
                 ch="L"
-                on={peakL != null ? bigMeterLit(peakL) : 0}
+                on={litL}
+                peak={peakSegL}
                 readout={peakL != null ? formatDbfs(peakL) : "—"}
               />
               <BigMeterRow
                 ch="R"
-                on={peakR != null ? bigMeterLit(peakR) : 0}
+                on={litR}
+                peak={peakSegR}
                 readout={peakR != null ? formatDbfs(peakR) : "—"}
               />
               <div

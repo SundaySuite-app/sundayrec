@@ -1286,7 +1286,9 @@
     "mixerOfflineLabel": "Audio source missing",
     "mixerOfflineNone": "No audio mixer connected",
     "mixerOfflineGone": "The selected audio source is disconnected",
-    "mixerOfflineFix": "Choose audio source"
+    "mixerOfflineFix": "Choose audio source",
+    "clip": "CLIP",
+    "clipReset": "Clipping detected — click to reset"
   },
   "liveScreen": {
     "title": "Live stream",

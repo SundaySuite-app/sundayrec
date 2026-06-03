@@ -1286,7 +1286,9 @@
     "mixerOfflineLabel": "Ljudkälla saknas",
     "mixerOfflineNone": "Ingen ljudmixer ansluten",
     "mixerOfflineGone": "Den valda ljudkällan är frånkopplad",
-    "mixerOfflineFix": "Välj ljudkälla"
+    "mixerOfflineFix": "Välj ljudkälla",
+    "clip": "KLIPP",
+    "clipReset": "Klippning upptäckt — klicka för att återställa"
   },
   "liveScreen": {
     "title": "Direktsändning",

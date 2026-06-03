@@ -1286,7 +1286,9 @@
     "mixerOfflineLabel": "Brak źródła dźwięku",
     "mixerOfflineNone": "Brak podłączonego miksera",
     "mixerOfflineGone": "Wybrane źródło dźwięku jest odłączone",
-    "mixerOfflineFix": "Wybierz źródło dźwięku"
+    "mixerOfflineFix": "Wybierz źródło dźwięku",
+    "clip": "PRZEST.",
+    "clipReset": "Wykryto przesterowanie — kliknij, aby zresetować"
   },
   "liveScreen": {
     "title": "Transmisja na żywo",

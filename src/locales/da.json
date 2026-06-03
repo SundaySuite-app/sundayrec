@@ -1286,7 +1286,9 @@
     "mixerOfflineLabel": "Lydkilde mangler",
     "mixerOfflineNone": "Ingen lydmixer tilsluttet",
     "mixerOfflineGone": "Den valgte lydkilde er frakoblet",
-    "mixerOfflineFix": "Vælg lydkilde"
+    "mixerOfflineFix": "Vælg lydkilde",
+    "clip": "KLIP",
+    "clipReset": "Klip registreret — klik for at nulstille"
   },
   "liveScreen": {
     "title": "Direkte udsendelse",
