@@ -1,5 +1,18 @@
 # Frontend-parity — the two backend-dependent features
 
+> **STATUS: BOTH DONE (2026-06-03).**
+> - #1 Channel-select L/R — commit `91846b4`.
+> - #2 Auto-stop countdown + extend/cancel — commit `c6eeec1`.
+>
+> Both shipped behind `npm run check` (1112 Rust + 271 vitest green, clippy
+> --workspace clean). The implementations follow the threads below, with two
+> deliberate refinements: (1) the channel pick is one shared L/R pair (not a
+> per-device `HashMap`); (2) auto-stop uses a `tokio::sync::watch` channel with
+> an absolute epoch-ms deadline (not a re-baked duration), so extend/cancel move
+> the REAL timer immediately and splits/reconnects re-pin the same stop time.
+> `extend` ADDS to the live deadline (so "+30 min" never shortens). Still
+> HARDWARE/TIMING-UNVERIFIED until a rig smoke-test.
+
 Scoped by parallel design agents + validated against the code. These are the
 last two parity items; both need backend changes (hence not done in the
 frontend-only pass). The smaller polish that came out of the same agent batch
