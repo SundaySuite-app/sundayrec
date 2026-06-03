@@ -1,0 +1,17 @@
+# Force the macOS deployment target for ALL cargo builds (local + CI).
+#
+# whisper.cpp (whisper-rs-sys, a DEFAULT feature) uses C++17 `std::filesystem`,
+# whose `directory_iterator` is only available on macOS 10.15+. Without this the
+# `cc`/`cmake` build of ggml fails with "'~directory_iterator' is unavailable:
+# introduced in macOS 10.15". `tauri.conf.json`'s `minimumSystemVersion` does NOT
+# propagate to the whisper build script's compiler invocation, so we set the env
+# var the `cc`/`cmake` crates actually read. `force = true` overrides any lower
+# value a tool (e.g. the bundler) might set first.
+#
+# whisper.cpp drives its ggml build through the `cmake` crate, whose generator
+# honours CMAKE_OSX_DEPLOYMENT_TARGET (NOT MACOSX_DEPLOYMENT_TARGET) — verified
+# locally: with only the latter set the ggml C++ still failed, with the former it
+# compiles. We set both so the `cc`-based and `cmake`-based crates each get it.
+[env]
+MACOSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }
+CMAKE_OSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }
