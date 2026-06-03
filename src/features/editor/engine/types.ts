@@ -129,6 +129,11 @@ export interface EditorState {
   vpStart: number;
   vpEnd: number;
 
+  // Video (the Videofil variant — playback is driven by an HTMLVideoElement
+  // instead of Web Audio; the waveform comes from the backend peaks seam).
+  isVideoFile: boolean;
+  videoEl: HTMLVideoElement | null;
+
   // Playback
   audioCtx: AudioContext | null;
   sourceNodes: AudioBufferSourceNode[];
@@ -174,6 +179,8 @@ export function createEditorState(): EditorState {
     cutHistory: [],
     cutHistoryIdx: -1,
     suggestions: [],
+    isVideoFile: false,
+    videoEl: null,
     introBuffer: null,
     outroBuffer: null,
     introDuration: 0,

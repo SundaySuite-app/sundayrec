@@ -61,6 +61,7 @@ export function EditScreen() {
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const timeRef = useRef<HTMLSpanElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [format, setFormat] = useState<ExportFormat>("mp3");
   const [exporting, setExporting] = useState(false);
@@ -173,6 +174,7 @@ export function EditScreen() {
     const canvas = canvasRef.current;
     if (canvas) engine.attachCanvas(canvas);
     if (minimapRef.current) engine.attachMinimap(minimapRef.current);
+    if (videoRef.current) engine.attachVideo(videoRef.current);
     engine.onTick = (sec, _playing) => {
       const el = timeRef.current;
       if (el) el.textContent = formatTime(Math.max(0, sec));
@@ -337,8 +339,19 @@ export function EditScreen() {
         multiple: false,
         filters: [
           {
-            name: "Lyd",
-            extensions: ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus"],
+            name: "Lyd/video",
+            extensions: [
+              "mp3",
+              "m4a",
+              "aac",
+              "wav",
+              "flac",
+              "ogg",
+              "opus",
+              "mp4",
+              "mov",
+              "m4v",
+            ],
           },
         ],
       });
@@ -414,6 +427,11 @@ export function EditScreen() {
     setLoudness(null);
     setMasterPreset(null);
   }, [metaPath]);
+
+  // Video files export as MP4 by default (mp3 still available to pull the audio).
+  useEffect(() => {
+    if (snap.isVideoFile) setFormat("mp4");
+  }, [snap.isVideoFile]);
 
   const onAnalyzeLoudness = useCallback(async () => {
     if (!metaPath) return;
@@ -690,6 +708,18 @@ export function EditScreen() {
           ref={wrapRef}
           style={{ display: "flex", flexDirection: "column", gap: 8 }}
         >
+          {/* Always mounted (so the ref attaches), shown only for video files. */}
+          <video
+            ref={videoRef}
+            playsInline
+            style={{
+              width: "100%",
+              maxHeight: 360,
+              borderRadius: 10,
+              background: "#000",
+              display: snap.isVideoFile ? "block" : "none",
+            }}
+          />
           <canvas
             ref={canvasRef}
             style={{

@@ -11,10 +11,13 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
 import type { EditorFileRead } from "@/lib/bindings/EditorFileRead";
+import type { EditorMediaInfo } from "@/lib/bindings/EditorMediaInfo";
+import type { EditorPeaks } from "@/lib/bindings/EditorPeaks";
 import {
   createEditorState,
   baseName,
   extOf,
+  VIDEO_EXTS,
   WEB_AUDIO_EXTS,
   type Cut,
   type EditorState,
@@ -74,6 +77,7 @@ export interface EditorSnapshot {
   hasOutro: boolean;
   introDuration: number;
   outroDuration: number;
+  isVideoFile: boolean;
   suggestionCount: number;
   /** The longest detected sermon/speech block, for the one-click auto-trim. */
   sermon: { start: number; end: number; minutes: number } | null;
@@ -92,6 +96,8 @@ export class EditorEngine {
   private error: string | null = null;
   private draftTimer: ReturnType<typeof setTimeout> | null = null;
   private labelsOverride: WaveLabels | null = null;
+  private video: HTMLVideoElement | null = null;
+  private videoEndedHandler: (() => void) | null = null;
 
   /** Per-frame playhead callback (timecode). Set by the React shell. */
   onTick: ((sec: number, isPlaying: boolean) => void) | null = null;
@@ -115,7 +121,9 @@ export class EditorEngine {
       version: this.version,
       filePath: s.filePath,
       fileName: s.filePath ? baseName(s.filePath) : "",
-      hasFile: !!s.audioBuffer,
+      // True once a file is loaded — peaks are set on success for BOTH the
+      // audio (Web Audio) and video (backend) paths; video has no audioBuffer.
+      hasFile: !!s.peaks,
       loading: this.loading,
       error: this.error,
       duration: s.duration,
@@ -135,6 +143,7 @@ export class EditorEngine {
       hasOutro: !!s.outroBuffer,
       introDuration: s.introDuration,
       outroDuration: s.outroDuration,
+      isVideoFile: s.isVideoFile,
       suggestionCount: s.suggestions.length,
       sermon: this.findSermonBlock(),
     };
@@ -192,6 +201,12 @@ export class EditorEngine {
     this.drawMinimapNow();
   }
 
+  /** Register the `<video>` element used for the Videofil variant's playback +
+   *  preview. Audio files never touch it. */
+  attachVideo(el: HTMLVideoElement): void {
+    this.video = el;
+  }
+
   private readColors(): void {
     try {
       const cs = getComputedStyle(document.documentElement);
@@ -238,6 +253,9 @@ export class EditorEngine {
 
   private currentSec(): number {
     const s = this.state;
+    if (s.isVideoFile) {
+      return s.isPlaying && s.videoEl ? s.videoEl.currentTime : s.playStartSec;
+    }
     if (s.isPlaying && s.audioCtx) {
       return s.playStartSec + (s.audioCtx.currentTime - s.playStartCtxTime);
     }
@@ -314,6 +332,7 @@ export class EditorEngine {
     s.filePath = path;
     s.peaks = null;
     s.audioBuffer = null;
+    s.isVideoFile = VIDEO_EXTS.has(extOf(path));
     s.playStartSec = 0;
     s.audioGainDb = 0;
     s.clipTimes = [];
@@ -330,6 +349,11 @@ export class EditorEngine {
     this.loading = true;
     this.error = null;
     this.emit();
+
+    if (s.isVideoFile) {
+      await this.loadVideoFile(path, seq);
+      return;
+    }
 
     try {
       const ctx = new AudioContext();
@@ -391,6 +415,73 @@ export class EditorEngine {
     throw new Error(
       "Fant ingen lyddata i filen (eller filen er for stor for direkte avspilling).",
     );
+  }
+
+  /** Video variant: the `<video>` element drives playback (via the asset
+   *  protocol), and the waveform comes from the backend peaks seam (ffmpeg
+   *  extracts the audio track — a video container can't be Web-Audio-decoded). */
+  private async loadVideoFile(path: string, seq: number): Promise<void> {
+    const s = this.state;
+    try {
+      const info = await invoke<EditorMediaInfo>("editor_load_recording", {
+        inputPath: path,
+      });
+      if (seq !== this.state.loadSeq) return;
+
+      s.videoEl = this.video;
+      if (this.video) {
+        this.video.src = convertFileSrc(path);
+        this.video.load();
+      }
+      s.duration = info.durationSec > 0 ? info.durationSec : 0;
+
+      if (info.hasAudio) {
+        try {
+          const pk = await invoke<EditorPeaks>("editor_peaks", {
+            inputPath: path,
+          });
+          if (seq !== this.state.loadSeq) return;
+          s.peaks = this.resamplePeaks(pk.peaks, s.duration);
+        } catch {
+          s.peaks = new Float32Array(Math.max(1, Math.ceil(s.duration * 100)));
+        }
+      } else {
+        // Video-only (no audio track) → a flat line.
+        s.peaks = new Float32Array(Math.max(1, Math.ceil(s.duration * 100)));
+      }
+
+      if (!(s.duration > 0)) {
+        throw new Error("Kunne ikke lese videoens varighet.");
+      }
+      fitAll(s);
+      await this.restoreDraft(path, seq);
+      if (seq !== this.state.loadSeq) return;
+      this.loading = false;
+      this.emit();
+      this.syncCanvasSize();
+      this.scheduleDraw();
+      this.drawMinimapNow();
+    } catch (e) {
+      if (seq !== this.state.loadSeq) return;
+      this.loading = false;
+      this.error =
+        e instanceof Error ? e.message : "Kunne ikke laste videofilen";
+      this.emit();
+    }
+  }
+
+  /** Resample the backend's fixed-bucket peak array to the engine's 100 Hz grid
+   *  so the renderer's `sec * 100` indexing stays consistent with audio files. */
+  private resamplePeaks(backend: number[], durationSec: number): Float32Array {
+    const total = Math.max(1, Math.ceil(durationSec * 100));
+    const out = new Float32Array(total);
+    const n = backend.length;
+    if (n === 0) return out;
+    for (let i = 0; i < total; i++) {
+      const bucket = Math.min(n - 1, Math.floor((i / total) * n));
+      out[i] = backend[bucket];
+    }
+    return out;
   }
 
   // ── Cut-draft persistence (crash recovery) ────────────────────────────────
@@ -464,6 +555,12 @@ export class EditorEngine {
 
   closeFile(): void {
     this.stop();
+    this.detachVideoEnded();
+    if (this.video) {
+      this.video.pause();
+      this.video.removeAttribute("src");
+      this.video.load();
+    }
     // Flush a pending draft for the file we're leaving (don't delete it — a
     // reopen should restore unsaved cuts).
     if (this.draftTimer) {
@@ -493,6 +590,34 @@ export class EditorEngine {
 
   private startPlay(preview: boolean): void {
     const s = this.state;
+
+    // Video variant: the <video> element is the clock + audio source.
+    if (s.isVideoFile) {
+      if (!s.videoEl) return;
+      s.playStartSec = snapOutOfCut(s, s.playStartSec, maxPlayableSec(s));
+      s.isPreview = preview;
+      s.loopStartSec = s.playStartSec;
+      s.isPlaying = true;
+      s.videoEl.currentTime = clampMain(s, s.playStartSec);
+      s.videoEl.play().catch(() => {});
+      this.attachVideoEnded(() => {
+        if (!s.isPlaying) return;
+        if (s.isLooping) {
+          this.stop();
+          s.playStartSec = s.loopStartSec;
+          this.startPlay(s.isPreview);
+        } else {
+          s.isPlaying = false;
+          cancelAnimationFrame(s.rafId);
+          this.emit();
+          this.scheduleDraw();
+        }
+      });
+      this.emit();
+      this.animate();
+      return;
+    }
+
     if (!s.audioBuffer || !s.audioCtx) return;
     if (s.audioCtx.state === "suspended") s.audioCtx.resume().catch(() => {});
 
@@ -601,6 +726,16 @@ export class EditorEngine {
 
   stop(): void {
     const s = this.state;
+    this.detachVideoEnded();
+    if (s.isVideoFile && s.videoEl) {
+      if (s.isPlaying) s.playStartSec = s.videoEl.currentTime;
+      s.videoEl.pause();
+      s.isPlaying = false;
+      cancelAnimationFrame(s.rafId);
+      this.emit();
+      this.scheduleDraw();
+      return;
+    }
     for (const n of s.sourceNodes) {
       try {
         n.stop();
@@ -621,9 +756,45 @@ export class EditorEngine {
     this.scheduleDraw();
   }
 
+  private attachVideoEnded(onEnded: () => void): void {
+    const el = this.state.videoEl;
+    if (!el) return;
+    if (this.videoEndedHandler)
+      el.removeEventListener("ended", this.videoEndedHandler);
+    this.videoEndedHandler = onEnded;
+    el.addEventListener("ended", onEnded, { once: true });
+  }
+
+  private detachVideoEnded(): void {
+    const el = this.state.videoEl;
+    if (el && this.videoEndedHandler) {
+      el.removeEventListener("ended", this.videoEndedHandler);
+    }
+    this.videoEndedHandler = null;
+  }
+
   private animate = (): void => {
     const s = this.state;
-    if (!s.isPlaying || !s.audioCtx) return;
+    if (!s.isPlaying) return;
+
+    if (s.isVideoFile && s.videoEl) {
+      const curSec = s.videoEl.currentTime;
+      // Preview mode skips over cut regions (jump the video past them).
+      if (s.isPreview) {
+        const inCut = s.cuts.find((c) => curSec >= c.start && curSec < c.end);
+        if (inCut) {
+          s.videoEl.currentTime = inCut.end;
+          s.playStartSec = inCut.end;
+        }
+      }
+      this.onTick?.(curSec, true);
+      this.autoScrollToPlayhead(curSec);
+      this.draw();
+      s.rafId = requestAnimationFrame(this.animate);
+      return;
+    }
+
+    if (!s.audioCtx) return;
     const curSec =
       s.playStartSec + (s.audioCtx.currentTime - s.playStartCtxTime);
     this.onTick?.(curSec, true);
@@ -649,10 +820,19 @@ export class EditorEngine {
 
   // ── Seek / navigation ─────────────────────────────────────────────────────
 
+  /** Mirror the playhead onto the video element when paused (so the frame the
+   *  user sees matches the timecode). No-op for audio files. */
+  private syncVideoTime(): void {
+    const s = this.state;
+    if (s.isVideoFile && s.videoEl)
+      s.videoEl.currentTime = clampMain(s, s.playStartSec);
+  }
+
   seekTo(sec: number): void {
     const s = this.state;
     this.stop();
     s.playStartSec = snapOutOfCut(s, clampPlayable(s, sec), maxPlayableSec(s));
+    this.syncVideoTime();
     const mainPlayhead = clampMain(s, s.playStartSec);
     if (mainPlayhead < s.vpStart || mainPlayhead > s.vpEnd) {
       const span = s.vpEnd - s.vpStart;
@@ -668,6 +848,7 @@ export class EditorEngine {
     const s = this.state;
     this.stop();
     s.playStartSec = clampPlayable(s, s.playStartSec + secs);
+    this.syncVideoTime();
     const mainPlayhead = clampMain(s, s.playStartSec);
     if (mainPlayhead < s.vpStart || mainPlayhead > s.vpEnd) {
       const half = (s.vpEnd - s.vpStart) / 2;
@@ -949,6 +1130,7 @@ export class EditorEngine {
 
     if (s.playheadDragging) {
       s.playStartSec = clampPlayable(s, extSec);
+      this.syncVideoTime();
       this.onTick?.(s.playStartSec, false);
       this.scheduleDraw();
       return;
@@ -999,6 +1181,7 @@ export class EditorEngine {
     if (s.playheadDragging) {
       s.playheadDragging = false;
       s.playStartSec = snapOutOfCut(s, s.playStartSec, maxPlayableSec(s));
+      this.syncVideoTime();
       this.onTick?.(s.playStartSec, false);
       this.scheduleDraw();
       return;
@@ -1024,6 +1207,7 @@ export class EditorEngine {
         clampPlayable(s, extSec),
         maxPlayableSec(s),
       );
+      this.syncVideoTime();
       this.onTick?.(s.playStartSec, false);
     }
     s.dragStartSec = -1;
@@ -1162,6 +1346,7 @@ export class EditorEngine {
     }
     window.removeEventListener("mousemove", this.onMinimapMove);
     window.removeEventListener("mouseup", this.onMinimapUp);
+    this.detachVideoEnded();
     if (this.drawRaf) cancelAnimationFrame(this.drawRaf);
     if (this.draftTimer) clearTimeout(this.draftTimer);
     const ctx = this.state.audioCtx;
