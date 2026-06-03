@@ -1273,7 +1273,16 @@
     "cdHm": "om {{h}}t {{m}}m",
     "cdDays": "om {{d}} dager",
     "wakeAuto": "Maskinen vekkes automatisk",
-    "flipCamera": "Speilvend kamera"
+    "flipCamera": "Speilvend kamera",
+    "cloudBackup": "Sky-backup",
+    "cloudConnected": "Tilkoblet",
+    "cloudOff": "Ikke tilkoblet",
+    "cloudOn": "På",
+    "cloudOffHint": "Sikkerhetskopier opptak automatisk",
+    "transcription": "Transkripsjon",
+    "transcriptionWhisper": "Whisper (på enheten)",
+    "transcriptionHint": "Automatisk tekst til søk",
+    "manage": "Endre"
   },
   "liveScreen": {
     "title": "Direkte sending",

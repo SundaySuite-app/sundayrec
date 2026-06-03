@@ -53,6 +53,17 @@ import type { Settings } from "@/lib/bindings/Settings";
 import type { FileFormat } from "@/lib/bindings/FileFormat";
 import type { RecordingRow } from "@/lib/bindings/RecordingRow";
 import type { PruneSummary } from "@/lib/bindings/PruneSummary";
+import type { CloudConnectionStatus } from "@/lib/bindings/CloudConnectionStatus";
+import type { CloudService } from "@/lib/bindings/CloudService";
+
+/** Friendly name for a connected cloud service. */
+function cloudServiceLabel(s: CloudService): string {
+  return s === "google-drive"
+    ? "Google Drive"
+    : s === "youtube"
+      ? "YouTube"
+      : "Gmail";
+}
 
 function TrustBanner() {
   const { t } = useTranslation();
@@ -671,6 +682,62 @@ function HomeHistory() {
   );
 }
 
+/**
+ * Publish-status strip — the Electron home showed at-a-glance cloud / cover /
+ * transcription cards. Here: a real cloud-backup connection status (the one
+ * with clean status data) + a transcription quick-link, both deep-linking to
+ * their panels. Cover lives in Settings → Publisering.
+ */
+function PublishStrip() {
+  const { t } = useTranslation();
+  const { data: cloud } = useQuery<CloudConnectionStatus[]>({
+    queryKey: ["cloud_connection_status"],
+    queryFn: () => invoke<CloudConnectionStatus[]>("cloud_connection_status"),
+  });
+  const connected = (cloud ?? []).filter((c) => c.connected);
+  const cloudV =
+    connected.length > 0
+      ? t("homeScreen.cloudConnected", "Tilkoblet")
+      : t("homeScreen.cloudOff", "Ikke tilkoblet");
+  const cloudMeta =
+    connected.length > 0
+      ? connected.map((c) => cloudServiceLabel(c.service)).join(", ")
+      : t("homeScreen.cloudOffHint", "Sikkerhetskopier opptak automatisk");
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 16,
+        marginTop: 16,
+      }}
+    >
+      <DeviceCard
+        icon="drive"
+        k={t("homeScreen.cloudBackup", "Sky-backup")}
+        v={cloudV}
+        meta={cloudMeta}
+        badge={
+          connected.length > 0 ? (
+            <Badge kind="ok">{t("homeScreen.cloudOn", "På")}</Badge>
+          ) : undefined
+        }
+        onEdit={() => navigateTo("cloud")}
+        editLabel={t("homeScreen.manage", "Endre")}
+      />
+      <DeviceCard
+        icon="sparkle"
+        k={t("homeScreen.transcription", "Transkripsjon")}
+        v={t("homeScreen.transcriptionWhisper", "Whisper (på enheten)")}
+        meta={t("homeScreen.transcriptionHint", "Automatisk tekst til søk")}
+        onEdit={() => navigateTo("transcribe")}
+        editLabel={t("homeScreen.manage", "Endre")}
+      />
+    </div>
+  );
+}
+
 export function HomeScreen({
   onRecord,
 }: {
@@ -1200,6 +1267,7 @@ export function HomeScreen({
         </div>
       </div>
 
+      <PublishStrip />
       <HomeHistory />
     </div>
   );

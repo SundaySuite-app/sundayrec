@@ -1273,7 +1273,16 @@
     "cdHm": "dans {{h}}h {{m}}m",
     "cdDays": "dans {{d}} jours",
     "wakeAuto": "L’ordinateur se réveille automatiquement",
-    "flipCamera": "Inverser la caméra"
+    "flipCamera": "Inverser la caméra",
+    "cloudBackup": "Sauvegarde cloud",
+    "cloudConnected": "Connecté",
+    "cloudOff": "Non connecté",
+    "cloudOn": "Activé",
+    "cloudOffHint": "Sauvegarder les enregistrements automatiquement",
+    "transcription": "Transcription",
+    "transcriptionWhisper": "Whisper (sur l’appareil)",
+    "transcriptionHint": "Texte automatique pour la recherche",
+    "manage": "Gérer"
   },
   "liveScreen": {
     "title": "Diffusion en direct",

@@ -1273,7 +1273,16 @@
     "cdHm": "in {{h}} Std {{m}} Min",
     "cdDays": "in {{d}} Tagen",
     "wakeAuto": "Der Computer wird automatisch geweckt",
-    "flipCamera": "Kamera spiegeln"
+    "flipCamera": "Kamera spiegeln",
+    "cloudBackup": "Cloud-Backup",
+    "cloudConnected": "Verbunden",
+    "cloudOff": "Nicht verbunden",
+    "cloudOn": "An",
+    "cloudOffHint": "Aufnahmen automatisch sichern",
+    "transcription": "Transkription",
+    "transcriptionWhisper": "Whisper (auf dem Gerät)",
+    "transcriptionHint": "Automatischer Text für die Suche",
+    "manage": "Ändern"
   },
   "liveScreen": {
     "title": "Livestream",

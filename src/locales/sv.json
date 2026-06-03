@@ -1273,7 +1273,16 @@
     "cdHm": "om {{h}}h {{m}}m",
     "cdDays": "om {{d}} dagar",
     "wakeAuto": "Datorn väcks automatiskt",
-    "flipCamera": "Spegla kamera"
+    "flipCamera": "Spegla kamera",
+    "cloudBackup": "Moln-backup",
+    "cloudConnected": "Ansluten",
+    "cloudOff": "Inte ansluten",
+    "cloudOn": "På",
+    "cloudOffHint": "Säkerhetskopiera inspelningar automatiskt",
+    "transcription": "Transkribering",
+    "transcriptionWhisper": "Whisper (på enheten)",
+    "transcriptionHint": "Automatisk text för sökning",
+    "manage": "Ändra"
   },
   "liveScreen": {
     "title": "Direktsändning",
