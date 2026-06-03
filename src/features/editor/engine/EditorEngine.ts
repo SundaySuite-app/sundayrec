@@ -78,7 +78,7 @@ export class EditorEngine {
   private state: EditorState = createEditorState();
   private canvas: HTMLCanvasElement | null = null;
   private minimap: HTMLCanvasElement | null = null;
-  private colors: WaveColors = { surface: "#0e1b29", accent: "#f0bb47" };
+  private colors: WaveColors = { surface: "#111827", accent: "#f0bb47" };
   private drawRaf = 0;
   private version = 0;
   private snapshot: EditorSnapshot;
@@ -188,7 +188,7 @@ export class EditorEngine {
       const surface = cs.getPropertyValue("--sr-ink-900").trim();
       const accent = cs.getPropertyValue("--sr-gold").trim();
       this.colors = {
-        surface: surface || "#0e1b29",
+        surface: surface || "#111827",
         accent: accent || "#f0bb47",
       };
     } catch {
@@ -342,12 +342,16 @@ export class EditorEngine {
       // draft is written every edit and cleared on export — finding one means
       // we were closed mid-edit).
       await this.restoreDraft(path, seq);
+      // A newer load may have started during restoreDraft's await — don't let
+      // this stale load flip `loading`/emit over the newer one's state.
+      if (seq !== this.state.loadSeq) return;
       this.loading = false;
       this.emit();
       this.syncCanvasSize();
       this.scheduleDraw();
       this.drawMinimapNow();
     } catch (e) {
+      if (seq !== this.state.loadSeq) return;
       this.loading = false;
       this.error = e instanceof Error ? e.message : "Kunne ikke laste lydfilen";
       this.emit();

@@ -181,7 +181,7 @@ export function createEditorState(): EditorState {
 
 /** File extension incl. dot, lower-cased (`"/a/b.MP3"` → `".mp3"`). */
 export function extOf(path: string): string {
-  return ("." + (path.split(".").pop()?.toLowerCase() ?? "")).toLowerCase();
+  return "." + (path.split(".").pop()?.toLowerCase() ?? "");
 }
 
 /** Basename of a path, handling both separators. */

@@ -676,7 +676,7 @@ export function EditScreen() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {snap.cuts.map((c, i) => (
               <div
-                key={`${c.start}-${c.end}-${i}`}
+                key={`${c.start}-${c.end}`}
                 style={{
                   display: "flex",
                   alignItems: "center",

@@ -674,7 +674,9 @@
   color: var(--sr-text-2);
 }
 .sr-input::placeholder {
-  color: var(--sr-text-dim);
+  /* text-dim (#2e3a55) is near-invisible on the input surface after the
+     Electron re-skin; tertiary text reads clearly while staying muted. */
+  color: var(--sr-text-3);
 }
 .sr-input:focus,
 .sr-select:focus {
