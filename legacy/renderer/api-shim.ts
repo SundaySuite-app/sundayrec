@@ -1,14 +1,60 @@
-// window.api shim — maps the OLD Electron preload surface onto safe stubs so the
-// ported vanilla-TS renderer runs inside Tauri with NO backend wired yet.
-//
-// Every method resolves to a benign default and NEVER throws, so every screen
-// renders exactly like the old app (with empty/placeholder data). Settings are
-// persisted to localStorage so the settings UI feels real across reloads. Real
-// Tauri `invoke()` wiring per channel is a later phase — see the plan + the
-// command map in src-tauri + reference hooks.
+// window.api shim — maps the OLD Electron preload surface onto the Tauri backend.
 //
 // Loaded as a module script BEFORE ./main.ts in index.html, so `window.api`
 // exists before the renderer boots.
+//
+// PHASE 3 (in progress): methods are being wired to real Tauri `invoke()`
+// commands (134 exist in src-tauri/src/lib.rs; the contract is documented in
+// reference/hooks.ts + reference/bindings). Each wired method calls the backend
+// through `call()` and falls back to a safe default on any error, so a missing/
+// mismatched command degrades to the old empty-state instead of throwing. Methods
+// not yet wired keep their safe stub (marked `// TODO Phase 3: <command>`).
+//
+// NOTE: VU metering + audio/video device enumeration are CLIENT-SIDE in the
+// ported renderer (Web Audio getUserMedia / enumerateDevices), so they already
+// work in the Tauri WKWebView with no backend wiring (just a mic/camera grant).
+
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+
+// Re-exported so the unused `convertFileSrc` import is retained for the file://
+// → asset: rewrites that land as pages get wired. (Tree-shaken if truly unused.)
+void convertFileSrc;
+
+/** Invoke a Tauri command, falling back to `fallback` on any error so the UI
+ *  never throws while the backend is partially wired. */
+async function call<T>(
+  cmd: string,
+  args: Record<string, unknown> | undefined,
+  fallback: T,
+): Promise<T> {
+  try {
+    return (await invoke<T>(cmd, args)) as T;
+  } catch (e) {
+    console.warn(`[api-shim] ${cmd} failed → fallback`, e);
+    return fallback;
+  }
+}
+
+// Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
+// (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
+const EVENT_MAP: Record<string, string> = {
+  "recording-overlay-start": "recording://started",
+  "recording-overlay-stop": "recording://state",
+  "recording-finished": "recording://finished",
+  "recording-error": "recording://error",
+  "recording-progress": "recording://progress",
+  "recording-reconnecting": "recording://reconnecting",
+  "recording-reconnected": "recording://reconnected",
+  "video-preview-frame": "preview://frame",
+  "video-preview-stopped": "preview://stopped",
+  "video-preview-meta": "preview://meta",
+  "master-progress": "editor-master-progress",
+  "whisper-progress": "whisper://progress",
+  "whisper-model-progress": "whisper://model-progress",
+  "stream-stats": "streaming://stats",
+  "editor-export-progress": "editor://export-progress",
+};
 
 // ── Default settings (mirrors OLD src/main/store.ts `defaults`) ───────────────
 const DEFAULT_SETTINGS: Record<string, unknown> = {
@@ -159,7 +205,9 @@ const api: Record<string, unknown> = {
   updateHistoryNote: async () => true,
 
   // ── Disk / recording ────────────────────────────────────────────────────
-  getDiskSpace: async () => ({ freeBytes: null, totalBytes: null }),
+  // get_disk_space returns { freeBytes } (camelCase) — exactly what home.ts reads.
+  getDiskSpace: async () =>
+    call("get_disk_space", undefined, { freeBytes: null, totalBytes: null }),
   startRecordingNow: async () => ({ ok: false }),
   stopRecordingNow: async () => true,
   runTestRecording: async () => ({ ok: false, level: null, message: "" }),
@@ -177,7 +225,8 @@ const api: Record<string, unknown> = {
   clearSmtpPassword: async () => true,
 
   // ── App / updates ───────────────────────────────────────────────────────
-  getAppVersion: async () => "0.2.0",
+  getAppVersion: async () =>
+    (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
   getPlatform: async () => platform,
   checkForUpdates: async () => ({ available: false }),
   installUpdate: async () => true,
@@ -196,7 +245,16 @@ const api: Record<string, unknown> = {
   // audio-page.ts calls `.some(...)` on the result → must be an array.
   listFfmpegAudioDevices: async () => [],
   diagnoseAudio: async () => ({ dshow: [], wasapi: [], wasapiAvailable: false }),
-  listVideoDevices: async () => [],
+  // list_devices → { video_inputs: FfmpegDevice[] }; old renderer wants
+  // { name, index }[]. FfmpegDevice already carries both fields.
+  listVideoDevices: async () => {
+    const inv = await call<{ video_inputs?: { name: string; index: number }[] }>(
+      "list_devices",
+      undefined,
+      {},
+    );
+    return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
+  },
   videoPreviewStart: async () => true,
   videoPreviewStop: async () => true,
 
@@ -326,11 +384,22 @@ const api: Record<string, unknown> = {
   notifyWeakSignal: noop,
 
   // ── Event subscriptions ─────────────────────────────────────────────────
-  // No backend events fire yet, so every subscription is a harmless no-op that
-  // returns an unsubscribe function. Real Tauri `listen()` mapping is a later
-  // phase (recording-* -> recording://*, video-preview-frame -> preview://frame,
-  // master-progress -> editor-master-progress, etc.).
-  on: (_channel: string, _fn: (...args: unknown[]) => void) => off,
+  // Map the old Electron channel to its Tauri event and forward the payload.
+  // Unknown channels (no Rust emitter yet) return a harmless no-op unsubscribe.
+  on: (channel: string, fn: (...args: unknown[]) => void) => {
+    const evt = EVENT_MAP[channel];
+    if (!evt) return off;
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    void listen(evt, (e) => fn(e.payload)).then((u) => {
+      if (cancelled) u();
+      else unlisten = u;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
