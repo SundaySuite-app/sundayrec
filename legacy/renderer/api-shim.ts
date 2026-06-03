@@ -121,15 +121,19 @@ const cloudStatusStub = {
 const streamStatusStub = {
   active: false,
   uptime: 0,
-  bitrate: 0,
+  // Field names match what live-page.ts reads (s.bitrateKbps / s.dropped / s.fps),
+  // so idle stats show "0 kbps" / "0" like the old app — not "undefined".
+  bitrateKbps: 0,
   fps: 0,
-  droppedFrames: 0,
+  dropped: 0,
   destinations: [],
 };
 const whisperStatusStub = {
   models: [],
   installed: [],
   active: null,
+  // home.ts / editor-transcript.ts read `status.binaryAvailable`.
+  binaryAvailable: false,
   available: false,
 };
 
@@ -189,7 +193,8 @@ const api: Record<string, unknown> = {
 
   // ── Audio / video devices ───────────────────────────────────────────────
   listAsioDrivers: async () => [],
-  listFfmpegAudioDevices: async () => ({ inputs: [], dshow: [], wasapi: [] }),
+  // audio-page.ts calls `.some(...)` on the result → must be an array.
+  listFfmpegAudioDevices: async () => [],
   diagnoseAudio: async () => ({ dshow: [], wasapi: [], wasapiAvailable: false }),
   listVideoDevices: async () => [],
   videoPreviewStart: async () => true,
