@@ -35,6 +35,8 @@ const PLANNED = vi.hoisted(
     silence_timeout_minutes: 5,
     framerate: 30,
     channel_mode: "stereo",
+    input_channel_l: null,
+    input_channel_r: null,
     sample_rate: 48000,
     bitrate_kbps: 192,
     split_minutes: 0,

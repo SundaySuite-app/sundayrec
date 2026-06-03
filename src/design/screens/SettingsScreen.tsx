@@ -27,7 +27,7 @@ import type { AudioDeviceList } from "@/lib/bindings/AudioDeviceList";
 import type { IntegrationSettings } from "@/lib/bindings/IntegrationSettings";
 import { LANGUAGE_NAMES, SUPPORTED_LNGS, changeLanguage } from "@/i18n";
 import { SETTINGS_QUERY_KEY } from "@/features/settings/queryKey";
-import { useVideoDevices } from "@/design/hooks";
+import { useInputDevices, useVideoDevices } from "@/design/hooks";
 import { navigateTo } from "@/lib/navigation";
 
 import { Icon } from "../Icon";
@@ -311,6 +311,78 @@ function AudioDevicePicker({ s, update }: TabProps) {
   );
 }
 
+/**
+ * Per-channel input picker for multi-channel mixers (e.g. an X32): choose which
+ * two 0-based device input channels land in the LEFT/RIGHT of a stereo file.
+ * Shown ONLY when stereo is selected AND the chosen device exposes >2 channels —
+ * the common single-mixer case. `null` values keep the default (0, 1) routing.
+ */
+function ChannelSelectCard({ s, update }: TabProps) {
+  const { t } = useTranslation();
+  const list = useInputDevices();
+  const inputs = list?.inputs ?? [];
+  const selected =
+    inputs.find((d) =>
+      s.deviceName != null ? d.name === s.deviceName : d.is_default,
+    ) ?? null;
+  const channels = selected?.channels ?? 0;
+  // Only meaningful for stereo on a genuine multi-channel device.
+  if (s.channels !== "stereo" || channels <= 2) return null;
+
+  const opts = Array.from({ length: channels }, (_, i) => i);
+  return (
+    <Card
+      title={t("settingsScreen.audio.inputChannelsTitle", "Velg kanaler")}
+      desc={t(
+        "settingsScreen.audio.inputChannelsDesc",
+        "Mikseren har flere enn to kanaler. Velg hvilke to som tas opp (venstre og høyre).",
+      )}
+      pad
+    >
+      <div className="sr-row" style={{ gap: 16, marginTop: 14 }}>
+        <label className="sr-stack-2" style={{ flex: 1 }}>
+          <span style={{ fontSize: 13, color: "var(--sr-text-3)" }}>
+            {t("settingsScreen.audio.channelL", "Venstre kanal")}
+          </span>
+          <select
+            className="sr-select"
+            value={s.inputChannelL ?? 0}
+            onChange={(e) => update({ inputChannelL: Number(e.target.value) })}
+          >
+            {opts.map((i) => (
+              <option key={i} value={i}>
+                {t("settingsScreen.audio.channel", "Kanal {{n}}", { n: i + 1 })}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="sr-stack-2" style={{ flex: 1 }}>
+          <span style={{ fontSize: 13, color: "var(--sr-text-3)" }}>
+            {t("settingsScreen.audio.channelR", "Høyre kanal")}
+          </span>
+          <select
+            className="sr-select"
+            value={s.inputChannelR ?? 1}
+            onChange={(e) => update({ inputChannelR: Number(e.target.value) })}
+          >
+            {opts.map((i) => (
+              <option key={i} value={i}>
+                {t("settingsScreen.audio.channel", "Kanal {{n}}", { n: i + 1 })}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--sr-text-3)", marginTop: 10 }}>
+        {t(
+          "settingsScreen.audio.inputChannelsHint",
+          "Kanalene telles fra 1 slik mikseren viser dem.",
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function TabLydkilde({ s, update }: TabProps) {
   const { t } = useTranslation();
   return (
@@ -372,6 +444,7 @@ function TabLydkilde({ s, update }: TabProps) {
           />
         </div>
       </Card>
+      <ChannelSelectCard s={s} update={update} />
       <Card
         title={t("settingsScreen.audio.sampleRateTitle", "Samplingsrate")}
         pad

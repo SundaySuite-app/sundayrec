@@ -39,6 +39,15 @@ framerate: number,
  */
 channel_mode: ChannelMode, 
 /**
+ * Explicit 0-based device input channel → LEFT output (multi-channel mixers).
+ * `None` keeps the `channel_mode` default routing.
+ */
+input_channel_l: number | null, 
+/**
+ * Explicit 0-based device input channel → RIGHT output. See `input_channel_l`.
+ */
+input_channel_r: number | null, 
+/**
  * Capture sample rate in Hz, or `None` to capture at the device's NATIVE
  * rate (omit `-ar` — the anti-resample / anti-choppiness fix). Resolved from
  * `Settings::sample_rate_mode` via `resolved_sample_rate()`.

@@ -170,6 +170,16 @@ pub struct Settings {
     /// Input channel layout.
     #[serde(default = "default_channels")]
     pub channels: ChannelMode,
+    /// Explicit 0-based input channel to record into the LEFT output channel.
+    /// `None` keeps the `channels`-mode default routing. Set for multi-channel
+    /// mixers (e.g. an X32) where you want to record specific channels (17 & 18).
+    /// Clamped 0..=31 in `validate()`. Only honoured for `ChannelMode::Stereo`.
+    #[serde(default)]
+    pub input_channel_l: Option<i32>,
+    /// Explicit 0-based input channel to record into the RIGHT output channel.
+    /// See [`Settings::input_channel_l`].
+    #[serde(default)]
+    pub input_channel_r: Option<i32>,
     /// Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
     /// back-compat with exported/old profiles; the RECORDER no longer reads it —
     /// it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
@@ -448,6 +458,8 @@ impl Default for Settings {
             av_sync: true,
 
             channels: default_channels(),
+            input_channel_l: None,
+            input_channel_r: None,
             sample_rate: default_sample_rate(),
             sample_rate_mode: default_sample_rate_mode(),
             input_volume: default_input_volume(),
@@ -542,6 +554,8 @@ impl Settings {
         self.eq_bass = clamp_i32(self.eq_bass, -24, 24);
         self.eq_mid = clamp_i32(self.eq_mid, -24, 24);
         self.eq_treble = clamp_i32(self.eq_treble, -24, 24);
+        self.input_channel_l = self.input_channel_l.map(|c| clamp_i32(c, 0, 31));
+        self.input_channel_r = self.input_channel_r.map(|c| clamp_i32(c, 0, 31));
         self.comp_threshold = clamp_f64(self.comp_threshold, -60.0, 0.0, -24.0);
         self.comp_ratio = clamp_f64(self.comp_ratio, 1.0, 100.0, 4.0);
         self.comp_attack = clamp_f64(self.comp_attack, 0.1, 2000.0, 10.0);
@@ -828,6 +842,24 @@ mod tests {
         };
         under.validate();
         assert_eq!(under.input_volume, 0);
+    }
+
+    #[test]
+    fn validate_clamps_input_channels() {
+        let mut s = Settings {
+            input_channel_l: Some(99),
+            input_channel_r: Some(-5),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, Some(31));
+        assert_eq!(s.input_channel_r, Some(0));
+
+        // None stays None (mode-default routing).
+        let mut none = Settings::default();
+        none.validate();
+        assert_eq!(none.input_channel_l, None);
+        assert_eq!(none.input_channel_r, None);
     }
 
     #[test]

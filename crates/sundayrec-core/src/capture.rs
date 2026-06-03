@@ -156,6 +156,25 @@ pub fn channel_map_filter(mode: ChannelMode) -> Option<String> {
     }
 }
 
+/// Explicit per-channel `pan` for multi-channel mixers (e.g. an X32): record any
+/// two 0-based device input channels into a stereo file. Returns `Some(filter)`
+/// ONLY for `ChannelMode::Stereo` with a non-identity `(l, r)` pair — i.e. when
+/// the user picked channels other than the default `(0, 1)`. Mono modes keep
+/// [`channel_map_filter`]'s routing (device routing for mono picks is
+/// HARDWARE-UNVERIFIED, so we defer it). `None` means "use the mode default".
+pub fn custom_channel_map_filter(
+    mode: ChannelMode,
+    l: Option<i32>,
+    r: Option<i32>,
+) -> Option<String> {
+    match (mode, l, r) {
+        (ChannelMode::Stereo, Some(l), Some(r)) if (l, r) != (0, 1) => {
+            Some(format!("pan=stereo|c0=c{l}|c1=c{r}"))
+        }
+        _ => None,
+    }
+}
+
 /// Output channel count for an `-ac` argument: stereo keeps both, every mono mode
 /// downmixes to one (the [`channel_map_filter`] selects WHICH signal).
 fn ac_count(mode: ChannelMode) -> u8 {
@@ -303,6 +322,12 @@ pub struct CaptureOpts {
     pub framerate: u32,
     /// Output channel layout / downmix mode.
     pub channel_mode: ChannelMode,
+    /// Explicit 0-based device input channel → LEFT output (multi-channel mixers).
+    /// `None` keeps the `channel_mode` default routing. See
+    /// [`custom_channel_map_filter`].
+    pub input_channel_l: Option<i32>,
+    /// Explicit 0-based device input channel → RIGHT output. See `input_channel_l`.
+    pub input_channel_r: Option<i32>,
     /// Output sample rate in Hz, or `None` to capture at the device's NATIVE
     /// rate (omit `-ar`). `None` is the default — forcing a rate that doesn't
     /// match the device resamples and drops samples (the choppiness root cause).
@@ -335,6 +360,8 @@ impl Default for CaptureOpts {
             silence_threshold_db: None,
             framerate: 30,
             channel_mode: ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
             sample_rate: None,
             bitrate_kbps: 192,
             live_levels: true,
@@ -390,7 +417,11 @@ pub fn build_unified_capture_args(
     } else {
         unified_audio_drift_filter(platform).to_string()
     };
-    let pan = channel_map_filter(opts.channel_mode).unwrap_or_default();
+    // Explicit per-channel pick (multi-channel mixers) overrides the mode default
+    // when the user chose channels other than (0, 1); otherwise the mode routing.
+    let pan = custom_channel_map_filter(opts.channel_mode, opts.input_channel_l, opts.input_channel_r)
+        .or_else(|| channel_map_filter(opts.channel_mode))
+        .unwrap_or_default();
     let silence = build_silence_detect_filter(opts.stop_on_silence, opts.silence_threshold_db);
     // The live-levels astats pass is OPTIONAL: when the user turns the meters off
     // (`live_levels = false`) we drop it from the chain so its per-frame stderr
@@ -1219,6 +1250,48 @@ mod tests {
             channel_map_filter(ChannelMode::MonoMix).as_deref(),
             Some("pan=mono|c0=0.5*c0+0.5*c1")
         );
+    }
+
+    #[test]
+    fn custom_channel_map_filter_picks_explicit_stereo_channels() {
+        // A real multi-channel pick (X32 ch 17 & 18 → 0-based 16 & 17).
+        assert_eq!(
+            custom_channel_map_filter(ChannelMode::Stereo, Some(16), Some(17)).as_deref(),
+            Some("pan=stereo|c0=c16|c1=c17")
+        );
+        // The identity pair (0, 1) is just plain stereo → no filter.
+        assert_eq!(
+            custom_channel_map_filter(ChannelMode::Stereo, Some(0), Some(1)),
+            None
+        );
+        // A partial / missing pick falls through to the mode default.
+        assert_eq!(
+            custom_channel_map_filter(ChannelMode::Stereo, Some(2), None),
+            None
+        );
+        // Mono modes ignore the explicit pick (HARDWARE-UNVERIFIED, deferred).
+        assert_eq!(
+            custom_channel_map_filter(ChannelMode::MonoL, Some(4), Some(5)),
+            None
+        );
+    }
+
+    #[test]
+    fn custom_channels_override_pan_in_af_chain() {
+        let opts = CaptureOpts {
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..CaptureOpts::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, None, "1", "/tmp/x.wav", &opts);
+        let af = args
+            .iter()
+            .position(|a| a == "-af")
+            .map(|i| args[i + 1].clone())
+            .expect("an -af chain");
+        assert!(af.contains("pan=stereo|c0=c16|c1=c17"), "af was: {af}");
+        // Still a stereo output.
+        assert!(has_pair(&args, "-ac", "2"));
     }
 
     #[test]

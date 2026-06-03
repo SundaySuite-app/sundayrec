@@ -151,6 +151,11 @@ pub struct RecordingOpts {
     pub framerate: u32,
     /// Output channel layout / downmix mode (stereo, mono-L, mono-R, mono-mix).
     pub channel_mode: ChannelMode,
+    /// Explicit 0-based device input channel → LEFT output (multi-channel mixers).
+    /// `None` keeps the `channel_mode` default routing.
+    pub input_channel_l: Option<i32>,
+    /// Explicit 0-based device input channel → RIGHT output. See `input_channel_l`.
+    pub input_channel_r: Option<i32>,
     /// Capture sample rate in Hz, or `None` to capture at the device's NATIVE
     /// rate (omit `-ar` — the anti-resample / anti-choppiness fix). Resolved from
     /// `Settings::sample_rate_mode` via `resolved_sample_rate()`.
@@ -266,6 +271,8 @@ pub fn build_record_args(
         silence_threshold_db: opts.silence_threshold_db,
         framerate: opts.framerate,
         channel_mode: opts.channel_mode,
+        input_channel_l: opts.input_channel_l,
+        input_channel_r: opts.input_channel_r,
         sample_rate: opts.sample_rate,
         bitrate_kbps: opts.bitrate_kbps,
         live_levels: opts.live_levels,
@@ -1756,6 +1763,8 @@ mod tests {
             silence_timeout_minutes: 5,
             framerate: 30,
             channel_mode: ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
             sample_rate: Some(48_000),
             bitrate_kbps: 192,
             split_minutes: 0,
@@ -2147,6 +2156,8 @@ mod tests {
             silence_timeout_minutes: 7,
             framerate: 25,
             channel_mode: ChannelMode::MonoL,
+            input_channel_l: None,
+            input_channel_r: None,
             sample_rate: Some(44_100),
             bitrate_kbps: 256,
             split_minutes: 30,

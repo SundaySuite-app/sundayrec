@@ -33,6 +33,20 @@ vi.mock("@tauri-apps/api/core", () => ({
       if (cmd === "app_info")
         return { name: "SundayRec", version: "4.99.1", platform: "macos" };
       if (cmd === "list_devices") return { video_inputs: [] };
+      // A multi-channel mixer (8 ins) so the per-channel ChannelSelectCard shows.
+      if (cmd === "list_input_devices")
+        return {
+          host: "CoreAudio",
+          inputs: [
+            {
+              name: "X32",
+              direction: "input",
+              channels: 8,
+              sample_rates: [48000],
+              is_default: true,
+            },
+          ],
+        };
       // The Sunday-suite tab reads/writes the opt-in integrations bag. Start
       // disabled; `integrations_set_settings` echoes a merged bag so the
       // optimistic→canonical toggle update works.
@@ -52,6 +66,8 @@ vi.mock("@tauri-apps/api/core", () => ({
           silence_timeout_minutes: 0,
           framerate: 0,
           channel_mode: "stereo",
+          input_channel_l: null,
+          input_channel_r: null,
           sample_rate: 48000,
           bitrate_kbps: 192,
           split_minutes: 0,
@@ -164,6 +180,27 @@ describe("SettingsScreen", () => {
         "settings_save",
         expect.objectContaining({
           settings: expect.objectContaining({ channels: "monoMix" }),
+        }),
+      ),
+    );
+  });
+
+  it("shows the channel picker for a multi-channel mixer and persists a pick", async () => {
+    renderSettings();
+    // The card only appears once the (8-channel) device list resolves.
+    await waitFor(() =>
+      expect(screen.getByText("Velg kanaler")).toBeInTheDocument(),
+    );
+
+    // Picking left channel 3 (0-based value 2) persists as inputChannelL.
+    const leftSelect = screen.getAllByRole("combobox")[0];
+    fireEvent.change(leftSelect, { target: { value: "2" } });
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "settings_save",
+        expect.objectContaining({
+          settings: expect.objectContaining({ inputChannelL: 2 }),
         }),
       ),
     );

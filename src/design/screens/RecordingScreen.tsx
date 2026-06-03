@@ -117,6 +117,8 @@ function useRecordingSession(video: boolean) {
           silence_timeout_minutes: s?.silenceTimeoutMinutes ?? 5,
           framerate: 30,
           channel_mode: s?.channels ?? "stereo",
+          input_channel_l: s?.inputChannelL ?? null,
+          input_channel_r: s?.inputChannelR ?? null,
           // Resolve the sample-rate POLICY (auto → null = native rate, no
           // resample) — the recorder no longer reads the legacy `sampleRate`.
           sample_rate: resolvedSampleRate(s?.sampleRateMode ?? "auto"),

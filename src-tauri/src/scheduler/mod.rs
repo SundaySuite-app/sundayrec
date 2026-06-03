@@ -427,6 +427,8 @@ pub(crate) fn build_opts(
         silence_timeout_minutes: settings.silence_timeout_minutes.max(1) as u32,
         framerate: settings.video_framerate.clamp(1, 120) as u32,
         channel_mode: settings.channels,
+        input_channel_l: settings.input_channel_l,
+        input_channel_r: settings.input_channel_r,
         // Auto (native) → None (omit -ar, no resample → no choppiness); explicit
         // modes → Some(hz). The legacy `sample_rate: i32` field is NOT used.
         sample_rate: settings.resolved_sample_rate(),

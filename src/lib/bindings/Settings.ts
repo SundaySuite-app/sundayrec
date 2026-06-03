@@ -88,6 +88,18 @@ avSync: boolean,
  */
 channels: ChannelMode, 
 /**
+ * Explicit 0-based input channel to record into the LEFT output channel.
+ * `None` keeps the `channels`-mode default routing. Set for multi-channel
+ * mixers (e.g. an X32) where you want to record specific channels (17 & 18).
+ * Clamped 0..=31 in `validate()`. Only honoured for `ChannelMode::Stereo`.
+ */
+inputChannelL: number | null, 
+/**
+ * Explicit 0-based input channel to record into the RIGHT output channel.
+ * See [`Settings::input_channel_l`].
+ */
+inputChannelR: number | null, 
+/**
  * Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
  * back-compat with exported/old profiles; the RECORDER no longer reads it —
  * it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).

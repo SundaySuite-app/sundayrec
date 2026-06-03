@@ -72,6 +72,8 @@ export const DEFAULT_SETTINGS: Settings = {
   separateAudioFormat: "wav",
   avSync: true,
   channels: "stereo",
+  inputChannelL: null,
+  inputChannelR: null,
   sampleRate: 48000,
   sampleRateMode: "auto",
   inputVolume: 100,
