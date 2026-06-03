@@ -19,6 +19,7 @@ import {
   type Cut,
   type EditorState,
   type Suggestion,
+  type WaveLabels,
 } from "./types";
 import { computePeaks, computePeakGain } from "./peaks";
 import {
@@ -86,6 +87,7 @@ export class EditorEngine {
   private loading = false;
   private error: string | null = null;
   private draftTimer: ReturnType<typeof setTimeout> | null = null;
+  private labelsOverride: WaveLabels | null = null;
 
   /** Per-frame playhead callback (timecode). Set by the React shell. */
   onTick: ((sec: number, isPlaying: boolean) => void) | null = null;
@@ -464,6 +466,7 @@ export class EditorEngine {
     this.state.audioCtx = null;
     if (prevCtx) prevCtx.close().catch(() => {});
     this.state = createEditorState();
+    if (this.labelsOverride) this.state.labels = this.labelsOverride;
     this.emit();
     this.scheduleDraw();
     this.drawMinimapNow();
@@ -782,6 +785,14 @@ export class EditorEngine {
   setIncludeIntroOutro(on: boolean): void {
     this.state.includeIntroOutro = on;
     this.emit();
+    this.scheduleDraw();
+  }
+
+  /** Override the canvas overlay labels (segment names, sections, tooltip) with
+   *  translated strings. Persists across closeFile so the language sticks. */
+  setLabels(labels: WaveLabels): void {
+    this.labelsOverride = labels;
+    this.state.labels = labels;
     this.scheduleDraw();
   }
 

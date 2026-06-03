@@ -54,6 +54,34 @@ export const VIDEO_EXTS = new Set([
   ".f4v",
 ]);
 
+/** Short labels the canvas renderer paints (segment overlays, section names,
+ *  hover tooltip). Defaulted to Norwegian; the React shell overrides them with
+ *  translated strings via `engine.setLabels()` so the waveform follows the
+ *  app language. */
+export interface WaveLabels {
+  sermon: string;
+  speech: string;
+  music: string;
+  silence: string;
+  mixed: string;
+  intro: string;
+  outro: string;
+  main: string;
+}
+
+export function defaultLabels(): WaveLabels {
+  return {
+    sermon: "Antatt preken",
+    speech: "Tale",
+    music: "Musikk",
+    silence: "Stillhet",
+    mixed: "Blandet",
+    intro: "Intro",
+    outro: "Outro",
+    main: "Hovedopptak",
+  };
+}
+
 /** Metadata sidecar shape (title / speaker / description + chapter markers). */
 export interface ChapterMark {
   time: number;
@@ -132,6 +160,9 @@ export interface EditorState {
   // Cut-handle + playhead dragging
   handleDrag: HandleDrag | null;
   playheadDragging: boolean;
+
+  // Canvas overlay labels (translated by the shell; Norwegian default).
+  labels: WaveLabels;
 }
 
 export function createEditorState(): EditorState {
@@ -176,6 +207,7 @@ export function createEditorState(): EditorState {
     loopStartSec: 0,
     handleDrag: null,
     playheadDragging: false,
+    labels: defaultLabels(),
   };
 }
 

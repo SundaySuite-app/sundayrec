@@ -50,7 +50,7 @@ const MASTER_PRESETS: { id: string | null; labelKey: string }[] = [
 ];
 
 export function EditScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // One engine per mounted screen.
   const engine = useMemo(() => new EditorEngine(), []);
   const snap = useSyncExternalStore(engine.subscribe, engine.getSnapshot);
@@ -104,6 +104,21 @@ export function EditScreen() {
     ro.observe(wrap);
     return () => ro.disconnect();
   }, [engine]);
+
+  // Translate the canvas overlay labels (segment names, sections, hover
+  // tooltip) and refresh them when the app language changes.
+  useEffect(() => {
+    engine.setLabels({
+      sermon: t("editor.tooltipSermon"),
+      speech: t("editor.tooltipSpeech"),
+      music: t("editor.tooltipMusic"),
+      silence: t("editor.tooltipSilence"),
+      mixed: t("editor.tooltipMixed"),
+      intro: t("editor.tlIntro"),
+      outro: t("editor.tlOutro"),
+      main: t("editor.tlMain"),
+    });
+  }, [engine, t, i18n.language]);
 
   // Hydrate metadata from the `.meta` sidecar whenever a new file loads. Falls
   // back to the engine-derived title (filename, cleaned up) when absent.

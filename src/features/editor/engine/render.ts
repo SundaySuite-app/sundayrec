@@ -107,7 +107,7 @@ export function drawWaveform(
       let lbl = seg.label;
       if (seg.type === "sermon") {
         const mins = Math.round((seg.end - seg.start) / 60);
-        lbl = `★ Antatt preken — ${mins} min`;
+        lbl = `★ ${state.labels.sermon} — ${mins} min`;
       } else if (lbl.length > 18) lbl = lbl.slice(0, 17) + "…";
       ctx.fillText(
         lbl,
@@ -328,7 +328,7 @@ export function drawWaveform(
       ctx.fillStyle = "#7AAAFF";
       ctx.globalAlpha = 0.9;
       ctx.fillText(
-        `Intro · ${formatDuration(state.introDuration)}`,
+        `${state.labels.intro} · ${formatDuration(state.introDuration)}`,
         geom.introPx / 2,
         RULER / 2,
       );
@@ -337,7 +337,7 @@ export function drawWaveform(
       ctx.fillStyle = "#7AAAFF";
       ctx.globalAlpha = 0.9;
       ctx.fillText(
-        `Outro · ${formatDuration(state.outroDuration)}`,
+        `${state.labels.outro} · ${formatDuration(state.outroDuration)}`,
         geom.mainPxEnd + geom.outroPx / 2,
         RULER / 2,
       );
@@ -349,7 +349,7 @@ export function drawWaveform(
       ctx.fillStyle = ACCENT;
       ctx.globalAlpha = 0.85;
       ctx.fillText(
-        "Hovedopptak",
+        state.labels.main,
         (geom.mainPxStart + geom.mainPxEnd) / 2,
         RULER / 2,
       );
@@ -377,9 +377,9 @@ export function drawWaveform(
 
     let label: string;
     if (state.hoverSec < 0 && effIntroDur(state) > 0) {
-      label = `Intro ${formatTime(state.hoverSec + effIntroDur(state))}`;
+      label = `${state.labels.intro} ${formatTime(state.hoverSec + effIntroDur(state))}`;
     } else if (state.hoverSec > state.duration && effOutroDur(state) > 0) {
-      label = `Outro ${formatTime(state.hoverSec - state.duration)}`;
+      label = `${state.labels.outro} ${formatTime(state.hoverSec - state.duration)}`;
     } else {
       label = formatTime(state.hoverSec);
     }
@@ -392,14 +392,14 @@ export function drawWaveform(
     if (hoveredSeg && state.hoverSec >= 0 && state.hoverSec <= state.duration) {
       const typeLbl =
         hoveredSeg.type === "sermon"
-          ? "Antatt preken"
+          ? state.labels.sermon
           : hoveredSeg.type === "speech"
-            ? "Tale"
+            ? state.labels.speech
             : hoveredSeg.type === "music"
-              ? "Musikk"
+              ? state.labels.music
               : hoveredSeg.type === "silence"
-                ? "Stillhet"
-                : "Blandet";
+                ? state.labels.silence
+                : state.labels.mixed;
       label = `${typeLbl} · ${formatDuration(hoveredSeg.duration)}  (${formatTime(state.hoverSec)})`;
     }
     ctx.font = "600 10px system-ui, -apple-system, sans-serif";
