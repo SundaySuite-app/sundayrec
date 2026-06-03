@@ -1265,7 +1265,8 @@
     "separateAudioTitle": "Spela in en separat ljudfil",
     "separateAudioSub": "Utöver videofilen sparas en separat ljudfil i valt format.",
     "separateAudioFormat": "Ljudformat",
-    "cameraNoSignal": "Ingen bild"
+    "cameraNoSignal": "Ingen bild",
+    "viewAll": "Visa alla"
   },
   "liveScreen": {
     "title": "Direktsändning",

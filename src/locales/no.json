@@ -1265,7 +1265,8 @@
     "separateAudioTitle": "Ta opp separat lydfil",
     "separateAudioSub": "I tillegg til videofilen lagres en egen lydfil i valgt format.",
     "separateAudioFormat": "Lydformat",
-    "cameraNoSignal": "Ingen bilde"
+    "cameraNoSignal": "Ingen bilde",
+    "viewAll": "Se alle"
   },
   "liveScreen": {
     "title": "Direkte sending",

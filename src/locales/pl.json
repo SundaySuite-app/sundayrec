@@ -1265,7 +1265,8 @@
     "separateAudioTitle": "Nagraj osobny plik audio",
     "separateAudioSub": "Oprócz pliku wideo zapisywany jest osobny plik audio w wybranym formacie.",
     "separateAudioFormat": "Format audio",
-    "cameraNoSignal": "Brak obrazu"
+    "cameraNoSignal": "Brak obrazu",
+    "viewAll": "Zobacz wszystkie"
   },
   "liveScreen": {
     "title": "Transmisja na żywo",

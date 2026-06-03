@@ -1265,7 +1265,8 @@
     "separateAudioTitle": "Record a separate audio file",
     "separateAudioSub": "In addition to the video file, a separate audio file is saved in the chosen format.",
     "separateAudioFormat": "Audio format",
-    "cameraNoSignal": "No image"
+    "cameraNoSignal": "No image",
+    "viewAll": "View all"
   },
   "liveScreen": {
     "title": "Live stream",

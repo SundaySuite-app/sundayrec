@@ -11,7 +11,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import { Icon } from "../Icon";
-import { Badge, DeviceCard, Meter, ReadyChip, SegOpt, Toggle } from "../atoms";
+import {
+  Badge,
+  Btn,
+  Card,
+  DeviceCard,
+  EmptyState,
+  Meter,
+  ReadyChip,
+  SegOpt,
+  Toggle,
+} from "../atoms";
 import {
   dbfsToLit,
   formatBytes,
@@ -41,6 +51,8 @@ import { navigateTo, navigateToSettings } from "@/lib/navigation";
 import type { ScheduleStatus } from "@/lib/bindings/ScheduleStatus";
 import type { Settings } from "@/lib/bindings/Settings";
 import type { FileFormat } from "@/lib/bindings/FileFormat";
+import type { RecordingRow } from "@/lib/bindings/RecordingRow";
+import type { PruneSummary } from "@/lib/bindings/PruneSummary";
 
 function TrustBanner() {
   const { t } = useTranslation();
@@ -382,6 +394,234 @@ function SeparateAudioCard({
         </div>
       )}
     </div>
+  );
+}
+
+/** Whole seconds → `h:mm:ss` / `m:ss` for the history duration column. */
+function fmtClock(totalSec: number): string {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+    : `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+/** A unix-seconds (or ms) timestamp → short Norwegian-ish date+time. */
+function fmtWhen(ts: number): string {
+  const ms = ts > 1e12 ? ts : ts * 1000;
+  try {
+    return new Date(ms).toLocaleString(undefined, {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * "Siste opptak" — the recording history that lived at the bottom of the
+ * Electron home page. Search + stats + per-row delete + maintenance (clear /
+ * prune missing files), reusing the same `recordings_*` commands the full
+ * HistoryPanel uses. "Se alle" deep-links to the dedicated history view.
+ */
+function HomeHistory() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [query, setQuery] = useState("");
+  const [showMenu, setShowMenu] = useState(false);
+
+  const { data, isLoading } = useQuery<RecordingRow[]>({
+    queryKey: ["recordings", "list"],
+    queryFn: () => invoke<RecordingRow[]>("recordings_list"),
+  });
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ["recordings", "list"] });
+  const del = useMutation({
+    mutationFn: (id: string) => invoke<void>("recordings_delete", { id }),
+    onSuccess: invalidate,
+  });
+  const clear = useMutation({
+    mutationFn: () => invoke<void>("recordings_clear"),
+    onSuccess: invalidate,
+  });
+  const prune = useMutation({
+    mutationFn: () => invoke<PruneSummary>("recordings_prune"),
+    onSuccess: invalidate,
+  });
+
+  const all = data ?? [];
+  const q = query.trim().toLowerCase();
+  const rows = q
+    ? all.filter((r) => r.file_path.toLowerCase().includes(q))
+    : all.slice(0, 12);
+  const totalSec = all.reduce((s, r) => s + (r.duration_ms ?? 0) / 1000, 0);
+
+  return (
+    <Card
+      title={t("editScreen.recentRecordings", "Siste opptak")}
+      icon="clock"
+      desc={
+        all.length > 0
+          ? `${all.length} ${t("history.totalCount", "opptak")} · ${fmtClock(totalSec)} ${t("history.totalDuration", "totalt")}`
+          : undefined
+      }
+      action={
+        all.length > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              position: "relative",
+            }}
+          >
+            <input
+              className="sr-input sm"
+              value={query}
+              placeholder={t("history.searchPlaceholder", "Søk i historikk…")}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{ maxWidth: 180 }}
+            />
+            <Btn
+              variant="ghost"
+              sm
+              icon="list"
+              ariaLabel="Mer"
+              onClick={() => setShowMenu((v) => !v)}
+            />
+            <Btn variant="ghost" sm onClick={() => navigateTo("history")}>
+              {t("homeScreen.viewAll", "Se alle")}
+            </Btn>
+            {showMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: 6,
+                  zIndex: 10,
+                  background: "var(--sr-ink-850)",
+                  border: "1px solid var(--sr-line)",
+                  borderRadius: 8,
+                  padding: 6,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  minWidth: 200,
+                  boxShadow: "var(--sr-shadow-md)",
+                }}
+              >
+                <button
+                  className="sr-btn ghost sm"
+                  style={{ justifyContent: "flex-start" }}
+                  onClick={() => {
+                    setShowMenu(false);
+                    prune.mutate();
+                  }}
+                >
+                  {t("history.pruneBtn", "Rydd opp")}
+                </button>
+                <button
+                  className="sr-btn ghost sm"
+                  style={{
+                    justifyContent: "flex-start",
+                    color: "var(--sr-red)",
+                  }}
+                  onClick={() => {
+                    setShowMenu(false);
+                    if (
+                      confirm(
+                        t("history.confirmClear", "Slett hele historikken?"),
+                      )
+                    )
+                      clear.mutate();
+                  }}
+                >
+                  {t("history.clearBtn", "Slett alle")}
+                </button>
+              </div>
+            )}
+          </div>
+        ) : undefined
+      }
+    >
+      {isLoading ? (
+        <div className="sr-card-desc">…</div>
+      ) : all.length === 0 ? (
+        <EmptyState
+          icon="clock"
+          title={t("history.empty", "Ingen opptak ennå")}
+          desc={t(
+            "history.emptyDesc",
+            "Når du har tatt opp din første gudstjeneste dukker den opp her.",
+          )}
+        />
+      ) : rows.length === 0 ? (
+        <div className="sr-card-desc">
+          {t("history.noMatchDesc", "Ingen opptak passer søket «{{query}}».", {
+            query,
+          })}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "7px 10px",
+                borderRadius: 8,
+                background: "var(--sr-ink-850)",
+              }}
+            >
+              <Icon name="file" size={15} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.file_path.split(/[/\\]/).pop()}
+                </div>
+                <div className="sr-card-desc">
+                  {fmtWhen(r.started_at || r.created_at)}
+                  {r.duration_ms != null && (
+                    <> · {fmtClock(r.duration_ms / 1000)}</>
+                  )}
+                  {r.byte_size != null && <> · {formatBytes(r.byte_size)}</>}
+                </div>
+              </div>
+              <Btn
+                variant="ghost"
+                sm
+                icon="x"
+                ariaLabel={t("history.deleteEntry", "Slett oppføring")}
+                onClick={() => {
+                  if (
+                    confirm(
+                      t(
+                        "history.confirmDelete",
+                        "Slett dette opptaket fra historikken?",
+                      ),
+                    )
+                  )
+                    del.mutate(r.id);
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -898,6 +1138,8 @@ export function HomeScreen({
           )}
         </div>
       </div>
+
+      <HomeHistory />
     </div>
   );
 }

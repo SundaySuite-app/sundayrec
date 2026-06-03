@@ -1265,7 +1265,8 @@
     "separateAudioTitle": "Optag en separat lydfil",
     "separateAudioSub": "Ud over videofilen gemmes en separat lydfil i det valgte format.",
     "separateAudioFormat": "Lydformat",
-    "cameraNoSignal": "Intet billede"
+    "cameraNoSignal": "Intet billede",
+    "viewAll": "Se alle"
   },
   "liveScreen": {
     "title": "Direkte udsendelse",
