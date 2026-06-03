@@ -336,6 +336,11 @@ const api: Record<string, unknown> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).api = api;
 
+// Mark this file as a module (loaded via <script type="module">) so its
+// top-level helpers (loadSettings, api, …) stay module-scoped and don't collide
+// with the renderer's global declarations. Phase 3 adds real imports here.
+export {};
+
 // Verification navigation (only with `?goto=<page>`): poll until main.ts has
 // installed window.showPage, then navigate. Inert without the query param.
 if (VERIFY_GOTO) {
