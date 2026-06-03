@@ -316,6 +316,10 @@ function RecHeader({
               status === "recording" ? "var(--sr-red)" : "var(--sr-gold)",
             marginTop: 3,
             boxShadow: "0 0 0 4px rgba(229,72,77,0.22)",
+            animation:
+              status === "recording"
+                ? "sr-recordring 2s ease-out infinite"
+                : undefined,
           }}
         />
         <div>
