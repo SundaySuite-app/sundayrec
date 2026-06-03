@@ -43,6 +43,7 @@ import {
   deleteCut as deleteCutModel,
   getKeepSegs,
   getRemainingDuration,
+  mediaTimeFromPlan,
   pushCutHistory,
   redoCut,
   snapOutOfCut,
@@ -136,8 +137,7 @@ export class EditorEngine {
       audioGainDb: s.audioGainDb,
       normalized: s.audioGainDb !== 0,
       includeIntroOutro: s.includeIntroOutro,
-      canUndo:
-        s.cutHistoryIdx >= 0 && (s.cutHistoryIdx > 0 || s.cuts.length > 0),
+      canUndo: s.cutHistoryIdx > 0,
       canRedo: s.cutHistoryIdx < s.cutHistory.length - 1,
       hasIntro: !!s.introBuffer,
       hasOutro: !!s.outroBuffer,
@@ -326,8 +326,11 @@ export class EditorEngine {
     // Reset per-file state
     const s = this.state;
     s.cuts = [];
-    s.cutHistory = [];
-    s.cutHistoryIdx = -1;
+    // Seed an empty baseline at index 0 (see createEditorState) so undo can walk
+    // back to "no cuts" without a special-case wipe; a restored draft overwrites
+    // this baseline in restoreDraft.
+    s.cutHistory = [[]];
+    s.cutHistoryIdx = 0;
     s.suggestions = [];
     s.filePath = path;
     s.peaks = null;
@@ -529,6 +532,8 @@ export class EditorEngine {
           typeof c.end === "number" &&
           c.end > c.start,
       );
+      // The restored cuts ARE the editing baseline (index 0): undo must not
+      // throw them away until the user makes a new edit on top.
       this.state.cutHistory = [JSON.parse(JSON.stringify(this.state.cuts))];
       this.state.cutHistoryIdx = 0;
       if (typeof draft.audioGainDb === "number")
@@ -661,6 +666,10 @@ export class EditorEngine {
       }
     }
 
+    // The audioCtx time the MAIN audio starts (after any intro lead) — the anchor
+    // the animation loop maps elapsed playback through the kept-segment plan.
+    s.playMainStartCtx = when;
+    s.playSegPlan = [];
     if (!inOutro) {
       const allSegs: Cut[] = preview
         ? getKeepSegs(s)
@@ -679,6 +688,7 @@ export class EditorEngine {
         node.start(when, seg.start + offset, dur);
         when += dur;
         nodes.push(node);
+        s.playSegPlan.push({ start: seg.start + offset, dur });
       }
       if (!inIntro && firstMainSec >= 0 && firstMainSec > mainStartSec + 0.01) {
         s.playStartSec = firstMainSec;
@@ -795,8 +805,19 @@ export class EditorEngine {
     }
 
     if (!s.audioCtx) return;
-    const curSec =
-      s.playStartSec + (s.audioCtx.currentTime - s.playStartCtxTime);
+    // Preview compresses cut regions out, so map elapsed playback through the
+    // scheduled keep-segment plan; the playhead then skips cuts WITH the audio
+    // instead of drifting linearly. Non-preview (plan empty) stays linear.
+    let curSec: number;
+    if (s.isPreview && s.playSegPlan.length > 0) {
+      const elapsed = s.audioCtx.currentTime - s.playMainStartCtx;
+      curSec =
+        elapsed <= 0
+          ? s.playStartSec
+          : mediaTimeFromPlan(s.playSegPlan, elapsed);
+    } else {
+      curSec = s.playStartSec + (s.audioCtx.currentTime - s.playStartCtxTime);
+    }
     this.onTick?.(curSec, true);
     this.autoScrollToPlayhead(curSec);
     this.draw();

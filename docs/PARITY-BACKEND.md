@@ -1,6 +1,7 @@
 # Frontend-parity — the two backend-dependent features
 
 > **STATUS: BOTH DONE (2026-06-03).**
+>
 > - #1 Channel-select L/R — commit `91846b4`.
 > - #2 Auto-stop countdown + extend/cancel — commit `c6eeec1`.
 >

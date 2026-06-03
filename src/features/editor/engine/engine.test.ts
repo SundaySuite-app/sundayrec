@@ -17,6 +17,7 @@ import {
   getKeepSegs,
   getRemainingDuration,
   isInCut,
+  mediaTimeFromPlan,
   pushCutHistory,
   redoCut,
   snapOutOfCut,
@@ -160,5 +161,48 @@ describe("cuts", () => {
     expect(s.cuts).toEqual([]);
     redoCut(s);
     expect(s.cuts).toEqual([{ start: 10, end: 20 }]);
+  });
+
+  it("maps preview elapsed time through the keep-segment plan (skips cuts)", () => {
+    // Two kept segments: 0–10s, then 20–30s (a 10–20s cut removed between them).
+    const plan = [
+      { start: 0, dur: 10 },
+      { start: 20, dur: 10 },
+    ];
+    // Inside the first segment → linear.
+    expect(mediaTimeFromPlan(plan, 5)).toBeCloseTo(5, 5);
+    // At the segment boundary, the media time JUMPS past the cut, not linearly.
+    expect(mediaTimeFromPlan(plan, 10)).toBeCloseTo(10, 5);
+    expect(mediaTimeFromPlan(plan, 11)).toBeCloseTo(21, 5); // 20 + 1, NOT 11
+    expect(mediaTimeFromPlan(plan, 19)).toBeCloseTo(29, 5);
+    // Past the end clamps to the last segment's end.
+    expect(mediaTimeFromPlan(plan, 100)).toBeCloseTo(30, 5);
+    // Empty plan falls back to the elapsed value.
+    expect(mediaTimeFromPlan([], 7)).toBeCloseTo(7, 5);
+  });
+
+  it("does not wipe a restored-draft baseline on undo", () => {
+    // Mirrors restoreDraft: the reopened cuts become the index-0 baseline.
+    const s = stateWithDuration(100);
+    s.cuts = [
+      { start: 10, end: 20 },
+      { start: 50, end: 60 },
+    ];
+    s.cutHistory = [JSON.parse(JSON.stringify(s.cuts))];
+    s.cutHistoryIdx = 0;
+    // Undo at the baseline is a no-op — the restored work must survive.
+    undoCut(s);
+    expect(s.cuts).toEqual([
+      { start: 10, end: 20 },
+      { start: 50, end: 60 },
+    ]);
+    // A new edit is undoable back to the restored baseline (not to empty).
+    addCut(s, 70, 80);
+    expect(s.cuts.length).toBe(3);
+    undoCut(s);
+    expect(s.cuts).toEqual([
+      { start: 10, end: 20 },
+      { start: 50, end: 60 },
+    ]);
   });
 });

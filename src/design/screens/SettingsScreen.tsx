@@ -330,6 +330,13 @@ function ChannelSelectCard({ s, update }: TabProps) {
   if (s.channels !== "stereo" || channels <= 2) return null;
 
   const opts = Array.from({ length: channels }, (_, i) => i);
+  // The values shown when nothing is picked yet (default stereo routing 0/1).
+  // Writing BOTH on every change keeps the pair complete — the backend pan
+  // filter only applies when L AND R are set, so a one-sided pick must still
+  // persist the other side's shown value, not leave it null (which would
+  // silently fall back to 0/1 and record the wrong channel).
+  const lVal = s.inputChannelL ?? 0;
+  const rVal = s.inputChannelR ?? 1;
   return (
     <Card
       title={t("settingsScreen.audio.inputChannelsTitle", "Velg kanaler")}
@@ -346,8 +353,13 @@ function ChannelSelectCard({ s, update }: TabProps) {
           </span>
           <select
             className="sr-select"
-            value={s.inputChannelL ?? 0}
-            onChange={(e) => update({ inputChannelL: Number(e.target.value) })}
+            value={lVal}
+            onChange={(e) =>
+              update({
+                inputChannelL: Number(e.target.value),
+                inputChannelR: rVal,
+              })
+            }
           >
             {opts.map((i) => (
               <option key={i} value={i}>
@@ -362,8 +374,13 @@ function ChannelSelectCard({ s, update }: TabProps) {
           </span>
           <select
             className="sr-select"
-            value={s.inputChannelR ?? 1}
-            onChange={(e) => update({ inputChannelR: Number(e.target.value) })}
+            value={rVal}
+            onChange={(e) =>
+              update({
+                inputChannelR: Number(e.target.value),
+                inputChannelL: lVal,
+              })
+            }
           >
             {opts.map((i) => (
               <option key={i} value={i}>

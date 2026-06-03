@@ -202,6 +202,15 @@ pub fn recording_status(engine: State<'_, RecorderEngine>) -> RecorderState {
     engine.current_state()
 }
 
+/// The current auto-stop deadline (absolute epoch ms), or null when none is
+/// armed. Lets a screen that (re)mounts mid-recording rehydrate the countdown
+/// synchronously instead of waiting for the next `recording://state` event
+/// (which only fires on a lifecycle transition).
+#[tauri::command]
+pub fn recording_scheduled_stop_ms(engine: State<'_, RecorderEngine>) -> Option<u64> {
+    engine.scheduled_stop_ms()
+}
+
 /// Extend the running recording's auto-stop by `minutes` (the "+30 min" button).
 /// Adds to the live deadline so it never shortens; the running loop picks up the
 /// change and re-emits `recording://state` with the new `scheduled_stop_ms`. A

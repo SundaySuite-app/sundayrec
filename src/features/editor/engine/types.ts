@@ -142,6 +142,13 @@ export interface EditorState {
   playStartSec: number;
   isPlaying: boolean;
   isPreview: boolean;
+  // Preview-playback segment plan: the kept segments actually scheduled, in play
+  // order, with their effective `{start, dur}`. The animation loop maps elapsed
+  // wall-clock through this so the playhead skips cut regions with the audio
+  // (instead of drifting linearly). `playMainStartCtx` is the audioCtx time the
+  // MAIN audio begins (after any intro lead).
+  playSegPlan: { start: number; dur: number }[];
+  playMainStartCtx: number;
   rafId: number;
   loadSeq: number;
 
@@ -176,8 +183,11 @@ export function createEditorState(): EditorState {
     duration: 0,
     peaks: null,
     cuts: [],
-    cutHistory: [],
-    cutHistoryIdx: -1,
+    // History index 0 is ALWAYS a restorable baseline snapshot (empty here, or
+    // the restored draft on reopen) — never a special-cased "before the first
+    // entry" sentinel. Undo stops at index 0; it never wipes to empty by guess.
+    cutHistory: [[]],
+    cutHistoryIdx: 0,
     suggestions: [],
     isVideoFile: false,
     videoEl: null,
@@ -201,6 +211,8 @@ export function createEditorState(): EditorState {
     playStartSec: 0,
     isPlaying: false,
     isPreview: false,
+    playSegPlan: [],
+    playMainStartCtx: 0,
     rafId: 0,
     loadSeq: 0,
     dragStartSec: -1,

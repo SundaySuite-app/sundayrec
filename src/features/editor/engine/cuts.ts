@@ -55,13 +55,9 @@ export function deleteCut(state: EditorState, i: number): void {
 }
 
 export function undoCut(state: EditorState): void {
-  if (state.cutHistoryIdx <= 0) {
-    if (state.cutHistoryIdx === 0 && state.cuts.length > 0) {
-      state.cuts = [];
-      state.cutHistoryIdx = -1;
-    }
-    return;
-  }
+  // Index 0 is the restorable baseline (empty on a fresh file, or the reopened
+  // draft); undo never goes before it and never wipes by guessing.
+  if (state.cutHistoryIdx <= 0) return;
   state.cutHistoryIdx--;
   state.cuts = JSON.parse(
     JSON.stringify(state.cutHistory[state.cutHistoryIdx]),
@@ -92,6 +88,25 @@ export function getKeepSegs(state: EditorState): Cut[] {
 
 export function getRemainingDuration(state: EditorState): number {
   return getKeepSegs(state).reduce((sum, s) => sum + (s.end - s.start), 0);
+}
+
+/** Map elapsed PLAYBACK seconds (the kept audio with cuts removed, played
+ *  back-to-back) to the real MEDIA time, by walking the scheduled keep-segments
+ *  in play order. Preview playback compresses cut regions out, so the displayed
+ *  playhead must follow the segment plan — a linear wall-clock offset would drift
+ *  the moment playback crosses the first cut. `plan` is the per-segment effective
+ *  `{start, dur}` in the order they were scheduled. Pure → unit-tested. */
+export function mediaTimeFromPlan(
+  plan: { start: number; dur: number }[],
+  elapsed: number,
+): number {
+  let remaining = Math.max(0, elapsed);
+  for (const seg of plan) {
+    if (remaining <= seg.dur) return seg.start + remaining;
+    remaining -= seg.dur;
+  }
+  const last = plan[plan.length - 1];
+  return last ? last.start + last.dur : elapsed;
 }
 
 /** If `sec` falls inside a cut, return the cut's end (nearest keep-region

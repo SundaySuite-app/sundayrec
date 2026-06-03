@@ -392,7 +392,8 @@ impl RecorderEngine {
     }
 
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
-    /// auto-stop is armed. Lets `recording_status` report it synchronously.
+    /// auto-stop is armed. Exposed via the `recording_scheduled_stop_ms` command
+    /// so a (re)mounting screen can rehydrate the countdown synchronously.
     pub fn scheduled_stop_ms(&self) -> Option<u64> {
         *self.scheduled_stop.borrow()
     }
@@ -632,10 +633,19 @@ fn set_state(
 /// The auto-stop deadline after the user extends by `minutes`: add to the current
 /// deadline so "+30 min" really extends (never shortens), falling back to `now`
 /// when nothing is armed or the existing deadline already passed. Pure → tested.
+///
+/// `minutes` is clamped to one day so a stray/adversarial IPC value can't push the
+/// deadline so far out that the downstream `Instant::now() + remaining` overflows
+/// the platform clock and panics the live recording loop.
 fn extended_stop_ms(current: Option<u64>, now: u64, minutes: u32) -> u64 {
     let base = current.filter(|&d| d > now).unwrap_or(now);
+    let minutes = minutes.min(MAX_AUTOSTOP_MINUTES);
     base + u64::from(minutes) * 60_000
 }
+
+/// Upper bound on an auto-stop horizon (1 day). Matches the `manual_max_minutes`
+/// clamp domain and keeps every derived `Duration` well inside `Instant` range.
+const MAX_AUTOSTOP_MINUTES: u32 = 1440;
 
 /// Why the current segment's ffmpeg stopped — drives what the supervisor does
 /// next.
@@ -688,7 +698,13 @@ async fn run_session(
     let mut stop_watch = scheduled_stop.subscribe();
     // Emit a state transition, always stamping the CURRENT auto-stop deadline so
     // the UI countdown stays in sync on every transition (start, reconnect, stop).
+    // A TERMINAL state (Stopped/Failed) clears the deadline first, so a finished
+    // OR failed recording never ships a lingering countdown — the clear lives
+    // here (one place) instead of being scattered before each Failed exit.
     let emit_state = |to: RecorderState, reconnect_count: u32| {
+        if to.is_terminal() {
+            scheduled_stop.send_replace(None);
+        }
         set_state(&app, &last_state, to, reconnect_count, *scheduled_stop.borrow());
     };
     // Unique per recording (singleton engine → start_ms never repeats); also the
@@ -1021,9 +1037,8 @@ async fn run_session(
             },
         );
     }
-    // Clear the auto-stop BEFORE the final state emit so the Stopped payload (and
-    // any later `recording_status`) reports no stale deadline.
-    scheduled_stop.send_replace(None);
+    // The auto-stop is cleared inside `emit_state` for terminal states, so the
+    // Stopped payload (and any later `recording_status`) reports no stale deadline.
     emit_state(RecorderState::Stopped, session.reconnect_count());
     tracing::info!("recorder: session stopped cleanly");
 }
@@ -1995,6 +2010,13 @@ mod tests {
         // A live deadline in the future → add to IT (so "+30 min" really extends).
         let future = now + 10 * 60_000;
         assert_eq!(extended_stop_ms(Some(future), now, 30), future + 30 * 60_000);
+
+        // A huge/adversarial minutes value is clamped to one day, so the derived
+        // Duration can never overflow the platform Instant downstream.
+        assert_eq!(
+            extended_stop_ms(None, now, u32::MAX),
+            now + u64::from(MAX_AUTOSTOP_MINUTES) * 60_000
+        );
     }
 
     #[test]

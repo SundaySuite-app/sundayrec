@@ -191,7 +191,22 @@ function useRecordingSession(video: boolean) {
   // Auto-stop countdown. The backend stamps an ABSOLUTE deadline
   // (`scheduled_stop_ms`) on every state event; we tick locally to it so the
   // countdown is smooth without spamming IPC. `null` = no auto-stop armed.
-  const scheduledStopMs = state?.scheduled_stop_ms ?? null;
+  // On mount we ALSO rehydrate the deadline synchronously (in case we attached
+  // to an already-running recording before the next state event fires); a real
+  // state event then takes precedence.
+  const [seededStopMs, setSeededStopMs] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    invoke<number | null>("recording_scheduled_stop_ms")
+      .then((ms) => alive && setSeededStopMs(ms))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const scheduledStopMs = state
+    ? (state.scheduled_stop_ms ?? null)
+    : seededStopMs;
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (scheduledStopMs === null) return;
