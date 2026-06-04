@@ -116,7 +116,7 @@ function applyVideoFlipState(): void {
   document.getElementById('btn-home-video-flip')?.classList.toggle('flip-active', flipped)
 }
 
-function updateVideoToggleButton(): void {
+export function updateVideoToggleButton(): void {
   const btn   = document.getElementById('btn-video-toggle')
   const label = document.getElementById('video-toggle-label')
   const on    = settings.videoEnabled ?? false
@@ -355,16 +355,26 @@ export async function startVideoPreview(): Promise<void> {
   if (phDiv) phDiv.style.display = ''
 
   try {
+    // Request the configured resolution in 16:9 so the preview matches the
+    // recording (the default getUserMedia mode is 640×480 4:3 → letterboxed).
+    const RES_DIMS: Record<string, [number, number]> = {
+      '480p': [854, 480], '720p': [1280, 720], '1080p': [1920, 1080], '2160p': [3840, 2160],
+    }
+    const [rw, rh] = RES_DIMS[settings.videoResolution ?? '720p'] ?? [1280, 720]
+    const videoConstraint: MediaTrackConstraints = {
+      width:       { ideal: rw },
+      height:      { ideal: rh },
+      aspectRatio: { ideal: 16 / 9 },
+    }
     // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
     // label; fall back to the default camera. enumerateDevices only exposes
     // labels after a getUserMedia grant, so on first run we just use the default.
-    let videoConstraint: MediaTrackConstraints | boolean = true
     try {
       const devs = await navigator.mediaDevices.enumerateDevices()
       const cam  = devs.find(d =>
         d.kind === 'videoinput' && !!settings.videoDeviceName &&
         d.label && d.label.includes(settings.videoDeviceName))
-      if (cam?.deviceId) videoConstraint = { deviceId: { ideal: cam.deviceId } }
+      if (cam?.deviceId) videoConstraint.deviceId = { ideal: cam.deviceId }
     } catch { /* enumerate needs permission first — fall back to default device */ }
 
     const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false })
