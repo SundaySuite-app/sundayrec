@@ -37,7 +37,6 @@ let recBytes     = 0
 let previewRestartTimer: ReturnType<typeof setTimeout> | null = null
 let recPreviewUnsub:      (() => void) | undefined
 let recCaptureErrUnsub:   (() => void) | undefined
-let lastRecFrameTs    = 0
 let recVideoDimsSet   = false
 let recFrameBlobUrl:  string | null = null
 
@@ -526,28 +525,28 @@ function showOverlay(opts: RecordingOpts): void {
     recPreviewUnsub?.()
     recCaptureErrUnsub?.()
     recVideoDimsSet = false
-    const recFrameIntervalMs = Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 30)) - 2
-    recPreviewUnsub = window.api.on('video-preview-frame', (data: unknown) => {
-      const now = Date.now()
-      if (now - lastRecFrameTs < recFrameIntervalMs) return
-      lastRecFrameTs = now
-      const arr = data as Uint8Array
-      if (!recImg || arr.length < 4) return
+    // DURING recording the backend recorder owns the camera and writes a low-fps
+    // preview JPEG to a file; we POLL it (base64) here. (The old Electron app got
+    // IPC frames; the Tauri recorder writes a file instead — a poll is the match.)
+    const recPollMs = Math.max(150, Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 15)))
+    const recPollTimer = setInterval(async () => {
+      let b64: string | null = null
+      try { b64 = await window.api.recordingPreviewFrame?.() ?? null } catch { b64 = null }
+      if (!b64 || !recImg) return
       if (!recVideoDimsSet) {
-        const dims = readJpegDims(arr)
+        const bytes = Uint8Array.from(atob(b64.slice(0, 1400)), c => c.charCodeAt(0))
+        const dims = readJpegDims(bytes)
         if (dims) {
           recVideoDimsSet = true
           const wrap = document.querySelector<HTMLElement>('.rec-video-wrap')
           if (wrap) wrap.style.setProperty('--rec-video-ar', `${dims.w} / ${dims.h}`)
         }
       }
-      const url = URL.createObjectURL(new Blob([arr as BlobPart], { type: 'image/jpeg' }))
-      if (recFrameBlobUrl) URL.revokeObjectURL(recFrameBlobUrl)
-      recFrameBlobUrl = url
-      recImg.src = url
+      recImg.src = `data:image/jpeg;base64,${b64}`
       recImg.style.display = ''
       if (recPh) recPh.style.display = 'none'
-    })
+    }, recPollMs)
+    recPreviewUnsub = () => clearInterval(recPollTimer)
     recCaptureErrUnsub = window.api.on('video-capture-error', () => {
       if (recPh) { recPh.textContent = 'Kamera feilet — opptar kun lyd'; recPh.style.display = '' }
       if (recImg) recImg.style.display = 'none'

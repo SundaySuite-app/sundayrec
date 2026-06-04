@@ -203,6 +203,7 @@
         <!-- Preview image — first and dominant -->
         <div class="video-preview-wrap">
           <img id="video-preview-img" class="video-preview-img" alt="" style="display:none" />
+          <video id="video-preview-video" class="video-preview-img" autoplay muted playsinline style="display:none"></video>
           <div id="video-preview-placeholder" class="video-preview-placeholder">
             <div class="video-placeholder-inner">
               <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.35;margin-bottom:8px"><path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.889L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1596,13 +1597,9 @@
                ffmpeg opens both camera and microphone in one process so
                A/V sync is frame-accurate from the first frame. Power
                users can opt out if they hit an unusual edge case. -->
-          <div class="toggle-row" id="video-unified-row">
-            <div>
-              <div class="toggle-title" data-i18n="video.unifiedTitle">Perfekt A/V-synk</div>
-              <div class="toggle-desc" data-i18n="video.unifiedDesc">Bruker én ffmpeg-prosess for både lyd og bilde — eliminerer all sync-drift. Anbefales på. Slå av kun hvis du opplever uventede problemer med video-opptak.</div>
-            </div>
-            <label class="toggle"><input type="checkbox" id="opt-use-unified-recorder" checked /><span class="toggle-track"></span></label>
-          </div>
+          <!-- Perfekt A/V-synk er ALLTID på (unified recorder): én ffmpeg-prosess
+               for lyd + bilde. Valget er fjernet — det skal alltid være perfekt
+               sync. `useUnifiedRecorder` tvinges til true i video-page.ts. -->
         </div>
       </div>
 

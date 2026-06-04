@@ -393,8 +393,14 @@ const api: Record<string, unknown> = {
     );
     return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
+  // The SETUP-phase camera preview is now client-side getUserMedia (home.ts) —
+  // no backend needed — so these are no-ops.
   videoPreviewStart: async () => true,
   videoPreviewStop: async () => true,
+  // DURING recording the backend owns the camera and writes a preview JPEG to a
+  // file; the renderer polls this (~base64 JPEG, or null when no fresh frame).
+  recordingPreviewFrame: async () =>
+    call<string | null>("recording_preview_frame", undefined, null),
   // Probe what the selected camera can actually capture, to gate the
   // resolution/fps UI. `token` is the device index (avfoundation) or name.
   // Returns null on failure → caller offers everything.

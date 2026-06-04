@@ -173,10 +173,7 @@ export function applyVideoSettingsToUI(): void {
   updateKeepAudioVisibility()
 
   // Unified-recorder toggle — default ON since v4.51. Treat `undefined`
-  // (= never-touched setting) the same as `true` so fresh installs and
-  // upgrade-paths get perfect A/V sync without having to opt in.
-  const unifiedEl = document.getElementById('opt-use-unified-recorder') as HTMLInputElement | null
-  if (unifiedEl) unifiedEl.checked = settings.useUnifiedRecorder !== false
+  // Perfekt A/V-synk (unified recorder) er ALLTID på — valget er fjernet fra UI.
 
   // Populate device select (best-effort — may not have been loaded yet)
   if (loadedDevices.length) {
@@ -287,8 +284,8 @@ async function saveVideoSettings(): Promise<void> {
   const keepAudioEl = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
   const keepAudio   = keepAudioEl ? keepAudioEl.checked : true
 
-  const unifiedEl = document.getElementById('opt-use-unified-recorder') as HTMLInputElement | null
-  const useUnifiedRecorder = !!unifiedEl?.checked
+  // Perfekt A/V-synk er alltid på (valget er fjernet).
+  const useUnifiedRecorder = true
 
   const updated = {
     ...settings,

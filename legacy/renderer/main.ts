@@ -190,6 +190,7 @@ declare global {
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
       videoPreviewStart: (opts: unknown) => Promise<boolean>
       videoPreviewStop:  () => Promise<void>
+      recordingPreviewFrame: () => Promise<string | null>
       editorSetVideoPath:      (filePath: string) => Promise<boolean>
       editorExtractAudioPeaks: (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
       editorPickVideoFile:     ()                 => Promise<string | null>

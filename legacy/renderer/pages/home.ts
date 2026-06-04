@@ -3,7 +3,6 @@ import { settings, patchSettings } from '../state'
 import { fmtCountdown, fmtStorageHours, fmtDate, escHtml, flashMsg } from '../helpers'
 import { startVU, stopVU } from './home-vu'
 import { getAudioDevices } from '../audio/capture'
-import { normalizeFrameData } from '../../shared/normalize-frame-data'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -19,13 +18,7 @@ let fullHistory: RecordingEntry[] = []
 // ── Video preview state ──────────────────────────────────────────────────────
 
 let previewActive         = false
-let previewFrameUnsub:    (() => void) | undefined
-let previewStopUnsub:     (() => void) | undefined
-let previewVideoUnsub:    (() => void) | undefined
-let previewMetaUnsub:     (() => void) | undefined
-let previewNoFrameTimer:  ReturnType<typeof setTimeout> | null = null
-let lastFrameTs           = 0
-let lastFrameBlobUrl:     string | null = null
+let previewStream:        MediaStream | null = null
 
 // ── Video-mode layout: relocate VU, preview section and info cards ──────────
 //
@@ -119,6 +112,7 @@ let homeVideoDevices: HomeVideoDevice[] = []
 function applyVideoFlipState(): void {
   const flipped = settings.videoFlip ?? false
   document.getElementById('video-preview-img')?.classList.toggle('video-flip', flipped)
+  document.getElementById('video-preview-video')?.classList.toggle('video-flip', flipped)
   document.getElementById('btn-home-video-flip')?.classList.toggle('flip-active', flipped)
 }
 
@@ -299,20 +293,25 @@ async function applyHomeVideoDeviceSelection(): Promise<void> {
 
 export function stopVideoPreview(): void {
   previewActive = false
-  if (previewNoFrameTimer) { clearTimeout(previewNoFrameTimer); previewNoFrameTimer = null }
-  if (lastFrameBlobUrl) { URL.revokeObjectURL(lastFrameBlobUrl); lastFrameBlobUrl = null }
-  previewFrameUnsub?.(); previewFrameUnsub = undefined
-  previewStopUnsub?.();  previewStopUnsub  = undefined
-  previewVideoUnsub?.(); previewVideoUnsub  = undefined
-  previewMetaUnsub?.();  previewMetaUnsub  = undefined
-  window.api.videoPreviewStop?.()
+  // Release the camera (client-side getUserMedia preview) so the recorder can
+  // open it when recording starts.
+  if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null }
+  const video = document.getElementById('video-preview-video') as HTMLVideoElement | null
   const img   = document.getElementById('video-preview-img') as HTMLImageElement | null
   const phDiv = document.getElementById('video-preview-placeholder')
+  if (video) { video.srcObject = null; video.style.display = 'none' }
   if (img)   { img.src = ''; img.style.display = 'none' }
   if (phDiv) { phDiv.style.display = '' }
 }
 
-export function startVideoPreview(): void {
+// The live camera preview is a CLIENT-SIDE getUserMedia stream piped into a
+// <video> element — it works in WKWebView with no backend, where the old
+// Electron MJPEG-over-IPC preview did not (the Tauri backend writes a preview
+// JPEG to a file, not IPC frames). The RECORDING still uses the backend ffmpeg
+// device; this is preview only, and it's released (stopVideoPreview) the moment
+// recording starts so the recorder can take the camera (macOS gives one client
+// the capture device at a time).
+export async function startVideoPreview(): Promise<void> {
   const section = document.getElementById('video-preview-section')
   updateVideoToggleButton()
 
@@ -320,100 +319,54 @@ export function startVideoPreview(): void {
     if (section) section.style.display = 'none'
     return
   }
-
-  // Show section regardless — even if no device yet (user can pick one inline)
   if (section) section.style.display = ''
 
+  const phDiv  = document.getElementById('video-preview-placeholder')
+  const phTxt  = document.getElementById('video-preview-placeholder-text')
+  const video  = document.getElementById('video-preview-video') as HTMLVideoElement | null
+
   if (!settings.videoDeviceName) {
-    const phDiv = document.getElementById('video-preview-placeholder')
-    const phTxt = document.getElementById('video-preview-placeholder-text')
     if (phTxt) phTxt.textContent = 'Velg kamera og trykk oppdater'
     if (phDiv) phDiv.style.display = ''
     return
   }
 
-  if (previewActive) return  // already running
+  if (previewActive) return
   previewActive = true
-
-  const img   = document.getElementById('video-preview-img') as HTMLImageElement | null
-  const phDiv = document.getElementById('video-preview-placeholder')
-  const phTxt = document.getElementById('video-preview-placeholder-text')
   if (phTxt) phTxt.textContent = 'Starter kamera…'
+  if (phDiv) phDiv.style.display = ''
 
-  // Renderer-side safety net: if no frame arrives within 75 s, show an error.
-  // The main process tries up to 6 configs (10 s each = 60 s max) before giving up.
-  // This timer fires only if all retries are exhausted and IPC is never received.
-  if (previewNoFrameTimer) clearTimeout(previewNoFrameTimer)
-  previewNoFrameTimer = setTimeout(() => {
-    previewNoFrameTimer = null
-    if (previewActive) {
-      previewActive = false
-      if (phTxt) phTxt.textContent = t('home.cameraNoResponse', 'Kamera svarte ikke — prøv å oppdatere')
-      if (phDiv) phDiv.style.display = ''
-      if (img)   img.style.display   = 'none'
-      window.api.videoPreviewStop?.()
+  try {
+    // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
+    // label; fall back to the default camera. enumerateDevices only exposes
+    // labels after a getUserMedia grant, so on first run we just use the default.
+    let videoConstraint: MediaTrackConstraints | boolean = true
+    try {
+      const devs = await navigator.mediaDevices.enumerateDevices()
+      const cam  = devs.find(d =>
+        d.kind === 'videoinput' && !!settings.videoDeviceName &&
+        d.label && d.label.includes(settings.videoDeviceName))
+      if (cam?.deviceId) videoConstraint = { deviceId: { ideal: cam.deviceId } }
+    } catch { /* enumerate needs permission first — fall back to default device */ }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false })
+    if (!previewActive) { stream.getTracks().forEach(t => t.stop()); return } // stopped while awaiting
+    previewStream = stream
+    if (video) {
+      video.srcObject = stream
+      video.style.display = ''
+      await video.play().catch(() => {})
     }
-  }, 75000)
-
-  // Bug 2: use ?. before .then/.catch so if videoPreviewStart is undefined we don't crash
-  window.api.videoPreviewStart?.({
-    videoDeviceName:  settings.videoDeviceName,
-    videoDeviceIndex: settings.videoDeviceIndex,
-    videoFramerate:   settings.videoFramerate,
-  })?.then((ok: unknown) => {
-    if (ok === false) {
-      // Main process denied camera permission before even starting ffmpeg
-      if (previewNoFrameTimer) { clearTimeout(previewNoFrameTimer); previewNoFrameTimer = null }
-      previewActive = false
-      if (phTxt) phTxt.textContent = 'Kameratilgang nektet — sjekk Systeminnstillinger'
-      if (phDiv) phDiv.style.display = ''
-    }
-  })?.catch(() => { /* IPC errors are non-fatal */ })
-
-  const frameIntervalMs = Math.floor(1000 / (settings.videoFramerate ?? 30)) - 2
-  previewFrameUnsub = window.api.on('video-preview-frame', (data: unknown) => {
-    if (previewNoFrameTimer) { clearTimeout(previewNoFrameTimer); previewNoFrameTimer = null }
-    const now = Date.now()
-    if (now - lastFrameTs < frameIntervalMs) return
-    lastFrameTs = now
-    // IPC payloads cross the contextBridge through structured clone. Depending on
-    // Electron version and the original Node Buffer's backing store, `data` can
-    // arrive as a Uint8Array, a Buffer-like object, an ArrayBuffer, or rarely a
-    // plain object with numeric indices. Normalize to a Uint8Array before
-    // building the Blob — without this, `new Blob([data])` produces a 0-byte
-    // blob and the <img> goes blank with no error.
-    const arr = normalizeFrameData(data)
-    if (!img || !arr || arr.length < 4) return
-    // Cast: TS 6 narrows Blob input to exclude SharedArrayBuffer-backed views,
-    // but normalizeFrameData always returns a regular ArrayBuffer-backed view.
-    const url = URL.createObjectURL(new Blob([arr as BlobPart], { type: 'image/jpeg' }))
-    if (lastFrameBlobUrl) URL.revokeObjectURL(lastFrameBlobUrl)
-    lastFrameBlobUrl = url
-    img.src = url
-    img.style.display = ''
     if (phDiv) phDiv.style.display = 'none'
-  })
-
-  previewStopUnsub = window.api.on('video-preview-stopped', () => {
-    if (previewNoFrameTimer) { clearTimeout(previewNoFrameTimer); previewNoFrameTimer = null }
+  } catch (err) {
     previewActive = false
-    if (phTxt) phTxt.textContent = 'Kamera utilgjengelig'
+    const name = (err as DOMException)?.name
+    if (phTxt) phTxt.textContent = name === 'NotAllowedError'
+      ? 'Kameratilgang nektet — sjekk Systeminnstillinger'
+      : t('home.cameraNoResponse', 'Kamera svarte ikke — prøv å oppdatere')
     if (phDiv) phDiv.style.display = ''
-    if (img) img.style.display = 'none'
-  })
-
-  previewMetaUnsub = window.api.on('video-preview-meta', (_data: unknown) => {
-    // Container uses fixed height (not aspect-ratio), so no inline resize needed.
-    // Frame is displayed with object-fit: contain — aspect ratio preserved by CSS.
-  })
-
-  previewVideoUnsub = window.api.on('video-progress', (data: unknown) => {
-    const d = data as { bytes: number }
-    const el = document.getElementById('video-progress-bytes')
-    if (el) el.textContent = `${(d.bytes / 1048576).toFixed(1)} MB`
-    const row = document.getElementById('video-progress-row')
-    if (row) row.style.display = ''
-  })
+    if (video) video.style.display = 'none'
+  }
 }
 
 function highlightCard(card: HTMLElement | null): void {
