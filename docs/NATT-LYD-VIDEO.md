@@ -62,6 +62,17 @@ Hardware}` + `videotoolbox_codec_args` (h264/hevc_videotoolbox, `-b:v`
    `processing`-objektet (overstyrer presets). Presets fyller mikseren.
 9. **Auto-balanse «løft svak»** (du: beholdt) — ingen endring.
 
+## Oppfølging 2 — «ja, implementer det»
+
+- **Fler-språklig kapitteldeteksjon** (norsk + engelsk) — `Language`-enum, 66
+  engelske bibelbøker, engelske punkt-fraser («firstly», «point 2»). Velges fra
+  transkripsjonens språk. (commit `eb81300`)
+- **Støy-bevisst ett-klikks** — måler støygulvet (astats) i samme pass som
+  kanaldiagnosen og velger «Støyete rom»-kjeden når det er støyete, ellers
+  «Podkast-stemme». (commit `31ddc2d`)
+- _Gjenstår kun preferanse:_ de-esser/de-reverb-default i podcast-preset — nå
+  fritt justerbart i den avanserte mikseren uansett.
+
 ## Åpne spørsmål til deg
 
 1. **Auto-balanse av kanaler — løft svak eller demp sterk?** Jeg løfter den
