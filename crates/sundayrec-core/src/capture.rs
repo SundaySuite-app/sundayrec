@@ -421,13 +421,6 @@ pub struct CaptureOpts {
     /// builder honours this ONLY on macOS (`Platform::MacOS`); elsewhere it
     /// silently falls back to software (VideoToolbox is mac-only).
     pub hw_accel: bool,
-    /// Target output resolution `(width, height)` from the user's quality setting
-    /// (e.g. 720p → `(1280, 720)`). The output is SCALED to this size with a
-    /// downscale-only filter (`scale='min(iw,W)':'min(ih,H)'`), so the recorded
-    /// file ALWAYS matches the chosen resolution and never upscales beyond what
-    /// the camera delivers (picking 4K on a 1080p camera yields a 1080p file, not
-    /// a fake-4K upscale). `None` keeps the camera's native frame size.
-    pub video_output_size: Option<(u32, u32)>,
 }
 
 impl Default for CaptureOpts {
@@ -446,7 +439,6 @@ impl Default for CaptureOpts {
             video_input: None,
             video_codec: crate::editor::VideoCodec::H264,
             hw_accel: false,
-            video_output_size: None,
         }
     }
 }
@@ -643,18 +635,12 @@ pub fn build_unified_capture_args(
         }
         args.push("-pix_fmt".into());
         args.push("yuv420p".into());
-        // Force the OUTPUT to the chosen resolution with a DOWNSCALE-ONLY filter,
-        // so the recorded file always matches the quality setting regardless of
-        // what mode the camera opened in (the mode-probe is unreliable on some
-        // cameras — e.g. a FaceTime cam that accepts `-framerate 1` never lists
-        // its modes — so we can't rely on pinning the input). `min(iw,W)` /
-        // `min(ih,H)` never upscales: 720p on a 1080p camera → 1280×720; 4K on a
-        // 1080p camera → stays 1920×1080 (honest, not a fake-4K upscale). The
-        // preview output below has its own `scale` and is unaffected.
-        if let Some((w, h)) = opts.video_output_size {
-            args.push("-vf".into());
-            args.push(format!("scale='min(iw,{w})':'min(ih,{h})'"));
-        }
+        // NOTE: the OUTPUT resolution is controlled by the INPUT `-video_size`
+        // (the probed/pinned camera mode above) — NOT by an output `-vf scale`.
+        // An output `-vf` on this primary output conflicted with the preview
+        // output's `-map 0:v` (ffmpeg can't feed one input stream into both a
+        // simple filtergraph AND a direct map) → the whole recording failed to
+        // produce a file. So resolution stays an input-mode concern.
         // PERFECT A/V SYNC: avfoundation cameras deliver VARIABLE frame rate (they
         // drop to ~15 fps in low light). Muxed as-is the video timeline diverges
         // from the audio and lip-sync drifts over a service. `-r <fps> -fps_mode
@@ -1097,26 +1083,28 @@ mod tests {
     }
 
     #[test]
-    fn video_output_size_adds_downscale_only_scale_filter() {
+    fn primary_output_has_no_vf_only_preview_does() {
+        // The primary output must NOT carry an output `-vf` — it would conflict
+        // with the preview output's `-map 0:v` (one input stream can't feed both a
+        // simple filtergraph and a direct map) and break the recording. The only
+        // `-vf` is the preview's `scale=480:-2,fps=4`.
         let opts = CaptureOpts {
-            video_output_size: Some((1280, 720)),
+            preview_jpg: Some("/tmp/p.jpg".into()),
             ..CaptureOpts::default()
         };
         let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mp4", &opts);
-        // The main output carries a downscale-only scale filter.
-        assert!(
-            has_pair(&args, "-vf", "scale='min(iw,1280)':'min(ih,720)'"),
-            "{args:?}"
+        let vf_values: Vec<&String> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| *a == "-vf" && *i + 1 < args.len())
+            .map(|(i, _)| &args[i + 1])
+            .collect();
+        assert_eq!(
+            vf_values.len(),
+            1,
+            "exactly one -vf (the preview): {args:?}"
         );
-    }
-
-    #[test]
-    fn no_output_size_means_no_main_scale_filter() {
-        // Audio-only / no target size → no scale on the main output (the preview
-        // output's own scale=480 may still appear, so check for the main filter).
-        let opts = CaptureOpts::default();
-        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mp4", &opts);
-        assert!(!args.iter().any(|a| a.contains("min(iw")), "{args:?}");
+        assert!(vf_values[0].contains("scale=480"), "{args:?}");
     }
 
     #[test]

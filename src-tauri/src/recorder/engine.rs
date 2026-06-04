@@ -302,11 +302,6 @@ pub fn build_record_args(
             _ => sundayrec_core::editor::VideoCodec::H264,
         },
         hw_accel: opts.video_encoder == "hardware",
-        // Force the output to the chosen resolution (downscale-only) so the file
-        // ALWAYS matches the quality setting — independent of the camera-mode
-        // probe (which is unreliable on some cameras). Only when video is on.
-        video_output_size: video
-            .map(|_| sundayrec_core::capture::resolution_dims(&opts.video_resolution)),
     };
     build_unified_capture_args(
         platform,

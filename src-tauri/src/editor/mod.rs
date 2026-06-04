@@ -861,10 +861,13 @@ pub async fn load_recording(input_path: &str) -> AppResult<EditorMediaInfo> {
 }
 
 /// Decode audio to 8 kHz mono WAV via the sidecar, read the samples, and
-/// down-sample to peaks with the core. HARDWARE-UNVERIFIED.
+/// down-sample to **100 peaks/second** — the SAME rate the renderer's
+/// `computePeaks` produces and the waveform indexes against (`pi = sec*100`). A
+/// fixed bucket count (the old 2000) would misalign the video waveform with the
+/// timeline; 100/s keeps it accurate at any duration. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
-    use sundayrec_core::editor::{downsample_peaks, peaks_extract_args, PEAK_BUCKETS};
+    use sundayrec_core::editor::{downsample_peaks, peaks_extract_args};
 
     if !std::path::Path::new(input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
@@ -878,7 +881,9 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
         return Err(AppError::Recording("peaks extract produced no WAV".into()));
     }
     let samples = read_wav_s16_f32(&wav_path)?;
-    let peaks = downsample_peaks(&samples, PEAK_BUCKETS);
+    // 8 kHz / 100 peaks-per-second = 80 samples per peak.
+    let buckets = (samples.len() / 80).max(1);
+    let peaks = downsample_peaks(&samples, buckets);
     Ok(EditorPeaks {
         peaks,
         sample_rate: 8000,

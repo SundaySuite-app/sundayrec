@@ -30,26 +30,44 @@ type VideoDevice = { name: string; index: number }
 let loadedDevices: VideoDevice[] = []
 
 export function setupVideoPage(): void {
+  // AUTO-SAVE: every video control persists immediately on change (the old flow
+  // required clicking «Lagre», so a resolution change the user made and then
+  // navigated away from was silently lost — the recorder kept using defaults, and
+  // the Home card never updated). saveVideoSettings also refreshes the Home strip
+  // + pushes the recording-critical settings to the backend.
+  const autoSave = () => { void saveVideoSettings() }
+
   const toggle = document.getElementById('opt-video-enable') as HTMLInputElement | null
   toggle?.addEventListener('change', () => {
     const enabled = toggle.checked
     const panel = document.getElementById('video-settings-panel')
     if (panel) panel.style.display = enabled ? '' : 'none'
+    autoSave()
   })
 
   document.getElementById('btn-video-refresh-devices')?.addEventListener('click', async () => {
     await refreshVideoDevices()
   })
 
-  // When the camera changes, gate resolution/fps to what it can actually do.
+  // When the camera changes, gate resolution/fps to what it can actually do + save.
   document.getElementById('video-device-select')?.addEventListener('change', () => {
     void applyCameraCapabilities()
+    autoSave()
   })
 
-  // video-mode radio buttons — update keep-audio visibility
-  document.querySelectorAll<HTMLInputElement>('input[name="video-mode"]').forEach(el => {
-    el.addEventListener('change', updateKeepAudioVisibility)
+  // Persist resolution / fps / container / codec / encoder on change.
+  document.querySelectorAll<HTMLInputElement>('input[name="video-resolution"]').forEach(el => {
+    el.addEventListener('change', autoSave)
   })
+  ;['video-fps-select', 'video-container-select', 'video-codec-select', 'video-encoder-select'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', autoSave)
+  })
+
+  // video-mode radio buttons — update keep-audio visibility + save
+  document.querySelectorAll<HTMLInputElement>('input[name="video-mode"]').forEach(el => {
+    el.addEventListener('change', () => { updateKeepAudioVisibility(); autoSave() })
+  })
+  document.getElementById('opt-video-keep-audio')?.addEventListener('change', autoSave)
 
   // Toggle custom bitrate row
   const toggleBitrateRow = () => {

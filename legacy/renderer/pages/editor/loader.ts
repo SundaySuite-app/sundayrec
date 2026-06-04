@@ -118,33 +118,23 @@ export async function loadFile(fp: string): Promise<void> {
       E.videoEl.load()
     }
 
-    // Extract audio at low sample rate for waveform display
-    const result = await window.api.editorExtractAudioPeaks(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
+    // Waveform for video: the backend extracts the audio + down-samples to peaks
+    // (100/s, the renderer's rate) — we CAN'T decode the raw video bytes
+    // client-side (a 1080p service is multi-GB, over the inline limit), and video
+    // PLAYBACK uses the <video> element (asset://) so no AudioBuffer is needed.
+    // E.peaks drives the waveform; E.duration comes from the video element.
+    const result = await window.api.editorExtractAudioPeaks(fp) as { peaks: number[]; sampleRate: number } | null
 
     if (seq !== E.loadSeq) return
 
-    if (result) {
-      const u8 = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data as ArrayBuffer)
-      const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-
-      let localCtx: AudioContext | null = null
-      try {
-        localCtx = new AudioContext()
-        const buf = await localCtx.decodeAudioData(ab)
-        if (seq !== E.loadSeq) { localCtx.close().catch(() => {}); return }
-        E.audioCtx    = localCtx
-        E.audioBuffer = buf
-        E.duration    = result.duration > 0 ? result.duration : buf.duration
-        E.peaks       = computePeaks(E.audioBuffer)
-      } catch (err) {
-        console.warn('[editor] audio decode failed for video file, trying video-only mode', err)
-        localCtx?.close().catch(() => {})
-        // Fall through to video-only mode below
-      }
+    let haveBackendPeaks = false
+    if (result && Array.isArray(result.peaks) && result.peaks.length) {
+      E.peaks = Float32Array.from(result.peaks)
+      haveBackendPeaks = true
     }
 
-    // Video-only mode: no audio track (or decode failed) — get duration from video element
-    if (!E.audioBuffer) {
+    // Duration always comes from the video element for video files.
+    {
       try {
         E.duration = await new Promise<number>((resolve, reject) => {
           if (!E.videoEl) { reject(new Error('no video element')); return }
@@ -162,9 +152,11 @@ export async function loadFile(fp: string): Promise<void> {
           }, 15000)
         })
         if (seq !== E.loadSeq) return
-        // Flat/empty peaks — waveform shows as a thin line
-        E.peaks = new Float32Array(Math.ceil(E.duration * 100))
-        console.log('[editor] video-only mode, duration:', E.duration.toFixed(1) + 's')
+        // Only flat-fill when the backend gave NO peaks (else keep the real ones).
+        if (!haveBackendPeaks) {
+          E.peaks = new Float32Array(Math.ceil(E.duration * 100))
+          console.log('[editor] video-only mode (flat waveform), duration:', E.duration.toFixed(1) + 's')
+        }
       } catch (err) {
         console.error('[editor] could not determine video duration:', err)
         showEditorError('Kunne ikke laste videofil — filen er kanskje korrupt')
