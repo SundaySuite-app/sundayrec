@@ -46,6 +46,25 @@ export async function detectDeviceChannels(deviceId: string | null | undefined):
   } catch { return 2 }
 }
 
+// ── VU meter channel helper ──────────────────────────────────────────────────
+
+/**
+ * Which channel-splitter output should drive the RIGHT VU analyser.
+ *
+ * WKWebView's `getUserMedia` commonly delivers a MONO track — most microphones
+ * (and the built-in Mac mic) are mono, and it doesn't reliably honour
+ * `channelCount: { ideal: 2 }`. Feeding such a stream into a 2-channel splitter
+ * leaves output 1 (R) silent, so the meter shows only L even when "Stereo" is
+ * selected (the reported bug). A Stereo recording of a mono source is dual-mono
+ * (the backend ffmpeg duplicates L→R via `-ac 2`), so the meter SHOULD show both
+ * bars. We therefore mirror channel 0 into R unless the device DEFINITIVELY
+ * reports ≥2 channels (a real stereo interface), which keeps independent L/R.
+ */
+export function rVuChannel(stream: MediaStream): number {
+  const ch = stream.getAudioTracks()[0]?.getSettings().channelCount ?? 0
+  return ch >= 2 ? 1 : 0
+}
+
 // ── Channel routing helper (also used by audio-page.ts) ─────────────────────
 
 export function buildInputRouter(
@@ -125,7 +144,8 @@ export async function startMonitorStream(opts: RecordingOpts): Promise<MonitorSe
   const vuAnalyserR = audioCtx.createAnalyser(); vuAnalyserR.fftSize = 1024
   inputRouter.connect(vuSplitter)
   vuSplitter.connect(vuAnalyserL, 0)
-  vuSplitter.connect(vuAnalyserR, 1)
+  // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
+  vuSplitter.connect(vuAnalyserR, rVuChannel(stream))
 
   return { stream, audioCtx, vuAnalyserL, vuAnalyserR, inputRouter, src, opts }
 }
@@ -162,7 +182,7 @@ export async function reconnectMonitorStream(session: MonitorSession): Promise<b
     const vuSplitter = audioCtx.createChannelSplitter(2)
     newRouter.connect(vuSplitter)
     vuSplitter.connect(session.vuAnalyserL, 0)
-    vuSplitter.connect(session.vuAnalyserR, 1)
+    vuSplitter.connect(session.vuAnalyserR, rVuChannel(newStream))
     session.stream.getTracks().forEach(t => { t.onended = null; t.stop() })
     session.stream      = newStream
     session.inputRouter = newRouter

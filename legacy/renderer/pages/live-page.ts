@@ -16,6 +16,7 @@ import { settings } from '../state'
 import { escHtml } from '../helpers'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 import type { VuState } from '../audio/vu'
+import { rVuChannel } from '../audio/capture'
 import type { StreamDestinationStored } from '../../types'
 import { setupLiveOverlays, reactivateLiveOverlays } from './live-overlays'
 import { normalizeFrameData } from '../../shared/normalize-frame-data'
@@ -201,7 +202,8 @@ function startVuMeter(): void {
     liveVu.analyserR = liveVu.ctx.createAnalyser(); liveVu.analyserR.fftSize = 1024
     src.connect(split)
     split.connect(liveVu.analyserL, 0)
-    split.connect(liveVu.analyserR, 1)
+    // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
+    split.connect(liveVu.analyserR, rVuChannel(stream))
 
     const fillL = document.getElementById('live-vu-l')
     const pkL   = document.getElementById('live-vu-peak-l')

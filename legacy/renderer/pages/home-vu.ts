@@ -1,5 +1,5 @@
 import { settings } from '../state'
-import { buildInputRouter, getAudioDevices } from '../audio/capture'
+import { buildInputRouter, getAudioDevices, rVuChannel } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 import type { VuState } from '../audio/vu'
 import { t } from '../i18n'
@@ -55,7 +55,8 @@ function tryStartVU(): void {
       vu.analyserR = vu.ctx.createAnalyser(); vu.analyserR.fftSize = 1024
       routed.connect(split)
       split.connect(vu.analyserL, 0)
-      split.connect(vu.analyserR, 1)
+      // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
+      split.connect(vu.analyserR, rVuChannel(stream))
 
       const fillL = document.getElementById('vu-l')
       const pkL   = document.getElementById('vu-peak-l')

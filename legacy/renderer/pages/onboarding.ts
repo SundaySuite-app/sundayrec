@@ -1,5 +1,5 @@
 import { settings, patchSettings } from '../state'
-import { getAudioDevices } from '../audio/capture'
+import { getAudioDevices, rVuChannel } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 
 // ── VU state for audio test step ─────────────────────────────────
@@ -202,7 +202,8 @@ async function s3(body: HTMLElement): Promise<void> {
     obVu.analyserR = obCtx.createAnalyser(); obVu.analyserR.fftSize = 1024
     src.connect(split)
     split.connect(obVu.analyserL, 0)
-    split.connect(obVu.analyserR, 1)
+    // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
+    split.connect(obVu.analyserR, rVuChannel(obStream))
 
     tickVU(obVu, null, null, null, null, null, null, (dbL, dbR) => {
       const db   = Math.max(dbL, dbR)
