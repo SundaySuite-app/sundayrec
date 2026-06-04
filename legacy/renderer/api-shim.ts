@@ -76,6 +76,23 @@ async function call<T>(
   }
 }
 
+/** Editor/mastering commands return BARE Rust result structs (e.g. `{outputPath}`),
+ *  but the ported Electron consumers expect the old `{ ok, …, error }` envelope —
+ *  they all branch on `result.ok`. Wrap a success with `ok: true`; a failure (the
+ *  invoke threw → the `{ ok: false }` fallback) stays `ok: false`. Without this,
+ *  every editor export / mastering step reads `ok === undefined` (falsy) and shows
+ *  "failed" even when the file was written. (Found by the IPC-seam audit.) */
+async function editorCall<T extends object>(
+  cmd: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const r = await call<T | { ok: false }>(cmd, args, { ok: false } as { ok: false });
+  if (r && typeof r === "object" && (r as { ok?: unknown }).ok === false) {
+    return { ok: false };
+  }
+  return { ok: true, ...(r as object) };
+}
+
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
 // (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
 const EVENT_MAP: Record<string, string> = {
@@ -94,6 +111,43 @@ const EVENT_MAP: Record<string, string> = {
   "whisper-model-progress": "whisper://model-progress",
   "stream-stats": "streaming://stats",
   "editor-export-progress": "editor://export-progress",
+};
+
+// Per-event payload ADAPTERS: the Tauri backend emits typed Rust structs whose
+// field names (snake_case) / shapes differ from the old Electron IPC payloads
+// the ported handlers expect. Each adapter reshapes the payload to what the
+// legacy handler reads. (Found by the IPC-seam audit.)
+const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
+  // RecordingProgress { bytes_written } → handler reads `bytes`.
+  "recording-progress": (p) => {
+    const d = (p ?? {}) as { bytes_written?: number };
+    return { ...d, bytes: d.bytes_written };
+  },
+  // RecordingFinished { file_path, has_video } → handler reads `path`. There's no
+  // split-restart signal in the Tauri event, so a finished recording always
+  // hides the overlay + offers "open in editor" (splitRestart: false).
+  "recording-finished": (p) => {
+    const d = (p ?? {}) as { file_path?: string };
+    return { ...d, path: d.file_path, splitRestart: false };
+  },
+  // RecordingEvent { code, message } → handler also reads `error` for the
+  // localized native-error mapping.
+  "recording-error": (p) => {
+    const d = (p ?? {}) as { code?: string; message?: string };
+    return { ...d, error: d.code };
+  },
+  // PreviewFrame { data: <base64>, … } → the legacy frame handlers expect raw
+  // JPEG bytes (normalizeFrameData). Decode base64 → Uint8Array.
+  "video-preview-frame": (p) => {
+    const d = p as { data?: string } | undefined;
+    if (d && typeof d.data === "string") {
+      const bin = atob(d.data);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    }
+    return p;
+  },
 };
 
 // ── Default settings (mirrors OLD src/main/store.ts `defaults`) ───────────────
@@ -299,7 +353,13 @@ const api: Record<string, unknown> = {
   },
   clearHistory: async () => call("recordings_clear", undefined, false).then(() => true),
   pruneHistory: async () => call("recordings_prune", undefined, 0),
-  updateHistoryNote: async () => true, // TODO Phase 3: no recordings_update_note command yet
+  // recording_update_note(id, note) — map the renderer's timestamp key back to the
+  // Rust row id (same map deleteHistoryEntry uses).
+  updateHistoryNote: async (ts: number, note: string) => {
+    const id = historyIdByTs.get(ts);
+    if (!id) return false;
+    return call("recording_update_note", { id, note: note || null }, false).then(() => true);
+  },
 
   // ── Disk / recording ────────────────────────────────────────────────────
   // get_disk_space returns { freeBytes } (camelCase) — exactly what home.ts reads.
@@ -456,7 +516,7 @@ const api: Record<string, unknown> = {
           .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
           .map((c) => ({ time: c.time as number, title: c.title as string }))
       : [];
-    return call(
+    return editorCall(
       "editor_export",
       {
         request: {
@@ -481,7 +541,6 @@ const api: Record<string, unknown> = {
           channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
         },
       },
-      { ok: false },
     );
   },
   // Analyse stereo channel balance → { code, imbalanceDb, peakLeftDb,
@@ -515,9 +574,11 @@ const api: Record<string, unknown> = {
     call("editor_delete_sidecar", { mediaPath: fp, sidecar: "cutsDraft" }, false).then(
       () => true,
     ),
-  editorDetectSegments: async (fp: string) => ({
-    segments: await call("editor_segments", { inputPath: fp }, []),
-  }),
+  // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
+  // the result directly to Suggestion[] and assigns E.suggestions, so return the
+  // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
+  editorDetectSegments: async (fp: string) =>
+    call("editor_segments", { inputPath: fp }, []),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).
@@ -545,33 +606,29 @@ const api: Record<string, unknown> = {
           .filter((c) => c && typeof c.time === "number" && typeof c.title === "string")
           .map((c) => ({ time: c.time as number, title: c.title as string }))
       : [];
-    return call(
-      "editor_export",
-      {
-        request: {
-          inputPath: o.inputPath,
-          cutRegions: o.cutRegions ?? [],
-          duration: o.duration ?? 0,
-          format: fmt,
-          outputFolder: o.outputFolder ?? "",
-          bitrate: null,
-          bitDepth: null,
-          masterPreset: (o.masterPreset as string) || null,
-          introPath: o.introPath ?? null,
-          outroPath: o.outroPath ?? null,
-          gainDb: null,
-          chapters,
-          title: (m.title as string) || null,
-          speaker: (m.speaker as string) || null,
-          description: (m.description as string) || null,
-          vocalChainPreset: (o.vocalChainPreset as string) || null,
-          processing: (o.processing as Record<string, unknown>) ?? null,
-          channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
-          videoCodec: (o.videoCodec as string) || null,
-        },
+    return editorCall("editor_export", {
+      request: {
+        inputPath: o.inputPath,
+        cutRegions: o.cutRegions ?? [],
+        duration: o.duration ?? 0,
+        format: fmt,
+        outputFolder: o.outputFolder ?? "",
+        bitrate: null,
+        bitDepth: null,
+        masterPreset: (o.masterPreset as string) || null,
+        introPath: o.introPath ?? null,
+        outroPath: o.outroPath ?? null,
+        gainDb: null,
+        chapters,
+        title: (m.title as string) || null,
+        speaker: (m.speaker as string) || null,
+        description: (m.description as string) || null,
+        vocalChainPreset: (o.vocalChainPreset as string) || null,
+        processing: (o.processing as Record<string, unknown>) ?? null,
+        channelRepair: (o.channelRepair as Record<string, unknown>) ?? null,
+        videoCodec: (o.videoCodec as string) || null,
       },
-      { ok: false },
-    );
+    });
   },
   editorProbeStreams: async (fp: string) =>
     call("editor_probe_streams", { inputPath: fp }, { streams: [] }),
@@ -591,21 +648,31 @@ const api: Record<string, unknown> = {
   // ── Mastering (editor_master_* / editor_mastering_analyze) ──────────────
   masterPresets: async () => [], // TODO Phase 3: presets are client-side; no command
   // editor_master_preview/apply take a single `request` struct; cancel takes jobId.
+  // Mastering commands return bare structs; the consumer expects { ok, … }.
   masterPreview: async (
     inputPath: string,
     presetId: string,
     startSec: number,
     durationSec: number,
   ) =>
-    call(
-      "editor_master_preview",
-      { request: { inputPath, presetId, startSec, durationSec } },
+    editorCall("editor_master_preview", {
+      request: { inputPath, presetId, startSec, durationSec },
+    }),
+  // The consumer reads `measureRes.ok` + `measureRes.measurement.inputI`, but the
+  // Rust returns a FLAT EditorLoudness — wrap it under `measurement`.
+  masterMeasure: async (inputPath: string, presetId: string) => {
+    const r = await call<Record<string, unknown> | { ok: false }>(
+      "editor_mastering_analyze",
+      { inputPath, presetId },
       { ok: false },
-    ),
-  masterMeasure: async (inputPath: string, presetId: string) =>
-    call("editor_mastering_analyze", { inputPath, presetId }, { ok: false }),
+    );
+    if (r && typeof r === "object" && (r as { ok?: unknown }).ok === false) {
+      return { ok: false };
+    }
+    return { ok: true, measurement: r };
+  },
   masterApply: async (params: unknown) =>
-    call("editor_master_apply", { request: params }, { ok: false }),
+    editorCall("editor_master_apply", { request: params }),
   masterCancel: async (jobId: string) =>
     call("editor_master_cancel", { jobId }, true).then(() => true),
 
@@ -730,7 +797,8 @@ const api: Record<string, unknown> = {
     if (!evt) return off;
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
-    void listen(evt, (e) => fn(e.payload)).then((u) => {
+    const adapt = EVENT_ADAPTERS[channel];
+    void listen(evt, (e) => fn(adapt ? adapt(e.payload) : e.payload)).then((u) => {
       if (cancelled) u();
       else unlisten = u;
     });

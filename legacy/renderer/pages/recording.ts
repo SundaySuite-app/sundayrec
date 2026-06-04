@@ -127,16 +127,24 @@ export function setupRecording(): void {
 
   const ipcCleanups = [
     window.api.on('recording-overlay-start', (opts) => {
-      // Recording already started in main; just show UI and open monitoring stream
-      const o = opts as RecordingOpts
+      // Tauri's `recording://started` carries NO opts (the manual start path
+      // already showed the overlay locally with the real opts). Guard so we don't
+      // re-render the overlay with `undefined` and throw.
+      const o = opts as RecordingOpts | undefined
+      if (!o || typeof o !== 'object') return
       showOverlay(o)
       startMonitoring(o).catch(err => {
         console.error('[recording] monitoring start error:', err)
         try { stopMonitoring() } catch {}
       })
     }),
-    window.api.on('recording-overlay-stop', () => {
-      // Main already called stopSession(); just close monitoring stream and hide UI
+    window.api.on('recording-overlay-stop', (data) => {
+      // This is mapped to `recording://state`, which fires on EVERY transition
+      // (preparing/recording/reconnecting/…), not just on stop. Only tear the
+      // overlay down on a TERMINAL state, or a preparing→recording mid-session
+      // event would hide the live overlay.
+      const st = (data as { state?: string } | undefined)?.state
+      if (st !== 'stopped' && st !== 'failed' && st !== 'idle') return
       if (stopOverridden) return
       stopMonitoring().catch(err => console.error('[recording] monitoring stop error:', err)).finally(() => hideOverlay())
     }),
