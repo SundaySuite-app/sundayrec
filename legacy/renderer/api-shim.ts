@@ -246,6 +246,58 @@ function saveSettingsLocal(s: unknown): boolean {
   }
 }
 
+// The UI's full settings live in localStorage (83 fields, superset of the Rust
+// Settings). But the RECORDER reads the backend (sqlite) settings via
+// `plan_recording_opts` → `settings::load(db)`, which the UI never wrote to — so
+// the user's resolution/format/camera/codec choices NEVER reached an actual
+// recording (it used backend DEFAULTS). This pushes the recording-critical subset
+// to the backend so manual + scheduled recordings honour the UI. Only a curated
+// set of fields with KNOWN-COMPATIBLE types is sent (the Rust enums for
+// format/channels are ported 1:1, so the string values match); everything else
+// defaults backend-side. Best-effort — a deserialize error leaves the backend
+// unchanged (no regression). `settings_save` deserializes with serde(default).
+function backendRecordingSettings(s: Record<string, unknown>): Record<string, unknown> {
+  return {
+    deviceId: s.deviceId ?? null,
+    deviceName: s.deviceName ?? null,
+    videoEnabled: s.videoEnabled ?? false,
+    videoDeviceName: s.videoDeviceName ?? null,
+    videoDeviceIndex: s.videoDeviceIndex ?? null,
+    videoResolution: s.videoResolution ?? "720p",
+    videoFramerate: s.videoFramerate ?? 30,
+    videoContainer: s.videoContainer ?? "mp4",
+    videoCodec: s.videoCodec ?? "h264",
+    videoEncoder: s.videoEncoder ?? "software",
+    videoFlip: s.videoFlip ?? false,
+    outputMode: s.videoSeparate ? "separate" : "combined",
+    keepSeparateAudio: s.videoKeepAudio !== false,
+    separateAudioFormat: s.format ?? "wav",
+    channels: s.channels ?? "stereo",
+    format: s.format ?? "mp3",
+    bitrate: String(s.bitrate ?? "192"),
+    saveFolder: s.saveFolder ?? null,
+    stopOnSilence: s.stopOnSilence ?? false,
+    silenceThreshold: s.silenceThreshold ?? -50,
+    silenceTimeoutMinutes: s.silenceTimeoutMinutes ?? 5,
+    splitMinutes: s.splitMinutes ?? 0,
+    manualMaxMinutes: s.manualMaxMinutes ?? 0,
+    preRollSeconds: s.preRollSeconds ?? 0,
+  };
+}
+
+let lastSyncedJson = "";
+async function syncBackendRecordingSettings(s: unknown): Promise<void> {
+  try {
+    const curated = backendRecordingSettings((s ?? {}) as Record<string, unknown>);
+    const json = JSON.stringify(curated);
+    if (json === lastSyncedJson) return; // nothing changed
+    lastSyncedJson = json;
+    await invoke("settings_save", { settings: curated });
+  } catch (e) {
+    console.warn("[api-shim] backend settings sync failed (recording will use defaults)", e);
+  }
+}
+
 const noop = (): void => {};
 const off = () => {}; // unsubscribe stub
 
@@ -327,7 +379,11 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
 const api: Record<string, unknown> = {
   // ── Settings ────────────────────────────────────────────────────────────
   getSettings: async () => loadSettings(),
-  saveSettings: async (s: unknown) => saveSettingsLocal(s),
+  saveSettings: async (s: unknown) => {
+    const ok = saveSettingsLocal(s);
+    void syncBackendRecordingSettings(s); // push recording-critical subset to sqlite
+    return ok;
+  },
   exportProfile: async () => loadSettings(),
   importProfile: async () => true,
   resetSettings: async () => {
@@ -821,6 +877,11 @@ const api: Record<string, unknown> = {
 };
 
 (window as any).api = api;
+
+// Seed the backend (sqlite) recording settings from localStorage ON BOOT, so a
+// fresh launch where the user records without re-saving still uses their saved
+// resolution/format/camera choices (not backend defaults). Best-effort.
+void syncBackendRecordingSettings(loadSettings());
 
 // Mark this file as a module (loaded via <script type="module">) so its
 // top-level helpers (loadSettings, api, …) stay module-scoped and don't collide
