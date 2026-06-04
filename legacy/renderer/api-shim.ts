@@ -282,7 +282,45 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     splitMinutes: s.splitMinutes ?? 0,
     manualMaxMinutes: s.manualMaxMinutes ?? 0,
     preRollSeconds: s.preRollSeconds ?? 0,
+    // The weekly schedule + one-off recordings drive the BACKEND scheduler
+    // (which couldn't see them while settings lived only in localStorage → no
+    // scheduled recording ever fired). SANITISED so a single malformed entry
+    // can't fail the whole settings_save (which would also drop the recording
+    // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
+    slots: sanitizeSlots(s.slots),
+    specialRecordings: sanitizeSpecials(s.specialRecordings),
   };
+}
+
+function sanitizeSlots(v: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((sl) => sl && Array.isArray((sl as { days?: unknown }).days))
+    .map((sl) => {
+      const o = sl as Record<string, unknown>;
+      return {
+        days: (o.days as unknown[]).filter((d) => Number.isInteger(d)),
+        start: typeof o.start === "string" ? o.start : "10:00",
+        stop: typeof o.stop === "string" ? o.stop : "12:00",
+        max: typeof o.max === "number" ? o.max : null,
+      };
+    });
+}
+
+function sanitizeSpecials(v: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((r) => r && typeof (r as { date?: unknown }).date === "string")
+    .map((r) => {
+      const o = r as Record<string, unknown>;
+      return {
+        id: typeof o.id === "string" ? o.id : null,
+        date: o.date as string,
+        name: typeof o.name === "string" ? o.name : "",
+        start: typeof o.start === "string" ? o.start : "10:00",
+        stop: typeof o.stop === "string" ? o.stop : "12:00",
+      };
+    });
 }
 
 let lastSyncedJson = "";
@@ -293,6 +331,13 @@ async function syncBackendRecordingSettings(s: unknown): Promise<void> {
     if (json === lastSyncedJson) return; // nothing changed
     lastSyncedJson = json;
     await invoke("settings_save", { settings: curated });
+    // Wake the scheduler supervisor so it picks up new/changed slots immediately
+    // (settings_save alone doesn't recompute the schedule).
+    try {
+      await invoke("scheduler_reschedule");
+    } catch {
+      /* scheduler reschedule is best-effort */
+    }
   } catch (e) {
     console.warn("[api-shim] backend settings sync failed (recording will use defaults)", e);
   }
