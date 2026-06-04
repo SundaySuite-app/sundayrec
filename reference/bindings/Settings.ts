@@ -71,6 +71,12 @@ videoContainer: string,
  */
 videoCodec: string, 
 /**
+ * Recording video encoder backend: `"software"` (default, libx264/5 — best
+ * quality) | `"hardware"` (VideoToolbox on macOS — realtime, needed for live
+ * 4K H.265). Ignored off macOS (falls back to software).
+ */
+videoEncoder: string, 
+/**
  * Mirror the camera horizontally (preview + recording). Default false.
  * Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
  */

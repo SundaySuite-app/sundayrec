@@ -414,9 +414,13 @@ pub struct CaptureOpts {
     /// and fills this in. The OUTPUT still conforms to `framerate` via `-r`.
     pub video_input: Option<VideoCaptureMode>,
     /// Video output codec — H.264 (default, universal) or H.265/HEVC (~half the
-    /// size). For live 4K H.265, software `libx265` may not keep up on a modest
-    /// CPU; a hardware encoder (videotoolbox) is the recommended follow-up.
+    /// size).
     pub video_codec: crate::editor::VideoCodec,
+    /// Use the **VideoToolbox hardware encoder** (macOS) instead of software
+    /// x264/x265. Realtime even at 4K — the right choice for live 4K H.265. The
+    /// builder honours this ONLY on macOS (`Platform::MacOS`); elsewhere it
+    /// silently falls back to software (VideoToolbox is mac-only).
+    pub hw_accel: bool,
 }
 
 impl Default for CaptureOpts {
@@ -434,6 +438,7 @@ impl Default for CaptureOpts {
             preview_jpg: None,
             video_input: None,
             video_codec: crate::editor::VideoCodec::H264,
+            hw_accel: false,
         }
     }
 }
@@ -586,19 +591,48 @@ pub fn build_unified_capture_args(
     // and channel count come from validated settings. Video (when present) stays a
     // simple libx264.
     if has_video {
+        // Hardware (VideoToolbox) encoding is honoured ONLY on macOS — it's the
+        // realtime path for live 4K H.265. Elsewhere we fall back to software
+        // x264/x265 (VideoToolbox is mac-only).
+        let use_hw = opts.hw_accel && matches!(platform, Platform::MacOS);
         args.push("-c:v".into());
-        match opts.video_codec {
-            crate::editor::VideoCodec::H264 => args.push("libx264".into()),
-            crate::editor::VideoCodec::H265 => {
-                args.push("libx265".into());
-                // `hvc1` tag so QuickTime/Apple players accept the HEVC stream in
-                // an mp4/mov container.
-                args.push("-tag:v".into());
-                args.push("hvc1".into());
+        if use_hw {
+            match opts.video_codec {
+                crate::editor::VideoCodec::H264 => args.push("h264_videotoolbox".into()),
+                crate::editor::VideoCodec::H265 => {
+                    args.push("hevc_videotoolbox".into());
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
             }
+            // VideoToolbox has no CRF — target a resolution-appropriate bitrate,
+            // and `-realtime 1` biases it for live capture. Output dims = the
+            // pinned input mode (capture doesn't scale); default to 1080p.
+            let (w, h) = opts
+                .video_input
+                .map(|m| (m.width, m.height))
+                .unwrap_or((1920, 1080));
+            args.push("-b:v".into());
+            args.push(format!(
+                "{}k",
+                crate::editor::default_video_bitrate_kbps(w, h)
+            ));
+            args.push("-realtime".into());
+            args.push("1".into());
+        } else {
+            match opts.video_codec {
+                crate::editor::VideoCodec::H264 => args.push("libx264".into()),
+                crate::editor::VideoCodec::H265 => {
+                    args.push("libx265".into());
+                    // `hvc1` tag so QuickTime/Apple players accept the HEVC stream
+                    // in an mp4/mov container.
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+            }
+            args.push("-preset".into());
+            args.push("veryfast".into());
         }
-        args.push("-preset".into());
-        args.push("veryfast".into());
         args.push("-pix_fmt".into());
         args.push("yuv420p".into());
         // PERFECT A/V SYNC: avfoundation cameras deliver VARIABLE frame rate (they
@@ -1040,6 +1074,44 @@ mod tests {
         assert!(has_pair(&args, "-tag:v", "hvc1"));
         // faststart still emitted for mp4.
         assert!(has_pair(&args, "-movflags", "+faststart"));
+    }
+
+    #[test]
+    fn hw_accel_uses_videotoolbox_on_mac_with_bitrate() {
+        let opts = CaptureOpts {
+            hw_accel: true,
+            video_codec: crate::editor::VideoCodec::H265,
+            video_input: Some(VideoCaptureMode {
+                width: 3840,
+                height: 2160,
+                input_fps: 30,
+            }),
+            ..CaptureOpts::default()
+        };
+        let args = build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mov", &opts);
+        assert!(has_pair(&args, "-c:v", "hevc_videotoolbox"));
+        assert!(has_pair(&args, "-tag:v", "hvc1"));
+        assert!(has_pair(&args, "-b:v", "40000k"), "4K bitrate");
+        assert!(has_pair(&args, "-realtime", "1"));
+        // No software-only preset on the hardware path.
+        assert!(
+            !args.iter().any(|a| a == "-preset"),
+            "hw path has no -preset"
+        );
+    }
+
+    #[test]
+    fn hw_accel_falls_back_to_software_off_mac() {
+        let opts = CaptureOpts {
+            hw_accel: true,
+            ..CaptureOpts::default()
+        };
+        // Windows has no VideoToolbox → software libx264 with a preset.
+        let args =
+            build_unified_capture_args(Platform::Windows, Some("Cam"), "Mic", "out.mp4", &opts);
+        assert!(has_pair(&args, "-c:v", "libx264"));
+        assert!(has_pair(&args, "-preset", "veryfast"));
+        assert!(!args.iter().any(|a| a == "h264_videotoolbox"));
     }
 
     #[test]

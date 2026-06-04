@@ -159,6 +159,8 @@ export function applyVideoSettingsToUI(): void {
   if (containerEl) containerEl.value = settings.videoContainer ?? 'mp4'
   const codecEl = document.getElementById('video-codec-select') as HTMLSelectElement | null
   if (codecEl) codecEl.value = settings.videoCodec ?? 'h264'
+  const encoderEl = document.getElementById('video-encoder-select') as HTMLSelectElement | null
+  if (encoderEl) encoderEl.value = settings.videoEncoder ?? 'software'
 
   // Output mode
   const separate   = settings.videoSeparate ?? false
@@ -273,6 +275,8 @@ async function saveVideoSettings(): Promise<void> {
   const codecEl = document.getElementById('video-codec-select') as HTMLSelectElement | null
   const videoContainer = (containerEl?.value ?? 'mp4') as 'mp4' | 'mov'
   const videoCodec = (codecEl?.value ?? 'h264') as 'h264' | 'h265'
+  const encoderEl = document.getElementById('video-encoder-select') as HTMLSelectElement | null
+  const videoEncoder = (encoderEl?.value ?? 'software') as 'software' | 'hardware'
 
   const autoMode = document.getElementById('opt-video-bitrate-auto') as HTMLInputElement | null
   const bitrate  = (autoMode?.checked) ? 0 : parseInt(bitrateInput?.value ?? '0') || 0
@@ -295,6 +299,7 @@ async function saveVideoSettings(): Promise<void> {
     videoFramerate:    fps,
     videoContainer,
     videoCodec,
+    videoEncoder,
     videoBitrate:      bitrate,
     videoSeparate:     separate,
     videoKeepAudio:    keepAudio,

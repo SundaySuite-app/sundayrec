@@ -266,6 +266,62 @@ pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> 
     a
 }
 
+/// The encoder backend for a video output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VideoEncoder {
+    /// Software `libx264`/`libx265` — best quality-per-bit, but CPU-bound (a
+    /// modest machine can't encode 4K H.265 in realtime).
+    #[default]
+    Software,
+    /// Apple **VideoToolbox** hardware encoder (`h264_videotoolbox` /
+    /// `hevc_videotoolbox`) — realtime even at 4K, the right choice for LIVE
+    /// capture. macOS-only: the caller MUST gate this to macOS and fall back to
+    /// [`VideoEncoder::Software`] elsewhere (VideoToolbox doesn't exist on
+    /// Windows/Linux; Windows would use qsv/nvenc/amf, not wired here).
+    Hardware,
+}
+
+/// Suggested target video bitrate (kbps) for an output resolution. The hardware
+/// (VideoToolbox) encoder targets a BITRATE rather than a CRF, so we pick a
+/// sensible rate per resolution (≈ the common streaming ladder, tuned a touch
+/// high for clean sermon/podcast capture). `long_side` is `max(width, height)`.
+pub fn default_video_bitrate_kbps(width: u32, height: u32) -> u32 {
+    match width.max(height) {
+        l if l >= 3840 => 40_000, // 4K UHD
+        l if l >= 1920 => 12_000, // 1080p
+        l if l >= 1280 => 6_000,  // 720p
+        _ => 2_500,               // 480p and below
+    }
+}
+
+/// Build the video + audio codec args for the HARDWARE (VideoToolbox) path —
+/// the realtime encoder for live 4K. Unlike software x264/x265 it has no CRF, so
+/// it targets `-b:v <bitrate>`; `-realtime 1` biases it for live capture, HEVC
+/// carries the `hvc1` tag, and `+faststart` is emitted only for ISO/QuickTime
+/// containers. macOS-only (caller-gated; see [`VideoEncoder::Hardware`]).
+pub fn videotoolbox_codec_args(
+    container: &str,
+    codec: VideoCodec,
+    bitrate_kbps: u32,
+) -> Vec<String> {
+    let s = |v: &str| v.to_string();
+    let mut a: Vec<String> = match codec {
+        VideoCodec::H264 => vec![s("-c:v"), s("h264_videotoolbox")],
+        VideoCodec::H265 => vec![s("-c:v"), s("hevc_videotoolbox"), s("-tag:v"), s("hvc1")],
+    };
+    a.extend([
+        s("-b:v"),
+        format!("{bitrate_kbps}k"),
+        s("-realtime"),
+        s("1"),
+    ]);
+    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("192k")]);
+    if matches!(container, "mp4" | "mov" | "m4v") {
+        a.extend([s("-movflags"), s("+faststart")]);
+    }
+    a
+}
+
 // ── Filter graph construction ─────────────────────────────────────────────────
 
 /// Format a seconds value the way Electron's `.toFixed(4)` did — fixed 4
@@ -1183,6 +1239,32 @@ mod tests {
     fn video_codec_args_crf_override() {
         let a = video_codec_args("mp4", VideoCodec::H264, Some(23));
         assert!(a.windows(2).any(|w| w == ["-crf", "23"]), "{a:?}");
+    }
+
+    #[test]
+    fn default_video_bitrate_scales_with_resolution() {
+        assert_eq!(default_video_bitrate_kbps(3840, 2160), 40_000);
+        assert_eq!(default_video_bitrate_kbps(1920, 1080), 12_000);
+        assert_eq!(default_video_bitrate_kbps(1280, 720), 6_000);
+        assert_eq!(default_video_bitrate_kbps(854, 480), 2_500);
+    }
+
+    #[test]
+    fn videotoolbox_uses_hw_encoder_bitrate_and_realtime() {
+        let a = videotoolbox_codec_args("mov", VideoCodec::H265, 40_000);
+        assert!(
+            a.windows(2).any(|w| w == ["-c:v", "hevc_videotoolbox"]),
+            "{a:?}"
+        );
+        assert!(a.windows(2).any(|w| w == ["-tag:v", "hvc1"]));
+        assert!(a.windows(2).any(|w| w == ["-b:v", "40000k"]));
+        assert!(a.windows(2).any(|w| w == ["-realtime", "1"]));
+        // No software-only knobs.
+        assert!(!a.iter().any(|x| x == "-crf"));
+        assert!(!a.iter().any(|x| x == "-preset"));
+        // H.264 hardware variant.
+        let h264 = videotoolbox_codec_args("mp4", VideoCodec::H264, 12_000);
+        assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
     }
 
     // ── filter graphs ──────────────────────────────────────────────────────────

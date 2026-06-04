@@ -1529,6 +1529,13 @@
             <option value="h265" data-i18n="video.codecH265">H.265 / HEVC (mindre fil)</option>
           </select>
 
+          <label class="form-label mt" data-i18n="video.encoder">ENKODER</label>
+          <select class="form-input" id="video-encoder-select" style="max-width:340px">
+            <option value="software" selected data-i18n="video.encoderSoftware">Software (best kvalitet)</option>
+            <option value="hardware" data-i18n="video.encoderHardware">Hardware / VideoToolbox (raskere — anbefalt for 4K)</option>
+          </select>
+          <div class="form-hint" data-i18n="video.encoderHint">Hardware-enkoder (kun Mac) gjør 4K H.265-opptak mulig i sann-tid. Software gir best kvalitet for vanlig opptak.</div>
+
           <label class="form-label mt" data-i18n="video.bitrate">BITHASTIGHET</label>
           <div style="display:flex;flex-direction:column;gap:8px">
             <label class="video-bitrate-radio">

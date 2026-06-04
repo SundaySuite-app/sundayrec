@@ -257,6 +257,8 @@ export interface Settings {
   videoContainer?: 'mp4' | 'mov'
   /** Recording video codec: 'h264' (default) | 'h265' (HEVC). */
   videoCodec?: 'h264' | 'h265'
+  /** Recording encoder backend: 'software' (default) | 'hardware' (VideoToolbox). */
+  videoEncoder?: 'software' | 'hardware'
   videoSeparate?: boolean      // true = keep audio + video as separate files; false = mux into combined MP4
   videoKeepAudio?: boolean     // when combined MP4: also keep the separate high-quality audio file (default true)
   videoFlip?: boolean          // mirror the camera horizontally (e.g. front-facing cameras)

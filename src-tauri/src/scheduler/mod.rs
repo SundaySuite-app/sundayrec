@@ -449,6 +449,8 @@ pub(crate) fn build_opts(
         video_resolution: settings.video_resolution.clone(),
         // H.264 (default) or H.265/HEVC for the recording.
         video_codec: settings.video_codec.clone(),
+        // software (libx264/5) or hardware (VideoToolbox, mac) encoder backend.
+        video_encoder: settings.video_encoder.clone(),
         // Resolved server-side by the recorder's camera-mode probe at start.
         video_input: None,
     })

@@ -155,6 +155,11 @@ pub struct Settings {
     /// ~half the size; for live 4K a hardware encoder is recommended).
     #[serde(default = "default_video_codec")]
     pub video_codec: String,
+    /// Recording video encoder backend: `"software"` (default, libx264/5 — best
+    /// quality) | `"hardware"` (VideoToolbox on macOS — realtime, needed for live
+    /// 4K H.265). Ignored off macOS (falls back to software).
+    #[serde(default = "default_video_encoder")]
+    pub video_encoder: String,
     /// Mirror the camera horizontally (preview + recording). Default false.
     /// Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
     #[serde(default)]
@@ -443,6 +448,9 @@ fn default_video_container() -> String {
 fn default_video_codec() -> String {
     "h264".to_string()
 }
+fn default_video_encoder() -> String {
+    "software".to_string()
+}
 fn default_output_mode() -> String {
     "combined".to_string()
 }
@@ -468,6 +476,7 @@ impl Default for Settings {
             video_framerate: default_video_framerate(),
             video_container: default_video_container(),
             video_codec: default_video_codec(),
+            video_encoder: default_video_encoder(),
             video_flip: false,
             output_mode: default_output_mode(),
             keep_separate_audio: false,
@@ -597,6 +606,9 @@ impl Settings {
         }
         if !matches!(self.video_codec.as_str(), "h264" | "h265") {
             self.video_codec = default_video_codec();
+        }
+        if !matches!(self.video_encoder.as_str(), "software" | "hardware") {
+            self.video_encoder = default_video_encoder();
         }
 
         // Recording behaviour
