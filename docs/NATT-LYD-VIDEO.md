@@ -47,6 +47,21 @@ opptak/kamera).
 - **Kamera-gating**: deaktiver det kameraet ikke støtter (UVC-deskriptor er
   fast). Ved feilet probe → la alt være aktivt (blokker ikke på probe-miss).
 
+## Oppfølging etter dine svar (samme økt)
+
+Du svarte på 3 av spørsmålene, og jeg implementerte dem med en gang:
+
+7. **VideoToolbox hardware-enkoder** (du: «ja») — `VideoEncoder{Software,
+   Hardware}` + `videotoolbox_codec_args` (h264/hevc_videotoolbox, `-b:v`
+   oppløsnings-utledet bitrate, `-realtime 1`). Opptak bruker det KUN på macOS
+   (faller tilbake til software ellers). Nytt `video_encoder`-innstilling +
+   «ENKODER»-velger i UI. Gjør live 4K H.265 realistisk.
+8. **Full vokal-mikser-UI** (du: «ja, full mixer») — `mixer.ts` eksponerer hvert
+   trinn (lavkutt/støy/rom/gate/EQ×3/kompressor/de-esser/limiter/sluttgain) som
+   skyvere i eksport-modalen. «🎛 Avansert lydmikser»-checkbox; sender hele
+   `processing`-objektet (overstyrer presets). Presets fyller mikseren.
+9. **Auto-balanse «løft svak»** (du: beholdt) — ingen endring.
+
 ## Åpne spørsmål til deg
 
 1. **Auto-balanse av kanaler — løft svak eller demp sterk?** Jeg løfter den
