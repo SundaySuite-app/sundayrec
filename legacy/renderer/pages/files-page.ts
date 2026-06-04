@@ -3,6 +3,7 @@ import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
 import { flashSaved, setVal, setRadio, isoDate, setupDirtyBar } from '../helpers'
 import { t } from '../i18n'
 import { getChurchHolidays } from '../../shared/church-calendar'
+import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
 
 let _markFilesClean = () => {}
 let _markFilesDirty = () => {}
@@ -18,31 +19,45 @@ export function setupFilesPage(): void {
   _markPublishClean = pubBar.clean
   _markPublishDirty = pubBar.dirty
 
+  // AUTO-SAVE: every recorder-critical files-control persists immediately on
+  // change (the old flow needed a «Lagre» click; a format/folder change the user
+  // navigated away from was lost → recorder kept defaults). saveFilesSettings
+  // saves the whole Settings object + refreshes the Home format/disk cards.
+  const autoSave = () => { void saveFilesSettings() }
+
   document.getElementById('btn-pick-folder')?.addEventListener('click', async () => {
     const folder = await window.api.pickFolder()
     if (folder) {
       setVal('save-folder', folder)
       patchSettings({ saveFolder: folder })
       _markFilesDirty()
+      autoSave()
     }
   })
 
-  document.getElementById('pattern-select')?.addEventListener('change', updateFilenamePreview)
+  document.getElementById('pattern-select')?.addEventListener('change', () => { updateFilenamePreview(); autoSave() })
   document.querySelectorAll('input[name="format"]').forEach(r =>
-    r.addEventListener('change', () => { toggleMp3Quality(); updateFilenamePreview() })
+    r.addEventListener('change', () => { toggleMp3Quality(); updateFilenamePreview(); autoSave() })
+  )
+  document.querySelectorAll('input[name="bitrate"]').forEach(r =>
+    r.addEventListener('change', autoSave)
   )
   document.getElementById('opt-auto-delete')?.addEventListener('change', function (this: HTMLInputElement) {
     const row = document.getElementById('auto-delete-days-row')
     if (row) row.style.display = this.checked ? 'block' : 'none'
+    autoSave()
   })
-  document.getElementById('opt-trim-silence')?.addEventListener('change', () => {/* live preview not needed */})
+  document.getElementById('auto-delete-days')?.addEventListener('change', autoSave)
+  document.getElementById('opt-trim-silence')?.addEventListener('change', autoSave)
 
   // Opptaksoppførsel — silence-toggle reveals threshold/timeout config inline.
-  // (Dirty-bar is auto-tracked via the page-level change listener in setupDirtyBar.)
   document.getElementById('opt-silence')?.addEventListener('change', function (this: HTMLInputElement) {
     const silCfg = document.getElementById('silence-config')
     if (silCfg) silCfg.style.display = this.checked ? 'block' : 'none'
+    autoSave()
   })
+  ;['opt-silence-threshold', 'opt-silence-timeout', 'opt-split-minutes', 'opt-manual-max', 'opt-preroll-seconds']
+    .forEach(id => document.getElementById(id)?.addEventListener('change', autoSave))
 
   document.getElementById('btn-files-save')?.addEventListener('click', saveFilesSettings)
   document.getElementById('btn-files-cancel')?.addEventListener('click', () => applyFilesSettingsToUI())
@@ -315,4 +330,9 @@ async function saveFilesSettings(): Promise<void> {
     ? document.getElementById('btn-publish-save')
     : document.getElementById('btn-files-save')
   flashSaved(flashBtn)
+  // Refresh Home live: the format/device info-strip + the disk-hours estimate
+  // (which depends on format/bitrate) — so the change shows without navigating
+  // away and back.
+  void loadHomeInfoStrip()
+  void refreshHomeDiskSpace()
 }

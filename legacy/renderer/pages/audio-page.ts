@@ -3,7 +3,7 @@ import { settings, patchSettings } from '../state'
 import { flashSaved, setVal, setRadio, updateSliderLabel, setupDirtyBar } from '../helpers'
 import { getAudioDevices, detectDeviceChannels, buildInputRouter } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
-import { refreshHomeDiskSpace } from './home'
+import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
 import type { DeviceChannels, ChannelMode } from '../../types'
 
 let monitorStream: MediaStream   | null = null
@@ -29,22 +29,42 @@ export function setupAudioPage(): void {
   _markAudioClean = bar.clean
   _markAudioDirty = bar.dirty
 
+  // AUTO-SAVE: persist on change so a setting takes effect immediately (the old
+  // flow required clicking «Lagre»; a change the user made and navigated away
+  // from was silently lost → recorder kept using defaults). saveAudioSettings
+  // also pushes the recording-critical subset to the backend.
+  const autoSave = () => { void saveAudioSettings() }
+
   document.getElementById('input-volume')?.addEventListener('input', () => {
     updateVolumeLabel()
     updateVolGradient()
   })
+  document.getElementById('input-volume')?.addEventListener('change', autoSave)
 
-  // Sync sample-rate cards ↔ hidden select
+  // Sync sample-rate cards ↔ hidden select + save
   document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
     r.addEventListener('change', () => {
       const sel = document.getElementById('sample-rate') as HTMLSelectElement | null
       if (sel) sel.value = r.value
+      autoSave()
     })
+  })
+
+  // Channel-mode cards (stereo / mono / monoL / monoR) + compressor controls.
+  document.querySelectorAll<HTMLInputElement>('input[name="channels"]').forEach(r => {
+    r.addEventListener('change', autoSave)
+  })
+  // Multi-channel L/R mapping selects (persist the device's channel choice).
+  document.getElementById('channel-select-l')?.addEventListener('change', autoSave)
+  document.getElementById('channel-select-r')?.addEventListener('change', autoSave)
+  ;['comp-threshold', 'comp-ratio', 'comp-attack', 'comp-release'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', autoSave)
   })
 
   document.getElementById('opt-compressor')?.addEventListener('change', function (this: HTMLInputElement) {
     const cs = document.getElementById('comp-settings')
     if (cs) cs.style.display = this.checked ? 'block' : 'none'
+    autoSave()
   })
 
   document.getElementById('btn-test-audio')?.addEventListener('click', async () => {
@@ -123,8 +143,10 @@ async function saveAudioSettings(): Promise<void> {
   await window.api.saveSettings(settings)
   _markAudioClean()
   flashSaved(document.getElementById('btn-audio-save'))
-  // OPPGAVE 7: refresh disk estimate on home page when channels/samplerate change
+  // Refresh Home live: disk estimate (channels/samplerate) + the device/format
+  // info-strip cards so the change shows without navigating away and back.
   void refreshHomeDiskSpace()
+  void loadHomeInfoStrip()
 }
 
 export async function renderDeviceList(containerId: string): Promise<void> {
@@ -169,6 +191,9 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       if (subEl) subEl.textContent = `${subBase} · ${count} ${t('audio.channelCount', 'kanaler')}`
       const stored = settings.deviceChannels?.[d.deviceId]
       updateChannelSelector(count, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      // Persist the device choice immediately (no «Lagre» click needed) so the
+      // recorder + Home card pick it up.
+      void saveAudioSettings()
     })
     container.appendChild(card)
   })

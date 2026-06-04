@@ -1297,7 +1297,7 @@ export function loadVideoInfoStrip(): void {
   if (modeEl)    modeEl.textContent    = settings.videoSeparate ? 'Separate filer (video + lyd)' : 'Kombinert MP4'
 }
 
-async function loadHomeInfoStrip(): Promise<void> {
+export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
   const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
   const nameEl   = document.getElementById('home-device-name')
