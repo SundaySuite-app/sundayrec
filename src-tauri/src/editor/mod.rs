@@ -917,19 +917,15 @@ fn core_repair_to_dto(r: sundayrec_core::processing::ChannelRepair) -> EditorCha
     }
 }
 
-/// Analyse a recording's stereo channel balance: run `astats` over the whole
-/// file, parse the per-channel peaks, and ask the core for a recommended repair
-/// (swap / duplicate-good-channel / per-channel makeup). HARDWARE-UNVERIFIED.
+/// Run `astats` over the whole file to a null sink and return ffmpeg's stderr
+/// (the per-channel + overall summary). Shared by channel diagnosis and the
+/// one-click auto-process so a single pass yields both the levels and the noise
+/// floor. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
-pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagnosis> {
-    use sundayrec_core::levels::parse_levels;
-    use sundayrec_core::processing::{diagnose_channels as core_diagnose, ChannelLevelsDb};
-
+async fn run_astats_stderr(input_path: &str) -> AppResult<String> {
     if !std::path::Path::new(input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
     }
-    // astats over the whole input to a null sink → per-channel peak summary on
-    // stderr (parsed by the tested `levels::parse_levels`).
     let args = [
         "-nostdin",
         "-hide_banner",
@@ -946,20 +942,27 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
         .wait_with_output()
         .await
         .map_err(|e| AppError::Recording(format!("astats wait: {e}")))?;
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let levels = parse_levels(&stderr)
-        .ok_or_else(|| AppError::Recording("astats produced no channel levels".into()))?;
+    Ok(String::from_utf8_lossy(&out.stderr).into_owned())
+}
 
+/// Build the channel diagnosis from a parsed astats summary.
+#[cfg(feature = "editor")]
+fn diagnosis_from_stderr(stderr: &str) -> AppResult<EditorChannelDiagnosis> {
+    use sundayrec_core::levels::parse_levels;
+    use sundayrec_core::processing::{diagnose_channels as core_diagnose, ChannelLevelsDb};
+
+    let levels = parse_levels(stderr)
+        .ok_or_else(|| AppError::Recording("astats produced no channel levels".into()))?;
     let pl = levels.peak_db_left;
-    match levels.peak_db_right {
+    Ok(match levels.peak_db_right {
         // Mono source — nothing to balance.
-        None => Ok(EditorChannelDiagnosis {
+        None => EditorChannelDiagnosis {
             code: "mono".into(),
             imbalance_db: 0.0,
             peak_left_db: pl,
             peak_right_db: None,
             recommended: core_repair_to_dto(sundayrec_core::processing::ChannelRepair::None),
-        }),
+        },
         Some(pr) => {
             let d = core_diagnose(ChannelLevelsDb {
                 peak_left_db: pl,
@@ -967,24 +970,38 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
                 rms_left_db: None,
                 rms_right_db: None,
             });
-            Ok(EditorChannelDiagnosis {
+            EditorChannelDiagnosis {
                 code: d.code.to_string(),
                 imbalance_db: d.imbalance_db,
                 peak_left_db: pl,
                 peak_right_db: Some(pr),
                 recommended: core_repair_to_dto(d.recommended),
-            })
+            }
         }
-    }
+    })
 }
 
-/// One-click "auto-improve": diagnose the channels, then recommend the full
-/// best-result setup — channel repair + the podcast vocal chain + clear-speech
-/// mastering. Delegates the ffmpeg work to [`diagnose_channels`] (so it returns
-/// the `feature_disabled` error in the default build), then composes the preset
-/// choices + a Norwegian summary. The renderer applies the result in one click.
+/// Analyse a recording's stereo channel balance: run `astats` over the whole
+/// file, parse the per-channel peaks, and ask the core for a recommended repair
+/// (swap / duplicate-good-channel / per-channel makeup). HARDWARE-UNVERIFIED.
+#[cfg(feature = "editor")]
+pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagnosis> {
+    let stderr = run_astats_stderr(input_path).await?;
+    diagnosis_from_stderr(&stderr)
+}
+
+/// One-click "auto-improve": ONE astats pass yields both the channel diagnosis
+/// AND the noise floor, so we recommend the full best-result setup — channel
+/// repair + a NOISE-AWARE vocal chain (the heavier `voice-noisy-room` when the
+/// floor is high, else `voice-podcast`) + clear-speech mastering — with a
+/// Norwegian summary. The renderer applies the result in one click.
+#[cfg(feature = "editor")]
 pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
-    let diagnosis = diagnose_channels(input_path).await?;
+    let stderr = run_astats_stderr(input_path).await?;
+    let diagnosis = diagnosis_from_stderr(&stderr)?;
+    let noise_floor = sundayrec_core::levels::parse_noise_floor_db(&stderr);
+    let preset = sundayrec_core::processing::recommend_vocal_preset(noise_floor);
+
     let repair_note = match diagnosis.code.as_str() {
         "dead_left" => "høyre kanal kopieres til begge (venstre er stille — sjekk kabel)",
         "dead_right" => "venstre kanal kopieres til begge (høyre er stille — sjekk kabel)",
@@ -993,14 +1010,25 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
         "mono" => "mono-opptak",
         _ => "kanalbalanse OK",
     };
+    let chain_note = if preset == "voice-noisy-room" {
+        "støyete-rom-kjede (sterkere støyreduksjon)"
+    } else {
+        "podkast-stemme"
+    };
     let summary =
-        format!("Automatisk lydforbedring: {repair_note}, podkast-stemme + tydelig mastering.");
+        format!("Automatisk lydforbedring: {repair_note}, {chain_note} + tydelig mastering.");
     Ok(EditorAutoProcess {
         diagnosis,
-        vocal_chain_preset: "voice-podcast".into(),
+        vocal_chain_preset: preset.to_string(),
         master_preset: "speech-clear".into(),
         summary,
     })
+}
+
+/// Auto-process needs ffmpeg (astats) — disabled in the default build.
+#[cfg(not(feature = "editor"))]
+pub async fn auto_process(_input_path: &str) -> AppResult<EditorAutoProcess> {
+    disabled("autoProcess")
 }
 
 /// Measure loudness: run the preset's pass-1 measure chain to a null sink and

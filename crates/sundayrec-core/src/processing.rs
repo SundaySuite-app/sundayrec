@@ -620,6 +620,21 @@ pub fn vocal_chain_preset_by_id(id: &str) -> Option<VocalChainPreset> {
     vocal_chain_presets().into_iter().find(|p| p.id == id)
 }
 
+/// A measured noise floor (dBFS) above this is "noisy" — a clean recording sits
+/// around −60…−70 dBFS, a room with audible hiss/HVAC/handling around −45.
+const NOISE_NOISY_THRESHOLD_DB: f64 = -50.0;
+
+/// Pick the best one-click vocal-chain preset from a measured noise floor: a
+/// noisy recording gets the heavier `voice-noisy-room` chain (stronger denoise +
+/// de-reverb + gate), a clean one the standard `voice-podcast`. `None` (no
+/// measurement) defaults to `voice-podcast`.
+pub fn recommend_vocal_preset(noise_floor_db: Option<f64>) -> &'static str {
+    match noise_floor_db {
+        Some(nf) if nf.is_finite() && nf > NOISE_NOISY_THRESHOLD_DB => "voice-noisy-room",
+        _ => "voice-podcast",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -967,5 +982,18 @@ mod tests {
     #[test]
     fn unknown_preset_id_is_none() {
         assert!(vocal_chain_preset_by_id("nope").is_none());
+    }
+
+    #[test]
+    fn recommend_preset_picks_noisy_room_when_floor_high() {
+        // Clean recording (low noise floor) → standard podcast chain.
+        assert_eq!(recommend_vocal_preset(Some(-65.0)), "voice-podcast");
+        assert_eq!(recommend_vocal_preset(Some(-50.0)), "voice-podcast");
+        // Noisy (floor above −50) → the heavier noisy-room chain.
+        assert_eq!(recommend_vocal_preset(Some(-45.0)), "voice-noisy-room");
+        assert_eq!(recommend_vocal_preset(Some(-30.0)), "voice-noisy-room");
+        // No measurement / non-finite → default to podcast.
+        assert_eq!(recommend_vocal_preset(None), "voice-podcast");
+        assert_eq!(recommend_vocal_preset(Some(f64::NAN)), "voice-podcast");
     }
 }
