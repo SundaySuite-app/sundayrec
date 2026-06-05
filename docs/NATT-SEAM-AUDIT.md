@@ -57,25 +57,36 @@ sjekket mot Rust-emit-payloaden.
   (device/video\*/format/bitrate/saveFolder/silence/split/keepSeparateAudio/
   resolution/codec/encoder/slots/special).
 
-## ÅPNE SPØRSMÅL — krever DIN avgjørelse (ikke auto-fikset med vilje)
+## UX-FIKSET (de tidligere åpne punktene — «fiks ux + rydd opp»)
 
-### 1. Sample-rate: UI tvinger ikke `-ar` (med vilje uendret)
+### 1. ✅ Sample-rate: «Automatisk» (native) lagt til + wiret
 
-Recorderen defaulter til `SampleRate::Auto` = ta opp på enhetens NATIVE rate
-(utelater `-ar`, ingen resampling — dette er bevisst, fordi å tvinge 48 kHz på en
-44,1 kHz USB-mikser droppet samples → hakkete lyd). UI-en tilbyr bare 44,1/48 kHz
-(ingen «Auto»), default 48 kHz. Jeg **synker IKKE** `sampleRate`→`sampleRateMode`,
-fordi å mappe UI-defaulten 48 kHz → tvunget `r48000` ville gjeninnføre nettopp den
-hakkete-lyd-risikoen for ALLE som ikke rørte valget — og jeg kan ikke verifisere
-lyd på rigg i natt. **Din avgjørelse:** skal opptaket ære et eksplisitt rate-valg
-(og evt. få en «Auto/Native»-opsjon i UI), eller alltid ta opp native? Krever
-rigg-lydverifisering uansett.
+La til et **«Automatisk»-kort** (nytt ANBEFALT default) ved siden av 44,1/48 kHz.
+Radio-verdiene ER nå `SampleRate`-enumen direkte (`auto`/`r44100`/`r48000`),
+lagres som nytt `sampleRateMode`-felt og synkes til recorderen i det kuraterte
+subsettet (whitelistet). Auto = recorderens trygge native-capture (ingen `-ar`,
+ingen hakkete lyd på 44,1 kHz-maskinvare); de eksplisitte modusene tvinger raten
+for den som vil. Numerisk `sampleRate` beholdes synket for klient-bruk (VU-monitor
 
-### 2. Mikser (kompressor/EQ/limiter/inputVolume) påvirker IKKE opptak — BY DESIGN
+- disk-estimat). _Rigg: bekreft at et eksplisitt valg faktisk endrer opptaks-raten._
 
-Disse `Settings`-feltene leses inn, men brukes ALDRI i opptaks-pipelinen. Det er
-**tilsiktet**: `index.html:948` dokumenterer at lydforbedringer ble fjernet fra
-opptak i v4.31 — filosofien er «ta opp rått, etterbehandle i editoren»
-(Normaliser + Mastering-presets). Feltene beholdes skjult med defaults for
-bakoverkompatibilitet. **Ingen feil** — men hvis du vil at audio-page IKKE skal
-presentere dem som aktive opptaksvalg, er det en UI-avgjørelse.
+### 2. ✅ Mikser: bekreftet skjult by-design + ryddet vekk død kode
+
+Kompressor/EQ/limiter/input-volume er ALLEREDE skjulte inert-inputs (`index.html`
+record-raw-filosofi siden v4.31 — dynamikk/EQ hører hjemme i editoren). De er
+altså ikke presentert som aktive opptaksvalg = UX er riktig. Ryddet vekk den døde
+event-wiringen + sluttet å persistere dem i save (de beholder defaults).
+
+### 3. ✅ Fremdrift: ubestemt stripe for eksport + transkripsjon
+
+Backenden emitter ingen export-/transcribe-progress → baren sto frosset på 0%.
+Lagt til en gjenbrukbar `.progress-indeterminate`-stripe som vises under
+operasjoner uten sporbar fremdrift og fjernes automatisk så snart en ekte %
+kommer (modell-nedlasting beholder ekte bar). Honnør-fiks uten å gjette falsk %.
+_Ekte %-bar ville fortsatt kreve backend-emit (egen oppfølging)._
+
+### Rydding
+
+Alle 18 eslint-advarsler i den ordrette porten fjernet → `npm run check` 0
+advarsler (ubrukte importer + død write-only/superseded lokal-state + én død
+funksjon, hver verifisert genuint ubrukt — ingen skjult wiring-gap).
