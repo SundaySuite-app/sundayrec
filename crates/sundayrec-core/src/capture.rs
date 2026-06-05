@@ -297,18 +297,30 @@ const FPS_OPTIONS: &[u32] = &[24, 25, 30, 50, 60];
 /// lists — the caller should then fall back to offering everything (better to let
 /// the user try than to block on a failed probe).
 pub fn summarize_camera_capabilities(modes: &[CameraMode]) -> CameraCapabilities {
-    let max_width = modes.iter().map(|m| m.width).max().unwrap_or(0);
-    let max_height = modes.iter().map(|m| m.height).max().unwrap_or(0);
+    // A 16:9 tag is offerable only if some mode is at least as large in BOTH
+    // dimensions — we can downscale/crop DOWN to it, never UP. Checking both dims
+    // (not just height) means a square/portrait mode (e.g. a FaceTime camera's
+    // 1552x1552) can't falsely unlock a 16:9 tag it can't actually fill: 4K stays
+    // gated unless a real ≥3840x2160 mode exists.
+    let supported_resolutions: Vec<String> = RES_TAGS
+        .iter()
+        .filter(|(tag, _)| {
+            let (tw, th) = resolution_dims(tag);
+            modes.iter().any(|m| m.width >= tw && m.height >= th)
+        })
+        .map(|(tag, _)| (*tag).to_string())
+        .collect();
+    // max_width/max_height = the largest 16:9 size we can actually DELIVER (drives
+    // the "camera delivers max Xp" note). (0, 0) when no modes / nothing supported.
+    let (max_width, max_height) = supported_resolutions
+        .last()
+        .map(|tag| resolution_dims(tag))
+        .unwrap_or((0, 0));
     let max_fps = modes
         .iter()
         .flat_map(|m| m.framerates.iter().copied())
         .max()
         .unwrap_or(0);
-    let supported_resolutions = RES_TAGS
-        .iter()
-        .filter(|(_, h)| max_height >= *h)
-        .map(|(tag, _)| (*tag).to_string())
-        .collect();
     let supported_framerates = FPS_OPTIONS
         .iter()
         .copied()
@@ -1087,6 +1099,22 @@ mod tests {
         assert_eq!(cap.max_height, 0);
         assert!(cap.supported_resolutions.is_empty());
         assert!(cap.supported_framerates.is_empty());
+    }
+
+    #[test]
+    fn capabilities_square_mode_does_not_unlock_4k() {
+        // A FaceTime-style camera: 16:9 up to 1080p + a high-res SQUARE mode. The
+        // square's pixel count exceeds 1080p, but it can't fill a 16:9 4K frame, so
+        // 2160p must stay GATED (no upscale). Native 16:9 ceiling is 1080p.
+        let modes = vec![
+            CameraMode { width: 1920, height: 1080, framerates: vec![30] },
+            CameraMode { width: 1552, height: 1552, framerates: vec![30] },
+            CameraMode { width: 1280, height: 720, framerates: vec![15, 30] },
+        ];
+        let cap = summarize_camera_capabilities(&modes);
+        assert_eq!(cap.supported_resolutions, vec!["480p", "720p", "1080p"]);
+        assert!(!cap.supported_resolutions.contains(&"2160p".to_string()));
+        assert_eq!((cap.max_width, cap.max_height), (1920, 1080));
     }
 
     #[test]

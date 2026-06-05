@@ -239,8 +239,20 @@ export async function applyCameraCapabilities(): Promise<void> {
   } catch {
     cap = null
   }
-  // Empty/failed probe → offer everything (don't block on a probe miss).
-  if (!cap || cap.supportedResolutions.length === 0) return
+  // Empty/FAILED probe → be CONSERVATIVE, don't offer everything: we must never
+  // UPSCALE to a resolution we can't confirm the source delivers natively. Assume
+  // a safe 1080p ceiling (the common case) and flag it, so 4K stays gated until a
+  // probe actually confirms a native-4K source. (Down-scaling is always fine.)
+  let probeFailed = false
+  if (!cap || cap.supportedResolutions.length === 0) {
+    cap = {
+      supportedResolutions: ['480p', '720p', '1080p'],
+      supportedFramerates: [24, 25, 30, 50, 60],
+      maxHeight: 1080,
+      maxFps: 60,
+    }
+    probeFailed = true
+  }
 
   // The highest supported tag = the camera's native ceiling (list is ascending).
   const nativeTag = [...cap.supportedResolutions].pop()
@@ -289,11 +301,20 @@ export async function applyCameraCapabilities(): Promise<void> {
   // Always show the camera's native ceiling; prepend a warning when we had to
   // fall back from an unsupported pick.
   if (warnEl) {
-    const info = `${t('video.cameraDelivers', 'Kameraet leverer maks')} ${cap.maxHeight}p · ${cap.maxFps} fps.`
-    warnEl.textContent = fellBack
-      ? `${t('video.resUnsupportedShort', 'Valgt oppløsning støttes ikke — satt til kameraets maks.')} ${info}`
-      : info
-    ;(warnEl as HTMLElement).style.color = fellBack ? 'var(--warning, #d08700)' : 'var(--text-3, #8899bb)'
+    if (probeFailed) {
+      // Honest about the assumption — this is NOT a confirmed camera ceiling.
+      warnEl.textContent = t(
+        'video.probeFailed',
+        'Kunne ikke lese kameraets oppløsninger — begrenset til 1080p for å unngå oppskalering. 4K krever et kamera som leverer ekte 4K.',
+      )
+      ;(warnEl as HTMLElement).style.color = 'var(--warning, #d08700)'
+    } else {
+      const info = `${t('video.cameraDelivers', 'Kameraet leverer maks')} ${cap.maxHeight}p · ${cap.maxFps} fps.`
+      warnEl.textContent = fellBack
+        ? `${t('video.resUnsupportedShort', 'Valgt oppløsning støttes ikke — satt til kameraets maks.')} ${info}`
+        : info
+      ;(warnEl as HTMLElement).style.color = fellBack ? 'var(--warning, #d08700)' : 'var(--text-3, #8899bb)'
+    }
     warnEl.style.display = ''
   }
 }
