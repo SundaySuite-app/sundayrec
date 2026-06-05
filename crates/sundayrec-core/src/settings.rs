@@ -155,9 +155,11 @@ pub struct Settings {
     /// ~half the size; for live 4K a hardware encoder is recommended).
     #[serde(default = "default_video_codec")]
     pub video_codec: String,
-    /// Recording video encoder backend: `"software"` (default, libx264/5 — best
-    /// quality) | `"hardware"` (VideoToolbox on macOS — realtime, needed for live
-    /// 4K H.265). Ignored off macOS (falls back to software).
+    /// Recording video encoder backend: `"hardware"` (default — VideoToolbox on
+    /// macOS — realtime + low CPU, so the live preview/meters stay snappy and live
+    /// 4K H.265 is feasible) | `"software"` (libx264/5 — max compression
+    /// efficiency, but pegs the CPU and makes the live monitoring lag). Ignored
+    /// off macOS (always falls back to software).
     #[serde(default = "default_video_encoder")]
     pub video_encoder: String,
     /// Mirror the camera horizontally (preview + recording). Default false.
@@ -449,7 +451,11 @@ fn default_video_codec() -> String {
     "h264".to_string()
 }
 fn default_video_encoder() -> String {
-    "software".to_string()
+    // Hardware (VideoToolbox) by default on a Mac-first app: it offloads the encode
+    // to the media engine, freeing the CPU so the live preview + VU meters stay
+    // snappy during recording (software libx264 pegged the CPU → laggy monitoring).
+    // Gated to macOS at capture time; non-mac silently uses software.
+    "hardware".to_string()
 }
 fn default_output_mode() -> String {
     "combined".to_string()

@@ -691,7 +691,14 @@ pub fn build_unified_capture_args(
             args.push("0:v".into());
             args.push("-an".into());
             args.push("-vf".into());
-            args.push("scale=480:-2,fps=4".into());
+            // 720px-wide @ 12 fps (was 480 @ 4): a sharper, smoother live preview.
+            // With the main encode on hardware (VideoToolbox) there's CPU headroom
+            // for this; the MJPEG sink is still a file (never back-pressures capture).
+            args.push("scale=720:-2,fps=12".into());
+            // High JPEG quality (mjpeg -q:v is 2=best..31=worst) so the preview is
+            // crisp, not blocky.
+            args.push("-q:v".into());
+            args.push("4".into());
             args.push("-update".into());
             args.push("1".into());
             args.push("-y".into());
@@ -1087,7 +1094,7 @@ mod tests {
         // The primary output must NOT carry an output `-vf` — it would conflict
         // with the preview output's `-map 0:v` (one input stream can't feed both a
         // simple filtergraph and a direct map) and break the recording. The only
-        // `-vf` is the preview's `scale=480:-2,fps=4`.
+        // `-vf` is the preview's `scale=720:-2,fps=12`.
         let opts = CaptureOpts {
             preview_jpg: Some("/tmp/p.jpg".into()),
             ..CaptureOpts::default()
@@ -1104,7 +1111,7 @@ mod tests {
             1,
             "exactly one -vf (the preview): {args:?}"
         );
-        assert!(vf_values[0].contains("scale=480"), "{args:?}");
+        assert!(vf_values[0].contains("scale=720"), "{args:?}");
     }
 
     #[test]
@@ -1274,7 +1281,7 @@ mod tests {
             "auto-overwrite; got: {args:?}"
         );
         assert!(
-            has_pair(&args, "-vf", "scale=480:-2,fps=4"),
+            has_pair(&args, "-vf", "scale=720:-2,fps=12"),
             "got: {args:?}"
         );
         assert!(args.iter().any(|a| a == "-an"), "preview drops audio");

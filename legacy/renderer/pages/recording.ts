@@ -526,7 +526,10 @@ function showOverlay(opts: RecordingOpts): void {
     // DURING recording the backend recorder owns the camera and writes a low-fps
     // preview JPEG to a file; we POLL it (base64) here. (The old Electron app got
     // IPC frames; the Tauri recorder writes a file instead — a poll is the match.)
-    const recPollMs = Math.max(150, Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 15)))
+    // Poll roughly at the backend preview rate (12 fps → ~83 ms). The cap was
+    // 150 ms (~6.7 fps), which threw away half the preview frames and made the
+    // image feel laggy even when the backend produced more.
+    const recPollMs = Math.max(80, Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 15)))
     const recPollTimer = setInterval(async () => {
       let b64: string | null = null
       try { b64 = await window.api.recordingPreviewFrame?.() ?? null } catch { b64 = null }

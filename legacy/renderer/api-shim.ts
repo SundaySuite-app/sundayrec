@@ -300,7 +300,7 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     videoFramerate: s.videoFramerate ?? 30,
     videoContainer: s.videoContainer ?? "mp4",
     videoCodec: s.videoCodec ?? "h264",
-    videoEncoder: s.videoEncoder ?? "software",
+    videoEncoder: s.videoEncoder ?? "hardware",
     videoFlip: s.videoFlip ?? false,
     outputMode: s.videoSeparate ? "separate" : "combined",
     keepSeparateAudio: s.videoKeepAudio !== false,
