@@ -24,6 +24,25 @@ Tidligere i økta (egne commits, nå på `main`): `dccd7fa` wakeFromSleep til
 kuratert subset, `0d9be10` filenamePattern til kuratert subset — samme klasse
 (felt recorderen leser som `settings_save` ellers re-defaultet).
 
+## Event-seam (analog audit av EVENT_MAP-payloads)
+
+Samme metode på den andre retningen: hver `EVENT_MAP`-oppføring uten adapter ble
+sjekket mot Rust-emit-payloaden.
+
+- **FIKSET — `master-progress`** (`9e139c2`): `EditorMasterProgress` emitter
+  snake_case (`job_id/current_sec/total_sec`), men mastering-panelet leser
+  `currentSec/totalSec` → `totalSec` undefined → fremdriftsbaren sto frosset på
+  **0% hele veien** (så hengt ut, selv om mastreringen virket). La til adapter.
+- **OK uten adapter:** alle `recording://*`-events (`RecorderState` serialiseres
+  snake_case = consumer-strengene `'stopped'/'failed'/'idle'`; reconnect-events tar
+  ingen payload; started-event er tomt + guardet); `whisper-model-progress`
+  (`ModelDownloadProgress` er allerede camelCase = consumer).
+- **BACKEND-GAP (krever Rust-emit, ikke frontend-fiks):** `whisper-progress`
+  (transkripsjon) og `editor-export-progress` emittes ALDRI fra backend → ingen
+  live-% under transkribering/eksport. Begge operasjoner FULLFØRER fint; kun den
+  visuelle fremdriften mangler. Egen oppfølging hvis ønsket (emit progress i
+  whisper-transcribe + editor-export-løkkene).
+
 ## Verifisert OK (ingen endring nødvendig)
 
 - **Kamera-gating** (`CameraCapabilities`: maxWidth/Height/Fps/supportedResolutions/
