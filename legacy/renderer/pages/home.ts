@@ -358,10 +358,15 @@ export async function startVideoPreview(): Promise<void> {
     const RES_DIMS: Record<string, [number, number]> = {
       '480p': [854, 480], '720p': [1280, 720], '1080p': [1920, 1080], '2160p': [3840, 2160],
     }
-    const [rw, rh] = RES_DIMS[settings.videoResolution ?? '720p'] ?? [1280, 720]
+    const [rw] = RES_DIMS[settings.videoResolution ?? '720p'] ?? [1280, 720]
+    // The preview is only a MONITOR — it never needs more than 1080p. Asking a
+    // 1080p camera (e.g. FaceTime HD) for 4K made WKWebView collapse the
+    // unsatisfiable width+height+aspectRatio ideals into a cropped 1920×1920
+    // SQUARE (zoomed in). Cap the request at 1080p and specify width + aspectRatio
+    // ONLY (no fighting height) so the browser always returns a clean 16:9 frame
+    // at the camera's real max. The overlay still reports the true delivered size.
     const videoConstraint: MediaTrackConstraints = {
-      width:       { ideal: rw },
-      height:      { ideal: rh },
+      width:       { ideal: Math.min(rw, 1920) },
       aspectRatio: { ideal: 16 / 9 },
     }
     // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
