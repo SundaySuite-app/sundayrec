@@ -233,10 +233,13 @@
               <rect x="9.25" y="2" width="1.5" height="16" rx=".75"/>
             </svg>
           </button>
-          <!-- Size of the video feed (smaller ↔ full width). Persists. -->
-          <div class="video-size-control" title="Størrelse på videofeed" data-i18n-title="tooltip.videoSize">
-            <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" style="flex-shrink:0;opacity:.5"><path d="M3 3h6v2H5v4H3V3zm14 14h-6v-2h4v-4h2v6z"/></svg>
-            <input id="home-video-size-slider" type="range" min="45" max="100" value="100" step="5" class="video-size-slider" aria-label="Størrelse på videofeed" />
+          <!-- Video-feed size: small / medium / large. Reflows the whole row —
+               a smaller feed gives the info cards the freed width (they wrap into
+               a grid) instead of leaving empty space. Persists. -->
+          <div class="video-size-seg" role="group" aria-label="Størrelse på videofeed" title="Størrelse på videofeed" data-i18n-title="tooltip.videoSize">
+            <button type="button" data-vsize="s" title="Liten video"><svg width="15" height="15" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" rx="1" fill="currentColor"/></svg></button>
+            <button type="button" data-vsize="m" title="Middels video"><svg width="15" height="15" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg></button>
+            <button type="button" data-vsize="l" title="Stor video" class="active"><svg width="15" height="15" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
           </div>
           <div id="video-progress-row" class="video-progress-badge" style="display:none">
             <span class="rec-dot-sm" style="width:5px;height:5px"></span>

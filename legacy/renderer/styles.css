@@ -3181,9 +3181,7 @@ body.platform-win32  #wake-instructions-win { display: block; }
   border: 1px solid var(--border);
   border-radius: var(--r);
   overflow: hidden;
-  /* Centered so the resize slider can shrink the feed and keep it centred in the
-     available space (max-width is set inline from the slider, default 100%). */
-  margin: 0 auto 12px;
+  margin: 0 0 12px;
   /* Visually move the camera-source bar to the TOP of the card without
      re-ordering markup (existing event handlers + screen reader DOM stay
      untouched). column-reverse + putting VU back to natural last position
@@ -3208,10 +3206,20 @@ body.platform-win32  #wake-instructions-win { display: block; }
   font-size: 9px; font-weight: 700; letter-spacing: 1px;
   color: var(--text3); text-transform: uppercase; flex-shrink: 0;
 }
-.video-size-control { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.video-size-slider {
-  width: 96px; height: 4px; cursor: pointer; accent-color: var(--accent2);
+/* Segmented video-feed size control (small / medium / large). */
+.video-size-seg {
+  display: inline-flex; gap: 2px; flex-shrink: 0;
+  background: var(--surface3); border: 1px solid var(--border2);
+  border-radius: 7px; padding: 2px;
 }
+.video-size-seg button {
+  border: none; background: none; color: var(--text3);
+  width: 26px; height: 22px; border-radius: 5px; padding: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.video-size-seg button:hover { color: var(--text); }
+.video-size-seg button.active { background: var(--accent2); color: #1a1a1a; }
 .video-source-select {
   flex: 1; min-width: 140px; max-width: 320px;
   height: 28px; padding: 0 8px;
@@ -3422,6 +3430,19 @@ body.platform-win32  #wake-instructions-win { display: block; }
 .video-mode-vu-slot { min-width: 0; }
 .video-mode-preview-slot { min-width: 0; }
 .video-mode-preview-slot > #video-preview-section { width: 100%; }
+
+/* Video-feed size presets (set by the segmented control in the source bar).
+   A smaller video gives its width to the info-card column, which wraps into a
+   responsive grid so the freed space is filled — no empty gap. Default (no
+   class) = "large": video dominant, info cards a single narrow column. */
+#page-home.vsize-m .video-mode-top-row { grid-template-columns: minmax(0, 1.4fr) 1fr; }
+#page-home.vsize-s .video-mode-top-row { grid-template-columns: 1fr 1fr; }
+#page-home.vsize-m .video-mode-layout .info-card-column,
+#page-home.vsize-s .video-mode-layout .info-card-column {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  align-content: start;
+}
 
 /* Preview that doesn't add letterboxing on the sides — the container itself
    adopts a 16:9 aspect ratio so the black background is the box, not bars

@@ -115,11 +115,19 @@ function applyVideoFlipState(): void {
   document.getElementById('btn-home-video-flip')?.classList.toggle('flip-active', flipped)
 }
 
-/** Constrain the Home video-preview card to `pct`% of the available width (it's
- *  centered via CSS), letting the user shrink the feed. 100 = full width. */
-function applyHomeVideoSize(pct: number): void {
-  const card = document.querySelector<HTMLElement>('#video-preview-section .video-preview-card')
-  if (card) card.style.maxWidth = `${pct}%`
+/** Apply a Home video-feed size preset: 'l' (large, default) | 'm' | 's'. Smaller
+ *  presets shrink the video column and reflow the info cards into the freed width
+ *  (CSS classes on #page-home), so there's no wasted space. Also reflects the
+ *  active state on the segmented control. */
+function applyHomeVideoSize(size: 's' | 'm' | 'l'): void {
+  const page = document.getElementById('page-home')
+  if (page) {
+    page.classList.remove('vsize-s', 'vsize-m')
+    if (size === 's') page.classList.add('vsize-s')
+    else if (size === 'm') page.classList.add('vsize-m')
+  }
+  document.querySelectorAll<HTMLElement>('.video-size-seg button').forEach(b =>
+    b.classList.toggle('active', b.dataset.vsize === size))
 }
 
 export function updateVideoToggleButton(): void {
@@ -721,19 +729,20 @@ export function setupHome(): void {
     await applyHomeVideoDeviceSelection()
   })
 
-  // Video-feed size slider — constrains the preview card's max-width (it's
-  // centered) so the feed can be made smaller than full width. Persisted, so the
-  // choice sticks across sessions. Useful when the window fills the screen.
-  const sizeSlider = document.getElementById('home-video-size-slider') as HTMLInputElement | null
-  if (sizeSlider) {
-    const saved = parseInt(localStorage.getItem('sundayrec.homeVideoSize') ?? '100', 10)
-    const init  = Number.isFinite(saved) ? Math.min(100, Math.max(45, saved)) : 100
-    sizeSlider.value = String(init)
+  // Video-feed size — small / medium / large. A smaller feed reflows the info
+  // cards into the freed width (no wasted space), useful when the window fills the
+  // screen. Persisted, so the choice sticks across sessions.
+  const sizeSeg = document.querySelector<HTMLElement>('.video-size-seg')
+  if (sizeSeg) {
+    const saved = localStorage.getItem('sundayrec.homeVideoSize')
+    const init: 's' | 'm' | 'l' = saved === 's' || saved === 'm' ? saved : 'l'
     applyHomeVideoSize(init)
-    sizeSlider.addEventListener('input', () => {
-      const pct = parseInt(sizeSlider.value, 10) || 100
-      applyHomeVideoSize(pct)
-      try { localStorage.setItem('sundayrec.homeVideoSize', String(pct)) } catch { /* ignore */ }
+    sizeSeg.querySelectorAll<HTMLElement>('button').forEach(b => {
+      b.addEventListener('click', () => {
+        const size = (b.dataset.vsize as 's' | 'm' | 'l') ?? 'l'
+        applyHomeVideoSize(size)
+        try { localStorage.setItem('sundayrec.homeVideoSize', size) } catch { /* ignore */ }
+      })
     })
   }
 
