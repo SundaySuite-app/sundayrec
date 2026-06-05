@@ -335,12 +335,19 @@ pub fn resolve_camera_mode(
     target_h: u32,
     target_fps: u32,
 ) -> Option<VideoCaptureMode> {
-    let target_landscape = target_w >= target_h;
     let target_area = i64::from(target_w) * i64::from(target_h);
+    let target_ar = f64::from(target_w) / f64::from(target_h);
     let best = modes.iter().min_by_key(|m| {
         let area = i64::from(m.width) * i64::from(m.height);
-        let orient_penalty = u8::from((m.width >= m.height) != target_landscape);
-        (orient_penalty, (area - target_area).abs())
+        // PRIMARY: match the target's ASPECT RATIO. A 16:9 target must never pick a
+        // 1:1 square (or portrait) mode when a 16:9 mode exists. The old check only
+        // compared orientation (width>=height), which a 1552x1552 mode PASSES as
+        // "landscape" — so it then won on pixel count and recorded a zoomed square
+        // (rig-reported "4K is zoomed"). Scored in hundredths as an integer key.
+        let ar = f64::from(m.width) / f64::from(m.height);
+        let ar_penalty = ((ar - target_ar).abs() * 100.0) as i64;
+        // SECONDARY: closest pixel count to the target.
+        (ar_penalty, (area - target_area).abs())
     })?;
     let input_fps = pick_input_framerate(&best.framerates, target_fps)?;
     Some(VideoCaptureMode {
@@ -759,6 +766,22 @@ mod tests {
                 .input_fps,
             15
         );
+    }
+
+    #[test]
+    fn resolve_4k_target_picks_16_9_not_a_square_mode() {
+        // Newer MacBook FaceTime cameras advertise a high-res SQUARE mode (e.g.
+        // 1552x1552). Targeting 4K (3840x2160, 16:9) must pick the 16:9 1920x1080
+        // mode, NOT the square one — it has more pixels but records a zoomed 1:1
+        // crop. Regression for the rig-reported "4K is zoomed/square" bug.
+        let modes = parse_avfoundation_modes(
+            "[avfoundation @ 0x1] Supported modes:\n\
+             [avfoundation @ 0x1]   1920x1080@[15.000000 30.000000]fps\n\
+             [avfoundation @ 0x1]   1552x1552@[30.000000]fps\n\
+             [avfoundation @ 0x1]   1280x720@[15.000000 30.000000]fps",
+        );
+        let r = resolve_camera_mode(&modes, 3840, 2160, 30).unwrap();
+        assert_eq!((r.width, r.height), (1920, 1080), "picked: {r:?}");
     }
 
     #[test]
