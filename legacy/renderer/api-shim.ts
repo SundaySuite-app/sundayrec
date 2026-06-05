@@ -276,6 +276,17 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     format: s.format ?? "mp3",
     bitrate: String(s.bitrate ?? "192"),
     saveFolder: s.saveFolder ?? null,
+    // The filename pattern drives the recorder's output filename (build_opts →
+    // build_filename). Omitting it let Rust's #[serde(default)] re-default it to
+    // `date` on every settings_save, so a user who picked church/plain/datetime
+    // had every recording silently named with the `date` pattern. Whitelisted
+    // because a stale/corrupt localStorage value would otherwise fail the WHOLE
+    // settings_save (serde rejects an unknown enum), dropping ALL recorder sync.
+    filenamePattern: (["date", "church", "plain", "datetime"] as const).includes(
+      s.filenamePattern as "date" | "church" | "plain" | "datetime",
+    )
+      ? (s.filenamePattern as string)
+      : "date",
     stopOnSilence: s.stopOnSilence ?? false,
     silenceThreshold: s.silenceThreshold ?? -50,
     silenceTimeoutMinutes: s.silenceTimeoutMinutes ?? 5,
