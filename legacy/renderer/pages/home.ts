@@ -122,9 +122,8 @@ function applyVideoFlipState(): void {
 function applyHomeVideoSize(size: 's' | 'm' | 'l'): void {
   const page = document.getElementById('page-home')
   if (page) {
-    page.classList.remove('vsize-s', 'vsize-m')
-    if (size === 's') page.classList.add('vsize-s')
-    else if (size === 'm') page.classList.add('vsize-m')
+    page.classList.remove('vsize-s', 'vsize-m', 'vsize-l')
+    page.classList.add(`vsize-${size}`)
   }
   document.querySelectorAll<HTMLElement>('.video-size-seg button').forEach(b =>
     b.classList.toggle('active', b.dataset.vsize === size))

@@ -3206,9 +3206,11 @@ body.platform-win32  #wake-instructions-win { display: block; }
   font-size: 9px; font-weight: 700; letter-spacing: 1px;
   color: var(--text3); text-transform: uppercase; flex-shrink: 0;
 }
-/* Segmented video-feed size control (small / medium / large). */
+/* Segmented video-feed size control (small / medium / large). Pushed to the far
+   right of the source bar (margin-left:auto) so it reads as separate from the
+   source-select / refresh / mirror controls on the left. */
 .video-size-seg {
-  display: inline-flex; gap: 2px; flex-shrink: 0;
+  display: inline-flex; gap: 2px; flex-shrink: 0; margin-left: auto;
   background: var(--surface3); border: 1px solid var(--border2);
   border-radius: 7px; padding: 2px;
 }
@@ -3435,14 +3437,30 @@ body.platform-win32  #wake-instructions-win { display: block; }
    A smaller video gives its width to the info-card column, which wraps into a
    responsive grid so the freed space is filled — no empty gap. Default (no
    class) = "large": video dominant, info cards a single narrow column. */
-#page-home.vsize-m .video-mode-top-row { grid-template-columns: minmax(0, 1.4fr) 1fr; }
-#page-home.vsize-s .video-mode-top-row { grid-template-columns: 1fr 1fr; }
-#page-home.vsize-m .video-mode-layout .info-card-column,
-#page-home.vsize-s .video-mode-layout .info-card-column {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+/* STOR: video spans the full width; the info cards sit in a row BELOW it (the
+   top-row collapses to a single column, so the card column drops to row 2). The
+   video is height-capped so the cards stay reachable without a huge scroll. */
+#page-home.vsize-l .video-mode-top-row { grid-template-columns: 1fr; }
+#page-home.vsize-l .video-mode-layout .info-card-column {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   align-content: start;
 }
+#page-home.vsize-l .video-preview-wrap { max-height: 76vh; }
+
+/* MEDIUM: classic split — large video left, info cards in a column on the right. */
+#page-home.vsize-m .video-mode-top-row { grid-template-columns: 1fr 320px; }
+
+/* LITEN: smaller video; the info cards take the larger half as a responsive grid
+   and get a bit more padding so they read as primary content (balanced, no gap). */
+#page-home.vsize-s .video-mode-top-row { grid-template-columns: minmax(0, 0.85fr) 1fr; }
+#page-home.vsize-s .video-mode-layout .info-card-column {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-content: start;
+}
+#page-home.vsize-s .video-mode-layout .info-card-column .info-card { padding: 17px 18px; }
+#page-home.vsize-s .video-mode-layout .info-card-column .info-card-value { font-size: 14px; }
 
 /* Preview that doesn't add letterboxing on the sides — the container itself
    adopts a 16:9 aspect ratio so the black background is the box, not bars
