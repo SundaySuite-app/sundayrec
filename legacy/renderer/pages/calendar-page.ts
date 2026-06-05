@@ -23,22 +23,10 @@ export function setupCalendarPage(): void {
     calMonth++; if (calMonth > 11) { calMonth = 0; calYear++ }
     clearSelectionIfOutOfMonth(); renderCalendar()
   })
-  document.getElementById('btn-autofill')?.addEventListener('click', async () => {
-    const h = getChurchHolidays(calYear)
-    if (!settings.specialRecordings) settings.specialRecordings = []
-    const existing = new Set(settings.specialRecordings.map(s => `${s.date}|${s.name}`))
-    Object.entries(h).forEach(([date, names]) => {
-      for (const name of names) {
-        const key = `${date}|${name}`
-        if (!existing.has(key)) {
-          settings.specialRecordings!.push({ date, name, start: '11:00', stop: '12:00' })
-          existing.add(key)
-        }
-      }
-    })
-    await window.api.saveSettings(settings)
-    renderCalendar()
-  })
+  // NB: the old "Kirkehøytider <år>"-autofill button (bulk-add a recording for
+  // EVERY church holiday in the year) was removed — auto-scheduling the whole year
+  // isn't useful. The church-year events are SHOWN in the calendar (holiday chips)
+  // so the user can click a specific special day and choose to record it.
   document.getElementById('btn-add-special')?.addEventListener('click', saveSpecial)
 }
 
@@ -105,8 +93,6 @@ export function renderCalendar(): void {
     })
   })
 
-  const yearSpan = document.getElementById('autofill-year')
-  if (yearSpan) yearSpan.textContent = String(calYear)
   renderPlannedList()
 }
 
