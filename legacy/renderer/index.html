@@ -14,13 +14,22 @@
   <div class="sidebar-top">
     <div class="logo">
       <svg class="logo-icon" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-label="SundayRec logo">
-        <rect width="1024" height="1024" rx="180" fill="#194280"/>
-        <rect x="477.5" y="303" width="69" height="431" fill="#F0BB47"/>
-        <rect x="370" y="418" width="283" height="70" fill="#F0BB47"/>
-        <path d="M 250 304 Q 140 466 250 628" stroke="#F0BB47" stroke-width="20" stroke-linecap="round" fill="none"/>
-        <path d="M 335 350 Q 245 469 335 588" stroke="#F0BB47" stroke-width="20" stroke-linecap="round" fill="none"/>
-        <path d="M 689 350 Q 779 469 689 588" stroke="#F0BB47" stroke-width="20" stroke-linecap="round" fill="none"/>
-        <path d="M 774 304 Q 884 466 774 628" stroke="#F0BB47" stroke-width="20" stroke-linecap="round" fill="none"/>
+        <defs>
+          <linearGradient id="srlogo-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A4E92"/><stop offset="1" stop-color="#172F5E"/></linearGradient>
+          <radialGradient id="srlogo-glow" cx="0.26" cy="0.2" r="0.95"><stop offset="0" stop-color="#ffffff" stop-opacity="0.12"/><stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+          <linearGradient id="srlogo-gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2D58A"/><stop offset="1" stop-color="#EBB84B"/></linearGradient>
+          <clipPath id="srlogo-clip"><rect width="1024" height="1024" rx="228"/></clipPath>
+        </defs>
+        <g clip-path="url(#srlogo-clip)">
+          <rect width="1024" height="1024" fill="url(#srlogo-bg)"/>
+          <rect width="1024" height="1024" fill="url(#srlogo-glow)"/>
+          <path d="M 701.3 375.6 A 161.3 161.3 0 0 1 701.3 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+          <path d="M 322.7 375.6 A 161.3 161.3 0 0 0 322.7 583.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+          <path d="M 766.5 301.6 A 270.8 270.8 0 0 1 766.5 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+          <path d="M 257.4 301.6 A 270.8 270.8 0 0 0 257.4 657.0" fill="none" stroke="#EBB84B" stroke-width="15" stroke-linecap="round"/>
+          <rect x="479.5" y="320.0" width="65.0" height="425.8" rx="6.2" fill="url(#srlogo-gold)"/>
+          <rect x="376.8" y="437.6" width="270.4" height="65.0" rx="6.2" fill="url(#srlogo-gold)"/>
+        </g>
       </svg>
       <span class="logo-text">SundayRec</span>
     </div>
@@ -271,10 +280,10 @@
           <div class="info-card-label" data-i18n="home.formatLabel">FORMAT</div>
           <div class="info-card-value" id="home-format-value">—</div>
           <div class="info-card-sub" id="home-format-sub"></div>
-          <button class="info-card-audio-sep" id="btn-audio-separate" style="display:none">
-            <span class="audio-sep-dot" id="audio-sep-dot"></span>
+          <div class="info-card-audio-sep" id="btn-audio-separate" role="switch" aria-checked="false" tabindex="0" style="display:none">
+            <span class="audio-sep-switch"><span class="audio-sep-knob"></span></span>
             <span id="audio-separate-label">Separat lydfil</span>
-          </button>
+          </div>
         </div>
         <a href="#" class="info-card-action" id="btn-go-audio-fmt" data-i18n="home.changeSettings">Endre</a>
       </div>
@@ -419,16 +428,6 @@
     <div class="page-header">
       <h1 data-i18n="nav.schedule">Tidsplan</h1>
       <p class="subtitle" data-i18n="schedule.subtitle">Faste ukentlige opptak + spesialdager (jul, påske, konfirmasjon o.l.).</p>
-    </div>
-
-    <!-- How it works hint — non-intrusive, helps non-technical users -->
-    <div class="schedule-howto schedule-howto-card" id="schedule-howto-card">
-      <span class="schedule-howto-icon">💡</span>
-      <div class="schedule-howto-body">
-        <strong class="schedule-howto-strong" data-i18n="schedule.howtoTitle">Slik fungerer det:</strong>
-        <span data-i18n="schedule.howtoBody">Klikk på en dag i kalenderen for å legge til et engangsopptak (f.eks. en konfirmasjon). For faste ukentlige opptak (f.eks. gudstjeneste hver søndag kl. 11), bruk «Ukentlig tidsplan» nedenfor.</span>
-        <a href="#" class="schedule-howto-dismiss" id="btn-schedule-howto-dismiss" data-i18n="schedule.howtoDismiss">Skjul</a>
-      </div>
     </div>
 
     <!-- Calendar — shown first for immediate overview -->

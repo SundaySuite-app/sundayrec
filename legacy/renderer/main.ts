@@ -17,6 +17,7 @@ import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page
 import { setupIntegrationsPage } from './pages/integrations-page'
 import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/live-page'
 import { setupSearchPage, activateSearchPage } from './pages/search-page'
+import { enhanceTimeInputs } from './time-input'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -395,6 +396,7 @@ async function init(): Promise<void> {
   setupClipReset()
   setupSettingsTabs()
   setupGlobalEscape()
+  enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile
   window.openEditorReviewMode = openEditorReviewMode

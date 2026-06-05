@@ -1,4 +1,5 @@
 import { settings, patchSettings } from '../state'
+import { enhanceTimeInput } from '../time-input'
 import { getAudioDevices, rVuChannel } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 
@@ -278,6 +279,8 @@ function s4(body: HTMLElement): void {
       <button class="btn-primary" id="ob-n4" style="justify-content:center">Fullfør oppsett →</button>
       <button class="ob-text-btn" id="ob-s4">Hopp over — legg til manuelt under Planlegging</button>
     </div>`
+
+  enhanceTimeInput(document.getElementById('ob-start') as HTMLInputElement | null)
 
   const chk    = document.getElementById('ob-on') as HTMLInputElement
   const fields = document.getElementById('ob-sched-fields')!

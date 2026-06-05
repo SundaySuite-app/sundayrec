@@ -140,7 +140,7 @@ export function updateVideoToggleButton(): void {
 }
 
 export function updateAudioSeparateButton(): void {
-  const btn   = document.getElementById('btn-audio-separate') as HTMLButtonElement | null
+  const btn   = document.getElementById('btn-audio-separate') as HTMLElement | null
   const label = document.getElementById('audio-separate-label')
   const card  = document.getElementById('home-format-card')
   if (!btn || !label) return
@@ -148,9 +148,12 @@ export function updateAudioSeparateButton(): void {
   const keepAudio = settings.videoKeepAudio ?? true
   btn.style.display = videoOn ? 'inline-flex' : 'none'
   btn.classList.toggle('audio-separate-on', keepAudio)
+  btn.setAttribute('aria-checked', keepAudio ? 'true' : 'false')
   label.textContent = keepAudio ? 'Separat lydfil' : 'Ingen lydfil'
   // Grey out the whole FORMAT card when video is on but separate audio is off
   card?.classList.toggle('format-inactive', videoOn && !keepAudio)
+  // Whole card acts as the toggle in video mode (pointer affordance)
+  card?.classList.toggle('format-toggleable', videoOn)
 }
 
 // ── Silent preflight (proactive issue surfacing) ─────────────────────────
@@ -695,10 +698,11 @@ export function setupHome(): void {
   })
 
   // Separate audio toggle — keep high-quality audio file alongside combined MP4.
-  // Mirrors Innstillinger → Video → "Behold separat lydfil". When the user
-  // toggles here, propagate the change to the Video-tab toggle if it's already
-  // mounted in the DOM so both stay in sync without requiring a page navigation.
-  document.getElementById('btn-audio-separate')?.addEventListener('click', async () => {
+  // The whole FORMAT card is the toggle in video mode: click the switch OR
+  // anywhere on the card. Mirrors Innstillinger → Video → "Behold separat lydfil".
+  // When toggled here, propagate to the Video-tab toggle if it's already mounted
+  // so both stay in sync without requiring a page navigation.
+  const toggleSeparateAudio = async (): Promise<void> => {
     const nowKeep = !(settings.videoKeepAudio ?? true)
     patchSettings({ videoKeepAudio: nowKeep })
     await window.api.saveSettings({ ...settings })
@@ -706,6 +710,20 @@ export function setupHome(): void {
     // Sync the Video-tab toggle (no-op if the tab hasn't been opened yet)
     const videoToggle = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
     if (videoToggle && videoToggle.checked !== nowKeep) videoToggle.checked = nowKeep
+  }
+  document.getElementById('home-format-card')?.addEventListener('click', e => {
+    // Let the "Endre" link navigate to the format settings instead of toggling
+    if ((e.target as HTMLElement)?.closest('#btn-go-audio-fmt')) return
+    // Separate-audio only exists in video mode (audio-only has no combined file)
+    if (!(settings.videoEnabled ?? false)) return
+    void toggleSeparateAudio()
+  })
+  // Keyboard activation for the switch (role="switch", tabindex=0)
+  document.getElementById('btn-audio-separate')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      if (settings.videoEnabled ?? false) void toggleSeparateAudio()
+    }
   })
 
   // Inline camera refresh button

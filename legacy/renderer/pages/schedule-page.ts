@@ -51,20 +51,6 @@ function updateNextRecordingPreview(): void {
 }
 
 export function setupSchedulePage(): void {
-  // How-it-works dismissible card — once dismissed, hidden for this session
-  document.getElementById('btn-schedule-howto-dismiss')?.addEventListener('click', e => {
-    e.preventDefault()
-    const card = document.getElementById('schedule-howto-card')
-    if (card) card.style.display = 'none'
-    try { localStorage.setItem('sundayrec.scheduleHowtoDismissed', '1') } catch { /* ignore */ }
-  })
-  try {
-    if (localStorage.getItem('sundayrec.scheduleHowtoDismissed') === '1') {
-      const card = document.getElementById('schedule-howto-card')
-      if (card) card.style.display = 'none'
-    }
-  } catch { /* ignore */ }
-
   document.getElementById('btn-add-slot')?.addEventListener('click', () => openSlotEditor(-1))
   document.getElementById('btn-slot-save')?.addEventListener('click', saveSlot)
   document.getElementById('slot-start')?.addEventListener('change', () => {
