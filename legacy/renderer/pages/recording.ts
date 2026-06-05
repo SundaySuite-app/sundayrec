@@ -167,11 +167,10 @@ export function setupRecording(): void {
       const d = data as { bytes?: number } | undefined
       if (d?.bytes !== undefined) recBytes = d.bytes
     }),
-    window.api.on('video-progress', (data) => {
-      const d = data as { bytes: number }
-      const el = document.getElementById('rec-video-bytes')
-      if (el) el.textContent = `${(d.bytes / 1048576).toFixed(1)} MB`
-    }),
+    // NB: there's no separate 'video-progress' event from the Tauri backend — the
+    // combined file's bytes_written (recording-progress, above) is the only size
+    // signal. The KAMERA badge is updated from recBytes in the 1 s timer instead,
+    // so it no longer stays stuck at "0 MB".
     window.api.on('recording-reconnecting', () => showReconnectBanner()),
     window.api.on('recording-reconnected',  () => hideReconnectBanner()),
     window.api.on('tray-start-recording',   () => openManualModal()),
@@ -456,8 +455,13 @@ async function startMonitoring(opts: RecordingOpts): Promise<void> {
     const s = elapsed % 60
     const timerEl = document.getElementById('rec-timer')
     if (timerEl) timerEl.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    const mb = (recBytes / 1e6).toFixed(1) + ' MB'
     const sizeEl = document.getElementById('rec-size')
-    if (sizeEl) sizeEl.textContent = (recBytes / 1e6).toFixed(1) + ' MB'
+    if (sizeEl) sizeEl.textContent = mb
+    // The KAMERA badge gets the same growing file size (no separate video-byte
+    // event exists) — was stuck at "0 MB" before.
+    const camBytesEl = document.getElementById('rec-video-bytes')
+    if (camBytesEl) camBytesEl.textContent = mb
   }, 1000)
 }
 
