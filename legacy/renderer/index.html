@@ -233,6 +233,11 @@
               <rect x="9.25" y="2" width="1.5" height="16" rx=".75"/>
             </svg>
           </button>
+          <!-- Size of the video feed (smaller ↔ full width). Persists. -->
+          <div class="video-size-control" title="Størrelse på videofeed" data-i18n-title="tooltip.videoSize">
+            <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" style="flex-shrink:0;opacity:.5"><path d="M3 3h6v2H5v4H3V3zm14 14h-6v-2h4v-4h2v6z"/></svg>
+            <input id="home-video-size-slider" type="range" min="45" max="100" value="100" step="5" class="video-size-slider" aria-label="Størrelse på videofeed" />
+          </div>
           <div id="video-progress-row" class="video-progress-badge" style="display:none">
             <span class="rec-dot-sm" style="width:5px;height:5px"></span>
             <span id="video-progress-bytes">0 MB</span>

@@ -3181,7 +3181,9 @@ body.platform-win32  #wake-instructions-win { display: block; }
   border: 1px solid var(--border);
   border-radius: var(--r);
   overflow: hidden;
-  margin: 0 0 12px;
+  /* Centered so the resize slider can shrink the feed and keep it centred in the
+     available space (max-width is set inline from the slider, default 100%). */
+  margin: 0 auto 12px;
   /* Visually move the camera-source bar to the TOP of the card without
      re-ordering markup (existing event handlers + screen reader DOM stay
      untouched). column-reverse + putting VU back to natural last position
@@ -3205,6 +3207,10 @@ body.platform-win32  #wake-instructions-win { display: block; }
 .video-source-label {
   font-size: 9px; font-weight: 700; letter-spacing: 1px;
   color: var(--text3); text-transform: uppercase; flex-shrink: 0;
+}
+.video-size-control { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.video-size-slider {
+  width: 96px; height: 4px; cursor: pointer; accent-color: var(--accent2);
 }
 .video-source-select {
   flex: 1; min-width: 140px; max-width: 320px;

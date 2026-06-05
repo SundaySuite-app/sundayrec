@@ -115,6 +115,13 @@ function applyVideoFlipState(): void {
   document.getElementById('btn-home-video-flip')?.classList.toggle('flip-active', flipped)
 }
 
+/** Constrain the Home video-preview card to `pct`% of the available width (it's
+ *  centered via CSS), letting the user shrink the feed. 100 = full width. */
+function applyHomeVideoSize(pct: number): void {
+  const card = document.querySelector<HTMLElement>('#video-preview-section .video-preview-card')
+  if (card) card.style.maxWidth = `${pct}%`
+}
+
 export function updateVideoToggleButton(): void {
   const btn   = document.getElementById('btn-video-toggle')
   const label = document.getElementById('video-toggle-label')
@@ -713,6 +720,22 @@ export function setupHome(): void {
   document.getElementById('home-video-device-select')?.addEventListener('change', async () => {
     await applyHomeVideoDeviceSelection()
   })
+
+  // Video-feed size slider — constrains the preview card's max-width (it's
+  // centered) so the feed can be made smaller than full width. Persisted, so the
+  // choice sticks across sessions. Useful when the window fills the screen.
+  const sizeSlider = document.getElementById('home-video-size-slider') as HTMLInputElement | null
+  if (sizeSlider) {
+    const saved = parseInt(localStorage.getItem('sundayrec.homeVideoSize') ?? '100', 10)
+    const init  = Number.isFinite(saved) ? Math.min(100, Math.max(45, saved)) : 100
+    sizeSlider.value = String(init)
+    applyHomeVideoSize(init)
+    sizeSlider.addEventListener('input', () => {
+      const pct = parseInt(sizeSlider.value, 10) || 100
+      applyHomeVideoSize(pct)
+      try { localStorage.setItem('sundayrec.homeVideoSize', String(pct)) } catch { /* ignore */ }
+    })
+  }
 
   const goVideoSettings = (e: Event) => {
     e.preventDefault()

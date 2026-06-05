@@ -818,6 +818,7 @@
     "clipReset": "Clip — click to reset",
     "refreshDevices": "Refresh device list",
     "mirrorCamera": "Mirror camera horizontally",
+    "videoSize": "Video feed size",
     "deleteAllHistory": "Delete all recordings from history",
     "maintenance": "Maintenance",
     "gotoToday": "Go to today",
