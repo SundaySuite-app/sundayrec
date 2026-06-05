@@ -257,6 +257,21 @@ function saveSettingsLocal(s: unknown): boolean {
 // defaults backend-side. Best-effort — a deserialize error leaves the backend
 // unchanged (no regression). `settings_save` deserializes with serde(default).
 function backendRecordingSettings(s: Record<string, unknown>): Record<string, unknown> {
+  // Channel L/R: the recorder reads TOP-LEVEL inputChannelL/R (custom_channel_map_filter
+  // records ANY two device channels into a stereo file — e.g. an X32 mixer on ch 16/17),
+  // but the audio-page stores the mapping PER DEVICE in deviceChannels[deviceId]. So the
+  // recorder never saw it → channel selection was silently ignored (always default 0/1).
+  // Translate the SELECTED device's mapping to the top-level fields; clamp 0..31 mirrors
+  // the Rust validate(). Default (0,1) is a no-op in custom_channel_map_filter, so this
+  // only changes behaviour when the user actually picked non-default channels.
+  const deviceChannels = (s.deviceChannels ?? {}) as Record<
+    string,
+    { channelL?: unknown; channelR?: unknown }
+  >;
+  const selDeviceId = (s.deviceId as string | null) ?? null;
+  const chMap = (selDeviceId && deviceChannels[selDeviceId]) || {};
+  const clampCh = (v: unknown): number | null =>
+    typeof v === "number" && Number.isInteger(v) ? Math.min(31, Math.max(0, v)) : null;
   return {
     deviceId: s.deviceId ?? null,
     deviceName: s.deviceName ?? null,
@@ -273,6 +288,8 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     keepSeparateAudio: s.videoKeepAudio !== false,
     separateAudioFormat: s.format ?? "wav",
     channels: s.channels ?? "stereo",
+    inputChannelL: clampCh(chMap.channelL),
+    inputChannelR: clampCh(chMap.channelR),
     format: s.format ?? "mp3",
     bitrate: String(s.bitrate ?? "192"),
     saveFolder: s.saveFolder ?? null,
