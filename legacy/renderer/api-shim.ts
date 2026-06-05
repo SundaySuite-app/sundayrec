@@ -153,6 +153,23 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
     }
     return p;
   },
+  // EditorMasterProgress { job_id, current_sec, total_sec } (snake_case) → the
+  // mastering panel reads currentSec/totalSec. Without this, `totalSec` was
+  // undefined so the progress bar stayed frozen at 0% for the WHOLE mastering
+  // apply (looked hung even though it was working). (Found by the event-seam audit.)
+  "master-progress": (p) => {
+    const d = (p ?? {}) as {
+      job_id?: string;
+      current_sec?: number;
+      total_sec?: number;
+    };
+    return {
+      ...d,
+      jobId: d.job_id,
+      currentSec: d.current_sec,
+      totalSec: d.total_sec,
+    };
+  },
 };
 
 // ── Default settings (mirrors OLD src/main/store.ts `defaults`) ───────────────
