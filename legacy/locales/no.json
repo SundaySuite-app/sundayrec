@@ -448,7 +448,10 @@
     "leftOnly": "Kun venstre",
     "rightOnly": "Kun høyre",
     "sampleRateMusicDesc": "Musikk, CD og podcast",
-    "sampleRateVideoDesc": "Video, Zoom og TV-utstyr"
+    "sampleRateVideoDesc": "Video, Zoom og TV-utstyr",
+    "sampleRateAuto": "Automatisk",
+    "sampleRateAutoDesc": "Følger lydkortet — ingen resampling",
+    "recommended": "Anbefalt"
   },
   "files": {
     "title": "Filer & Format",

@@ -448,7 +448,10 @@
     "leftOnly": "Left only",
     "rightOnly": "Right only",
     "sampleRateMusicDesc": "Music, CD and podcast",
-    "sampleRateVideoDesc": "Video, Zoom and TV equipment"
+    "sampleRateVideoDesc": "Video, Zoom and TV equipment",
+    "sampleRateAuto": "Automatic",
+    "sampleRateAutoDesc": "Follows the sound card — no resampling",
+    "recommended": "Recommended"
   },
   "files": {
     "title": "Files & Format",

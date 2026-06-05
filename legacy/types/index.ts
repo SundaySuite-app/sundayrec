@@ -176,8 +176,14 @@ export interface Settings {
 
   // Audio processing
   channels: ChannelMode
-  /** Sample rate in Hz. Valid: 8000–192000. Default: 48000 */
+  /** Sample rate in Hz. Valid: 8000–192000. Default: 48000. Derived from
+   *  {@link sampleRateMode} for client-side use (VU monitor + disk estimate). */
   sampleRate: number
+  /** Capture sample-rate policy the recorder honours. `auto` (default) records at
+   *  the device's native rate (no `-ar`, no resampling → no choppiness on a 44.1
+   *  kHz mixer); the explicit modes force that rate. Maps 1:1 to the Rust
+   *  `SampleRate` enum. */
+  sampleRateMode?: 'auto' | 'r44100' | 'r48000'
   /** Input gain as percentage. Valid: 0–200. Default: 100 */
   inputVolume: number
   /** Bass EQ gain in dB. Valid: -24–+24. Default: 0 */

@@ -926,24 +926,24 @@
         </div>
 
         <div class="card-title" style="margin-top:20px" data-i18n="audio.sampleRate">Samplingsrate</div>
-        <div class="option-cards" style="grid-template-columns:1fr 1fr">
+        <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
           <label class="option-card">
-            <input type="radio" name="sampleRate" value="44100" id="sr-44" />
+            <input type="radio" name="sampleRate" value="auto" id="sr-auto" checked />
+            <div class="option-card-name" data-i18n="audio.sampleRateAuto">Automatisk</div>
+            <div class="option-card-badge" data-i18n="audio.recommended">Anbefalt</div>
+            <div class="option-card-desc" data-i18n="audio.sampleRateAutoDesc">Følger lydkortet — ingen resampling</div>
+          </label>
+          <label class="option-card">
+            <input type="radio" name="sampleRate" value="r44100" id="sr-44" />
             <div class="option-card-name">44 100 Hz</div>
             <div class="option-card-desc" data-i18n="audio.sampleRateMusicDesc">Musikk, CD og podcast</div>
           </label>
           <label class="option-card">
-            <input type="radio" name="sampleRate" value="48000" id="sr-48" checked />
+            <input type="radio" name="sampleRate" value="r48000" id="sr-48" />
             <div class="option-card-name">48 000 Hz</div>
-            <div class="option-card-badge">Anbefalt</div>
             <div class="option-card-desc" data-i18n="audio.sampleRateVideoDesc">Video, Zoom og TV-utstyr</div>
           </label>
         </div>
-        <!-- Hidden select for compatibility with existing save logic -->
-        <select id="sample-rate" style="display:none">
-          <option value="44100">44100</option>
-          <option value="48000" selected>48000</option>
-        </select>
 
         <!-- Lydforbedringer (kompressor + limiter + EQ) er fjernet fra opptak-
              pipelinen i v4.31. Filosofien er nå: ta opp rått, etterbehandle i

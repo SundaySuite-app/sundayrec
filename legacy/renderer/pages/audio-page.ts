@@ -1,10 +1,10 @@
 import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, setVal, setRadio, updateSliderLabel, setupDirtyBar } from '../helpers'
+import { flashSaved, setVal, setRadio, setupDirtyBar } from '../helpers'
 import { getAudioDevices, detectDeviceChannels, buildInputRouter } from '../audio/capture'
 import { makeVuState, tickVU, stopVuState } from '../audio/vu'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
-import type { DeviceChannels, ChannelMode } from '../../types'
+import type { ChannelMode } from '../../types'
 
 let monitorStream: MediaStream   | null = null
 let monitorCtx:    AudioContext  | null = null
@@ -14,8 +14,6 @@ let testVu = makeVuState()
 
 let _markAudioClean = () => {}
 let _markAudioDirty = () => {}
-
-let detectedChannelCount = 2
 
 function updateVolGradient(): void {
   const el = document.getElementById('input-volume') as HTMLInputElement | null
@@ -35,37 +33,20 @@ export function setupAudioPage(): void {
   // also pushes the recording-critical subset to the backend.
   const autoSave = () => { void saveAudioSettings() }
 
-  document.getElementById('input-volume')?.addEventListener('input', () => {
-    updateVolumeLabel()
-    updateVolGradient()
-  })
-  document.getElementById('input-volume')?.addEventListener('change', autoSave)
-
-  // Sync sample-rate cards ↔ hidden select + save
+  // Sample-rate mode cards (auto / r44100 / r48000) → save.
   document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
-    r.addEventListener('change', () => {
-      const sel = document.getElementById('sample-rate') as HTMLSelectElement | null
-      if (sel) sel.value = r.value
-      autoSave()
-    })
+    r.addEventListener('change', autoSave)
   })
 
-  // Channel-mode cards (stereo / mono / monoL / monoR) + compressor controls.
+  // Channel-mode cards (stereo / mono / monoL / monoR).
   document.querySelectorAll<HTMLInputElement>('input[name="channels"]').forEach(r => {
     r.addEventListener('change', autoSave)
   })
   // Multi-channel L/R mapping selects (persist the device's channel choice).
   document.getElementById('channel-select-l')?.addEventListener('change', autoSave)
   document.getElementById('channel-select-r')?.addEventListener('change', autoSave)
-  ;['comp-threshold', 'comp-ratio', 'comp-attack', 'comp-release'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', autoSave)
-  })
-
-  document.getElementById('opt-compressor')?.addEventListener('change', function (this: HTMLInputElement) {
-    const cs = document.getElementById('comp-settings')
-    if (cs) cs.style.display = this.checked ? 'block' : 'none'
-    autoSave()
-  })
+  // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
+  // (record-raw philosophy — see saveAudioSettings); no listeners needed.
 
   document.getElementById('btn-test-audio')?.addEventListener('click', async () => {
     if (isMonitoring) { stopMonitoring(); return }
@@ -87,11 +68,10 @@ export function applyAudioSettingsToUI(): void {
   setVal('input-volume', settings.inputVolume ?? 100)
   updateVolumeLabel()
   setRadio('channels', settings.channels ?? 'stereo')
-  setVal('sample-rate', settings.sampleRate ?? 48000)
-  // Sync sample-rate cards
-  const srVal = String(settings.sampleRate ?? 48000)
+  // Sample-rate mode cards — default Auto (native capture).
+  const srMode = settings.sampleRateMode ?? 'auto'
   document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
-    r.checked = r.value === srVal
+    r.checked = r.value === srMode
   })
   updateVolGradient()
   const compEl = document.getElementById('opt-compressor') as HTMLInputElement | null
@@ -123,20 +103,23 @@ async function saveAudioSettings(): Promise<void> {
   const deviceChannels = { ...(settings.deviceChannels ?? {}) }
   if (deviceId) deviceChannels[deviceId] = { channelL: chL, channelR: chR }
 
+  const srMode = ((document.querySelector('input[name="sampleRate"]:checked') as HTMLInputElement | null)
+    ?.value ?? 'auto') as 'auto' | 'r44100' | 'r48000'
+
+  // NB: the compressor/limiter/EQ/input-volume fields are NOT saved here. They are
+  // hidden, inert inputs (record-raw philosophy since v4.31 — dynamics/EQ live in
+  // the editor, not the capture pipeline), so they keep their DEFAULT_SETTINGS
+  // values. The audio-page only persists what it actually controls.
   const patch = {
     deviceId,
     deviceName,
     deviceChannels,
-    inputVolume:    +((document.getElementById('input-volume')    as HTMLInputElement | null)?.value ?? 100),
     channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as ChannelMode,
-    sampleRate:     +((document.getElementById('sample-rate')    as HTMLInputElement | null)?.value ?? 48000),
-    compEnabled:    !!(document.getElementById('opt-compressor') as HTMLInputElement | null)?.checked,
-    compThreshold:  +((document.getElementById('comp-threshold')  as HTMLInputElement | null)?.value ?? -24),
-    compRatio:      +((document.getElementById('comp-ratio')      as HTMLInputElement | null)?.value ?? 4),
-    compAttack:     +((document.getElementById('comp-attack')     as HTMLInputElement | null)?.value ?? 10),
-    compRelease:    +((document.getElementById('comp-release')    as HTMLInputElement | null)?.value ?? 200),
-    limiterEnabled: true,
-    limiterCeiling: -1
+    sampleRateMode: srMode,
+    // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
+    // estimate). Auto → 48 kHz as a reasonable estimate; the recorder itself uses
+    // sampleRateMode (auto = native, no -ar).
+    sampleRate:     srMode === 'r44100' ? 44100 : 48000,
   }
 
   patchSettings(patch)
@@ -186,7 +169,6 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       patchSettings({ deviceId: d.deviceId, deviceName: d.label })
       _markAudioDirty()
       const count = await detectDeviceChannels(d.deviceId)
-      detectedChannelCount = count
       const subEl = card.querySelector('.device-sub') as HTMLElement | null
       if (subEl) subEl.textContent = `${subBase} · ${count} ${t('audio.channelCount', 'kanaler')}`
       const stored = settings.deviceChannels?.[d.deviceId]
@@ -214,7 +196,6 @@ export async function renderDeviceList(containerId: string): Promise<void> {
   const devId = settings.deviceId ?? (devices[0]?.deviceId ?? null)
   if (devId && !devId.startsWith('asio::')) {
     detectDeviceChannels(devId).then(count => {
-      detectedChannelCount = count
       const stored = settings.deviceChannels?.[devId]
       updateChannelSelector(count, stored?.channelL ?? 0, stored?.channelR ?? 1)
       const selCard = container.querySelector('.device-card.selected') as HTMLElement | null
@@ -227,7 +208,6 @@ export async function renderDeviceList(containerId: string): Promise<void> {
   } else if (devId?.startsWith('asio::')) {
     const stored = settings.deviceChannels?.[devId]
     updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1)
-    detectedChannelCount = 16
   }
 }
 

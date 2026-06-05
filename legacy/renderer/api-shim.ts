@@ -181,6 +181,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   deviceChannels: {},
   channels: "stereo",
   sampleRate: 48000,
+  sampleRateMode: "auto",
   inputVolume: 100,
   eqBass: 0,
   eqMid: 0,
@@ -307,6 +308,14 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     channels: s.channels ?? "stereo",
     inputChannelL: clampCh(chMap.channelL),
     inputChannelR: clampCh(chMap.channelR),
+    // Sample-rate policy → Rust SampleRate enum. The recorder uses this (Auto =
+    // native capture, no -ar resampling); the numeric `sampleRate` is client-only.
+    // Whitelisted so a stale value can't fail the whole settings_save.
+    sampleRateMode: (["auto", "r44100", "r48000", "r96000"] as const).includes(
+      s.sampleRateMode as "auto" | "r44100" | "r48000" | "r96000",
+    )
+      ? (s.sampleRateMode as string)
+      : "auto",
     format: s.format ?? "mp3",
     bitrate: String(s.bitrate ?? "192"),
     saveFolder: s.saveFolder ?? null,
