@@ -215,28 +215,39 @@ fn scratch_paths(primary: &Path) -> (PathBuf, PathBuf) {
 }
 
 /// Atomically move `tmp` onto `target`. POSIX: a single `rename`. Windows: a
-/// `rename` over an existing file can fail, so copy then unlink — mirrors the
-/// Electron `copyFileSync`+`unlinkSync` Windows branch.
+/// Atomically replace the deliverable's primary file with the muxed temp.
+///
+/// `rename` is ATOMIC on the same volume on BOTH platforms: Rust's Windows rename
+/// uses `MoveFileExW` with replace-existing, so the target ends up as either the
+/// old file or the COMPLETE new one — never a half-written mix. The temp is
+/// created next to the target (same volume), so this is the safe path everywhere.
+/// (The old Windows branch did `copy`+`unlink`, where a crash mid-copy left a
+/// corrupt deliverable — that's the data-loss bug this fixes.)
 async fn atomic_replace(tmp: &Path, target: &Path) -> AppResult<()> {
-    if is_windows() {
-        tokio::fs::copy(tmp, target).await.map_err(|e| {
-            AppError::Recording(format!(
-                "concat: failed to copy {} → {}: {e}",
-                tmp.display(),
-                target.display()
-            ))
-        })?;
-        let _ = tokio::fs::remove_file(tmp).await;
-    } else {
-        tokio::fs::rename(tmp, target).await.map_err(|e| {
-            AppError::Recording(format!(
-                "concat: failed to rename {} → {}: {e}",
-                tmp.display(),
-                target.display()
-            ))
-        })?;
+    match tokio::fs::rename(tmp, target).await {
+        Ok(()) => Ok(()),
+        // Windows fallback: rename can still fail if the target is held open by
+        // another handle. Recover with copy+remove (NON-atomic — a crash mid-copy
+        // could corrupt the deliverable, but that beats failing the whole finalize
+        // and losing the recording). POSIX rename rarely needs this.
+        Err(rename_err) if is_windows() => {
+            tracing::warn!("concat: rename failed ({rename_err}); falling back to copy+remove");
+            tokio::fs::copy(tmp, target).await.map_err(|e| {
+                AppError::Recording(format!(
+                    "concat: failed to copy {} → {}: {e}",
+                    tmp.display(),
+                    target.display()
+                ))
+            })?;
+            let _ = tokio::fs::remove_file(tmp).await;
+            Ok(())
+        }
+        Err(e) => Err(AppError::Recording(format!(
+            "concat: failed to rename {} → {}: {e}",
+            tmp.display(),
+            target.display()
+        ))),
     }
-    Ok(())
 }
 
 /// Run the concat ffmpeg to completion under the [`CONCAT_WATCHDOG`] timeout.
