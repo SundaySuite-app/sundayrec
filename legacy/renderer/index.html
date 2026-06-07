@@ -1816,6 +1816,18 @@
         </button>
       </div>
 
+      <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
+           ONLY in the Windows build (the only build with ASIO support) — revealed
+           by general-page.ts when the platform is Windows. The trademark notice is
+           legal text and is intentionally NOT translated. See docs/BUILD_ASIO.md. -->
+      <div class="card" id="asio-attribution-card" style="display:none">
+        <div class="card-title" data-i18n="general.audioTechTitle">Lyd-teknologi</div>
+        <p class="card-desc">
+          ASIO Driver Interface Technology by Steinberg Media Technologies GmbH.
+          ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+        </p>
+      </div>
+
       <div class="page-footer">
         <button class="btn-primary" id="btn-general-save" data-i18n="general.save">Lagre</button>
         <button class="btn-ghost" id="btn-general-cancel" data-i18n="general.cancel">Avbryt</button>

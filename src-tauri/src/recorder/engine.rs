@@ -497,14 +497,28 @@ impl RecorderEngine {
                 ))
             }
         };
-        let audio = find_best_device_match(&inv.audio_inputs, &opts.audio_device_name)
-            .cloned()
-            .ok_or_else(|| {
-                AppError::Recording(format!(
-                    "no audio device matched '{}'",
-                    opts.audio_device_name
-                ))
-            })?;
+        // ASIO devices are NOT dshow/avfoundation inputs, so they won't appear in
+        // the ffmpeg device list — detect them first and skip the ffmpeg match. The
+        // capture itself runs through cpal (see `run_asio_session` below); this
+        // `FfmpegDevice` only carries the name for history/labels. Always `false`
+        // off-Windows / without the `asio` feature, so non-ASIO + macOS are
+        // unaffected and fall through to the normal ffmpeg match.
+        let wants_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
+        // `audio` is `mut` so the ASIO branch can REASSIGN it to a real dshow match
+        // on fallback (ASIO failed → record via WASAPI/dshow instead). For a
+        // genuine ASIO device the synthetic entry only carries the name for labels.
+        let mut audio = if wants_asio {
+            FfmpegDevice::new(opts.audio_device_name.clone(), "asio", None)
+        } else {
+            find_best_device_match(&inv.audio_inputs, &opts.audio_device_name)
+                .cloned()
+                .ok_or_else(|| {
+                    AppError::Recording(format!(
+                        "no audio device matched '{}'",
+                        opts.audio_device_name
+                    ))
+                })?
+        };
         // Video resolution uses the dedicated video-input list + the video match
         // ladder (F2.1). None unless the user enabled video AND a name matches.
         let video = match &opts.video_device_name {
@@ -541,6 +555,70 @@ impl RecorderEngine {
                     modes = modes.len(),
                     "recorder: camera-mode probe found nothing — using legacy 720p guess"
                 ),
+            }
+        }
+
+        // ── ASIO capture branch (Windows pro audio) ─────────────────────────
+        // When the selected device is an ASIO interface we capture the audio via
+        // cpal and pipe it into ffmpeg (ffmpeg can't open ASIO). This is a
+        // SELF-CONTAINED supervisor (`run_asio_session`) — split/reconnect/preroll
+        // are out of scope for the ASIO path (v1); everything else (audio-only AND
+        // video+ASIO) flows through it. Non-ASIO + macOS skip this entirely.
+        if wants_asio {
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+            let sup_app = app.clone();
+            let last_state = Arc::clone(&self.last_state);
+            // CLONE what the ASIO attempt needs so the originals survive for the
+            // dshow/WASAPI fallback below if ASIO fails to start.
+            let (opts_asio, video_asio, pool_asio) = (opts.clone(), video.clone(), pool.clone());
+            let supervisor = tauri::async_runtime::spawn(async move {
+                crate::recorder::asio::run_asio_session(
+                    sup_app, pool_asio, opts_asio, video_asio, stop_rx, ready_tx, last_state,
+                )
+                .await;
+            });
+            match ready_rx.await {
+                Ok(Ok(())) => {
+                    *lock_recover(&self.session) = Some(RecorderSession {
+                        supervisor,
+                        stop_tx,
+                    });
+                    return Ok(());
+                }
+                ready => {
+                    // ASIO failed to start (driver busy/absent, device vanished, or
+                    // the supervisor died). Don't fail the recording — fall back to
+                    // the WASAPI/dshow capture automatically and notify the UI.
+                    supervisor.abort();
+                    let err = match ready {
+                        Ok(Err(e)) => e,
+                        _ => AppError::Recording(
+                            "ASIO recorder supervisor exited before signalling".into(),
+                        ),
+                    };
+                    match find_best_device_match(&inv.audio_inputs, &opts.audio_device_name).cloned()
+                    {
+                        Some(dshow) => {
+                            tracing::warn!(
+                                "recorder: ASIO start failed ({err}); falling back to WASAPI/dshow"
+                            );
+                            let _ = app.emit(
+                                ERROR_EVENT,
+                                RecordingEvent {
+                                    code: "asio_fallback".into(),
+                                    message: format!(
+                                        "ASIO utilgjengelig ({err}) — bruker WASAPI i stedet"
+                                    ),
+                                },
+                            );
+                            audio = dshow; // continue into the normal path below
+                        }
+                        // The device exists ONLY as ASIO (no dshow shadow) — there is
+                        // nothing to fall back to, so surface the real ASIO error.
+                        None => return Err(err),
+                    }
+                }
             }
         }
 

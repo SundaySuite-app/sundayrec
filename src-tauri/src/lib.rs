@@ -227,6 +227,8 @@ pub fn run() {
             commands::app::set_launch_at_login,
             commands::app::get_launch_at_login,
             commands::audio::list_input_devices,
+            commands::audio::list_audio_devices,
+            commands::audio::list_audio_input_channels,
             commands::audio::list_devices,
             commands::audio::list_video_devices,
             commands::audio::get_camera_capabilities,

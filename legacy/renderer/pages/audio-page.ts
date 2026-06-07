@@ -147,6 +147,41 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     return
   }
 
+  // ── ASIO devices (Windows pro audio) ───────────────────────────────────────
+  // An ASIO interface shows up as ONE device exposing all its channels (the
+  // dshow path splits it into stereo pairs). These come first — the preferred,
+  // low-latency, multichannel path. The backend addresses the device by its raw
+  // name (`deviceName`); the `asio::`-prefixed `deviceId` is the UI/key handle.
+  asioDrivers.forEach(name => {
+    const devId    = `asio::${name}`
+    const selected = settings.deviceId === devId
+    const card     = document.createElement('div')
+    card.className           = 'device-card' + (selected ? ' selected' : '')
+    card.dataset.deviceId    = devId
+    card.dataset.deviceLabel = name
+    card.innerHTML = `
+      <div class="device-icon">🎛</div>
+      <div>
+        <div class="device-name">${escHtml(name)}</div>
+        <div class="device-sub" data-sub-base="ASIO">ASIO</div>
+      </div>
+      <span class="device-badge ok">ASIO</span>`
+    card.addEventListener('click', async () => {
+      container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
+      card.classList.add('selected')
+      patchSettings({ deviceId: devId, deviceName: name })
+      _markAudioDirty()
+      const count = await window.api.listAsioInputChannels(name).catch(() => 0)
+      const chan  = count > 0 ? count : 16
+      const subEl = card.querySelector('.device-sub') as HTMLElement | null
+      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
+      const stored = settings.deviceChannels?.[devId]
+      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      void saveAudioSettings()
+    })
+    container.appendChild(card)
+  })
+
   // ── Standard Web Audio devices ─────────────────────────────────────────────
   devices.forEach(d => {
     const builtIn  = /built-in|innebygd|default/i.test(d.label)
@@ -206,8 +241,15 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       }
     })
   } else if (devId?.startsWith('asio::')) {
+    const name   = devId.slice('asio::'.length)
     const stored = settings.deviceChannels?.[devId]
-    updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1)
+    window.api.listAsioInputChannels(name).then(count => {
+      const chan = count > 0 ? count : 16
+      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      const selCard = container.querySelector('.device-card.selected') as HTMLElement | null
+      const subEl   = selCard?.querySelector('.device-sub') as HTMLElement | null
+      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
+    }).catch(() => updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1))
   }
 }
 

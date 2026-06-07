@@ -55,8 +55,13 @@ jobs:
           # logs a warning), so it's safe to ship.
           - platform: macos-latest
             args: "-- --no-default-features --features editor,tray"
+          # Windows adds `asio`: a low-latency, single-device multichannel audio
+          # backend for pro interfaces (the dshow path splits them into stereo
+          # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
+          # set up by the windows-only steps below (see docs/BUILD_ASIO.md). The
+          # recorder falls back to WASAPI automatically when no ASIO driver exists.
           - platform: windows-latest
-            args: "-- --no-default-features --features editor,tray"
+            args: "-- --no-default-features --features editor,tray,asio"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -70,6 +75,28 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      # ── Windows ASIO build prerequisites (see docs/BUILD_ASIO.md) ──────────
+      # cpal's `asio` feature compiles C++ glue + bindgen against the Steinberg
+      # ASIO SDK, so the Windows job needs the MSVC environment, libclang, and
+      # the SDK. macOS skips all of this (no `asio` feature there).
+      - name: Set up MSVC environment (Windows, for ASIO)
+        if: matrix.platform == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Fetch ASIO SDK + set ASIO build env (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $url = "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip"
+          Invoke-WebRequest -Uri $url -OutFile asiosdk.zip
+          Expand-Archive -Path asiosdk.zip -DestinationPath asiosdk -Force
+          $sdk = (Get-ChildItem asiosdk -Directory | Select-Object -First 1).FullName
+          echo "CPAL_ASIO_DIR=$sdk" >> $env:GITHUB_ENV
+          # libclang ships with the LLVM that is preinstalled on the windows-latest
+          # image; bindgen (used by asio-sys) needs LIBCLANG_PATH to find it.
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+          Write-Host "ASIO SDK at $sdk"
 
       - name: Cache cargo (src-tauri)
         uses: Swatinem/rust-cache@v2

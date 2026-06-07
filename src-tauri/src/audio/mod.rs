@@ -6,6 +6,7 @@
 //!
 //!   - [`devices`]     enumerate input devices + capabilities (cpal, for the VU)
 //!   - [`device_enum`] real ffmpeg `-list_devices` enumeration (recorder addressing)
+//!   - [`asio`]        Windows ASIO device + channel enumeration (Fase 2)
 //!   - [`vu`]          the VU engine: cpal input stream → `PeakMeters` → `vu://levels`
 //!
 //! The pure metering math (peak/RMS/dBFS, the lock-free `PeakMeters`) lives in
@@ -13,6 +14,7 @@
 //! stream in [`vu`] is the only hardware-touching part and is marked
 //! HARDWARE-UNVERIFIED until smoke-tested on a real device.
 
+pub mod asio;
 pub mod device_enum;
 pub mod devices;
 pub mod vu;

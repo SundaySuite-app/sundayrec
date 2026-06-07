@@ -16,6 +16,14 @@ export function setupGeneralPage(): void {
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
   document.getElementById('opt-email-error')?.addEventListener('change', toggleEmailSection)
 
+  // Steinberg ASIO attribution is required by the ASIO SDK licence and is only
+  // relevant in the Windows build (the only build compiled with ASIO support).
+  // Reveal the card on Windows; it stays hidden on macOS.
+  if (/win/i.test(navigator.userAgent)) {
+    const asioCard = document.getElementById('asio-attribution-card')
+    if (asioCard) asioCard.style.display = ''
+  }
+
   document.getElementById('btn-clear-smtp-pass')?.addEventListener('click', async () => {
     await window.api.clearSmtpPassword()
     const passInput = document.getElementById('email-pass') as HTMLInputElement | null
