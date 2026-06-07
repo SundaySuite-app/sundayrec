@@ -77,6 +77,7 @@ pub async fn run_cpal_session(
     _stop_rx: tokio::sync::mpsc::Receiver<()>,
     ready_tx: tokio::sync::oneshot::Sender<crate::error::AppResult<()>>,
     _last_state: std::sync::Arc<std::sync::Mutex<sundayrec_core::recorder::RecorderState>>,
+    _scheduled_stop: std::sync::Arc<tokio::sync::watch::Sender<Option<u64>>>,
 ) {
     let _ = ready_tx.send(Err(crate::error::AppError::Recording(
         "cpal capture is only available on Windows".into(),
@@ -89,11 +90,14 @@ mod imp {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
+    use std::time::Duration;
+
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use cpal::{FromSample, Sample, SampleFormat};
     use sqlx::SqlitePool;
+    use sundayrec_core::audio::PeakMeters;
     use sundayrec_core::capture::{build_cpal_pipe_audio_args, build_cpal_pipe_video_args};
-    use sundayrec_core::device_match::FfmpegDevice;
+    use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
     use sundayrec_core::recorder::RecorderState;
     use tauri::{AppHandle, Emitter};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -104,8 +108,8 @@ mod imp {
     use crate::error::{AppError, AppResult};
     use crate::media::ffmpeg::spawn_ffmpeg;
     use crate::recorder::engine::{
-        RecorderStatePayload, RecordingEvent, RecordingFinished, RecordingOpts, ERROR_EVENT,
-        FINISHED_EVENT, STATE_EVENT,
+        extract_separate_audio, now_ms, RecorderStatePayload, RecordingEvent, RecordingFinished,
+        RecordingLevels, RecordingOpts, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT, STATE_EVENT,
     };
 
     /// Ring capacity in f32 samples: ~500 ms of stereo audio at 96 kHz. A generous
@@ -135,15 +139,34 @@ mod imp {
     }
 
     /// Find an input device by name (empty → host default).
+    ///
+    /// The stored name comes from the frontend's Web Audio label, which is NOT
+    /// guaranteed identical to cpal's device name — so we FUZZY-match it against the
+    /// cpal device list with the same `find_best_device_match` moat the dshow path
+    /// uses (exact → substring → word-overlap), then open the matched device by its
+    /// exact cpal name. Without this, a label/name mismatch made cpal silently never
+    /// engage (always falling back to dshow).
     fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
         if name.is_empty() {
             return host
                 .default_input_device()
                 .ok_or_else(|| "no default input device".to_string());
         }
-        host.input_devices()
+        let devices: Vec<cpal::Device> = host
+            .input_devices()
             .map_err(|e| format!("listing input devices: {e}"))?
-            .find(|d| d.name().ok().as_deref() == Some(name))
+            .collect();
+        let candidates: Vec<FfmpegDevice> = devices
+            .iter()
+            .filter_map(|d| d.name().ok())
+            .map(|n| FfmpegDevice::new(n, "cpal", None))
+            .collect();
+        let target = find_best_device_match(&candidates, name)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| name.to_string());
+        devices
+            .into_iter()
+            .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
             .ok_or_else(|| format!("input device not found: {name}"))
     }
 
@@ -179,6 +202,7 @@ mod imp {
         plan: Vec<ChannelRoute>,
         mut prod: ringbuf::HeapProd<f32>,
         dropped: Arc<AtomicU64>,
+        peaks: Arc<PeakMeters>,
         err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
     ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
@@ -186,6 +210,7 @@ mod imp {
         f32: FromSample<T>,
     {
         use ringbuf::traits::Producer;
+        let out_ch = plan.len();
         let mut conv: Vec<f32> = Vec::with_capacity(4096);
         let mut scratch: Vec<f32> = Vec::with_capacity(4096);
         device.build_input_stream(
@@ -199,6 +224,20 @@ mod imp {
                 scratch.clear();
                 for frame in conv.chunks_exact(total) {
                     route_frame(&plan, frame, &mut scratch);
+                }
+                // Per-output-channel block peak → the live VU meters (H1). RT-safe:
+                // a bounded max pass + an atomic observe (peak-hold; sampler resets).
+                for ch in 0..out_ch {
+                    let mut pk = 0.0_f32;
+                    let mut i = ch;
+                    while i < scratch.len() {
+                        let a = scratch[i].abs();
+                        if a > pk {
+                            pk = a;
+                        }
+                        i += out_ch;
+                    }
+                    peaks.observe(ch, pk);
                 }
                 let pushed = prod.push_slice(&scratch);
                 if pushed < scratch.len() {
@@ -225,6 +264,7 @@ mod imp {
         prod: ringbuf::HeapProd<f32>,
         stop: Arc<AtomicBool>,
         dropped: Arc<AtomicU64>,
+        peaks: Arc<PeakMeters>,
         built_tx: std::sync::mpsc::Sender<Result<(), String>>,
         err_tx: tokio::sync::mpsc::Sender<String>,
     ) {
@@ -247,16 +287,16 @@ mod imp {
 
             use cpal::SampleFormat as SF;
             let stream = match sample_format {
-                SF::I8 => build_typed::<i8>(&device, &config, total, plan, prod, dropped, err_fn),
-                SF::I16 => build_typed::<i16>(&device, &config, total, plan, prod, dropped, err_fn),
+                SF::I8 => build_typed::<i8>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::I16 => build_typed::<i16>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
                 SF::I24 => {
-                    build_typed::<cpal::I24>(&device, &config, total, plan, prod, dropped, err_fn)
+                    build_typed::<cpal::I24>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
                 }
-                SF::I32 => build_typed::<i32>(&device, &config, total, plan, prod, dropped, err_fn),
-                SF::U8 => build_typed::<u8>(&device, &config, total, plan, prod, dropped, err_fn),
-                SF::U16 => build_typed::<u16>(&device, &config, total, plan, prod, dropped, err_fn),
-                SF::F32 => build_typed::<f32>(&device, &config, total, plan, prod, dropped, err_fn),
-                SF::F64 => build_typed::<f64>(&device, &config, total, plan, prod, dropped, err_fn),
+                SF::I32 => build_typed::<i32>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::U8 => build_typed::<u8>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::U16 => build_typed::<u16>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::F32 => build_typed::<f32>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::F64 => build_typed::<f64>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
                 other => return Err(format!("unsupported sample format: {other:?}")),
             }
             .map_err(|e| format!("building input stream: {e}"))?;
@@ -323,6 +363,7 @@ mod imp {
         mut stop_rx: tokio::sync::mpsc::Receiver<()>,
         ready_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
         last_state: Arc<Mutex<RecorderState>>,
+        scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     ) {
         let label = match host_kind {
             CpalHostKind::Wasapi => "WASAPI",
@@ -407,6 +448,9 @@ mod imp {
         // ── Ring + threads ───────────────────────────────────────────────────
         let stop = Arc::new(AtomicBool::new(false));
         let dropped = Arc::new(AtomicU64::new(0));
+        // Per-output-channel peak-hold for the live VU meters (H1). Shared between
+        // the cpal callback (observe) and the sampler task below (take + emit).
+        let peaks = Arc::new(PeakMeters::new(out_ch as usize));
         let rb = ringbuf::HeapRb::<f32>::new(RING_CAPACITY);
         let (prod, cons) = {
             use ringbuf::traits::Split;
@@ -419,6 +463,7 @@ mod imp {
         let st_plan = plan.clone();
         let st_stop = Arc::clone(&stop);
         let st_dropped = Arc::clone(&dropped);
+        let st_peaks = Arc::clone(&peaks);
         let stream_handle = std::thread::Builder::new()
             .name("cpal-capture".into())
             .spawn(move || {
@@ -432,6 +477,7 @@ mod imp {
                     prod,
                     st_stop,
                     st_dropped,
+                    st_peaks,
                     built_tx,
                     err_tx,
                 )
@@ -473,38 +519,100 @@ mod imp {
 
         // Stream is live → start draining into ffmpeg and report ready.
         let writer = tauri::async_runtime::spawn(writer_task(cons, stdin, Arc::clone(&stop)));
-        set_state(&app, &last_state, RecorderState::Recording);
+
+        // Live VU meters (H1): sample the per-channel peak-hold ~30×/s and emit
+        // `recording://levels` so the in-recording meters work on the cpal path too.
+        let levels_task = {
+            let app = app.clone();
+            let peaks = Arc::clone(&peaks);
+            let stop = Arc::clone(&stop);
+            let stereo = out_ch >= 2;
+            tauri::async_runtime::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(33));
+                // Silence is NEG_INFINITY dBFS; clamp to a finite floor the UI renders.
+                let floor = |db: f32| if db.is_finite() { db as f64 } else { -100.0 };
+                while !stop.load(Ordering::Relaxed) {
+                    tick.tick().await;
+                    let _ = app.emit(
+                        LEVELS_EVENT,
+                        RecordingLevels {
+                            peak_db_left: floor(peaks.take_dbfs(0)),
+                            peak_db_right: stereo.then(|| floor(peaks.take_dbfs(1))),
+                        },
+                    );
+                }
+            })
+        };
+
+        // Live auto-stop (H3): arm the SHARED absolute deadline so the UI countdown
+        // and recording_extend_autostop/cancel work on the cpal path. Mirrors
+        // run_session — re-pin the timer whenever the watch changes.
+        let start_ms = now_ms();
+        let initial_stop = (opts.manual_max_minutes > 0)
+            .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
+        scheduled_stop.send_replace(initial_stop);
+        let mut stop_watch = scheduled_stop.subscribe();
+        let mut auto_deadline: Option<u64> = *stop_watch.borrow();
+        let remaining = |d: Option<u64>| -> Duration {
+            d.map(|d| Duration::from_millis(d.saturating_sub(now_ms())))
+                // `None` → idle ~100 years so the guarded arm never fires.
+                .unwrap_or_else(|| Duration::from_secs(60 * 60 * 24 * 365 * 100))
+        };
+        let auto_sleep = tokio::time::sleep(remaining(auto_deadline));
+        tokio::pin!(auto_sleep);
+
+        set_state(&app, &last_state, RecorderState::Recording, auto_deadline);
         let _ = ready_tx.send(Ok(()));
 
         // ── Run until stop / auto-stop / device or ffmpeg death ──────────────
-        let auto_stop = opts.manual_max_minutes;
-        let auto_stop_fut = async {
-            if auto_stop == 0 {
-                std::future::pending::<()>().await
-            } else {
-                tokio::time::sleep(std::time::Duration::from_secs(u64::from(auto_stop) * 60)).await
-            }
-        };
-        tokio::pin!(auto_stop_fut);
-
-        tokio::select! {
-            _ = stop_rx.recv() => tracing::info!("recorder: cpal — graceful stop requested"),
-            _ = &mut auto_stop_fut => tracing::info!("recorder: cpal — manual-max auto-stop"),
-            msg = err_rx.recv() => {
-                let reason = msg.unwrap_or_else(|| "audio device error".into());
-                tracing::warn!(%reason, "recorder: cpal — device error, finalising");
-                emit_error(&app, "device_disconnected", &reason);
-            }
-            status = child.wait() => {
-                tracing::warn!(?status, "recorder: cpal — ffmpeg exited unexpectedly");
-                let tail = stderr_tail.lock().map(|g| g.clone()).unwrap_or_default();
-                emit_error(&app, "ffmpeg_exited", tail.lines().last().unwrap_or("ffmpeg stopped"));
+        loop {
+            tokio::select! {
+                _ = stop_rx.recv() => {
+                    tracing::info!("recorder: cpal — graceful stop requested");
+                    break;
+                }
+                _ = &mut auto_sleep, if auto_deadline.is_some() => {
+                    tracing::info!("recorder: cpal — auto-stop deadline reached");
+                    break;
+                }
+                changed = stop_watch.changed() => {
+                    if changed.is_ok() {
+                        auto_deadline = *stop_watch.borrow();
+                        auto_sleep
+                            .as_mut()
+                            .reset(tokio::time::Instant::now() + remaining(auto_deadline));
+                        let _ = app.emit(
+                            STATE_EVENT,
+                            RecorderStatePayload {
+                                state: last_state
+                                    .lock()
+                                    .map(|g| *g)
+                                    .unwrap_or(RecorderState::Recording),
+                                reconnect_count: 0,
+                                scheduled_stop_ms: auto_deadline,
+                            },
+                        );
+                    }
+                }
+                msg = err_rx.recv() => {
+                    let reason = msg.unwrap_or_else(|| "audio device error".into());
+                    tracing::warn!(%reason, "recorder: cpal — device error, finalising");
+                    emit_error(&app, "device_disconnected", &reason);
+                    break;
+                }
+                status = child.wait() => {
+                    tracing::warn!(?status, "recorder: cpal — ffmpeg exited unexpectedly");
+                    let tail = stderr_tail.lock().map(|g| g.clone()).unwrap_or_default();
+                    emit_error(&app, "ffmpeg_exited", tail.lines().last().unwrap_or("ffmpeg stopped"));
+                    break;
+                }
             }
         }
 
         // ── Tear down: stop stream → writer EOF → ffmpeg finalises ───────────
-        set_state(&app, &last_state, RecorderState::Stopping);
+        set_state(&app, &last_state, RecorderState::Stopping, auto_deadline);
         stop.store(true, Ordering::Relaxed);
+        levels_task.abort();
         let _ = writer.await; // closes stdin (EOF)
         let _ = child.wait().await; // ffmpeg finalises the container
         let _ = stream_handle.join();
@@ -514,6 +622,15 @@ mod imp {
         let dropped_total = dropped.load(Ordering::Relaxed);
         if dropped_total > 0 {
             tracing::warn!(dropped_total, "recorder: cpal — ring overran, samples dropped");
+        }
+
+        // ── Separate-audio sidecar (H2): extract the clean audio next to a video
+        // recording, exactly like the dshow path (`engine::extract_separate_audio`). ─
+        if has_video && opts.keep_separate_audio {
+            if let Some(pool) = &pool {
+                let audio = FfmpegDevice::new(device_name.clone(), "cpal", None);
+                extract_separate_audio(pool, &opts.output_path, start_ms, 0.0, &opts, &audio).await;
+            }
         }
 
         // ── History + finished event ─────────────────────────────────────────
@@ -531,7 +648,10 @@ mod imp {
                 },
             );
         }
-        set_state(&app, &last_state, RecorderState::Stopped);
+        // Clear the shared auto-stop deadline so a finished recording ships no
+        // lingering countdown, then announce the terminal state.
+        scheduled_stop.send_replace(None);
+        set_state(&app, &last_state, RecorderState::Stopped, None);
         tracing::info!(host = label, "recorder: cpal session stopped cleanly");
     }
 
@@ -544,9 +664,15 @@ mod imp {
         }
     }
 
-    /// Emit a `recording://state` payload and update the shared last-state mirror.
-    /// The cpal path has no reconnects and no armed auto-stop deadline to report.
-    fn set_state(app: &AppHandle, last_state: &Arc<Mutex<RecorderState>>, to: RecorderState) {
+    /// Emit a `recording://state` payload and update the shared last-state mirror,
+    /// stamping the current auto-stop deadline so the UI countdown stays in sync.
+    /// The cpal path has no reconnects (always 0).
+    fn set_state(
+        app: &AppHandle,
+        last_state: &Arc<Mutex<RecorderState>>,
+        to: RecorderState,
+        scheduled_stop_ms: Option<u64>,
+    ) {
         if let Ok(mut g) = last_state.lock() {
             *g = to;
         }
@@ -555,7 +681,7 @@ mod imp {
             RecorderStatePayload {
                 state: to,
                 reconnect_count: 0,
-                scheduled_stop_ms: None,
+                scheduled_stop_ms,
             },
         );
     }

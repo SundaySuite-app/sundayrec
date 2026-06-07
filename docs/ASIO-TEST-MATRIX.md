@@ -26,6 +26,21 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
       opptak (dual-klokke — `build_cpal_pipe_video_args`).
 - [ ] **24-bit enhet:** en enhet som rapporterer 24-bit tas opp uten feil (bevis at
       cpal 0.17 + generisk `from_sample` virker).
+- [ ] **Enhetsmatching (fuzzy):** valgt enhet med ulik Web Audio-etikett vs cpal-navn
+      treffer likevel (cpal slår faktisk inn, ikke stille dshow-fallback). Loggen viser
+      `host=WASAPI`.
+
+## Windows — funksjons-paritet på cpal-veien (Runde 3)
+
+- [ ] **Live nivåmetere:** «Opptaksmodus»-overlayet viser levende V/H-metere under et
+      WASAPI-opptak (H1 — beregnes i cpal-callbacken, ikke ffmpeg-astats).
+- [ ] **Separat lyd-sidecar:** videoopptak med «behold separat lyd» på → sidecar-fil
+      produseres ved siden av videoen (H2).
+- [ ] **Live auto-stopp:** sett manual-max → nedtelling vises; «+30 min» forlenger;
+      «avbryt» fjerner (H3 — watch-kanal).
+- [ ] **Ruting:** vanlig enhet + preroll/oppdeling/stopp-på-stillhet → opptaket går via
+      DirectShow (full funksjon), IKKE cpal. ASIO + slik funksjon → cpal kjører +
+      «feature_unsupported_asio»-varsel (ikke stille tap).
 
 ## Windows — ASIO (pro-lydkort, f.eks. Soundcraft MADI-USB)
 
@@ -69,12 +84,22 @@ Bygg-oppsett: [`BUILD_ASIO.md`](./BUILD_ASIO.md).
       Generelt → «Lyd-teknologi»).
 - [ ] Lyd-motoren forblir en **gratis kjernefunksjon** (ikke bak Pro-tier).
 
-## Kjent utsatt (faller tilbake til dshow på cpal-stien)
+## Funksjons-paritet (Runde 3) — status
 
-- Split, reconnect, preroll, live VU-metere og stopp-på-stillhet er IKKE wiret på
-  cpal-stien (se `recorder::cpal_capture`-modul-doc). Bruk «Klassisk lyd-motor» /
-  dshow-veien for disse hvis nødvendig.
-- Ekte driver-leverte ASIO-kanalnavn (v1 viser «Input N») krever ASIO SDK
+- ✅ Wiret inn på cpal-stien: live nivåmetere, separat lyd-sidecar, live auto-stopp
+  (+30/avbryt/nedtelling), fuzzy enhetsmatching.
+- ✅ Rutes til dshow for vanlige enheter: preroll, oppdeling (split), stopp-på-stillhet
+  (full funksjon, ingen stille tap). ASIO + disse → tydelig varsel.
+
+## Kjent utsatt
+
+- **Krasj-recovery-manifest** skrives ikke på cpal-stien (H4 ikke implementert): en app-
+  krasj MIDT i et cpal-opptak gir ikke auto-gjenoppretting ved neste oppstart (best-effort
+  funksjon; filen som ffmpeg allerede skrev finnes fortsatt på disk). dshow-veien har full
+  recovery.
+- Split/preroll/stillhet PÅ en ASIO-enhet (ikke ruterbart til dshow — dshow kan ikke ASIO);
+  gir «feature_unsupported_asio»-varsel.
+- Ekte driver-leverte ASIO-kanalnavn (viser «Input N») krever ASIO SDK
   `ASIOGetChannelInfo` under cpal — TODO.
-- Kosmetisk «WASAPI»-merke på vanlige enhetskort i UI er ikke lagt til (ASIO-kort
-  har «ASIO»-merke); loggen bekrefter host-valget under rigg-test.
+- Kosmetisk «WASAPI»-merke på vanlige enhetskort i UI (ASIO-kort har «ASIO»-merke);
+  loggen bekrefter host-valget under rigg-test.

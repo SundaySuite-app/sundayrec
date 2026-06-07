@@ -558,23 +558,46 @@ impl RecorderEngine {
         // `cfg!(windows)` (not `#[cfg]`) so this compiles on every platform — the
         // call signature is type-checked on macOS even though it only RUNS on
         // Windows (DCE'd elsewhere; `run_cpal_session` has a non-Windows stub).
-        if cfg!(windows) && !opts.classic_directshow {
+        let is_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
+        // Features that ONLY the full dshow `run_session` implements (preroll,
+        // split, stop-on-silence). For a normal device we route such sessions to
+        // dshow so they're never silently dropped; ASIO has no dshow alternative,
+        // so we still use cpal but warn the user the feature isn't supported there.
+        let needs_dshow_only =
+            preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
+        let use_cpal =
+            cfg!(windows) && !opts.classic_directshow && (is_asio || !needs_dshow_only);
+        if use_cpal {
             use crate::recorder::cpal_capture::{run_cpal_session, CpalHostKind};
-            let host_kind = if crate::audio::asio::is_asio_device(&opts.audio_device_name) {
+            let host_kind = if is_asio {
                 CpalHostKind::Asio
             } else {
                 CpalHostKind::Wasapi
             };
+            // ASIO + a dshow-only feature: we can't fall back (dshow can't open
+            // ASIO), so tell the user plainly that the feature is inactive rather
+            // than dropping it silently.
+            if is_asio && needs_dshow_only {
+                let _ = app.emit(
+                    ERROR_EVENT,
+                    RecordingEvent {
+                        code: "feature_unsupported_asio".into(),
+                        message: "Forhåndsopptak/oppdeling/stopp-på-stillhet støttes ikke med ASIO ennå — opptaket kjører uten.".into(),
+                    },
+                );
+            }
             let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
             let sup_app = app.clone();
             let last_state = Arc::clone(&self.last_state);
+            let scheduled_stop = Arc::clone(&self.scheduled_stop);
             // CLONE what the cpal attempt needs so the originals survive for the
             // dshow fallback below if cpal fails to start.
             let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
             let supervisor = tauri::async_runtime::spawn(async move {
                 run_cpal_session(
                     host_kind, sup_app, pool_c, opts_c, video_c, stop_rx, ready_tx, last_state,
+                    scheduled_stop,
                 )
                 .await;
             });
@@ -1815,7 +1838,7 @@ fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<
 /// gate as the main file; a failed/empty extract is logged and skipped, never fatal.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg against a real finished file.
-async fn extract_separate_audio(
+pub(crate) async fn extract_separate_audio(
     pool: &SqlitePool,
     final_path: &str,
     started_at: u64,
@@ -1902,7 +1925,7 @@ async fn extract_separate_audio(
 }
 
 /// Epoch milliseconds (the engine's clock; core takes this as an argument).
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
