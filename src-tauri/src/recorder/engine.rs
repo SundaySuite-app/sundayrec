@@ -1607,6 +1607,35 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
             message: message.to_string(),
         },
     );
+    // Companion for the standalone "SundayRec Lydhjelp" diagnostic: persist the
+    // last classified error to disk so that tool can explain, in plain Norwegian,
+    // what stopped the recording last time (it can't see our in-process events).
+    skriv_siste_feil_til_disk(app, code, message);
+}
+
+/// Best-effort write of the most recent classified error to
+/// `<app_data_dir>/last-error.json` (atomic temp+rename). Never fails the
+/// recorder — any I/O error is logged and swallowed.
+fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
+    use tauri::Manager;
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    // Keep the file small — the diagnostic only needs the code + a stderr snippet.
+    let msg: String = message.chars().take(2000).collect();
+    let body = serde_json::json!({
+        "code": code,
+        "message": msg,
+        "timestamp": chrono::Local::now().to_rfc3339(),
+    });
+    let path = dir.join("last-error.json");
+    let tmp = dir.join("last-error.json.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        tracing::info!(path = %path.display(), "Lydhjelp: siste feil skrevet til disk");
+    } else {
+        tracing::warn!("Lydhjelp: klarte ikke skrive last-error.json");
+    }
 }
 
 /// Finalise every deliverable that has closed but not yet been finalised
