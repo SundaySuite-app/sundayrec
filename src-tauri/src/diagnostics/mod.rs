@@ -16,13 +16,17 @@
 //! honest gap, not a fake green.
 
 use sqlx::SqlitePool;
-use sundayrec_core::diagnostics::{build_report_markdown, DiagnosticsInput, SettingsSummary};
+use sundayrec_core::diagnostics::{
+    build_report_markdown, detect_issues, DiagnosticFinding, DiagnosticsInput, LastErrorInfo,
+    SettingsSummary,
+};
 use tauri::{AppHandle, Manager};
 
 use crate::audio::device_enum::enumerate_ffmpeg_devices;
 use crate::audio::devices::list_input_devices;
 use crate::error::AppResult;
 use crate::media::ffmpeg::ffmpeg_version;
+use crate::media::permissions::{status as perm_status, AuthStatus, MediaKind};
 use crate::settings;
 
 use serde::{Deserialize, Serialize};
@@ -38,6 +42,9 @@ use ts_rs::TS;
 pub struct DiagnosticsReport {
     /// The full markdown report (rendered by the panel + copied to clipboard).
     pub markdown: String,
+    /// Structured findings (the stable error-code system) for the UI to render as
+    /// a coloured checklist — the actionable summary above the raw markdown.
+    pub findings: Vec<DiagnosticFinding>,
     /// Absolute path the report was written to, or `None` if the save failed.
     pub saved_to: Option<String>,
     /// Audio capture test: `None` in F2.2 (deferred to Fase 3 — see module docs).
@@ -77,6 +84,29 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         }
     }
 
+    // ── Extended facts (the comprehensive diagnose) ──────────────────────────
+    // ASIO devices (Windows + feature; empty otherwise).
+    let asio_devices: Vec<String> = crate::audio::asio::list_asio_devices()
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+
+    // Save folder: free space + writability.
+    let folder = resolve_diag_folder(app, &s);
+    let free_disk_bytes = fs4::available_space(&folder).ok();
+    let save_folder_writable = Some(folder_is_writable(&folder));
+
+    // OS permissions (macOS reports real status; elsewhere Unknown → None).
+    let mic_permission = auth_to_opt(perm_status(MediaKind::Microphone));
+    let camera_permission = if s.video_enabled {
+        auth_to_opt(perm_status(MediaKind::Camera))
+    } else {
+        None
+    };
+
+    // Most recent classified recording error (best-effort read).
+    let last_error = read_last_error(app);
+
     let input = DiagnosticsInput {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         platform: std::env::consts::OS.to_string(),
@@ -88,17 +118,87 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         // Capture test deferred to Fase 3 — see module docs.
         capture_ok: None,
         video_ok: None,
+        free_disk_bytes,
+        save_folder_writable,
+        mic_permission,
+        camera_permission,
+        // Audio-engine status is set by the recorder; read it from managed state.
+        audio_engine: app
+            .try_state::<crate::recorder::engine::RecorderEngine>()
+            .and_then(|e| e.last_audio_engine()),
+        audio_engine_fallback: app
+            .try_state::<crate::recorder::engine::RecorderEngine>()
+            .and_then(|e| e.last_audio_fallback()),
+        asio_devices,
+        last_error,
+        orphan_guard_active: Some(crate::platform::orphan_guard_active()),
     };
 
+    // Structured findings (the error-code system) + the human report.
+    let findings = detect_issues(&input);
     let markdown = build_report_markdown(input);
     let saved_to = save_report(app, &markdown);
 
     Ok(DiagnosticsReport {
         markdown,
         saved_to,
+        findings,
         capture_ok: None,
         video_ok: None,
     })
+}
+
+/// Map an [`AuthStatus`] to the lowercase string the diagnose findings expect, or
+/// `None` when it's `Unknown` (non-macOS / lookup failed — nothing to report).
+fn auth_to_opt(s: AuthStatus) -> Option<String> {
+    match s {
+        AuthStatus::Authorized => Some("authorized".into()),
+        AuthStatus::Denied => Some("denied".into()),
+        AuthStatus::Restricted => Some("restricted".into()),
+        AuthStatus::NotDetermined => Some("not_determined".into()),
+        AuthStatus::Unknown => None,
+    }
+}
+
+/// Resolve the save folder for the diagnose probe (settings override → default).
+/// Mirrors the scheduler's resolver without depending on its private helper.
+fn resolve_diag_folder(
+    app: &AppHandle,
+    s: &sundayrec_core::settings::Settings,
+) -> std::path::PathBuf {
+    if let Some(f) = &s.save_folder {
+        if !f.trim().is_empty() {
+            return std::path::PathBuf::from(f);
+        }
+    }
+    app.path()
+        .document_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .map(|d| d.join("SundayRec"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+}
+
+/// Best-effort writability probe: create the dir, write + remove a marker file.
+fn folder_is_writable(folder: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(folder).is_err() {
+        return false;
+    }
+    let probe = folder.join(".sundayrec-write-test");
+    match std::fs::write(&probe, b"ok") {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Read `<app-data>/last-error.json` (written by the recorder) into structured
+/// form. `None` if absent/unparseable — a missing file just means "no recent error".
+fn read_last_error(app: &AppHandle) -> Option<LastErrorInfo> {
+    let path = app.path().app_data_dir().ok()?.join("last-error.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<LastErrorInfo>(&raw).ok()
 }
 
 /// Write the report under the app-data dir as `SundayRec-diagnose.md`. Best

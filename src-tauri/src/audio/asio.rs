@@ -251,7 +251,9 @@ mod imp {
     /// Summarise one ASIO device into an [`AsioDevice`]. Never panics: a device
     /// that refuses to report configs is returned with what we could read.
     fn summarise(device: &cpal::Device) -> AsioDevice {
-        let name = device.name().unwrap_or_else(|_| "Unknown ASIO device".to_string());
+        let name = device
+            .name()
+            .unwrap_or_else(|_| "Unknown ASIO device".to_string());
 
         let mut input_channels: u16 = 0;
         let mut output_channels: u16 = 0;
@@ -326,7 +328,9 @@ mod imp {
     }
 
     pub fn is_asio_device(name: &str) -> bool {
-        list_asio_devices().iter().any(|d| d.name == name || d.id == name)
+        list_asio_devices()
+            .iter()
+            .any(|d| d.name == name || d.id == name)
     }
 }
 
@@ -375,8 +379,20 @@ mod tests {
     fn input_channels_are_one_based_labels_zero_based_indices() {
         let chans = input_channels_for(3);
         assert_eq!(chans.len(), 3);
-        assert_eq!(chans[0], AudioChannel { index: 0, label: "Input 1".into() });
-        assert_eq!(chans[2], AudioChannel { index: 2, label: "Input 3".into() });
+        assert_eq!(
+            chans[0],
+            AudioChannel {
+                index: 0,
+                label: "Input 1".into()
+            }
+        );
+        assert_eq!(
+            chans[2],
+            AudioChannel {
+                index: 2,
+                label: "Input 3".into()
+            }
+        );
     }
 
     #[test]

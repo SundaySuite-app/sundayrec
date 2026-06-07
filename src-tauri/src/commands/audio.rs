@@ -56,9 +56,7 @@ pub async fn list_audio_devices() -> AppResult<Vec<TaggedAudioInput>> {
 pub async fn list_audio_input_channels(device_id: String) -> AppResult<Vec<AudioChannel>> {
     tokio::task::spawn_blocking(move || list_asio_input_channels(&device_id))
         .await
-        .map_err(|e| {
-            crate::error::AppError::Audio(format!("channel enumeration task failed: {e}"))
-        })
+        .map_err(|e| crate::error::AppError::Audio(format!("channel enumeration task failed: {e}")))
 }
 
 /// Enumerate the capture devices ffmpeg can see (audio + video), for the F2.1

@@ -287,23 +287,35 @@ mod imp {
 
             use cpal::SampleFormat as SF;
             let stream = match sample_format {
-                SF::I8 => build_typed::<i8>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::I16 => build_typed::<i16>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::I24 => {
-                    build_typed::<cpal::I24>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                SF::I8 => {
+                    build_typed::<i8>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
                 }
-                SF::I32 => build_typed::<i32>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::U8 => build_typed::<u8>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::U16 => build_typed::<u16>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::F32 => build_typed::<f32>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
-                SF::F64 => build_typed::<f64>(&device, &config, total, plan, prod, dropped, peaks, err_fn),
+                SF::I16 => {
+                    build_typed::<i16>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
+                SF::I24 => build_typed::<cpal::I24>(
+                    &device, &config, total, plan, prod, dropped, peaks, err_fn,
+                ),
+                SF::I32 => {
+                    build_typed::<i32>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
+                SF::U8 => {
+                    build_typed::<u8>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
+                SF::U16 => {
+                    build_typed::<u16>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
+                SF::F32 => {
+                    build_typed::<f32>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
+                SF::F64 => {
+                    build_typed::<f64>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
+                }
                 other => return Err(format!("unsupported sample format: {other:?}")),
             }
             .map_err(|e| format!("building input stream: {e}"))?;
 
-            stream
-                .play()
-                .map_err(|e| format!("starting stream: {e}"))?;
+            stream.play().map_err(|e| format!("starting stream: {e}"))?;
             Ok(stream)
         })();
 
@@ -621,7 +633,10 @@ mod imp {
         }
         let dropped_total = dropped.load(Ordering::Relaxed);
         if dropped_total > 0 {
-            tracing::warn!(dropped_total, "recorder: cpal — ring overran, samples dropped");
+            tracing::warn!(
+                dropped_total,
+                "recorder: cpal — ring overran, samples dropped"
+            );
         }
 
         // ── Separate-audio sidecar (H2): extract the clean audio next to a video

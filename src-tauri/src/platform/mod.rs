@@ -20,12 +20,21 @@ pub fn guard_child_processes() {
     imp::guard_child_processes();
 }
 
+/// Whether the kill-on-close Job Object guard is active this session (Windows).
+/// Surfaced by the diagnose tool. Always `false` off Windows / on failure.
+pub fn orphan_guard_active() -> bool {
+    ORPHAN_GUARD.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(crate) static ORPHAN_GUARD: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 #[cfg(windows)]
 mod imp {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
@@ -60,7 +69,9 @@ mod imp {
             if AssignProcessToJobObject(job, GetCurrentProcess()) == 0 {
                 // Most likely cause: already in a job that forbids breakaway (rare on
                 // Win10/11, which allow nested jobs). Fall back to kill_on_drop.
-                tracing::warn!("orphan-guard: AssignProcessToJobObject failed — relying on kill_on_drop");
+                tracing::warn!(
+                    "orphan-guard: AssignProcessToJobObject failed — relying on kill_on_drop"
+                );
                 CloseHandle(job);
                 return;
             }
@@ -68,6 +79,7 @@ mod imp {
             // leaked so the job stays open for the whole process lifetime and
             // KILL_ON_JOB_CLOSE fires when we exit/die. (`job` is a Copy raw handle;
             // letting it go out of scope does nothing — the OS handle stays open.)
+            super::ORPHAN_GUARD.store(true, std::sync::atomic::Ordering::Relaxed);
             tracing::info!("orphan-guard: process placed in kill-on-close Job Object");
         }
     }

@@ -385,6 +385,11 @@ pub struct RecorderEngine {
     /// clear it. Wrapped in `Arc` so both the engine (commands) and the
     /// supervisor task share the one sender.
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    /// Which audio engine the LAST `start()` used (`"wasapi"`/`"asio"`/
+    /// `"directshow"`/`"avfoundation"`) + any fallback reason. Surfaced by the
+    /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
+    /// fell back, and why. `(engine, fallback_reason)`.
+    audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 }
 
 impl Default for RecorderEngine {
@@ -400,6 +405,7 @@ impl RecorderEngine {
             session: Mutex::new(None),
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
+            audio_engine: Arc::new(Mutex::new((None, None))),
         }
     }
 
@@ -407,6 +413,23 @@ impl RecorderEngine {
     /// on every transition). Used by the `recording_status` command.
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
+    }
+
+    /// Record which audio engine `start()` chose (+ optional fallback reason), for
+    /// the diagnose tool. `fallback` is `Some(reason)` only when the modern engine
+    /// (WASAPI/ASIO) couldn't start and we fell back to DirectShow.
+    pub(crate) fn set_audio_engine(&self, engine: &str, fallback: Option<String>) {
+        *lock_recover(&self.audio_engine) = (Some(engine.to_string()), fallback);
+    }
+
+    /// The audio engine the last recording used (diagnose tool).
+    pub fn last_audio_engine(&self) -> Option<String> {
+        lock_recover(&self.audio_engine).0.clone()
+    }
+
+    /// Why the last recording fell back from the modern engine, if it did.
+    pub fn last_audio_fallback(&self) -> Option<String> {
+        lock_recover(&self.audio_engine).1.clone()
     }
 
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
@@ -565,8 +588,11 @@ impl RecorderEngine {
         // so we still use cpal but warn the user the feature isn't supported there.
         let needs_dshow_only =
             preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
-        let use_cpal =
-            cfg!(windows) && !opts.classic_directshow && (is_asio || !needs_dshow_only);
+        let use_cpal = cfg!(windows) && !opts.classic_directshow && (is_asio || !needs_dshow_only);
+        // Why the modern engine fell back, if it did — recorded into the engine
+        // status (read by the diagnose tool), NOT surfaced as a fatal recording
+        // error (the recording proceeds fine on DirectShow).
+        let mut cpal_fallback_reason: Option<String> = None;
         if use_cpal {
             use crate::recorder::cpal_capture::{run_cpal_session, CpalHostKind};
             let host_kind = if is_asio {
@@ -575,15 +601,12 @@ impl RecorderEngine {
                 CpalHostKind::Wasapi
             };
             // ASIO + a dshow-only feature: we can't fall back (dshow can't open
-            // ASIO), so tell the user plainly that the feature is inactive rather
-            // than dropping it silently.
+            // ASIO), so the feature is inactive. This is informational, not a
+            // recording failure — log it (the diagnose tool can surface it) rather
+            // than emitting a fatal `recording://error` that would tear down the UI.
             if is_asio && needs_dshow_only {
-                let _ = app.emit(
-                    ERROR_EVENT,
-                    RecordingEvent {
-                        code: "feature_unsupported_asio".into(),
-                        message: "Forhåndsopptak/oppdeling/stopp-på-stillhet støttes ikke med ASIO ennå — opptaket kjører uten.".into(),
-                    },
+                tracing::warn!(
+                    "recorder: preroll/split/silence not supported on the ASIO path — recording without them"
                 );
             }
             let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
@@ -596,13 +619,21 @@ impl RecorderEngine {
             let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
             let supervisor = tauri::async_runtime::spawn(async move {
                 run_cpal_session(
-                    host_kind, sup_app, pool_c, opts_c, video_c, stop_rx, ready_tx, last_state,
+                    host_kind,
+                    sup_app,
+                    pool_c,
+                    opts_c,
+                    video_c,
+                    stop_rx,
+                    ready_tx,
+                    last_state,
                     scheduled_stop,
                 )
                 .await;
             });
             match ready_rx.await {
                 Ok(Ok(())) => {
+                    self.set_audio_engine(if is_asio { "asio" } else { "wasapi" }, None);
                     *lock_recover(&self.session) = Some(RecorderSession {
                         supervisor,
                         stop_tx,
@@ -612,7 +643,8 @@ impl RecorderEngine {
                 ready => {
                     // cpal couldn't start (driver busy/absent, device vanished, or
                     // the supervisor died). Don't fail the recording — fall back to
-                    // the dshow capture automatically and notify the UI.
+                    // the dshow capture automatically. The reason goes into the
+                    // engine status (diagnose tool), NOT a fatal recording error.
                     supervisor.abort();
                     let err = match ready {
                         Ok(Err(e)) => e,
@@ -623,15 +655,7 @@ impl RecorderEngine {
                     tracing::warn!(
                         "recorder: cpal {host_kind:?} start failed ({err}); falling back to dshow"
                     );
-                    let _ = app.emit(
-                        ERROR_EVENT,
-                        RecordingEvent {
-                            code: "cpal_fallback".into(),
-                            message: format!(
-                                "Moderne lyd-motor utilgjengelig ({err}) — bruker DirectShow"
-                            ),
-                        },
-                    );
+                    cpal_fallback_reason = Some(err.to_string());
                     // fall through to the dshow run_session path below.
                 }
             }
@@ -646,6 +670,17 @@ impl RecorderEngine {
                 opts.audio_device_name
             ))
         })?;
+        // Record which engine this session actually uses (diagnose tool): the
+        // dshow path on Windows (forced-classic or cpal-fallback), avfoundation on
+        // macOS. `cpal_fallback_reason` is set only when we came from a cpal failure.
+        self.set_audio_engine(
+            if cfg!(windows) {
+                "directshow"
+            } else {
+                "avfoundation"
+            },
+            cpal_fallback_reason,
+        );
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
