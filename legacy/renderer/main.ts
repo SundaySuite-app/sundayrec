@@ -208,6 +208,7 @@ declare global {
       getLogs:                 ()                 => Promise<unknown[]>
       getLogFilePath:          ()                 => Promise<string | null>
       diagnoseAudio?:          () => Promise<{ dshow: string[]; wasapi: string[]; wasapiAvailable: boolean }>
+      runDiagnostics:          () => Promise<{ markdown: string; findings: { code: string; severity: 'ok' | 'info' | 'warning' | 'critical'; title: string; detail: string; hint: string }[]; savedTo: string | null; captureOk: boolean | null; videoOk: boolean | null }>
 
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>

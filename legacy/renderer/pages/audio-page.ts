@@ -357,31 +357,55 @@ export function stopMonitoring(): void {
   if (warn) warn.style.display = 'none'
 }
 
+// Comprehensive diagnose: calls the unified backend `run_diagnostics`, which
+// gathers system/devices/ffmpeg/disk/permissions/audio-engine/last-error and
+// returns coded findings (SR-*) + a full markdown report. The modal shows the
+// colour-coded findings on top and the raw report below, with a copy button so
+// the user can paste it to support — the "fishing" the diagnose tool is for.
 async function runAudioDiagnosis(): Promise<void> {
   const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
-  if (btn) { btn.disabled = true; btn.textContent = 'Analyserer...' }
+  if (btn) { btn.disabled = true; btn.textContent = t('audio.diagnoseRunning', 'Analyserer…') }
 
   try {
-    const result = await window.api.diagnoseAudio?.()
-    if (!result) return
+    const report = await window.api.runDiagnostics()
 
     const modal = document.getElementById('audio-diagnose-modal')
     const body  = document.getElementById('audio-diagnose-body')
     if (!modal || !body) return
 
-    const lines: string[] = [
-      `WASAPI tilgjengelig: ${result.wasapiAvailable ? 'Ja' : 'Nei'}`,
-      '',
-      `DirectShow-enheter (${result.dshow.length}):`,
-      ...result.dshow.map(n => `  • ${n}`),
-      '',
-      `WASAPI-enheter (${result.wasapi.length}):`,
-      ...(result.wasapi.length ? result.wasapi.map(n => `  • ${n}`) : ['  (ingen funnet — se konsoll for detaljer)']),
-    ]
-    body.textContent = lines.join('\n')
+    const badge = (sev: string): string =>
+      sev === 'critical' ? '🔴' : sev === 'warning' ? '⚠️' : sev === 'info' ? 'ℹ️' : '✅'
+
+    const findingsHtml = (report.findings ?? [])
+      .map(f => `
+        <div class="diag-finding diag-${escHtml(f.severity)}">
+          <div class="diag-finding-head">${badge(f.severity)} <code>${escHtml(f.code)}</code> — <strong>${escHtml(f.title)}</strong></div>
+          ${f.detail ? `<div class="diag-finding-detail">${escHtml(f.detail)}</div>` : ''}
+          ${f.hint ? `<div class="diag-finding-hint">👉 ${escHtml(f.hint)}</div>` : ''}
+        </div>`)
+      .join('')
+
+    const savedLine = report.savedTo
+      ? `<div class="diag-saved">${t('audio.diagnoseSaved', 'Lagret til')}: <code>${escHtml(report.savedTo)}</code></div>`
+      : ''
+
+    body.innerHTML = `
+      <div class="diag-findings">${findingsHtml}</div>
+      <button type="button" class="btn-secondary" id="btn-diagnose-copy" style="margin:8px 0">${t('audio.diagnoseCopy', '📋 Kopier full rapport')}</button>
+      ${savedLine}
+      <details style="margin-top:8px"><summary>${t('audio.diagnoseFull', 'Full rapport')}</summary><pre class="diag-report">${escHtml(report.markdown)}</pre></details>`
+
+    document.getElementById('btn-diagnose-copy')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(report.markdown)
+        const b = document.getElementById('btn-diagnose-copy')
+        if (b) b.textContent = t('audio.diagnoseCopied', '✓ Kopiert')
+      } catch { /* clipboard blocked — the report is still visible to copy by hand */ }
+    })
+
     modal.style.display = 'flex'
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Diagnose' }
+    if (btn) { btn.disabled = false; btn.textContent = t('audio.diagnose', 'Diagnose') }
   }
 }
 

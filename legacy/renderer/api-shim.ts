@@ -625,13 +625,30 @@ const api: Record<string, unknown> = {
   installUpdate: async () => true,
   getLogs: async () => [],
   getLogFilePath: async () => null,
-  runDiagnostics: async () => ({
-    markdown: "",
-    savedTo: null,
-    clipboardOk: false,
-    captureOk: false,
-    videoOk: null,
-  }),
+  // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
+  // permissions/audio-engine/last-error and returns structured `findings` (the
+  // SR-* error codes) + a full markdown report. On failure → an empty report so
+  // the panel still opens.
+  runDiagnostics: async () =>
+    call<{
+      markdown: string;
+      findings: {
+        code: string;
+        severity: "ok" | "info" | "warning" | "critical";
+        title: string;
+        detail: string;
+        hint: string;
+      }[];
+      savedTo: string | null;
+      captureOk: boolean | null;
+      videoOk: boolean | null;
+    }>("run_diagnostics", undefined, {
+      markdown: "",
+      findings: [],
+      savedTo: null,
+      captureOk: null,
+      videoOk: null,
+    }),
 
   // ── Audio / video devices ───────────────────────────────────────────────
   // ASIO driver names = the asio-backend entries of the unified tagged device
