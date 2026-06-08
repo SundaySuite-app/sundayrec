@@ -11,6 +11,12 @@ Windows + lydutstyr, ikke skrive det på nytt.
 
 ---
 
+> **Kjører du i Claude-desktop-appen (ikke terminal-CLI)?** Det går helt fint — du
+> har samme verktøy. Åpne en tom mappe som workspace, så kan du bare si:
+> «Klon `https://github.com/richardfossland/sundayrec-tauri.git`, sjekk ut grenen
+> `feat/windows-asio`, les så `docs/WINDOWS-RIGG-START.md` og følg den.»
+> PowerShell-kommandoene under kjøres likt uansett.
+
 ## 0. Hent koden
 
 ```powershell
