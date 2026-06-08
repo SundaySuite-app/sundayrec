@@ -45,6 +45,14 @@ export function setupAudioPage(): void {
   // Multi-channel L/R mapping selects (persist the device's channel choice).
   document.getElementById('channel-select-l')?.addEventListener('change', autoSave)
   document.getElementById('channel-select-r')?.addEventListener('change', autoSave)
+
+  // Windows-only "classic DirectShow" escape hatch: reveal the card on Windows and
+  // persist the toggle. On macOS the card stays hidden (no DirectShow there).
+  if (/win/i.test(navigator.userAgent)) {
+    const card = document.getElementById('classic-audio-card')
+    if (card) card.style.display = ''
+    document.getElementById('opt-classic-dshow')?.addEventListener('change', autoSave)
+  }
   // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
   // (record-raw philosophy — see saveAudioSettings); no listeners needed.
 
@@ -74,6 +82,8 @@ export function applyAudioSettingsToUI(): void {
     r.checked = r.value === srMode
   })
   updateVolGradient()
+  const classicEl = document.getElementById('opt-classic-dshow') as HTMLInputElement | null
+  if (classicEl) classicEl.checked = !!settings.classicDirectshow
   const compEl = document.getElementById('opt-compressor') as HTMLInputElement | null
   if (compEl) {
     compEl.checked = !!settings.compEnabled
@@ -105,6 +115,7 @@ async function saveAudioSettings(): Promise<void> {
 
   const srMode = ((document.querySelector('input[name="sampleRate"]:checked') as HTMLInputElement | null)
     ?.value ?? 'auto') as 'auto' | 'r44100' | 'r48000'
+  const classicDirectshow = !!(document.getElementById('opt-classic-dshow') as HTMLInputElement | null)?.checked
 
   // NB: the compressor/limiter/EQ/input-volume fields are NOT saved here. They are
   // hidden, inert inputs (record-raw philosophy since v4.31 — dynamics/EQ live in
@@ -116,6 +127,7 @@ async function saveAudioSettings(): Promise<void> {
     deviceChannels,
     channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as ChannelMode,
     sampleRateMode: srMode,
+    classicDirectshow,
     // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
     // estimate). Auto → 48 kHz as a reasonable estimate; the recorder itself uses
     // sampleRateMode (auto = native, no -ar).
@@ -146,6 +158,41 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     container.innerHTML = `<div style="color:var(--text3);font-size:13px;padding:8px 0">${t('audio.noDevices')}</div>`
     return
   }
+
+  // ── ASIO devices (Windows pro audio) ───────────────────────────────────────
+  // An ASIO interface shows up as ONE device exposing all its channels (the
+  // dshow path splits it into stereo pairs). These come first — the preferred,
+  // low-latency, multichannel path. The backend addresses the device by its raw
+  // name (`deviceName`); the `asio::`-prefixed `deviceId` is the UI/key handle.
+  asioDrivers.forEach(name => {
+    const devId    = `asio::${name}`
+    const selected = settings.deviceId === devId
+    const card     = document.createElement('div')
+    card.className           = 'device-card' + (selected ? ' selected' : '')
+    card.dataset.deviceId    = devId
+    card.dataset.deviceLabel = name
+    card.innerHTML = `
+      <div class="device-icon">🎛</div>
+      <div>
+        <div class="device-name">${escHtml(name)}</div>
+        <div class="device-sub" data-sub-base="ASIO">ASIO</div>
+      </div>
+      <span class="device-badge ok">ASIO</span>`
+    card.addEventListener('click', async () => {
+      container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
+      card.classList.add('selected')
+      patchSettings({ deviceId: devId, deviceName: name })
+      _markAudioDirty()
+      const count = await window.api.listAsioInputChannels(name).catch(() => 0)
+      const chan  = count > 0 ? count : 16
+      const subEl = card.querySelector('.device-sub') as HTMLElement | null
+      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
+      const stored = settings.deviceChannels?.[devId]
+      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      void saveAudioSettings()
+    })
+    container.appendChild(card)
+  })
 
   // ── Standard Web Audio devices ─────────────────────────────────────────────
   devices.forEach(d => {
@@ -206,8 +253,15 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       }
     })
   } else if (devId?.startsWith('asio::')) {
+    const name   = devId.slice('asio::'.length)
     const stored = settings.deviceChannels?.[devId]
-    updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1)
+    window.api.listAsioInputChannels(name).then(count => {
+      const chan = count > 0 ? count : 16
+      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      const selCard = container.querySelector('.device-card.selected') as HTMLElement | null
+      const subEl   = selCard?.querySelector('.device-sub') as HTMLElement | null
+      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
+    }).catch(() => updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1))
   }
 }
 
@@ -303,31 +357,55 @@ export function stopMonitoring(): void {
   if (warn) warn.style.display = 'none'
 }
 
+// Comprehensive diagnose: calls the unified backend `run_diagnostics`, which
+// gathers system/devices/ffmpeg/disk/permissions/audio-engine/last-error and
+// returns coded findings (SR-*) + a full markdown report. The modal shows the
+// colour-coded findings on top and the raw report below, with a copy button so
+// the user can paste it to support — the "fishing" the diagnose tool is for.
 async function runAudioDiagnosis(): Promise<void> {
   const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
-  if (btn) { btn.disabled = true; btn.textContent = 'Analyserer...' }
+  if (btn) { btn.disabled = true; btn.textContent = t('audio.diagnoseRunning', 'Analyserer…') }
 
   try {
-    const result = await window.api.diagnoseAudio?.()
-    if (!result) return
+    const report = await window.api.runDiagnostics()
 
     const modal = document.getElementById('audio-diagnose-modal')
     const body  = document.getElementById('audio-diagnose-body')
     if (!modal || !body) return
 
-    const lines: string[] = [
-      `WASAPI tilgjengelig: ${result.wasapiAvailable ? 'Ja' : 'Nei'}`,
-      '',
-      `DirectShow-enheter (${result.dshow.length}):`,
-      ...result.dshow.map(n => `  • ${n}`),
-      '',
-      `WASAPI-enheter (${result.wasapi.length}):`,
-      ...(result.wasapi.length ? result.wasapi.map(n => `  • ${n}`) : ['  (ingen funnet — se konsoll for detaljer)']),
-    ]
-    body.textContent = lines.join('\n')
+    const badge = (sev: string): string =>
+      sev === 'critical' ? '🔴' : sev === 'warning' ? '⚠️' : sev === 'info' ? 'ℹ️' : '✅'
+
+    const findingsHtml = (report.findings ?? [])
+      .map(f => `
+        <div class="diag-finding diag-${escHtml(f.severity)}">
+          <div class="diag-finding-head">${badge(f.severity)} <code>${escHtml(f.code)}</code> — <strong>${escHtml(f.title)}</strong></div>
+          ${f.detail ? `<div class="diag-finding-detail">${escHtml(f.detail)}</div>` : ''}
+          ${f.hint ? `<div class="diag-finding-hint">👉 ${escHtml(f.hint)}</div>` : ''}
+        </div>`)
+      .join('')
+
+    const savedLine = report.savedTo
+      ? `<div class="diag-saved">${t('audio.diagnoseSaved', 'Lagret til')}: <code>${escHtml(report.savedTo)}</code></div>`
+      : ''
+
+    body.innerHTML = `
+      <div class="diag-findings">${findingsHtml}</div>
+      <button type="button" class="btn-secondary" id="btn-diagnose-copy" style="margin:8px 0">${t('audio.diagnoseCopy', '📋 Kopier full rapport')}</button>
+      ${savedLine}
+      <details style="margin-top:8px"><summary>${t('audio.diagnoseFull', 'Full rapport')}</summary><pre class="diag-report">${escHtml(report.markdown)}</pre></details>`
+
+    document.getElementById('btn-diagnose-copy')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(report.markdown)
+        const b = document.getElementById('btn-diagnose-copy')
+        if (b) b.textContent = t('audio.diagnoseCopied', '✓ Kopiert')
+      } catch { /* clipboard blocked — the report is still visible to copy by hand */ }
+    })
+
     modal.style.display = 'flex'
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Diagnose' }
+    if (btn) { btn.disabled = false; btn.textContent = t('audio.diagnose', 'Diagnose') }
   }
 }
 

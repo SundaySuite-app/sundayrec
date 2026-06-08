@@ -16,6 +16,7 @@
 //! vs what the manual smoke-test must confirm.
 
 pub mod concat;
+pub mod cpal_capture;
 pub mod engine;
 pub mod preroll;
 pub mod recovery;

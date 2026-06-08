@@ -71,11 +71,16 @@ pub(crate) async fn access_token(
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
+        // Classify from the body, but do NOT put the raw response into the error:
+        // it's persisted to the queue's `last_error` and shown in the UI. Surface
+        // only the status; the full body goes to the (local) debug log.
+        tracing::debug!(%status, "cloud token refresh failed");
         return match oauth::classify_refresh_error(&text) {
             oauth::RefreshErrorKind::InvalidGrant => TokenOutcome::NeedsReauth,
-            oauth::RefreshErrorKind::Other => {
-                TokenOutcome::Transient(format!("refresh {status}: {text}"))
-            }
+            oauth::RefreshErrorKind::Other => TokenOutcome::Transient(format!(
+                "token-oppdatering feilet (HTTP {})",
+                status.as_u16()
+            )),
         };
     }
     match oauth::parse_token_response(&text, now_ms()) {
@@ -87,7 +92,11 @@ pub(crate) async fn access_token(
 /// Upload one file to Drive via a resumable session. The chunk loop is driven by
 /// `drive::chunk_plan` / `content_range_header` / `chunk_status_outcome` /
 /// `parse_resume_offset`.
-async fn upload_file(access_token: &str, file_path: &str) -> AppResult<()> {
+async fn upload_file(
+    access_token: &str,
+    file_path: &str,
+    folder_id: Option<&str>,
+) -> AppResult<()> {
     let path = Path::new(file_path);
     let filename = path
         .file_name()
@@ -118,7 +127,7 @@ async fn upload_file(access_token: &str, file_path: &str) -> AppResult<()> {
         .bearer_auth(access_token)
         .header("content-type", "application/json; charset=UTF-8")
         .header("x-upload-content-type", mime)
-        .body(drive::build_init_body(filename, &description, None))
+        .body(drive::build_init_body(filename, &description, folder_id))
         .send()
         .await
         .map_err(|e| AppError::Internal(format!("init session: {e}")))?;
@@ -231,11 +240,25 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
         }
     };
 
+    // Honour the user's chosen Drive folder (set via the folder picker). Without
+    // this every backup landed in Drive root regardless of the selection. A
+    // missing/unreadable selection → root (Drive's default), as before.
+    let folder_id = super::get_folder(pool, service)
+        .await
+        .ok()
+        .flatten()
+        .map(|f| f.folder_id)
+        .filter(|f| !f.trim().is_empty());
+
     // Bound the whole resumable upload: a Drive session that stalls (308 forever
     // / a hung PUT) must give up rather than loop on this one entry indefinitely.
     // A timeout is treated as a retryable failure so the queue's backoff retries
     // it later with a fresh session.
-    let outcome = match tokio::time::timeout(UPLOAD_DEADLINE, upload_file(&token, &file_path)).await
+    let outcome = match tokio::time::timeout(
+        UPLOAD_DEADLINE,
+        upload_file(&token, &file_path, folder_id.as_deref()),
+    )
+    .await
     {
         Ok(res) => res,
         Err(_) => {
@@ -279,6 +302,27 @@ pub fn spawn(pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
     tauri::async_runtime::spawn(async move {
         if config.is_none() {
             tracing::info!("cloud upload worker idle: Google OAuth client not configured");
+        }
+        // Crash recovery: an entry left in `Uploading` was interrupted by a crash /
+        // force-quit mid-upload. `select_next` only picks `Pending`, so without this
+        // it would sit stuck forever and that backup would silently never happen.
+        // At boot any `Uploading` is stale → requeue it (the upload restarts fresh).
+        if let Ok(mut entries) = store::load_queue(&pool).await {
+            let stale: Vec<String> = entries
+                .iter()
+                .filter(|e| e.status == queue::UploadStatus::Uploading)
+                .map(|e| e.id.clone())
+                .collect();
+            if !stale.is_empty() {
+                queue::reset_stale_uploading(&mut entries);
+                tracing::info!(
+                    "cloud upload: requeued {} interrupted upload(s) from a previous session",
+                    stale.len()
+                );
+                for id in &stale {
+                    let _ = persist_entry(&pool, &entries, id).await;
+                }
+            }
         }
         loop {
             let Some(cfg) = config.as_ref() else {

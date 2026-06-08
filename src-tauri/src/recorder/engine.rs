@@ -191,6 +191,10 @@ pub struct RecordingOpts {
     /// `"hardware"` → VideoToolbox on macOS (realtime 4K); ignored off macOS.
     #[serde(default)]
     pub video_encoder: String,
+    /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
+    /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
+    #[serde(default)]
+    pub classic_directshow: bool,
     /// The camera INPUT mode the recorder probed at start (a size + framerate the
     /// device actually advertises). NOT sent by the frontend — it's resolved
     /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
@@ -381,6 +385,11 @@ pub struct RecorderEngine {
     /// clear it. Wrapped in `Arc` so both the engine (commands) and the
     /// supervisor task share the one sender.
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    /// Which audio engine the LAST `start()` used (`"wasapi"`/`"asio"`/
+    /// `"directshow"`/`"avfoundation"`) + any fallback reason. Surfaced by the
+    /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
+    /// fell back, and why. `(engine, fallback_reason)`.
+    audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 }
 
 impl Default for RecorderEngine {
@@ -396,6 +405,7 @@ impl RecorderEngine {
             session: Mutex::new(None),
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
+            audio_engine: Arc::new(Mutex::new((None, None))),
         }
     }
 
@@ -403,6 +413,23 @@ impl RecorderEngine {
     /// on every transition). Used by the `recording_status` command.
     pub fn current_state(&self) -> RecorderState {
         *lock_recover(&self.last_state)
+    }
+
+    /// Record which audio engine `start()` chose (+ optional fallback reason), for
+    /// the diagnose tool. `fallback` is `Some(reason)` only when the modern engine
+    /// (WASAPI/ASIO) couldn't start and we fell back to DirectShow.
+    pub(crate) fn set_audio_engine(&self, engine: &str, fallback: Option<String>) {
+        *lock_recover(&self.audio_engine) = (Some(engine.to_string()), fallback);
+    }
+
+    /// The audio engine the last recording used (diagnose tool).
+    pub fn last_audio_engine(&self) -> Option<String> {
+        lock_recover(&self.audio_engine).0.clone()
+    }
+
+    /// Why the last recording fell back from the modern engine, if it did.
+    pub fn last_audio_fallback(&self) -> Option<String> {
+        lock_recover(&self.audio_engine).1.clone()
     }
 
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
@@ -497,14 +524,13 @@ impl RecorderEngine {
                 ))
             }
         };
-        let audio = find_best_device_match(&inv.audio_inputs, &opts.audio_device_name)
-            .cloned()
-            .ok_or_else(|| {
-                AppError::Recording(format!(
-                    "no audio device matched '{}'",
-                    opts.audio_device_name
-                ))
-            })?;
+        // Match the selected mic against ffmpeg's dshow/avfoundation list. On
+        // Windows the cpal capture path (below) addresses the device BY NAME via
+        // cpal, so a dshow match is not required there — keep it OPTIONAL so an
+        // ASIO-only / cpal-only device doesn't error here. It is still needed for
+        // the macOS path and the Windows dshow fallback.
+        let dshow_audio: Option<FfmpegDevice> =
+            find_best_device_match(&inv.audio_inputs, &opts.audio_device_name).cloned();
         // Video resolution uses the dedicated video-input list + the video match
         // ladder (F2.1). None unless the user enabled video AND a name matches.
         let video = match &opts.video_device_name {
@@ -543,6 +569,118 @@ impl RecorderEngine {
                 ),
             }
         }
+
+        // ── Windows: capture audio via cpal (modern API), not ffmpeg/dshow ──────
+        // dshow is an old API that splits pro interfaces into stereo pairs and is
+        // the source of the Windows instability. So on Windows we capture audio
+        // ourselves with cpal — WASAPI for normal devices, ASIO for pro interfaces
+        // — and pipe it into ffmpeg (which still does the camera via dshow + all
+        // encoding). dshow audio remains only as an automatic fallback if cpal
+        // can't start, and the `classic_directshow` setting forces it. macOS keeps
+        // the ffmpeg avfoundation path (run_session) entirely.
+        // `cfg!(windows)` (not `#[cfg]`) so this compiles on every platform — the
+        // call signature is type-checked on macOS even though it only RUNS on
+        // Windows (DCE'd elsewhere; `run_cpal_session` has a non-Windows stub).
+        let is_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
+        // Features that ONLY the full dshow `run_session` implements (preroll,
+        // split, stop-on-silence). For a normal device we route such sessions to
+        // dshow so they're never silently dropped; ASIO has no dshow alternative,
+        // so we still use cpal but warn the user the feature isn't supported there.
+        let needs_dshow_only =
+            preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
+        let use_cpal = cfg!(windows) && !opts.classic_directshow && (is_asio || !needs_dshow_only);
+        // Why the modern engine fell back, if it did — recorded into the engine
+        // status (read by the diagnose tool), NOT surfaced as a fatal recording
+        // error (the recording proceeds fine on DirectShow).
+        let mut cpal_fallback_reason: Option<String> = None;
+        if use_cpal {
+            use crate::recorder::cpal_capture::{run_cpal_session, CpalHostKind};
+            let host_kind = if is_asio {
+                CpalHostKind::Asio
+            } else {
+                CpalHostKind::Wasapi
+            };
+            // ASIO + a dshow-only feature: we can't fall back (dshow can't open
+            // ASIO), so the feature is inactive. This is informational, not a
+            // recording failure — log it (the diagnose tool can surface it) rather
+            // than emitting a fatal `recording://error` that would tear down the UI.
+            if is_asio && needs_dshow_only {
+                tracing::warn!(
+                    "recorder: preroll/split/silence not supported on the ASIO path — recording without them"
+                );
+            }
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+            let sup_app = app.clone();
+            let last_state = Arc::clone(&self.last_state);
+            let scheduled_stop = Arc::clone(&self.scheduled_stop);
+            // CLONE what the cpal attempt needs so the originals survive for the
+            // dshow fallback below if cpal fails to start.
+            let (opts_c, video_c, pool_c) = (opts.clone(), video.clone(), pool.clone());
+            let supervisor = tauri::async_runtime::spawn(async move {
+                run_cpal_session(
+                    host_kind,
+                    sup_app,
+                    pool_c,
+                    opts_c,
+                    video_c,
+                    stop_rx,
+                    ready_tx,
+                    last_state,
+                    scheduled_stop,
+                )
+                .await;
+            });
+            match ready_rx.await {
+                Ok(Ok(())) => {
+                    self.set_audio_engine(if is_asio { "asio" } else { "wasapi" }, None);
+                    *lock_recover(&self.session) = Some(RecorderSession {
+                        supervisor,
+                        stop_tx,
+                    });
+                    return Ok(());
+                }
+                ready => {
+                    // cpal couldn't start (driver busy/absent, device vanished, or
+                    // the supervisor died). Don't fail the recording — fall back to
+                    // the dshow capture automatically. The reason goes into the
+                    // engine status (diagnose tool), NOT a fatal recording error.
+                    supervisor.abort();
+                    let err = match ready {
+                        Ok(Err(e)) => e,
+                        _ => AppError::Recording(
+                            "cpal recorder supervisor exited before signalling".into(),
+                        ),
+                    };
+                    tracing::warn!(
+                        "recorder: cpal {host_kind:?} start failed ({err}); falling back to dshow"
+                    );
+                    cpal_fallback_reason = Some(err.to_string());
+                    // fall through to the dshow run_session path below.
+                }
+            }
+        }
+
+        // dshow/avfoundation path: macOS always; Windows only when cpal is disabled
+        // (`classic_directshow`) or failed to start (fallback above). Needs a real
+        // ffmpeg device match — an ASIO-only device with no dshow shadow errors here.
+        let audio = dshow_audio.ok_or_else(|| {
+            AppError::Recording(format!(
+                "no audio device matched '{}'",
+                opts.audio_device_name
+            ))
+        })?;
+        // Record which engine this session actually uses (diagnose tool): the
+        // dshow path on Windows (forced-classic or cpal-fallback), avfoundation on
+        // macOS. `cpal_fallback_reason` is set only when we came from a cpal failure.
+        self.set_audio_engine(
+            if cfg!(windows) {
+                "directshow"
+            } else {
+                "avfoundation"
+            },
+            cpal_fallback_reason,
+        );
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
@@ -1529,6 +1667,35 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
             message: message.to_string(),
         },
     );
+    // Companion for the standalone "SundayRec Lydhjelp" diagnostic: persist the
+    // last classified error to disk so that tool can explain, in plain Norwegian,
+    // what stopped the recording last time (it can't see our in-process events).
+    skriv_siste_feil_til_disk(app, code, message);
+}
+
+/// Best-effort write of the most recent classified error to
+/// `<app_data_dir>/last-error.json` (atomic temp+rename). Never fails the
+/// recorder — any I/O error is logged and swallowed.
+fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
+    use tauri::Manager;
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    // Keep the file small — the diagnostic only needs the code + a stderr snippet.
+    let msg: String = message.chars().take(2000).collect();
+    let body = serde_json::json!({
+        "code": code,
+        "message": msg,
+        "timestamp": chrono::Local::now().to_rfc3339(),
+    });
+    let path = dir.join("last-error.json");
+    let tmp = dir.join("last-error.json.tmp");
+    if std::fs::write(&tmp, body.to_string()).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        tracing::info!(path = %path.display(), "Lydhjelp: siste feil skrevet til disk");
+    } else {
+        tracing::warn!("Lydhjelp: klarte ikke skrive last-error.json");
+    }
 }
 
 /// Finalise every deliverable that has closed but not yet been finalised
@@ -1706,7 +1873,7 @@ fn build_separate_audio_args(src: &str, dst: &str, opts: &RecordingOpts) -> Vec<
 /// gate as the main file; a failed/empty extract is logged and skipped, never fatal.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg against a real finished file.
-async fn extract_separate_audio(
+pub(crate) async fn extract_separate_audio(
     pool: &SqlitePool,
     final_path: &str,
     started_at: u64,
@@ -1793,7 +1960,7 @@ async fn extract_separate_audio(
 }
 
 /// Epoch milliseconds (the engine's clock; core takes this as an argument).
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1869,6 +2036,7 @@ mod tests {
             video_resolution: "720p".into(),
             video_codec: "h264".into(),
             video_encoder: "software".into(),
+            classic_directshow: false,
             video_input: None,
         }
     }
@@ -2286,6 +2454,7 @@ mod tests {
             video_resolution: "1080p".into(),
             video_codec: "h264".into(),
             video_encoder: "software".into(),
+            classic_directshow: false,
             video_input: None,
         };
         let json = serde_json::to_string(&o).unwrap();
