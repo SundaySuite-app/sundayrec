@@ -92,7 +92,11 @@ pub(crate) async fn access_token(
 /// Upload one file to Drive via a resumable session. The chunk loop is driven by
 /// `drive::chunk_plan` / `content_range_header` / `chunk_status_outcome` /
 /// `parse_resume_offset`.
-async fn upload_file(access_token: &str, file_path: &str) -> AppResult<()> {
+async fn upload_file(
+    access_token: &str,
+    file_path: &str,
+    folder_id: Option<&str>,
+) -> AppResult<()> {
     let path = Path::new(file_path);
     let filename = path
         .file_name()
@@ -123,7 +127,7 @@ async fn upload_file(access_token: &str, file_path: &str) -> AppResult<()> {
         .bearer_auth(access_token)
         .header("content-type", "application/json; charset=UTF-8")
         .header("x-upload-content-type", mime)
-        .body(drive::build_init_body(filename, &description, None))
+        .body(drive::build_init_body(filename, &description, folder_id))
         .send()
         .await
         .map_err(|e| AppError::Internal(format!("init session: {e}")))?;
@@ -236,11 +240,25 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
         }
     };
 
+    // Honour the user's chosen Drive folder (set via the folder picker). Without
+    // this every backup landed in Drive root regardless of the selection. A
+    // missing/unreadable selection → root (Drive's default), as before.
+    let folder_id = super::get_folder(pool, service)
+        .await
+        .ok()
+        .flatten()
+        .map(|f| f.folder_id)
+        .filter(|f| !f.trim().is_empty());
+
     // Bound the whole resumable upload: a Drive session that stalls (308 forever
     // / a hung PUT) must give up rather than loop on this one entry indefinitely.
     // A timeout is treated as a retryable failure so the queue's backoff retries
     // it later with a fresh session.
-    let outcome = match tokio::time::timeout(UPLOAD_DEADLINE, upload_file(&token, &file_path)).await
+    let outcome = match tokio::time::timeout(
+        UPLOAD_DEADLINE,
+        upload_file(&token, &file_path, folder_id.as_deref()),
+    )
+    .await
     {
         Ok(res) => res,
         Err(_) => {
