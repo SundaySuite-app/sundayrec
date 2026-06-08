@@ -143,6 +143,160 @@ pub fn audio_encode_args(
     a
 }
 
+/// ffmpeg args for an **audio-only cpal capture** (Windows WASAPI or ASIO): raw
+/// interleaved 32-bit float PCM arrives on `pipe:0` (the cpal callback already
+/// de-interleaved and routed the chosen channels, so the pipe carries EXACTLY the
+/// output channels — no `pan` filter is needed), and ffmpeg only encodes + muxes
+/// to `output_path`.
+///
+/// `input_sample_rate` MUST be the cpal stream's actual rate: raw PCM has no
+/// header, so ffmpeg has to be told how to interpret the bytes on `pipe:0`.
+/// `channels` is the routed channel count on the pipe (1 for mono modes, 2 for
+/// stereo). `output_sample_rate` (from settings) becomes an OUTPUT `-ar` when
+/// `Some` (a resample) or is omitted to keep the native rate — same convention as
+/// [`audio_encode_args`].
+///
+/// This is the cpal-pipe analogue of [`build_unified_capture_args`]'s audio-only
+/// path; the difference is the INPUT (`-f f32le -i pipe:0` instead of `-f dshow/-f
+/// avfoundation`). Stop is by EOF on the pipe, so there is no `q`-stop coupling.
+pub fn build_cpal_pipe_audio_args(
+    input_sample_rate: u32,
+    channels: u8,
+    output_path: &str,
+    output_sample_rate: Option<u32>,
+    bitrate_kbps: u32,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "-hide_banner".into(),
+        "-f".into(),
+        "f32le".into(),
+        "-ar".into(),
+        input_sample_rate.to_string(),
+        "-ac".into(),
+        channels.to_string(),
+        "-i".into(),
+        "pipe:0".into(),
+    ];
+    args.extend(audio_encode_args(
+        ext_of(output_path),
+        channels,
+        output_sample_rate,
+        bitrate_kbps,
+    ));
+    args.push("-avoid_negative_ts".into());
+    args.push("make_zero".into());
+    args.push("-y".into());
+    args.push(output_path.into());
+    args
+}
+
+/// ffmpeg args for a **video + cpal-audio capture** (Windows WASAPI or ASIO): the
+/// camera comes from dshow (input 0) and the routed cpal PCM arrives on `pipe:0`
+/// (input 1). This is the two-clock case — the dshow camera and the cpal audio
+/// interface run on independent clocks — so the audio is drift-corrected with
+/// `aresample=async=1000:first_pts=0` (same as the dshow A/V path) and BOTH inputs
+/// get `-use_wallclock_as_timestamps 1` so ffmpeg head-aligns them by real arrival
+/// time (the single-process analogue of the two-process start_time probe). The
+/// video is conformed to CFR (`-r/-fps_mode cfr`) to stay locked to the audio.
+///
+/// ⚠️ The dual-clock A/V sync here is the riskiest part of the cpal path and is
+/// HARDWARE-UNVERIFIED — it must be lip-sync checked on a Windows rig.
+#[allow(clippy::too_many_arguments)]
+pub fn build_cpal_pipe_video_args(
+    camera_dshow_name: &str,
+    framerate: u32,
+    input_sample_rate: u32,
+    channels: u8,
+    output_path: &str,
+    output_sample_rate: Option<u32>,
+    bitrate_kbps: u32,
+    video_codec: crate::editor::VideoCodec,
+    preview_jpg: Option<&str>,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec!["-hide_banner".into()];
+
+    // Input 0: dshow camera, wall-clock timestamped for head alignment.
+    args.push("-use_wallclock_as_timestamps".into());
+    args.push("1".into());
+    args.push("-f".into());
+    args.push("dshow".into());
+    args.push("-framerate".into());
+    args.push(framerate.to_string());
+    args.push("-i".into());
+    args.push(format!("video={camera_dshow_name}"));
+
+    // Input 1: routed ASIO PCM on the pipe, also wall-clock timestamped.
+    args.push("-use_wallclock_as_timestamps".into());
+    args.push("1".into());
+    args.push("-f".into());
+    args.push("f32le".into());
+    args.push("-ar".into());
+    args.push(input_sample_rate.to_string());
+    args.push("-ac".into());
+    args.push(channels.to_string());
+    args.push("-i".into());
+    args.push("pipe:0".into());
+
+    // Two independent clocks → continuously resample audio to track the video and
+    // pin the first sample to t=0 (the cpal callback already routed channels, so
+    // no `pan` here).
+    args.push("-af".into());
+    args.push("aresample=async=1000:first_pts=0".into());
+
+    // Software video encode (VideoToolbox is mac-only; ASIO is Windows-only).
+    args.push("-c:v".into());
+    match video_codec {
+        crate::editor::VideoCodec::H264 => args.push("libx264".into()),
+        crate::editor::VideoCodec::H265 => {
+            args.push("libx265".into());
+            args.push("-tag:v".into());
+            args.push("hvc1".into());
+        }
+    }
+    args.push("-preset".into());
+    args.push("veryfast".into());
+    args.push("-pix_fmt".into());
+    args.push("yuv420p".into());
+    // Conform to TRUE constant frame rate so the picture stays locked to audio.
+    args.push("-r".into());
+    args.push(framerate.to_string());
+    args.push("-fps_mode".into());
+    args.push("cfr".into());
+
+    args.extend(audio_encode_args(
+        ext_of(output_path),
+        channels,
+        output_sample_rate,
+        bitrate_kbps,
+    ));
+
+    args.push("-avoid_negative_ts".into());
+    args.push("make_zero".into());
+    if matches!(ext_of(output_path), "mp4" | "mov" | "m4v") {
+        args.push("-movflags".into());
+        args.push("+faststart".into());
+    }
+    args.push("-y".into());
+    args.push(output_path.into());
+
+    // Optional deadlock-proof live preview (a file sink, never a pipe) — same as
+    // the unified path's second output.
+    if let Some(preview) = preview_jpg {
+        args.push("-map".into());
+        args.push("0:v".into());
+        args.push("-an".into());
+        args.push("-vf".into());
+        args.push("scale=720:-2,fps=12".into());
+        args.push("-q:v".into());
+        args.push("4".into());
+        args.push("-update".into());
+        args.push("1".into());
+        args.push("-y".into());
+        args.push(preview.into());
+    }
+    args
+}
+
 /// The channel-select `pan` filter for a capture, or `None` for plain stereo (no
 /// remap). MonoL/MonoR pick ONE source channel; MonoMix averages both. Without
 /// this, every non-stereo mode collapsed to a bare `-ac 1` that let ffmpeg
@@ -1107,9 +1261,21 @@ mod tests {
         // square's pixel count exceeds 1080p, but it can't fill a 16:9 4K frame, so
         // 2160p must stay GATED (no upscale). Native 16:9 ceiling is 1080p.
         let modes = vec![
-            CameraMode { width: 1920, height: 1080, framerates: vec![30] },
-            CameraMode { width: 1552, height: 1552, framerates: vec![30] },
-            CameraMode { width: 1280, height: 720, framerates: vec![15, 30] },
+            CameraMode {
+                width: 1920,
+                height: 1080,
+                framerates: vec![30],
+            },
+            CameraMode {
+                width: 1552,
+                height: 1552,
+                framerates: vec![30],
+            },
+            CameraMode {
+                width: 1280,
+                height: 720,
+                framerates: vec![15, 30],
+            },
         ];
         let cap = summarize_camera_capabilities(&modes);
         assert_eq!(cap.supported_resolutions, vec!["480p", "720p", "1080p"]);
@@ -1491,6 +1657,71 @@ mod tests {
         assert!(has_pair(&wav, "-c:a", "pcm_s16le"));
         assert!(!wav.iter().any(|a| a == "-b:a"));
         assert!(!wav.iter().any(|a| a == "-ar"));
+    }
+
+    #[test]
+    fn asio_audio_args_use_f32le_pipe_input() {
+        // The pipe carries raw f32 PCM the cpal callback already routed, so the
+        // input is `-f f32le -ar <stream rate> -ac <routed ch> -i pipe:0`.
+        let args = build_cpal_pipe_audio_args(48_000, 2, "/rec/service.wav", None, 192);
+        assert!(has_pair(&args, "-f", "f32le"));
+        assert!(
+            has_pair(&args, "-ar", "48000"),
+            "input rate is mandatory for raw PCM"
+        );
+        assert!(has_pair(&args, "-i", "pipe:0"));
+        // Output codec from the .wav extension; routed channel count flows to -ac.
+        assert!(has_pair(&args, "-c:a", "pcm_s16le"));
+        assert!(has_pair(&args, "-ac", "2"));
+        // Stop is by EOF on the pipe — never a `q` on stdin (stdin carries data).
+        assert_eq!(args.last().map(String::as_str), Some("/rec/service.wav"));
+        assert!(has_pair(&args, "-y", "/rec/service.wav"));
+    }
+
+    #[test]
+    fn asio_audio_args_mono_and_output_resample() {
+        // Mono mode → 1 channel on the pipe AND in the output; an explicit output
+        // sample rate becomes a (second) `-ar` AFTER the input args (a resample).
+        let args = build_cpal_pipe_audio_args(96_000, 1, "/rec/talk.mp3", Some(48_000), 256);
+        assert!(has_pair(&args, "-ac", "1"));
+        assert!(has_pair(&args, "-c:a", "libmp3lame"));
+        assert!(has_pair(&args, "-b:a", "256k"));
+        // Input rate (96k) AND output rate (48k) both present → resample on encode.
+        assert!(args.iter().any(|a| a == "96000"));
+        assert!(args.iter().any(|a| a == "48000"));
+    }
+
+    #[test]
+    fn asio_video_args_two_inputs_dshow_video_and_pipe_audio() {
+        let args = build_cpal_pipe_video_args(
+            "Logitech BRIO",
+            30,
+            48_000,
+            2,
+            "/rec/service.mp4",
+            None,
+            192,
+            crate::editor::VideoCodec::H264,
+            Some("/rec/preview.jpg"),
+        );
+        // Input 0 = dshow camera; input 1 = the f32le pipe.
+        assert!(has_pair(&args, "-i", "video=Logitech BRIO"));
+        assert!(has_pair(&args, "-i", "pipe:0"));
+        // Both inputs wall-clock stamped for head alignment (the two-clock case).
+        assert_eq!(
+            args.iter()
+                .filter(|a| *a == "-use_wallclock_as_timestamps")
+                .count(),
+            2
+        );
+        // Drift correction + CFR video lock.
+        assert!(args.iter().any(|a| a == "aresample=async=1000:first_pts=0"));
+        assert!(has_pair(&args, "-fps_mode", "cfr"));
+        assert!(has_pair(&args, "-c:v", "libx264"));
+        // faststart for the mp4 container + a preview second output.
+        assert!(has_pair(&args, "-movflags", "+faststart"));
+        assert!(has_pair(&args, "-map", "0:v"));
+        assert_eq!(args.last().map(String::as_str), Some("/rec/preview.jpg"));
     }
 
     #[test]

@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; media-src 'self' media: blob: asset: http://asset.localhost https://asset.localhost; connect-src 'self' ipc: http://ipc.localhost" />
   <title>SundayRec</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -967,6 +968,21 @@
         <input type="hidden" id="limiter-ceiling" value="-1" />
       </div>
 
+      <!-- Windows-only advanced escape hatch: on Windows audio is captured via the
+           modern cpal engine (WASAPI for normal devices, ASIO for pro interfaces).
+           This forces the legacy DirectShow path if the modern one misbehaves on a
+           specific rig. Revealed by audio-page.ts only on Windows. -->
+      <div class="card" id="classic-audio-card" style="display:none">
+        <div class="card-title" data-i18n="audio.engineTitle">Lyd-motor (avansert)</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="audio.classicDshow">Klassisk lyd-motor (DirectShow)</div>
+            <div class="toggle-desc" data-i18n="audio.classicDshowDesc">SundayRec bruker normalt en moderne Windows-lyd-motor (WASAPI, eller ASIO for proff lydutstyr). Slå dette på bare hvis opptak er ustabilt på denne maskinen — da brukes den gamle DirectShow-veien i stedet.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-classic-dshow" /><span class="toggle-track"></span></label>
+        </div>
+      </div>
+
       <div class="page-footer">
         <button class="btn-primary" id="btn-audio-save" data-i18n="audio.save">Lagre</button>
         <button class="btn-ghost" id="btn-audio-cancel" data-i18n="audio.cancel">Avbryt</button>
@@ -1814,6 +1830,18 @@
         <button type="button" class="btn-secondary" id="btn-show-onboarding" style="margin-top:8px" data-i18n="general.openOnboarding">
           Åpne oppstartsveileder
         </button>
+      </div>
+
+      <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
+           ONLY in the Windows build (the only build with ASIO support) — revealed
+           by general-page.ts when the platform is Windows. The trademark notice is
+           legal text and is intentionally NOT translated. See docs/BUILD_ASIO.md. -->
+      <div class="card" id="asio-attribution-card" style="display:none">
+        <div class="card-title" data-i18n="general.audioTechTitle">Lyd-teknologi</div>
+        <p class="card-desc">
+          ASIO Driver Interface Technology by Steinberg Media Technologies GmbH.
+          ASIO is a trademark and software of Steinberg Media Technologies GmbH.
+        </p>
       </div>
 
       <div class="page-footer">

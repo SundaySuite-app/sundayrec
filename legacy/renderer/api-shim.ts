@@ -304,6 +304,8 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     videoFlip: s.videoFlip ?? false,
     outputMode: s.videoSeparate ? "separate" : "combined",
     keepSeparateAudio: s.videoKeepAudio !== false,
+    // Windows escape hatch: force legacy DirectShow audio over cpal (WASAPI/ASIO).
+    classicDirectshow: s.classicDirectshow ?? false,
     separateAudioFormat: s.format ?? "wav",
     channels: s.channels ?? "stereo",
     inputChannelL: clampCh(chMap.channelL),
@@ -623,18 +625,64 @@ const api: Record<string, unknown> = {
   installUpdate: async () => true,
   getLogs: async () => [],
   getLogFilePath: async () => null,
-  runDiagnostics: async () => ({
-    markdown: "",
-    savedTo: null,
-    clipboardOk: false,
-    captureOk: false,
-    videoOk: null,
-  }),
+  // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
+  // permissions/audio-engine/last-error and returns structured `findings` (the
+  // SR-* error codes) + a full markdown report. On failure → an empty report so
+  // the panel still opens.
+  runDiagnostics: async () =>
+    call<{
+      markdown: string;
+      findings: {
+        code: string;
+        severity: "ok" | "info" | "warning" | "critical";
+        title: string;
+        detail: string;
+        hint: string;
+      }[];
+      savedTo: string | null;
+      captureOk: boolean | null;
+      videoOk: boolean | null;
+    }>("run_diagnostics", undefined, {
+      markdown: "",
+      findings: [],
+      savedTo: null,
+      captureOk: null,
+      videoOk: null,
+    }),
 
   // ── Audio / video devices ───────────────────────────────────────────────
-  listAsioDrivers: async () => [],
-  // audio-page.ts calls `.some(...)` on the result → must be an array.
-  listFfmpegAudioDevices: async () => [],
+  // ASIO driver names = the asio-backend entries of the unified tagged device
+  // list (empty on macOS / when the `asio` feature is off / no driver installed,
+  // so the picker simply shows no ASIO cards). See `audio::asio`.
+  listAsioDrivers: async () => {
+    const devs = await call<{ name: string; backend: string }[]>(
+      "list_audio_devices",
+      undefined,
+      [],
+    );
+    return devs.filter((d) => d.backend === "asio").map((d) => d.name);
+  },
+  // Input-channel COUNT for an ASIO device, so the L/R selector offers the real
+  // channels (the dshow path can't see them). 0 when ASIO is unavailable → the
+  // caller falls back to a sensible default.
+  listAsioInputChannels: async (deviceId: string) =>
+    (
+      await call<{ index: number; label: string }[]>(
+        "list_audio_input_channels",
+        { deviceId },
+        [],
+      )
+    ).length,
+  // The ffmpeg/dshow audio inputs, for the "selected device not seen by ffmpeg"
+  // warning. audio-page.ts calls `.some(...)` on the result → must be an array.
+  listFfmpegAudioDevices: async () => {
+    const inv = await call<{ audio_inputs?: { name: string; index: number }[] }>(
+      "list_devices",
+      undefined,
+      {},
+    );
+    return (inv.audio_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
+  },
   diagnoseAudio: async () => ({ dshow: [], wasapi: [], wasapiAvailable: false }),
   // list_devices → { video_inputs: FfmpegDevice[] }; old renderer wants
   // { name, index }[]. FfmpegDevice already carries both fields.

@@ -134,6 +134,7 @@ declare global {
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       pickAudioFile:          ()                 => Promise<string | null>
       listAsioDrivers:        ()                 => Promise<string[]>
+      listAsioInputChannels:  (deviceId: string) => Promise<number>
       listFfmpegAudioDevices: () => Promise<{ name: string; index: number }[]>
       cloudConnect:        (service: string) => Promise<{ ok: boolean; accountName?: string; error?: string }>
       cloudCancelConnect:  (service: string) => Promise<boolean>
@@ -207,6 +208,7 @@ declare global {
       getLogs:                 ()                 => Promise<unknown[]>
       getLogFilePath:          ()                 => Promise<string | null>
       diagnoseAudio?:          () => Promise<{ dshow: string[]; wasapi: string[]; wasapiAvailable: boolean }>
+      runDiagnostics:          () => Promise<{ markdown: string; findings: { code: string; severity: 'ok' | 'info' | 'warning' | 'critical'; title: string; detail: string; hint: string }[]; savedTo: string | null; captureOk: boolean | null; videoOk: boolean | null }>
 
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>

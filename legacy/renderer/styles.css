@@ -4385,3 +4385,16 @@ button > svg:first-child { flex-shrink: 0; }
 .overlay-toggle input:checked + .overlay-toggle-knob { background: #2db66c; }
 .overlay-toggle input:checked + .overlay-toggle-knob::before { transform: translateX(16px); }
 .thumb-card-icon-search { width: 64px; height: 64px; margin-right: 12px; }
+
+/* Diagnose-rapport (samlet diagnose-verktøy) */
+.diag-findings { display: flex; flex-direction: column; gap: 8px; }
+.diag-finding { padding: 8px 10px; border-radius: 8px; border-left: 4px solid var(--text3, #888); background: rgba(127,127,127,0.08); }
+.diag-finding.diag-critical { border-left-color: #e5484d; background: rgba(229,72,77,0.10); }
+.diag-finding.diag-warning  { border-left-color: #f0a020; background: rgba(240,160,32,0.10); }
+.diag-finding.diag-info     { border-left-color: #4a90d9; background: rgba(74,144,217,0.10); }
+.diag-finding.diag-ok       { border-left-color: #2db66c; background: rgba(45,182,108,0.10); }
+.diag-finding-head { font-size: 13px; }
+.diag-finding-head code { font-size: 12px; opacity: 0.85; }
+.diag-finding-detail { font-size: 12px; color: var(--text2, #aaa); margin-top: 2px; }
+.diag-finding-hint { font-size: 12px; margin-top: 2px; }
+.diag-report { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; background: rgba(0,0,0,0.18); padding: 8px; border-radius: 6px; }

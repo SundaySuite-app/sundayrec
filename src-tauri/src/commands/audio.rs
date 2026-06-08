@@ -10,7 +10,12 @@ use tauri::{AppHandle, State};
 use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
 use sundayrec_core::device_match::FfmpegDevice;
 
-use crate::audio::device_enum::{enumerate_ffmpeg_devices, DeviceInventory};
+use crate::audio::asio::{
+    list_asio_devices, list_asio_input_channels, merge_audio_inputs, AudioChannel, TaggedAudioInput,
+};
+use crate::audio::device_enum::{
+    enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_cached, DeviceInventory,
+};
 use crate::audio::devices::{list_input_devices as enumerate_inputs, AudioDeviceList};
 use crate::audio::vu::VuEngine;
 use crate::error::AppResult;
@@ -19,6 +24,41 @@ use crate::error::AppResult;
 #[tauri::command]
 pub fn list_input_devices() -> AppResult<AudioDeviceList> {
     enumerate_inputs()
+}
+
+/// The unified, backend-tagged audio-input list for the device picker: ASIO
+/// devices (Windows, when a driver is present) FIRST, then the host's
+/// WASAPI/CoreAudio devices, with any WASAPI stereo-pair shadow of an ASIO
+/// interface de-duplicated. Each entry carries a backend badge the UI shows.
+///
+/// On macOS/Linux, or when the `asio` feature is off, the ASIO list is empty and
+/// this is just the host's cpal devices tagged `CoreAudio`/`Wasapi` — so the
+/// frontend can call this one command on every platform.
+///
+/// cpal/ASIO enumeration is BLOCKING (it talks to the driver), so it runs on a
+/// blocking thread to keep the async runtime free.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — the ASIO branch needs a Windows rig with an ASIO
+/// driver; the merge/dedup logic is pure + unit-tested.
+#[tauri::command]
+pub async fn list_audio_devices() -> AppResult<Vec<TaggedAudioInput>> {
+    tokio::task::spawn_blocking(|| {
+        let asio = list_asio_devices();
+        let host = enumerate_inputs()?;
+        Ok(merge_audio_inputs(asio, &host.inputs))
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Audio(format!("device enumeration task failed: {e}")))?
+}
+
+/// List the input channels of one ASIO device, for the channel (L/R) selector.
+/// Empty when the device is gone or ASIO is unavailable (the UI then falls back
+/// to the device's reported channel count). Runs on a blocking thread.
+#[tauri::command]
+pub async fn list_audio_input_channels(device_id: String) -> AppResult<Vec<AudioChannel>> {
+    tokio::task::spawn_blocking(move || list_asio_input_channels(&device_id))
+        .await
+        .map_err(|e| crate::error::AppError::Audio(format!("channel enumeration task failed: {e}")))
 }
 
 /// Enumerate the capture devices ffmpeg can see (audio + video), for the F2.1
@@ -30,7 +70,9 @@ pub fn list_input_devices() -> AppResult<AudioDeviceList> {
 /// real devices; only the pure argument/parse helpers are tested.
 #[tauri::command]
 pub async fn list_devices() -> AppResult<DeviceInventory> {
-    enumerate_ffmpeg_devices().await
+    // Cached (1.5 s): the picker often asks for audio + video back-to-back; this
+    // folds those into one spawn. Record/diagnose use the uncached path.
+    enumerate_ffmpeg_devices_cached().await
 }
 
 /// List ONLY the camera (video) devices ffmpeg can see, for the settings camera
@@ -42,7 +84,9 @@ pub async fn list_devices() -> AppResult<DeviceInventory> {
 /// pure parse helpers in `sundayrec_core::device_enum` are unit-tested.
 #[tauri::command]
 pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
-    Ok(enumerate_ffmpeg_devices().await?.video_inputs)
+    // Cached (1.5 s) — see `list_devices`. The recorder resolves the camera via
+    // the uncached path at start, so a stale picker list never affects a capture.
+    Ok(enumerate_ffmpeg_devices_cached().await?.video_inputs)
 }
 
 /// What a camera can actually capture, for gating the resolution/fps UI to modes

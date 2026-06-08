@@ -78,6 +78,18 @@ bridge = ["dep:tokio-tungstenite", "dep:futures-util"]
 # When OFF the `update_*` commands return a clear `feature_disabled` error (same
 # idiom as `editor`/`streaming`).
 updater = ["dep:tauri-plugin-updater"]
+# Windows ASIO audio backend. Turns on cpal's `asio` feature so we can open a
+# low-latency, single-device multichannel ASIO input stream and pipe its raw PCM
+# into the ffmpeg sidecar (the dshow path splits pro interfaces into stereo
+# pairs; ASIO exposes all channels under one device). DEFAULT-OFF and only
+# EFFECTIVE on Windows: every ASIO code path is `#[cfg(all(target_os =
+# "windows", feature = "asio"))]`, and when no ASIO device is present the
+# recorder falls back to the existing dshow/WASAPI capture automatically. macOS
+# never compiles the ASIO path (Core Audio already exposes the aggregate device
+# as one). Building this on Windows needs the Steinberg ASIO SDK + LLVM/Clang +
+# MSVC — see `docs/BUILD_ASIO.md`. cpal's asio build script is a no-op on
+# non-Windows targets, so `--features asio` is harmless on macOS/Linux CI.
+asio = ["cpal/asio"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -92,14 +104,25 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2.7.1"
 # `process` plugin: relaunch/exit, used by the updater flow later.
 tauri-plugin-process = "2"
+# Single-instance lock: a second launch focuses the running window instead of
+# starting another process. On a shared church PC users kept re-opening the app,
+# piling up instances that each grab audio and crash the Windows Audio service —
+# this is the root-cause fix for that. Desktop-only (the only target here).
+tauri-plugin-single-instance = "2"
 # Native notifications — the scheduler (Fase 5) fires "recording starts in N
 # min" reminders and preflight/missed alerts from the backend, even when the
 # window is hidden in the tray.
 tauri-plugin-notification = "2"
 
-# Native audio I/O (CoreAudio / WASAPI) — used by the VU metering engine to
-# read microphone levels in Rust, so the webview never needs `getUserMedia`.
-cpal = "0.15"
+# Native audio I/O (CoreAudio / WASAPI / ASIO) — drives the VU metering engine
+# AND the Windows cpal capture path (WASAPI default, ASIO for pro interfaces)
+# that pipes PCM into the ffmpeg sidecar. Pinned to 0.17.3: 0.17 added 24-bit
+# (`I24`) sample support — common native format for pro USB interfaces + ASIO4ALL
+# that 0.15 could not represent — and 0.17.3 carries the ASIO linker fixes (0.17.1
+# had broken ASIO). The Windows-only `asio` feature turns on `cpal/asio` (see
+# [features]).
+cpal = "0.17.3"
+
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -205,6 +228,26 @@ sha2 = { version = "0.10", optional = true }
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.
 tauri-plugin-updater = { version = "2", optional = true }
+
+# ── Windows-only: cpal capture pipe buffer ───────────────────────────────────
+# Lock-free SPSC ring buffer between the cpal real-time callback (producer) and
+# the pipe-writer task (consumer): the audio callback must NEVER block on pipe
+# I/O, so it pushes routed PCM into the ring and the writer drains it into
+# ffmpeg's stdin. Used by BOTH the WASAPI (default Windows) and ASIO capture
+# paths in `recorder::cpal_capture`, so it's a Windows-target dep (not tied to
+# the `asio` feature).
+[target.'cfg(windows)'.dependencies]
+ringbuf = "0.4"
+# Win32 Job Object APIs for the orphan-guard (`platform::guard_child_processes`):
+# put the process in a kill-on-close job so no ffmpeg child outlives SundayRec,
+# even on a hard kill. `windows-sys` (raw FFI) is chosen over `windows` for its
+# far more stable API surface. Tauri already pulls it transitively.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 # ── macOS-only: trackpad haptics (Force Touch) ───────────────────────────────
 # The editor fires subtle haptic taps via `NSHapticFeedbackManager`. These are
