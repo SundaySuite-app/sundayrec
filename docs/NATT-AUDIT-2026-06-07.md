@@ -93,3 +93,32 @@ er shared-mode (full multikanal krever ASIO — forventet).
 - `recording://levels` fra backend brukes ikke av overlay-meteret (klient-side
   Web Audio dekker WASAPI; ASIO-opptak mangler in-recording-meter — H1 emitteres
   men ikke konsumert; lavt prioritert).
+
+---
+
+## 7. Runde 2 (natt forts.) — cloud + sikkerhet
+
+**Cloud-subsystem (fikset):**
+
+| #   | Alvor     | Funn                                                                                                                                                  | Fiks                                                                                                |
+| --- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| C1  | Høy       | Backup tapt stille: kø-oppføring som krasjet midt i opplasting ble stående `Uploading`; `select_next` plukker bare `Pending` → ble aldri prøvd igjen. | `queue::reset_stale_uploading()` (enhetstestet) ved worker-oppstart requeuer avbrutte opplastinger. |
+| C2  | Medium    | Brukerens valgte Drive-mappe ble ignorert (`build_init_body(..,None)`) → alt i Drive-roten.                                                           | Worker slår opp `get_folder(service)` og sender `folder_id` til opplasting.                         |
+| C3  | Sikkerhet | OAuth token-feil la HELE serverresponsen i `last_error` (persistert + vist i UI).                                                                     | Kun HTTP-status i meldingen; full kropp → lokal debug-logg.                                         |
+
+**Sikkerhet — DOKUMENTERT, ikke endret blindt (krever webview-/rigg-test):**
+
+- `tauri.conf.json`: `csp: null`. Å legge på CSP er god defense-in-depth, MEN
+  verbatim-rendereren har inline `<script>` (api-shim + drag-region) og inline
+  styles, så en for streng `script-src 'self'` vil knuse UI-et. Anbefalt: test en
+  CSP som tillater `'unsafe-inline'` for style + flytt inline-script til ekstern
+  fil, deretter stram `script-src`.
+- `assetProtocol.scope: ["**"]` er bredt, MEN appen MÅ laste brukerens opptak/
+  editor-media via `asset://` fra vilkårlige lagringsmapper. En naiv innstramming
+  (`dist/*`) ville brutt avspilling/editor. Riktig fiks = dynamisk scope til
+  lagringsmappe + app-data; krever testing.
+
+**Editor (lav prioritet, dokumentert):** mastering skriver direkte med `-y` (ny
+fil, ikke-destruktivt bekreftet — strøm­brudd korrumperer kun en re-kjørbar
+utdata, ikke kilden); kapittel-tider forskyves ikke ved intro-jingle; export-
+ffmeta-temp ryddes best-effort. Ingen kildedata-tap.
