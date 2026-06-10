@@ -311,10 +311,17 @@ mod tests {
         .unwrap();
 
         let recovered = recover_session(&pool, &m).await;
-        assert_eq!(recovered, 1, "only the not-yet-recorded deliverable is added");
+        assert_eq!(
+            recovered, 1,
+            "only the not-yet-recorded deliverable is added"
+        );
 
         let rows = list_recordings(&pool).await.unwrap();
-        assert_eq!(rows.len(), 2, "no duplicate row for the already-recorded file");
+        assert_eq!(
+            rows.len(),
+            2,
+            "no duplicate row for the already-recorded file"
+        );
         let d0 = &m.deliverables[0].primary_path;
         assert_eq!(
             rows.iter().filter(|r| &r.file_path == d0).count(),
