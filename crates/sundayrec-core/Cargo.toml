@@ -41,3 +41,12 @@ regex = "1"
 # challenge derivation and the base64url-encoding used across the cloud module.
 sha2 = "0.10"
 base64 = "0.22"
+# Canonical cross-app wire contracts (Rust mirror of @sunday/contracts). The
+# StageManifest + MediaHandoff/deep-link shapes this crate produces/parses are
+# CANONICAL there; we converge onto them so they cannot silently drift from the
+# SundayStage producer / SundayEdit parser. Distributed by git tag (same
+# mechanism as `sunday-auth` in src-tauri) so the crate builds standalone — a
+# path dep would break a single-repo checkout. Pure serde, no Tauri/I/O, so it
+# is safe in this GUI-free core. For local platform co-dev, override with a
+# `[patch]` in .cargo/config.toml.
+sunday-contracts = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
