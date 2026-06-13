@@ -247,12 +247,34 @@ fn score_passage(text: &str, lang: Language) -> f64 {
 
     let cues: &[&str] = match lang {
         Language::Norwegian => &[
-            "gud", "jesus", "kristus", "nåde", "kjærlighet", "håp", "tro", "derfor", "husk",
-            "kall", "frelse", "ånd", "evig",
+            "gud",
+            "jesus",
+            "kristus",
+            "nåde",
+            "kjærlighet",
+            "håp",
+            "tro",
+            "derfor",
+            "husk",
+            "kall",
+            "frelse",
+            "ånd",
+            "evig",
         ],
         Language::English => &[
-            "god", "jesus", "christ", "grace", "love", "hope", "faith", "therefore", "remember",
-            "calling", "salvation", "spirit", "eternal",
+            "god",
+            "jesus",
+            "christ",
+            "grace",
+            "love",
+            "hope",
+            "faith",
+            "therefore",
+            "remember",
+            "calling",
+            "salvation",
+            "spirit",
+            "eternal",
         ],
     };
     for cue in cues {
@@ -277,7 +299,11 @@ fn score_passage(text: &str, lang: Language) -> f64 {
 /// Rank the transcript lines into 2–4 highlight passages. Pure. Each line is a
 /// candidate; the top-scoring, non-overlapping passages (kept in time order for
 /// the panel) are returned. Returns an empty vec when nothing clears the bar.
-pub fn rank_highlights(lines: &[TranscriptLine], ends: &[f64], lang: Language) -> Vec<SermonHighlight> {
+pub fn rank_highlights(
+    lines: &[TranscriptLine],
+    ends: &[f64],
+    lang: Language,
+) -> Vec<SermonHighlight> {
     let mut scored: Vec<SermonHighlight> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let score = score_passage(&line.text, lang);
@@ -579,12 +605,17 @@ mod tests {
         }
         let topics = detect_topic_shifts(&lines, TOPIC_PAUSE_SECONDS);
         assert!(topics.len() <= MAX_TOPIC_CHAPTERS, "got {}", topics.len());
-        assert!(topics.windows(2).all(|w| w[1].time - w[0].time >= TOPIC_MIN_GAP_SECONDS));
+        assert!(topics
+            .windows(2)
+            .all(|w| w[1].time - w[0].time >= TOPIC_MIN_GAP_SECONDS));
     }
 
     #[test]
     fn topic_title_tidies_and_ellipsizes() {
-        assert_eq!(topic_title("men la oss nå tenke på dette emnet"), "Men la oss nå tenke på…");
+        assert_eq!(
+            topic_title("men la oss nå tenke på dette emnet"),
+            "Men la oss nå tenke på…"
+        );
         assert_eq!(topic_title("   "), "");
     }
 
@@ -593,10 +624,16 @@ mod tests {
     #[test]
     fn rank_highlights_picks_quotable_passages_in_time_order() {
         let lines = vec![
-            line(5.0, "Amen."),                                       // too short → score 0
-            line(10.0, "Gud elsker deg uansett hva du har gjort, og hans nåde er nok for oss alle."),
-            line(60.0, "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter."),
-            line(120.0, "eh, altså, sånn, ja"),                       // filler, short → 0
+            line(5.0, "Amen."), // too short → score 0
+            line(
+                10.0,
+                "Gud elsker deg uansett hva du har gjort, og hans nåde er nok for oss alle.",
+            ),
+            line(
+                60.0,
+                "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter.",
+            ),
+            line(120.0, "eh, altså, sånn, ja"), // filler, short → 0
         ];
         let ends = vec![6.0, 18.0, 70.0, 122.0];
         let hl = rank_highlights(&lines, &ends, Language::Norwegian);
@@ -622,8 +659,14 @@ mod tests {
     #[test]
     fn extractive_summary_stitches_top_sentences() {
         let lines = vec![
-            line(10.0, "Gud elsker deg uansett hva du har gjort, og hans nåde er nok for oss alle."),
-            line(60.0, "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter."),
+            line(
+                10.0,
+                "Gud elsker deg uansett hva du har gjort, og hans nåde er nok for oss alle.",
+            ),
+            line(
+                60.0,
+                "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter.",
+            ),
         ];
         let ends = vec![18.0, 70.0];
         let s = extractive_summary(&lines, &ends, Language::Norwegian);
@@ -641,10 +684,19 @@ mod tests {
     #[test]
     fn extractive_title_prefers_scripture_reference() {
         let chapters = vec![
-            Chapter { time: 200.0, title: "Men la oss nå…".into() },
-            Chapter { time: 10.0, title: "Johannes 3:16".into() },
+            Chapter {
+                time: 200.0,
+                title: "Men la oss nå…".into(),
+            },
+            Chapter {
+                time: 10.0,
+                title: "Johannes 3:16".into(),
+            },
         ];
-        assert_eq!(extractive_title(&chapters, "noe oppsummering"), "Johannes 3:16");
+        assert_eq!(
+            extractive_title(&chapters, "noe oppsummering"),
+            "Johannes 3:16"
+        );
     }
 
     #[test]
@@ -662,7 +714,10 @@ mod tests {
         assert_eq!(req["model"], "claude-opus-4-8");
         // Adaptive thinking (never enabled+budget_tokens on Opus 4.8).
         assert_eq!(req["thinking"]["type"], "adaptive");
-        assert!(req.get("temperature").is_none(), "no sampling params on Opus 4.8");
+        assert!(
+            req.get("temperature").is_none(),
+            "no sampling params on Opus 4.8"
+        );
         assert!(req.get("budget_tokens").is_none());
         // Strict JSON schema with additionalProperties:false.
         let schema = &req["output_config"]["format"]["schema"];
@@ -732,8 +787,14 @@ mod tests {
     #[test]
     fn build_local_companion_is_offline_and_local_sourced() {
         let lines = vec![
-            line(10.0, "La oss lese fra Johannes 3:16 i kveld, der Gud viser sin store kjærlighet."),
-            line(200.0, "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter."),
+            line(
+                10.0,
+                "La oss lese fra Johannes 3:16 i kveld, der Gud viser sin store kjærlighet.",
+            ),
+            line(
+                200.0,
+                "La oss huske at håpet i Kristus aldri svikter, selv i de mørkeste netter.",
+            ),
         ];
         let ends = vec![20.0, 210.0];
         let c = build_local_companion(&lines, &ends, "no");
@@ -772,7 +833,10 @@ mod tests {
 
     #[test]
     fn companion_round_trips_camelcase_json() {
-        let lines = vec![line(10.0, "Gud elsker deg uansett hva du har gjort i livet ditt.")];
+        let lines = vec![line(
+            10.0,
+            "Gud elsker deg uansett hva du har gjort i livet ditt.",
+        )];
         let ends = vec![20.0];
         let c = build_local_companion(&lines, &ends, "no");
         let json = serde_json::to_string(&c).unwrap();
