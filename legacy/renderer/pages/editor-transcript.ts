@@ -18,6 +18,12 @@ import type { TranscriptData, TranscriptSegment, RecordingMetadata } from '../..
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
+import {
+  setupCompanionPanel,
+  clearCompanion,
+  renderCompanionControls,
+  setCompanionSeek,
+} from './editor-companion'
 
 interface ModelStatus {
   id:             string
@@ -52,6 +58,10 @@ function isVideoPath(p: string): boolean {
 
 export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   onSeekCallback = onSeek
+  // R8: wire the AI sermon companion. It reads the current transcript through a
+  // getter (no module-coupling) and seeks via the same callback as the segments.
+  setupCompanionPanel(() => currentTranscript)
+  setCompanionSeek(onSeek)
   $('btn-transcribe')?.addEventListener('click', openModal)
   $('btn-transcribe-cancel')?.addEventListener('click', closeModal)
   $('btn-transcribe-start')?.addEventListener('click', startTranscription)
@@ -160,6 +170,7 @@ export async function loadTranscriptForFile(filePath: string): Promise<void> {
 export function clearTranscript(): void {
   currentFilePath = null
   currentTranscript = null
+  clearCompanion()
   renderPanel()
 }
 
@@ -212,6 +223,9 @@ function renderPanel(): void {
     if (exportBtn)    exportBtn.style.display    = 'none'
     if (exportVttBtn) exportVttBtn.style.display = 'none'
     if (deleteBtn)    deleteBtn.style.display    = 'none'
+    const companionSection = $('editor-companion-section')
+    if (companionSection) companionSection.style.display = 'none'
+    clearCompanion()
     return
   }
 
@@ -253,6 +267,14 @@ function renderPanel(): void {
   if (exportBtn)    exportBtn.style.display    = ''
   if (exportVttBtn) exportVttBtn.style.display = ''
   if (deleteBtn)    deleteBtn.style.display    = ''
+
+  // R8: reveal the companion section and (re)render its header controls. We
+  // reset its body so a previous file's companion doesn't linger; the user
+  // clicks "Lag prekenhjelp" to build for this transcript.
+  const companionSection = $('editor-companion-section')
+  if (companionSection) companionSection.style.display = ''
+  clearCompanion()
+  void renderCompanionControls()
 }
 
 function formatTime(sec: number): string {

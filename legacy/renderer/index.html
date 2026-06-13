@@ -1909,6 +1909,21 @@
           <label class="toggle"><input type="checkbox" id="opt-integrations-stage" /><span class="toggle-track"></span></label>
         </div>
       </div>
+
+      <!-- R8: optional AI sermon-companion summary key. Independent of the master
+           integrations toggle — chapters/highlights always work on-device; this
+           only upgrades the summary/title prose from a language model. The key is
+           stored in the OS keychain only, never in settings or a bundle. -->
+      <div class="card" id="integrations-companion-card">
+        <div class="card-title" data-i18n="companion.settingsTitle">Prekenhjelp — AI-oppsummering (valgfritt)</div>
+        <p class="card-desc" data-i18n="companion.settingsDesc">Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.</p>
+        <div class="form-row" id="integrations-companion-key-row">
+          <input type="password" class="form-input" id="integration-companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
+          <button class="btn-ghost btn-sm" id="btn-companion-apikey-save" data-i18n="companion.keySave">Lagre</button>
+          <button class="btn-ghost btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
+        </div>
+        <div class="form-hint" id="integration-companion-apikey-status"></div>
+      </div>
     </div>
 
   </section>
@@ -2323,6 +2338,19 @@
         <div id="editor-transcript-body" class="editor-transcript-body">
           <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen — tar 5-15 minutter avhengig av lengde og valgt modell.</div>
         </div>
+      </div>
+
+      <!-- R8 AI sermon companion: chapters + highlights + Norwegian summary from
+           the transcript. Hidden until a transcript exists. The optional summary
+           uses an Anthropic seam when a key is set; otherwise a local fallback. -->
+      <div id="editor-companion-section" class="editor-companion-section" style="display:none">
+        <div class="editor-transcript-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M10 2l1.9 4.6L17 7.2l-3.6 3.1L14.5 16 10 13.3 5.5 16l1.1-5.7L3 7.2l5.1-.6L10 2z"/></svg>
+          <span class="editor-transcript-title" data-i18n="companion.title">Prekenhjelp</span>
+          <span style="flex:1"></span>
+          <span id="editor-companion-header-controls" class="editor-companion-header-controls"></span>
+        </div>
+        <div id="editor-companion-body" class="editor-companion-body"></div>
       </div>
 
       <!-- Transcribe modal: choose model + language -->

@@ -518,6 +518,37 @@ export interface TranscriptData {
   segments:  TranscriptSegment[]
 }
 
+/** A ranked, quotable highlight passage from the AI sermon companion (R8).
+ *  Times are seconds on the recording timeline; `score` is the heuristic rank. */
+export interface SermonHighlight {
+  time:  number
+  end:   number
+  text:  string
+  score: number
+}
+
+/** One companion chapter marker (deterministic on-device detection). */
+export interface CompanionChapter {
+  time:  number
+  title: string
+}
+
+/** Where the companion summary/title came from. `llm` = the optional Anthropic
+ *  seam produced + validated it; `local` = fully-local extractive fallback. */
+export type SummarySource = 'llm' | 'local'
+
+/** Result of the AI sermon companion: deterministic chapters + highlights, plus
+ *  a Norwegian summary/title that is LLM-suggested when a key is configured,
+ *  else a local extractive fallback. Mirrors the Rust `SermonCompanion`. */
+export interface SermonCompanion {
+  title:         string
+  summary:       string
+  summarySource: SummarySource
+  chapters:      CompanionChapter[]
+  highlights:    SermonHighlight[]
+  language:      string
+}
+
 export type CloudServiceId = 'google-drive' | 'dropbox' | 'onedrive'
 
 export interface CloudServiceSettings {

@@ -1,6 +1,6 @@
 import { loadLocale, setApplyHook } from './i18n'
 import { updateSettings } from './state'
-import type { Settings, IntegrationSettings, ServiceLink } from '../types'
+import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
@@ -230,6 +230,15 @@ declare global {
       songSubmitUsage:         (recordingPath: string) => Promise<{ ok: boolean; submitted?: number; errors?: Array<{ key: string; error: string }>; error?: string; hint?: string }>
       planFetchServices:       (fromIso?: string) => Promise<{ ok: boolean; services?: unknown[]; error?: string }>
       planUpdateService:       (serviceId: string, wasStreamed?: boolean, recordingUrl?: string) => Promise<{ ok: boolean; error?: string }>
+
+      // R8 AI sermon companion (chapters + highlights + Norwegian summary).
+      // companionBuild returns null on any failure; the optional LLM summary is
+      // keychain-only (companionSetLlmKey) and degrades to a local extractive
+      // summary when no key is configured.
+      companionBuild:          (transcript: unknown, useLlm?: boolean) => Promise<SermonCompanion | null>
+      companionLlmConfigured:  () => Promise<boolean>
+      companionSetLlmKey:      (key: string) => Promise<boolean>
+      companionClearLlmKey:    () => Promise<boolean>
     }
     appVersion?: string
   }

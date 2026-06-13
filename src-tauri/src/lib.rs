@@ -367,6 +367,15 @@ pub fn run() {
             commands::whisper::whisper_delete_model,
             commands::whisper::whisper_transcribe,
             commands::whisper::whisper_export_transcript,
+            // R8 AI sermon companion — chapters/highlights/summary from a
+            // transcript. Pure detectors in sundayrec-core; the OPTIONAL Anthropic
+            // summary seam is NETWORK-UNVERIFIED and falls back to a fully-local
+            // extractive summary when no key is configured.
+            commands::companion::companion_build,
+            commands::companion::companion_llm_configured,
+            commands::companion::companion_llm_status,
+            commands::companion::companion_set_llm_key,
+            commands::companion::companion_clear_llm_key,
             // PU-6 episode prep + review queue + Stage import.
             commands::review::prep_build_episode,
             commands::review::review_queue_list,
