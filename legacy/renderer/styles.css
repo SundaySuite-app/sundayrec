@@ -1905,6 +1905,60 @@ body.platform-win32  #wake-instructions-win { display: block; }
 }
 .editor-transcript-segment-text { flex: 1; color: var(--text); }
 
+/* R8 AI sermon companion */
+.editor-companion-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--rsm);
+  padding: 12px 14px;
+  margin: 8px 0;
+}
+.editor-companion-header-controls { display: flex; align-items: center; gap: 8px; }
+.editor-companion-mode {
+  font-size: 11px; color: var(--text3);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 8px;
+}
+.editor-companion-body { font-size: 13px; color: var(--text2); line-height: 1.5; }
+.editor-companion-status {
+  padding: 10px; background: var(--surface2); border-radius: var(--rsm);
+  font-size: 12px; color: var(--text3); text-align: center;
+}
+.editor-companion-status--muted { color: var(--text3); }
+.editor-companion-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.editor-companion-suggested-title { font-size: 14px; color: var(--text); }
+.editor-companion-badge {
+  font-size: 10px; color: var(--text3);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 1px 7px; white-space: nowrap;
+}
+.editor-companion-badge--ai {
+  color: var(--accent); border-color: var(--accent);
+}
+.editor-companion-summary {
+  margin: 8px 0; color: var(--text2);
+  white-space: pre-wrap;
+}
+.editor-companion-actions {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 8px 0;
+}
+.editor-companion-action-hint { font-size: 11px; color: var(--text3); }
+.editor-companion-highlights-title {
+  font-size: 11px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: .04em; margin: 10px 0 4px;
+}
+.editor-companion-highlights { display: flex; flex-direction: column; gap: 6px; }
+.editor-companion-highlight {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 6px 8px; background: var(--surface2); border-radius: 4px;
+  border-left: 2px solid var(--accent);
+}
+.editor-companion-hl-time {
+  flex-shrink: 0; font-variant-numeric: tabular-nums; min-width: 46px;
+}
+.editor-companion-hl-text { flex: 1; color: var(--text); }
+
 /* Transcribe modal */
 .transcribe-modal h2 { margin: 0 0 6px; }
 .modal-desc { font-size: 13px; color: var(--text2); margin-bottom: 16px; line-height: 1.5; }

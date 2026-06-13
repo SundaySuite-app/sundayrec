@@ -33,6 +33,10 @@ pub enum SecretProvider {
     /// SundaySong / SundayPlan API key (bearer). Encrypted in the keychain, never
     /// in the integration-settings blob — mirrors the Electron `setSongApiKey`.
     SongApiKey,
+    /// Anthropic API key for the OPTIONAL AI sermon-companion summary seam (R8).
+    /// Stored in the OS keychain only — NEVER in settings, NEVER in a bundle. When
+    /// unset the companion falls back to the fully-local extractive summary.
+    CompanionLlmKey,
 }
 
 impl SecretProvider {
@@ -45,11 +49,12 @@ impl SecretProvider {
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
             SecretProvider::SongApiKey => "integrations.song_api_key",
+            SecretProvider::CompanionLlmKey => "companion.llm_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 6] {
+    pub fn all() -> [SecretProvider; 7] {
         [
             SecretProvider::GoogleDrive,
             SecretProvider::YouTube,
@@ -57,6 +62,7 @@ impl SecretProvider {
             SecretProvider::StreamKey,
             SecretProvider::SmtpPassword,
             SecretProvider::SongApiKey,
+            SecretProvider::CompanionLlmKey,
         ]
     }
 }

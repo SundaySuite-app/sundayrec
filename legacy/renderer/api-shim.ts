@@ -993,6 +993,26 @@ const api: Record<string, unknown> = {
   // recording timeline. Empty array on any failure (no transcript = no chapters).
   editorDetectChapters: async (lines: unknown, lang?: string) =>
     call("editor_detect_chapters", { lines: lines ?? [], lang: lang ?? null }, []),
+
+  // R8 AI sermon companion — chapters + highlights + Norwegian summary from a
+  // finished transcript. Deterministic detectors run on-device; the summary
+  // uses the OPTIONAL Anthropic seam when a key is configured, else a local
+  // extractive fallback (summarySource tells which). Returns null on any failure
+  // so the panel shows a calm "ikke tilgjengelig" state rather than throwing.
+  companionBuild: async (transcript: unknown, useLlm?: boolean) =>
+    call(
+      "companion_build",
+      { transcript, useLlm: useLlm ?? null },
+      null,
+    ),
+  // Whether the OPTIONAL LLM summary is wired (keychain or ANTHROPIC_API_KEY).
+  companionLlmConfigured: async () =>
+    call("companion_llm_configured", undefined, false),
+  // Save/clear the Anthropic key in the OS keychain (never settings/bundle).
+  companionSetLlmKey: async (key: string) =>
+    call("companion_set_llm_key", { key }, false).then(() => true),
+  companionClearLlmKey: async () =>
+    call("companion_clear_llm_key", undefined, false).then(() => true),
   editorSetVideoPath: async (fp: string) =>
     call("editor_load_recording", { inputPath: fp }, { ok: false }),
   // editor_peaks → { peaks, sampleRate }; old too-large path wants { data,

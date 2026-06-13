@@ -52,6 +52,7 @@ pub mod capture;
 pub mod chapters;
 pub mod church_calendar;
 pub mod cloud;
+pub mod companion;
 pub mod device_enum;
 pub mod device_match;
 pub mod diagnostics;

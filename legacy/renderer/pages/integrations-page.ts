@@ -89,6 +89,38 @@ export async function setupIntegrationsPage(): Promise<void> {
     if (statusEl) statusEl.textContent = '✓ API-nøkkel lagret (kryptert)'
   })
 
+  // R8: AI sermon-companion key (independent of the master integrations toggle —
+  // it only upgrades the summary prose; chapters/highlights always run locally).
+  // Stored keychain-only via the dedicated companion IPC, never in settings.
+  try {
+    const companionStatus = $('integration-companion-apikey-status')
+    if (companionStatus) {
+      const configured = await window.api.companionLlmConfigured()
+      companionStatus.textContent = configured
+        ? '✓ API-nøkkel lagret (nøkkelring)'
+        : 'Ingen nøkkel — lokal oppsummering brukes'
+    }
+  } catch { /* leave status blank */ }
+
+  $('btn-companion-apikey-save')?.addEventListener('click', async () => {
+    const inp = $('integration-companion-apikey') as HTMLInputElement | null
+    const statusEl = $('integration-companion-apikey-status')
+    if (!inp) return
+    const key = inp.value.trim()
+    if (!key) return
+    await window.api.companionSetLlmKey(key)
+    inp.value = ''
+    if (statusEl) statusEl.textContent = '✓ API-nøkkel lagret (nøkkelring)'
+  })
+
+  $('btn-companion-apikey-clear')?.addEventListener('click', async () => {
+    const inp = $('integration-companion-apikey') as HTMLInputElement | null
+    const statusEl = $('integration-companion-apikey-status')
+    await window.api.companionClearLlmKey()
+    if (inp) inp.value = ''
+    if (statusEl) statusEl.textContent = 'Ingen nøkkel — lokal oppsummering brukes'
+  })
+
   // Connection save (church_id + Song API URL)
   $('btn-integrations-connection-save')?.addEventListener('click', async () => {
     const churchInput  = $('integration-church-id')    as HTMLInputElement | null
