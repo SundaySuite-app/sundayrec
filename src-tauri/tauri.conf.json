@@ -62,6 +62,11 @@
       "endpoints": [
         "https://github.com/richardfossland/sundayrec/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["sundayrec"]
+      }
     }
   }
 }
