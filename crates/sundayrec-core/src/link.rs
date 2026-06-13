@@ -9,8 +9,19 @@
 //! The grammar mirrors SundayEdit's receiving `deeplink.rs` and the platform
 //! `sunday-contracts::deeplink::MediaHandoff` contract: `application/
 //! x-www-form-urlencoded` component encoding, but spaces as `%20` (never `+`)
-//! so they survive the receiver's `+`→space decode. Once the `sunday-contracts`
-//! crate is published (git tag), this should converge onto it.
+//! so they survive the receiver's `+`→space decode.
+//!
+//! CONVERGED onto `sunday-contracts` (git tag). The percent-codec
+//! (`encode_component`/`decode_component`) is now re-exported from the canonical
+//! crate rather than re-implemented here, and the SundayEdit/Studio import-link
+//! PRODUCER delegates to the canonical [`build_handoff_url`] via a
+//! [`MediaHandoff`]. The local [`DeepLinkAction`] enum is NOT replaced: it is a
+//! SundayRec-specific superset with OAuth-callback / captions hand-back / unknown
+//! variants the canonical (import-only) contract does not model. Its `Import`
+//! variant converges via a `From<DeepLinkAction>`→`Option<MediaHandoff>` bridge
+//! plus a round-trip parity test, so the import wire cannot drift from canonical.
+
+use sunday_contracts::{build_handoff_url, decode_component, MediaHandoff, ACTION_IMPORT};
 
 /// The scheme SundayEdit registers for inbound import links.
 pub const SUNDAYEDIT_SCHEME: &str = "sundayedit";
@@ -18,41 +29,26 @@ pub const SUNDAYEDIT_SCHEME: &str = "sundayedit";
 pub const SUNDAYSTUDIO_SCHEME: &str = "sundaystudio";
 
 /// Build a `<scheme>://import?path=<enc>[&returnTo=<enc>]` deep link to hand a
-/// media file to a sister app.
+/// media file to a sister app. Delegates to the canonical
+/// [`build_handoff_url`] so the wire stays byte-identical to what the platform
+/// (and SundayEdit's parser) expect. SundayRec only fills the `path` +
+/// `returnTo` fields of the richer [`MediaHandoff`]; the optional
+/// language/context/glossary/ids are left absent (the receiver treats them as
+/// not-supplied), which reproduces the exact `path[&returnTo]` URL the old
+/// hand-rolled builder emitted.
 pub fn build_import_url(scheme: &str, path: &str, return_to: Option<&str>) -> String {
-    let mut url = format!("{scheme}://import?path={}", encode_component(path));
-    if let Some(rt) = return_to.filter(|s| !s.is_empty()) {
-        url.push_str("&returnTo=");
-        url.push_str(&encode_component(rt));
-    }
-    url
-}
-
-/// Percent-encode a URL query-component value: RFC 3986 unreserved chars pass
-/// through, everything else (incl. `/`, spaces, non-ASCII) becomes `%XX`.
-/// Spaces always encode as `%20`, never `+`.
-fn encode_component(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for &b in s.as_bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            _ => {
-                out.push('%');
-                out.push(hex_digit(b >> 4));
-                out.push(hex_digit(b & 0x0f));
-            }
-        }
-    }
-    out
-}
-
-fn hex_digit(n: u8) -> char {
-    match n {
-        0..=9 => (b'0' + n) as char,
-        _ => (b'A' + (n - 10)) as char,
-    }
+    let handoff = MediaHandoff {
+        action: ACTION_IMPORT.to_string(),
+        path: path.to_string(),
+        media_kind: None,
+        language: None,
+        context: None,
+        glossary: Vec::new(),
+        service_id: None,
+        church_id: None,
+        return_to: return_to.filter(|s| !s.is_empty()).map(str::to_string),
+    };
+    build_handoff_url(scheme, &handoff)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,8 +133,10 @@ fn pick(pairs: &[(String, String)], key: &str) -> Option<String> {
 }
 
 /// Percent-decode an `application/x-www-form-urlencoded` query string into key/
-/// value pairs. `+` decodes to space; `%XX` to its byte; UTF-8 is decoded
-/// lossily. Pairs with an empty key are dropped (junk like a bare `?`).
+/// value pairs. The per-component decode (`+`→space, `%XX`→byte, lossy UTF-8)
+/// is the canonical [`decode_component`] from `sunday-contracts`, so SundayRec's
+/// inbound parser and the platform's outbound builder share one codec. Pairs
+/// with an empty key are dropped (junk like a bare `?`).
 fn decode_query_pairs(query: &str) -> Vec<(String, String)> {
     query
         .split('&')
@@ -157,37 +155,29 @@ fn decode_query_pairs(query: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Decode one URL component: `+`→space, `%XX`→byte, then UTF-8 (lossy).
-fn decode_component(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' if i + 2 < bytes.len() => {
-                let hi = hex_val(bytes[i + 1]);
-                let lo = hex_val(bytes[i + 2]);
-                if let (Some(hi), Some(lo)) = (hi, lo) {
-                    out.push((hi << 4) | lo);
-                    i += 3;
-                    continue;
-                }
-                out.push(b'%');
-            }
-            b => out.push(b),
+/// Bridge SundayRec's import-flow deep link onto the canonical
+/// [`MediaHandoff`]. Only [`DeepLinkAction::Import`] models a media handoff; the
+/// OAuth-callback / captions hand-back / unknown variants are SundayRec-specific
+/// and have no canonical counterpart, so they map to `None`. SundayRec carries
+/// only `path` + `return_to` on the import flow today; the richer
+/// language/context/glossary/ids fields are left absent. This keeps the import
+/// wire pinned to the canonical contract (a parity test round-trips it).
+impl From<&DeepLinkAction> for Option<MediaHandoff> {
+    fn from(action: &DeepLinkAction) -> Self {
+        match action {
+            DeepLinkAction::Import { path, return_to } => Some(MediaHandoff {
+                action: ACTION_IMPORT.to_string(),
+                path: path.clone(),
+                media_kind: None,
+                language: None,
+                context: None,
+                glossary: Vec::new(),
+                service_id: None,
+                church_id: None,
+                return_to: return_to.clone(),
+            }),
+            _ => None,
         }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
     }
 }
 
@@ -353,5 +343,64 @@ mod tests {
                 return_to: None,
             }
         );
+    }
+
+    // ── canonical MediaHandoff parity ───────────────────────────────────────
+
+    #[test]
+    fn import_link_parses_under_the_canonical_handoff_parser() {
+        // A link SundayRec PRODUCES must parse identically under the canonical
+        // `sunday-contracts` parser the receiving sister app uses. This is the
+        // anti-drift guard: if our producer or the canonical codec diverged,
+        // the path/returnTo would not survive the canonical decode.
+        use sunday_contracts::parse_handoff_url;
+        let url = build_import_url(
+            SUNDAYEDIT_SCHEME,
+            "/Users/ola/Bønn møte.mp4",
+            Some("sundayrec"),
+        );
+        let h = parse_handoff_url(&url, SUNDAYEDIT_SCHEME).expect("canonical parse");
+        assert_eq!(h.path, "/Users/ola/Bønn møte.mp4");
+        assert_eq!(h.return_to.as_deref(), Some("sundayrec"));
+        assert_eq!(h.action, ACTION_IMPORT);
+    }
+
+    #[test]
+    fn import_action_bridges_to_a_media_handoff_and_others_do_not() {
+        let import = DeepLinkAction::Import {
+            path: "/a b.mp4".into(),
+            return_to: Some("sundayrec".into()),
+        };
+        let h: Option<MediaHandoff> = (&import).into();
+        let h = h.expect("import bridges to a handoff");
+        assert_eq!(h.path, "/a b.mp4");
+        assert_eq!(h.return_to.as_deref(), Some("sundayrec"));
+
+        // The SundayRec-specific variants have no canonical handoff.
+        for action in [
+            DeepLinkAction::OAuthCallback { query: vec![] },
+            DeepLinkAction::Captions {
+                path: "/a.srt".into(),
+                recording: None,
+            },
+            DeepLinkAction::Unknown { host: "wat".into() },
+        ] {
+            let bridged: Option<MediaHandoff> = (&action).into();
+            assert!(bridged.is_none(), "{action:?} must not bridge");
+        }
+    }
+
+    #[test]
+    fn import_round_trips_rec_producer_to_canonical_to_rec_parser() {
+        // Produce with our builder → bridge a parsed import back to a handoff →
+        // the canonical builder reproduces an equivalent URL our own parser
+        // accepts. Pins the full import wire to the canonical contract.
+        use sunday_contracts::build_handoff_url;
+        let original = build_import_url(SUNDAYREC_SCHEME, "/x/My Talk.mov", Some("edit"));
+        let action = parse_deep_link(&original).unwrap();
+        let handoff: Option<MediaHandoff> = (&action).into();
+        let rebuilt = build_handoff_url(SUNDAYREC_SCHEME, &handoff.unwrap());
+        assert_eq!(rebuilt, original);
+        assert_eq!(parse_deep_link(&rebuilt).unwrap(), action);
     }
 }

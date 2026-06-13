@@ -4846,6 +4846,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sunday-contracts"
+version = "0.4.0"
+source = "git+https://github.com/richardfossland/sunday-platform.git?tag=v0.4.1#b6fab75d9eed17a2454dfdf86f30f550f2e72732"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "sundayrec"
 version = "0.4.0"
 dependencies = [
@@ -4901,6 +4909,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sunday-contracts",
  "thiserror 2.0.18",
  "ts-rs",
 ]

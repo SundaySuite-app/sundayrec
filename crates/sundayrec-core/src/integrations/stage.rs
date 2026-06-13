@@ -8,122 +8,32 @@
 //! lives here; the `applyStageManifest` fs writes (`.meta.json` chapters +
 //! `.service.json` link) are the `src-tauri` shell's job.
 
-use serde::{Deserialize, Serialize};
-
 use super::{ChapterMarker, ServiceLink, ServiceLinkSource, SongUsage};
 
-/// Song identifiers carried on a manifest item. FIELD-IDENTICAL mirror of the
-/// canonical `StageManifestSong` (sunday-platform `sunday-contracts` v0.4.0,
-/// crates/sunday-contracts/src/stage.rs); converge onto the published crate
-/// once apps can depend on it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct StageManifestSong {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tono_work_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ccli_song_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sundaysong_id: Option<String>,
-}
-
-/// One cue in the manifest. `at_ms`/`end_ms` are absolute unix ms.
-/// FIELD-IDENTICAL mirror of the canonical `StageManifestItem`
-/// (sunday-contracts v0.4.0, stage.rs).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageManifestItem {
-    pub at_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_ms: Option<i64>,
-    pub kind: String,
-    pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_item_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub song: Option<StageManifestSong>,
-}
-
-/// A Stage cue log. FIELD-IDENTICAL mirror of the canonical `StageManifest`
-/// (sunday-contracts v0.4.0, stage.rs): camelCase wire keys, no
-/// `schema_version` envelope, absent options omitted (never `null`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StageManifest {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub service_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub church_id: Option<String>,
-    pub started_at_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ended_at_ms: Option<i64>,
-    pub items: Vec<StageManifestItem>,
-}
+// CONVERGED onto the canonical wire contract. The Stage manifest shape lived in
+// THREE places (Stage's `sundayrec_bridge/manifest.rs` producer, this parser,
+// and the canonical `sunday-contracts::stage`); the canonical crate is the
+// single source of truth, so we re-export its types here instead of keeping a
+// hand-maintained mirror. The local alignment/setlist logic below operates on
+// these re-exported types unchanged. A round-trip parity test in this module's
+// `tests` fails the build if the canonical shape ever drifts from what this
+// app's chapter/setlist mapping relies on.
+//
+// The canonical structs carry `#[serde(rename_all = "camelCase")]` directly, so
+// they deserialize the Stage wire JSON without the hand-written shim the old
+// port needed; `parse_stage_manifest` now just calls `serde_json` on them.
+pub use sunday_contracts::{StageManifest, StageManifestItem, StageManifestSong};
 
 /// Parse + minimally validate a manifest (must have `startedAtMs` + an `items`
 /// array). Returns `None` on bad input. Ports `parseStageManifest`. The shell
 /// passes the JSON it read from the manifest file. The wire keys are camelCase
-/// (Stage emits them so), accepted via serde rename on parse.
+/// (Stage emits them so); the canonical [`StageManifest`] deserializes them
+/// directly. `started_at_ms` and `items` are non-optional on the canonical
+/// struct, so serde already rejects a manifest missing either — preserving the
+/// "must have startedAtMs + items" contract the Electron `parseStageManifest`
+/// enforced.
 pub fn parse_stage_manifest(text: &str) -> Option<StageManifest> {
-    // The wire JSON is camelCase; deserialize through a shim so the Rust struct
-    // can stay snake_case without sprinkling rename attrs on every field.
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Shim {
-        source: Option<String>,
-        service_id: Option<String>,
-        church_id: Option<String>,
-        started_at_ms: Option<i64>,
-        ended_at_ms: Option<i64>,
-        #[serde(default)]
-        items: Option<Vec<ShimItem>>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ShimItem {
-        at_ms: i64,
-        end_ms: Option<i64>,
-        kind: String,
-        label: String,
-        service_item_id: Option<String>,
-        song: Option<ShimSong>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct ShimSong {
-        title: Option<String>,
-        tono_work_id: Option<String>,
-        ccli_song_id: Option<String>,
-        sundaysong_id: Option<String>,
-    }
-
-    let shim: Shim = serde_json::from_str(text).ok()?;
-    let started_at_ms = shim.started_at_ms?;
-    let items = shim.items?;
-    Some(StageManifest {
-        source: shim.source,
-        service_id: shim.service_id,
-        church_id: shim.church_id,
-        started_at_ms,
-        ended_at_ms: shim.ended_at_ms,
-        items: items
-            .into_iter()
-            .map(|i| StageManifestItem {
-                at_ms: i.at_ms,
-                end_ms: i.end_ms,
-                kind: i.kind,
-                label: i.label,
-                service_item_id: i.service_item_id,
-                song: i.song.map(|s| StageManifestSong {
-                    title: s.title,
-                    tono_work_id: s.tono_work_id,
-                    ccli_song_id: s.ccli_song_id,
-                    sundaysong_id: s.sundaysong_id,
-                }),
-            })
-            .collect(),
-    })
+    serde_json::from_str(text).ok()
 }
 
 /// Best chapter title: a song's clean title beats the cue label. Ports
@@ -351,5 +261,57 @@ mod tests {
         let json = serde_json::to_string(&link).unwrap();
         assert!(json.contains("\"wasStreamed\":true"));
         assert!(json.contains("\"linkedAt\":555"));
+    }
+
+    /// PARITY GUARD against the canonical `sunday-contracts::StageManifest`.
+    /// Now that this module re-exports the canonical types, a literal field
+    /// drift can't happen — but the wire-shape contract this app relies on
+    /// (camelCase keys, absent options omitted not `null`, the exact field set
+    /// our chapter/setlist mapping reads) is asserted here so an upstream change
+    /// to the canonical struct that would break our import flow fails the build.
+    #[test]
+    fn canonical_manifest_round_trips_camel_case_wire() {
+        let m = StageManifest {
+            source: Some("stage".into()),
+            service_id: Some("svc1".into()),
+            church_id: Some("ch1".into()),
+            started_at_ms: 1_000_000,
+            ended_at_ms: Some(1_300_000),
+            items: vec![StageManifestItem {
+                at_ms: 1_060_000,
+                end_ms: Some(1_180_000),
+                kind: "song".into(),
+                label: "Amazing Grace — Vers 1".into(),
+                service_item_id: Some("i1".into()),
+                song: Some(StageManifestSong {
+                    title: Some("Amazing Grace".into()),
+                    tono_work_id: None,
+                    ccli_song_id: Some("22025".into()),
+                    sundaysong_id: None,
+                }),
+            }],
+        };
+
+        // Wire keys are camelCase; absent options are omitted, never `null`.
+        let v = serde_json::to_value(&m).unwrap();
+        assert!(v.get("startedAtMs").is_some());
+        assert!(v.get("serviceId").is_some());
+        assert!(v.get("endedAtMs").is_some());
+        assert!(v.get("started_at_ms").is_none());
+        let item0 = &v["items"][0];
+        assert!(item0.get("atMs").is_some());
+        assert!(item0.get("serviceItemId").is_some());
+        assert!(item0["song"].get("ccliSongId").is_some());
+        // `tonoWorkId`/`sundaysongId` were None → omitted, not null.
+        assert!(item0["song"].get("tonoWorkId").is_none());
+        let serialized = serde_json::to_string(&m).unwrap();
+        assert!(
+            !serialized.contains("null"),
+            "absent options must be omitted: {serialized}"
+        );
+
+        // Our parser reads the canonical serialization back identically.
+        let back = parse_stage_manifest(&serialized).expect("re-parse");
+        assert_eq!(back, m);
     }
 }
