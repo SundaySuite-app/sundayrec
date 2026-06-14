@@ -1036,7 +1036,7 @@ async function loadDiskSpace(): Promise<void> {
   } else if (fmt === 'flac') {
     kbps = settings.channels === 'stereo' ? 600 : 350
   } else {
-    kbps = parseInt(String(settings.bitrate ?? 192))
+    kbps = parseInt(String(settings.bitrate ?? 256))
   }
   const hours  = Math.floor(disk.freeBytes / (kbps * 125 * 3600))
   const recEst = fmtStorageHours(hours)
@@ -1219,7 +1219,7 @@ export async function loadHomeInfoStrip(): Promise<void> {
 
   const fmt     = (settings.format ?? 'mp3').toUpperCase()
   const hasBr   = settings.format !== 'flac' && settings.format !== 'wav'
-  const br      = hasBr ? `${settings.bitrate ?? 192}k` : ''
+  const br      = hasBr ? `${settings.bitrate ?? 256}k` : ''
   const ch      = settings.channels === 'stereo' ? t('audio.stereo', 'Stereo') : t('audio.monoL', 'Mono')
   const srHz    = parseInt(String(settings.sampleRate ?? 44100))
   const srLabel = `${(srHz / 1000).toFixed(srHz % 1000 === 0 ? 0 : 1)} kHz`

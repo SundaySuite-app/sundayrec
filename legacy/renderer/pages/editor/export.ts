@@ -474,7 +474,7 @@ export async function runExport(): Promise<void> {
 
   const fmt = (document.querySelector<HTMLElement>('#export-fmt-section .export-fmt-btn.active')?.dataset.fmt ?? 'mp3') as 'mp3'|'wav'|'flac'|'aac'
   const dest = document.querySelector<HTMLElement>('.export-dest-btn.active')?.dataset.dest ?? 'same'
-  const bitrate   = parseInt((($('export-bitrate')    as HTMLSelectElement)?.value  ?? '192'))
+  const bitrate   = parseInt((($('export-bitrate')    as HTMLSelectElement)?.value  ?? '256'))
   const bitDepth  = parseInt((($('export-bitdepth')   as HTMLSelectElement)?.value  ?? '16')) as 16|24
 
   const mode: 'new' | 'replace' | 'folder' =

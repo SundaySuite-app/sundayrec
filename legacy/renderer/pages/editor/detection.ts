@@ -100,18 +100,29 @@ export function renderAnalyzePanel(): void {
   renderSermonPicker()
 }
 
-/** Apply trim cuts around the currently-marked sermon segment: drop every-
- *  thing before sermon.start and after sermon.end. */
+/** Apply trim cuts to keep ONLY the sermon: drop everything before sermon.start
+ *  and after sermon.end, AND any music that falls inside the sermon span (the
+ *  auto-pick can span a song between two talk blocks — the user wants all music
+ *  gone). Interior silence is kept (natural pauses; cutting them chops the talk).
+ *  Mirrors `sundayrec_core::editor::sermon_cut_regions`. */
 export function applySermonTrim(): void {
   const sermon = E.suggestions.find(s => s.type === 'sermon')
   if (!sermon || !E.duration) return
-  E.cuts = []
+  const cuts: { start: number; end: number }[] = []
   if (sermon.start > 0.5) {
-    E.cuts.push({ start: 0, end: Math.min(sermon.start, E.duration) })
+    cuts.push({ start: 0, end: Math.min(sermon.start, E.duration) })
   }
   if (sermon.end < E.duration - 0.5) {
-    E.cuts.push({ start: Math.max(0, sermon.end), end: E.duration })
+    cuts.push({ start: Math.max(0, sermon.end), end: E.duration })
   }
+  for (const s of E.suggestions) {
+    if (s.type !== 'music') continue
+    const start = Math.max(s.start, sermon.start)
+    const end = Math.min(s.end, sermon.end)
+    if (end > start + 0.5) cuts.push({ start, end })
+  }
+  cuts.sort((a, b) => a.start - b.start)
+  E.cuts = cuts
   pushCutHistory()
   markDirty()
   renderCutList()
