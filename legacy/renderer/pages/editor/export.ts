@@ -474,7 +474,11 @@ export async function runExport(): Promise<void> {
 
   const fmt = (document.querySelector<HTMLElement>('#export-fmt-section .export-fmt-btn.active')?.dataset.fmt ?? 'mp3') as 'mp3'|'wav'|'flac'|'aac'
   const dest = document.querySelector<HTMLElement>('.export-dest-btn.active')?.dataset.dest ?? 'same'
-  const bitrate   = parseInt((($('export-bitrate')    as HTMLSelectElement)?.value  ?? '256'))
+  // AAC has its OWN bitrate dropdown; mp3 (and the fallback) use #export-bitrate.
+  // Reading #export-bitrate for every format made the AAC dropdown a dead control
+  // (the user's AAC choice was silently ignored — the hidden mp3 select won).
+  const bitrateSel = fmt === 'aac' ? 'export-aac-bitrate' : 'export-bitrate'
+  const bitrate   = parseInt((($(bitrateSel)          as HTMLSelectElement)?.value  ?? '256'))
   const bitDepth  = parseInt((($('export-bitdepth')   as HTMLSelectElement)?.value  ?? '16')) as 16|24
 
   const mode: 'new' | 'replace' | 'folder' =
