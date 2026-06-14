@@ -54,6 +54,16 @@ use crate::settings::ChannelMode;
 /// passages produce denser packets, so the queue needs more headroom.
 const MAC_INPUT_QUEUE: &str = "8192";
 
+/// avfoundation input demux buffer (`-rtbufsize`) on mac/linux. Complements the
+/// `-thread_queue_size` knob: where the thread queue absorbs jitter on the read
+/// side, `-rtbufsize` gives ffmpeg a deeper real-time demux buffer so a transient
+/// encoder/CPU spike doesn't overflow and drop input → another choppiness source.
+/// Audio packets are small so this ceiling is cheap; the Windows preview path
+/// already uses `-rtbufsize 100M` as precedent. It is only an UPPER BOUND on
+/// buffering — it never changes the recorded output. RIGG-VERIFISER the audible
+/// effect on the MacBook built-in mic + the Behringer USB mixer.
+const MAC_INPUT_RTBUFSIZE: &str = "256M";
+
 /// The audio codec selected from an output container extension. The ONE place
 /// extension→codec is decided, so the main recorder and the pre-roll harvest can
 /// never disagree (a mismatch there muxes an AAC pre-roll onto an mp3/wav/flac
@@ -701,6 +711,8 @@ pub fn build_unified_capture_args(
             // single most important fix for glitchy macOS capture.
             args.push("-thread_queue_size".into());
             args.push(MAC_INPUT_QUEUE.into());
+            args.push("-rtbufsize".into());
+            args.push(MAC_INPUT_RTBUFSIZE.into());
             if has_video {
                 // avfoundation REJECTS any size/framerate the camera doesn't
                 // advertise — including the bare default 29.97 and the common PAL
@@ -1048,7 +1060,7 @@ mod tests {
         assert!(af.contains("silencedetect="));
         assert!(
             af.contains(
-                "astats=metadata=1:reset=10:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+                "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
             ),
             "live per-channel levels astats+ametadata must be present; got: {af}"
         );
@@ -1150,6 +1162,11 @@ mod tests {
             &CaptureOpts::default(),
         );
         assert!(has_pair(&a, "-thread_queue_size", "8192"));
+        assert!(has_pair(&a, "-rtbufsize", "256M"));
+        // The input-buffer options are INPUT options → must precede `-i`.
+        let i_pos = a.iter().position(|x| x == "-i").unwrap();
+        let rt_pos = a.iter().position(|x| x == "-rtbufsize").unwrap();
+        assert!(rt_pos < i_pos, "-rtbufsize must precede -i; got: {a:?}");
         assert!(has_pair(&a, "-fflags", "+genpts"));
         assert!(
             !a.iter().any(|x| x == "-framerate"),
@@ -1173,6 +1190,7 @@ mod tests {
             &CaptureOpts::default(),
         );
         assert!(has_pair(&a, "-thread_queue_size", "8192"));
+        assert!(has_pair(&a, "-rtbufsize", "256M"));
         assert!(has_pair(&a, "-framerate", "30"));
         // The camera must be opened with a supported capture mode (avfoundation
         // rejects a bare framerate → "Input/output error", zero frames).
@@ -1408,6 +1426,12 @@ mod tests {
         assert_eq!(count_i(&args), 2, "video + audio = two -i on windows");
         assert!(args.iter().any(|a| a == "video=Logitech BRIO"));
         assert!(args.iter().any(|a| a == "audio=Yamaha AG06"));
+        // The avfoundation-specific input buffer (`-rtbufsize`) is mac/linux-only;
+        // the dshow input path is unchanged.
+        assert!(
+            !args.iter().any(|a| a == "-rtbufsize"),
+            "windows dshow input must stay unchanged (no -rtbufsize)"
+        );
     }
 
     #[test]

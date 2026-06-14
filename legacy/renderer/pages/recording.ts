@@ -518,9 +518,12 @@ function startLevelsMeter(): void {
   const loop = (): void => {
     if (!isRecording) { meterRaf = 0; return }
     const now = Date.now()
-    // Rise instant, fall eased — same feel as the old analyser meter.
-    meter.smL = meter.tL > meter.smL ? meter.tL : meter.smL * 0.8 + meter.tL * 0.2
-    meter.smR = meter.tR > meter.smR ? meter.tR : meter.smR * 0.8 + meter.tR * 0.2
+    // Rise instant, fall eased. The fall is lighter (0.6/0.4) than before
+    // (0.8/0.2) so the needle drops nearly as fast as the home-page Web Audio
+    // meter — the heavy easing was a big part of the "uv-signal henger bak"
+    // feel. Peak-hold (below) still gives the eye a stable peak indicator.
+    meter.smL = meter.tL > meter.smL ? meter.tL : meter.smL * 0.6 + meter.tL * 0.4
+    meter.smR = meter.tR > meter.smR ? meter.tR : meter.smR * 0.6 + meter.tR * 0.4
     const a = hold(meter.smL, meter.pkL, meter.pkTL, now); meter.pkL = a.p; meter.pkTL = a.t
     const b = hold(meter.smR, meter.pkR, meter.pkTR, now); meter.pkR = b.p; meter.pkTR = b.t
 

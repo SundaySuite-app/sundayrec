@@ -75,8 +75,10 @@ const HARVEST_TRIM_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct PrerollSettings {
     /// Stored mic/mixer name to fuzzy-match against the enumerated audio devices.
     pub audio_device_name: String,
-    /// Capture sample rate (Hz).
-    pub sample_rate: u32,
+    /// Capture sample rate (Hz), or `None` for the device's NATIVE rate. Must
+    /// mirror the main recorder (`Settings::resolved_sample_rate`) so the prepend
+    /// concat is a clean `-c copy` — see `sundayrec_core::preroll`.
+    pub sample_rate: Option<u32>,
     /// Output channel count (1 = mono, 2 = stereo).
     pub channels: u8,
 }
@@ -212,7 +214,7 @@ impl PrerollEngine {
     pub async fn harvest(
         &self,
         requested_seconds: u32,
-        sample_rate: u32,
+        sample_rate: Option<u32>,
         channels: u8,
         audio_codec: &str,
         bitrate_kbps: Option<u32>,
@@ -503,7 +505,11 @@ pub fn preroll_settings_from(
     };
     Some(PrerollSettings {
         audio_device_name,
-        sample_rate: settings.sample_rate.max(8_000) as u32,
+        // Native by default (Auto → None), matching the main recorder. The dead
+        // back-compat `Settings::sample_rate` field is NOT used here anymore — it
+        // forced pre-roll to 48 kHz regardless of the device, mismatching a
+        // native recording at the `-c copy` join (NEEDS-RICHARD §settings-sync).
+        sample_rate: settings.resolved_sample_rate(),
         channels,
     })
 }
@@ -511,7 +517,7 @@ pub fn preroll_settings_from(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sundayrec_core::settings::{ChannelMode, Settings};
+    use sundayrec_core::settings::{ChannelMode, SampleRate, Settings};
 
     #[test]
     fn engine_starts_inactive() {
@@ -570,25 +576,31 @@ mod tests {
 
     #[test]
     fn settings_maps_channels_and_rate() {
+        // A forced rate (mode, not the dead back-compat field) flows through.
         let s = Settings {
             pre_roll_seconds: 30,
             device_name: Some("Soundcraft".into()),
             channels: ChannelMode::Stereo,
-            sample_rate: 44_100,
+            sample_rate_mode: SampleRate::R44100,
             ..Default::default()
         };
         let p = preroll_settings_from(&s).unwrap();
         assert_eq!(p.audio_device_name, "Soundcraft");
         assert_eq!(p.channels, 2);
-        assert_eq!(p.sample_rate, 44_100);
+        assert_eq!(p.sample_rate, Some(44_100));
 
-        let mono = Settings {
+        // Default (Auto) → native (None), matching the main recorder — the dead
+        // `sample_rate` field must NOT force a rate anymore.
+        let native = Settings {
             pre_roll_seconds: 30,
             device_name: Some("Soundcraft".into()),
             channels: ChannelMode::MonoMix,
+            sample_rate: 48_000, // back-compat field set, but ignored now
             ..Default::default()
         };
-        assert_eq!(preroll_settings_from(&mono).unwrap().channels, 1);
+        let np = preroll_settings_from(&native).unwrap();
+        assert_eq!(np.channels, 1);
+        assert_eq!(np.sample_rate, None, "Auto mode → native (no forced rate)");
     }
 
     #[test]

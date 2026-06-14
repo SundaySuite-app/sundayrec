@@ -102,7 +102,7 @@ pub fn preroll_start_offset_ms(captured_ms: u64, trim_ms: u64) -> u64 {
 pub fn build_preroll_capture_args(
     platform: crate::ffmpeg::Platform,
     audio_device: &str,
-    sample_rate: u32,
+    sample_rate: Option<u32>,
     channels: u8,
     output_path: &str,
 ) -> Vec<String> {
@@ -123,8 +123,14 @@ pub fn build_preroll_capture_args(
             args.push(format!("audio={audio_device}"));
         }
     }
-    args.push("-ar".into());
-    args.push(sample_rate.to_string());
+    // `None` = capture at the device's NATIVE rate (omit `-ar`) — MUST match the
+    // main recorder, which is native by default. Forcing a rate here that differs
+    // from the recording's rate makes the F3.3a `-c copy` prepend mismatch (broken
+    // join / choppy seam); native on both sides keeps the concat a clean copy.
+    if let Some(sr) = sample_rate {
+        args.push("-ar".into());
+        args.push(sr.to_string());
+    }
     args.push("-ac".into());
     args.push(channels.to_string());
     args.push("-c:a".into());
@@ -160,7 +166,7 @@ pub fn build_preroll_trim_args(
     raw_path: &str,
     start_offset_ms: u64,
     trim_ms: u64,
-    sample_rate: u32,
+    sample_rate: Option<u32>,
     channels: u8,
     audio_codec: &str,
     bitrate_kbps: Option<u32>,
@@ -183,8 +189,12 @@ pub fn build_preroll_trim_args(
         args.push("-b:a".into());
         args.push(format!("{kbps}k"));
     }
-    args.push("-ar".into());
-    args.push(sample_rate.to_string());
+    // `None` keeps the raw capture's (native) rate — see `build_preroll_capture_args`:
+    // the trim output rate must equal the recording's rate for the `-c copy` prepend.
+    if let Some(sr) = sample_rate {
+        args.push("-ar".into());
+        args.push(sr.to_string());
+    }
     args.push("-ac".into());
     args.push(channels.to_string());
     args.push("-avoid_negative_ts".into());
@@ -296,7 +306,8 @@ mod tests {
     #[test]
     fn capture_args_mac_audio_only_wav() {
         use crate::ffmpeg::Platform;
-        let args = build_preroll_capture_args(Platform::MacOS, "1", 48_000, 2, "/tmp/pre.wav");
+        let args =
+            build_preroll_capture_args(Platform::MacOS, "1", Some(48_000), 2, "/tmp/pre.wav");
         assert!(args.windows(2).any(|w| w == ["-f", "avfoundation"]));
         assert!(args.iter().any(|a| a == ":1"), "audio-only input :1");
         assert!(args.windows(2).any(|w| w == ["-c:a", "pcm_s16le"]));
@@ -314,7 +325,7 @@ mod tests {
         let args = build_preroll_capture_args(
             Platform::Windows,
             "Soundcraft USB Audio",
-            44_100,
+            Some(44_100),
             1,
             "C:/t/pre.wav",
         );
@@ -326,13 +337,40 @@ mod tests {
     }
 
     #[test]
+    fn native_rate_omits_ar_on_capture_and_trim() {
+        use crate::ffmpeg::Platform;
+        // Auto/native (None) → NO `-ar` so pre-roll captures at the device's own
+        // rate, matching the (native) main recording. A forced rate on only the
+        // pre-roll side would break the `-c copy` prepend.
+        let cap = build_preroll_capture_args(Platform::MacOS, "1", None, 2, "/tmp/pre.wav");
+        assert!(
+            !cap.iter().any(|a| a == "-ar"),
+            "native capture must omit -ar; got: {cap:?}"
+        );
+        let trim = build_preroll_trim_args(
+            "/tmp/pre.wav",
+            0,
+            5_000,
+            None,
+            2,
+            "aac",
+            Some(192),
+            "/tmp/pre.m4a",
+        );
+        assert!(
+            !trim.iter().any(|a| a == "-ar"),
+            "native trim must omit -ar; got: {trim:?}"
+        );
+    }
+
+    #[test]
     fn trim_args_seek_and_duration() {
         // Keep 15 s starting 75 s into the raw capture.
         let args = build_preroll_trim_args(
             "/tmp/pre.wav",
             75_000,
             15_000,
-            48_000,
+            Some(48_000),
             2,
             "aac",
             Some(192),
@@ -357,7 +395,7 @@ mod tests {
             "/tmp/pre.wav",
             0,
             5_000,
-            44_100,
+            Some(44_100),
             1,
             "aac",
             Some(192),
@@ -377,7 +415,7 @@ mod tests {
             "/tmp/p.wav",
             0,
             5_000,
-            48_000,
+            Some(48_000),
             2,
             "aac",
             Some(256),
@@ -390,7 +428,7 @@ mod tests {
                 "/tmp/p.wav",
                 0,
                 5_000,
-                48_000,
+                Some(48_000),
                 2,
                 codec,
                 None,

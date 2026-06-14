@@ -31,7 +31,11 @@ ts-rs = { version = "11", features = ["serde-compat"] }
 # `clock`) keeps this crate PURE — it never reads the wall clock itself; callers
 # pass `now: NaiveDateTime` / `now_ms` in (mirrors Electron `scheduler.ts`). The
 # `src-tauri` shell owns `Local::now()`.
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+# `alloc` (NOT `clock`) enables the String-returning formatters (e.g.
+# `to_rfc3339_opts`) the unit tests use, without pulling the wall clock — so the
+# crate stays pure AND `cargo test -p sundayrec-core` compiles standalone (without
+# it, the method only resolves under workspace feature-unification with src-tauri).
+chrono = { version = "0.4", default-features = false, features = ["serde", "alloc"] }
 # Robust parsing of the OS power-tool text output the wake module (Fase 5.2)
 # consumes — `pmset -g sched`, `powercfg -waketimers`, `pmset -g batt`.
 regex = "1"
