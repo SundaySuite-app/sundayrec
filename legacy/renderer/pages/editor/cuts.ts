@@ -2,7 +2,7 @@ import { t } from '../../i18n'
 import { E, $, markDirty, type Cut } from './state'
 import { pushSnapshot, undoSnapshot, redoSnapshot } from './cut-history'
 import { computeKeepSegs } from './keep-segments'
-import { clampMain } from './geometry'
+import { addCutToList } from './cut-ops'
 import { gainFactor } from './peaks'
 import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap, updateMinimapViewport } from './waveform'
@@ -57,24 +57,11 @@ export function clearEditorDraft(): void {
 }
 
 export function addCut(s: number, e: number): void {
-  if (e < s) [s, e] = [e, s]
-  // Cuts must always live in main coords — clamp in case the drag started or
-  // ended in an intro/outro slot (caller may have passed extended-timeline
-  // values).
-  s = clampMain(s); e = clampMain(e)
-  if (e - s < 0.1) return
-
-  E.cuts.push({ start: s, end: e })
-  E.cuts.sort((a, b) => a.start - b.start)
-
-  // Merge overlapping
-  const merged: Cut[] = []
-  for (const c of E.cuts) {
-    const prev = merged[merged.length - 1]
-    if (prev && c.start <= prev.end + 0.01) { prev.end = Math.max(prev.end, c.end) }
-    else merged.push({ ...c })
-  }
-  E.cuts = merged
+  // Pure add+clamp+merge (unit-tested in cut-ops.test.ts). Clamps to [0,duration]
+  // in case the drag started/ended in an intro/outro slot; null = too short to keep.
+  const next = addCutToList(E.cuts, s, e, E.duration)
+  if (!next) return
+  E.cuts = next
   pushCutHistory()
   markDirty()
   updateRemainingDisplay()
