@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { E, $, markDirty, type Cut } from './state'
 import { pushSnapshot, undoSnapshot, redoSnapshot } from './cut-history'
+import { computeKeepSegs } from './keep-segments'
 import { clampMain } from './geometry'
 import { gainFactor } from './peaks'
 import { formatTime, formatDuration } from './format'
@@ -116,15 +117,9 @@ export function redoCut(): void {
 }
 
 export function getKeepSegs(): { start: number; end: number }[] {
-  const sorted = [...E.cuts].sort((a, b) => a.start - b.start)
-  const keeps: { start: number; end: number }[] = []
-  let cursor = 0
-  for (const c of sorted) {
-    if (c.start > cursor + 0.05) keeps.push({ start: cursor, end: c.start })
-    cursor = Math.max(cursor, c.end)
-  }
-  if (cursor < E.duration - 0.05) keeps.push({ start: cursor, end: E.duration })
-  return keeps
+  // Pure computation (unit-tested in keep-segments.test.ts) — drives preview
+  // playback + the export cut-plan.
+  return computeKeepSegs(E.cuts, E.duration)
 }
 
 export function getRemainingDuration(): number {
