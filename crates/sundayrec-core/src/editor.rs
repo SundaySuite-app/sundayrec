@@ -104,6 +104,56 @@ pub fn build_keeps(cut_regions: &[CutRegion], duration: f64) -> Vec<KeepSegment>
     keeps
 }
 
+/// Build the cut regions for the "trim to sermon" action — keep the sermon, drop
+/// everything else. It cuts (a) the head before the sermon, (b) the tail after
+/// it, and (c) any `music` block that falls INSIDE the sermon span. (c) matters
+/// for the Case-0 pick (`find_sermon_segment`), whose span runs from the first to
+/// the last speech block and can straddle a song between two talk sections — the
+/// user wants ALL music gone, not just the head/tail. Interior SILENCE is kept on
+/// purpose (natural pauses in speech; cutting them would chop the talk into
+/// fragments).
+///
+/// Returns an empty list when there is no detected sermon (`kind == "sermon"`) —
+/// the caller then leaves the recording whole. Regions are clamped to
+/// `[0, duration]` and sorted; feed them straight to [`build_keeps`]. Mirrors the
+/// renderer `applySermonTrim` so the two stay in lockstep (the renderer applies
+/// the cuts today; this is the canonical, unit-tested algorithm + the seam-ready
+/// version for when detection moves server-side).
+pub fn sermon_cut_regions(
+    segments: &[crate::audio_analysis::DetectedSegment],
+    duration: f64,
+) -> Vec<CutRegion> {
+    let Some(sermon) = segments.iter().find(|s| s.kind == "sermon") else {
+        return Vec::new();
+    };
+    let mut cuts: Vec<CutRegion> = Vec::new();
+    if sermon.start > KEEP_EPSILON {
+        cuts.push(CutRegion {
+            start: 0.0,
+            end: sermon.start,
+        });
+    }
+    if sermon.end < duration - KEEP_EPSILON {
+        cuts.push(CutRegion {
+            start: sermon.end,
+            end: duration,
+        });
+    }
+    for s in segments.iter().filter(|s| s.kind == "music") {
+        let start = s.start.max(sermon.start);
+        let end = s.end.min(sermon.end);
+        if end > start + KEEP_EPSILON {
+            cuts.push(CutRegion { start, end });
+        }
+    }
+    cuts.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    cuts
+}
+
 // ── Save extension policy ─────────────────────────────────────────────────────
 
 /// Why a save was refused outright (no fixable output exists).
@@ -154,10 +204,10 @@ pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec
         ],
         "flac" | "mka" => vec![s("-c:a"), s("flac")],
         "aac" | "m4a" | "m4b" | "m4r" | "caf" => {
-            vec![s("-c:a"), s("aac"), s("-b:a"), br(192)]
+            vec![s("-c:a"), s("aac"), s("-b:a"), br(256)]
         }
-        "ogg" | "oga" => vec![s("-c:a"), s("libvorbis"), s("-b:a"), br(192)],
-        "opus" => vec![s("-c:a"), s("libopus"), s("-b:a"), br(128)],
+        "ogg" | "oga" => vec![s("-c:a"), s("libvorbis"), s("-b:a"), br(256)],
+        "opus" => vec![s("-c:a"), s("libopus"), s("-b:a"), br(160)],
         "aiff" | "aif" => vec![s("-c:a"), s("pcm_s16be")],
         "au" | "snd" => vec![s("-c:a"), s("pcm_mulaw")],
         "wma" => vec![s("-c:a"), s("wmav2"), s("-b:a"), br(192)],
@@ -176,7 +226,8 @@ pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec
         "tta" => vec![s("-c:a"), s("tta")],
         // ape/dts/mpc/ra/ram/spx/gsm: no reliable encoder → transcode to wav.
         "ape" | "dts" | "mpc" | "ra" | "ram" | "spx" | "gsm" => vec![s("-c:a"), s("pcm_s16le")],
-        _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(192)],
+        // mp3 (and any unknown ext) → LAME at a transparent 256k default.
+        _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(256)],
     }
 }
 
@@ -259,7 +310,7 @@ pub fn video_codec_args(container: &str, codec: VideoCodec, crf: Option<u8>) -> 
         VideoCodec::H265 => vec![s("-c:v"), s("libx265"), s("-tag:v"), s("hvc1")],
     };
     a.extend([s("-preset"), s("veryfast"), s("-crf"), crf.to_string()]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("192k")]);
+    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -315,7 +366,7 @@ pub fn videotoolbox_codec_args(
         s("-realtime"),
         s("1"),
     ]);
-    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("192k")]);
+    a.extend([s("-c:a"), s("aac"), s("-b:a"), s("256k")]);
     if matches!(container, "mp4" | "mov" | "m4v") {
         a.extend([s("-movflags"), s("+faststart")]);
     }
@@ -744,6 +795,47 @@ pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
     .collect()
 }
 
+/// ffmpeg arguments to transcode `input_path` to a compact, **seekable, stereo**
+/// AAC `.m4a` proxy at the source rate (48 kHz cap is the browser's comfort zone)
+/// for AUDIBLE playback of files too big / too exotic for the inline Web-Audio
+/// path. Unlike [`peaks_extract_args`] (8 kHz MONO — fine for a waveform but
+/// telephone-quality to LISTEN to), this keeps stereo + full speech/music
+/// bandwidth, yet stays small enough to stream from disk via an `<audio>` element
+/// (no multi-GB Web-Audio PCM buffer → no OOM). `+faststart` puts the moov atom up
+/// front so the element can start + seek immediately.
+///
+/// NOTE: the renderer wiring (play oversized/exotic files via an `<audio>` element
+/// pointed at this proxy, keeping the 8 kHz WAV only for the waveform) is a
+/// RIGG-VERIFISER follow-up — it changes the editor's playback transport, which
+/// cannot be validated in a headless build. The arg builder is ready + tested.
+pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
+    [
+        "-nostdin",
+        "-hide_banner",
+        "-i",
+        input_path,
+        "-vn",
+        "-ac",
+        "2",
+        // Cap at 48 kHz: anything higher is wasted on monitoring and some webviews
+        // refuse exotic rates. `aresample` only downsamples when the source is
+        // higher; a 44.1 kHz source passes through (ffmpeg keeps the lower rate).
+        "-af",
+        "aresample=48000",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        "-y",
+        out_path,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
 /// ffmpeg arguments to decode `input_path` to 16 kHz mono signed-16 PCM on stdout
 /// for the [`crate::audio_analysis`] classifier (it expects 16 kHz). `-f s16le`
 /// to a pipe so the seam reads raw samples without a WAV header. Mirrors the
@@ -1117,6 +1209,55 @@ mod tests {
         assert!(keeps.is_empty());
     }
 
+    // ── sermon_cut_regions ─────────────────────────────────────────────────────
+    fn ds(start: f64, end: f64, kind: &str) -> crate::audio_analysis::DetectedSegment {
+        crate::audio_analysis::DetectedSegment {
+            start,
+            end,
+            duration: end - start,
+            label: kind.to_string(),
+            kind: kind.to_string(),
+        }
+    }
+
+    #[test]
+    fn sermon_cut_trims_head_tail_and_interior_music() {
+        let segs = vec![
+            ds(0.0, 200.0, "music"),    // head worship
+            ds(200.0, 1600.0, "sermon"),
+            ds(800.0, 820.0, "music"),  // a clip played mid-sermon
+            ds(1600.0, 1700.0, "music"), // closing song
+        ];
+        let cuts = sermon_cut_regions(&segs, 1700.0);
+        assert_eq!(
+            cuts,
+            vec![
+                CutRegion { start: 0.0, end: 200.0 },
+                CutRegion { start: 800.0, end: 820.0 },
+                CutRegion { start: 1600.0, end: 1700.0 },
+            ]
+        );
+        // The kept material is exactly the sermon minus the interior song.
+        let keeps = build_keeps(&cuts, 1700.0);
+        assert_eq!(keeps, vec![
+            KeepSegment { start: 200.0, end: 800.0 },
+            KeepSegment { start: 820.0, end: 1600.0 },
+        ]);
+    }
+
+    #[test]
+    fn sermon_cut_is_empty_for_sermon_only_recording() {
+        // Whole file is the sermon → nothing to trim.
+        let segs = vec![ds(0.0, 1800.0, "sermon")];
+        assert!(sermon_cut_regions(&segs, 1800.0).is_empty());
+    }
+
+    #[test]
+    fn sermon_cut_is_empty_when_no_sermon_detected() {
+        let segs = vec![ds(0.0, 100.0, "music"), ds(100.0, 200.0, "speech")];
+        assert!(sermon_cut_regions(&segs, 200.0).is_empty());
+    }
+
     // ── resolve_save_ext ───────────────────────────────────────────────────────
 
     #[test]
@@ -1153,31 +1294,59 @@ mod tests {
     }
 
     #[test]
-    fn aac_codec_uses_bitrate_with_default_192() {
+    fn aac_codec_uses_bitrate_with_default_256() {
+        // Transparent default for speech+music; the caller can still override.
         assert_eq!(
             codec_args("aac", None, None),
-            vec!["-c:a", "aac", "-b:a", "192k"]
-        );
-        assert_eq!(
-            codec_args("m4a", Some(256), None),
             vec!["-c:a", "aac", "-b:a", "256k"]
         );
+        assert_eq!(
+            codec_args("m4a", None, None),
+            vec!["-c:a", "aac", "-b:a", "256k"]
+        );
+        assert_eq!(
+            codec_args("m4a", Some(320), None),
+            vec!["-c:a", "aac", "-b:a", "320k"]
+        );
     }
 
     #[test]
-    fn opus_default_is_128k() {
+    fn opus_default_is_160k() {
         assert_eq!(
             codec_args("opus", None, None),
-            vec!["-c:a", "libopus", "-b:a", "128k"]
+            vec!["-c:a", "libopus", "-b:a", "160k"]
         );
     }
 
     #[test]
-    fn unknown_codec_defaults_to_mp3() {
+    fn ogg_default_is_256k() {
+        assert_eq!(
+            codec_args("ogg", None, None),
+            vec!["-c:a", "libvorbis", "-b:a", "256k"]
+        );
+    }
+
+    #[test]
+    fn unknown_codec_defaults_to_mp3_256() {
         assert_eq!(
             codec_args("weird", None, None),
-            vec!["-c:a", "libmp3lame", "-b:a", "192k"]
+            vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
+        assert_eq!(
+            codec_args("mp3", None, None),
+            vec!["-c:a", "libmp3lame", "-b:a", "256k"]
+        );
+    }
+
+    #[test]
+    fn lossless_formats_carry_no_bitrate() {
+        for fmt in ["wav", "flac", "aiff", "tta", "wv"] {
+            let a = codec_args(fmt, None, None);
+            assert!(
+                !a.iter().any(|x| x == "-b:a"),
+                "{fmt} is lossless → no -b:a; got: {a:?}"
+            );
+        }
     }
 
     #[test]
@@ -1188,8 +1357,8 @@ mod tests {
     // ── format breadth + video codecs ────────────────────────────────────────────
 
     #[test]
-    fn mp4_codec_args_unchanged_after_generalisation() {
-        // The generalised builder must still produce the exact legacy mp4 args.
+    fn mp4_codec_args_use_transparent_audio_bitrate() {
+        // H.264 video unchanged; the muxed audio track is a transparent 256k AAC.
         assert_eq!(
             mp4_codec_args(),
             vec![
@@ -1202,7 +1371,7 @@ mod tests {
                 "-c:a",
                 "aac",
                 "-b:a",
-                "192k",
+                "256k",
                 "-movflags",
                 "+faststart"
             ]
@@ -1591,6 +1760,21 @@ mod tests {
         assert!(joined.contains("-ar 8000"));
         assert!(joined.contains("-f wav"));
         assert_eq!(args.last().unwrap(), "/tmp/p.wav");
+    }
+
+    #[test]
+    fn playback_proxy_args_are_stereo_48k_aac_faststart() {
+        // The AUDIBLE proxy keeps stereo + full bandwidth (unlike the 8 kHz mono
+        // peaks WAV) but stays a compact, seekable m4a so it streams from disk.
+        let args = playback_proxy_args("/rec/big.flac", "/tmp/proxy.m4a");
+        let joined = args.join(" ");
+        assert!(joined.contains("-vn"));
+        assert!(joined.contains("-ac 2"), "stereo, not mono: {joined}");
+        assert!(joined.contains("aresample=48000"), "capped at 48 kHz: {joined}");
+        assert!(joined.contains("-c:a aac"));
+        assert!(joined.contains("-b:a 192k"));
+        assert!(joined.contains("-movflags +faststart"), "seekable: {joined}");
+        assert_eq!(args.last().unwrap(), "/tmp/proxy.m4a");
     }
 
     #[test]

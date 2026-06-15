@@ -427,7 +427,10 @@ fn default_format() -> FileFormat {
     FileFormat::Mp3
 }
 fn default_bitrate() -> String {
-    "192".to_string()
+    // 256 kbps: transparent for speech+music, and matches the editor export
+    // default (`editor::codec_args`) so a recording isn't re-compressed harder on
+    // the way out. The ceiling stays 320 (see `bitrate_kbps`).
+    "256".to_string()
 }
 fn default_filename_pattern() -> FilenamePattern {
     FilenamePattern::Date
@@ -649,7 +652,7 @@ impl Settings {
 
     /// The lossy-codec bitrate in kbps, parsed from the Electron-heritage
     /// `bitrate` String and clamped to a sane CBR range. Any unparseable / empty /
-    /// out-of-range value falls back to 192 kbps so the recorder never receives a
+    /// out-of-range value falls back to 256 kbps so the recorder never receives a
     /// nonsense `-b:a`. (PCM/FLAC ignore this entirely.)
     pub fn bitrate_kbps(&self) -> u32 {
         self.bitrate
@@ -658,7 +661,7 @@ impl Settings {
             .parse::<u32>()
             .ok()
             .map(|k| k.clamp(32, 320))
-            .unwrap_or(192)
+            .unwrap_or(256)
     }
 
     /// The capture sample rate the recorder should use, derived from
@@ -730,7 +733,7 @@ mod tests {
         assert_eq!(s.limiter_ceiling, -1.0);
         // Output
         assert_eq!(s.format, FileFormat::Mp3);
-        assert_eq!(s.bitrate, "192");
+        assert_eq!(s.bitrate, "256");
         assert_eq!(s.filename_pattern, FilenamePattern::Date);
         assert_eq!(s.save_folder, None);
         assert_eq!(s.auto_delete_days, 0);
@@ -835,8 +838,8 @@ mod tests {
         assert_eq!(mk("256k").bitrate_kbps(), 256, "tolerates a trailing k");
         assert_eq!(mk("999").bitrate_kbps(), 320, "clamps above the ceiling");
         assert_eq!(mk("16").bitrate_kbps(), 32, "clamps below the floor");
-        assert_eq!(mk("").bitrate_kbps(), 192, "empty → safe default");
-        assert_eq!(mk("abc").bitrate_kbps(), 192, "garbage → safe default");
+        assert_eq!(mk("").bitrate_kbps(), 256, "empty → safe default");
+        assert_eq!(mk("abc").bitrate_kbps(), 256, "garbage → safe default");
     }
 
     #[test]

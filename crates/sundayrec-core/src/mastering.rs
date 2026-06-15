@@ -59,7 +59,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
             true_peak_db: -1.0,
             filters: "highpass=f=80,equalizer=f=200:t=q:w=2:g=-1.5,equalizer=f=3000:t=q:w=1:g=2,\
                       equalizer=f=7000:t=q:w=1.5:g=-2,\
-                      acompressor=threshold=-20dB:ratio=3:attack=5:release=80:makeup=2"
+                      acompressor=threshold=-18dB:ratio=2.5:attack=5:release=80:makeup=1.5"
                 .into(),
         },
         MasterPreset {
@@ -71,7 +71,7 @@ pub fn master_presets() -> Vec<MasterPreset> {
             true_peak_db: -1.0,
             filters: "highpass=f=100,equalizer=f=200:t=q:w=2:g=-2,equalizer=f=2500:t=q:w=1:g=3,\
                       equalizer=f=7000:t=q:w=1.5:g=-3,\
-                      acompressor=threshold=-24dB:ratio=4:attack=3:release=50:makeup=3,\
+                      acompressor=threshold=-24dB:ratio=4:attack=3:release=50:makeup=2,\
                       acompressor=threshold=-12dB:ratio=2:attack=50:release=300:makeup=1"
                 .into(),
         },
@@ -292,10 +292,10 @@ pub fn master_codec_args(ext: &str, bitrate: Option<u32>) -> Vec<String> {
     match ext {
         "wav" => vec![s("-c:a"), s("pcm_s16le")],
         "flac" => vec![s("-c:a"), s("flac")],
-        "aac" | "m4a" | "m4b" | "m4r" | "caf" => vec![s("-c:a"), s("aac"), s("-b:a"), br(192)],
-        "ogg" | "oga" => vec![s("-c:a"), s("libvorbis"), s("-b:a"), br(192)],
-        "opus" => vec![s("-c:a"), s("libopus"), s("-b:a"), br(128)],
-        _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(192)],
+        "aac" | "m4a" | "m4b" | "m4r" | "caf" => vec![s("-c:a"), s("aac"), s("-b:a"), br(256)],
+        "ogg" | "oga" => vec![s("-c:a"), s("libvorbis"), s("-b:a"), br(256)],
+        "opus" => vec![s("-c:a"), s("libopus"), s("-b:a"), br(160)],
+        _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(256)],
     }
 }
 
@@ -374,9 +374,12 @@ pub fn clamp_preview_start(requested: f64) -> f64 {
 }
 
 /// ffmpeg args for a single-pass mastering *preview* of a `[start, start+dur]`
-/// snippet to a temp mp3. Mirrors `buildPreview`'s argv exactly: `-ss`/`-t`
-/// BEFORE `-i` for an accurate container-index seek, the preview (single-pass)
-/// loudnorm chain via `-af`, a fixed `libmp3lame -b:a 192k` encode, `-y out`.
+/// snippet to a temp mp3. Mirrors `buildPreview`'s argv: `-ss`/`-t` BEFORE `-i`
+/// for an accurate container-index seek, the preview (single-pass) loudnorm chain
+/// via `-af`, a `libmp3lame -b:a 320k` encode, `-y out`. The preview is what the
+/// user A/Bs against the original, so it runs at 320k (near-transparent) — at the
+/// old 192k the user was comparing the master to a LOSSY render, which made the
+/// mastering itself sound more compressed than the actual export.
 /// `start`/`dur` are formatted to 3 decimals as the TS `.toFixed(3)` did. The
 /// seam supplies the clamped values (via [`clamp_preview_start`]/
 /// [`clamp_preview_duration`]) and the temp `out_path`.
@@ -401,7 +404,7 @@ pub fn preview_args(
         "-c:a",
         "libmp3lame",
         "-b:a",
-        "192k",
+        "320k",
         "-y",
         out_path,
     ]
@@ -550,6 +553,26 @@ mod tests {
     // ── filter builders ──────────────────────────────────────────────────────────
 
     #[test]
+    fn default_preset_compression_is_gentle() {
+        // The recommended default must not over-squash: a single ~2.5:1 compressor
+        // with modest makeup, NOT the old aggressive 3:1/+2 dB. (Subjective; the
+        // exact values are RIGG-VERIFIER'd, this just guards against regressing to
+        // the harsher defaults.)
+        let clear = get_preset_by_id("speech-clear").unwrap();
+        assert!(
+            clear.filters.contains("ratio=2.5"),
+            "speech-clear compressor should be gentle (2.5:1); got: {}",
+            clear.filters
+        );
+        assert!(!clear.filters.contains("ratio=3"));
+        // The opt-in punchy preset stays aggressive but with less first-stage
+        // makeup to curb pumping.
+        let punchy = get_preset_by_id("speech-punchy").unwrap();
+        assert!(punchy.filters.contains("ratio=4"), "punchy stays strong");
+        assert!(!punchy.filters.contains("makeup=3"), "less makeup → less pumping");
+    }
+
+    #[test]
     fn measure_filters_append_json_loudnorm() {
         let p = get_preset_by_id("speech-clear").unwrap();
         let f = build_measure_pass_filters(&p);
@@ -606,10 +629,10 @@ mod tests {
     // ── codec args ───────────────────────────────────────────────────────────────
 
     #[test]
-    fn master_codec_defaults_to_mp3_192() {
+    fn master_codec_defaults_to_mp3_256() {
         assert_eq!(
             master_codec_args("xyz", None),
-            vec!["-c:a", "libmp3lame", "-b:a", "192k"]
+            vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
     }
 
@@ -673,6 +696,11 @@ mod tests {
             .iter()
             .any(|a| a.contains("loudnorm") && !a.contains("print_format")));
         assert!(args.contains(&"libmp3lame".to_string()));
+        // Near-transparent preview so the A/B isn't confounded by a lossy render.
+        assert!(
+            args.windows(2).any(|w| w == ["-b:a", "320k"]),
+            "preview must be 320k; got: {args:?}"
+        );
     }
 
     // ── preview temp cleanup ─────────────────────────────────────────────────────────

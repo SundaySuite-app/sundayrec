@@ -225,7 +225,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   limiterEnabled: true,
   limiterCeiling: -1,
   format: "mp3",
-  bitrate: "192",
+  bitrate: "256",
   filenamePattern: "date",
   saveFolder: null,
   autoDeleteDays: 0,
@@ -350,7 +350,7 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
       ? (s.sampleRateMode as string)
       : "auto",
     format: s.format ?? "mp3",
-    bitrate: String(s.bitrate ?? "192"),
+    bitrate: String(s.bitrate ?? "256"),
     saveFolder: s.saveFolder ?? null,
     // The filename pattern drives the recorder's output filename (build_opts →
     // build_filename). Omitting it let Rust's #[serde(default)] re-default it to

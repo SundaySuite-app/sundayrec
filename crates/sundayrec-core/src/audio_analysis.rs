@@ -680,25 +680,34 @@ pub fn detect_segments(segments: &[AnalysisSegment]) -> Vec<DetectedSegment> {
     segments
         .iter()
         .map(|s| {
-            let is_sermon = sermon.is_some_and(|b| {
-                s.start_sec == b.start_sec
-                    && s.end_sec == b.end_sec
-                    && s.seg_type == SegmentType::Speech
+            // The sermon may SPAN several segments — the Case-0 "whole speech span"
+            // pick (`find_sermon_segment`) runs from the first to the last speech
+            // block and can straddle pauses or a short song. Promote the speech
+            // segment that BEGINS the span and stretch it to the full bounds, so the
+            // UI and `editor::sermon_cut_regions` get ONE contiguous sermon block.
+            // For the single-block picks (Cases 1–3) the bounds equal one segment,
+            // so the geometry is unchanged. Earlier this required an exact
+            // start+end match, so a multi-segment span was never marked → the
+            // "trim to sermon" action silently did nothing for those recordings.
+            let is_sermon_start = sermon.is_some_and(|b| {
+                s.seg_type == SegmentType::Speech && (s.start_sec - b.start_sec).abs() < 1e-6
             });
-            DetectedSegment {
-                start: s.start_sec,
-                end: s.end_sec,
-                duration: s.duration_sec,
-                label: if is_sermon {
-                    "Preken".to_string()
-                } else {
-                    s.label.clone()
-                },
-                kind: if is_sermon {
-                    "sermon".to_string()
-                } else {
-                    kind_str(s.seg_type).to_string()
-                },
+            if let (true, Some(b)) = (is_sermon_start, sermon) {
+                DetectedSegment {
+                    start: b.start_sec,
+                    end: b.end_sec,
+                    duration: b.end_sec - b.start_sec,
+                    label: "Preken".to_string(),
+                    kind: "sermon".to_string(),
+                }
+            } else {
+                DetectedSegment {
+                    start: s.start_sec,
+                    end: s.end_sec,
+                    duration: s.duration_sec,
+                    label: s.label.clone(),
+                    kind: kind_str(s.seg_type).to_string(),
+                }
             }
         })
         .collect()
@@ -935,5 +944,31 @@ mod tests {
         assert_eq!(detected[0].kind, "music");
         assert_eq!(detected[1].kind, "sermon");
         assert_eq!(detected[1].label, "Preken");
+        // Single-block pick: geometry unchanged.
+        assert_eq!(detected[1].start, 200.0);
+        assert_eq!(detected[1].end, 1400.0);
+    }
+
+    #[test]
+    fn detect_segments_marks_sermon_spanning_multiple_segments() {
+        use SegmentType::*;
+        // Sermon-only-ish recording where a short song splits the talk. The span
+        // pick runs first→last speech; the FIRST speech block is promoted and
+        // stretched to the full span so "trim to sermon" has a sermon to act on
+        // (previously NOTHING was marked → the action did nothing).
+        let segs = vec![
+            seg(0.0, 5.0, Silence),
+            seg(5.0, 700.0, Speech),
+            seg(700.0, 720.0, Music), // brief interlude (still <5% of total)
+            seg(720.0, 1500.0, Speech),
+            seg(1500.0, 1505.0, Silence),
+        ];
+        let detected = detect_segments(&segs);
+        let sermon: Vec<&DetectedSegment> = detected.iter().filter(|d| d.kind == "sermon").collect();
+        assert_eq!(sermon.len(), 1, "exactly one sermon block marked");
+        assert_eq!(sermon[0].start, 5.0);
+        assert_eq!(sermon[0].end, 1500.0, "stretched across the interlude");
+        // The interior music is still listed so the cut step can remove it.
+        assert!(detected.iter().any(|d| d.kind == "music"));
     }
 }

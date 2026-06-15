@@ -172,7 +172,7 @@ export function applyFilesSettingsToUI(): void {
   const patternEl = document.getElementById('pattern-select') as HTMLSelectElement | null
   if (patternEl) patternEl.value = settings.filenamePattern ?? 'date'
   setRadio('format',  settings.format          ?? 'mp3')
-  setRadio('bitrate', String(settings.bitrate  ?? '192'))
+  setRadio('bitrate', String(settings.bitrate  ?? '256'))
   const autoDelEl = document.getElementById('opt-auto-delete') as HTMLInputElement | null
   if (autoDelEl) {
     autoDelEl.checked = !!settings.autoDeleteDays
@@ -309,7 +309,7 @@ async function saveFilesSettings(): Promise<void> {
     saveFolder:      (document.getElementById('save-folder') as HTMLInputElement | null)?.value ?? '',
     filenamePattern: ((document.getElementById('pattern-select') as HTMLSelectElement | null)?.value ?? 'date') as FilenamePattern,
     format:          ((document.querySelector('input[name="format"]:checked')  as HTMLInputElement | null)?.value ?? 'mp3') as FileFormat,
-    bitrate:         (document.querySelector('input[name="bitrate"]:checked') as HTMLInputElement | null)?.value ?? '192',
+    bitrate:         (document.querySelector('input[name="bitrate"]:checked') as HTMLInputElement | null)?.value ?? '256',
     autoDeleteDays:  days,
     trimSilence:     !!(document.getElementById('opt-trim-silence') as HTMLInputElement | null)?.checked,
     protectRecording:      protectEl?.checked ?? true,

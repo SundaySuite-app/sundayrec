@@ -1240,10 +1240,11 @@ fn session_manifest(
 
 /// Coalesces the live per-channel peak levels parsed from ffmpeg's `ametadata`
 /// stream and throttles how often they reach the UI. ffmpeg prints one line per
-/// channel PER FRAME (~94 frames/s × 2 = ~188 lines/s); the meters only need
-/// ~20 updates/s, so we hold the latest L/R and emit on a fixed cadence. The
-/// fast attack lives in ffmpeg's short `reset` window; the slow peak-hold RELEASE
-/// lives in the UI — this just paces the feed.
+/// channel PER FRAME (~94 frames/s × 2 = ~188 lines/s); the meters need ~60
+/// updates/s to feel as responsive as the home-page meter, so we hold the latest
+/// L/R and emit on a fixed cadence. The fast attack lives in ffmpeg's short
+/// `reset` window; the slow peak-hold RELEASE lives in the UI — this just paces
+/// the feed.
 struct LevelMeter {
     left: f64,
     right: Option<f64>,
@@ -1251,9 +1252,12 @@ struct LevelMeter {
 }
 
 impl LevelMeter {
-    /// ~30 UI updates/s — snappy needle without flooding the event bridge (the
-    /// UI's rAF peak-hold smooths the release between these).
-    const EMIT_EVERY: Duration = Duration::from_millis(33);
+    /// ~60 UI updates/s — matches the home-page Web Audio meter's 60 fps so the
+    /// recording needle feels just as responsive. Safe to pace this fast because
+    /// delivery is a non-blocking `try_send` (latest-wins; intervening frames are
+    /// coalesced here and any overflow is dropped, never back-pressured onto the
+    /// stderr reader).
+    const EMIT_EVERY: Duration = Duration::from_millis(16);
 
     fn new() -> Self {
         Self {
@@ -1288,8 +1292,8 @@ impl LevelMeter {
 /// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader) and
 /// forward the appropriate [`ReaderMsg`]. The live meter levels arrive as flat
 /// `lavfi.astats.<ch>.Peak_level=` lines (one per channel per frame) which update
-/// the held [`LevelMeter`] and emit on its throttle. Pure-helper driven — the
-/// reader owns no state machine.
+/// the held [`LevelMeter`] and emit on its ~60×/s throttle. Pure-helper driven —
+/// the reader owns no state machine.
 async fn classify_stderr_line(
     line: &str,
     startup: &mut StartupResolver,
@@ -1298,11 +1302,19 @@ async fn classify_stderr_line(
     last_error: &mut Option<RecordingErrorCode>,
 ) {
     // Live per-frame peak levels (`lavfi.astats.1.Peak_level=-12.5`): update the
-    // held L/R and forward at most ~20×/s.
+    // held L/R and forward at most ~60×/s.
     if let Some((channel, db)) = parse_ametadata_peak(line) {
         levels.update(channel, db);
         if let Some(lv) = levels.take_due() {
-            let _ = msg_tx.send(ReaderMsg::Levels(lv)).await;
+            // NON-BLOCKING on purpose. Levels are the highest-rate message and are
+            // latest-wins (already coalesced in `take_due`). If we `.await`ed the
+            // send on a full bounded channel, a momentary slow consumer would block
+            // the stderr reader → ffmpeg's stderr pipe fills → ffmpeg stalls on the
+            // write → avfoundation drops capture samples (CHOPPY audio) and the meter
+            // feed arrives in late bursts (GROWING VU lag). `try_send` drops one
+            // intermediate frame instead — the correct behaviour for a latest-wins
+            // meter, and the fix that keeps the reader draining stderr at all times.
+            let _ = msg_tx.try_send(ReaderMsg::Levels(lv));
         }
         return;
     }
@@ -1357,8 +1369,12 @@ async fn run_segment(
     // classifies lines with the pure core helpers.
     // A roomy buffer so a momentary slow consumer (event dispatch) never
     // back-pressures the stderr reader → ffmpeg's stderr pipe never fills →
-    // ffmpeg never stalls on a blocked write and drops audio samples.
-    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(256);
+    // ffmpeg never stalls on a blocked write and drops audio samples. The buffer
+    // alone is NOT enough (an `.await`ed send on a full bounded channel still
+    // blocks) — the high-rate `Levels` message therefore uses a non-blocking
+    // `try_send` in `classify_stderr_line`; this buffer is defense-in-depth for
+    // the low-rate reliable messages (Progress/Silence/Error/Started/Exit).
+    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
     let reader = tauri::async_runtime::spawn(async move {
         let mut startup = StartupResolver::new();
         let mut last_error: Option<RecordingErrorCode> = None;
@@ -2514,6 +2530,74 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["-b:a", "256k"]));
         assert!(args.windows(2).any(|w| w == ["-ac", "1"]), "mono → -ac 1");
         assert!(args.windows(2).any(|w| w == ["-ar", "44100"]));
+    }
+
+    #[test]
+    fn build_record_args_native_rate_omits_ar() {
+        // The anti-choppiness contract: Auto/native sample rate (None) must NOT
+        // emit `-ar`, so ffmpeg captures at the device's own rate instead of
+        // resampling (forcing a mismatched rate drops samples → choppy audio).
+        let audio = FfmpegDevice::new("Built-in Mic", "avfoundation", Some(1));
+        let mut o = opts();
+        o.sample_rate = None;
+        let args = build_record_args(Platform::MacOS, &audio, None, &o, "/tmp/rec.m4a");
+        assert!(
+            !args.iter().any(|a| a == "-ar"),
+            "native rate must omit -ar; got: {args:?}"
+        );
+    }
+
+    #[test]
+    fn build_record_args_forced_rate_emits_ar() {
+        // The escape hatch: an explicit rate is honoured (advanced users / fixed
+        // interfaces) — only the DEFAULT is native.
+        let audio = FfmpegDevice::new("Built-in Mic", "avfoundation", Some(1));
+        let mut o = opts();
+        o.sample_rate = Some(44_100);
+        let args = build_record_args(Platform::MacOS, &audio, None, &o, "/tmp/rec.m4a");
+        assert!(
+            args.windows(2).any(|w| w == ["-ar", "44100"]),
+            "forced rate must emit -ar 44100; got: {args:?}"
+        );
+    }
+
+    /// Regression guard for the CHOPPY-AUDIO + VU-LAG root cause. The high-rate
+    /// `Levels` message must be delivered with a NON-BLOCKING `try_send`. If it
+    /// `.await`ed a full bounded channel, the stderr reader would block, ffmpeg's
+    /// stderr pipe would fill, ffmpeg would stall on the write, and avfoundation
+    /// would drop capture samples (choppy) while the meter feed arrived in late
+    /// bursts (growing VU lag). Here the consumer never drains a capacity-1
+    /// channel; the classify path must still complete (drop, not block).
+    #[tokio::test]
+    async fn levels_never_block_the_reader_when_consumer_stalls() {
+        let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
+        // Pre-fill so the channel is permanently full (the consumer never drains).
+        tx.send(ReaderMsg::Progress(0)).await.unwrap();
+
+        let mut startup = StartupResolver::new();
+        let mut levels = LevelMeter::new();
+        let mut last_error = None;
+
+        let driver = async {
+            for _ in 0..5 {
+                // Let the meter's emit throttle elapse so `take_due()` fires and we
+                // actually attempt a send onto the (full) channel.
+                tokio::time::sleep(LevelMeter::EMIT_EVERY + Duration::from_millis(5)).await;
+                classify_stderr_line(
+                    "lavfi.astats.1.Peak_level=-12.5",
+                    &mut startup,
+                    &mut levels,
+                    &tx,
+                    &mut last_error,
+                )
+                .await;
+            }
+        };
+        let res = tokio::time::timeout(Duration::from_secs(2), driver).await;
+        assert!(
+            res.is_ok(),
+            "levels delivery must not block when the consumer is stalled"
+        );
     }
 
     #[test]
