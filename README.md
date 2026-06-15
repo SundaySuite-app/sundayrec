@@ -5,17 +5,15 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust +
 React 19 + Tailwind v4 + ts-rs).
 
 > **This is the official SundayRec.** It supersedes the original Electron app
-> (versions ≤ 4.55.0). The legacy Electron source is preserved on the
-> [`electron-legacy`](https://github.com/richardfossland/sundayrec/tree/electron-legacy)
-> branch (tag `v4.55.0`) and is no longer maintained.
+> (versions ≤ 4.55.0), which is no longer maintained or distributed.
 >
 > **Upgrading from 4.x:** download the latest installer from
-> [Releases](https://github.com/richardfossland/sundayrec/releases/latest). The
+> [Releases](https://github.com/SundaySuite-app/sundayrec/releases/latest). The
 > new app replaces the old one. Your **recordings are safe** (they live in your
 > chosen save folder); app **settings must be re-entered** (the new version
 > stores them separately).
 
-The legacy Electron app (now the `electron-legacy` branch) is the **behavioural
+The original Electron app is the **behavioural
 specification**, not a template. We reuse the _knowledge_ — hardened ffmpeg
 arguments, device parsers, error classification, silence/watchdog logic — but
 rebuild the _structure_ cleanly in Rust. See
