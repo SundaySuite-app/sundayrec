@@ -13,19 +13,18 @@ Windows + lydutstyr, ikke skrive det på nytt.
 
 > **Kjører du i Claude-desktop-appen (ikke terminal-CLI)?** Det går helt fint — du
 > har samme verktøy. Åpne en tom mappe som workspace, så kan du bare si:
-> «Klon `https://github.com/richardfossland/sundayrec-tauri.git`, sjekk ut grenen
-> `feat/windows-asio`, les så `docs/WINDOWS-RIGG-START.md` og følg den.»
+> «Klon `https://github.com/SundaySuite-app/sundayrec.git`, les så
+> `docs/WINDOWS-RIGG-START.md` og følg den.»
 > PowerShell-kommandoene under kjøres likt uansett.
 
 ## 0. Hent koden
 
 ```powershell
-git clone https://github.com/richardfossland/sundayrec-tauri.git
-cd sundayrec-tauri
-git checkout feat/windows-asio
+git clone https://github.com/SundaySuite-app/sundayrec.git
+cd sundayrec
 ```
 
-Alt ligger på grenen `feat/windows-asio` (HEAD `85d6a9f` da denne ble skrevet).
+Alt ligger på `main` (den kanoniske grenen — ASIO-arbeidet er merget inn).
 Det finnes INGEN andre filer du må få overført — repoet er komplett.
 
 ## 1. Les disse først (full kontekst — du har ikke samtalehistorikken)
