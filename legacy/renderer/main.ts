@@ -98,8 +98,6 @@ declare global {
         onBattery:      boolean | null
         standbyEnabled: boolean | null
       }>
-      wakeCheckPower:   () => Promise<boolean | null>
-      wakeCheckStandby: () => Promise<boolean | null>
       wakeTest:         (secondsAhead?: number) => Promise<{
         ok: boolean
         reason?: 'no_sleep' | 'no_resume' | 'too_late' | 'cancelled' | 'unsupported' | 'error'

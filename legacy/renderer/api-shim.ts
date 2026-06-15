@@ -877,8 +877,6 @@ const api: Record<string, unknown> = {
       onBattery: null,
       standbyEnabled: null,
     }),
-  wakeCheckPower: async () => ({}), // TODO Phase 3: no wake_check_power command
-  wakeCheckStandby: async () => ({}), // TODO Phase 3: no wake_check_standby command
   wakeTest: async (secondsAhead?: number) =>
     call("wake_test", { secondsAhead: secondsAhead ?? null }, { ok: false }),
   wakeCancelTest: async () => call("wake_cancel_test", undefined, true).then(() => true),
