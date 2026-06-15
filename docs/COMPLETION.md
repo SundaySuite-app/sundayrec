@@ -18,11 +18,11 @@ companion to `SMOKE-TEST.md` (the hardware-in-the-loop checklist) and
   `streaming`, `ndi`, `bridge`, `updater`). The shipping build and the CI gate
   carry none of them; a feature-disabled command returns a clear `feature_disabled`
   error and the matching panel shows a calm "not built into this build" hint.
-- **Gate-green:** `npm run check` (eslint + tsc + vitest + clippy `-D warnings` +
-  `cargo test --workspace`) passes — **918 Rust tests** (687 core + 231 src-tauri)
-  - **296 vitest**. Each default-off feature also compiles in isolation
-    (`cargo build -p sundayrec --features <flag>`), the `whisper` C++ build being the
-    single by-inspection exception.
+- **Gate-green:** `npm run check` (prettier + eslint + tsc + rustfmt + clippy
+  `-D warnings` + `cargo test --workspace`) passes — **1276 Rust tests**
+  (925 core + 351 src-tauri). Each default-off feature also compiles in isolation
+  (`cargo build -p sundayrec --features <flag>`), the `whisper` C++ build being the
+  single by-inspection exception.
 
 ## Feature inventory (what's built)
 
@@ -157,10 +157,10 @@ proof, replacing the earlier "panels work without catalog entries" footnote.
 
 **Code-complete + verified in the gate (no rig needed):**
 
-- Every `sundayrec-core` decision (the entire 687-test core).
-- Every command's IPC surface + the panel data-flow (the 296 vitest), including
-  the pure transcript search index, history filter/pairing/stats, and the i18n
-  7-catalog parity guard.
+- Every `sundayrec-core` decision (the entire 925-test core), including the pure
+  transcript search index, history filter/pairing/stats, and the i18n 7-catalog
+  parity guard.
+- Every command's IPC surface + the panel data-flow (the 351 src-tauri tests).
 - Every default-off feature _compiles_ (build + clippy `-D warnings`), so the
   feature-gated seams are wired correctly even though their effects are unproven.
 - The full settings round-trip, history persistence, diagnostics report, schedule
