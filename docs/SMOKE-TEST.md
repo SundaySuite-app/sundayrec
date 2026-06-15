@@ -52,8 +52,10 @@ npm run build          # tsc + vite frontend build
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: **918 Rust tests** (687 core + 231 src-tauri) + **296 vitest** +
-clippy `-D warnings`. Every default-off feature also compiles in isolation —
+gate is green: **~1300 Rust tests** (sundayrec-core + src-tauri) + a **vitest**
+frontend suite (newly bootstrapped — pure logic like the editor cut-history state
+machine; grows as more pure logic is extracted) + clippy `-D warnings`. Every
+default-off feature also compiles in isolation —
 `cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
 `editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
 exception, verified by inspection).

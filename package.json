@@ -16,13 +16,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:rust": "cargo test --workspace",
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
     "fmt:rust": "cargo fmt --all",
     "fmt:rust:check": "cargo fmt --all --check",
     "bindings": "cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run fmt:rust:check && npm run lint:rust && npm run test:rust",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run fmt:rust:check && npm run lint:rust && npm run test:rust",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky"
   },
@@ -52,6 +54,7 @@
     "prettier": "^3.8.3",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.60.0",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.9"
   }
 }
