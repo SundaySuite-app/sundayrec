@@ -21,6 +21,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::selftest::RecordingTelemetry;
+
 /// A non-secret summary of the user's settings for the report. EVERY field here
 /// is safe to print. Secrets (cloud tokens, e-mail/SMTP credentials, stream
 /// keys) are intentionally absent — see the module docs: the report cannot leak
@@ -143,6 +145,15 @@ pub struct DiagnosticsInput {
     /// Whether the Windows orphan-guard Job Object is active this session.
     #[serde(default)]
     pub orphan_guard_active: Option<bool>,
+    /// Health telemetry of the MOST RECENT recording (drops/xruns/IPC-starvation),
+    /// read back from `last-recording.json`. `None` = nothing recorded yet. The
+    /// automatic passive-logging signal that lets the report explain stutter/lag.
+    #[serde(default)]
+    pub last_recording: Option<RecordingTelemetry>,
+    /// Recent recordings' telemetry (newest last) for a TREND view — so the user
+    /// pastes a pattern, not a one-off snapshot. Capped upstream (~20).
+    #[serde(default)]
+    pub recording_history: Vec<RecordingTelemetry>,
 }
 
 /// The most recent recording error, read back from `last-error.json` (written by
@@ -332,6 +343,30 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
 
+    // Last recording HEALTH (automatic telemetry): drops/xruns = stutter,
+    // levels_dropped = the UI/IPC couldn't keep up (recording mode lag).
+    if let Some(t) = &input.last_recording {
+        if t.is_degraded() {
+            let mut bits: Vec<String> = Vec::new();
+            if t.drops > 0 {
+                bits.push(format!("{} dropp", t.drops));
+            }
+            if t.xruns > 0 {
+                bits.push(format!("{} xruns", t.xruns));
+            }
+            if t.levels_dropped > 0 {
+                bits.push(format!("{} IPC-overbelastninger", t.levels_dropped));
+            }
+            out.push(DiagnosticFinding::new(
+                "SR-CAPTURE-01",
+                Warning,
+                "Forrige opptak viste tegn til hakking/treghet",
+                format!("{} (varighet {:.0} s).", bits.join(", "), t.duration_sec),
+                "Lukk andre tunge programmer, sjekk USB-kabel/strøm til lydkortet, og at samplingsrate står på «Auto». Kjør så et nytt opptak og sjekk om tallene faller.",
+            ));
+        }
+    }
+
     // All clear.
     if out.is_empty() {
         out.push(DiagnosticFinding::new(
@@ -489,6 +524,37 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
         lines.push(format!("- **Kode:** `{}`", err.code));
         lines.push(format!("- **Melding:** {}", err.message));
         lines.push(format!("- **Tidspunkt:** {}", err.timestamp));
+        lines.push(String::new());
+    }
+
+    // ── Siste opptak (helse-telemetri, automatisk innsamlet) ────────────────
+    if let Some(t) = &input.last_recording {
+        lines.push("## Siste opptak (teknisk)".to_string());
+        lines.push(format!("- **Varighet:** {:.0} s", t.duration_sec));
+        lines.push(format!("- **Dropp (frames):** {}", t.drops));
+        lines.push(format!("- **xruns/diskontinuitet:** {}", t.xruns));
+        lines.push(format!(
+            "- **IPC-overbelastning (tapte nivå-oppdateringer):** {}",
+            t.levels_dropped
+        ));
+        lines.push(format!(
+            "- **Avsluttet rent:** {}",
+            if t.exit_ok { "ja" } else { "nei" }
+        ));
+        if !t.timestamp.is_empty() {
+            lines.push(format!("- **Tidspunkt:** {}", t.timestamp));
+        }
+        // Trend across recent recordings (newest first) so a pattern is visible.
+        if input.recording_history.len() > 1 {
+            lines.push("### Trend (nyeste først)".to_string());
+            for h in input.recording_history.iter().rev().take(5) {
+                let badge = if h.is_degraded() { "⚠️" } else { "✅" };
+                lines.push(format!(
+                    "- {badge} {} — dropp {}, xruns {}, ipc {} ({:.0} s)",
+                    h.timestamp, h.drops, h.xruns, h.levels_dropped, h.duration_sec
+                ));
+            }
+        }
         lines.push(String::new());
     }
 
@@ -714,5 +780,39 @@ mod tests {
         assert!(md.contains("\"format\": \"mp3\""));
         assert!(md.contains("\"channels\": \"stereo\""));
         assert!(md.contains("\"filenamePattern\": \"date\""));
+    }
+
+    #[test]
+    fn degraded_last_recording_warns_and_renders_section() {
+        let mut input = sample_input();
+        input.last_recording = Some(RecordingTelemetry {
+            drops: 3,
+            xruns: 1,
+            levels_dropped: 5,
+            duration_sec: 65.0,
+            timestamp: "2026-06-15T10:00:00+02:00".into(),
+            exit_ok: true,
+            ..Default::default()
+        });
+        let f = detect_issues(&input);
+        assert!(f
+            .iter()
+            .any(|x| x.code == "SR-CAPTURE-01" && x.severity == DiagnosticSeverity::Warning));
+        let md = build_report_markdown(input);
+        assert!(md.contains("Siste opptak (teknisk)"));
+        assert!(md.contains("IPC-overbelastning"));
+    }
+
+    #[test]
+    fn clean_last_recording_no_capture_finding() {
+        let mut input = sample_input();
+        input.last_recording = Some(RecordingTelemetry {
+            duration_sec: 60.0,
+            exit_ok: true,
+            ..Default::default()
+        });
+        let f = detect_issues(&input);
+        assert!(!f.iter().any(|x| x.code == "SR-CAPTURE-01"));
+        // No degraded recording → still no SR-CAPTURE among findings.
     }
 }
