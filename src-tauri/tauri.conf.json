@@ -34,7 +34,8 @@
             "$AUDIO/**",
             "$DESKTOP/**",
             "$APPDATA/**",
-            "$APPLOCALDATA/**"
+            "$APPLOCALDATA/**",
+            "$TEMP/**"
           ],
           "deny": [
             "$HOME/.ssh/**",

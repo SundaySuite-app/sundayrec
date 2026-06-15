@@ -70,7 +70,9 @@ async function pickPath(opts: {
  *  <audio>/<video>/<img> `src`. The OLD Electron renderer used `file://` (and a
  *  custom `media://` protocol), which WKWebView blocks — every editor preview /
  *  mastering playback that set `file://…` was silently dead. The asset protocol
- *  is enabled with scope `**` in tauri.conf, so this is the supported path. */
+ *  is enabled in tauri.conf with an allow-list scope (the user media roots —
+ *  $DOCUMENT/$DOWNLOAD/$VIDEO/$AUDIO/$DESKTOP/$APPDATA/$APPLOCALDATA — plus the
+ *  OS temp dir for previews/proxies), so this is the supported path. */
 function toAssetUrl(path: string): string {
   return path ? convertFileSrc(path) : "";
 }

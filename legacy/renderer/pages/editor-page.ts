@@ -4,7 +4,7 @@ import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
-import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
+import { E, $, markDirty, clearDirty, setOnDirtyChange, playbackMediaEl } from './editor/state'
 import { formatDuration } from './editor/format'
 import { computePeakGain, setNormalizeUI } from './editor/peaks'
 import { minPlayableSec, maxPlayableSec, clampPlayable, clampMain, xToSec, getRegionAtX } from './editor/geometry'
@@ -330,7 +330,8 @@ export function setupEditorPage(): void {
   const seekToSec = (sec: number): void => {
     E.playStartSec = clampPlayable(snapOutOfCut(sec))
     updateTimecode(E.playStartSec)
-    if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+    const pe = playbackMediaEl()
+    if (pe) pe.currentTime = clampMain(E.playStartSec)
     drawWaveform()
   }
   setupTranscriptPanel(seekToSec)
@@ -963,6 +964,15 @@ function closeCurrentFile(): void {
     E.videoEl.pause()
     E.videoEl.src = ''
     E.videoEl.load()
+  }
+  // Tear down the streamed playback proxy too (oversized/exotic audio), or its
+  // <audio> element + temp file would leak past an explicit close. Mirrors the
+  // loader's teardown on the load-replacement path.
+  if (E.proxyAudioEl) {
+    E.proxyAudioEl.pause()
+    E.proxyAudioEl.removeAttribute('src')
+    E.proxyAudioEl.load()
+    E.proxyAudioEl = null
   }
   E.isVideoFile = false
   E.audioGainDb = 0
