@@ -111,6 +111,7 @@ export async function loadFile(fp: string): Promise<void> {
     E.isVideoFile = false
   } else {
     const streams = await window.api.editorProbeStreams(fp)
+    if (seq !== E.loadSeq) return // a newer load started during the probe
     E.isVideoFile = !!streams && streams.hasVideo
   }
 
@@ -128,6 +129,7 @@ export async function loadFile(fp: string): Promise<void> {
     // used a custom `media://current` scheme that doesn't exist in WKWebView, so
     // the video editor never showed a frame). convertFileSrc handles the path.
     await window.api.editorSetVideoPath(fp)
+    if (seq !== E.loadSeq) return
     if (E.videoEl) {
       E.videoEl.src = window.api.toAssetUrl(fp)
       E.videoEl.load()
@@ -156,13 +158,21 @@ export async function loadFile(fp: string): Promise<void> {
           if (E.videoEl.readyState >= 1 && isFinite(E.videoEl.duration)) {
             resolve(E.videoEl.duration); return
           }
-          const onMeta  = () => { E.videoEl?.removeEventListener('error', onErr); resolve(E.videoEl?.duration ?? 0) }
-          const onErr   = () => { E.videoEl?.removeEventListener('loadedmetadata', onMeta); reject(new Error('video error')) }
-          E.videoEl.addEventListener('loadedmetadata', onMeta, { once: true })
-          E.videoEl.addEventListener('error', onErr, { once: true })
-          setTimeout(() => {
+          // Single cleanup so neither the timeout nor the listeners outlive the
+          // promise — an orphaned 15 s timer + stale listeners on a reused video
+          // element corrupted the NEXT file's load when the user switched fast.
+          let timer = 0
+          const cleanup = () => {
+            clearTimeout(timer)
             E.videoEl?.removeEventListener('loadedmetadata', onMeta)
             E.videoEl?.removeEventListener('error', onErr)
+          }
+          const onMeta = () => { cleanup(); resolve(E.videoEl?.duration ?? 0) }
+          const onErr  = () => { cleanup(); reject(new Error('video error')) }
+          E.videoEl.addEventListener('loadedmetadata', onMeta, { once: true })
+          E.videoEl.addEventListener('error', onErr, { once: true })
+          timer = window.setTimeout(() => {
+            cleanup()
             reject(new Error('timeout waiting for video metadata'))
           }, 15000)
         })
@@ -181,7 +191,7 @@ export async function loadFile(fp: string): Promise<void> {
     }
   } else if (WEB_AUDIO_EXTS.has(ext)) {
     // Browser-decodable audio: read raw bytes → Web Audio API.
-    // Files above EDITOR_INLINE_LIMIT (400 MB) come back as { tooLarge: true }
+    // Files above EDITOR_INLINE_LIMIT (100 MB) come back as { tooLarge: true }
     // and we fall through to the ffmpeg-extract path so we don't OOM the
     // renderer (Web Audio decodes to 32-bit float — a 1 GB FLAC = 5+ GB PCM).
     const raw = await window.api.editorReadFile(fp) as unknown
@@ -320,7 +330,10 @@ export async function loadFile(fp: string): Promise<void> {
   // above backs the WAVEFORM but is telephone-quality to LISTEN to. Transcode a
   // seekable stereo AAC proxy in the background and stream it via <audio> once
   // ready — a graceful upgrade (playback uses the 8 kHz buffer until it arrives).
-  if (usedFfmpegExtract) void startPlaybackProxy(fp, seq)
+  // OFF by default (opt-in): the proxy transport is rig-UNVERIFIED and was a
+  // suspected source of editor instability, so the stable 8 kHz path is the
+  // default. Enable per [`isPlaybackProxyEnabled`] once it's verified on a rig.
+  if (usedFfmpegExtract && isPlaybackProxyEnabled()) void startPlaybackProxy(fp, seq)
 
   if (E.pendingSeekSec != null) {
     const target = E.pendingSeekSec
@@ -373,6 +386,21 @@ function teardownProxyAudio(): void {
     try { el.pause() } catch {}
     el.removeAttribute('src')
     try { el.load() } catch {}
+  }
+}
+
+/**
+ * Whether the experimental full-fidelity playback proxy (C5) is opted in. OFF by
+ * default — the stable 8 kHz preview is the playback path until the proxy is
+ * verified on a real rig. Opt in by setting localStorage
+ * `sundayrec.editor.playbackProxy` to `"on"` (a settings toggle can write this
+ * later). Kept a frontend-only flag so enabling it can't touch the backend.
+ */
+function isPlaybackProxyEnabled(): boolean {
+  try {
+    return localStorage.getItem('sundayrec.editor.playbackProxy') === 'on'
+  } catch {
+    return false
   }
 }
 

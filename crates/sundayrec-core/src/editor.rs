@@ -990,10 +990,13 @@ pub fn sidecar_path(dir: &str, stem: &str, sidecar: Sidecar) -> Option<String> {
 
 // ── Inline-vs-stream file-size guard (P1 parity) ─────────────────────────────
 
-/// 400 MB — the editor reads a media file's bytes inline up to this size (covers
-/// a 4-hour service in lossless WAV); anything larger the renderer must stream
-/// via the ffmpeg peaks-extract path instead. Mirrors `EDITOR_INLINE_LIMIT`.
-pub const EDITOR_INLINE_LIMIT: u64 = 400 * 1024 * 1024;
+/// 100 MB — the editor reads a media file's bytes inline up to this size;
+/// anything larger the renderer streams via the ffmpeg peaks-extract path
+/// instead. Lowered from 400 MB: inline reads cross IPC as bytes AND decode to
+/// f32 PCM in the webview, so a near-limit file briefly held ~4× its size in
+/// renderer RAM (a ~1.6 GB spike at 400 MB → editor freeze / OOM). 100 MB keeps
+/// the spike bounded; 100 MB–4 h files take the low-memory 8 kHz extract path.
+pub const EDITOR_INLINE_LIMIT: u64 = 100 * 1024 * 1024;
 
 /// What `editor-read-file` should do for a file of `size` bytes:
 /// read it inline, or signal `{ tooLarge }` so the renderer streams it.
@@ -1919,13 +1922,15 @@ mod tests {
     // ── inline-vs-stream guard ─────────────────────────────────────────────────────
 
     #[test]
-    fn inline_decision_flips_at_400mb() {
+    fn inline_decision_flips_at_limit() {
         assert_eq!(inline_decision(0), InlineDecision::Inline);
         assert_eq!(inline_decision(EDITOR_INLINE_LIMIT), InlineDecision::Inline);
         assert_eq!(
             inline_decision(EDITOR_INLINE_LIMIT + 1),
             InlineDecision::TooLarge
         );
+        // The lowered 100 MB limit: a 200 MB file now streams instead of OOM-risking.
+        assert_eq!(inline_decision(200 * 1024 * 1024), InlineDecision::TooLarge);
     }
 
     // ── temp-file cleanup ──────────────────────────────────────────────────────────

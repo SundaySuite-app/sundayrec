@@ -89,6 +89,9 @@ export function deleteCut(i: number): void {
 }
 
 export function undoCut(): void {
+  // Never swap the cut array out from under an in-flight drag — that orphans the
+  // drag's in-place edits and corrupts history on mouse-up. Let the drag finish.
+  if (E.handleDrag || E.isDragging) return
   if (E.cutHistoryIdx <= 0) {
     // Undo back to empty state
     if (E.cutHistoryIdx === 0 && E.cuts.length > 0) {
@@ -107,6 +110,7 @@ export function undoCut(): void {
 }
 
 export function redoCut(): void {
+  if (E.handleDrag || E.isDragging) return // see undoCut: don't disrupt a live drag
   if (E.cutHistoryIdx >= E.cutHistory.length - 1) return
   E.cutHistoryIdx++
   E.cuts = JSON.parse(JSON.stringify(E.cutHistory[E.cutHistoryIdx]))
