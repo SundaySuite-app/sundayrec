@@ -836,6 +836,17 @@ pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
     .collect()
 }
 
+/// Filename prefix for the editor's playback-proxy temp `.m4a` (the full-fidelity
+/// listen transport for oversized/exotic files). The seam writes one to the OS
+/// temp dir and sweeps stale ones by this prefix so they don't accumulate.
+pub const PLAYBACK_PROXY_PREFIX: &str = "sundayrec-playback-proxy-";
+
+/// Whether a temp-dir entry name is a leftover playback-proxy m4a the seam should
+/// sweep before writing a fresh one. Mirrors [`crate::mastering::is_preview_temp_name`].
+pub fn is_playback_proxy_temp_name(name: &str) -> bool {
+    name.starts_with(PLAYBACK_PROXY_PREFIX) && name.ends_with(".m4a")
+}
+
 /// ffmpeg arguments to decode `input_path` to 16 kHz mono signed-16 PCM on stdout
 /// for the [`crate::audio_analysis`] classifier (it expects 16 kHz). `-f s16le`
 /// to a pipe so the seam reads raw samples without a WAV header. Mirrors the
@@ -1799,6 +1810,21 @@ mod tests {
             "seekable: {joined}"
         );
         assert_eq!(args.last().unwrap(), "/tmp/proxy.m4a");
+    }
+
+    #[test]
+    fn playback_proxy_temp_name_recognises_only_its_own_files() {
+        assert!(is_playback_proxy_temp_name(
+            "sundayrec-playback-proxy-0192abc.m4a"
+        ));
+        // Not the mastering preview, not the original, not a half-named match.
+        assert!(!is_playback_proxy_temp_name(
+            "sundayrec-master-preview-1.mp3"
+        ));
+        assert!(!is_playback_proxy_temp_name(
+            "sundayrec-playback-proxy-1.wav"
+        ));
+        assert!(!is_playback_proxy_temp_name("service.m4a"));
     }
 
     #[test]

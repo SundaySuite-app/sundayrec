@@ -819,6 +819,12 @@ pub async fn extract_audio(_input_path: &str) -> AppResult<EditorAudioExtract> {
     disabled("extractAudio")
 }
 
+/// Transcode a large/exotic recording to a seekable stereo AAC playback proxy.
+#[cfg(not(feature = "editor"))]
+pub async fn extract_playback_proxy(_input_path: &str) -> AppResult<String> {
+    disabled("extractPlaybackProxy")
+}
+
 /// Content-detect segments (silence/speech/music + promoted sermon block).
 #[cfg(not(feature = "editor"))]
 pub async fn segments(_input_path: &str) -> AppResult<Vec<EditorSegment>> {
@@ -941,6 +947,58 @@ pub async fn extract_audio(input_path: &str) -> AppResult<EditorAudioExtract> {
         .await
         .map_err(|e| AppError::Recording(format!("read extracted wav: {e}")))?;
     Ok(EditorAudioExtract { bytes, duration })
+}
+
+/// Transcode a large/exotic recording to a small, **seekable stereo AAC `.m4a`
+/// proxy** for AUDIBLE full-fidelity playback via an `<audio>` element (streams
+/// from disk → no multi-GB Web-Audio PCM buffer). The 8 kHz WAV from
+/// [`extract_audio`] stays the waveform source; this is the listen-quality
+/// transport that replaces it for playback. Returns the temp-file path the
+/// renderer plays through `asset://` (the same pattern as the mastering preview).
+/// Export still runs on the original file, so quality is untouched.
+/// HARDWARE-UNVERIFIED — the renderer wiring is a RIGG-VERIFISER follow-up.
+#[cfg(feature = "editor")]
+pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
+    use sundayrec_core::editor::{playback_proxy_args, PLAYBACK_PROXY_PREFIX};
+
+    if !std::path::Path::new(input_path).exists() {
+        return Err(AppError::Validation("file_not_found".into()));
+    }
+    // Only one proxy is alive at a time (the currently-open file), so sweep any
+    // stale ones first — a ~tens-of-MB m4a per open would otherwise pile up.
+    sweep_playback_proxies();
+    let out_path = std::env::temp_dir().join(format!(
+        "{PLAYBACK_PROXY_PREFIX}{}.m4a",
+        uuid::Uuid::now_v7().simple()
+    ));
+    let out_str = out_path.to_string_lossy().into_owned();
+    let args = playback_proxy_args(input_path, &out_str);
+    run_ffmpeg(&args).await?;
+    if !out_path.exists() {
+        return Err(AppError::Recording(
+            "playback proxy produced no file".into(),
+        ));
+    }
+    Ok(out_str)
+}
+
+/// Best-effort sweep of stale playback-proxy m4a files from the OS temp dir.
+/// Called before writing a fresh proxy so they don't accumulate across opens.
+#[cfg(feature = "editor")]
+fn sweep_playback_proxies() {
+    use sundayrec_core::editor::is_playback_proxy_temp_name;
+
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for entry in entries.flatten() {
+            if entry
+                .file_name()
+                .to_str()
+                .is_some_and(is_playback_proxy_temp_name)
+            {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 
 /// Decode to 16 kHz mono PCM, classify + group with the core, promote the

@@ -1,5 +1,5 @@
 import { t } from '../../i18n'
-import { E, cssVar } from './state'
+import { E, cssVar, playbackMediaEl } from './state'
 import { getLayoutGeom, secToX, effIntroDur, effOutroDur } from './geometry'
 import { gainFactor } from './peaks'
 import { formatTime, formatDuration } from './format'
@@ -61,9 +61,12 @@ export function drawWaveform(): void {
   ctx.lineWidth = 1
   ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke()
 
-  // Current playhead time (used for "past" shading)
-  const curSec = (E.isPlaying && E.isVideoFile && E.videoEl)
-    ? E.videoEl.currentTime
+  // Current playhead time (used for "past" shading). Element transports (video
+  // or the audio proxy) report position via currentTime; the Web-Audio buffer
+  // path derives it from the AudioContext clock.
+  const playEl = playbackMediaEl()
+  const curSec = (E.isPlaying && playEl)
+    ? playEl.currentTime
     : (E.isPlaying && E.audioCtx)
     ? E.playStartSec + (E.audioCtx.currentTime - E.playStartCtxTime)
     : E.playStartSec

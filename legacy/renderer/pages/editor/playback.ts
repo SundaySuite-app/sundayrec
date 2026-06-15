@@ -1,4 +1,4 @@
-import { E, $ } from './state'
+import { E, $, playbackMediaEl } from './state'
 import { clampMain, clampPlayable, effIntroDur, effOutroDur } from './geometry'
 import { gainFactor } from './peaks'
 import { formatTime } from './format'
@@ -16,7 +16,8 @@ export function seekTo(sec: number): void {
   stopPlay()
   E.playStartSec = snapOutOfCut(clampPlayable(sec))
   updateTimecode(E.playStartSec)
-  if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+  const seekEl = playbackMediaEl()
+  if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
   const mainPlayhead = clampMain(E.playStartSec)
   if (mainPlayhead < E.vpStart || mainPlayhead > E.vpEnd) {
     const span = E.vpEnd - E.vpStart
@@ -52,7 +53,8 @@ export function seekBy(secs: number): void {
   stopPlay()
   E.playStartSec = clampPlayable(E.playStartSec + secs)
   updateTimecode(E.playStartSec)
-  if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+  const seekEl = playbackMediaEl()
+  if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
   // Pan viewport when playhead drops out of view. Viewport itself stays in
   // main coords — intro/outro live in their own slots and always remain
   // visible when at the recording edge.
@@ -86,57 +88,44 @@ export function togglePlay(preview: boolean): void {
 }
 
 // Track the current onEnded listener so we can remove it on manual stopPlay.
-// Without removal, repeated start/stop accumulates dead listeners on videoEl
-// (the once:true flag fires-and-removes, but only when the event actually
-// fires — manual stop never fires it).
-let videoEndedHandler: (() => void) | null = null
+// Without removal, repeated start/stop accumulates dead listeners on the media
+// element (the once:true flag fires-and-removes, but only when the event
+// actually fires — manual stop never fires it). Covers both transports: the
+// video element and the streamed audio proxy.
+let mediaEndedHandler: (() => void) | null = null
 
-export function attachVideoEndedHandler(onEnded: () => void): void {
-  if (!E.videoEl) return
-  if (videoEndedHandler) E.videoEl.removeEventListener('ended', videoEndedHandler)
-  videoEndedHandler = onEnded
-  E.videoEl.addEventListener('ended', onEnded, { once: true })
+export function attachMediaEndedHandler(onEnded: () => void): void {
+  const el = playbackMediaEl()
+  if (!el) return
+  if (mediaEndedHandler) el.removeEventListener('ended', mediaEndedHandler)
+  mediaEndedHandler = onEnded
+  el.addEventListener('ended', onEnded, { once: true })
 }
 
-export function detachVideoEndedHandler(): void {
-  if (E.videoEl && videoEndedHandler) {
-    E.videoEl.removeEventListener('ended', videoEndedHandler)
-    videoEndedHandler = null
+export function detachMediaEndedHandler(): void {
+  const el = playbackMediaEl()
+  if (el && mediaEndedHandler) {
+    el.removeEventListener('ended', mediaEndedHandler)
+    mediaEndedHandler = null
   }
 }
 
 export function startPlay(preview: boolean): void {
-  // Video-only mode: no audio buffer, but video element can still play
-  if (E.isVideoFile && E.videoEl && !E.audioBuffer) {
+  // Element-driven playback: video files, or oversized/exotic audio routed to a
+  // streamed AAC proxy. Both play through an HTMLMediaElement (currentTime +
+  // play/pause) rather than the scheduled Web-Audio buffer, and both fall here
+  // before the audioBuffer guard so video-only mode (no decoded buffer) plays.
+  const mediaEl = playbackMediaEl()
+  if (mediaEl) {
     E.isPreview    = preview
     E.loopStartSec = E.playStartSec
     E.isPlaying    = true
-    E.videoEl.currentTime = clampMain(E.playStartSec)
-    E.videoEl.play().catch(() => {})
-    attachVideoEndedHandler(() => {
-      videoEndedHandler = null
-      if (!E.isPlaying) return
-      if (E.isLooping) { stopPlay(); E.playStartSec = E.loopStartSec; startPlay(E.isPreview) }
-      else { E.isPlaying = false; cancelAnimationFrame(E.rafId); updatePlayIcon(); drawWaveform() }
-    })
-    updatePlayIcon()
-    animate()
-    return
-  }
+    mediaEl.currentTime = clampMain(E.playStartSec)
+    mediaEl.play().catch(() => {})
 
-  if (!E.audioBuffer || !E.audioCtx) return
-
-  // Video playback: drive the video element, use Web Audio only for gain meter
-  if (E.isVideoFile && E.videoEl) {
-    E.isPreview    = preview
-    E.loopStartSec = E.playStartSec
-    E.isPlaying    = true
-    E.videoEl.currentTime = clampMain(E.playStartSec)
-    E.videoEl.play().catch(() => {})
-
-    // On natural end, handle loop / stop
-    attachVideoEndedHandler(() => {
-      videoEndedHandler = null
+    // On natural end, handle loop / stop.
+    attachMediaEndedHandler(() => {
+      mediaEndedHandler = null
       if (!E.isPlaying) return
       if (E.isLooping) {
         stopPlay()
@@ -154,6 +143,8 @@ export function startPlay(preview: boolean): void {
     animate()
     return
   }
+
+  if (!E.audioBuffer || !E.audioCtx) return
 
   // If the playhead has somehow ended up inside a cut (e.g. arrow-key seek
   // landed there), snap it to the cut's end before scheduling so audio and
@@ -268,12 +259,13 @@ export function startPlay(preview: boolean): void {
 }
 
 export function stopPlay(): void {
-  detachVideoEndedHandler()
-  if (E.isVideoFile && E.videoEl) {
+  detachMediaEndedHandler()
+  const mediaEl = playbackMediaEl()
+  if (mediaEl) {
     if (E.isPlaying) {
-      E.playStartSec = E.videoEl.currentTime
+      E.playStartSec = mediaEl.currentTime
     }
-    E.videoEl.pause()
+    mediaEl.pause()
     E.isPlaying = false
     cancelAnimationFrame(E.rafId)
     updatePlayIcon()
@@ -295,14 +287,15 @@ export function stopPlay(): void {
 export function animate(): void {
   if (!E.isPlaying) return
 
-  if (E.isVideoFile && E.videoEl) {
-    const curSec = E.videoEl.currentTime
+  const mediaEl = playbackMediaEl()
+  if (mediaEl) {
+    const curSec = mediaEl.currentTime
 
     // Preview mode: skip over cut regions
     if (E.isPreview) {
       const nextCut = E.cuts.find(c => curSec >= c.start && curSec < c.end)
       if (nextCut) {
-        E.videoEl.currentTime = nextCut.end
+        mediaEl.currentTime = nextCut.end
         E.playStartSec = nextCut.end
       }
     }

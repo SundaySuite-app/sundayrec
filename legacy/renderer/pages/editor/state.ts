@@ -76,6 +76,11 @@ export const E = {
   audioCtx: null as AudioContext | null,
   sourceNodes: [] as AudioBufferSourceNode[],
   audioBuffer: null as AudioBuffer | null,
+  // Full-fidelity playback transport for oversized/exotic audio: an <audio>
+  // element streaming a seekable AAC proxy from disk (asset://). When set it
+  // drives playback instead of the 8 kHz Web-Audio buffer (which then only
+  // backs the waveform). null = no proxy → the AudioBuffer drives playback.
+  proxyAudioEl: null as HTMLAudioElement | null,
   playStartCtxTime: 0,
   playStartSec: 0,
   isPlaying: false,
@@ -147,6 +152,19 @@ export const E = {
   canvas: null as unknown as HTMLCanvasElement,
   minimap: null as unknown as HTMLCanvasElement,
   minimapVp: null as unknown as HTMLElement,
+}
+
+/**
+ * The media element driving playback when one is active: the video element for
+ * video files, or the streamed AAC proxy for oversized/exotic audio that can't
+ * go through Web Audio. `null` → the decoded `AudioBuffer` drives playback
+ * (normal-size, browser-decodable audio). Centralising the transport choice
+ * here keeps seek / stop / animate / scrub all in agreement — each just asks
+ * "is there a media element?" instead of re-deriving `isVideoFile && videoEl`.
+ */
+export function playbackMediaEl(): HTMLMediaElement | null {
+  if (E.proxyAudioEl) return E.proxyAudioEl
+  return E.isVideoFile ? E.videoEl : null
 }
 
 // ── Dirty-state helpers ───────────────────────────────────────────────────

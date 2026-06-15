@@ -1032,6 +1032,13 @@ const api: Record<string, unknown> = {
     if (!r || !r.bytes) return null;
     return { data: new Uint8Array(r.bytes), duration: r.duration ?? 0 };
   },
+  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file for
+  // full-fidelity playback of oversized/exotic files (the <audio> element
+  // streams it from disk via asset://, so no multi-GB Web-Audio PCM buffer).
+  // Returns the proxy path, or null if the transcode failed (caller then keeps
+  // the 8 kHz buffer for playback). The 8 kHz WAV remains the waveform source.
+  editorExtractPlaybackProxy: async (fp: string) =>
+    call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
   editorPickVideoFile: async () =>
     pickPath({ name: "Video", extensions: VIDEO_EXT }),
   editorSaveVideo: async () => ({ ok: false }),

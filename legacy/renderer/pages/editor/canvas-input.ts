@@ -1,4 +1,4 @@
-import { E } from './state'
+import { E, playbackMediaEl } from './state'
 import { xToSec, xToMainSec, secToX, clampMain, clampPlayable, maxPlayableSec } from './geometry'
 import { addCut, deleteCut, pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
 import { drawWaveform, scheduleDrawWaveform, drawMinimap, updateMinimapViewport } from './waveform'
@@ -70,7 +70,7 @@ export function onCanvasMove(e: MouseEvent): void {
   if (E.playheadDragging) {
     E.playStartSec = clampPlayable(extSec)
     updateTimecode(E.playStartSec)
-    if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+    { const pe = playbackMediaEl(); if (pe) pe.currentTime = clampMain(E.playStartSec) }
     scheduleDrawWaveform()
     return
   }
@@ -119,7 +119,7 @@ export function onCanvasUp(e: MouseEvent): void {
     // "skip me" zones, so resting the playhead inside one is meaningless.
     E.playStartSec = snapOutOfCut(E.playStartSec)
     updateTimecode(E.playStartSec)
-    if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+    { const pe = playbackMediaEl(); if (pe) pe.currentTime = clampMain(E.playStartSec) }
     drawWaveform()
     return
   }
@@ -142,7 +142,7 @@ export function onCanvasUp(e: MouseEvent): void {
     stopPlay()
     E.playStartSec = snapOutOfCut(clampPlayable(extSec))
     updateTimecode(E.playStartSec)
-    if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+    { const pe = playbackMediaEl(); if (pe) pe.currentTime = clampMain(E.playStartSec) }
   }
 
   E.dragStartSec = -1

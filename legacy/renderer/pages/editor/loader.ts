@@ -1,11 +1,11 @@
 import { settings } from '../../state'
 import type { RecordingMetadata } from '../../../types'
-import { E, $, clearDirty, VIDEO_EXTS, WEB_AUDIO_EXTS } from './state'
+import { E, $, clearDirty, VIDEO_EXTS, WEB_AUDIO_EXTS, playbackMediaEl } from './state'
 import { computePeaks, computeJinglePeaks, setNormalizeUI } from './peaks'
 import { fitAll } from './viewport'
 import { clampPlayable, clampMain } from './geometry'
 import { snapOutOfCut } from './canvas-input'
-import { stopPlay, updateTimecode, updateTotalTime } from './playback'
+import { stopPlay, startPlay, updateTimecode, updateTotalTime } from './playback'
 import { renderAnalyzePanel, runDetection } from './detection'
 import { renderMetaPanel, renderChapterList } from './metadata'
 import { renderCutList, updateRemainingDisplay } from './cuts'
@@ -82,6 +82,11 @@ export async function loadFile(fp: string): Promise<void> {
   E.filePath = fp
   E.peaks = null
   E.audioBuffer = null
+  // Drop any previous file's streamed playback proxy (set below only for the
+  // ffmpeg-extract paths). Until/unless a fresh one is ready, playback uses the
+  // decoded buffer — so this also defines the fallback for the new file.
+  teardownProxyAudio()
+  let usedFfmpegExtract = false
   E.playStartSec = 0
   E.meta = { title: '', speaker: '', description: '', chapters: [] }
   E.metaDirty = false
@@ -191,6 +196,7 @@ export async function loadFile(fp: string): Promise<void> {
       console.log('[editor] file too large for Web Audio, using ffmpeg-extract path')
       const ok = await loadViaFfmpegExtract(fp, seq)
       if (!ok) return
+      usedFfmpegExtract = true
     } else {
       const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer)
       const ab  = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
@@ -217,6 +223,7 @@ export async function loadFile(fp: string): Promise<void> {
     // Browser cannot decode these — extract via ffmpeg at 8 kHz mono.
     // The resulting WAV is decodable by Web Audio API and serves as both
     // waveform source and playback buffer (phone-call quality, adequate for cut-finding).
+    usedFfmpegExtract = true
     const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
     if (seq !== E.loadSeq) return
     if (!result) {
@@ -309,12 +316,19 @@ export async function loadFile(fp: string): Promise<void> {
     updateMinimapViewport()
   })
 
+  // Full-fidelity playback upgrade for oversized/exotic files: the 8 kHz extract
+  // above backs the WAVEFORM but is telephone-quality to LISTEN to. Transcode a
+  // seekable stereo AAC proxy in the background and stream it via <audio> once
+  // ready — a graceful upgrade (playback uses the 8 kHz buffer until it arrives).
+  if (usedFfmpegExtract) void startPlaybackProxy(fp, seq)
+
   if (E.pendingSeekSec != null) {
     const target = E.pendingSeekSec
     E.pendingSeekSec = null
     E.playStartSec = clampPlayable(snapOutOfCut(target))
     updateTimecode(E.playStartSec)
-    if (E.isVideoFile && E.videoEl) E.videoEl.currentTime = clampMain(E.playStartSec)
+    const seekEl = playbackMediaEl()
+    if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
     drawWaveform()
   }
 
@@ -345,6 +359,55 @@ export async function loadFile(fp: string): Promise<void> {
 
   // Update Stage-kapitler button visibility (opt-in, no-op when disabled).
   void updateStageButton()
+}
+
+/**
+ * Tear down the streamed playback proxy (if any): pause it, drop its `src` so
+ * WKWebView releases the temp file, and clear the ref so playback falls back to
+ * the 8 kHz Web-Audio buffer. Called on every load before a new file is read.
+ */
+function teardownProxyAudio(): void {
+  const el = E.proxyAudioEl
+  E.proxyAudioEl = null
+  if (el) {
+    try { el.pause() } catch {}
+    el.removeAttribute('src')
+    try { el.load() } catch {}
+  }
+}
+
+/**
+ * Transcode a seekable stereo AAC proxy for an oversized/exotic file and, once
+ * ready, route playback through a streamed `<audio>` element (full fidelity,
+ * low memory — no multi-GB Web-Audio PCM). A pure quality upgrade over the
+ * 8 kHz preview buffer: on ANY failure (transcode error, a newer load, or the
+ * element failing to load) playback keeps the 8 kHz buffer. If a preview is
+ * mid-play when the proxy arrives, it resumes through the proxy from the same
+ * spot (`stopPlay` syncs `playStartSec`) so the upgrade is near-seamless.
+ * HARDWARE-UNVERIFIED — `<audio>`-via-`asset://` mirrors the mastering preview.
+ */
+async function startPlaybackProxy(fp: string, seq: number): Promise<void> {
+  let proxyPath: string | null = null
+  try {
+    proxyPath = await window.api.editorExtractPlaybackProxy(fp)
+  } catch { proxyPath = null }
+  // A newer file started loading while we transcoded, or the transcode failed.
+  if (seq !== E.loadSeq || !proxyPath) return
+
+  const el = new Audio()
+  el.preload = 'auto'
+  // Revert to the 8 kHz buffer if the proxy turns out unplayable.
+  el.addEventListener('error', () => {
+    if (E.proxyAudioEl === el) E.proxyAudioEl = null
+  }, { once: true })
+  el.src = window.api.toAssetUrl(proxyPath)
+
+  const wasPlaying = E.isPlaying
+  const preview = E.isPreview
+  if (wasPlaying) stopPlay()          // syncs E.playStartSec to the current position
+  E.proxyAudioEl = el
+  el.load()
+  if (wasPlaying) startPlay(preview)  // resume from the same spot via the proxy
 }
 
 export async function reloadIntroOutro(): Promise<void> {

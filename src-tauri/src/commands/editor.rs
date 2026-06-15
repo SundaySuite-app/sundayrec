@@ -36,6 +36,15 @@ pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioEx
     editor::extract_audio(&input_path).await
 }
 
+/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
+/// full-fidelity playback; returns the temp-file path the renderer streams via
+/// `asset://` (an `<audio>` element). The 8 kHz WAV stays the waveform source and
+/// export still runs on the original, so quality is untouched. HARDWARE-UNVERIFIED.
+#[tauri::command]
+pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {
+    editor::extract_playback_proxy(&input_path).await
+}
+
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
 #[tauri::command]
 pub async fn editor_segments(input_path: String) -> AppResult<Vec<EditorSegment>> {

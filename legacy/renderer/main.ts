@@ -197,6 +197,7 @@ declare global {
       editorSetVideoPath:      (filePath: string) => Promise<boolean>
       editorExtractAudioPeaks: (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
       editorExtractAudioWav:   (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
+      editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>
       editorPickVideoFile:     ()                 => Promise<string | null>
       editorSaveVideo:         (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       editorExportVideo:       (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
