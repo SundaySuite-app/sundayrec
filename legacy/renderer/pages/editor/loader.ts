@@ -31,7 +31,12 @@ export async function pickAndLoad(): Promise<void> {
 export async function loadViaFfmpegExtract(fp: string, seq: number): Promise<boolean> {
   const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
   if (seq !== E.loadSeq) return false
-  if (!result) { showState('empty'); return false }
+  if (!result) {
+    console.error('[editor] ffmpeg-extract returned no audio for', fp)
+    showEditorError('Kunne ikke hente ut lyd fra filen — formatet støttes kanskje ikke, eller filen er korrupt')
+    showState('empty')
+    return false
+  }
 
   const u8 = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data as ArrayBuffer)
   const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
@@ -46,8 +51,10 @@ export async function loadViaFfmpegExtract(fp: string, seq: number): Promise<boo
     E.duration    = result.duration > 0 ? result.duration : buf.duration
     E.peaks       = computePeaks(E.audioBuffer)
     return true
-  } catch {
+  } catch (err) {
     localCtx?.close().catch(() => {})
+    console.error('[editor] could not decode extracted audio for', fp, err)
+    showEditorError('Kunne ikke dekode den uthentede lyden — filen er kanskje korrupt')
     showState('empty')
     return false
   }
@@ -173,7 +180,12 @@ export async function loadFile(fp: string): Promise<void> {
     // and we fall through to the ffmpeg-extract path so we don't OOM the
     // renderer (Web Audio decodes to 32-bit float — a 1 GB FLAC = 5+ GB PCM).
     const raw = await window.api.editorReadFile(fp) as unknown
-    if (!raw) { showState('empty'); return }
+    if (!raw) {
+      console.error('[editor] could not read audio file', fp)
+      showEditorError('Kunne ikke lese lydfilen — sjekk at filen finnes og at du har tilgang til den')
+      showState('empty')
+      return
+    }
 
     if (typeof raw === 'object' && raw !== null && 'tooLarge' in raw && (raw as { tooLarge: boolean }).tooLarge) {
       console.log('[editor] file too large for Web Audio, using ffmpeg-extract path')
@@ -192,8 +204,10 @@ export async function loadFile(fp: string): Promise<void> {
         E.audioBuffer = buf
         E.duration    = E.audioBuffer.duration
         E.peaks       = computePeaks(E.audioBuffer)
-      } catch {
+      } catch (err) {
         localCtx?.close().catch(() => {})
+        console.error('[editor] could not decode audio file', fp, err)
+        showEditorError('Kunne ikke dekode lydfilen — formatet støttes kanskje ikke')
         showState('empty')
         return
       }
@@ -205,7 +219,12 @@ export async function loadFile(fp: string): Promise<void> {
     // waveform source and playback buffer (phone-call quality, adequate for cut-finding).
     const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
     if (seq !== E.loadSeq) return
-    if (!result) { showState('empty'); return }
+    if (!result) {
+      console.error('[editor] ffmpeg-extract returned no audio for', fp)
+      showEditorError('Kunne ikke hente ut lyd fra filen — formatet støttes kanskje ikke')
+      showState('empty')
+      return
+    }
 
     const u8 = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data as ArrayBuffer)
     const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
@@ -219,8 +238,10 @@ export async function loadFile(fp: string): Promise<void> {
       E.audioBuffer = buf
       E.duration    = result.duration > 0 ? result.duration : buf.duration
       E.peaks       = computePeaks(E.audioBuffer)
-    } catch {
+    } catch (err) {
       localCtx?.close().catch(() => {})
+      console.error('[editor] could not decode extracted audio for', fp, err)
+      showEditorError('Kunne ikke dekode lyden fra filen — filen er kanskje korrupt')
       showState('empty')
       return
     }
