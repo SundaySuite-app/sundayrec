@@ -35,6 +35,10 @@ pub struct SettingsSummary {
     pub device_name: Option<String>,
     pub channels: String,
     pub sample_rate: i32,
+    /// The sample-rate MODE that actually drives capture: `"auto"` (native, no
+    /// `-ar`) or a forced `"r44100"/"r48000"/"r96000"`. A forced rate that
+    /// doesn't match the device resamples and can cause stutter.
+    pub sample_rate_mode: String,
     pub input_volume: i32,
     pub format: String,
     pub bitrate: String,
@@ -61,6 +65,7 @@ impl SettingsSummary {
             device_name: s.device_name.clone(),
             channels: serde_plain_tag(&s.channels),
             sample_rate: s.sample_rate,
+            sample_rate_mode: serde_plain_tag(&s.sample_rate_mode),
             input_volume: s.input_volume,
             format: serde_plain_tag(&s.format),
             bitrate: s.bitrate.clone(),
@@ -279,6 +284,22 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
 
+    // Forced sample rate — a known stutter cause when it doesn't match the
+    // device's native rate (ffmpeg then resamples and can drop samples). Only
+    // surfaced when the user has moved off the safe "Auto" default.
+    if input.settings.sample_rate_mode != "auto" {
+        out.push(DiagnosticFinding::new(
+            "SR-RATE-01",
+            Info,
+            "Fast samplingsrate er valgt",
+            format!(
+                "Innstillingen tvinger {} (ikke «Auto»).",
+                rate_label(&input.settings.sample_rate_mode)
+            ),
+            "Hvis lydkortet kjører en annen rate, resampler ffmpeg og du kan få hakking. Velg «Auto» under Innstillinger → Lyd med mindre du har en konkret grunn.",
+        ));
+    }
+
     // Video enabled but no camera.
     if input.settings.video_enabled && input.video_devices.is_empty() {
         out.push(DiagnosticFinding::new(
@@ -378,6 +399,16 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
     out
+}
+
+/// Human label for a `SampleRate` serde tag (`"r48000"` → `"48 kHz"`).
+fn rate_label(mode: &str) -> String {
+    match mode {
+        "r44100" => "44,1 kHz".to_string(),
+        "r48000" => "48 kHz".to_string(),
+        "r96000" => "96 kHz".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// Human-friendly byte size (MB/GB) for findings + the report.
@@ -814,5 +845,24 @@ mod tests {
         let f = detect_issues(&input);
         assert!(!f.iter().any(|x| x.code == "SR-CAPTURE-01"));
         // No degraded recording → still no SR-CAPTURE among findings.
+    }
+
+    #[test]
+    fn forced_sample_rate_is_info_finding() {
+        // Default is "auto" → no finding (the healthy test already asserts that).
+        let mut input = sample_input();
+        input.settings.sample_rate_mode = "r48000".to_string();
+        let e = detect_issues(&input)
+            .into_iter()
+            .find(|x| x.code == "SR-RATE-01")
+            .expect("forced-rate finding");
+        assert_eq!(e.severity, DiagnosticSeverity::Info);
+        assert!(e.detail.contains("48 kHz"));
+    }
+
+    #[test]
+    fn auto_sample_rate_has_no_rate_finding() {
+        let input = sample_input(); // default mode = auto
+        assert!(!detect_issues(&input).iter().any(|x| x.code == "SR-RATE-01"));
     }
 }
