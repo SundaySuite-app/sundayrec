@@ -964,7 +964,8 @@ mod tests {
             seg(1500.0, 1505.0, Silence),
         ];
         let detected = detect_segments(&segs);
-        let sermon: Vec<&DetectedSegment> = detected.iter().filter(|d| d.kind == "sermon").collect();
+        let sermon: Vec<&DetectedSegment> =
+            detected.iter().filter(|d| d.kind == "sermon").collect();
         assert_eq!(sermon.len(), 1, "exactly one sermon block marked");
         assert_eq!(sermon[0].start, 5.0);
         assert_eq!(sermon[0].end, 1500.0, "stretched across the interlude");

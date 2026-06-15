@@ -1223,26 +1223,44 @@ mod tests {
     #[test]
     fn sermon_cut_trims_head_tail_and_interior_music() {
         let segs = vec![
-            ds(0.0, 200.0, "music"),    // head worship
+            ds(0.0, 200.0, "music"), // head worship
             ds(200.0, 1600.0, "sermon"),
-            ds(800.0, 820.0, "music"),  // a clip played mid-sermon
+            ds(800.0, 820.0, "music"),   // a clip played mid-sermon
             ds(1600.0, 1700.0, "music"), // closing song
         ];
         let cuts = sermon_cut_regions(&segs, 1700.0);
         assert_eq!(
             cuts,
             vec![
-                CutRegion { start: 0.0, end: 200.0 },
-                CutRegion { start: 800.0, end: 820.0 },
-                CutRegion { start: 1600.0, end: 1700.0 },
+                CutRegion {
+                    start: 0.0,
+                    end: 200.0
+                },
+                CutRegion {
+                    start: 800.0,
+                    end: 820.0
+                },
+                CutRegion {
+                    start: 1600.0,
+                    end: 1700.0
+                },
             ]
         );
         // The kept material is exactly the sermon minus the interior song.
         let keeps = build_keeps(&cuts, 1700.0);
-        assert_eq!(keeps, vec![
-            KeepSegment { start: 200.0, end: 800.0 },
-            KeepSegment { start: 820.0, end: 1600.0 },
-        ]);
+        assert_eq!(
+            keeps,
+            vec![
+                KeepSegment {
+                    start: 200.0,
+                    end: 800.0
+                },
+                KeepSegment {
+                    start: 820.0,
+                    end: 1600.0
+                },
+            ]
+        );
     }
 
     #[test]
@@ -1770,10 +1788,16 @@ mod tests {
         let joined = args.join(" ");
         assert!(joined.contains("-vn"));
         assert!(joined.contains("-ac 2"), "stereo, not mono: {joined}");
-        assert!(joined.contains("aresample=48000"), "capped at 48 kHz: {joined}");
+        assert!(
+            joined.contains("aresample=48000"),
+            "capped at 48 kHz: {joined}"
+        );
         assert!(joined.contains("-c:a aac"));
         assert!(joined.contains("-b:a 192k"));
-        assert!(joined.contains("-movflags +faststart"), "seekable: {joined}");
+        assert!(
+            joined.contains("-movflags +faststart"),
+            "seekable: {joined}"
+        );
         assert_eq!(args.last().unwrap(), "/tmp/proxy.m4a");
     }
 

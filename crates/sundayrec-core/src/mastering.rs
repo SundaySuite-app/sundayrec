@@ -569,7 +569,10 @@ mod tests {
         // makeup to curb pumping.
         let punchy = get_preset_by_id("speech-punchy").unwrap();
         assert!(punchy.filters.contains("ratio=4"), "punchy stays strong");
-        assert!(!punchy.filters.contains("makeup=3"), "less makeup → less pumping");
+        assert!(
+            !punchy.filters.contains("makeup=3"),
+            "less makeup → less pumping"
+        );
     }
 
     #[test]
