@@ -20,7 +20,7 @@ jeg kan ikke høre lyd eller kjenne på VU-følelsen. Se RIGG-VERIFISER nederst.
 ## Rotårsak som bandt #1 og #4 sammen (viktigst)
 
 Stderr-leseren i `src-tauri/src/recorder/engine.rs` sendte de høyfrekvente
-nivå-meldingene med `msg_tx.send(Levels).await` på en *bounded* kanal. Når
+nivå-meldingene med `msg_tx.send(Levels).await` på en _bounded_ kanal. Når
 konsumenten henger et øyeblikk (Tauri `app.emit`), fylles kanalen, den awaitede
 send-en **blokkerer leseren**, ffmpeg sin stderr-pipe fylles, ffmpeg stopper på
 skriving, og avfoundation dropper capture-samples → **hakkete lyd** + nivåene
@@ -31,11 +31,12 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
 ## Endringer
 
 ### A — Opptak: mot hakking
+
 - **A1** `engine.rs`: nivå-send → `try_send` (dropp ved full); kanal 256→512.
   Ny test `levels_never_block_the_reader_when_consumer_stalls`.
 - **A2** `capture.rs`: `-rtbufsize 256M` på avfoundation-input (dypere demux-
   buffer mot dropp ved CPU-spike). Tester for tilstedeværelse + posisjon før `-i`
-  + at Windows-stien er uendret.
+  - at Windows-stien er uendret.
 - **A3** Pre-roll tvang `-ar 48000` uansett enhet (NEEDS-RICHARD §settings-sync).
   `preroll.rs` (core) `build_preroll_{capture,trim}_args` tar nå `Option<u32>`
   (None = native, ingen `-ar`); `preroll.rs` (tauri) + `commands/recorder.rs`
@@ -44,7 +45,8 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
 - **A4** Regresjonstester som låser native default (None → ingen `-ar`).
 
 ### B — VU like responsiv som hjem-siden (uten å re-introdusere hakking)
-- **B1 = A1** fjerner det *voksende* etterslepet.
+
+- **B1 = A1** fjerner det _voksende_ etterslepet.
 - **B2** `ffmpeg.rs`: astats `reset=10 → reset=5` (~0.1 s peak-vindu, raskere nål).
 - **B3** `engine.rs`: emit-kadens 33 ms → **16 ms (~60 Hz)** for å matche hjem-VU
   (trygt med A1). `recording.ts`: lettere fall-glatting (0.8/0.2 → 0.6/0.4).
@@ -53,6 +55,7 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
   enhets-eier på macOS). `vu.rs`/`vu://levels` forblir hjem-side-only.
 
 ### C — Editor/eksport: høyere opplevd kvalitet
+
 - **C1** `editor.rs::codec_args` defaults: aac/m4a/ogg 192→**256k**, opus 128→
   **160k**, mp3/ukjent 192→**256k**. Lossless urørt.
 - **C2** Video-eksport audio `192k → 256k` (`video_codec_args`,
@@ -78,19 +81,21 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
   re-komprimeres hardere på vei ut).
 
 ### D — Preken: foreslå + godkjenn + kutt all musikk
+
 - **D1** Ny tested `editor.rs::sermon_cut_regions(segments, duration)`: kutter
-  hode, hale OG all `music` *inne i* preken-spennet (beholder indre stillhet =
+  hode, hale OG all `music` _inne i_ preken-spennet (beholder indre stillhet =
   naturlige pauser). Frontend `detection.ts::applySermonTrim` speiler logikken
   (kjører i appen i dag; Rust-funksjonen er kanonisk + seam-klar).
 - **D2** Rettet en reell bug i `audio_analysis.rs::detect_segments`: prekenen ble
-  bare markert når ETT segment matchet bounds *eksakt* → Case-0-spennet (hele
+  bare markert når ETT segment matchet bounds _eksakt_ → Case-0-spennet (hele
   tale-området, kan strekke seg over en sang/pause) ble ALDRI markert → «marker
   preken»-knappen gjorde ingenting for de opptakene. Nå promoteres tale-segmentet
-  som *starter* spennet og strekkes til hele bounds. Ny test for fler-segment-
+  som _starter_ spennet og strekkes til hele bounds. Ny test for fler-segment-
   spenn. Heuristikken forøvrig (lengste tale = preken; «kun preken» ≥80 %
   tale/<5 % musikk; etter-5-min-preferanse) var allerede på plass og beholdt.
 
 ### Løse tråder
+
 - **LT (chrono)** `crates/sundayrec-core/Cargo.toml`: la til chrono-feature
   `alloc` (IKKE `clock` — beholder renheten) så `cargo test -p sundayrec-core`
   kompilerer standalone igjen (en test-helper bruker `to_rfc3339_opts`; uten
@@ -103,6 +108,7 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
   nødvendig; bekreftet ende-til-ende. (A3 fikset den gjenværende preroll-delen.)
 
 ## Åpne valg (overstyrbare)
+
 - **Default-bitrate 256k** (ikke 320) som balanse størrelse/kvalitet. Tak 320
   beholdt; si ifra om du vil ha 320 som default.
 - **Mildere `speech-clear`-mastering** som ny default — A/B på ekte opptak; ruller
@@ -111,6 +117,7 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
   for store/eksotiske filer? Da blir avspilling full-fidelitet + lavere minne.
 
 ## RIGG-VERIFISER (kan ikke gjøres headless — kun du, på ekte Mac/Win-rigg)
+
 1. **Hakking borte?** Ta opp 30 s + en lang økt (built-in mic + Behringer USB).
    Bekreft jevn lyd. (A1+A2+A3 er de relevante endringene.)
 2. **VU-respons** under REC vs. hjem-siden — skal nå føles ~likt. (B1/B2/B3.)
@@ -125,11 +132,12 @@ Dette er trolig den enkeltstående største fiksen for begge symptomene.
 6. **C5** (hvis wiret senere): proxy-avspilling dekoder i editoren på Mac+Win.
 
 ## Bevisst utsatt (trenger verifisering / egen økt)
+
 - **C5 frontend-rewire** (`<audio>`-strømmet playback-proxy).
 - **Windows opptaks-VU**: astats-sink er `/dev/stderr` (macOS-only) → Windows
   opptaks-VU er reelt ikke-funksjonell (hjem-VU via Web Audio funker overalt).
 - **npm audit**: `tmp`-saken (issue #2) er borte. Gjenstår 2 high i **esbuild/vite**
-  som KUN er dev-verktøy (ikke i den pakkede appen) og krever en *breaking*
+  som KUN er dev-verktøy (ikke i den pakkede appen) og krever en _breaking_
   vite 8-migrering å fikse — gjort `npm audit fix` (trygg vite 7-patch + rettet
   stale lockfile-versjon 0.2.0→0.4.1), men ikke `--force` blindt. Egen oppgave.
 - **A5** (kutte astats-print-rate via `asetnsamples`) — kun hvis A1+A2 ikke holder
