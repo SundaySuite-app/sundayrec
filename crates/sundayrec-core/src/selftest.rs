@@ -365,6 +365,76 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
     }
 }
 
+// ── Always-on recording telemetry ───────────────────────────────────────────
+
+/// Health counters accumulated AUTOMATICALLY during a real recording — the
+/// passive-logging path. The recorder's stderr reader feeds every line through
+/// [`RecordingTelemetry::observe_line`] and flags a starved IPC channel via
+/// [`RecordingTelemetry::note_levels_dropped`]; the host stamps `duration_sec`/
+/// `timestamp`/`exit_ok` at session end and persists it. Surfaced in the
+/// diagnose report so the user pastes a *trend*, not a guess.
+///
+/// `drops`/`dups` track the max ffmpeg `drop=`/`dup=` seen (cumulative within one
+/// ffmpeg process); across a split (a new process) this is the max single
+/// segment, not the sum — an acceptable under-report for the common single-take
+/// sermon. `xruns`/`levels_dropped` are event counts that accumulate correctly.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../../src/lib/bindings/RecordingTelemetry.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingTelemetry {
+    /// Max ffmpeg `drop=` (discarded frames; an avfoundation/USB-overflow signal).
+    pub drops: u64,
+    /// Max ffmpeg `dup=` (duplicated frames; a clock-mismatch signal).
+    pub dups: u64,
+    /// xrun/overrun-class stderr lines seen — the direct stutter signal.
+    pub xruns: u64,
+    /// Times the live-levels IPC `try_send` hit a FULL channel — the direct
+    /// renderer/IPC-starvation signal ("recording mode lags"). A rising count
+    /// means the UI couldn't keep up and back-pressure was building.
+    pub levels_dropped: u64,
+    /// Wall-clock length of the recording (host-stamped at session end).
+    pub duration_sec: f64,
+    /// ISO-8601 local timestamp of session end (host-stamped).
+    pub timestamp: String,
+    /// Whether the session ended cleanly (Stopped) vs Failed (host-stamped).
+    pub exit_ok: bool,
+}
+
+impl RecordingTelemetry {
+    /// Fold one ffmpeg stderr line into the counters. Cheap; call on the
+    /// low-rate lines (NOT the high-rate per-frame level lines, which carry no
+    /// drop/dup/xrun fields anyway).
+    pub fn observe_line(&mut self, line: &str) {
+        self.drops = self.drops.max(parse_drop_count(line));
+        self.dups = self.dups.max(parse_dup_count(line));
+        self.xruns += parse_xrun_count(line);
+    }
+
+    /// Record that a live-levels message was dropped because the IPC channel was
+    /// full (the renderer/event loop couldn't drain fast enough).
+    pub fn note_levels_dropped(&mut self) {
+        self.levels_dropped = self.levels_dropped.saturating_add(1);
+    }
+
+    /// Whether these counters indicate a degraded recording (any dropped audio
+    /// signal or IPC starvation). Used to raise a diagnose finding.
+    pub fn is_degraded(&self) -> bool {
+        self.drops > 0 || self.xruns > 0 || self.levels_dropped > 0
+    }
+}
+
+/// Push `item` onto a newest-last ring, trimming from the front to keep at most
+/// `cap` entries. Pure helper for the rolling recording-telemetry history.
+pub fn push_capped<T>(ring: &mut Vec<T>, item: T, cap: usize) {
+    ring.push(item);
+    if cap == 0 {
+        ring.clear();
+    } else if ring.len() > cap {
+        let overflow = ring.len() - cap;
+        ring.drain(0..overflow);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,5 +569,40 @@ clean line";
         f.silence_total_sec = 2.0;
         let r = selftest_verdict(&f);
         assert!((r.silence_ratio - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn telemetry_observe_line_accumulates() {
+        let mut t = RecordingTelemetry::default();
+        t.observe_line("frame=10 dup=1 drop=3 speed=1x");
+        t.observe_line("frame=20 dup=0 drop=2 speed=1x"); // drop/dup are max, not last
+        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
+        t.observe_line("size=256kB time=00:00:05.00"); // clean progress line
+        assert_eq!(t.drops, 3, "max drop across lines");
+        assert_eq!(t.dups, 1);
+        assert_eq!(t.xruns, 1, "one xrun-class line");
+        assert!(t.is_degraded());
+    }
+
+    #[test]
+    fn telemetry_levels_dropped_counts() {
+        let mut t = RecordingTelemetry::default();
+        assert!(!t.is_degraded());
+        t.note_levels_dropped();
+        t.note_levels_dropped();
+        assert_eq!(t.levels_dropped, 2);
+        assert!(t.is_degraded());
+    }
+
+    #[test]
+    fn push_capped_keeps_newest() {
+        let mut ring: Vec<u32> = Vec::new();
+        for i in 0..5 {
+            push_capped(&mut ring, i, 3);
+        }
+        assert_eq!(ring, vec![2, 3, 4], "newest-last, capped at 3");
+        // cap 0 → always empty
+        push_capped(&mut ring, 99, 0);
+        assert!(ring.is_empty());
     }
 }
