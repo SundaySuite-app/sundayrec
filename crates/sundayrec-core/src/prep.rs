@@ -406,6 +406,41 @@ mod tests {
     }
 
     #[test]
+    fn tie_break_prefers_higher_confidence_at_equal_duration() {
+        // Two equal-length speech blocks past the 5-min mark; the higher-confidence
+        // one wins (strict `>` tie-break). speech_ratio 0.4 < 0.80 so the Case-0
+        // sermon-only early-return is correctly skipped and the loop is reached.
+        let segs = vec![
+            seg(360.0, 300.0, SegmentType::Speech, 0.7),
+            seg(700.0, 300.0, SegmentType::Speech, 0.9),
+        ];
+        let s = find_sermon_segment(&segs, 1500.0).unwrap();
+        assert_eq!(s.seg_index, 1);
+        assert!((s.confidence - 0.9).abs() < 1e-9);
+        // Order-independent: the high-confidence block still wins when listed first.
+        let rev = vec![
+            seg(700.0, 300.0, SegmentType::Speech, 0.9),
+            seg(360.0, 300.0, SegmentType::Speech, 0.7),
+        ];
+        let s2 = find_sermon_segment(&rev, 1500.0).unwrap();
+        assert!((s2.confidence - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn unclamped_end_when_duration_unknown() {
+        // duration_sec <= 0 (unknown) skips Case-0 and takes the else-arm that
+        // leaves end_sec unclamped.
+        let segs = vec![seg(360.0, 300.0, SegmentType::Speech, 0.8)];
+        let s = find_sermon_segment(&segs, 0.0).unwrap();
+        assert_eq!(s.end_sec, 660.0);
+    }
+
+    #[test]
+    fn derive_duration_of_empty_segments_is_zero() {
+        assert_eq!(derive_duration_sec(&[]), 0.0);
+    }
+
+    #[test]
     fn sermon_only_recording_returns_whole_speech_span() {
         // >80% speech, no music, >60s total.
         let segs = vec![
