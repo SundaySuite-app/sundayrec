@@ -340,4 +340,50 @@ frame= 300 fps= 30";
         assert_eq!(lv.peak_db_left, -3.25);
         assert_eq!(lv.peak_db_right, None);
     }
+
+    #[test]
+    fn parse_levels_ignores_channels_beyond_two() {
+        // The meters are stereo: a Channel 3 peak must not leak into the reading.
+        let chunk = "\
+[Parsed_astats_0 @ 0x1] Channel: 1
+[Parsed_astats_0 @ 0x1] Peak level dB: -6.0
+[Parsed_astats_0 @ 0x1] Channel: 2
+[Parsed_astats_0 @ 0x1] Peak level dB: -7.0
+[Parsed_astats_0 @ 0x1] Channel: 3
+[Parsed_astats_0 @ 0x1] Peak level dB: -99.0";
+        let lv = parse_levels(chunk).expect("stereo levels");
+        assert_eq!(lv.peak_db_left, -6.0);
+        assert_eq!(lv.peak_db_right, Some(-7.0), "channel 3 ignored");
+    }
+
+    #[test]
+    fn parse_levels_peak_without_channel_header_defaults_to_left() {
+        // Some mono astats builds emit a Peak line with no preceding Channel header
+        // → it must land on channel 1 (left), not be dropped.
+        let chunk = "[Parsed_astats_0 @ 0x1] Peak level dB: -15.0";
+        let lv = parse_levels(chunk).expect("headerless peak");
+        assert_eq!(lv.peak_db_left, -15.0);
+        assert_eq!(lv.peak_db_right, None);
+    }
+
+    #[test]
+    fn ametadata_passes_through_clipping_value() {
+        // A full-scale / clipping reading (0 dBFS) is finite and must pass through
+        // verbatim — only -inf/nan get floored.
+        assert_eq!(
+            parse_ametadata_peak("lavfi.astats.1.Peak_level=0.000000"),
+            Some((1, 0.0))
+        );
+    }
+
+    #[test]
+    fn noise_floor_returns_last_per_channel_when_no_overall() {
+        // With no Overall block, the last per-channel value is returned.
+        let chunk = "\
+[Parsed_astats_0 @ 0x1] Channel: 1
+[Parsed_astats_0 @ 0x1] Noise floor dB: -58.2
+[Parsed_astats_0 @ 0x1] Channel: 2
+[Parsed_astats_0 @ 0x1] Noise floor dB: -57.9";
+        assert_eq!(parse_noise_floor_db(chunk), Some(-57.9));
+    }
 }

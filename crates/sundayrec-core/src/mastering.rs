@@ -550,6 +550,40 @@ mod tests {
         assert_eq!(m.input_i, -23.45);
     }
 
+    #[test]
+    fn rejects_block_with_non_finite_measurement() {
+        // An overflowing token parses to a non-finite f64; the is_finite guard must
+        // reject the block rather than hand back inf/NaN loudness.
+        let block = r#"{ "input_i" : "1e400", "input_tp" : "-2.0" }"#;
+        assert!(parse_loudnorm_json(block).is_none());
+    }
+
+    #[test]
+    fn returns_none_on_unbalanced_braces() {
+        // A truncated/garbled stderr (no closing brace) yields no top-level block.
+        let block = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0" "#;
+        assert!(parse_loudnorm_json(block).is_none());
+    }
+
+    #[test]
+    fn lenient_parse_ignores_trailing_units() {
+        // loudnorm sometimes annotates values; the JS-parseFloat-style lenient
+        // parse must take the leading number and drop the trailing unit.
+        let block = r#"{ "input_i" : "-23.45 LUFS", "input_tp" : "-3.12 dBTP" }"#;
+        let m = parse_loudnorm_json(block).unwrap();
+        assert_eq!(m.input_i, -23.45);
+        assert_eq!(m.input_tp, -3.12);
+    }
+
+    #[test]
+    fn target_offset_falls_back_to_normalization_type() {
+        // Mirrors the TS `target_offset ?? normalization_type` chain: when
+        // target_offset is absent, a numeric normalization_type is used.
+        let block = r#"{ "input_i" : "-20.0", "input_tp" : "-2.0", "normalization_type" : "5.0" }"#;
+        let m = parse_loudnorm_json(block).unwrap();
+        assert_eq!(m.target_offset, 5.0);
+    }
+
     // ── filter builders ──────────────────────────────────────────────────────────
 
     #[test]

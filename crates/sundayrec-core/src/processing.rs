@@ -756,6 +756,45 @@ mod tests {
     }
 
     #[test]
+    fn diagnose_dead_channel_with_marginal_partner_falls_through_to_imbalance() {
+        // One leg dead (< -45), the other alive-but-not-healthy (in [-45, -30)):
+        // all three dead-branches require a HEALTHY partner, so none fire and the
+        // code falls through to the imbalance path — lifting the dead leg by the
+        // capped 12 dB. Locks this distinct branch against a future reorder.
+        let left = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -50.0,  // dead
+            peak_right_db: -35.0, // alive but < HEALTHY(-30)
+            rms_left_db: None,
+            rms_right_db: None,
+        });
+        assert_eq!(left.code, "imbalance");
+        assert_eq!(
+            left.recommended,
+            ChannelRepair::GainDb {
+                left_db: 12.0,
+                right_db: 0.0
+            }
+        );
+        assert!((left.imbalance_db - (-15.0)).abs() < 1e-9);
+
+        // Symmetric: right dead, left marginal.
+        let right = diagnose_channels(ChannelLevelsDb {
+            peak_left_db: -35.0,
+            peak_right_db: -50.0,
+            rms_left_db: None,
+            rms_right_db: None,
+        });
+        assert_eq!(right.code, "imbalance");
+        assert_eq!(
+            right.recommended,
+            ChannelRepair::GainDb {
+                left_db: 0.0,
+                right_db: 12.0
+            }
+        );
+    }
+
+    #[test]
     fn diagnose_both_dead_recommends_nothing() {
         let d = diagnose_channels(ChannelLevelsDb {
             peak_left_db: -80.0,

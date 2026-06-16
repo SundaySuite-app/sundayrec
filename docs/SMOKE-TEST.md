@@ -46,14 +46,14 @@ the app at capture time with no error — that is the symptom to watch for.
 ## 1. Pre-gate (headless, do this first)
 
 ```bash
-npm run check          # lint + typecheck + vitest + clippy + cargo test
+npm run check          # prettier + eslint + tsc + rustfmt + clippy + cargo test
 cargo build            # debug build of the Tauri binary
 npm run build          # tsc + vite frontend build
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: **918 Rust tests** (687 core + 231 src-tauri) + **296 vitest** +
-clippy `-D warnings`. Every default-off feature also compiles in isolation —
+gate is green: the full Rust test suite (`cargo test --workspace`) + clippy
+`-D warnings`. Every default-off feature also compiles in isolation —
 `cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
 `editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
 exception, verified by inspection).
@@ -500,9 +500,10 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
 
 > [HW] The ffprobe/decode/measure/render runs only execute under `--features
 editor` against real media — never in the gate. Only the core argv-building,
-> filter-graph, loudnorm parse, and VAD/sermon decisions, plus the renderer's
-> peaks→SVG mapping and the load→peaks→regions→export data flow (vitest, invoke
-> mocked), are unit-tested. The waveform/cut-band paint is // GUI-UNVERIFIED.
+> filter-graph, loudnorm parse, and VAD/sermon decisions are unit-tested in Rust
+> core; the renderer's peaks→SVG mapping and load→peaks→regions→export data flow
+> have no JS unit-test harness on this branch. The waveform/cut-band paint is
+> // GUI-UNVERIFIED.
 > The default build deliberately returns `feature_disabled` for every editor
 > command, and the panel shows a calm hint.
 
@@ -520,8 +521,8 @@ npm run tauri dev -- --features streaming         # drive the Direktesending dis
 > under `--features streaming` against a real camera + a real RTMP endpoint +
 > a real key — never in the gate. Only the core decisions (the tee/encode/
 > overlay argv, the keyframe/bitrate math, the audio-map, the key/URL validation,
-> the key-redacted log copy) and the panel's IPC data-flow (vitest, invoke
-> mocked) are unit-tested.
+> the key-redacted log copy) are unit-tested in Rust core; the panel's IPC
+> data-flow has no JS unit-test harness on this branch.
 
 1. Open the **Direktesending** disclosure. In the default build (no
    `--features streaming`) **Start** returns `feature_disabled` and the panel
@@ -579,8 +580,8 @@ feature flag — this was part of PU-6. The **Gjennomgang** panel (R6) drives it
 3. Run the reminder sweep (`review_process_reminders`).
    - **Expected:** entries past their reminder window surface a notification.
 
-> The data flow + IPC (vitest, invoke mocked) and the core decisions are tested;
-> the on-screen render is // GUI-UNVERIFIED.
+> The core decisions are unit-tested in Rust; the panel data-flow + IPC have no
+> JS unit-test harness on this branch; the on-screen render is // GUI-UNVERIFIED.
 
 ---
 

@@ -33,10 +33,38 @@ pub fn lock_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Minimal percent-encoding for URL query/path values: keep the RFC-3986
+/// unreserved set (`A-Za-z0-9-._~`) verbatim, `%XX`-encode every other byte.
+/// Consolidated here so the command modules that interpolate user-supplied ids
+/// (church/service ids, etc.) into request URLs stop each carrying their own copy.
+pub fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn url_encode_keeps_unreserved_and_escapes_the_rest() {
+        assert_eq!(url_encode("abcXYZ-09_.~"), "abcXYZ-09_.~");
+        assert_eq!(url_encode("a b&c#d=e"), "a%20b%26c%23d%3De");
+        assert_eq!(
+            url_encode("550e8400-e29b-41d4-a716-446655440000"),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+        assert_eq!(url_encode(""), "");
+    }
 
     #[test]
     fn lock_recover_returns_inner_after_poison() {

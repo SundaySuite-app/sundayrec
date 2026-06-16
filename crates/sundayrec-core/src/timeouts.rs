@@ -48,8 +48,9 @@ impl RecorderTimeouts {
     /// against burning CPU over a 90-min recording.
     pub const STUCK_POLL_MS: u64 = 15_000;
 
-    /// Maximum delay between reconnect attempts. With 20 attempts and the
-    /// default reconnect-delay formula we hit this cap around attempt 7.
+    /// Maximum delay between reconnect attempts. With the default reconnect-delay
+    /// formula (`min(2000 + attempt*1500, 10000)`, see `reconnect::reconnect_delay`)
+    /// we hit this cap at attempt 6 (2000 + 6*1500 = 11000 → capped).
     pub const RECONNECT_MAX_DELAY_MS: u64 = 10_000;
 
     /// Throttle progress IPC from backend → renderer. ffmpeg emits a progress

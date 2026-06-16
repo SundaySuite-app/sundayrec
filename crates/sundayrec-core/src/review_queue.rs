@@ -375,6 +375,19 @@ mod tests {
     }
 
     #[test]
+    fn entry_past_multiple_thresholds_advances_only_one_rung_per_call() {
+        // An entry that has aged past ALL reminder thresholds in a single poll
+        // (e.g. the app was closed over a long weekend) must advance only ONE step
+        // (Day1), not fire Day1+Day2+Day7 at once — the else-if chain guarantees
+        // one rung per call. 8 days is past REMIND_7D_MS but under AUTO_DISCARD_MS.
+        let out = process_reminders(&[entry("a", 0, 0)], 8 * DAY_MS);
+        assert_eq!(out.actions.len(), 1);
+        assert_eq!(out.actions[0].channel, ReminderChannel::NotifyEmail);
+        assert_eq!(out.actions[0].message, ReminderMessage::Day1);
+        assert_eq!(out.survivors[0].reminded, 1);
+    }
+
+    #[test]
     fn auto_discard_at_14_days_drops_and_emits_history() {
         let out = process_reminders(&[entry("a", 0, 3)], AUTO_DISCARD_MS + 1);
         assert_eq!(out.actions[0].channel, ReminderChannel::AutoDiscard);

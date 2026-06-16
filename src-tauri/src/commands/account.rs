@@ -68,11 +68,13 @@ pub async fn sunday_whoami_song(church_id: String) -> AppResult<String> {
         .ok_or_else(|| {
             AppError::Validation("SundaySong API not configured (set SUNDAY_SONG_API_URL)".into())
         })?;
-    // church_id comes from the verified claims (a UUID), so it is URL-safe as-is.
+    // church_id is a renderer-supplied IPC argument (not a verified claim), so
+    // percent-encode it defensively — the same convention the Plan integration
+    // uses for the identical id class.
     let url = format!(
         "{}/v1/account/whoami?church_id={}",
         base.trim_end_matches('/'),
-        church_id
+        crate::util::url_encode(&church_id)
     );
 
     let client = crate::cloud::http_client();

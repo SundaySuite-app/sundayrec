@@ -125,11 +125,16 @@ fn parse_device_numbered(line: &str) -> Option<String> {
 }
 
 /// Extract the inner text of the FIRST double-quoted substring on the line, if
-/// any. Mirrors the Electron `line.match(/"([^"]+)"/)`.
+/// any. Mirrors the Electron `line.match(/"([^"]+)"/)` — the `+` is one-or-more,
+/// so an empty `""` yields `None` (not `Some("")`), which would otherwise become
+/// a nameless ghost device that substring-matches every stored name downstream.
 fn first_double_quoted(line: &str) -> Option<&str> {
     let start = line.find('"')?;
     let rest = &line[start + 1..];
     let end = rest.find('"')?;
+    if end == 0 {
+        return None; // empty quotes — not a real device name
+    }
     Some(&rest[..end])
 }
 
@@ -488,6 +493,19 @@ mod tests {
 [dshow @ 1] \"Mic\"
 [dshow @ 2] \"Mic\"";
         assert_eq!(parse_dshow_device_list(stderr).len(), 1);
+    }
+
+    #[test]
+    fn dshow_empty_quotes_produce_no_ghost_device() {
+        // An empty `""` must NOT register a nameless device (it would substring-
+        // match every stored name in find_best_device_match). Matches the
+        // documented `/"([^"]+)"/` one-or-more intent.
+        assert!(parse_dshow_device_list("[dshow @ 1] \"\"").is_empty());
+        assert!(parse_video_dshow_device_list("[dshow @ 1] \"\"").is_empty());
+        // A real name on a later line still parses.
+        let devs = parse_dshow_device_list("[dshow @ 1] \"\"\n[dshow @ 1] \"Real Mic\"");
+        assert_eq!(devs.len(), 1);
+        assert_eq!(devs[0].name, "Real Mic");
     }
 
     // ── AVFoundation audio (section boundaries) ───────────────────────────────

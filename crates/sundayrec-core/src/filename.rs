@@ -142,15 +142,24 @@ pub fn make_unique_path(base_path: &str, exists: impl Fn(&str) -> bool) -> Strin
         None => (base_path, ""),
     };
 
-    let mut n = 2;
-    loop {
-        let candidate = format!("{stem}_{n}{ext}");
+    // Bounded suffix search. A real directory never holds anywhere near this many
+    // same-stem files, so the cap only ever bites when `exists` is buggy/racing and
+    // lies "true" forever — in which case NO return value can be unique, so we stop
+    // looping and return the last candidate rather than hang the calling thread.
+    let mut candidate = String::new();
+    for n in 2..=MAX_DISAMBIGUATION_SUFFIX {
+        candidate = format!("{stem}_{n}{ext}");
         if !exists(&candidate) {
             return candidate;
         }
-        n += 1;
     }
+    candidate // exhausted (pathological): the highest-numbered candidate
 }
+
+/// Upper bound on the `_2`, `_3`, … collision-suffix search in
+/// [`make_unique_path`]. Far above any plausible same-stem file count; exists
+/// purely to guarantee termination against a misbehaving `exists` predicate.
+const MAX_DISAMBIGUATION_SUFFIX: u32 = 10_000;
 
 #[cfg(test)]
 mod tests {
@@ -328,6 +337,15 @@ mod tests {
         let taken2 = ["/my.recs/a.wav"];
         let out2 = make_unique_path("/my.recs/a.wav", |p| taken2.contains(&p));
         assert_eq!(out2, "/my.recs/a_2.wav");
+    }
+
+    #[test]
+    fn make_unique_path_terminates_when_exists_always_true() {
+        // A buggy/racing predicate that claims EVERYTHING is taken must not hang —
+        // the bounded search returns the highest-numbered candidate instead of
+        // looping forever. (Regression guard for the former unbounded `loop`.)
+        let out = make_unique_path("/recs/a.mp3", |_| true);
+        assert_eq!(out, format!("/recs/a_{MAX_DISAMBIGUATION_SUFFIX}.mp3"));
     }
 
     /// A `Date`-pattern, mp3, no-extras params at `now` — test convenience.
