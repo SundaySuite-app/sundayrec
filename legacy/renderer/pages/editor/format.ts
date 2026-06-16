@@ -12,6 +12,8 @@ export function formatTime(s: number): string {
 export function formatDuration(s: number): string {
   if (s < 1)   return `${(s * 1000).toFixed(0)}ms`
   if (s < 60)  return `${s.toFixed(1)}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+  // Round to whole seconds FIRST, then split — rounding `s % 60` independently
+  // can carry to 60 ("1m 60s" for s=119.6), an out-of-range label.
+  if (s < 3600) { const total = Math.round(s); return `${Math.floor(total / 60)}m ${total % 60}s` }
   return `${Math.floor(s / 3600)}t ${Math.floor((s % 3600) / 60)}m`
 }
