@@ -261,8 +261,8 @@ pub async fn integrations_plan_fetch_services(
     let from = from_iso.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     let url = format!(
         "{base_url}/rest/v1/service?church_id=eq.{}&starts_at_utc=gte.{}&order=starts_at_utc.asc&limit=30",
-        urlencoding(&church_id),
-        urlencoding(&from)
+        crate::util::url_encode(&church_id),
+        crate::util::url_encode(&from)
     );
     let client = reqwest::Client::new();
     let mut req = client
@@ -365,7 +365,7 @@ pub async fn integrations_plan_update_service(
     }
     let url = format!(
         "{base_url}/rest/v1/service?id=eq.{}",
-        urlencoding(&service_id)
+        crate::util::url_encode(&service_id)
     );
     let client = reqwest::Client::new();
     let mut req = client
@@ -466,21 +466,6 @@ fn parse_plan_services_body(body: &str) -> Result<Vec<PlanService>, PlanFetchRes
         error: Some(format!("Plan API parse error: {e}")),
         services: None,
     })
-}
-
-/// Minimal percent-encoding for the Supabase REST query values (church/service
-/// id). Keeps the RFC-3986 unreserved set; everything else `%XX`.
-fn urlencoding(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
