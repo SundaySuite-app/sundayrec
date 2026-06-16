@@ -155,8 +155,13 @@ pub fn find_best_device_match<'a>(
     if let Some(d) = devices.iter().find(|d| d.name.to_lowercase().contains(&n)) {
         return Some(d);
     }
-    // 3. Device name is a substring of stored name.
-    if let Some(d) = devices.iter().find(|d| n.contains(&d.name.to_lowercase())) {
+    // 3. Device name is a substring of stored name. Skip empty device names: an
+    //    empty string is a substring of everything, so a nameless device would
+    //    always match here and shadow the real one.
+    if let Some(d) = devices
+        .iter()
+        .find(|d| !d.name.is_empty() && n.contains(&d.name.to_lowercase()))
+    {
         return Some(d);
     }
     // 4. Word overlap ≥ 2 (prefix-aware, for localisation).
@@ -232,6 +237,17 @@ mod tests {
         let devs = vec![dev("Scarlett 2i2")];
         let got = find_best_device_match(&devs, "Focusrite Scarlett 2i2 USB").unwrap();
         assert_eq!(got.name, "Scarlett 2i2");
+    }
+
+    #[test]
+    fn empty_named_device_never_matches_via_substring() {
+        // A nameless device must not shadow the real one: "" is a substring of
+        // every stored name, so without the strategy-3 guard it would always win.
+        let devs = vec![dev(""), dev("Real Mic")];
+        let got = find_best_device_match(&devs, "Real Mic").unwrap();
+        assert_eq!(got.name, "Real Mic");
+        // With ONLY a nameless device present, no spurious match.
+        assert!(find_best_device_match(&[dev("")], "Some Stored Name").is_none());
     }
 
     #[test]
