@@ -82,6 +82,6 @@ preview / normalize / intro-outro / mastering / export for both an audio and a v
 
 ## Verification per phase
 
-`npm run check` green (format/lint/tsc/vitest/clippy/rust-test) after each phase.
+`npm run check` green (format/lint/tsc/clippy/rust-test) after each phase.
 Manual rig smoke-test by Richard: open a real recording in Rediger → waveform renders
 → play/scrub → drag a cut → preview skips it → export produces a trimmed file.

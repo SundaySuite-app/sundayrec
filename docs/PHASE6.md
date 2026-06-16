@@ -26,8 +26,8 @@ testable half.
 - `src/features/cloud/CloudBackupPanel.tsx` — connections + queue UI with
   disconnect / retry / remove / clear-failed.
 
-Verified: `cargo test` (queue store + manager) + `vitest` (panel) green; clippy +
-fmt + tsc + eslint clean. The DB is the single source of truth, so a queued
+Verified: `cargo test` (queue store + manager) green; clippy + fmt + tsc + eslint
+clean. (The panel itself is the vanilla-TS renderer — no JS unit-test harness.) The DB is the single source of truth, so a queued
 backup survives a restart.
 
 ## F6.3 — network layer (wired; NETWORK/HARDWARE-UNVERIFIED)
