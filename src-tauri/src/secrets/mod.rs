@@ -164,6 +164,20 @@ fn resolve_from(explicit: Option<String>, keychain: Option<String>, env: Option<
 mod tests {
     use super::*;
 
+    /// The real-keychain round-trip tests below WRITE to the OS keychain. On a
+    /// locked/unauthorised keychain that write BLOCKS on an OS authorization
+    /// prompt — it never returns, so the `_or_skip` match arms can't skip it, and
+    /// the whole `cargo test` hangs. Gate them behind an explicit opt-in so the
+    /// headless gate never hangs; set `SUNDAYREC_KEYCHAIN_TEST=1` on a machine with
+    /// an unlocked, authorised keychain to actually exercise them.
+    fn keychain_test_opted_in() -> bool {
+        if std::env::var_os("SUNDAYREC_KEYCHAIN_TEST").is_none() {
+            eprintln!("SKIP: set SUNDAYREC_KEYCHAIN_TEST=1 to exercise the real keychain");
+            return false;
+        }
+        true
+    }
+
     #[test]
     fn explicit_value_wins() {
         let got = resolve_from(
@@ -214,6 +228,9 @@ mod tests {
     // reachable, otherwise skip so headless CI stays green.
     #[test]
     fn real_stream_key_round_trip_or_skip() {
+        if !keychain_test_opted_in() {
+            return;
+        }
         let id = "sundayrec-test-dest";
         let sentinel = "stream-key-sentinel-1234";
         match set_stream_key(id, sentinel) {
@@ -248,6 +265,9 @@ mod tests {
     // the StreamKey slot with a sentinel value it always cleans up.
     #[test]
     fn real_keychain_round_trip_or_skip() {
+        if !keychain_test_opted_in() {
+            return;
+        }
         let provider = SecretProvider::StreamKey;
         let sentinel = "sundayrec-test-sentinel-value";
         match set(provider, sentinel) {

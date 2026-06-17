@@ -172,6 +172,21 @@ mod tests {
     }
 
     #[test]
+    fn empty_save_dir_prunes_nothing() {
+        // A blank save_dir must NOT make every recording a deletion candidate:
+        // path_under(path, "") matches any path (empty base has no components), so
+        // without the save_dir.is_empty() short-circuit this would delete files
+        // wholesale — a data-loss safety guard.
+        let c = [
+            cand("old1", Some(&under("a.mp4")), Some(1_000), &[]),
+            cand("old2", Some("/anywhere/else/b.mp4"), Some(1_000), &[]),
+        ];
+        let d = decide_prune(&c, 30, 2_000, "", &[]);
+        assert!(d.delete_ids.is_empty());
+        assert_eq!(d.kept_awaiting_cloud, 0);
+    }
+
+    #[test]
     fn deletes_old_file_under_save_dir() {
         let c = [cand("old", Some(&under("a.mp4")), Some(1_000), &[])];
         // cutoff after the start → old enough

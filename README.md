@@ -55,8 +55,7 @@ npm run bindings                     # regenerate ts-rs TypeScript bindings
 # Frontend
 npm install
 npm run build                        # tsc + vite production build
-npm run test                         # vitest (jsdom)
-npm run check                        # full gate: lint + typecheck + vitest + clippy + cargo test
+npm run check                        # full gate: prettier + eslint + tsc + rustfmt + clippy + cargo test
 ```
 
 `npm run tauri dev` / `npm run tauri build` need a display and will fetch the

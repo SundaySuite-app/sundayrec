@@ -1042,6 +1042,24 @@ mod tests {
     }
 
     #[test]
+    fn validate_normalizes_unknown_video_tags() {
+        // An older/garbage store may carry video tags outside the known set; they
+        // must be coerced back to the defaults rather than produce bad ffmpeg args.
+        let mut s = Settings {
+            video_resolution: "999p".into(),
+            video_container: "mkv".into(),
+            video_codec: "av1".into(),
+            video_encoder: "quantum".into(),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.video_resolution, default_video_resolution());
+        assert_eq!(s.video_container, default_video_container());
+        assert_eq!(s.video_codec, default_video_codec());
+        assert_eq!(s.video_encoder, default_video_encoder());
+    }
+
+    #[test]
     fn validate_clamps_auto_delete_days() {
         let mut over = Settings {
             auto_delete_days: 100_000,

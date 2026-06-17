@@ -648,6 +648,22 @@ mod tests {
     }
 
     #[test]
+    fn rank_highlights_falls_back_to_start_when_end_missing() {
+        // Documented behaviour: when `ends` is shorter than `lines`, a highlight's
+        // `end` falls back to its own `start` (zero-duration) rather than panicking.
+        // Pinned so the intentional fallback isn't "fixed" away by accident.
+        let lines = vec![line(
+            10.0,
+            "Gud elsker deg uansett hva du har gjort, og hans nåde er nok for oss alle.",
+        )];
+        let ends: Vec<f64> = vec![]; // shorter than `lines` → exercises the fallback
+        let hl = rank_highlights(&lines, &ends, Language::Norwegian);
+        assert_eq!(hl.len(), 1);
+        assert_eq!(hl[0].time, 10.0);
+        assert_eq!(hl[0].end, hl[0].time, "missing end falls back to start");
+    }
+
+    #[test]
     fn score_rejects_too_short_and_too_long() {
         assert_eq!(score_passage("Kort.", Language::Norwegian), 0.0);
         let long = "ord ".repeat(200);

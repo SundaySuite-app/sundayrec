@@ -1,7 +1,7 @@
 # Release checklist — SundayRec (Tauri)
 
-Single, current-state launchpad. The code is gate-green (918 Rust tests; `npm run
-check` passes). Everything below that is **not** a code change is an owner action
+Single, current-state launchpad. The code is gate-green (the full Rust test suite;
+`npm run check` passes). Everything below that is **not** a code change is an owner action
 (secrets / accounts / signing) or a rig verification. Distilled from
 `NEEDS-RICHARD.md`, `DISTRIBUTION.md`, `RELEASE-AUDIT.md`, `SMOKE-TEST.md`.
 

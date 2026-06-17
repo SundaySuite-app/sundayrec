@@ -5,8 +5,8 @@
 > - #1 Channel-select L/R — commit `91846b4`.
 > - #2 Auto-stop countdown + extend/cancel — commit `c6eeec1`.
 >
-> Both shipped behind `npm run check` (1112 Rust + 271 vitest green, clippy
-> --workspace clean). The implementations follow the threads below, with two
+> Both shipped behind a green `npm run check` (the full Rust test suite +
+> clippy `-D warnings`; the frontend has no JS unit-test harness on this branch). The implementations follow the threads below, with two
 > deliberate refinements: (1) the channel pick is one shared L/R pair (not a
 > per-device `HashMap`); (2) auto-stop uses a `tokio::sync::watch` channel with
 > an absolute epoch-ms deadline (not a re-baked duration), so extend/cancel move

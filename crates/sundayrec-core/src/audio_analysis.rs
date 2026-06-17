@@ -885,6 +885,52 @@ mod tests {
         assert_eq!(merge_short_segments(&segs).len(), 1);
     }
 
+    #[test]
+    fn merge_absorbs_head_island_into_next() {
+        use SegmentType::*;
+        // A short segment at the very start (no prev) is absorbed FORWARD.
+        let segs = vec![seg(0.0, 2.0, Mixed), seg(2.0, 200.0, Speech)];
+        let merged = merge_short_segments(&segs);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].seg_type, Speech);
+        assert_eq!(merged[0].start_sec, 0.0);
+        assert_eq!(merged[0].end_sec, 200.0);
+    }
+
+    #[test]
+    fn merge_absorbs_tail_island_into_prev() {
+        use SegmentType::*;
+        // A short segment at the very end (no next) is absorbed BACKWARD.
+        let segs = vec![seg(0.0, 198.0, Speech), seg(198.0, 200.0, Mixed)];
+        let merged = merge_short_segments(&segs);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].seg_type, Speech);
+        assert_eq!(merged[0].start_sec, 0.0);
+        assert_eq!(merged[0].end_sec, 200.0);
+    }
+
+    #[test]
+    fn merge_prefers_the_longer_of_two_neighbours() {
+        use SegmentType::*;
+        // Island between a 50 s Speech (prev) and a 148 s Music (next): the longer
+        // next neighbour wins, so the boundary moves to the island's start (50 s)
+        // and the island joins Music — not Speech.
+        let segs = vec![
+            seg(0.0, 50.0, Speech),
+            seg(50.0, 52.0, Mixed), // 2 s island (< MIN_SEGMENT_SEC)
+            seg(52.0, 200.0, Music),
+        ];
+        let merged = merge_short_segments(&segs);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].seg_type, Speech);
+        assert_eq!(
+            merged[0].end_sec, 50.0,
+            "Speech keeps its end → island not absorbed left"
+        );
+        assert_eq!(merged[1].seg_type, Music);
+        assert_eq!(merged[1].start_sec, 50.0, "Music absorbs the island");
+    }
+
     // ── sermon detection ────────────────────────────────────────────────────────────
 
     #[test]
