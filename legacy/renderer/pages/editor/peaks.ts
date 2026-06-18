@@ -31,12 +31,14 @@ export function computePeaks(buf: AudioBuffer): Float32Array {
   // under a second on a modern CPU. If you hit a file that lags the UI,
   // route it through `computePeaksAsync` instead.
   const RATE = 100
+  // Reset BEFORE any work (incl. getChannelData, which can throw) so a failure
+  // can never leave the previous file's clip markers showing on a new file.
+  E.clipTimes   = []
   const total = Math.ceil(buf.duration * RATE)
   const out   = new Float32Array(total)
   const ch0   = buf.getChannelData(0)
   const ch1   = buf.numberOfChannels > 1 ? buf.getChannelData(1) : ch0
   const spp   = Math.floor(buf.sampleRate / RATE)
-  E.clipTimes   = []
 
   for (let i = 0; i < total; i++) {
     const s = i * spp

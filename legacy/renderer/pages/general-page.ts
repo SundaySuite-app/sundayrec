@@ -264,7 +264,9 @@ async function saveGeneralSettings(): Promise<void> {
     askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked
   })
   await window.api.saveSettings(settings)
-  if (newLang !== currentLang) loadLocale(newLang)
+  // loadLocale is async now (lazy locale chunk); fire-and-forget — it re-applies
+  // translations when the chunk resolves.
+  if (newLang !== currentLang) void loadLocale(newLang)
   markAllClean()
   const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
   const flashBtn = activeTab === 'settings-notifications'

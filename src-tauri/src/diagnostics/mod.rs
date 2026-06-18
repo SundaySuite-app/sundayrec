@@ -107,6 +107,11 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     // Most recent classified recording error (best-effort read).
     let last_error = read_last_error(app);
 
+    // Automatic recording health telemetry (drops/xruns/IPC-starvation), read
+    // back from disk so it survives an app restart between recording + diagnose.
+    let recording_history = read_recording_history(app);
+    let last_recording = recording_history.last().cloned();
+
     let input = DiagnosticsInput {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         platform: std::env::consts::OS.to_string(),
@@ -132,6 +137,8 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         asio_devices,
         last_error,
         orphan_guard_active: Some(crate::platform::orphan_guard_active()),
+        last_recording,
+        recording_history,
     };
 
     // Structured findings (the error-code system) + the human report.
@@ -199,6 +206,19 @@ fn read_last_error(app: &AppHandle) -> Option<LastErrorInfo> {
     let path = app.path().app_data_dir().ok()?.join("last-error.json");
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str::<LastErrorInfo>(&raw).ok()
+}
+
+/// Read the rolling recording-telemetry history (newest last) the recorder
+/// persists at session end. Empty when absent/unparseable — a missing file just
+/// means "nothing recorded yet". The most recent entry is the "last recording".
+fn read_recording_history(app: &AppHandle) -> Vec<sundayrec_core::selftest::RecordingTelemetry> {
+    let Ok(dir) = app.path().app_data_dir() else {
+        return Vec::new();
+    };
+    std::fs::read_to_string(dir.join("recording-telemetry-history.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 /// Write the report under the app-data dir as `SundayRec-diagnose.md`. Best

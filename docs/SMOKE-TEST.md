@@ -52,8 +52,10 @@ npm run build          # tsc + vite frontend build
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
-gate is green: the full Rust test suite (`cargo test --workspace`) + clippy
-`-D warnings`. Every default-off feature also compiles in isolation —
+gate is green: the full Rust test suite (`cargo test --workspace` — **~1300 tests**
+across sundayrec-core + src-tauri) + a **vitest** frontend suite (newly bootstrapped
+— pure logic like the editor cut-history state machine; grows as more pure logic is
+extracted) + clippy `-D warnings`. Every default-off feature also compiles in isolation —
 `cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
 `editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
 exception, verified by inspection).
@@ -123,6 +125,50 @@ verify here — there should be **no** repeated cloud log spam.
 
 > [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device.
 > A basic single-segment 30 s capture is the smoke-test target here.
+
+---
+
+## 5b. Recording-health telemetry — prove the stutter/lag fixes [HW]
+
+This is the **verification loop** for the 2026-06 perf/stability work. The app now
+records its own health automatically during every recording (Pillar 0): ffmpeg
+`drop=`/`dup=`, xrun/discontinuity lines, and — the key "recording mode lags"
+signal — how often the live-levels IPC channel was **full** (`levels_dropped`).
+It persists to `last-recording.json` + a rolling `recording-telemetry-history.json`
+and surfaces in the diagnose report.
+
+**Read the numbers after a normal recording:**
+
+1. Record a service (or ~15 s of speech) normally, then stop.
+2. Open **Innstillinger → Lyd → Diagnose** (the audio diagnose), copy the report.
+   - **Expected:** a **"Siste opptak (teknisk)"** section with `Dropp`, `xruns`,
+     `IPC-overbelastning (tapte nivå-oppdateringer)` and `Avsluttet rent`, plus a
+     newest-first **Trend** across recent recordings.
+   - **Healthy target:** `Dropp 0`, `xruns 0`, `IPC-overbelastning 0`, clean exit.
+   - A degraded recording also raises finding **SR-CAPTURE-01** with the counts.
+
+**Prove the telemetry has teeth (it must DETECT a bad recording):**
+
+3. Start a CPU hog (e.g. `yes > /dev/null &` ×4, or a heavy export), record ~15 s,
+   stop, re-open Diagnose.
+   - **Expected:** the numbers rise — `IPC-overbelastning` and/or `Dropp`/`xruns`
+     go up, and SR-CAPTURE-01 appears. If they DON'T move under deliberate stress,
+     the instrumentation is wrong — report that.
+4. Kill the hog, record again → numbers return toward 0.
+
+**Per-lever check (paste the before/after numbers into the PR / release notes):**
+
+| Lever                                    | What changed                          | Look at                                                | Expected                                 |
+| ---------------------------------------- | ------------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
+| **B** scrolling-waveform redraw → 30 fps | less main-thread work while recording | `IPC-overbelastning` (`levels_dropped`)                | lower than before, esp. under load       |
+| **A** forced sample-rate surfacing       | resampling = a stutter cause          | finding **SR-RATE-01** + the report's `sampleRateMode` | `auto` = no finding; a forced rate flags |
+| **C/D/E** (data-gated)                   | buffer/back-pressure/disk             | only pursue if the above numbers stay high             | —                                        |
+
+> [HW] Drop/xrun phrase matching (`selftest::XRUN_PHRASES`) and the Pass/Warn/Fail
+> thresholds (`selftest::FAIL_GAP_SEC` …) are conservative defaults — calibrate
+> them from the FIRST known-good capture on the Behringer rig (a clean 15 s take's
+> numbers are the reference). The parsers/verdict are pure + unit-tested; only the
+> real ffmpeg stderr wording + the thresholds need rig confirmation.
 
 ---
 
@@ -507,6 +553,31 @@ editor` against real media — never in the gate. Only the core argv-building,
 > The default build deliberately returns `feature_disabled` for every editor
 > command, and the panel shows a calm hint.
 
+### 12b. Editor STABILITY loop [HW] — prove the 2026-06 hardening
+
+Targets the "editor is unstable" reports. Run this stress loop after the fixes:
+
+1. **Large file:** open a 100 MB–4 h recording.
+   - **Expected:** it loads via the low-memory extract path (the inline limit is
+     now 100 MB), no multi-second freeze, no OOM/renderer crash.
+2. **Rapid play/stop/seek:** play, stop, seek, undo, redo ~20× quickly.
+   - **Expected:** no stuck play-icon, no doubled/looping audio, no hang.
+3. **Switch files mid-play:** start playback, then open a different recording
+   before it finishes; repeat fast a few times.
+   - **Expected:** the new file loads cleanly — no wrong audio/video-layout from
+     the previous file, no extra AudioContext piling up (the loader seq-guards),
+     no stale clip-warning badge.
+4. **Undo mid-drag:** drag a cut handle and press Cmd/Ctrl+Z mid-drag.
+   - **Expected:** the undo is ignored until the drag ends (no cut-history
+     corruption); cuts stay consistent.
+5. **C5 full-fidelity playback is OFF by default.** Oversized/exotic files play
+   the stable 8 kHz preview. To trial the experimental proxy on the rig, set
+   `localStorage['sundayrec.editor.playbackProxy'] = 'on'` in devtools, reload,
+   and re-run steps 1–3 — only promote it to default once it's clean here.
+
+> [HW] These are interactive webview behaviours (AudioContext lifecycle, the
+> `<audio>` proxy transport, canvas redraw) that the headless gate can't see.
+
 ---
 
 ## §R3 — Live streaming (RTMP + lower-thirds) — `--features streaming`
@@ -690,3 +761,9 @@ A green smoke test = §2–§6 all behave as the **Expected** lines say on a rea
 Mac with a real mic/camera, with no panic in the `tauri dev` stderr. §7 is a
 bonus that needs a Google client. Record any deviation (which step, the stderr
 log, the OS permission state) when reporting back.
+
+For any build that touches **recording, capture, the editor, the meter loop, or
+boot ordering**, also run **§5b** (recording-health telemetry) and **§12b**
+(editor stability loop) and paste the diagnose "Siste opptak" numbers into the
+release notes — that is the standing gate that stops unverified audio/editor
+fixes from shipping (see `RELEASE-CHECKLIST.md`).

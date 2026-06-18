@@ -21,6 +21,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::selftest::RecordingTelemetry;
+
 /// A non-secret summary of the user's settings for the report. EVERY field here
 /// is safe to print. Secrets (cloud tokens, e-mail/SMTP credentials, stream
 /// keys) are intentionally absent — see the module docs: the report cannot leak
@@ -33,6 +35,10 @@ pub struct SettingsSummary {
     pub device_name: Option<String>,
     pub channels: String,
     pub sample_rate: i32,
+    /// The sample-rate MODE that actually drives capture: `"auto"` (native, no
+    /// `-ar`) or a forced `"r44100"/"r48000"/"r96000"`. A forced rate that
+    /// doesn't match the device resamples and can cause stutter.
+    pub sample_rate_mode: String,
     pub input_volume: i32,
     pub format: String,
     pub bitrate: String,
@@ -59,6 +65,7 @@ impl SettingsSummary {
             device_name: s.device_name.clone(),
             channels: serde_plain_tag(&s.channels),
             sample_rate: s.sample_rate,
+            sample_rate_mode: serde_plain_tag(&s.sample_rate_mode),
             input_volume: s.input_volume,
             format: serde_plain_tag(&s.format),
             bitrate: s.bitrate.clone(),
@@ -143,6 +150,15 @@ pub struct DiagnosticsInput {
     /// Whether the Windows orphan-guard Job Object is active this session.
     #[serde(default)]
     pub orphan_guard_active: Option<bool>,
+    /// Health telemetry of the MOST RECENT recording (drops/xruns/IPC-starvation),
+    /// read back from `last-recording.json`. `None` = nothing recorded yet. The
+    /// automatic passive-logging signal that lets the report explain stutter/lag.
+    #[serde(default)]
+    pub last_recording: Option<RecordingTelemetry>,
+    /// Recent recordings' telemetry (newest last) for a TREND view — so the user
+    /// pastes a pattern, not a one-off snapshot. Capped upstream (~20).
+    #[serde(default)]
+    pub recording_history: Vec<RecordingTelemetry>,
 }
 
 /// The most recent recording error, read back from `last-error.json` (written by
@@ -268,6 +284,22 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
 
+    // Forced sample rate — a known stutter cause when it doesn't match the
+    // device's native rate (ffmpeg then resamples and can drop samples). Only
+    // surfaced when the user has moved off the safe "Auto" default.
+    if input.settings.sample_rate_mode != "auto" {
+        out.push(DiagnosticFinding::new(
+            "SR-RATE-01",
+            Info,
+            "Fast samplingsrate er valgt",
+            format!(
+                "Innstillingen tvinger {} (ikke «Auto»).",
+                rate_label(&input.settings.sample_rate_mode)
+            ),
+            "Hvis lydkortet kjører en annen rate, resampler ffmpeg og du kan få hakking. Velg «Auto» under Innstillinger → Lyd med mindre du har en konkret grunn.",
+        ));
+    }
+
     // Video enabled but no camera.
     if input.settings.video_enabled && input.video_devices.is_empty() {
         out.push(DiagnosticFinding::new(
@@ -332,6 +364,30 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
 
+    // Last recording HEALTH (automatic telemetry): drops/xruns = stutter,
+    // levels_dropped = the UI/IPC couldn't keep up (recording mode lag).
+    if let Some(t) = &input.last_recording {
+        if t.is_degraded() {
+            let mut bits: Vec<String> = Vec::new();
+            if t.drops > 0 {
+                bits.push(format!("{} dropp", t.drops));
+            }
+            if t.xruns > 0 {
+                bits.push(format!("{} xruns", t.xruns));
+            }
+            if t.levels_dropped > 0 {
+                bits.push(format!("{} IPC-overbelastninger", t.levels_dropped));
+            }
+            out.push(DiagnosticFinding::new(
+                "SR-CAPTURE-01",
+                Warning,
+                "Forrige opptak viste tegn til hakking/treghet",
+                format!("{} (varighet {:.0} s).", bits.join(", "), t.duration_sec),
+                "Lukk andre tunge programmer, sjekk USB-kabel/strøm til lydkortet, og at samplingsrate står på «Auto». Kjør så et nytt opptak og sjekk om tallene faller.",
+            ));
+        }
+    }
+
     // All clear.
     if out.is_empty() {
         out.push(DiagnosticFinding::new(
@@ -343,6 +399,16 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         ));
     }
     out
+}
+
+/// Human label for a `SampleRate` serde tag (`"r48000"` → `"48 kHz"`).
+fn rate_label(mode: &str) -> String {
+    match mode {
+        "r44100" => "44,1 kHz".to_string(),
+        "r48000" => "48 kHz".to_string(),
+        "r96000" => "96 kHz".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// Human-friendly byte size (MB/GB) for findings + the report.
@@ -489,6 +555,37 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
         lines.push(format!("- **Kode:** `{}`", err.code));
         lines.push(format!("- **Melding:** {}", err.message));
         lines.push(format!("- **Tidspunkt:** {}", err.timestamp));
+        lines.push(String::new());
+    }
+
+    // ── Siste opptak (helse-telemetri, automatisk innsamlet) ────────────────
+    if let Some(t) = &input.last_recording {
+        lines.push("## Siste opptak (teknisk)".to_string());
+        lines.push(format!("- **Varighet:** {:.0} s", t.duration_sec));
+        lines.push(format!("- **Dropp (frames):** {}", t.drops));
+        lines.push(format!("- **xruns/diskontinuitet:** {}", t.xruns));
+        lines.push(format!(
+            "- **IPC-overbelastning (tapte nivå-oppdateringer):** {}",
+            t.levels_dropped
+        ));
+        lines.push(format!(
+            "- **Avsluttet rent:** {}",
+            if t.exit_ok { "ja" } else { "nei" }
+        ));
+        if !t.timestamp.is_empty() {
+            lines.push(format!("- **Tidspunkt:** {}", t.timestamp));
+        }
+        // Trend across recent recordings (newest first) so a pattern is visible.
+        if input.recording_history.len() > 1 {
+            lines.push("### Trend (nyeste først)".to_string());
+            for h in input.recording_history.iter().rev().take(5) {
+                let badge = if h.is_degraded() { "⚠️" } else { "✅" };
+                lines.push(format!(
+                    "- {badge} {} — dropp {}, xruns {}, ipc {} ({:.0} s)",
+                    h.timestamp, h.drops, h.xruns, h.levels_dropped, h.duration_sec
+                ));
+            }
+        }
         lines.push(String::new());
     }
 
@@ -714,5 +811,58 @@ mod tests {
         assert!(md.contains("\"format\": \"mp3\""));
         assert!(md.contains("\"channels\": \"stereo\""));
         assert!(md.contains("\"filenamePattern\": \"date\""));
+    }
+
+    #[test]
+    fn degraded_last_recording_warns_and_renders_section() {
+        let mut input = sample_input();
+        input.last_recording = Some(RecordingTelemetry {
+            drops: 3,
+            xruns: 1,
+            levels_dropped: 5,
+            duration_sec: 65.0,
+            timestamp: "2026-06-15T10:00:00+02:00".into(),
+            exit_ok: true,
+            ..Default::default()
+        });
+        let f = detect_issues(&input);
+        assert!(f
+            .iter()
+            .any(|x| x.code == "SR-CAPTURE-01" && x.severity == DiagnosticSeverity::Warning));
+        let md = build_report_markdown(input);
+        assert!(md.contains("Siste opptak (teknisk)"));
+        assert!(md.contains("IPC-overbelastning"));
+    }
+
+    #[test]
+    fn clean_last_recording_no_capture_finding() {
+        let mut input = sample_input();
+        input.last_recording = Some(RecordingTelemetry {
+            duration_sec: 60.0,
+            exit_ok: true,
+            ..Default::default()
+        });
+        let f = detect_issues(&input);
+        assert!(!f.iter().any(|x| x.code == "SR-CAPTURE-01"));
+        // No degraded recording → still no SR-CAPTURE among findings.
+    }
+
+    #[test]
+    fn forced_sample_rate_is_info_finding() {
+        // Default is "auto" → no finding (the healthy test already asserts that).
+        let mut input = sample_input();
+        input.settings.sample_rate_mode = "r48000".to_string();
+        let e = detect_issues(&input)
+            .into_iter()
+            .find(|x| x.code == "SR-RATE-01")
+            .expect("forced-rate finding");
+        assert_eq!(e.severity, DiagnosticSeverity::Info);
+        assert!(e.detail.contains("48 kHz"));
+    }
+
+    #[test]
+    fn auto_sample_rate_has_no_rate_finding() {
+        let input = sample_input(); // default mode = auto
+        assert!(!detect_issues(&input).iter().any(|x| x.code == "SR-RATE-01"));
     }
 }

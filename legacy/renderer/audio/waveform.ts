@@ -107,9 +107,19 @@ export class RecordingWaveform {
   start(): void {
     if (this.running) return
     this.running = true
+    let lastDrawTs = 0
     const loop = (): void => {
       if (!this.running) return
-      this.draw(performance.now())
+      const now = performance.now()
+      // ~30 fps cap on this full-canvas redraw. The scroll is time-based (ring
+      // points are timestamped), so 30 vs 60 fps is visually imperceptible — but
+      // halving this redraw frees the main thread DURING recording, reducing the
+      // event-loop/IPC starvation that makes recording mode feel laggy. The data
+      // ring still fills at the meter loop's full rate; only the draw is capped.
+      if (now - lastDrawTs >= 33) {
+        lastDrawTs = now
+        this.draw(now)
+      }
       this.rafId = requestAnimationFrame(loop)
     }
     this.rafId = requestAnimationFrame(loop)

@@ -73,3 +73,23 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 - [ ] **Deep-link**: after a signed `tauri build`, open `sundayrec://…` and
       confirm it routes into the app (the config is in place but GUI-UNVERIFIED;
       requires the `tray` feature, which release builds include).
+
+### 6a. Recording/editor health gate (HARD — for any build touching audio)
+
+The headless `npm run check`/`ci` is **necessary but not sufficient**: it cannot
+see audio stutter, recording-mode lag, or editor instability. So for any build
+that changed **`recorder/`, `capture.rs`, the editor, the meter loop, or boot
+ordering**, this is a publish blocker:
+
+- [ ] Run **§5b** (record normally → Diagnose → "Siste opptak" numbers). Paste
+      `Dropp / xruns / IPC-overbelastning` + the Trend into the release notes.
+      Healthy = all ≈ 0, clean exit, no `SR-CAPTURE-01`.
+- [ ] Confirm the telemetry **detects** a deliberately-stressed capture (§5b
+      step 3) — if the numbers don't move under a CPU hog, the gate is blind.
+- [ ] Run **§12b** (editor stability loop) — large file, rapid play/stop/seek,
+      switch-files-mid-play, undo-mid-drag — no crash / stuck icon / wrong audio.
+- [ ] If `SR-RATE-01` fires, confirm the device truly needs a forced rate;
+      otherwise set sample rate to **Auto** before sign-off.
+
+> Rule: no recording/editor change is "done" until these rig numbers are in the
+> release notes. This is what stops unverified audio fixes from shipping again.

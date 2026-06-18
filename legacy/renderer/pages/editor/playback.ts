@@ -284,6 +284,21 @@ export function stopPlay(): void {
   drawWaveform()
 }
 
+// Cap the per-frame full-canvas redraw to ~30 fps during playback. The redraw
+// is the expensive part of the loop; the playhead is imperceptible at 30 vs
+// 60 fps, but halving it frees the main thread (smoother editor, esp. on long
+// files). Only the playback loop is throttled — direct drawWaveform() calls
+// (seek, edits, stop) still draw immediately.
+let lastWaveformDrawMs = 0
+const WAVEFORM_MIN_FRAME_MS = 33
+function drawWaveformThrottled(): void {
+  const now = performance.now()
+  if (now - lastWaveformDrawMs >= WAVEFORM_MIN_FRAME_MS) {
+    lastWaveformDrawMs = now
+    drawWaveform()
+  }
+}
+
 export function animate(): void {
   if (!E.isPlaying) return
 
@@ -303,7 +318,7 @@ export function animate(): void {
     updateTimecode(curSec)
     autoScrollToPlayhead(curSec)
     setCurrentTranscriptTime(curSec)
-    drawWaveform()
+    drawWaveformThrottled()
     E.rafId = requestAnimationFrame(animate)
     return
   }
@@ -313,7 +328,7 @@ export function animate(): void {
   updateTimecode(curSec)
   autoScrollToPlayhead(curSec)
   setCurrentTranscriptTime(curSec)
-  drawWaveform()
+  drawWaveformThrottled()
   E.rafId = requestAnimationFrame(animate)
 }
 

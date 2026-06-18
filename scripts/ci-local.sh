@@ -23,6 +23,7 @@ step "ffmpeg/ffprobe sidecars";        npm run ffmpeg
 step "frontend — eslint";              npm run lint
 step "frontend — prettier --check";    npm run format:check
 step "frontend — tsc --noEmit";        npm run typecheck
+step "frontend — vitest";              npm run test
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check
 step "rust — cargo clippy -D warnings"; npm run lint:rust

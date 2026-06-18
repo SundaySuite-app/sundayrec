@@ -1,6 +1,8 @@
 import { t } from '../../i18n'
 import { E, $, markDirty, type Cut } from './state'
-import { clampMain } from './geometry'
+import { pushSnapshot, undoSnapshot, redoSnapshot } from './cut-history'
+import { computeKeepSegs } from './keep-segments'
+import { addCutToList } from './cut-ops'
 import { gainFactor } from './peaks'
 import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap, updateMinimapViewport } from './waveform'
@@ -26,11 +28,11 @@ export function isInDrag(sec: number): boolean {
 // live state. Index -1 means "no history yet" (initial empty state).
 // pushCutHistory() is called AFTER a mutation to record the new state.
 export function pushCutHistory(): void {
-  // Discard any redo states ahead of the current pointer
-  E.cutHistory = E.cutHistory.slice(0, E.cutHistoryIdx + 1)
-  E.cutHistory.push(JSON.parse(JSON.stringify(E.cuts)))
-  if (E.cutHistory.length > 50) E.cutHistory.shift()
-  E.cutHistoryIdx = E.cutHistory.length - 1
+  // Pure state machine (unit-tested in cut-history.test.ts) owns the snapshot/
+  // cap/redo-discard invariants; here we just store the result + persist.
+  const next = pushSnapshot({ history: E.cutHistory, idx: E.cutHistoryIdx }, E.cuts)
+  E.cutHistory = next.history
+  E.cutHistoryIdx = next.idx
   // Persist cuts to a draft sidecar so a crash mid-edit doesn't lose the work
   scheduleDraftSave()
 }
@@ -55,24 +57,11 @@ export function clearEditorDraft(): void {
 }
 
 export function addCut(s: number, e: number): void {
-  if (e < s) [s, e] = [e, s]
-  // Cuts must always live in main coords — clamp in case the drag started or
-  // ended in an intro/outro slot (caller may have passed extended-timeline
-  // values).
-  s = clampMain(s); e = clampMain(e)
-  if (e - s < 0.1) return
-
-  E.cuts.push({ start: s, end: e })
-  E.cuts.sort((a, b) => a.start - b.start)
-
-  // Merge overlapping
-  const merged: Cut[] = []
-  for (const c of E.cuts) {
-    const prev = merged[merged.length - 1]
-    if (prev && c.start <= prev.end + 0.01) { prev.end = Math.max(prev.end, c.end) }
-    else merged.push({ ...c })
-  }
-  E.cuts = merged
+  // Pure add+clamp+merge (unit-tested in cut-ops.test.ts). Clamps to [0,duration]
+  // in case the drag started/ended in an intro/outro slot; null = too short to keep.
+  const next = addCutToList(E.cuts, s, e, E.duration)
+  if (!next) return
+  E.cuts = next
   pushCutHistory()
   markDirty()
   updateRemainingDisplay()
@@ -89,17 +78,13 @@ export function deleteCut(i: number): void {
 }
 
 export function undoCut(): void {
-  if (E.cutHistoryIdx <= 0) {
-    // Undo back to empty state
-    if (E.cutHistoryIdx === 0 && E.cuts.length > 0) {
-      E.cuts = []
-      E.cutHistoryIdx = -1
-      renderCutList(); updateRemainingDisplay(); drawWaveform(); drawMinimap()
-    }
-    return
-  }
-  E.cutHistoryIdx--
-  E.cuts = JSON.parse(JSON.stringify(E.cutHistory[E.cutHistoryIdx]))
+  // Never swap the cut array out from under an in-flight drag — that orphans the
+  // drag's in-place edits and corrupts history on mouse-up. Let the drag finish.
+  if (E.handleDrag || E.isDragging) return
+  const r = undoSnapshot({ history: E.cutHistory, idx: E.cutHistoryIdx }, E.cuts.length)
+  if (!r) return
+  E.cutHistoryIdx = r.idx
+  E.cuts = r.cuts
   renderCutList()
   updateRemainingDisplay()
   drawWaveform()
@@ -107,9 +92,11 @@ export function undoCut(): void {
 }
 
 export function redoCut(): void {
-  if (E.cutHistoryIdx >= E.cutHistory.length - 1) return
-  E.cutHistoryIdx++
-  E.cuts = JSON.parse(JSON.stringify(E.cutHistory[E.cutHistoryIdx]))
+  if (E.handleDrag || E.isDragging) return // see undoCut: don't disrupt a live drag
+  const r = redoSnapshot({ history: E.cutHistory, idx: E.cutHistoryIdx })
+  if (!r) return
+  E.cutHistoryIdx = r.idx
+  E.cuts = r.cuts
   renderCutList()
   updateRemainingDisplay()
   drawWaveform()
@@ -117,15 +104,9 @@ export function redoCut(): void {
 }
 
 export function getKeepSegs(): { start: number; end: number }[] {
-  const sorted = [...E.cuts].sort((a, b) => a.start - b.start)
-  const keeps: { start: number; end: number }[] = []
-  let cursor = 0
-  for (const c of sorted) {
-    if (c.start > cursor + 0.05) keeps.push({ start: cursor, end: c.start })
-    cursor = Math.max(cursor, c.end)
-  }
-  if (cursor < E.duration - 0.05) keeps.push({ start: cursor, end: E.duration })
-  return keeps
+  // Pure computation (unit-tested in keep-segments.test.ts) — drives preview
+  // playback + the export cut-plan.
+  return computeKeepSegs(E.cuts, E.duration)
 }
 
 export function getRemainingDuration(): number {

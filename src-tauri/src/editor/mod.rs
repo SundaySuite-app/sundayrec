@@ -501,7 +501,7 @@ pub struct EditorStreamInfo {
 }
 
 /// The `editor-read-file` outcome: either the file is small enough to read its
-/// bytes inline, or it is over the 400 MB limit and the renderer must stream it
+/// bytes inline, or it is over the 100 MB limit and the renderer must stream it
 /// via the peaks-extract path. Mirrors the `{ tooLarge, size }` shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../src/lib/bindings/EditorFileRead.ts")]
@@ -581,7 +581,7 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 }
 
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
-/// Reads the bytes only when within the 400 MB limit. A missing file surfaces
+/// Reads the bytes only when within the 100 MB limit. A missing file surfaces
 /// as an error (the renderer should not have asked for an absent recording).
 pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
     use sundayrec_core::editor::{inline_decision, InlineDecision};
