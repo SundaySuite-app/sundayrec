@@ -84,6 +84,23 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                 if let Some(clip) = &manifest.preroll_clip_path {
                     let _ = tokio::fs::remove_file(clip).await;
                 }
+                // Decoupled capture: drop the now-orphaned per-session capture
+                // folder — best-effort, only removes it if EMPTY.
+                // `recover_session` already deleted each successfully-delivered
+                // fragment (via `finalize_deliverable`'s Step 2); a fragment whose
+                // delivery failed is deliberately left in place as a recovery
+                // source, so the folder correctly survives in that case. All
+                // deliverables share one capture folder, so the first is enough
+                // to locate it.
+                if manifest.delivery_encode.is_some() {
+                    if let Some(cap_dir) = manifest
+                        .deliverables
+                        .first()
+                        .and_then(|d| Path::new(&d.primary_path).parent())
+                    {
+                        let _ = tokio::fs::remove_dir(cap_dir).await;
+                    }
+                }
             }
             Err(e) => {
                 tracing::warn!(file = %path.display(), "recovery: corrupt manifest, deleting: {e}");
@@ -189,7 +206,8 @@ mod tests {
     use super::*;
     use crate::db::store::{list_recordings, open_pool};
     use sundayrec_core::recovery::{
-        has_recoverable_audio, recoverable_deliverables, DeliverableManifest,
+        has_recoverable_audio, recoverable_deliverables, AudioEncodeManifest, DeliverableManifest,
+        DeliveryMode,
     };
 
     /// A fully-migrated pool over a temp-dir database file (mirrors the db/settings
@@ -395,6 +413,15 @@ mod tests {
                     if let Some(clip) = &manifest.preroll_clip_path {
                         let _ = tokio::fs::remove_file(clip).await;
                     }
+                    if manifest.delivery_encode.is_some() {
+                        if let Some(cap_dir) = manifest
+                            .deliverables
+                            .first()
+                            .and_then(|d| Path::new(&d.primary_path).parent())
+                        {
+                            let _ = tokio::fs::remove_dir(cap_dir).await;
+                        }
+                    }
                 }
                 Err(_) => {
                     let _ = tokio::fs::remove_file(&path).await;
@@ -471,5 +498,100 @@ mod tests {
 
         assert_eq!(scan_dir(&pool, recovery.path()).await, 0);
         assert!(stray.exists(), "non-json files are left untouched");
+    }
+
+    fn decoupled_encode_spec(delivery_dir: &Path) -> AudioEncodeManifest {
+        AudioEncodeManifest {
+            delivery_dir: delivery_dir.to_string_lossy().into_owned(),
+            ext: "mp3".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 256,
+            mode: DeliveryMode::AudioEncode,
+            hvc1_tag: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn scan_loop_removes_the_now_empty_capture_dir() {
+        // A decoupled-capture manifest whose fragments are already gone (in
+        // production: every deliverable finished a successful encode/remux, which
+        // deletes its own capture file) leaves the per-session capture folder
+        // empty — the scan loop's cleanup (mirroring `scan_and_recover`) must
+        // remove it, same as the live engine does at a clean session end.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let save_dir = tempfile::tempdir().unwrap();
+        let cap_dir = save_dir.path().join(".sundayrec-capture-1700000000000");
+        tokio::fs::create_dir_all(&cap_dir).await.unwrap();
+
+        let mut m = manifest_in(&cap_dir); // fragments point into cap_dir, absent on disk
+        m.delivery_encode = Some(decoupled_encode_spec(save_dir.path()));
+        let manifest_file = recovery.path().join("session.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 0, "no surviving fragments to recover");
+        assert!(!cap_dir.exists(), "empty capture dir is cleaned up");
+    }
+
+    #[tokio::test]
+    async fn scan_loop_keeps_a_non_empty_capture_dir() {
+        // `remove_dir` only removes an EMPTY directory — litter unrelated to any
+        // manifest deliverable (e.g. a capture file a failed delivery kept) must
+        // keep the folder alive as a recovery source, not be silently destroyed.
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let save_dir = tempfile::tempdir().unwrap();
+        let cap_dir = save_dir.path().join(".sundayrec-capture-1700000000000");
+        tokio::fs::create_dir_all(&cap_dir).await.unwrap();
+        tokio::fs::write(cap_dir.join("stray.tmp"), b"x")
+            .await
+            .unwrap();
+
+        let mut m = manifest_in(&cap_dir);
+        m.delivery_encode = Some(decoupled_encode_spec(save_dir.path()));
+        let manifest_file = recovery.path().join("session.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let _ = scan_dir(&pool, recovery.path()).await;
+        assert!(
+            cap_dir.exists(),
+            "non-empty capture dir must survive cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn scan_loop_leaves_legacy_manifests_capture_dir_alone() {
+        // A legacy manifest (`delivery_encode: None`) has no capture-dir concept
+        // at all — the fragment IS the delivery file, living in the user's OWN
+        // save folder — so the `is_some()` gate on the cap_dir cleanup must skip
+        // it entirely. (The delivered files are never deleted by recovery either
+        // way, so this also documents that the save folder survives intact.)
+        let (pool, _db) = temp_pool().await;
+        let recovery = tempfile::tempdir().unwrap();
+        let rec = tempfile::tempdir().unwrap();
+        let m = manifest_in(rec.path()); // delivery_encode: None by default
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let manifest_file = recovery.path().join("session.json");
+        tokio::fs::write(&manifest_file, m.to_json().unwrap())
+            .await
+            .unwrap();
+
+        let recovered = scan_dir(&pool, recovery.path()).await;
+        assert_eq!(recovered, 2);
+        assert!(
+            rec.path().exists(),
+            "the user's save folder must never be removed"
+        );
+        assert!(
+            Path::new(&m.deliverables[0].primary_path).exists(),
+            "delivered recordings are never deleted by recovery"
+        );
     }
 }

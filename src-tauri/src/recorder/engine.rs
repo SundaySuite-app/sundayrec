@@ -950,6 +950,8 @@ async fn run_session(
         Err(e) => {
             let _ = ready.send(Err(e));
             emit_state(RecorderState::Failed, 0);
+            // The capture dir was just created and never written to — empty.
+            let _ = tokio::fs::remove_dir(&cap_dir).await;
             return;
         }
     };
@@ -1094,6 +1096,12 @@ async fn run_session(
                                 emit_state(RecorderState::Failed, 0);
                             }
                         }
+                        // The unified attempt's capture dir held only the just-
+                        // removed empty/broken primary (no fragments — the
+                        // fallback trigger requires zero bytes produced) — empty
+                        // now. The two-process fallback owns its own temps
+                        // elsewhere, so this cleanup is unrelated to its outcome.
+                        let _ = tokio::fs::remove_dir(&cap_dir).await;
                         return;
                     }
                 }
@@ -1117,6 +1125,10 @@ async fn run_session(
                             &opts,
                         )
                         .await;
+                        // Best-effort: only removes it if empty (a failed final
+                        // delivery leaves its WAV/MKV behind on purpose — the
+                        // capture survives as a playback/recovery source).
+                        let _ = tokio::fs::remove_dir(&cap_dir).await;
                         tracing::error!("recorder: giving up — fail-stop");
                         return;
                     }
@@ -1199,6 +1211,10 @@ async fn run_session(
                                                 &opts,
                                             )
                                             .await;
+                                            // Best-effort: only removes it if empty
+                                            // (a failed final delivery leaves its
+                                            // WAV/MKV behind on purpose).
+                                            let _ = tokio::fs::remove_dir(&cap_dir).await;
                                             tracing::error!(
                                                 "recorder: giving up — respawn budget exhausted"
                                             );
