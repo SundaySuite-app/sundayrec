@@ -83,7 +83,9 @@ use sundayrec_core::preflight::{low_disk_should_stop, min_disk_headroom_bytes};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
-use sundayrec_core::recovery::{DeliverableManifest, SessionManifest};
+use sundayrec_core::recovery::{
+    delivery_path_for, AudioEncodeManifest, DeliverableManifest, SessionManifest,
+};
 use sundayrec_core::settings::ChannelMode;
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
 use sundayrec_core::timeouts::RecorderTimeouts;
@@ -96,8 +98,7 @@ use crate::audio::device_enum::{
 };
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
-use crate::media::ffmpeg::spawn_ffmpeg;
-use crate::recorder::concat::{finalize_deliverable, output_is_valid};
+use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
 
@@ -875,7 +876,42 @@ async fn run_session(
     // Unique per recording (singleton engine → start_ms never repeats); also the
     // crash-recovery manifest's filename.
     let session_id = start_ms.to_string();
-    let mut session = RecordingSession::new(opts.output_path.clone(), start_ms);
+    // Decoupled-audio capture (the anti-"hakkete" fix). An audio-only recording
+    // captures to a lossless PCM WAV in a per-session hidden folder BESIDE the
+    // delivery file, then transcodes to the user's chosen format at finalisation —
+    // so a real-time lossy encoder can never fall behind and back-pressure
+    // avfoundation into dropping samples. Video recordings capture straight to their
+    // delivery container (transcoding video is out of scope + expensive).
+    let audio_only = video.is_none();
+    let cap_dir = capture_dir(&opts.output_path, &session_id);
+    let session_output = if audio_only {
+        if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
+            tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
+            let _ = ready.send(Err(AppError::Recording(format!(
+                "kunne ikke opprette opptaksmappe {}: {e}",
+                cap_dir.display()
+            ))));
+            emit_state(RecorderState::Failed, 0);
+            return;
+        }
+        capture_base_path(&cap_dir, &opts.output_path)
+    } else {
+        opts.output_path.clone()
+    };
+    // How to transcode the WAV capture to the delivery format — persisted in the
+    // crash-recovery manifest so an interrupted recording can be finished on the
+    // next launch. `None` for video (fragments already ARE the delivery container).
+    let delivery_encode = audio_only.then(|| AudioEncodeManifest {
+        delivery_dir: delivery_dir_of(&opts.output_path),
+        ext: delivery_ext(&opts.output_path),
+        channels: match opts.channel_mode {
+            ChannelMode::Stereo => 2,
+            _ => 1,
+        },
+        sample_rate: opts.sample_rate,
+        bitrate_kbps: opts.bitrate_kbps,
+    });
+    let mut session = RecordingSession::new(session_output, start_ms);
     // How many deliverables have already been finalised (concat + history row).
     // Each split closes one; session end finalises the rest. The pre-roll clip is
     // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
@@ -916,7 +952,14 @@ async fn run_session(
         // fragments instead of losing the recording. Best-effort; never blocks.
         crate::recorder::recovery::write_manifest(
             &app,
-            &session_manifest(&session_id, &session, &audio, &preroll_clip, start_ms),
+            &session_manifest(
+                &session_id,
+                &session,
+                &audio,
+                &preroll_clip,
+                start_ms,
+                &delivery_encode,
+            ),
         )
         .await;
 
@@ -1195,6 +1238,13 @@ async fn run_session(
     // Clean finish: every deliverable is finalised + history-rowed, so the
     // recovery manifest is no longer needed.
     crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+    // Decoupled-audio path: drop the now-empty per-session capture folder.
+    // `remove_dir` removes it ONLY if empty — a FAILED delivery transcode left its
+    // WAV behind (finalize_one fell back to it as the history file), so the folder
+    // stays and the WAV survives as a playback/recovery source.
+    if audio_only {
+        let _ = tokio::fs::remove_dir(&cap_dir).await;
+    }
     // Record→edit hand-off: tell the UI where the finished file landed so it can
     // offer "open in editor". Only when the main file actually exists + is
     // non-empty (a recording that produced nothing skips the suggestion).
@@ -1217,6 +1267,51 @@ async fn run_session(
     tracing::info!("recorder: session stopped cleanly");
 }
 
+/// The per-session capture folder for the decoupled-audio path: a hidden
+/// `.sundayrec-capture-<session_id>` directory BESIDE the user's delivery file. On
+/// the same volume (so the finalise transcode/rename never crosses filesystems) and
+/// PERSISTENT — deliberately NOT OS-temp — so a crash leaves the WAV fragments on
+/// disk for the next-launch recovery scan to finish.
+fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
+    std::path::Path::new(delivery)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(format!(".sundayrec-capture-{session_id}"))
+}
+
+/// The WAV capture base path inside `cap_dir`, carrying the SAME file stem as the
+/// delivery file so [`delivery_path_for`] maps it straight back (and splits derive
+/// `<stem>_2.wav` etc). E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
+fn capture_base_path(cap_dir: &std::path::Path, delivery: &str) -> String {
+    let stem = std::path::Path::new(delivery)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("recording");
+    cap_dir
+        .join(format!("{stem}.wav"))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The directory a delivery file lands in (the user's save folder), or `""`.
+fn delivery_dir_of(delivery: &str) -> String {
+    std::path::Path::new(delivery)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// The lowercased delivery extension (`"mp3"`, `"wav"`, …), or `""` — drives the
+/// transcode codec via [`audio_encode_args`]/`codec_for_extension`.
+fn delivery_ext(delivery: &str) -> String {
+    std::path::Path::new(delivery)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 /// Snapshot the live session into a persistable crash-recovery manifest.
 fn session_manifest(
     session_id: &str,
@@ -1224,12 +1319,14 @@ fn session_manifest(
     audio: &FfmpegDevice,
     preroll_clip: &Option<PrerollClip>,
     start_ms: u64,
+    delivery_encode: &Option<AudioEncodeManifest>,
 ) -> SessionManifest {
     SessionManifest {
         session_id: session_id.to_string(),
         device_name: audio.name.clone(),
         session_start_ms: start_ms,
         preroll_clip_path: preroll_clip.as_ref().map(|c| c.raw_path.clone()),
+        delivery_encode: delivery_encode.clone(),
         deliverables: session
             .deliverables()
             .iter()
@@ -1294,6 +1391,27 @@ impl LevelMeter {
 /// `lavfi.astats.<ch>.Peak_level=` lines (one per channel per frame) which update
 /// the held [`LevelMeter`] and emit on its ~60×/s throttle. Pure-helper driven —
 /// the reader owns no state machine.
+/// `true` if `line` is one of ffmpeg's own capture-back-pressure / sample-drop
+/// warnings — the machine-observable signature of the "hakkete" bug. These are NOT
+/// fatal (ffmpeg keeps recording) so they fall straight through the error
+/// classifier; we surface them as warnings so a rig test (and the Lydhjelp
+/// diagnostic) can SEE capture drops happening rather than only hearing them.
+/// Lowercase-substring match against the phrasings ffmpeg actually prints.
+fn is_capture_drop_warning(line: &str) -> bool {
+    let l = line.to_ascii_lowercase();
+    [
+        "thread message queue blocking",
+        "consider raising the thread_queue_size",
+        "audio queue overflow",
+        "queue input is backward in time",
+        "past duration",
+        "non monotonically increasing dts",
+        "packets dropped",
+    ]
+    .iter()
+    .any(|needle| l.contains(needle))
+}
+
 async fn classify_stderr_line(
     line: &str,
     startup: &mut StartupResolver,
@@ -1317,6 +1435,17 @@ async fn classify_stderr_line(
             let _ = msg_tx.try_send(ReaderMsg::Levels(lv));
         }
         return;
+    }
+    // Capture back-pressure / sample-drop warnings: log-only (not fatal, so we let
+    // the line fall through to the normal progress/silence/error classification too,
+    // though in practice these phrasings match none of those). Surfacing them makes
+    // the "hakkete" symptom observable in the logs + Lydhjelp.
+    if is_capture_drop_warning(line) {
+        tracing::warn!(
+            capture_drop = true,
+            line = %line,
+            "recorder: ffmpeg reported capture back-pressure / dropped samples"
+        );
     }
     if let Some(b) = parse_size_kb(line) {
         if startup.observe_progress() {
@@ -1675,10 +1804,26 @@ async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>) {
 
 /// Spawn ffmpeg taking ownership of the child (the supervisor holds it for the
 /// segment's whole life; dropping it triggers `kill_on_drop`).
+/// Spawn a RECORDING ffmpeg segment. Unlike the shared [`spawn_ffmpeg`] (which
+/// pipes stdout for the preview/editor MJPEG readers), the recording capture has NO
+/// stdout consumer — its live preview is a file sink, not a pipe. Leaving stdout
+/// piped but undrained is a latent deadlock: if ffmpeg ever wrote to it, the full
+/// pipe would stall the process → dropped capture samples ("hakkete"). So we send
+/// stdout to null here. stdin stays piped (we write `q` for a graceful, container-
+/// finalising stop) and stderr stays piped (the progress/levels/error reader).
+/// `kill_on_drop` prevents a zombie ffmpeg if the supervisor task is dropped.
 async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child> {
+    use std::process::Stdio;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: spawning ffmpeg segment");
-    spawn_ffmpeg(&arg_refs).await
+    tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args(&arg_refs)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
 /// Emit a classified error to the renderer.
@@ -1797,16 +1942,37 @@ async fn finalize_one(
         None
     };
 
-    let final_path = match finalize_deliverable(deliverable, preroll_path).await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!(
-                deliverable = %deliverable.primary_path,
-                "recorder: concat failed, keeping primary as history file: {e}"
-            );
-            deliverable.primary_path.clone()
+    // Decoupled-audio path: the deliverable's primary is a lossless WAV capture, so
+    // ask `finalize_deliverable` to transcode it to the user's format. The WAV stem
+    // (carrying any `_2` split suffix) maps back into the save folder with the
+    // delivery extension. Video captured straight to its container → no transcode.
+    let audio_only = opts.video_device_name.is_none();
+    let delivery_spec = audio_only.then(|| {
+        let delivery_dir = delivery_dir_of(&opts.output_path);
+        let ext = delivery_ext(&opts.output_path);
+        DeliverySpec {
+            delivery_path: delivery_path_for(&deliverable.primary_path, &delivery_dir, &ext),
+            ext,
+            channels: match opts.channel_mode {
+                ChannelMode::Stereo => 2,
+                _ => 1,
+            },
+            sample_rate: opts.sample_rate,
+            bitrate_kbps: opts.bitrate_kbps,
         }
-    };
+    });
+
+    let final_path =
+        match finalize_deliverable(deliverable, preroll_path, delivery_spec.as_ref()).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(
+                    deliverable = %deliverable.primary_path,
+                    "recorder: finalise failed, keeping primary as history file: {e}"
+                );
+                deliverable.primary_path.clone()
+            }
+        };
 
     // Guard: never record a missing / zero-byte / undecodable file in history.
     if !output_is_valid(std::path::Path::new(&final_path)).await {
@@ -2062,6 +2228,71 @@ mod tests {
             classic_directshow: false,
             video_input: None,
         }
+    }
+
+    #[test]
+    fn capture_dir_is_hidden_per_session_folder_beside_delivery() {
+        // The WAV capture lives in a hidden, session-scoped folder in the SAME
+        // directory as the delivery file (same volume → no cross-fs finalise).
+        let d = capture_dir("/rec/sermon.mp3", "1700000000000");
+        assert_eq!(
+            d,
+            std::path::PathBuf::from("/rec/.sundayrec-capture-1700000000000")
+        );
+        // A bare filename (parent is the empty relative path) → the capture folder
+        // sits in the cwd. Never panics; the real recorder always passes an absolute
+        // delivery path so this is only a defensive edge case.
+        let d2 = capture_dir("sermon.mp3", "42");
+        assert_eq!(d2, std::path::PathBuf::from(".sundayrec-capture-42"));
+    }
+
+    #[test]
+    fn capture_base_path_keeps_the_delivery_stem_as_wav() {
+        // The capture base carries the delivery's OWN stem so `delivery_path_for`
+        // maps it straight back, and splits derive `<stem>_2.wav`.
+        let cap = capture_dir("/rec/sermon.mp3", "1");
+        assert_eq!(
+            capture_base_path(&cap, "/rec/sermon.mp3"),
+            "/rec/.sundayrec-capture-1/sermon.wav"
+        );
+        // Round-trip: capture base → delivery path reproduces the user's file.
+        let base = capture_base_path(&cap, "/rec/sermon.mp3");
+        assert_eq!(
+            delivery_path_for(
+                &base,
+                &delivery_dir_of("/rec/sermon.mp3"),
+                &delivery_ext("/rec/sermon.mp3")
+            ),
+            "/rec/sermon.mp3"
+        );
+    }
+
+    #[test]
+    fn delivery_ext_and_dir_helpers() {
+        assert_eq!(delivery_ext("/rec/sermon.MP3"), "mp3"); // lowercased
+        assert_eq!(delivery_ext("/rec/sermon"), ""); // no extension
+        assert_eq!(delivery_dir_of("/rec/sermon.mp3"), "/rec");
+        assert_eq!(delivery_dir_of("sermon.mp3"), ""); // no parent
+    }
+
+    #[test]
+    fn is_capture_drop_warning_matches_ffmpeg_phrasings() {
+        // Real ffmpeg drop/back-pressure lines (any case) are flagged…
+        assert!(is_capture_drop_warning(
+            "[avfoundation @ 0x7f] Thread message queue blocking; consider raising the thread_queue_size"
+        ));
+        assert!(is_capture_drop_warning("Audio queue overflow"));
+        assert!(is_capture_drop_warning(
+            "Non monotonically increasing dts to muxer in stream 0"
+        ));
+        assert!(is_capture_drop_warning("1234 packets dropped"));
+        // …but ordinary progress / silence lines are NOT.
+        assert!(!is_capture_drop_warning(
+            "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"
+        ));
+        assert!(!is_capture_drop_warning(
+            "[silencedetect @ 0x1] silence_start: 3.2"
+        ));
     }
 
     #[test]

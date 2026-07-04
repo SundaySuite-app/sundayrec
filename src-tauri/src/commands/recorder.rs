@@ -114,10 +114,20 @@ pub async fn start_recording(
                     sundayrec_core::settings::ChannelMode::Stereo => 2,
                     _ => 1,
                 };
-                let container_ext = std::path::Path::new(&opts.output_path)
-                    .extension()
-                    .map(|e| e.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                // Audio-only recordings now capture to a lossless WAV (the encode is
+                // decoupled to finalisation — the anti-"hakkete" fix), so the pre-roll
+                // must ALSO be WAV/PCM for the `-c copy` prepend into the WAV capture
+                // to stay lossless AND container-compatible. Video still matches its
+                // delivery container (it captures straight to that container).
+                let audio_only = opts.video_device_name.is_none();
+                let container_ext = if audio_only {
+                    "wav".to_string()
+                } else {
+                    std::path::Path::new(&opts.output_path)
+                        .extension()
+                        .map(|e| e.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                };
                 let codec = sundayrec_core::capture::codec_for_extension(&container_ext);
                 // Empty/unknown extension → use the fallback codec's own container
                 // so codec and container always agree.

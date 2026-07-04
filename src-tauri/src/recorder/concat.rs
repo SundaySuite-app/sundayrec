@@ -40,6 +40,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use sundayrec_core::capture::audio_encode_args;
 use sundayrec_core::recorder::{
     build_concat_args, build_concat_list, concat_inputs, concat_needed, is_plausible_output,
     Deliverable,
@@ -47,6 +48,31 @@ use sundayrec_core::recorder::{
 
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::{ffmpeg_path, ffprobe_path};
+
+/// How to DELIVER a finalised deliverable in the decoupled-audio path: after the
+/// lossless WAV capture fragments are concat-stitched, transcode the merged WAV
+/// into the user's chosen format at `delivery_path`.
+///
+/// WHY the two-step (capture WAV → transcode): the capturing ffmpeg writes lossless
+/// PCM so a real-time lossy encoder can never fall behind and back-pressure
+/// avfoundation into dropping samples (the "hakkete" bug). The lossy encode is
+/// deferred here, where it can no longer harm the capture. Passing `None` to
+/// [`finalize_deliverable`] keeps the LEGACY/video path — the fragments already ARE
+/// the delivery file (their own container), so no transcode happens.
+#[derive(Debug, Clone)]
+pub(crate) struct DeliverySpec {
+    /// Where the transcoded delivery file lands (the user-visible recording).
+    pub delivery_path: String,
+    /// Delivery container/codec extension (`mp3`/`wav`/`flac`/`m4a`), driving the
+    /// codec via [`audio_encode_args`].
+    pub ext: String,
+    /// Output channel count (1 mono / 2 stereo).
+    pub channels: u8,
+    /// Forced output sample rate, or `None` to keep the captured native rate.
+    pub sample_rate: Option<u32>,
+    /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC.
+    pub bitrate_kbps: u32,
+}
 
 /// Hard limit on the concat-copy ffmpeg run. A stream-copy of even a multi-hour
 /// service is fast; anything past this means ffmpeg is wedged. Ports the Electron
@@ -76,9 +102,10 @@ fn is_windows() -> bool {
 /// primary as the history file.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
-pub async fn finalize_deliverable(
+pub(crate) async fn finalize_deliverable(
     deliverable: &Deliverable,
     preroll_clip_path: Option<&str>,
+    delivery: Option<&DeliverySpec>,
 ) -> AppResult<String> {
     let primary = deliverable.primary_path.clone();
 
@@ -94,63 +121,123 @@ pub async fn finalize_deliverable(
         None => None,
     };
 
-    if !concat_needed(&deliverable.fragments, preroll.is_some()) {
-        // Single fragment, no pre-roll → the primary file is already complete.
-        return Ok(primary);
-    }
+    // ── Step 1: produce the merged capture file at `primary` ─────────────────────
+    // When a concat is needed (multiple fragments or a pre-roll to prepend) we
+    // stitch them losslessly (`-c copy`) into `primary`; otherwise the single
+    // fragment already IS `primary`. In the decoupled-audio path these are WAV
+    // capture files; in the legacy/video path they are the delivery container.
+    if concat_needed(&deliverable.fragments, preroll.is_some()) {
+        let inputs = concat_inputs(&deliverable.fragments, preroll);
+        let primary_path = PathBuf::from(&primary);
+        let (list_path, tmp_path) = scratch_paths(&primary_path);
 
-    let inputs = concat_inputs(&deliverable.fragments, preroll);
-    let primary_path = PathBuf::from(&primary);
-    let (list_path, tmp_path) = scratch_paths(&primary_path);
+        // 1a. Write the concat-demuxer list.
+        let list_body = build_concat_list(&inputs, is_windows());
+        tokio::fs::write(&list_path, list_body.as_bytes())
+            .await
+            .map_err(|e| {
+                AppError::Recording(format!(
+                    "concat: failed to write list {}: {e}",
+                    list_path.display()
+                ))
+            })?;
 
-    // 1. Write the concat-demuxer list.
-    let list_body = build_concat_list(&inputs, is_windows());
-    tokio::fs::write(&list_path, list_body.as_bytes())
-        .await
-        .map_err(|e| {
-            AppError::Recording(format!(
-                "concat: failed to write list {}: {e}",
-                list_path.display()
-            ))
-        })?;
+        // 1b. Run ffmpeg concat (-c copy) under the watchdog.
+        let args = build_concat_args(&list_path.to_string_lossy(), &tmp_path.to_string_lossy());
+        let run = run_concat(&args).await;
+        if let Err(e) = run {
+            // Leave the fragments on disk; only the (incomplete) temp + list are litter.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            let _ = tokio::fs::remove_file(&list_path).await;
+            return Err(e);
+        }
 
-    // 2. Run ffmpeg concat (-c copy) under the watchdog.
-    let args = build_concat_args(&list_path.to_string_lossy(), &tmp_path.to_string_lossy());
-    let run = run_concat(&args).await;
-    if let Err(e) = run {
-        // Leave the fragments on disk; only the (incomplete) temp + list are litter.
-        let _ = tokio::fs::remove_file(&tmp_path).await;
+        // 1c. VALIDATE the muxed temp BEFORE it can replace the primary. A 0-byte /
+        //     header-only / silently-skipped concat must never overwrite a good
+        //     recording — keep the primary + fragments on disk and surface the error.
+        if !output_is_valid(&tmp_path).await {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            let _ = tokio::fs::remove_file(&list_path).await;
+            return Err(AppError::Recording(format!(
+                "concat: produced an invalid/zero-byte output for {primary}; kept the primary + fragments"
+            )));
+        }
+
+        // 1d. Atomically replace the primary file with the muxed temp.
+        atomic_replace(&tmp_path, &primary_path).await?;
+
+        // 1e. Delete the now-merged fragment files (fragments[1..]) + the list.
+        //     `fragments[0]` == primary_path, which now holds the merged result.
+        for frag in deliverable.fragments.iter().skip(1) {
+            let _ = tokio::fs::remove_file(frag).await;
+        }
         let _ = tokio::fs::remove_file(&list_path).await;
-        return Err(e);
+
+        tracing::info!(
+            inputs = inputs.len(),
+            output = %primary,
+            "recorder: finalised deliverable (concat -c copy)"
+        );
     }
 
-    // 3. VALIDATE the muxed temp BEFORE it can replace the primary. A 0-byte /
-    //    header-only / silently-skipped concat must never overwrite a good
-    //    recording — keep the primary + fragments on disk and surface the error.
-    if !output_is_valid(&tmp_path).await {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        let _ = tokio::fs::remove_file(&list_path).await;
-        return Err(AppError::Recording(format!(
-            "concat: produced an invalid/zero-byte output for {primary}; kept the primary + fragments"
-        )));
+    // ── Step 2: deliver ──────────────────────────────────────────────────────────
+    // Legacy/video (`None`): `primary` IS the finished delivery file — return it.
+    // Decoupled audio (`Some`): `primary` is a lossless WAV capture; transcode it
+    // to the user's chosen format, validate it, and drop the WAV.
+    match delivery {
+        None => Ok(primary),
+        Some(spec) => {
+            if let Err(e) = transcode_capture_to_delivery(&primary, spec).await {
+                // Keep the WAV capture on disk so no audio is lost to a failed
+                // transcode — the WAV is a fully playable recording in its own right.
+                tracing::error!(
+                    wav = %primary,
+                    delivery = %spec.delivery_path,
+                    "recorder: delivery transcode failed, keeping the WAV capture: {e}"
+                );
+                return Err(e);
+            }
+            if !output_is_valid(Path::new(&spec.delivery_path)).await {
+                return Err(AppError::Recording(format!(
+                    "concat: delivery transcode produced an invalid/zero-byte file {}; kept the WAV capture {primary}",
+                    spec.delivery_path
+                )));
+            }
+            // The delivery file is whole — the WAV capture is now redundant litter.
+            let _ = tokio::fs::remove_file(&primary).await;
+            tracing::info!(
+                wav = %primary,
+                delivery = %spec.delivery_path,
+                "recorder: delivered (transcoded WAV capture → {})",
+                spec.ext
+            );
+            Ok(spec.delivery_path.clone())
+        }
     }
+}
 
-    // 4. Atomically replace the primary file with the muxed temp.
-    atomic_replace(&tmp_path, &primary_path).await?;
-
-    // 5. Delete the now-merged fragment files (fragments[1..]) + the list.
-    //    `fragments[0]` == primary_path, which now holds the merged result.
-    for frag in deliverable.fragments.iter().skip(1) {
-        let _ = tokio::fs::remove_file(frag).await;
-    }
-    let _ = tokio::fs::remove_file(&list_path).await;
-
-    tracing::info!(
-        inputs = inputs.len(),
-        output = %primary,
-        "recorder: finalised deliverable (concat -c copy)"
-    );
-    Ok(primary)
+/// Transcode a lossless WAV capture into the delivery format via the SAME
+/// [`audio_encode_args`] seam the recorder uses (so channels / sample-rate / bitrate
+/// match the recording's settings), under the concat watchdog. A one-shot
+/// `ffmpeg -i <wav> <encode args> -y <delivery>`.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
+async fn transcode_capture_to_delivery(wav: &str, spec: &DeliverySpec) -> AppResult<()> {
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        wav.to_string(),
+    ];
+    args.extend(audio_encode_args(
+        &spec.ext,
+        spec.channels,
+        spec.sample_rate,
+        spec.bitrate_kbps,
+    ));
+    args.push("-y".into());
+    args.push(spec.delivery_path.clone());
+    run_concat(&args).await
 }
 
 /// `true` if `path` exists and is past the pure size gate (non-empty enough to be
@@ -301,7 +388,7 @@ mod tests {
         // No concat needed → returns the primary path without spawning ffmpeg or
         // touching the filesystem (the file need not even exist for this path).
         let d = deliverable("/rec/g.mp3", &["/rec/g.mp3"]);
-        let out = finalize_deliverable(&d, None).await.unwrap();
+        let out = finalize_deliverable(&d, None, None).await.unwrap();
         assert_eq!(out, "/rec/g.mp3");
     }
 
@@ -360,7 +447,7 @@ mod tests {
         tokio::fs::write(&primary, vec![0u8; 4096]).await.unwrap();
         let primary_s = primary.to_string_lossy().into_owned();
         let d = deliverable(&primary_s, &[&primary_s]);
-        let out = finalize_deliverable(&d, Some("/nope/stale_preroll.mp3"))
+        let out = finalize_deliverable(&d, Some("/nope/stale_preroll.mp3"), None)
             .await
             .unwrap();
         assert_eq!(out, primary_s, "primary returned untouched");
@@ -408,7 +495,7 @@ mod tests {
         let frag2_s = frag2.to_string_lossy().into_owned();
 
         let d = deliverable(&primary_s, &[&primary_s, &frag2_s]);
-        let _ = finalize_deliverable(&d, None).await;
+        let _ = finalize_deliverable(&d, None, None).await;
 
         // Invariant across success/failure: the deliverable's primary still exists
         // and is non-empty — the recording is never lost.
@@ -443,7 +530,9 @@ mod tests {
         let preroll_s = preroll.to_string_lossy().into_owned();
 
         let d = deliverable(&primary_s, &[&primary_s]);
-        let out = finalize_deliverable(&d, Some(&preroll_s)).await.unwrap();
+        let out = finalize_deliverable(&d, Some(&preroll_s), None)
+            .await
+            .unwrap();
         assert_eq!(out, primary_s, "below-gate pre-roll dropped, primary kept");
         // The below-gate pre-roll guard means no concat ran → primary untouched.
         assert_eq!(tokio::fs::read(&primary).await.unwrap(), vec![0u8; 8192]);

@@ -19,10 +19,10 @@ use std::path::{Path, PathBuf};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Manager};
 
-use sundayrec_core::recovery::{recoverable_deliverables, SessionManifest};
+use sundayrec_core::recovery::{delivery_path_for, recoverable_deliverables, SessionManifest};
 
 use crate::db::store::{insert_recording, RecordingRow};
-use crate::recorder::concat::{finalize_deliverable, output_is_valid};
+use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 
 /// `<app-data>/recovery` — where session manifests live. Created on demand.
 fn manifest_dir(app: &AppHandle) -> Option<PathBuf> {
@@ -114,12 +114,24 @@ async fn recover_session(pool: &SqlitePool, manifest: &SessionManifest) -> usize
             None
         };
 
-        let final_path = finalize_deliverable(&deliverable, preroll)
+        // Decoupled-audio path: the manifest carries how to transcode the WAV
+        // capture fragments to the user's delivery format. `None` = legacy/video
+        // (the fragments already ARE the delivery file → no transcode). The WAV
+        // primary's stem (with any `_2` split suffix) maps back into the save folder.
+        let delivery_spec = manifest.delivery_encode.as_ref().map(|enc| DeliverySpec {
+            delivery_path: delivery_path_for(&dm.primary_path, &enc.delivery_dir, &enc.ext),
+            ext: enc.ext.clone(),
+            channels: enc.channels,
+            sample_rate: enc.sample_rate,
+            bitrate_kbps: enc.bitrate_kbps,
+        });
+
+        let final_path = finalize_deliverable(&deliverable, preroll, delivery_spec.as_ref())
             .await
             .unwrap_or_else(|e| {
                 tracing::warn!(
                     deliverable = %dm.primary_path,
-                    "recovery: concat failed, keeping primary: {e}"
+                    "recovery: finalise failed, keeping primary: {e}"
                 );
                 dm.primary_path.clone()
             });
@@ -206,6 +218,7 @@ mod tests {
             device_name: "Soundcraft USB".into(),
             session_start_ms: 1_700_000_000_000,
             preroll_clip_path: None,
+            delivery_encode: None,
             deliverables: vec![
                 DeliverableManifest {
                     primary_path: a.clone(),
@@ -351,6 +364,7 @@ mod tests {
             device_name: "dev".into(),
             session_start_ms: 0,
             preroll_clip_path: None,
+            delivery_encode: None,
             deliverables: vec![],
         };
         assert_eq!(recover_session(&pool, &m).await, 0);
