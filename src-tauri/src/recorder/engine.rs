@@ -79,7 +79,9 @@ use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::levels::{parse_ametadata_peak, ChannelLevels, SILENCE_FLOOR_DB};
-use sundayrec_core::preflight::{low_disk_should_stop, min_disk_headroom_bytes};
+use sundayrec_core::preflight::{
+    finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
+};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
@@ -1561,11 +1563,16 @@ async fn run_segment(
 
     // Low-disk guard: every 30 s, probe free space on the save volume and stop
     // GRACEFULLY before ffmpeg hits ENOSPC and leaves a corrupt container. The
-    // headroom matches the pre-flight threshold (4 GB with video, else 500 MB).
+    // base headroom matches the pre-flight threshold (4 GB with video, else
+    // 500 MB); the decoupled-capture delivery step (WAV encode / MKV remux) needs
+    // its OWN transient headroom on top — see `finalize_reserve_bytes` — so the
+    // per-tick threshold grows with the current segment's captured size instead
+    // of staying fixed regardless of how much has been captured so far.
     let disk_folder = std::path::Path::new(&opts.output_path)
         .parent()
         .map(|p| p.to_path_buf());
-    let disk_headroom = min_disk_headroom_bytes(opts.video_device_name.is_some());
+    let video_active = opts.video_device_name.is_some();
+    let disk_headroom = min_disk_headroom_bytes(video_active);
     let mut disk_tick = tokio::time::interval(Duration::from_secs(30));
     disk_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -1688,7 +1695,11 @@ async fn run_segment(
             _ = disk_tick.tick() => {
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
-                        if low_disk_should_stop(free, disk_headroom) {
+                        let reserve = finalize_reserve_bytes(
+                            video_active,
+                            segment_bytes.load(Ordering::Relaxed),
+                        );
+                        if low_disk_should_stop(free, disk_headroom + reserve) {
                             emit_error(
                                 app,
                                 "disk_full",
