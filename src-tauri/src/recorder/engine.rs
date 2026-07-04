@@ -1117,109 +1117,85 @@ async fn run_session(
                         attempt,
                         next_segment,
                     } => {
-                        emit_state(RecorderState::Reconnecting, session.reconnect_count());
-                        let _ = app.emit(
-                            RECONNECTING_EVENT,
-                            RecordingEvent {
-                                code: "reconnecting".into(),
-                                message: format!(
-                                    "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
-                                    sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
-                                ),
-                            },
-                        );
-                        tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
-                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        // Respawn loop. A FAILED respawn is treated as just another
+                        // unexpected exit: re-consult the pure policy and try again
+                        // with its fresh delay/segment — so respawn failures draw on
+                        // the SAME reconnect budget as device exits. (This replaces a
+                        // hand-inlined duplicate of this match that gave up after
+                        // exactly one respawn retry.)
+                        let mut delay_ms = delay_ms;
+                        let mut attempt = attempt;
+                        let mut next_segment = next_segment;
+                        loop {
+                            emit_state(RecorderState::Reconnecting, session.reconnect_count());
+                            let _ = app.emit(
+                                RECONNECTING_EVENT,
+                                RecordingEvent {
+                                    code: "reconnecting".into(),
+                                    message: format!(
+                                        "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
+                                        sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
+                                    ),
+                                },
+                            );
+                            tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
-                        let args = build_record_args(
-                            platform,
-                            &audio,
-                            video.as_ref(),
-                            &opts,
-                            &next_segment,
-                        );
-                        match spawn_ffmpeg_owned(&args).await {
-                            Ok(c) => {
-                                child = c;
-                                let _ = app.emit(
-                                    RECONNECTED_EVENT,
-                                    RecordingEvent {
-                                        code: "reconnected".into(),
-                                        message: "Tilkobling gjenopprettet — fortsetter opptak"
-                                            .into(),
-                                    },
-                                );
-                                emit_state(RecorderState::Recording, session.reconnect_count());
-                            }
-                            Err(e) => {
-                                // Respawn failed: loop again so the NEXT
-                                // on_unexpected_exit re-evaluates the budget.
-                                tracing::warn!("recorder: reconnect respawn failed: {e}");
-                                // Spawn a fake already-dead child path: re-enter
-                                // the loop by treating this like another exit.
-                                // We do this by spawning a no-op that exits, but
-                                // simplest: recurse the decision inline.
-                                match session.on_unexpected_exit(now_ms(), None) {
-                                    RecoveryDecision::Reconnect {
-                                        delay_ms,
-                                        next_segment,
-                                        ..
-                                    } => {
-                                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                                        let args = build_record_args(
-                                            platform,
-                                            &audio,
-                                            video.as_ref(),
-                                            &opts,
-                                            &next_segment,
-                                        );
-                                        match spawn_ffmpeg_owned(&args).await {
-                                            Ok(c) => {
-                                                child = c;
-                                                emit_state(
-                                                    RecorderState::Recording,
-                                                    session.reconnect_count(),
-                                                );
-                                            }
-                                            Err(e2) => {
-                                                emit_error(&app, "device_error", &e2.to_string());
-                                                emit_state(
-                                                    RecorderState::Failed,
-                                                    session.reconnect_count(),
-                                                );
-                                                finalize_pending(
-                                                    &app,
-                                                    &pool,
-                                                    &session,
-                                                    &mut finalized,
-                                                    now_ms(),
-                                                    &preroll_clip,
-                                                    &audio,
-                                                    &opts,
-                                                )
-                                                .await;
-                                                return;
-                                            }
+                            let args = build_record_args(
+                                platform,
+                                &audio,
+                                video.as_ref(),
+                                &opts,
+                                &next_segment,
+                            );
+                            match spawn_ffmpeg_owned(&args).await {
+                                Ok(c) => {
+                                    child = c;
+                                    let _ = app.emit(
+                                        RECONNECTED_EVENT,
+                                        RecordingEvent {
+                                            code: "reconnected".into(),
+                                            message: "Tilkobling gjenopprettet — fortsetter opptak"
+                                                .into(),
+                                        },
+                                    );
+                                    emit_state(RecorderState::Recording, session.reconnect_count());
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("recorder: reconnect respawn failed: {e}");
+                                    match session.on_unexpected_exit(now_ms(), None) {
+                                        RecoveryDecision::Reconnect {
+                                            delay_ms: next_delay,
+                                            attempt: next_attempt,
+                                            next_segment: seg,
+                                        } => {
+                                            delay_ms = next_delay;
+                                            attempt = next_attempt;
+                                            next_segment = seg;
                                         }
-                                    }
-                                    RecoveryDecision::GiveUp => {
-                                        emit_error(&app, "device_disconnected", &e.to_string());
-                                        emit_state(
-                                            RecorderState::Failed,
-                                            session.reconnect_count(),
-                                        );
-                                        finalize_pending(
-                                            &app,
-                                            &pool,
-                                            &session,
-                                            &mut finalized,
-                                            now_ms(),
-                                            &preroll_clip,
-                                            &audio,
-                                            &opts,
-                                        )
-                                        .await;
-                                        return;
+                                        RecoveryDecision::GiveUp => {
+                                            emit_error(&app, "device_disconnected", &e.to_string());
+                                            emit_state(
+                                                RecorderState::Failed,
+                                                session.reconnect_count(),
+                                            );
+                                            finalize_pending(
+                                                &app,
+                                                &pool,
+                                                &session,
+                                                &mut finalized,
+                                                now_ms(),
+                                                &preroll_clip,
+                                                &audio,
+                                                &opts,
+                                            )
+                                            .await;
+                                            tracing::error!(
+                                                "recorder: giving up — respawn budget exhausted"
+                                            );
+                                            return;
+                                        }
                                     }
                                 }
                             }
