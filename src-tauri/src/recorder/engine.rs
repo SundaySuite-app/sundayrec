@@ -1643,8 +1643,7 @@ async fn run_segment(
             }
             // Graceful stop request.
             _ = stop_rx.recv() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::GracefulStop;
             }
             // Startup watchdog: no first progress in time → the start failed.
@@ -1690,8 +1689,7 @@ async fn run_segment(
                                 "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
                             );
                             // Graceful stop so the container is finalised + playable.
-                            graceful_q(&mut stdin).await;
-                            let _ = child.wait().await;
+                            stop_and_wait_bounded(&mut child, &mut stdin).await;
                             break SegmentOutcome::DiskStop;
                         }
                     }
@@ -1699,15 +1697,13 @@ async fn run_segment(
             }
             // Split timer.
             _ = &mut split_sleep, if split_deadline.is_some() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::Split;
             }
             // Auto-stop deadline reached (guarded so a `None` deadline — the
             // 100-year "never" sleep — can never actually fire).
             _ = &mut auto_sleep, if auto_deadline.is_some() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::AutoStop;
             }
             // The auto-stop deadline was moved or cleared (live extend/cancel, or
@@ -1737,8 +1733,7 @@ async fn run_segment(
             // Stop-on-silence fired.
             () = wait_opt(&mut silence_stop), if silence_stop.is_some() => {
                 silence.on_stop_fired();
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::SilenceStop;
             }
             // Silence warning fired.
@@ -1767,6 +1762,44 @@ async fn graceful_q(stdin: &mut Option<tokio::process::ChildStdin>) {
         let _ = pipe.write_all(b"q\n").await;
         let _ = pipe.flush().await;
         // Dropping `pipe` closes stdin → EOF.
+    }
+}
+
+/// Send the graceful `q` and wait for ffmpeg to exit, but never forever: past
+/// [`RecorderTimeouts::STOP_FINALIZE_MS`] a wedged finalise (or a hung device) is
+/// killed instead. Without this bound every one of the five stop paths in
+/// `run_segment` (graceful/disk/split/auto-stop/silence-stop) could freeze the
+/// WHOLE engine on a stuck `child.wait()` — the UI stuck on "Stopping" forever.
+/// Both the WAV/MKV decoupled captures stay playable even through a kill (that is
+/// the point of decoupling), so a bounded kill here loses nothing new.
+async fn stop_and_wait_bounded(
+    child: &mut tokio::process::Child,
+    stdin: &mut Option<tokio::process::ChildStdin>,
+) {
+    stop_and_wait_within(
+        child,
+        stdin,
+        Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS),
+    )
+    .await;
+}
+
+/// The bound-parameterised body of [`stop_and_wait_bounded`], split out so the
+/// timeout-kill behaviour is unit-testable without waiting on the real
+/// [`RecorderTimeouts::STOP_FINALIZE_MS`] (2 min).
+async fn stop_and_wait_within(
+    child: &mut tokio::process::Child,
+    stdin: &mut Option<tokio::process::ChildStdin>,
+    bound: Duration,
+) {
+    graceful_q(stdin).await;
+    if tokio::time::timeout(bound, child.wait()).await.is_err() {
+        tracing::error!(
+            timeout_ms = bound.as_millis(),
+            "recorder: ffmpeg did not finalise in time on stop — killing it"
+        );
+        let _ = child.start_kill();
+        let _ = child.wait().await;
     }
 }
 
@@ -2288,6 +2321,50 @@ mod tests {
         assert!(!is_capture_drop_warning(
             "[silencedetect @ 0x1] silence_start: 3.2"
         ));
+    }
+
+    #[tokio::test]
+    async fn stop_and_wait_within_kills_a_hung_finalise_past_the_bound() {
+        // Models a wedged finalise (e.g. a stuck +faststart rewrite, or a hung
+        // device): the child ignores `q` and just sleeps. Past the bound, the
+        // helper must kill it rather than block the caller forever — this is the
+        // exact freeze the UI-stuck-on-"Stopping" bug was.
+        let mut child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn `sleep`");
+        let mut stdin = child.stdin.take();
+        let start = std::time::Instant::now();
+        stop_and_wait_within(&mut child, &mut stdin, Duration::from_millis(150)).await;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "must not block past the bound"
+        );
+        // The child is gone (killed) — `try_wait` reports Some without blocking.
+        assert!(
+            child.try_wait().ok().flatten().is_some(),
+            "the hung child must have been killed"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_and_wait_within_returns_promptly_on_a_cooperative_exit() {
+        // A process that actually exits (models a clean ffmpeg finalise) must not
+        // be held up for the full bound.
+        let mut child = tokio::process::Command::new("true")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn `true`");
+        let mut stdin = child.stdin.take();
+        let start = std::time::Instant::now();
+        stop_and_wait_within(&mut child, &mut stdin, Duration::from_secs(30)).await;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "a cooperative exit must not wait out the bound"
+        );
     }
 
     #[test]
