@@ -80,6 +80,7 @@ pub mod recorder;
 pub mod recovery;
 pub mod review_queue;
 pub mod schedule;
+pub mod selftest;
 pub mod settings;
 pub mod silence;
 pub mod streaming;

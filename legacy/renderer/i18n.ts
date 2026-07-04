@@ -1,27 +1,46 @@
+// Only the default/fallback locale is bundled eagerly. The other six are
+// dynamic-imported on first use (see LAZY_LOADERS) — that keeps ~280 KB of
+// unused locale JSON OUT of the initial bundle, the single biggest startup win.
 import noLocale from '../locales/no.json'
-import enLocale from '../locales/en.json'
-import frLocale from '../locales/fr.json'
-import deLocale from '../locales/de.json'
-import svLocale from '../locales/sv.json'
-import daLocale from '../locales/da.json'
-import plLocale from '../locales/pl.json'
 
 type LocaleData = Record<string, unknown>
 
 const LOCALE_MAP: Record<string, LocaleData> = {
   no: noLocale as LocaleData,
-  en: enLocale as LocaleData,
-  fr: frLocale as LocaleData,
-  de: deLocale as LocaleData,
-  sv: svLocale as LocaleData,
-  da: daLocale as LocaleData,
-  pl: plLocale as LocaleData,
+}
+
+/** Dynamic-import loaders for the non-default locales. Vite emits each as its
+ *  own chunk, fetched only when that language is selected. */
+const LAZY_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
+  en: () => import('../locales/en.json'),
+  fr: () => import('../locales/fr.json'),
+  de: () => import('../locales/de.json'),
+  sv: () => import('../locales/sv.json'),
+  da: () => import('../locales/da.json'),
+  pl: () => import('../locales/pl.json'),
 }
 
 export let T: LocaleData = LOCALE_MAP['no']
 export let currentLang = 'no'
 
-export function loadLocale(lang: string): void {
+/**
+ * Activate a locale, lazy-loading it on first use. Async now (was sync) because
+ * the non-default locales are fetched on demand. Always resolves — an unknown
+ * language or a failed import falls back to the eagerly-bundled `no`. Callers at
+ * startup should await this before building localized UI; the language-switch
+ * caller can fire-and-forget (applyTranslations re-applies when it resolves).
+ */
+export async function loadLocale(lang: string): Promise<void> {
+  if (!LOCALE_MAP[lang]) {
+    const loader = LAZY_LOADERS[lang]
+    if (loader) {
+      try {
+        LOCALE_MAP[lang] = (await loader()).default as LocaleData
+      } catch {
+        // fall through to the 'no' fallback below
+      }
+    }
+  }
   T = LOCALE_MAP[lang] ?? LOCALE_MAP['no']
   currentLang = LOCALE_MAP[lang] ? lang : 'no'
   applyTranslations()

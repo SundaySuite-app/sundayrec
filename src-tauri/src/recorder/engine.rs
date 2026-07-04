@@ -88,6 +88,7 @@ use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision
 use sundayrec_core::recovery::{
     delivery_path_for, AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
 };
+use sundayrec_core::selftest::{push_capped, RecordingTelemetry};
 use sundayrec_core::settings::ChannelMode;
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
 use sundayrec_core::timeouts::RecorderTimeouts;
@@ -395,6 +396,10 @@ pub struct RecorderEngine {
     /// diagnose tool so support can see whether ASIO/WASAPI actually engaged or
     /// fell back, and why. `(engine, fallback_reason)`.
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
+    /// Health telemetry of the LAST recording (drops/xruns/IPC-starvation),
+    /// accumulated automatically by the stderr reader and persisted at session
+    /// end. Surfaced by the diagnose tool; `None` until the first recording.
+    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
 }
 
 impl Default for RecorderEngine {
@@ -411,6 +416,7 @@ impl RecorderEngine {
             last_state: Arc::new(Mutex::new(RecorderState::Idle)),
             scheduled_stop: Arc::new(scheduled_stop),
             audio_engine: Arc::new(Mutex::new((None, None))),
+            last_telemetry: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -435,6 +441,12 @@ impl RecorderEngine {
     /// Why the last recording fell back from the modern engine, if it did.
     pub fn last_audio_fallback(&self) -> Option<String> {
         lock_recover(&self.audio_engine).1.clone()
+    }
+
+    /// Health telemetry of the last recording (drops/xruns/IPC-starvation), for
+    /// the diagnose tool. `None` until the first recording on this engine.
+    pub fn last_recording_telemetry(&self) -> Option<RecordingTelemetry> {
+        lock_recover(&self.last_telemetry).clone()
     }
 
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
@@ -704,6 +716,7 @@ impl RecorderEngine {
         let sup_app = app.clone();
         let last_state = Arc::clone(&self.last_state);
         let scheduled_stop = Arc::clone(&self.scheduled_stop);
+        let last_telemetry = Arc::clone(&self.last_telemetry);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
                 sup_app,
@@ -717,6 +730,7 @@ impl RecorderEngine {
                 ready_tx,
                 last_state,
                 scheduled_stop,
+                last_telemetry,
             )
             .await;
         });
@@ -848,8 +862,12 @@ async fn run_session(
     ready: tokio::sync::oneshot::Sender<AppResult<()>>,
     last_state: Arc<Mutex<RecorderState>>,
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
+    last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
 ) {
     let start_ms = now_ms();
+    // Session-wide health counters, fed per-line by each segment's stderr reader
+    // (drops/xruns/IPC-starvation) and persisted at session end via `emit_state`.
+    let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
     // Arm the auto-stop deadline for the whole session (absolute, so splits +
     // reconnects re-pin the SAME stop time, not a fresh duration). `manual_max
     // == 0` means no auto-stop. Always send_replace so a stale deadline from a
@@ -866,6 +884,9 @@ async fn run_session(
     let emit_state = |to: RecorderState, reconnect_count: u32| {
         if to.is_terminal() {
             scheduled_stop.send_replace(None);
+            // Single funnel for session end → stamp + persist the health telemetry
+            // (automatic passive logging surfaced by the diagnose tool).
+            persist_recording_telemetry(&app, &telemetry, &last_telemetry, start_ms, to);
         }
         set_state(
             &app,
@@ -990,6 +1011,7 @@ async fn run_session(
             &mut stop_rx,
             &last_state,
             &mut stop_watch,
+            Arc::clone(&telemetry),
         )
         .await;
 
@@ -1426,6 +1448,7 @@ async fn classify_stderr_line(
     levels: &mut LevelMeter,
     msg_tx: &tokio::sync::mpsc::Sender<ReaderMsg>,
     last_error: &mut Option<RecordingErrorCode>,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
 ) {
     // Live per-frame peak levels (`lavfi.astats.1.Peak_level=-12.5`): update the
     // held L/R and forward at most ~60×/s.
@@ -1440,14 +1463,24 @@ async fn classify_stderr_line(
             // feed arrives in late bursts (GROWING VU lag). `try_send` drops one
             // intermediate frame instead — the correct behaviour for a latest-wins
             // meter, and the fix that keeps the reader draining stderr at all times.
-            let _ = msg_tx.try_send(ReaderMsg::Levels(lv));
+            // A FULL channel here is the direct signal that the renderer/event loop
+            // can't keep up ("recording mode lags") — count it as telemetry.
+            if msg_tx.try_send(ReaderMsg::Levels(lv)).is_err() {
+                lock_recover(telemetry).note_levels_dropped();
+            }
         }
         return;
     }
+    // Non-level line: fold ffmpeg drop=/dup=/xrun stats into the session
+    // telemetry (cheap; the high-rate level lines returned above carry none).
+    lock_recover(telemetry).observe_line(line);
     // Capture back-pressure / sample-drop warnings: log-only (not fatal, so we let
     // the line fall through to the normal progress/silence/error classification too,
-    // though in practice these phrasings match none of those). Surfacing them makes
-    // the "hakkete" symptom observable in the logs + Lydhjelp.
+    // though in practice these phrasings match none of those). Complements the
+    // telemetry above (persisted, surfaced in the diagnose report after the fact)
+    // with an IMMEDIATE log line — these specific avfoundation-side phrasings
+    // (thread-queue/backward-time/past-duration) aren't in `XRUN_PHRASES`, and a
+    // live tracing consumer sees the drop the moment it happens.
     if is_capture_drop_warning(line) {
         tracing::warn!(
             capture_drop = true,
@@ -1489,6 +1522,7 @@ async fn run_segment(
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     last_state: &Arc<Mutex<RecorderState>>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
+    telemetry: Arc<Mutex<RecordingTelemetry>>,
 ) -> SegmentOutcome {
     let Some(stderr) = child.stderr.take() else {
         return SegmentOutcome::UnexpectedExit { last_error: None };
@@ -1550,6 +1584,7 @@ async fn run_segment(
                             &mut levels,
                             &msg_tx,
                             &mut last_error,
+                            &telemetry,
                         )
                         .await;
                     }
@@ -1561,7 +1596,15 @@ async fn run_segment(
         // A final progress chunk may arrive without a terminator — classify it.
         if !line_buf.is_empty() {
             let line = String::from_utf8_lossy(&line_buf).into_owned();
-            classify_stderr_line(&line, &mut startup, &mut levels, &msg_tx, &mut last_error).await;
+            classify_stderr_line(
+                &line,
+                &mut startup,
+                &mut levels,
+                &msg_tx,
+                &mut last_error,
+                &telemetry,
+            )
+            .await;
         }
         let _ = msg_tx.send(ReaderMsg::Exit { last_error }).await;
     });
@@ -1913,6 +1956,55 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
         tracing::info!(path = %path.display(), "Lydhjelp: siste feil skrevet til disk");
     } else {
         tracing::warn!("Lydhjelp: klarte ikke skrive last-error.json");
+    }
+}
+
+/// Stamp + persist the session's health telemetry at session end (called once,
+/// from the `emit_state` terminal funnel). Writes the latest to
+/// `<app_data_dir>/last-recording.json` and appends to a capped, newest-last
+/// `recording-telemetry-history.json` ring so the diagnose tool can show a
+/// TREND. Also keeps the latest in memory for the synchronous status read.
+/// Best-effort — never fails the recorder.
+fn persist_recording_telemetry(
+    app: &AppHandle,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+    last_telemetry: &Arc<Mutex<Option<RecordingTelemetry>>>,
+    start_ms: u64,
+    final_state: RecorderState,
+) {
+    use tauri::Manager;
+
+    // Snapshot + stamp the host-known fields.
+    let mut t = lock_recover(telemetry).clone();
+    t.duration_sec = now_ms().saturating_sub(start_ms) as f64 / 1000.0;
+    t.timestamp = chrono::Local::now().to_rfc3339();
+    t.exit_ok = matches!(final_state, RecorderState::Stopped);
+
+    // In-memory (diagnose status reads this synchronously).
+    *lock_recover(last_telemetry) = Some(t.clone());
+
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+
+    // Most-recent snapshot.
+    if let Ok(json) = serde_json::to_string(&t) {
+        let path = dir.join("last-recording.json");
+        let tmp = dir.join("last-recording.json.tmp");
+        let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &path));
+    }
+
+    // Rolling history (cap 20, newest last) for the trend view.
+    let hist_path = dir.join("recording-telemetry-history.json");
+    let mut hist: Vec<RecordingTelemetry> = std::fs::read_to_string(&hist_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    push_capped(&mut hist, t, 20);
+    if let Ok(json) = serde_json::to_string(&hist) {
+        let tmp = dir.join("recording-telemetry-history.json.tmp");
+        let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &hist_path));
     }
 }
 
@@ -2913,6 +3005,7 @@ mod tests {
         let mut startup = StartupResolver::new();
         let mut levels = LevelMeter::new();
         let mut last_error = None;
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
 
         let driver = async {
             for _ in 0..5 {
@@ -2925,6 +3018,7 @@ mod tests {
                     &mut levels,
                     &tx,
                     &mut last_error,
+                    &telemetry,
                 )
                 .await;
             }
@@ -2933,6 +3027,12 @@ mod tests {
         assert!(
             res.is_ok(),
             "levels delivery must not block when the consumer is stalled"
+        );
+        // The full-channel drops must have been COUNTED — this is exactly the
+        // IPC-starvation signal the diagnose telemetry surfaces.
+        assert!(
+            lock_recover(&telemetry).levels_dropped > 0,
+            "a stalled consumer must register dropped-levels telemetry"
         );
     }
 

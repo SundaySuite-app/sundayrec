@@ -143,7 +143,7 @@ pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamI
     editor::probe_streams(&input_path).await
 }
 
-/// Stat a recording and either return its bytes inline (≤400 MB) or signal
+/// Stat a recording and either return its bytes inline (≤100 MB) or signal
 /// `tooLarge` so the renderer streams it via the peaks-extract path. Async +
 /// spawn_blocking: a sync command runs on the main thread, and reading a
 /// hundreds-of-MB recording there froze the whole UI for the duration.

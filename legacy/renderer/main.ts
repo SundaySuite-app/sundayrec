@@ -247,12 +247,14 @@ declare global {
 export async function loadSettings(): Promise<void> {
   const s = await window.api.getSettings()
   updateSettings(s)
-  applyAllSettingsToUI(s)
+  await applyAllSettingsToUI(s)
 }
 
-function applyAllSettingsToUI(s: Settings): void {
+async function applyAllSettingsToUI(s: Settings): Promise<void> {
   const lang = s.language ?? 'no'
-  loadLocale(lang)
+  // Await the active locale (lazy-loaded for non-`no`) BEFORE building localized
+  // UI so the apply* calls below read the right language.
+  await loadLocale(lang)
   applyAudioSettingsToUI()
   applyScheduleSettingsToUI()
   applyFilesSettingsToUI()
