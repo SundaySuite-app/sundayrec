@@ -627,6 +627,77 @@ impl Default for CaptureOpts {
     }
 }
 
+/// Push the video-encoder argument run (`-c:v … [-tag:v hvc1] [-b:v … -realtime 1
+/// | -preset veryfast] -pix_fmt yuv420p -r <fps> -fps_mode cfr`) shared by the
+/// unified single-process capture and the two-process video-only fallback capture.
+/// Hardware (VideoToolbox) encoding is honoured ONLY on macOS — the realtime path
+/// for live 4K H.265; elsewhere (or when `hw_accel` is false) this falls back to
+/// software x264/x265. `iso_container` gates the `hvc1` FourCC tag: pass `false`
+/// for a Matroska capture (its own codec IDs; the tag belongs at the mp4/mov remux
+/// instead), `true` for a direct mp4/mov/m4v output.
+///
+/// `-r <fps> -fps_mode cfr` conforms the (variable-frame-rate) camera to TRUE
+/// constant frame rate — cameras drop fps in low light, and an uncorrected VFR
+/// timeline drifts against the audio clock over a whole service.
+pub fn push_video_encoder_args(
+    args: &mut Vec<String>,
+    platform: Platform,
+    hw_accel: bool,
+    video_codec: crate::editor::VideoCodec,
+    video_input: Option<VideoCaptureMode>,
+    framerate: u32,
+    iso_container: bool,
+) {
+    let use_hw = hw_accel && matches!(platform, Platform::MacOS);
+    args.push("-c:v".into());
+    if use_hw {
+        match video_codec {
+            crate::editor::VideoCodec::H264 => args.push("h264_videotoolbox".into()),
+            crate::editor::VideoCodec::H265 => {
+                args.push("hevc_videotoolbox".into());
+                if iso_container {
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+            }
+        }
+        // VideoToolbox has no CRF — target a resolution-appropriate bitrate, and
+        // `-realtime 1` biases it for live capture. Output dims = the pinned input
+        // mode (capture doesn't scale); default to 1080p.
+        let (w, h) = video_input
+            .map(|m| (m.width, m.height))
+            .unwrap_or((1920, 1080));
+        args.push("-b:v".into());
+        args.push(format!(
+            "{}k",
+            crate::editor::default_video_bitrate_kbps(w, h)
+        ));
+        args.push("-realtime".into());
+        args.push("1".into());
+    } else {
+        match video_codec {
+            crate::editor::VideoCodec::H264 => args.push("libx264".into()),
+            crate::editor::VideoCodec::H265 => {
+                args.push("libx265".into());
+                // `hvc1` tag so QuickTime/Apple players accept the HEVC stream in
+                // an mp4/mov container (see the iso_container doc above).
+                if iso_container {
+                    args.push("-tag:v".into());
+                    args.push("hvc1".into());
+                }
+            }
+        }
+        args.push("-preset".into());
+        args.push("veryfast".into());
+    }
+    args.push("-pix_fmt".into());
+    args.push("yuv420p".into());
+    args.push("-r".into());
+    args.push(framerate.to_string());
+    args.push("-fps_mode".into());
+    args.push("cfr".into());
+}
+
 /// Build the unified-capture ffmpeg argument vector.
 ///
 /// `video_device`:
@@ -687,7 +758,7 @@ pub fn build_unified_capture_args(
     // (`live_levels = false`) we drop it from the chain so its per-frame stderr
     // can't starve the capture. drift + pan + silencedetect always stay.
     let levels = if opts.live_levels {
-        build_levels_detect_filter()
+        build_levels_detect_filter(platform)
     } else {
         String::new()
     };
@@ -777,67 +848,28 @@ pub fn build_unified_capture_args(
     // and channel count come from validated settings. Video (when present) stays a
     // simple libx264.
     if has_video {
-        // Hardware (VideoToolbox) encoding is honoured ONLY on macOS — it's the
-        // realtime path for live 4K H.265. Elsewhere we fall back to software
-        // x264/x265 (VideoToolbox is mac-only).
-        let use_hw = opts.hw_accel && matches!(platform, Platform::MacOS);
-        args.push("-c:v".into());
-        if use_hw {
-            match opts.video_codec {
-                crate::editor::VideoCodec::H264 => args.push("h264_videotoolbox".into()),
-                crate::editor::VideoCodec::H265 => {
-                    args.push("hevc_videotoolbox".into());
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
-                }
-            }
-            // VideoToolbox has no CRF — target a resolution-appropriate bitrate,
-            // and `-realtime 1` biases it for live capture. Output dims = the
-            // pinned input mode (capture doesn't scale); default to 1080p.
-            let (w, h) = opts
-                .video_input
-                .map(|m| (m.width, m.height))
-                .unwrap_or((1920, 1080));
-            args.push("-b:v".into());
-            args.push(format!(
-                "{}k",
-                crate::editor::default_video_bitrate_kbps(w, h)
-            ));
-            args.push("-realtime".into());
-            args.push("1".into());
-        } else {
-            match opts.video_codec {
-                crate::editor::VideoCodec::H264 => args.push("libx264".into()),
-                crate::editor::VideoCodec::H265 => {
-                    args.push("libx265".into());
-                    // `hvc1` tag so QuickTime/Apple players accept the HEVC stream
-                    // in an mp4/mov container.
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
-                }
-            }
-            args.push("-preset".into());
-            args.push("veryfast".into());
-        }
-        args.push("-pix_fmt".into());
-        args.push("yuv420p".into());
+        // The `hvc1` FourCC tag is an ISO/QuickTime-container concept. The decoupled
+        // video path captures to Matroska (which has its own codec IDs and can
+        // reject foreign tags) — the tag is applied at the finalize REMUX into
+        // mp4/mov instead, so only stamp it here for a direct ISO-container output.
+        let iso_container = matches!(ext_of(output_path), "mp4" | "mov" | "m4v");
+        push_video_encoder_args(
+            &mut args,
+            platform,
+            opts.hw_accel,
+            opts.video_codec,
+            opts.video_input,
+            opts.framerate,
+            iso_container,
+        );
         // NOTE: the OUTPUT resolution is controlled by the INPUT `-video_size`
         // (the probed/pinned camera mode above) — NOT by an output `-vf scale`.
         // An output `-vf` on this primary output conflicted with the preview
         // output's `-map 0:v` (ffmpeg can't feed one input stream into both a
         // simple filtergraph AND a direct map) → the whole recording failed to
-        // produce a file. So resolution stays an input-mode concern.
-        // PERFECT A/V SYNC: avfoundation cameras deliver VARIABLE frame rate (they
-        // drop to ~15 fps in low light). Muxed as-is the video timeline diverges
-        // from the audio and lip-sync drifts over a service. `-r <fps> -fps_mode
-        // cfr` conforms the capture to TRUE constant frame rate, duplicating /
-        // dropping frames against their real PTS so the video stays locked to the
-        // audio clock for the whole recording. (Per-output: the MJPEG preview
-        // output below sets its own rate via `fps=8` and is unaffected.)
-        args.push("-r".into());
-        args.push(opts.framerate.to_string());
-        args.push("-fps_mode".into());
-        args.push("cfr".into());
+        // produce a file. So resolution stays an input-mode concern. (Per-output:
+        // the MJPEG preview output below sets its own rate via `fps=8` and is
+        // unaffected by the CFR conform above.)
     }
     args.extend(audio_encode_args(
         ext_of(output_path),
@@ -1323,6 +1355,31 @@ mod tests {
         assert!(has_pair(&args, "-tag:v", "hvc1"));
         // faststart still emitted for mp4.
         assert!(has_pair(&args, "-movflags", "+faststart"));
+    }
+
+    #[test]
+    fn h265_to_mkv_capture_omits_the_iso_only_hvc1_tag() {
+        // The decoupled video path captures HEVC to Matroska; the hvc1 FourCC is an
+        // ISO/QuickTime-container concept and is applied at the finalize REMUX into
+        // mp4/mov instead — the mkv capture args must not carry it (matroska has
+        // its own codec IDs). Both encoder backends.
+        for hw in [false, true] {
+            let opts = CaptureOpts {
+                hw_accel: hw,
+                video_codec: crate::editor::VideoCodec::H265,
+                ..CaptureOpts::default()
+            };
+            let args =
+                build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mkv", &opts);
+            assert!(
+                !args.iter().any(|a| a == "-tag:v"),
+                "mkv capture must not stamp hvc1 (hw={hw}): {args:?}"
+            );
+            assert!(
+                !args.iter().any(|a| a == "-movflags"),
+                "mkv capture must not get movflags (hw={hw})"
+            );
+        }
     }
 
     #[test]

@@ -469,7 +469,7 @@ mod tests {
             "-i".into(),
             "sine=frequency=440:duration=2:sample_rate=48000".into(),
             "-af".into(),
-            build_levels_detect_filter(),
+            build_levels_detect_filter(crate::recorder::engine::current_platform()),
             "-t".into(),
             "2".into(),
         ];
@@ -739,5 +739,268 @@ mod tests {
         assert_eq!(health.version.as_deref(), Some(version.as_str()));
         assert_eq!(health.path, bin.to_string_lossy());
         eprintln!("ffmpeg_health version banner: {version}");
+    }
+
+    /// End-to-end proof of the decoupled-audio seam (the anti-"hakkete" fix): a
+    /// lossless WAV "capture" is transcoded to the user's delivery format by the
+    /// SAME `finalize_deliverable` path a real audio-only recording uses, and the
+    /// delivery file is ffprobed to confirm the codec / channels / duration survived
+    /// AND that the WAV capture was consumed afterwards. Skips without a real
+    /// sidecar. `block_on` keeps the `ENV_LOCK` guard in a sync context (no lock
+    /// held across `.await`).
+    #[test]
+    fn decoupled_wav_capture_transcodes_to_delivery_or_skips() {
+        use crate::recorder::concat::{finalize_deliverable, DeliverySpec};
+        use sundayrec_core::capture::audio_encode_args;
+        use sundayrec_core::recorder::Deliverable;
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        // 1. Synthesize a lossless stereo WAV "capture" (what the recorder now
+        //    writes for audio-only) with the fetched ffmpeg.
+        let wav = dir.path().join("sermon.wav");
+        let mut cap_args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:duration=2:sample_rate=48000".into(),
+            "-t".into(),
+            "2".into(),
+        ];
+        cap_args.extend(audio_encode_args("wav", 2, None, 192)); // pcm_s16le, native, 2ch
+        cap_args.push("-y".into());
+        cap_args.push(wav.to_string_lossy().into_owned());
+        let cap = std::process::Command::new(&ffmpeg)
+            .args(&cap_args)
+            .output()
+            .expect("ffmpeg should synthesize the WAV capture");
+        assert!(
+            cap.status.success(),
+            "WAV capture synth failed: {}",
+            String::from_utf8_lossy(&cap.stderr)
+        );
+
+        // 2. Point the recorder's internal ffmpeg/ffprobe at the sidecars, then run
+        //    the REAL finalize/transcode seam (single fragment → straight to the
+        //    delivery transcode; no concat).
+        // SAFETY: serialised by ENV_LOCK; both restored before releasing the lock.
+        unsafe {
+            std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+            std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+        }
+        let wav_s = wav.to_string_lossy().into_owned();
+        let delivery = dir.path().join("sermon.mp3");
+        let delivery_s = delivery.to_string_lossy().into_owned();
+        let d = Deliverable {
+            primary_path: wav_s.clone(),
+            fragments: vec![wav_s.clone()],
+            started_at_ms: 0,
+        };
+        let spec = DeliverySpec {
+            delivery_path: delivery_s.clone(),
+            ext: "mp3".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            mode: sundayrec_core::recovery::DeliveryMode::AudioEncode,
+            hvc1_tag: false,
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let out = rt.block_on(finalize_deliverable(&d, None, Some(&spec)));
+        unsafe {
+            std::env::remove_var("SUNDAYREC_FFMPEG");
+            std::env::remove_var("SUNDAYREC_FFPROBE");
+        }
+
+        let out = out.expect("delivery transcode should succeed with a real ffmpeg");
+        assert_eq!(out, delivery_s, "returns the delivery path");
+        assert!(delivery.exists(), "delivery file was written");
+        assert!(
+            !wav.exists(),
+            "the WAV capture is consumed after a successful transcode"
+        );
+
+        // 3. ffprobe the delivery: codec is mp3, 2 channels, duration ≈ 2.0 s — the
+        //    seam preserved the recording's shape.
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name,channels:format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
+            .arg(&delivery)
+            .output()
+            .expect("ffprobe should run");
+        assert!(probe.status.success(), "ffprobe failed for the delivery");
+        let text = String::from_utf8_lossy(&probe.stdout);
+        let fields: Vec<&str> = text.split_whitespace().collect();
+        assert_eq!(
+            fields.first().copied(),
+            Some("mp3"),
+            "delivery codec is mp3"
+        );
+        assert_eq!(
+            fields.get(1).copied(),
+            Some("2"),
+            "delivery keeps 2 channels"
+        );
+        let dur: f64 = fields
+            .get(2)
+            .and_then(|s| s.parse().ok())
+            .expect("ffprobe should report a numeric duration");
+        assert!(
+            (dur - 2.0).abs() <= 0.2,
+            "delivery duration off: {dur} s (expected ≈ 2.0)"
+        );
+        eprintln!("decoupled seam: WAV → mp3 delivery OK ({dur:.3} s, 2ch)");
+    }
+
+    /// End-to-end proof of the decoupled-VIDEO seam (crash-safe capture): an MKV
+    /// A/V "capture" (what the recorder now writes for video sessions) is remuxed
+    /// `-c copy` into the user's mp4 delivery by the SAME `finalize_deliverable`
+    /// path, and the delivery is ffprobed to confirm video+audio codecs and
+    /// duration survived AND the MKV capture was consumed. Skips without a real
+    /// sidecar.
+    #[test]
+    fn decoupled_mkv_capture_remuxes_to_mp4_delivery_or_skips() {
+        use crate::recorder::concat::{finalize_deliverable, DeliverySpec};
+        use sundayrec_core::recorder::Deliverable;
+        use sundayrec_core::recovery::DeliveryMode;
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        // 1. Synthesize a 2 s h264+aac MKV "capture" from lavfi sources.
+        let mkv = dir.path().join("service.mkv");
+        let cap = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x240:rate=30:duration=2",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2:sample_rate=48000",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-t",
+                "2",
+                "-y",
+            ])
+            .arg(&mkv)
+            .output()
+            .expect("ffmpeg should synthesize the MKV capture");
+        assert!(
+            cap.status.success(),
+            "MKV capture synth failed: {}",
+            String::from_utf8_lossy(&cap.stderr)
+        );
+
+        // 2. Run the REAL finalize seam in RemuxCopy mode (single fragment → no
+        //    concat, straight to the delivery remux).
+        // SAFETY: serialised by ENV_LOCK; both restored before releasing the lock.
+        unsafe {
+            std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+            std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+        }
+        let mkv_s = mkv.to_string_lossy().into_owned();
+        let delivery = dir.path().join("service.mp4");
+        let delivery_s = delivery.to_string_lossy().into_owned();
+        let d = Deliverable {
+            primary_path: mkv_s.clone(),
+            fragments: vec![mkv_s.clone()],
+            started_at_ms: 0,
+        };
+        let spec = DeliverySpec {
+            delivery_path: delivery_s.clone(),
+            ext: "mp4".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            mode: DeliveryMode::RemuxCopy,
+            hvc1_tag: false, // h264 needs no tag
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let out = rt.block_on(finalize_deliverable(&d, None, Some(&spec)));
+        unsafe {
+            std::env::remove_var("SUNDAYREC_FFMPEG");
+            std::env::remove_var("SUNDAYREC_FFPROBE");
+        }
+
+        let out = out.expect("delivery remux should succeed with a real ffmpeg");
+        assert_eq!(out, delivery_s, "returns the delivery path");
+        assert!(delivery.exists(), "delivery mp4 was written");
+        assert!(
+            !mkv.exists(),
+            "the MKV capture is consumed after a successful remux"
+        );
+
+        // 3. ffprobe the delivery: h264 video + aac audio, duration ≈ 2.0 s — the
+        //    remux preserved the streams untouched.
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name:format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+            ])
+            .arg(&delivery)
+            .output()
+            .expect("ffprobe should run");
+        assert!(probe.status.success(), "ffprobe failed for the delivery");
+        let text = String::from_utf8_lossy(&probe.stdout);
+        let fields: Vec<&str> = text.split_whitespace().collect();
+        assert!(
+            fields.contains(&"h264"),
+            "delivery keeps the h264 video stream: {fields:?}"
+        );
+        assert!(
+            fields.contains(&"aac"),
+            "delivery keeps the aac audio stream: {fields:?}"
+        );
+        let dur: f64 = fields
+            .last()
+            .and_then(|s| s.parse().ok())
+            .expect("ffprobe should report a numeric duration");
+        assert!(
+            (dur - 2.0).abs() <= 0.2,
+            "delivery duration off: {dur} s (expected ≈ 2.0)"
+        );
+        eprintln!("decoupled video seam: MKV → mp4 delivery OK ({dur:.3} s, h264+aac)");
     }
 }

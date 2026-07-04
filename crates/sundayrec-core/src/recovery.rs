@@ -18,9 +18,88 @@
 //! `src-tauri` `recorder::recovery` module owns the filesystem I/O (writing the
 //! manifest, probing existence, running the concat, writing history).
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 use crate::recorder::Deliverable;
+
+/// How a decoupled capture becomes the delivery file at finalisation.
+///
+/// - `AudioEncode` (audio-only sessions): the capture is lossless PCM WAV;
+///   finalisation ENCODES it to the user's chosen audio format.
+/// - `RemuxCopy` (video sessions): the capture is a crash-tolerant Matroska
+///   (`.mkv` — playable up to the crash point, unlike an mp4 whose moov atom only
+///   exists after a clean stop); finalisation REMUXES it (`-c copy`, no re-encode,
+///   seconds) into the user's mp4/mov with `+faststart`.
+///
+/// `#[serde(default)]` on the manifest field → manifests written before video
+/// decoupling existed deserialise to `AudioEncode` (they were all audio).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryMode {
+    /// Encode a WAV capture to the delivery audio format.
+    #[default]
+    AudioEncode,
+    /// Stream-copy an MKV capture into the delivery video container.
+    RemuxCopy,
+}
+
+/// How to turn a decoupled session's capture fragments into the user's chosen
+/// delivery file at finalisation.
+///
+/// WHY: the capture ffmpeg writes a crash-tolerant, back-pressure-free format —
+/// lossless PCM WAV for audio (a real-time lossy encoder can never fall behind and
+/// push avfoundation into dropping samples: the "hakkete" bug) and Matroska for
+/// video (playable even after a crash, unlike a moov-less mp4). The delivery
+/// encode/remux is deferred to finalisation. A crash mid-recording leaves the
+/// capture fragments on disk; recovery must know how to finish them, so the
+/// manifest carries this spec. `None` on a manifest means the legacy path
+/// (fragments already ARE the delivery file — no transcode).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioEncodeManifest {
+    /// The directory the delivery file(s) land in (the user's save folder).
+    pub delivery_dir: String,
+    /// The delivery container extension (`mp3`/`wav`/`flac`/`m4a`; `mp4`/`mov`
+    /// for `RemuxCopy`).
+    pub ext: String,
+    /// Output channel count (1 mono / 2 stereo). Unused by `RemuxCopy`.
+    pub channels: u8,
+    /// Forced output sample rate, or `None` to keep the captured native rate.
+    /// Unused by `RemuxCopy`.
+    pub sample_rate: Option<u32>,
+    /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC and `RemuxCopy`.
+    pub bitrate_kbps: u32,
+    /// Whether finalisation encodes (audio) or stream-copies (video). Serde
+    /// default (`AudioEncode`) keeps pre-video manifests parsing.
+    #[serde(default)]
+    pub mode: DeliveryMode,
+    /// `RemuxCopy` only: stamp the video stream `hvc1` in the mp4/mov (HEVC
+    /// recordings — QuickTime/Apple players reject the default `hev1` tag).
+    #[serde(default)]
+    pub hvc1_tag: bool,
+}
+
+/// Map a capture-WAV primary path back to its delivery path for the decoupled
+/// audio path: the delivery directory, the WAV's own file stem (which carries any
+/// `_2` split suffix — never `_rN`, since reconnect fragments are merged INTO the
+/// primary), and the delivery extension. E.g. `<cap>/sermon_2.wav` + dir `/rec` +
+/// `mp3` → `/rec/sermon_2.mp3`.
+pub fn delivery_path_for(capture_primary: &str, delivery_dir: &str, ext: &str) -> String {
+    let stem = Path::new(capture_primary)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("recording");
+    let file = if ext.is_empty() {
+        stem.to_string()
+    } else {
+        format!("{stem}.{ext}")
+    };
+    Path::new(delivery_dir)
+        .join(file)
+        .to_string_lossy()
+        .into_owned()
+}
 
 /// One deliverable's recoverable layout (mirrors [`Deliverable`], but owned +
 /// serde so it can round-trip through the manifest file).
@@ -66,6 +145,11 @@ pub struct SessionManifest {
     pub session_start_ms: u64,
     /// The pre-roll clip path prepended to the FIRST deliverable, if any.
     pub preroll_clip_path: Option<String>,
+    /// For the decoupled audio path: how to transcode the WAV capture fragments to
+    /// the delivery format on recovery. `None` = legacy/video (fragments already ARE
+    /// the delivery file). `#[serde(default)]` so older manifests deserialise cleanly.
+    #[serde(default)]
+    pub delivery_encode: Option<AudioEncodeManifest>,
     /// Every deliverable's layout, in order.
     pub deliverables: Vec<DeliverableManifest>,
 }
@@ -128,6 +212,7 @@ mod tests {
             device_name: "Soundcraft USB".into(),
             session_start_ms: 1_700_000_000_000,
             preroll_clip_path: Some("/rec/_preroll.mp3".into()),
+            delivery_encode: None,
             deliverables: vec![
                 DeliverableManifest {
                     primary_path: "/rec/sermon.mp3".into(),
@@ -148,6 +233,97 @@ mod tests {
         let m = manifest();
         let back = SessionManifest::from_json(&m.to_json().unwrap()).unwrap();
         assert_eq!(m, back);
+    }
+
+    #[test]
+    fn manifest_round_trips_with_delivery_encode() {
+        let mut m = manifest();
+        m.delivery_encode = Some(AudioEncodeManifest {
+            delivery_dir: "/rec".into(),
+            ext: "mp3".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 256,
+            mode: DeliveryMode::AudioEncode,
+            hvc1_tag: false,
+        });
+        let back = SessionManifest::from_json(&m.to_json().unwrap()).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn manifest_round_trips_with_remux_copy_mode() {
+        // A video session's manifest: MKV capture, remux to mp4 with the hvc1 tag.
+        let mut m = manifest();
+        m.delivery_encode = Some(AudioEncodeManifest {
+            delivery_dir: "/rec".into(),
+            ext: "mp4".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 256,
+            mode: DeliveryMode::RemuxCopy,
+            hvc1_tag: true,
+        });
+        let back = SessionManifest::from_json(&m.to_json().unwrap()).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn delivery_encode_without_mode_defaults_to_audio_encode() {
+        // A manifest written by the audio-only decoupling build (before video
+        // decoupling added `mode`/`hvc1_tag`) must parse as AudioEncode.
+        let legacy = r#"{
+            "session_id": "s",
+            "device_name": "dev",
+            "session_start_ms": 0,
+            "preroll_clip_path": null,
+            "delivery_encode": {
+                "delivery_dir": "/rec",
+                "ext": "mp3",
+                "channels": 2,
+                "sample_rate": null,
+                "bitrate_kbps": 256
+            },
+            "deliverables": []
+        }"#;
+        let m = SessionManifest::from_json(legacy).unwrap();
+        let enc = m.delivery_encode.expect("delivery_encode parsed");
+        assert_eq!(enc.mode, DeliveryMode::AudioEncode);
+        assert!(!enc.hvc1_tag);
+    }
+
+    #[test]
+    fn legacy_manifest_without_delivery_encode_deserialises_to_none() {
+        // A manifest written before the decoupled-audio field existed must still
+        // parse (serde default) — a crash-recovery blob from an older build.
+        let legacy = r#"{
+            "session_id": "s",
+            "device_name": "dev",
+            "session_start_ms": 0,
+            "preroll_clip_path": null,
+            "deliverables": []
+        }"#;
+        let m = SessionManifest::from_json(legacy).unwrap();
+        assert_eq!(m.delivery_encode, None);
+    }
+
+    #[test]
+    fn delivery_path_for_maps_stem_into_delivery_dir() {
+        // Deliverable 0: the base stem maps to the delivery file.
+        assert_eq!(
+            delivery_path_for("/tmp/cap-123/sermon.wav", "/rec", "mp3"),
+            "/rec/sermon.mp3"
+        );
+        // A split deliverable keeps its `_2` suffix through the mapping.
+        assert_eq!(
+            delivery_path_for("/tmp/cap-123/sermon_2.wav", "/rec", "flac"),
+            "/rec/sermon_2.flac"
+        );
+        // No extension → just the stem in the delivery dir.
+        assert_eq!(
+            delivery_path_for("/tmp/cap-123/sermon.wav", "/rec", ""),
+            "/rec/sermon"
+        );
     }
 
     #[test]
@@ -216,6 +392,7 @@ mod tests {
             device_name: "dev".into(),
             session_start_ms: 0,
             preroll_clip_path: None,
+            delivery_encode: None,
             deliverables: vec![DeliverableManifest {
                 primary_path: "/rec/a.mp3".into(),
                 fragments: vec![
@@ -246,6 +423,7 @@ mod tests {
             device_name: "dev".into(),
             session_start_ms: 0,
             preroll_clip_path: None,
+            delivery_encode: None,
             deliverables: vec![],
         };
         assert!(recoverable_deliverables(&m, |_| true).is_empty());
@@ -261,6 +439,7 @@ mod tests {
             device_name: "dev".into(),
             session_start_ms: 0,
             preroll_clip_path: None,
+            delivery_encode: None,
             deliverables: vec![DeliverableManifest {
                 primary_path: "/rec/ghost.mp3".into(),
                 fragments: vec![],

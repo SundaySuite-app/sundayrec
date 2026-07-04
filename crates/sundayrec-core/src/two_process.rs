@@ -33,6 +33,7 @@
 //! drift over a 90-minute service is corrected too, and `-shortest` stops the
 //! muxer when the shorter input ends (no trailing audio over a frozen frame).
 
+use crate::capture::{push_video_encoder_args, VideoCaptureMode};
 use crate::ffmpeg::Platform;
 
 /// A unified-capture startup failure dies within this many ms of session start
@@ -158,14 +159,26 @@ fn fixed3(v: f64) -> String {
 ///
 /// `-use_wallclock_as_timestamps 1` tags the container `start_time` with the
 /// capture's Unix epoch so [`av_offset_decision`] can align it against the audio
-/// file. Video is encoded `libx264 -preset veryfast` (same simple encode as the
-/// unified video path — the spike doesn't tune the encoder). `output_path` is
-/// always the final argument.
+/// file. The encoder args come from the SAME [`push_video_encoder_args`] seam the
+/// unified capture uses, so the fallback honours the user's chosen codec/hardware
+/// setting instead of a hardcoded `libx264 veryfast`. As in the unified path, the
+/// INPUT `-framerate` uses the probed `mode.input_fps` (what the camera actually
+/// advertises) while the OUTPUT `-r`/`-fps_mode cfr` conform targets
+/// `output_framerate` (the user's chosen setting) — the two can legitimately
+/// differ (e.g. a 30fps-only camera CFR-converted to a 25fps recording).
+/// `output_path` is the capture TEMP file — Matroska (`.mkv`), crash-tolerant like
+/// the unified decoupled path and irrelevant to the final `-c:v copy` mux (any
+/// container muxes into any other), so no `faststart`/ISO-tag concerns apply here
+/// — `iso_container: false`. `output_path` is always the final argument.
+#[allow(clippy::too_many_arguments)]
 pub fn build_video_capture_args(
     platform: Platform,
     video_device: &str,
     output_path: &str,
-    mode: crate::capture::VideoCaptureMode,
+    mode: VideoCaptureMode,
+    output_framerate: u32,
+    hw_accel: bool,
+    video_codec: crate::editor::VideoCodec,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
@@ -203,19 +216,20 @@ pub fn build_video_capture_args(
         }
     }
 
-    // Simple H.264 encode (the spike doesn't tune the encoder).
-    args.push("-c:v".into());
-    args.push("libx264".into());
-    args.push("-preset".into());
-    args.push("veryfast".into());
-    args.push("-pix_fmt".into());
-    args.push("yuv420p".into());
+    push_video_encoder_args(
+        &mut args,
+        platform,
+        hw_accel,
+        video_codec,
+        Some(mode),
+        output_framerate,
+        false, // mkv capture temp — no ISO-only hvc1 tag here
+    );
 
-    // Normalise leading timestamps + faststart for a directly-playable temp file.
+    // Normalise leading timestamps for a well-formed temp file. No faststart: the
+    // capture temp is Matroska (see doc above), which rejects the ISO-only flag.
     args.push("-avoid_negative_ts".into());
     args.push("make_zero".into());
-    args.push("-movflags".into());
-    args.push("+faststart".into());
 
     args.push("-y".into());
     args.push(output_path.into());
@@ -230,15 +244,21 @@ pub fn build_video_capture_args(
 ///     process).
 ///   - Windows: the dshow audio **name**, emitted as `audio=<name>`.
 ///
-/// Encoded AAC @ 48 kHz with the requested channel count, matching the unified
-/// recorder's audio codec so the mux can `-c copy` the audio if it wanted — but
-/// the mux re-encodes to AAC anyway (it has to apply `aresample`). `start_time`
-/// is wall-clock-stamped for [`av_offset_decision`]. `output_path` is last.
+/// Encoded AAC with the recording's OWN channel count / sample rate / bitrate
+/// (previously hardcoded to 192k/48 kHz regardless of the user's settings). `None`
+/// sample rate omits `-ar` — same native-rate convention as the unified/decoupled
+/// audio path (forcing a rate the device doesn't natively run at can trigger a
+/// resample). The mux re-encodes to AAC anyway (it has to apply `aresample`), so
+/// this is about honouring the user's channel/rate/bitrate choice, not enabling a
+/// stream copy. `start_time` is wall-clock-stamped for [`av_offset_decision`].
+/// `output_path` is last.
 pub fn build_audio_capture_args(
     platform: Platform,
     audio_device: &str,
     output_path: &str,
     channels: u8,
+    sample_rate: Option<u32>,
+    bitrate_kbps: u32,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![
         "-hide_banner".into(),
@@ -268,9 +288,11 @@ pub fn build_audio_capture_args(
     args.push("-c:a".into());
     args.push("aac".into());
     args.push("-b:a".into());
-    args.push("192k".into());
-    args.push("-ar".into());
-    args.push("48000".into());
+    args.push(format!("{bitrate_kbps}k"));
+    if let Some(sr) = sample_rate {
+        args.push("-ar".into());
+        args.push(sr.to_string());
+    }
     args.push("-ac".into());
     args.push(channels.to_string());
 
@@ -553,8 +575,15 @@ mod tests {
 
     #[test]
     fn video_capture_mac_uses_idx_none_and_wallclock() {
-        let args =
-            build_video_capture_args(Platform::MacOS, "0", "/tmp/v.mp4", mode(1280, 720, 30));
+        let args = build_video_capture_args(
+            Platform::MacOS,
+            "0",
+            "/tmp/v.mkv",
+            mode(1280, 720, 30),
+            30,
+            false,
+            crate::editor::VideoCodec::H264,
+        );
         assert!(has_pair(&args, "-use_wallclock_as_timestamps", "1"));
         assert!(has_pair(&args, "-f", "avfoundation"));
         assert!(args.iter().any(|a| a == "0:none"), "got: {args:?}");
@@ -562,9 +591,54 @@ mod tests {
         assert!(has_pair(&args, "-framerate", "30"));
         assert!(has_pair(&args, "-video_size", "1280x720"));
         assert!(has_pair(&args, "-c:v", "libx264"));
+        // mkv capture temp — no faststart (ISO-only) and no ISO-only hvc1 tag.
+        assert!(!args.iter().any(|a| a == "-movflags"));
+        assert!(!args.iter().any(|a| a == "-tag:v"));
         // No audio codec on a video-only process.
         assert!(!args.iter().any(|a| a == "-c:a"));
-        assert_eq!(args.last().unwrap(), "/tmp/v.mp4");
+        assert_eq!(args.last().unwrap(), "/tmp/v.mkv");
+    }
+
+    #[test]
+    fn video_capture_honours_hevc_and_hardware_encoder_settings() {
+        // The fallback must respect the user's codec/hardware choice via the SAME
+        // push_video_encoder_args seam the unified path uses — not a hardcoded
+        // libx264.
+        let args = build_video_capture_args(
+            Platform::MacOS,
+            "0",
+            "/tmp/v.mkv",
+            mode(1280, 720, 30),
+            30,
+            true,
+            crate::editor::VideoCodec::H265,
+        );
+        assert!(has_pair(&args, "-c:v", "hevc_videotoolbox"));
+        assert!(has_pair(&args, "-realtime", "1"));
+        // hvc1 is an ISO-container concept; the mkv capture temp must not get it.
+        assert!(!args.iter().any(|a| a == "-tag:v"));
+    }
+
+    #[test]
+    fn video_capture_conforms_output_cfr_to_the_user_setting_not_the_probed_input() {
+        // Input `-framerate` uses the probed camera mode; output `-r`/`-fps_mode
+        // cfr` conforms to the user's chosen recording framerate — the two are
+        // allowed to differ (a 30fps-only camera CFR-converted to a 25fps take).
+        let args = build_video_capture_args(
+            Platform::MacOS,
+            "0",
+            "/tmp/v.mkv",
+            mode(1280, 720, 30),
+            25,
+            false,
+            crate::editor::VideoCodec::H264,
+        );
+        assert!(has_pair(&args, "-framerate", "30"), "input stays probed");
+        assert!(
+            has_pair(&args, "-r", "25"),
+            "output CFR targets the setting"
+        );
+        assert!(has_pair(&args, "-fps_mode", "cfr"));
     }
 
     #[test]
@@ -572,8 +646,11 @@ mod tests {
         let args = build_video_capture_args(
             Platform::Windows,
             "Logitech BRIO",
-            "C:/v.mp4",
+            "C:/v.mkv",
             mode(1280, 720, 30),
+            30,
+            false,
+            crate::editor::VideoCodec::H264,
         );
         assert!(has_pair(&args, "-f", "dshow"));
         assert!(args.iter().any(|a| a == "video=Logitech BRIO"));
@@ -585,19 +662,41 @@ mod tests {
 
     #[test]
     fn audio_capture_mac_uses_leading_colon_and_no_video_codec() {
-        let args = build_audio_capture_args(Platform::MacOS, "1", "/tmp/a.m4a", 2);
+        let args =
+            build_audio_capture_args(Platform::MacOS, "1", "/tmp/a.mkv", 2, Some(48_000), 192);
         assert!(has_pair(&args, "-use_wallclock_as_timestamps", "1"));
         assert!(has_pair(&args, "-f", "avfoundation"));
         assert!(args.iter().any(|a| a == ":1"), "leading-colon audio input");
         assert!(has_pair(&args, "-c:a", "aac"));
+        assert!(has_pair(&args, "-b:a", "192k"));
+        assert!(has_pair(&args, "-ar", "48000"));
         assert!(has_pair(&args, "-ac", "2"));
         assert!(!args.iter().any(|a| a == "-c:v"));
-        assert_eq!(args.last().unwrap(), "/tmp/a.m4a");
+        assert_eq!(args.last().unwrap(), "/tmp/a.mkv");
+    }
+
+    #[test]
+    fn audio_capture_honours_recording_bitrate_and_native_rate() {
+        // Previously hardcoded 192k/48kHz regardless of the user's settings.
+        let args = build_audio_capture_args(Platform::MacOS, "1", "/tmp/a.mkv", 2, None, 256);
+        assert!(has_pair(&args, "-b:a", "256k"), "honours recording bitrate");
+        // None sample rate omits -ar entirely (native-rate convention).
+        assert!(
+            !args.iter().any(|a| a == "-ar"),
+            "no -ar for native/unforced rate"
+        );
     }
 
     #[test]
     fn audio_capture_windows_uses_named_audio_input_and_channels() {
-        let args = build_audio_capture_args(Platform::Windows, "Yamaha AG06", "C:/a.m4a", 1);
+        let args = build_audio_capture_args(
+            Platform::Windows,
+            "Yamaha AG06",
+            "C:/a.mkv",
+            1,
+            Some(48_000),
+            192,
+        );
         assert!(has_pair(&args, "-f", "dshow"));
         assert!(args.iter().any(|a| a == "audio=Yamaha AG06"));
         assert!(has_pair(&args, "-ac", "1"), "mono → -ac 1");

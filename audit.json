@@ -13,9 +13,7 @@
           "title": "esbuild allows arbitrary file read when running the development server on Windows",
           "url": "https://github.com/advisories/GHSA-g7r4-m6w7-qqqr",
           "severity": "low",
-          "cwe": [
-            "CWE-22"
-          ],
+          "cwe": ["CWE-22"],
           "cvss": {
             "score": 2.5,
             "vectorString": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:N/I:L/A:N"
@@ -25,9 +23,7 @@
       ],
       "effects": [],
       "range": "0.27.3 - 0.28.0",
-      "nodes": [
-        "node_modules/esbuild"
-      ],
+      "nodes": ["node_modules/esbuild"],
       "fixAvailable": true
     }
   },

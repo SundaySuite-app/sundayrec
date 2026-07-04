@@ -79,11 +79,15 @@ use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::errors::{classify_recording_error, RecordingErrorCode};
 use sundayrec_core::ffmpeg::Platform;
 use sundayrec_core::levels::{parse_ametadata_peak, ChannelLevels, SILENCE_FLOOR_DB};
-use sundayrec_core::preflight::{low_disk_should_stop, min_disk_headroom_bytes};
+use sundayrec_core::preflight::{
+    finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
+};
 use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
-use sundayrec_core::recovery::{DeliverableManifest, SessionManifest};
+use sundayrec_core::recovery::{
+    delivery_path_for, AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
+};
 use sundayrec_core::selftest::{push_capped, RecordingTelemetry};
 use sundayrec_core::settings::ChannelMode;
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
@@ -97,8 +101,7 @@ use crate::audio::device_enum::{
 };
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
-use crate::media::ffmpeg::spawn_ffmpeg;
-use crate::recorder::concat::{finalize_deliverable, output_is_valid};
+use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
 
@@ -776,7 +779,7 @@ impl RecorderEngine {
 /// Emit a state change and remember it. Asserts the transition is legal via the
 /// core table (a refused transition is a logic bug — logged, but we still emit
 /// the requested state so the UI doesn't desync).
-fn set_state(
+pub(crate) fn set_state(
     app: &AppHandle,
     last_state: &Arc<Mutex<RecorderState>>,
     to: RecorderState,
@@ -896,7 +899,51 @@ async fn run_session(
     // Unique per recording (singleton engine → start_ms never repeats); also the
     // crash-recovery manifest's filename.
     let session_id = start_ms.to_string();
-    let mut session = RecordingSession::new(opts.output_path.clone(), start_ms);
+    // Decoupled capture (the anti-"hakkete" + crash-safety fix). EVERY recording
+    // captures to a crash-tolerant, back-pressure-free container in a per-session
+    // hidden folder BESIDE the delivery file:
+    //   - audio-only → lossless PCM WAV: a real-time lossy encoder can never fall
+    //     behind and push avfoundation into dropping samples;
+    //   - video → Matroska (.mkv): playable up to a crash point, unlike an mp4/mov
+    //     whose moov atom only exists after a clean stop — and stopping no longer
+    //     pays the `+faststart` whole-file rewrite.
+    // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
+    // user's chosen delivery format.
+    let audio_only = video.is_none();
+    let cap_dir = capture_dir(&opts.output_path, &session_id);
+    if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
+        tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
+        let _ = ready.send(Err(AppError::Recording(format!(
+            "kunne ikke opprette opptaksmappe {}: {e}",
+            cap_dir.display()
+        ))));
+        emit_state(RecorderState::Failed, 0);
+        return;
+    }
+    let capture_ext = if audio_only { "wav" } else { "mkv" };
+    let session_output = capture_base_path(&cap_dir, &opts.output_path, capture_ext);
+    // How to turn the capture into the delivery file — persisted in the
+    // crash-recovery manifest so an interrupted recording can be finished on the
+    // next launch.
+    let delivery_encode = Some(AudioEncodeManifest {
+        delivery_dir: delivery_dir_of(&opts.output_path),
+        ext: delivery_ext(&opts.output_path),
+        channels: match opts.channel_mode {
+            ChannelMode::Stereo => 2,
+            _ => 1,
+        },
+        sample_rate: opts.sample_rate,
+        bitrate_kbps: opts.bitrate_kbps,
+        mode: if audio_only {
+            DeliveryMode::AudioEncode
+        } else {
+            DeliveryMode::RemuxCopy
+        },
+        // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
+        // reject hev1); the tag is NOT applied to the mkv capture itself.
+        hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+    });
+    let mut session = RecordingSession::new(session_output, start_ms);
     // How many deliverables have already been finalised (concat + history row).
     // Each split closes one; session end finalises the rest. The pre-roll clip is
     // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
@@ -924,6 +971,8 @@ async fn run_session(
         Err(e) => {
             let _ = ready.send(Err(e));
             emit_state(RecorderState::Failed, 0);
+            // The capture dir was just created and never written to — empty.
+            let _ = tokio::fs::remove_dir(&cap_dir).await;
             return;
         }
     };
@@ -937,7 +986,14 @@ async fn run_session(
         // fragments instead of losing the recording. Best-effort; never blocks.
         crate::recorder::recovery::write_manifest(
             &app,
-            &session_manifest(&session_id, &session, &audio, &preroll_clip, start_ms),
+            &session_manifest(
+                &session_id,
+                &session,
+                &audio,
+                &preroll_clip,
+                start_ms,
+                &delivery_encode,
+            ),
         )
         .await;
 
@@ -1035,9 +1091,13 @@ async fn run_session(
                                     .into(),
                             },
                         );
-                        // Drop the empty/broken unified file before the fallback
-                        // writes its own temps + muxed output.
+                        // Drop the empty/broken unified file + its now-stale
+                        // recovery manifest before the fallback writes its own
+                        // temps + muxed output — the two-process path doesn't
+                        // extend this manifest, so it would otherwise sit as
+                        // harmless litter until a future startup scan skips it.
                         let _ = std::fs::remove_file(session.primary_path());
+                        crate::recorder::recovery::delete_manifest(&app, &session_id).await;
 
                         let result = crate::recorder::two_process::run_two_process_session(
                             app.clone(),
@@ -1047,6 +1107,8 @@ async fn run_session(
                             audio.clone(),
                             video_dev.clone(),
                             stop_rx,
+                            Arc::clone(&last_state),
+                            stop_watch.clone(),
                         )
                         .await;
                         match result {
@@ -1056,6 +1118,12 @@ async fn run_session(
                                 emit_state(RecorderState::Failed, 0);
                             }
                         }
+                        // The unified attempt's capture dir held only the just-
+                        // removed empty/broken primary (no fragments — the
+                        // fallback trigger requires zero bytes produced) — empty
+                        // now. The two-process fallback owns its own temps
+                        // elsewhere, so this cleanup is unrelated to its outcome.
+                        let _ = tokio::fs::remove_dir(&cap_dir).await;
                         return;
                     }
                 }
@@ -1079,6 +1147,10 @@ async fn run_session(
                             &opts,
                         )
                         .await;
+                        // Best-effort: only removes it if empty (a failed final
+                        // delivery leaves its WAV/MKV behind on purpose — the
+                        // capture survives as a playback/recovery source).
+                        let _ = tokio::fs::remove_dir(&cap_dir).await;
                         tracing::error!("recorder: giving up — fail-stop");
                         return;
                     }
@@ -1087,109 +1159,89 @@ async fn run_session(
                         attempt,
                         next_segment,
                     } => {
-                        emit_state(RecorderState::Reconnecting, session.reconnect_count());
-                        let _ = app.emit(
-                            RECONNECTING_EVENT,
-                            RecordingEvent {
-                                code: "reconnecting".into(),
-                                message: format!(
-                                    "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
-                                    sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
-                                ),
-                            },
-                        );
-                        tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
-                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                        // Respawn loop. A FAILED respawn is treated as just another
+                        // unexpected exit: re-consult the pure policy and try again
+                        // with its fresh delay/segment — so respawn failures draw on
+                        // the SAME reconnect budget as device exits. (This replaces a
+                        // hand-inlined duplicate of this match that gave up after
+                        // exactly one respawn retry.)
+                        let mut delay_ms = delay_ms;
+                        let mut attempt = attempt;
+                        let mut next_segment = next_segment;
+                        loop {
+                            emit_state(RecorderState::Reconnecting, session.reconnect_count());
+                            let _ = app.emit(
+                                RECONNECTING_EVENT,
+                                RecordingEvent {
+                                    code: "reconnecting".into(),
+                                    message: format!(
+                                        "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
+                                        sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
+                                    ),
+                                },
+                            );
+                            tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
+                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
-                        let args = build_record_args(
-                            platform,
-                            &audio,
-                            video.as_ref(),
-                            &opts,
-                            &next_segment,
-                        );
-                        match spawn_ffmpeg_owned(&args).await {
-                            Ok(c) => {
-                                child = c;
-                                let _ = app.emit(
-                                    RECONNECTED_EVENT,
-                                    RecordingEvent {
-                                        code: "reconnected".into(),
-                                        message: "Tilkobling gjenopprettet — fortsetter opptak"
-                                            .into(),
-                                    },
-                                );
-                                emit_state(RecorderState::Recording, session.reconnect_count());
-                            }
-                            Err(e) => {
-                                // Respawn failed: loop again so the NEXT
-                                // on_unexpected_exit re-evaluates the budget.
-                                tracing::warn!("recorder: reconnect respawn failed: {e}");
-                                // Spawn a fake already-dead child path: re-enter
-                                // the loop by treating this like another exit.
-                                // We do this by spawning a no-op that exits, but
-                                // simplest: recurse the decision inline.
-                                match session.on_unexpected_exit(now_ms(), None) {
-                                    RecoveryDecision::Reconnect {
-                                        delay_ms,
-                                        next_segment,
-                                        ..
-                                    } => {
-                                        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                                        let args = build_record_args(
-                                            platform,
-                                            &audio,
-                                            video.as_ref(),
-                                            &opts,
-                                            &next_segment,
-                                        );
-                                        match spawn_ffmpeg_owned(&args).await {
-                                            Ok(c) => {
-                                                child = c;
-                                                emit_state(
-                                                    RecorderState::Recording,
-                                                    session.reconnect_count(),
-                                                );
-                                            }
-                                            Err(e2) => {
-                                                emit_error(&app, "device_error", &e2.to_string());
-                                                emit_state(
-                                                    RecorderState::Failed,
-                                                    session.reconnect_count(),
-                                                );
-                                                finalize_pending(
-                                                    &app,
-                                                    &pool,
-                                                    &session,
-                                                    &mut finalized,
-                                                    now_ms(),
-                                                    &preroll_clip,
-                                                    &audio,
-                                                    &opts,
-                                                )
-                                                .await;
-                                                return;
-                                            }
+                            let args = build_record_args(
+                                platform,
+                                &audio,
+                                video.as_ref(),
+                                &opts,
+                                &next_segment,
+                            );
+                            match spawn_ffmpeg_owned(&args).await {
+                                Ok(c) => {
+                                    child = c;
+                                    let _ = app.emit(
+                                        RECONNECTED_EVENT,
+                                        RecordingEvent {
+                                            code: "reconnected".into(),
+                                            message: "Tilkobling gjenopprettet — fortsetter opptak"
+                                                .into(),
+                                        },
+                                    );
+                                    emit_state(RecorderState::Recording, session.reconnect_count());
+                                    break;
+                                }
+                                Err(e) => {
+                                    tracing::warn!("recorder: reconnect respawn failed: {e}");
+                                    match session.on_unexpected_exit(now_ms(), None) {
+                                        RecoveryDecision::Reconnect {
+                                            delay_ms: next_delay,
+                                            attempt: next_attempt,
+                                            next_segment: seg,
+                                        } => {
+                                            delay_ms = next_delay;
+                                            attempt = next_attempt;
+                                            next_segment = seg;
                                         }
-                                    }
-                                    RecoveryDecision::GiveUp => {
-                                        emit_error(&app, "device_disconnected", &e.to_string());
-                                        emit_state(
-                                            RecorderState::Failed,
-                                            session.reconnect_count(),
-                                        );
-                                        finalize_pending(
-                                            &app,
-                                            &pool,
-                                            &session,
-                                            &mut finalized,
-                                            now_ms(),
-                                            &preroll_clip,
-                                            &audio,
-                                            &opts,
-                                        )
-                                        .await;
-                                        return;
+                                        RecoveryDecision::GiveUp => {
+                                            emit_error(&app, "device_disconnected", &e.to_string());
+                                            emit_state(
+                                                RecorderState::Failed,
+                                                session.reconnect_count(),
+                                            );
+                                            finalize_pending(
+                                                &app,
+                                                &pool,
+                                                &session,
+                                                &mut finalized,
+                                                now_ms(),
+                                                &preroll_clip,
+                                                &audio,
+                                                &opts,
+                                            )
+                                            .await;
+                                            // Best-effort: only removes it if empty
+                                            // (a failed final delivery leaves its
+                                            // WAV/MKV behind on purpose).
+                                            let _ = tokio::fs::remove_dir(&cap_dir).await;
+                                            tracing::error!(
+                                                "recorder: giving up — respawn budget exhausted"
+                                            );
+                                            return;
+                                        }
                                     }
                                 }
                             }
@@ -1217,6 +1269,11 @@ async fn run_session(
     // Clean finish: every deliverable is finalised + history-rowed, so the
     // recovery manifest is no longer needed.
     crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+    // Drop the now-empty per-session capture folder. `remove_dir` removes it ONLY
+    // if empty — a FAILED delivery transcode left its WAV/MKV behind (finalize_one
+    // fell back to it as the history file), so the folder stays and the capture
+    // survives as a playback/recovery source.
+    let _ = tokio::fs::remove_dir(&cap_dir).await;
     // Record→edit hand-off: tell the UI where the finished file landed so it can
     // offer "open in editor". Only when the main file actually exists + is
     // non-empty (a recording that produced nothing skips the suggestion).
@@ -1239,6 +1296,52 @@ async fn run_session(
     tracing::info!("recorder: session stopped cleanly");
 }
 
+/// The per-session capture folder for the decoupled-audio path: a hidden
+/// `.sundayrec-capture-<session_id>` directory BESIDE the user's delivery file. On
+/// the same volume (so the finalise transcode/rename never crosses filesystems) and
+/// PERSISTENT — deliberately NOT OS-temp — so a crash leaves the WAV fragments on
+/// disk for the next-launch recovery scan to finish.
+fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
+    std::path::Path::new(delivery)
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(format!(".sundayrec-capture-{session_id}"))
+}
+
+/// The capture base path inside `cap_dir`, carrying the SAME file stem as the
+/// delivery file so [`delivery_path_for`] maps it straight back (and splits derive
+/// `<stem>_2.<ext>` etc). `capture_ext` is `wav` (audio) or `mkv` (video).
+/// E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
+fn capture_base_path(cap_dir: &std::path::Path, delivery: &str, capture_ext: &str) -> String {
+    let stem = std::path::Path::new(delivery)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("recording");
+    cap_dir
+        .join(format!("{stem}.{capture_ext}"))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The directory a delivery file lands in (the user's save folder), or `""`.
+fn delivery_dir_of(delivery: &str) -> String {
+    std::path::Path::new(delivery)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// The lowercased delivery extension (`"mp3"`, `"wav"`, …), or `""` — drives the
+/// transcode codec via [`audio_encode_args`]/`codec_for_extension`.
+fn delivery_ext(delivery: &str) -> String {
+    std::path::Path::new(delivery)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 /// Snapshot the live session into a persistable crash-recovery manifest.
 fn session_manifest(
     session_id: &str,
@@ -1246,12 +1349,14 @@ fn session_manifest(
     audio: &FfmpegDevice,
     preroll_clip: &Option<PrerollClip>,
     start_ms: u64,
+    delivery_encode: &Option<AudioEncodeManifest>,
 ) -> SessionManifest {
     SessionManifest {
         session_id: session_id.to_string(),
         device_name: audio.name.clone(),
         session_start_ms: start_ms,
         preroll_clip_path: preroll_clip.as_ref().map(|c| c.raw_path.clone()),
+        delivery_encode: delivery_encode.clone(),
         deliverables: session
             .deliverables()
             .iter()
@@ -1316,6 +1421,27 @@ impl LevelMeter {
 /// `lavfi.astats.<ch>.Peak_level=` lines (one per channel per frame) which update
 /// the held [`LevelMeter`] and emit on its ~60×/s throttle. Pure-helper driven —
 /// the reader owns no state machine.
+/// `true` if `line` is one of ffmpeg's own capture-back-pressure / sample-drop
+/// warnings — the machine-observable signature of the "hakkete" bug. These are NOT
+/// fatal (ffmpeg keeps recording) so they fall straight through the error
+/// classifier; we surface them as warnings so a rig test (and the Lydhjelp
+/// diagnostic) can SEE capture drops happening rather than only hearing them.
+/// Lowercase-substring match against the phrasings ffmpeg actually prints.
+fn is_capture_drop_warning(line: &str) -> bool {
+    let l = line.to_ascii_lowercase();
+    [
+        "thread message queue blocking",
+        "consider raising the thread_queue_size",
+        "audio queue overflow",
+        "queue input is backward in time",
+        "past duration",
+        "non monotonically increasing dts",
+        "packets dropped",
+    ]
+    .iter()
+    .any(|needle| l.contains(needle))
+}
+
 async fn classify_stderr_line(
     line: &str,
     startup: &mut StartupResolver,
@@ -1348,6 +1474,20 @@ async fn classify_stderr_line(
     // Non-level line: fold ffmpeg drop=/dup=/xrun stats into the session
     // telemetry (cheap; the high-rate level lines returned above carry none).
     lock_recover(telemetry).observe_line(line);
+    // Capture back-pressure / sample-drop warnings: log-only (not fatal, so we let
+    // the line fall through to the normal progress/silence/error classification too,
+    // though in practice these phrasings match none of those). Complements the
+    // telemetry above (persisted, surfaced in the diagnose report after the fact)
+    // with an IMMEDIATE log line — these specific avfoundation-side phrasings
+    // (thread-queue/backward-time/past-duration) aren't in `XRUN_PHRASES`, and a
+    // live tracing consumer sees the drop the moment it happens.
+    if is_capture_drop_warning(line) {
+        tracing::warn!(
+            capture_drop = true,
+            line = %line,
+            "recorder: ffmpeg reported capture back-pressure / dropped samples"
+        );
+    }
     if let Some(b) = parse_size_kb(line) {
         if startup.observe_progress() {
             let _ = msg_tx.send(ReaderMsg::Started).await;
@@ -1482,11 +1622,16 @@ async fn run_segment(
 
     // Low-disk guard: every 30 s, probe free space on the save volume and stop
     // GRACEFULLY before ffmpeg hits ENOSPC and leaves a corrupt container. The
-    // headroom matches the pre-flight threshold (4 GB with video, else 500 MB).
+    // base headroom matches the pre-flight threshold (4 GB with video, else
+    // 500 MB); the decoupled-capture delivery step (WAV encode / MKV remux) needs
+    // its OWN transient headroom on top — see `finalize_reserve_bytes` — so the
+    // per-tick threshold grows with the current segment's captured size instead
+    // of staying fixed regardless of how much has been captured so far.
     let disk_folder = std::path::Path::new(&opts.output_path)
         .parent()
         .map(|p| p.to_path_buf());
-    let disk_headroom = min_disk_headroom_bytes(opts.video_device_name.is_some());
+    let video_active = opts.video_device_name.is_some();
+    let disk_headroom = min_disk_headroom_bytes(video_active);
     let mut disk_tick = tokio::time::interval(Duration::from_secs(30));
     disk_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -1570,8 +1715,7 @@ async fn run_segment(
             }
             // Graceful stop request.
             _ = stop_rx.recv() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::GracefulStop;
             }
             // Startup watchdog: no first progress in time → the start failed.
@@ -1610,15 +1754,18 @@ async fn run_segment(
             _ = disk_tick.tick() => {
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
-                        if low_disk_should_stop(free, disk_headroom) {
+                        let reserve = finalize_reserve_bytes(
+                            video_active,
+                            segment_bytes.load(Ordering::Relaxed),
+                        );
+                        if low_disk_should_stop(free, disk_headroom + reserve) {
                             emit_error(
                                 app,
                                 "disk_full",
                                 "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
                             );
                             // Graceful stop so the container is finalised + playable.
-                            graceful_q(&mut stdin).await;
-                            let _ = child.wait().await;
+                            stop_and_wait_bounded(&mut child, &mut stdin).await;
                             break SegmentOutcome::DiskStop;
                         }
                     }
@@ -1626,15 +1773,13 @@ async fn run_segment(
             }
             // Split timer.
             _ = &mut split_sleep, if split_deadline.is_some() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::Split;
             }
             // Auto-stop deadline reached (guarded so a `None` deadline — the
             // 100-year "never" sleep — can never actually fire).
             _ = &mut auto_sleep, if auto_deadline.is_some() => {
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::AutoStop;
             }
             // The auto-stop deadline was moved or cleared (live extend/cancel, or
@@ -1664,8 +1809,7 @@ async fn run_segment(
             // Stop-on-silence fired.
             () = wait_opt(&mut silence_stop), if silence_stop.is_some() => {
                 silence.on_stop_fired();
-                graceful_q(&mut stdin).await;
-                let _ = child.wait().await;
+                stop_and_wait_bounded(&mut child, &mut stdin).await;
                 break SegmentOutcome::SilenceStop;
             }
             // Silence warning fired.
@@ -1697,9 +1841,47 @@ async fn graceful_q(stdin: &mut Option<tokio::process::ChildStdin>) {
     }
 }
 
+/// Send the graceful `q` and wait for ffmpeg to exit, but never forever: past
+/// [`RecorderTimeouts::STOP_FINALIZE_MS`] a wedged finalise (or a hung device) is
+/// killed instead. Without this bound every one of the five stop paths in
+/// `run_segment` (graceful/disk/split/auto-stop/silence-stop) could freeze the
+/// WHOLE engine on a stuck `child.wait()` — the UI stuck on "Stopping" forever.
+/// Both the WAV/MKV decoupled captures stay playable even through a kill (that is
+/// the point of decoupling), so a bounded kill here loses nothing new.
+pub(crate) async fn stop_and_wait_bounded(
+    child: &mut tokio::process::Child,
+    stdin: &mut Option<tokio::process::ChildStdin>,
+) {
+    stop_and_wait_within(
+        child,
+        stdin,
+        Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS),
+    )
+    .await;
+}
+
+/// The bound-parameterised body of [`stop_and_wait_bounded`], split out so the
+/// timeout-kill behaviour is unit-testable without waiting on the real
+/// [`RecorderTimeouts::STOP_FINALIZE_MS`] (2 min).
+async fn stop_and_wait_within(
+    child: &mut tokio::process::Child,
+    stdin: &mut Option<tokio::process::ChildStdin>,
+    bound: Duration,
+) {
+    graceful_q(stdin).await;
+    if tokio::time::timeout(bound, child.wait()).await.is_err() {
+        tracing::error!(
+            timeout_ms = bound.as_millis(),
+            "recorder: ffmpeg did not finalise in time on stop — killing it"
+        );
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
+}
+
 /// A `Sleep` that fires after `d`, or never (a 100-year sleep) when `d` is None.
 /// Lets the `select!` arm exist unconditionally; the arm's `if` guard gates it.
-fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
+pub(crate) fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
     tokio::time::sleep(d.unwrap_or(Duration::from_secs(60 * 60 * 24 * 365 * 100)))
 }
 
@@ -1715,10 +1897,26 @@ async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>) {
 
 /// Spawn ffmpeg taking ownership of the child (the supervisor holds it for the
 /// segment's whole life; dropping it triggers `kill_on_drop`).
+/// Spawn a RECORDING ffmpeg segment. Unlike the shared [`spawn_ffmpeg`] (which
+/// pipes stdout for the preview/editor MJPEG readers), the recording capture has NO
+/// stdout consumer — its live preview is a file sink, not a pipe. Leaving stdout
+/// piped but undrained is a latent deadlock: if ffmpeg ever wrote to it, the full
+/// pipe would stall the process → dropped capture samples ("hakkete"). So we send
+/// stdout to null here. stdin stays piped (we write `q` for a graceful, container-
+/// finalising stop) and stderr stays piped (the progress/levels/error reader).
+/// `kill_on_drop` prevents a zombie ffmpeg if the supervisor task is dropped.
 async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child> {
+    use std::process::Stdio;
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     tracing::info!(?arg_refs, "recorder: spawning ffmpeg segment");
-    spawn_ffmpeg(&arg_refs).await
+    tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args(&arg_refs)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
 /// Emit a classified error to the renderer.
@@ -1886,16 +2084,43 @@ async fn finalize_one(
         None
     };
 
-    let final_path = match finalize_deliverable(deliverable, preroll_path).await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!(
-                deliverable = %deliverable.primary_path,
-                "recorder: concat failed, keeping primary as history file: {e}"
-            );
-            deliverable.primary_path.clone()
+    // Decoupled capture: the deliverable's primary is a WAV (audio) or MKV (video)
+    // capture, so ask `finalize_deliverable` to encode/remux it to the user's
+    // format. The capture stem (carrying any `_2` split suffix) maps back into the
+    // save folder with the delivery extension.
+    let audio_only = opts.video_device_name.is_none();
+    let delivery_spec = {
+        let delivery_dir = delivery_dir_of(&opts.output_path);
+        let ext = delivery_ext(&opts.output_path);
+        DeliverySpec {
+            delivery_path: delivery_path_for(&deliverable.primary_path, &delivery_dir, &ext),
+            ext,
+            channels: match opts.channel_mode {
+                ChannelMode::Stereo => 2,
+                _ => 1,
+            },
+            sample_rate: opts.sample_rate,
+            bitrate_kbps: opts.bitrate_kbps,
+            mode: if audio_only {
+                DeliveryMode::AudioEncode
+            } else {
+                DeliveryMode::RemuxCopy
+            },
+            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
         }
     };
+
+    let final_path =
+        match finalize_deliverable(deliverable, preroll_path, Some(&delivery_spec)).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(
+                    deliverable = %deliverable.primary_path,
+                    "recorder: finalise failed, keeping primary as history file: {e}"
+                );
+                deliverable.primary_path.clone()
+            }
+        };
 
     // Guard: never record a missing / zero-byte / undecodable file in history.
     if !output_is_valid(std::path::Path::new(&final_path)).await {
@@ -2151,6 +2376,120 @@ mod tests {
             classic_directshow: false,
             video_input: None,
         }
+    }
+
+    #[test]
+    fn capture_dir_is_hidden_per_session_folder_beside_delivery() {
+        // The WAV capture lives in a hidden, session-scoped folder in the SAME
+        // directory as the delivery file (same volume → no cross-fs finalise).
+        let d = capture_dir("/rec/sermon.mp3", "1700000000000");
+        assert_eq!(
+            d,
+            std::path::PathBuf::from("/rec/.sundayrec-capture-1700000000000")
+        );
+        // A bare filename (parent is the empty relative path) → the capture folder
+        // sits in the cwd. Never panics; the real recorder always passes an absolute
+        // delivery path so this is only a defensive edge case.
+        let d2 = capture_dir("sermon.mp3", "42");
+        assert_eq!(d2, std::path::PathBuf::from(".sundayrec-capture-42"));
+    }
+
+    #[test]
+    fn capture_base_path_keeps_the_delivery_stem() {
+        // The capture base carries the delivery's OWN stem so `delivery_path_for`
+        // maps it straight back, and splits derive `<stem>_2.<ext>`.
+        let cap = capture_dir("/rec/sermon.mp3", "1");
+        assert_eq!(
+            capture_base_path(&cap, "/rec/sermon.mp3", "wav"),
+            "/rec/.sundayrec-capture-1/sermon.wav"
+        );
+        // Video sessions capture to crash-tolerant Matroska.
+        assert_eq!(
+            capture_base_path(&cap, "/rec/service.mp4", "mkv"),
+            "/rec/.sundayrec-capture-1/service.mkv"
+        );
+        // Round-trip: capture base → delivery path reproduces the user's file.
+        let base = capture_base_path(&cap, "/rec/sermon.mp3", "wav");
+        assert_eq!(
+            delivery_path_for(
+                &base,
+                &delivery_dir_of("/rec/sermon.mp3"),
+                &delivery_ext("/rec/sermon.mp3")
+            ),
+            "/rec/sermon.mp3"
+        );
+    }
+
+    #[test]
+    fn delivery_ext_and_dir_helpers() {
+        assert_eq!(delivery_ext("/rec/sermon.MP3"), "mp3"); // lowercased
+        assert_eq!(delivery_ext("/rec/sermon"), ""); // no extension
+        assert_eq!(delivery_dir_of("/rec/sermon.mp3"), "/rec");
+        assert_eq!(delivery_dir_of("sermon.mp3"), ""); // no parent
+    }
+
+    #[test]
+    fn is_capture_drop_warning_matches_ffmpeg_phrasings() {
+        // Real ffmpeg drop/back-pressure lines (any case) are flagged…
+        assert!(is_capture_drop_warning(
+            "[avfoundation @ 0x7f] Thread message queue blocking; consider raising the thread_queue_size"
+        ));
+        assert!(is_capture_drop_warning("Audio queue overflow"));
+        assert!(is_capture_drop_warning(
+            "Non monotonically increasing dts to muxer in stream 0"
+        ));
+        assert!(is_capture_drop_warning("1234 packets dropped"));
+        // …but ordinary progress / silence lines are NOT.
+        assert!(!is_capture_drop_warning(
+            "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"
+        ));
+        assert!(!is_capture_drop_warning(
+            "[silencedetect @ 0x1] silence_start: 3.2"
+        ));
+    }
+
+    #[tokio::test]
+    async fn stop_and_wait_within_kills_a_hung_finalise_past_the_bound() {
+        // Models a wedged finalise (e.g. a stuck +faststart rewrite, or a hung
+        // device): the child ignores `q` and just sleeps. Past the bound, the
+        // helper must kill it rather than block the caller forever — this is the
+        // exact freeze the UI-stuck-on-"Stopping" bug was.
+        let mut child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn `sleep`");
+        let mut stdin = child.stdin.take();
+        let start = std::time::Instant::now();
+        stop_and_wait_within(&mut child, &mut stdin, Duration::from_millis(150)).await;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "must not block past the bound"
+        );
+        // The child is gone (killed) — `try_wait` reports Some without blocking.
+        assert!(
+            child.try_wait().ok().flatten().is_some(),
+            "the hung child must have been killed"
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_and_wait_within_returns_promptly_on_a_cooperative_exit() {
+        // A process that actually exits (models a clean ffmpeg finalise) must not
+        // be held up for the full bound.
+        let mut child = tokio::process::Command::new("true")
+            .stdin(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn `true`");
+        let mut stdin = child.stdin.take();
+        let start = std::time::Instant::now();
+        stop_and_wait_within(&mut child, &mut stdin, Duration::from_secs(30)).await;
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "a cooperative exit must not wait out the bound"
+        );
     }
 
     #[test]

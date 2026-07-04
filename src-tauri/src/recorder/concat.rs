@@ -40,13 +40,50 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use sundayrec_core::capture::audio_encode_args;
 use sundayrec_core::recorder::{
     build_concat_args, build_concat_list, concat_inputs, concat_needed, is_plausible_output,
     Deliverable,
 };
+use sundayrec_core::recovery::DeliveryMode;
 
 use crate::error::{AppError, AppResult};
 use crate::media::ffmpeg::{ffmpeg_path, ffprobe_path};
+
+/// How to DELIVER a finalised deliverable in the decoupled-capture path: after the
+/// capture fragments are concat-stitched, turn the merged capture into the user's
+/// chosen format at `delivery_path` — ENCODING a WAV audio capture
+/// ([`DeliveryMode::AudioEncode`]) or STREAM-COPYING an MKV video capture into
+/// mp4/mov ([`DeliveryMode::RemuxCopy`], `-c copy`, seconds even for hours).
+///
+/// WHY the two-step (capture → deliver): the capturing ffmpeg writes a
+/// crash-tolerant, back-pressure-free format — lossless PCM for audio (a real-time
+/// lossy encoder can never fall behind and push avfoundation into dropping samples:
+/// the "hakkete" bug) and Matroska for video (playable even after a crash, unlike a
+/// moov-less mp4; also removes the `+faststart` whole-file rewrite from capture
+/// stop). The encode/remux is deferred here, where it can no longer harm the
+/// capture. Passing `None` to [`finalize_deliverable`] keeps the LEGACY path — the
+/// fragments already ARE the delivery file, so no transcode happens.
+#[derive(Debug, Clone)]
+pub(crate) struct DeliverySpec {
+    /// Where the transcoded delivery file lands (the user-visible recording).
+    pub delivery_path: String,
+    /// Delivery container extension (`mp3`/`wav`/`flac`/`m4a`; `mp4`/`mov` for
+    /// remux), driving the codec via [`audio_encode_args`] in AudioEncode mode.
+    pub ext: String,
+    /// Output channel count (1 mono / 2 stereo). Unused by RemuxCopy.
+    pub channels: u8,
+    /// Forced output sample rate, or `None` to keep the captured native rate.
+    /// Unused by RemuxCopy.
+    pub sample_rate: Option<u32>,
+    /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC and RemuxCopy.
+    pub bitrate_kbps: u32,
+    /// Encode (audio) or stream-copy (video).
+    pub mode: DeliveryMode,
+    /// RemuxCopy only: tag the video stream `hvc1` (HEVC in mp4/mov — Apple
+    /// players reject the default `hev1`).
+    pub hvc1_tag: bool,
+}
 
 /// Hard limit on the concat-copy ffmpeg run. A stream-copy of even a multi-hour
 /// service is fast; anything past this means ffmpeg is wedged. Ports the Electron
@@ -76,9 +113,10 @@ fn is_windows() -> bool {
 /// primary as the history file.
 ///
 /// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
-pub async fn finalize_deliverable(
+pub(crate) async fn finalize_deliverable(
     deliverable: &Deliverable,
     preroll_clip_path: Option<&str>,
+    delivery: Option<&DeliverySpec>,
 ) -> AppResult<String> {
     let primary = deliverable.primary_path.clone();
 
@@ -94,63 +132,157 @@ pub async fn finalize_deliverable(
         None => None,
     };
 
-    if !concat_needed(&deliverable.fragments, preroll.is_some()) {
-        // Single fragment, no pre-roll → the primary file is already complete.
-        return Ok(primary);
-    }
+    // ── Step 1: produce the merged capture file at `primary` ─────────────────────
+    // When a concat is needed (multiple fragments or a pre-roll to prepend) we
+    // stitch them losslessly (`-c copy`) into `primary`; otherwise the single
+    // fragment already IS `primary`. In the decoupled-audio path these are WAV
+    // capture files; in the legacy/video path they are the delivery container.
+    if concat_needed(&deliverable.fragments, preroll.is_some()) {
+        let inputs = concat_inputs(&deliverable.fragments, preroll);
+        let primary_path = PathBuf::from(&primary);
+        let (list_path, tmp_path) = scratch_paths(&primary_path);
 
-    let inputs = concat_inputs(&deliverable.fragments, preroll);
-    let primary_path = PathBuf::from(&primary);
-    let (list_path, tmp_path) = scratch_paths(&primary_path);
+        // 1a. Write the concat-demuxer list.
+        let list_body = build_concat_list(&inputs, is_windows());
+        tokio::fs::write(&list_path, list_body.as_bytes())
+            .await
+            .map_err(|e| {
+                AppError::Recording(format!(
+                    "concat: failed to write list {}: {e}",
+                    list_path.display()
+                ))
+            })?;
 
-    // 1. Write the concat-demuxer list.
-    let list_body = build_concat_list(&inputs, is_windows());
-    tokio::fs::write(&list_path, list_body.as_bytes())
-        .await
-        .map_err(|e| {
-            AppError::Recording(format!(
-                "concat: failed to write list {}: {e}",
-                list_path.display()
-            ))
-        })?;
+        // 1b. Run ffmpeg concat (-c copy) under the watchdog.
+        let args = build_concat_args(&list_path.to_string_lossy(), &tmp_path.to_string_lossy());
+        let run = run_concat(&args).await;
+        if let Err(e) = run {
+            // Leave the fragments on disk; only the (incomplete) temp + list are litter.
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            let _ = tokio::fs::remove_file(&list_path).await;
+            return Err(e);
+        }
 
-    // 2. Run ffmpeg concat (-c copy) under the watchdog.
-    let args = build_concat_args(&list_path.to_string_lossy(), &tmp_path.to_string_lossy());
-    let run = run_concat(&args).await;
-    if let Err(e) = run {
-        // Leave the fragments on disk; only the (incomplete) temp + list are litter.
-        let _ = tokio::fs::remove_file(&tmp_path).await;
+        // 1c. VALIDATE the muxed temp BEFORE it can replace the primary. A 0-byte /
+        //     header-only / silently-skipped concat must never overwrite a good
+        //     recording — keep the primary + fragments on disk and surface the error.
+        if !output_is_valid(&tmp_path).await {
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            let _ = tokio::fs::remove_file(&list_path).await;
+            return Err(AppError::Recording(format!(
+                "concat: produced an invalid/zero-byte output for {primary}; kept the primary + fragments"
+            )));
+        }
+
+        // 1d. Atomically replace the primary file with the muxed temp.
+        atomic_replace(&tmp_path, &primary_path).await?;
+
+        // 1e. Delete the now-merged fragment files (fragments[1..]) + the list.
+        //     `fragments[0]` == primary_path, which now holds the merged result.
+        for frag in deliverable.fragments.iter().skip(1) {
+            let _ = tokio::fs::remove_file(frag).await;
+        }
         let _ = tokio::fs::remove_file(&list_path).await;
-        return Err(e);
+
+        tracing::info!(
+            inputs = inputs.len(),
+            output = %primary,
+            "recorder: finalised deliverable (concat -c copy)"
+        );
     }
 
-    // 3. VALIDATE the muxed temp BEFORE it can replace the primary. A 0-byte /
-    //    header-only / silently-skipped concat must never overwrite a good
-    //    recording — keep the primary + fragments on disk and surface the error.
-    if !output_is_valid(&tmp_path).await {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        let _ = tokio::fs::remove_file(&list_path).await;
-        return Err(AppError::Recording(format!(
-            "concat: produced an invalid/zero-byte output for {primary}; kept the primary + fragments"
-        )));
+    // ── Step 2: deliver ──────────────────────────────────────────────────────────
+    // Legacy (`None`): `primary` IS the finished delivery file — return it.
+    // Decoupled capture (`Some`): `primary` is a WAV (audio) or MKV (video)
+    // capture; encode/remux it to the user's chosen format, validate it, and drop
+    // the capture file.
+    match delivery {
+        None => Ok(primary),
+        Some(spec) => {
+            if let Err(e) = transcode_capture_to_delivery(&primary, spec).await {
+                // Keep the capture on disk so nothing is lost to a failed delivery —
+                // WAV and MKV are both fully playable recordings in their own right.
+                tracing::error!(
+                    capture = %primary,
+                    delivery = %spec.delivery_path,
+                    "recorder: delivery transcode failed, keeping the capture file: {e}"
+                );
+                return Err(e);
+            }
+            if !output_is_valid(Path::new(&spec.delivery_path)).await {
+                return Err(AppError::Recording(format!(
+                    "concat: delivery transcode produced an invalid/zero-byte file {}; kept the capture {primary}",
+                    spec.delivery_path
+                )));
+            }
+            // The delivery file is whole — the capture is now redundant litter.
+            let _ = tokio::fs::remove_file(&primary).await;
+            tracing::info!(
+                capture = %primary,
+                delivery = %spec.delivery_path,
+                "recorder: delivered (capture → {})",
+                spec.ext
+            );
+            Ok(spec.delivery_path.clone())
+        }
     }
+}
 
-    // 4. Atomically replace the primary file with the muxed temp.
-    atomic_replace(&tmp_path, &primary_path).await?;
-
-    // 5. Delete the now-merged fragment files (fragments[1..]) + the list.
-    //    `fragments[0]` == primary_path, which now holds the merged result.
-    for frag in deliverable.fragments.iter().skip(1) {
-        let _ = tokio::fs::remove_file(frag).await;
+/// Build the one-shot delivery ffmpeg arguments for a merged capture file. Pure so
+/// the argument shape is unit-tested without a process.
+///
+/// - `AudioEncode`: `-i <wav> <audio_encode_args> -y <delivery>` — the SAME
+///   [`audio_encode_args`] seam the recorder uses, so channels / sample-rate /
+///   bitrate match the recording's settings.
+/// - `RemuxCopy`: `-i <mkv> -map 0 -c copy [-tag:v hvc1] [-movflags +faststart]
+///   -y <delivery>` — a lossless stream copy into the delivery container (seconds
+///   even for a multi-hour service). `+faststart` (progressive playback) only for
+///   the ISO/QuickTime containers, mirroring the capture-args gate.
+fn delivery_transcode_args(capture: &str, spec: &DeliverySpec) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "-nostdin".into(),
+        "-hide_banner".into(),
+        "-i".into(),
+        capture.to_string(),
+    ];
+    match spec.mode {
+        DeliveryMode::AudioEncode => {
+            args.extend(audio_encode_args(
+                &spec.ext,
+                spec.channels,
+                spec.sample_rate,
+                spec.bitrate_kbps,
+            ));
+        }
+        DeliveryMode::RemuxCopy => {
+            // Take every stream (video + audio) untouched.
+            args.push("-map".into());
+            args.push("0".into());
+            args.push("-c".into());
+            args.push("copy".into());
+            if spec.hvc1_tag {
+                // HEVC into mp4/mov must be tagged hvc1 — QuickTime/Apple players
+                // reject the default hev1.
+                args.push("-tag:v".into());
+                args.push("hvc1".into());
+            }
+            if matches!(spec.ext.as_str(), "mp4" | "mov" | "m4v") {
+                args.push("-movflags".into());
+                args.push("+faststart".into());
+            }
+        }
     }
-    let _ = tokio::fs::remove_file(&list_path).await;
+    args.push("-y".into());
+    args.push(spec.delivery_path.clone());
+    args
+}
 
-    tracing::info!(
-        inputs = inputs.len(),
-        output = %primary,
-        "recorder: finalised deliverable (concat -c copy)"
-    );
-    Ok(primary)
+/// Turn a merged capture file into the delivery file (encode or remux per
+/// [`DeliverySpec::mode`]), under the concat watchdog.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — spawns ffmpeg + touches the filesystem.
+async fn transcode_capture_to_delivery(capture: &str, spec: &DeliverySpec) -> AppResult<()> {
+    run_concat(&delivery_transcode_args(capture, spec)).await
 }
 
 /// `true` if `path` exists and is past the pure size gate (non-empty enough to be
@@ -301,7 +433,7 @@ mod tests {
         // No concat needed → returns the primary path without spawning ffmpeg or
         // touching the filesystem (the file need not even exist for this path).
         let d = deliverable("/rec/g.mp3", &["/rec/g.mp3"]);
-        let out = finalize_deliverable(&d, None).await.unwrap();
+        let out = finalize_deliverable(&d, None, None).await.unwrap();
         assert_eq!(out, "/rec/g.mp3");
     }
 
@@ -360,7 +492,7 @@ mod tests {
         tokio::fs::write(&primary, vec![0u8; 4096]).await.unwrap();
         let primary_s = primary.to_string_lossy().into_owned();
         let d = deliverable(&primary_s, &[&primary_s]);
-        let out = finalize_deliverable(&d, Some("/nope/stale_preroll.mp3"))
+        let out = finalize_deliverable(&d, Some("/nope/stale_preroll.mp3"), None)
             .await
             .unwrap();
         assert_eq!(out, primary_s, "primary returned untouched");
@@ -408,7 +540,7 @@ mod tests {
         let frag2_s = frag2.to_string_lossy().into_owned();
 
         let d = deliverable(&primary_s, &[&primary_s, &frag2_s]);
-        let _ = finalize_deliverable(&d, None).await;
+        let _ = finalize_deliverable(&d, None, None).await;
 
         // Invariant across success/failure: the deliverable's primary still exists
         // and is non-empty — the recording is never lost.
@@ -443,7 +575,9 @@ mod tests {
         let preroll_s = preroll.to_string_lossy().into_owned();
 
         let d = deliverable(&primary_s, &[&primary_s]);
-        let out = finalize_deliverable(&d, Some(&preroll_s)).await.unwrap();
+        let out = finalize_deliverable(&d, Some(&preroll_s), None)
+            .await
+            .unwrap();
         assert_eq!(out, primary_s, "below-gate pre-roll dropped, primary kept");
         // The below-gate pre-roll guard means no concat ran → primary untouched.
         assert_eq!(tokio::fs::read(&primary).await.unwrap(), vec![0u8; 8192]);
@@ -461,5 +595,81 @@ mod tests {
         atomic_replace(&tmp, &target).await.unwrap();
         assert!(!tmp.exists(), "temp consumed");
         assert_eq!(tokio::fs::read(&target).await.unwrap(), b"merged");
+    }
+
+    // ── delivery_transcode_args — both delivery modes ─────────────────────────
+
+    fn has_pair(args: &[String], a: &str, b: &str) -> bool {
+        args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    fn spec(ext: &str, mode: DeliveryMode, hvc1_tag: bool) -> DeliverySpec {
+        DeliverySpec {
+            delivery_path: format!("/rec/out.{ext}"),
+            ext: ext.into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 256,
+            mode,
+            hvc1_tag,
+        }
+    }
+
+    #[test]
+    fn audio_encode_args_shape() {
+        // AudioEncode: the WAV capture is ENCODED via the audio_encode_args seam.
+        let args = delivery_transcode_args(
+            "/cap/sermon.wav",
+            &spec("mp3", DeliveryMode::AudioEncode, false),
+        );
+        assert!(has_pair(&args, "-i", "/cap/sermon.wav"));
+        assert!(has_pair(&args, "-c:a", "libmp3lame"));
+        assert!(has_pair(&args, "-b:a", "256k"));
+        assert!(has_pair(&args, "-ac", "2"));
+        // No -ar: native rate passes through.
+        assert!(!args.iter().any(|a| a == "-ar"));
+        // Never a stream copy in encode mode.
+        assert!(!args.iter().any(|a| a == "copy"));
+        assert_eq!(args.last().unwrap(), "/rec/out.mp3");
+    }
+
+    #[test]
+    fn remux_copy_args_stream_copy_all_with_faststart() {
+        // RemuxCopy: every stream copied untouched, faststart for the ISO container.
+        let args = delivery_transcode_args(
+            "/cap/service.mkv",
+            &spec("mp4", DeliveryMode::RemuxCopy, false),
+        );
+        assert!(has_pair(&args, "-i", "/cap/service.mkv"));
+        assert!(has_pair(&args, "-map", "0"), "all streams mapped");
+        assert!(has_pair(&args, "-c", "copy"), "lossless stream copy");
+        assert!(has_pair(&args, "-movflags", "+faststart"));
+        // h264 needs no FourCC tag.
+        assert!(!args.iter().any(|a| a == "-tag:v"));
+        // No audio re-encode in remux mode.
+        assert!(!args.iter().any(|a| a == "-c:a"));
+        assert_eq!(args.last().unwrap(), "/rec/out.mp4");
+    }
+
+    #[test]
+    fn remux_copy_stamps_hvc1_for_hevc() {
+        // An HEVC recording must be tagged hvc1 in mp4/mov — Apple players reject
+        // the default hev1.
+        let args = delivery_transcode_args(
+            "/cap/service.mkv",
+            &spec("mp4", DeliveryMode::RemuxCopy, true),
+        );
+        assert!(has_pair(&args, "-tag:v", "hvc1"));
+    }
+
+    #[test]
+    fn remux_copy_omits_faststart_for_non_iso_container() {
+        // Defensive: a non-ISO delivery ext (shouldn't happen for video — the
+        // scheduler pins mp4/mov) must not get the mp4-only movflags.
+        let args = delivery_transcode_args(
+            "/cap/service.mkv",
+            &spec("mkv", DeliveryMode::RemuxCopy, false),
+        );
+        assert!(!args.iter().any(|a| a == "-movflags"));
     }
 }

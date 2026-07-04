@@ -96,6 +96,32 @@ pub fn low_disk_should_stop(free_bytes: u64, headroom_bytes: u64) -> bool {
     free_bytes < headroom_bytes
 }
 
+/// Extra headroom the FINALISE step needs, on top of the steady-state
+/// [`min_disk_headroom_bytes`], so a graceful low-disk stop doesn't itself leave
+/// too little room for the decoupled-capture delivery step to complete. The
+/// delivery step briefly needs BOTH the still-present capture AND its new
+/// delivery file on disk at once — the disk-vacuum-during-recording guard was
+/// previously blind to this and could stop "safely" with too little margin for
+/// the delivery encode/remux to actually finish.
+///
+/// `captured_bytes` is the CURRENT (open) segment's capture size — a deliberately
+/// simple estimate (not a full-session sum across every already-finalised
+/// deliverable, which need no reserve since they're already delivered):
+///   - Video (`RemuxCopy`, since the video decoupling): the delivery is a
+///     lossless `-c copy` stream copy, so it lands at roughly the SAME size as
+///     the MKV capture — reserve the full `captured_bytes`.
+///   - Audio (`AudioEncode`): the delivery is lossy-encoded from lossless PCM
+///     WAV, landing at roughly a SIXTH of the capture's size for typical
+///     settings (WAV ≈ 1.5 Mbps vs. a 192–256 kbps delivery) — `/5` leaves
+///     margin without over-reserving on a long capture.
+pub fn finalize_reserve_bytes(video_active: bool, captured_bytes: u64) -> u64 {
+    if video_active {
+        captured_bytes
+    } else {
+        captured_bytes / 5
+    }
+}
+
 /// Bytes-per-GB the Electron message used for its `.toFixed(1)` GB string
 /// (`1_073_741_824` = 1024³, see `preflight.ts:55`).
 const BYTES_PER_GB: f64 = 1_073_741_824.0;
@@ -250,6 +276,43 @@ mod tests {
             MIN_DISK_AUDIO_BYTES,
             min_disk_headroom_bytes(true)
         ));
+    }
+
+    // ── finalize_reserve_bytes ───────────────────────────────────────────────
+
+    #[test]
+    fn finalize_reserve_video_is_the_full_capture_size() {
+        // Video's decoupled delivery is a lossless -c copy remux → the delivery
+        // lands at roughly the SAME size as the MKV capture.
+        assert_eq!(finalize_reserve_bytes(true, 10_000_000_000), 10_000_000_000);
+        assert_eq!(finalize_reserve_bytes(true, 0), 0);
+    }
+
+    #[test]
+    fn finalize_reserve_audio_is_a_fifth_of_the_capture_size() {
+        // Audio's WAV capture is lossy-encoded down to roughly a sixth of its
+        // size for typical settings; /5 leaves margin.
+        assert_eq!(finalize_reserve_bytes(false, 1_000_000_000), 200_000_000);
+        assert_eq!(finalize_reserve_bytes(false, 0), 0);
+    }
+
+    #[test]
+    fn low_disk_should_stop_accounts_for_the_finalize_reserve() {
+        // Without the reserve, `free` clears the steady-state headroom — but the
+        // finalise step needs more than that to actually complete. Feeding the
+        // reserve into the SAME low_disk_should_stop call (headroom + reserve) is
+        // how the engine's disk-tick uses this.
+        let headroom = min_disk_headroom_bytes(false); // 500 MB
+        let reserve = finalize_reserve_bytes(false, 2_000_000_000); // 400 MB
+        let free = headroom + 100_000_000; // 600 MB — clears headroom alone
+        assert!(
+            !low_disk_should_stop(free, headroom),
+            "sanity: headroom alone would NOT stop"
+        );
+        assert!(
+            low_disk_should_stop(free, headroom + reserve),
+            "the finalize reserve pushes the guard to stop first"
+        );
     }
 
     // ── disk_space_finding ───────────────────────────────────────────────────

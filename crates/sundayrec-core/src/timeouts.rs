@@ -66,6 +66,14 @@ impl RecorderTimeouts {
     /// fire a warning once (per stretch), even when stop-on-silence is off — so
     /// a muted mixer doesn't yield a silent file with no alert.
     pub const SILENCE_WARN_MS: u64 = 60_000;
+
+    /// Graceful-stop finalise bound: after sending `q`, how long ffmpeg may take
+    /// to flush + finalise its container before we kill it. Without this bound a
+    /// wedged finalise froze the whole engine (UI stuck on "Stopping" forever).
+    /// 2 min is generous — the decoupled captures (WAV/MKV) finalise in moments
+    /// (no `+faststart` whole-file rewrite happens at capture stop any more), and
+    /// both containers stay playable even through a kill.
+    pub const STOP_FINALIZE_MS: u64 = 120_000;
 }
 
 #[cfg(test)]
@@ -89,5 +97,6 @@ mod tests {
         assert_eq!(RecorderTimeouts::PROGRESS_THROTTLE_MS, 5_000);
         assert_eq!(RecorderTimeouts::NDI_STOP_TIMEOUT_MS, 2_000);
         assert_eq!(RecorderTimeouts::SILENCE_WARN_MS, 60_000);
+        assert_eq!(RecorderTimeouts::STOP_FINALIZE_MS, 120_000);
     }
 }

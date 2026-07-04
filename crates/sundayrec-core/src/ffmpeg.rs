@@ -89,16 +89,28 @@ pub fn build_silence_detect_filter(
 ///   native sample rate + the non-blocking levels send, not this value.
 /// - `measure_perchannel=Peak_level` restricts the measurement to ONLY the
 ///   per-channel peak we need (keeps stderr small and the parser unambiguous).
-/// - `ametadata=mode=print:file=/dev/stderr` is what makes the meter LIVE:
-///   `astats` alone only logs its summary ONCE at EOF (the meter sat frozen for
-///   the whole take); `ametadata` prints the current frame metadata every frame,
-///   e.g. `lavfi.astats.1.Peak_level=-12.5` (ch1=left) / `…2.Peak_level=…`
-///   (ch2=right), which [`crate::levels::parse_ametadata_peak`] reads. NOTE:
-///   `/dev/stderr` is a unix path — the recorder is macOS-focused; Windows would
-///   need a different sink (deferred).
-pub fn build_levels_detect_filter() -> String {
-    "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
-        .to_string()
+/// - `ametadata=mode=print:file=…` is what makes the meter LIVE: `astats` alone
+///   only logs its summary ONCE at EOF (the meter sat frozen for the whole take);
+///   `ametadata` prints the current frame metadata every frame, e.g.
+///   `lavfi.astats.1.Peak_level=-12.5` (ch1=left) / `…2.Peak_level=…` (ch2=right),
+///   which [`crate::levels::parse_ametadata_peak`] reads — from the SAME stderr
+///   stream the reader already drains for progress/silence/error lines, on every
+///   platform. The sink path is the one thing that differs by platform:
+///   `/dev/stderr` is a unix path (mac/linux); Windows has no such path, so it
+///   uses ffmpeg's `pipe:` AVIO protocol addressed by file-descriptor NUMBER
+///   (`pipe\:2`, escaped because `:` is the filter-option separator) — ffmpeg's
+///   own CRT maps fd 2 to the process's real stderr handle on Windows too, so the
+///   engine's existing stderr reader picks the lines up unchanged.
+///   ⚠️ HARDWARE-UNVERIFIED on Windows — verify on a rig before shipping the
+///   Windows dshow/cpal capture paths with live levels on.
+pub fn build_levels_detect_filter(platform: Platform) -> String {
+    let sink = match platform {
+        Platform::Windows => r"pipe\:2",
+        Platform::MacOS | Platform::Linux => "/dev/stderr",
+    };
+    format!(
+        "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file={sink}"
+    )
 }
 
 #[cfg(test)]
@@ -108,14 +120,25 @@ mod tests {
     #[test]
     fn levels_filter_is_perchannel_peak_passthrough() {
         assert_eq!(
-            build_levels_detect_filter(),
+            build_levels_detect_filter(Platform::MacOS),
             "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
         );
     }
 
     #[test]
+    fn levels_filter_sink_is_platform_specific() {
+        // mac/linux: the unix stderr path. Windows: no such path — ffmpeg's own
+        // `pipe:` AVIO protocol addressed by fd NUMBER (2 = stderr), which the CRT
+        // maps to the real stderr handle even on Windows. Escaped `\:` because
+        // `:` is the filter-option separator.
+        assert!(build_levels_detect_filter(Platform::MacOS).ends_with("file=/dev/stderr"));
+        assert!(build_levels_detect_filter(Platform::Linux).ends_with("file=/dev/stderr"));
+        assert!(build_levels_detect_filter(Platform::Windows).ends_with(r"file=pipe\:2"));
+    }
+
+    #[test]
     fn levels_filter_prints_live_per_frame_metadata() {
-        let f = build_levels_detect_filter();
+        let f = build_levels_detect_filter(Platform::MacOS);
         assert!(f.starts_with("astats="), "must be an astats filter");
         assert!(f.contains("metadata=1"), "needs metadata output");
         assert!(f.contains("reset=5"), "needs a short, responsive window");

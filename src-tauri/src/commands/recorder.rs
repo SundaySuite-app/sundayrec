@@ -101,33 +101,25 @@ pub async fn start_recording(
     //   clip of audio captured BEFORE this press, honouring `pre_roll_seconds`.
     //   `None` window / inactive loop / nothing-captured → no clip.
     let pre_roll_seconds = crate::settings::load(&db.pool).await?.pre_roll_seconds;
+    // Pre-roll applies to AUDIO-ONLY recordings only. The harvested clip is
+    // audio-only; `-c copy`-prepending it onto a VIDEO deliverable would concat
+    // files with different stream layouts (audio-only vs video+audio) → a broken
+    // or rejected file. A proper video pre-roll (rolling camera buffer) is a
+    // separate feature; until then the clip is simply not harvested for video.
+    let audio_only_session = opts.video_device_name.is_none();
     let harvest = async {
-        match (pre_roll_seconds, preroll.is_active()) {
+        match (pre_roll_seconds, preroll.is_active() && audio_only_session) {
             (secs, true) if secs > 0 => {
-                // Match the recording's REAL codec + container so the F3.3a prepend
-                // concat is a lossless `-c copy`. The codec is derived from the
-                // recording's own output extension (mp3→libmp3lame, wav→pcm_s16le,
-                // flac→flac, m4a/aac→aac) — NOT hardcoded to AAC, which would mux an
-                // AAC clip onto a non-AAC recording and corrupt the file. Channels
-                // and sample rate mirror the recording's resolved opts.
+                // Audio-only recordings capture to a lossless WAV (the encode is
+                // decoupled to finalisation — the anti-"hakkete" fix), so the pre-roll
+                // is harvested as PCM/WAV too: the `-c copy` prepend into the WAV
+                // capture then stays lossless AND container-compatible. Channels
+                // mirror the recording's resolved opts; PCM carries no bitrate.
                 let channels = match opts.channel_mode {
                     sundayrec_core::settings::ChannelMode::Stereo => 2,
                     _ => 1,
                 };
-                let container_ext = std::path::Path::new(&opts.output_path)
-                    .extension()
-                    .map(|e| e.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let codec = sundayrec_core::capture::codec_for_extension(&container_ext);
-                // Empty/unknown extension → use the fallback codec's own container
-                // so codec and container always agree.
-                let harvest_ext = if container_ext.is_empty() {
-                    codec.default_extension().to_string()
-                } else {
-                    container_ext
-                };
-                // Lossy codecs carry the recording's bitrate; PCM/FLAC must omit it.
-                let bitrate = codec.uses_bitrate().then_some(opts.bitrate_kbps);
+                let codec = sundayrec_core::capture::codec_for_extension("wav");
                 preroll
                     .harvest(
                         secs as u32,
@@ -140,8 +132,8 @@ pub async fn start_recording(
                         opts.sample_rate,
                         channels,
                         codec.ffmpeg_name(),
-                        bitrate,
-                        &harvest_ext,
+                        None, // PCM: no bitrate
+                        "wav",
                     )
                     .await
             }
