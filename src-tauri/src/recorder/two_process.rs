@@ -40,22 +40,26 @@
 //! are NOT exercised by the test suite. They MUST be smoke-tested on a rig.
 
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use sqlx::SqlitePool;
 use sundayrec_core::capture::VideoCaptureMode;
 use sundayrec_core::device_match::FfmpegDevice;
 use sundayrec_core::ffmpeg::Platform;
+use sundayrec_core::recorder::RecorderState;
 use sundayrec_core::two_process::{
     av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
 };
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::BufReader;
 
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
-use crate::media::ffmpeg::{ffprobe_path, spawn_ffmpeg};
-use crate::recorder::engine::{RecordingOpts, ERROR_EVENT, STATE_EVENT};
+use crate::media::ffmpeg::ffprobe_path;
+use crate::recorder::engine::{
+    now_ms, set_state, sleep_opt, stop_and_wait_bounded, RecordingOpts, ERROR_EVENT,
+};
 
 /// Hard limit on the mux ffmpeg run. A `-c:v copy` mux of even a multi-hour
 /// service is fast (audio re-encode dominates and is still real-time-ish);
@@ -105,14 +109,20 @@ pub async fn probe_start_time_sec(path: &str) -> Option<f64> {
 }
 
 /// Run a SIMPLE (non-split, non-reconnect) two-process video session: spawn the
-/// video + audio captures, record until `stop_rx` fires, gracefully stop both,
-/// probe their start times, mux with the decided A/V offset, and write ONE
-/// history row for the muxed deliverable.
+/// video + audio captures, record until `stop_rx` fires (or the auto-stop
+/// deadline on `stop_watch` is reached), gracefully stop both, probe their start
+/// times, mux with the decided A/V offset, and write ONE history row for the
+/// muxed deliverable.
 ///
 /// `video` MUST be present (the fallback only exists for video sessions; an
 /// audio-only session never needs it). `output_path` is the FINAL muxed file;
-/// the two temp captures are derived from it (`<stem>_vtmp.mp4`,
-/// `<stem>_atmp.m4a`) and cleaned up after a successful mux.
+/// the two temp captures are derived from it (`<stem>_vtmp.mkv`,
+/// `<stem>_atmp.mkv` — Matroska, crash-tolerant like the unified decoupled
+/// captures; irrelevant to the mux since video is stream-copied) and cleaned up
+/// after a successful mux. `last_state` / `stop_watch` mirror what
+/// `run_session` threads through the unified path, so this fallback participates
+/// in the SAME state-payload + live extend/cancel machinery instead of emitting a
+/// malformed `()` state event and ignoring `manual_max_minutes` entirely.
 ///
 /// Returns `Ok(())` on a clean mux (history row written, temps removed) and
 /// `Err` if a capture can't launch — so the caller can surface the failure. A
@@ -129,13 +139,20 @@ pub async fn run_two_process_session(
     audio: FfmpegDevice,
     video: FfmpegDevice,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
+    last_state: Arc<Mutex<RecorderState>>,
+    mut stop_watch: tokio::sync::watch::Receiver<Option<u64>>,
 ) -> AppResult<()> {
-    let video_temp = derive_temp_path(&opts.output_path, "_vtmp", "mp4");
-    let audio_temp = derive_temp_path(&opts.output_path, "_atmp", "m4a");
+    let video_temp = derive_temp_path(&opts.output_path, "_vtmp", "mkv");
+    let audio_temp = derive_temp_path(&opts.output_path, "_atmp", "mkv");
 
     let channels: u8 = match opts.channel_mode {
         sundayrec_core::settings::ChannelMode::Stereo => 2,
         _ => 1,
+    };
+    let hw_accel = opts.video_encoder == "hardware";
+    let video_codec = match opts.video_codec.as_str() {
+        "h265" | "hevc" => sundayrec_core::editor::VideoCodec::H265,
+        _ => sundayrec_core::editor::VideoCodec::H264,
     };
     // The camera INPUT mode resolved by the engine's probe — pins a size/rate the
     // device advertises so avfoundation opens the camera. Falls back to a safe
@@ -146,11 +163,23 @@ pub async fn run_two_process_session(
         height: 720,
         input_fps: 30,
     });
-    let video_args = build_video_capture_args(platform, &device_token(&video), &video_temp, mode);
-    let audio_args =
-        build_audio_capture_args(platform, &device_token(&audio), &audio_temp, channels);
-
-    let _ = app.emit(STATE_EVENT, ());
+    let video_args = build_video_capture_args(
+        platform,
+        &device_token(&video),
+        &video_temp,
+        mode,
+        opts.framerate,
+        hw_accel,
+        video_codec,
+    );
+    let audio_args = build_audio_capture_args(
+        platform,
+        &device_token(&audio),
+        &audio_temp,
+        channels,
+        opts.sample_rate,
+        opts.bitrate_kbps,
+    );
 
     // Spawn BOTH captures. If the second fails to launch, kill the first so we
     // don't leak a recording process, and report the failure.
@@ -164,6 +193,15 @@ pub async fn run_two_process_session(
         }
     };
 
+    let started_ms = now_ms();
+    set_state(
+        &app,
+        &last_state,
+        RecorderState::Recording,
+        0,
+        *stop_watch.borrow(),
+    );
+
     tracing::info!(
         video_temp = %video_temp,
         audio_temp = %audio_temp,
@@ -174,41 +212,84 @@ pub async fn run_two_process_session(
     // AND keep the video stderr TAIL so a capture failure can report the REAL
     // reason (the camera not opening) instead of a confusing downstream
     // "mux_failed".
-    let video_tail = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let video_tail = Arc::new(Mutex::new(String::new()));
     let video_stderr = video_child.stderr.take();
     let audio_stderr = audio_child.stderr.take();
     let vt = video_tail.clone();
     let video_log = video_stderr.map(|s| tauri::async_runtime::spawn(drain_stderr(s, "video", vt)));
     let audio_log = audio_stderr.map(|s| {
-        let sink = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = Arc::new(Mutex::new(String::new()));
         tauri::async_runtime::spawn(drain_stderr(s, "audio", sink))
     });
 
     let mut video_stdin = video_child.stdin.take();
     let mut audio_stdin = audio_child.stdin.take();
 
-    // Record until the user requests a stop (or either child dies — a death here
-    // ends the session; reconnect is out of scope for the simple fallback).
+    // Auto-stop: the SAME live watch channel `run_session` arms from
+    // `manual_max_minutes` and the extend/cancel commands move. Without this the
+    // fallback ignored the auto-stop setting entirely and ran until the user
+    // manually stopped or a device died.
+    let auto_remaining = |deadline: Option<u64>| -> Option<Duration> {
+        deadline.map(|d| Duration::from_millis(d.saturating_sub(now_ms())))
+    };
+    let mut auto_deadline: Option<u64> = *stop_watch.borrow();
+    let auto_sleep = sleep_opt(auto_remaining(auto_deadline));
+    tokio::pin!(auto_sleep);
+
+    // Record until the user requests a stop, the auto-stop deadline fires, or
+    // either child dies (a death here ends the session; reconnect is out of
+    // scope for the simple fallback).
     let mut video_died_early = false;
-    tokio::select! {
-        _ = stop_rx.recv() => {
-            tracing::info!("recorder: two-process — graceful stop requested");
-        }
-        status = video_child.wait() => {
-            video_died_early = true;
-            tracing::warn!(?status, "recorder: two-process — video process exited early");
-        }
-        status = audio_child.wait() => {
-            tracing::warn!(?status, "recorder: two-process — audio process exited early");
+    loop {
+        tokio::select! {
+            _ = stop_rx.recv() => {
+                tracing::info!("recorder: two-process — graceful stop requested");
+                break;
+            }
+            status = video_child.wait() => {
+                video_died_early = true;
+                tracing::warn!(?status, "recorder: two-process — video process exited early");
+                break;
+            }
+            status = audio_child.wait() => {
+                tracing::warn!(?status, "recorder: two-process — audio process exited early");
+                break;
+            }
+            _ = &mut auto_sleep, if auto_deadline.is_some() => {
+                tracing::info!("recorder: two-process — auto-stop deadline reached");
+                break;
+            }
+            changed = stop_watch.changed() => {
+                if changed.is_ok() {
+                    auto_deadline = *stop_watch.borrow();
+                    match auto_remaining(auto_deadline) {
+                        Some(rem) => auto_sleep.as_mut().reset(tokio::time::Instant::now() + rem),
+                        None => auto_sleep.as_mut().reset(
+                            tokio::time::Instant::now()
+                                + Duration::from_secs(60 * 60 * 24 * 365 * 100),
+                        ),
+                    }
+                    set_state(
+                        &app,
+                        &last_state,
+                        RecorderState::Recording,
+                        0,
+                        auto_deadline,
+                    );
+                }
+            }
         }
     }
 
-    // Graceful stop BOTH: send `q` so each container finalises cleanly (a kill
-    // would corrupt the MP4), then await both.
-    graceful_q(&mut video_stdin).await;
-    graceful_q(&mut audio_stdin).await;
-    let _ = video_child.wait().await;
-    let _ = audio_child.wait().await;
+    // Graceful stop BOTH, bounded (a wedged finalise on either side must not
+    // freeze this fallback the same way it could the unified engine — see
+    // `engine::stop_and_wait_bounded`). Concurrent, not sequential: sending `q`
+    // to both and waiting both in parallel avoids a worst case of two full
+    // timeout windows back to back.
+    tokio::join!(
+        stop_and_wait_bounded(&mut video_child, &mut video_stdin),
+        stop_and_wait_bounded(&mut audio_child, &mut audio_stdin),
+    );
     if let Some(h) = video_log {
         h.abort();
     }
@@ -225,7 +306,7 @@ pub async fn run_two_process_session(
         let reason = sundayrec_core::two_process::summarize_camera_failure(&tail);
         tracing::error!("recorder: two-process video capture failed: {reason}");
         emit_error(&app, "video_capture_failed", &reason);
-        write_history(&pool, &audio_temp, &audio, &opts).await;
+        write_history(&pool, &audio_temp, &audio, started_ms, now_ms()).await;
         return Ok(());
     }
 
@@ -260,7 +341,7 @@ pub async fn run_two_process_session(
         }
     };
 
-    write_history(&pool, &final_path, &audio, &opts).await;
+    write_history(&pool, &final_path, &audio, started_ms, now_ms()).await;
     Ok(())
 }
 
@@ -268,9 +349,8 @@ pub async fn run_two_process_session(
 ///
 /// ⚠️ HARDWARE-UNVERIFIED (spawns ffmpeg).
 async fn run_mux(args: &[String]) -> AppResult<()> {
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    tracing::info!(?arg_refs, "recorder: two-process — muxing");
-    let mut child = spawn_ffmpeg(&arg_refs).await?;
+    tracing::info!(?args, "recorder: two-process — muxing");
+    let mut child = spawn_owned(args).await?;
     match tokio::time::timeout(MUX_WATCHDOG, child.wait()).await {
         Ok(Ok(status)) if status.success() => Ok(()),
         Ok(Ok(status)) => Err(AppError::Recording(format!(
@@ -285,15 +365,16 @@ async fn run_mux(args: &[String]) -> AppResult<()> {
 }
 
 /// Write the muxed deliverable's history row (best-effort; a `None` pool or a DB
-/// error is a no-op / logged). `started_at`/`duration_ms` are best-effort: the
-/// container's own timeline drives playback, and the session-level timing model
-/// is owned by the unified engine — the two-process simple path records the
-/// finished-file size and the device name, matching `finalize_one`'s shape.
+/// error is a no-op / logged). `started_ms`/`ended_ms` are the wall-clock moments
+/// this fallback spawned its captures and finished stopping them — real values
+/// (previously `started_at: 0.0, duration_ms: None`, which sorted the recording
+/// to 1970 in any history view ordered by start time).
 async fn write_history(
     pool: &Option<SqlitePool>,
     final_path: &str,
     audio: &FfmpegDevice,
-    _opts: &RecordingOpts,
+    started_ms: u64,
+    ended_ms: u64,
 ) {
     let byte_size = tokio::fs::metadata(final_path)
         .await
@@ -304,8 +385,8 @@ async fn write_history(
         id: String::new(),
         file_path: final_path.to_string(),
         device_name: Some(audio.name.clone()),
-        started_at: 0.0,
-        duration_ms: None,
+        started_at: started_ms as f64,
+        duration_ms: Some(ended_ms.saturating_sub(started_ms) as f64),
         byte_size,
         created_at: 0.0,
         note: None,
@@ -339,19 +420,22 @@ fn device_token(d: &FfmpegDevice) -> String {
 }
 
 /// Spawn ffmpeg taking ownership of the child (drop triggers `kill_on_drop`).
+/// stdout is NULLED — none of this module's three ffmpeg processes (video
+/// capture / audio capture / mux) has a stdout consumer, and the shared
+/// `spawn_ffmpeg` pipes stdout unconditionally; an unread, growing pipe can
+/// eventually fill and stall the writer — the same latent-deadlock class fixed
+/// for the unified recording capture (`engine::spawn_ffmpeg_owned`).
 async fn spawn_owned(args: &[String]) -> AppResult<tokio::process::Child> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    tracing::info!(?arg_refs, "recorder: two-process — spawning capture");
-    spawn_ffmpeg(&arg_refs).await
-}
-
-/// Write ffmpeg `q\n` to stdin and drop it (EOF nudge) for a graceful finalise.
-/// Mirrors `engine::graceful_q`.
-async fn graceful_q(stdin: &mut Option<tokio::process::ChildStdin>) {
-    if let Some(mut pipe) = stdin.take() {
-        let _ = pipe.write_all(b"q\n").await;
-        let _ = pipe.flush().await;
-    }
+    tracing::info!(?arg_refs, "recorder: two-process — spawning ffmpeg");
+    tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args(&arg_refs)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
 /// Drain a child's stderr to the trace log so a failing capture is diagnosable,

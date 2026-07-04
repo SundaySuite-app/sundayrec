@@ -763,7 +763,7 @@ impl RecorderEngine {
 /// Emit a state change and remember it. Asserts the transition is legal via the
 /// core table (a refused transition is a logic bug — logged, but we still emit
 /// the requested state so the UI doesn't desync).
-fn set_state(
+pub(crate) fn set_state(
     app: &AppHandle,
     last_state: &Arc<Mutex<RecorderState>>,
     to: RecorderState,
@@ -1065,9 +1065,13 @@ async fn run_session(
                                     .into(),
                             },
                         );
-                        // Drop the empty/broken unified file before the fallback
-                        // writes its own temps + muxed output.
+                        // Drop the empty/broken unified file + its now-stale
+                        // recovery manifest before the fallback writes its own
+                        // temps + muxed output — the two-process path doesn't
+                        // extend this manifest, so it would otherwise sit as
+                        // harmless litter until a future startup scan skips it.
                         let _ = std::fs::remove_file(session.primary_path());
+                        crate::recorder::recovery::delete_manifest(&app, &session_id).await;
 
                         let result = crate::recorder::two_process::run_two_process_session(
                             app.clone(),
@@ -1077,6 +1081,8 @@ async fn run_session(
                             audio.clone(),
                             video_dev.clone(),
                             stop_rx,
+                            Arc::clone(&last_state),
+                            stop_watch.clone(),
                         )
                         .await;
                         match result {
@@ -1772,7 +1778,7 @@ async fn graceful_q(stdin: &mut Option<tokio::process::ChildStdin>) {
 /// WHOLE engine on a stuck `child.wait()` — the UI stuck on "Stopping" forever.
 /// Both the WAV/MKV decoupled captures stay playable even through a kill (that is
 /// the point of decoupling), so a bounded kill here loses nothing new.
-async fn stop_and_wait_bounded(
+pub(crate) async fn stop_and_wait_bounded(
     child: &mut tokio::process::Child,
     stdin: &mut Option<tokio::process::ChildStdin>,
 ) {
@@ -1805,7 +1811,7 @@ async fn stop_and_wait_within(
 
 /// A `Sleep` that fires after `d`, or never (a 100-year sleep) when `d` is None.
 /// Lets the `select!` arm exist unconditionally; the arm's `if` guard gates it.
-fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
+pub(crate) fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
     tokio::time::sleep(d.unwrap_or(Duration::from_secs(60 * 60 * 24 * 365 * 100)))
 }
 
