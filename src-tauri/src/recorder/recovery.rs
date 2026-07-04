@@ -114,16 +114,19 @@ async fn recover_session(pool: &SqlitePool, manifest: &SessionManifest) -> usize
             None
         };
 
-        // Decoupled-audio path: the manifest carries how to transcode the WAV
-        // capture fragments to the user's delivery format. `None` = legacy/video
-        // (the fragments already ARE the delivery file → no transcode). The WAV
-        // primary's stem (with any `_2` split suffix) maps back into the save folder.
+        // Decoupled capture: the manifest carries how to finish the capture
+        // fragments — encode a WAV (audio) or remux an MKV (video) to the user's
+        // delivery format. `None` = legacy (the fragments already ARE the delivery
+        // file → no transcode). The capture primary's stem (with any `_2` split
+        // suffix) maps back into the save folder.
         let delivery_spec = manifest.delivery_encode.as_ref().map(|enc| DeliverySpec {
             delivery_path: delivery_path_for(&dm.primary_path, &enc.delivery_dir, &enc.ext),
             ext: enc.ext.clone(),
             channels: enc.channels,
             sample_rate: enc.sample_rate,
             bitrate_kbps: enc.bitrate_kbps,
+            mode: enc.mode,
+            hvc1_tag: enc.hvc1_tag,
         });
 
         let final_path = finalize_deliverable(&deliverable, preroll, delivery_spec.as_ref())

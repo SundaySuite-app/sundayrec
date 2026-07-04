@@ -84,7 +84,7 @@ use sundayrec_core::progress::{parse_size_kb, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::recovery::{
-    delivery_path_for, AudioEncodeManifest, DeliverableManifest, SessionManifest,
+    delivery_path_for, AudioEncodeManifest, DeliverableManifest, DeliveryMode, SessionManifest,
 };
 use sundayrec_core::settings::ChannelMode;
 use sundayrec_core::silence::{SilenceAction, SilenceEvent, SilenceWatcher};
@@ -876,32 +876,33 @@ async fn run_session(
     // Unique per recording (singleton engine → start_ms never repeats); also the
     // crash-recovery manifest's filename.
     let session_id = start_ms.to_string();
-    // Decoupled-audio capture (the anti-"hakkete" fix). An audio-only recording
-    // captures to a lossless PCM WAV in a per-session hidden folder BESIDE the
-    // delivery file, then transcodes to the user's chosen format at finalisation —
-    // so a real-time lossy encoder can never fall behind and back-pressure
-    // avfoundation into dropping samples. Video recordings capture straight to their
-    // delivery container (transcoding video is out of scope + expensive).
+    // Decoupled capture (the anti-"hakkete" + crash-safety fix). EVERY recording
+    // captures to a crash-tolerant, back-pressure-free container in a per-session
+    // hidden folder BESIDE the delivery file:
+    //   - audio-only → lossless PCM WAV: a real-time lossy encoder can never fall
+    //     behind and push avfoundation into dropping samples;
+    //   - video → Matroska (.mkv): playable up to a crash point, unlike an mp4/mov
+    //     whose moov atom only exists after a clean stop — and stopping no longer
+    //     pays the `+faststart` whole-file rewrite.
+    // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
+    // user's chosen delivery format.
     let audio_only = video.is_none();
     let cap_dir = capture_dir(&opts.output_path, &session_id);
-    let session_output = if audio_only {
-        if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
-            tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
-            let _ = ready.send(Err(AppError::Recording(format!(
-                "kunne ikke opprette opptaksmappe {}: {e}",
-                cap_dir.display()
-            ))));
-            emit_state(RecorderState::Failed, 0);
-            return;
-        }
-        capture_base_path(&cap_dir, &opts.output_path)
-    } else {
-        opts.output_path.clone()
-    };
-    // How to transcode the WAV capture to the delivery format — persisted in the
+    if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
+        tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
+        let _ = ready.send(Err(AppError::Recording(format!(
+            "kunne ikke opprette opptaksmappe {}: {e}",
+            cap_dir.display()
+        ))));
+        emit_state(RecorderState::Failed, 0);
+        return;
+    }
+    let capture_ext = if audio_only { "wav" } else { "mkv" };
+    let session_output = capture_base_path(&cap_dir, &opts.output_path, capture_ext);
+    // How to turn the capture into the delivery file — persisted in the
     // crash-recovery manifest so an interrupted recording can be finished on the
-    // next launch. `None` for video (fragments already ARE the delivery container).
-    let delivery_encode = audio_only.then(|| AudioEncodeManifest {
+    // next launch.
+    let delivery_encode = Some(AudioEncodeManifest {
         delivery_dir: delivery_dir_of(&opts.output_path),
         ext: delivery_ext(&opts.output_path),
         channels: match opts.channel_mode {
@@ -910,6 +911,14 @@ async fn run_session(
         },
         sample_rate: opts.sample_rate,
         bitrate_kbps: opts.bitrate_kbps,
+        mode: if audio_only {
+            DeliveryMode::AudioEncode
+        } else {
+            DeliveryMode::RemuxCopy
+        },
+        // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
+        // reject hev1); the tag is NOT applied to the mkv capture itself.
+        hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
     });
     let mut session = RecordingSession::new(session_output, start_ms);
     // How many deliverables have already been finalised (concat + history row).
@@ -1238,13 +1247,11 @@ async fn run_session(
     // Clean finish: every deliverable is finalised + history-rowed, so the
     // recovery manifest is no longer needed.
     crate::recorder::recovery::delete_manifest(&app, &session_id).await;
-    // Decoupled-audio path: drop the now-empty per-session capture folder.
-    // `remove_dir` removes it ONLY if empty — a FAILED delivery transcode left its
-    // WAV behind (finalize_one fell back to it as the history file), so the folder
-    // stays and the WAV survives as a playback/recovery source.
-    if audio_only {
-        let _ = tokio::fs::remove_dir(&cap_dir).await;
-    }
+    // Drop the now-empty per-session capture folder. `remove_dir` removes it ONLY
+    // if empty — a FAILED delivery transcode left its WAV/MKV behind (finalize_one
+    // fell back to it as the history file), so the folder stays and the capture
+    // survives as a playback/recovery source.
+    let _ = tokio::fs::remove_dir(&cap_dir).await;
     // Record→edit hand-off: tell the UI where the finished file landed so it can
     // offer "open in editor". Only when the main file actually exists + is
     // non-empty (a recording that produced nothing skips the suggestion).
@@ -1280,16 +1287,17 @@ fn capture_dir(delivery: &str, session_id: &str) -> std::path::PathBuf {
         .join(format!(".sundayrec-capture-{session_id}"))
 }
 
-/// The WAV capture base path inside `cap_dir`, carrying the SAME file stem as the
+/// The capture base path inside `cap_dir`, carrying the SAME file stem as the
 /// delivery file so [`delivery_path_for`] maps it straight back (and splits derive
-/// `<stem>_2.wav` etc). E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
-fn capture_base_path(cap_dir: &std::path::Path, delivery: &str) -> String {
+/// `<stem>_2.<ext>` etc). `capture_ext` is `wav` (audio) or `mkv` (video).
+/// E.g. delivery `/rec/sermon.mp3` → `<cap>/sermon.wav`.
+fn capture_base_path(cap_dir: &std::path::Path, delivery: &str, capture_ext: &str) -> String {
     let stem = std::path::Path::new(delivery)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("recording");
     cap_dir
-        .join(format!("{stem}.wav"))
+        .join(format!("{stem}.{capture_ext}"))
         .to_string_lossy()
         .into_owned()
 }
@@ -1942,12 +1950,12 @@ async fn finalize_one(
         None
     };
 
-    // Decoupled-audio path: the deliverable's primary is a lossless WAV capture, so
-    // ask `finalize_deliverable` to transcode it to the user's format. The WAV stem
-    // (carrying any `_2` split suffix) maps back into the save folder with the
-    // delivery extension. Video captured straight to its container → no transcode.
+    // Decoupled capture: the deliverable's primary is a WAV (audio) or MKV (video)
+    // capture, so ask `finalize_deliverable` to encode/remux it to the user's
+    // format. The capture stem (carrying any `_2` split suffix) maps back into the
+    // save folder with the delivery extension.
     let audio_only = opts.video_device_name.is_none();
-    let delivery_spec = audio_only.then(|| {
+    let delivery_spec = {
         let delivery_dir = delivery_dir_of(&opts.output_path);
         let ext = delivery_ext(&opts.output_path);
         DeliverySpec {
@@ -1959,11 +1967,17 @@ async fn finalize_one(
             },
             sample_rate: opts.sample_rate,
             bitrate_kbps: opts.bitrate_kbps,
+            mode: if audio_only {
+                DeliveryMode::AudioEncode
+            } else {
+                DeliveryMode::RemuxCopy
+            },
+            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
         }
-    });
+    };
 
     let final_path =
-        match finalize_deliverable(deliverable, preroll_path, delivery_spec.as_ref()).await {
+        match finalize_deliverable(deliverable, preroll_path, Some(&delivery_spec)).await {
             Ok(p) => p,
             Err(e) => {
                 tracing::error!(
@@ -2247,16 +2261,21 @@ mod tests {
     }
 
     #[test]
-    fn capture_base_path_keeps_the_delivery_stem_as_wav() {
+    fn capture_base_path_keeps_the_delivery_stem() {
         // The capture base carries the delivery's OWN stem so `delivery_path_for`
-        // maps it straight back, and splits derive `<stem>_2.wav`.
+        // maps it straight back, and splits derive `<stem>_2.<ext>`.
         let cap = capture_dir("/rec/sermon.mp3", "1");
         assert_eq!(
-            capture_base_path(&cap, "/rec/sermon.mp3"),
+            capture_base_path(&cap, "/rec/sermon.mp3", "wav"),
             "/rec/.sundayrec-capture-1/sermon.wav"
         );
+        // Video sessions capture to crash-tolerant Matroska.
+        assert_eq!(
+            capture_base_path(&cap, "/rec/service.mp4", "mkv"),
+            "/rec/.sundayrec-capture-1/service.mkv"
+        );
         // Round-trip: capture base → delivery path reproduces the user's file.
-        let base = capture_base_path(&cap, "/rec/sermon.mp3");
+        let base = capture_base_path(&cap, "/rec/sermon.mp3", "wav");
         assert_eq!(
             delivery_path_for(
                 &base,

@@ -781,14 +781,21 @@ pub fn build_unified_capture_args(
         // realtime path for live 4K H.265. Elsewhere we fall back to software
         // x264/x265 (VideoToolbox is mac-only).
         let use_hw = opts.hw_accel && matches!(platform, Platform::MacOS);
+        // The `hvc1` FourCC tag is an ISO/QuickTime-container concept. The decoupled
+        // video path captures to Matroska (which has its own codec IDs and can
+        // reject foreign tags) — the tag is applied at the finalize REMUX into
+        // mp4/mov instead, so only stamp it here for a direct ISO-container output.
+        let iso_container = matches!(ext_of(output_path), "mp4" | "mov" | "m4v");
         args.push("-c:v".into());
         if use_hw {
             match opts.video_codec {
                 crate::editor::VideoCodec::H264 => args.push("h264_videotoolbox".into()),
                 crate::editor::VideoCodec::H265 => {
                     args.push("hevc_videotoolbox".into());
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
+                    if iso_container {
+                        args.push("-tag:v".into());
+                        args.push("hvc1".into());
+                    }
                 }
             }
             // VideoToolbox has no CRF — target a resolution-appropriate bitrate,
@@ -811,9 +818,11 @@ pub fn build_unified_capture_args(
                 crate::editor::VideoCodec::H265 => {
                     args.push("libx265".into());
                     // `hvc1` tag so QuickTime/Apple players accept the HEVC stream
-                    // in an mp4/mov container.
-                    args.push("-tag:v".into());
-                    args.push("hvc1".into());
+                    // in an mp4/mov container (see iso_container note above).
+                    if iso_container {
+                        args.push("-tag:v".into());
+                        args.push("hvc1".into());
+                    }
                 }
             }
             args.push("-preset".into());
@@ -1323,6 +1332,31 @@ mod tests {
         assert!(has_pair(&args, "-tag:v", "hvc1"));
         // faststart still emitted for mp4.
         assert!(has_pair(&args, "-movflags", "+faststart"));
+    }
+
+    #[test]
+    fn h265_to_mkv_capture_omits_the_iso_only_hvc1_tag() {
+        // The decoupled video path captures HEVC to Matroska; the hvc1 FourCC is an
+        // ISO/QuickTime-container concept and is applied at the finalize REMUX into
+        // mp4/mov instead — the mkv capture args must not carry it (matroska has
+        // its own codec IDs). Both encoder backends.
+        for hw in [false, true] {
+            let opts = CaptureOpts {
+                hw_accel: hw,
+                video_codec: crate::editor::VideoCodec::H265,
+                ..CaptureOpts::default()
+            };
+            let args =
+                build_unified_capture_args(Platform::MacOS, Some("0"), "1", "/tmp/s.mkv", &opts);
+            assert!(
+                !args.iter().any(|a| a == "-tag:v"),
+                "mkv capture must not stamp hvc1 (hw={hw}): {args:?}"
+            );
+            assert!(
+                !args.iter().any(|a| a == "-movflags"),
+                "mkv capture must not get movflags (hw={hw})"
+            );
+        }
     }
 
     #[test]

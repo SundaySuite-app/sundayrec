@@ -24,28 +24,60 @@ use serde::{Deserialize, Serialize};
 
 use crate::recorder::Deliverable;
 
-/// How to turn a decoupled audio session's lossless WAV capture fragments into the
-/// user's chosen delivery file at finalisation.
+/// How a decoupled capture becomes the delivery file at finalisation.
 ///
-/// WHY: for audio-only recordings the capture ffmpeg writes lossless PCM (WAV) so a
-/// real-time lossy encoder can never fall behind and back-pressure avfoundation
-/// into dropping samples (the "hakkete" bug). The lossy encode is deferred to
-/// finalisation. A crash mid-recording leaves the WAV fragments on disk; recovery
-/// must know how to transcode them to the delivery format, so the manifest carries
-/// this spec. `None` on a manifest means the legacy/video path (fragments already
-/// ARE the delivery file — no transcode).
+/// - `AudioEncode` (audio-only sessions): the capture is lossless PCM WAV;
+///   finalisation ENCODES it to the user's chosen audio format.
+/// - `RemuxCopy` (video sessions): the capture is a crash-tolerant Matroska
+///   (`.mkv` — playable up to the crash point, unlike an mp4 whose moov atom only
+///   exists after a clean stop); finalisation REMUXES it (`-c copy`, no re-encode,
+///   seconds) into the user's mp4/mov with `+faststart`.
+///
+/// `#[serde(default)]` on the manifest field → manifests written before video
+/// decoupling existed deserialise to `AudioEncode` (they were all audio).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryMode {
+    /// Encode a WAV capture to the delivery audio format.
+    #[default]
+    AudioEncode,
+    /// Stream-copy an MKV capture into the delivery video container.
+    RemuxCopy,
+}
+
+/// How to turn a decoupled session's capture fragments into the user's chosen
+/// delivery file at finalisation.
+///
+/// WHY: the capture ffmpeg writes a crash-tolerant, back-pressure-free format —
+/// lossless PCM WAV for audio (a real-time lossy encoder can never fall behind and
+/// push avfoundation into dropping samples: the "hakkete" bug) and Matroska for
+/// video (playable even after a crash, unlike a moov-less mp4). The delivery
+/// encode/remux is deferred to finalisation. A crash mid-recording leaves the
+/// capture fragments on disk; recovery must know how to finish them, so the
+/// manifest carries this spec. `None` on a manifest means the legacy path
+/// (fragments already ARE the delivery file — no transcode).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioEncodeManifest {
     /// The directory the delivery file(s) land in (the user's save folder).
     pub delivery_dir: String,
-    /// The delivery container/codec extension (`mp3`/`wav`/`flac`/`m4a`).
+    /// The delivery container extension (`mp3`/`wav`/`flac`/`m4a`; `mp4`/`mov`
+    /// for `RemuxCopy`).
     pub ext: String,
-    /// Output channel count (1 mono / 2 stereo).
+    /// Output channel count (1 mono / 2 stereo). Unused by `RemuxCopy`.
     pub channels: u8,
     /// Forced output sample rate, or `None` to keep the captured native rate.
+    /// Unused by `RemuxCopy`.
     pub sample_rate: Option<u32>,
-    /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC.
+    /// Output bitrate (kbps) for lossy codecs; ignored by PCM/FLAC and `RemuxCopy`.
     pub bitrate_kbps: u32,
+    /// Whether finalisation encodes (audio) or stream-copies (video). Serde
+    /// default (`AudioEncode`) keeps pre-video manifests parsing.
+    #[serde(default)]
+    pub mode: DeliveryMode,
+    /// `RemuxCopy` only: stamp the video stream `hvc1` in the mp4/mov (HEVC
+    /// recordings — QuickTime/Apple players reject the default `hev1` tag).
+    #[serde(default)]
+    pub hvc1_tag: bool,
 }
 
 /// Map a capture-WAV primary path back to its delivery path for the decoupled
@@ -212,9 +244,52 @@ mod tests {
             channels: 2,
             sample_rate: None,
             bitrate_kbps: 256,
+            mode: DeliveryMode::AudioEncode,
+            hvc1_tag: false,
         });
         let back = SessionManifest::from_json(&m.to_json().unwrap()).unwrap();
         assert_eq!(m, back);
+    }
+
+    #[test]
+    fn manifest_round_trips_with_remux_copy_mode() {
+        // A video session's manifest: MKV capture, remux to mp4 with the hvc1 tag.
+        let mut m = manifest();
+        m.delivery_encode = Some(AudioEncodeManifest {
+            delivery_dir: "/rec".into(),
+            ext: "mp4".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 256,
+            mode: DeliveryMode::RemuxCopy,
+            hvc1_tag: true,
+        });
+        let back = SessionManifest::from_json(&m.to_json().unwrap()).unwrap();
+        assert_eq!(m, back);
+    }
+
+    #[test]
+    fn delivery_encode_without_mode_defaults_to_audio_encode() {
+        // A manifest written by the audio-only decoupling build (before video
+        // decoupling added `mode`/`hvc1_tag`) must parse as AudioEncode.
+        let legacy = r#"{
+            "session_id": "s",
+            "device_name": "dev",
+            "session_start_ms": 0,
+            "preroll_clip_path": null,
+            "delivery_encode": {
+                "delivery_dir": "/rec",
+                "ext": "mp3",
+                "channels": 2,
+                "sample_rate": null,
+                "bitrate_kbps": 256
+            },
+            "deliverables": []
+        }"#;
+        let m = SessionManifest::from_json(legacy).unwrap();
+        let enc = m.delivery_encode.expect("delivery_encode parsed");
+        assert_eq!(enc.mode, DeliveryMode::AudioEncode);
+        assert!(!enc.hvc1_tag);
     }
 
     #[test]
