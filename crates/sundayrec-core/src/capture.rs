@@ -758,7 +758,7 @@ pub fn build_unified_capture_args(
     // (`live_levels = false`) we drop it from the chain so its per-frame stderr
     // can't starve the capture. drift + pan + silencedetect always stay.
     let levels = if opts.live_levels {
-        build_levels_detect_filter()
+        build_levels_detect_filter(platform)
     } else {
         String::new()
     };

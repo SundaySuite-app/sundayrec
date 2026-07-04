@@ -469,7 +469,7 @@ mod tests {
             "-i".into(),
             "sine=frequency=440:duration=2:sample_rate=48000".into(),
             "-af".into(),
-            build_levels_detect_filter(),
+            build_levels_detect_filter(crate::recorder::engine::current_platform()),
             "-t".into(),
             "2".into(),
         ];
