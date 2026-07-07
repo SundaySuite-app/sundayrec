@@ -143,7 +143,12 @@ jobs:
             - macOS: right-click the app ▸ Open ▸ Open.
             - Windows: "More info" ▸ "Run anyway".
           releaseDraft: true
-          prerelease: true
+          # NOT a pre-release: the updater endpoint reads GitHub's
+          # /releases/latest, which EXCLUDES pre-releases. Marking the release
+          # pre-release means a published draft never becomes "latest" and every
+          # installed client silently stops receiving updates (latest.json 404).
+          # The draft still lands unpublished (releaseDraft) for review first.
+          prerelease: false
           # Generates latest.json (the updater feed) alongside the installers.
           includeUpdaterJson: true
           args: ${{ matrix.args }}

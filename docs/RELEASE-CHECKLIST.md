@@ -65,6 +65,12 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 - [ ] Watch the run; it produces a **draft** Release. **Publishing is a separate
       manual step** — review the draft, then mark it published/latest (same
       gotcha as the Electron SundayRec; a draft is served to no one).
+- [ ] When you publish the draft, confirm **"Set as the latest release" is
+      ticked and "Set as a pre-release" is NOT** — the auto-updater reads
+      `/releases/latest`, which excludes pre-releases. A pre-release (or a still-
+      draft) release means every installed client silently stops updating
+      (`latest.json` 404). The workflow now sets `prerelease: false`, so this is
+      the default; just don't override it.
 
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
