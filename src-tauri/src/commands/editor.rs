@@ -19,12 +19,14 @@ use tauri::{Emitter, State};
 /// Probe a recording's duration/streams for the editor's first paint.
 #[tauri::command]
 pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaInfo> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::load_recording(&input_path).await
 }
 
 /// Decode the audio to a renderer waveform (peaks + sample rate).
 #[tauri::command]
 pub async fn editor_peaks(input_path: String) -> AppResult<EditorPeaks> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::peaks(&input_path).await
 }
 
@@ -33,6 +35,7 @@ pub async fn editor_peaks(input_path: String) -> AppResult<EditorPeaks> {
 /// limit or in a codec the browser can't decode.
 #[tauri::command]
 pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioExtract> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::extract_audio(&input_path).await
 }
 
@@ -42,12 +45,14 @@ pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioEx
 /// export still runs on the original, so quality is untouched. HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::extract_playback_proxy(&input_path).await
 }
 
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
 #[tauri::command]
 pub async fn editor_segments(input_path: String) -> AppResult<Vec<EditorSegment>> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::segments(&input_path).await
 }
 
@@ -76,6 +81,7 @@ pub fn editor_detect_chapters(
 /// (swap / duplicate the good channel / per-channel makeup). HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_diagnose_channels(input_path: String) -> AppResult<EditorChannelDiagnosis> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::diagnose_channels(&input_path).await
 }
 
@@ -83,6 +89,7 @@ pub async fn editor_diagnose_channels(input_path: String) -> AppResult<EditorCha
 /// processing setup (channel repair + podcast vocal chain + clear mastering).
 #[tauri::command]
 pub async fn editor_auto_process(input_path: String) -> AppResult<EditorAutoProcess> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::auto_process(&input_path).await
 }
 
@@ -92,12 +99,21 @@ pub async fn editor_mastering_analyze(
     input_path: String,
     preset_id: String,
 ) -> AppResult<EditorLoudness> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::mastering_analyze(&input_path, &preset_id).await
 }
 
 /// Apply the cut-plan (+ optional mastering) and render to the chosen format.
 #[tauri::command]
 pub async fn editor_export(request: EditorExportRequest) -> AppResult<EditorExportResult> {
+    super::path_guard::checked_input_file(&request.input_path)?;
+    super::path_guard::checked_path(&request.output_folder)?;
+    for clip in [&request.intro_path, &request.outro_path]
+        .into_iter()
+        .flatten()
+    {
+        super::path_guard::checked_input_file(clip)?;
+    }
     editor::export(&request).await
 }
 
@@ -105,6 +121,7 @@ pub async fn editor_export(request: EditorExportRequest) -> AppResult<EditorExpo
 /// for the editor's video-preview scrubber. HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_frame(input_path: String, sec: f64) -> AppResult<String> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::extract_frame(&input_path, sec).await
 }
 
@@ -118,6 +135,7 @@ pub fn editor_read_sidecar(
     media_path: String,
     sidecar: EditorSidecar,
 ) -> AppResult<Option<serde_json::Value>> {
+    super::path_guard::checked_path(&media_path)?;
     editor::read_sidecar(&media_path, sidecar)
 }
 
@@ -128,18 +146,21 @@ pub fn editor_write_sidecar(
     sidecar: EditorSidecar,
     value: serde_json::Value,
 ) -> AppResult<bool> {
+    super::path_guard::checked_path(&media_path)?;
     Ok(editor::write_sidecar(&media_path, sidecar, &value))
 }
 
 /// Delete a per-recording sidecar. Returns whether one was removed.
 #[tauri::command]
 pub fn editor_delete_sidecar(media_path: String, sidecar: EditorSidecar) -> AppResult<bool> {
+    super::path_guard::checked_path(&media_path)?;
     Ok(editor::delete_sidecar(&media_path, sidecar))
 }
 
 /// Probe just has_video/has_audio for the editor's audio-vs-video layout.
 #[tauri::command]
 pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamInfo> {
+    super::path_guard::checked_input_file(&input_path)?;
     editor::probe_streams(&input_path).await
 }
 
@@ -149,6 +170,7 @@ pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamI
 /// hundreds-of-MB recording there froze the whole UI for the duration.
 #[tauri::command]
 pub async fn editor_read_file(media_path: String) -> AppResult<EditorFileRead> {
+    super::path_guard::checked_input_file(&media_path)?;
     tokio::task::spawn_blocking(move || editor::read_file_guarded(&media_path))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("editor read join: {e}")))?
@@ -158,6 +180,9 @@ pub async fn editor_read_file(media_path: String) -> AppResult<EditorFileRead> {
 /// count removed. Called at startup over the save-folder + history folders.
 #[tauri::command]
 pub fn editor_cleanup_temp_files(folders: Vec<String>) -> AppResult<usize> {
+    for folder in &folders {
+        super::path_guard::checked_path(folder)?;
+    }
     Ok(editor::cleanup_temp_files(&folders))
 }
 
@@ -166,6 +191,7 @@ pub fn editor_cleanup_temp_files(folders: Vec<String>) -> AppResult<usize> {
 pub async fn editor_master_preview(
     request: EditorMasterPreviewRequest,
 ) -> AppResult<EditorMasterPreviewResult> {
+    super::path_guard::checked_input_file(&request.input_path)?;
     editor::master_preview(&request).await
 }
 
@@ -177,6 +203,8 @@ pub async fn editor_master_apply(
     engine: State<'_, MasterEngine>,
     request: EditorMasterApplyRequest,
 ) -> AppResult<EditorMasterApplyResult> {
+    super::path_guard::checked_input_file(&request.input_path)?;
+    super::path_guard::checked_path(&request.output_path)?;
     let job_id = request.job_id.clone();
     editor::master_apply(&engine, &request, move |current_sec, total_sec| {
         let _ = app.emit(
