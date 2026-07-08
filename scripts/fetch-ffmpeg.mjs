@@ -16,9 +16,24 @@
 // panicked (`health.available == false`) and a release build would have
 // bundled a broken sidecar. So: VERIFY each binary actually runs, and
 // re-download ffmpeg-static (its installer is idempotent) before giving up.
+//
+// SHA-256 pinning: `scripts/ffmpeg-checksums.json` maps `<name>-<host>` to the
+// expected hash of the binary that gets BUNDLED AND SHIPPED. A pinned entry
+// that mismatches is a hard failure (tampered/truncated download). A missing
+// entry logs the computed hash so it can be pinned from a trusted machine —
+// run this script locally per release platform and commit the values.
+// (`@ffprobe-installer/ffprobe` ships inside its npm tarball, so npm's
+// lockfile integrity already covers it; it's pinned here anyway for symmetry.)
 
 import { execSync, execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, copyFileSync, chmodSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  copyFileSync,
+  chmodSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
@@ -47,6 +62,35 @@ function runs(bin, name) {
     r.status === 0 &&
     `${r.stdout}${r.stderr}`.toLowerCase().includes(name)
   );
+}
+
+// Pinned SHA-256 hashes (see header). Keys look like `ffmpeg-aarch64-apple-darwin`.
+const checksums = JSON.parse(
+  readFileSync(join(root, "scripts", "ffmpeg-checksums.json"), "utf8"),
+);
+
+function verifyChecksum(name, src) {
+  const key = `${name}-${host}`;
+  const actual = createHash("sha256").update(readFileSync(src)).digest("hex");
+  const expected = checksums[key];
+  if (expected && actual !== expected) {
+    console.error(
+      `✗ ${name}: SHA-256 mismatch for ${key}\n` +
+        `  expected ${expected}\n` +
+        `  actual   ${actual}\n` +
+        `  The downloaded binary is not the pinned one — refusing to bundle it.`,
+    );
+    process.exit(1);
+  }
+  if (!expected) {
+    console.warn(
+      `⚠ ${name}: no pinned SHA-256 for ${key} — computed ${actual}\n` +
+        `  Pin it by adding "${key}": "${actual}" to scripts/ffmpeg-checksums.json\n` +
+        `  (from a trusted machine; see the header of this script).`,
+    );
+  } else {
+    console.log(`✓ ${name}: SHA-256 verified (${key})`);
+  }
 }
 
 mkdirSync(outDir, { recursive: true });
@@ -82,6 +126,7 @@ for (const [name, src] of [
     );
     process.exit(1);
   }
+  verifyChecksum(name, src);
   const dest = join(outDir, `${name}-${host}${ext}`);
   copyFileSync(src, dest);
   chmodSync(dest, 0o755);

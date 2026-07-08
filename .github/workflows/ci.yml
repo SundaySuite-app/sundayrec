@@ -63,11 +63,13 @@ jobs:
           npm run format:check
           npm run typecheck
 
-      # No "Frontend unit tests" step: the legacy vanilla-TS renderer (the
-      # verbatim Electron port) ships no JS test runner, so there is no
-      # `npm run test` script — the previous step referenced a missing script and
-      # failed every run. The renderer is exercised manually; the Rust suite
-      # below is the automated gate. Re-add a step here if a frontend runner lands.
+      # Vitest: pure renderer logic (editor cut-plan/geometry, locale parity).
+      - name: Frontend unit tests
+        run: npm run test
+
+      # package.json / Cargo.toml / tauri.conf.json must agree on the version.
+      - name: App version in sync
+        run: npm run version-sync
 
       # The Rust suite is deliberately device-INDEPENDENT (device enumeration
       # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests;
@@ -81,15 +83,20 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace
 
-      # The ts-rs bindings in src/lib/bindings/ are generated from the Rust
-      # types and committed. Regenerate them and fail if anything drifted, so
-      # the frontend contract can never silently diverge from the backend.
+      # The ts-rs bindings are generated from the Rust types into the transient
+      # src/lib/bindings/ and synced to the COMMITTED legacy/bindings/ (which
+      # the renderer's legacy/types re-export). Regenerate and fail if the
+      # committed copy drifted, so the frontend contract can never silently
+      # diverge from the backend.
       - name: ts-rs bindings are up to date
         run: |
           npm run bindings
-          if ! git diff --quiet -- src/lib/bindings; then
+          # status --porcelain (not diff): also catches brand-new binding files,
+          # which are untracked and invisible to `git diff`.
+          if [ -n "$(git status --porcelain -- legacy/bindings)" ]; then
             echo "::error::ts-rs bindings are stale — run 'npm run bindings' and commit the result."
-            git --no-pager diff -- src/lib/bindings
+            git status --porcelain -- legacy/bindings
+            git --no-pager diff -- legacy/bindings
             exit 1
           fi
 
@@ -98,3 +105,26 @@ jobs:
       # installer packaging.
       - name: Build Tauri app (no bundle)
         run: npm run tauri build -- --no-bundle
+
+  # Dependency vulnerability scan — advisory DBs for both ecosystems. Runs as
+  # its own job so a slow cargo-audit install doesn't hold up the main gate.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: npm audit (high+)
+        run: npm audit --audit-level=high
+
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit

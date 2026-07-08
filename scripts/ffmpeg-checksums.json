@@ -1,0 +1,3 @@
+{
+  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars bundled by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. A mismatch hard-fails the fetch; a missing key logs the computed hash with pin instructions. Populate each platform's entries by running `npm run ffmpeg` on a trusted machine of that platform (the release runners cover aarch64-apple-darwin and x86_64-pc-windows-msvc; CI covers x86_64-unknown-linux-gnu) and committing the printed values."
+}
