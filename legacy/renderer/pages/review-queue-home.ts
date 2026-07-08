@@ -181,11 +181,16 @@ function renderEntry(entry: ReviewQueueEntry): HTMLElement {
   return item
 }
 
-/** Hook into the global IPC channel so the card updates as items arrive/leave. */
+/** Hook into the global IPC channel so the card updates as items arrive/leave.
+ * Guarded — calling it twice must not stack duplicate handlers. */
+let reviewQueueWired = false
+const reviewQueueUnsubs: Array<(() => void) | undefined> = []
 export function setupReviewQueueListeners(): void {
-  window.api.on('review-queue-update', () => {
+  if (reviewQueueWired) return
+  reviewQueueWired = true
+  reviewQueueUnsubs.push(window.api.on('review-queue-update', () => {
     refreshReviewQueue().catch(err => console.warn('[review-queue-home] refresh failed:', err))
-  })
+  }))
 }
 
 declare global {

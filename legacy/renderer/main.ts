@@ -432,9 +432,32 @@ async function init(): Promise<void> {
   toggleMp3Quality()
 }
 
+/** Surface a message in the same global banner the CSP smoke-test uses, so
+ * fatal errors are visible in the UI instead of only in the devtools console. */
+function showGlobalErrorBanner(message: string): void {
+  const banner = document.getElementById('global-error-banner')
+  const msg    = document.getElementById('global-error-msg')
+  if (msg)    msg.textContent = message
+  if (banner) banner.style.display = ''
+}
+
 window.addEventListener('unhandledrejection', e => {
   console.error('Unhandled promise rejection:', e.reason)
   e.preventDefault()
 })
 
-init().catch(err => console.error('Init failed:', err))
+// Synchronous uncaught errors previously went nowhere visible — log them so a
+// broken handler shows up in diagnostics. (No banner: a stray non-fatal throw
+// mid-session shouldn't alarm the user; init failures below do get the banner.)
+window.addEventListener('error', e => {
+  console.error('Uncaught error:', e.error ?? e.message)
+})
+
+init().catch(err => {
+  console.error('Init failed:', err)
+  showGlobalErrorBanner(
+    'Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. ' +
+    'Restart appen — hvis problemet vedvarer, kontakt support. (' +
+    (err instanceof Error ? err.message : String(err)) + ')',
+  )
+})
