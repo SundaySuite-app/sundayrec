@@ -71,9 +71,9 @@ npm run check
 bash scripts/ci-local.sh             # CI mirror incl. bindings drift + build
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same gate plus a dependency audit; it
-triggers on `v*` tags and manual dispatch (kept off per-push to save Actions
-minutes — run `scripts/ci-local.sh` before tagging). Releases are built and
+CI (`.github/workflows/ci.yml`) runs the same gate plus a dependency audit on
+every push to `main`, every PR, `v*` tags, and manual dispatch (the repo is
+public, so Actions minutes are free). Releases are built and
 published as drafts by `.github/workflows/release.yml` (macOS arm64 + Windows;
 signing/notarization activate when the secrets in `docs/NEEDS-RICHARD.md`
 exist).

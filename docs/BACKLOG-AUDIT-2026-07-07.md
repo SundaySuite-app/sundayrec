@@ -85,12 +85,13 @@ sjekksum-rammeverk for ffmpeg/ASIO, ts-rs-bindings-adopsjon
 
 ## CI / release
 
-16. **Vurder PR/push-trigger for CI** når Actions-billing er løst
-    (NEEDS-RICHARD punkt 1) — i dag gates `main` kun ved tagging.
+16. ~~Vurder PR/push-trigger for CI~~ **Gjort (2026-07-08):** repoet ble
+    offentlig (gratis Actions-minutter), og `ci.yml` trigges nå på push til
+    `main` + PR-er i tillegg til `v*`-tagger.
 17. **macOS Intel/universal-target** i `release.yml` (i dag kun arm64) +
     Windows whisper-feature når MSVC-bygget er verifisert.
-18. **Åpne punkter fra `docs/NEEDS-RICHARD.md`** (konto/nøkkel/rigg): Actions-
-    billing, Apple-signering/notarisering (p12-passord + ny app-spesifikk
+18. **Åpne punkter fra `docs/NEEDS-RICHARD.md`** (konto/nøkkel/rigg):
+    Apple-signering/notarisering (p12-passord + ny app-spesifikk
     nøkkel), `TAURI_SIGNING_*`-secrets, Google OAuth desktop-klient, Windows
     code-signing, rigg-verifisering av capture/ASIO/wake/NDI/streaming
     (inkl. `stream_start`-signaturmismatchen) og sample-rate-velgeren

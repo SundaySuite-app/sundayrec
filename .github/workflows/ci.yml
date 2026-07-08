@@ -1,12 +1,16 @@
 name: CI
 
 on:
-  # Run the full lint/test/build gate only at release time (on a v* tag,
-  # alongside release.yml) — not on every branch push or PR. Use the manual
-  # trigger below to verify a branch before tagging.
+  # The repo is public, so Actions minutes are free — run the full gate on
+  # every push to main and every PR (it used to be tag-only to save minutes
+  # while the account's billing was blocked), plus on v* tags alongside
+  # release.yml and via manual dispatch.
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
