@@ -107,10 +107,9 @@ subset.
 - The feed fetch, signature verify, download and relaunch are NETWORK/GUI-
   UNVERIFIED — they only run in a release build against the signed feed
   (smoke §R7). A dev build short-circuits the check (no signed release exists).
-- The `tauri.conf.json` does NOT yet carry the `plugins.updater` block (no
-  pubkey/endpoints) — add it alongside the keypair so the release build resolves
-  the feed. Until then the `updater` feature compiles + the panel works, but a
-  real check has nowhere to point.
+- _(resolved)_ `tauri.conf.json` now carries the `plugins.updater` block
+  (pubkey + endpoints) — see item 4 above. The remaining gap is only the
+  `TAURI_SIGNING_PRIVATE_KEY` (+ password) CI secrets.
 
 ## PU-3 — Podcast RSS publish (`--features publish`)
 
