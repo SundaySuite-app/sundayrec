@@ -71,9 +71,11 @@ videoContainer: string,
  */
 videoCodec: string, 
 /**
- * Recording video encoder backend: `"software"` (default, libx264/5 — best
- * quality) | `"hardware"` (VideoToolbox on macOS — realtime, needed for live
- * 4K H.265). Ignored off macOS (falls back to software).
+ * Recording video encoder backend: `"hardware"` (default — VideoToolbox on
+ * macOS — realtime + low CPU, so the live preview/meters stay snappy and live
+ * 4K H.265 is feasible) | `"software"` (libx264/5 — max compression
+ * efficiency, but pegs the CPU and makes the live monitoring lag). Ignored
+ * off macOS (always falls back to software).
  */
 videoEncoder: string, 
 /**
@@ -90,6 +92,13 @@ outputMode: string,
  * Also keep the standalone high-quality audio file next to a combined MP4?
  */
 keepSeparateAudio: boolean, 
+/**
+ * Windows ONLY escape hatch: force the legacy ffmpeg **DirectShow** audio
+ * capture instead of the modern cpal (WASAPI/ASIO) path. Default `false` —
+ * cpal is the standard Windows capture (more stable, full multichannel via
+ * ASIO). Flip on only if cpal misbehaves on a specific rig. No effect on macOS.
+ */
+classicDirectshow: boolean, 
 /**
  * Container/codec for the standalone audio file extracted alongside a video
  * recording when `keep_separate_audio` is on. Default `Wav` (lossless, the

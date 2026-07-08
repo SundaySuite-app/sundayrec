@@ -10,11 +10,10 @@ target
 # break the byte-for-byte parity with the old app. Leave it exactly as shipped.
 legacy
 
-# Kept React reference (ts-rs bindings + hooks) — not part of the build; the
-# bindings are generated, so don't reformat them either.
+# Kept React reference (hooks) — not part of the build.
 reference
 
-# ts-rs regenerates these on `cargo test` (export_to points here). The frontend
-# no longer imports them (the legacy renderer has its own types); they're a
-# transient build artifact — see reference/bindings for the committed snapshot.
+# ts-rs bindings: src/lib/bindings is the transient regen target; the committed
+# copy lives at legacy/bindings (already covered by the `legacy` entry above —
+# generated code is never reformatted).
 src/lib/bindings
