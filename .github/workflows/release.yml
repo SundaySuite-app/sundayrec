@@ -9,16 +9,17 @@
 # Windows, signs + notarizes macOS, and creates a DRAFT GitHub Release with the
 # installers. Review the draft, then publish it.
 #
-# ── STATUS (Phase 0 → Phase 9) ────────────────────────────────────────────────
+# ── STATUS ────────────────────────────────────────────────────────────────────
 # Signing is wired and ACTIVATES the moment the documented secrets exist
 # (docs/DISTRIBUTION.md). Until then the build still runs but produces UNSIGNED
 # installers (tauri-action skips signing when the secrets are absent).
 #
-# The auto-updater (`latest.json`) is intentionally OFF here — the updater
-# plugin + signing keypair land in Phase 9 (see docs/MIGRATION-TAURI2.md). To
-# turn it on then: install tauri-plugin-updater, add its pubkey to
-# tauri.conf.json, add the TAURI_SIGNING_* secrets, and flip
-# `includeUpdaterJson: true`. The env wiring is already in place below.
+# The auto-updater IS wired: tauri.conf.json carries the `plugins.updater`
+# block (pubkey + endpoints, `createUpdaterArtifacts: true`) and this workflow
+# sets `includeUpdaterJson: true` so `latest.json` ships with every release.
+# The only missing pieces are the CI secrets TAURI_SIGNING_PRIVATE_KEY (+
+# password) — until they exist the updater artifacts are unsigned and installed
+# clients won't accept them. See docs/NEEDS-RICHARD.md item 4.
 
 name: release
 
@@ -94,6 +95,19 @@ jobs:
         run: |
           $url = "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip"
           Invoke-WebRequest -Uri $url -OutFile asiosdk.zip
+          # SHA-256 pin: a moved/altered download must not silently feed the
+          # build. Populate the pin from the hash this step prints on a trusted
+          # run (the SDK zip is a frozen 2019 artifact, so it never changes).
+          $expected = ""  # TODO(release): pin from the printed hash of a trusted run
+          $actual = (Get-FileHash asiosdk.zip -Algorithm SHA256).Hash.ToLower()
+          Write-Host "asiosdk.zip SHA-256: $actual"
+          if ($expected -ne "" -and $actual -ne $expected) {
+            Write-Error "ASIO SDK checksum mismatch (expected $expected) — refusing to build."
+            exit 1
+          }
+          if ($expected -eq "") {
+            Write-Warning "ASIO SDK SHA-256 is not pinned yet — copy the printed hash into this step."
+          }
           Expand-Archive -Path asiosdk.zip -DestinationPath asiosdk -Force
           $sdk = (Get-ChildItem asiosdk -Directory | Select-Object -First 1).FullName
           echo "CPAL_ASIO_DIR=$sdk" >> $env:GITHUB_ENV

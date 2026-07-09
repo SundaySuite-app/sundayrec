@@ -114,15 +114,27 @@ export function setupGeneralPage(): void {
   document.getElementById('btn-varsler-save')?.addEventListener('click', saveGeneralSettings)
   document.getElementById('btn-varsler-cancel')?.addEventListener('click', () => applyGeneralSettingsToUI())
 
+  wireUpdateIpcListeners()
+}
+
+// Lifetime `window.api.on` subscriptions + the hourly auto-check interval —
+// unsubscribes kept, wiring guarded so a re-run of setupGeneralPage can never
+// stack duplicate handlers (or a second interval).
+let updateIpcWired = false
+const updateIpcUnsubs: Array<(() => void) | undefined> = []
+function wireUpdateIpcListeners(): void {
+  if (updateIpcWired) return
+  updateIpcWired = true
+
   // Update events from main
   // On macOS, autoDownload is disabled (unsigned app — in-place ZIP install loops).
   // update-available shows a download link; update-downloaded only fires on Windows.
   let _isMac = false
   window.api.getPlatform?.().then(p => { _isMac = p === 'darwin' }).catch(() => {})
 
-  window.api.on('update-checking',          () => setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…')))
-  window.api.on('update-not-available',     () => { setUpdateStatus('ok', t('update.upToDate', 'Du er oppdatert')); hideToast() })
-  window.api.on('update-available',         (info: unknown) => {
+  updateIpcUnsubs.push(window.api.on('update-checking',          () => setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))))
+  updateIpcUnsubs.push(window.api.on('update-not-available',     () => { setUpdateStatus('ok', t('update.upToDate', 'Du er oppdatert')); hideToast() }))
+  updateIpcUnsubs.push(window.api.on('update-available',         (info: unknown) => {
     const v = (info as { version: string }).version
     if (_isMac) {
       setUpdateStatus('ready', t('update.availableMac', 'Versjon {v} tilgjengelig — last ned ny DMG').replace('{v}', v))
@@ -143,8 +155,8 @@ export function setupGeneralPage(): void {
         t('update.toastAvailableText', 'Versjon {v} lastes ned…').replace('{v}', v)
       )
     }
-  })
-  window.api.on('update-download-progress', (prog: unknown) => {
+  }))
+  updateIpcUnsubs.push(window.api.on('update-download-progress', (prog: unknown) => {
     if (_isMac) return
     const pct  = Math.round((prog as { percent?: number }).percent ?? 0)
     const wrap = document.getElementById('update-progress-wrap')
@@ -153,8 +165,8 @@ export function setupGeneralPage(): void {
     if (bar)  bar.style.width   = pct + '%'
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
     setToastProgress(pct)
-  })
-  window.api.on('update-downloaded', (info: unknown) => {
+  }))
+  updateIpcUnsubs.push(window.api.on('update-downloaded', (info: unknown) => {
     const v = (info as { version: string }).version
     const wrap = document.getElementById('update-progress-wrap')
     if (wrap) wrap.style.display = 'none'
@@ -166,11 +178,11 @@ export function setupGeneralPage(): void {
       t('update.toastReadyText', 'Versjon {v} er lastet ned').replace('{v}', v),
       true
     )
-  })
-  window.api.on('update-error', (msg: unknown) => {
+  }))
+  updateIpcUnsubs.push(window.api.on('update-error', (msg: unknown) => {
     setUpdateStatus('error', t('update.error', 'Kunne ikke sjekke for oppdateringer'))
     console.warn('Update error:', msg)
-  })
+  }))
 
   // Auto-check on launch + hourly, mirroring the Electron app's updater (which
   // checked on startup and every 60 min). Listeners above are registered first,

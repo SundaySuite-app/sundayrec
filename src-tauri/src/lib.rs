@@ -198,8 +198,15 @@ pub fn run() {
             {
                 let recover_app = app.handle().clone();
                 let recover_pool = pool.clone();
-                tauri::async_runtime::spawn(async move {
+                let recovery_task = tauri::async_runtime::spawn(async move {
                     recorder::recovery::scan_and_recover(recover_app, recover_pool).await;
+                });
+                // Watch the handle so a panicked scan lands in the log instead
+                // of vanishing with the dropped JoinHandle.
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = recovery_task.await {
+                        tracing::error!("crash-recovery scan task failed: {e}");
+                    }
                 });
             }
 

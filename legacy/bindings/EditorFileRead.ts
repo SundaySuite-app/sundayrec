@@ -2,7 +2,7 @@
 
 /**
  * The `editor-read-file` outcome: either the file is small enough to read its
- * bytes inline, or it is over the 400 MB limit and the renderer must stream it
+ * bytes inline, or it is over the 100 MB limit and the renderer must stream it
  * via the peaks-extract path. Mirrors the `{ tooLarge, size }` shape.
  */
 export type EditorFileRead = { 

@@ -106,7 +106,9 @@ er shared-mode (full multikanal krever ASIO — forventet).
 | C2  | Medium    | Brukerens valgte Drive-mappe ble ignorert (`build_init_body(..,None)`) → alt i Drive-roten.                                                           | Worker slår opp `get_folder(service)` og sender `folder_id` til opplasting.                         |
 | C3  | Sikkerhet | OAuth token-feil la HELE serverresponsen i `last_error` (persistert + vist i UI).                                                                     | Kun HTTP-status i meldingen; full kropp → lokal debug-logg.                                         |
 
-**Sikkerhet — DOKUMENTERT, ikke endret blindt (krever webview-/rigg-test):**
+**Sikkerhet — LØST i ettertid (2026-07-08): `tauri.conf.json` har nå en
+restriktiv CSP og en scoped `assetProtocol` allow/deny-liste (bl.a. deny av
+`~/.ssh`, `~/.aws`, `~/.gnupg`). Punktene under står som historikk:**
 
 - `tauri.conf.json`: `csp: null`. Å legge på CSP er god defense-in-depth, MEN
   verbatim-rendereren har inline `<script>` (api-shim + drag-region) og inline

@@ -2,9 +2,9 @@
 logs
 *.log
 
-# ts-rs regenerates these on `cargo test` (export_to points at the old React
-# tree). The legacy renderer doesn't import them; the committed snapshot lives
-# in reference/bindings. Transient — don't track.
+# ts-rs regenerates these on `cargo test` (export_to points here). Transient
+# regen target — `npm run bindings` syncs them into the committed, consumed
+# copy at legacy/bindings/. Don't track this one.
 /src/lib/bindings/
 npm-debug.log*
 yarn-debug.log*
@@ -40,3 +40,6 @@ coverage
 *.sln
 *.sw?
 .claude/
+
+# Ad-hoc `npm audit --json` snapshots (CI runs the audit — see ci.yml)
+audit.json

@@ -109,19 +109,30 @@ export function setupPublishPage(): void {
     flashSaved(document.getElementById('btn-publish-save') ?? document.getElementById('btn-files-save'))
   })
 
+  wireCloudIpcListeners()
+}
+
+// Lifetime `window.api.on` subscriptions — unsubscribes kept, wiring guarded so
+// a re-run of setupPublishPage can never stack duplicate handlers.
+let cloudIpcWired = false
+const cloudIpcUnsubs: Array<(() => void) | undefined> = []
+function wireCloudIpcListeners(): void {
+  if (cloudIpcWired) return
+  cloudIpcWired = true
+
   // Listen for upload progress/done from main
-  window.api.on('cloud-upload-progress', (data: unknown) => {
+  cloudIpcUnsubs.push(window.api.on('cloud-upload-progress', (data: unknown) => {
     const { service, filename } = data as { service: CloudServiceId; filename: string }
     showUploadStatus(service, `Laster opp ${filename}…`, false)
-  })
-  window.api.on('cloud-upload-done', (data: unknown) => {
+  }))
+  cloudIpcUnsubs.push(window.api.on('cloud-upload-done', (data: unknown) => {
     const { service, ok, error } = data as { service: CloudServiceId; ok: boolean; error?: string }
     showUploadStatus(service, ok ? '✓ Opplastet' : `✕ ${error ?? 'Feil'}`, !ok)
     refreshStatus()
-  })
-  window.api.on('cloud-queue-update', (data: unknown) => {
+  }))
+  cloudIpcUnsubs.push(window.api.on('cloud-queue-update', (data: unknown) => {
     renderQueue(data as CloudQueueStatus)
-  })
+  }))
 }
 
 async function refreshStatus(): Promise<void> {

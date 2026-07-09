@@ -1,3 +1,12 @@
+> **ARKIVERT (2026-07-08) — beskriver en tidligere tilstand.** Dette
+> dokumentet ble skrevet 2026-06-01 mot v0.1.0 og motsier dagens konfig på de
+> fleste punkter: versjonen er nå 0.4.2, `csp` er satt (ikke `null`),
+> `assetProtocol` har en scoped allow/deny-liste, `plugins.updater`-blokken
+> finnes (med `createUpdaterArtifacts: true` og `includeUpdaterJson: true` i
+> release.yml), releases markeres ikke lenger pre-release, og CI trigges på
+> `v*`-tagger (ikke push/PR). Se `.github/workflows/`, `src-tauri/tauri.conf.json`
+> og `docs/NEEDS-RICHARD.md` for gjeldende tilstand.
+
 # Release audit — pipeline as it stands
 
 A concrete audit of the SundayRec release pipeline **as configured in the repo

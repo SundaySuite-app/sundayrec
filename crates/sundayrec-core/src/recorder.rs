@@ -283,7 +283,12 @@ impl RecordingSession {
     /// first fragment (the original output path). Use
     /// [`deliverables`](Self::deliverables) for the per-deliverable paths.
     pub fn primary_path(&self) -> &str {
-        &self.deliverables[0].primary_path
+        // `deliverables` is never empty (`new` seeds it, nothing drains it), but
+        // fall back to the base path rather than panic mid-recording.
+        self.deliverables
+            .first()
+            .map(|d| d.primary_path.as_str())
+            .unwrap_or(&self.base_path)
     }
 
     /// The path of the segment currently being written (the most recent fragment
@@ -299,11 +304,12 @@ impl RecordingSession {
     /// The fragment paths of the deliverable currently being recorded into, in
     /// start order (start fragment + any `_rN` reconnect fragments so far).
     pub fn current_deliverable_fragments(&self) -> &[String] {
-        &self
-            .deliverables
+        // Same never-empty invariant as `primary_path`; degrade to the base path
+        // instead of panicking mid-recording.
+        self.deliverables
             .last()
-            .expect("a session always has at least one deliverable")
-            .fragments
+            .map(|d| d.fragments.as_slice())
+            .unwrap_or(std::slice::from_ref(&self.base_path))
     }
 
     /// Whether the deliverable currently being recorded is the FIRST one — the
@@ -357,20 +363,26 @@ impl RecordingSession {
         // path (NOT the session base), so a reconnect inside a split deliverable
         // is named `g_2_r1.mp3` and groups under that deliverable — its concat
         // target is `g_2.mp3`, not the original `g.mp3`.
+        // `deliverables` is never empty (`new` seeds it, nothing drains it), but
+        // re-seed rather than panic mid-recording if the invariant ever broke.
+        if self.deliverables.is_empty() {
+            self.deliverables.push(Deliverable {
+                primary_path: self.base_path.clone(),
+                fragments: vec![self.base_path.clone()],
+                started_at_ms: now_ms,
+            });
+        }
         let current_primary = self
             .deliverables
             .last()
-            .expect("a session always has at least one deliverable")
-            .primary_path
-            .clone();
+            .map(|d| d.primary_path.clone())
+            .unwrap_or_else(|| self.base_path.clone());
         let next_segment = reconnect_fragment_path(&current_primary, attempt);
         // A reconnect appends a fragment to the CURRENT deliverable — it stays
         // one file (the fragments are stitched at finalisation).
-        self.deliverables
-            .last_mut()
-            .expect("a session always has at least one deliverable")
-            .fragments
-            .push(next_segment.clone());
+        if let Some(current) = self.deliverables.last_mut() {
+            current.fragments.push(next_segment.clone());
+        }
         // A reconnect starts a fresh segment clock for split purposes.
         self.current_segment_start_ms = now_ms;
         RecoveryDecision::Reconnect {

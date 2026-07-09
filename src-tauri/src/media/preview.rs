@@ -887,8 +887,12 @@ async fn attempt_preview_mode(
     // classified error of each severity wins; we forward it back so the reader
     // loop can short-circuit (permission) or remember it (retry-eligible).
     let (err_tx, mut err_rx) = tokio::sync::mpsc::channel::<(&'static str, bool)>(2);
+    // Held so the drain task is aborted on every attempt exit (it also ends on
+    // its own when the child drops and stderr closes — the guard is the tidy
+    // bound, same as `_emit_guard` below).
+    let mut _stderr_guard = None;
     if let Some(stderr) = child.stderr.take() {
-        tokio::spawn(async move {
+        _stderr_guard = Some(AbortOnDrop(tauri::async_runtime::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 tracing::debug!(target: "preview_ffmpeg", "{line}");
@@ -898,7 +902,7 @@ async fn attempt_preview_mode(
                     let _ = err_tx.try_send((msg, fatal));
                 }
             }
-        });
+        })));
     }
 
     // DECOUPLE the emit from the stdout read. Emitting each frame synchronously in

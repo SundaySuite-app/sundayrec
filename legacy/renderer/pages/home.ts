@@ -851,17 +851,7 @@ export function setupHome(): void {
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
 
-  // Backend warning toast — shown for cloud/preroll/wake/disk/device issues
-  window.api.on('backend-warning', (data: unknown) => {
-    const d = data as { msg: string; severity: 'warn' | 'error'; category: string }
-    if (d?.msg) showBackendWarning(d.msg, d.severity ?? 'warn')
-  })
-
-  // Post-recording summary in existing editor prompt toast
-  window.api.on('recording-finished', (entry: unknown) => {
-    const rec = entry as RecordingEntry & { splitRestart?: boolean } | undefined
-    if (rec && !rec.splitRestart) showRecordingFinishedSummary(rec)
-  })
+  wireHomeIpcListeners()
 
   // OPPGAVE 1 — Generic ESC key handler: closes all open modals/backdrops
   document.addEventListener('keydown', (e) => {
@@ -875,6 +865,31 @@ export function setupHome(): void {
     })
   })
 
+}
+
+// The `window.api.on` subscriptions below live for the app's lifetime, but the
+// unsubscribes are kept and the wiring is guarded so a re-run of `setupHome`
+// can never stack duplicate handlers.
+let homeIpcWired = false
+const homeIpcUnsubs: Array<(() => void) | undefined> = []
+function wireHomeIpcListeners(): void {
+  if (homeIpcWired) return
+  homeIpcWired = true
+
+  // Backend warning toast — shown for cloud/preroll/wake/disk/device issues
+  homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
+    const d = data as { msg: string; severity: 'warn' | 'error'; category: string }
+    if (d?.msg) showBackendWarning(d.msg, d.severity ?? 'warn')
+  }))
+
+  // Post-recording summary in existing editor prompt toast. (recording.ts also
+  // listens to 'recording-finished', but for a different job — overlay teardown
+  // + editor prompt; this one only shows the summary toast.)
+  homeIpcUnsubs.push(window.api.on('recording-finished', (entry: unknown) => {
+    const rec = entry as RecordingEntry & { splitRestart?: boolean } | undefined
+    if (rec && !rec.splitRestart) showRecordingFinishedSummary(rec)
+  }))
+
   // Wire up the review-queue card — listens to IPC events from main so the card
   // updates instantly when a new prep lands or the user publishes/discards.
   setupReviewQueueListeners()
@@ -882,19 +897,19 @@ export function setupHome(): void {
   // Tray menu hooks: clicking "📬 N episoder klare" or "Sjekk system nå" in the
   // tray must surface the relevant UI. main.ts in main-process emits these
   // channels — see src/main/tray.ts.
-  window.api.on('tray-open-review-queue', () => {
+  homeIpcUnsubs.push(window.api.on('tray-open-review-queue', () => {
     window.showPage('home')
     refreshReviewQueue().then(() => {
       document.getElementById('review-queue-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }).catch(() => {})
-  })
-  window.api.on('tray-run-preflight', () => {
+  }))
+  homeIpcUnsubs.push(window.api.on('tray-run-preflight', () => {
     window.showPage('settings')
     document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
     requestAnimationFrame(() => {
       document.getElementById('btn-run-preflight-settings')?.click()
     })
-  })
+  }))
 }
 
 export async function refreshHome(): Promise<void> {

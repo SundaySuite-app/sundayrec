@@ -1,7 +1,7 @@
 {
   "name": "sundayrec",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "scripts": {
     "ffmpeg": "node scripts/fetch-ffmpeg.mjs",
@@ -22,9 +22,10 @@
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
     "fmt:rust": "cargo fmt --all",
     "fmt:rust:check": "cargo fmt --all --check",
-    "bindings": "cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs",
+    "bindings": "cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs && node scripts/sync-bindings.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run fmt:rust:check && npm run lint:rust && npm run test:rust",
+    "version-sync": "node scripts/check-version-sync.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run fmt:rust:check && npm run lint:rust && npm run test:rust",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky"
   },

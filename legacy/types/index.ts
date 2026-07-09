@@ -1,6 +1,35 @@
-export type ChannelMode = 'stereo' | 'monoL' | 'monoR' | 'monoMix'
-export type FileFormat  = 'mp3' | 'wav' | 'flac' | 'aac'
-export type FilenamePattern = 'date' | 'church' | 'plain' | 'datetime'
+// ── Generated ts-rs bindings ────────────────────────────────────────────────
+// These types are re-exported from `legacy/bindings/` (generated from the Rust
+// types by `npm run bindings`) so a backend contract change surfaces as a tsc
+// error here instead of silently drifting. Only types whose generated shape is
+// field-for-field identical to the old hand-written one are re-exported; the
+// rest below stay hand-written until the Rust side matches (e.g. `?` vs
+// `| null` optionality — see docs/BACKLOG-AUDIT-2026-07-07.md).
+import type { ChannelMode } from '../bindings/ChannelMode'
+import type { FileFormat } from '../bindings/FileFormat'
+import type { FilenamePattern } from '../bindings/FilenamePattern'
+import type { EpisodePrepStatus } from '../bindings/EpisodePrepStatus'
+import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
+import type { ChapterMarker } from '../bindings/ChapterMarker'
+import type { TranscriptSegment } from '../bindings/TranscriptSegment'
+import type { SermonHighlight } from '../bindings/SermonHighlight'
+import type { CompanionChapter } from '../bindings/CompanionChapter'
+import type { SummarySource } from '../bindings/SummarySource'
+import type { SermonCompanion } from '../bindings/SermonCompanion'
+export type {
+  ChannelMode,
+  FileFormat,
+  FilenamePattern,
+  EpisodePrepStatus,
+  PrepAnalysisSegment,
+  ChapterMarker,
+  TranscriptSegment,
+  SermonHighlight,
+  CompanionChapter,
+  SummarySource,
+  SermonCompanion,
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 export type RecordingPhase =
   | 'idle'          // no active session
@@ -81,33 +110,16 @@ export interface PodcastSettings {
   defaultMasterPreset?: string
 }
 
-/**
- * Audio analysis segment (mirror of AnalysisSegment in main/audio-analysis.ts)
- * stored on EpisodePrep for renderer-side display without re-running analysis.
- */
-export interface PrepAnalysisSegment {
-  startSec:    number
-  endSec:      number
-  durationSec: number
-  type:        'silence' | 'speech' | 'music' | 'mixed' | 'unknown'
-  confidence:  number
-  avgRmsDb:    number
-  label:       string
-}
-
-/**
- * Status of an EpisodePrep through its lifecycle.
- *
- *   analyzing       — background analysis running
- *   ready           — prep complete, all defaults applied, no concerns
- *   needs-attention — prep complete, but the suggested sermon segment is
- *                     low-confidence or absent. Human review required.
- *   published       — user clicked "Godkjenn og publiser" and the upload
- *                     pipeline ran to completion.
- *   discarded       — user clicked "Ikke publiser denne uka".
- */
-export type EpisodePrepStatus = 'analyzing' | 'ready' | 'needs-attention' | 'published' | 'discarded'
-
+// PrepAnalysisSegment + EpisodePrepStatus are generated (re-exported above).
+//
+// EpisodePrep status lifecycle:
+//   analyzing       — background analysis running
+//   ready           — prep complete, all defaults applied, no concerns
+//   needs-attention — prep complete, but the suggested sermon segment is
+//                     low-confidence or absent. Human review required.
+//   published       — user clicked "Godkjenn og publiser" and the upload
+//                     pipeline ran to completion.
+//   discarded       — user clicked "Ikke publiser denne uka".
 export interface EpisodePrep {
   id:                string                       // uuid
   recordingPath:     string                       // source file
@@ -480,11 +492,8 @@ export interface UpdateInfo {
   releaseNotes?: string
 }
 
-export interface ChapterMarker {
-  time: number   // seconds from start of main content
-  title: string
-}
-
+// ChapterMarker is generated (re-exported above): { time (sec from start of
+// main content), title }.
 export interface RecordingMetadata {
   title: string
   speaker: string
@@ -492,13 +501,8 @@ export interface RecordingMetadata {
   chapters: ChapterMarker[]
 }
 
-/** A single transcript segment from whisper.cpp output. `start`/`end` are
- *  seconds into the recording. */
-export interface TranscriptSegment {
-  start: number
-  end:   number
-  text:  string
-}
+// TranscriptSegment is generated (re-exported above): one whisper.cpp segment,
+// `start`/`end` in seconds into the recording.
 
 /** Sidecar file written alongside the recording at <name>.transcript.json.
  *  Schema-versioned so we can evolve format without breaking older files. */
@@ -518,37 +522,11 @@ export interface TranscriptData {
   segments:  TranscriptSegment[]
 }
 
-/** A ranked, quotable highlight passage from the AI sermon companion (R8).
- *  Times are seconds on the recording timeline; `score` is the heuristic rank. */
-export interface SermonHighlight {
-  time:  number
-  end:   number
-  text:  string
-  score: number
-}
+// SermonHighlight / CompanionChapter / SummarySource / SermonCompanion are
+// generated (re-exported above) — the AI sermon-companion result types.
 
-/** One companion chapter marker (deterministic on-device detection). */
-export interface CompanionChapter {
-  time:  number
-  title: string
-}
-
-/** Where the companion summary/title came from. `llm` = the optional Anthropic
- *  seam produced + validated it; `local` = fully-local extractive fallback. */
-export type SummarySource = 'llm' | 'local'
-
-/** Result of the AI sermon companion: deterministic chapters + highlights, plus
- *  a Norwegian summary/title that is LLM-suggested when a key is configured,
- *  else a local extractive fallback. Mirrors the Rust `SermonCompanion`. */
-export interface SermonCompanion {
-  title:         string
-  summary:       string
-  summarySource: SummarySource
-  chapters:      CompanionChapter[]
-  highlights:    SermonHighlight[]
-  language:      string
-}
-
+// NB: distinct from the generated `CloudService` ('google-drive'|'youtube'|
+// 'gmail'), which models OAuth account kinds — this one is the backup targets.
 export type CloudServiceId = 'google-drive' | 'dropbox' | 'onedrive'
 
 export interface CloudServiceSettings {

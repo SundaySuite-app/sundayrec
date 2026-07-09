@@ -1,3 +1,10 @@
+> **NB (2026-07-08):** Deler av dette dokumentet (feature-/paritetsmatrisen og
+> «Redesign»-seksjonene) beskriver en React-basert `src/`-frontend
+> (`src/App.tsx`, `src/design/screens/*`) som ble **reversert** og ikke finnes
+> i repoet. Den shippende frontenden er den porterte vanilla-TS-rendereren
+> under `legacy/renderer/` (se README). Kjernearkitekturen
+> (`sundayrec-core` + `src-tauri`) beskrives fortsatt korrekt.
+
 # SundayRec (Tauri 2) — Completion summary
 
 This document records the **finished state** of the Electron → Tauri 2 rebuild of

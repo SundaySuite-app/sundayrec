@@ -21,6 +21,7 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use ts_rs::TS;
 
 /// Wake the machine this many minutes before a scheduled recording, so it's
@@ -319,8 +320,10 @@ pub enum WinErrorKind {
 /// mis-classify the most common permission failure as a generic error and skip
 /// the un-elevated retry. We accept `access is denied` too.
 pub fn classify_win_error(msg: &str) -> WinErrorKind {
-    let re = Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege").unwrap();
-    if re.is_match(msg) {
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege").unwrap()
+    });
+    if RE.is_match(msg) {
         WinErrorKind::Permission
     } else {
         WinErrorKind::Error
@@ -433,12 +436,17 @@ pub struct VerifiedWake {
 /// "Scheduled power events" section (repeating events are skipped — we don't
 /// schedule them). `ref_year` guards against year typos. Port of `parsePmsetSched`.
 pub fn parse_pmset_sched(stdout: &str, ref_year: Option<i32>) -> Vec<VerifiedWake> {
-    let row = Regex::new(
-        r#"(?i)\bwake\s+at\s+(\d{1,2})/(\d{1,2})/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s+by\s+['"]?([^'"]+?)['"]?\s*$"#,
-    )
-    .unwrap();
-    let sched_hdr = Regex::new(r"(?i)^Scheduled power events:?").unwrap();
-    let repeat_hdr = Regex::new(r"(?i)^Repeating power events:?").unwrap();
+    static ROW: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r#"(?i)\bwake\s+at\s+(\d{1,2})/(\d{1,2})/(\d{2,4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s+by\s+['"]?([^'"]+?)['"]?\s*$"#,
+        )
+        .unwrap()
+    });
+    static SCHED_HDR: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^Scheduled power events:?").unwrap());
+    static REPEAT_HDR: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^Repeating power events:?").unwrap());
+    let (row, sched_hdr, repeat_hdr) = (&*ROW, &*SCHED_HDR, &*REPEAT_HDR);
 
     let mut out = Vec::new();
     let mut in_one_off = false;
@@ -489,13 +497,17 @@ pub fn parse_pmset_sched(stdout: &str, ref_year: Option<i32>) -> Vec<VerifiedWak
 /// Parse `powercfg -waketimers`, extracting each timer's expiry + owning task.
 /// Port of `parsePowercfgWaketimers`.
 pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
-    let block_split = Regex::new(r"\r?\n\s*\r?\n").unwrap();
-    let expires = Regex::new(
-        r"(?i)expires\s+at\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\s+on\s+(\d{1,2})/(\d{1,2})/(\d{2,4})",
-    )
-    .unwrap();
-    let task = Regex::new(r#"(?i)['"]([^'"]*SundayRec[^'"]*)['"]"#).unwrap();
-    let reason = Regex::new(r"(?i)Reason:\s*(.+)").unwrap();
+    static BLOCK_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r?\n\s*\r?\n").unwrap());
+    static EXPIRES: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?i)expires\s+at\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?\s+on\s+(\d{1,2})/(\d{1,2})/(\d{2,4})",
+        )
+        .unwrap()
+    });
+    static TASK: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#"(?i)['"]([^'"]*SundayRec[^'"]*)['"]"#).unwrap());
+    static REASON: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)Reason:\s*(.+)").unwrap());
+    let (block_split, expires, task, reason) = (&*BLOCK_SPLIT, &*EXPIRES, &*TASK, &*REASON);
 
     let mut out = Vec::new();
     for block in block_split.split(stdout) {
@@ -609,8 +621,10 @@ pub fn parse_mac_sleep_config(stdout: &str) -> SleepConfig {
 /// `Some(true)` if enabled, `Some(false)` if disabled, `None` if not found.
 /// Port of the win32 branch of `getSleepConfig`.
 pub fn parse_win_wake_timers(stdout: &str) -> Option<bool> {
-    let re = Regex::new(r"(?i)Current AC Power Setting Index:\s+(0x[0-9a-f]+)").unwrap();
-    let c = re.captures(stdout)?;
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)Current AC Power Setting Index:\s+(0x[0-9a-f]+)").unwrap()
+    });
+    let c = RE.captures(stdout)?;
     let val = i64::from_str_radix(c[1].trim_start_matches("0x"), 16).ok()?;
     Some(val > 0)
 }
@@ -618,16 +632,18 @@ pub fn parse_win_wake_timers(stdout: &str) -> Option<bool> {
 /// True if on battery, false if AC / no battery (desktop), `None` if unknown.
 /// Port of `parsePmsetBatt`.
 pub fn parse_pmset_batt(stdout: &str) -> Option<bool> {
-    let ac = Regex::new(r"(?i)AC\s*Power").unwrap();
-    let batt = Regex::new(r"(?i)Battery\s*Power").unwrap();
-    if ac.is_match(stdout) {
+    static AC: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)AC\s*Power").unwrap());
+    static BATT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)Battery\s*Power").unwrap());
+    static INTERNAL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)InternalBattery").unwrap());
+    static ANY_BATTERY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)Battery").unwrap());
+    if AC.is_match(stdout) {
         return Some(false);
     }
-    if batt.is_match(stdout) {
+    if BATT.is_match(stdout) {
         return Some(true);
     }
-    let has_battery = Regex::new(r"(?i)InternalBattery").unwrap().is_match(stdout)
-        || Regex::new(r"(?i)Battery").unwrap().is_match(stdout);
+    let has_battery = INTERNAL.is_match(stdout) || ANY_BATTERY.is_match(stdout);
     if !has_battery {
         return Some(false); // desktop → on AC
     }
@@ -637,14 +653,14 @@ pub fn parse_pmset_batt(stdout: &str) -> Option<bool> {
 /// Parse `wmic path Win32_Battery get BatteryStatus` → on-battery? Port of
 /// `parseWmicBatteryStatus`. 1 = discharging (on battery); 2+ = AC.
 pub fn parse_wmic_battery_status(stdout: &str) -> Option<bool> {
-    let num = Regex::new(r"(?i)BatteryStatus\s*=\s*(\d+)").unwrap();
-    if let Some(c) = num.captures(stdout) {
+    static NUM: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)BatteryStatus\s*=\s*(\d+)").unwrap());
+    static MENTIONED: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)BatteryStatus\s*=").unwrap());
+    if let Some(c) = NUM.captures(stdout) {
         return c[1].parse::<i32>().ok().map(|s| s == 1);
     }
-    if Regex::new(r"(?i)BatteryStatus\s*=")
-        .unwrap()
-        .is_match(stdout)
-    {
+    if MENTIONED.is_match(stdout) {
         return None; // mentioned but non-numeric → malformed
     }
     Some(false) // no battery row → desktop → on AC
@@ -653,8 +669,8 @@ pub fn parse_wmic_battery_status(stdout: &str) -> Option<bool> {
 /// True if macOS standby (deep sleep) is enabled — it can sabotage wake on Apple
 /// Silicon. `None` if the line is absent. Port of `parsePmsetStandby`.
 pub fn parse_pmset_standby(stdout: &str) -> Option<bool> {
-    let re = Regex::new(r"\bstandby\s+(\d+)\b").unwrap();
-    re.captures(stdout).map(|c| &c[1] == "1")
+    static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bstandby\s+(\d+)\b").unwrap());
+    RE.captures(stdout).map(|c| &c[1] == "1")
 }
 
 #[cfg(test)]

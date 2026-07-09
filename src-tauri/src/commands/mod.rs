@@ -20,6 +20,7 @@ pub mod haptics;
 pub mod integrations;
 pub mod media;
 pub mod ndi;
+pub mod path_guard;
 pub mod publish;
 pub mod recorder;
 pub mod review;

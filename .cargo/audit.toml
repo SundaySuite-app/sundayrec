@@ -1,0 +1,14 @@
+# cargo-audit configuration — read by the "Dependency audit" CI job (ci.yml).
+#
+# Only UNFIXABLE advisories may be ignored here, each with a justification and
+# a condition for removal. Re-check on every entry when bumping dependencies.
+
+[advisories]
+ignore = [
+  # rsa 0.9.x — "Marvin Attack" timing sidechannel (medium, 5.9). No fixed
+  # release exists (fix lands in the unreleased rsa 0.10 line). Transitive via
+  # sqlx-mysql, which sqlx pulls into the lockfile even though SundayRec only
+  # ever opens SQLite databases — the vulnerable code never runs in this app.
+  # Remove when sqlx bumps to an rsa with the fix.
+  "RUSTSEC-2023-0071",
+]

@@ -25,14 +25,18 @@ step "frontend — prettier --check";    npm run format:check
 step "frontend — tsc --noEmit";        npm run typecheck
 step "frontend — vitest";              npm run test
 
+step "app version in sync";            npm run version-sync
+
 step "rust — cargo fmt --check";       npm run fmt:rust:check
 step "rust — cargo clippy -D warnings"; npm run lint:rust
 step "rust — cargo test --workspace";  npm run test:rust
 
+# status --porcelain (not diff): also catches brand-new binding files, which
+# are untracked and invisible to `git diff`.
 step "ts-rs bindings up to date";      npm run bindings
-if ! git diff --quiet -- src/lib/bindings; then
+if [ -n "$(git status --porcelain -- legacy/bindings)" ]; then
   printf "\033[1;31m✗ ts-rs bindings are stale — regenerate and commit:\033[0m\n"
-  git --no-pager diff --stat -- src/lib/bindings
+  git status --porcelain -- legacy/bindings
   exit 1
 fi
 
