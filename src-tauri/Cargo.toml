@@ -252,7 +252,7 @@ ringbuf = "0.4"
 # put the process in a kill-on-close job so no ffmpeg child outlives SundayRec,
 # even on a hard kill. `windows-sys` (raw FFI) is chosen over `windows` for its
 # far more stable API surface. Tauri already pulls it transitively.
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_System_JobObjects",
