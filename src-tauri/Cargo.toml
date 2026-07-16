@@ -233,7 +233,7 @@ libloading = { version = "0.8", optional = true }
 tempfile = { version = "3", optional = true }
 # PU-5 whisper model-download integrity check (SHA-256). Already in the tree via
 # `keyring`; pulled directly only under `--features whisper` for the download seam.
-sha2 = { version = "0.10", optional = true }
+sha2 = { version = "0.11", optional = true }
 # R7 auto-update plugin (pull API). Pulled only under `--features updater`; a
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.
