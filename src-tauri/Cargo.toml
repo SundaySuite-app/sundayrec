@@ -217,7 +217,7 @@ tauri-plugin-autostart = "2"
 # hardware runs ~30× realtime, verified with whisper-cli on the rig 2026-06-11).
 # Bridge #2 WebSocket client for the Supabase Realtime subscription. rustls (no
 # system OpenSSL); pulled only under `--features bridge`. INFRA-UNVERIFIED.
-tokio-tungstenite = { version = "0.24", default-features = false, features = [
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
     "rustls-tls-webpki-roots",
     "connect",
 ], optional = true }
