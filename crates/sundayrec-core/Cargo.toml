@@ -25,7 +25,7 @@ thiserror = "2"
 # Generates the TypeScript bindings the frontend consumes. `serde-compat`
 # makes ts-rs honour serde attributes (rename_all, etc.). Run the export with
 # `cargo test export_bindings -p sundayrec-core`.
-ts-rs = { version = "11", features = ["serde-compat"] }
+ts-rs = { version = "12", features = ["serde-compat"] }
 # Civil date/time arithmetic for the scheduler (Fase 5) AND HTTP-date parsing
 # of the cloud `Retry-After` header (Fase 6). `default-features = false` (NO
 # `clock`) keeps this crate PURE — it never reads the wall clock itself; callers
