@@ -43,7 +43,7 @@ regex = "1"
 # SHA-256 of the verifier (RFC 7636). Pure, no I/O — the `src-tauri` shell
 # generates the random verifier; this crate only does the deterministic
 # challenge derivation and the base64url-encoding used across the cloud module.
-sha2 = "0.10"
+sha2 = "0.11"
 base64 = "0.22"
 # Canonical cross-app wire contracts (Rust mirror of @sunday/contracts). The
 # StageManifest + MediaHandoff/deep-link shapes this crate produces/parses are
