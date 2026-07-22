@@ -247,7 +247,7 @@ tauri-plugin-updater = { version = "2", optional = true }
 # paths in `recorder::cpal_capture`, so it's a Windows-target dep (not tied to
 # the `asio` feature).
 [target.'cfg(windows)'.dependencies]
-ringbuf = "0.4"
+ringbuf = "0.5"
 # Win32 Job Object APIs for the orphan-guard (`platform::guard_child_processes`):
 # put the process in a kill-on-close job so no ffmpeg child outlives SundayRec,
 # even on a hard kill. `windows-sys` (raw FFI) is chosen over `windows` for its
