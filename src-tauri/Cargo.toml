@@ -227,7 +227,7 @@ futures-util = { version = "0.3", optional = true }
 # WITHOUT the NDI SDK and runs cleanly when the runtime is absent. Pulled only
 # under `--features ndi`. No SDK headers needed — the FFI ABI is declared by hand
 # in `src/ndi/sender.rs` to match libndi's public C API.
-libloading = { version = "0.8", optional = true }
+libloading = { version = "0.9", optional = true }
 # PU-5 whisper seam writes the 16 kHz WAV to a temp dir before inference. Pulled
 # only under `--features whisper` (also a dev-dep below for the storage tests).
 tempfile = { version = "3", optional = true }
