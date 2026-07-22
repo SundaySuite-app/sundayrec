@@ -160,7 +160,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Local-first storage. Replaces Electron's `electron-store` (a JSON blob) with
 # SQLite via sqlx. Runtime-checked queries (no DATABASE_URL / `.sqlx` cache
 # needed to build); `migrate` runs the versioned schema in `migrations/`.
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
     "macros",
