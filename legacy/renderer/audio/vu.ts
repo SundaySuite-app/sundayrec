@@ -57,32 +57,78 @@ function computePeak(db: number, peak: number, pt: number, now: number): { p: nu
   return { p: peak, t: pt }
 }
 
+// Per-element write cache so a 60 fps caller only touches the DOM when a value
+// actually changed. The fill is animated with `transform: scaleX(...)` (GPU
+// composite, no layout); the peak marker's `left` and the dB text DO cause
+// layout, so they are quantized/throttled — that combination is what makes the
+// recording overlay smooth (it used to set style.width + textContent on every
+// frame, fighting a CSS width-transition and reflowing the page 60×/s).
+interface VuWriteState {
+  fillScale: number
+  peakBucket: number
+  peakVisible: boolean
+  text: string
+  textAt: number
+}
+const vuWrites = new WeakMap<HTMLElement, VuWriteState>()
+const DB_TEXT_MIN_INTERVAL_MS = 150
+
+function writeState(el: HTMLElement): VuWriteState {
+  let s = vuWrites.get(el)
+  if (!s) {
+    s = { fillScale: -1, peakBucket: -1, peakVisible: false, text: '', textAt: 0 }
+    vuWrites.set(el, s)
+  }
+  return s
+}
+
 export function setVUBar(
   fillEl: HTMLElement | null,
   peakEl: HTMLElement | null,
   dbEl:   HTMLElement | null,
   db: number, peakDb: number
 ): void {
-  // Horizontal-mode encoding: .vu-bar-fill is a *mask* that covers the right
-  // side of the gradient track. Width X% = "X% of the gradient is hidden",
-  // leaving (100 - X)% of audio visible from the left.
-  //
-  // Vertical-mode encoding (used when parent has .vu-section-vertical): the
-  // mask covers the top X% of the gradient instead. Same X% — the CSS for
-  // each mode picks the property it cares about and ignores the other.
+  // .vu-bar-fill is a *mask* anchored right: it covers the right side of the
+  // gradient track, leaving audioPct% visible from the left. scaleX with
+  // `transform-origin: right` (styles.css) shrinks the mask without layout.
   const audioPct = dbToHeight(db)           // 0..100, 100 = loudest
-  const maskPct  = 100 - audioPct           // 0..100, 0 = fully unmasked
   const peakPct  = dbToHeight(peakDb)       // 0..100
   if (fillEl) {
-    fillEl.style.width = maskPct + '%'
-    fillEl.style.setProperty('--vu-mask', maskPct + '%')
+    // ~0.1% granularity — invisible steps, but skips no-op writes at silence.
+    const scale = Math.round((100 - audioPct) * 10) / 1000
+    const s = writeState(fillEl)
+    if (s.fillScale !== scale) {
+      s.fillScale = scale
+      fillEl.style.transform = `scaleX(${scale})`
+    }
   }
   if (peakEl) {
-    peakEl.style.left    = peakPct + '%'
-    peakEl.style.setProperty('--vu-peak-pos', peakPct + '%')
-    peakEl.style.opacity = peakDb > -59 ? '1' : '0'
+    const s = writeState(peakEl)
+    // `left` reflows, so quantize to 0.5% buckets — the hold keeps the marker
+    // still most of the time, and during the fall the steps are subpixel-ish.
+    const bucket = Math.round(peakPct * 2)
+    if (s.peakBucket !== bucket) {
+      s.peakBucket = bucket
+      peakEl.style.left = bucket / 2 + '%'
+    }
+    const visible = peakDb > -59
+    if (s.peakVisible !== visible) {
+      s.peakVisible = visible
+      peakEl.style.opacity = visible ? '1' : '0'
+    }
   }
-  if (dbEl) dbEl.textContent = db > -59 ? db.toFixed(1) : '—'
+  if (dbEl) {
+    const s = writeState(dbEl)
+    const now = performance.now()
+    if (now - s.textAt >= DB_TEXT_MIN_INTERVAL_MS) {
+      const text = db > -59 ? db.toFixed(1) : '—'
+      if (s.text !== text) {
+        s.text = text
+        s.textAt = now
+        dbEl.textContent = text
+      }
+    }
+  }
 }
 
 export function tickVU(
