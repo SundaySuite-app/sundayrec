@@ -619,7 +619,12 @@ select:focus:not(:focus-visible) {
 .vu-bar-fill {
   position: absolute; right: 0; top: 0; bottom: 0; width: 100%;
   background: var(--surface2);
-  border-radius: 0 3px 3px 0; transition: width .05s ease-out; z-index: 1;
+  border-radius: 0 3px 3px 0; z-index: 1;
+  /* Animated via transform: scaleX() from JS (audio/vu.ts) — GPU composite,
+     no layout. The old `transition: width .05s` fought the 60 fps rAF writer
+     (restarted every frame → stutter) and reflowed the page per frame. */
+  transform-origin: right center;
+  will-change: transform;
 }
 .vu-bar-peak {
   position: absolute; top: 2px; bottom: 2px; width: 2px;

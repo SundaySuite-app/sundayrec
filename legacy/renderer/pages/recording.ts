@@ -21,7 +21,7 @@ import { getAudioDevices } from '../audio/capture'
 import { setVUBar } from '../audio/vu'
 import { RecordingWaveform } from '../audio/waveform'
 import { fmtCountdown, flashMsg, isoDate } from '../helpers'
-import { stopVU as stopHomeVU } from './home-vu'
+import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
 import { stopMonitoring as stopAudioPageMonitoring } from './audio-page'
 import { renderRecentRecordings, stopVideoPreview, startVideoPreview } from './home'
 import { showEditorPrompt } from './editor-page'
@@ -548,10 +548,10 @@ function startLevelsMeter(): void {
     const b = hold(meter.smR, meter.pkR, meter.pkTR, now); meter.pkR = b.p; meter.pkTR = b.t
 
     setVUBar(fillL, pkElL, dbElL, meter.smL, meter.pkL)
-    if (cL && meter.smL > -0.5) cL.classList.add('clip')
+    if (cL && meter.smL > -0.5 && !cL.classList.contains('clip')) cL.classList.add('clip')
     if (!meter.mono) {
       setVUBar(fillR, pkElR, dbElR, meter.smR, meter.pkR)
-      if (cR && meter.smR > -0.5) cR.classList.add('clip')
+      if (cR && meter.smR > -0.5 && !cR.classList.contains('clip')) cR.classList.add('clip')
     }
 
     updateRecSignalStatus(meter.smL, meter.mono ? meter.smL : meter.smR)
@@ -700,7 +700,12 @@ function hideOverlay(): void {
   const recVideoWrap = document.querySelector<HTMLElement>('.rec-video-wrap')
   if (recVideoWrap) recVideoWrap.style.removeProperty('--rec-video-ar')
 
-  // Restart preview after a short delay — gives time for split auto-restart to cancel it
+  // Restart preview + the home "Lydnivå — live" meter after a short delay —
+  // gives time for split auto-restart to cancel it, and lets ffmpeg release
+  // the audio device before we reopen it with getUserMedia. The home VU was
+  // stopped by startMonitoring() (one mic owner at a time) and previously
+  // NEVER came back after a recording — the meter sat dead until the user
+  // re-navigated to home.
   if (previewRestartTimer) clearTimeout(previewRestartTimer)
   previewRestartTimer = setTimeout(() => {
     previewRestartTimer = null
@@ -709,6 +714,7 @@ function hideOverlay(): void {
       const progressRow = document.getElementById('video-progress-row')
       if (progressRow) progressRow.style.display = 'none'
       startVideoPreview()
+      startHomeVU()
     }
   }, 3000)
   const overlay = document.getElementById('recording-overlay')
@@ -781,6 +787,7 @@ function updateScheduledStopCountdown(): void {
   el.textContent = diff > 0 ? fmtCountdown(diff) : '—'
 }
 
+let lastSigCls = ' ' // sentinel ≠ any real class so the first call writes
 function updateRecSignalStatus(dbL: number, dbR: number): void {
   const db  = Math.max(dbL, dbR)
   const dot = document.getElementById('rec-sig-dot')
@@ -791,6 +798,10 @@ function updateRecSignalStatus(dbL: number, dbR: number): void {
   else if (db >= -12) { cls = 'hoyt';     text = t('recording.sigHigh',     'HØYT')     }
   else if (db >= -40) { cls = 'god';      text = t('recording.sigGood',     'GOD')      }
   else if (db > -55)  { cls = 'svak';     text = t('recording.sigWeak',     'SVAK')     }
+  // Called from the 60 fps meter loop — only touch the DOM when the tier
+  // actually flips (className/textContent writes dirty style + layout).
+  if (cls === lastSigCls) return
+  lastSigCls = cls
   dot.className  = 'rec-sig-dot'   + (cls ? ' ' + cls : '')
   lbl.className  = 'rec-sig-label' + (cls ? ' ' + cls : '')
   lbl.textContent = text
