@@ -202,6 +202,35 @@ pub fn has_recoverable_audio<F: Fn(&str) -> bool>(manifest: &SessionManifest, ex
     !recoverable_deliverables(manifest, exists).is_empty()
 }
 
+/// Every fragment path in the manifest, in deliverable order. The I/O layer
+/// samples these files' sizes (twice, a beat apart) to decide whether a writer
+/// is still appending — see [`growing_fragments`].
+pub fn all_fragment_paths(manifest: &SessionManifest) -> Vec<String> {
+    manifest
+        .deliverables
+        .iter()
+        .flat_map(|d| d.fragments.iter().cloned())
+        .collect()
+}
+
+/// Given two size samples of the same files (`(path, byte_size)`, missing files
+/// omitted), return the paths that GREW between the samples. A non-empty result
+/// means some process is still writing — recovering now would concatenate and
+/// then delete a file underneath a live writer, so the caller must SKIP this
+/// manifest and retry on the next launch. A file that shrank or disappeared is
+/// not "growing" (a crashed writer can truncate; that's still safe to salvage).
+///
+/// Pure: the caller does the actual `stat`ing.
+pub fn growing_fragments(before: &[(String, u64)], after: &[(String, u64)]) -> Vec<String> {
+    before
+        .iter()
+        .filter_map(|(path, sz_before)| {
+            let sz_after = after.iter().find(|(p, _)| p == path).map(|(_, s)| *s)?;
+            (sz_after > *sz_before).then(|| path.clone())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,5 +486,45 @@ mod tests {
         // is still "nothing to recover".
         let m = manifest();
         assert!(!has_recoverable_audio(&m, |p| p == "/rec/_preroll.mp3"));
+    }
+
+    #[test]
+    fn all_fragment_paths_flattens_in_deliverable_order() {
+        let m = manifest();
+        let paths = all_fragment_paths(&m);
+        // Every deliverable's fragments, concatenated in order.
+        let expected: Vec<String> = m
+            .deliverables
+            .iter()
+            .flat_map(|d| d.fragments.iter().cloned())
+            .collect();
+        assert_eq!(paths, expected);
+        assert!(!paths.is_empty(), "the fixture has fragments");
+    }
+
+    #[test]
+    fn growing_fragments_flags_only_files_that_grew() {
+        let before = vec![
+            ("/rec/a.wav".to_string(), 1000_u64),
+            ("/rec/b.wav".to_string(), 2000),
+            ("/rec/c.wav".to_string(), 3000),
+        ];
+        let after = vec![
+            ("/rec/a.wav".to_string(), 1000_u64), // unchanged — stable
+            ("/rec/b.wav".to_string(), 2764),     // grew — live writer!
+            ("/rec/c.wav".to_string(), 500),      // shrank — crashed writer, safe
+        ];
+        assert_eq!(growing_fragments(&before, &after), vec!["/rec/b.wav"]);
+    }
+
+    #[test]
+    fn growing_fragments_ignores_files_missing_from_either_sample() {
+        // Disappeared between samples (deleted) → not growing. Appeared between
+        // samples → no baseline, not growing. Both are safe for recovery: the
+        // existence predicate re-checks at recover time.
+        let before = vec![("/rec/gone.wav".to_string(), 1000_u64)];
+        let after = vec![("/rec/new.wav".to_string(), 9000_u64)];
+        assert!(growing_fragments(&before, &after).is_empty());
+        assert!(growing_fragments(&[], &[]).is_empty());
     }
 }

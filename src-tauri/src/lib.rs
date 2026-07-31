@@ -191,6 +191,17 @@ pub fn run() {
             // Idles cleanly when Google OAuth isn't configured (no spinning).
             cloud::worker::spawn(pool.clone(), cloud::config::GoogleOAuthConfig::resolve());
 
+            // Orphan hygiene (unix; Windows is covered by the Job Object above).
+            // Runs HERE — after the single-instance gate (a duplicate launch
+            // must never shoot the primary's live capture) and before both the
+            // crash-recovery scan (which reads, then deletes, the very files an
+            // orphan is still writing) and our first own sidecar spawn
+            // (preroll/preview below), which the sweep can't tell from an
+            // orphan. Sweep first, THEN arm the reaper (the sweep must not
+            // shoot the fresh reaper's pattern-carrying shell).
+            platform::sweep_orphaned_sidecars();
+            platform::spawn_orphan_reaper();
+
             // Crash recovery: if a previous run was interrupted mid-recording, its
             // orphaned segment fragments are finalised into playable files +
             // history rows on this launch (best-effort, in the background so it

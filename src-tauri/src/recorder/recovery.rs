@@ -78,6 +78,20 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
         };
         match SessionManifest::from_json(&body) {
             Ok(manifest) => {
+                // A fragment that GROWS between two size samples has a live
+                // writer (an orphaned capture the platform sweep couldn't stop,
+                // or an external process). Recovering now would concatenate —
+                // then delete — a file underneath that writer, so leave the
+                // manifest for the next launch instead. (2026-07-31: recovery
+                // "salvaged" a file an orphan kept appending to for 12 min.)
+                if let Some(busy) = still_being_written(&manifest).await {
+                    tracing::warn!(
+                        session = %manifest.session_id,
+                        fragment = %busy,
+                        "recovery: fragment still growing — a writer is alive; skipping this session for now"
+                    );
+                    continue;
+                }
                 recovered += recover_session(&pool, &manifest).await;
                 // Clean up the manifest + any leftover pre-roll clip.
                 let _ = tokio::fs::remove_file(&path).await;
@@ -112,6 +126,35 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
         tracing::info!("recovery: recovered {recovered} interrupted recording(s) on startup");
     }
     recovered
+}
+
+/// Two-sample stability probe: stat every fragment, wait a beat, stat again.
+/// Returns the first fragment that GREW (→ some process is still writing), or
+/// `None` when all sizes are stable. The growth decision itself is the pure,
+/// unit-tested `sundayrec_core::recovery::growing_fragments`.
+async fn still_being_written(manifest: &SessionManifest) -> Option<String> {
+    async fn sample(paths: &[String]) -> Vec<(String, u64)> {
+        let mut out = Vec::with_capacity(paths.len());
+        for p in paths {
+            if let Ok(m) = tokio::fs::metadata(p).await {
+                out.push((p.clone(), m.len()));
+            }
+        }
+        out
+    }
+    let paths = sundayrec_core::recovery::all_fragment_paths(manifest);
+    let before = sample(&paths).await;
+    if before.is_empty() {
+        return None; // nothing on disk — nothing can be growing
+    }
+    // Long enough that a live ffmpeg's buffered WAV/MKV writes land between the
+    // samples (it flushes far more often than this), short enough that startup
+    // recovery still feels immediate.
+    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+    let after = sample(&paths).await;
+    sundayrec_core::recovery::growing_fragments(&before, &after)
+        .into_iter()
+        .next()
 }
 
 /// Finalise one orphaned session's surviving deliverables into history rows.

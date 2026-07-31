@@ -147,7 +147,8 @@ pub struct DiagnosticsInput {
     /// The most recent classified recording error written to `last-error.json`.
     #[serde(default)]
     pub last_error: Option<LastErrorInfo>,
-    /// Whether the Windows orphan-guard Job Object is active this session.
+    /// Whether the orphan guard is active this session (Windows: kill-on-close
+    /// Job Object; macOS/Linux: the detached sidecar reaper).
     #[serde(default)]
     pub orphan_guard_active: Option<bool>,
     /// Health telemetry of the MOST RECENT recording (drops/xruns/IPC-starvation),
@@ -470,7 +471,7 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     ));
     if let Some(active) = input.orphan_guard_active {
         lines.push(format!(
-            "- **Orphan-guard (Job Object):** {}",
+            "- **Orphan-guard (Job Object / reaper):** {}",
             if active { "aktiv" } else { "ikke aktiv" }
         ));
     }

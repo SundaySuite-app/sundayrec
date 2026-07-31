@@ -164,6 +164,14 @@ export function setupRecording(): void {
       // overlay down on a TERMINAL state, or a preparing→recording mid-session
       // event would hide the live overlay.
       const st = (data as { state?: string } | undefined)?.state
+      if (st === 'recording' || st === 'reconnecting') {
+        // Resync: the engine says a session is LIVE. If the UI thinks it's idle
+        // (a torn-down overlay after a transient error), bring the overlay back —
+        // otherwise the user has a running recording with no stop button (the
+        // 2026-07-31 rig incident).
+        if (!isRecording) resyncOverlayToLiveSession()
+        return
+      }
       if (st !== 'stopped' && st !== 'failed' && st !== 'idle') return
       if (stopOverridden) return
       stopMonitoring().catch(err => console.error('[recording] monitoring stop error:', err)).finally(() => hideOverlay())
@@ -175,13 +183,25 @@ export function setupRecording(): void {
       if (rec?.path && !rec.splitRestart && settings.askOpenEditor !== false) showEditorPrompt(rec.path)
     }),
     window.api.on('recording-error', (data) => {
+      // TERMINAL: the backend only emits recording://error when the session is
+      // over (fatal code / recovery given up) — transient hiccups arrive on
+      // recording-warning instead and must NOT tear the overlay down.
       const d = data as { error?: string; message?: string } | undefined
       // Stop monitoring (VU timer + mic stream) before hiding overlay — same as normal stop
       stopMonitoring().catch(err => console.error('[recording] stopMonitoring on error:', err))
       hideOverlay()
       renderRecentRecordings()
-      const msg = d?.message ?? (d?.error ? translateNativeError(d.error) : null)
+      // The localized code text leads (the raw `message` is an ffmpeg stderr
+      // line like ":2: Input/output error" — diagnostics material, not UI copy).
+      const msg = (d?.error ? translateNativeError(d.error) : null) ?? d?.message ?? null
       if (msg) showGlobalError(msg)
+    }),
+    window.api.on('recording-warning', (data) => {
+      // NON-terminal: the engine's reconnect policy is (about to start) retrying.
+      // Keep the overlay; show the reconnect banner so the hiccup is visible.
+      const d = data as { error?: string; message?: string } | undefined
+      console.warn('[recording] transient recorder error:', d?.error, d?.message)
+      showReconnectBanner()
     }),
     window.api.on('recording-progress', (data) => {
       const d = data as { bytes?: number } | undefined
@@ -707,6 +727,28 @@ function hideOverlay(): void {
   const lbl = document.getElementById('status-label')
   if (dot) dot.className = 'status-dot'
   if (lbl) lbl.textContent = t('status.ready', 'Alt er klart')
+}
+
+// Bring the overlay back for a session the ENGINE says is live but the UI lost
+// track of (e.g. a torn-down overlay after a transient error, before the
+// warning/error split existed). Deliberately minimal: no opts are available at
+// this point, so the video preview poller and save-path hint stay off — the
+// meters, timer, reconnect banner and (crucially) the stop button all work.
+function resyncOverlayToLiveSession(): void {
+  console.warn('[recording] engine reports a live session while UI was idle — resyncing overlay')
+  isRecording = true
+  window.__isRecording = true
+  if (previewRestartTimer) { clearTimeout(previewRestartTimer); previewRestartTimer = null }
+  stopVideoPreview()
+  const overlay = document.getElementById('recording-overlay')
+  if (overlay) overlay.style.display = 'flex'
+  const dot = document.getElementById('status-dot')
+  const lbl = document.getElementById('status-label')
+  if (dot) dot.className = 'status-dot recording'
+  if (lbl) lbl.textContent = t('status.recording', 'Tar opp')
+  document.getElementById('btn-start-recording')?.classList.add('recording')
+  const deviceEl = document.getElementById('rec-device-name')
+  if (deviceEl && !deviceEl.textContent) deviceEl.textContent = settings.deviceName ?? ''
 }
 
 function showReconnectBanner(): void {

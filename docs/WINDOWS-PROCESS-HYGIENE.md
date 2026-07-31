@@ -23,11 +23,17 @@ som samtidig holder lyd-ressurser presset Windows Audio-tjenesten til den krasje
 
 ## Bevisst utsatt
 
-- **Oppstarts-opprydding av gamle orphans (FIKS 4):** ikke implementert. Single-
-  instance hindrer nye oppstablede instanser, og Job Object hindrer nye orphans, så
-  dette gjelder kun orphans fra GAMLE versjoner før denne oppdateringen — der holder
-  én omstart av maskinen. Å enumerere + drepe ffmpeg-prosesser ved navn er risikabelt
-  (kan treffe andre apper) og droppes derfor med vilje.
+- **Oppstarts-opprydding av gamle orphans (FIKS 4):** ~~ikke implementert~~ —
+  **implementert på macOS/Linux i v0.4.4** etter rigg-hendelsen 2026-07-31 (en
+  krasjet instans lot en ffmpeg ta opp rommet i 12+ min; mac har ingen Job
+  Object). To mekanismer i `platform/mod.rs` (`unix_imp`): en **oppstarts-sweep**
+  (kjøres etter single-instance-gaten, før crash-recovery) og en **frakoblet
+  reaper** som dreper sidecars i det appen dør — uansett dødsårsak, SIGKILL
+  inkludert. «Risikabelt å drepe ved navn»-innvendingen er løst ved at begge KUN
+  matcher den absolutte stien til VÅR bundlede ffmpeg/ffprobe (ERE-escapet, med
+  klasse-innpakket sistetegn så mønsteret aldri matcher sin egen bærer-prosess);
+  en bar `ffmpeg` fra PATH nektes. På Windows dekker Job Object fortsatt alt —
+  sweep/reaper er no-op der.
 
 ## Testplan (Windows — må bestås før release)
 

@@ -80,7 +80,8 @@ asioDevices: Array<string>,
  */
 lastError: LastErrorInfo | null, 
 /**
- * Whether the Windows orphan-guard Job Object is active this session.
+ * Whether the orphan guard is active this session (Windows: kill-on-close
+ * Job Object; macOS/Linux: the detached sidecar reaper).
  */
 orphanGuardActive: boolean | null, 
 /**
