@@ -52,7 +52,7 @@ use crate::settings::ChannelMode;
 /// absorbs the jitter. Raised 1024 → 4096 (a choppy USB Behringer), then 4096 →
 /// 8192 after the built-in MacBook mic still stuttered "when speaking" — louder
 /// passages produce denser packets, so the queue needs more headroom.
-const MAC_INPUT_QUEUE: &str = "8192";
+pub const MAC_INPUT_QUEUE: &str = "8192";
 
 /// avfoundation input demux buffer (`-rtbufsize`) on mac/linux. Complements the
 /// `-thread_queue_size` knob: where the thread queue absorbs jitter on the read
@@ -62,7 +62,7 @@ const MAC_INPUT_QUEUE: &str = "8192";
 /// already uses `-rtbufsize 100M` as precedent. It is only an UPPER BOUND on
 /// buffering — it never changes the recorded output. RIGG-VERIFISER the audible
 /// effect on the MacBook built-in mic + the Behringer USB mixer.
-const MAC_INPUT_RTBUFSIZE: &str = "256M";
+pub const MAC_INPUT_RTBUFSIZE: &str = "256M";
 
 /// The audio codec selected from an output container extension. The ONE place
 /// extension→codec is decided, so the main recorder and the pre-roll harvest can

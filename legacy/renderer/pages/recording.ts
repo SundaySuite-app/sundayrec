@@ -22,6 +22,7 @@ import { setVUBar } from '../audio/vu'
 import { RecordingWaveform } from '../audio/waveform'
 import { fmtCountdown, flashMsg, isoDate } from '../helpers'
 import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
+import { stopVuMeter as stopLiveVuMeter } from './live-page'
 import { stopMonitoring as stopAudioPageMonitoring } from './audio-page'
 import { renderRecentRecordings, stopVideoPreview, startVideoPreview } from './home'
 import { showEditorPrompt } from './editor-page'
@@ -366,6 +367,13 @@ async function handleManualStart(): Promise<void> {
     videoDeviceIndex: noVideo ? null : videoIdx,
   }
 
+  // LEAK GUARD (2026-07-31 audit): release EVERY renderer-side audio capture
+  // BEFORE ffmpeg opens the device — the home VU's getUserMedia stream used to
+  // stay open across the whole device-open (it was only stopped inside
+  // startMonitoring, AFTER the spawn), so the recorder always started with a
+  // second microphone owner attached.
+  releaseRendererAudioCaptures()
+
   // Do NOT close the modal before we know if the recording started —
   // closing first makes error messages invisible to the user.
   let res: { ok?: boolean; error?: string } | null = null
@@ -375,6 +383,8 @@ async function handleManualStart(): Promise<void> {
     if (mm) mm.style.display = 'none'
     showGlobalError(err instanceof Error ? err.message : String(err))
     if (btn) btn.disabled = false
+    // The start failed — give the home meter back.
+    startHomeVU()
     return
   }
 
@@ -455,6 +465,16 @@ export function showGlobalError(msg: string): void {
 }
 
 // ── Monitoring stream (VU only) ──────────────────────────────────────────────
+
+/** Release EVERY renderer-side audio capture (home VU, audio-settings monitor,
+ *  live-page VU). Called BEFORE the recorder's ffmpeg opens the device and from
+ *  the engine-resync path, so a recording can never run with a second
+ *  getUserMedia owner on the microphone (2026-07-31 leak audit). */
+export function releaseRendererAudioCaptures(): void {
+  try { stopHomeVU() } catch {}
+  try { stopAudioPageMonitoring() } catch {}
+  try { stopLiveVuMeter() } catch {}
+}
 
 async function startMonitoring(_opts: RecordingOpts): Promise<void> {
   stopHomeVU()
@@ -759,6 +779,9 @@ function resyncOverlayToLiveSession(): void {
   console.warn('[recording] engine reports a live session while UI was idle — resyncing overlay')
   isRecording = true
   window.__isRecording = true
+  // The engine is recording (e.g. scheduler-started or after a transient
+  // error) — make sure no renderer-side capture holds the mic alongside it.
+  releaseRendererAudioCaptures()
   if (previewRestartTimer) { clearTimeout(previewRestartTimer); previewRestartTimer = null }
   stopVideoPreview()
   const overlay = document.getElementById('recording-overlay')

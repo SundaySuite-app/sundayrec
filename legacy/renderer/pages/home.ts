@@ -922,7 +922,10 @@ export async function refreshHome(): Promise<void> {
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
-  startVU()
+  // LEAK GUARD (2026-07-31 audit): navigating home mid-recording used to
+  // reopen the getUserMedia meter stream — a second microphone owner beside
+  // the recorder's ffmpeg for the rest of the take.
+  if (!window.__isRecording) startVU()
 
   // Once-per-session silent preflight. Surfaces critical issues (disk full,
   // mic permission denied, device missing) on home as a banner *without*

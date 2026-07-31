@@ -182,6 +182,10 @@ const liveVu = makeVuState()
 function startVuMeter(): void {
   if (liveVu.stream) return  // already running
   if (!document.getElementById('live-vu-l')) return
+  // LEAK GUARD (2026-07-31 audit): never open a second microphone owner while
+  // the recorder's ffmpeg holds the device — visiting the live page mid-take
+  // used to attach an extra getUserMedia stream for the rest of the recording.
+  if (window.__isRecording) return
 
   const devId = settings.deviceId && settings.deviceId !== 'default' ? settings.deviceId : null
   navigator.mediaDevices.getUserMedia({
@@ -224,7 +228,7 @@ function startVuMeter(): void {
   })
 }
 
-function stopVuMeter(): void {
+export function stopVuMeter(): void {
   stopVuState(liveVu)
   const fills = ['live-vu-l', 'live-vu-r'].map(id => document.getElementById(id))
   const peaks = ['live-vu-peak-l', 'live-vu-peak-r'].map(id => document.getElementById(id))

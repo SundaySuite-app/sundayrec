@@ -141,6 +141,13 @@ pub async fn start_recording(
         }
     };
     let (_, clip) = tokio::join!(preview.stop_and_release(), harvest);
+    // LEAK GUARD (2026-07-31 audit): the harvest above only STOPS the rolling
+    // pre-roll capture on the audio-only path. For a VIDEO session (or pre-roll
+    // = 0 with an active loop) the rolling ffmpeg would keep holding the
+    // microphone for the whole recording — a second device owner competing with
+    // the capture. Stop it unconditionally; the idle loop is restarted by the
+    // preroll scheduler after the session ends.
+    preroll.stop();
     engine.start(app, Some(db.pool.clone()), opts, clip).await
 }
 
