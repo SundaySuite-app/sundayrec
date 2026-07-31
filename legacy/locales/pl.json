@@ -463,7 +463,11 @@
     "recommended": "Zalecane",
     "captureBench": "📏 Test precyzji (60 s)",
     "benchRunning": "Pomiar przez 60 s — odtwórz dźwięk/mów do mikrofonu …",
-    "benchResult": "Zmierzono {m}s z {e}s ({p} % straty)"
+    "benchResult": "Zmierzono {m}s z {e}s ({p} % straty)",
+    "scanChannels": "🔍 Znajdź kanały z sygnałem (3 s)",
+    "scanRunning": "Nasłuch przez 3 s — odtwórz dźwięk na kanałach …",
+    "scanFound": "{n} kanałów z sygnałem: {list}",
+    "scanNone": "Brak kanałów z sygnałem — odtwórz dźwięk i spróbuj ponownie"
   },
   "files": {
     "title": "Pliki i format",

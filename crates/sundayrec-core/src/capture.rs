@@ -52,6 +52,51 @@ use crate::settings::ChannelMode;
 /// absorbs the jitter. Raised 1024 → 4096 (a choppy USB Behringer), then 4096 →
 /// 8192 after the built-in MacBook mic still stuttered "when speaking" — louder
 /// passages produce denser packets, so the queue needs more headroom.
+/// Parse the INPUT audio channel count from an ffmpeg stderr banner, e.g.
+/// `Stream #0:0: Audio: pcm_f32le, 96000 Hz, 32 channels, flt, …`. ffmpeg names
+/// the 1/2-channel layouts (`mono`, `stereo`) and uses `N.M(...)` layout names
+/// for surround. Scans only the INPUT section (stops at `Output #`), first
+/// audio stream wins. This is how the app learns a digital mixer's REAL channel
+/// count — the webview's getUserMedia caps at 2, which hid the channel picker
+/// for the Qu-5's 32 input channels (2026-07-31).
+pub fn parse_input_channel_count(stderr: &str) -> Option<u32> {
+    for line in stderr.lines() {
+        if line.contains("Output #") {
+            break;
+        }
+        if !line.contains("Audio:") {
+            continue;
+        }
+        for part in line.split(", ") {
+            let p = part.trim();
+            if let Some(n) = p
+                .strip_suffix(" channels")
+                .and_then(|d| d.trim().parse::<u32>().ok())
+            {
+                return Some(n);
+            }
+            match p {
+                "mono" => return Some(1),
+                "stereo" => return Some(2),
+                _ => {}
+            }
+            // Surround layout names: "5.1", "5.1(side)", "7.1" → fronts + LFE.
+            let name = p.split('(').next().unwrap_or(p);
+            if let Some((a, b)) = name.split_once('.') {
+                if let (Ok(a), Ok(b)) = (a.parse::<u32>(), b.parse::<u32>()) {
+                    if a > 0 && a <= 64 && b <= 4 {
+                        return Some(a + b);
+                    }
+                }
+            }
+        }
+        // First audio stream seen but nothing matched — keep scanning is wrong;
+        // an unrecognised layout is safer reported as unknown.
+        return None;
+    }
+    None
+}
+
 pub const MAC_INPUT_QUEUE: &str = "8192";
 
 /// avfoundation input demux buffer (`-rtbufsize`) on mac/linux. Complements the
@@ -1099,6 +1144,28 @@ mod tests {
         // On mac/linux the chain has no empty leading slot — it starts with
         // silencedetect (no stray leading comma).
         assert!(!af.starts_with(','), "no empty drift slot leaking a comma");
+    }
+
+    #[test]
+    fn input_channel_count_parses_real_banners() {
+        // The actual Qu-5 banner (avfoundation, 32 ch @ 96 kHz).
+        let qu5 = "Input #0, avfoundation, from ':0':\n  Stream #0:0: Audio: pcm_f32le, 96000 Hz, 32 channels, flt, 98304 kb/s";
+        assert_eq!(parse_input_channel_count(qu5), Some(32));
+        let stereo = "  Stream #0:0: Audio: pcm_f32le, 48000 Hz, stereo, flt";
+        assert_eq!(parse_input_channel_count(stereo), Some(2));
+        let mono = "  Stream #0:0: Audio: pcm_s16le, 44100 Hz, mono, s16";
+        assert_eq!(parse_input_channel_count(mono), Some(1));
+        let surround = "  Stream #0:0: Audio: pcm_f32le, 48000 Hz, 5.1(side), flt";
+        assert_eq!(parse_input_channel_count(surround), Some(6));
+    }
+
+    #[test]
+    fn input_channel_count_ignores_the_output_section() {
+        // Only the INPUT stream counts — the output side is our own -ac.
+        let blob =
+            "Output #0, wav, to 'x.wav':\n  Stream #0:0: Audio: pcm_s16le, 96000 Hz, 32 channels";
+        assert_eq!(parse_input_channel_count(blob), None);
+        assert_eq!(parse_input_channel_count("no audio here"), None);
     }
 
     #[test]

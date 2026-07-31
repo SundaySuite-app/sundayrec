@@ -33,8 +33,18 @@ export async function getAudioDevices(): Promise<MediaDeviceInfo[]> {
   } catch { return [] }
 }
 
-export async function detectDeviceChannels(deviceId: string | null | undefined): Promise<number> {
+export async function detectDeviceChannels(deviceId: string | null | undefined, deviceLabel?: string | null): Promise<number> {
   if (!deviceId || deviceId === 'default' || deviceId === '') return 2
+  // The REAL channel count comes from the ffmpeg backend — getUserMedia caps a
+  // device at 2, which hid the channel picker for digital mixers (the Qu-5
+  // exposes 32 input channels over avfoundation; WebKit reported 2, so the
+  // picker never appeared — 2026-07-31).
+  if (deviceLabel) {
+    try {
+      const n = await window.api.probeDeviceChannels(deviceLabel)
+      if (typeof n === 'number' && n >= 1) return Math.max(2, n)
+    } catch { /* fall through to the getUserMedia estimate */ }
+  }
   try {
     const s = await navigator.mediaDevices.getUserMedia({
       audio: { deviceId: { ideal: deviceId }, channelCount: { ideal: 32 } },

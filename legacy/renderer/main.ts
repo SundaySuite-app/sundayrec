@@ -59,6 +59,8 @@ declare global {
       stopRecordingNow:    () => Promise<boolean>
       runTestRecording:    () => Promise<{ ok: boolean; signal?: 'silent' | 'low' | 'normal'; rmsDb?: number; error?: string }>
       runCaptureBench:     (secs: number) => Promise<import('../bindings/SelfTestReport').SelfTestReport>
+      probeDeviceChannels: (deviceName: string) => Promise<number>
+      scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
       testWebhook:         () => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>

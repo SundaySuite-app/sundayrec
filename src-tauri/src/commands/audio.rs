@@ -159,3 +159,20 @@ pub fn stop_vu(engine: State<'_, VuEngine>) -> AppResult<()> {
     engine.stop();
     Ok(())
 }
+
+/// The selected device's REAL input channel count via the ffmpeg backend (the
+/// webview's getUserMedia caps at 2 and hid the picker for digital mixers).
+#[tauri::command]
+pub async fn probe_device_channels(device_name: String) -> AppResult<u32> {
+    crate::audio::channel_probe::probe_input_channels(&device_name).await
+}
+
+/// Scan every input channel's peak over `secs` seconds — "which of my mixer's
+/// channels actually carry the mix?"
+#[tauri::command]
+pub async fn scan_device_channels(
+    device_name: String,
+    secs: u32,
+) -> AppResult<Vec<crate::audio::channel_probe::ChannelPeak>> {
+    crate::audio::channel_probe::scan_channel_peaks(&device_name, secs).await
+}

@@ -874,7 +874,7 @@ async fn run_session(
     pool: Option<SqlitePool>,
     opts: RecordingOpts,
     platform: Platform,
-    audio: FfmpegDevice,
+    mut audio: FfmpegDevice,
     video: Option<FfmpegDevice>,
     preroll_clip: Option<PrerollClip>,
     mut stop_rx: tokio::sync::mpsc::Receiver<()>,
@@ -1225,6 +1225,31 @@ async fn run_session(
                                     }
                                 }
 
+                                // Re-resolve the device by NAME before every
+                                // respawn: avfoundation indices reshuffle when
+                                // virtual/Continuity devices (Teams, iPhone)
+                                // come and go, and a stale index opens the
+                                // WRONG device — rig-observed as a 20 s
+                                // zero-byte recording (2026-07-31).
+                                if let Ok(inv) =
+                                    crate::audio::device_enum::enumerate_ffmpeg_devices().await
+                                {
+                                    if let Some(fresh) =
+                                        sundayrec_core::device_match::find_best_device_match(
+                                            &inv.audio_inputs,
+                                            &opts.audio_device_name,
+                                        )
+                                    {
+                                        if fresh.index != audio.index {
+                                            tracing::warn!(
+                                                old = ?audio.index,
+                                                new = ?fresh.index,
+                                                "recorder: device index moved — re-resolved before respawn"
+                                            );
+                                        }
+                                        audio = fresh.clone();
+                                    }
+                                }
                                 let args = build_record_args(
                                     platform,
                                     &audio,

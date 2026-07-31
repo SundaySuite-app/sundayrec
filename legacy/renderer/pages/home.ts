@@ -3,6 +3,7 @@ import { settings, patchSettings } from '../state'
 import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
 import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
+import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import type { RecordingEntry } from './history'
@@ -692,7 +693,7 @@ export function setupHome(): void {
           .replace('{p}', pct.toFixed(2)) +
         (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
     } catch (err) {
-      status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err))
+      status.textContent = '❌ ' + errText(err)
     }
     if (!window.__isRecording) startVU() // give the home meter back
     btn.disabled = false

@@ -148,6 +148,13 @@ pub async fn start_recording(
     // the capture. Stop it unconditionally; the idle loop is restarted by the
     // preroll scheduler after the session ends.
     preroll.stop();
+    // SETTLE: the renderer released its getUserMedia captures just before this
+    // command, but WebKit tears the CoreAudio unit down asynchronously — until
+    // it does, a multi-channel device can sit in the webview's 2-channel
+    // format and avfoundation's open fails with "audio format is not
+    // supported" (rig-verified on the Qu-5, 2026-07-31). A short pause lets
+    // the device's native format come back before ffmpeg opens it.
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     engine.start(app, Some(db.pool.clone()), opts, clip).await
 }
 
