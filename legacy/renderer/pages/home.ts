@@ -1028,6 +1028,10 @@ async function loadNextRecording(prefetchedNext?: { date: string } | null): Prom
 
   const tick = () => {
     if (!cntEl) return
+    // Skip while recording: the overlay covers home, but this 1 Hz text write
+    // used to invalidate layout for the whole hidden page every second of a
+    // take (there is no CSS containment). Resumes the moment recording ends.
+    if (window.__isRecording) return
     const diff   = d.getTime() - Date.now()
     const suffix = t('home.untilStart', 'til oppstart')
     cntEl.textContent = diff > 0 ? `${fmtCountdown(diff)} ${suffix}` : ''

@@ -476,6 +476,42 @@ export function releaseRendererAudioCaptures(): void {
   try { stopLiveVuMeter() } catch {}
 }
 
+/** Time-based release easing for the meter fall: the fraction of the remaining
+ *  distance to cover after `dt` ms, for a τ≈80 ms exponential release. Pure —
+ *  unit-tested. */
+export function easeFallAlpha(dtMs: number): number {
+  return 1 - Math.exp(-dtMs / 80)
+}
+
+/** Meter + waveform + timer WITHOUT RecordingOpts — for sessions the renderer
+ *  didn't start itself (scheduler-started recordings, engine resync after a
+ *  transient error). The full startMonitoring needs opts it doesn't have; this
+ *  lite variant drives everything that runs off `recording://levels`. Fixes
+ *  scheduler-started takes showing a dead meter/waveform/timer. */
+export function startMonitoringLite(): void {
+  recStartTime = Date.now()
+  recBytes = 0
+  const wfCanvas = document.getElementById('rec-waveform') as HTMLCanvasElement | null
+  if (wfCanvas && !recWaveform) {
+    recWaveform = new RecordingWaveform(wfCanvas)
+    recWaveform.start()
+  }
+  if (!levelsUnsub) startLevelsMeter()
+  if (!recTimerIval) {
+    recTimerIval = setInterval(() => {
+      if (!isRecording) return
+      const elapsed = Math.floor((Date.now() - recStartTime) / 1000)
+      const h = Math.floor(elapsed / 3600)
+      const m = Math.floor((elapsed % 3600) / 60)
+      const s = elapsed % 60
+      const timerEl = document.getElementById('rec-timer')
+      if (timerEl) timerEl.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+      const sizeEl = document.getElementById('rec-size')
+      if (sizeEl) sizeEl.textContent = (recBytes / 1e6).toFixed(1) + ' MB'
+    }, 1000)
+  }
+}
+
 async function startMonitoring(_opts: RecordingOpts): Promise<void> {
   stopHomeVU()
   stopAudioPageMonitoring()
@@ -570,15 +606,20 @@ function startLevelsMeter(): void {
       : { p: pk, t: pt }
   }
 
+  let lastLoopTs = performance.now()
   const loop = (): void => {
     if (!isRecording) { meterRaf = 0; return }
     const now = Date.now()
-    // Rise instant, fall eased. The fall is lighter (0.6/0.4) than before
-    // (0.8/0.2) so the needle drops nearly as fast as the home-page Web Audio
-    // meter — the heavy easing was a big part of the "uv-signal henger bak"
-    // feel. Peak-hold (below) still gives the eye a stable peak indicator.
-    meter.smL = meter.tL > meter.smL ? meter.tL : meter.smL * 0.6 + meter.tL * 0.4
-    meter.smR = meter.tR > meter.smR ? meter.tR : meter.smR * 0.6 + meter.tR * 0.4
+    // Rise instant, fall eased with a TIME-based constant (τ ≈ 80 ms). The old
+    // per-frame factor (0.6/0.4) defined the release in FRAMES, so whenever the
+    // frame rate dipped the needle's motion law visibly changed — a jank
+    // amplifier. exp(−dt/τ) keeps the release identical at any frame rate.
+    const nowPerf = performance.now()
+    const dt = Math.min(200, nowPerf - lastLoopTs)
+    lastLoopTs = nowPerf
+    const alpha = easeFallAlpha(dt)
+    meter.smL = meter.tL > meter.smL ? meter.tL : meter.smL + (meter.tL - meter.smL) * alpha
+    meter.smR = meter.tR > meter.smR ? meter.tR : meter.smR + (meter.tR - meter.smR) * alpha
     const a = hold(meter.smL, meter.pkL, meter.pkTL, now); meter.pkL = a.p; meter.pkTL = a.t
     const b = hold(meter.smR, meter.pkR, meter.pkTR, now); meter.pkR = b.p; meter.pkTR = b.t
 
@@ -628,6 +669,8 @@ async function doStopRecording(): Promise<void> {
 function showOverlay(opts: RecordingOpts): void {
   isRecording = true
   window.__isRecording = true
+  // Pause the invisible home-page animations for the duration (styles.css).
+  document.body.classList.add('recording-active')
   // Cancel any pending preview restart and stop home preview (device now used by recorder)
   if (previewRestartTimer) { clearTimeout(previewRestartTimer); previewRestartTimer = null }
   stopVideoPreview()
@@ -724,6 +767,7 @@ function showOverlay(opts: RecordingOpts): void {
 function hideOverlay(): void {
   isRecording = false
   window.__isRecording = false
+  document.body.classList.remove('recording-active')
 
   // Clean up overlay video preview
   recPreviewUnsub?.(); recPreviewUnsub = undefined
@@ -793,6 +837,11 @@ function resyncOverlayToLiveSession(): void {
   document.getElementById('btn-start-recording')?.classList.add('recording')
   const deviceEl = document.getElementById('rec-device-name')
   if (deviceEl && !deviceEl.textContent) deviceEl.textContent = settings.deviceName ?? ''
+  document.body.classList.add('recording-active')
+  // Bring the meters/waveform/timer to life — the engine is recording and
+  // emitting levels; without this a resynced (or scheduler-started) session
+  // showed a dead overlay.
+  startMonitoringLite()
 }
 
 function showReconnectBanner(): void {

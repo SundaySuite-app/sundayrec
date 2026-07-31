@@ -65,18 +65,22 @@ function computePeak(db: number, peak: number, pt: number, now: number): { p: nu
 // frame, fighting a CSS width-transition and reflowing the page 60×/s).
 interface VuWriteState {
   fillScale: number
-  peakBucket: number
+  peakPx: number
   peakVisible: boolean
   text: string
   textAt: number
+  /** Cached parent-track width in px (peak translateX basis); refreshed lazily. */
+  trackW: number
+  trackWAt: number
 }
 const vuWrites = new WeakMap<HTMLElement, VuWriteState>()
 const DB_TEXT_MIN_INTERVAL_MS = 150
+const TRACK_W_REFRESH_MS = 1000
 
 function writeState(el: HTMLElement): VuWriteState {
   let s = vuWrites.get(el)
   if (!s) {
-    s = { fillScale: -1, peakBucket: -1, peakVisible: false, text: '', textAt: 0 }
+    s = { fillScale: -1, peakPx: -1, peakVisible: false, text: '', textAt: 0, trackW: 0, trackWAt: 0 }
     vuWrites.set(el, s)
   }
   return s
@@ -104,12 +108,20 @@ export function setVUBar(
   }
   if (peakEl) {
     const s = writeState(peakEl)
-    // `left` reflows, so quantize to 0.5% buckets — the hold keeps the marker
-    // still most of the time, and during the fall the steps are subpixel-ish.
-    const bucket = Math.round(peakPct * 2)
-    if (s.peakBucket !== bucket) {
-      s.peakBucket = bucket
-      peakEl.style.left = bucket / 2 + '%'
+    // transform: translateX — GPU composite, NO layout. The old `left: %` write
+    // reflowed on every frame during the peak release (25 dB/s fall = ~0.7 %
+    // per frame, defeating any coarse bucketing) ×2 bars ×60 Hz. translateX
+    // needs the track width in px; cache it and refresh lazily (a resize is
+    // corrected within a second, invisible on a 2 px marker).
+    const now = performance.now()
+    if (now - s.trackWAt >= TRACK_W_REFRESH_MS) {
+      s.trackWAt = now
+      s.trackW = peakEl.parentElement?.clientWidth ?? s.trackW
+    }
+    const px = Math.round((peakPct / 100) * s.trackW)
+    if (s.peakPx !== px) {
+      s.peakPx = px
+      peakEl.style.transform = `translateX(${px}px)`
     }
     const visible = peakDb > -59
     if (s.peakVisible !== visible) {
