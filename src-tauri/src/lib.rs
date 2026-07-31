@@ -364,6 +364,7 @@ pub fn run() {
             commands::editor::editor_peaks,
             commands::editor::editor_extract_audio,
             commands::editor::editor_extract_playback_proxy,
+            commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
             commands::editor::editor_detect_chapters,

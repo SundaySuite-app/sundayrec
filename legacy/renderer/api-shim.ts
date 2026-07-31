@@ -1090,6 +1090,10 @@ const api: Record<string, unknown> = {
   // the 8 kHz buffer for playback). The 8 kHz WAV remains the waveform source.
   editorExtractPlaybackProxy: async (fp: string) =>
     call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
+  // editor_probe_peak → true max_volume (dBFS) of the ORIGINAL file via
+  // volumedetect — Normalize's honest basis on the 8 kHz-extract path.
+  editorProbePeak: async (fp: string) =>
+    call<number | null>("editor_probe_peak", { inputPath: fp }, null),
   editorPickVideoFile: async () =>
     pickPath({ name: "Video", extensions: VIDEO_EXT }),
   editorSaveVideo: async () => ({ ok: false }),

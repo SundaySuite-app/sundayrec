@@ -664,7 +664,8 @@
     "errFileNotFound": "Originalfilen er ikke tilgjengelig — er disken frakoblet?",
     "errCutData": "Intern feil i kuttdataene. Prøv å laste filen på nytt.",
     "chaptersEmpty": "Ingen kapitler ennå. Klikk «+ Legg til ved playhead» for å starte.",
-    "chapterClickSeek": "Klikk for å søke"
+    "chapterClickSeek": "Klikk for å søke",
+    "qualityFallback": "Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke."
   },
   "master": {
     "title": "Mastering (klargjør for publisering)",

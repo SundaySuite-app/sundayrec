@@ -825,6 +825,12 @@ pub async fn extract_playback_proxy(_input_path: &str) -> AppResult<String> {
     disabled("extractPlaybackProxy")
 }
 
+/// True-peak probe over the original file (Normalize's honest basis).
+#[cfg(not(feature = "editor"))]
+pub async fn probe_true_peak_db(_input_path: &str) -> AppResult<Option<f64>> {
+    disabled("probeTruePeak")
+}
+
 /// Content-detect segments (silence/speech/music + promoted sermon block).
 #[cfg(not(feature = "editor"))]
 pub async fn segments(_input_path: &str) -> AppResult<Vec<EditorSegment>> {
@@ -980,6 +986,38 @@ pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
         ));
     }
     Ok(out_str)
+}
+
+/// True-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
+/// honest basis for Normalize when the in-memory buffer is the 8 kHz waveform
+/// extract (its peaks under-read the real peak; the EXPORT runs on the
+/// original, so normalizing from extract peaks risked clipping). `None` when
+/// the probe fails — the caller falls back to buffer peaks.
+#[cfg(feature = "editor")]
+pub async fn probe_true_peak_db(input_path: &str) -> AppResult<Option<f64>> {
+    use sundayrec_core::editor::{parse_max_volume_db, peak_probe_args};
+
+    if !std::path::Path::new(input_path).exists() {
+        return Err(AppError::Validation("file_not_found".into()));
+    }
+    let args = peak_probe_args(input_path);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
+    let drain = child.stderr.take().map(|mut stderr| {
+        tauri::async_runtime::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut bytes = Vec::new();
+            let _ = stderr.read_to_end(&mut bytes).await;
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    });
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(300), child.wait()).await;
+    let _ = child.start_kill();
+    let stderr_buf = match drain {
+        Some(h) => h.await.unwrap_or_default(),
+        None => String::new(),
+    };
+    Ok(parse_max_volume_db(&stderr_buf))
 }
 
 /// Best-effort sweep of stale playback-proxy m4a files from the OS temp dir.

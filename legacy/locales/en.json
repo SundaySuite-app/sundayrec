@@ -664,7 +664,8 @@
     "errFileNotFound": "Original file is not available — is the disk disconnected?",
     "errCutData": "Internal error in cut data. Try reloading the file.",
     "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
-    "chapterClickSeek": "Click to seek"
+    "chapterClickSeek": "Click to seek",
+    "qualityFallback": "Playback in reduced quality (8 kHz) — full quality could not be prepared for this file. Export is unaffected."
   },
   "master": {
     "title": "Mastering (prepare for publishing)",

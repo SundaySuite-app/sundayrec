@@ -664,7 +664,8 @@
     "errFileNotFound": "Plik oryginalny nie jest dostępny — czy dysk jest odłączony?",
     "errCutData": "Wewnętrzny błąd danych wycięć. Spróbuj ponownie wczytać plik.",
     "chaptersEmpty": "Brak rozdziałów. Kliknij \"+ Dodaj w pozycji odtwarzania\", aby zacząć.",
-    "chapterClickSeek": "Kliknij, aby przejść"
+    "chapterClickSeek": "Kliknij, aby przejść",
+    "qualityFallback": "Odtwarzanie w obniżonej jakości (8 kHz) — nie udało się przygotować pełnej jakości dla tego pliku. Eksport nie jest zmieniony."
   },
   "master": {
     "title": "Mastering (przygotuj do publikacji)",

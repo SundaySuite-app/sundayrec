@@ -664,7 +664,8 @@
     "errFileNotFound": "Originaldatei ist nicht verfügbar — ist der Datenträger getrennt?",
     "errCutData": "Interner Fehler in Schnittdaten. Versuchen Sie, die Datei neu zu laden.",
     "chaptersEmpty": "Noch keine Kapitel. Klicken Sie auf „+ An Wiedergabeposition hinzufügen\", um zu beginnen.",
-    "chapterClickSeek": "Zum Suchen klicken"
+    "chapterClickSeek": "Zum Suchen klicken",
+    "qualityFallback": "Wiedergabe in reduzierter Qualität (8 kHz) — volle Qualität konnte für diese Datei nicht vorbereitet werden. Der Export ist nicht betroffen."
   },
   "master": {
     "title": "Mastering (Vorbereitung zur Veröffentlichung)",

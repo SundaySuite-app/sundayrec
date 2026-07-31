@@ -11,7 +11,9 @@ export const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.wmv', '.ts'
 // Ambiguous containers (can be video or audio) — probe to decide
 export const PROBE_EXTS = new Set(['.mkv', '.webm', '.mka'])
 // Audio formats the browser (Web Audio API) can decode natively
-export const WEB_AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.m4b', '.m4r', '.ogg', '.oga', '.opus', '.webm'])
+export const WEB_AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.m4b', '.m4r', '.ogg', '.oga', '.opus', '.webm', '.aiff', '.aif', '.caf'])
+// .aiff/.aif/.caf: CoreAudio-native — WKWebView decodes them fine; they used
+// to fall through to the 8 kHz mono extract at ANY size (2026-07-31 audit).
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 export const $ = (id: string) => document.getElementById(id)
@@ -80,6 +82,10 @@ export const E = {
   // element streaming a seekable AAC proxy from disk (asset://). When set it
   // drives playback instead of the 8 kHz Web-Audio buffer (which then only
   // backs the waveform). null = no proxy → the AudioBuffer drives playback.
+  /** The loaded buffer came from the 8 kHz ffmpeg extract (oversized/exotic
+   *  file) — its peaks under-read the true peak; Normalize probes the
+   *  original instead. */
+  usedFfmpegExtract: false,
   proxyAudioEl: null as HTMLAudioElement | null,
   playStartCtxTime: 0,
   playStartSec: 0,

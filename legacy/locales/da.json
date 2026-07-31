@@ -664,7 +664,8 @@
     "errFileNotFound": "Originalfilen er ikke tilgængelig — er disken afbrudt?",
     "errCutData": "Intern fejl i klippedata. Prøv at genindlæse filen.",
     "chaptersEmpty": "Ingen kapitler endnu. Klik på \"+ Tilføj ved afspilningsmarkør\" for at starte.",
-    "chapterClickSeek": "Klik for at søge"
+    "chapterClickSeek": "Klik for at søge",
+    "qualityFallback": "Afspilning i reduceret kvalitet (8 kHz) — fuld kvalitet kunne ikke klargøres for denne fil. Eksport påvirkes ikke."
   },
   "master": {
     "title": "Mastering (klargør til udgivelse)",
