@@ -137,6 +137,7 @@ const EVENT_MAP: Record<string, string> = {
   "recording-overlay-stop": "recording://state",
   "recording-finished": "recording://finished",
   "recording-error": "recording://error",
+  "recording-warning": "recording://warning",
   "recording-progress": "recording://progress",
   "recording-levels": "recording://levels",
   "recording-reconnecting": "recording://reconnecting",
@@ -171,6 +172,12 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
   // RecordingEvent { code, message } → handler also reads `error` for the
   // localized native-error mapping.
   "recording-error": (p) => {
+    const d = (p ?? {}) as { code?: string; message?: string };
+    return { ...d, error: d.code };
+  },
+  // Same payload shape as recording-error — a NON-terminal classified error
+  // (the backend reconnect policy retries; the session continues).
+  "recording-warning": (p) => {
     const d = (p ?? {}) as { code?: string; message?: string };
     return { ...d, error: d.code };
   },
@@ -724,6 +731,16 @@ const api: Record<string, unknown> = {
   installUpdate: async () => {
     let timer: ReturnType<typeof setInterval> | undefined;
     try {
+      // "Restart & install" after a completed download must RELAUNCH, not
+      // re-enter the download pipeline. (The 0.4.2 bug: this always re-ran
+      // download_and_install, whose re-check could fail — e.g. the pre-release
+      // /releases/latest 404 — and every non-ready outcome returned silently,
+      // so clicking the restart button did nothing visible.)
+      const cur = await invoke<UpdateStatus>("update_status").catch(() => null);
+      if (cur?.phase === "readyToInstall") {
+        await invoke("update_relaunch");
+        return true;
+      }
       // Poll the engine status for download progress while the install runs.
       timer = setInterval(() => {
         void invoke<UpdateStatus>("update_status")
@@ -742,11 +759,14 @@ const api: Record<string, unknown> = {
         await invoke("update_relaunch");
         return true;
       }
-      if (st.phase === "error") {
-        emitLocal("update-error", st.message ?? "error");
+      if (st.phase === "upToDate") {
+        emitLocal("update-not-available");
         return false;
       }
-      return true;
+      // Anything else (error / a phase we don't expect here) is a FAILED
+      // install attempt — surface it instead of returning a silent success.
+      emitLocal("update-error", ("message" in st ? st.message : null) ?? `unexpected update phase: ${st.phase}`);
+      return false;
     } catch (e) {
       if (timer !== undefined) clearInterval(timer);
       emitLocal("update-error", String(e));

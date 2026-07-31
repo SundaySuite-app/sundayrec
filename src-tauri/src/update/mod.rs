@@ -256,9 +256,29 @@ pub async fn download_and_install(
 }
 
 /// Relaunch the app so the staged update takes effect (the Electron
-/// `quitAndInstall`). GUI-UNVERIFIED.
+/// `quitAndInstall`).
+///
+/// Two pre-restart steps are LOAD-BEARING (the 0.4.2 "restart never came back"
+/// bug):
+///
+/// 1. `tauri_plugin_single_instance::destroy` — `app.restart()` on the main
+///    thread runs `cleanup_before_exit` + `process::restart` WITHOUT dispatching
+///    `RunEvent::Exit`, so the plugin's socket/lock is never released. The
+///    freshly spawned replacement then reaches the still-bound socket of the
+///    dying parent, concludes another instance is running, and exits — the app
+///    quits and never reappears. Destroying the lock first closes that race.
+/// 2. Stop the capture sidecars — the `RunEvent::ExitRequested` cleanup is
+///    likewise skipped on the restart path, so a recording/preview ffmpeg would
+///    survive into (and fight with) the updated instance.
 #[cfg(feature = "updater")]
 pub fn relaunch(app: &AppHandle) -> AppResult<()> {
+    use tauri::Manager;
+    tauri_plugin_single_instance::destroy(app);
+    app.state::<crate::recorder::engine::RecorderEngine>()
+        .stop();
+    app.state::<crate::media::preview::PreviewEngine>().stop();
+    app.state::<crate::audio::vu::VuEngine>().stop();
+    tracing::info!("update: single-instance lock released + sidecars stopped — restarting");
     // `restart()` diverges (`-> !`): the process is replaced and never returns
     // here. The `Ok(())` is unreachable but keeps the signature identical to
     // the feature-OFF stub so the command layer is feature-agnostic.

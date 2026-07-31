@@ -110,7 +110,16 @@ pub const PROGRESS_EVENT: &str = "recording://progress";
 /// Event channel: fired once, when ffmpeg's first `size=` line proves encoding.
 pub const STARTED_EVENT: &str = "recording://started";
 /// Event channel: a classified fatal error from ffmpeg's stderr (or the watchdog).
+/// The UI treats this as TERMINAL (tears the recording overlay down), so it must
+/// only fire when the session is actually over — transient errors that the
+/// reconnect policy will retry go out on [`WARNING_EVENT`] instead. (The rig
+/// incident 2026-07-31: a transient avfoundation open error was emitted here,
+/// the UI went idle, and the respawned capture kept recording invisibly.)
 pub const ERROR_EVENT: &str = "recording://error";
+/// Event channel: a classified but NON-terminal error — the reconnect policy
+/// will retry, the session continues. The UI shows a notice without tearing the
+/// overlay down.
+pub const WARNING_EVENT: &str = "recording://warning";
 /// Event channel: a silence warning (muted mixer / weak signal).
 pub const SILENCE_EVENT: &str = "recording://silence";
 /// Event channel: the recorder is attempting to reconnect after an unexpected death.
@@ -979,7 +988,7 @@ async fn run_session(
 
     emit_state(RecorderState::Recording, 0);
 
-    loop {
+    'session: loop {
         // Persist the crash-recovery manifest reflecting the CURRENT deliverable /
         // fragment layout (it grows across splits + reconnects). If the app dies
         // before the clean delete at session end, the startup scan finalises these
@@ -1181,7 +1190,17 @@ async fn run_session(
                                 },
                             );
                             tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
-                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                            // The back-off must stay stop-responsive: with a dead
+                            // child there is nothing to wind down, so a stop (or
+                            // app quit) during the wait goes STRAIGHT to the
+                            // graceful finalize instead of respawning first.
+                            tokio::select! {
+                                _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
+                                _ = stop_rx.recv() => {
+                                    tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
+                                    break 'session;
+                                }
+                            }
 
                             let args = build_record_args(
                                 platform,
@@ -1702,10 +1721,17 @@ async fn run_segment(
                         let _ = app.emit(LEVELS_EVENT, RecordingLevels::from(lv));
                     }
                     Some(ReaderMsg::Error(code, line)) => {
-                        // Surface the classified error; do NOT end the segment —
-                        // ffmpeg usually dies right after, and the Exit branch
-                        // carries the last_error to the recovery policy.
-                        emit_error(app, error_code_str(code), &line);
+                        // Do NOT end the segment — ffmpeg usually dies right
+                        // after, and the Exit branch carries the last_error to
+                        // the recovery policy. Only a FATAL code (no reconnect
+                        // coming) may go out on the terminal ERROR_EVENT; a
+                        // transient one goes out as a warning so the UI keeps
+                        // the overlay up while the reconnect policy retries.
+                        if sundayrec_core::recorder::is_fatal_reconnect_error(code) {
+                            emit_error(app, error_code_str(code), &line);
+                        } else {
+                            emit_warning(app, error_code_str(code), &line);
+                        }
                     }
                     Some(ReaderMsg::Exit { last_error }) => {
                         break SegmentOutcome::UnexpectedExit { last_error };
@@ -1919,7 +1945,8 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
         .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
-/// Emit a classified error to the renderer.
+/// Emit a classified TERMINAL error to the renderer (the UI tears the recording
+/// overlay down on this event — see [`ERROR_EVENT`]).
 fn emit_error(app: &AppHandle, code: &str, message: &str) {
     let _ = app.emit(
         ERROR_EVENT,
@@ -1931,6 +1958,20 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
     // Companion for the standalone "SundayRec Lydhjelp" diagnostic: persist the
     // last classified error to disk so that tool can explain, in plain Norwegian,
     // what stopped the recording last time (it can't see our in-process events).
+    skriv_siste_feil_til_disk(app, code, message);
+}
+
+/// Emit a classified NON-terminal error (the session continues — the reconnect
+/// policy will retry). Still mirrored to `last-error.json` so the diagnostics
+/// surface sees transient hiccups too.
+fn emit_warning(app: &AppHandle, code: &str, message: &str) {
+    let _ = app.emit(
+        WARNING_EVENT,
+        RecordingEvent {
+            code: code.to_string(),
+            message: message.to_string(),
+        },
+    );
     skriv_siste_feil_til_disk(app, code, message);
 }
 
