@@ -2,6 +2,7 @@ import { t, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
 import { startVU } from './home-vu'
+import { releaseRendererAudioCaptures } from './recording'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import type { RecordingEntry } from './history'
@@ -676,6 +677,10 @@ export function setupHome(): void {
     if (!btn || !status) return
     btn.disabled = true
     status.textContent = t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')
+    // The bench must measure the RECORDING PATH alone: release every
+    // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
+    // getUserMedia on the same device skews the source itself).
+    releaseRendererAudioCaptures()
     try {
       const r = await window.api.runCaptureBench(60)
       const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
@@ -689,6 +694,7 @@ export function setupHome(): void {
     } catch (err) {
       status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err))
     }
+    if (!window.__isRecording) startVU() // give the home meter back
     btn.disabled = false
   })
   document.getElementById('btn-run-preflight-settings')?.addEventListener('click',  () => runPreflight('btn-run-preflight-settings',  'health-status-settings', 'preflight-findings-settings'))
