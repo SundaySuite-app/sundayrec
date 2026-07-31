@@ -95,7 +95,14 @@
     "toastReadyText": "Version {v} er hentet",
     "availableMac": "Version {v} — klik for at hente",
     "toastAvailableMac": "Version {v} — klik for at hente",
-    "restartInstall": "↺ Genstart og installer"
+    "restartInstall": "↺ Genstart og installer",
+    "availableInstall": "Version {v} tilgængelig — klik for at downloade og installere",
+    "toastAvailableInstall": "Version {v} — klik for at downloade og installere",
+    "btnDownloadInstall": "Download og installer",
+    "btnDownloading": "Downloader…",
+    "btnRestartInstall": "Genstart og installer",
+    "restarting": "Genstarter…",
+    "restartFailed": "Genstarten skete ikke — luk appen og åbn den igen, så er opdateringen aktiv"
   },
   "history": {
     "title": "Historik",

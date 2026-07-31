@@ -95,7 +95,14 @@
     "toastReadyText": "La version {v} a été téléchargée",
     "availableMac": "Version {v} — cliquez pour télécharger",
     "toastAvailableMac": "Version {v} — cliquez pour télécharger",
-    "restartInstall": "↺ Redémarrer et installer"
+    "restartInstall": "↺ Redémarrer et installer",
+    "availableInstall": "Version {v} disponible — cliquez pour télécharger et installer",
+    "toastAvailableInstall": "Version {v} — cliquez pour télécharger et installer",
+    "btnDownloadInstall": "Télécharger et installer",
+    "btnDownloading": "Téléchargement…",
+    "btnRestartInstall": "Redémarrer et installer",
+    "restarting": "Redémarrage…",
+    "restartFailed": "Le redémarrage n'a pas eu lieu — quittez l'application et rouvrez-la, la mise à jour sera alors active"
   },
   "history": {
     "title": "Historique",

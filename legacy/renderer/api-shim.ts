@@ -483,6 +483,7 @@ const LOCAL_CHANNELS = new Set([
   "update-not-available",
   "update-download-progress",
   "update-downloaded",
+  "update-restarting",
   "update-error",
 ]);
 const localListeners: Record<string, Array<(p: unknown) => void>> = {};
@@ -729,6 +730,29 @@ const api: Record<string, unknown> = {
     }
   },
   installUpdate: async () => {
+    // Ask the backend to relaunch, with a visible state and a dead-man's
+    // switch: if this process is still alive N seconds after asking, the
+    // restart did NOT happen — surface that instead of silence (the recurring
+    // 0.4.2→0.4.4 failure mode was precisely a no-op restart button). On a
+    // SUCCESSFUL relaunch the process dies and the timer never fires.
+    const requestRelaunch = async (): Promise<boolean> => {
+      emitLocal("update-restarting");
+      const deadMans = setTimeout(
+        () => emitLocal("update-error", "restart_failed"),
+        6000,
+      );
+      try {
+        await invoke("update_relaunch");
+        // macOS: the backend arms the `open`-helper and exits — this promise
+        // normally never resolves. If it does, keep the dead-man's switch
+        // armed; reaching the timeout means we are provably still running.
+        return true;
+      } catch (e) {
+        clearTimeout(deadMans);
+        emitLocal("update-error", String(e));
+        return false;
+      }
+    };
     let timer: ReturnType<typeof setInterval> | undefined;
     try {
       // "Restart & install" after a completed download must RELAUNCH, not
@@ -738,8 +762,7 @@ const api: Record<string, unknown> = {
       // so clicking the restart button did nothing visible.)
       const cur = await invoke<UpdateStatus>("update_status").catch(() => null);
       if (cur?.phase === "readyToInstall") {
-        await invoke("update_relaunch");
-        return true;
+        return await requestRelaunch();
       }
       // Poll the engine status for download progress while the install runs.
       timer = setInterval(() => {
@@ -756,8 +779,7 @@ const api: Record<string, unknown> = {
       clearInterval(timer);
       if (st.phase === "readyToInstall") {
         emitLocal("update-downloaded", { version: st.version });
-        await invoke("update_relaunch");
-        return true;
+        return await requestRelaunch();
       }
       if (st.phase === "upToDate") {
         emitLocal("update-not-available");

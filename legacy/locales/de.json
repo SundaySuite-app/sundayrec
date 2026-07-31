@@ -95,7 +95,14 @@
     "toastReadyText": "Version {v} wurde heruntergeladen",
     "availableMac": "Version {v} — klicken Sie zum Herunterladen",
     "toastAvailableMac": "Version {v} — klicken Sie zum Herunterladen",
-    "restartInstall": "↺ Neu starten und installieren"
+    "restartInstall": "↺ Neu starten und installieren",
+    "availableInstall": "Version {v} verfügbar — klicken zum Herunterladen und Installieren",
+    "toastAvailableInstall": "Version {v} — klicken zum Herunterladen und Installieren",
+    "btnDownloadInstall": "Herunterladen und installieren",
+    "btnDownloading": "Wird heruntergeladen…",
+    "btnRestartInstall": "Neu starten und installieren",
+    "restarting": "Wird neu gestartet…",
+    "restartFailed": "Der Neustart fand nicht statt — App beenden und erneut öffnen, dann ist das Update aktiv"
   },
   "history": {
     "title": "Verlauf",
