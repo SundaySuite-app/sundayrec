@@ -95,7 +95,14 @@
     "toastReadyText": "Versjon {v} er lastet ned",
     "availableMac": "Versjon {v} — klikk for å laste ned",
     "toastAvailableMac": "Versjon {v} — klikk for å laste ned",
-    "restartInstall": "↺ Start på nytt og installer"
+    "restartInstall": "↺ Start på nytt og installer",
+    "availableInstall": "Versjon {v} tilgjengelig — klikk for å laste ned og installere",
+    "toastAvailableInstall": "Versjon {v} — klikk for å laste ned og installere",
+    "btnDownloadInstall": "Last ned og installer",
+    "btnDownloading": "Laster ned…",
+    "btnRestartInstall": "Start på nytt og installer",
+    "restarting": "Starter på nytt…",
+    "restartFailed": "Omstarten skjedde ikke — avslutt appen og åpne den på nytt, så er oppdateringen aktiv"
   },
   "history": {
     "title": "Historikk",

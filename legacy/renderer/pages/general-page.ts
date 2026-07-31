@@ -126,52 +126,61 @@ function wireUpdateIpcListeners(): void {
   if (updateIpcWired) return
   updateIpcWired = true
 
-  // Update events from main
-  // On macOS, autoDownload is disabled (unsigned app — in-place ZIP install loops).
-  // update-available shows a download link; update-downloaded only fires on Windows.
-  let _isMac = false
-  window.api.getPlatform?.().then(p => { _isMac = p === 'darwin' }).catch(() => {})
+  // Update events from the api-shim bridge. The updater flow is identical on
+  // every platform now (Tauri downloads only when installUpdate is invoked) —
+  // the old `_isMac` special-casing hid ALL download progress on macOS, so a
+  // click on "install" looked completely dead for the whole ~40 MB download.
+  const updateButtons = (): HTMLButtonElement[] =>
+    ['btn-toast-install', 'btn-restart-install']
+      .map(id => document.getElementById(id) as HTMLButtonElement | null)
+      .filter((b): b is HTMLButtonElement => b !== null)
+  const setUpdateButtons = (label: string | null, opts?: { disabled?: boolean; show?: boolean }): void => {
+    for (const b of updateButtons()) {
+      if (label !== null) b.textContent = label
+      if (opts?.disabled !== undefined) b.disabled = opts.disabled
+      if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
+    }
+  }
+  const hideProgress = (): void => {
+    const wrap = document.getElementById('update-progress-wrap')
+    if (wrap) wrap.style.display = 'none'
+  }
 
   updateIpcUnsubs.push(window.api.on('update-checking',          () => setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))))
-  updateIpcUnsubs.push(window.api.on('update-not-available',     () => { setUpdateStatus('ok', t('update.upToDate', 'Du er oppdatert')); hideToast() }))
+  updateIpcUnsubs.push(window.api.on('update-not-available',     () => {
+    // Also retire any stale install/restart button from an earlier round — a
+    // leftover "Start på nytt og installer" on an up-to-date app is a button
+    // that provably does nothing (rig-observed on 0.4.5).
+    setUpdateStatus('ok', t('update.upToDate', 'Du er oppdatert'))
+    setUpdateButtons(null, { show: false, disabled: false })
+    hideProgress()
+    hideToast()
+  }))
   updateIpcUnsubs.push(window.api.on('update-available',         (info: unknown) => {
     const v = (info as { version: string }).version
-    if (_isMac) {
-      setUpdateStatus('ready', t('update.availableMac', 'Versjon {v} tilgjengelig — last ned ny DMG').replace('{v}', v))
-      const restartBtn = document.getElementById('btn-restart-install')
-      if (restartBtn) {
-        restartBtn.textContent = `↓ Last ned v${v}`
-        restartBtn.style.display = 'inline-flex'
-      }
-      showUpdateToast(
-        t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
-        t('update.toastAvailableMac', 'Versjon {v} — klikk for å laste ned').replace('{v}', v),
-        true
-      )
-    } else {
-      setUpdateStatus('pending', t('update.available', 'Ny versjon {v} er tilgjengelig — laster ned…').replace('{v}', v))
-      showUpdateToast(
-        t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
-        t('update.toastAvailableText', 'Versjon {v} lastes ned…').replace('{v}', v)
-      )
-    }
+    setUpdateStatus('ready', t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v))
+    // The label must say what the click DOES from here: download + install.
+    setUpdateButtons(`↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
+    showUpdateToast(
+      t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
+      t('update.toastAvailableInstall', 'Versjon {v} — klikk for å laste ned og installere').replace('{v}', v),
+      true
+    )
   }))
   updateIpcUnsubs.push(window.api.on('update-download-progress', (prog: unknown) => {
-    if (_isMac) return
     const pct  = Math.round((prog as { percent?: number }).percent ?? 0)
     const wrap = document.getElementById('update-progress-wrap')
     const bar  = document.getElementById('update-progress-bar') as HTMLElement | null
     if (wrap) wrap.style.display = 'block'
     if (bar)  bar.style.width   = pct + '%'
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
+    setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
     setToastProgress(pct)
   }))
   updateIpcUnsubs.push(window.api.on('update-downloaded', (info: unknown) => {
     const v = (info as { version: string }).version
-    const wrap = document.getElementById('update-progress-wrap')
-    if (wrap) wrap.style.display = 'none'
-    const restartBtn = document.getElementById('btn-restart-install')
-    if (restartBtn) restartBtn.style.display = 'inline-flex'
+    hideProgress()
+    setUpdateButtons(`↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
     setUpdateStatus('ready', t('update.readyInstall', 'Versjon {v} er klar — start på nytt for å installere').replace('{v}', v))
     showUpdateToast(
       t('update.toastReadyTitle', 'Klar for installasjon'),
@@ -179,8 +188,21 @@ function wireUpdateIpcListeners(): void {
       true
     )
   }))
+  updateIpcUnsubs.push(window.api.on('update-restarting', () => {
+    setUpdateStatus('pending', t('update.restarting', 'Starter på nytt…'))
+    setUpdateButtons(t('update.restarting', 'Starter på nytt…'), { disabled: true })
+  }))
   updateIpcUnsubs.push(window.api.on('update-error', (msg: unknown) => {
-    setUpdateStatus('error', t('update.error', 'Kunne ikke sjekke for oppdateringer'))
+    hideProgress()
+    setUpdateButtons(null, { disabled: false })
+    // The dead-man's switch in api-shim fires this when the process is still
+    // alive after a relaunch request — tell the user exactly what to do
+    // instead of the generic "check failed" text.
+    if (msg === 'restart_failed') {
+      setUpdateStatus('error', t('update.restartFailed', 'Omstarten skjedde ikke — avslutt appen og åpne den på nytt, så er oppdateringen aktiv'))
+    } else {
+      setUpdateStatus('error', t('update.error', 'Kunne ikke sjekke for oppdateringer'))
+    }
     console.warn('Update error:', msg)
   }))
 

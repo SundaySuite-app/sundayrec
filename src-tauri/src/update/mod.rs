@@ -255,30 +255,96 @@ pub async fn download_and_install(
     Ok(next)
 }
 
+/// Append a timestamped line to `<app_data>/update-relaunch.log`. The GUI app's
+/// stdout goes nowhere (Finder launch), which made the 0.4.2→0.4.4 relaunch
+/// failures undiagnosable after the fact — this file is the flight recorder for
+/// the one code path that, by design, kills its own process.
+fn relaunch_log(app: &AppHandle, msg: &str) {
+    use tauri::Manager;
+    tracing::info!("update-relaunch: {msg}");
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let line = format!("{} {msg}\n", chrono::Local::now().to_rfc3339());
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("update-relaunch.log"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+}
+
 /// Relaunch the app so the staged update takes effect (the Electron
 /// `quitAndInstall`).
 ///
-/// Two pre-restart steps are LOAD-BEARING (the 0.4.2 "restart never came back"
-/// bug):
+/// History (the "restart never came back / did nothing" saga):
+/// - 0.4.2: frontend never invoked relaunch at all.
+/// - 0.4.4: `tauri_plugin_single_instance::destroy` + engine stops before
+///   `app.restart()` — still no visible restart on macOS (rig-verified: the
+///   bundle was replaced but the old process kept running).
 ///
-/// 1. `tauri_plugin_single_instance::destroy` — `app.restart()` on the main
-///    thread runs `cleanup_before_exit` + `process::restart` WITHOUT dispatching
-///    `RunEvent::Exit`, so the plugin's socket/lock is never released. The
-///    freshly spawned replacement then reaches the still-bound socket of the
-///    dying parent, concludes another instance is running, and exits — the app
-///    quits and never reappears. Destroying the lock first closes that race.
-/// 2. Stop the capture sidecars — the `RunEvent::ExitRequested` cleanup is
-///    likewise skipped on the restart path, so a recording/preview ffmpeg would
-///    survive into (and fight with) the updated instance.
+/// So on macOS we no longer use `app.restart()` at all. Instead: a detached
+/// helper (`sh -c 'sleep …; open -n <bundle>'`) is armed, then `app.exit(0)`
+/// runs the NORMAL exit path (RunEvent::ExitRequested stops the capture
+/// sidecars; the plugins clean up). The helper outlives us and asks
+/// LaunchServices to start the updated bundle once we're gone — no
+/// parent/child socket race, no reliance on tauri's process::restart.
+/// `destroy` is still called first so the single-instance lock can never
+/// outlive the dying instance. Non-macOS keeps `app.restart()`.
 #[cfg(feature = "updater")]
 pub fn relaunch(app: &AppHandle) -> AppResult<()> {
     use tauri::Manager;
+    relaunch_log(app, "invoked");
     tauri_plugin_single_instance::destroy(app);
+    relaunch_log(app, "single-instance lock destroyed");
     app.state::<crate::recorder::engine::RecorderEngine>()
         .stop();
     app.state::<crate::media::preview::PreviewEngine>().stop();
     app.state::<crate::audio::vu::VuEngine>().stop();
-    tracing::info!("update: single-instance lock released + sidecars stopped — restarting");
+    relaunch_log(app, "engines stopped");
+
+    #[cfg(target_os = "macos")]
+    {
+        // current_exe = <bundle>.app/Contents/MacOS/<bin> → the .app is 3 up.
+        let bundle = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.ancestors().nth(3).map(std::path::PathBuf::from))
+            .filter(|p| p.extension().is_some_and(|e| e == "app"));
+        if let Some(bundle) = bundle {
+            let quoted = format!("'{}'", bundle.to_string_lossy().replace('\'', r"'\''"));
+            // `unset SUNDAYREC_TEST_RELAUNCH`: modern macOS `open` FORWARDS the
+            // caller's environment to the launched app (rig-verified: the test
+            // hook relaunch-looped every ~4 s until the chain broke), so the
+            // diagnostic hook must be disarmed here or a hook-triggered test
+            // would loop forever. One hook run = exactly one self-restart.
+            let script = format!("unset SUNDAYREC_TEST_RELAUNCH; sleep 0.7; open -n {quoted}");
+            match std::process::Command::new("/bin/sh")
+                .args(["-c", &script])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(_) => {
+                    relaunch_log(app, "relaunch helper armed — exiting via the normal path");
+                    app.exit(0);
+                    return Ok(());
+                }
+                Err(e) => {
+                    // Fall through to app.restart() — worse odds, but not none.
+                    relaunch_log(
+                        app,
+                        &format!("helper spawn FAILED ({e}) — falling back to app.restart()"),
+                    );
+                }
+            }
+        } else {
+            // Dev build (no .app bundle) — restart() handles the plain binary.
+            relaunch_log(app, "no .app bundle (dev?) — using app.restart()");
+        }
+    }
+
+    relaunch_log(app, "calling app.restart()");
     // `restart()` diverges (`-> !`): the process is replaced and never returns
     // here. The `Ok(())` is unreachable but keeps the signature identical to
     // the feature-OFF stub so the command layer is feature-agnostic.

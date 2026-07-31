@@ -95,7 +95,14 @@
     "toastReadyText": "Wersja {v} została pobrana",
     "availableMac": "Wersja {v} — kliknij, aby pobrać",
     "toastAvailableMac": "Wersja {v} — kliknij, aby pobrać",
-    "restartInstall": "↺ Uruchom ponownie i zainstaluj"
+    "restartInstall": "↺ Uruchom ponownie i zainstaluj",
+    "availableInstall": "Wersja {v} dostępna — kliknij, aby pobrać i zainstalować",
+    "toastAvailableInstall": "Wersja {v} — kliknij, aby pobrać i zainstalować",
+    "btnDownloadInstall": "Pobierz i zainstaluj",
+    "btnDownloading": "Pobieranie…",
+    "btnRestartInstall": "Uruchom ponownie i zainstaluj",
+    "restarting": "Ponowne uruchamianie…",
+    "restartFailed": "Ponowne uruchomienie nie nastąpiło — zamknij aplikację i otwórz ją ponownie, wtedy aktualizacja będzie aktywna"
   },
   "history": {
     "title": "Historia",

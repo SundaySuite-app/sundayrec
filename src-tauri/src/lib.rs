@@ -223,6 +223,23 @@ pub fn run() {
 
             app.manage(db::Db::new(pool));
 
+            // DIAGNOSTIC SEAM: `SUNDAYREC_TEST_RELAUNCH=1` fires the updater's
+            // relaunch path 3 s after startup — the only way to end-to-end
+            // verify a code path that kills its own process without publishing
+            // a release (the 0.4.2/0.4.4 relaunch regressions shipped unproven
+            // for exactly this reason). Inert unless the env var is explicitly
+            // set. The relaunched instance is started by LaunchServices
+            // (`open`), which does NOT inherit the variable — no loop.
+            #[cfg(feature = "updater")]
+            if std::env::var("SUNDAYREC_TEST_RELAUNCH").as_deref() == Ok("1") {
+                let relaunch_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    tracing::warn!("SUNDAYREC_TEST_RELAUNCH=1: firing update::relaunch");
+                    let _ = update::relaunch(&relaunch_handle);
+                });
+            }
+
             // The pre-roll engine (F3.2) writes its rolling temp captures under
             // a `tmp` dir in app-data (cleaned up on harvest/stop). Managed here
             // because it needs the resolved app-data path. At most one loop runs.
