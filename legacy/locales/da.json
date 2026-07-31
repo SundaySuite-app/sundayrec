@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom og TV-udstyr",
     "sampleRateAuto": "Automatisk",
     "sampleRateAutoDesc": "Følger lydkortet — ingen resampling",
-    "recommended": "Anbefalet"
+    "recommended": "Anbefalet",
+    "captureBench": "📏 Præcisionstest (60 sek)",
+    "benchRunning": "Måler i 60 sek — afspil lyd/tal i mikrofonen …",
+    "benchResult": "Målt {m}s af {e}s ({p} % tab)"
   },
   "files": {
     "title": "Filer & Format",

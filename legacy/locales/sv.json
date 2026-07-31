@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom och TV-utrustning",
     "sampleRateAuto": "Automatisk",
     "sampleRateAutoDesc": "Följer ljudkortet — ingen omsampling",
-    "recommended": "Rekommenderas"
+    "recommended": "Rekommenderas",
+    "captureBench": "📏 Precisionstest (60 s)",
+    "benchRunning": "Mäter i 60 s — spela upp ljud/tala i mikrofonen …",
+    "benchResult": "Uppmätt {m}s av {e}s ({p} % förlust)"
   },
   "files": {
     "title": "Filer & Format",

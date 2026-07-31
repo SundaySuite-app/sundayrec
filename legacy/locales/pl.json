@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Wideo, Zoom i sprzęt TV",
     "sampleRateAuto": "Automatycznie",
     "sampleRateAutoDesc": "Zgodnie z kartą dźwiękową — bez resamplingu",
-    "recommended": "Zalecane"
+    "recommended": "Zalecane",
+    "captureBench": "📏 Test precyzji (60 s)",
+    "benchRunning": "Pomiar przez 60 s — odtwórz dźwięk/mów do mikrofonu …",
+    "benchResult": "Zmierzono {m}s z {e}s ({p} % straty)"
   },
   "files": {
     "title": "Pliki i format",

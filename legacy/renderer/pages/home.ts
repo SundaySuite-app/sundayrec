@@ -668,6 +668,29 @@ export function setupHome(): void {
   // Legacy IDs (btn-test-recording / btn-run-preflight) were removed from the
   // Home card in v4.31 — buttons now live exclusively on Innstillinger → Lyd.
   document.getElementById('btn-test-recording-settings')?.addEventListener('click', () => runTestRecording('btn-test-recording-settings', 'health-status-settings'))
+  // Precision capture bench: real recording argv for 60 s, ffprobed and judged
+  // — the zero-loss proof tool (2026-07-31). Uses the shared health status line.
+  document.getElementById('btn-capture-bench')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-capture-bench') as HTMLButtonElement | null
+    const status = document.getElementById('health-status-settings')
+    if (!btn || !status) return
+    btn.disabled = true
+    status.textContent = t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')
+    try {
+      const r = await window.api.runCaptureBench(60)
+      const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
+      const pct = r.expectedSec ? (loss / r.expectedSec * 100) : 0
+      status.textContent = `${r.verdict === 'pass' ? '✅' : r.verdict === 'warn' ? '⚠️' : '❌'} ` +
+        t('audio.benchResult', 'Målt {m}s av {e}s ({p} % tap)')
+          .replace('{m}', (r.measuredSec ?? 0).toFixed(2))
+          .replace('{e}', (r.expectedSec ?? 0).toFixed(0))
+          .replace('{p}', pct.toFixed(2)) +
+        (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
+    } catch (err) {
+      status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err))
+    }
+    btn.disabled = false
+  })
   document.getElementById('btn-run-preflight-settings')?.addEventListener('click',  () => runPreflight('btn-run-preflight-settings',  'health-status-settings', 'preflight-findings-settings'))
 
   // Home → Settings → Lyd quick-jump (replaces the old inline test buttons)

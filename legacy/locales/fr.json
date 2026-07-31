@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Vidéo, Zoom et matériel TV",
     "sampleRateAuto": "Automatique",
     "sampleRateAutoDesc": "Suit la carte son — aucun rééchantillonnage",
-    "recommended": "Recommandé"
+    "recommended": "Recommandé",
+    "captureBench": "📏 Test de précision (60 s)",
+    "benchRunning": "Mesure pendant 60 s — jouez du son/parlez dans le micro …",
+    "benchResult": "Mesuré {m}s sur {e}s ({p} % de perte)"
   },
   "files": {
     "title": "Fichiers et format",

@@ -278,3 +278,17 @@ pub async fn run_test_recording(db: State<'_, Db>) -> AppResult<TestRecordingRes
     let device = s.device_name.clone().unwrap_or_default();
     run_test(&device).await
 }
+
+/// Precision capture bench (the zero-loss proof tool): run the REAL recording
+/// argv for `secs` seconds against the configured mic + sample-rate settings and
+/// return the full Pass/Warn/Fail report with expected/measured seconds.
+#[tauri::command]
+pub async fn run_capture_bench(
+    db: State<'_, Db>,
+    secs: u32,
+) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
+    let s = settings::load(&db.pool).await.unwrap_or_default();
+    let device = s.device_name.clone().unwrap_or_default();
+    let rate = s.resolved_sample_rate();
+    crate::test_recording::run_capture_bench(&device, rate, secs).await
+}

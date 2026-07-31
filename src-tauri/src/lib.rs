@@ -321,6 +321,7 @@ pub fn run() {
             commands::recorder::preroll_status,
             commands::recorder::get_disk_space,
             commands::recorder::run_test_recording,
+            commands::recorder::run_capture_bench,
             commands::db::setting_get,
             commands::db::setting_set,
             commands::db::recordings_list,

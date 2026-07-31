@@ -58,6 +58,7 @@ declare global {
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
       runTestRecording:    () => Promise<{ ok: boolean; signal?: 'silent' | 'low' | 'normal'; rmsDb?: number; error?: string }>
+      runCaptureBench:     (secs: number) => Promise<import('../bindings/SelfTestReport').SelfTestReport>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
       testWebhook:         () => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>

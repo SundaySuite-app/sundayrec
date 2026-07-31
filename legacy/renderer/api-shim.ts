@@ -676,6 +676,14 @@ const api: Record<string, unknown> = {
   // didn't match what the consumer reads.
   runTestRecording: async () =>
     call("run_test_recording", undefined, { ok: false }),
+  // Precision capture bench: real recording argv for N s → ffprobed +
+  // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
+  // button can show the actual error text.
+  runCaptureBench: async (secs: number) =>
+    invoke<import("../bindings/SelfTestReport").SelfTestReport>(
+      "run_capture_bench",
+      { secs },
+    ),
   // run_preflight returns Vec<PreflightFinding> directly; old code reads { findings }.
   runPreflight: async () => ({
     findings: await call<unknown[]>("run_preflight", undefined, []),
