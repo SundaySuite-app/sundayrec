@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen",
     "errorDiskFull": "Disken er fuld — frigør plads og prøv igen",
     "errorFfmpegMissing": "Intern fejl: optagelseskomponent mangler — geninstallér appen",
-    "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder"
+    "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder",
+    "qualityAlarm": "ADVARSEL: Optagelsen mangler lyd — filen indeholder {m} af {e} sekunder. Tjek optagelsen, før du stoler på den."
   },
   "video": {
     "minBitrateWarn": "Mindste bitrate er 500 kbps",

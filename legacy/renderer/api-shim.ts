@@ -138,6 +138,7 @@ const EVENT_MAP: Record<string, string> = {
   "recording-finished": "recording://finished",
   "recording-error": "recording://error",
   "recording-warning": "recording://warning",
+  "recording-quality": "recording://quality",
   "recording-progress": "recording://progress",
   "recording-levels": "recording://levels",
   "recording-reconnecting": "recording://reconnecting",

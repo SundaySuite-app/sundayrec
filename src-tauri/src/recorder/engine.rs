@@ -133,6 +133,11 @@ pub const LEVELS_EVENT: &str = "recording://levels";
 /// Event channel: a recording finished cleanly. Carries the final file path so
 /// the UI can offer "open in editor" — the record→edit hand-off.
 pub const FINISHED_EVENT: &str = "recording://finished";
+/// Event channel: the session-end quality verdict FAILED (measured media
+/// duration falls short of the wall clock, or the drop counters crossed the
+/// fail line). Carries the full `SelfTestReport`. The UI shows a persistent
+/// warning — a recording that silently lost audio must never look clean.
+pub const QUALITY_EVENT: &str = "recording://quality";
 
 /// Payload for [`FINISHED_EVENT`] — where the finished recording landed, so the
 /// UI's "open in editor" action can load it straight into the editor.
@@ -882,6 +887,9 @@ async fn run_session(
     // Session-wide health counters, fed per-line by each segment's stderr reader
     // (drops/xruns/IPC-starvation) and persisted at session end via `emit_state`.
     let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+    // Sum of delivered (finalised) file sizes — feeds the session verdict's
+    // "did we capture anything at all" floor.
+    let delivered_bytes = Arc::new(AtomicU64::new(0));
     // Arm the auto-stop deadline for the whole session (absolute, so splits +
     // reconnects re-pin the SAME stop time, not a fresh duration). `manual_max
     // == 0` means no auto-stop. Always send_replace so a stale deadline from a
@@ -898,9 +906,9 @@ async fn run_session(
     let emit_state = |to: RecorderState, reconnect_count: u32| {
         if to.is_terminal() {
             scheduled_stop.send_replace(None);
-            // Single funnel for session end → stamp + persist the health telemetry
-            // (automatic passive logging surfaced by the diagnose tool).
-            persist_recording_telemetry(&app, &telemetry, &last_telemetry, start_ms, to);
+            // Telemetry persist/verdict happens at run_session's SINGLE exit
+            // point (after the last finalize_pending), so the measured media
+            // durations are included — a terminal emit only clears the deadline.
         }
         set_state(
             &app,
@@ -910,281 +918,291 @@ async fn run_session(
             *scheduled_stop.borrow(),
         );
     };
-    // Unique per recording (singleton engine → start_ms never repeats); also the
-    // crash-recovery manifest's filename.
-    let session_id = start_ms.to_string();
-    // Decoupled capture (the anti-"hakkete" + crash-safety fix). EVERY recording
-    // captures to a crash-tolerant, back-pressure-free container in a per-session
-    // hidden folder BESIDE the delivery file:
-    //   - audio-only → lossless PCM WAV: a real-time lossy encoder can never fall
-    //     behind and push avfoundation into dropping samples;
-    //   - video → Matroska (.mkv): playable up to a crash point, unlike an mp4/mov
-    //     whose moov atom only exists after a clean stop — and stopping no longer
-    //     pays the `+faststart` whole-file rewrite.
-    // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
-    // user's chosen delivery format.
-    let audio_only = video.is_none();
-    let cap_dir = capture_dir(&opts.output_path, &session_id);
-    if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
-        tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
-        let _ = ready.send(Err(AppError::Recording(format!(
-            "kunne ikke opprette opptaksmappe {}: {e}",
-            cap_dir.display()
-        ))));
-        emit_state(RecorderState::Failed, 0);
-        return;
-    }
-    let capture_ext = if audio_only { "wav" } else { "mkv" };
-    let session_output = capture_base_path(&cap_dir, &opts.output_path, capture_ext);
-    // How to turn the capture into the delivery file — persisted in the
-    // crash-recovery manifest so an interrupted recording can be finished on the
-    // next launch.
-    let delivery_encode = Some(AudioEncodeManifest {
-        delivery_dir: delivery_dir_of(&opts.output_path),
-        ext: delivery_ext(&opts.output_path),
-        channels: match opts.channel_mode {
-            ChannelMode::Stereo => 2,
-            _ => 1,
-        },
-        sample_rate: opts.sample_rate,
-        bitrate_kbps: opts.bitrate_kbps,
-        mode: if audio_only {
-            DeliveryMode::AudioEncode
-        } else {
-            DeliveryMode::RemuxCopy
-        },
-        // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
-        // reject hev1); the tag is NOT applied to the mkv capture itself.
-        hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
-    });
-    let mut session = RecordingSession::new(session_output, start_ms);
-    // How many deliverables have already been finalised (concat + history row).
-    // Each split closes one; session end finalises the rest. The pre-roll clip is
-    // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
-    let mut finalized: usize = 0;
-    // Clear any stale preview frame from a previous video recording so the tile
-    // doesn't briefly show last time's image before ffmpeg writes a fresh one.
-    if opts.video_device_name.is_some() {
-        let _ = std::fs::remove_file(recording_preview_path());
-    }
-    emit_state(RecorderState::Preparing, 0);
-
-    // Spawn the FIRST segment. A launch failure here is reported to the caller.
-    let first_args = build_record_args(
-        platform,
-        &audio,
-        video.as_ref(),
-        &opts,
-        session.primary_path(),
-    );
-    let mut child = match spawn_ffmpeg_owned(&first_args).await {
-        Ok(c) => {
-            let _ = ready.send(Ok(()));
-            c
-        }
-        Err(e) => {
-            let _ = ready.send(Err(e));
+    // Everything below runs inside ONE labeled block with a single exit point,
+    // so the session-end telemetry verdict/persist can never be skipped by an
+    // early exit (every `break 'run` funnels through it).
+    'run: {
+        // Unique per recording (singleton engine → start_ms never repeats); also the
+        // crash-recovery manifest's filename.
+        let session_id = start_ms.to_string();
+        // Decoupled capture (the anti-"hakkete" + crash-safety fix). EVERY recording
+        // captures to a crash-tolerant, back-pressure-free container in a per-session
+        // hidden folder BESIDE the delivery file:
+        //   - audio-only → lossless PCM WAV: a real-time lossy encoder can never fall
+        //     behind and push avfoundation into dropping samples;
+        //   - video → Matroska (.mkv): playable up to a crash point, unlike an mp4/mov
+        //     whose moov atom only exists after a clean stop — and stopping no longer
+        //     pays the `+faststart` whole-file rewrite.
+        // Finalisation encodes (audio) / remuxes (video, `-c copy`, seconds) into the
+        // user's chosen delivery format.
+        let audio_only = video.is_none();
+        let cap_dir = capture_dir(&opts.output_path, &session_id);
+        if let Err(e) = tokio::fs::create_dir_all(&cap_dir).await {
+            tracing::error!(dir = %cap_dir.display(), "recorder: failed to create capture dir: {e}");
+            let _ = ready.send(Err(AppError::Recording(format!(
+                "kunne ikke opprette opptaksmappe {}: {e}",
+                cap_dir.display()
+            ))));
             emit_state(RecorderState::Failed, 0);
-            // The capture dir was just created and never written to — empty.
-            let _ = tokio::fs::remove_dir(&cap_dir).await;
-            return;
+            break 'run;
         }
-    };
+        let capture_ext = if audio_only { "wav" } else { "mkv" };
+        let session_output = capture_base_path(&cap_dir, &opts.output_path, capture_ext);
+        // How to turn the capture into the delivery file — persisted in the
+        // crash-recovery manifest so an interrupted recording can be finished on the
+        // next launch.
+        let delivery_encode = Some(AudioEncodeManifest {
+            delivery_dir: delivery_dir_of(&opts.output_path),
+            ext: delivery_ext(&opts.output_path),
+            channels: match opts.channel_mode {
+                ChannelMode::Stereo => 2,
+                _ => 1,
+            },
+            sample_rate: opts.sample_rate,
+            bitrate_kbps: opts.bitrate_kbps,
+            mode: if audio_only {
+                DeliveryMode::AudioEncode
+            } else {
+                DeliveryMode::RemuxCopy
+            },
+            // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
+            // reject hev1); the tag is NOT applied to the mkv capture itself.
+            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+        });
+        let mut session = RecordingSession::new(session_output, start_ms);
+        // How many deliverables have already been finalised (concat + history row).
+        // Each split closes one; session end finalises the rest. The pre-roll clip is
+        // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
+        let mut finalized: usize = 0;
+        // Clear any stale preview frame from a previous video recording so the tile
+        // doesn't briefly show last time's image before ffmpeg writes a fresh one.
+        if opts.video_device_name.is_some() {
+            let _ = std::fs::remove_file(recording_preview_path());
+        }
+        emit_state(RecorderState::Preparing, 0);
 
-    emit_state(RecorderState::Recording, 0);
-
-    'session: loop {
-        // Persist the crash-recovery manifest reflecting the CURRENT deliverable /
-        // fragment layout (it grows across splits + reconnects). If the app dies
-        // before the clean delete at session end, the startup scan finalises these
-        // fragments instead of losing the recording. Best-effort; never blocks.
-        crate::recorder::recovery::write_manifest(
-            &app,
-            &session_manifest(
-                &session_id,
-                &session,
-                &audio,
-                &preroll_clip,
-                start_ms,
-                &delivery_encode,
-            ),
-        )
-        .await;
-
-        // ── Run ONE segment to completion ───────────────────────────────────
-        // Per-deliverable `byte_size` is read from the finalised file on disk
-        // (after concat), so we no longer accumulate a session-wide byte total;
-        // `segment_bytes` still drives this segment's live progress + watchdog.
-        let segment_bytes = Arc::new(AtomicU64::new(0));
-        let outcome = run_segment(
-            &app,
-            child,
+        // Spawn the FIRST segment. A launch failure here is reported to the caller.
+        let first_args = build_record_args(
+            platform,
+            &audio,
+            video.as_ref(),
             &opts,
-            &session,
-            Arc::clone(&segment_bytes),
-            &mut stop_rx,
-            &last_state,
-            &mut stop_watch,
-            Arc::clone(&telemetry),
-        )
-        .await;
-
-        match outcome {
-            SegmentOutcome::GracefulStop
-            | SegmentOutcome::AutoStop
-            | SegmentOutcome::SilenceStop
-            | SegmentOutcome::DiskStop => {
-                break;
+            session.primary_path(),
+        );
+        let mut child = match spawn_ffmpeg_owned(&first_args).await {
+            Ok(c) => {
+                let _ = ready.send(Ok(()));
+                c
             }
-            SegmentOutcome::Split => {
-                // The split CLOSES the current deliverable. Finalise it (concat
-                // its fragments + write its history row) BEFORE opening the next.
-                let close_ms = now_ms();
-                finalize_pending(
-                    &app,
-                    &pool,
+            Err(e) => {
+                let _ = ready.send(Err(e));
+                emit_state(RecorderState::Failed, 0);
+                // The capture dir was just created and never written to — empty.
+                let _ = tokio::fs::remove_dir(&cap_dir).await;
+                break 'run;
+            }
+        };
+
+        emit_state(RecorderState::Recording, 0);
+
+        'session: loop {
+            // Persist the crash-recovery manifest reflecting the CURRENT deliverable /
+            // fragment layout (it grows across splits + reconnects). If the app dies
+            // before the clean delete at session end, the startup scan finalises these
+            // fragments instead of losing the recording. Best-effort; never blocks.
+            crate::recorder::recovery::write_manifest(
+                &app,
+                &session_manifest(
+                    &session_id,
                     &session,
-                    &mut finalized,
-                    close_ms,
-                    &preroll_clip,
                     &audio,
-                    &opts,
-                )
-                .await;
+                    &preroll_clip,
+                    start_ms,
+                    &delivery_encode,
+                ),
+            )
+            .await;
 
-                let next = session.begin_split_segment(close_ms);
-                let args = build_record_args(platform, &audio, video.as_ref(), &opts, &next);
-                tracing::info!(segment = %next, "recorder: split — starting new segment");
-                match spawn_ffmpeg_owned(&args).await {
-                    Ok(c) => child = c,
-                    Err(e) => {
-                        tracing::error!("recorder: split respawn failed: {e}");
-                        emit_error(&app, "device_error", &e.to_string());
-                        emit_state(RecorderState::Failed, session.reconnect_count());
-                        finalize_pending(
-                            &app,
-                            &pool,
-                            &session,
-                            &mut finalized,
-                            now_ms(),
-                            &preroll_clip,
-                            &audio,
-                            &opts,
-                        )
-                        .await;
-                        return;
-                    }
+            // ── Run ONE segment to completion ───────────────────────────────────
+            // Per-deliverable `byte_size` is read from the finalised file on disk
+            // (after concat), so we no longer accumulate a session-wide byte total;
+            // `segment_bytes` still drives this segment's live progress + watchdog.
+            let segment_bytes = Arc::new(AtomicU64::new(0));
+            let outcome = run_segment(
+                &app,
+                child,
+                &opts,
+                &session,
+                Arc::clone(&segment_bytes),
+                &mut stop_rx,
+                &last_state,
+                &mut stop_watch,
+                Arc::clone(&telemetry),
+            )
+            .await;
+
+            match outcome {
+                SegmentOutcome::GracefulStop
+                | SegmentOutcome::AutoStop
+                | SegmentOutcome::SilenceStop
+                | SegmentOutcome::DiskStop => {
+                    break;
                 }
-            }
-            SegmentOutcome::UnexpectedExit { last_error } => {
-                // F3.3b auto-fallback: a video session whose FIRST capture died
-                // at startup without producing output usually means the camera +
-                // mic can't share one ffmpeg process. Rather than burn the
-                // reconnect budget on a pairing that will never work, hand off to
-                // the two-process path (separate captures + mux). Narrow trigger
-                // (pure decision in core); anything else falls through to the
-                // normal reconnect policy below. HARDWARE-UNVERIFIED.
-                if let Some(video_dev) = video.as_ref() {
-                    if sundayrec_core::two_process::should_fallback_to_two_process(
-                        true,
-                        finalized == 0,
-                        session.reconnect_count(),
-                        segment_bytes.load(Ordering::Relaxed),
-                        (now_ms() - start_ms) as i64,
-                    ) {
-                        tracing::warn!(
-                            "recorder: unified video startup failed with no output — \
-                             switching to two-process fallback"
-                        );
-                        let _ = app.emit(
-                            RECONNECTING_EVENT,
-                            RecordingEvent {
-                                code: "two_process_fallback".into(),
-                                message: "Kamera og mikrofon kan ikke deles i én prosess — \
-                                          bytter til to-prosess-opptak"
-                                    .into(),
-                            },
-                        );
-                        // Drop the empty/broken unified file + its now-stale
-                        // recovery manifest before the fallback writes its own
-                        // temps + muxed output — the two-process path doesn't
-                        // extend this manifest, so it would otherwise sit as
-                        // harmless litter until a future startup scan skips it.
-                        let _ = std::fs::remove_file(session.primary_path());
-                        crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+                SegmentOutcome::Split => {
+                    // The split CLOSES the current deliverable. Finalise it (concat
+                    // its fragments + write its history row) BEFORE opening the next.
+                    let close_ms = now_ms();
+                    finalize_pending(
+                        &app,
+                        &pool,
+                        &session,
+                        &mut finalized,
+                        close_ms,
+                        &preroll_clip,
+                        &audio,
+                        &opts,
+                        &telemetry,
+                        &delivered_bytes,
+                    )
+                    .await;
 
-                        let result = crate::recorder::two_process::run_two_process_session(
-                            app.clone(),
-                            pool.clone(),
-                            opts.clone(),
-                            platform,
-                            audio.clone(),
-                            video_dev.clone(),
-                            stop_rx,
-                            Arc::clone(&last_state),
-                            stop_watch.clone(),
-                        )
-                        .await;
-                        match result {
-                            Ok(()) => emit_state(RecorderState::Stopped, 0),
-                            Err(e) => {
-                                emit_error(&app, "device_error", &e.to_string());
-                                emit_state(RecorderState::Failed, 0);
-                            }
+                    let next = session.begin_split_segment(close_ms);
+                    let args = build_record_args(platform, &audio, video.as_ref(), &opts, &next);
+                    tracing::info!(segment = %next, "recorder: split — starting new segment");
+                    match spawn_ffmpeg_owned(&args).await {
+                        Ok(c) => child = c,
+                        Err(e) => {
+                            tracing::error!("recorder: split respawn failed: {e}");
+                            emit_error(&app, "device_error", &e.to_string());
+                            emit_state(RecorderState::Failed, session.reconnect_count());
+                            finalize_pending(
+                                &app,
+                                &pool,
+                                &session,
+                                &mut finalized,
+                                now_ms(),
+                                &preroll_clip,
+                                &audio,
+                                &opts,
+                                &telemetry,
+                                &delivered_bytes,
+                            )
+                            .await;
+                            break 'run;
                         }
-                        // The unified attempt's capture dir held only the just-
-                        // removed empty/broken primary (no fragments — the
-                        // fallback trigger requires zero bytes produced) — empty
-                        // now. The two-process fallback owns its own temps
-                        // elsewhere, so this cleanup is unrelated to its outcome.
-                        let _ = tokio::fs::remove_dir(&cap_dir).await;
-                        return;
                     }
                 }
-
-                // Consult the pure recovery policy.
-                match session.on_unexpected_exit(now_ms(), last_error) {
-                    RecoveryDecision::GiveUp => {
-                        let code = last_error
-                            .map(error_code_str)
-                            .unwrap_or("device_disconnected");
-                        emit_error(&app, code, "Opptaket kunne ikke gjenopprettes");
-                        emit_state(RecorderState::Failed, session.reconnect_count());
-                        finalize_pending(
-                            &app,
-                            &pool,
-                            &session,
-                            &mut finalized,
-                            now_ms(),
-                            &preroll_clip,
-                            &audio,
-                            &opts,
-                        )
-                        .await;
-                        // Best-effort: only removes it if empty (a failed final
-                        // delivery leaves its WAV/MKV behind on purpose — the
-                        // capture survives as a playback/recovery source).
-                        let _ = tokio::fs::remove_dir(&cap_dir).await;
-                        tracing::error!("recorder: giving up — fail-stop");
-                        return;
-                    }
-                    RecoveryDecision::Reconnect {
-                        delay_ms,
-                        attempt,
-                        next_segment,
-                    } => {
-                        // Respawn loop. A FAILED respawn is treated as just another
-                        // unexpected exit: re-consult the pure policy and try again
-                        // with its fresh delay/segment — so respawn failures draw on
-                        // the SAME reconnect budget as device exits. (This replaces a
-                        // hand-inlined duplicate of this match that gave up after
-                        // exactly one respawn retry.)
-                        let mut delay_ms = delay_ms;
-                        let mut attempt = attempt;
-                        let mut next_segment = next_segment;
-                        loop {
-                            emit_state(RecorderState::Reconnecting, session.reconnect_count());
+                SegmentOutcome::UnexpectedExit { last_error } => {
+                    // F3.3b auto-fallback: a video session whose FIRST capture died
+                    // at startup without producing output usually means the camera +
+                    // mic can't share one ffmpeg process. Rather than burn the
+                    // reconnect budget on a pairing that will never work, hand off to
+                    // the two-process path (separate captures + mux). Narrow trigger
+                    // (pure decision in core); anything else falls through to the
+                    // normal reconnect policy below. HARDWARE-UNVERIFIED.
+                    if let Some(video_dev) = video.as_ref() {
+                        if sundayrec_core::two_process::should_fallback_to_two_process(
+                            true,
+                            finalized == 0,
+                            session.reconnect_count(),
+                            segment_bytes.load(Ordering::Relaxed),
+                            (now_ms() - start_ms) as i64,
+                        ) {
+                            tracing::warn!(
+                                "recorder: unified video startup failed with no output — \
+                             switching to two-process fallback"
+                            );
                             let _ = app.emit(
+                                RECONNECTING_EVENT,
+                                RecordingEvent {
+                                    code: "two_process_fallback".into(),
+                                    message: "Kamera og mikrofon kan ikke deles i én prosess — \
+                                          bytter til to-prosess-opptak"
+                                        .into(),
+                                },
+                            );
+                            // Drop the empty/broken unified file + its now-stale
+                            // recovery manifest before the fallback writes its own
+                            // temps + muxed output — the two-process path doesn't
+                            // extend this manifest, so it would otherwise sit as
+                            // harmless litter until a future startup scan skips it.
+                            let _ = std::fs::remove_file(session.primary_path());
+                            crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+
+                            let result = crate::recorder::two_process::run_two_process_session(
+                                app.clone(),
+                                pool.clone(),
+                                opts.clone(),
+                                platform,
+                                audio.clone(),
+                                video_dev.clone(),
+                                stop_rx,
+                                Arc::clone(&last_state),
+                                stop_watch.clone(),
+                            )
+                            .await;
+                            match result {
+                                Ok(()) => emit_state(RecorderState::Stopped, 0),
+                                Err(e) => {
+                                    emit_error(&app, "device_error", &e.to_string());
+                                    emit_state(RecorderState::Failed, 0);
+                                }
+                            }
+                            // The unified attempt's capture dir held only the just-
+                            // removed empty/broken primary (no fragments — the
+                            // fallback trigger requires zero bytes produced) — empty
+                            // now. The two-process fallback owns its own temps
+                            // elsewhere, so this cleanup is unrelated to its outcome.
+                            let _ = tokio::fs::remove_dir(&cap_dir).await;
+                            break 'run;
+                        }
+                    }
+
+                    // Consult the pure recovery policy.
+                    match session.on_unexpected_exit(now_ms(), last_error) {
+                        RecoveryDecision::GiveUp => {
+                            let code = last_error
+                                .map(error_code_str)
+                                .unwrap_or("device_disconnected");
+                            emit_error(&app, code, "Opptaket kunne ikke gjenopprettes");
+                            emit_state(RecorderState::Failed, session.reconnect_count());
+                            finalize_pending(
+                                &app,
+                                &pool,
+                                &session,
+                                &mut finalized,
+                                now_ms(),
+                                &preroll_clip,
+                                &audio,
+                                &opts,
+                                &telemetry,
+                                &delivered_bytes,
+                            )
+                            .await;
+                            // Best-effort: only removes it if empty (a failed final
+                            // delivery leaves its WAV/MKV behind on purpose — the
+                            // capture survives as a playback/recovery source).
+                            let _ = tokio::fs::remove_dir(&cap_dir).await;
+                            tracing::error!("recorder: giving up — fail-stop");
+                            break 'run;
+                        }
+                        RecoveryDecision::Reconnect {
+                            delay_ms,
+                            attempt,
+                            next_segment,
+                        } => {
+                            // Respawn loop. A FAILED respawn is treated as just another
+                            // unexpected exit: re-consult the pure policy and try again
+                            // with its fresh delay/segment — so respawn failures draw on
+                            // the SAME reconnect budget as device exits. (This replaces a
+                            // hand-inlined duplicate of this match that gave up after
+                            // exactly one respawn retry.)
+                            let mut delay_ms = delay_ms;
+                            let mut attempt = attempt;
+                            let mut next_segment = next_segment;
+                            loop {
+                                emit_state(RecorderState::Reconnecting, session.reconnect_count());
+                                let _ = app.emit(
                                 RECONNECTING_EVENT,
                                 RecordingEvent {
                                     code: "reconnecting".into(),
@@ -1194,77 +1212,88 @@ async fn run_session(
                                     ),
                                 },
                             );
-                            tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
-                            // The back-off must stay stop-responsive: with a dead
-                            // child there is nothing to wind down, so a stop (or
-                            // app quit) during the wait goes STRAIGHT to the
-                            // graceful finalize instead of respawning first.
-                            tokio::select! {
-                                _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
-                                _ = stop_rx.recv() => {
-                                    tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
-                                    break 'session;
+                                tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
+                                // The back-off must stay stop-responsive: with a dead
+                                // child there is nothing to wind down, so a stop (or
+                                // app quit) during the wait goes STRAIGHT to the
+                                // graceful finalize instead of respawning first.
+                                tokio::select! {
+                                    _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
+                                    _ = stop_rx.recv() => {
+                                        tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
+                                        break 'session;
+                                    }
                                 }
-                            }
 
-                            let args = build_record_args(
-                                platform,
-                                &audio,
-                                video.as_ref(),
-                                &opts,
-                                &next_segment,
-                            );
-                            match spawn_ffmpeg_owned(&args).await {
-                                Ok(c) => {
-                                    child = c;
-                                    let _ = app.emit(
-                                        RECONNECTED_EVENT,
-                                        RecordingEvent {
-                                            code: "reconnected".into(),
-                                            message: "Tilkobling gjenopprettet — fortsetter opptak"
-                                                .into(),
-                                        },
-                                    );
-                                    emit_state(RecorderState::Recording, session.reconnect_count());
-                                    break;
-                                }
-                                Err(e) => {
-                                    tracing::warn!("recorder: reconnect respawn failed: {e}");
-                                    match session.on_unexpected_exit(now_ms(), None) {
-                                        RecoveryDecision::Reconnect {
-                                            delay_ms: next_delay,
-                                            attempt: next_attempt,
-                                            next_segment: seg,
-                                        } => {
-                                            delay_ms = next_delay;
-                                            attempt = next_attempt;
-                                            next_segment = seg;
-                                        }
-                                        RecoveryDecision::GiveUp => {
-                                            emit_error(&app, "device_disconnected", &e.to_string());
-                                            emit_state(
-                                                RecorderState::Failed,
-                                                session.reconnect_count(),
-                                            );
-                                            finalize_pending(
-                                                &app,
-                                                &pool,
-                                                &session,
-                                                &mut finalized,
-                                                now_ms(),
-                                                &preroll_clip,
-                                                &audio,
-                                                &opts,
-                                            )
-                                            .await;
-                                            // Best-effort: only removes it if empty
-                                            // (a failed final delivery leaves its
-                                            // WAV/MKV behind on purpose).
-                                            let _ = tokio::fs::remove_dir(&cap_dir).await;
-                                            tracing::error!(
+                                let args = build_record_args(
+                                    platform,
+                                    &audio,
+                                    video.as_ref(),
+                                    &opts,
+                                    &next_segment,
+                                );
+                                match spawn_ffmpeg_owned(&args).await {
+                                    Ok(c) => {
+                                        child = c;
+                                        let _ = app.emit(
+                                            RECONNECTED_EVENT,
+                                            RecordingEvent {
+                                                code: "reconnected".into(),
+                                                message:
+                                                    "Tilkobling gjenopprettet — fortsetter opptak"
+                                                        .into(),
+                                            },
+                                        );
+                                        emit_state(
+                                            RecorderState::Recording,
+                                            session.reconnect_count(),
+                                        );
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("recorder: reconnect respawn failed: {e}");
+                                        match session.on_unexpected_exit(now_ms(), None) {
+                                            RecoveryDecision::Reconnect {
+                                                delay_ms: next_delay,
+                                                attempt: next_attempt,
+                                                next_segment: seg,
+                                            } => {
+                                                delay_ms = next_delay;
+                                                attempt = next_attempt;
+                                                next_segment = seg;
+                                            }
+                                            RecoveryDecision::GiveUp => {
+                                                emit_error(
+                                                    &app,
+                                                    "device_disconnected",
+                                                    &e.to_string(),
+                                                );
+                                                emit_state(
+                                                    RecorderState::Failed,
+                                                    session.reconnect_count(),
+                                                );
+                                                finalize_pending(
+                                                    &app,
+                                                    &pool,
+                                                    &session,
+                                                    &mut finalized,
+                                                    now_ms(),
+                                                    &preroll_clip,
+                                                    &audio,
+                                                    &opts,
+                                                    &telemetry,
+                                                    &delivered_bytes,
+                                                )
+                                                .await;
+                                                // Best-effort: only removes it if empty
+                                                // (a failed final delivery leaves its
+                                                // WAV/MKV behind on purpose).
+                                                let _ = tokio::fs::remove_dir(&cap_dir).await;
+                                                tracing::error!(
                                                 "recorder: giving up — respawn budget exhausted"
                                             );
-                                            return;
+                                                break 'run;
+                                            }
                                         }
                                     }
                                 }
@@ -1274,50 +1303,60 @@ async fn run_session(
                 }
             }
         }
-    }
 
-    // Graceful end of session: finalise the last (and any not-yet-finalised)
-    // deliverable — concat its fragments + write its history row.
-    emit_state(RecorderState::Stopping, session.reconnect_count());
-    finalize_pending(
+        // Graceful end of session: finalise the last (and any not-yet-finalised)
+        // deliverable — concat its fragments + write its history row.
+        emit_state(RecorderState::Stopping, session.reconnect_count());
+        finalize_pending(
+            &app,
+            &pool,
+            &session,
+            &mut finalized,
+            now_ms(),
+            &preroll_clip,
+            &audio,
+            &opts,
+            &telemetry,
+            &delivered_bytes,
+        )
+        .await;
+        // Clean finish: every deliverable is finalised + history-rowed, so the
+        // recovery manifest is no longer needed.
+        crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+        // Drop the now-empty per-session capture folder. `remove_dir` removes it ONLY
+        // if empty — a FAILED delivery transcode left its WAV/MKV behind (finalize_one
+        // fell back to it as the history file), so the folder stays and the capture
+        // survives as a playback/recovery source.
+        let _ = tokio::fs::remove_dir(&cap_dir).await;
+        // Record→edit hand-off: tell the UI where the finished file landed so it can
+        // offer "open in editor". Only when the main file actually exists + is
+        // non-empty (a recording that produced nothing skips the suggestion).
+        if tokio::fs::metadata(&opts.output_path)
+            .await
+            .map(|m| m.len() > 0)
+            .unwrap_or(false)
+        {
+            let _ = app.emit(
+                FINISHED_EVENT,
+                RecordingFinished {
+                    file_path: opts.output_path.clone(),
+                    has_video: opts.video_device_name.is_some(),
+                },
+            );
+        }
+        // The auto-stop is cleared inside `emit_state` for terminal states, so the
+        // Stopped payload (and any later `recording_status`) reports no stale deadline.
+        emit_state(RecorderState::Stopped, session.reconnect_count());
+        tracing::info!("recorder: session stopped cleanly");
+    } // 'run — the ONE exit point:
+    finalize_session_telemetry(
         &app,
-        &pool,
-        &session,
-        &mut finalized,
-        now_ms(),
-        &preroll_clip,
-        &audio,
-        &opts,
-    )
-    .await;
-    // Clean finish: every deliverable is finalised + history-rowed, so the
-    // recovery manifest is no longer needed.
-    crate::recorder::recovery::delete_manifest(&app, &session_id).await;
-    // Drop the now-empty per-session capture folder. `remove_dir` removes it ONLY
-    // if empty — a FAILED delivery transcode left its WAV/MKV behind (finalize_one
-    // fell back to it as the history file), so the folder stays and the capture
-    // survives as a playback/recovery source.
-    let _ = tokio::fs::remove_dir(&cap_dir).await;
-    // Record→edit hand-off: tell the UI where the finished file landed so it can
-    // offer "open in editor". Only when the main file actually exists + is
-    // non-empty (a recording that produced nothing skips the suggestion).
-    if tokio::fs::metadata(&opts.output_path)
-        .await
-        .map(|m| m.len() > 0)
-        .unwrap_or(false)
-    {
-        let _ = app.emit(
-            FINISHED_EVENT,
-            RecordingFinished {
-                file_path: opts.output_path.clone(),
-                has_video: opts.video_device_name.is_some(),
-            },
-        );
-    }
-    // The auto-stop is cleared inside `emit_state` for terminal states, so the
-    // Stopped payload (and any later `recording_status`) reports no stale deadline.
-    emit_state(RecorderState::Stopped, session.reconnect_count());
-    tracing::info!("recorder: session stopped cleanly");
+        &telemetry,
+        &last_telemetry,
+        start_ms,
+        &last_state,
+        &delivered_bytes,
+    );
 }
 
 /// The per-session capture folder for the decoupled-audio path: a hidden
@@ -1928,8 +1967,8 @@ async fn stop_and_wait_bounded_draining(
     msg_rx: &mut tokio::sync::mpsc::Receiver<ReaderMsg>,
 ) {
     graceful_q(stdin).await;
-    let deadline = tokio::time::Instant::now()
-        + Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS);
+    let deadline =
+        tokio::time::Instant::now() + Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS);
     let mut reader_done = false;
     loop {
         tokio::select! {
@@ -2083,20 +2122,47 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
 /// `recording-telemetry-history.json` ring so the diagnose tool can show a
 /// TREND. Also keeps the latest in memory for the synchronous status read.
 /// Best-effort — never fails the recorder.
-fn persist_recording_telemetry(
+fn finalize_session_telemetry(
     app: &AppHandle,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     last_telemetry: &Arc<Mutex<Option<RecordingTelemetry>>>,
     start_ms: u64,
-    final_state: RecorderState,
+    last_state: &Arc<Mutex<RecorderState>>,
+    delivered_bytes: &AtomicU64,
 ) {
+    use sundayrec_core::selftest::{
+        duration_loss_pct, facts_from_recording, selftest_verdict, SelfTestVerdict,
+        DURATION_LOSS_FAIL_PCT,
+    };
     use tauri::Manager;
+
+    let final_state = *lock_recover(last_state);
 
     // Snapshot + stamp the host-known fields.
     let mut t = lock_recover(telemetry).clone();
     t.duration_sec = now_ms().saturating_sub(start_ms) as f64 / 1000.0;
     t.timestamp = chrono::Local::now().to_rfc3339();
     t.exit_ok = matches!(final_state, RecorderState::Stopped);
+
+    // Truth verdict: feed the session facts through the SAME unit-tested
+    // Pass/Warn/Fail engine the self-test uses. This is what the 2026-07-31
+    // incident lacked — wall clock said 46.6 s, the file held 20.4 s, and every
+    // counter reported "clean".
+    let size_bytes = delivered_bytes.load(Ordering::Relaxed);
+    let facts = facts_from_recording(&t, size_bytes);
+    t.loss_pct = duration_loss_pct(facts.expected_sec, facts.measured_sec);
+    let report = selftest_verdict(&facts);
+    let alarm = report.verdict == SelfTestVerdict::Fail || t.loss_pct >= DURATION_LOSS_FAIL_PCT;
+    t.report = Some(report.clone());
+    if alarm {
+        tracing::error!(
+            loss_pct = t.loss_pct,
+            expected_sec = facts.expected_sec,
+            measured_sec = facts.measured_sec,
+            "recorder: QUALITY ALARM — the delivered audio is shorter than the session"
+        );
+        let _ = app.emit(QUALITY_EVENT, &report);
+    }
 
     // In-memory (diagnose status reads this synchronously).
     *lock_recover(last_telemetry) = Some(t.clone());
@@ -2149,6 +2215,8 @@ async fn finalize_pending(
     preroll_clip: &Option<PrerollClip>,
     audio: &FfmpegDevice,
     opts: &RecordingOpts,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+    delivered_bytes: &AtomicU64,
 ) {
     let deliverables = session.deliverables();
     let total = deliverables.len();
@@ -2169,6 +2237,8 @@ async fn finalize_pending(
             preroll_clip,
             audio,
             opts,
+            telemetry,
+            delivered_bytes,
         )
         .await;
     }
@@ -2198,7 +2268,17 @@ async fn finalize_one(
     preroll_clip: &Option<PrerollClip>,
     audio: &FfmpegDevice,
     opts: &RecordingOpts,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+    delivered_bytes: &AtomicU64,
 ) {
+    // Truth measurement, part 1: this deliverable SHOULD hold its wall-clock
+    // span. What it ACTUALLY holds is probed below; the session-end verdict
+    // compares the sums. Accumulated up front so a failed finalize still
+    // registers as missing audio instead of silently shrinking `expected`.
+    {
+        let span_sec = end_ms.saturating_sub(deliverable.started_at_ms) as f64 / 1000.0;
+        lock_recover(telemetry).expected_sec += span_sec;
+    }
     // Pre-roll is prepended ONLY to the first deliverable's first fragment.
     let preroll_path = if index == 0 {
         preroll_clip.as_ref().map(|c| c.raw_path.as_str())
@@ -2263,6 +2343,14 @@ async fn finalize_one(
         .await
         .map(|m| m.len() as i64)
         .ok();
+
+    // Truth measurement, part 2: how much audio the delivered file REALLY
+    // holds. An unprobeable file contributes 0 measured seconds — which shows
+    // up as loss, the correct failure direction.
+    if let Some(media_sec) = crate::media::ffmpeg::probe_duration_secs(&final_path).await {
+        lock_recover(telemetry).measured_sec += media_sec;
+    }
+    delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
     let Some(pool) = pool else { return };
     let started_at = deliverable.started_at_ms;
@@ -2570,7 +2658,9 @@ mod tests {
         assert!(hit("Non monotonically increasing dts to muxer in stream 0"));
         assert!(hit("1234 packets dropped"));
         // …but ordinary progress / silence lines are NOT.
-        assert!(!hit("size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"));
+        assert!(!hit(
+            "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"
+        ));
         assert!(!hit("[silencedetect @ 0x1] silence_start: 3.2"));
     }
 
@@ -3185,7 +3275,11 @@ mod tests {
                 &telemetry,
             );
         }
-        assert_eq!(bytes.load(Ordering::Relaxed), 300 * 1024, "latest bytes live");
+        assert_eq!(
+            bytes.load(Ordering::Relaxed),
+            300 * 1024,
+            "latest bytes live"
+        );
         // Exactly ONE Started and ONE Progress forwarded (coalesced ≤1/s).
         let mut started = 0;
         let mut progress = 0;

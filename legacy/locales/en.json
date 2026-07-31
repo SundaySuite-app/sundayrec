@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "The audio device was disconnected during recording — check the connection",
     "errorDiskFull": "The disk is full — free up space and try again",
     "errorFfmpegMissing": "Internal error: the recording binary is missing — reinstall the app",
-    "errorStuck": "Recording stopped — no audio from the device for 60 seconds"
+    "errorStuck": "Recording stopped — no audio from the device for 60 seconds",
+    "qualityAlarm": "WARNING: The recording is missing audio — the file holds {m} of {e} seconds. Check the recording before trusting it."
   },
   "video": {
     "minBitrateWarn": "Minimum bitrate is 500 kbps",

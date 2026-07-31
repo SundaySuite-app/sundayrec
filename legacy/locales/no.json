@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Lydenheten ble koblet fra under opptak — sjekk tilkoblingen",
     "errorDiskFull": "Disken er full — frigjør plass og prøv igjen",
     "errorFfmpegMissing": "Intern feil: opptaksbinær mangler — installer appen på nytt",
-    "errorStuck": "Opptaket stoppet — ingen lyd fra enheten i 60 sekunder"
+    "errorStuck": "Opptaket stoppet — ingen lyd fra enheten i 60 sekunder",
+    "qualityAlarm": "ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det."
   },
   "video": {
     "minBitrateWarn": "Minste bitrate er 500 kbps",

@@ -165,7 +165,10 @@ mod tests {
         // p=0: the final partial batch must not be zero-padded — the recorded
         // stream stays byte-identical. (The ≥1024 floor is a compile-time
         // assert next to the const.)
-        assert!(f.contains(":p=0,"), "no zero-padding of the last batch: {f}");
+        assert!(
+            f.contains(":p=0,"),
+            "no zero-padding of the last batch: {f}"
+        );
     }
 
     #[test]

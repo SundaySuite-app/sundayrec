@@ -750,7 +750,12 @@ clean line";
         assert_eq!(f.xruns, 3, "capture-drop lines are xrun-class events");
         // 3 xruns (below FAIL_XRUNS=5) on an otherwise-clean take ⇒ Warn.
         let report = selftest_verdict(&f);
-        assert_eq!(report.verdict, SelfTestVerdict::Warn, "{:?}", report.reasons);
+        assert_eq!(
+            report.verdict,
+            SelfTestVerdict::Warn,
+            "{:?}",
+            report.reasons
+        );
         // At/above FAIL_XRUNS ⇒ Fail.
         let mut worse = f.clone();
         worse.xruns = FAIL_XRUNS;
@@ -768,7 +773,12 @@ clean line";
         };
         let f = facts_from_recording(&t, 500_000_000);
         let report = selftest_verdict(&f);
-        assert_eq!(report.verdict, SelfTestVerdict::Pass, "{:?}", report.reasons);
+        assert_eq!(
+            report.verdict,
+            SelfTestVerdict::Pass,
+            "{:?}",
+            report.reasons
+        );
         assert!(duration_loss_pct(f.expected_sec, f.measured_sec) < DURATION_LOSS_FAIL_PCT);
     }
 

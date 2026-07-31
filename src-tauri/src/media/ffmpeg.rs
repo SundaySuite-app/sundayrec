@@ -96,6 +96,35 @@ pub async fn spawn_ffmpeg(args: &[&str]) -> AppResult<tokio::process::Child> {
         .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
+/// ffprobe the MEDIA duration (seconds) of a finished file — the truth the
+/// recorder's loss measurement compares against wall clock (2026-07-31: wall
+/// said 46.6 s, the file held 20.4 s, and nothing noticed). `None` on any
+/// failure — the caller treats an unprobeable file as unmeasured, never as 0 s.
+pub async fn probe_duration_secs(path: &str) -> Option<f64> {
+    let out = tokio::process::Command::new(ffprobe_path())
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            path,
+        ])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|d| d.is_finite() && *d >= 0.0)
+}
+
 // ── Synchronous health / diagnostics ────────────────────────────────────────
 
 /// Run `ffmpeg -version` synchronously and return its first line — used for the

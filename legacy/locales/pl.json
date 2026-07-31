@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie",
     "errorDiskFull": "Dysk jest pełny — zwolnij miejsce i spróbuj ponownie",
     "errorFfmpegMissing": "Błąd wewnętrzny: brak komponentu nagrywającego — zainstaluj aplikację ponownie",
-    "errorStuck": "Nagranie zatrzymane — przez 60 sekund nie było dźwięku z urządzenia"
+    "errorStuck": "Nagranie zatrzymane — przez 60 sekund nie było dźwięku z urządzenia",
+    "qualityAlarm": "UWAGA: W nagraniu brakuje dźwięku — plik zawiera {m} z {e} sekund. Sprawdź nagranie, zanim mu zaufasz."
   },
   "video": {
     "minBitrateWarn": "Minimalny bitrate to 500 kbps",

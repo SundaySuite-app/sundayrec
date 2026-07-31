@@ -203,6 +203,21 @@ export function setupRecording(): void {
       console.warn('[recording] transient recorder error:', d?.error, d?.message)
       showReconnectBanner()
     }),
+    window.api.on('recording-quality', (data) => {
+      // Session-end truth verdict FAILED: the delivered file provably holds
+      // less audio than the session lasted (or the drop counters crossed the
+      // fail line). This must never pass silently — it is the alarm the
+      // 2026-07-31 incident lacked (15–56 % loss reported as "clean").
+      const r = data as { expectedSec?: number; measuredSec?: number; reasons?: string[] } | undefined
+      const expected = Math.round(r?.expectedSec ?? 0)
+      const measured = Math.round(r?.measuredSec ?? 0)
+      console.error('[recording] QUALITY ALARM:', r?.reasons, `${measured}/${expected}s`)
+      showGlobalError(
+        t('recording.qualityAlarm', 'ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det.')
+          .replace('{m}', String(measured))
+          .replace('{e}', String(expected))
+      )
+    }),
     window.api.on('recording-progress', (data) => {
       const d = data as { bytes?: number } | undefined
       if (d?.bytes !== undefined) recBytes = d.bytes

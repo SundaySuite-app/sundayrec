@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Das Audiogerät wurde während der Aufnahme getrennt — Verbindung prüfen",
     "errorDiskFull": "Die Festplatte ist voll — schaffen Sie Platz und versuchen Sie es erneut",
     "errorFfmpegMissing": "Interner Fehler: Aufnahme-Programmkomponente fehlt — App neu installieren",
-    "errorStuck": "Aufnahme gestoppt — 60 Sekunden lang kein Ton vom Gerät"
+    "errorStuck": "Aufnahme gestoppt — 60 Sekunden lang kein Ton vom Gerät",
+    "qualityAlarm": "WARNUNG: Der Aufnahme fehlt Audio — die Datei enthält {m} von {e} Sekunden. Prüfen Sie die Aufnahme, bevor Sie ihr vertrauen."
   },
   "video": {
     "minBitrateWarn": "Mindestbitrate ist 500 kbps",

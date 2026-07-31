@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen",
     "errorDiskFull": "Disken är full — frigör utrymme och försök igen",
     "errorFfmpegMissing": "Internt fel: inspelningskomponent saknas — installera om appen",
-    "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder"
+    "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder",
+    "qualityAlarm": "VARNING: Inspelningen saknar ljud — filen innehåller {m} av {e} sekunder. Kontrollera inspelningen innan du litar på den."
   },
   "video": {
     "minBitrateWarn": "Minsta bithastighet är 500 kbps",

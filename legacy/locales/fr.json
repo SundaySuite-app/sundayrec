@@ -719,7 +719,8 @@
     "errorDeviceDisconnected": "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion",
     "errorDiskFull": "Le disque est plein — libérez de l’espace et réessayez",
     "errorFfmpegMissing": "Erreur interne : le composant d’enregistrement est manquant — réinstallez l’application",
-    "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes"
+    "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes",
+    "qualityAlarm": "ATTENTION : Il manque de l'audio à l'enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l'enregistrement avant de vous y fier."
   },
   "video": {
     "minBitrateWarn": "Le débit minimal est de 500 kbps",
