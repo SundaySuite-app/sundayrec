@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Wideo, Zoom i sprzęt TV",
     "sampleRateAuto": "Automatycznie",
     "sampleRateAutoDesc": "Zgodnie z kartą dźwiękową — bez resamplingu",
-    "recommended": "Zalecane"
+    "recommended": "Zalecane",
+    "captureBench": "📏 Test precyzji (60 s)",
+    "benchRunning": "Pomiar przez 60 s — odtwórz dźwięk/mów do mikrofonu …",
+    "benchResult": "Zmierzono {m}s z {e}s ({p} % straty)"
   },
   "files": {
     "title": "Pliki i format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Plik oryginalny nie jest dostępny — czy dysk jest odłączony?",
     "errCutData": "Wewnętrzny błąd danych wycięć. Spróbuj ponownie wczytać plik.",
     "chaptersEmpty": "Brak rozdziałów. Kliknij \"+ Dodaj w pozycji odtwarzania\", aby zacząć.",
-    "chapterClickSeek": "Kliknij, aby przejść"
+    "chapterClickSeek": "Kliknij, aby przejść",
+    "qualityFallback": "Odtwarzanie w obniżonej jakości (8 kHz) — nie udało się przygotować pełnej jakości dla tego pliku. Eksport nie jest zmieniony."
   },
   "master": {
     "title": "Mastering (przygotuj do publikacji)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "Urządzenie audio zostało odłączone w trakcie nagrywania — sprawdź połączenie",
     "errorDiskFull": "Dysk jest pełny — zwolnij miejsce i spróbuj ponownie",
     "errorFfmpegMissing": "Błąd wewnętrzny: brak komponentu nagrywającego — zainstaluj aplikację ponownie",
-    "errorStuck": "Nagranie zatrzymane — przez 60 sekund nie było dźwięku z urządzenia"
+    "errorStuck": "Nagranie zatrzymane — przez 60 sekund nie było dźwięku z urządzenia",
+    "qualityAlarm": "UWAGA: W nagraniu brakuje dźwięku — plik zawiera {m} z {e} sekund. Sprawdź nagranie, zanim mu zaufasz."
   },
   "video": {
     "minBitrateWarn": "Minimalny bitrate to 500 kbps",

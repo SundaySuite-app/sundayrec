@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom og TV-utstyr",
     "sampleRateAuto": "Automatisk",
     "sampleRateAutoDesc": "Følger lydkortet — ingen resampling",
-    "recommended": "Anbefalt"
+    "recommended": "Anbefalt",
+    "captureBench": "📏 Presisjonstest (60 sek)",
+    "benchRunning": "Måler i 60 sek — spill av lyd/snakk i mikrofonen …",
+    "benchResult": "Målt {m}s av {e}s ({p} % tap)"
   },
   "files": {
     "title": "Filer & Format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Originalfilen er ikke tilgjengelig — er disken frakoblet?",
     "errCutData": "Intern feil i kuttdataene. Prøv å laste filen på nytt.",
     "chaptersEmpty": "Ingen kapitler ennå. Klikk «+ Legg til ved playhead» for å starte.",
-    "chapterClickSeek": "Klikk for å søke"
+    "chapterClickSeek": "Klikk for å søke",
+    "qualityFallback": "Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke."
   },
   "master": {
     "title": "Mastering (klargjør for publisering)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "Lydenheten ble koblet fra under opptak — sjekk tilkoblingen",
     "errorDiskFull": "Disken er full — frigjør plass og prøv igjen",
     "errorFfmpegMissing": "Intern feil: opptaksbinær mangler — installer appen på nytt",
-    "errorStuck": "Opptaket stoppet — ingen lyd fra enheten i 60 sekunder"
+    "errorStuck": "Opptaket stoppet — ingen lyd fra enheten i 60 sekunder",
+    "qualityAlarm": "ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det."
   },
   "video": {
     "minBitrateWarn": "Minste bitrate er 500 kbps",

@@ -25,6 +25,29 @@ interface EnvPoint {
   t: number // performance.now() ms
 }
 
+/** Draw-gate interval — every other 60 Hz frame. */
+export const DRAW_INTERVAL_MS = 33.4
+/** Pure accumulator gate for the ~30 fps draw pacing: returns the NEW gate
+ *  timestamp when a draw is due (advanced by exactly one interval so the
+ *  cadence stays even), or the old one when not. A stall > 2 intervals resyncs
+ *  to `now` instead of replaying missed draws. Unit-tested. */
+export function nextDrawGate(gate: number, now: number): number {
+  if (now - gate < DRAW_INTERVAL_MS) return gate
+  if (now - gate > DRAW_INTERVAL_MS * 2) return now
+  return gate + DRAW_INTERVAL_MS
+}
+
+/** Max additive bloom stamps per frame (see `bloomStride`). */
+export const BLOOM_BUDGET = 32
+/** Pure bloom budget: given the number of bloom-qualifying columns, return the
+ *  stamp STRIDE so at most `budget` additive drawImage composites run per
+ *  frame. Loud audio used to stamp one bloom per column (~478/frame — jank that
+ *  scaled with loudness); the stride keeps worst-case cost constant. */
+export function bloomStride(qualifying: number, budget: number): number {
+  if (qualifying <= budget) return 1
+  return Math.ceil(qualifying / budget)
+}
+
 // Palette — matte amber-gold on a deep, slightly darker blue. Deliberately NO
 // near-white anywhere (the core used to read as a glossy cream highlight, and the
 // additive bloom blew out to white); the core tops out at a muted amber so loud
@@ -49,7 +72,11 @@ export class RecordingWaveform {
   private readonly pxPerSecCss = 74
   private readonly playheadFrac = 0.78
   private readonly growMs = 100
-  private readonly minStepCss = 0.9 // light decimation of the outline
+  // Outline decimation: at 60 points/s and 74 px/s the point spacing is
+  // ~1.23 CSS px, so the old 0.9 threshold NEVER merged anything — the two
+  // Catmull-Rom fills ran ~1,900 bezier segments/frame. 2.0 halves the column
+  // count with no visible change (the fills are smoothed curves anyway).
+  private readonly minStepCss = 2.0
   private readonly idleEnter = 0.07 // rms below this → idle breath fades in
   private readonly bloomThresh = 0.62 // core level above which the (subtle) bloom kicks in
 
@@ -107,7 +134,7 @@ export class RecordingWaveform {
   start(): void {
     if (this.running) return
     this.running = true
-    let lastDrawTs = 0
+    let gate = 0
     const loop = (): void => {
       if (!this.running) return
       const now = performance.now()
@@ -116,8 +143,14 @@ export class RecordingWaveform {
       // halving this redraw frees the main thread DURING recording, reducing the
       // event-loop/IPC starvation that makes recording mode feel laggy. The data
       // ring still fills at the meter loop's full rate; only the draw is capped.
-      if (now - lastDrawTs >= 33) {
-        lastDrawTs = now
+      // ACCUMULATOR gate (not `gate = now`): a plain `>= 33` check against a
+      // 16.7 ms rAF cadence sits ON the boundary, so timestamp jitter made the
+      // cadence alternate 33/50 ms — visible judder. Advancing the gate by the
+      // interval keeps a steady 2-frame rhythm; the resync clause absorbs long
+      // stalls without a burst of catch-up draws.
+      const next = nextDrawGate(gate, now)
+      if (next !== gate) {
+        gate = next
         this.draw(now)
       }
       this.rafId = requestAnimationFrame(loop)
@@ -347,13 +380,24 @@ export class RecordingWaveform {
       // RMS core.
       this.fillEnvelope(colX, colCore, cols, cy, maxAmp, this.coreGrad)
 
-      // Bloom — stamp the cached glow at loud core columns (additive).
+      // Bloom — stamp the cached glow at loud core columns (additive), under a
+      // HARD BUDGET. Unbudgeted, every column above the threshold got its own
+      // additive drawImage (~478/frame during any normal service level) — the
+      // dominant, loudness-scaling jank source on WKWebView. The stride keeps
+      // the haze visually continuous while capping worst-case cost.
       if (this.glow) {
+        let qualifying = 0
+        for (let c = 0; c < cols; c++) {
+          if (colCore[c] >= this.bloomThresh) qualifying++
+        }
+        const stride = bloomStride(qualifying, BLOOM_BUDGET)
         const gw = this.glow.width
         ctx.globalCompositeOperation = 'lighter'
+        let qi = 0
         for (let c = 0; c < cols; c++) {
           const v = colCore[c]
           if (v < this.bloomThresh) continue
+          if (qi++ % stride !== 0) continue
           const intensity = (v - this.bloomThresh) / (1 - this.bloomThresh)
           // Much smaller + dimmer than before: a faint warm haze on loud moments,
           // not a white blow-out.

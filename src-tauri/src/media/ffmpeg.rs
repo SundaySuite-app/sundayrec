@@ -96,6 +96,35 @@ pub async fn spawn_ffmpeg(args: &[&str]) -> AppResult<tokio::process::Child> {
         .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
 }
 
+/// ffprobe the MEDIA duration (seconds) of a finished file — the truth the
+/// recorder's loss measurement compares against wall clock (2026-07-31: wall
+/// said 46.6 s, the file held 20.4 s, and nothing noticed). `None` on any
+/// failure — the caller treats an unprobeable file as unmeasured, never as 0 s.
+pub async fn probe_duration_secs(path: &str) -> Option<f64> {
+    let out = tokio::process::Command::new(ffprobe_path())
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            path,
+        ])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|d| d.is_finite() && *d >= 0.0)
+}
+
 // ── Synchronous health / diagnostics ────────────────────────────────────────
 
 /// Run `ffmpeg -version` synchronously and return its first line — used for the
@@ -488,6 +517,19 @@ mod tests {
             String::from_utf8_lossy(&status.stderr)
         );
 
+        // STDERR BUDGET — the anti-backpressure contract, locked forever. The
+        // pre-v0.5.0 chain emitted ~4,000 lines over this 2 s run (astats
+        // printed 22 lines per ~10 ms device frame); that firehose filled the
+        // 16–64 KB stderr pipe whenever the reader lagged → ffmpeg stalled →
+        // avfoundation silently dropped 15–56 % of samples (2026-07-31). The
+        // batched chain emits well under 400.
+        let stderr_lines = String::from_utf8_lossy(&status.stderr).lines().count();
+        assert!(
+            stderr_lines < 400,
+            "levels chain stderr budget blown: {stderr_lines} lines over 2 s — \
+             the astats print rate has regressed toward the capture-starving firehose"
+        );
+
         let len = std::fs::metadata(&out).expect("output exists").len();
         assert!(
             len >= MIN_VALID_OUTPUT_BYTES,
@@ -520,6 +562,82 @@ mod tests {
             "levels-chain duration off: {dur} s (expected ≈ 2.0)"
         );
         eprintln!("levels chain: encoded + ffprobed OK ({dur:.3} s, {len} bytes)");
+    }
+
+    /// 96 kHz DURATION-EXACT REAL-FFMPEG TEST — the sample-loss regression
+    /// guard at the rate where the 2026-07-31 incident lost up to 56 %. Runs a
+    /// 10 s lavfi sine at 96 kHz through the EXACT recording chain (levels +
+    /// silencedetect + native-rate encode) and asserts the produced WAV holds
+    /// 10 s of media within ±0.15 s, plus the stderr budget at double the data
+    /// rate. RUNS when the bundled sidecar is present; hardware-free.
+    #[test]
+    fn levels_chain_96k_duration_exact_or_skips() {
+        use sundayrec_core::capture::audio_encode_args;
+        use sundayrec_core::ffmpeg::build_levels_detect_filter;
+
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("chain96k.wav");
+        let out_s = out.to_string_lossy().into_owned();
+
+        let mut args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "sine=frequency=440:duration=10:sample_rate=96000".into(),
+            "-af".into(),
+            format!(
+                "silencedetect=noise=-55dB:duration=1,{}",
+                build_levels_detect_filter(crate::recorder::engine::current_platform())
+            ),
+            "-t".into(),
+            "10".into(),
+        ];
+        args.extend(audio_encode_args("wav", 2, None, 192));
+        args.push("-y".into());
+        args.push(out_s);
+
+        let status = std::process::Command::new(&ffmpeg)
+            .args(&args)
+            .output()
+            .expect("ffmpeg should run");
+        assert!(
+            status.status.success(),
+            "ffmpeg failed for the 96k chain: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+        let stderr_lines = String::from_utf8_lossy(&status.stderr).lines().count();
+        assert!(
+            stderr_lines < 800,
+            "96k stderr budget blown: {stderr_lines} lines over 10 s"
+        );
+
+        let probe = std::process::Command::new(&ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&out)
+            .output()
+            .expect("ffprobe should run");
+        let dur: f64 = String::from_utf8_lossy(&probe.stdout)
+            .trim()
+            .parse()
+            .expect("numeric duration");
+        assert!(
+            (dur - 10.0).abs() <= 0.15,
+            "96k chain lost samples: {dur} s (expected ≈ 10.0)"
+        );
+        eprintln!("96k chain: duration-exact OK ({dur:.3} s, {stderr_lines} stderr lines)");
     }
 
     /// DUAL-OUTPUT (recording + DEADLOCK-PROOF live preview) REAL-FFMPEG TEST. A

@@ -110,9 +110,16 @@ pub fn build_preroll_capture_args(
     let mut args: Vec<String> = vec!["-hide_banner".into()];
     match platform {
         Platform::MacOS | Platform::Linux => {
-            // avfoundation audio-only input is ":<audioIdx>".
+            // avfoundation audio-only input is ":<audioIdx>". Same jitter
+            // absorbers as the REAL capture (2026-07-31 audit: the preroll's
+            // rolling ffmpeg carried neither knob, so it was even more prone to
+            // silent sample drops than the recording it feeds).
             args.push("-f".into());
             args.push("avfoundation".into());
+            args.push("-thread_queue_size".into());
+            args.push(crate::capture::MAC_INPUT_QUEUE.into());
+            args.push("-rtbufsize".into());
+            args.push(crate::capture::MAC_INPUT_RTBUFSIZE.into());
             args.push("-i".into());
             args.push(format!(":{audio_device}"));
         }
@@ -310,6 +317,9 @@ mod tests {
             build_preroll_capture_args(Platform::MacOS, "1", Some(48_000), 2, "/tmp/pre.wav");
         assert!(args.windows(2).any(|w| w == ["-f", "avfoundation"]));
         assert!(args.iter().any(|a| a == ":1"), "audio-only input :1");
+        // Same jitter absorbers as the real capture (2026-07-31 audit).
+        assert!(args.windows(2).any(|w| w == ["-thread_queue_size", "8192"]));
+        assert!(args.windows(2).any(|w| w == ["-rtbufsize", "256M"]));
         assert!(args.windows(2).any(|w| w == ["-c:a", "pcm_s16le"]));
         assert!(args.windows(2).any(|w| w == ["-t", "90"]), "90 s cap");
         assert!(args.windows(2).any(|w| w == ["-ar", "48000"]));

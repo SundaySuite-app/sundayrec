@@ -122,10 +122,24 @@ export function setupEditorPage(): void {
   // to -1 dBFS (1 dB safety headroom), and scales the waveform render +
   // export pipeline accordingly. Idempotent — clicking when already
   // normalized is a no-op.
-  $('btn-normalize-peak')?.addEventListener('click', () => {
+  $('btn-normalize-peak')?.addEventListener('click', async () => {
     if (!E.peaks || E.peaks.length === 0) return
     if (E.audioGainDb !== 0) return     // already normalized — idempotent
-    const gain = computePeakGain(E.peaks)
+    let gain = computePeakGain(E.peaks)
+    // On the ffmpeg-extract path the in-memory peaks come from the 8 kHz mono
+    // downmix, which UNDER-reads the true peak by several dB — and the export
+    // (where this gain is applied) runs on the ORIGINAL file, so normalizing
+    // from extract peaks risked pushing the export into clipping. Probe the
+    // original's true peak (volumedetect) and use that instead; fall back to
+    // the buffer-derived gain if the probe fails.
+    if (E.usedFfmpegExtract) {
+      try {
+        const maxDb = await window.api.editorProbePeak(E.filePath)
+        if (typeof maxDb === 'number' && isFinite(maxDb)) {
+          gain = maxDb >= -1 ? 0 : -1 - maxDb
+        }
+      } catch { /* keep buffer-derived gain */ }
+    }
     if (!isFinite(gain) || Math.abs(gain) < 0.05) {
       // Already at (or above) target — show that explicitly
       setNormalizeUI(0, /*alreadyAtTarget*/ true)

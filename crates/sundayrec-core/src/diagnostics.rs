@@ -368,6 +368,21 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
     // Last recording HEALTH (automatic telemetry): drops/xruns = stutter,
     // levels_dropped = the UI/IPC couldn't keep up (recording mode lag).
     if let Some(t) = &input.last_recording {
+        // Measured duration loss is its OWN, louder finding: the file provably
+        // holds less audio than the session lasted (the 2026-07-31 incident:
+        // 15–56 % missing while every counter said "clean").
+        if t.loss_pct >= crate::selftest::DURATION_LOSS_FAIL_PCT {
+            out.push(DiagnosticFinding::new(
+                "REC-LOSS",
+                Critical,
+                "Forrige opptak MANGLER lyd",
+                format!(
+                    "Forventet ~{:.0} s, fila inneholder {:.0} s — {:.1} % av lyden mangler.",
+                    t.expected_sec, t.measured_sec, t.loss_pct
+                ),
+                "Dette er alvorlig: opptaksprosessen mistet samples underveis. Lukk andre tunge programmer, koble lydkortet direkte (ikke via hub), og meld fra med denne rapporten — tallene her er beviset feilsøkingen trenger.",
+            ));
+        }
         if t.is_degraded() {
             let mut bits: Vec<String> = Vec::new();
             if t.drops > 0 {
@@ -375,6 +390,9 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
             }
             if t.xruns > 0 {
                 bits.push(format!("{} xruns", t.xruns));
+            }
+            if t.capture_drop_lines > 0 {
+                bits.push(format!("{} capture-dropp-varsler", t.capture_drop_lines));
             }
             if t.levels_dropped > 0 {
                 bits.push(format!("{} IPC-overbelastninger", t.levels_dropped));

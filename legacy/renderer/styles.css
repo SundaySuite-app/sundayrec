@@ -628,8 +628,12 @@ select:focus:not(:focus-visible) {
 }
 .vu-bar-peak {
   position: absolute; top: 2px; bottom: 2px; width: 2px;
-  background: rgba(255,255,255,.9); left: 0%;
+  background: rgba(255,255,255,.9); left: 0;
   opacity: 0; pointer-events: none; z-index: 3;
+  /* Moved via transform: translateX(px) from JS (audio/vu.ts) — GPU composite,
+     no layout. The old per-frame `left: %` writes reflowed continuously during
+     every peak release. */
+  will-change: transform;
 }
 .vu-bar-clip {
   width: 10px; height: 32px; border-radius: 3px; flex-shrink: 0;
@@ -4499,3 +4503,21 @@ button > svg:first-child { flex-shrink: 0; }
 .diag-finding-detail { font-size: 12px; color: var(--text2, #aaa); margin-top: 2px; }
 .diag-finding-hint { font-size: 12px; margin-top: 2px; }
 .diag-report { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; background: rgba(0,0,0,0.18); padding: 8px; border-radius: 6px; }
+
+/* ── Recording-active: silence invisible animations behind the overlay ──────
+   showPage() is never called while the recording overlay is up, so the home
+   page stays laid out AND animating underneath it: the hero card's box-shadow
+   keyframes repaint a large blur every frame, and the record button's pulse
+   rings composite two extra layers — all for content nobody can see. The
+   body-level class (toggled by showOverlay/hideOverlay/resync) pauses them for
+   the duration of the take. */
+body.recording-active .hero-ok,
+body.recording-active .hero-warn {
+  animation: none;
+}
+body.recording-active .btn-record.recording::before,
+body.recording-active .btn-record.recording::after,
+body.recording-active .rec-dot-sm,
+body.recording-active .status-dot.recording {
+  animation: none;
+}

@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom and TV equipment",
     "sampleRateAuto": "Automatic",
     "sampleRateAutoDesc": "Follows the sound card — no resampling",
-    "recommended": "Recommended"
+    "recommended": "Recommended",
+    "captureBench": "📏 Precision test (60 s)",
+    "benchRunning": "Measuring for 60 s — play audio/speak into the microphone …",
+    "benchResult": "Measured {m}s of {e}s ({p} % loss)"
   },
   "files": {
     "title": "Files & Format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Original file is not available — is the disk disconnected?",
     "errCutData": "Internal error in cut data. Try reloading the file.",
     "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
-    "chapterClickSeek": "Click to seek"
+    "chapterClickSeek": "Click to seek",
+    "qualityFallback": "Playback in reduced quality (8 kHz) — full quality could not be prepared for this file. Export is unaffected."
   },
   "master": {
     "title": "Mastering (prepare for publishing)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "The audio device was disconnected during recording — check the connection",
     "errorDiskFull": "The disk is full — free up space and try again",
     "errorFfmpegMissing": "Internal error: the recording binary is missing — reinstall the app",
-    "errorStuck": "Recording stopped — no audio from the device for 60 seconds"
+    "errorStuck": "Recording stopped — no audio from the device for 60 seconds",
+    "qualityAlarm": "WARNING: The recording is missing audio — the file holds {m} of {e} seconds. Check the recording before trusting it."
   },
   "video": {
     "minBitrateWarn": "Minimum bitrate is 500 kbps",

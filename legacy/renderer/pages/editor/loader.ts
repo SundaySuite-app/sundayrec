@@ -1,4 +1,5 @@
 import { settings } from '../../state'
+import { t } from '../../i18n'
 import type { RecordingMetadata } from '../../../types'
 import { E, $, clearDirty, VIDEO_EXTS, WEB_AUDIO_EXTS, playbackMediaEl } from './state'
 import { computePeaks, computeJinglePeaks, setNormalizeUI } from './peaks'
@@ -87,6 +88,7 @@ export async function loadFile(fp: string): Promise<void> {
   // decoded buffer — so this also defines the fallback for the new file.
   teardownProxyAudio()
   let usedFfmpegExtract = false
+  E.usedFfmpegExtract = false
   E.playStartSec = 0
   E.meta = { title: '', speaker: '', description: '', chapters: [] }
   E.metaDirty = false
@@ -207,6 +209,7 @@ export async function loadFile(fp: string): Promise<void> {
       const ok = await loadViaFfmpegExtract(fp, seq)
       if (!ok) return
       usedFfmpegExtract = true
+      E.usedFfmpegExtract = true
     } else {
       const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer)
       const ab  = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
@@ -234,6 +237,7 @@ export async function loadFile(fp: string): Promise<void> {
     // The resulting WAV is decodable by Web Audio API and serves as both
     // waveform source and playback buffer (phone-call quality, adequate for cut-finding).
     usedFfmpegExtract = true
+    E.usedFfmpegExtract = true
     const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
     if (seq !== E.loadSeq) return
     if (!result) {
@@ -330,9 +334,11 @@ export async function loadFile(fp: string): Promise<void> {
   // above backs the WAVEFORM but is telephone-quality to LISTEN to. Transcode a
   // seekable stereo AAC proxy in the background and stream it via <audio> once
   // ready — a graceful upgrade (playback uses the 8 kHz buffer until it arrives).
-  // OFF by default (opt-in): the proxy transport is rig-UNVERIFIED and was a
-  // suspected source of editor instability, so the stable 8 kHz path is the
-  // default. Enable per [`isPlaybackProxyEnabled`] once it's verified on a rig.
+  // ON by default since v0.5.0: with the 100 MB inline limit, essentially every
+  // real service recording (~5 min of 96 kHz FLAC) landed on the 8 kHz mono
+  // path — "incredibly bad quality on clips I know are good" (2026-07-31). The
+  // 8 kHz buffer remains the waveform source and the fallback; failures now
+  // surface a visible notice instead of silently sounding like a telephone.
   if (usedFfmpegExtract && isPlaybackProxyEnabled()) void startPlaybackProxy(fp, seq)
 
   if (E.pendingSeekSec != null) {
@@ -380,6 +386,9 @@ export async function loadFile(fp: string): Promise<void> {
  * the 8 kHz Web-Audio buffer. Called on every load before a new file is read.
  */
 function teardownProxyAudio(): void {
+  // A new load starts fresh — clear any quality notice from the previous file.
+  const notice = document.getElementById('editor-quality-notice')
+  if (notice) notice.style.display = 'none'
   const el = E.proxyAudioEl
   E.proxyAudioEl = null
   if (el) {
@@ -390,18 +399,35 @@ function teardownProxyAudio(): void {
 }
 
 /**
- * Whether the experimental full-fidelity playback proxy (C5) is opted in. OFF by
- * default — the stable 8 kHz preview is the playback path until the proxy is
- * verified on a real rig. Opt in by setting localStorage
- * `sundayrec.editor.playbackProxy` to `"on"` (a settings toggle can write this
- * later). Kept a frontend-only flag so enabling it can't touch the backend.
+ * Whether the full-fidelity playback proxy (C5) is enabled. ON by default since
+ * v0.5.0 — the 8 kHz preview is only the waveform source + emergency fallback.
+ * Opt OUT by setting localStorage `sundayrec.editor.playbackProxy` to `"off"`
+ * (kept as an escape hatch if a rig hits proxy instability).
  */
 function isPlaybackProxyEnabled(): boolean {
   try {
-    return localStorage.getItem('sundayrec.editor.playbackProxy') === 'on'
+    return localStorage.getItem('sundayrec.editor.playbackProxy') !== 'off'
   } catch {
-    return false
+    return true
   }
+}
+
+/** Show a small, non-blocking quality notice in the editor workspace (the
+ *  editor still WORKS on the 8 kHz fallback — a full error state would be
+ *  wrong, silence would be worse). Reuses one fixed element; auto-created. */
+function showQualityNotice(text: string): void {
+  let el = document.getElementById('editor-quality-notice')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'editor-quality-notice'
+    el.style.cssText =
+      'margin:8px 0;padding:8px 12px;border-radius:8px;font-size:13px;' +
+      'background:rgba(239,180,75,.12);border:1px solid rgba(239,180,75,.4);color:var(--text2)'
+    const anchor = document.getElementById('editor-workspace')
+    anchor?.prepend(el)
+  }
+  el.textContent = text
+  el.style.display = ''
 }
 
 /**
@@ -419,14 +445,24 @@ async function startPlaybackProxy(fp: string, seq: number): Promise<void> {
   try {
     proxyPath = await window.api.editorExtractPlaybackProxy(fp)
   } catch { proxyPath = null }
-  // A newer file started loading while we transcoded, or the transcode failed.
-  if (seq !== E.loadSeq || !proxyPath) return
+  if (seq !== E.loadSeq) return // a newer file started loading while we transcoded
+  if (!proxyPath) {
+    // The transcode failed — playback stays on the 8 kHz fallback. Say so:
+    // the silent version of this fallback was "incredibly bad quality on
+    // clips I know are good" with no explanation (2026-07-31).
+    showQualityNotice(t('editor.qualityFallback', 'Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke.'))
+    return
+  }
 
   const el = new Audio()
   el.preload = 'auto'
-  // Revert to the 8 kHz buffer if the proxy turns out unplayable.
+  // Revert to the 8 kHz buffer if the proxy turns out unplayable — visibly.
   el.addEventListener('error', () => {
-    if (E.proxyAudioEl === el) E.proxyAudioEl = null
+    if (E.proxyAudioEl === el) {
+      E.proxyAudioEl = null
+      console.warn('[editor] playback proxy failed to load:', proxyPath)
+      showQualityNotice(t('editor.qualityFallback', 'Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke.'))
+    }
   }, { once: true })
   el.src = window.api.toAssetUrl(proxyPath)
 

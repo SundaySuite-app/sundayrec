@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom och TV-utrustning",
     "sampleRateAuto": "Automatisk",
     "sampleRateAutoDesc": "Följer ljudkortet — ingen omsampling",
-    "recommended": "Rekommenderas"
+    "recommended": "Rekommenderas",
+    "captureBench": "📏 Precisionstest (60 s)",
+    "benchRunning": "Mäter i 60 s — spela upp ljud/tala i mikrofonen …",
+    "benchResult": "Uppmätt {m}s av {e}s ({p} % förlust)"
   },
   "files": {
     "title": "Filer & Format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Originalfilen är inte tillgänglig — är disken frånkopplad?",
     "errCutData": "Internt fel i klippdata. Försök ladda om filen.",
     "chaptersEmpty": "Inga kapitel ännu. Klicka på \"+ Lägg till vid uppspelningsmarkör\" för att starta.",
-    "chapterClickSeek": "Klicka för att söka"
+    "chapterClickSeek": "Klicka för att söka",
+    "qualityFallback": "Uppspelning i reducerad kvalitet (8 kHz) — full kvalitet kunde inte förberedas för den här filen. Exporten påverkas inte."
   },
   "master": {
     "title": "Mastring (förbered för publicering)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "Ljudenheten kopplades från under inspelningen — kontrollera anslutningen",
     "errorDiskFull": "Disken är full — frigör utrymme och försök igen",
     "errorFfmpegMissing": "Internt fel: inspelningskomponent saknas — installera om appen",
-    "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder"
+    "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder",
+    "qualityAlarm": "VARNING: Inspelningen saknar ljud — filen innehåller {m} av {e} sekunder. Kontrollera inspelningen innan du litar på den."
   },
   "video": {
     "minBitrateWarn": "Minsta bithastighet är 500 kbps",

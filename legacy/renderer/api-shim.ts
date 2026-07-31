@@ -138,6 +138,7 @@ const EVENT_MAP: Record<string, string> = {
   "recording-finished": "recording://finished",
   "recording-error": "recording://error",
   "recording-warning": "recording://warning",
+  "recording-quality": "recording://quality",
   "recording-progress": "recording://progress",
   "recording-levels": "recording://levels",
   "recording-reconnecting": "recording://reconnecting",
@@ -675,6 +676,14 @@ const api: Record<string, unknown> = {
   // didn't match what the consumer reads.
   runTestRecording: async () =>
     call("run_test_recording", undefined, { ok: false }),
+  // Precision capture bench: real recording argv for N s → ffprobed +
+  // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
+  // button can show the actual error text.
+  runCaptureBench: async (secs: number) =>
+    invoke<import("../bindings/SelfTestReport").SelfTestReport>(
+      "run_capture_bench",
+      { secs },
+    ),
   // run_preflight returns Vec<PreflightFinding> directly; old code reads { findings }.
   runPreflight: async () => ({
     findings: await call<unknown[]>("run_preflight", undefined, []),
@@ -1081,6 +1090,10 @@ const api: Record<string, unknown> = {
   // the 8 kHz buffer for playback). The 8 kHz WAV remains the waveform source.
   editorExtractPlaybackProxy: async (fp: string) =>
     call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
+  // editor_probe_peak → true max_volume (dBFS) of the ORIGINAL file via
+  // volumedetect — Normalize's honest basis on the 8 kHz-extract path.
+  editorProbePeak: async (fp: string) =>
+    call<number | null>("editor_probe_peak", { inputPath: fp }, null),
   editorPickVideoFile: async () =>
     pickPath({ name: "Video", extensions: VIDEO_EXT }),
   editorSaveVideo: async () => ({ ok: false }),

@@ -2,6 +2,7 @@ import { t, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
 import { startVU } from './home-vu'
+import { releaseRendererAudioCaptures } from './recording'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import type { RecordingEntry } from './history'
@@ -668,6 +669,34 @@ export function setupHome(): void {
   // Legacy IDs (btn-test-recording / btn-run-preflight) were removed from the
   // Home card in v4.31 — buttons now live exclusively on Innstillinger → Lyd.
   document.getElementById('btn-test-recording-settings')?.addEventListener('click', () => runTestRecording('btn-test-recording-settings', 'health-status-settings'))
+  // Precision capture bench: real recording argv for 60 s, ffprobed and judged
+  // — the zero-loss proof tool (2026-07-31). Uses the shared health status line.
+  document.getElementById('btn-capture-bench')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-capture-bench') as HTMLButtonElement | null
+    const status = document.getElementById('health-status-settings')
+    if (!btn || !status) return
+    btn.disabled = true
+    status.textContent = t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')
+    // The bench must measure the RECORDING PATH alone: release every
+    // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
+    // getUserMedia on the same device skews the source itself).
+    releaseRendererAudioCaptures()
+    try {
+      const r = await window.api.runCaptureBench(60)
+      const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
+      const pct = r.expectedSec ? (loss / r.expectedSec * 100) : 0
+      status.textContent = `${r.verdict === 'pass' ? '✅' : r.verdict === 'warn' ? '⚠️' : '❌'} ` +
+        t('audio.benchResult', 'Målt {m}s av {e}s ({p} % tap)')
+          .replace('{m}', (r.measuredSec ?? 0).toFixed(2))
+          .replace('{e}', (r.expectedSec ?? 0).toFixed(0))
+          .replace('{p}', pct.toFixed(2)) +
+        (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
+    } catch (err) {
+      status.textContent = '❌ ' + (err instanceof Error ? err.message : String(err))
+    }
+    if (!window.__isRecording) startVU() // give the home meter back
+    btn.disabled = false
+  })
   document.getElementById('btn-run-preflight-settings')?.addEventListener('click',  () => runPreflight('btn-run-preflight-settings',  'health-status-settings', 'preflight-findings-settings'))
 
   // Home → Settings → Lyd quick-jump (replaces the old inline test buttons)
@@ -922,7 +951,10 @@ export async function refreshHome(): Promise<void> {
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
-  startVU()
+  // LEAK GUARD (2026-07-31 audit): navigating home mid-recording used to
+  // reopen the getUserMedia meter stream — a second microphone owner beside
+  // the recorder's ffmpeg for the rest of the take.
+  if (!window.__isRecording) startVU()
 
   // Once-per-session silent preflight. Surfaces critical issues (disk full,
   // mic permission denied, device missing) on home as a banner *without*
@@ -1002,6 +1034,10 @@ async function loadNextRecording(prefetchedNext?: { date: string } | null): Prom
 
   const tick = () => {
     if (!cntEl) return
+    // Skip while recording: the overlay covers home, but this 1 Hz text write
+    // used to invalidate layout for the whole hidden page every second of a
+    // take (there is no CSS containment). Resumes the moment recording ends.
+    if (window.__isRecording) return
     const diff   = d.getTime() - Date.now()
     const suffix = t('home.untilStart', 'til oppstart')
     cntEl.textContent = diff > 0 ? `${fmtCountdown(diff)} ${suffix}` : ''

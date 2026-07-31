@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Video, Zoom og TV-udstyr",
     "sampleRateAuto": "Automatisk",
     "sampleRateAutoDesc": "Følger lydkortet — ingen resampling",
-    "recommended": "Anbefalet"
+    "recommended": "Anbefalet",
+    "captureBench": "📏 Præcisionstest (60 sek)",
+    "benchRunning": "Måler i 60 sek — afspil lyd/tal i mikrofonen …",
+    "benchResult": "Målt {m}s af {e}s ({p} % tab)"
   },
   "files": {
     "title": "Filer & Format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Originalfilen er ikke tilgængelig — er disken afbrudt?",
     "errCutData": "Intern fejl i klippedata. Prøv at genindlæse filen.",
     "chaptersEmpty": "Ingen kapitler endnu. Klik på \"+ Tilføj ved afspilningsmarkør\" for at starte.",
-    "chapterClickSeek": "Klik for at søge"
+    "chapterClickSeek": "Klik for at søge",
+    "qualityFallback": "Afspilning i reduceret kvalitet (8 kHz) — fuld kvalitet kunne ikke klargøres for denne fil. Eksport påvirkes ikke."
   },
   "master": {
     "title": "Mastering (klargør til udgivelse)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "Lydenheden blev afbrudt under optagelsen — tjek forbindelsen",
     "errorDiskFull": "Disken er fuld — frigør plads og prøv igen",
     "errorFfmpegMissing": "Intern fejl: optagelseskomponent mangler — geninstallér appen",
-    "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder"
+    "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder",
+    "qualityAlarm": "ADVARSEL: Optagelsen mangler lyd — filen indeholder {m} af {e} sekunder. Tjek optagelsen, før du stoler på den."
   },
   "video": {
     "minBitrateWarn": "Mindste bitrate er 500 kbps",

@@ -92,6 +92,32 @@ pub fn parse_xrun_count(stderr: &str) -> u64 {
         .count() as u64
 }
 
+/// The phrasings ffmpeg / avfoundation actually print when the CAPTURE side
+/// back-pressures or drops samples — the machine-observable signature of the
+/// "hakkete" bug (2026-07-31: 15–56 % sample loss registered as a fully CLEAN
+/// recording because these lines were logged but never counted; this list and
+/// [`XRUN_PHRASES`] were disjoint). Single source of truth — the engine's
+/// warning log and the telemetry counter both match against THIS list.
+pub const CAPTURE_DROP_PHRASES: &[&str] = &[
+    "thread message queue blocking",
+    "consider raising the thread_queue_size",
+    "audio queue overflow",
+    "queue input is backward in time",
+    "past duration",
+    "non monotonically increasing dts",
+    "packets dropped",
+];
+
+/// `true` if a PRE-LOWERCASED stderr line is a capture-drop warning.
+pub fn is_capture_drop_line(lower: &str) -> bool {
+    CAPTURE_DROP_PHRASES.iter().any(|p| lower.contains(p))
+}
+
+/// `true` if a PRE-LOWERCASED stderr line is an xrun/overrun-class event.
+pub fn is_xrun_line(lower: &str) -> bool {
+    XRUN_PHRASES.iter().any(|p| lower.contains(p))
+}
+
 /// Parse the LAST `time=HH:MM:SS.ss` value out of an ffmpeg stderr blob into
 /// seconds — the captured duration. `time=N/A` (printed before the first frame)
 /// is skipped. Returns `None` when no parseable `time=` appears. The continuity
@@ -392,6 +418,31 @@ pub struct RecordingTelemetry {
     /// renderer/IPC-starvation signal ("recording mode lags"). A rising count
     /// means the UI couldn't keep up and back-pressure was building.
     pub levels_dropped: u64,
+    /// Capture back-pressure / sample-drop warnings from ffmpeg's own stderr
+    /// ([`CAPTURE_DROP_PHRASES`]) — the direct "samples were thrown away" count.
+    #[serde(default)]
+    pub capture_drop_lines: u64,
+    /// Non-levels reader messages (Progress/Silence/Error/Started) dropped on a
+    /// full channel. Observability loss only — NEVER capture loss (the whole
+    /// point of the all-`try_send` reader).
+    #[serde(default)]
+    pub msgs_dropped: u64,
+    /// Wall-clock seconds the session SHOULD have captured (sum of segment
+    /// spans, host-stamped at finalize). 0 until the truth-measurement runs.
+    #[serde(default)]
+    pub expected_sec: f64,
+    /// Media seconds actually present in the delivered file(s) (ffprobe at
+    /// finalize). THE truth the 2026-07-31 incident lacked: wall clock said
+    /// 46.6 s while the file held 20.4 s and everything reported "clean".
+    #[serde(default)]
+    pub measured_sec: f64,
+    /// Percent of expected audio MISSING from the delivery (startup-allowance
+    /// adjusted). ≥ [`DURATION_LOSS_FAIL_PCT`] ⇒ degraded + user-visible.
+    #[serde(default)]
+    pub loss_pct: f64,
+    /// The Pass/Warn/Fail verdict computed at session end (None on legacy rows).
+    #[serde(default)]
+    pub report: Option<SelfTestReport>,
     /// Wall-clock length of the recording (host-stamped at session end).
     pub duration_sec: f64,
     /// ISO-8601 local timestamp of session end (host-stamped).
@@ -405,9 +456,22 @@ impl RecordingTelemetry {
     /// low-rate lines (NOT the high-rate per-frame level lines, which carry no
     /// drop/dup/xrun fields anyway).
     pub fn observe_line(&mut self, line: &str) {
-        self.drops = self.drops.max(parse_drop_count(line));
-        self.dups = self.dups.max(parse_dup_count(line));
-        self.xruns += parse_xrun_count(line);
+        self.observe_line_prelowered(&line.to_lowercase());
+    }
+
+    /// [`Self::observe_line`] for a caller that already lowercased the line —
+    /// the recorder's reader classifies every line against several phrase lists
+    /// and must pay for AT MOST one allocation per line (it drains the pipe
+    /// ffmpeg blocks on; per-line cost is capture-health-critical).
+    pub fn observe_line_prelowered(&mut self, lower: &str) {
+        self.drops = self.drops.max(parse_drop_count(lower));
+        self.dups = self.dups.max(parse_dup_count(lower));
+        if is_xrun_line(lower) {
+            self.xruns = self.xruns.saturating_add(1);
+        }
+        if is_capture_drop_line(lower) {
+            self.capture_drop_lines = self.capture_drop_lines.saturating_add(1);
+        }
     }
 
     /// Record that a live-levels message was dropped because the IPC channel was
@@ -416,10 +480,61 @@ impl RecordingTelemetry {
         self.levels_dropped = self.levels_dropped.saturating_add(1);
     }
 
-    /// Whether these counters indicate a degraded recording (any dropped audio
-    /// signal or IPC starvation). Used to raise a diagnose finding.
+    /// Record that a non-levels reader message was dropped on a full channel
+    /// (observability loss, deliberately preferred over reader back-pressure).
+    pub fn note_msg_dropped(&mut self) {
+        self.msgs_dropped = self.msgs_dropped.saturating_add(1);
+    }
+
+    /// Whether these counters indicate a degraded recording (dropped audio,
+    /// capture back-pressure, measured duration loss, or IPC starvation). Used
+    /// to raise a diagnose finding.
     pub fn is_degraded(&self) -> bool {
-        self.drops > 0 || self.xruns > 0 || self.levels_dropped > 0
+        self.drops > 0
+            || self.xruns > 0
+            || self.levels_dropped > 0
+            || self.capture_drop_lines > 0
+            || self.loss_pct >= DURATION_LOSS_FAIL_PCT
+    }
+}
+
+/// Wall-clock allowance for ffmpeg spawn + device open before the first sample
+/// lands (measured 0.3–2 s on the rig). Subtracted from the wall-clock span
+/// before loss is computed so a healthy recording is 0 % loss, not 0.5–2 s
+/// "missing".
+pub const CAPTURE_STARTUP_ALLOWANCE_SEC: f64 = 2.0;
+
+/// Missing ≥ this percent of the expected audio ⇒ degraded + user-visible
+/// warning. (The 2026-07-31 incident was 15–56 %.)
+pub const DURATION_LOSS_FAIL_PCT: f64 = 1.0;
+
+/// Percent of `expected_sec` MISSING from `measured_sec` (0 when expected ≤ 0 —
+/// a session shorter than the startup allowance can't be judged).
+pub fn duration_loss_pct(expected_sec: f64, measured_sec: f64) -> f64 {
+    if expected_sec <= 0.0 {
+        return 0.0;
+    }
+    ((expected_sec - measured_sec).max(0.0) / expected_sec * 100.0).clamp(0.0, 100.0)
+}
+
+/// Build [`SelfTestFacts`] from a real recording's telemetry so the SAME
+/// unit-tested [`selftest_verdict`] engine judges live sessions (its first real
+/// caller — it sat unwired while recordings lost 15–56 % of their samples).
+/// RMS/silence facts are unmeasured on the live path (`None`/0), which
+/// [`crate::test_recording::classify_signal`] treats as not-silent.
+pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTestFacts {
+    SelfTestFacts {
+        expected_sec: (t.expected_sec - CAPTURE_STARTUP_ALLOWANCE_SEC).max(0.0),
+        measured_sec: t.measured_sec,
+        drops: t.drops,
+        dups: t.dups,
+        // Capture-drop lines ARE xrun-class events for verdict purposes.
+        xruns: t.xruns.saturating_add(t.capture_drop_lines),
+        size_bytes,
+        strongest_rms_db: None,
+        silence_total_sec: 0.0,
+        native_sample_rate: None,
+        forced_sample_rate: None,
     }
 }
 
@@ -582,6 +697,89 @@ clean line";
         assert_eq!(t.dups, 1);
         assert_eq!(t.xruns, 1, "one xrun-class line");
         assert!(t.is_degraded());
+    }
+
+    #[test]
+    fn telemetry_counts_capture_drop_lines() {
+        // The 2026-07-31 blindness: these avfoundation phrasings were logged but
+        // never counted — 28 % sample loss registered as a clean recording.
+        let mut t = RecordingTelemetry::default();
+        t.observe_line("[avfoundation @ 0x0] Thread message queue blocking; consider raising the thread_queue_size option");
+        t.observe_line("[aist#0:0] 100 packets dropped");
+        t.observe_line("size=256kB time=00:00:05.00");
+        assert_eq!(t.capture_drop_lines, 2);
+        assert!(t.is_degraded(), "capture drops must degrade the verdict");
+    }
+
+    #[test]
+    fn duration_loss_pct_basics() {
+        assert_eq!(duration_loss_pct(100.0, 100.0), 0.0);
+        let bibeltime = duration_loss_pct(100.0, 72.0); // the incident's 28 %
+        assert!((bibeltime - 28.0).abs() < 1e-9, "got {bibeltime}");
+        assert_eq!(duration_loss_pct(100.0, 110.0), 0.0); // longer than expected ≠ loss
+        assert_eq!(duration_loss_pct(0.0, 5.0), 0.0); // too short to judge
+        assert_eq!(duration_loss_pct(-1.0, 5.0), 0.0);
+    }
+
+    #[test]
+    fn loss_pct_at_threshold_degrades() {
+        let t = RecordingTelemetry {
+            loss_pct: DURATION_LOSS_FAIL_PCT,
+            ..Default::default()
+        };
+        assert!(t.is_degraded());
+        let ok = RecordingTelemetry {
+            loss_pct: DURATION_LOSS_FAIL_PCT - 0.1,
+            ..Default::default()
+        };
+        assert!(!ok.is_degraded());
+    }
+
+    #[test]
+    fn facts_from_recording_applies_startup_allowance_and_folds_drop_lines() {
+        let t = RecordingTelemetry {
+            expected_sec: 62.0,
+            measured_sec: 59.9,
+            xruns: 1,
+            capture_drop_lines: 2,
+            ..Default::default()
+        };
+        let f = facts_from_recording(&t, 1_000_000);
+        assert_eq!(f.expected_sec, 62.0 - CAPTURE_STARTUP_ALLOWANCE_SEC);
+        assert_eq!(f.measured_sec, 59.9);
+        assert_eq!(f.xruns, 3, "capture-drop lines are xrun-class events");
+        // 3 xruns (below FAIL_XRUNS=5) on an otherwise-clean take ⇒ Warn.
+        let report = selftest_verdict(&f);
+        assert_eq!(
+            report.verdict,
+            SelfTestVerdict::Warn,
+            "{:?}",
+            report.reasons
+        );
+        // At/above FAIL_XRUNS ⇒ Fail.
+        let mut worse = f.clone();
+        worse.xruns = FAIL_XRUNS;
+        assert_eq!(selftest_verdict(&worse).verdict, SelfTestVerdict::Fail);
+    }
+
+    #[test]
+    fn healthy_recording_facts_pass_the_verdict() {
+        // classify_signal(None) must not flag a live recording (RMS unmeasured)
+        // as silent, and a measured duration within the allowance is 0 % loss.
+        let t = RecordingTelemetry {
+            expected_sec: 3600.0,
+            measured_sec: 3598.5,
+            ..Default::default()
+        };
+        let f = facts_from_recording(&t, 500_000_000);
+        let report = selftest_verdict(&f);
+        assert_eq!(
+            report.verdict,
+            SelfTestVerdict::Pass,
+            "{:?}",
+            report.reasons
+        );
+        assert!(duration_loss_pct(f.expected_sec, f.measured_sec) < DURATION_LOSS_FAIL_PCT);
     }
 
     #[test]

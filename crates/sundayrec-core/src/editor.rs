@@ -824,8 +824,12 @@ pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
         "aresample=48000",
         "-c:a",
         "aac",
+        // 256k AAC-LC: transparent for monitoring/cut decisions now that the
+        // proxy is the DEFAULT listen transport (v0.5.0) — 192k was chosen when
+        // it was an opt-in experiment. (ALAC noted as the lossless revisit if
+        // fidelity complaints ever arrive; ~3× the disk for marginal gain.)
         "-b:a",
-        "192k",
+        "256k",
         "-movflags",
         "+faststart",
         "-y",
@@ -840,6 +844,43 @@ pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
 /// listen transport for oversized/exotic files). The seam writes one to the OS
 /// temp dir and sweeps stale ones by this prefix so they don't accumulate.
 pub const PLAYBACK_PROXY_PREFIX: &str = "sundayrec-playback-proxy-";
+
+/// One-shot true-peak probe over the ORIGINAL file: `volumedetect` into the
+/// null muxer. Used by the editor's Normalize when the loaded buffer is the
+/// 8 kHz waveform extract — peaks computed from that band-limited downmix
+/// under-read the real peak by several dB, so normalizing from them could push
+/// the EXPORT into clipping (the export always runs on the original).
+pub fn peak_probe_args(input_path: &str) -> Vec<String> {
+    [
+        "-nostdin",
+        "-hide_banner",
+        "-i",
+        input_path,
+        "-vn",
+        "-af",
+        "volumedetect",
+        "-f",
+        "null",
+        "-",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// Parse `volumedetect`'s `max_volume: -3.4 dB` line from an ffmpeg stderr
+/// blob. `None` when absent/unparseable — the caller falls back to its
+/// buffer-derived peaks rather than guessing.
+pub fn parse_max_volume_db(stderr: &str) -> Option<f64> {
+    const FIELD: &str = "max_volume:";
+    let pos = stderr.find(FIELD)?;
+    let tail = stderr[pos + FIELD.len()..].trim_start();
+    let token: String = tail
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '+' || *c == '.')
+        .collect();
+    token.parse::<f64>().ok().filter(|v| v.is_finite())
+}
 
 /// Whether a temp-dir entry name is a leftover playback-proxy m4a the seam should
 /// sweep before writing a fresh one. Mirrors [`crate::mastering::is_preview_temp_name`].
@@ -1807,12 +1848,33 @@ mod tests {
             "capped at 48 kHz: {joined}"
         );
         assert!(joined.contains("-c:a aac"));
-        assert!(joined.contains("-b:a 192k"));
+        assert!(joined.contains("-b:a 256k"));
         assert!(
             joined.contains("-movflags +faststart"),
             "seekable: {joined}"
         );
         assert_eq!(args.last().unwrap(), "/tmp/proxy.m4a");
+    }
+
+    #[test]
+    fn peak_probe_args_use_volumedetect_into_null() {
+        let a = peak_probe_args("/rec/sermon.flac");
+        let joined = a.join(" ");
+        assert!(joined.contains("-af volumedetect"));
+        assert!(joined.contains("-f null -"), "null muxer, no output file");
+        assert!(joined.contains("-vn"), "audio only");
+        assert!(a.contains(&"/rec/sermon.flac".to_string()));
+    }
+
+    #[test]
+    fn parse_max_volume_reads_the_volumedetect_line() {
+        let blob = "[Parsed_volumedetect_0 @ 0x1] n_samples: 192000\n\
+                    [Parsed_volumedetect_0 @ 0x1] mean_volume: -21.3 dB\n\
+                    [Parsed_volumedetect_0 @ 0x1] max_volume: -3.4 dB\n";
+        assert_eq!(parse_max_volume_db(blob), Some(-3.4));
+        assert_eq!(parse_max_volume_db("max_volume: 0.0 dB"), Some(0.0));
+        assert_eq!(parse_max_volume_db("no such line"), None);
+        assert_eq!(parse_max_volume_db("max_volume: n/a"), None);
     }
 
     #[test]

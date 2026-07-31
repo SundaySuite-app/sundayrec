@@ -141,6 +141,13 @@ pub async fn start_recording(
         }
     };
     let (_, clip) = tokio::join!(preview.stop_and_release(), harvest);
+    // LEAK GUARD (2026-07-31 audit): the harvest above only STOPS the rolling
+    // pre-roll capture on the audio-only path. For a VIDEO session (or pre-roll
+    // = 0 with an active loop) the rolling ffmpeg would keep holding the
+    // microphone for the whole recording — a second device owner competing with
+    // the capture. Stop it unconditionally; the idle loop is restarted by the
+    // preroll scheduler after the session ends.
+    preroll.stop();
     engine.start(app, Some(db.pool.clone()), opts, clip).await
 }
 
@@ -270,4 +277,18 @@ pub async fn run_test_recording(db: State<'_, Db>) -> AppResult<TestRecordingRes
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
     run_test(&device).await
+}
+
+/// Precision capture bench (the zero-loss proof tool): run the REAL recording
+/// argv for `secs` seconds against the configured mic + sample-rate settings and
+/// return the full Pass/Warn/Fail report with expected/measured seconds.
+#[tauri::command]
+pub async fn run_capture_bench(
+    db: State<'_, Db>,
+    secs: u32,
+) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
+    let s = settings::load(&db.pool).await.unwrap_or_default();
+    let device = s.device_name.clone().unwrap_or_default();
+    let rate = s.resolved_sample_rate();
+    crate::test_recording::run_capture_bench(&device, rate, secs).await
 }

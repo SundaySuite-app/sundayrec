@@ -42,6 +42,13 @@ pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioEx
 /// Transcode a large/exotic recording to a seekable stereo AAC proxy for
 /// full-fidelity playback; returns the temp-file path the renderer streams via
 /// `asset://` (an `<audio>` element). The 8 kHz WAV stays the waveform source and
+/// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
+/// basis when the loaded buffer is the 8 kHz extract.
+#[tauri::command]
+pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
+    crate::editor::probe_true_peak_db(&input_path).await
+}
+
 /// export still runs on the original, so quality is untouched. HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {

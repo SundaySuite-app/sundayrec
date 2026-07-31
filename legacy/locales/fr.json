@@ -460,7 +460,10 @@
     "sampleRateVideoDesc": "Vidéo, Zoom et matériel TV",
     "sampleRateAuto": "Automatique",
     "sampleRateAutoDesc": "Suit la carte son — aucun rééchantillonnage",
-    "recommended": "Recommandé"
+    "recommended": "Recommandé",
+    "captureBench": "📏 Test de précision (60 s)",
+    "benchRunning": "Mesure pendant 60 s — jouez du son/parlez dans le micro …",
+    "benchResult": "Mesuré {m}s sur {e}s ({p} % de perte)"
   },
   "files": {
     "title": "Fichiers et format",
@@ -661,7 +664,8 @@
     "errFileNotFound": "Le fichier original n’est pas disponible — le disque est-il déconnecté ?",
     "errCutData": "Erreur interne dans les données de coupe. Essayez de recharger le fichier.",
     "chaptersEmpty": "Pas encore de chapitres. Cliquez sur « + Ajouter à la tête de lecture » pour commencer.",
-    "chapterClickSeek": "Cliquer pour rechercher"
+    "chapterClickSeek": "Cliquer pour rechercher",
+    "qualityFallback": "Lecture en qualité réduite (8 kHz) — la pleine qualité n'a pas pu être préparée pour ce fichier. L'export n'est pas affecté."
   },
   "master": {
     "title": "Mastering (préparation à la publication)",
@@ -719,7 +723,8 @@
     "errorDeviceDisconnected": "Le périphérique audio a été déconnecté pendant l’enregistrement — vérifiez la connexion",
     "errorDiskFull": "Le disque est plein — libérez de l’espace et réessayez",
     "errorFfmpegMissing": "Erreur interne : le composant d’enregistrement est manquant — réinstallez l’application",
-    "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes"
+    "errorStuck": "L’enregistrement s’est arrêté — aucun son du périphérique pendant 60 secondes",
+    "qualityAlarm": "ATTENTION : Il manque de l'audio à l'enregistrement — le fichier contient {m} des {e} secondes. Vérifiez l'enregistrement avant de vous y fier."
   },
   "video": {
     "minBitrateWarn": "Le débit minimal est de 500 kbps",
