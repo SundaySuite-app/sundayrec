@@ -463,7 +463,11 @@
     "recommended": "Anbefalt",
     "captureBench": "📏 Presisjonstest (60 sek)",
     "benchRunning": "Måler i 60 sek — spill av lyd/snakk i mikrofonen …",
-    "benchResult": "Målt {m}s av {e}s ({p} % tap)"
+    "benchResult": "Målt {m}s av {e}s ({p} % tap)",
+    "scanChannels": "🔍 Finn kanaler med signal (3 sek)",
+    "scanRunning": "Lytter i 3 sek — spill lyd på kanalene …",
+    "scanFound": "{n} kanaler med signal: {list}",
+    "scanNone": "Ingen kanaler med signal — spill lyd og prøv igjen"
   },
   "files": {
     "title": "Filer & Format",

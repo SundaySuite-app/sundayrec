@@ -679,6 +679,12 @@ const api: Record<string, unknown> = {
   // Precision capture bench: real recording argv for N s → ffprobed +
   // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
   // button can show the actual error text.
+  // Real input channel count via the ffmpeg backend (getUserMedia caps at 2).
+  probeDeviceChannels: async (deviceName: string) =>
+    invoke<number>("probe_device_channels", { deviceName }),
+  // Per-channel peak scan — "which mixer channels carry the mix?"
+  scanDeviceChannels: async (deviceName: string, secs: number) =>
+    invoke<{ channel: number; peakDb: number }[]>("scan_device_channels", { deviceName, secs }),
   runCaptureBench: async (secs: number) =>
     invoke<import("../bindings/SelfTestReport").SelfTestReport>(
       "run_capture_bench",

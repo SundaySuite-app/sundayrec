@@ -463,7 +463,11 @@
     "recommended": "Rekommenderas",
     "captureBench": "📏 Precisionstest (60 s)",
     "benchRunning": "Mäter i 60 s — spela upp ljud/tala i mikrofonen …",
-    "benchResult": "Uppmätt {m}s av {e}s ({p} % förlust)"
+    "benchResult": "Uppmätt {m}s av {e}s ({p} % förlust)",
+    "scanChannels": "🔍 Hitta kanaler med signal (3 s)",
+    "scanRunning": "Lyssnar i 3 s — spela ljud på kanalerna …",
+    "scanFound": "{n} kanaler med signal: {list}",
+    "scanNone": "Inga kanaler med signal — spela ljud och försök igen"
   },
   "files": {
     "title": "Filer & Format",

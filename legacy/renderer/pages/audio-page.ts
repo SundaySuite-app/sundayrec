@@ -43,6 +43,7 @@ export function setupAudioPage(): void {
     r.addEventListener('change', autoSave)
   })
   // Multi-channel L/R mapping selects (persist the device's channel choice).
+  setupChannelScan()
   document.getElementById('channel-select-l')?.addEventListener('change', autoSave)
   document.getElementById('channel-select-r')?.addEventListener('change', autoSave)
 
@@ -142,12 +143,18 @@ async function saveAudioSettings(): Promise<void> {
   const selectedCard = document.querySelector('.device-card.selected') as HTMLElement | null
   const deviceId   = selectedCard?.dataset.deviceId   ?? settings.deviceId   ?? null
   const deviceName = selectedCard?.dataset.deviceLabel ?? settings.deviceName ?? null
-  const chL      = +((document.getElementById('channel-select-l') as HTMLInputElement | null)?.value ?? 0)
-  const chR      = +((document.getElementById('channel-select-r') as HTMLInputElement | null)?.value ?? 1)
+  const chCard   = document.getElementById('channel-select-card')
+  const selLEl   = document.getElementById('channel-select-l') as HTMLSelectElement | null
+  const chL      = +(selLEl?.value ?? 0)
+  const chR      = +((document.getElementById('channel-select-r') as HTMLSelectElement | null)?.value ?? 1)
 
-  // Persist per-device channel selection
+  // Persist per-device channel selection — but ONLY when the picker is visible
+  // and populated. Saving from the hidden/empty selects wrote a phantom L=0/R=0
+  // mapping (pan=stereo|c0=c0|c1=c0 — channel 0 duplicated to both sides),
+  // which recorded a near-silent channel on the Qu-5 (2026-07-31).
   const deviceChannels = { ...(settings.deviceChannels ?? {}) }
-  if (deviceId) deviceChannels[deviceId] = { channelL: chL, channelR: chR }
+  const pickerActive = chCard?.style.display !== 'none' && (selLEl?.options.length ?? 0) > 0
+  if (deviceId && pickerActive) deviceChannels[deviceId] = { channelL: chL, channelR: chR }
 
   const srMode = ((document.querySelector('input[name="sampleRate"]:checked') as HTMLInputElement | null)
     ?.value ?? 'auto') as 'auto' | 'r44100' | 'r48000'
@@ -251,7 +258,7 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       card.classList.add('selected')
       patchSettings({ deviceId: d.deviceId, deviceName: d.label })
       _markAudioDirty()
-      const count = await detectDeviceChannels(d.deviceId)
+      const count = await detectDeviceChannels(d.deviceId, d.label)
       autoMonoForDevice(count)
       const subEl = card.querySelector('.device-sub') as HTMLElement | null
       if (subEl) subEl.textContent = `${subBase} · ${count} ${t('audio.channelCount', 'kanaler')}`
@@ -279,7 +286,7 @@ export async function renderDeviceList(containerId: string): Promise<void> {
   // Probe current (non-ASIO) device for channel count
   const devId = settings.deviceId ?? (devices[0]?.deviceId ?? null)
   if (devId && !devId.startsWith('asio::')) {
-    detectDeviceChannels(devId).then(count => {
+    detectDeviceChannels(devId, settings.deviceName).then(count => {
       autoMonoForDevice(count)
       const stored = settings.deviceChannels?.[devId]
       updateChannelSelector(count, stored?.channelL ?? 0, stored?.channelR ?? 1)
@@ -301,6 +308,65 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
     }).catch(() => updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1))
   }
+}
+
+/** Wire the per-channel signal scan: runs the REAL capture backend for 3 s and
+ *  marks which channels carry signal directly in the L/R dropdowns — the "which
+ *  of my mixer's 32 channels is the mix on?" answer (2026-07-31). Call once. */
+export function setupChannelScan(): void {
+  const btn = document.getElementById('btn-scan-channels') as HTMLButtonElement | null
+  const status = document.getElementById('channel-scan-status')
+  if (!btn || !status) return
+  btn.addEventListener('click', async () => {
+    const name = settings.deviceName
+    if (!name) return
+    btn.disabled = true
+    status.textContent = t('audio.scanRunning', 'Lytter i 3 sek — spill lyd på kanalene …')
+    // The scan opens the device via ffmpeg — release the webview's own mic
+    // stream first, or the device may sit in a 2-kanals format ffmpeg can't
+    // open ("audio format is not supported").
+    try { stopMonitoring() } catch {}
+    try {
+      const peaks = await window.api.scanDeviceChannels(name, 3)
+      const live = peaks.filter(p => p.peakDb > -50)
+      const label = (ch: number): string => {
+        const p = peaks.find(x => x.channel === ch)
+        if (!p) return `Kanal ${ch}`
+        const loud = p.peakDb > -50
+        return `Kanal ${ch}${loud ? ` 🔊 (${p.peakDb.toFixed(0)} dB)` : ''}`
+      }
+      for (const sel of ['channel-select-l', 'channel-select-r']) {
+        const el = document.getElementById(sel) as HTMLSelectElement | null
+        if (!el) continue
+        for (const opt of Array.from(el.options)) {
+          opt.textContent = label(Number(opt.value) + 1)
+        }
+      }
+      status.textContent = live.length
+        ? t('audio.scanFound', '{n} kanaler med signal: {list}')
+            .replace('{n}', String(live.length))
+            .replace('{list}', live.map(p => p.channel).join(', '))
+        : t('audio.scanNone', 'Ingen kanaler med signal — spill lyd og prøv igjen')
+    } catch (err) {
+      status.textContent = '❌ ' + errText(err)
+    }
+    btn.disabled = false
+  })
+}
+
+/** Human-readable text from any thrown value (Tauri command errors arrive as
+ *  serialized objects — String(err) shows "[object Object]"). */
+export function errText(err: unknown): string {
+  if (typeof err === 'string') return err
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>
+    for (const k of ['message', 'recording', 'validation', 'internal']) {
+      if (typeof o[k] === 'string') return o[k] as string
+    }
+    try { return JSON.stringify(err) } catch { /* fall through */ }
+  }
+  return String(err)
 }
 
 function updateChannelSelector(count: number, chL: number, chR: number): void {

@@ -296,6 +296,8 @@ pub fn run() {
             commands::account::sunday_whoami_song,
             commands::audio::list_input_devices,
             commands::audio::list_audio_devices,
+            commands::audio::probe_device_channels,
+            commands::audio::scan_device_channels,
             commands::audio::list_audio_input_channels,
             commands::audio::list_devices,
             commands::audio::list_video_devices,
