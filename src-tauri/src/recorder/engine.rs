@@ -362,14 +362,15 @@ pub async fn list_recording_devices() -> AppResult<Vec<FfmpegDevice>> {
 /// What event the reader task sends the supervisor for each stderr line of
 /// interest (so the supervisor's `select!` owns all state).
 enum ReaderMsg {
-    /// A `size=` progress line: total bytes for the current segment.
+    /// A `size=` progress line: total bytes for the current segment (coalesced
+    /// to ≤1/s in the reader; the live byte count itself is written straight to
+    /// the shared `segment_bytes` atomic so the watchdog never depends on
+    /// message delivery).
     Progress(u64),
     /// The first progress line (encoding confirmed).
     Started,
     /// A silence marker.
     Silence(SilenceEvent),
-    /// A per-channel peak-levels readout (drives the live L/R meters).
-    Levels(ChannelLevels),
     /// A classified error line (not the catch-all `DeviceError`).
     Error(RecordingErrorCode, String),
     /// ffmpeg's stderr closed → the process exited. Carries the classified
@@ -378,6 +379,10 @@ enum ReaderMsg {
         last_error: Option<RecordingErrorCode>,
     },
 }
+// NOTE: live levels deliberately do NOT ride this channel — they flow over a
+// `tokio::sync::watch` (latest-wins by construction) to a dedicated forwarder
+// task, so the highest-rate data can never occupy queue slots or interleave
+// with control messages. See `run_segment`.
 
 /// A running recording: the supervisor task plus the stop channel.
 struct RecorderSession {
@@ -1394,22 +1399,20 @@ fn session_manifest(
 struct LevelMeter {
     left: f64,
     right: Option<f64>,
-    last_emit: std::time::Instant,
 }
 
 impl LevelMeter {
-    /// ~60 UI updates/s — matches the home-page Web Audio meter's 60 fps so the
-    /// recording needle feels just as responsive. Safe to pace this fast because
-    /// delivery is a non-blocking `try_send` (latest-wins; intervening frames are
-    /// coalesced here and any overflow is dropped, never back-pressured onto the
-    /// stderr reader).
-    const EMIT_EVERY: Duration = Duration::from_millis(16);
+    /// Emission cadence of the levels FORWARDER task (not the reader): ~30 UI
+    /// updates/s. The renderer's 60 fps easing loop interpolates between them,
+    /// and halving the IPC hop rate halves the webview main-thread contention
+    /// ("hele appen er treg under opptak", 2026-07-31). Pacing lives in the
+    /// forwarder so the reader's cost per level line is one atomic watch write.
+    const EMIT_EVERY: Duration = Duration::from_millis(33);
 
     fn new() -> Self {
         Self {
             left: SILENCE_FLOOR_DB,
             right: None,
-            last_emit: std::time::Instant::now(),
         }
     }
 
@@ -1421,86 +1424,77 @@ impl LevelMeter {
         }
     }
 
-    /// The latest L/R snapshot, but only once per [`Self::EMIT_EVERY`] window —
-    /// otherwise `None` (coalesce intervening frames).
-    fn take_due(&mut self) -> Option<ChannelLevels> {
-        if self.last_emit.elapsed() < Self::EMIT_EVERY {
-            return None;
-        }
-        self.last_emit = std::time::Instant::now();
-        Some(ChannelLevels {
+    /// The latest L/R snapshot.
+    fn snapshot(&self) -> ChannelLevels {
+        ChannelLevels {
             peak_db_left: self.left,
             peak_db_right: self.right,
-        })
+        }
     }
 }
 
-/// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader) and
-/// forward the appropriate [`ReaderMsg`]. The live meter levels arrive as flat
-/// `lavfi.astats.<ch>.Peak_level=` lines (one per channel per frame) which update
-/// the held [`LevelMeter`] and emit on its ~60×/s throttle. Pure-helper driven —
-/// the reader owns no state machine.
-/// `true` if `line` is one of ffmpeg's own capture-back-pressure / sample-drop
-/// warnings — the machine-observable signature of the "hakkete" bug. These are NOT
-/// fatal (ffmpeg keeps recording) so they fall straight through the error
-/// classifier; we surface them as warnings so a rig test (and the Lydhjelp
-/// diagnostic) can SEE capture drops happening rather than only hearing them.
-/// Lowercase-substring match against the phrasings ffmpeg actually prints.
-fn is_capture_drop_warning(line: &str) -> bool {
-    let l = line.to_ascii_lowercase();
-    [
-        "thread message queue blocking",
-        "consider raising the thread_queue_size",
-        "audio queue overflow",
-        "queue input is backward in time",
-        "past duration",
-        "non monotonically increasing dts",
-        "packets dropped",
-    ]
-    .iter()
-    .any(|needle| l.contains(needle))
+/// Mutable per-segment reader state — everything `classify_stderr_line` folds
+/// lines into. Owned by the reader task; no locks except the telemetry mutex.
+struct ReaderCtx {
+    startup: StartupResolver,
+    /// `Started` actually DELIVERED (a `try_send` can drop it on a full channel;
+    /// we retry on subsequent progress lines until one lands — the startup
+    /// watchdog depends on it).
+    started_sent: bool,
+    levels: LevelMeter,
+    last_error: Option<RecordingErrorCode>,
+    /// Last time a `Progress` message was forwarded — the UI byte counter only
+    /// needs ~1/s; the live count for the watchdog rides the atomic instead.
+    last_progress_forward: std::time::Instant,
 }
 
-async fn classify_stderr_line(
+impl ReaderCtx {
+    fn new() -> Self {
+        Self {
+            startup: StartupResolver::new(),
+            started_sent: false,
+            levels: LevelMeter::new(),
+            last_error: None,
+            last_progress_forward: std::time::Instant::now() - Duration::from_secs(60),
+        }
+    }
+}
+
+/// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader).
+///
+/// ## The zero-back-pressure invariant (2026-07-31 incident)
+///
+/// This function is called from the task that drains the pipe ffmpeg BLOCKS on.
+/// It must therefore never await anything: every hand-off is a `watch` write or
+/// an mpsc `try_send`. A full channel loses one *message* (counted in
+/// telemetry) — awaiting it would stall the reader → ffmpeg's stderr write
+/// blocks → the filter graph stalls → avfoundation silently DROPS SAMPLES
+/// (measured 15–56 % loss). Observability may degrade; capture may not.
+fn classify_stderr_line(
     line: &str,
-    startup: &mut StartupResolver,
-    levels: &mut LevelMeter,
+    ctx: &mut ReaderCtx,
+    levels_tx: &tokio::sync::watch::Sender<ChannelLevels>,
     msg_tx: &tokio::sync::mpsc::Sender<ReaderMsg>,
-    last_error: &mut Option<RecordingErrorCode>,
+    segment_bytes: &AtomicU64,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
 ) {
-    // Live per-frame peak levels (`lavfi.astats.1.Peak_level=-12.5`): update the
-    // held L/R and forward at most ~60×/s.
+    // Live peak levels (`lavfi.astats.1.Peak_level=-12.5`, one line per channel
+    // per batched astats print): update the held L/R and publish latest-wins.
+    // `watch` never blocks and never queues — the forwarder task paces emission.
     if let Some((channel, db)) = parse_ametadata_peak(line) {
-        levels.update(channel, db);
-        if let Some(lv) = levels.take_due() {
-            // NON-BLOCKING on purpose. Levels are the highest-rate message and are
-            // latest-wins (already coalesced in `take_due`). If we `.await`ed the
-            // send on a full bounded channel, a momentary slow consumer would block
-            // the stderr reader → ffmpeg's stderr pipe fills → ffmpeg stalls on the
-            // write → avfoundation drops capture samples (CHOPPY audio) and the meter
-            // feed arrives in late bursts (GROWING VU lag). `try_send` drops one
-            // intermediate frame instead — the correct behaviour for a latest-wins
-            // meter, and the fix that keeps the reader draining stderr at all times.
-            // A FULL channel here is the direct signal that the renderer/event loop
-            // can't keep up ("recording mode lags") — count it as telemetry.
-            if msg_tx.try_send(ReaderMsg::Levels(lv)).is_err() {
-                lock_recover(telemetry).note_levels_dropped();
-            }
-        }
+        ctx.levels.update(channel, db);
+        let _ = levels_tx.send_replace(ctx.levels.snapshot());
         return;
     }
-    // Non-level line: fold ffmpeg drop=/dup=/xrun stats into the session
-    // telemetry (cheap; the high-rate level lines returned above carry none).
-    lock_recover(telemetry).observe_line(line);
-    // Capture back-pressure / sample-drop warnings: log-only (not fatal, so we let
-    // the line fall through to the normal progress/silence/error classification too,
-    // though in practice these phrasings match none of those). Complements the
-    // telemetry above (persisted, surfaced in the diagnose report after the fact)
-    // with an IMMEDIATE log line — these specific avfoundation-side phrasings
-    // (thread-queue/backward-time/past-duration) aren't in `XRUN_PHRASES`, and a
-    // live tracing consumer sees the drop the moment it happens.
-    if is_capture_drop_warning(line) {
+    // Non-level line: one lowercase alloc, shared by every phrase scan below.
+    let lower = line.to_ascii_lowercase();
+    // Fold drop=/dup=/xrun/capture-drop stats into the session telemetry. The
+    // capture-drop phrasings (thread-queue/backward-time/past-duration…) are
+    // counted there too (single source of truth: CAPTURE_DROP_PHRASES in core)
+    // — plus an immediate log line so a live tracing consumer sees the drop the
+    // moment it happens.
+    lock_recover(telemetry).observe_line_prelowered(&lower);
+    if sundayrec_core::selftest::is_capture_drop_line(&lower) {
         tracing::warn!(
             capture_drop = true,
             line = %line,
@@ -1508,17 +1502,38 @@ async fn classify_stderr_line(
         );
     }
     if let Some(b) = parse_size_kb(line) {
-        if startup.observe_progress() {
-            let _ = msg_tx.send(ReaderMsg::Started).await;
+        // The watchdog's byte count rides the shared atomic — delivered even if
+        // every Progress MESSAGE were dropped, so a starved channel can never
+        // masquerade as a stuck recording.
+        segment_bytes.store(b, Ordering::Relaxed);
+        if ctx.startup.observe_progress() || !ctx.started_sent {
+            if msg_tx.try_send(ReaderMsg::Started).is_ok() {
+                ctx.started_sent = true;
+            } else {
+                lock_recover(telemetry).note_msg_dropped();
+            }
         }
-        let _ = msg_tx.send(ReaderMsg::Progress(b)).await;
+        // UI byte counter: ~1/s is plenty.
+        if ctx.last_progress_forward.elapsed() >= Duration::from_secs(1) {
+            ctx.last_progress_forward = std::time::Instant::now();
+            if msg_tx.try_send(ReaderMsg::Progress(b)).is_err() {
+                lock_recover(telemetry).note_msg_dropped();
+            }
+        }
     } else if let Some(ev) = SilenceEvent::from_stderr(line) {
-        let _ = msg_tx.send(ReaderMsg::Silence(ev)).await;
-    } else if looks_like_error(line) {
+        if msg_tx.try_send(ReaderMsg::Silence(ev)).is_err() {
+            lock_recover(telemetry).note_msg_dropped();
+        }
+    } else if looks_like_error_prelowered(&lower) {
         let code = classify_recording_error(line);
         if code != RecordingErrorCode::DeviceError {
-            *last_error = Some(code);
-            let _ = msg_tx.send(ReaderMsg::Error(code, line.to_string())).await;
+            ctx.last_error = Some(code);
+            if msg_tx
+                .try_send(ReaderMsg::Error(code, line.to_string()))
+                .is_err()
+            {
+                lock_recover(telemetry).note_msg_dropped();
+            }
         }
     }
 }
@@ -1554,25 +1569,21 @@ async fn run_segment(
     // on a poll. There is NO stdout pipe to drain here (a full pipe was what froze
     // the capture), so the segment reader only owns stderr.
 
-    // Reader task: stream stderr → ReaderMsg over a channel so the supervisor's
-    // select! owns all decisions. The reader holds NO state machine; it only
-    // classifies lines with the pure core helpers.
-    // A roomy buffer so a momentary slow consumer (event dispatch) never
-    // back-pressures the stderr reader → ffmpeg's stderr pipe never fills →
-    // ffmpeg never stalls on a blocked write and drops audio samples. The buffer
-    // alone is NOT enough (an `.await`ed send on a full bounded channel still
-    // blocks) — the high-rate `Levels` message therefore uses a non-blocking
-    // `try_send` in `classify_stderr_line`; this buffer is defense-in-depth for
-    // the low-rate reliable messages (Progress/Silence/Error/Started/Exit).
+    // Reader task: drain stderr → atomics/watch/try_send so the supervisor's
+    // select! owns all decisions. THE ZERO-BACK-PRESSURE INVARIANT: this task's
+    // only await is the stderr `read()` itself — no consumer (channel, IPC,
+    // disk, UI) can ever stall it, so ffmpeg's stderr pipe can never fill and
+    // avfoundation can never be pushed into dropping samples (the 2026-07-31
+    // incident). A full channel costs a counted message, never capture.
     let (msg_tx, mut msg_rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+    // Live levels ride a `watch` (latest-wins by construction, never queues).
+    let (levels_tx, mut levels_rx) = tokio::sync::watch::channel(ChannelLevels {
+        peak_db_left: SILENCE_FLOOR_DB,
+        peak_db_right: None,
+    });
+    let reader_bytes = Arc::clone(&segment_bytes);
     let reader = tauri::async_runtime::spawn(async move {
-        let mut startup = StartupResolver::new();
-        let mut last_error: Option<RecordingErrorCode> = None;
-        // Live L/R meter: ffmpeg's `ametadata` prints a flat
-        // `lavfi.astats.<ch>.Peak_level=` line per channel per frame; the meter
-        // holds the latest values and throttles emission (handled in
-        // `classify_stderr_line`).
-        let mut levels = LevelMeter::new();
+        let mut ctx = ReaderCtx::new();
 
         // CRITICAL: ffmpeg writes its `size=…` progress line with CARRIAGE
         // RETURNS (`\r`) and NO trailing newline until the process exits, so a
@@ -1599,13 +1610,12 @@ async fn run_segment(
                         line_buf.clear();
                         classify_stderr_line(
                             &line,
-                            &mut startup,
-                            &mut levels,
+                            &mut ctx,
+                            &levels_tx,
                             &msg_tx,
-                            &mut last_error,
+                            &reader_bytes,
                             &telemetry,
-                        )
-                        .await;
+                        );
                     }
                 } else {
                     line_buf.push(b);
@@ -1617,16 +1627,36 @@ async fn run_segment(
             let line = String::from_utf8_lossy(&line_buf).into_owned();
             classify_stderr_line(
                 &line,
-                &mut startup,
-                &mut levels,
+                &mut ctx,
+                &levels_tx,
                 &msg_tx,
-                &mut last_error,
+                &reader_bytes,
                 &telemetry,
-            )
-            .await;
+            );
         }
-        let _ = msg_tx.send(ReaderMsg::Exit { last_error }).await;
+        // Exit is the ONE blocking send — legal: stderr is EOF, so there is no
+        // pipe left to back-pressure; the reader has nothing further to drain.
+        let _ = msg_tx
+            .send(ReaderMsg::Exit {
+                last_error: ctx.last_error,
+            })
+            .await;
     });
+
+    // Levels forwarder: the ONLY place recording levels cross into the webview.
+    // Paces IPC to ~30/s regardless of the astats print rate, off the
+    // supervisor's select! so a slow `app.emit` can never delay control
+    // messages. Ends when the reader (and its `levels_tx`) is dropped.
+    let levels_forwarder = {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            while levels_rx.changed().await.is_ok() {
+                let lv = *levels_rx.borrow_and_update();
+                let _ = app.emit(LEVELS_EVENT, RecordingLevels::from(lv));
+                tokio::time::sleep(LevelMeter::EMIT_EVERY).await;
+            }
+        })
+    };
 
     // Silence watcher + its (host-owned) timers.
     let mut silence = SilenceWatcher::new(opts.stop_on_silence);
@@ -1700,7 +1730,8 @@ async fn run_segment(
                         let _ = app.emit(STARTED_EVENT, ());
                     }
                     Some(ReaderMsg::Progress(b)) => {
-                        segment_bytes.store(b, Ordering::Relaxed);
+                        // Byte count already lives in the shared atomic (written
+                        // by the reader); this message only feeds the UI counter.
                         let _ = app.emit(PROGRESS_EVENT, RecordingProgress { bytes_written: b });
                     }
                     Some(ReaderMsg::Silence(ev)) => {
@@ -1716,9 +1747,6 @@ async fn run_segment(
                                 SilenceAction::CancelWarn => { silence_warn = None; }
                             }
                         }
-                    }
-                    Some(ReaderMsg::Levels(lv)) => {
-                        let _ = app.emit(LEVELS_EVENT, RecordingLevels::from(lv));
                     }
                     Some(ReaderMsg::Error(code, line)) => {
                         // Do NOT end the segment — ffmpeg usually dies right
@@ -1741,7 +1769,7 @@ async fn run_segment(
             }
             // Graceful stop request.
             _ = stop_rx.recv() => {
-                stop_and_wait_bounded(&mut child, &mut stdin).await;
+                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
                 break SegmentOutcome::GracefulStop;
             }
             // Startup watchdog: no first progress in time → the start failed.
@@ -1791,7 +1819,7 @@ async fn run_segment(
                                 "Lite ledig diskplass — stopper opptaket trygt før disken blir full.",
                             );
                             // Graceful stop so the container is finalised + playable.
-                            stop_and_wait_bounded(&mut child, &mut stdin).await;
+                            stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
                             break SegmentOutcome::DiskStop;
                         }
                     }
@@ -1799,13 +1827,13 @@ async fn run_segment(
             }
             // Split timer.
             _ = &mut split_sleep, if split_deadline.is_some() => {
-                stop_and_wait_bounded(&mut child, &mut stdin).await;
+                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
                 break SegmentOutcome::Split;
             }
             // Auto-stop deadline reached (guarded so a `None` deadline — the
             // 100-year "never" sleep — can never actually fire).
             _ = &mut auto_sleep, if auto_deadline.is_some() => {
-                stop_and_wait_bounded(&mut child, &mut stdin).await;
+                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
                 break SegmentOutcome::AutoStop;
             }
             // The auto-stop deadline was moved or cleared (live extend/cancel, or
@@ -1835,7 +1863,7 @@ async fn run_segment(
             // Stop-on-silence fired.
             () = wait_opt(&mut silence_stop), if silence_stop.is_some() => {
                 silence.on_stop_fired();
-                stop_and_wait_bounded(&mut child, &mut stdin).await;
+                stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
                 break SegmentOutcome::SilenceStop;
             }
             // Silence warning fired.
@@ -1853,8 +1881,10 @@ async fn run_segment(
         }
     };
 
-    // Make sure the reader task is done (it sends Exit then returns).
+    // Make sure the reader + levels forwarder are done (the reader sends Exit
+    // then returns; dropping its `levels_tx` also ends the forwarder loop).
     reader.abort();
+    levels_forwarder.abort();
     outcome
 }
 
@@ -1884,6 +1914,48 @@ pub(crate) async fn stop_and_wait_bounded(
         Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS),
     )
     .await;
+}
+
+/// [`stop_and_wait_bounded`] that also DRAINS (and discards) the reader channel
+/// while waiting. On stop, ffmpeg flushes everything it buffered (rig-observed:
+/// ~27 MB at finalize) — a torrent of stderr lines whose messages would
+/// otherwise sit in a full channel and be counted as dropped, and whose final
+/// `size=` update should reach the byte atomic promptly. The reader itself can
+/// never block (all-`try_send`), so this is hygiene, not a capture guarantee.
+async fn stop_and_wait_bounded_draining(
+    child: &mut tokio::process::Child,
+    stdin: &mut Option<tokio::process::ChildStdin>,
+    msg_rx: &mut tokio::sync::mpsc::Receiver<ReaderMsg>,
+) {
+    graceful_q(stdin).await;
+    let deadline = tokio::time::Instant::now()
+        + Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS);
+    let mut reader_done = false;
+    loop {
+        tokio::select! {
+            // tokio's Child::wait is documented cancel-safe.
+            res = child.wait() => {
+                let _ = res;
+                return;
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                tracing::error!(
+                    timeout_ms = RecorderTimeouts::STOP_FINALIZE_MS,
+                    "recorder: ffmpeg did not finalise in time on stop — killing it"
+                );
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                return;
+            }
+            msg = msg_rx.recv(), if !reader_done => {
+                // Discard — the segment is over; only the Exit/None terminator
+                // matters, and it merely disarms this arm.
+                if msg.is_none() {
+                    reader_done = true;
+                }
+            }
+        }
+    }
 }
 
 /// The bound-parameterised body of [`stop_and_wait_bounded`], split out so the
@@ -1983,7 +2055,6 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
     let Ok(dir) = app.path().app_data_dir() else {
         return;
     };
-    let _ = std::fs::create_dir_all(&dir);
     // Keep the file small — the diagnostic only needs the code + a stderr snippet.
     let msg: String = message.chars().take(2000).collect();
     let body = serde_json::json!({
@@ -1991,13 +2062,19 @@ fn skriv_siste_feil_til_disk(app: &AppHandle, code: &str, message: &str) {
         "message": msg,
         "timestamp": chrono::Local::now().to_rfc3339(),
     });
-    let path = dir.join("last-error.json");
-    let tmp = dir.join("last-error.json.tmp");
-    if std::fs::write(&tmp, body.to_string()).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
-        tracing::info!(path = %path.display(), "Lydhjelp: siste feil skrevet til disk");
-    } else {
-        tracing::warn!("Lydhjelp: klarte ikke skrive last-error.json");
-    }
+    // Blocking fs I/O OFF the async caller: emit_error/emit_warning run on the
+    // supervisor task — the drainer of the reader channel. A slow disk here used
+    // to stall the drain (part of the 2026-07-31 back-pressure chain).
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("last-error.json");
+        let tmp = dir.join("last-error.json.tmp");
+        if std::fs::write(&tmp, body.to_string()).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+            tracing::info!(path = %path.display(), "Lydhjelp: siste feil skrevet til disk");
+        } else {
+            tracing::warn!("Lydhjelp: klarte ikke skrive last-error.json");
+        }
+    });
 }
 
 /// Stamp + persist the session's health telemetry at session end (called once,
@@ -2027,26 +2104,30 @@ fn persist_recording_telemetry(
     let Ok(dir) = app.path().app_data_dir() else {
         return;
     };
-    let _ = std::fs::create_dir_all(&dir);
+    // Blocking fs I/O off the async caller (the terminal emit_state funnel runs
+    // on the supervisor task). Best-effort, as before.
+    tauri::async_runtime::spawn_blocking(move || {
+        let _ = std::fs::create_dir_all(&dir);
 
-    // Most-recent snapshot.
-    if let Ok(json) = serde_json::to_string(&t) {
-        let path = dir.join("last-recording.json");
-        let tmp = dir.join("last-recording.json.tmp");
-        let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &path));
-    }
+        // Most-recent snapshot.
+        if let Ok(json) = serde_json::to_string(&t) {
+            let path = dir.join("last-recording.json");
+            let tmp = dir.join("last-recording.json.tmp");
+            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &path));
+        }
 
-    // Rolling history (cap 20, newest last) for the trend view.
-    let hist_path = dir.join("recording-telemetry-history.json");
-    let mut hist: Vec<RecordingTelemetry> = std::fs::read_to_string(&hist_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    push_capped(&mut hist, t, 20);
-    if let Ok(json) = serde_json::to_string(&hist) {
-        let tmp = dir.join("recording-telemetry-history.json.tmp");
-        let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &hist_path));
-    }
+        // Rolling history (cap 20, newest last) for the trend view.
+        let hist_path = dir.join("recording-telemetry-history.json");
+        let mut hist: Vec<RecordingTelemetry> = std::fs::read_to_string(&hist_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        push_capped(&mut hist, t, 20);
+        if let Ok(json) = serde_json::to_string(&hist) {
+            let tmp = dir.join("recording-telemetry-history.json.tmp");
+            let _ = std::fs::write(&tmp, &json).and_then(|()| std::fs::rename(&tmp, &hist_path));
+        }
+    });
 }
 
 /// Finalise every deliverable that has closed but not yet been finalised
@@ -2347,8 +2428,14 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// Heuristic: does this stderr line look like an error worth classifying?
+#[cfg(test)] // production classifies via the prelowered variant (one alloc/line)
 fn looks_like_error(line: &str) -> bool {
-    let l = line.to_lowercase();
+    looks_like_error_prelowered(&line.to_lowercase())
+}
+
+/// [`looks_like_error`] for a caller that already lowercased the line — the
+/// reader pays for at most one lowercase alloc per stderr line.
+fn looks_like_error_prelowered(l: &str) -> bool {
     l.contains("error")
         || l.contains("denied")
         || l.contains("not found")
@@ -2471,22 +2558,20 @@ mod tests {
 
     #[test]
     fn is_capture_drop_warning_matches_ffmpeg_phrasings() {
+        // The phrase list moved to core (single source of truth — it now feeds
+        // BOTH the warn log and the telemetry counter); the reader matches on a
+        // pre-lowercased line.
+        let hit = |line: &str| sundayrec_core::selftest::is_capture_drop_line(&line.to_lowercase());
         // Real ffmpeg drop/back-pressure lines (any case) are flagged…
-        assert!(is_capture_drop_warning(
+        assert!(hit(
             "[avfoundation @ 0x7f] Thread message queue blocking; consider raising the thread_queue_size"
         ));
-        assert!(is_capture_drop_warning("Audio queue overflow"));
-        assert!(is_capture_drop_warning(
-            "Non monotonically increasing dts to muxer in stream 0"
-        ));
-        assert!(is_capture_drop_warning("1234 packets dropped"));
+        assert!(hit("Audio queue overflow"));
+        assert!(hit("Non monotonically increasing dts to muxer in stream 0"));
+        assert!(hit("1234 packets dropped"));
         // …but ordinary progress / silence lines are NOT.
-        assert!(!is_capture_drop_warning(
-            "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"
-        ));
-        assert!(!is_capture_drop_warning(
-            "[silencedetect @ 0x1] silence_start: 3.2"
-        ));
+        assert!(!hit("size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s"));
+        assert!(!hit("[silencedetect @ 0x1] silence_start: 3.2"));
     }
 
     #[tokio::test]
@@ -2866,25 +2951,16 @@ mod tests {
     }
 
     #[test]
-    fn level_meter_holds_latest_and_throttles_emission() {
+    fn level_meter_holds_latest_snapshot() {
+        // Pacing now lives in the levels-forwarder task (watch channel is
+        // latest-wins by construction); the meter itself just holds L/R.
         let mut m = LevelMeter::new();
-        // A fresh meter has not waited out its window → nothing due yet.
         m.update(1, -12.0);
         m.update(2, -9.0);
-        assert!(
-            m.take_due().is_none(),
-            "must coalesce within the throttle window"
-        );
-        // After the window, the LATEST held L/R is emitted exactly once.
-        m.last_emit = std::time::Instant::now() - LevelMeter::EMIT_EVERY - Duration::from_millis(1);
         m.update(1, -6.0);
-        let lv = m.take_due().expect("a due snapshot");
+        let lv = m.snapshot();
         assert_eq!(lv.peak_db_left, -6.0, "holds the latest left");
         assert_eq!(lv.peak_db_right, Some(-9.0), "holds the latest right");
-        assert!(
-            m.take_due().is_none(),
-            "the next read in the same window is coalesced again"
-        );
     }
 
     #[test]
@@ -3030,51 +3106,98 @@ mod tests {
         );
     }
 
-    /// Regression guard for the CHOPPY-AUDIO + VU-LAG root cause. The high-rate
-    /// `Levels` message must be delivered with a NON-BLOCKING `try_send`. If it
-    /// `.await`ed a full bounded channel, the stderr reader would block, ffmpeg's
-    /// stderr pipe would fill, ffmpeg would stall on the write, and avfoundation
-    /// would drop capture samples (choppy) while the meter feed arrived in late
-    /// bursts (growing VU lag). Here the consumer never drains a capacity-1
-    /// channel; the classify path must still complete (drop, not block).
-    #[tokio::test]
-    async fn levels_never_block_the_reader_when_consumer_stalls() {
+    /// Regression guard for the CHOPPY-AUDIO root cause (2026-07-31: 15–56 %
+    /// sample loss). `classify_stderr_line` is now fully SYNCHRONOUS — its only
+    /// hand-offs are a `watch` write and mpsc `try_send`s — so NO consumer state
+    /// (full channel, stalled forwarder, dead receiver) can ever block the
+    /// stderr reader. Here every consumer is maximally hostile: the mpsc is
+    /// permanently full and the watch receiver is dropped; the classify path
+    /// must still complete instantly for every line class, and the dropped
+    /// non-levels messages must be COUNTED.
+    #[test]
+    fn classify_never_blocks_when_every_consumer_stalls() {
         let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
-        // Pre-fill so the channel is permanently full (the consumer never drains).
-        tx.send(ReaderMsg::Progress(0)).await.unwrap();
-
-        let mut startup = StartupResolver::new();
-        let mut levels = LevelMeter::new();
-        let mut last_error = None;
+        tx.try_send(ReaderMsg::Progress(0)).unwrap(); // permanently full
+        let (levels_tx, levels_rx) = tokio::sync::watch::channel(ChannelLevels {
+            peak_db_left: SILENCE_FLOOR_DB,
+            peak_db_right: None,
+        });
+        drop(levels_rx); // dead levels consumer
+        let bytes = AtomicU64::new(0);
         let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ReaderCtx::new();
 
-        let driver = async {
-            for _ in 0..5 {
-                // Let the meter's emit throttle elapse so `take_due()` fires and we
-                // actually attempt a send onto the (full) channel.
-                tokio::time::sleep(LevelMeter::EMIT_EVERY + Duration::from_millis(5)).await;
-                classify_stderr_line(
-                    "lavfi.astats.1.Peak_level=-12.5",
-                    &mut startup,
-                    &mut levels,
-                    &tx,
-                    &mut last_error,
-                    &telemetry,
-                )
-                .await;
+        for _ in 0..5 {
+            classify_stderr_line(
+                "lavfi.astats.1.Peak_level=-12.5",
+                &mut ctx,
+                &levels_tx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+            classify_stderr_line(
+                "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s",
+                &mut ctx,
+                &levels_tx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+            classify_stderr_line(
+                "Error while opening device: Input/output error",
+                &mut ctx,
+                &levels_tx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        // The byte count reached the atomic even though every MESSAGE dropped.
+        assert_eq!(bytes.load(Ordering::Relaxed), 1024 * 1024);
+        let t = lock_recover(&telemetry).clone();
+        assert!(
+            t.msgs_dropped > 0,
+            "full-channel drops must be counted as telemetry"
+        );
+    }
+
+    #[test]
+    fn reader_progress_is_coalesced_but_bytes_are_live() {
+        // The UI byte counter rides ~1/s messages; the watchdog's byte count is
+        // written straight to the atomic on EVERY size= line.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let (levels_tx, _levels_rx_keep) = tokio::sync::watch::channel(ChannelLevels {
+            peak_db_left: SILENCE_FLOOR_DB,
+            peak_db_right: None,
+        });
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ReaderCtx::new();
+
+        for kb in [100u64, 200, 300] {
+            classify_stderr_line(
+                &format!("size=    {kb}kB time=00:00:01.00 bitrate= 838.9kbits/s"),
+                &mut ctx,
+                &levels_tx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 300 * 1024, "latest bytes live");
+        // Exactly ONE Started and ONE Progress forwarded (coalesced ≤1/s).
+        let mut started = 0;
+        let mut progress = 0;
+        while let Ok(m) = rx.try_recv() {
+            match m {
+                ReaderMsg::Started => started += 1,
+                ReaderMsg::Progress(_) => progress += 1,
+                _ => {}
             }
-        };
-        let res = tokio::time::timeout(Duration::from_secs(2), driver).await;
-        assert!(
-            res.is_ok(),
-            "levels delivery must not block when the consumer is stalled"
-        );
-        // The full-channel drops must have been COUNTED — this is exactly the
-        // IPC-starvation signal the diagnose telemetry surfaces.
-        assert!(
-            lock_recover(&telemetry).levels_dropped > 0,
-            "a stalled consumer must register dropped-levels telemetry"
-        );
+        }
+        assert_eq!(started, 1, "Started delivered exactly once when it lands");
+        assert_eq!(progress, 1, "intra-second progress messages are coalesced");
     }
 
     #[test]

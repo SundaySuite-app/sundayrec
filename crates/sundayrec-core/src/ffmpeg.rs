@@ -67,6 +67,16 @@ pub fn build_silence_detect_filter(
     }
 }
 
+/// Samples per astats print-batch (see [`build_levels_detect_filter`]). TUNING
+/// KNOB: if the meter feels steppy on a real rig, lower to 2048 (23 prints/s at
+/// 48 kHz, 47/s at 96 kHz) — still ≥25× below the pre-fix line rate. Do NOT go
+/// below 1024: the whole point is that the print rate must never again scale
+/// with the device's frame cadence.
+pub const LEVELS_BATCH_SAMPLES: u32 = 4800;
+// Compile-time guard: batching below one device frame (~1024 samples) would
+// reintroduce cadence-scaling of the print rate — the 2026-07-31 bug.
+const _: () = assert!(LEVELS_BATCH_SAMPLES >= 1024);
+
 /// Build the live per-channel peak-level `astats` filter string.
 ///
 /// WHY: the "Opptaksmodus" UI shows L/R level meters. Rather than open a SECOND
@@ -79,16 +89,25 @@ pub fn build_silence_detect_filter(
 /// untouched and only writes telemetry to stderr — so adding it to the `-af`
 /// chain NEVER alters the recorded file.
 ///
+/// - `asetnsamples=n=LEVELS_BATCH_SAMPLES` batches the stream into fixed-size
+///   frames BEFORE astats, which is what actually sets the print rate: `ametadata`
+///   prints once per FRAME, and device frames are ~1024 samples (≈95 prints/s at
+///   96 kHz — measured ~2 090 stderr lines/s with the old chain, ~91 % of it
+///   unused `Overall.*` keys). That firehose fills the 16–64 KB stderr pipe in
+///   ~0.2 s whenever the reader lags; ffmpeg then BLOCKS on the stderr write, the
+///   filter graph stalls, avfoundation's queue overflows and samples are dropped
+///   SILENTLY — the measured 15–56 % sample loss of the 2026-07-31 rig incident.
+///   4800 samples = 10 prints/s at 48 kHz, 20/s at 96 kHz — plenty for a meter
+///   the UI eases at 60 fps, and ~50× less stderr than before. (This is fix "A5"
+///   deferred in docs/NATT-LYD-VU-PREKEN-2026-06-14.md, now landed.)
 /// - `metadata=1` makes astats publish the measurements as frame metadata.
-/// - `reset=5` re-measures every 5 frames (~0.1 s). `ametadata` prints once per
-///   frame REGARDLESS of `reset` (measured: ~47 lines/s/channel at any reset), so
-///   `reset` does NOT change the stderr volume — it only sets the peak WINDOW. A
-///   large window (the old `reset=50`, ~1 s) made the meter hold peaks and decay
-///   sluggishly ("the meter lags"); the shorter window tracks transients almost
-///   as tightly as the home-page Web Audio meter. The choppy-audio fix is the
-///   native sample rate + the non-blocking levels send, not this value.
-/// - `measure_perchannel=Peak_level` restricts the measurement to ONLY the
-///   per-channel peak we need (keeps stderr small and the parser unambiguous).
+/// - `reset=1` re-measures every (batched) frame — the batch IS the peak window
+///   (~0.05–0.1 s), so meter attack semantics match the old `reset=5` on ~20 ms
+///   device frames.
+/// - `measure_perchannel=Peak_level` restricts the per-channel block to ONLY the
+///   peak we need, and `measure_overall=none` disables the Overall block that
+///   nothing ever consumed (19 of the 22 lines every print — the bulk of the
+///   old stderr volume).
 /// - `ametadata=mode=print:file=…` is what makes the meter LIVE: `astats` alone
 ///   only logs its summary ONCE at EOF (the meter sat frozen for the whole take);
 ///   `ametadata` prints the current frame metadata every frame, e.g.
@@ -108,8 +127,11 @@ pub fn build_levels_detect_filter(platform: Platform) -> String {
         Platform::Windows => r"pipe\:2",
         Platform::MacOS | Platform::Linux => "/dev/stderr",
     };
+    // `p=0`: do NOT zero-pad the final partial batch — the recorded output must
+    // stay byte-identical to the input stream (asetnsamples only re-batches
+    // frame boundaries, which PCM/WAV muxing is indifferent to).
     format!(
-        "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file={sink}"
+        "asetnsamples=n={LEVELS_BATCH_SAMPLES}:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file={sink}"
     )
 }
 
@@ -121,8 +143,29 @@ mod tests {
     fn levels_filter_is_perchannel_peak_passthrough() {
         assert_eq!(
             build_levels_detect_filter(Platform::MacOS),
-            "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+            "asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=/dev/stderr"
         );
+    }
+
+    #[test]
+    fn levels_filter_batches_prints_and_disables_overall() {
+        // The anti-backpressure contract (2026-07-31 rig incident: ~2 090 stderr
+        // lines/s at 96 kHz starved the capture and silently dropped 15–56 % of
+        // samples): the print rate is set by the sample-count batch — NEVER by
+        // the device's frame cadence — and the unused Overall block is off.
+        let f = build_levels_detect_filter(Platform::MacOS);
+        assert!(
+            f.starts_with(&format!("asetnsamples=n={LEVELS_BATCH_SAMPLES}:p=0,")),
+            "print rate must be sample-count batched: {f}"
+        );
+        assert!(
+            f.contains("measure_overall=none"),
+            "the 19 unused Overall.* lines/print must stay off: {f}"
+        );
+        // p=0: the final partial batch must not be zero-padded — the recorded
+        // stream stays byte-identical. (The ≥1024 floor is a compile-time
+        // assert next to the const.)
+        assert!(f.contains(":p=0,"), "no zero-padding of the last batch: {f}");
     }
 
     #[test]
@@ -139,9 +182,9 @@ mod tests {
     #[test]
     fn levels_filter_prints_live_per_frame_metadata() {
         let f = build_levels_detect_filter(Platform::MacOS);
-        assert!(f.starts_with("astats="), "must be an astats filter");
+        assert!(f.contains("astats="), "must carry an astats filter");
         assert!(f.contains("metadata=1"), "needs metadata output");
-        assert!(f.contains("reset=5"), "needs a short, responsive window");
+        assert!(f.contains("reset=1"), "the batch IS the peak window");
         assert!(
             f.contains("measure_perchannel=Peak_level"),
             "needs per-channel peak"

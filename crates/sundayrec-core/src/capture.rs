@@ -1092,9 +1092,9 @@ mod tests {
         assert!(af.contains("silencedetect="));
         assert!(
             af.contains(
-                "astats=metadata=1:reset=5:measure_perchannel=Peak_level,ametadata=mode=print:file=/dev/stderr"
+                "asetnsamples=n=4800:p=0,astats=metadata=1:reset=1:measure_perchannel=Peak_level:measure_overall=none,ametadata=mode=print:file=/dev/stderr"
             ),
-            "live per-channel levels astats+ametadata must be present; got: {af}"
+            "live per-channel levels (batched, Overall off) must be present; got: {af}"
         );
         // On mac/linux the chain has no empty leading slot — it starts with
         // silencedetect (no stray leading comma).
