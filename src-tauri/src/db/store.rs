@@ -567,8 +567,10 @@ mod tests {
         // and wake-failure tables come from later migrations, so this proves the
         // full migration set applied — not just the first one.
         for table in ["app_setting", "recording", "upload_queue", "wake_failure"] {
-            let q = format!("SELECT COUNT(*) AS n FROM {table}");
-            let row = sqlx::query(&q).fetch_one(&pool).await.expect(table);
+            // AssertSqlSafe: sqlx 0.9 requires dynamic SQL to be explicitly
+            // vouched for — `table` comes from the hardcoded list above.
+            let q = sqlx::AssertSqlSafe(format!("SELECT COUNT(*) AS n FROM {table}"));
+            let row = sqlx::query(q).fetch_one(&pool).await.expect(table);
             assert_eq!(row.get::<i64, _>("n"), 0, "{table} should start empty");
         }
     }

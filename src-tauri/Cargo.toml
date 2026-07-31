@@ -105,7 +105,7 @@ sundayrec-core = { path = "../crates/sundayrec-core" }
 # git tag (see sunday-platform README) so each app builds standalone in CI — a
 # path dep would break the single-repo checkout. For local sunday-auth co-dev,
 # override with a `[patch]` in .cargo/config.toml.
-sunday-auth = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.3.0" }
+sunday-auth = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
 
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
@@ -160,7 +160,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Local-first storage. Replaces Electron's `electron-store` (a JSON blob) with
 # SQLite via sqlx. Runtime-checked queries (no DATABASE_URL / `.sqlx` cache
 # needed to build); `migrate` runs the versioned schema in `migrations/`.
-sqlx = { version = "0.8", default-features = false, features = [
+sqlx = { version = "0.9", default-features = false, features = [
     "runtime-tokio",
     "sqlite",
     "macros",
@@ -227,7 +227,7 @@ futures-util = { version = "0.3", optional = true }
 # WITHOUT the NDI SDK and runs cleanly when the runtime is absent. Pulled only
 # under `--features ndi`. No SDK headers needed — the FFI ABI is declared by hand
 # in `src/ndi/sender.rs` to match libndi's public C API.
-libloading = { version = "0.8", optional = true }
+libloading = { version = "0.9", optional = true }
 # PU-5 whisper seam writes the 16 kHz WAV to a temp dir before inference. Pulled
 # only under `--features whisper` (also a dev-dep below for the storage tests).
 tempfile = { version = "3", optional = true }
@@ -247,7 +247,7 @@ tauri-plugin-updater = { version = "2", optional = true }
 # paths in `recorder::cpal_capture`, so it's a Windows-target dep (not tied to
 # the `asio` feature).
 [target.'cfg(windows)'.dependencies]
-ringbuf = "0.4"
+ringbuf = "0.5"
 # Win32 Job Object APIs for the orphan-guard (`platform::guard_child_processes`):
 # put the process in a kill-on-close job so no ffmpeg child outlives SundayRec,
 # even on a hard kill. `windows-sys` (raw FFI) is chosen over `windows` for its
