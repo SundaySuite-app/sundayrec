@@ -143,9 +143,16 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTS }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_SIGNING_IDENTITY: "Developer ID Application: Richard Fossland (784GN847G4)"
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Notarization DISABLED 2026-07-31 (owner decision): Apple's notary
+          # service returns 403 "A required agreement is missing or has expired"
+          # until the updated Program License Agreement is accepted on
+          # developer.apple.com (team 784GN847G4). The app is still Developer
+          # ID-SIGNED (offline, works) — first launch needs right-click ▸ Open.
+          # Re-enable by uncommenting these three lines once the agreement is
+          # signed:
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "SundayRec ${{ github.ref_name }}"
