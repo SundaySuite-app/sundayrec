@@ -302,8 +302,11 @@ pub async fn run_capture_bench(
     // forces ffmpeg).
     match crate::recorder::engine::select_capture_backend(
         cfg!(target_os = "macos"),
+        cfg!(windows),
         true,
         s.classic_ffmpeg_audio,
+        s.classic_directshow,
+        crate::audio::asio::is_asio_device(&device),
     ) {
         crate::recorder::engine::CaptureBackend::NativeAudio { host } => {
             crate::test_recording::run_native_capture_bench(host, &device, rate, secs).await

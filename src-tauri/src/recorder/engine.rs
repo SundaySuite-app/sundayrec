@@ -628,13 +628,30 @@ impl RecorderEngine {
         // call signature is type-checked on macOS even though it only RUNS on
         // Windows (DCE'd elsewhere; `run_cpal_session` has a non-Windows stub).
         let is_asio = crate::audio::asio::is_asio_device(&opts.audio_device_name);
-        // Features that ONLY the full dshow `run_session` implements (preroll,
-        // split, stop-on-silence). For a normal device we route such sessions to
-        // dshow so they're never silently dropped; ASIO has no dshow alternative,
-        // so we still use cpal but warn the user the feature isn't supported there.
+        // Route the session's capture backend FIRST: audio-only sessions run on
+        // the native engine on both platforms (escape hatches force ffmpeg);
+        // video sessions keep the ffmpeg paths — including Windows' cpal-pipe
+        // session below, which is now VIDEO-ONLY (plus the legacy hatches).
+        let backend = select_capture_backend(
+            cfg!(target_os = "macos"),
+            cfg!(windows),
+            video.is_none(),
+            opts.classic_ffmpeg_audio,
+            opts.classic_directshow,
+            is_asio,
+        );
+        // Features that ONLY the full `run_session` implements on the legacy
+        // Windows pipe path (preroll, split, stop-on-silence). For a normal
+        // device we route such sessions to dshow so they're never silently
+        // dropped; ASIO has no dshow alternative, so we still use cpal but warn
+        // the user the feature isn't supported there. (The native engine
+        // supports all three, so this only matters behind the hatches.)
         let needs_dshow_only =
             preroll_clip.is_some() || opts.split_minutes > 0 || opts.stop_on_silence;
-        let use_cpal = cfg!(windows) && !opts.classic_directshow && (is_asio || !needs_dshow_only);
+        let use_cpal = cfg!(windows)
+            && !opts.classic_directshow
+            && (is_asio || !needs_dshow_only)
+            && !matches!(backend, CaptureBackend::NativeAudio { .. });
         // Why the modern engine fell back, if it did — recorded into the engine
         // status (read by the diagnose tool), NOT surfaced as a fatal recording
         // error (the recording proceeds fine on DirectShow).
@@ -707,25 +724,32 @@ impl RecorderEngine {
             }
         }
 
-        // dshow/avfoundation path: macOS always; Windows only when cpal is disabled
-        // (`classic_directshow`) or failed to start (fallback above). Needs a real
-        // ffmpeg device match — an ASIO-only device with no dshow shadow errors here.
-        let audio = dshow_audio.ok_or_else(|| {
-            AppError::Recording(format!(
-                "no audio device matched '{}'",
-                opts.audio_device_name
-            ))
-        })?;
-        // Route the session's capture backend: audio-only on macOS → the native
-        // cpal engine (unless the `classic_ffmpeg_audio` escape hatch forces the
-        // legacy path); everything else → ffmpeg. Record the engine label for
-        // the diagnose tool (a native start failure later overwrites this with
-        // the fallback engine + reason inside `run_session`).
-        let backend = select_capture_backend(
-            cfg!(target_os = "macos"),
-            video.is_none(),
-            opts.classic_ffmpeg_audio,
-        );
+        // Resolve the ffmpeg-side device. The native backend resolves its own
+        // device (fuzzy, by name, via cpal) — the ffmpeg match is only needed
+        // there for manifest/history metadata and the automatic ffmpeg
+        // fallback, so an ASIO-only device with no dshow shadow synthesizes a
+        // name-only entry instead of erroring the whole start.
+        let audio = match dshow_audio {
+            Some(d) => d,
+            None if matches!(backend, CaptureBackend::NativeAudio { .. }) => FfmpegDevice::new(
+                opts.audio_device_name.clone(),
+                if cfg!(windows) {
+                    "dshow"
+                } else {
+                    "avfoundation"
+                },
+                None,
+            ),
+            None => {
+                return Err(AppError::Recording(format!(
+                    "no audio device matched '{}'",
+                    opts.audio_device_name
+                )))
+            }
+        };
+        // Record the engine label for the diagnose tool (a native start failure
+        // later overwrites this with the fallback engine + reason inside
+        // `run_session`).
         let engine_label = match backend {
             CaptureBackend::NativeAudio { host } => host.label(),
             CaptureBackend::Ffmpeg => {
@@ -895,18 +919,36 @@ pub(crate) enum CaptureBackend {
     NativeAudio { host: CpalHostKind },
 }
 
-/// Pure routing decision for the session's capture backend. Video sessions and
-/// the escape hatch keep the ffmpeg path byte-for-byte; audio-only sessions on
-/// macOS route to the native engine. (Windows audio-only keeps its existing
-/// cpal-pipe/dshow logic until the Windows routing phase flips it too.)
+/// Pure routing decision for the session's capture backend.
+///
+/// Audio-only sessions route to the native engine on BOTH platforms (CoreAudio
+/// on macOS; WASAPI, or ASIO for an ASIO device, on Windows). Video sessions
+/// keep the ffmpeg paths byte-for-byte (incl. Windows' cpal-pipe session).
+/// Escape hatches force ffmpeg: `classic_ffmpeg_audio` on any platform, and
+/// Windows' older `classic_directshow` (a user who forced DirectShow wants the
+/// legacy-est path — native must not override that).
 pub(crate) fn select_capture_backend(
     is_macos: bool,
+    is_windows: bool,
     audio_only: bool,
     classic_ffmpeg_audio: bool,
+    classic_directshow: bool,
+    is_asio_device: bool,
 ) -> CaptureBackend {
-    if is_macos && audio_only && !classic_ffmpeg_audio {
+    if !audio_only || classic_ffmpeg_audio || (is_windows && classic_directshow) {
+        return CaptureBackend::Ffmpeg;
+    }
+    if is_macos {
         CaptureBackend::NativeAudio {
             host: CpalHostKind::Default,
+        }
+    } else if is_windows {
+        CaptureBackend::NativeAudio {
+            host: if is_asio_device {
+                CpalHostKind::Asio
+            } else {
+                CpalHostKind::Wasapi
+            },
         }
     } else {
         CaptureBackend::Ffmpeg
@@ -2862,24 +2904,52 @@ mod tests {
 
     #[test]
     fn backend_routing_matrix() {
-        // macOS audio-only → native engine; everything else keeps ffmpeg.
+        // macOS audio-only → native engine (CoreAudio via the default host).
         assert!(matches!(
-            select_capture_backend(true, true, false),
+            select_capture_backend(true, false, true, false, false, false),
+            CaptureBackend::NativeAudio {
+                host: CpalHostKind::Default
+            }
+        ));
+        // Windows audio-only → native WASAPI; an ASIO device → native ASIO.
+        assert!(matches!(
+            select_capture_backend(false, true, true, false, false, false),
+            CaptureBackend::NativeAudio {
+                host: CpalHostKind::Wasapi
+            }
+        ));
+        assert!(matches!(
+            select_capture_backend(false, true, true, false, false, true),
+            CaptureBackend::NativeAudio {
+                host: CpalHostKind::Asio
+            }
+        ));
+        // The ffmpeg escape hatch forces the legacy path on both platforms.
+        assert_eq!(
+            select_capture_backend(true, false, true, true, false, false),
+            CaptureBackend::Ffmpeg
+        );
+        assert_eq!(
+            select_capture_backend(false, true, true, true, false, false),
+            CaptureBackend::Ffmpeg
+        );
+        // Windows' classic_directshow hatch also wins over native.
+        assert_eq!(
+            select_capture_backend(false, true, true, false, true, false),
+            CaptureBackend::Ffmpeg
+        );
+        // ...but on macOS classic_directshow means nothing.
+        assert!(matches!(
+            select_capture_backend(true, false, true, false, true, false),
             CaptureBackend::NativeAudio { .. }
         ));
-        // The escape hatch forces the legacy ffmpeg path.
-        assert_eq!(
-            select_capture_backend(true, true, true),
-            CaptureBackend::Ffmpeg
-        );
         // Video sessions stay on ffmpeg (owner decision: audio first).
         assert_eq!(
-            select_capture_backend(true, false, false),
+            select_capture_backend(true, false, false, false, false, false),
             CaptureBackend::Ffmpeg
         );
-        // Windows keeps its existing routing until the Windows phase flips it.
         assert_eq!(
-            select_capture_backend(false, true, false),
+            select_capture_backend(false, true, false, false, false, false),
             CaptureBackend::Ffmpeg
         );
     }

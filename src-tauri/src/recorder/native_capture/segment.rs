@@ -14,8 +14,8 @@
 //! - astats levels lines      → 33 ms sampler over the routed `MeterBanks`
 //! - silencedetect markers    → `WriterEvent::Silence` (in-process detector)
 //! - stderr error classify    → typed `cpal::StreamError` / `WriterErrorKind`
-//! - `q` + wait (finalize)    → stop flags + bounded joins (writer patches the
-//!                              RIFF header and fsyncs)
+//! - `q` + wait (finalize)    → stop flags + bounded joins (writer patches
+//!   the RIFF header and fsyncs)
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
