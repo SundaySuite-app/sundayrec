@@ -144,12 +144,14 @@ pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
 
 /// Start the VU engine on `device_name` (or the host default when `None`).
 /// Streams `vu://levels` events until `stop_vu`. Stops any previous session.
+/// Returns the NEGOTIATED channel count — the width of every `vu://levels`
+/// payload, which the channel grid sizes itself from.
 #[tauri::command]
 pub async fn start_vu(
     app: AppHandle,
     engine: State<'_, VuEngine>,
     device_name: Option<String>,
-) -> AppResult<()> {
+) -> AppResult<u16> {
     engine.start(app, device_name).await
 }
 
@@ -163,7 +165,12 @@ pub fn stop_vu(engine: State<'_, VuEngine>) -> AppResult<()> {
 /// The selected device's REAL input channel count via the ffmpeg backend (the
 /// webview's getUserMedia caps at 2 and hid the picker for digital mixers).
 #[tauri::command]
-pub async fn probe_device_channels(device_name: String) -> AppResult<u32> {
+pub async fn probe_device_channels(
+    engine: State<'_, VuEngine>,
+    device_name: String,
+) -> AppResult<u32> {
+    // The ffmpeg blink-open fails if the VU stream holds another format.
+    engine.stop();
     crate::audio::channel_probe::probe_input_channels(&device_name).await
 }
 
@@ -171,8 +178,12 @@ pub async fn probe_device_channels(device_name: String) -> AppResult<u32> {
 /// channels actually carry the mix?"
 #[tauri::command]
 pub async fn scan_device_channels(
+    engine: State<'_, VuEngine>,
     device_name: String,
     secs: u32,
 ) -> AppResult<Vec<crate::audio::channel_probe::ChannelPeak>> {
+    // The ffmpeg scan opens the device itself; release the VU stream first
+    // (the renderer also stops the grid — this is the guarantee).
+    engine.stop();
     crate::audio::channel_probe::scan_channel_peaks(&device_name, secs).await
 }

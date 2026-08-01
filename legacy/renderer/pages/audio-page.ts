@@ -1,19 +1,10 @@
 import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, setVal, setRadio, setupDirtyBar } from '../helpers'
-import { getAudioDevices, detectDeviceChannels, buildInputRouter } from '../audio/capture'
-import { makeVuState, tickVU, stopVuState } from '../audio/vu'
+import { setVal, setRadio } from '../helpers'
+import { getAudioDevices } from '../audio/capture'
+import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
 import type { ChannelMode } from '../../types'
-
-let monitorStream: MediaStream   | null = null
-let monitorCtx:    AudioContext  | null = null
-let monitorSrc:    MediaStreamAudioSourceNode | null = null
-let isMonitoring   = false
-let testVu = makeVuState()
-
-let _markAudioClean = () => {}
-let _markAudioDirty = () => {}
 
 function updateVolGradient(): void {
   const el = document.getElementById('input-volume') as HTMLInputElement | null
@@ -23,14 +14,10 @@ function updateVolGradient(): void {
 }
 
 export function setupAudioPage(): void {
-  const bar = setupDirtyBar('settings-audio')
-  _markAudioClean = bar.clean
-  _markAudioDirty = bar.dirty
-
-  // AUTO-SAVE: persist on change so a setting takes effect immediately (the old
-  // flow required clicking «Lagre»; a change the user made and navigated away
-  // from was silently lost → recorder kept using defaults). saveAudioSettings
-  // also pushes the recording-critical subset to the backend.
+  // AUTO-SAVE is the ONLY save model on this page: every control persists on
+  // change (the old Lagre/Avbryt footer contradicted it — the footer implied
+  // unsaved work while the write had already happened, and Avbryt could not
+  // revert it). The channel grid shows its own inline «Lagret ✓».
   const autoSave = () => { void saveAudioSettings() }
 
   // Sample-rate mode cards (auto / r44100 / r48000) → save.
@@ -38,14 +25,16 @@ export function setupAudioPage(): void {
     r.addEventListener('change', autoSave)
   })
 
-  // Channel-mode cards (stereo / mono / monoL / monoR).
+  // Channel-mode cards (stereo / mono / monoL / monoR) → save. The channel
+  // grid listens on the same radios to re-render its chips/badges.
   document.querySelectorAll<HTMLInputElement>('input[name="channels"]').forEach(r => {
     r.addEventListener('change', autoSave)
   })
-  // Multi-channel L/R mapping selects (persist the device's channel choice).
-  setupChannelScan()
-  document.getElementById('channel-select-l')?.addEventListener('change', autoSave)
-  document.getElementById('channel-select-r')?.addEventListener('change', autoSave)
+
+  // The live channel grid: meters per native channel, tap-to-assign L/R. The
+  // grid reports the authoritative channel count back → device sub-line +
+  // the mono auto-switch for 1-channel devices.
+  setupChannelGrid(onGridChannelCount)
 
   // Show the actual rate «Automatisk» resolves to (the hardware's native rate).
   void showAutoSampleRate()
@@ -66,25 +55,18 @@ export function setupAudioPage(): void {
   // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
   // (record-raw philosophy — see saveAudioSettings); no listeners needed.
 
-  document.getElementById('btn-test-audio')?.addEventListener('click', async () => {
-    if (isMonitoring) { stopMonitoring(); return }
-    await startMonitoring()
-  })
-
   document.getElementById('btn-audio-diagnose')?.addEventListener('click', runAudioDiagnosis)
   document.getElementById('btn-audio-diagnose-close')?.addEventListener('click', () => {
     const modal = document.getElementById('audio-diagnose-modal')
     if (modal) modal.style.display = 'none'
   })
-
-  document.getElementById('btn-audio-save')?.addEventListener('click', saveAudioSettings)
-  document.getElementById('btn-audio-cancel')?.addEventListener('click', () => applyAudioSettingsToUI())
 }
 
 /** Fill the «Automatisk» card with the actual sample rate it will use — the
- *  audio hardware's native rate (what ffmpeg captures at with no `-ar`). Detected
- *  via a throwaway AudioContext, whose `sampleRate` is the system audio rate (on
- *  the Mac built-in mic this matches the capture rate, e.g. 48 000 Hz). */
+ *  audio hardware's native rate (what the capture engine records at with no
+ *  forced rate). Detected via a throwaway AudioContext, whose `sampleRate` is
+ *  the system audio rate (on the Mac built-in mic this matches the capture
+ *  rate, e.g. 48 000 Hz). */
 async function showAutoSampleRate(): Promise<void> {
   const el = document.getElementById('sr-auto-actual')
   if (!el) return
@@ -101,23 +83,26 @@ async function showAutoSampleRate(): Promise<void> {
   }
 }
 
-/** A 1-channel input device (the Mac built-in mic, most USB lavaliers) can't
- *  produce stereo — recording it as stereo gives a dead right channel. So when a
- *  mono device is active, switch the recording to MonoL (full-level mono from the
- *  live channel; a clean mono file plays on both speakers). Only ever auto-set
- *  mono — never auto-revert a 2-channel device, so a real stereo interface keeps
- *  the user's choice. */
-function autoMonoForDevice(count: number): void {
-  if (count === 1 && settings.channels !== "monoL") {
-    setRadio("channels", "monoL")
+/** The channel grid's authoritative count → device-card sub-line + the mono
+ *  auto-switch. A 1-channel device (the Mac built-in mic, most USB lavaliers)
+ *  can't produce stereo — recording it as stereo gives a dead right channel,
+ *  so switch to MonoL. Only ever auto-set mono — never auto-revert a
+ *  multichannel device, so a real stereo interface keeps the user's choice. */
+function onGridChannelCount(count: number): void {
+  if (count === 1 && settings.channels !== 'monoL') {
+    setRadio('channels', 'monoL')
     void saveAudioSettings()
+  }
+  const selCard = document.querySelector('#device-list .device-card.selected') as HTMLElement | null
+  const subEl = selCard?.querySelector('.device-sub') as HTMLElement | null
+  if (subEl) {
+    const base = subEl.dataset.subBase ?? ''
+    subEl.textContent = `${base} · ${count} ${t('audio.channelCount', 'kanaler')}`
   }
 }
 
 export function applyAudioSettingsToUI(): void {
-  _markAudioClean()
   setVal('input-volume', settings.inputVolume ?? 100)
-  updateVolumeLabel()
   setRadio('channels', settings.channels ?? 'stereo')
   // Sample-rate mode cards — default Auto (native capture).
   const srMode = settings.sampleRateMode ?? 'auto'
@@ -141,28 +126,16 @@ export function applyAudioSettingsToUI(): void {
   setVal('comp-release',   settings.compRelease   ?? 200)
 }
 
-function updateVolumeLabel(): void {
-  const el  = document.getElementById('input-volume') as HTMLInputElement | null
-  const lbl = document.getElementById('volume-value')
-  if (el && lbl) lbl.textContent = el.value + '%'
-}
-
 async function saveAudioSettings(): Promise<void> {
   const selectedCard = document.querySelector('.device-card.selected') as HTMLElement | null
   const deviceId   = selectedCard?.dataset.deviceId   ?? settings.deviceId   ?? null
   const deviceName = selectedCard?.dataset.deviceLabel ?? settings.deviceName ?? null
-  const chCard   = document.getElementById('channel-select-card')
-  const selLEl   = document.getElementById('channel-select-l') as HTMLSelectElement | null
-  const chL      = +(selLEl?.value ?? 0)
-  const chR      = +((document.getElementById('channel-select-r') as HTMLSelectElement | null)?.value ?? 1)
 
-  // Persist per-device channel selection — but ONLY when the picker is visible
-  // and populated. Saving from the hidden/empty selects wrote a phantom L=0/R=0
-  // mapping (pan=stereo|c0=c0|c1=c0 — channel 0 duplicated to both sides),
-  // which recorded a near-silent channel on the Qu-5 (2026-07-31).
-  const deviceChannels = { ...(settings.deviceChannels ?? {}) }
-  const pickerActive = chCard?.style.display !== 'none' && (selLEl?.options.length ?? 0) > 0
-  if (deviceId && pickerActive) deviceChannels[deviceId] = { channelL: chL, channelR: chR }
+  // Channel L/R mapping is NOT read from the DOM here: only the channel grid's
+  // explicit tap handler writes `settings.deviceChannels` (channel-grid.ts).
+  // This is the structural replacement for the old `pickerActive` guard — a
+  // hidden/empty picker once wrote a phantom L=0/R=0 mapping that recorded a
+  // near-silent channel on the Qu-5 (2026-07-31).
 
   const srMode = ((document.querySelector('input[name="sampleRate"]:checked') as HTMLInputElement | null)
     ?.value ?? 'auto') as 'auto' | 'r44100' | 'r48000'
@@ -176,21 +149,18 @@ async function saveAudioSettings(): Promise<void> {
   const patch = {
     deviceId,
     deviceName,
-    deviceChannels,
     channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as ChannelMode,
     sampleRateMode: srMode,
     classicDirectshow,
     classicFfmpegAudio,
     // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
     // estimate). Auto → 48 kHz as a reasonable estimate; the recorder itself uses
-    // sampleRateMode (auto = native, no -ar).
+    // sampleRateMode (auto = native, no forced rate).
     sampleRate:     srMode === 'r44100' ? 44100 : 48000,
   }
 
   patchSettings(patch)
   await window.api.saveSettings(settings)
-  _markAudioClean()
-  flashSaved(document.getElementById('btn-audio-save'))
   // Refresh Home live: disk estimate (channels/samplerate) + the device/format
   // info-strip cards so the change shows without navigating away and back.
   void refreshHomeDiskSpace()
@@ -231,18 +201,14 @@ export async function renderDeviceList(containerId: string): Promise<void> {
         <div class="device-sub" data-sub-base="ASIO">ASIO</div>
       </div>
       <span class="device-badge ok">ASIO</span>`
-    card.addEventListener('click', async () => {
+    card.addEventListener('click', () => {
       container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
       card.classList.add('selected')
       patchSettings({ deviceId: devId, deviceName: name })
-      _markAudioDirty()
-      const count = await window.api.listAsioInputChannels(name).catch(() => 0)
-      const chan  = count > 0 ? count : 16
-      const subEl = card.querySelector('.device-sub') as HTMLElement | null
-      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
-      const stored = settings.deviceChannels?.[devId]
-      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
+      // Persist immediately, then point the live channel grid at the device —
+      // the grid reports the real channel count back (sub-line + auto-mono).
       void saveAudioSettings()
+      void startChannelGrid(devId, name)
     })
     container.appendChild(card)
   })
@@ -255,28 +221,20 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     card.className            = 'device-card' + (selected ? ' selected' : '')
     card.dataset.deviceId     = d.deviceId
     card.dataset.deviceLabel  = d.label
-    const subBase = builtIn ? t('audio.internal','Innebygd') : 'USB / Ekstern'
+    const subBase = builtIn ? t('audio.internal','Innebygd') : t('audio.deviceExternal', 'USB / Ekstern')
     card.innerHTML = `
       <div class="device-icon">${builtIn ? '🎙' : '🎛'}</div>
       <div>
-        <div class="device-name">${escHtml(d.label || 'Ukjent enhet')}</div>
+        <div class="device-name">${escHtml(d.label || t('audio.deviceUnknown', 'Ukjent enhet'))}</div>
         <div class="device-sub" data-sub-base="${escHtml(subBase)}">${escHtml(subBase)}</div>
       </div>
       <span class="device-badge ${builtIn ? 'warn' : 'ok'}">${builtIn ? t('audio.notRecommended') : t('audio.connected','Tilkoblet ✓')}</span>`
-    card.addEventListener('click', async () => {
+    card.addEventListener('click', () => {
       container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
       card.classList.add('selected')
       patchSettings({ deviceId: d.deviceId, deviceName: d.label })
-      _markAudioDirty()
-      const count = await detectDeviceChannels(d.deviceId, d.label)
-      autoMonoForDevice(count)
-      const subEl = card.querySelector('.device-sub') as HTMLElement | null
-      if (subEl) subEl.textContent = `${subBase} · ${count} ${t('audio.channelCount', 'kanaler')}`
-      const stored = settings.deviceChannels?.[d.deviceId]
-      updateChannelSelector(count, stored?.channelL ?? 0, stored?.channelR ?? 1)
-      // Persist the device choice immediately (no «Lagre» click needed) so the
-      // recorder + Home card pick it up.
       void saveAudioSettings()
+      void startChannelGrid(d.deviceId, d.label)
     })
     container.appendChild(card)
   })
@@ -293,75 +251,14 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     if (warn) warn.style.display = found ? 'none' : ''
   }).catch(() => {})
 
-  // Probe current (non-ASIO) device for channel count
+  // Start the live channel grid for the persisted (or first) device.
   const devId = settings.deviceId ?? (devices[0]?.deviceId ?? null)
-  if (devId && !devId.startsWith('asio::')) {
-    detectDeviceChannels(devId, settings.deviceName).then(count => {
-      autoMonoForDevice(count)
-      const stored = settings.deviceChannels?.[devId]
-      updateChannelSelector(count, stored?.channelL ?? 0, stored?.channelR ?? 1)
-      const selCard = container.querySelector('.device-card.selected') as HTMLElement | null
-      const subEl   = selCard?.querySelector('.device-sub') as HTMLElement | null
-      if (subEl) {
-        const base = subEl.dataset.subBase ?? ''
-        subEl.textContent = `${base} · ${count} ${t('audio.channelCount', 'kanaler')}`
-      }
-    })
-  } else if (devId?.startsWith('asio::')) {
-    const name   = devId.slice('asio::'.length)
-    const stored = settings.deviceChannels?.[devId]
-    window.api.listAsioInputChannels(name).then(count => {
-      const chan = count > 0 ? count : 16
-      updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
-      const selCard = container.querySelector('.device-card.selected') as HTMLElement | null
-      const subEl   = selCard?.querySelector('.device-sub') as HTMLElement | null
-      if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
-    }).catch(() => updateChannelSelector(16, stored?.channelL ?? 0, stored?.channelR ?? 1))
+  if (devId) {
+    const label = devId.startsWith('asio::')
+      ? devId.slice('asio::'.length)
+      : (settings.deviceName ?? devices.find(d => d.deviceId === devId)?.label ?? null)
+    void startChannelGrid(devId, label)
   }
-}
-
-/** Wire the per-channel signal scan: runs the REAL capture backend for 3 s and
- *  marks which channels carry signal directly in the L/R dropdowns — the "which
- *  of my mixer's 32 channels is the mix on?" answer (2026-07-31). Call once. */
-export function setupChannelScan(): void {
-  const btn = document.getElementById('btn-scan-channels') as HTMLButtonElement | null
-  const status = document.getElementById('channel-scan-status')
-  if (!btn || !status) return
-  btn.addEventListener('click', async () => {
-    const name = settings.deviceName
-    if (!name) return
-    btn.disabled = true
-    status.textContent = t('audio.scanRunning', 'Lytter i 3 sek — spill lyd på kanalene …')
-    // The scan opens the device via ffmpeg — release the webview's own mic
-    // stream first, or the device may sit in a 2-kanals format ffmpeg can't
-    // open ("audio format is not supported").
-    try { stopMonitoring() } catch {}
-    try {
-      const peaks = await window.api.scanDeviceChannels(name, 3)
-      const live = peaks.filter(p => p.peakDb > -50)
-      const label = (ch: number): string => {
-        const p = peaks.find(x => x.channel === ch)
-        if (!p) return `Kanal ${ch}`
-        const loud = p.peakDb > -50
-        return `Kanal ${ch}${loud ? ` 🔊 (${p.peakDb.toFixed(0)} dB)` : ''}`
-      }
-      for (const sel of ['channel-select-l', 'channel-select-r']) {
-        const el = document.getElementById(sel) as HTMLSelectElement | null
-        if (!el) continue
-        for (const opt of Array.from(el.options)) {
-          opt.textContent = label(Number(opt.value) + 1)
-        }
-      }
-      status.textContent = live.length
-        ? t('audio.scanFound', '{n} kanaler med signal: {list}')
-            .replace('{n}', String(live.length))
-            .replace('{list}', live.map(p => p.channel).join(', '))
-        : t('audio.scanNone', 'Ingen kanaler med signal — spill lyd og prøv igjen')
-    } catch (err) {
-      status.textContent = '❌ ' + errText(err)
-    }
-    btn.disabled = false
-  })
 }
 
 /** Human-readable text from any thrown value (Tauri command errors arrive as
@@ -377,98 +274,6 @@ export function errText(err: unknown): string {
     try { return JSON.stringify(err) } catch { /* fall through */ }
   }
   return String(err)
-}
-
-function updateChannelSelector(count: number, chL: number, chR: number): void {
-  const card = document.getElementById('channel-select-card')
-  if (!card) return
-  if (count <= 2) { card.style.display = 'none'; return }
-  card.style.display = 'block'
-  const selL = document.getElementById('channel-select-l') as HTMLSelectElement | null
-  const selR = document.getElementById('channel-select-r') as HTMLSelectElement | null
-  if (!selL || !selR) return
-  const makeOpts = (): HTMLOptionElement[] =>
-    Array.from({ length: count }, (_, i) => {
-      const opt = document.createElement('option')
-      opt.value = String(i)
-      opt.textContent = `Kanal ${i + 1}`
-      return opt
-    })
-  selL.replaceChildren(...makeOpts())
-  selR.replaceChildren(...makeOpts())
-  selL.value = String(chL); selR.value = String(chR)
-}
-
-async function startMonitoring(): Promise<void> {
-  // OPPGAVE 3: stop any existing stream before opening a new one to prevent double GUM streams
-  if (monitorStream) {
-    monitorStream.getTracks().forEach(t => t.stop())
-    monitorStream = null
-    monitorSrc?.disconnect(); monitorSrc = null
-    monitorCtx?.close(); monitorCtx = null
-    // Small pause to let the driver release the device
-    await new Promise<void>(r => setTimeout(r, 100))
-  }
-
-  try {
-    // ASIO device IDs (asio::DriverName) are not valid getUserMedia IDs — use default input for monitoring
-    const rawId  = settings.deviceId
-    const devId  = rawId && rawId !== 'default' && !rawId.startsWith('asio::') ? rawId : null
-    const stored = settings.deviceId ? (settings.deviceChannels?.[settings.deviceId] ?? null) : null
-    const chL    = stored?.channelL ?? 0
-    const chR    = stored?.channelR ?? 1
-    const need   = Math.max(2, chL + 1, chR + 1)
-
-    monitorStream = await navigator.mediaDevices.getUserMedia({
-      audio: { ...(devId ? { deviceId: { ideal: devId } } : {}),
-        channelCount: { ideal: need }, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-      video: false
-    })
-    monitorCtx = new AudioContext({ sampleRate: settings.sampleRate ?? 48000 })
-    monitorSrc = monitorCtx.createMediaStreamSource(monitorStream)
-
-    const inputNode = buildInputRouter(monitorCtx, monitorSrc, monitorStream, chL, chR)
-    const gain = monitorCtx.createGain()
-    gain.gain.value = (settings.inputVolume ?? 80) / 100
-    inputNode.connect(gain).connect(monitorCtx.destination)
-
-    // VU meters for audio test
-    const monAnalyser = monitorCtx.createAnalyser()
-    monAnalyser.fftSize = 2048
-    inputNode.connect(monAnalyser)
-    testVu = makeVuState()
-    Object.assign(testVu, { analyserL: monAnalyser, analyserR: monAnalyser })
-    tickVU(testVu,
-      document.getElementById('test-vu-l'), null, null,
-      document.getElementById('test-vu-r'), null, null
-    )
-    const vuSect = document.getElementById('test-vu-section')
-    if (vuSect) vuSect.style.display = 'block'
-
-    isMonitoring = true
-    const btn  = document.getElementById('btn-test-audio')
-    if (btn) btn.innerHTML = `⏹ <span>${t('audio.monitorStop', 'Stopp test')}</span>`
-    const warn = document.getElementById('test-audio-warn')
-    if (warn) warn.style.display = 'block'
-  } catch (err) {
-    monitorStream?.getTracks().forEach(tk => tk.stop()); monitorStream = null
-    monitorCtx?.close(); monitorCtx = null
-    alert(t('audio.monitorError', 'Kunne ikke starte lydtest: ') + (err as Error).message)
-  }
-}
-
-export function stopMonitoring(): void {
-  stopVuState(testVu); testVu = makeVuState()
-  const vuSect = document.getElementById('test-vu-section')
-  if (vuSect) vuSect.style.display = 'none'
-  monitorSrc?.disconnect(); monitorSrc = null
-  monitorCtx?.close();      monitorCtx = null
-  monitorStream?.getTracks().forEach(t => t.stop()); monitorStream = null
-  isMonitoring = false
-  const btn  = document.getElementById('btn-test-audio')
-  if (btn) btn.innerHTML = `🎧 <span data-i18n="audio.testBtn">${t('audio.testBtn', 'Test lyd')}</span>`
-  const warn = document.getElementById('test-audio-warn')
-  if (warn) warn.style.display = 'none'
 }
 
 // Comprehensive diagnose: calls the unified backend `run_diagnostics`, which

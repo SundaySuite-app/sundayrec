@@ -84,6 +84,7 @@ pub async fn start_recording(
     engine: State<'_, RecorderEngine>,
     preroll: State<'_, PrerollEngine>,
     preview: State<'_, crate::media::preview::PreviewEngine>,
+    vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
     opts: RecordingOpts,
 ) -> AppResult<()> {
@@ -148,6 +149,11 @@ pub async fn start_recording(
     // the capture. Stop it unconditionally; the idle loop is restarted by the
     // preroll scheduler after the session ends.
     preroll.stop();
+    // The channel-grid/VU engine also holds the device open (cpal, shared
+    // mode). Stop it before the capture engine opens the device — the settle
+    // below then also absorbs its teardown. Covers manual AND scheduler
+    // starts, so the renderer-side stop is a fast path, not the guarantee.
+    vu.stop();
     // SETTLE: the renderer released its getUserMedia captures just before this
     // command, but WebKit tears the CoreAudio unit down asynchronously — until
     // it does, a multi-channel device can sit in the webview's 2-channel
@@ -166,8 +172,12 @@ pub async fn start_recording(
 #[tauri::command]
 pub async fn preroll_start(
     preroll: State<'_, PrerollEngine>,
+    vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
 ) -> AppResult<bool> {
+    // Belt-and-braces: the rolling capture opens the mic via ffmpeg; make sure
+    // the channel-grid/VU stream isn't holding it (renderer also stops first).
+    vu.stop();
     let settings = crate::settings::load(&db.pool).await?;
     match preroll_settings_from(&settings) {
         Some(ps) => {
@@ -280,7 +290,12 @@ pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<Disk
 /// signal level. The argv + classifiers are the unit-tested core; the spawn/
 /// astats path is HARDWARE-UNVERIFIED (needs a real mic + the ffmpeg sidecar).
 #[tauri::command]
-pub async fn run_test_recording(db: State<'_, Db>) -> AppResult<TestRecordingResult> {
+pub async fn run_test_recording(
+    db: State<'_, Db>,
+    vu: State<'_, crate::audio::vu::VuEngine>,
+) -> AppResult<TestRecordingResult> {
+    // Release the channel-grid/VU stream before opening the device for real.
+    vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
     run_test(&device).await
@@ -292,8 +307,11 @@ pub async fn run_test_recording(db: State<'_, Db>) -> AppResult<TestRecordingRes
 #[tauri::command]
 pub async fn run_capture_bench(
     db: State<'_, Db>,
+    vu: State<'_, crate::audio::vu::VuEngine>,
     secs: u32,
 ) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
+    // Release the channel-grid/VU stream before the bench opens the device.
+    vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
     let rate = s.resolved_sample_rate();

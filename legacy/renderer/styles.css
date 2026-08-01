@@ -4521,3 +4521,81 @@ body.recording-active .rec-dot-sm,
 body.recording-active .status-dot.recording {
   animation: none;
 }
+
+/* ── Live channel grid (Lydkilde → «Kanaler og signal») ──────────────
+   One tappable vertical meter per NATIVE device channel, fed by the Rust VU
+   engine (vu-levels ~30/s). Fill animates via transform: scaleY (GPU-only —
+   the v0.5.0 renderer discipline), not the height% the base .vu-pro-fill uses. */
+.ch-assign-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.ch-assign-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1.5px solid var(--border);
+  border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  color: var(--text); font: inherit;
+}
+.ch-assign-chip .ch-assign-slot {
+  font-size: 10px; font-weight: 700; letter-spacing: 1px; color: var(--text3);
+  text-transform: uppercase;
+}
+.ch-assign-chip .ch-assign-ch { font-size: 13px; font-weight: 600; }
+.ch-assign-chip.armed {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+.ch-assign-chip.armed .ch-assign-slot { color: var(--accent); }
+
+.ch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px; margin-top: 10px;
+}
+.ch-col {
+  background: none; border: 1.5px solid transparent; border-radius: 8px;
+  padding: 6px 2px 4px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  position: relative; font: inherit; color: var(--text2);
+}
+.ch-col:hover { border-color: var(--accent-border); }
+.ch-col .ch-col-track {
+  width: 100%; max-width: 20px; height: 110px;
+  background: linear-gradient(to top, #15803d 0%, #22c55e 30%, #86efac 60%, #ca8a04 68%, #f97316 80%, #ef4444 90%, #dc2626 100%);
+  border: 1px solid rgba(255,255,255,.05);
+  border-radius: 3px; position: relative; overflow: hidden;
+}
+/* Top-anchored mask hides the unlit part of the FIXED gradient — a quiet
+   channel shows only the green base, never a compressed red-topped sliver. */
+.ch-col .ch-col-mask {
+  /* 1px overscan: subpixel rounding of the scaleY transform otherwise leaves
+     a red hairline of the gradient's top edge peeking out on silent channels. */
+  position: absolute; inset: -1px; background: var(--surface2);
+  transform: scaleY(1); transform-origin: top;
+  transition: transform .05s ease-out;
+  will-change: transform;
+}
+.ch-col-num { font-size: 11px; font-variant-numeric: tabular-nums; }
+.ch-col.has-signal .ch-col-num { color: var(--accent); font-weight: 700; }
+.ch-col.assigned { border-color: var(--accent); background: var(--accent-bg); }
+.ch-col-badge {
+  position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; font-weight: 800; letter-spacing: .5px;
+  background: var(--accent); color: #1a1206; border-radius: 999px;
+  padding: 1px 6px; opacity: 0; pointer-events: none; z-index: 1;
+}
+.ch-col.assigned .ch-col-badge { opacity: 1; }
+.ch-col.skeleton .ch-col-track { animation: chSkeleton 1.2s ease-in-out infinite; }
+@keyframes chSkeleton { 0%,100% { opacity: .35; } 50% { opacity: .7; } }
+.ch-grid.static .ch-col .ch-col-mask { transition: none; }
+
+.ch-grid-status {
+  display: flex; gap: 10px; align-items: center; margin-top: 8px;
+  font-size: 12px; color: var(--text3); min-height: 18px;
+}
+.ch-grid-saved { color: var(--green, #22c55e); opacity: 0; transition: opacity .2s; font-weight: 600; }
+.ch-grid-saved.show { opacity: 1; }
+.ch-grid-fallback { display: flex; }
+
+/* The LYDKILDE info card is tappable (jumps to the channel grid). */
+.info-card-tappable { cursor: pointer; }
+.info-card-tappable:hover { border-color: var(--accent-border); }
+.info-card-sub .signal-dot { margin-right: 5px; }

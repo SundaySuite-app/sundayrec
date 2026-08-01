@@ -4,7 +4,8 @@ import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
-import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList, stopMonitoring } from './pages/audio-page'
+import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList } from './pages/audio-page'
+import { stopChannelGrid } from './pages/channel-grid'
 import { setupSchedulePage, applyScheduleSettingsToUI, renderDayPickers, renderSlotsList } from './pages/schedule-page'
 import { setupCalendarPage, renderCalendar, renderPlannedList } from './pages/calendar-page'
 import { setupFilesPage, applyFilesSettingsToUI, updateFilenamePreview, toggleMp3Quality } from './pages/files-page'
@@ -136,8 +137,11 @@ declare global {
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       pickAudioFile:          ()                 => Promise<string | null>
       listAsioDrivers:        ()                 => Promise<string[]>
-      listAsioInputChannels:  (deviceId: string) => Promise<number>
+      listAsioInputChannels:  (deviceId: string) => Promise<{ index: number; label: string }[]>
       listFfmpegAudioDevices: () => Promise<{ name: string; index: number }[]>
+      startVu:                (deviceName: string | null) => Promise<number>
+      stopVu:                 ()                 => Promise<void>
+      listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
       cloudConnect:        (service: string) => Promise<{ ok: boolean; accountName?: string; error?: string }>
       cloudCancelConnect:  (service: string) => Promise<boolean>
       cloudDisconnect:     (service: string) => Promise<void>
@@ -275,7 +279,7 @@ function showPage(id: string): void {
   if (id !== 'home') { stopVU(); stopVideoPreview(); deactivateHome() }
   if (id !== 'editor') deactivateEditor()
   if (id !== 'live') deactivateLivePage()
-  if (id !== 'settings') stopMonitoring()
+  if (id !== 'settings') stopChannelGrid()
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'))
   document.getElementById(`page-${id}`)?.classList.add('active')
@@ -301,7 +305,7 @@ function setupSettingsTabs(): void {
       document.querySelectorAll<HTMLElement>('#page-settings .inner-page').forEach(p => p.classList.remove('active'))
       document.getElementById(tabId)?.classList.add('active')
       if (tabId === 'settings-audio') renderDeviceList('device-list')
-      else stopMonitoring()
+      else stopChannelGrid()
       if (tabId === 'settings-video') refreshVideoDevices()
     })
   })
