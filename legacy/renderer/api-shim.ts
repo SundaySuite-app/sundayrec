@@ -141,6 +141,7 @@ const EVENT_MAP: Record<string, string> = {
   "recording-quality": "recording://quality",
   "recording-progress": "recording://progress",
   "recording-levels": "recording://levels",
+  "vu-levels": "vu://levels",
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "video-preview-frame": "preview://frame",
@@ -684,6 +685,17 @@ const api: Record<string, unknown> = {
   // Real input channel count via the ffmpeg backend (getUserMedia caps at 2).
   probeDeviceChannels: async (deviceName: string) =>
     invoke<number>("probe_device_channels", { deviceName }),
+  // Engine-side VU metering: starts the cpal stream on the device (negotiated
+  // FULL channel count — a Qu-5's 32, not getUserMedia's 2) and streams
+  // `vu-levels` events (~30/s, one peak+RMS entry per native channel) until
+  // stopVu. Returns the negotiated channel count — the channel grid's width.
+  startVu: async (deviceName: string | null) =>
+    invoke<number>("start_vu", { deviceName }),
+  stopVu: async () => invoke<void>("stop_vu"),
+  // cpal device list (instant, no ffmpeg spawn): real max channel counts +
+  // supported standard rates per input device.
+  listInputDevices: async () =>
+    invoke<import("../bindings/AudioDeviceList").AudioDeviceList>("list_input_devices"),
   // Per-channel peak scan — "which mixer channels carry the mix?"
   scanDeviceChannels: async (deviceName: string, secs: number) =>
     invoke<{ channel: number; peakDb: number }[]>("scan_device_channels", { deviceName, secs }),
@@ -851,17 +863,15 @@ const api: Record<string, unknown> = {
     );
     return devs.filter((d) => d.backend === "asio").map((d) => d.name);
   },
-  // Input-channel COUNT for an ASIO device, so the L/R selector offers the real
-  // channels (the dshow path can't see them). 0 when ASIO is unavailable → the
-  // caller falls back to a sensible default.
+  // The ASIO device's real input channels WITH driver labels, so the channel
+  // grid can show channel names, not just numbers. Empty when ASIO is
+  // unavailable → the caller falls back to a sensible default.
   listAsioInputChannels: async (deviceId: string) =>
-    (
-      await call<{ index: number; label: string }[]>(
-        "list_audio_input_channels",
-        { deviceId },
-        [],
-      )
-    ).length,
+    call<{ index: number; label: string }[]>(
+      "list_audio_input_channels",
+      { deviceId },
+      [],
+    ),
   // The ffmpeg/dshow audio inputs, for the "selected device not seen by ffmpeg"
   // warning. audio-page.ts calls `.some(...)` on the result → must be an array.
   listFfmpegAudioDevices: async () => {

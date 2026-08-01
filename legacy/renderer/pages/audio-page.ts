@@ -236,7 +236,7 @@ export async function renderDeviceList(containerId: string): Promise<void> {
       card.classList.add('selected')
       patchSettings({ deviceId: devId, deviceName: name })
       _markAudioDirty()
-      const count = await window.api.listAsioInputChannels(name).catch(() => 0)
+      const count = (await window.api.listAsioInputChannels(name).catch(() => [])).length
       const chan  = count > 0 ? count : 16
       const subEl = card.querySelector('.device-sub') as HTMLElement | null
       if (subEl) subEl.textContent = `ASIO · ${chan} ${t('audio.channelCount', 'kanaler')}`
@@ -310,7 +310,8 @@ export async function renderDeviceList(containerId: string): Promise<void> {
   } else if (devId?.startsWith('asio::')) {
     const name   = devId.slice('asio::'.length)
     const stored = settings.deviceChannels?.[devId]
-    window.api.listAsioInputChannels(name).then(count => {
+    window.api.listAsioInputChannels(name).then(chans => {
+      const count = chans.length
       const chan = count > 0 ? count : 16
       updateChannelSelector(chan, stored?.channelL ?? 0, stored?.channelR ?? 1)
       const selCard = container.querySelector('.device-card.selected') as HTMLElement | null

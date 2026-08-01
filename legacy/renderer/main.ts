@@ -136,8 +136,11 @@ declare global {
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       pickAudioFile:          ()                 => Promise<string | null>
       listAsioDrivers:        ()                 => Promise<string[]>
-      listAsioInputChannels:  (deviceId: string) => Promise<number>
+      listAsioInputChannels:  (deviceId: string) => Promise<{ index: number; label: string }[]>
       listFfmpegAudioDevices: () => Promise<{ name: string; index: number }[]>
+      startVu:                (deviceName: string | null) => Promise<number>
+      stopVu:                 ()                 => Promise<void>
+      listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
       cloudConnect:        (service: string) => Promise<{ ok: boolean; accountName?: string; error?: string }>
       cloudCancelConnect:  (service: string) => Promise<boolean>
       cloudDisconnect:     (service: string) => Promise<void>
