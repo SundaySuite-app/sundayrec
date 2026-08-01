@@ -291,9 +291,22 @@ where
                         route_frame(plan, frame, &mut scratch);
                     }
                     observe_levels(&scratch, plan.len(), meters);
-                    let pushed = prod.push_slice(&scratch);
-                    if pushed < scratch.len() {
-                        overrun.fetch_add((scratch.len() - pushed) as u64, Ordering::Relaxed);
+                    // FRAME-ALIGNED push: on overrun, drop whole frames only.
+                    // A partial frame in the ring would permanently swap the
+                    // L/R interleaving for the rest of the file.
+                    use ringbuf::traits::Observer;
+                    let out_ch = plan.len().max(1);
+                    let want = scratch.len();
+                    let fit = prod.vacant_len();
+                    let take = if fit >= want {
+                        want
+                    } else {
+                        (fit / out_ch) * out_ch
+                    };
+                    let pushed = prod.push_slice(&scratch[..take]);
+                    debug_assert_eq!(pushed, take, "aligned push must fit fully");
+                    if take < want {
+                        overrun.fetch_add((want - take) as u64, Ordering::Relaxed);
                     }
                 }
             }

@@ -25,5 +25,8 @@
 //! - [`stream`] — the consolidated cpal layer (host open, fuzzy device find,
 //!   format negotiation, one typed stream-builder set) shared with the VU
 //!   engine in `audio/vu.rs`.
+//! - [`writer`] — the WAV writer thread (f32→s16, 250 ms flush + in-place
+//!   header patching, byte/frame counters, in-process silence feed).
 
 pub mod stream;
+pub mod writer;
