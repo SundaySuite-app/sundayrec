@@ -134,6 +134,75 @@ impl SilenceWatcher {
     }
 }
 
+/// The detection threshold in dBFS, mirroring
+/// [`crate::ffmpeg::build_silence_detect_filter`] exactly: the user's clamped
+/// value when stop-on-silence is on, else a fixed permissive −55 dB — detection
+/// always runs because the warning path always needs markers.
+pub fn silence_threshold_db(stop_on_silence: bool, silence_threshold_db: Option<i32>) -> f32 {
+    if stop_on_silence {
+        silence_threshold_db.unwrap_or(-50).clamp(-70, -10) as f32
+    } else {
+        -55.0
+    }
+}
+
+/// How long a stretch must stay below threshold before `Start` is emitted —
+/// parity with the ffmpeg filter's `duration=1` (debounces inter-sentence gaps).
+pub const SILENCE_DEBOUNCE_SECS: f64 = 1.0;
+
+/// In-process replacement for ffmpeg's `silencedetect` filter: the native
+/// capture writer feeds it one (block peak, frame count) pair per drained
+/// block, and it emits the same debounced [`SilenceEvent`]s the stderr parser
+/// used to — so the downstream [`SilenceWatcher`] and host timers are
+/// unchanged. Deterministic, no clocks: time is counted in frames.
+#[derive(Debug, Clone)]
+pub struct SilenceDetector {
+    threshold_linear: f32,
+    debounce_frames: u64,
+    silent_frames: u64,
+    /// Has `Start` been emitted for the current silent stretch?
+    in_silence: bool,
+}
+
+impl SilenceDetector {
+    /// `threshold_db` from [`silence_threshold_db`]; `sample_rate` in Hz (the
+    /// session's pinned rate — frames are counted at this rate).
+    pub fn new(threshold_db: f32, sample_rate: u32) -> Self {
+        Self {
+            threshold_linear: 10.0_f32.powf(threshold_db / 20.0),
+            debounce_frames: ((sample_rate.max(1) as f64) * SILENCE_DEBOUNCE_SECS) as u64,
+            silent_frames: 0,
+            in_silence: false,
+        }
+    }
+
+    /// Feed one block: its max |sample| (linear) and its length in frames.
+    /// Returns `Start` once a stretch has stayed silent for the debounce
+    /// window, `End` on the first loud block after a `Start`, else `None`.
+    /// A sub-debounce dip just resets the counter — no event (that's the
+    /// hysteresis `duration=1` provides in ffmpeg).
+    pub fn feed(&mut self, block_peak_linear: f32, frames: u64) -> Option<SilenceEvent> {
+        // A NaN peak counts as silent (defensive: never lets a broken block
+        // suppress a legitimate silence alarm).
+        let silent = !block_peak_linear.is_finite() || block_peak_linear < self.threshold_linear;
+        if silent {
+            self.silent_frames = self.silent_frames.saturating_add(frames);
+            if !self.in_silence && self.silent_frames >= self.debounce_frames {
+                self.in_silence = true;
+                return Some(SilenceEvent::Start);
+            }
+            None
+        } else {
+            self.silent_frames = 0;
+            if self.in_silence {
+                self.in_silence = false;
+                return Some(SilenceEvent::End);
+            }
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,5 +302,92 @@ mod tests {
         // Stop already fired; end only cancels the warn timer.
         let end = w.feed(SilenceEvent::End);
         assert_eq!(end, vec![SilenceAction::CancelWarn]);
+    }
+
+    // ── SilenceDetector (in-process silencedetect parity) ────────────────────
+
+    #[test]
+    fn threshold_rules_mirror_ffmpeg_filter_builder() {
+        // Mirrors the table in ffmpeg.rs: default, clamp both ends, off → −55.
+        assert_eq!(silence_threshold_db(true, None), -50.0);
+        assert_eq!(silence_threshold_db(true, Some(-60)), -60.0);
+        assert_eq!(silence_threshold_db(true, Some(-100)), -70.0);
+        assert_eq!(silence_threshold_db(true, Some(0)), -10.0);
+        assert_eq!(silence_threshold_db(false, Some(-30)), -55.0);
+        assert_eq!(silence_threshold_db(false, None), -55.0);
+    }
+
+    /// 100-frame blocks at rate 1000 → debounce is exactly 10 blocks.
+    fn det() -> SilenceDetector {
+        SilenceDetector::new(-50.0, 1000)
+    }
+    const QUIET: f32 = 0.001; // −60 dBFS, below −50
+    const LOUD: f32 = 0.1; // −20 dBFS, above −50
+
+    #[test]
+    fn start_emitted_exactly_at_debounce_boundary() {
+        let mut d = det();
+        for _ in 0..9 {
+            assert_eq!(d.feed(QUIET, 100), None);
+        }
+        // The 10th silent block completes 1.0 s → Start.
+        assert_eq!(d.feed(QUIET, 100), Some(SilenceEvent::Start));
+        // Continued silence emits nothing further.
+        assert_eq!(d.feed(QUIET, 100), None);
+    }
+
+    #[test]
+    fn sub_debounce_dip_emits_nothing() {
+        let mut d = det();
+        for _ in 0..9 {
+            assert_eq!(d.feed(QUIET, 100), None);
+        }
+        // A loud block before the boundary resets the counter — no event.
+        assert_eq!(d.feed(LOUD, 100), None);
+        for _ in 0..9 {
+            assert_eq!(d.feed(QUIET, 100), None);
+        }
+        assert_eq!(d.feed(QUIET, 100), Some(SilenceEvent::Start));
+    }
+
+    #[test]
+    fn end_on_first_loud_block_after_start() {
+        let mut d = det();
+        for _ in 0..10 {
+            d.feed(QUIET, 100);
+        }
+        assert_eq!(d.feed(LOUD, 100), Some(SilenceEvent::End));
+        // And the next stretch debounces afresh.
+        for _ in 0..9 {
+            assert_eq!(d.feed(QUIET, 100), None);
+        }
+        assert_eq!(d.feed(QUIET, 100), Some(SilenceEvent::Start));
+    }
+
+    #[test]
+    fn exactly_at_threshold_counts_as_loud() {
+        // silencedetect triggers on strictly-below-noise; at-threshold is loud.
+        let mut d = SilenceDetector::new(-20.0, 1000);
+        let at = 10.0_f32.powf(-20.0 / 20.0);
+        for _ in 0..20 {
+            assert_eq!(d.feed(at, 100), None);
+        }
+    }
+
+    #[test]
+    fn nan_peak_counts_as_silent_and_never_panics() {
+        let mut d = det();
+        for _ in 0..10 {
+            d.feed(f32::NAN, 100);
+        }
+        // NaN blocks accumulated as silence → Start already emitted at block 10.
+        assert_eq!(d.feed(LOUD, 100), Some(SilenceEvent::End));
+    }
+
+    #[test]
+    fn zero_sample_rate_is_defensive_not_divide_by_zero() {
+        let mut d = SilenceDetector::new(-50.0, 0);
+        // rate clamps to 1 → debounce 1 frame; first silent block starts.
+        assert_eq!(d.feed(QUIET, 1), Some(SilenceEvent::Start));
     }
 }

@@ -98,6 +98,64 @@ impl PeakMeters {
     }
 }
 
+/// The two atomic meter banks a level display needs: peak (transient) and RMS
+/// (energy). Two separate banks because [`PeakMeters::take`] is destructive —
+/// each bank has exactly ONE consumer (the 33 ms UI sampler); anything else
+/// that needs level data (e.g. the silence detector) is fed from its own pass,
+/// never by reading these banks.
+pub struct MeterBanks {
+    pub peak: PeakMeters,
+    pub rms: PeakMeters,
+}
+
+impl MeterBanks {
+    pub fn new(channels: usize) -> Self {
+        Self {
+            peak: PeakMeters::new(channels),
+            rms: PeakMeters::new(channels),
+        }
+    }
+
+    pub fn channels(&self) -> usize {
+        self.peak.channels()
+    }
+}
+
+/// De-interleave an interleaved f32 block per channel and observe peak + RMS
+/// into the banks. Real-time safe: a bounded, allocation-free pass per block
+/// (one scalar per channel per callback). Shared by every sample-format path
+/// of the cpal layer (VU engine and native capture engine alike).
+pub fn observe_levels(data: &[f32], chans: usize, m: &MeterBanks) {
+    if chans == 0 {
+        return;
+    }
+    for ch in 0..chans {
+        let mut peak = 0.0_f32;
+        let mut sum_sq = 0.0_f64;
+        let mut n = 0u64;
+        let mut i = ch;
+        while i < data.len() {
+            let s = data[i];
+            if s.is_finite() {
+                let a = s.abs();
+                if a > peak {
+                    peak = a;
+                }
+                sum_sq += (s as f64) * (s as f64);
+                n += 1;
+            }
+            i += chans;
+        }
+        m.peak.observe(ch, peak);
+        let r = if n == 0 {
+            0.0
+        } else {
+            (sum_sq / n as f64).sqrt() as f32
+        };
+        m.rms.observe(ch, r);
+    }
+}
+
 /// A single VU snapshot, one entry per channel, in dBFS. This is the payload of
 /// the `vu://levels` Tauri event. `f32::NEG_INFINITY` (silence) is serialised by
 /// serde_json as `null`, which the renderer treats as "-∞ / floor".
@@ -185,6 +243,40 @@ mod tests {
         assert_eq!(m.take(0), 0.0);
         assert_eq!(m.take(5), 0.0);
         assert_eq!(m.channels(), 1);
+    }
+
+    #[test]
+    fn observe_levels_deinterleaves_per_channel() {
+        let m = MeterBanks::new(2);
+        // L = constant 0.5, R = constant −0.25 (interleaved).
+        let block = [0.5, -0.25, 0.5, -0.25, 0.5, -0.25, 0.5, -0.25];
+        observe_levels(&block, 2, &m);
+        assert!((m.peak.take(0) - 0.5).abs() < 1e-6);
+        assert!((m.peak.take(1) - 0.25).abs() < 1e-6);
+        // RMS of a DC block is its magnitude.
+        observe_levels(&block, 2, &m);
+        assert!((m.rms.take(0) - 0.5).abs() < 1e-6);
+        assert!((m.rms.take(1) - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn observe_levels_skips_nan_and_zero_channels() {
+        let m = MeterBanks::new(1);
+        observe_levels(&[0.5, f32::NAN, 0.5], 1, &m);
+        assert!((m.peak.take(0) - 0.5).abs() < 1e-6);
+        // Drain the rms bank too — banks hold max-since-last-take.
+        assert!((m.rms.take(0) - 0.5).abs() < 1e-6);
+        // chans == 0 must be a no-op, not a hang/panic.
+        observe_levels(&[0.5], 0, &m);
+        assert_eq!(m.peak.take(0), 0.0);
+        // All-NaN block reads as silence.
+        observe_levels(&[f32::NAN, f32::NAN], 1, &m);
+        assert_eq!(m.rms.take(0), 0.0);
+    }
+
+    #[test]
+    fn meter_banks_channels_reports_size() {
+        assert_eq!(MeterBanks::new(32).channels(), 32);
     }
 
     #[test]

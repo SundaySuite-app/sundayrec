@@ -90,5 +90,6 @@ pub mod tray;
 pub mod two_process;
 pub mod update;
 pub mod wake;
+pub mod wav;
 pub mod webhook;
 pub mod whisper;
