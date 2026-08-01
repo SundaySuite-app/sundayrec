@@ -24,13 +24,13 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use cpal::traits::{DeviceTrait, StreamTrait};
+use cpal::traits::StreamTrait;
 use sundayrec_core::audio::{MeterBanks, VuLevels};
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, open_host, CpalHostKind, StreamSink,
+    build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
 };
 use crate::util::lock_recover;
 
@@ -60,8 +60,10 @@ impl VuEngine {
     }
 
     /// Start metering the given input device (or the host default when `None`).
-    /// Idempotent in effect: any previous session is stopped first.
-    pub async fn start(&self, app: AppHandle, device_name: Option<String>) -> AppResult<()> {
+    /// Idempotent in effect: any previous session is stopped first. Returns the
+    /// NEGOTIATED channel count — the authoritative width of every `vu://levels`
+    /// payload, which the renderer's channel grid sizes itself from.
+    pub async fn start(&self, app: AppHandle, device_name: Option<String>) -> AppResult<u16> {
         self.stop();
 
         let stop = Arc::new(AtomicBool::new(false));
@@ -75,7 +77,7 @@ impl VuEngine {
         // worker → the whole app beachballs. The async await frees the worker
         // while the cpal thread finishes building. (The worker is a std::thread,
         // so it can send on the oneshot from any thread.)
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<()>>();
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<AppResult<u16>>();
 
         let worker = std::thread::Builder::new()
             .name("sundayrec-vu".into())
@@ -86,9 +88,9 @@ impl VuEngine {
 
         // Wait for the worker to report whether the stream built + started.
         match ready_rx.await {
-            Ok(Ok(())) => {
+            Ok(Ok(channels)) => {
                 *lock_recover(&self.session) = Some(VuSession { stop, worker });
-                Ok(())
+                Ok(channels)
             }
             Ok(Err(e)) => {
                 // Worker already returned; join it so we don't leak the thread.
@@ -120,7 +122,7 @@ fn run_vu_worker(
     app: AppHandle,
     device_name: Option<String>,
     stop: Arc<AtomicBool>,
-    ready_tx: tokio::sync::oneshot::Sender<AppResult<()>>,
+    ready_tx: tokio::sync::oneshot::Sender<AppResult<u16>>,
 ) {
     let built = build_vu_stream(device_name.as_deref());
     let (stream, meters) = match built {
@@ -136,8 +138,8 @@ fn run_vu_worker(
         return;
     }
 
-    // We're live — unblock the caller.
-    let _ = ready_tx.send(Ok(()));
+    // We're live — unblock the caller with the negotiated channel count.
+    let _ = ready_tx.send(Ok(meters.channels() as u16));
 
     let channels = meters.channels();
     while !stop.load(Ordering::Acquire) {
@@ -184,18 +186,24 @@ fn build_vu_stream(device_name: Option<&str>) -> AppResult<(cpal::Stream, Arc<Me
     let host = open_host(CpalHostKind::Default).map_err(AppError::Audio)?;
     let device = find_device(&host, device_name.unwrap_or("")).map_err(AppError::Audio)?;
 
-    let supported = device
-        .default_input_config()
-        .map_err(|e| AppError::Audio(format!("querying default input config: {e}")))?;
-
-    let channels = supported.channels() as usize;
-    let config: cpal::StreamConfig = supported.config();
+    // Negotiate the FULL channel count (the supported-configs range walk), not
+    // `default_input_config()` — a digital mixer's default config commonly
+    // advertises 2 channels while the device exposes all 32. The channel grid
+    // needs a meter per REAL input channel. (Same negotiation the native
+    // capture engine uses; rate request `None` = device native.)
+    let negotiated = negotiate(&device, None).map_err(AppError::Audio)?;
+    let channels = negotiated.channels as usize;
+    let config = cpal::StreamConfig {
+        channels: negotiated.channels,
+        sample_rate: negotiated.sample_rate,
+        buffer_size: cpal::BufferSize::Default,
+    };
 
     let meters = Arc::new(MeterBanks::new(channels));
     let stream = build_input_stream_any(
         &device,
         &config,
-        supported.sample_format(),
+        negotiated.sample_format,
         channels,
         StreamSink::Meters(Arc::clone(&meters)),
         |e| tracing::error!("VU input stream error: {e}"),
@@ -220,5 +228,36 @@ mod tests {
     #[test]
     fn event_name_is_stable() {
         assert_eq!(VU_EVENT, "vu://levels");
+    }
+
+    /// Real-device: the VU stream must open at the NEGOTIATED (max) channel
+    /// count, never fewer than the default config advertises — the channel
+    /// grid depends on it. SELF-SKIPPING on machines without an input device.
+    #[test]
+    fn vu_stream_negotiates_max_channels_or_skips() {
+        use cpal::traits::{DeviceTrait, HostTrait};
+        let Ok(host) = open_host(CpalHostKind::Default) else {
+            eprintln!("SKIP: no default cpal host");
+            return;
+        };
+        let Some(device) = host.default_input_device() else {
+            eprintln!("SKIP: no default input device");
+            return;
+        };
+        let default_ch = device
+            .default_input_config()
+            .map(|c| c.channels() as usize)
+            .unwrap_or(0);
+        match build_vu_stream(None) {
+            Ok((stream, meters)) => {
+                assert!(
+                    meters.channels() >= default_ch.max(1),
+                    "negotiated {} channels < default config's {default_ch}",
+                    meters.channels()
+                );
+                drop(stream);
+            }
+            Err(e) => eprintln!("SKIP: VU stream could not build here: {e}"),
+        }
     }
 }
