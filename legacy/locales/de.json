@@ -403,6 +403,8 @@
     "errPastDate": "Das Datum liegt bereits in der Vergangenheit — die Aufnahme wird nicht starten"
   },
   "audio": {
+    "classicFfmpeg": "Klassische Aufnahme-Engine (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec nimmt Audio normalerweise mit der neuen integrierten Engine auf, die den Ton direkt vom Audiogerät liest und die Datei selbst schreibt. Nur einschalten, wenn Aufnahmen auf diesem Rechner fehlschlagen — dann wird der alte ffmpeg-Weg verwendet.",
     "title": "Audioquelle",
     "subtitle": "Wählen Sie das USB-Mischpult, von dem aufgenommen werden soll",
     "available": "Verfügbare Geräte",

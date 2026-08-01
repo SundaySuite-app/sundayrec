@@ -50,12 +50,18 @@ export function setupAudioPage(): void {
   // Show the actual rate «Automatisk» resolves to (the hardware's native rate).
   void showAutoSampleRate()
 
-  // Windows-only "classic DirectShow" escape hatch: reveal the card on Windows and
-  // persist the toggle. On macOS the card stays hidden (no DirectShow there).
-  if (/win/i.test(navigator.userAgent)) {
+  // Advanced audio-engine escape hatches. The ffmpeg hatch (native capture →
+  // legacy ffmpeg) applies on every platform; the DirectShow row is the older
+  // Windows-only hatch and stays hidden on macOS (no DirectShow there).
+  {
     const card = document.getElementById('classic-audio-card')
     if (card) card.style.display = ''
-    document.getElementById('opt-classic-dshow')?.addEventListener('change', autoSave)
+    document.getElementById('opt-classic-ffmpeg')?.addEventListener('change', autoSave)
+    if (/win/i.test(navigator.userAgent)) {
+      const row = document.getElementById('classic-dshow-row')
+      if (row) row.style.display = ''
+      document.getElementById('opt-classic-dshow')?.addEventListener('change', autoSave)
+    }
   }
   // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
   // (record-raw philosophy — see saveAudioSettings); no listeners needed.
@@ -121,6 +127,8 @@ export function applyAudioSettingsToUI(): void {
   updateVolGradient()
   const classicEl = document.getElementById('opt-classic-dshow') as HTMLInputElement | null
   if (classicEl) classicEl.checked = !!settings.classicDirectshow
+  const classicFfEl = document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null
+  if (classicFfEl) classicFfEl.checked = !!settings.classicFfmpegAudio
   const compEl = document.getElementById('opt-compressor') as HTMLInputElement | null
   if (compEl) {
     compEl.checked = !!settings.compEnabled
@@ -159,6 +167,7 @@ async function saveAudioSettings(): Promise<void> {
   const srMode = ((document.querySelector('input[name="sampleRate"]:checked') as HTMLInputElement | null)
     ?.value ?? 'auto') as 'auto' | 'r44100' | 'r48000'
   const classicDirectshow = !!(document.getElementById('opt-classic-dshow') as HTMLInputElement | null)?.checked
+  const classicFfmpegAudio = !!(document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null)?.checked
 
   // NB: the compressor/limiter/EQ/input-volume fields are NOT saved here. They are
   // hidden, inert inputs (record-raw philosophy since v4.31 — dynamics/EQ live in
@@ -171,6 +180,7 @@ async function saveAudioSettings(): Promise<void> {
     channels:       ((document.querySelector('input[name="channels"]:checked') as HTMLInputElement | null)?.value ?? 'stereo') as ChannelMode,
     sampleRateMode: srMode,
     classicDirectshow,
+    classicFfmpegAudio,
     // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
     // estimate). Auto → 48 kHz as a reasonable estimate; the recorder itself uses
     // sampleRateMode (auto = native, no -ar).

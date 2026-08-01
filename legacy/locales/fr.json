@@ -403,6 +403,8 @@
     "errPastDate": "La date est déjà passée — l’enregistrement ne démarrera pas"
   },
   "audio": {
+    "classicFfmpeg": "Moteur d'enregistrement classique (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec enregistre normalement l'audio avec le nouveau moteur intégré, qui lit le son directement depuis la carte son et écrit lui-même le fichier. N'activez ceci que si l'enregistrement échoue sur cette machine — l'ancienne voie ffmpeg sera alors utilisée.",
     "title": "Source audio",
     "subtitle": "Choisissez la table de mixage USB à utiliser pour l’enregistrement",
     "available": "Périphériques disponibles",

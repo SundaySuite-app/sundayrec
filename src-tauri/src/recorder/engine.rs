@@ -102,6 +102,7 @@ use crate::audio::device_enum::{
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
+use crate::recorder::native_capture::stream::CpalHostKind;
 use crate::recorder::preroll::PrerollClip;
 use crate::util::lock_recover;
 
@@ -215,6 +216,10 @@ pub struct RecordingOpts {
     /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
     #[serde(default)]
     pub classic_directshow: bool,
+    /// Escape hatch: force the legacy ffmpeg audio capture (avfoundation) instead
+    /// of the native cpal engine. Default `false`. See `Settings::classic_ffmpeg_audio`.
+    #[serde(default)]
+    pub classic_ffmpeg_audio: bool,
     /// The camera INPUT mode the recorder probed at start (a size + framerate the
     /// device actually advertises). NOT sent by the frontend — it's resolved
     /// server-side so avfoundation doesn't reject an unsupported size/rate. `None`
@@ -711,17 +716,27 @@ impl RecorderEngine {
                 opts.audio_device_name
             ))
         })?;
-        // Record which engine this session actually uses (diagnose tool): the
-        // dshow path on Windows (forced-classic or cpal-fallback), avfoundation on
-        // macOS. `cpal_fallback_reason` is set only when we came from a cpal failure.
-        self.set_audio_engine(
-            if cfg!(windows) {
-                "directshow"
-            } else {
-                "avfoundation"
-            },
-            cpal_fallback_reason,
+        // Route the session's capture backend: audio-only on macOS → the native
+        // cpal engine (unless the `classic_ffmpeg_audio` escape hatch forces the
+        // legacy path); everything else → ffmpeg. Record the engine label for
+        // the diagnose tool (a native start failure later overwrites this with
+        // the fallback engine + reason inside `run_session`).
+        let backend = select_capture_backend(
+            cfg!(target_os = "macos"),
+            video.is_none(),
+            opts.classic_ffmpeg_audio,
         );
+        let engine_label = match backend {
+            CaptureBackend::NativeAudio { host } => host.label(),
+            CaptureBackend::Ffmpeg => {
+                if cfg!(windows) {
+                    "directshow"
+                } else {
+                    "avfoundation"
+                }
+            }
+        };
+        self.set_audio_engine(engine_label, cpal_fallback_reason);
 
         let (stop_tx, stop_rx) = tokio::sync::mpsc::channel::<()>(1);
         // The "ready" handshake MUST be async: the command awaits it on a Tauri
@@ -736,12 +751,14 @@ impl RecorderEngine {
         let last_state = Arc::clone(&self.last_state);
         let scheduled_stop = Arc::clone(&self.scheduled_stop);
         let last_telemetry = Arc::clone(&self.last_telemetry);
+        let audio_engine = Arc::clone(&self.audio_engine);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
                 sup_app,
                 pool,
                 opts,
                 platform,
+                backend,
                 audio,
                 video,
                 preroll_clip,
@@ -750,6 +767,7 @@ impl RecorderEngine {
                 last_state,
                 scheduled_stop,
                 last_telemetry,
+                audio_engine,
             )
             .await;
         });
@@ -842,9 +860,9 @@ fn extended_stop_ms(current: Option<u64>, now: u64, minutes: u32) -> u64 {
 /// clamp domain and keeps every derived `Duration` well inside `Instant` range.
 const MAX_AUTOSTOP_MINUTES: u32 = 1440;
 
-/// Why the current segment's ffmpeg stopped — drives what the supervisor does
-/// next.
-enum SegmentOutcome {
+/// Why the current segment's capture stopped — drives what the supervisor does
+/// next. Shared by the ffmpeg `run_segment` and the native `run_native_segment`.
+pub(crate) enum SegmentOutcome {
     /// Graceful stop requested by the user → finalise + end the session.
     GracefulStop,
     /// Split timer fired → finalise this segment, start a fresh one.
@@ -854,13 +872,75 @@ enum SegmentOutcome {
     /// Stop-on-silence fired → finalise + end the session.
     SilenceStop,
     /// Free disk space fell below the headroom → graceful stop + end the session
-    /// BEFORE ffmpeg hits ENOSPC and corrupts the container.
+    /// BEFORE the capture hits ENOSPC and corrupts the container.
     DiskStop,
-    /// ffmpeg died unexpectedly → consult the recovery policy. Carries the last
-    /// classified error (for the fatal-error short-circuit).
+    /// The capture died unexpectedly → consult the recovery policy. Carries the
+    /// last classified error (for the fatal-error short-circuit).
     UnexpectedExit {
         last_error: Option<RecordingErrorCode>,
     },
+}
+
+/// Which capture engine records the audio for this session.
+///
+/// `NativeAudio` = the cpal engine that writes the capture WAV directly
+/// (`recorder::native_capture`) — the standard path for audio-only sessions
+/// after the 2026-08-01 rebuild (avfoundation measurably drops samples below
+/// ffmpeg's observability). `Ffmpeg` = the legacy unified ffmpeg capture —
+/// still used for every video session and behind the `classic_ffmpeg_audio`
+/// escape hatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CaptureBackend {
+    Ffmpeg,
+    NativeAudio { host: CpalHostKind },
+}
+
+/// Pure routing decision for the session's capture backend. Video sessions and
+/// the escape hatch keep the ffmpeg path byte-for-byte; audio-only sessions on
+/// macOS route to the native engine. (Windows audio-only keeps its existing
+/// cpal-pipe/dshow logic until the Windows routing phase flips it too.)
+pub(crate) fn select_capture_backend(
+    is_macos: bool,
+    audio_only: bool,
+    classic_ffmpeg_audio: bool,
+) -> CaptureBackend {
+    if is_macos && audio_only && !classic_ffmpeg_audio {
+        CaptureBackend::NativeAudio {
+            host: CpalHostKind::Default,
+        }
+    } else {
+        CaptureBackend::Ffmpeg
+    }
+}
+
+/// One spawned capture attempt — the ffmpeg child or the native stack.
+pub(crate) enum CaptureChild {
+    Ffmpeg(tokio::process::Child),
+    Native(Box<crate::recorder::native_capture::segment::NativeSegment>),
+}
+
+/// Spawn a capture for `backend` writing to `output_path`. The ffmpeg arm
+/// builds the argv from the resolved devices; the native arm resolves the
+/// device itself (fuzzy, by NAME — so every spawn re-resolves, covering the
+/// index-reshuffle class of bug for free).
+async fn spawn_capture(
+    backend: CaptureBackend,
+    platform: Platform,
+    audio: &FfmpegDevice,
+    video: Option<&FfmpegDevice>,
+    opts: &RecordingOpts,
+    output_path: &str,
+) -> AppResult<CaptureChild> {
+    match backend {
+        CaptureBackend::Ffmpeg => {
+            let args = build_record_args(platform, audio, video, opts, output_path);
+            Ok(CaptureChild::Ffmpeg(spawn_ffmpeg_owned(&args).await?))
+        }
+        CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
+            crate::recorder::native_capture::segment::spawn_native_segment(host, opts, output_path)
+                .await?,
+        ))),
+    }
 }
 
 /// The supervisor: owns the [`RecordingSession`] + [`RecorderState`] and runs
@@ -874,6 +954,7 @@ async fn run_session(
     pool: Option<SqlitePool>,
     opts: RecordingOpts,
     platform: Platform,
+    backend: CaptureBackend,
     mut audio: FfmpegDevice,
     video: Option<FfmpegDevice>,
     preroll_clip: Option<PrerollClip>,
@@ -882,7 +963,11 @@ async fn run_session(
     last_state: Arc<Mutex<RecorderState>>,
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
+    audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
 ) {
+    // The backend can demote itself once: native start failure → ffmpeg (the
+    // automatic escape hatch — a recording must start even if cpal can't).
+    let mut backend = backend;
     let start_ms = now_ms();
     // Session-wide health counters, fed per-line by each segment's stderr reader
     // (drops/xruns/IPC-starvation) and persisted at session end via `emit_state`.
@@ -981,18 +1066,61 @@ async fn run_session(
         }
         emit_state(RecorderState::Preparing, 0);
 
-        // Spawn the FIRST segment. A launch failure here is reported to the caller.
-        let first_args = build_record_args(
+        // Spawn the FIRST segment. A native-engine failure falls back to the
+        // ffmpeg capture automatically (recorded for the diagnose tool, never a
+        // fatal start); only a failure of the FALLBACK reaches the caller.
+        let mut child = match spawn_capture(
+            backend,
             platform,
             &audio,
             video.as_ref(),
             &opts,
             session.primary_path(),
-        );
-        let mut child = match spawn_ffmpeg_owned(&first_args).await {
+        )
+        .await
+        {
             Ok(c) => {
                 let _ = ready.send(Ok(()));
                 c
+            }
+            Err(native_err) if matches!(backend, CaptureBackend::NativeAudio { .. }) => {
+                tracing::warn!(
+                    "recorder: native capture start failed ({native_err}); falling back to ffmpeg"
+                );
+                *lock_recover(&audio_engine) = (
+                    Some(
+                        if cfg!(windows) {
+                            "directshow"
+                        } else {
+                            "avfoundation"
+                        }
+                        .to_string(),
+                    ),
+                    Some(native_err.to_string()),
+                );
+                backend = CaptureBackend::Ffmpeg;
+                match spawn_capture(
+                    backend,
+                    platform,
+                    &audio,
+                    video.as_ref(),
+                    &opts,
+                    session.primary_path(),
+                )
+                .await
+                {
+                    Ok(c) => {
+                        let _ = ready.send(Ok(()));
+                        c
+                    }
+                    Err(e) => {
+                        let _ = ready.send(Err(e));
+                        emit_state(RecorderState::Failed, 0);
+                        // The capture dir was just created and never written to — empty.
+                        let _ = tokio::fs::remove_dir(&cap_dir).await;
+                        break 'run;
+                    }
+                }
             }
             Err(e) => {
                 let _ = ready.send(Err(e));
@@ -1028,18 +1156,35 @@ async fn run_session(
             // (after concat), so we no longer accumulate a session-wide byte total;
             // `segment_bytes` still drives this segment's live progress + watchdog.
             let segment_bytes = Arc::new(AtomicU64::new(0));
-            let outcome = run_segment(
-                &app,
-                child,
-                &opts,
-                &session,
-                Arc::clone(&segment_bytes),
-                &mut stop_rx,
-                &last_state,
-                &mut stop_watch,
-                Arc::clone(&telemetry),
-            )
-            .await;
+            let outcome = match child {
+                CaptureChild::Ffmpeg(c) => {
+                    run_segment(
+                        &app,
+                        c,
+                        &opts,
+                        &session,
+                        Arc::clone(&segment_bytes),
+                        &mut stop_rx,
+                        &last_state,
+                        &mut stop_watch,
+                        Arc::clone(&telemetry),
+                    )
+                    .await
+                }
+                CaptureChild::Native(seg) => {
+                    crate::recorder::native_capture::segment::run_native_segment(
+                        &app,
+                        *seg,
+                        &opts,
+                        &session,
+                        Arc::clone(&segment_bytes),
+                        &mut stop_rx,
+                        &last_state,
+                        &mut stop_watch,
+                    )
+                    .await
+                }
+            };
 
             match outcome {
                 SegmentOutcome::GracefulStop
@@ -1067,9 +1212,10 @@ async fn run_session(
                     .await;
 
                     let next = session.begin_split_segment(close_ms);
-                    let args = build_record_args(platform, &audio, video.as_ref(), &opts, &next);
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
-                    match spawn_ffmpeg_owned(&args).await {
+                    match spawn_capture(backend, platform, &audio, video.as_ref(), &opts, &next)
+                        .await
+                    {
                         Ok(c) => child = c,
                         Err(e) => {
                             tracing::error!("recorder: split respawn failed: {e}");
@@ -1226,38 +1372,44 @@ async fn run_session(
                                 }
 
                                 // Re-resolve the device by NAME before every
-                                // respawn: avfoundation indices reshuffle when
-                                // virtual/Continuity devices (Teams, iPhone)
+                                // ffmpeg respawn: avfoundation indices reshuffle
+                                // when virtual/Continuity devices (Teams, iPhone)
                                 // come and go, and a stale index opens the
                                 // WRONG device — rig-observed as a 20 s
-                                // zero-byte recording (2026-07-31).
-                                if let Ok(inv) =
-                                    crate::audio::device_enum::enumerate_ffmpeg_devices().await
-                                {
-                                    if let Some(fresh) =
-                                        sundayrec_core::device_match::find_best_device_match(
-                                            &inv.audio_inputs,
-                                            &opts.audio_device_name,
-                                        )
+                                // zero-byte recording (2026-07-31). The native
+                                // backend re-resolves by name inside its own
+                                // spawn, so this ffmpeg enumeration is skipped.
+                                if backend == CaptureBackend::Ffmpeg {
+                                    if let Ok(inv) =
+                                        crate::audio::device_enum::enumerate_ffmpeg_devices().await
                                     {
-                                        if fresh.index != audio.index {
-                                            tracing::warn!(
-                                                old = ?audio.index,
-                                                new = ?fresh.index,
-                                                "recorder: device index moved — re-resolved before respawn"
-                                            );
+                                        if let Some(fresh) =
+                                            sundayrec_core::device_match::find_best_device_match(
+                                                &inv.audio_inputs,
+                                                &opts.audio_device_name,
+                                            )
+                                        {
+                                            if fresh.index != audio.index {
+                                                tracing::warn!(
+                                                    old = ?audio.index,
+                                                    new = ?fresh.index,
+                                                    "recorder: device index moved — re-resolved before respawn"
+                                                );
+                                            }
+                                            audio = fresh.clone();
                                         }
-                                        audio = fresh.clone();
                                     }
                                 }
-                                let args = build_record_args(
+                                match spawn_capture(
+                                    backend,
                                     platform,
                                     &audio,
                                     video.as_ref(),
                                     &opts,
                                     &next_segment,
-                                );
-                                match spawn_ffmpeg_owned(&args).await {
+                                )
+                                .await
+                                {
                                     Ok(c) => {
                                         child = c;
                                         let _ = app.emit(
@@ -2050,7 +2202,7 @@ pub(crate) fn sleep_opt(d: Option<Duration>) -> tokio::time::Sleep {
 /// Await an optional pinned sleep; when `None`, never resolves. The `select!`
 /// arm guards on `is_some()` so the `None` branch is never actually polled to
 /// completion.
-async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>) {
+pub(crate) async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep>>>) {
     match s {
         Some(sleep) => sleep.as_mut().await,
         None => std::future::pending::<()>().await,
@@ -2083,7 +2235,7 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
 
 /// Emit a classified TERMINAL error to the renderer (the UI tears the recording
 /// overlay down on this event — see [`ERROR_EVENT`]).
-fn emit_error(app: &AppHandle, code: &str, message: &str) {
+pub(crate) fn emit_error(app: &AppHandle, code: &str, message: &str) {
     let _ = app.emit(
         ERROR_EVENT,
         RecordingEvent {
@@ -2100,7 +2252,7 @@ fn emit_error(app: &AppHandle, code: &str, message: &str) {
 /// Emit a classified NON-terminal error (the session continues — the reconnect
 /// policy will retry). Still mirrored to `last-error.json` so the diagnostics
 /// surface sees transient hiccups too.
-fn emit_warning(app: &AppHandle, code: &str, message: &str) {
+pub(crate) fn emit_warning(app: &AppHandle, code: &str, message: &str) {
     let _ = app.emit(
         WARNING_EVENT,
         RecordingEvent {
@@ -2592,6 +2744,30 @@ fn error_code_str(code: RecordingErrorCode) -> &'static str {
 mod tests {
     use super::*;
 
+    #[test]
+    fn backend_routing_matrix() {
+        // macOS audio-only → native engine; everything else keeps ffmpeg.
+        assert!(matches!(
+            select_capture_backend(true, true, false),
+            CaptureBackend::NativeAudio { .. }
+        ));
+        // The escape hatch forces the legacy ffmpeg path.
+        assert_eq!(
+            select_capture_backend(true, true, true),
+            CaptureBackend::Ffmpeg
+        );
+        // Video sessions stay on ffmpeg (owner decision: audio first).
+        assert_eq!(
+            select_capture_backend(true, false, false),
+            CaptureBackend::Ffmpeg
+        );
+        // Windows keeps its existing routing until the Windows phase flips it.
+        assert_eq!(
+            select_capture_backend(false, true, false),
+            CaptureBackend::Ffmpeg
+        );
+    }
+
     fn opts() -> RecordingOpts {
         RecordingOpts {
             audio_device_name: "Soundcraft USB Audio".into(),
@@ -2615,6 +2791,7 @@ mod tests {
             video_codec: "h264".into(),
             video_encoder: "software".into(),
             classic_directshow: false,
+            classic_ffmpeg_audio: false,
             video_input: None,
         }
     }
@@ -3138,6 +3315,7 @@ mod tests {
             video_codec: "h264".into(),
             video_encoder: "software".into(),
             classic_directshow: false,
+            classic_ffmpeg_audio: false,
             video_input: None,
         };
         let json = serde_json::to_string(&o).unwrap();

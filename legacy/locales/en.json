@@ -403,6 +403,8 @@
     "errPastDate": "The date is already in the past — the recording won't start"
   },
   "audio": {
+    "classicFfmpeg": "Classic recording engine (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec normally records audio with the new built-in engine, which reads audio straight from the sound device and writes the file itself. Turn this on only if recording fails on this machine — the old ffmpeg path is used instead.",
     "title": "Audio Source",
     "subtitle": "Choose the USB mixer to record from",
     "available": "Available devices",

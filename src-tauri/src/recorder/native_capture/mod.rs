@@ -27,6 +27,9 @@
 //!   engine in `audio/vu.rs`.
 //! - [`writer`] — the WAV writer thread (f32→s16, 250 ms flush + in-place
 //!   header patching, byte/frame counters, in-process silence feed).
+//! - [`segment`] — the segment runner: one capture-fragment life, mirroring
+//!   `engine::run_segment`'s select! arms with native stop semantics.
 
+pub mod segment;
 pub mod stream;
 pub mod writer;
