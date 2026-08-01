@@ -78,7 +78,9 @@
     "cloudLabel": "SKY-BACKUP",
     "thumbLabel": "EPISODEBILDE",
     "whisperLabel": "TRANSKRIPSJON",
-    "seeAll": "Se alle →"
+    "seeAll": "Se alle →",
+    "sourceChannels": "Kanal {l}/{r}",
+    "sourceChannelMono": "Kanal {n}"
   },
   "update": {
     "available": "Ny versjon {v} er tilgjengelig — laster ned…",

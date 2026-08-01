@@ -78,7 +78,9 @@
     "cloudLabel": "MOLN-BACKUP",
     "thumbLabel": "AVSNITTSBILD",
     "whisperLabel": "TRANSKRIBERING",
-    "seeAll": "Visa alla →"
+    "seeAll": "Visa alla →",
+    "sourceChannels": "Kanal {l}/{r}",
+    "sourceChannelMono": "Kanal {n}"
   },
   "update": {
     "available": "Ny version {v} tillgänglig — laddar ner…",

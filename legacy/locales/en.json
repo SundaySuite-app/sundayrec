@@ -78,7 +78,9 @@
     "cloudLabel": "CLOUD BACKUP",
     "thumbLabel": "EPISODE ARTWORK",
     "whisperLabel": "TRANSCRIPTION",
-    "seeAll": "See all →"
+    "seeAll": "See all →",
+    "sourceChannels": "Channel {l}/{r}",
+    "sourceChannelMono": "Channel {n}"
   },
   "update": {
     "available": "New version {v} available — downloading…",

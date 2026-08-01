@@ -4594,3 +4594,8 @@ body.recording-active .status-dot.recording {
 .ch-grid-saved { color: var(--green, #22c55e); opacity: 0; transition: opacity .2s; font-weight: 600; }
 .ch-grid-saved.show { opacity: 1; }
 .ch-grid-fallback { display: flex; }
+
+/* The LYDKILDE info card is tappable (jumps to the channel grid). */
+.info-card-tappable { cursor: pointer; }
+.info-card-tappable:hover { border-color: var(--accent-border); }
+.info-card-sub .signal-dot { margin-right: 5px; }

@@ -820,10 +820,19 @@ export function setupHome(): void {
 
   document.getElementById('btn-go-audio-page')?.addEventListener('click', e => {
     e.preventDefault()
+    e.stopPropagation()
     window.showPage('settings')
     document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
     requestAnimationFrame(() =>
       highlightCard(document.querySelector('#settings-audio .card')))
+  })
+  // Tapping the LYDKILDE card itself lands on the CHANNEL GRID — the «is the
+  // right channel feeding the recording?» check, one tap from Home.
+  document.getElementById('home-audio-card')?.addEventListener('click', () => {
+    window.showPage('settings')
+    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
+    requestAnimationFrame(() =>
+      highlightCard(document.getElementById('channel-grid-card')))
   })
   document.getElementById('btn-go-audio-fmt')?.addEventListener('click', e => {
     e.preventDefault()
@@ -1261,11 +1270,28 @@ export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
   const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
   const nameEl   = document.getElementById('home-device-name')
-  const statusEl = document.getElementById('home-device-status')
+  const statusEl = document.getElementById('home-device-status-text')
+    ?? document.getElementById('home-device-status')
   if (nameEl)   nameEl.textContent   = device?.label ?? t('audio.builtIn', 'Standardenhet')
   if (statusEl) {
     const connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
-    statusEl.textContent = t(connected ? 'home.deviceConnected' : 'home.deviceMissing')
+    // Know-before-you-record: show WHICH channels feed the recording (the
+    // channel grid's stored mapping) so a wrong source is visible from Home.
+    const stored = settings.deviceId ? settings.deviceChannels?.[settings.deviceId] : null
+    const mode = settings.channels ?? 'stereo'
+    let chLine = ''
+    if (stored) {
+      chLine = mode === 'monoL'
+        ? t('home.sourceChannelMono', 'Kanal {n}').replace('{n}', String((stored.channelL ?? 0) + 1))
+        : mode === 'monoR'
+          ? t('home.sourceChannelMono', 'Kanal {n}').replace('{n}', String((stored.channelR ?? 1) + 1))
+          : t('home.sourceChannels', 'Kanal {l}/{r}')
+              .replace('{l}', String((stored.channelL ?? 0) + 1))
+              .replace('{r}', String((stored.channelR ?? 1) + 1))
+      const modeLabel = mode === 'stereo' ? t('audio.stereo', 'Stereo') : 'Mono'
+      chLine = `${chLine} · ${modeLabel} — `
+    }
+    statusEl.textContent = chLine + t(connected ? 'home.deviceConnected' : 'home.deviceMissing')
     statusEl.style.color = connected ? 'var(--green)' : 'var(--red)'
   }
 

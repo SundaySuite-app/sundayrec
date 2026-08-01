@@ -78,7 +78,9 @@
     "cloudLabel": "KOPIA W CHMURZE",
     "thumbLabel": "OKŁADKA ODCINKA",
     "whisperLabel": "TRANSKRYPCJA",
-    "seeAll": "Zobacz wszystkie →"
+    "seeAll": "Zobacz wszystkie →",
+    "sourceChannels": "Kanał {l}/{r}",
+    "sourceChannelMono": "Kanał {n}"
   },
   "update": {
     "available": "Dostępna nowa wersja {v} — pobieranie…",

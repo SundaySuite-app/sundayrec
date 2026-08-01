@@ -85,9 +85,11 @@ function tryStartVU(): void {
 
 function resetSignalStatus(): void {
   const dot  = document.getElementById('signal-dot')
+  const homeDot = document.getElementById('home-device-signal')
   const text = document.getElementById('signal-text')
   const peak = document.getElementById('signal-peak')
   if (dot)  dot.className = 'signal-dot'
+  if (homeDot) homeDot.className = 'signal-dot'
   if (text) { text.className = 'signal-text'; text.textContent = '—' }
   if (peak) peak.textContent = ''
 }
@@ -95,6 +97,7 @@ function resetSignalStatus(): void {
 function updateSignalStatus(dbL: number, dbR: number, state: VuState): void {
   const db   = Math.max(dbL, dbR)
   const dot  = document.getElementById('signal-dot')
+  const homeDot = document.getElementById('home-device-signal')
   const text = document.getElementById('signal-text')
   const peak = document.getElementById('signal-peak')
   if (!dot || !text) return
@@ -105,6 +108,7 @@ function updateSignalStatus(dbL: number, dbR: number, state: VuState): void {
   else if (db >= -40) { cls = 'god';      label = t('home.signalGood',     'Bra')      }
   else if (db > -55)  { cls = 'svak';     label = t('home.signalWeak',     'Svakt')    }
   dot.className  = 'signal-dot'  + (cls ? ' ' + cls : '')
+  if (homeDot) homeDot.className = 'signal-dot' + (cls ? ' ' + cls : '')
   text.className = 'signal-text' + (cls ? ' ' + cls : '')
   text.textContent = label
 

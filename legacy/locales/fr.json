@@ -78,7 +78,9 @@
     "cloudLabel": "SAUVEGARDE CLOUD",
     "thumbLabel": "IMAGE D'ÉPISODE",
     "whisperLabel": "TRANSCRIPTION",
-    "seeAll": "Voir tout →"
+    "seeAll": "Voir tout →",
+    "sourceChannels": "Canal {l}/{r}",
+    "sourceChannelMono": "Canal {n}"
   },
   "update": {
     "available": "Nouvelle version {v} disponible — téléchargement en cours…",
