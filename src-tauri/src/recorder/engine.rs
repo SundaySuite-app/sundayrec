@@ -930,6 +930,7 @@ async fn spawn_capture(
     video: Option<&FfmpegDevice>,
     opts: &RecordingOpts,
     output_path: &str,
+    pinned_rate: Option<u32>,
 ) -> AppResult<CaptureChild> {
     match backend {
         CaptureBackend::Ffmpeg => {
@@ -937,8 +938,13 @@ async fn spawn_capture(
             Ok(CaptureChild::Ffmpeg(spawn_ffmpeg_owned(&args).await?))
         }
         CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
-            crate::recorder::native_capture::segment::spawn_native_segment(host, opts, output_path)
-                .await?,
+            crate::recorder::native_capture::segment::spawn_native_segment(
+                host,
+                opts,
+                output_path,
+                pinned_rate,
+            )
+            .await?,
         ))),
     }
 }
@@ -1069,6 +1075,12 @@ async fn run_session(
         // Spawn the FIRST segment. A native-engine failure falls back to the
         // ffmpeg capture automatically (recorded for the diagnose tool, never a
         // fatal start); only a failure of the FALLBACK reaches the caller.
+        // The current deliverable's pinned capture rate (native backend): every
+        // fragment of one deliverable must share it for the -c copy concat.
+        let mut pinned_rate: Option<u32> = None;
+        // Bytes already captured into the current deliverable's PREVIOUS
+        // fragments (reconnects) — feeds the native RIFF-cap forced split.
+        let mut deliverable_bytes: u64 = 0;
         let mut child = match spawn_capture(
             backend,
             platform,
@@ -1076,6 +1088,7 @@ async fn run_session(
             video.as_ref(),
             &opts,
             session.primary_path(),
+            None,
         )
         .await
         {
@@ -1106,6 +1119,7 @@ async fn run_session(
                     video.as_ref(),
                     &opts,
                     session.primary_path(),
+                    None,
                 )
                 .await
                 {
@@ -1131,6 +1145,9 @@ async fn run_session(
             }
         };
 
+        if let CaptureChild::Native(seg) = &child {
+            pinned_rate = Some(seg.spec.sample_rate);
+        }
         emit_state(RecorderState::Recording, 0);
 
         'session: loop {
@@ -1178,6 +1195,7 @@ async fn run_session(
                         &opts,
                         &session,
                         Arc::clone(&segment_bytes),
+                        deliverable_bytes,
                         &mut stop_rx,
                         &last_state,
                         &mut stop_watch,
@@ -1213,10 +1231,24 @@ async fn run_session(
 
                     let next = session.begin_split_segment(close_ms);
                     tracing::info!(segment = %next, "recorder: split — starting new segment");
-                    match spawn_capture(backend, platform, &audio, video.as_ref(), &opts, &next)
-                        .await
+                    match spawn_capture(
+                        backend,
+                        platform,
+                        &audio,
+                        video.as_ref(),
+                        &opts,
+                        &next,
+                        None, // new deliverable — free to renegotiate the rate
+                    )
+                    .await
                     {
-                        Ok(c) => child = c,
+                        Ok(c) => {
+                            deliverable_bytes = 0;
+                            if let CaptureChild::Native(seg) = &c {
+                                pinned_rate = Some(seg.spec.sample_rate);
+                            }
+                            child = c;
+                        }
                         Err(e) => {
                             tracing::error!("recorder: split respawn failed: {e}");
                             emit_error(&app, "device_error", &e.to_string());
@@ -1239,6 +1271,10 @@ async fn run_session(
                     }
                 }
                 SegmentOutcome::UnexpectedExit { last_error } => {
+                    // The dead fragment stays part of the CURRENT deliverable —
+                    // its bytes count toward the native RIFF-cap forced split.
+                    deliverable_bytes =
+                        deliverable_bytes.saturating_add(segment_bytes.load(Ordering::Relaxed));
                     // F3.3b auto-fallback: a video session whose FIRST capture died
                     // at startup without producing output usually means the camera +
                     // mic can't share one ffmpeg process. Rather than burn the
@@ -1407,10 +1443,78 @@ async fn run_session(
                                     video.as_ref(),
                                     &opts,
                                     &next_segment,
+                                    pinned_rate, // an _rN fragment must match its siblings
                                 )
                                 .await
                                 {
-                                    Ok(c) => {
+                                    Ok(mut c) => {
+                                        // Native: the device may have come back at a
+                                        // DIFFERENT rate than the deliverable's pinned
+                                        // one — a -c copy _rN join would then corrupt.
+                                        // Close the deliverable and continue in a NEW
+                                        // one (the split machinery) instead.
+                                        if let CaptureChild::Native(seg) = &mut c {
+                                            if pinned_rate
+                                                .is_some_and(|pin| seg.spec.sample_rate != pin)
+                                            {
+                                                tracing::warn!(
+                                                    pinned = ?pinned_rate,
+                                                    got = seg.spec.sample_rate,
+                                                    "recorder: device rate changed across reconnect — starting a new deliverable"
+                                                );
+                                                crate::recorder::native_capture::segment::abort_native_segment(
+                                                    seg,
+                                                    &next_segment,
+                                                )
+                                                .await;
+                                                finalize_pending(
+                                                    &app,
+                                                    &pool,
+                                                    &session,
+                                                    &mut finalized,
+                                                    now_ms(),
+                                                    &preroll_clip,
+                                                    &audio,
+                                                    &opts,
+                                                    &telemetry,
+                                                    &delivered_bytes,
+                                                )
+                                                .await;
+                                                let split_path =
+                                                    session.begin_split_segment(now_ms());
+                                                match spawn_capture(
+                                                    backend,
+                                                    platform,
+                                                    &audio,
+                                                    video.as_ref(),
+                                                    &opts,
+                                                    &split_path,
+                                                    None,
+                                                )
+                                                .await
+                                                {
+                                                    Ok(c2) => {
+                                                        deliverable_bytes = 0;
+                                                        c = c2;
+                                                    }
+                                                    Err(e) => {
+                                                        emit_error(
+                                                            &app,
+                                                            "device_error",
+                                                            &e.to_string(),
+                                                        );
+                                                        emit_state(
+                                                            RecorderState::Failed,
+                                                            session.reconnect_count(),
+                                                        );
+                                                        break 'run;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if let CaptureChild::Native(seg) = &c {
+                                            pinned_rate = Some(seg.spec.sample_rate);
+                                        }
                                         child = c;
                                         let _ = app.emit(
                                             RECONNECTED_EVENT,

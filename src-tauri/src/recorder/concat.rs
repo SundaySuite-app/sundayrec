@@ -131,6 +131,22 @@ pub(crate) async fn finalize_deliverable(
         }
         None => None,
     };
+    // Format guard: the pre-roll clip is `-c copy`-prepended, which is only
+    // valid when clip and capture are the SAME s16 PCM WAV (rate + channels).
+    // The native engine records at the device's negotiated rate, which can
+    // differ from the clip's — a mismatched prepend would corrupt the WHOLE
+    // deliverable, so the clip is dropped (warn) and the recording survives.
+    let preroll = match preroll {
+        Some(p) if wav_prepend_compatible(Path::new(p), Path::new(&primary)).await => Some(p),
+        Some(p) => {
+            tracing::warn!(
+                clip = %p,
+                "concat: pre-roll clip format differs from the capture — finalising without it"
+            );
+            None
+        }
+        None => None,
+    };
 
     // ── Step 1: produce the merged capture file at `primary` ─────────────────────
     // When a concat is needed (multiple fragments or a pre-roll to prepend) we
@@ -289,6 +305,27 @@ async fn transcode_capture_to_delivery(capture: &str, spec: &DeliverySpec) -> Ap
 /// a real file). Cheap metadata-only check used to validate the pre-roll clip.
 async fn output_exists_nonempty(path: &Path) -> bool {
     matches!(tokio::fs::metadata(path).await, Ok(m) if is_plausible_output(m.len()))
+}
+
+/// Read a file's leading bytes and parse its WAV `fmt ` chunk, if it has one.
+async fn read_wav_info(path: &Path) -> Option<sundayrec_core::wav::WavHeaderInfo> {
+    use tokio::io::AsyncReadExt;
+    let mut f = tokio::fs::File::open(path).await.ok()?;
+    let mut buf = vec![0u8; 4096];
+    let n = f.read(&mut buf).await.ok()?;
+    buf.truncate(n);
+    sundayrec_core::wav::parse_header(&buf)
+}
+
+/// May the pre-roll clip be `-c copy`-prepended to the capture primary?
+/// Both parse as WAV → they must be copy-compatible (same s16 PCM format).
+/// Anything unparseable (legacy/video containers) keeps the historic behavior
+/// and lets the concat try.
+async fn wav_prepend_compatible(clip: &Path, primary: &Path) -> bool {
+    match (read_wav_info(clip).await, read_wav_info(primary).await) {
+        (Some(c), Some(p)) => c.copy_compatible_with(&p),
+        _ => true,
+    }
 }
 
 /// Best-effort validity check for a FINISHED output: it must exist, clear the pure

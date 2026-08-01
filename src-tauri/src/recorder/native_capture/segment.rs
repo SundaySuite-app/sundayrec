@@ -85,13 +85,20 @@ pub struct NativeSegment {
 /// (stream thread + ring + writer) writing to `output_path`. Returns once the
 /// stream is BUILT AND PLAYING (readiness discipline of `audio/vu.rs`) — a bad
 /// device fails the Start call so the supervisor can fall back to ffmpeg.
+///
+/// `pinned_rate` is the current deliverable's established rate (a reconnect
+/// reopen): it overrides the user's requested rate so the `_rN` fragment can
+/// `-c copy`-join its siblings. The supervisor compares the resulting
+/// [`NativeSegment::spec`] against the pin and converts a mismatch into a new
+/// deliverable.
 pub async fn spawn_native_segment(
     host: CpalHostKind,
     opts: &RecordingOpts,
     output_path: &str,
+    pinned_rate: Option<u32>,
 ) -> AppResult<NativeSegment> {
     let device_name = opts.audio_device_name.clone();
-    let requested_rate = opts.sample_rate;
+    let requested_rate = pinned_rate.or(opts.sample_rate);
 
     // Probe on a blocking thread: the (!Send) device handle never escapes.
     let negotiated = {
@@ -232,11 +239,11 @@ pub async fn spawn_native_segment(
     match ready_rx.await {
         Ok(Ok(())) => Ok(seg),
         Ok(Err(e)) => {
-            abort_spawn(&mut seg, output_path).await;
+            abort_native_segment(&mut seg, output_path).await;
             Err(AppError::Recording(e))
         }
         Err(_) => {
-            abort_spawn(&mut seg, output_path).await;
+            abort_native_segment(&mut seg, output_path).await;
             Err(AppError::Recording(
                 "native capture thread exited before signalling".into(),
             ))
@@ -244,9 +251,10 @@ pub async fn spawn_native_segment(
     }
 }
 
-/// Tear down a stack whose stream never started, and remove the (empty) WAV so
-/// the ffmpeg fallback / next attempt starts from a clean capture dir.
-async fn abort_spawn(seg: &mut NativeSegment, output_path: &str) {
+/// Tear down a stack that must not record (a failed spawn, or a reconnect that
+/// came back at an incompatible rate), and remove the WAV when it holds no
+/// audio so the next attempt starts from a clean capture dir.
+pub(crate) async fn abort_native_segment(seg: &mut NativeSegment, output_path: &str) {
     stop_native_bounded(seg).await;
     if seg.frames.load(Ordering::Relaxed) == 0 {
         let _ = tokio::fs::remove_file(output_path).await;
@@ -298,6 +306,11 @@ pub(crate) async fn stop_native_bounded(seg: &mut NativeSegment) {
 
 /// Run one native segment to completion. Mirrors `engine::run_segment`'s arms;
 /// see the module header for the signal mapping.
+///
+/// `deliverable_bytes` is the sum of the current deliverable's PREVIOUS
+/// fragments (`_rN` reconnect pieces) — the RIFF-cap guard forces a split
+/// before the `-c copy`-concatenated deliverable could cross the 4 GiB WAV
+/// ceiling.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_native_segment(
     app: &AppHandle,
@@ -305,6 +318,7 @@ pub(crate) async fn run_native_segment(
     opts: &RecordingOpts,
     session: &RecordingSession,
     segment_bytes: Arc<AtomicU64>,
+    deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     last_state: &Arc<Mutex<RecorderState>>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
@@ -455,14 +469,25 @@ pub(crate) async fn run_native_segment(
                     break SegmentOutcome::UnexpectedExit { last_error: None };
                 }
             }
-            // Low-disk guard.
+            // Low-disk guard + RIFF-cap guard (same 30 s cadence; the cap has
+            // 500 MiB of headroom below the real 4 GiB ceiling, dwarfing the
+            // ~12 MiB a 96 kHz stereo segment grows between ticks).
             _ = disk_tick.tick() => {
+                let seg_bytes = seg.bytes.load(Ordering::Relaxed);
+                if sundayrec_core::wav::should_force_split(
+                    deliverable_bytes.saturating_add(seg_bytes),
+                ) {
+                    tracing::warn!(
+                        deliverable_bytes,
+                        seg_bytes,
+                        "native capture: deliverable approaching the 4 GiB WAV ceiling — forcing a split"
+                    );
+                    stop_native_bounded(&mut seg).await;
+                    break SegmentOutcome::Split;
+                }
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
-                        let reserve = finalize_reserve_bytes(
-                            false,
-                            seg.bytes.load(Ordering::Relaxed),
-                        );
+                        let reserve = finalize_reserve_bytes(false, seg_bytes);
                         if low_disk_should_stop(free, disk_headroom + reserve) {
                             emit_error(
                                 app,
@@ -553,4 +578,105 @@ pub(crate) async fn run_native_segment(
     }
     segment_bytes.store(seg.bytes.load(Ordering::Relaxed), Ordering::Relaxed);
     outcome
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sundayrec_core::settings::ChannelMode;
+
+    fn test_opts(out: &str) -> RecordingOpts {
+        RecordingOpts {
+            audio_device_name: String::new(), // host default input
+            video_device_name: None,
+            output_path: out.to_string(),
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            silence_timeout_minutes: 5,
+            framerate: 30,
+            channel_mode: ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            sample_rate: None, // Auto → device native
+            bitrate_kbps: 192,
+            split_minutes: 0,
+            manual_max_minutes: 0,
+            live_levels: true,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
+            video_resolution: String::new(),
+            video_codec: String::new(),
+            video_encoder: String::new(),
+            classic_directshow: false,
+            classic_ffmpeg_audio: false,
+            video_input: None,
+        }
+    }
+
+    /// Real-device end-to-end: 2 s on the default input → a playable, header-
+    /// consistent WAV whose frame count agrees with the wall clock. SELF-
+    /// SKIPPING (same pattern as the real-ffmpeg tests in `media/ffmpeg.rs`):
+    /// no input device, or a build failure (CI runners, denied mic access) →
+    /// the test reports why and passes vacuously.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn native_capture_records_two_seconds_or_skips() {
+        use cpal::traits::HostTrait;
+        let Ok(host) = open_host(CpalHostKind::Default) else {
+            eprintln!("SKIP: no default cpal host");
+            return;
+        };
+        if host.default_input_device().is_none() {
+            eprintln!("SKIP: no default input device on this machine");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("native-selftest.wav");
+        let out_str = out.to_string_lossy().into_owned();
+        let opts = test_opts(&out_str);
+
+        let mut seg = match spawn_native_segment(CpalHostKind::Default, &opts, &out_str, None).await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("SKIP: native capture could not start here: {e}");
+                return;
+            }
+        };
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        stop_native_bounded(&mut seg).await;
+
+        let bytes = std::fs::read(&out).expect("capture wav readable");
+        let info = sundayrec_core::wav::parse_header(&bytes).expect("valid wav header");
+        assert_eq!(
+            info.sample_rate, seg.spec.sample_rate,
+            "header rate == negotiated"
+        );
+        assert_eq!(
+            info.channels, seg.spec.channels,
+            "header channels == routed"
+        );
+        assert_eq!(info.format_tag, 1, "pcm");
+        assert_eq!(info.bits_per_sample, 16, "s16 (the -c copy contract)");
+
+        let frames = seg.frames.load(Ordering::Relaxed);
+        let secs = frames as f64 / seg.spec.sample_rate as f64;
+        assert!(
+            (1.5..=3.0).contains(&secs),
+            "captured {secs:.2}s of audio for a 2 s run (frames={frames})"
+        );
+        // Byte accounting is exact: header + frames×ch×2 == file length,
+        // and the header's data field agrees.
+        let expect_len =
+            sundayrec_core::wav::HEADER_LEN as u64 + frames * seg.spec.bytes_per_frame();
+        assert_eq!(bytes.len() as u64, expect_len, "file length matches frames");
+        let data_field = u32::from_le_bytes(bytes[40..44].try_into().unwrap());
+        assert_eq!(u64::from(data_field), frames * seg.spec.bytes_per_frame());
+        assert_eq!(
+            seg.overrun.load(Ordering::Relaxed),
+            0,
+            "no ring overruns in a 2 s idle capture"
+        );
+    }
 }
