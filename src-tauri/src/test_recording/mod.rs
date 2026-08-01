@@ -159,6 +159,99 @@ pub async fn run_capture_bench(
     Ok(report)
 }
 
+/// Native-engine capture bench: drives the REAL shipping stack (negotiate →
+/// cpal stream → ring → WAV writer) for `secs` seconds, then judges the same
+/// facts with the same [`sundayrec_core::selftest::selftest_verdict`] as the
+/// ffmpeg bench. Measured duration comes from ffprobe over the produced WAV
+/// (the truth), with the writer's exact frame count logged as the capture-side
+/// cross-check; ring overruns count as xrun-class events.
+///
+/// Interior-silence facts are not gathered here (no silencedetect pass), so
+/// the verdict focuses on loss + level — the bench's purpose.
+pub async fn run_native_capture_bench(
+    host: crate::recorder::native_capture::stream::CpalHostKind,
+    audio_device_name: &str,
+    sample_rate: Option<u32>,
+    secs: u32,
+) -> AppResult<sundayrec_core::selftest::SelfTestReport> {
+    use crate::recorder::native_capture::segment::{spawn_native_segment, stop_native_bounded};
+    use sundayrec_core::selftest as st;
+    use sundayrec_core::settings::ChannelMode;
+
+    let secs = secs.clamp(5, 600);
+    let tmp_dir = std::env::temp_dir().join("sundayrec-bench");
+    std::fs::create_dir_all(&tmp_dir)?;
+    let out = tmp_dir.join(format!(
+        "bench_native_{}.wav",
+        crate::db::store::now_ms() as u64
+    ));
+    let out_str = out.to_string_lossy().into_owned();
+
+    let opts = crate::recorder::engine::RecordingOpts {
+        audio_device_name: audio_device_name.to_string(),
+        video_device_name: None,
+        output_path: out_str.clone(),
+        stop_on_silence: false,
+        silence_threshold_db: None,
+        silence_timeout_minutes: 5,
+        framerate: 30,
+        channel_mode: ChannelMode::Stereo,
+        input_channel_l: None,
+        input_channel_r: None,
+        sample_rate,
+        bitrate_kbps: 192,
+        split_minutes: 0,
+        manual_max_minutes: 0,
+        live_levels: false,
+        keep_separate_audio: false,
+        separate_audio_format: "wav".into(),
+        video_resolution: String::new(),
+        video_codec: String::new(),
+        video_encoder: String::new(),
+        classic_directshow: false,
+        classic_ffmpeg_audio: false,
+        video_input: None,
+    };
+
+    let mut seg = spawn_native_segment(host, &opts, &out_str, None).await?;
+    tokio::time::sleep(Duration::from_secs(u64::from(secs))).await;
+    stop_native_bounded(&mut seg).await;
+
+    let measured_sec = crate::media::ffmpeg::probe_duration_secs(&out_str)
+        .await
+        .unwrap_or(0.0);
+    let frames = seg.frames.load(std::sync::atomic::Ordering::Relaxed);
+    let frames_sec = frames as f64 / f64::from(seg.spec.sample_rate.max(1));
+    let overrun = seg.overrun.load(std::sync::atomic::Ordering::Relaxed);
+    let size_bytes = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
+    let strongest_rms_db = run_astats_rms(&out_str).await;
+
+    let facts = st::SelfTestFacts {
+        expected_sec: f64::from(secs),
+        measured_sec,
+        drops: 0,
+        dups: 0,
+        xruns: u64::from(overrun > 0),
+        size_bytes,
+        strongest_rms_db,
+        silence_total_sec: 0.0,
+        native_sample_rate: Some(seg.spec.sample_rate),
+        forced_sample_rate: sample_rate,
+    };
+    let report = st::selftest_verdict(&facts);
+    tracing::info!(
+        verdict = ?report.verdict,
+        expected = facts.expected_sec,
+        measured = facts.measured_sec,
+        frames_sec,
+        ring_overrun_samples = overrun,
+        rate = seg.spec.sample_rate,
+        "native capture bench complete"
+    );
+    let _ = std::fs::remove_file(&out);
+    Ok(report)
+}
+
 /// The bench's RMS pass: astats over the finished file (same helper the test
 /// recording uses). `None` on any failure — treated as unmeasured, not silent.
 async fn run_astats_rms(path: &str) -> Option<f64> {
@@ -349,6 +442,89 @@ mod tests {
         assert!(
             status.is_none(),
             "a hung capture must time out and be killed"
+        );
+    }
+
+    /// MACHINE BENCH (the v0.6.0 zero-loss proof): 60 s on the default input
+    /// through the REAL native stack, judged by the same verdict engine as a
+    /// live session. Ignored in the normal gate (records a full minute from
+    /// the machine's microphone) — run explicitly:
+    /// `cargo test -p sundayrec native_bench_60s -- --ignored --nocapture`.
+    /// Set `SUNDAYREC_BENCH_KEEP=/path/out.wav` to keep the capture for
+    /// spectrogram inspection.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "records 60 s from the default microphone — run with --ignored"]
+    async fn native_bench_60s_machine_proof() {
+        use crate::recorder::native_capture::segment::{spawn_native_segment, stop_native_bounded};
+        use crate::recorder::native_capture::stream::CpalHostKind;
+        use std::sync::atomic::Ordering;
+
+        let keep = std::env::var("SUNDAYREC_BENCH_KEEP").ok();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = match &keep {
+            Some(p) => std::path::PathBuf::from(p),
+            None => dir.path().join("bench60.wav"),
+        };
+        let out_str = out.to_string_lossy().into_owned();
+
+        let opts = crate::recorder::engine::RecordingOpts {
+            audio_device_name: String::new(),
+            video_device_name: None,
+            output_path: out_str.clone(),
+            stop_on_silence: false,
+            silence_threshold_db: None,
+            silence_timeout_minutes: 5,
+            framerate: 30,
+            channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            split_minutes: 0,
+            manual_max_minutes: 0,
+            live_levels: false,
+            keep_separate_audio: false,
+            separate_audio_format: "wav".into(),
+            video_resolution: String::new(),
+            video_codec: String::new(),
+            video_encoder: String::new(),
+            classic_directshow: false,
+            classic_ffmpeg_audio: false,
+            video_input: None,
+        };
+
+        let wall_start = std::time::Instant::now();
+        let mut seg = spawn_native_segment(CpalHostKind::Default, &opts, &out_str, None)
+            .await
+            .expect("native capture must start on the bench machine");
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        stop_native_bounded(&mut seg).await;
+        let wall = wall_start.elapsed().as_secs_f64();
+
+        let frames = seg.frames.load(Ordering::Relaxed);
+        let frames_sec = frames as f64 / f64::from(seg.spec.sample_rate.max(1));
+        let overrun = seg.overrun.load(Ordering::Relaxed);
+        let probed = crate::media::ffmpeg::probe_duration_secs(&out_str)
+            .await
+            .unwrap_or(0.0);
+
+        eprintln!(
+            "BENCH60: wall={wall:.3}s frames_sec={frames_sec:.3}s ffprobe={probed:.3}s \
+             rate={} overruns={overrun} file={out_str}",
+            seg.spec.sample_rate
+        );
+
+        assert_eq!(overrun, 0, "zero ring overruns");
+        // Zero-loss criterion: captured media within 1 s of the 60 s wall span
+        // (device open eats a fraction of the first second), and ffprobe agrees
+        // with the writer's exact frame count to within 50 ms.
+        assert!(
+            frames_sec > 59.0 && frames_sec <= wall + 0.1,
+            "frame seconds must track the wall clock (frames_sec={frames_sec:.3}, wall={wall:.3})"
+        );
+        assert!(
+            (probed - frames_sec).abs() < 0.05,
+            "ffprobe ({probed:.3}s) must agree with the frame count ({frames_sec:.3}s)"
         );
     }
 }

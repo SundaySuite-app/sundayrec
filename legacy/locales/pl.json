@@ -403,6 +403,8 @@
     "errPastDate": "Data już minęła — nagranie się nie rozpocznie"
   },
   "audio": {
+    "classicFfmpeg": "Klasyczny silnik nagrywania (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec zwykle nagrywa dźwięk nowym wbudowanym silnikiem, który odczytuje dźwięk bezpośrednio z karty dźwiękowej i sam zapisuje plik. Włącz to tylko wtedy, gdy nagrywanie zawodzi na tym komputerze — wtedy używana jest stara ścieżka ffmpeg.",
     "title": "Źródło dźwięku",
     "subtitle": "Wybierz mikser USB do nagrywania",
     "available": "Dostępne urządzenia",

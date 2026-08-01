@@ -403,6 +403,8 @@
     "errPastDate": "Datoen er allerede passeret — optagelsen vil ikke starte"
   },
   "audio": {
+    "classicFfmpeg": "Klassisk optagemotor (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec optager normalt lyd med den nye indbyggede motor, som læser lyden direkte fra lydkortet og selv skriver filen. Slå kun dette til, hvis optagelser fejler på denne maskine — så bruges den gamle ffmpeg-vej i stedet.",
     "title": "Lydkilde",
     "subtitle": "Vælg den USB-mixer, der skal bruges til optagelse",
     "available": "Tilgængelige enheder",

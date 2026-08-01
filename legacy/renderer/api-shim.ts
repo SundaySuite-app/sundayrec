@@ -347,6 +347,8 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     keepSeparateAudio: s.videoKeepAudio !== false,
     // Windows escape hatch: force legacy DirectShow audio over cpal (WASAPI/ASIO).
     classicDirectshow: s.classicDirectshow ?? false,
+    // Escape hatch: force legacy ffmpeg audio capture over the native engine.
+    classicFfmpegAudio: s.classicFfmpegAudio ?? false,
     separateAudioFormat: s.format ?? "wav",
     channels: s.channels ?? "stereo",
     inputChannelL: clampCh(chMap.channelL),

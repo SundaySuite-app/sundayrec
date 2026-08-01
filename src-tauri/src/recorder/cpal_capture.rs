@@ -2,6 +2,14 @@
 //! default, ASIO for pro interfaces) by piping its routed PCM into the existing
 //! ffmpeg sidecar.
 //!
+//! ## Scope after the 2026-08-01 native rebuild
+//!
+//! Audio-only sessions on BOTH platforms now run on the native engine
+//! ([`crate::recorder::native_capture`]: cpal → ring → direct WAV writer, full
+//! split/reconnect/silence support). This module remains for **Windows VIDEO
+//! sessions** (camera via dshow + cpal audio piped into one ffmpeg) and as the
+//! legacy path behind the `classic_ffmpeg_audio` hatch.
+//!
 //! ## Why this exists
 //!
 //! SundayRec records via an ffmpeg sidecar, and on Windows ffmpeg's only audio

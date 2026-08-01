@@ -18,6 +18,7 @@
 pub mod concat;
 pub mod cpal_capture;
 pub mod engine;
+pub mod native_capture;
 pub mod preroll;
 pub mod recovery;
 pub mod two_process;

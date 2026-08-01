@@ -100,6 +100,15 @@ keepSeparateAudio: boolean,
  */
 classicDirectshow: boolean, 
 /**
+ * Escape hatch: force the legacy **ffmpeg** audio capture (avfoundation on
+ * macOS) instead of the native cpal engine that records the WAV directly.
+ * Default `false` — the native engine is the standard path (avfoundation
+ * measurably drops samples below ffmpeg's observability; the 2026-08-01
+ * rebuild). Flip on only if the native engine misbehaves on a specific rig;
+ * scheduled for removal once the rig has verified 0 % loss.
+ */
+classicFfmpegAudio: boolean, 
+/**
  * Container/codec for the standalone audio file extracted alongside a video
  * recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
  * safe choice for a "keep the clean audio" sidecar).

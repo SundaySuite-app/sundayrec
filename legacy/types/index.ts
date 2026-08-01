@@ -199,6 +199,9 @@ export interface Settings {
   /** Windows ONLY escape hatch: force the legacy ffmpeg DirectShow audio capture
    *  instead of the modern cpal (WASAPI/ASIO) path. Default false. No effect on Mac. */
   classicDirectshow?: boolean
+  /** Escape hatch: force the legacy ffmpeg audio capture instead of the native
+   *  cpal engine that writes the WAV directly. Default false. */
+  classicFfmpegAudio?: boolean
   /** Input gain as percentage. Valid: 0–200. Default: 100 */
   inputVolume: number
   /** Bass EQ gain in dB. Valid: -24–+24. Default: 0 */

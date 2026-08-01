@@ -103,4 +103,9 @@ video_encoder: string,
  * Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
  * of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
  */
-classic_directshow: boolean, };
+classic_directshow: boolean, 
+/**
+ * Escape hatch: force the legacy ffmpeg audio capture (avfoundation) instead
+ * of the native cpal engine. Default `false`. See `Settings::classic_ffmpeg_audio`.
+ */
+classic_ffmpeg_audio: boolean, };

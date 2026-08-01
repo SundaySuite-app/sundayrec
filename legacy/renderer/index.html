@@ -956,13 +956,22 @@
         <input type="hidden" id="limiter-ceiling" value="-1" />
       </div>
 
-      <!-- Windows-only advanced escape hatch: on Windows audio is captured via the
-           modern cpal engine (WASAPI for normal devices, ASIO for pro interfaces).
-           This forces the legacy DirectShow path if the modern one misbehaves on a
-           specific rig. Revealed by audio-page.ts only on Windows. -->
+      <!-- Advanced escape hatches for the audio engine. Audio-only recordings use
+           the native capture engine (Rust/cpal writes the WAV directly); this
+           first toggle forces the legacy ffmpeg capture if the native engine
+           misbehaves on a specific rig. The DirectShow row below is the older
+           Windows-only hatch (cpal→DirectShow); audio-page.ts reveals it only on
+           Windows. -->
       <div class="card" id="classic-audio-card" style="display:none">
         <div class="card-title" data-i18n="audio.engineTitle">Lyd-motor (avansert)</div>
         <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="audio.classicFfmpeg">Klassisk opptaksmotor (ffmpeg)</div>
+            <div class="toggle-desc" data-i18n="audio.classicFfmpegDesc">SundayRec tar normalt opp lyd med den nye innebygde motoren, som leser lyden direkte fra lydkortet og skriver filen selv. Slå dette på bare hvis opptak feiler på denne maskinen — da brukes den gamle ffmpeg-veien i stedet.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-classic-ffmpeg" /><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row" id="classic-dshow-row" style="display:none">
           <div>
             <div class="toggle-title" data-i18n="audio.classicDshow">Klassisk lyd-motor (DirectShow)</div>
             <div class="toggle-desc" data-i18n="audio.classicDshowDesc">SundayRec bruker normalt en moderne Windows-lyd-motor (WASAPI, eller ASIO for proff lydutstyr). Slå dette på bare hvis opptak er ustabilt på denne maskinen — da brukes den gamle DirectShow-veien i stedet.</div>

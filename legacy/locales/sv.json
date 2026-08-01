@@ -403,6 +403,8 @@
     "errPastDate": "Datumet är redan passerat — inspelningen startar inte"
   },
   "audio": {
+    "classicFfmpeg": "Klassisk inspelningsmotor (ffmpeg)",
+    "classicFfmpegDesc": "SundayRec spelar normalt in ljud med den nya inbyggda motorn, som läser ljudet direkt från ljudkortet och skriver filen själv. Slå bara på detta om inspelningar misslyckas på den här datorn — då används den gamla ffmpeg-vägen i stället.",
     "title": "Ljudkälla",
     "subtitle": "Välj den USB-mixer som ska användas för inspelning",
     "available": "Tillgängliga enheter",
