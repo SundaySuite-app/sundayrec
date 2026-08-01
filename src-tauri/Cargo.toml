@@ -131,6 +131,12 @@ tauri-plugin-notification = "2"
 # had broken ASIO). The Windows-only `asio` feature turns on `cpal/asio` (see
 # [features]).
 cpal = "0.17.3"
+# Lock-free SPSC ring buffer between the cpal real-time callback (producer) and
+# the writer (consumer): the audio callback must NEVER block on I/O, so it
+# pushes routed PCM into the ring and the writer drains it. Used by the native
+# capture engine on every platform (`recorder::native_capture`) and the legacy
+# Windows pipe path (`recorder::cpal_capture`).
+ringbuf = "0.5"
 
 
 serde = { version = "1", features = ["derive"] }
@@ -239,15 +245,7 @@ sha2 = { version = "0.11", optional = true }
 # build + CI gate. NETWORK/GUI-UNVERIFIED.
 tauri-plugin-updater = { version = "2", optional = true }
 
-# ── Windows-only: cpal capture pipe buffer ───────────────────────────────────
-# Lock-free SPSC ring buffer between the cpal real-time callback (producer) and
-# the pipe-writer task (consumer): the audio callback must NEVER block on pipe
-# I/O, so it pushes routed PCM into the ring and the writer drains it into
-# ffmpeg's stdin. Used by BOTH the WASAPI (default Windows) and ASIO capture
-# paths in `recorder::cpal_capture`, so it's a Windows-target dep (not tied to
-# the `asio` feature).
 [target.'cfg(windows)'.dependencies]
-ringbuf = "0.5"
 # Win32 Job Object APIs for the orphan-guard (`platform::guard_child_processes`):
 # put the process in a kill-on-close job so no ffmpeg child outlives SundayRec,
 # even on a hard kill. `windows-sys` (raw FFI) is chosen over `windows` for its
