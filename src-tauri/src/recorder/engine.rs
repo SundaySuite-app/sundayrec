@@ -1199,6 +1199,7 @@ async fn run_session(
                         &mut stop_rx,
                         &last_state,
                         &mut stop_watch,
+                        Arc::clone(&telemetry),
                     )
                     .await
                 }
@@ -2432,6 +2433,17 @@ fn finalize_session_telemetry(
     let size_bytes = delivered_bytes.load(Ordering::Relaxed);
     let facts = facts_from_recording(&t, size_bytes);
     t.loss_pct = duration_loss_pct(facts.expected_sec, facts.measured_sec);
+    // Native cross-check: the writer's exact frame count vs ffprobe's measure.
+    // Agreement ⇒ the whole chain is honest; disagreement localizes a fault to
+    // capture (frames short of wall clock) vs delivery (ffprobe short of frames).
+    if t.native_frames_sec > 0.0 {
+        tracing::info!(
+            native_frames_sec = t.native_frames_sec,
+            ffprobe_measured_sec = t.measured_sec,
+            expected_sec = t.expected_sec,
+            "recorder: native frame-count cross-check"
+        );
+    }
     let report = selftest_verdict(&facts);
     let alarm = report.verdict == SelfTestVerdict::Fail || t.loss_pct >= DURATION_LOSS_FAIL_PCT;
     t.report = Some(report.clone());

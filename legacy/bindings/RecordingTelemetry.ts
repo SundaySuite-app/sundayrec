@@ -61,6 +61,19 @@ measuredSec: number,
  */
 lossPct: number, 
 /**
+ * Samples the NATIVE engine's real-time callback dropped on ring overrun
+ * (whole frames' worth of f32 samples). The native analogue of the
+ * xrun/capture-drop stderr counters; 0 on the ffmpeg path.
+ */
+ringOverrunSamples: bigint, 
+/**
+ * Media seconds implied by the native writer's EXACT frame count
+ * (frames/rate, summed per segment). Capture-side cross-check against the
+ * ffprobe-measured `measured_sec`: disagreement localizes a fault to
+ * capture vs delivery instantly. 0.0 on the ffmpeg path.
+ */
+nativeFramesSec: number, 
+/**
  * The Pass/Warn/Fail verdict computed at session end (None on legacy rows).
  */
 report: SelfTestReport | null, 

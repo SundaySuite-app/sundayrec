@@ -440,6 +440,17 @@ pub struct RecordingTelemetry {
     /// adjusted). ≥ [`DURATION_LOSS_FAIL_PCT`] ⇒ degraded + user-visible.
     #[serde(default)]
     pub loss_pct: f64,
+    /// Samples the NATIVE engine's real-time callback dropped on ring overrun
+    /// (whole frames' worth of f32 samples). The native analogue of the
+    /// xrun/capture-drop stderr counters; 0 on the ffmpeg path.
+    #[serde(default)]
+    pub ring_overrun_samples: u64,
+    /// Media seconds implied by the native writer's EXACT frame count
+    /// (frames/rate, summed per segment). Capture-side cross-check against the
+    /// ffprobe-measured `measured_sec`: disagreement localizes a fault to
+    /// capture vs delivery instantly. 0.0 on the ffmpeg path.
+    #[serde(default)]
+    pub native_frames_sec: f64,
     /// The Pass/Warn/Fail verdict computed at session end (None on legacy rows).
     #[serde(default)]
     pub report: Option<SelfTestReport>,
@@ -494,6 +505,7 @@ impl RecordingTelemetry {
             || self.xruns > 0
             || self.levels_dropped > 0
             || self.capture_drop_lines > 0
+            || self.ring_overrun_samples > 0
             || self.loss_pct >= DURATION_LOSS_FAIL_PCT
     }
 }
@@ -528,8 +540,13 @@ pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTest
         measured_sec: t.measured_sec,
         drops: t.drops,
         dups: t.dups,
-        // Capture-drop lines ARE xrun-class events for verdict purposes.
-        xruns: t.xruns.saturating_add(t.capture_drop_lines),
+        // Capture-drop lines ARE xrun-class events for verdict purposes; a
+        // native ring overrun counts as one xrun event (its MAGNITUDE already
+        // shows up as duration loss — the overrun samples never reach disk).
+        xruns: t
+            .xruns
+            .saturating_add(t.capture_drop_lines)
+            .saturating_add(u64::from(t.ring_overrun_samples > 0)),
         size_bytes,
         strongest_rms_db: None,
         silence_total_sec: 0.0,
@@ -573,6 +590,25 @@ clean line";
         // line 1 matches two phrases ("too full" + "frame dropped") → counts once.
         assert_eq!(parse_xrun_count(s), 2);
         assert_eq!(parse_xrun_count("all good here"), 0);
+    }
+
+    #[test]
+    fn native_telemetry_fields_default_and_degrade() {
+        // Old persisted rows (no native fields) must still deserialize.
+        let legacy = r#"{"drops":0,"dups":0,"xruns":0,"levelsDropped":0,
+            "durationSec":10.0,"timestamp":"t","exitOk":true}"#;
+        let t: RecordingTelemetry = serde_json::from_str(legacy).expect("legacy row parses");
+        assert_eq!(t.ring_overrun_samples, 0);
+        assert_eq!(t.native_frames_sec, 0.0);
+        assert!(!t.is_degraded());
+
+        // A native ring overrun degrades the session and counts as one
+        // xrun-class event in the verdict facts.
+        let mut t = t;
+        t.ring_overrun_samples = 4800;
+        assert!(t.is_degraded());
+        let facts = facts_from_recording(&t, 1_000_000);
+        assert_eq!(facts.xruns, 1);
     }
 
     #[test]

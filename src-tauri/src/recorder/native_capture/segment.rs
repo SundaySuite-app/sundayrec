@@ -322,6 +322,7 @@ pub(crate) async fn run_native_segment(
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     last_state: &Arc<Mutex<RecorderState>>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
+    telemetry: Arc<Mutex<sundayrec_core::selftest::RecordingTelemetry>>,
 ) -> SegmentOutcome {
     // Silence watcher + its (host-owned) timers — identical to the ffmpeg path.
     let mut silence = SilenceWatcher::new(opts.stop_on_silence);
@@ -570,11 +571,18 @@ pub(crate) async fn run_native_segment(
         }
     };
 
-    // Overrun accounting (telemetry wiring lands in the telemetry phase; the
-    // log line keeps the signal visible meanwhile).
+    // Fold this segment's health into the session telemetry: overruns are the
+    // native drop signal (verdict folds them into the xrun class), and the
+    // exact frame count is the capture-side cross-check against ffprobe.
     let overrun = seg.overrun.load(Ordering::Relaxed);
     if overrun > 0 {
         tracing::warn!(overrun, "native capture: ring overran — samples dropped");
+    }
+    {
+        let mut t = lock_recover(&telemetry);
+        t.ring_overrun_samples = t.ring_overrun_samples.saturating_add(overrun);
+        t.native_frames_sec +=
+            seg.frames.load(Ordering::Relaxed) as f64 / f64::from(seg.spec.sample_rate.max(1));
     }
     segment_bytes.store(seg.bytes.load(Ordering::Relaxed), Ordering::Relaxed);
     outcome

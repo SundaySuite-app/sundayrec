@@ -297,5 +297,19 @@ pub async fn run_capture_bench(
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
     let rate = s.resolved_sample_rate();
-    crate::test_recording::run_capture_bench(&device, rate, secs).await
+    // Dispatch on the SAME backend selection as a real recording, so the bench
+    // always proves the shipping path (native on mac unless the escape hatch
+    // forces ffmpeg).
+    match crate::recorder::engine::select_capture_backend(
+        cfg!(target_os = "macos"),
+        true,
+        s.classic_ffmpeg_audio,
+    ) {
+        crate::recorder::engine::CaptureBackend::NativeAudio { host } => {
+            crate::test_recording::run_native_capture_bench(host, &device, rate, secs).await
+        }
+        crate::recorder::engine::CaptureBackend::Ffmpeg => {
+            crate::test_recording::run_capture_bench(&device, rate, secs).await
+        }
+    }
 }
