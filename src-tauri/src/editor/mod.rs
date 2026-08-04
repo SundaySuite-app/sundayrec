@@ -737,6 +737,69 @@ impl MasterEngine {
     }
 }
 
+/// An export progress tick, emitted on the `editor://export-progress` event
+/// (the renderer subscribes through the shim channel `editor-export-progress`).
+/// `pct` is 0–100 and monotonically non-decreasing within one export; `phase`
+/// is a stable CODE the renderer localises — `measuring` (mastering pass 1,
+/// which reports no percentage of its own) or `encoding` (the render).
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../src/lib/bindings/EditorExportProgress.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct EditorExportProgress {
+    pub pct: f32,
+    pub phase: String,
+}
+
+/// Progress phase: the mastering measure pass (no percentage available).
+pub const EXPORT_PHASE_MEASURING: &str = "measuring";
+/// Progress phase: the actual render (percentage against the kept duration).
+pub const EXPORT_PHASE_ENCODING: &str = "encoding";
+
+/// The export engine: the ONE in-flight ffmpeg child an export owns, so
+/// `editor_cancel_export` can kill a render the user gave up on (a 90-minute
+/// service used to be unkillable — the button was a stub returning `true`).
+///
+/// A single slot rather than the mastering engine's id-keyed map because export
+/// is single-flight in the UI: the "Eksporter" button disables for the duration
+/// and the modal is closed, so there is never a second export to disambiguate.
+/// The mutex is recovered with `unwrap_or_else(|e| e.into_inner())` for the same
+/// reason `MasterEngine`'s are — it guards a plain `Option` with no invariant a
+/// panic could half-break, and one panicked export must not poison every later
+/// export/cancel.
+pub struct ExportEngine {
+    /// The live render's child process; `None` when nothing is exporting. Only
+    /// ever populated feature-on, but the slot compiles either way so
+    /// [`cancel_export`] can answer "nothing to cancel" in the default build.
+    child: std::sync::Mutex<Option<tokio::process::Child>>,
+}
+
+impl Default for ExportEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ExportEngine {
+    /// A fresh engine with no export in flight.
+    pub fn new() -> Self {
+        Self {
+            child: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Hand the engine the live render so a cancel can reach it.
+    #[cfg(feature = "editor")]
+    fn hold(&self, child: tokio::process::Child) {
+        *self.child.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+    }
+
+    /// Reclaim the live render (leaving the slot empty). `None` means someone
+    /// else already took it — i.e. a cancel won the race.
+    fn take(&self) -> Option<tokio::process::Child> {
+        self.child.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
+
 // ── Public entry points ─────────────────────────────────────────────────────────
 //
 // Each compiles in both feature states. OFF → a clear `feature_disabled` error.
@@ -851,8 +914,31 @@ pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult
 
 /// Render the cut-plan (+ optional mastering gain) to the requested format.
 #[cfg(not(feature = "editor"))]
-pub async fn export(_req: &EditorExportRequest) -> AppResult<EditorExportResult> {
+pub async fn export<F>(
+    _engine: &ExportEngine,
+    _req: &EditorExportRequest,
+    _on_progress: F,
+) -> AppResult<EditorExportResult>
+where
+    F: Fn(f32, &str),
+{
     disabled("export")
+}
+
+/// Abort the in-flight export. Returns whether one was actually running.
+/// Compiles in both feature states — the slot is empty in the default build, so
+/// even there this answers a calm "nothing to cancel" rather than erroring
+/// (same idiom as [`master_cancel`]).
+pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
+    match engine.take() {
+        // `kill()` on a tokio child both signals AND reaps it, so the aborted
+        // ffmpeg leaves no zombie behind.
+        Some(mut child) => {
+            let _ = child.kill().await;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
 }
 
 /// Extract a single video frame at `sec` as a base64 JPEG for the video preview.
@@ -1446,17 +1532,30 @@ where
 }
 
 /// Render the cut-plan + optional mastering gain to the requested format. The
-/// keep-segments, filter graph, codec args, output path, and timeout are ALL the
-/// core's tested decisions; the seam only spawns ffmpeg and picks the collision-
-/// free path on disk. HARDWARE-UNVERIFIED.
+/// keep-segments, filter graph, codec args, output directory, output path and
+/// timeout are ALL the core's tested decisions; the seam spawns ffmpeg, streams
+/// its `-progress` to `on_progress`, enforces the kill-timer, and picks the
+/// collision-free path on disk.
+///
+/// `on_progress(pct, phase)` is called with a monotonically non-decreasing
+/// percentage; the command layer adapts it to the `editor://export-progress`
+/// Tauri event. The in-flight child is parked in `engine` so
+/// [`cancel_export`] can kill it. HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
-pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> {
+pub async fn export<F>(
+    engine: &ExportEngine,
+    req: &EditorExportRequest,
+    on_progress: F,
+) -> AppResult<EditorExportResult>
+where
+    F: Fn(f32, &str),
+{
     use std::path::Path;
     use sundayrec_core::chapters::remap_chapters_to_keeps;
     use sundayrec_core::editor::{
-        audio_export_filter_complex, audio_simple_af, build_keeps, codec_args, collision_free_path,
-        ffmetadata, is_simple_audio_export, metadata_args, video_filter_complex,
-        Chapter as CoreChapter, CutRegion, RecordingMetadata,
+        audio_export_filter_complex, audio_simple_export_args, build_keeps, codec_args,
+        collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
+        video_filter_complex, Chapter as CoreChapter, CutRegion, RecordingMetadata,
     };
     use sundayrec_core::mastering::{build_apply_pass_filters, get_preset_by_id};
 
@@ -1491,6 +1590,10 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
     if keeps.is_empty() {
         return Err(AppError::Validation("no_audio_remaining".into()));
     }
+    // How much media the render actually produces — the denominator for the
+    // progress percentage AND the basis of the kill-timer (an export of the
+    // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
+    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
     // 2. Optional mastering: measure (pass 1) → apply chain (pass 2 filters).
     //    When no preset, the processing chain is empty (plain trim).
@@ -1498,6 +1601,9 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
         Some(id) => {
             let preset = get_preset_by_id(id)
                 .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?;
+            // A full-file loudness measure on a long service takes minutes with
+            // NOTHING to show for it; say so instead of leaving the bar at 0.
+            on_progress(0.0, EXPORT_PHASE_MEASURING);
             let measured = measure_loudness(&req.input_path, &preset).await?;
             // The apply chain is the preset filters + a measured-value loudnorm.
             vec![build_apply_pass_filters(&preset, &measured)]
@@ -1543,12 +1649,14 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
         }
     }
 
-    // 3. Core picks the collision-free output path.
+    // 3. Core picks the output directory ('' = "Samme mappe" → next to the
+    //    source) and then the collision-free file name inside it.
     let base = Path::new(&req.input_path)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "redigert".into());
-    let out_path = collision_free_path(&req.output_folder, &format!("{base}_redigert"), fmt, |c| {
+    let out_dir = resolve_output_dir(&req.output_folder, &req.input_path);
+    let out_path = collision_free_path(&out_dir, &format!("{base}_redigert"), fmt, |c| {
         Path::new(c).exists()
     });
 
@@ -1574,7 +1682,6 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
     //     NOTE: an intro jingle shifts the audio later; chapter times here are
     //     relative to the main audio (no intro offset) — fine for the common
     //     no-jingle podcast export, slightly early if a long intro is prepended.
-    let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
     let core_chapters: Vec<CoreChapter> = req
         .chapters
         .iter()
@@ -1626,8 +1733,14 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
         };
         args.extend(sundayrec_core::editor::video_codec_args(fmt, codec, None));
     } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
-        args.extend(["-af".into(), audio_simple_af(&keeps[0])]);
-        args.extend(codec_args(fmt, req.bitrate, req.bit_depth));
+        // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
+        // for a video source exported to an audio format (see the core fn).
+        args.extend(audio_simple_export_args(
+            &keeps[0],
+            fmt,
+            req.bitrate,
+            req.bit_depth,
+        ));
     } else {
         let (fc, map) = audio_export_filter_complex(
             &keeps,
@@ -1645,9 +1758,22 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
         args.extend(["-map_metadata".into(), meta_input_idx.to_string()]);
     }
     args.extend(metadata_args(&meta));
+    // Machine-readable progress on stdout, and `-nostats` to silence the human
+    // stats line we would otherwise have to drain from stderr for no gain.
+    args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
     args.extend(["-y".into(), out_path.clone()]);
 
-    let result = run_ffmpeg(&args).await;
+    // 6. The render itself: the total the percentage is measured against is the
+    //    kept media plus any jingles concatenated around it (they lengthen the
+    //    output, so leaving them out would make the bar stall near 100 %).
+    let mut total_sec = kept_duration;
+    for clip in [intro, outro].into_iter().flatten() {
+        total_sec += crate::media::ffmpeg::probe_duration_secs(clip)
+            .await
+            .unwrap_or(0.0);
+    }
+    let timeout_ms = export_timeout_ms_for(kept_duration);
+    let result = run_export_ffmpeg(engine, &args, total_sec, timeout_ms, &on_progress).await;
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
     }
@@ -1655,9 +1781,154 @@ pub async fn export(req: &EditorExportRequest) -> AppResult<EditorExportResult> 
     if !Path::new(&out_path).exists() {
         return Err(AppError::Recording("export produced no output file".into()));
     }
+    // The file is only real once ffmpeg has exited and the container is closed,
+    // so 100 % is reported here rather than from the -progress stream.
+    on_progress(100.0, EXPORT_PHASE_ENCODING);
     Ok(EditorExportResult {
         output_path: out_path,
     })
+}
+
+/// The export kill-timer in milliseconds: the core's duration-scaled
+/// [`export_timeout_ms`](sundayrec_core::editor::export_timeout_ms), unless
+/// `SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE` names a shorter one.
+///
+/// The override exists for the real-ffmpeg smoke test, which has to prove the
+/// timeout path actually kills the child — waiting out the 10-minute floor to
+/// learn that is not a test anyone runs. Never set in production.
+#[cfg(feature = "editor")]
+fn export_timeout_ms_for(kept_duration: f64) -> u64 {
+    std::env::var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+        .unwrap_or_else(|| sundayrec_core::editor::export_timeout_ms(kept_duration))
+}
+
+/// Spawn the export ffmpeg, stream its `-progress` to `on_progress`, and wait
+/// for it under the kill-timer. The live child is parked in `engine` so
+/// [`cancel_export`] can reach it.
+///
+/// Errors carry the same bare codes the renderer's `describeExportError` maps:
+/// `"timeout"` when the kill-timer fired, `"cancelled"` when the user aborted.
+#[cfg(feature = "editor")]
+async fn run_export_ffmpeg<F>(
+    engine: &ExportEngine,
+    args: &[String],
+    total_sec: f64,
+    timeout_ms: u64,
+    on_progress: &F,
+) -> AppResult<()>
+where
+    F: Fn(f32, &str),
+{
+    use sundayrec_core::mastering::parse_progress_time;
+    use tokio::io::AsyncReadExt;
+
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+        .args(&arg_refs)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| AppError::Recording(format!("export spawn: {e}")))?;
+
+    let mut stdout = child.stdout.take();
+    // Drain stderr on its own task. A piped stream nobody reads fills the ~64 KB
+    // kernel buffer and then BLOCKS ffmpeg on write — the same self-throttling
+    // that cost the recorder 15–56 % of its samples (2026-07-31). We only keep
+    // the tail, which is what an ffmpeg failure message lives in.
+    let stderr = child.stderr.take();
+    let stderr_task = tokio::spawn(async move {
+        let mut tail = String::new();
+        if let Some(mut err) = stderr {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = err.read(&mut chunk).await {
+                if n == 0 {
+                    break;
+                }
+                tail.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                // Trim on CHARACTER boundaries — ffmpeg echoes the file path, and
+                // a Norwegian folder name would panic a byte slice.
+                let chars = tail.chars().count();
+                if chars > 4000 {
+                    tail = tail.chars().skip(chars - 2000).collect();
+                }
+            }
+        }
+        tail
+    });
+    engine.hold(child);
+
+    // The whole read-then-wait is under the kill-timer: if ffmpeg wedges, the
+    // stdout read never returns EOF, so timing only the `wait()` would hang.
+    let waited = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
+        if let Some(mut out) = stdout.take() {
+            let mut buf = String::new();
+            let mut chunk = [0u8; 4096];
+            let mut last_pct = 0.0f32;
+            loop {
+                match out.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
+                    Err(_) => break,
+                }
+                // Consume COMPLETE lines only, leaving any partial tail for the
+                // next read. Re-scanning an accumulating buffer (what the
+                // mastering loop does) always re-reports the FIRST out_time in
+                // it, which freezes the bar for the first ~30 ticks.
+                while let Some(nl) = buf.find('\n') {
+                    let line: String = buf.drain(..=nl).collect();
+                    let Some(cur) = parse_progress_time(&line) else {
+                        continue;
+                    };
+                    if total_sec <= 0.0 {
+                        continue;
+                    }
+                    // Cap at 99: the output isn't usable until ffmpeg exits and
+                    // the container is finalised, so 100 belongs to the caller.
+                    let pct = ((cur / total_sec) * 100.0).clamp(0.0, 99.0) as f32;
+                    if pct > last_pct {
+                        last_pct = pct;
+                        on_progress(pct, EXPORT_PHASE_ENCODING);
+                    }
+                }
+            }
+        }
+        // Reclaim the child to await its exit. Gone = a cancel took it.
+        match engine.take() {
+            Some(mut c) => c
+                .wait()
+                .await
+                .map_err(|e| AppError::Recording(format!("export wait: {e}"))),
+            None => Err(AppError::Recording("cancelled".into())),
+        }
+    })
+    .await;
+
+    let status = match waited {
+        Ok(r) => r?,
+        Err(_elapsed) => {
+            // Kill the child ourselves so no ffmpeg outlives the abandoned
+            // export (`kill()` also reaps it — no zombie).
+            if let Some(mut c) = engine.take() {
+                let _ = c.kill().await;
+            }
+            let tail = stderr_task.await.unwrap_or_default();
+            tracing::warn!(timeout_ms, tail = %tail, "export exceeded its kill-timer");
+            // The renderer maps the bare code to a friendly Norwegian sentence.
+            return Err(AppError::Recording("timeout".into()));
+        }
+    };
+    let tail = stderr_task.await.unwrap_or_default();
+    if !status.success() {
+        let tail: String = tail.chars().rev().take(500).collect::<String>();
+        let tail: String = tail.chars().rev().collect();
+        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
+    }
+    Ok(())
 }
 
 /// Extract a single video frame at `sec` seconds, scaled to 480px wide, and
@@ -1834,8 +2105,17 @@ mod tests {
             intro_path: None,
             outro_path: None,
             gain_db: None,
+            chapters: Vec::new(),
+            title: None,
+            speaker: None,
+            description: None,
+            vocal_chain_preset: None,
+            processing: None,
+            channel_repair: None,
+            video_codec: None,
         };
-        assert!(export(&req)
+        let engine = ExportEngine::new();
+        assert!(export(&engine, &req, |_, _| {})
             .await
             .unwrap_err()
             .to_string()
@@ -1978,6 +2258,18 @@ mod tests {
         assert!(!was);
     }
 
+    #[test]
+    fn cancel_export_with_nothing_running_is_false() {
+        // The cancel button is always live in the UI; pressing it with no export
+        // in flight must be a calm no-op, not an error.
+        let engine = ExportEngine::new();
+        let was = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(cancel_export(&engine))
+            .unwrap();
+        assert!(!was);
+    }
+
     // ── Real-ffmpeg editor smoke test (feature-on; skips without the sidecar) ─────
     //
     // Generates a 2 s lavfi A/V file, then drives the editor's REAL `export` seam
@@ -1990,7 +2282,7 @@ mod tests {
     #[cfg(feature = "editor")]
     mod ffmpeg_smoke {
         use super::*;
-        use std::sync::Mutex;
+        use std::sync::{Arc, Mutex};
 
         // Serialise the `SUNDAYREC_*` env overrides against the parallel suite.
         static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -2006,20 +2298,11 @@ mod tests {
             p.is_file().then_some(p)
         }
 
-        #[test]
-        fn export_cuts_and_encodes_mp3_or_skips() {
-            let (Some(ffmpeg), Some(ffprobe)) =
-                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
-            else {
-                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
-                return;
-            };
-
-            let dir = tempfile::tempdir().unwrap();
-            // 1. Generate a 2 s lavfi A/V source (testsrc video + sine audio).
-            let src = dir.path().join("source.mp4");
-            let src_s = src.to_string_lossy().into_owned();
-            let gen = std::process::Command::new(&ffmpeg)
+        /// Generate a 2 s lavfi A/V source (testsrc video + sine audio) in `dir`
+        /// and return its path. HARDWARE-FREE — lavfi synthesises both streams.
+        fn lavfi_source(ffmpeg: &std::path::Path, dir: &std::path::Path) -> String {
+            let src = dir.join("source.mp4");
+            let gen = std::process::Command::new(ffmpeg)
                 .args([
                     "-hide_banner",
                     "-f",
@@ -2043,19 +2326,21 @@ mod tests {
                 "lavfi source generation failed: {}",
                 String::from_utf8_lossy(&gen.stderr)
             );
+            src.to_string_lossy().into_owned()
+        }
 
-            // 2. Drive the editor's REAL export seam: cut the middle 0.5 s out and
-            //    encode the remainder to mp3. The seam resolves ffmpeg via the
-            //    SUNDAYREC_FFMPEG override (the production fallback path).
-            let req = EditorExportRequest {
-                input_path: src_s,
+        /// An export request for `input_path` into `output_folder` (pass `""`
+        /// for the "Samme mappe" default), cutting the middle 0.5 s out.
+        fn cut_to_mp3_request(input_path: String, output_folder: &str) -> EditorExportRequest {
+            EditorExportRequest {
+                input_path,
                 cut_regions: vec![EditorCutRegion {
                     start: 0.75,
                     end: 1.25,
                 }],
                 duration: 2.0,
                 format: "mp3".into(),
-                output_folder: dir.path().to_string_lossy().into_owned(),
+                output_folder: output_folder.to_string(),
                 bitrate: Some(128),
                 bit_depth: None,
                 master_preset: None,
@@ -2070,25 +2355,51 @@ mod tests {
                 processing: None,
                 channel_repair: None,
                 video_codec: None,
-            };
+            }
+        }
 
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let out_path = {
-                let _guard = ENV_LOCK.lock().unwrap();
-                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
-                unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&req));
-                unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
-                result.expect("editor export should succeed against the lavfi source")
-            };
+        /// A progress sink that records every `(pct, phase)` the seam reports.
+        type Ticks = Arc<Mutex<Vec<(f32, String)>>>;
 
-            // 3. The output exists, is non-empty, and ffprobes as a real mp3 stream
-            //    shorter than the input (we cut 0.5 s out of 2 s ⇒ ~1.5 s).
-            let out = std::path::Path::new(&out_path.output_path);
-            let len = std::fs::metadata(out).expect("export output exists").len();
-            assert!(len > 0, "export produced an empty file");
+        fn sink() -> (Ticks, impl Fn(f32, &str)) {
+            let ticks: Ticks = Arc::new(Mutex::new(Vec::new()));
+            let sink = ticks.clone();
+            (ticks, move |pct: f32, phase: &str| {
+                sink.lock().unwrap().push((pct, phase.to_string()))
+            })
+        }
 
-            let probe = std::process::Command::new(&ffprobe)
+        /// Assert the recorded ticks never go backwards — a bar that jumps back
+        /// reads as "it restarted" to the user, and is the classic symptom of
+        /// re-parsing an accumulating `-progress` buffer.
+        fn assert_monotonic(ticks: &Ticks) {
+            let seen = ticks.lock().unwrap();
+            assert!(
+                !seen.is_empty(),
+                "export reported no progress at all — the bar would sit frozen"
+            );
+            let mut last = f32::NEG_INFINITY;
+            for (pct, phase) in seen.iter() {
+                assert!(
+                    *pct >= last,
+                    "progress went backwards: {last} → {pct} ({phase}); ticks: {seen:?}"
+                );
+                assert!(
+                    (0.0..=100.0).contains(pct),
+                    "progress out of range: {pct} ({phase})"
+                );
+                last = *pct;
+            }
+            assert_eq!(
+                seen.last().map(|(p, _)| *p),
+                Some(100.0),
+                "a finished export must end at 100 %; ticks: {seen:?}"
+            );
+        }
+
+        /// ffprobe the codec + duration of `path` as one CSV-ish report.
+        fn probe_report(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let probe = std::process::Command::new(ffprobe)
                 .args([
                     "-v",
                     "error",
@@ -2099,7 +2410,7 @@ mod tests {
                     "-of",
                     "default=noprint_wrappers=1:nokey=1",
                 ])
-                .arg(out)
+                .arg(path)
                 .output()
                 .expect("ffprobe should run on the export output");
             assert!(
@@ -2107,7 +2418,45 @@ mod tests {
                 "ffprobe failed on export output: {}",
                 String::from_utf8_lossy(&probe.stderr)
             );
-            let report = String::from_utf8_lossy(&probe.stdout);
+            String::from_utf8_lossy(&probe.stdout).into_owned()
+        }
+
+        #[test]
+        fn export_cuts_and_encodes_mp3_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+
+            let dir = tempfile::tempdir().unwrap();
+            let src_s = lavfi_source(&ffmpeg, dir.path());
+
+            // Drive the editor's REAL export seam: cut the middle 0.5 s out and
+            // encode the remainder to mp3. The seam resolves ffmpeg via the
+            // SUNDAYREC_FFMPEG override (the production fallback path).
+            let req = cut_to_mp3_request(src_s, &dir.path().to_string_lossy());
+            let engine = ExportEngine::new();
+            let (ticks, on_progress) = sink();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let out_path = {
+                let _guard = ENV_LOCK.lock().unwrap();
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
+                let result = rt.block_on(export(&engine, &req, on_progress));
+                unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
+                result.expect("editor export should succeed against the lavfi source")
+            };
+
+            // The output exists, is non-empty, and ffprobes as a real mp3 stream
+            // shorter than the input (we cut 0.5 s out of 2 s ⇒ ~1.5 s).
+            let out = std::path::Path::new(&out_path.output_path);
+            let len = std::fs::metadata(out).expect("export output exists").len();
+            assert!(len > 0, "export produced an empty file");
+
+            let report = probe_report(&ffprobe, out);
             assert!(
                 report.contains("mp3"),
                 "export should be an mp3 stream; ffprobe: {report}"
@@ -2121,10 +2470,130 @@ mod tests {
                 (1.0..1.9).contains(&dur),
                 "cut export duration {dur}s should be ~1.5 s (2 s − 0.5 s cut)"
             );
-            eprintln!(
-                "editor export smoke: wrote {} ({dur:.2}s mp3)",
-                out.display()
+            // The renderer's progress bar is driven by these ticks.
+            assert_monotonic(&ticks);
+            // The video source must NOT leak into the audio export (`-vn -map
+            // 0:a:0` on the simple path).
+            let video = probe_report_streams(&ffprobe, out);
+            assert!(
+                !video.contains("video"),
+                "an audio export of a video source must carry no video stream; ffprobe: {video}"
             );
+            eprintln!(
+                "editor export smoke: wrote {} ({dur:.2}s mp3, {} progress ticks)",
+                out.display(),
+                ticks.lock().unwrap().len()
+            );
+        }
+
+        /// ffprobe every stream's codec_type — proves the simple audio path drops
+        /// the source's video stream.
+        fn probe_report_streams(ffprobe: &std::path::Path, path: &std::path::Path) -> String {
+            let probe = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream=codec_type",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run on the export output");
+            String::from_utf8_lossy(&probe.stdout).into_owned()
+        }
+
+        /// The DEFAULT destination ("Samme mappe") sends an EMPTY folder. Before
+        /// the fix that string reached the path guard and every out-of-the-box
+        /// export died with "path must be absolute"; now it lands next to the
+        /// source file.
+        #[test]
+        fn export_with_empty_folder_lands_next_to_the_source_or_skips() {
+            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+
+            let dir = tempfile::tempdir().unwrap();
+            let src_s = lavfi_source(&ffmpeg, dir.path());
+            let req = cut_to_mp3_request(src_s, "");
+            let engine = ExportEngine::new();
+            let (ticks, on_progress) = sink();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let out = {
+                let _guard = ENV_LOCK.lock().unwrap();
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
+                let result = rt.block_on(export(&engine, &req, on_progress));
+                unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
+                result.expect("an export with the default destination must succeed")
+            };
+
+            let written = std::path::Path::new(&out.output_path);
+            assert_eq!(
+                written.parent().and_then(|p| p.canonicalize().ok()),
+                dir.path().canonicalize().ok(),
+                "the default destination must write beside the source; got {}",
+                written.display()
+            );
+            assert_eq!(
+                written
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned()),
+                Some("source_redigert.mp3".to_string())
+            );
+            assert!(std::fs::metadata(written).unwrap().len() > 0);
+            assert_monotonic(&ticks);
+            eprintln!(
+                "editor export smoke: default destination wrote {}",
+                written.display()
+            );
+        }
+
+        /// A wedged render must be killed, not waited on forever. Drives a REAL
+        /// export with the kill-timer overridden to 1 ms.
+        #[test]
+        fn export_timeout_kills_the_render_or_skips() {
+            let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+                eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+
+            let dir = tempfile::tempdir().unwrap();
+            let src_s = lavfi_source(&ffmpeg, dir.path());
+            let req = cut_to_mp3_request(src_s, &dir.path().to_string_lossy());
+            let engine = ExportEngine::new();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let err = {
+                let _guard = ENV_LOCK.lock().unwrap();
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe {
+                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                    // 1 ms — even a spawn takes longer than that.
+                    std::env::set_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE", "1");
+                }
+                let result = rt.block_on(export(&engine, &req, |_, _| {}));
+                unsafe {
+                    std::env::remove_var("SUNDAYREC_FFMPEG");
+                    std::env::remove_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE");
+                }
+                result.expect_err("a 1 ms kill-timer must abort the export")
+            };
+            let msg = err.to_string();
+            assert!(
+                msg.contains("timeout"),
+                "the renderer maps the bare `timeout` code to a friendly sentence; got {msg}"
+            );
+            // The child was killed AND reaped by the timeout path, so nothing is
+            // left in flight for a cancel to find (no orphan ffmpeg).
+            assert!(
+                !rt.block_on(cancel_export(&engine)).unwrap(),
+                "the timeout must leave no ffmpeg child behind"
+            );
+            eprintln!("editor export smoke: kill-timer aborted the render ({msg})");
         }
     }
 }

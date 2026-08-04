@@ -16,6 +16,7 @@
 //!   - [`video_filter_complex`]   — keep segments (+ processing) → A/V filter graph
 //!   - [`ffmetadata`]             — chapter metadata → the `;FFMETADATA1` sidecar text
 //!   - [`save_output_path`]       — collision-avoiding output path policy
+//!   - [`resolve_output_dir`]     — "same folder as the source" destination policy
 //!   - [`resolve_save_ext`]       — extension policy incl. FORCE_WAV refusal
 //!   - format constants ([`FORCE_WAV_FORMATS`], [`AUDIO_SAVE_EXTS`])
 //!
@@ -485,6 +486,35 @@ pub fn audio_simple_af(seg: &KeepSegment) -> String {
     )
 }
 
+/// The COMPLETE output-argument list for the simple single-segment audio path
+/// ([`is_simple_audio_export`]): stream selection + `-af` + codec.
+///
+/// The stream selection is load-bearing. The other two branches
+/// ([`audio_export_filter_complex`] / [`video_filter_complex`]) end in an
+/// explicit `-map`, but this one used to emit a bare `-af`, leaving ffmpeg's
+/// automatic stream selection in charge — and for a VIDEO-bearing source
+/// exported to an audio container that picks the video stream too (mp3 gets an
+/// attached-picture-shaped mess, and containers that refuse video fail outright).
+/// `-vn` drops video and `-map 0:a:0` pins the first audio stream of the main
+/// input (input 0 — the simple path has no intro/outro, so the main file is
+/// always index 0; an optional FFMETADATA input is appended *after* it).
+pub fn audio_simple_export_args(
+    seg: &KeepSegment,
+    fmt: &str,
+    bitrate: Option<u32>,
+    bit_depth: Option<u8>,
+) -> Vec<String> {
+    let mut args = vec![
+        "-vn".to_string(),
+        "-map".to_string(),
+        "0:a:0".to_string(),
+        "-af".to_string(),
+        audio_simple_af(seg),
+    ];
+    args.extend(codec_args(fmt, bitrate, bit_depth));
+    args
+}
+
 /// The audio filter graph for a *save* (no intro/outro/processing — the
 /// `saveEdited` path). Returns `None` for the single-keep case (caller uses a
 /// plain `-af`), or the filter_complex string + `[out]` map for multi-keep.
@@ -657,6 +687,38 @@ where
             return cand;
         }
         i += 1;
+    }
+}
+
+/// Resolve the directory an export writes into, given the renderer's requested
+/// folder and the source file.
+///
+/// An EMPTY `output_folder` means "Samme mappe" — the export modal's DEFAULT
+/// destination, which never picks a folder (only "Velg mappe…" does). Treating
+/// that empty string as a real path is what broke export out of the box: it
+/// reached the IPC path guard, failed `require_absolute` ("path must be
+/// absolute"), and every default export died before ffmpeg ever ran. Empty now
+/// resolves to the source file's own directory, which is what the pill promises.
+///
+/// A non-empty folder is returned untouched. The split is done on BOTH
+/// separators (not `std::path`) so the policy stays platform-neutral and
+/// testable on any host, exactly like [`join`]. The caller guarantees
+/// `input_path` is absolute (the IPC guard rejects anything else), so the
+/// derived parent is absolute too — `collision_free_path` gets an absolute dir
+/// in both cases.
+pub fn resolve_output_dir(output_folder: &str, input_path: &str) -> String {
+    let folder = output_folder.trim();
+    if !folder.is_empty() {
+        return folder.to_string();
+    }
+    match input_path.rfind(['/', '\\']) {
+        // A separator at index 0 means the file sits at the filesystem root —
+        // the directory is the root itself, not the empty string.
+        Some(0) => input_path[..1].to_string(),
+        Some(i) => input_path[..i].to_string(),
+        // No separator at all: a bare filename. Can't happen through the IPC
+        // guard (absolute paths only); `join` then yields a plain relative name.
+        None => String::new(),
     }
 }
 
@@ -1575,6 +1637,38 @@ mod tests {
     }
 
     #[test]
+    fn simple_export_args_pin_the_audio_stream() {
+        let seg = KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        };
+        let args = audio_simple_export_args(&seg, "mp3", Some(128), None);
+        // Without these two the export of a VIDEO source to an audio container
+        // let ffmpeg's automatic stream selection pull in the video stream.
+        assert!(args.contains(&"-vn".to_string()), "args: {args:?}");
+        let map_at = args
+            .iter()
+            .position(|a| a == "-map")
+            .expect("simple path must map explicitly");
+        assert_eq!(args[map_at + 1], "0:a:0");
+        // The trim + codec still ride along, unchanged.
+        let af_at = args.iter().position(|a| a == "-af").unwrap();
+        assert_eq!(args[af_at + 1], audio_simple_af(&seg));
+        assert!(args.ends_with(&["-b:a".to_string(), "128k".to_string()]));
+    }
+
+    #[test]
+    fn simple_export_args_carry_wav_bit_depth() {
+        let seg = KeepSegment {
+            start: 1.0,
+            end: 2.0,
+        };
+        let args = audio_simple_export_args(&seg, "wav", None, Some(24));
+        assert!(args.contains(&"-vn".to_string()));
+        assert!(args.ends_with(&["-c:a".to_string(), "pcm_s24le".to_string()]));
+    }
+
+    #[test]
     fn export_filter_single_keep_with_processing() {
         let keeps = vec![KeepSegment {
             start: 1.0,
@@ -1765,6 +1859,47 @@ mod tests {
     fn join_handles_trailing_separator() {
         assert_eq!(join("/rec/", "a.mp3"), "/rec/a.mp3");
         assert_eq!(join("", "a.mp3"), "a.mp3");
+    }
+
+    #[test]
+    fn empty_output_folder_resolves_to_the_source_directory() {
+        // The "Samme mappe" default sends '' — it must land next to the source,
+        // not blow up on the absolute-path guard.
+        assert_eq!(
+            resolve_output_dir("", "/Users/x/Opptak/gudstjeneste.mp4"),
+            "/Users/x/Opptak"
+        );
+        // Windows separators resolve the same way (no std::path involved).
+        assert_eq!(
+            resolve_output_dir("", r"C:\Opptak\gudstjeneste.mp4"),
+            r"C:\Opptak"
+        );
+        // Whitespace-only is still "same folder" (a picker never yields it, but
+        // the guard downstream would reject it as a path).
+        assert_eq!(resolve_output_dir("   ", "/rec/a.wav"), "/rec");
+    }
+
+    #[test]
+    fn explicit_output_folder_is_returned_unchanged() {
+        assert_eq!(
+            resolve_output_dir("/Users/x/Skrivebord", "/Users/x/Opptak/a.mp4"),
+            "/Users/x/Skrivebord"
+        );
+    }
+
+    #[test]
+    fn source_at_the_filesystem_root_resolves_to_the_root() {
+        assert_eq!(resolve_output_dir("", "/a.mp3"), "/");
+        // …and the joined output stays absolute (no "//" and no bare name).
+        assert_eq!(
+            collision_free_path(
+                &resolve_output_dir("", "/a.mp3"),
+                "a_redigert",
+                "mp3",
+                |_| { false }
+            ),
+            "/a_redigert.mp3"
+        );
     }
 
     // ── timeout ─────────────────────────────────────────────────────────────────

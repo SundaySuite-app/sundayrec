@@ -124,6 +124,8 @@ declare global {
       editorSaveFile:         (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       editorPickFile:         ()                 => Promise<string | null>
       editorExportFile:       (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
+      /** Kill the in-flight export render; resolves to whether one was running. */
+      editorCancelExport:     ()                 => Promise<boolean>
       editorPickOutputFolder: ()                 => Promise<string | null>
       editorReadMeta:         (filePath: string) => Promise<unknown>
       editorSaveMeta:         (filePath: string, metadata: unknown) => Promise<boolean>

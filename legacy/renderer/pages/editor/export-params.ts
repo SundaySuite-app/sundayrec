@@ -1,0 +1,99 @@
+// Export request assembly — the pure half of `runExport`.
+//
+// Split out of export.ts so the shape the renderer sends can be asserted in a
+// unit test without a DOM, an `E` state object, or the IPC shim. Two things
+// here are load-bearing and were regressions before:
+//
+//   1. `outputFolder` is ALWAYS a string. The default destination pill ("Samme
+//      mappe") never picks a folder, so it sends '' — which the backend reads
+//      as "next to the source file". Sending `undefined` instead put the shim's
+//      `?? ''` fallback in charge of a decision that belongs here.
+//   2. There is NO `mode` field. The old 'new' | 'replace' | 'folder' mode was
+//      dropped by the shim and never implemented in Rust, so "Erstatt original"
+//      silently behaved like "ny fil". The pill is gone; so is the field.
+
+/** One cut region on the recording timeline (seconds). */
+export interface ExportCutRegion {
+  start: number
+  end: number
+}
+
+/** Channel-repair settings as the backend's `EditorChannelRepair` expects them. */
+export interface ExportChannelRepair {
+  mode: string
+  leftDb: number
+  rightDb: number
+}
+
+/** Everything `buildExportRequest` needs, read out of the editor state + DOM by
+ *  the caller. `kind` picks the audio-format fields or the video-codec ones. */
+export interface ExportRequestInput {
+  kind: 'audio' | 'video'
+  inputPath: string
+  cutRegions: readonly ExportCutRegion[]
+  duration: number
+  /** '' = "Samme mappe" (the default). A picked folder is an absolute path. */
+  outputFolder: string
+  /** Audio container (`mp3|wav|flac|aac`) — audio exports only. */
+  format?: string
+  /** Audio bitrate in kbps — lossy audio formats only. */
+  bitrate?: number
+  /** WAV bit depth — WAV only. */
+  bitDepth?: 16 | 24
+  /** Video container (`mp4|mov|mkv`) — video exports only. */
+  videoFormat?: string
+  /** Video codec (`h264|h265`) — video exports only. */
+  videoCodec?: string
+  /** Peak-normalization gain in dB; 0 means "not normalized" → omitted. */
+  gainDb?: number
+  introPath?: string
+  outroPath?: string
+  metadata?: unknown
+  masterPreset?: string
+  vocalChainPreset?: string
+  processing?: unknown
+  channelRepair?: ExportChannelRepair
+}
+
+/** Drop an empty string / 0 so the backend sees `undefined` (→ `null`) rather
+ *  than a falsy value it would have to special-case. */
+function orUndefined<T>(value: T | undefined | ''): T | undefined {
+  return value === '' || value === undefined ? undefined : value
+}
+
+/**
+ * Build the params object handed to `window.api.editorExportFile` /
+ * `editorExportVideo`. Pure — same input, same output, no DOM reads.
+ */
+export function buildExportRequest(input: ExportRequestInput): Record<string, unknown> {
+  const shared: Record<string, unknown> = {
+    inputPath: input.inputPath,
+    cutRegions: input.cutRegions,
+    duration: input.duration,
+    // Always a string: '' means "same folder as the source", which the backend
+    // resolves. Never `undefined`, never a `mode`.
+    outputFolder: input.outputFolder ?? '',
+    gainDb: input.gainDb ? input.gainDb : undefined,
+    introPath: orUndefined(input.introPath),
+    outroPath: orUndefined(input.outroPath),
+    metadata: input.metadata,
+    masterPreset: orUndefined(input.masterPreset),
+    vocalChainPreset: orUndefined(input.vocalChainPreset),
+    processing: input.processing,
+    channelRepair: input.channelRepair,
+  }
+
+  if (input.kind === 'video') {
+    return {
+      ...shared,
+      videoFormat: input.videoFormat || 'mp4',
+      videoCodec: input.videoCodec || 'h264',
+    }
+  }
+  return {
+    ...shared,
+    outputFormat: input.format || 'mp3',
+    outputBitrate: input.bitrate,
+    outputBitDepth: input.bitDepth,
+  }
+}

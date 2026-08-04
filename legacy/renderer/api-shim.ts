@@ -1028,7 +1028,11 @@ const api: Record<string, unknown> = {
   // One-click "best result": diagnose + recommended preset bundle.
   editorAutoProcess: async (fp: string) =>
     call("editor_auto_process", { inputPath: fp }, null),
-  editorCancelExport: async () => true,
+  // Kill the in-flight export's ffmpeg. Returns whether one was running; the
+  // export itself then rejects with `cancelled`, which the editor maps to a
+  // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt
+  // button did nothing and a 90-minute render was unkillable.)
+  editorCancelExport: async () => call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
   // Sidecars (meta / cutsDraft / transcript) are clean JSON key-value via
   // editor_read/write/delete_sidecar — no media decode needed.

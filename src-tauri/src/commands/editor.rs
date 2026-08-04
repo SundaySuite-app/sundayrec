@@ -8,10 +8,10 @@
 
 use crate::editor::{
     self, EditorAudioExtract, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter,
-    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
+    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, MasterEngine,
+    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -110,18 +110,45 @@ pub async fn editor_mastering_analyze(
     editor::mastering_analyze(&input_path, &preset_id).await
 }
 
-/// Apply the cut-plan (+ optional mastering) and render to the chosen format.
+/// Apply the cut-plan (+ optional mastering) and render to the chosen format,
+/// emitting `editor://export-progress` ticks the renderer draws as a real bar.
 #[tauri::command]
-pub async fn editor_export(request: EditorExportRequest) -> AppResult<EditorExportResult> {
+pub async fn editor_export(
+    app: tauri::AppHandle,
+    engine: State<'_, ExportEngine>,
+    request: EditorExportRequest,
+) -> AppResult<EditorExportResult> {
     super::path_guard::checked_input_file(&request.input_path)?;
-    super::path_guard::checked_path(&request.output_folder)?;
+    // An EMPTY folder is the export modal's default destination ("Samme mappe")
+    // and means "next to the source" — the seam resolves it. Guarding it as a
+    // path was the whole out-of-the-box export failure: `require_absolute`
+    // rejected '' with "path must be absolute" before ffmpeg ever ran.
+    if !request.output_folder.is_empty() {
+        super::path_guard::checked_path(&request.output_folder)?;
+    }
     for clip in [&request.intro_path, &request.outro_path]
         .into_iter()
         .flatten()
     {
         super::path_guard::checked_input_file(clip)?;
     }
-    editor::export(&request).await
+    editor::export(&engine, &request, move |pct, phase| {
+        let _ = app.emit(
+            "editor://export-progress",
+            EditorExportProgress {
+                pct,
+                phase: phase.to_string(),
+            },
+        );
+    })
+    .await
+}
+
+/// Abort the in-flight export (kills the render's ffmpeg). Returns whether one
+/// was actually running.
+#[tauri::command]
+pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<bool> {
+    editor::cancel_export(&engine).await
 }
 
 /// Extract a single video frame at `sec` seconds as a base64 JPEG (480px wide)

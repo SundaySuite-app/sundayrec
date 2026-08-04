@@ -98,7 +98,11 @@ export function setupEditorPage(): void {
     })
   })
 
-  // Destination picker
+  // Destination picker. Two pills: "Samme mappe" (default) leaves
+  // E.exportOutputFolder EMPTY — the backend reads that as "beside the source
+  // file" — and "Velg mappe…" sets an absolute path. There is no third
+  // "Erstatt original" pill any more: replace-mode was never implemented in the
+  // backend, so it silently behaved like "ny fil".
   document.querySelectorAll<HTMLElement>('.export-dest-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       document.querySelectorAll('.export-dest-btn').forEach(b => b.classList.remove('active'))
@@ -106,13 +110,20 @@ export function setupEditorPage(): void {
       if (btn.dataset.dest === 'folder') {
         const folder = await window.api.editorPickOutputFolder()
         if (folder) {
-          ($('export-folder-path') as HTMLElement).textContent = folder
+          const label = $('export-folder-path')
+          if (label) { label.textContent = folder; label.style.display = '' }
           E.exportOutputFolder = folder
         } else {
           // Revert to same if cancelled
           document.querySelectorAll('.export-dest-btn').forEach(b => b.classList.remove('active'))
           document.querySelector<HTMLElement>('.export-dest-btn[data-dest="same"]')?.classList.add('active')
         }
+      } else {
+        // Back to the default → drop any previously picked folder, otherwise
+        // the pill said "Samme mappe" while the export still went elsewhere.
+        E.exportOutputFolder = ''
+        const label = $('export-folder-path')
+        if (label) { label.textContent = ''; label.style.display = 'none' }
       }
     })
   })
@@ -303,18 +314,10 @@ export function setupEditorPage(): void {
     drawWaveform()
   })
 
-  // Export progress listener — drop any previous registration first so
-  // setupEditorPage() called twice (renderer reload, tab swap, dev HMR)
-  // doesn't stack listeners that each fire a DOM write per progress event.
-  if (E.exportProgressUnsub) { try { E.exportProgressUnsub() } catch {} }
-  E.exportProgressUnsub = window.api.on('editor-export-progress', (data: unknown) => {
-    const { percent } = data as { percent: number }
-    const bar   = $('editor-export-progress-bar')
-    const label = $('editor-export-progress-label')
-    // A concrete % arrived → switch from the indeterminate stripe to a real bar.
-    if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = Math.min(99, percent) + '%' }
-    if (label) label.textContent = `Eksporterer… ${Math.round(percent)}%`
-  })
+  // NOTE: the export-progress listener lives in runExport() (export.ts), scoped
+  // to one export and unsubscribed in its `finally`. It used to be registered
+  // here for the whole page lifetime — and read a `percent` field the backend
+  // never emitted, so the bar stayed frozen while the label printed NaN.
 
   // Mastering wiring
   setupMasteringPanel()

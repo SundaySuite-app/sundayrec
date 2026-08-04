@@ -2462,6 +2462,7 @@
             <div class="editor-export-progress-bar" id="editor-export-progress-bar"></div>
           </div>
           <span class="editor-export-progress-label" id="editor-export-progress-label">Eksporterer…</span>
+          <button class="btn-ghost btn-sm" id="btn-editor-export-cancel" data-i18n="editor.exportCancel">Avbryt</button>
         </div>
         <div id="editor-result-row" class="editor-result-row" style="display:none">
           <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
@@ -2557,9 +2558,12 @@
     <!-- Destination -->
     <div class="export-section-label" data-i18n="editor.exportDest">Destinasjon</div>
     <div class="export-dest-row">
+      <!-- "Samme mappe" sends an EMPTY folder; the backend resolves that to the
+           source file's directory. "Erstatt original" was removed: the mode was
+           dropped by the IPC shim and never implemented, so it quietly wrote a
+           new file anyway. -->
       <button class="export-dest-btn active" data-dest="same" data-i18n="editor.exportDestSame">Samme mappe</button>
       <button class="export-dest-btn" data-dest="folder" data-i18n="editor.exportDestFolder">Velg mappe…</button>
-      <button class="export-dest-btn" data-dest="replace" data-i18n="editor.exportDestReplace">Erstatt original</button>
     </div>
     <div id="export-folder-path" class="export-folder-path" style="display:none"></div>
 

@@ -57,9 +57,6 @@ export const E = {
   // normalize, intro/outro swap, mastering preset, metadata edits, …).
   editorDirty: false,
 
-  // Holds the unsubscribe fn returned by window.api.on('editor-export-progress', …)
-  exportProgressUnsub: null as (() => void) | null | undefined,
-
   // Video routing
   isVideoFile: false,
   videoEl: null as HTMLVideoElement | null,
