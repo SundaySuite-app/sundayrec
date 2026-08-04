@@ -688,6 +688,7 @@
     "chaptersEmpty": "Ingen kapitler endnu. Klik på \"+ Tilføj ved afspilningsmarkør\" for at starte.",
     "chapterClickSeek": "Klik for at søge",
     "playbackViaProxy": "Afspilningen går via en midlertidig mellemfil (fuld kvalitet). Eksport bruger altid originalen.",
+    "analyzingWaveform": "Analyserer bølgeform…",
     "preparingPlayback": "Klargør afspilning…",
     "qualityFallback": "Afspilning er ikke tilgængelig for denne fil — formatet kan ikke afspilles her. Klipning og eksport virker som normalt."
   },

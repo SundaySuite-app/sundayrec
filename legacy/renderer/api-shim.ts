@@ -1059,8 +1059,10 @@ const api: Record<string, unknown> = {
   // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
   // the result directly to Suggestion[] and assigns E.suggestions, so return the
   // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
-  editorDetectSegments: async (fp: string) =>
-    call("editor_segments", { inputPath: fp }, []),
+  // The result is cached in a `<stem>.segments.json` sidecar; `force` (the
+  // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
+  editorDetectSegments: async (fp: string, force?: boolean) =>
+    call("editor_segments", { inputPath: fp, force: force ?? false }, []),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).
@@ -1099,6 +1101,7 @@ const api: Record<string, unknown> = {
       hasAudio: boolean;
       channels: number | null;
       sampleFmt: string | null;
+      sampleRate: number | null;
     } | null>("editor_load_recording", { inputPath: fp }, null),
   // editor_allow_asset_path → widens the webview's `asset://` scope to ONE file.
   // The static scope globs cover the standard user folders only; recordings on
@@ -1115,23 +1118,12 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
-  // editor_peaks → { peaks, sampleRate } — the VIDEO loader uses this for the
-  // waveform (playback is via the <video> asset:// element).
+  // editor_peaks → { peaks, sampleRate } — the waveform for BOTH the audio and
+  // the video loader (playback is always a media element on asset://). Streamed
+  // out of ffmpeg 100 peaks/s and cached in a `<stem>.peaks.json` sidecar, so a
+  // reopen costs a JSON read instead of a full decode.
   editorExtractAudioPeaks: async (fp: string) =>
     call("editor_peaks", { inputPath: fp }, null),
-  // editor_extract_audio → { bytes, duration }: a small decodable 8 kHz mono WAV
-  // for AUDIO files too large for inline Web Audio decode (> EDITOR_INLINE_LIMIT)
-  // or in a codec the browser can't decode. Mapped to the loader's
-  // { data, duration } shape (cuts/export still run on the original file).
-  editorExtractAudioWav: async (fp: string) => {
-    const r = await call<{ bytes?: number[] | null; duration?: number } | null>(
-      "editor_extract_audio",
-      { inputPath: fp },
-      null,
-    );
-    if (!r || !r.bytes) return null;
-    return { data: new Uint8Array(r.bytes), duration: r.duration ?? 0 };
-  },
   // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file for
   // full-fidelity playback of oversized/exotic files (the <audio> element
   // streams it from disk via asset://, so no multi-GB Web-Audio PCM buffer).

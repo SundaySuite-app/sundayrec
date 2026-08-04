@@ -4,4 +4,9 @@
  * What a load-probe resolved about a recording, for the editor's first paint.
  * The renderer-facing mirror of [`sundayrec_core::editor::ProbeResult`].
  */
-export type EditorMediaInfo = { durationSec: number, hasVideo: boolean, hasAudio: boolean, channels: number | null, sampleFmt: string | null, };
+export type EditorMediaInfo = { durationSec: number, hasVideo: boolean, hasAudio: boolean, channels: number | null, sampleFmt: string | null, 
+/**
+ * The first audio stream's sample rate (Hz), when ffprobe reported one.
+ * Additive + optional, so callers that predate it are unaffected.
+ */
+sampleRate: number | null, };

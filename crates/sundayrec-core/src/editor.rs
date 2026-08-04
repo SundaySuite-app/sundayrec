@@ -757,7 +757,7 @@ pub fn ffprobe_load_args(input_path: &str) -> Vec<String> {
         "-v",
         "error",
         "-show_entries",
-        "format=duration:stream=codec_type,channels,sample_fmt",
+        "format=duration:stream=codec_type,channels,sample_fmt,sample_rate",
         "-of",
         "default=noprint_wrappers=1:nokey=0",
         input_path,
@@ -776,17 +776,23 @@ pub struct ProbeResult {
     pub has_audio: bool,
     pub channels: Option<u32>,
     pub sample_fmt: Option<String>,
+    /// The first audio stream's sample rate (Hz), when ffprobe reported one.
+    /// The export pins `-ar` to this so a 96 kHz service is never silently
+    /// resampled; the loader can also show it.
+    pub sample_rate: Option<u32>,
 }
 
 /// Parse the `key=value` lines ffprobe prints for [`ffprobe_load_args`]. ffprobe
 /// emits one block per stream plus the format block, so we take the first audio
-/// stream's channels/sample_fmt and OR the video presence across all streams.
+/// stream's channels/sample_fmt/sample_rate and OR the video presence across all
+/// streams.
 pub fn parse_probe_output(stdout: &str) -> ProbeResult {
     let mut duration_sec = 0.0;
     let mut has_video = false;
     let mut has_audio = false;
     let mut channels: Option<u32> = None;
     let mut sample_fmt: Option<String> = None;
+    let mut sample_rate: Option<u32> = None;
     // ffprobe prints stream blocks then the format block; a `codec_type=audio`
     // line opens an audio stream whose subsequent `channels=`/`sample_fmt=`
     // belong to it. Track the current stream kind to attribute fields.
@@ -813,6 +819,9 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
             {
                 sample_fmt = Some(val.to_string());
             }
+            "sample_rate" if current_audio && sample_rate.is_none() => {
+                sample_rate = val.parse::<u32>().ok().filter(|r| *r > 0);
+            }
             "duration" => {
                 if let Ok(d) = val.parse::<f64>() {
                     if d.is_finite() && d > 0.0 {
@@ -829,14 +838,21 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
         has_audio,
         channels,
         sample_fmt,
+        sample_rate,
     }
 }
 
-/// ffmpeg arguments to extract the audio of `input_path` as an 8 kHz mono WAV to
-/// `out_path`, for renderer-side waveform/peaks. Mirrors `extractAudioForPeaks`'s
-/// `-vn -ac 1 -ar 8000 -f wav` exactly (8 kHz keeps the buffer tiny — plenty for
-/// peaks). The seam streams this to a temp WAV then decodes it.
-pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
+/// ffmpeg arguments to decode `input_path` to 8 kHz mono `s16le` **on stdout**
+/// for the waveform.
+///
+/// The decode is the Electron `extractAudioForPeaks` one (`-vn -ac 1 -ar 8000`;
+/// 8 kHz is plenty for a waveform) minus the round-trip through disk: no temp
+/// dir, no WAV header, and the seam folds each stdout chunk straight into a
+/// [`PeakAccumulator`], so peak extraction costs a few kB of RAM regardless of
+/// the recording's length. The old path decoded a 2 h 96 kHz FLAC into a ~115 MB
+/// WAV in a per-call temp dir that was never deleted, then read the whole thing
+/// back into memory before down-sampling it away.
+pub fn peaks_pipe_args(input_path: &str) -> Vec<String> {
     [
         "-nostdin",
         "-hide_banner",
@@ -848,9 +864,8 @@ pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
         "-ar",
         "8000",
         "-f",
-        "wav",
-        "-y",
-        out_path,
+        "s16le",
+        "pipe:1",
     ]
     .into_iter()
     .map(String::from)
@@ -860,14 +875,14 @@ pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
 /// ffmpeg arguments to transcode `input_path` to a compact, **seekable, stereo**
 /// AAC `.m4a` proxy at the source rate (48 kHz cap is the browser's comfort zone)
 /// for AUDIBLE playback of files too big / too exotic for the inline Web-Audio
-/// path. Unlike [`peaks_extract_args`] (8 kHz MONO — fine for a waveform but
+/// path. Unlike [`peaks_pipe_args`] (8 kHz MONO — fine for a waveform but
 /// telephone-quality to LISTEN to), this keeps stereo + full speech/music
 /// bandwidth, yet stays small enough to stream from disk via an `<audio>` element
 /// (no multi-GB Web-Audio PCM buffer → no OOM). `+faststart` puts the moov atom up
 /// front so the element can start + seek immediately.
 ///
 /// NOTE: the renderer wiring (play oversized/exotic files via an `<audio>` element
-/// pointed at this proxy, keeping the 8 kHz WAV only for the waveform) is a
+/// pointed at this proxy, keeping the 8 kHz decode only for the waveform) is a
 /// RIGG-VERIFISER follow-up — it changes the editor's playback transport, which
 /// cannot be validated in a headless build. The arg builder is ready + tested.
 pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
@@ -1036,6 +1051,170 @@ pub fn downsample_peaks(samples: &[f32], buckets: usize) -> Vec<f32> {
     out
 }
 
+// ── Streaming peaks (P3) ─────────────────────────────────────────────────────
+
+/// The rate [`peaks_pipe_args`] decodes at (Hz).
+pub const PEAKS_SAMPLE_RATE: u32 = 8000;
+
+/// Peak buckets per second — the rate the renderer's waveform indexes against
+/// (`pi = sec * 100`). Changing this desynchronises the waveform from the
+/// timeline, so it is a wire constant, not a tuning knob.
+pub const PEAKS_PER_SEC: usize = 100;
+
+/// Samples per peak bucket at [`PEAKS_SAMPLE_RATE`]: 8000 / 100 = 80.
+pub const PEAKS_BUCKET_SAMPLES: usize = (PEAKS_SAMPLE_RATE as usize) / PEAKS_PER_SEC;
+
+/// Folds a stream of little-endian `s16` bytes into 100-per-second peak buckets
+/// **as the bytes arrive** — the streaming equivalent of "decode everything into
+/// a `Vec<f32>`, then [`downsample_peaks`] it".
+///
+/// Two things it has to get right that a naive `chunks_exact(2)` per read does
+/// not: a sample can straddle a chunk boundary (an odd-length read leaves half a
+/// sample behind, which must be carried into the next chunk), and the final
+/// bucket is almost never full (its partial tail must still be emitted, or the
+/// waveform ends up to 10 ms short of the recording).
+#[derive(Debug, Clone)]
+pub struct PeakAccumulator {
+    bucket_size: usize,
+    /// The high byte of a sample split across a chunk boundary.
+    carry: Option<u8>,
+    /// Samples folded into the bucket currently being built.
+    filled: usize,
+    /// Running max-abs of the current bucket, already normalised to 0..1.
+    current: f32,
+    peaks: Vec<f32>,
+}
+
+impl PeakAccumulator {
+    /// A fresh accumulator emitting one peak per `bucket_size` samples. A zero
+    /// `bucket_size` is clamped to 1 so the accumulator can never spin.
+    pub fn new(bucket_size: usize) -> Self {
+        Self {
+            bucket_size: bucket_size.max(1),
+            carry: None,
+            filled: 0,
+            current: 0.0,
+            peaks: Vec::new(),
+        }
+    }
+
+    /// Fold one raw stdout chunk of `s16le` bytes in. Any trailing odd byte is
+    /// carried to the next call.
+    pub fn push_bytes(&mut self, chunk: &[u8]) {
+        let mut i = 0;
+        // Complete a sample whose low byte arrived in the previous chunk.
+        if let Some(lo) = self.carry.take() {
+            if let Some(&hi) = chunk.first() {
+                self.push_sample(i16::from_le_bytes([lo, hi]));
+                i = 1;
+            } else {
+                // Empty chunk — keep holding the half sample.
+                self.carry = Some(lo);
+                return;
+            }
+        }
+        let rest = &chunk[i..];
+        let pairs = rest.len() / 2;
+        for p in 0..pairs {
+            let b = &rest[p * 2..p * 2 + 2];
+            self.push_sample(i16::from_le_bytes([b[0], b[1]]));
+        }
+        if rest.len() % 2 == 1 {
+            self.carry = Some(rest[rest.len() - 1]);
+        }
+    }
+
+    fn push_sample(&mut self, sample: i16) {
+        // `i16::MIN.abs()` overflows — go through f32 like `downsample_peaks`'s
+        // input did (the WAV reader divided by 32768 before taking `abs`).
+        let a = (sample as f32 / 32768.0).abs();
+        if a > self.current {
+            self.current = a;
+        }
+        self.filled += 1;
+        if self.filled >= self.bucket_size {
+            self.peaks.push(self.current.min(1.0));
+            self.current = 0.0;
+            self.filled = 0;
+        }
+    }
+
+    /// Peaks emitted so far — the tail bucket is NOT included (use
+    /// [`finish`](Self::finish)). Handy for progress reporting.
+    pub fn len(&self) -> usize {
+        self.peaks.len()
+    }
+
+    /// Whether no complete bucket has been emitted yet.
+    pub fn is_empty(&self) -> bool {
+        self.peaks.is_empty()
+    }
+
+    /// Flush the partial tail bucket (if any) and yield the peaks. A stream that
+    /// never delivered a single sample yields an empty vec, matching
+    /// [`downsample_peaks`] on empty input.
+    pub fn finish(mut self) -> Vec<f32> {
+        if self.filled > 0 {
+            self.peaks.push(self.current.min(1.0));
+        }
+        self.peaks
+    }
+}
+
+/// Quantise 0..1 peaks to one byte each for the on-disk cache: `round(p * 255)`,
+/// clamped. 255 doubles as the clip marker (a full-scale sample is exactly what
+/// the renderer's clip badge looks for), and the byte form is what keeps a 2 h
+/// cache in the low megabytes instead of a float-per-peak JSON.
+pub fn quantize_peaks(peaks: &[f32]) -> Vec<u8> {
+    peaks
+        .iter()
+        .map(|p| {
+            // NaN has no ordering, so `clamp` would panic on it — call it silence.
+            // ±∞ clamps to the ends like any out-of-range value.
+            let v = if p.is_nan() { 0.0 } else { *p };
+            (v.clamp(0.0, 1.0) * 255.0).round() as u8
+        })
+        .collect()
+}
+
+/// Inverse of [`quantize_peaks`] — the renderer only ever draws these, so the
+/// ≤ 1/510 rounding error is invisible on a waveform.
+pub fn dequantize_peaks(bytes: &[u8]) -> Vec<f32> {
+    bytes.iter().map(|b| *b as f32 / 255.0).collect()
+}
+
+/// The cache-key rule shared by the peaks + segments sidecars: a cache is usable
+/// only when it was written by THIS format version, at the same peak rate, for a
+/// file of exactly the same size and modification time. Anything else (the file
+/// was re-recorded, re-exported in place, or the cache predates a format change)
+/// means recompute.
+///
+/// Pass `per_sec: None` for caches that carry no rate (segments).
+pub fn cache_is_fresh(
+    cached_version: u32,
+    expected_version: u32,
+    cached_size: u64,
+    cached_mtime_ms: u64,
+    cached_per_sec: Option<usize>,
+    actual_size: u64,
+    actual_mtime_ms: u64,
+) -> bool {
+    cached_version == expected_version
+        && cached_size == actual_size
+        && cached_mtime_ms == actual_mtime_ms
+        && cached_per_sec.is_none_or(|p| p == PEAKS_PER_SEC)
+}
+
+/// Filename prefix of the per-call temp dirs the OLD peaks path created (and
+/// never deleted — one leaked 8 kHz WAV per editor open). Nothing writes these
+/// any more; the sweep removes the leftovers a previous version left behind.
+pub const EDITOR_TEMP_DIR_PREFIX: &str = "sundayrec-editor-";
+
+/// Whether a temp-dir entry name is one of those legacy peaks temp dirs.
+pub fn is_editor_temp_dir_name(name: &str) -> bool {
+    name.starts_with(EDITOR_TEMP_DIR_PREFIX)
+}
+
 // ── Sidecar path policy (P1 parity) ──────────────────────────────────────────
 //
 // The Electron editor persisted per-recording editor state in three JSON
@@ -1058,6 +1237,11 @@ pub enum Sidecar {
     CutsDraft,
     /// `<base>.transcript.json` — the saved transcript.
     Transcript,
+    /// `<base>.peaks.json` — the quantised waveform cache (P3). Derived data,
+    /// not user state: deleting it costs one recompute, nothing else.
+    Peaks,
+    /// `<base>.segments.json` — the content-detection cache (P3). Same deal.
+    Segments,
 }
 
 impl Sidecar {
@@ -1067,6 +1251,8 @@ impl Sidecar {
             Sidecar::Meta => ".meta.json",
             Sidecar::CutsDraft => ".cuts-draft.json",
             Sidecar::Transcript => ".transcript.json",
+            Sidecar::Peaks => ".peaks.json",
+            Sidecar::Segments => ".segments.json",
         }
     }
 }
@@ -1960,14 +2146,53 @@ mod tests {
     }
 
     #[test]
-    fn peaks_extract_args_match_electron_8khz_mono_wav() {
-        let args = peaks_extract_args("/rec/a.mp4", "/tmp/p.wav");
+    fn ffprobe_load_args_ask_for_the_sample_rate() {
+        // P4 pins the export's `-ar` to the source rate — it can only do that if
+        // the probe asked for it.
+        let args = ffprobe_load_args("/rec/a.flac");
+        assert!(
+            args.iter().any(|a| a.contains("sample_rate")),
+            "the probe must request sample_rate: {args:?}"
+        );
+    }
+
+    #[test]
+    fn parse_probe_output_reads_the_first_audio_sample_rate() {
+        let out = "codec_type=video\nsample_rate=N/A\n\
+                   codec_type=audio\nchannels=2\nsample_fmt=s32\nsample_rate=96000\n\
+                   codec_type=audio\nchannels=1\nsample_rate=44100\n\
+                   duration=3600.0\n";
+        let p = parse_probe_output(out);
+        // The video block's N/A must not claim the field, and the SECOND audio
+        // stream must not overwrite the first.
+        assert_eq!(p.sample_rate, Some(96000));
+        assert_eq!(p.channels, Some(2));
+    }
+
+    #[test]
+    fn parse_probe_output_sample_rate_is_none_when_unreported() {
+        let out = "codec_type=audio\nchannels=1\nsample_rate=N/A\nduration=10.0\n";
+        assert_eq!(parse_probe_output(out).sample_rate, None);
+        let out0 = "codec_type=audio\nchannels=1\nsample_rate=0\nduration=10.0\n";
+        assert_eq!(parse_probe_output(out0).sample_rate, None);
+    }
+
+    #[test]
+    fn peaks_pipe_args_are_the_same_decode_straight_to_stdout() {
+        let args = peaks_pipe_args("/rec/a.mp4");
         let joined = args.join(" ");
+        // Same decode as the WAV variant …
         assert!(joined.contains("-vn"));
         assert!(joined.contains("-ac 1"));
         assert!(joined.contains("-ar 8000"));
-        assert!(joined.contains("-f wav"));
-        assert_eq!(args.last().unwrap(), "/tmp/p.wav");
+        // … but raw samples to a pipe, so there is no temp WAV to leak.
+        assert!(joined.contains("-f s16le"), "raw PCM, not a WAV: {joined}");
+        assert_eq!(args.last().unwrap(), "pipe:1");
+        assert!(
+            !joined.contains("-y"),
+            "nothing is written to disk, so there is no file to overwrite: {joined}"
+        );
+        assert!(args.contains(&"-nostdin".to_string()));
     }
 
     #[test]
@@ -2088,6 +2313,166 @@ mod tests {
         // more buckets than samples → one peak per sample.
         let peaks = downsample_peaks(&s, 100);
         assert_eq!(peaks.len(), 3);
+    }
+
+    // ── streaming peak accumulator ─────────────────────────────────────────────
+
+    /// A deterministic synthetic s16 signal + its raw little-endian bytes.
+    fn synthetic_s16(n: usize) -> (Vec<i16>, Vec<u8>) {
+        let samples: Vec<i16> = (0..n)
+            .map(|i| {
+                // A shape with sign changes and a few near-full-scale spikes, so
+                // max-abs actually has to pick.
+                let base = ((i as f64 * 0.37).sin() * 20000.0) as i16;
+                if i % 173 == 0 {
+                    -32000
+                } else {
+                    base
+                }
+            })
+            .collect();
+        let bytes = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        (samples, bytes)
+    }
+
+    #[test]
+    fn peak_accumulator_empty_input_is_empty() {
+        assert!(PeakAccumulator::new(80).finish().is_empty());
+        let mut acc = PeakAccumulator::new(80);
+        acc.push_bytes(&[]);
+        assert!(acc.is_empty());
+        assert!(acc.finish().is_empty());
+    }
+
+    #[test]
+    fn peak_accumulator_matches_downsample_peaks_on_the_same_buffer() {
+        // The streaming path must produce EXACTLY what the old
+        // decode-to-WAV-then-downsample path did, or the waveform changes shape
+        // the day the cache is regenerated.
+        const BUCKET: usize = 80;
+        let (samples, bytes) = synthetic_s16(BUCKET * 25);
+        let floats: Vec<f32> = samples.iter().map(|s| *s as f32 / 32768.0).collect();
+        let expected = downsample_peaks(&floats, floats.len() / BUCKET);
+
+        let mut acc = PeakAccumulator::new(BUCKET);
+        acc.push_bytes(&bytes);
+        let got = acc.finish();
+
+        assert_eq!(got.len(), expected.len());
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 1e-6,
+                "bucket {i}: streamed {g} vs batch {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn peak_accumulator_carries_samples_split_across_chunk_boundaries() {
+        // ffmpeg's stdout hands us whatever fits the pipe buffer — a 2-byte
+        // sample lands half in one read and half in the next all the time. Chunk
+        // the SAME bytes at every odd/awkward size and demand identical output.
+        const BUCKET: usize = 80;
+        let (_, bytes) = synthetic_s16(BUCKET * 7 + 13);
+        let mut whole = PeakAccumulator::new(BUCKET);
+        whole.push_bytes(&bytes);
+        let expected = whole.finish();
+
+        for chunk in [1usize, 2, 3, 5, 7, 79, 81, 159, 161, 1023] {
+            let mut acc = PeakAccumulator::new(BUCKET);
+            for part in bytes.chunks(chunk) {
+                acc.push_bytes(part);
+            }
+            let got = acc.finish();
+            assert_eq!(
+                got, expected,
+                "chunking at {chunk} bytes changed the peaks — a split sample was dropped or mis-paired"
+            );
+        }
+    }
+
+    #[test]
+    fn peak_accumulator_flushes_the_partial_tail_bucket() {
+        // 3 full buckets + 10 leftover samples ⇒ 4 peaks, so the waveform reaches
+        // the end of the recording instead of stopping up to 10 ms short.
+        const BUCKET: usize = 80;
+        let (_, bytes) = synthetic_s16(BUCKET * 3 + 10);
+        let mut acc = PeakAccumulator::new(BUCKET);
+        acc.push_bytes(&bytes);
+        assert_eq!(acc.len(), 3, "only complete buckets are emitted eagerly");
+        assert_eq!(acc.finish().len(), 4);
+    }
+
+    #[test]
+    fn peak_accumulator_holds_a_lone_odd_byte_until_its_partner_arrives() {
+        let mut acc = PeakAccumulator::new(1);
+        acc.push_bytes(&[0x00]); // low byte of 0x7F00 …
+        assert!(acc.is_empty(), "half a sample is not a sample");
+        acc.push_bytes(&[]); // an empty read must not lose the carry
+        assert!(acc.is_empty());
+        acc.push_bytes(&[0x7F]); // … high byte
+        let peaks = acc.finish();
+        assert_eq!(peaks.len(), 1);
+        assert!((peaks[0] - (0x7F00 as f32 / 32768.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn peak_accumulator_clamps_full_scale_negative_to_one() {
+        // `i16::MIN.abs()` overflows; the value must land at 1.0, not panic.
+        let mut acc = PeakAccumulator::new(1);
+        acc.push_bytes(&i16::MIN.to_le_bytes());
+        assert_eq!(acc.finish(), vec![1.0]);
+    }
+
+    #[test]
+    fn peaks_bucket_size_is_the_100_per_second_rate() {
+        assert_eq!(PEAKS_BUCKET_SAMPLES, 80);
+        assert_eq!(PEAKS_SAMPLE_RATE as usize / PEAKS_PER_SEC, 80);
+    }
+
+    // ── peak quantisation + cache freshness ────────────────────────────────────
+
+    #[test]
+    fn quantize_round_trips_within_a_byte() {
+        let peaks = [0.0f32, 0.25, 0.5, 0.751, 1.0];
+        let bytes = quantize_peaks(&peaks);
+        assert_eq!(bytes.first(), Some(&0));
+        assert_eq!(
+            bytes.last(),
+            Some(&255),
+            "full scale doubles as the clip mark"
+        );
+        for (p, q) in peaks.iter().zip(dequantize_peaks(&bytes)) {
+            assert!((p - q).abs() <= 1.0 / 255.0, "{p} → {q}");
+        }
+    }
+
+    #[test]
+    fn quantize_clamps_out_of_range_and_nan() {
+        assert_eq!(
+            quantize_peaks(&[-0.5, 2.0, f32::NAN, f32::INFINITY]),
+            vec![0, 255, 0, 255]
+        );
+    }
+
+    #[test]
+    fn cache_is_fresh_only_for_the_same_version_size_and_mtime() {
+        let fresh = |v, s, m, p| cache_is_fresh(v, 1, s, m, p, 4242, 1700);
+        assert!(fresh(1, 4242, 1700, Some(PEAKS_PER_SEC)));
+        assert!(fresh(1, 4242, 1700, None), "segments carry no rate");
+        // An older/newer format, a re-recorded file, an in-place re-export, or a
+        // cache written at a different peak rate: all recompute.
+        assert!(!fresh(0, 4242, 1700, None));
+        assert!(!fresh(1, 4243, 1700, None));
+        assert!(!fresh(1, 4242, 1701, None));
+        assert!(!fresh(1, 4242, 1700, Some(50)));
+    }
+
+    #[test]
+    fn legacy_editor_temp_dir_names_are_recognised_for_the_sweep() {
+        assert!(is_editor_temp_dir_name("sundayrec-editor-0192abc"));
+        assert!(!is_editor_temp_dir_name("sundayrec-playback-proxy-1.m4a"));
+        assert!(!is_editor_temp_dir_name("Downloads"));
     }
 
     // ── sidecar path policy ──────────────────────────────────────────────────────

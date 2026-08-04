@@ -368,7 +368,6 @@ pub fn run() {
             // R1 non-destructive editor (DTOs pure; ffmpeg runs gated by `editor`).
             commands::editor::editor_load_recording,
             commands::editor::editor_peaks,
-            commands::editor::editor_extract_audio,
             commands::editor::editor_extract_playback_proxy,
             commands::editor::editor_allow_asset_path,
             commands::editor::editor_probe_peak,

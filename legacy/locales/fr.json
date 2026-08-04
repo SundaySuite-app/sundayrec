@@ -688,6 +688,7 @@
     "chaptersEmpty": "Pas encore de chapitres. Cliquez sur « + Ajouter à la tête de lecture » pour commencer.",
     "chapterClickSeek": "Cliquer pour rechercher",
     "playbackViaProxy": "La lecture passe par un fichier intermédiaire temporaire (pleine qualité). L'export utilise toujours l'original.",
+    "analyzingWaveform": "Analyse de la forme d’onde…",
     "preparingPlayback": "Préparation de la lecture…",
     "qualityFallback": "La lecture n'est pas disponible pour ce fichier — ce format ne peut pas être lu ici. Le découpage et l'export fonctionnent normalement."
   },

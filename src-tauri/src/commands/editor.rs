@@ -7,8 +7,8 @@
 //! handles gracefully (the panel shows a "not built into this build" hint).
 
 use crate::editor::{
-    self, EditorAudioExtract, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter,
-    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorExportProgress,
+    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
     EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
@@ -23,33 +23,26 @@ pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaI
     editor::load_recording(&input_path).await
 }
 
-/// Decode the audio to a renderer waveform (peaks + sample rate).
+/// Decode the audio to a renderer waveform (peaks + sample rate). Streamed and
+/// cached in a `<stem>.peaks.json` sidecar — a reopen never re-decodes.
 #[tauri::command]
 pub async fn editor_peaks(input_path: String) -> AppResult<EditorPeaks> {
     super::path_guard::checked_input_file(&input_path)?;
     editor::peaks(&input_path).await
 }
 
-/// Extract a large/exotic recording to a small decodable 8 kHz mono WAV (bytes +
-/// duration) — the renderer's preview buffer when the file is over the inline
-/// limit or in a codec the browser can't decode.
-#[tauri::command]
-pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioExtract> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_audio(&input_path).await
-}
-
-/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
-/// full-fidelity playback; returns the temp-file path the renderer streams via
-/// `asset://` (an `<audio>` element). The 8 kHz WAV stays the waveform source and
 /// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
-/// basis when the loaded buffer is the 8 kHz extract.
+/// basis, since the waveform peaks are an 8 kHz mono downmix that under-reads
+/// the real peak by several dB.
 #[tauri::command]
 pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
     crate::editor::probe_true_peak_db(&input_path).await
 }
 
-/// export still runs on the original, so quality is untouched. HARDWARE-UNVERIFIED.
+/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
+/// full-fidelity playback; returns the temp-file path the renderer streams via
+/// `asset://` (an `<audio>` element). Export still runs on the original, so
+/// quality is untouched. HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {
     super::path_guard::checked_input_file(&input_path)?;
@@ -74,10 +67,16 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 }
 
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
+/// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
+/// opptak» button) skips the cache read and re-runs the analysis; the automatic
+/// post-open run leaves it unset and gets the cached answer for free.
 #[tauri::command]
-pub async fn editor_segments(input_path: String) -> AppResult<Vec<EditorSegment>> {
+pub async fn editor_segments(
+    input_path: String,
+    force: Option<bool>,
+) -> AppResult<Vec<EditorSegment>> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::segments(&input_path).await
+    editor::segments(&input_path, force.unwrap_or(false)).await
 }
 
 /// The built-in mastering presets for the editor's preset dropdown. Pure core

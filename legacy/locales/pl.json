@@ -688,6 +688,7 @@
     "chaptersEmpty": "Brak rozdziałów. Kliknij \"+ Dodaj w pozycji odtwarzania\", aby zacząć.",
     "chapterClickSeek": "Kliknij, aby przejść",
     "playbackViaProxy": "Odtwarzanie korzysta z tymczasowego pliku pośredniego (pełna jakość). Eksport zawsze używa oryginału.",
+    "analyzingWaveform": "Analizowanie przebiegu fali…",
     "preparingPlayback": "Przygotowywanie odtwarzania…",
     "qualityFallback": "Odtwarzanie tego pliku nie jest dostępne — tego formatu nie da się tu odtworzyć. Cięcie i eksport działają normalnie."
   },

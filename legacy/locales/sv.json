@@ -688,6 +688,7 @@
     "chaptersEmpty": "Inga kapitel ännu. Klicka på \"+ Lägg till vid uppspelningsmarkör\" för att starta.",
     "chapterClickSeek": "Klicka för att söka",
     "playbackViaProxy": "Uppspelningen går via en tillfällig mellanfil (full kvalitet). Exporten använder alltid originalet.",
+    "analyzingWaveform": "Analyserar vågform…",
     "preparingPlayback": "Förbereder uppspelning…",
     "qualityFallback": "Uppspelning är inte tillgänglig för den här filen — formatet kan inte spelas upp här. Klippning och export fungerar som vanligt."
   },

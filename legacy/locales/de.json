@@ -688,6 +688,7 @@
     "chaptersEmpty": "Noch keine Kapitel. Klicken Sie auf „+ An Wiedergabeposition hinzufügen\", um zu beginnen.",
     "chapterClickSeek": "Zum Suchen klicken",
     "playbackViaProxy": "Die Wiedergabe läuft über eine temporäre Zwischendatei (volle Qualität). Der Export nutzt immer das Original.",
+    "analyzingWaveform": "Wellenform wird analysiert…",
     "preparingPlayback": "Wiedergabe wird vorbereitet…",
     "qualityFallback": "Für diese Datei ist keine Wiedergabe möglich — das Format kann hier nicht abgespielt werden. Schneiden und Export funktionieren wie gewohnt."
   },

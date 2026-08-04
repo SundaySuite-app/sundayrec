@@ -152,11 +152,15 @@ async function loadAudioFile(fp: string, ext: string, seq: number): Promise<bool
     readyForFallback = whenPlayable(el, PLAYER_READY_TIMEOUT_MS)
   }
 
-  // Waveform: the backend extracts + down-samples to the renderer's 100 peaks/s
-  // — the same pipeline the video path has always used. No WAV bytes cross IPC
-  // and no AudioBuffer is built, so a 4 h FLAC costs the same renderer memory
-  // as a 4 min one.
-  const result = await window.api.editorExtractAudioPeaks(fp)
+  // Waveform: the backend streams the decode straight into 100 peaks/s — the
+  // same pipeline the video path has always used. No WAV bytes cross IPC and no
+  // AudioBuffer is built, so a 4 h FLAC costs the same renderer memory as a
+  // 4 min one. The result is cached beside the recording, so this is a file read
+  // on every open after the first.
+  const result = await withLoadingDetail(
+    t('editor.analyzingWaveform', 'Analyserer bølgeform…'),
+    window.api.editorExtractAudioPeaks(fp),
+  )
   if (seq !== E.loadSeq) return false
   if (result && Array.isArray(result.peaks) && result.peaks.length) {
     E.peaks = Float32Array.from(result.peaks)
@@ -283,7 +287,10 @@ export async function loadFile(fp: string): Promise<void> {
     // client-side (a 1080p service is multi-GB, over the inline limit), and video
     // PLAYBACK uses the <video> element (asset://) so no AudioBuffer is needed.
     // E.peaks drives the waveform; E.duration comes from the video element.
-    const result = await window.api.editorExtractAudioPeaks(fp)
+    const result = await withLoadingDetail(
+      t('editor.analyzingWaveform', 'Analyserer bølgeform…'),
+      window.api.editorExtractAudioPeaks(fp),
+    )
 
     if (seq !== E.loadSeq) return
 
@@ -433,12 +440,17 @@ export async function loadFile(fp: string): Promise<void> {
   // episode. Skipped if cuts were restored from a draft (they're already
   // editing) or if the user is in review-mode (handled separately).
   //
-  // Fired HERE, after the peaks + transport are resolved, rather than off a
-  // 200 ms timer: detection is another full ffmpeg pass over the recording, and
-  // starting it on a timer meant it raced the proxy transcode on the fallback
-  // path — two ffmpeg runs over the same multi-gigabyte file at once.
+  // Fired after the peaks + transport are resolved (never off a load-time
+  // timer): detection can be another full ffmpeg pass over the recording, and
+  // starting it early raced the proxy transcode on the fallback path — two
+  // ffmpeg runs over the same multi-gigabyte file at once. Deferred one step
+  // further to idle time so the FIRST PAINT of the workspace is never competing
+  // with a decode; on a reopen the backend answers from its segments cache and
+  // this returns almost immediately anyway.
   if (!E.isVideoFile && E.cuts.length === 0 && !reviewPrepId) {
-    void runDetection(true)
+    whenIdle(() => {
+      if (seq === E.loadSeq) void runDetection(true)
+    })
   }
 
   // Update Stage-kapitler button visibility (opt-in, no-op when disabled).
@@ -467,13 +479,56 @@ export function teardownPlayback(): void {
 }
 
 /** Extra line under the loading spinner ("Klargjør avspilling…"), or `null` to
- *  clear it. Only the proxy path ever has something to say here — a transcode
- *  takes real time and an unexplained wait reads as a hang. */
+ *  clear it. Only steps that take REAL time say anything here — a transcode or a
+ *  first-time waveform decode. An unexplained wait reads as a hang; a label that
+ *  flashes up for 30 ms on a cached open reads as jank. */
 function setLoadingDetail(text: string | null): void {
   const el = $('editor-loading-detail')
   if (!el) return
   el.textContent = text ?? ''
   el.style.display = text ? '' : 'none'
+}
+
+/** Below this, a wait is imperceptible and labelling it just makes the loading
+ *  screen flicker. A cached-peaks open lands well under it. */
+const LOADING_DETAIL_DELAY_MS = 400
+
+/**
+ * Await `work`, showing `text` under the spinner ONLY if it is still running
+ * after {@link LOADING_DETAIL_DELAY_MS}. With the peaks sidecar cache a reopen
+ * resolves in a few milliseconds, so the "Analyserer bølgeform…" line must never
+ * get the chance to paint — but the first open of a 2 h service still has to
+ * explain itself.
+ *
+ * The detail line is cleared only if this call is the one that set it, so a
+ * slower step that owns the line afterwards isn't wiped by a fast one.
+ */
+async function withLoadingDetail<T>(text: string, work: Promise<T>): Promise<T> {
+  let shown = false
+  const timer = window.setTimeout(() => {
+    shown = true
+    setLoadingDetail(text)
+  }, LOADING_DETAIL_DELAY_MS)
+  try {
+    return await work
+  } finally {
+    clearTimeout(timer)
+    if (shown) setLoadingDetail(null)
+  }
+}
+
+/**
+ * Run `fn` when the main thread is next idle, so it can't compete with the
+ * workspace's first paint. Falls back to a plain timer where
+ * `requestIdleCallback` is missing (Safari/WKWebView, i.e. every macOS build) —
+ * the deadline is the same either way, this is a deferral, not a scheduler.
+ */
+function whenIdle(fn: () => void): void {
+  const ric = (window as unknown as {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+  }).requestIdleCallback
+  if (typeof ric === 'function') ric(fn, { timeout: 1500 })
+  else window.setTimeout(fn, 1500)
 }
 
 /** Show a small, non-blocking notice in the editor workspace: playback is going

@@ -688,6 +688,7 @@
     "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
     "chapterClickSeek": "Click to seek",
     "playbackViaProxy": "Playback runs through a temporary intermediate file (full quality). Export always uses the original.",
+    "analyzingWaveform": "Analyzing waveform…",
     "preparingPlayback": "Preparing playback…",
     "qualityFallback": "Playback is not available for this file — the format cannot be played here. Cutting and export work as usual."
   },

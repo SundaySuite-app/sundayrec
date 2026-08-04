@@ -129,7 +129,7 @@ declare global {
       editorPickOutputFolder: ()                 => Promise<string | null>
       editorReadMeta:         (filePath: string) => Promise<unknown>
       editorSaveMeta:         (filePath: string, metadata: unknown) => Promise<boolean>
-      editorDetectSegments:   (filePath: string) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
+      editorDetectSegments:   (filePath: string, force?: boolean) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
@@ -203,10 +203,9 @@ declare global {
       videoPreviewStop:  () => Promise<void>
       recordingPreviewFrame: () => Promise<string | null>
       editorSetVideoPath:      (filePath: string) => Promise<boolean>
-      editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null } | null>
+      editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null; sampleRate: number | null } | null>
       editorAllowAssetPath:    (filePath: string) => Promise<boolean>
       editorExtractAudioPeaks: (filePath: string) => Promise<{ peaks: number[]; sampleRate: number } | null>
-      editorExtractAudioWav:   (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
       editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>
       editorPickVideoFile:     ()                 => Promise<string | null>
       editorSaveVideo:         (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
