@@ -105,7 +105,7 @@ pub async fn subscribe(
         "payload": { "config": { "broadcast": { "self": false } } },
         "ref": "1"
     });
-    ws.send(Message::Text(join.to_string()))
+    ws.send(Message::Text(join.to_string().into()))
         .await
         .map_err(|e| AppError::Internal(format!("realtime join: {e}")))?;
 

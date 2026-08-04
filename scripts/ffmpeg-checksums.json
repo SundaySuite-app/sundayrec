@@ -1,3 +1,5 @@
 {
-  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars bundled by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. A mismatch hard-fails the fetch; a missing key logs the computed hash with pin instructions. Populate each platform's entries by running `npm run ffmpeg` on a trusted machine of that platform (the release runners cover aarch64-apple-darwin and x86_64-pc-windows-msvc; CI covers x86_64-unknown-linux-gnu) and committing the printed values."
+  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars bundled by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. A mismatch hard-fails the fetch; a missing key logs the computed hash with pin instructions. Populate each platform's entries by running `npm run ffmpeg` on a trusted machine of that platform (the release runners cover aarch64-apple-darwin and x86_64-pc-windows-msvc; CI covers x86_64-unknown-linux-gnu) and committing the printed values.",
+  "ffmpeg-aarch64-apple-darwin": "a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584",
+  "ffprobe-aarch64-apple-darwin": "c846d5db9d3b5bc33f987725e21f3ea14953931221c191575918e907ad6c18ff"
 }

@@ -110,6 +110,33 @@ jobs:
       - name: Build Tauri app (no bundle)
         run: npm run tauri build -- --no-bundle
 
+  # Windows compile check — closes the "ubuntu-only CI" blind spot: the
+  # recorder's Windows halves (windows-sys job objects, cpal WASAPI paths,
+  # dshow arg builders, seek_write in the WAV writer) only COMPILE on a
+  # Windows target, and a PR with a merge conflict once shipped a Windows
+  # build break that ubuntu could never have caught. cargo check + clippy
+  # only (no tests, no bundle — release.yml builds the real installer), so
+  # the job stays fast. The repo is public → Actions minutes are free.
+  windows-check:
+    name: Windows cargo check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo check + clippy (workspace, all targets)
+        working-directory: src-tauri
+        run: |
+          cargo check --workspace --all-targets
+          cargo clippy --workspace --all-targets -- -D warnings
+
   # Dependency vulnerability scan — advisory DBs for both ecosystems. Runs as
   # its own job so a slow cargo-audit install doesn't hold up the main gate.
   audit:
