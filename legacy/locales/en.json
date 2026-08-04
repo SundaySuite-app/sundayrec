@@ -601,6 +601,7 @@
     "normalizeResult": "Peak now at -1 dBFS — safe for export.",
     "normalizeAlready": "The peak is already at -1 dBFS — no change needed.",
     "normalizeReset": "↺ Reset",
+    "normalizeExportHint": "Normalisation is heard on export, not while previewing.",
     "exportTitle": "Export…",
     "exportType": "Export type",
     "exportTypeVideo": "Video (with audio)",
@@ -686,7 +687,9 @@
     "errCutData": "Internal error in cut data. Try reloading the file.",
     "chaptersEmpty": "No chapters yet. Click \"+ Add at playhead\" to start.",
     "chapterClickSeek": "Click to seek",
-    "qualityFallback": "Playback in reduced quality (8 kHz) — full quality could not be prepared for this file. Export is unaffected."
+    "playbackViaProxy": "Playback runs through a temporary intermediate file (full quality). Export always uses the original.",
+    "preparingPlayback": "Preparing playback…",
+    "qualityFallback": "Playback is not available for this file — the format cannot be played here. Cutting and export work as usual."
   },
   "master": {
     "title": "Mastering (prepare for publishing)",

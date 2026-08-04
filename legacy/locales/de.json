@@ -601,6 +601,7 @@
     "normalizeResult": "Spitzenpegel jetzt -1 dBFS — sicher für den Export.",
     "normalizeAlready": "Der Spitzenpegel liegt bereits bei -1 dBFS — keine Änderung erforderlich.",
     "normalizeReset": "↺ Zurücksetzen",
+    "normalizeExportHint": "Die Normalisierung ist beim Export zu hören, nicht in der Vorschau.",
     "exportTitle": "Exportieren…",
     "exportType": "Exporttyp",
     "exportTypeVideo": "Video (mit Ton)",
@@ -686,7 +687,9 @@
     "errCutData": "Interner Fehler in Schnittdaten. Versuchen Sie, die Datei neu zu laden.",
     "chaptersEmpty": "Noch keine Kapitel. Klicken Sie auf „+ An Wiedergabeposition hinzufügen\", um zu beginnen.",
     "chapterClickSeek": "Zum Suchen klicken",
-    "qualityFallback": "Wiedergabe in reduzierter Qualität (8 kHz) — volle Qualität konnte für diese Datei nicht vorbereitet werden. Der Export ist nicht betroffen."
+    "playbackViaProxy": "Die Wiedergabe läuft über eine temporäre Zwischendatei (volle Qualität). Der Export nutzt immer das Original.",
+    "preparingPlayback": "Wiedergabe wird vorbereitet…",
+    "qualityFallback": "Für diese Datei ist keine Wiedergabe möglich — das Format kann hier nicht abgespielt werden. Schneiden und Export funktionieren wie gewohnt."
   },
   "master": {
     "title": "Mastering (Vorbereitung zur Veröffentlichung)",

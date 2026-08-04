@@ -1088,6 +1088,33 @@ const api: Record<string, unknown> = {
     call("companion_clear_llm_key", undefined, false).then(() => true),
   editorSetVideoPath: async (fp: string) =>
     call("editor_load_recording", { inputPath: fp }, { ok: false }),
+  // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
+  // An ffprobe-only probe: it gives the audio loader the authoritative duration
+  // WITHOUT reading a byte of media, which is what lets the editor paint a
+  // timeline for a multi-GB recording instantly. `null` on any failure.
+  editorLoadRecording: async (fp: string) =>
+    call<{
+      durationSec: number;
+      hasVideo: boolean;
+      hasAudio: boolean;
+      channels: number | null;
+      sampleFmt: string | null;
+    } | null>("editor_load_recording", { inputPath: fp }, null),
+  // editor_allow_asset_path → widens the webview's `asset://` scope to ONE file.
+  // The static scope globs cover the standard user folders only; recordings on
+  // an external drive/share match none of them and the <audio> src fails with an
+  // opaque media error. Call this before pointing any element at a path. Returns
+  // false when the grant was refused (guarded path / feature-off) — the caller
+  // still tries the element, since paths inside the static scope work regardless.
+  editorAllowAssetPath: async (fp: string) => {
+    try {
+      await invoke("editor_allow_asset_path", { path: fp });
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] editor_allow_asset_path failed", e);
+      return false;
+    }
+  },
   // editor_peaks → { peaks, sampleRate } — the VIDEO loader uses this for the
   // waveform (playback is via the <video> asset:// element).
   editorExtractAudioPeaks: async (fp: string) =>

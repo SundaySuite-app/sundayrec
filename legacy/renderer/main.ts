@@ -203,7 +203,9 @@ declare global {
       videoPreviewStop:  () => Promise<void>
       recordingPreviewFrame: () => Promise<string | null>
       editorSetVideoPath:      (filePath: string) => Promise<boolean>
-      editorExtractAudioPeaks: (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
+      editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null } | null>
+      editorAllowAssetPath:    (filePath: string) => Promise<boolean>
+      editorExtractAudioPeaks: (filePath: string) => Promise<{ peaks: number[]; sampleRate: number } | null>
       editorExtractAudioWav:   (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
       editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>
       editorPickVideoFile:     ()                 => Promise<string | null>

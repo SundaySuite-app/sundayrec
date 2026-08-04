@@ -4,7 +4,7 @@ import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
-import { E, $, markDirty, clearDirty, setOnDirtyChange, playbackMediaEl } from './editor/state'
+import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
 import { computePeakGain, setNormalizeUI } from './editor/peaks'
 import { minPlayableSec, maxPlayableSec, clampPlayable, clampMain, xToSec, getRegionAtX } from './editor/geometry'
@@ -12,13 +12,13 @@ import { deleteCut, undoCut, redoCut, getRemainingDuration, updateRemainingDispl
 import { runDetection, applySermonTrim, setSermonSegment, hideSuggestionBanner } from './editor/detection'
 import { saveMetadata } from './editor/metadata'
 import { syncCanvasSize, drawWaveform, drawMinimap, updateMinimapViewport } from './editor/waveform'
-import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode } from './editor/playback'
+import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode, seekMediaTo } from './editor/playback'
 import { fitAll, zoomBy } from './editor/viewport'
 import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
-import { pickAndLoad, loadFile, reloadIntroOutro, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
+import { pickAndLoad, loadFile, reloadIntroOutro, teardownPlayback, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
 
 // ── Setup ─────────────────────────────────────────────────────────────────
 export function setupEditorPage(): void {
@@ -137,20 +137,19 @@ export function setupEditorPage(): void {
     if (!E.peaks || E.peaks.length === 0) return
     if (E.audioGainDb !== 0) return     // already normalized — idempotent
     let gain = computePeakGain(E.peaks)
-    // On the ffmpeg-extract path the in-memory peaks come from the 8 kHz mono
-    // downmix, which UNDER-reads the true peak by several dB — and the export
-    // (where this gain is applied) runs on the ORIGINAL file, so normalizing
-    // from extract peaks risked pushing the export into clipping. Probe the
-    // original's true peak (volumedetect) and use that instead; fall back to
-    // the buffer-derived gain if the probe fails.
-    if (E.usedFfmpegExtract) {
-      try {
-        const maxDb = await window.api.editorProbePeak(E.filePath)
-        if (typeof maxDb === 'number' && isFinite(maxDb)) {
-          gain = maxDb >= -1 ? 0 : -1 - maxDb
-        }
-      } catch { /* keep buffer-derived gain */ }
-    }
+    // E.peaks ALWAYS comes from the backend's 8 kHz mono extract now (the
+    // renderer no longer decodes the recording at all), and that downmix
+    // UNDER-reads the true peak by several dB — while the export, where this
+    // gain is applied, runs on the ORIGINAL file. Normalizing from the extract
+    // peaks would push the export into clipping, so probe the original's true
+    // peak (volumedetect) unconditionally; the peaks-derived gain is only the
+    // fallback for when the probe itself fails.
+    try {
+      const maxDb = await window.api.editorProbePeak(E.filePath)
+      if (typeof maxDb === 'number' && isFinite(maxDb)) {
+        gain = maxDb >= -1 ? 0 : -1 - maxDb
+      }
+    } catch { /* keep peaks-derived gain */ }
     if (!isFinite(gain) || Math.abs(gain) < 0.05) {
       // Already at (or above) target — show that explicitly
       setNormalizeUI(0, /*alreadyAtTarget*/ true)
@@ -347,8 +346,7 @@ export function setupEditorPage(): void {
   const seekToSec = (sec: number): void => {
     E.playStartSec = clampPlayable(snapOutOfCut(sec))
     updateTimecode(E.playStartSec)
-    const pe = playbackMediaEl()
-    if (pe) pe.currentTime = clampMain(E.playStartSec)
+    seekMediaTo(clampMain(E.playStartSec))
     drawWaveform()
   }
   setupTranscriptPanel(seekToSec)
@@ -591,7 +589,7 @@ export function reactivateEditor(): void {
 /** Called when the user navigates away from the editor tab.
  *
  *  IMPORTANT: We only PAUSE/STOP work that runs in the background — playback
- *  and video. We do NOT release peaks, audioBuffer, audioCtx, cuts, meta, or
+ *  and video. We do NOT release peaks, the player's src, cuts, meta, or
  *  any of the editing state. Otherwise, returning to the editor with the same
  *  file open shows an empty waveform — the user has to close and re-open the
  *  file to see anything. (Reported bug, May 2026.)
@@ -605,10 +603,9 @@ export function deactivateEditor(): void {
   if (E.videoEl && !E.videoEl.paused) {
     E.videoEl.pause()
   }
-  // Note: deliberately NOT touching peaks / audioBuffer / audioCtx / cuts /
-  // cutHistory / suggestions / clipTimes / meta / isVideoFile / audioGainDb /
-  // reviewPrepId. Those are owned by the open-file lifecycle, not the
-  // tab-visibility lifecycle.
+  // Note: deliberately NOT touching peaks / playerEl / cuts / cutHistory /
+  // suggestions / clipTimes / meta / isVideoFile / audioGainDb / reviewPrepId.
+  // Those are owned by the open-file lifecycle, not the tab-visibility one.
   reviewPrep = null
   loadAndUpdateReviewBanner()
 }
@@ -961,9 +958,8 @@ function confirmDiscardIfDirty(intent: 'open' | 'close'): boolean {
 function closeCurrentFile(): void {
   stopPlay()
   clearTranscript()
-  E.audioCtx?.close().catch(() => {})
-  E.audioCtx = null
-  E.audioBuffer = null
+  // The shared AudioContext is deliberately NOT closed — it is the app's only
+  // one and the jingle buffers below belong to it (see audio-ctx.ts).
   E.introBuffer = null
   E.outroBuffer = null
   E.introPeaks = null
@@ -982,15 +978,10 @@ function closeCurrentFile(): void {
     E.videoEl.src = ''
     E.videoEl.load()
   }
-  // Tear down the streamed playback proxy too (oversized/exotic audio), or its
-  // <audio> element + temp file would leak past an explicit close. Mirrors the
-  // loader's teardown on the load-replacement path.
-  if (E.proxyAudioEl) {
-    E.proxyAudioEl.pause()
-    E.proxyAudioEl.removeAttribute('src')
-    E.proxyAudioEl.load()
-    E.proxyAudioEl = null
-  }
+  // Release the streaming player too, or the open file handle (and any temp
+  // proxy) would leak past an explicit close. Same teardown the loader runs when
+  // one file replaces another.
+  teardownPlayback()
   E.isVideoFile = false
   E.audioGainDb = 0
   setNormalizeUI(0, false)

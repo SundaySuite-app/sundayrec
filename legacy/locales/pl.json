@@ -601,6 +601,7 @@
     "normalizeResult": "Szczyt teraz -1 dBFS — bezpieczny do eksportu.",
     "normalizeAlready": "Szczyt jest już na poziomie -1 dBFS — żadna zmiana nie jest potrzebna.",
     "normalizeReset": "↺ Przywróć",
+    "normalizeExportHint": "Normalizację słychać przy eksporcie, nie w odsłuchu.",
     "exportTitle": "Eksportuj…",
     "exportType": "Typ eksportu",
     "exportTypeVideo": "Wideo (z dźwiękiem)",
@@ -686,7 +687,9 @@
     "errCutData": "Wewnętrzny błąd danych wycięć. Spróbuj ponownie wczytać plik.",
     "chaptersEmpty": "Brak rozdziałów. Kliknij \"+ Dodaj w pozycji odtwarzania\", aby zacząć.",
     "chapterClickSeek": "Kliknij, aby przejść",
-    "qualityFallback": "Odtwarzanie w obniżonej jakości (8 kHz) — nie udało się przygotować pełnej jakości dla tego pliku. Eksport nie jest zmieniony."
+    "playbackViaProxy": "Odtwarzanie korzysta z tymczasowego pliku pośredniego (pełna jakość). Eksport zawsze używa oryginału.",
+    "preparingPlayback": "Przygotowywanie odtwarzania…",
+    "qualityFallback": "Odtwarzanie tego pliku nie jest dostępne — tego formatu nie da się tu odtworzyć. Cięcie i eksport działają normalnie."
   },
   "master": {
     "title": "Mastering (przygotuj do publikacji)",

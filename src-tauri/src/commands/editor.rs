@@ -56,6 +56,23 @@ pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<Stri
     editor::extract_playback_proxy(&input_path).await
 }
 
+/// Widen the webview's `asset://` scope to ONE media file so the editor can put
+/// it in an `<audio>`/`<video>` `src`. The static scope globs in
+/// `tauri.conf.json` cover the standard user folders only — a recording on an
+/// external volume matches none of them and would fail to load with no visible
+/// reason. The path goes through the same `path_guard` as every other editor
+/// command first, so the renderer can never widen the scope into `~/.ssh` & co.
+#[tauri::command]
+pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    super::path_guard::checked_input_file(&path)?;
+    editor::allow_asset_path(&path, |p| {
+        use tauri::Manager;
+        app.asset_protocol_scope()
+            .allow_file(p)
+            .map_err(|e| crate::error::AppError::Internal(format!("asset scope allow: {e}")))
+    })
+}
+
 /// Content-detect timeline segments (silence/speech/music + promoted sermon).
 #[tauri::command]
 pub async fn editor_segments(input_path: String) -> AppResult<Vec<EditorSegment>> {

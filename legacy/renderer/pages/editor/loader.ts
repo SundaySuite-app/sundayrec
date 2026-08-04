@@ -1,12 +1,14 @@
 import { settings } from '../../state'
 import { t } from '../../i18n'
 import type { RecordingMetadata } from '../../../types'
-import { E, $, clearDirty, VIDEO_EXTS, WEB_AUDIO_EXTS, playbackMediaEl } from './state'
-import { computePeaks, computeJinglePeaks, setNormalizeUI } from './peaks'
+import { E, $, clearDirty, VIDEO_EXTS } from './state'
+import { routePlayback } from './play-regions'
+import { sharedAudioCtx } from './audio-ctx'
+import { computeClipTimes, computeJinglePeaks, setNormalizeUI } from './peaks'
 import { fitAll } from './viewport'
 import { clampPlayable, clampMain } from './geometry'
 import { snapOutOfCut } from './canvas-input'
-import { stopPlay, startPlay, updateTimecode, updateTotalTime } from './playback'
+import { stopPlay, startPlay, seekMediaTo, updateTimecode, updateTotalTime } from './playback'
 import { renderAnalyzePanel, runDetection } from './detection'
 import { renderMetaPanel, renderChapterList } from './metadata'
 import { renderCutList, updateRemainingDisplay } from './cuts'
@@ -23,58 +25,192 @@ export async function pickAndLoad(): Promise<void> {
   if (fp) loadFile(fp)
 }
 
+/** How long we give a media element to report metadata before declaring the
+ *  transport dead and falling back. Generous enough for a cold external drive,
+ *  short enough that the user isn't left with a play button that does nothing. */
+const PLAYER_READY_TIMEOUT_MS = 5000
+
+/** The ONE <audio> element that streams the main recording. Created on first
+ *  use and reused for every file — a fresh element per load leaked a decoder +
+ *  an open file handle each time. `E.playerEl` points at it only while an AUDIO
+ *  file is loaded (video files play through `E.videoEl`). */
+let persistentPlayerEl: HTMLAudioElement | null = null
+
+function ensurePlayerEl(): HTMLAudioElement {
+  if (!persistentPlayerEl) {
+    const el = new Audio()
+    el.preload = 'auto'
+    persistentPlayerEl = el
+  }
+  E.playerEl = persistentPlayerEl
+  return persistentPlayerEl
+}
+
 /**
- * Fallback loader for huge audio files that would crash decodeAudioData.
- * Uses the ffmpeg-extract path (8 kHz mono WAV) — phone-call quality, but
- * sufficient for waveform display and cut selection. Sets audioBuffer,
- * peaks, duration. Returns false if the load failed.
+ * Resolve once the element can report where it is (`loadedmetadata`), or `false`
+ * if it errors out or simply never gets there. ONE cleanup for the timer and
+ * both listeners: an orphaned timer plus stale listeners on a REUSED element is
+ * exactly how the previous file's load corrupted the next one when the user
+ * switched files quickly (see the video branch's identical lesson).
  */
-export async function loadViaFfmpegExtract(fp: string, seq: number): Promise<boolean> {
-  const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
-  if (seq !== E.loadSeq) return false
-  if (!result) {
-    console.error('[editor] ffmpeg-extract returned no audio for', fp)
-    showEditorError('Kunne ikke hente ut lyd fra filen — formatet støttes kanskje ikke, eller filen er korrupt')
-    showState('empty')
-    return false
-  }
+function whenPlayable(el: HTMLMediaElement, timeoutMs: number): Promise<boolean> {
+  if (el.readyState >= 1) return Promise.resolve(true)
+  return new Promise<boolean>(resolve => {
+    let timer = 0
+    const cleanup = () => {
+      clearTimeout(timer)
+      el.removeEventListener('loadedmetadata', onMeta)
+      el.removeEventListener('error', onErr)
+    }
+    const onMeta = () => { cleanup(); resolve(true) }
+    const onErr  = () => { cleanup(); resolve(false) }
+    el.addEventListener('loadedmetadata', onMeta, { once: true })
+    el.addEventListener('error', onErr, { once: true })
+    timer = window.setTimeout(() => { cleanup(); resolve(false) }, timeoutMs)
+  })
+}
 
-  const u8 = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data as ArrayBuffer)
-  const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-
-  let localCtx: AudioContext | null = null
+/**
+ * Point the player at a transcoded AAC proxy of `fp`. This is the LAST resort
+ * transport: either the container has no decoder in the webview at all, or the
+ * original refused to open. Costs a full transcode (a minute-plus on a long
+ * service), so it is never taken speculatively.
+ *
+ * Returns whether the proxy was produced and attached. The element's own load is
+ * watched in the background — if even the proxy won't open there is nothing left
+ * to try, and the notice says so rather than leaving a dead play button.
+ */
+async function attachPlaybackProxy(fp: string, seq: number): Promise<boolean> {
+  let proxyPath: string | null = null
   try {
-    localCtx = new AudioContext()
-    const buf = await localCtx.decodeAudioData(ab)
-    if (seq !== E.loadSeq) { localCtx.close().catch(() => {}); return false }
-    E.audioCtx    = localCtx
-    E.audioBuffer = buf
-    E.duration    = result.duration > 0 ? result.duration : buf.duration
-    E.peaks       = computePeaks(E.audioBuffer)
-    return true
-  } catch (err) {
-    localCtx?.close().catch(() => {})
-    console.error('[editor] could not decode extracted audio for', fp, err)
-    showEditorError('Kunne ikke dekode den uthentede lyden — filen er kanskje korrupt')
+    proxyPath = await window.api.editorExtractPlaybackProxy(fp)
+  } catch { proxyPath = null }
+  if (seq !== E.loadSeq) return false
+  if (!proxyPath) {
+    console.warn('[editor] playback proxy transcode failed for', fp)
+    showQualityNotice(t('editor.qualityFallback', 'Avspilling er ikke tilgjengelig for denne filen — formatet kan ikke spilles av her. Klipping og eksport virker som vanlig.'))
+    return false
+  }
+
+  await window.api.editorAllowAssetPath(proxyPath)
+  if (seq !== E.loadSeq) return false
+
+  const el = ensurePlayerEl()
+  el.src = window.api.toAssetUrl(proxyPath)
+  el.load()
+  E.playbackSource = 'proxy'
+  showQualityNotice(t('editor.playbackViaProxy', 'Avspilling går via en midlertidig mellomfil (full kvalitet). Eksport bruker alltid originalen.'))
+  void whenPlayable(el, PLAYER_READY_TIMEOUT_MS).then(ok => {
+    // Only speak for the transport we actually attached: a newer load, or a
+    // swap back to the original, owns the notice from then on.
+    if (seq === E.loadSeq && E.playbackSource === 'proxy' && !ok) {
+      console.warn('[editor] playback proxy would not open:', proxyPath)
+      showQualityNotice(t('editor.qualityFallback', 'Avspilling er ikke tilgjengelig for denne filen — formatet kan ikke spilles av her. Klipping og eksport virker som vanlig.'))
+    }
+  })
+  return true
+}
+
+/**
+ * Prepare playback + waveform for an AUDIO file. Playback is ALWAYS a media
+ * element streaming from disk — the original when the webview can decode it,
+ * a transcoded proxy otherwise. Nothing about the main recording goes through
+ * Web Audio any more: the old path decoded (or 8 kHz-extracted) the whole file
+ * into renderer memory, which is both why big files sounded like a telephone and
+ * why Normalize/jingles/cut-preview behaved differently per file size.
+ *
+ * Returns false when the file could not be loaded at all (an error state is
+ * already shown), or when a newer load superseded this one.
+ */
+async function loadAudioFile(fp: string, ext: string, seq: number): Promise<boolean> {
+  // Duration first, from ffprobe — it reads container headers only, so the
+  // timeline is ready in milliseconds even for a multi-gigabyte recording.
+  const info = await window.api.editorLoadRecording(fp)
+  if (seq !== E.loadSeq) return false
+  let duration = info && isFinite(info.durationSec) && info.durationSec > 0 ? info.durationSec : 0
+
+  const el = ensurePlayerEl()
+  let readyForFallback: Promise<boolean> | null = null
+
+  if (routePlayback(ext) === 'proxy') {
+    // No decoder for this container in the webview — there is nothing to try
+    // first, so transcode up front and tell the user why the wait exists.
+    setLoadingDetail(t('editor.preparingPlayback', 'Klargjør avspilling…'))
+    await attachPlaybackProxy(fp, seq)
+    if (seq !== E.loadSeq) return false
+  } else {
+    // The webview decodes this format natively: stream the ORIGINAL. The scope
+    // grant is what makes recordings on external volumes loadable at all.
+    await window.api.editorAllowAssetPath(fp)
+    if (seq !== E.loadSeq) return false
+    E.playbackSource = 'original'
+    el.src = window.api.toAssetUrl(fp)
+    el.load()
+    // Deliberately NOT awaited: the workspace paints as soon as the waveform is
+    // in. If the element turns out unable to open the original we swap in the
+    // proxy underneath it (below).
+    readyForFallback = whenPlayable(el, PLAYER_READY_TIMEOUT_MS)
+  }
+
+  // Waveform: the backend extracts + down-samples to the renderer's 100 peaks/s
+  // — the same pipeline the video path has always used. No WAV bytes cross IPC
+  // and no AudioBuffer is built, so a 4 h FLAC costs the same renderer memory
+  // as a 4 min one.
+  const result = await window.api.editorExtractAudioPeaks(fp)
+  if (seq !== E.loadSeq) return false
+  if (result && Array.isArray(result.peaks) && result.peaks.length) {
+    E.peaks = Float32Array.from(result.peaks)
+    E.clipTimes = computeClipTimes(E.peaks)
+    if (duration <= 0) duration = E.peaks.length / 100
+  }
+
+  if (duration <= 0) {
+    // Neither ffprobe nor the extract knew: ask the element itself, the way the
+    // video path does. Only reachable when ffmpeg/ffprobe are unavailable.
+    const ok = readyForFallback ? await readyForFallback : await whenPlayable(el, PLAYER_READY_TIMEOUT_MS)
+    if (seq !== E.loadSeq) return false
+    if (ok && isFinite(el.duration) && el.duration > 0) duration = el.duration
+  }
+
+  if (duration <= 0) {
+    console.error('[editor] could not determine duration for', fp)
+    showEditorError('Kunne ikke lese lydfilen — formatet støttes kanskje ikke, eller filen er korrupt')
     showState('empty')
     return false
   }
+  E.duration = duration
+
+  if (!E.peaks) {
+    // Flat waveform rather than an empty screen: cuts, chapters and export all
+    // work off the timeline, which we now have.
+    E.peaks = new Float32Array(Math.ceil(E.duration * 100))
+    console.log('[editor] no peaks available (flat waveform), duration:', E.duration.toFixed(1) + 's')
+  }
+
+  // Watch the ORIGINAL element load in the background and fall back to a proxy
+  // if it never comes up (DRM-free but unsupported profile, damaged header, a
+  // network volume that stalls). Not awaited — the editor is already usable.
+  if (readyForFallback) void watchPlayerLoad(readyForFallback, fp, seq)
+  return true
+}
+
+/** Swap in the proxy transport if the original never became playable, resuming
+ *  playback from the same spot when the user had already pressed play. */
+async function watchPlayerLoad(ready: Promise<boolean>, fp: string, seq: number): Promise<void> {
+  const ok = await ready
+  if (seq !== E.loadSeq || ok || E.playbackSource !== 'original') return
+  console.warn('[editor] original would not open in the player — preparing a proxy:', fp)
+  const wasPlaying = E.isPlaying
+  const preview = E.isPreview
+  if (wasPlaying) stopPlay()   // syncs E.playStartSec to the current position
+  const attached = await attachPlaybackProxy(fp, seq)
+  if (seq !== E.loadSeq) return
+  if (attached && wasPlaying) startPlay(preview)
 }
 
 export async function loadFile(fp: string): Promise<void> {
   const seq = ++E.loadSeq
   stopPlay()
-  const prevCtx = E.audioCtx
-  E.audioCtx = null
-  // Await the close — fire-and-forget could leave an old context partially
-  // alive while a new one is created. The seq-guard further down still
-  // catches cases where two loadFile calls overlap, but awaiting close()
-  // here means we never have two contexts processing audio at once.
-  if (prevCtx) {
-    try { await prevCtx.close() } catch {}
-    // Bail out if a newer load started while we were closing the old context.
-    if (seq !== E.loadSeq) return
-  }
 
   E.cuts = []
   E.cutHistory = []
@@ -82,13 +218,12 @@ export async function loadFile(fp: string): Promise<void> {
   E.suggestions = []
   E.filePath = fp
   E.peaks = null
-  E.audioBuffer = null
-  // Drop any previous file's streamed playback proxy (set below only for the
-  // ffmpeg-extract paths). Until/unless a fresh one is ready, playback uses the
-  // decoded buffer — so this also defines the fallback for the new file.
-  teardownProxyAudio()
-  let usedFfmpegExtract = false
-  E.usedFfmpegExtract = false
+  // Reset BEFORE any work so a failed load can never leave the previous file's
+  // clip markers showing on the new one.
+  E.clipTimes = []
+  // Drop the previous file's transport (element src + any quality notice) — the
+  // new file's is set up below.
+  teardownPlayback()
   E.playStartSec = 0
   E.meta = { title: '', speaker: '', description: '', chapters: [] }
   E.metaDirty = false
@@ -102,14 +237,15 @@ export async function loadFile(fp: string): Promise<void> {
 
   showState('loading')
 
-  // Determine if this is a video file. Fast paths for known video + known
-  // browser-decodable audio; everything else (ambiguous containers, exotic
-  // audio, or an unknown extension forced through the "Alle filer" picker) is
-  // probed with ffprobe so we route by actual stream content, not the name.
+  // Determine if this is a video file. Fast paths for known video + the audio
+  // formats the webview streams itself; everything else (ambiguous containers
+  // like .webm/.mka, exotic audio, or an unknown extension forced through the
+  // "Alle filer" picker) is probed with ffprobe so we route by actual stream
+  // content, not the name.
   const ext = ('.' + (fp.split('.').pop()?.toLowerCase() ?? '')).toLowerCase()
   if (VIDEO_EXTS.has(ext)) {
     E.isVideoFile = true
-  } else if (WEB_AUDIO_EXTS.has(ext)) {
+  } else if (routePlayback(ext) === 'element') {
     E.isVideoFile = false
   } else {
     const streams = await window.api.editorProbeStreams(fp)
@@ -132,6 +268,11 @@ export async function loadFile(fp: string): Promise<void> {
     // the video editor never showed a frame). convertFileSrc handles the path.
     await window.api.editorSetVideoPath(fp)
     if (seq !== E.loadSeq) return
+    // Widen the asset:// scope to this one file first — a service recorded onto
+    // an external drive matches none of the static scope globs, and the <video>
+    // src then fails with nothing but an opaque media error.
+    await window.api.editorAllowAssetPath(fp)
+    if (seq !== E.loadSeq) return
     if (E.videoEl) {
       E.videoEl.src = window.api.toAssetUrl(fp)
       E.videoEl.load()
@@ -142,13 +283,14 @@ export async function loadFile(fp: string): Promise<void> {
     // client-side (a 1080p service is multi-GB, over the inline limit), and video
     // PLAYBACK uses the <video> element (asset://) so no AudioBuffer is needed.
     // E.peaks drives the waveform; E.duration comes from the video element.
-    const result = await window.api.editorExtractAudioPeaks(fp) as { peaks: number[]; sampleRate: number } | null
+    const result = await window.api.editorExtractAudioPeaks(fp)
 
     if (seq !== E.loadSeq) return
 
     let haveBackendPeaks = false
     if (result && Array.isArray(result.peaks) && result.peaks.length) {
       E.peaks = Float32Array.from(result.peaks)
+      E.clipTimes = computeClipTimes(E.peaks)
       haveBackendPeaks = true
     }
 
@@ -191,82 +333,13 @@ export async function loadFile(fp: string): Promise<void> {
         return
       }
     }
-  } else if (WEB_AUDIO_EXTS.has(ext)) {
-    // Browser-decodable audio: read raw bytes → Web Audio API.
-    // Files above EDITOR_INLINE_LIMIT (100 MB) come back as { tooLarge: true }
-    // and we fall through to the ffmpeg-extract path so we don't OOM the
-    // renderer (Web Audio decodes to 32-bit float — a 1 GB FLAC = 5+ GB PCM).
-    const raw = await window.api.editorReadFile(fp) as unknown
-    if (!raw) {
-      console.error('[editor] could not read audio file', fp)
-      showEditorError('Kunne ikke lese lydfilen — sjekk at filen finnes og at du har tilgang til den')
-      showState('empty')
-      return
-    }
-
-    if (typeof raw === 'object' && raw !== null && 'tooLarge' in raw && (raw as { tooLarge: boolean }).tooLarge) {
-      console.log('[editor] file too large for Web Audio, using ffmpeg-extract path')
-      const ok = await loadViaFfmpegExtract(fp, seq)
-      if (!ok) return
-      usedFfmpegExtract = true
-      E.usedFfmpegExtract = true
-    } else {
-      const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer)
-      const ab  = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-
-      let localCtx: AudioContext | null = null
-      try {
-        localCtx = new AudioContext()
-        const buf = await localCtx.decodeAudioData(ab)
-        if (seq !== E.loadSeq) { localCtx.close().catch(() => {}); return }
-        E.audioCtx    = localCtx
-        E.audioBuffer = buf
-        E.duration    = E.audioBuffer.duration
-        E.peaks       = computePeaks(E.audioBuffer)
-      } catch (err) {
-        localCtx?.close().catch(() => {})
-        console.error('[editor] could not decode audio file', fp, err)
-        showEditorError('Kunne ikke dekode lydfilen — formatet støttes kanskje ikke')
-        showState('empty')
-        return
-      }
-    }
-  } else {
-    // Exotic audio (wma, ape, flac-in-mka, ac3, amr, etc.):
-    // Browser cannot decode these — extract via ffmpeg at 8 kHz mono.
-    // The resulting WAV is decodable by Web Audio API and serves as both
-    // waveform source and playback buffer (phone-call quality, adequate for cut-finding).
-    usedFfmpegExtract = true
-    E.usedFfmpegExtract = true
-    const result = await window.api.editorExtractAudioWav(fp) as { data: Uint8Array | ArrayBuffer; duration: number } | null
-    if (seq !== E.loadSeq) return
-    if (!result) {
-      console.error('[editor] ffmpeg-extract returned no audio for', fp)
-      showEditorError('Kunne ikke hente ut lyd fra filen — formatet støttes kanskje ikke')
-      showState('empty')
-      return
-    }
-
-    const u8 = result.data instanceof Uint8Array ? result.data : new Uint8Array(result.data as ArrayBuffer)
-    const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer
-
-    let localCtx: AudioContext | null = null
-    try {
-      localCtx = new AudioContext()
-      const buf = await localCtx.decodeAudioData(ab)
-      if (seq !== E.loadSeq) { localCtx.close().catch(() => {}); return }
-      E.audioCtx    = localCtx
-      E.audioBuffer = buf
-      E.duration    = result.duration > 0 ? result.duration : buf.duration
-      E.peaks       = computePeaks(E.audioBuffer)
-    } catch (err) {
-      localCtx?.close().catch(() => {})
-      console.error('[editor] could not decode extracted audio for', fp, err)
-      showEditorError('Kunne ikke dekode lyden fra filen — filen er kanskje korrupt')
-      showState('empty')
-      return
-    }
+  } else if (!(await loadAudioFile(fp, ext, seq))) {
+    // Audio: one path for every format — element playback of the original, or
+    // of a proxy when the webview has no decoder for it. Errors + the empty
+    // state are handled inside.
+    return
   }
+  setLoadingDetail(null)
 
   fitAll()
   const fname = fp.split(/[/\\]/).pop() ?? fp
@@ -315,7 +388,7 @@ export async function loadFile(fp: string): Promise<void> {
     if (chk) chk.checked = true
   }
 
-  // Clipping badge (shown after computePeaks)
+  // Clipping badge (from the peak array we just built)
   const clipBadge = $('editor-clip-badge')
   if (clipBadge) {
     clipBadge.style.display = E.clipTimes.length > 0 ? '' : 'none'
@@ -330,24 +403,12 @@ export async function loadFile(fp: string): Promise<void> {
     updateMinimapViewport()
   })
 
-  // Full-fidelity playback upgrade for oversized/exotic files: the 8 kHz extract
-  // above backs the WAVEFORM but is telephone-quality to LISTEN to. Transcode a
-  // seekable stereo AAC proxy in the background and stream it via <audio> once
-  // ready — a graceful upgrade (playback uses the 8 kHz buffer until it arrives).
-  // ON by default since v0.5.0: with the 100 MB inline limit, essentially every
-  // real service recording (~5 min of 96 kHz FLAC) landed on the 8 kHz mono
-  // path — "incredibly bad quality on clips I know are good" (2026-07-31). The
-  // 8 kHz buffer remains the waveform source and the fallback; failures now
-  // surface a visible notice instead of silently sounding like a telephone.
-  if (usedFfmpegExtract && isPlaybackProxyEnabled()) void startPlaybackProxy(fp, seq)
-
   if (E.pendingSeekSec != null) {
     const target = E.pendingSeekSec
     E.pendingSeekSec = null
     E.playStartSec = clampPlayable(snapOutOfCut(target))
     updateTimecode(E.playStartSec)
-    const seekEl = playbackMediaEl()
-    if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
+    seekMediaTo(clampMain(E.playStartSec))
     drawWaveform()
   }
 
@@ -371,9 +432,13 @@ export async function loadFile(fp: string): Promise<void> {
   // auto-trim suggestion banner so the user can one-click prep a podcast
   // episode. Skipped if cuts were restored from a draft (they're already
   // editing) or if the user is in review-mode (handled separately).
+  //
+  // Fired HERE, after the peaks + transport are resolved, rather than off a
+  // 200 ms timer: detection is another full ffmpeg pass over the recording, and
+  // starting it on a timer meant it raced the proxy transcode on the fallback
+  // path — two ffmpeg runs over the same multi-gigabyte file at once.
   if (!E.isVideoFile && E.cuts.length === 0 && !reviewPrepId) {
-    // Defer slightly so the workspace UI paints first.
-    setTimeout(() => { void runDetection(true) }, 200)
+    void runDetection(true)
   }
 
   // Update Stage-kapitler button visibility (opt-in, no-op when disabled).
@@ -381,40 +446,39 @@ export async function loadFile(fp: string): Promise<void> {
 }
 
 /**
- * Tear down the streamed playback proxy (if any): pause it, drop its `src` so
- * WKWebView releases the temp file, and clear the ref so playback falls back to
- * the 8 kHz Web-Audio buffer. Called on every load before a new file is read.
+ * Release the current file's playback transport: pause the player, drop its
+ * `src` so the webview closes the file handle (and any temp proxy can be swept),
+ * and clear the quality notice. Called on every load before a new file is read —
+ * the element itself is kept for reuse.
  */
-function teardownProxyAudio(): void {
-  // A new load starts fresh — clear any quality notice from the previous file.
+export function teardownPlayback(): void {
   const notice = document.getElementById('editor-quality-notice')
   if (notice) notice.style.display = 'none'
-  const el = E.proxyAudioEl
-  E.proxyAudioEl = null
+  setLoadingDetail(null)
+  const el = E.playerEl
+  E.playerEl = null
+  E.playbackSource = 'original'
   if (el) {
     try { el.pause() } catch {}
+    el.volume = 1
     el.removeAttribute('src')
     try { el.load() } catch {}
   }
 }
 
-/**
- * Whether the full-fidelity playback proxy (C5) is enabled. ON by default since
- * v0.5.0 — the 8 kHz preview is only the waveform source + emergency fallback.
- * Opt OUT by setting localStorage `sundayrec.editor.playbackProxy` to `"off"`
- * (kept as an escape hatch if a rig hits proxy instability).
- */
-function isPlaybackProxyEnabled(): boolean {
-  try {
-    return localStorage.getItem('sundayrec.editor.playbackProxy') !== 'off'
-  } catch {
-    return true
-  }
+/** Extra line under the loading spinner ("Klargjør avspilling…"), or `null` to
+ *  clear it. Only the proxy path ever has something to say here — a transcode
+ *  takes real time and an unexplained wait reads as a hang. */
+function setLoadingDetail(text: string | null): void {
+  const el = $('editor-loading-detail')
+  if (!el) return
+  el.textContent = text ?? ''
+  el.style.display = text ? '' : 'none'
 }
 
-/** Show a small, non-blocking quality notice in the editor workspace (the
- *  editor still WORKS on the 8 kHz fallback — a full error state would be
- *  wrong, silence would be worse). Reuses one fixed element; auto-created. */
+/** Show a small, non-blocking notice in the editor workspace: playback is going
+ *  through a proxy, or could not be prepared at all. Never an error state — cuts
+ *  and export run on the original either way. Reuses one element; auto-created. */
 function showQualityNotice(text: string): void {
   let el = document.getElementById('editor-quality-notice')
   if (!el) {
@@ -430,50 +494,6 @@ function showQualityNotice(text: string): void {
   el.style.display = ''
 }
 
-/**
- * Transcode a seekable stereo AAC proxy for an oversized/exotic file and, once
- * ready, route playback through a streamed `<audio>` element (full fidelity,
- * low memory — no multi-GB Web-Audio PCM). A pure quality upgrade over the
- * 8 kHz preview buffer: on ANY failure (transcode error, a newer load, or the
- * element failing to load) playback keeps the 8 kHz buffer. If a preview is
- * mid-play when the proxy arrives, it resumes through the proxy from the same
- * spot (`stopPlay` syncs `playStartSec`) so the upgrade is near-seamless.
- * HARDWARE-UNVERIFIED — `<audio>`-via-`asset://` mirrors the mastering preview.
- */
-async function startPlaybackProxy(fp: string, seq: number): Promise<void> {
-  let proxyPath: string | null = null
-  try {
-    proxyPath = await window.api.editorExtractPlaybackProxy(fp)
-  } catch { proxyPath = null }
-  if (seq !== E.loadSeq) return // a newer file started loading while we transcoded
-  if (!proxyPath) {
-    // The transcode failed — playback stays on the 8 kHz fallback. Say so:
-    // the silent version of this fallback was "incredibly bad quality on
-    // clips I know are good" with no explanation (2026-07-31).
-    showQualityNotice(t('editor.qualityFallback', 'Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke.'))
-    return
-  }
-
-  const el = new Audio()
-  el.preload = 'auto'
-  // Revert to the 8 kHz buffer if the proxy turns out unplayable — visibly.
-  el.addEventListener('error', () => {
-    if (E.proxyAudioEl === el) {
-      E.proxyAudioEl = null
-      console.warn('[editor] playback proxy failed to load:', proxyPath)
-      showQualityNotice(t('editor.qualityFallback', 'Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke.'))
-    }
-  }, { once: true })
-  el.src = window.api.toAssetUrl(proxyPath)
-
-  const wasPlaying = E.isPlaying
-  const preview = E.isPreview
-  if (wasPlaying) stopPlay()          // syncs E.playStartSec to the current position
-  E.proxyAudioEl = el
-  el.load()
-  if (wasPlaying) startPlay(preview)  // resume from the same spot via the proxy
-}
-
 export async function reloadIntroOutro(): Promise<void> {
   await loadIntroOutroBuffers(E.loadSeq)
 }
@@ -486,15 +506,21 @@ export async function loadIntroOutroBuffers(seq: number): Promise<void> {
 
   updateEditorIntroOutroDisplay()
 
+  // Jingles are the ONLY audio the renderer still decodes itself: they are a few
+  // seconds long, and having them as AudioBuffers is what lets us schedule them
+  // sample-accurately around the streamed recording. They are read as bytes
+  // (`editorReadFile`, well under the inline limit) rather than streamed, so no
+  // asset:// grant is needed for them. Decoded on the ONE shared context — a
+  // fresh `new AudioContext()` per jingle used to leak two hardware contexts per
+  // opened file, and macOS stops handing them out after a handful.
   async function decodeAudio(path: string): Promise<AudioBuffer | null> {
     try {
       const raw = await window.api.editorReadFile(path)
       if (!raw) return null
       const u8 = raw instanceof Uint8Array ? raw : new Uint8Array(raw as ArrayBuffer)
-      const tmpCtx = new AudioContext()
-      const buf = await tmpCtx.decodeAudioData(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer)
-      tmpCtx.close().catch(() => {})
-      return buf
+      return await sharedAudioCtx().decodeAudioData(
+        u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) as ArrayBuffer,
+      )
     } catch { return null }
   }
 

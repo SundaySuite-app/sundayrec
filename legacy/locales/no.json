@@ -601,6 +601,7 @@
     "normalizeResult": "Toppunkt nå -1 dBFS — trygg for eksport.",
     "normalizeAlready": "Toppunktet er allerede ved -1 dBFS — ingen endring nødvendig.",
     "normalizeReset": "↺ Tilbakestill",
+    "normalizeExportHint": "Normalisering høres ved eksport, ikke i forhåndslytting.",
     "exportTitle": "Eksporter…",
     "exportType": "Eksporttype",
     "exportTypeVideo": "Video (med lyd)",
@@ -686,7 +687,9 @@
     "errCutData": "Intern feil i kuttdataene. Prøv å laste filen på nytt.",
     "chaptersEmpty": "Ingen kapitler ennå. Klikk «+ Legg til ved playhead» for å starte.",
     "chapterClickSeek": "Klikk for å søke",
-    "qualityFallback": "Avspilling i redusert kvalitet (8 kHz) — full kvalitet kunne ikke klargjøres for denne filen. Eksport påvirkes ikke."
+    "playbackViaProxy": "Avspilling går via en midlertidig mellomfil (full kvalitet). Eksport bruker alltid originalen.",
+    "preparingPlayback": "Klargjør avspilling…",
+    "qualityFallback": "Avspilling er ikke tilgjengelig for denne filen — formatet kan ikke spilles av her. Klipping og eksport virker som vanlig."
   },
   "master": {
     "title": "Mastering (klargjør for publisering)",

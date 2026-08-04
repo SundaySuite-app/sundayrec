@@ -1624,6 +1624,9 @@ body.platform-win32  #wake-instructions-win { display: block; }
   border: 3px solid var(--border2); border-top-color: var(--accent);
   animation: spin .8s linear infinite;
 }
+/* Secondary line under the spinner — a step that takes real time explains itself
+   (the gap to the line above is the parent's 14px flex gap). */
+.editor-loading-detail { font-size: 12px; opacity: .8; margin-top: -6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .editor-header {
@@ -2400,6 +2403,13 @@ body.platform-win32  #wake-instructions-win { display: block; }
   flex-shrink: 0;
 }
 .editor-normalize-reset:hover { color: var(--text); }
+
+/* Own row (flex-basis 100% in the wrapping panel) so the honesty note reads as
+   a footnote to the whole control, not as part of the status line. */
+.editor-normalize-export-hint {
+  flex-basis: 100%;
+  font-size: 11px; color: var(--text3); opacity: .85; line-height: 1.4;
+}
 
 /* ── Export modal ─────────────────────────────────────────────────── */
 .export-modal { width: 440px; }

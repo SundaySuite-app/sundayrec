@@ -2030,6 +2030,9 @@
     <div id="editor-loading" class="editor-loading" style="display:none">
       <div class="editor-loading-spin"></div>
       <div data-i18n="editor.loading">Laster inn lydfil…</div>
+      <!-- Extra line, filled by the loader only when a step takes real time
+           (transcoding a playback proxy). Silent waits read as a hang. -->
+      <div id="editor-loading-detail" class="editor-loading-detail" style="display:none"></div>
     </div>
 
     <!-- Workspace -->
@@ -2168,6 +2171,10 @@
         </button>
         <span class="editor-normalize-status" id="editor-normalize-status" data-i18n="editor.normalizeHint">Justerer toppunktet til -1 dBFS for trygg sluttmiks.</span>
         <button class="editor-normalize-reset" id="btn-normalize-reset" type="button" style="display:none" data-i18n="editor.normalizeReset">↺ Tilbakestill</button>
+        <!-- Honesty note: preview streams the ORIGINAL file through the media
+             element, which has no gain stage — the normalize gain is an export
+             filter. Saying so beats a user turning it up and hearing nothing. -->
+        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
       </div>
 
       <!-- Intro/Outro panel (collapsible — primary path is drag-and-drop onto timeline) -->

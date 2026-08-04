@@ -894,6 +894,15 @@ pub async fn probe_true_peak_db(_input_path: &str) -> AppResult<Option<f64>> {
     disabled("probeTruePeak")
 }
 
+/// Grant the webview's `asset://` scope read access to ONE media file.
+#[cfg(not(feature = "editor"))]
+pub fn allow_asset_path<F>(_input_path: &str, _grant: F) -> AppResult<()>
+where
+    F: FnOnce(&Path) -> AppResult<()>,
+{
+    disabled("allowAssetPath")
+}
+
 /// Content-detect segments (silence/speech/music + promoted sermon block).
 #[cfg(not(feature = "editor"))]
 pub async fn segments(_input_path: &str) -> AppResult<Vec<EditorSegment>> {
@@ -1072,6 +1081,28 @@ pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
         ));
     }
     Ok(out_str)
+}
+
+/// Grant the webview's `asset://` scope read access to ONE media file, handing
+/// the actual grant to `grant` (the caller owns the `AppHandle`; this seam owns
+/// the "does it exist" decision and the feature gate).
+///
+/// The static `assetProtocol.scope.allow` globs in `tauri.conf.json` only cover
+/// the standard user folders. Churches record straight onto an external drive or
+/// a mounted share, and those paths match NO glob — the `<audio src="asset://…">`
+/// then fails with an opaque media error and playback is simply dead. The scope
+/// is extendable at runtime, so we widen it one file at a time (never a
+/// directory) right before the element is pointed at it.
+#[cfg(feature = "editor")]
+pub fn allow_asset_path<F>(input_path: &str, grant: F) -> AppResult<()>
+where
+    F: FnOnce(&Path) -> AppResult<()>,
+{
+    let path = Path::new(input_path);
+    if !path.exists() {
+        return Err(AppError::Validation("file_not_found".into()));
+    }
+    grant(path)
 }
 
 /// True-peak probe over the ORIGINAL file (`volumedetect` → null muxer) — the
@@ -2125,6 +2156,47 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("feature_disabled"));
+    }
+
+    /// The asset-scope grant is gated like the rest of the editor: feature-off
+    /// it must refuse WITHOUT running the grant closure, so a build without the
+    /// editor can never widen the webview's filesystem reach.
+    #[cfg(not(feature = "editor"))]
+    #[test]
+    fn allow_asset_path_disabled_without_feature() {
+        let mut granted = false;
+        let err = allow_asset_path("/x.wav", |_| {
+            granted = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "validation");
+        assert!(err.to_string().contains("feature_disabled"));
+        assert!(!granted, "the grant closure must not run when disabled");
+    }
+
+    /// Feature-on the grant runs for a real file and is refused for a missing
+    /// one — we never hand the webview a path that isn't there.
+    #[cfg(feature = "editor")]
+    #[test]
+    fn allow_asset_path_grants_existing_file_only() {
+        let (_dir, media) = tmp_media();
+        let mut granted: Option<std::path::PathBuf> = None;
+        allow_asset_path(&media, |p| {
+            granted = Some(p.to_path_buf());
+            Ok(())
+        })
+        .expect("existing file is granted");
+        assert_eq!(granted.as_deref(), Some(Path::new(&media)));
+
+        let mut ran = false;
+        let err = allow_asset_path("/no/such/file.wav", |_| {
+            ran = true;
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(err.code(), "validation");
+        assert!(!ran, "the grant closure must not run for a missing file");
     }
 
     #[cfg(not(feature = "editor"))]

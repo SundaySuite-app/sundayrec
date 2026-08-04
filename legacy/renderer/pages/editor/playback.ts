@@ -1,13 +1,53 @@
-import { E, $, playbackMediaEl } from './state'
+import { E, $, playbackMediaEl, currentPlaybackSec } from './state'
 import { clampMain, clampPlayable, effIntroDur, effOutroDur } from './geometry'
-import { gainFactor } from './peaks'
+import { sharedAudioCtx } from './audio-ctx'
+import { nextRegion, regionPosToTimeline, resolvePosition, type RegionTimeline } from './play-regions'
 import { formatTime } from './format'
-import { getKeepSegs } from './cuts'
 import { drawWaveform, updateMinimapViewport } from './waveform'
 import { setCurrentTranscriptTime } from '../editor-transcript'
 import { snapOutOfCut } from './canvas-input'
 
 // ── Playback engine, seek/scroll + timecode display ─────────────────────────
+//
+// The MAIN recording always plays through a media element streaming from disk
+// (`state.playerEl` for audio, `E.videoEl` for video) — never a decoded buffer.
+// The intro/outro jingles are AudioBuffers on the shared context, scheduled
+// around it. So a play spanning all three regions is a small state machine:
+//
+//   intro buffer  --onended-->  element.play()  --'ended'-->  outro buffer
+//
+// The region math itself is pure and lives in play-regions.ts; this file owns
+// only the transitions and the DOM.
+//
+// What this does NOT do any more: apply `audioGainDb` to playback. The old
+// Web-Audio path had a gain node, the element path silently had none, so
+// Normalize was audible for small files and inaudible for large ones. Now it is
+// consistently an EXPORT-time filter and the UI says so (editor.normalizeExportHint).
+
+/** The current extended timeline: recording length + whichever jingles are
+ *  actually in play (excluded ones have zero length and therefore don't exist). */
+function timeline(): RegionTimeline {
+  return { duration: E.duration, introDur: effIntroDur(), outroDur: effOutroDur() }
+}
+
+/**
+ * Move a media element's position, tolerating a not-yet-open resource. WebKit
+ * throws `InvalidStateError` when `currentTime` is written while readyState is
+ * HAVE_NOTHING — harmless in the old design (the element only ever held a video
+ * that was already open), but now every seek in the editor lands on a streamed
+ * <audio> that may still be opening. An exception here would abort whatever
+ * handler made the seek, taking the playhead redraw down with it.
+ */
+export function seekMediaEl(el: HTMLMediaElement, sec: number): void {
+  try { el.currentTime = sec } catch { /* resource not open yet — playStartSec still holds the target */ }
+}
+
+/** Point the active transport at `mainSec`, if there is one. `E.playStartSec`
+ *  remains the source of truth, so a seek that can't land yet is not lost. */
+export function seekMediaTo(mainSec: number): void {
+  const el = playbackMediaEl()
+  if (el) seekMediaEl(el, mainSec)
+}
 
 /** Move playhead to an absolute extended-timeline second, stopping any active
  *  playback. Centralises the seek-and-redraw logic used by keyboard shortcuts.
@@ -16,8 +56,7 @@ export function seekTo(sec: number): void {
   stopPlay()
   E.playStartSec = snapOutOfCut(clampPlayable(sec))
   updateTimecode(E.playStartSec)
-  const seekEl = playbackMediaEl()
-  if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
+  seekMediaTo(clampMain(E.playStartSec))
   const mainPlayhead = clampMain(E.playStartSec)
   if (mainPlayhead < E.vpStart || mainPlayhead > E.vpEnd) {
     const span = E.vpEnd - E.vpStart
@@ -53,8 +92,7 @@ export function seekBy(secs: number): void {
   stopPlay()
   E.playStartSec = clampPlayable(E.playStartSec + secs)
   updateTimecode(E.playStartSec)
-  const seekEl = playbackMediaEl()
-  if (seekEl) seekEl.currentTime = clampMain(E.playStartSec)
+  seekMediaTo(clampMain(E.playStartSec))
   // Pan viewport when playhead drops out of view. Viewport itself stays in
   // main coords — intro/outro live in their own slots and always remain
   // visible when at the recording edge.
@@ -110,174 +148,161 @@ export function detachMediaEndedHandler(): void {
   }
 }
 
-export function startPlay(preview: boolean): void {
-  // Element-driven playback: video files, or oversized/exotic audio routed to a
-  // streamed AAC proxy. Both play through an HTMLMediaElement (currentTime +
-  // play/pause) rather than the scheduled Web-Audio buffer, and both fall here
-  // before the audioBuffer guard so video-only mode (no decoded buffer) plays.
-  const mediaEl = playbackMediaEl()
-  if (mediaEl) {
-    E.isPreview    = preview
-    E.loopStartSec = E.playStartSec
-    E.isPlaying    = true
-    mediaEl.currentTime = clampMain(E.playStartSec)
-    mediaEl.play().catch(() => {})
+// Every start/stop bumps this. Region transitions are asynchronous — a jingle's
+// `onended`, an element's `canplay` — and a callback from a SUPERSEDED playback
+// must not act: pressing stop then play within the same second used to leave the
+// old file's pending `canplay` running, which then started the element on top of
+// the new intro jingle. Callbacks capture their generation and check it.
+let playGen = 0
 
-    // On natural end, handle loop / stop.
-    attachMediaEndedHandler(() => {
-      mediaEndedHandler = null
-      if (!E.isPlaying) return
-      if (E.isLooping) {
-        stopPlay()
-        E.playStartSec = E.loopStartSec
-        startPlay(E.isPreview)
-      } else {
-        E.isPlaying = false
-        cancelAnimationFrame(E.rafId)
-        updatePlayIcon()
-        drawWaveform()
-      }
-    })
+/** Stop and release a sounding jingle, if any. Idempotent. */
+function stopJingle(): void {
+  const node = E.jingleSource
+  E.jingleSource = null
+  E.jingleRegion = null
+  if (node) {
+    node.onended = null
+    try { node.stop() } catch { /* already stopped */ }
+    try { node.disconnect() } catch {}
+  }
+}
 
-    updatePlayIcon()
-    animate()
-    return
+/**
+ * Sound one jingle from `offset` seconds in, calling `onDone` when it reaches
+ * its natural end (never when we stop it ourselves — `stopJingle` clears the
+ * handler first). Returns false when there is nothing left to play, so the
+ * caller can move straight on to the next region instead of hanging.
+ */
+function playJingle(region: 'intro' | 'outro', offset: number, gen: number, onDone: () => void): boolean {
+  const buffer = region === 'intro' ? E.introBuffer : E.outroBuffer
+  if (!buffer) return false
+  const playDur = buffer.duration - offset
+  if (playDur <= 0.01) return false
+
+  const ctx = sharedAudioCtx()
+  const node = ctx.createBufferSource()
+  node.buffer = buffer
+  node.connect(ctx.destination)
+  node.onended = () => {
+    // A stop we initiated clears jingleSource first, so this only fires on a
+    // genuine end-of-jingle.
+    if (gen !== playGen || E.jingleSource !== node) return
+    E.jingleSource = null
+    E.jingleRegion = null
+    onDone()
+  }
+  E.jingleSource      = node
+  E.jingleRegion      = region
+  E.playStartCtxTime  = ctx.currentTime
+  E.playStartSec      = regionPosToTimeline(region, offset, timeline())
+  node.start(0, offset)
+  return true
+}
+
+/**
+ * Start the element at `mainSec`. The element may still be opening the file
+ * (readyState 0 on a cold external drive, or right after `src` was assigned), in
+ * which case we seek+play on `canplay` instead of dropping the request — the
+ * play button used to look dead when pressed within a second of opening a file.
+ */
+function playMainFrom(mainSec: number, gen: number): void {
+  const el = playbackMediaEl()
+  // No transport at all — no element, or one whose source could never be
+  // prepared (the proxy transcode failed too). End cleanly rather than spinning
+  // the animation loop against an element that will never advance: the play icon
+  // would sit on "pause" while nothing happened.
+  if (!el || !el.getAttribute('src')) { finishPlayback(gen); return }
+
+  E.playStartSec = regionPosToTimeline('main', clampMain(mainSec), timeline())
+  E.mainPlayPending = true
+
+  const start = () => {
+    if (gen !== playGen || !E.isPlaying) return
+    E.mainPlayPending = false
+    seekMediaEl(el, clampMain(E.playStartSec))
+    el.play().catch(() => {})
   }
 
-  if (!E.audioBuffer || !E.audioCtx) return
-
-  // If the playhead has somehow ended up inside a cut (e.g. arrow-key seek
-  // landed there), snap it to the cut's end before scheduling so audio and
-  // playhead stay in sync from the very first frame.
-  E.playStartSec = snapOutOfCut(E.playStartSec)
-
-  E.isPreview = preview
-  E.loopStartSec = E.playStartSec
-
-  // Extended-timeline playback: playStartSec can be inside intro (< 0),
-  // main ([0, duration]), or outro (> duration). We schedule each region's
-  // buffer at the right offset so audio always matches the playhead.
-  const introOn = E.includeIntroOutro && !!E.introBuffer
-  const outroOn = E.includeIntroOutro && !!E.outroBuffer
-  const inIntro = E.playStartSec < 0 && introOn
-  const inOutro = E.playStartSec > E.duration && outroOn
-  const mainStartSec = inIntro ? 0 : (inOutro ? E.duration : Math.max(0, E.playStartSec))
-
-  E.isPlaying        = true
-  E.playStartCtxTime = E.audioCtx.currentTime
-
-  let when = E.audioCtx.currentTime
-  const nodes: AudioBufferSourceNode[] = []
-
-  const mixGain = E.audioCtx.createGain()
-  // Apply the user-set peak-normalization gain to playback. This mirrors
-  // the ffmpeg `volume={gainDb}dB` filter we add at export time so what
-  // they hear during preview matches what they'll get in the exported file.
-  mixGain.gain.value = gainFactor()
-  mixGain.connect(E.audioCtx.destination)
-
-  // Schedule intro from the right offset whenever playhead is at-or-before
-  // main start. When playhead is inside intro (negative sec) we start the
-  // intro from `effIntroDur + playStartSec` so audio matches the playhead.
-  if (introOn && E.playStartSec < E.duration) {
-    const iDur = E.introBuffer!.duration
-    const introOffset = inIntro ? Math.max(0, effIntroDur() + E.playStartSec) : 0
-    const playDur = iDur - introOffset
-    if (playDur > 0.01) {
-      const introNode = E.audioCtx.createBufferSource()
-      introNode.buffer = E.introBuffer
-      introNode.connect(mixGain)
-      introNode.start(when, introOffset, playDur)
-      when += playDur
-      nodes.push(introNode)
-    }
-  }
-
-  if (!inOutro) {
-    const allSegs  = preview ? getKeepSegs() : [{ start: 0, end: E.duration }]
-    const segments = allSegs.filter(s => s.end > mainStartSec)
-
-    let firstMainSec = -1
-    for (let i = 0; i < segments.length; i++) {
-      const seg    = segments[i]
-      const offset = i === 0 ? Math.max(0, mainStartSec - seg.start) : 0
-      const dur    = seg.end - seg.start - offset
-      if (dur <= 0.01) continue
-
-      if (firstMainSec < 0) firstMainSec = seg.start + offset
-
-      const node = E.audioCtx.createBufferSource()
-      node.buffer = E.audioBuffer
-      node.connect(mixGain)
-      node.start(when, seg.start + offset, dur)
-      when += dur
-      nodes.push(node)
-    }
-    // Preview-skip: if playback skipped over a cut and started later, advance
-    // playStartSec so the playhead matches where audio actually starts. Only
-    // applies when not playing through intro (we keep negative playStartSec
-    // while inside intro so the timecode shows "Intro …").
-    if (!inIntro && firstMainSec >= 0 && firstMainSec > mainStartSec + 0.01) {
-      E.playStartSec = firstMainSec
-    }
-  }
-
-  E.sourceNodes = nodes
-
-  // Schedule outro after main content (or partway through if playhead is
-  // already inside outro).
-  if (outroOn) {
-    const outroOffset = inOutro ? Math.max(0, E.playStartSec - E.duration) : 0
-    const oDur = E.outroBuffer!.duration - outroOffset
-    if (oDur > 0.01) {
-      const outroNode = E.audioCtx.createBufferSource()
-      outroNode.buffer = E.outroBuffer
-      outroNode.connect(mixGain)
-      outroNode.start(when, outroOffset, oDur)
-      nodes.push(outroNode)
-    }
-  }
-
-  if (nodes.length === 0) { E.isPlaying = false; return }
-
-  nodes[nodes.length - 1]?.addEventListener('ended', () => {
-    if (!E.isPlaying) return
-    if (E.isLooping) {
-      stopPlay()
-      E.playStartSec = E.loopStartSec
-      startPlay(E.isPreview)
-    } else {
-      E.isPlaying = false
-      cancelAnimationFrame(E.rafId)
-      updatePlayIcon()
-      drawWaveform()
-    }
+  // On natural end, hand over to the outro (or loop / stop).
+  attachMediaEndedHandler(() => {
+    mediaEndedHandler = null
+    if (gen !== playGen || !E.isPlaying) return
+    if (nextRegion('main', timeline()) === 'outro' && playJingle('outro', 0, gen, () => finishPlayback(gen))) return
+    finishPlayback(gen)
   })
 
+  if (el.readyState >= 1) { start(); return }
+  el.addEventListener('canplay', start, { once: true })
+}
+
+/** End-of-playback: loop back to where the user pressed play, or stop cleanly. */
+function finishPlayback(gen: number): void {
+  if (gen !== playGen || !E.isPlaying) return
+  if (E.isLooping) {
+    const preview = E.isPreview
+    const from = E.loopStartSec
+    stopPlay()
+    E.playStartSec = from
+    startPlay(preview)
+    return
+  }
+  stopJingle()
+  E.mainPlayPending = false
+  E.isPlaying = false
+  cancelAnimationFrame(E.rafId)
+  updatePlayIcon()
+  drawWaveform()
+}
+
+export function startPlay(preview: boolean): void {
+  // Never leave a previous region sounding underneath a new one.
+  const gen = ++playGen
+  stopJingle()
+  cancelDuck()
+
+  // If the playhead has ended up inside a cut (e.g. an arrow-key seek landed
+  // there), snap it to the cut's end first so audio and playhead agree from the
+  // very first frame.
+  E.playStartSec = snapOutOfCut(clampPlayable(E.playStartSec))
+
+  E.isPreview       = preview
+  E.loopStartSec    = E.playStartSec
+  E.isPlaying       = true
+  E.mainPlayPending = false
+
+  const pos = resolvePosition(E.playStartSec, timeline())
+
+  if (pos.region === 'intro') {
+    // Intro first, then the recording from its very start.
+    if (!playJingle('intro', pos.offset, gen, () => playMainFrom(0, gen))) playMainFrom(0, gen)
+  } else if (pos.region === 'outro') {
+    if (!playJingle('outro', pos.offset, gen, () => finishPlayback(gen))) { finishPlayback(gen); return }
+  } else {
+    playMainFrom(pos.offset, gen)
+  }
+
+  if (!E.isPlaying) return
   updatePlayIcon()
   animate()
 }
 
 export function stopPlay(): void {
+  playGen++                 // invalidate every pending region transition
   detachMediaEndedHandler()
+  cancelDuck()
+  // Read the position BEFORE tearing anything down — and only when playback was
+  // actually running. A pending element reports currentTime 0, and writing that
+  // back to playStartSec silently threw the user's seek away.
+  const wasPlaying = E.isPlaying
+  const pos = wasPlaying ? currentPlaybackSec() : E.playStartSec
+  stopJingle()
+  E.mainPlayPending = false
   const mediaEl = playbackMediaEl()
   if (mediaEl) {
-    if (E.isPlaying) {
-      E.playStartSec = mediaEl.currentTime
-    }
-    mediaEl.pause()
-    E.isPlaying = false
-    cancelAnimationFrame(E.rafId)
-    updatePlayIcon()
-    drawWaveform()
-    return
+    try { mediaEl.pause() } catch {}
+    mediaEl.volume = 1
   }
-
-  for (const n of E.sourceNodes) { try { n.stop() } catch { /* already stopped */ } }
-  E.sourceNodes = []
-  if (E.isPlaying && E.audioCtx) {
-    E.playStartSec = clampPlayable(E.playStartSec + (E.audioCtx.currentTime - E.playStartCtxTime))
-  }
+  if (wasPlaying) E.playStartSec = clampPlayable(pos)
   E.isPlaying = false
   cancelAnimationFrame(E.rafId)
   updatePlayIcon()
@@ -299,32 +324,74 @@ function drawWaveformThrottled(): void {
   }
 }
 
+// ── Cut-preview de-click ────────────────────────────────────────────────────
+//
+// Preview playback jumps the element over each cut. A hard `currentTime` jump
+// lands mid-waveform on both sides, and the resulting step in the signal is an
+// audible click on every single cut — enough to make a clean edit sound broken.
+// Fading out over a few frames, jumping, then fading back in turns the step into
+// a ~50 ms dip nobody hears as a defect.
+//
+// `volume` is the only knob available: media elements allow ATTENUATION only
+// (0..1), which is exactly what a de-click needs. Frame-counted rather than
+// time-based so it costs nothing but the rAF we are already running.
+const DUCK_FRAMES = 3
+let duckToken = 0
+let ducking = false
+
+/** Abandon any in-flight ramp and restore full volume. Called from stop/start so
+ *  a ramp can never outlive the playback it belongs to (and leave the element
+ *  silent for the next play). */
+function cancelDuck(): void {
+  duckToken++
+  ducking = false
+  const el = playbackMediaEl()
+  if (el) el.volume = 1
+}
+
+/** Fade out → jump to `targetSec` → fade back in. */
+function previewSkipTo(el: HTMLMediaElement, targetSec: number): void {
+  const token = ++duckToken
+  ducking = true
+  let frame = 0
+
+  const fadeIn = () => {
+    if (token !== duckToken) return          // superseded: cancelDuck already restored volume
+    frame++
+    el.volume = Math.min(1, frame / DUCK_FRAMES)
+    if (frame < DUCK_FRAMES) { requestAnimationFrame(fadeIn); return }
+    el.volume = 1
+    ducking = false
+  }
+
+  const fadeOut = () => {
+    if (token !== duckToken) return
+    frame++
+    el.volume = Math.max(0, 1 - frame / DUCK_FRAMES)
+    if (frame < DUCK_FRAMES) { requestAnimationFrame(fadeOut); return }
+    try { el.currentTime = targetSec } catch {}
+    E.playStartSec = targetSec
+    frame = 0
+    requestAnimationFrame(fadeIn)
+  }
+
+  requestAnimationFrame(fadeOut)
+}
+
 export function animate(): void {
   if (!E.isPlaying) return
 
+  const curSec = currentPlaybackSec()
+
+  // Preview mode: skip over cut regions. Only while the RECORDING is playing —
+  // cuts live in main coords and the jingles have none. Suppressed during a ramp
+  // so the fade-out isn't restarted every frame by the cut it is escaping.
   const mediaEl = playbackMediaEl()
-  if (mediaEl) {
-    const curSec = mediaEl.currentTime
-
-    // Preview mode: skip over cut regions
-    if (E.isPreview) {
-      const nextCut = E.cuts.find(c => curSec >= c.start && curSec < c.end)
-      if (nextCut) {
-        mediaEl.currentTime = nextCut.end
-        E.playStartSec = nextCut.end
-      }
-    }
-
-    updateTimecode(curSec)
-    autoScrollToPlayhead(curSec)
-    setCurrentTranscriptTime(curSec)
-    drawWaveformThrottled()
-    E.rafId = requestAnimationFrame(animate)
-    return
+  if (E.isPreview && mediaEl && !E.jingleRegion && !E.mainPlayPending && !ducking) {
+    const insideCut = E.cuts.find(c => curSec >= c.start && curSec < c.end)
+    if (insideCut) previewSkipTo(mediaEl, insideCut.end)
   }
 
-  if (!E.audioCtx) return
-  const curSec = E.playStartSec + (E.audioCtx.currentTime - E.playStartCtxTime)
   updateTimecode(curSec)
   autoScrollToPlayhead(curSec)
   setCurrentTranscriptTime(curSec)
