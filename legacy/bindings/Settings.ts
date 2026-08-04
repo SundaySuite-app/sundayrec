@@ -344,6 +344,16 @@ editorIntroPath: string | null,
  */
 editorOutroPath: string | null, 
 /**
+ * Use the Apple **VideoToolbox** hardware encoder for the editor's VIDEO
+ * export? Default `false` — software x264/x265 is the quality-per-bit
+ * reference and works on every machine, so hardware stays opt-in. macOS
+ * only: on Windows/Linux the flag is ignored (VideoToolbox does not exist
+ * there), and even on macOS a hardware render that fails is retried once
+ * with the software args, so the toggle can never make an export
+ * unavailable — only faster.
+ */
+editorHwEncode: boolean, 
+/**
  * Download and install updates automatically? Default true.
  */
 autoUpdate: boolean, 

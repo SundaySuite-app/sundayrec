@@ -28,6 +28,19 @@ export interface ThumbnailInfo {
   format:   'jpeg' | 'png' | 'webp'
 }
 export type ThumbnailResult = { path: string; info: ThumbnailInfo; dataUrl: string } | { error: string }
+
+/** The pass-1 loudnorm measurement (`EditorLoudness`). All five measured values
+ *  ride along so `masterApply` can REUSE the measurement `masterMeasure` just
+ *  made instead of the backend reading the whole recording a second time. */
+export interface LoudnessMeasurementView {
+  inputI:       number
+  inputLra:     number
+  inputTp:      number
+  inputThresh:  number
+  targetOffset: number
+  /** The preset's target, not a measurement — carried for the "x → y LUFS" UI. */
+  targetLufs:   number
+}
 export interface ThumbnailResolved {
   path:    string
   info:    ThumbnailInfo
@@ -121,13 +134,14 @@ declare global {
       on:                  (channel: string, fn: (...args: unknown[]) => void) => (() => void) | undefined
       toAssetUrl:             (path: string) => string
       editorReadFile:         (filePath: string) => Promise<unknown>
-      editorSaveFile:         (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       editorPickFile:         ()                 => Promise<string | null>
       editorExportFile:       (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
+      /** Kill the in-flight export render; resolves to whether one was running. */
+      editorCancelExport:     ()                 => Promise<boolean>
       editorPickOutputFolder: ()                 => Promise<string | null>
       editorReadMeta:         (filePath: string) => Promise<unknown>
       editorSaveMeta:         (filePath: string, metadata: unknown) => Promise<boolean>
-      editorDetectSegments:   (filePath: string) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
+      editorDetectSegments:   (filePath: string, force?: boolean) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
@@ -201,17 +215,17 @@ declare global {
       videoPreviewStop:  () => Promise<void>
       recordingPreviewFrame: () => Promise<string | null>
       editorSetVideoPath:      (filePath: string) => Promise<boolean>
-      editorExtractAudioPeaks: (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
-      editorExtractAudioWav:   (filePath: string) => Promise<{ data: Uint8Array; duration: number } | null>
+      editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null; sampleRate: number | null } | null>
+      editorAllowAssetPath:    (filePath: string) => Promise<boolean>
+      editorExtractAudioPeaks: (filePath: string) => Promise<{ peaks: number[]; sampleRate: number } | null>
       editorExtractPlaybackProxy: (filePath: string) => Promise<string | null>
       editorPickVideoFile:     ()                 => Promise<string | null>
-      editorSaveVideo:         (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       editorExportVideo:       (params: unknown)  => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       editorProbeStreams:      (filePath: string) => Promise<{ hasVideo: boolean; hasAudio: boolean } | null>
       masterPresets:           () => Promise<{ id: string; label: string; description: string; targetLufs: number; targetLra: number; truePeakDb: number; filters: string }[]>
       masterPreview:           (inputPath: string, presetId: string, startSec: number, durationSec: number) => Promise<{ ok: boolean; previewPath?: string; error?: string }>
-      masterMeasure:           (inputPath: string, presetId: string) => Promise<{ ok: boolean; measurement?: { inputI: number; inputLra: number; inputTp: number; inputThresh: number; targetOffset: number }; targetLufs?: number; error?: string }>
-      masterApply:             (params: { inputPath: string; outputPath: string; presetId: string; measurement: { inputI: number; inputLra: number; inputTp: number; inputThresh: number; targetOffset: number }; jobId: string }) => Promise<{ ok: boolean; outputPath?: string; error?: string }>
+      masterMeasure:           (inputPath: string, presetId: string) => Promise<{ ok: boolean; measurement?: LoudnessMeasurementView; error?: string }>
+      masterApply:             (params: { inputPath: string; outputPath: string; presetId: string; measurement?: LoudnessMeasurementView; jobId: string }) => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       masterCancel:            (jobId: string) => Promise<boolean>
       getLogs:                 ()                 => Promise<unknown[]>
       getLogFilePath:          ()                 => Promise<string | null>

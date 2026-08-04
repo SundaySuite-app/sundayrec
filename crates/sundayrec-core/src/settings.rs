@@ -388,6 +388,15 @@ pub struct Settings {
     /// Path to an outro clip appended on export, or `None`.
     #[serde(default)]
     pub editor_outro_path: Option<String>,
+    /// Use the Apple **VideoToolbox** hardware encoder for the editor's VIDEO
+    /// export? Default `false` — software x264/x265 is the quality-per-bit
+    /// reference and works on every machine, so hardware stays opt-in. macOS
+    /// only: on Windows/Linux the flag is ignored (VideoToolbox does not exist
+    /// there), and even on macOS a hardware render that fails is retried once
+    /// with the software args, so the toggle can never make an export
+    /// unavailable — only faster.
+    #[serde(default)]
+    pub editor_hw_encode: bool,
 
     // ── Misc ─────────────────────────────────────────────────────────────────
     /// Download and install updates automatically? Default true.
@@ -570,6 +579,7 @@ impl Default for Settings {
 
             editor_intro_path: None,
             editor_outro_path: None,
+            editor_hw_encode: false,
 
             auto_update: true,
             ask_open_editor: true,
@@ -782,6 +792,9 @@ mod tests {
         // Editor intro/outro (R7)
         assert_eq!(s.editor_intro_path, None);
         assert_eq!(s.editor_outro_path, None);
+        // Hardware video encode is OPT-IN: software x264/x265 is the default
+        // everywhere, so a fresh install exports video identically on every mac.
+        assert!(!s.editor_hw_encode);
         // Misc
         assert!(s.auto_update);
         assert!(s.ask_open_editor);

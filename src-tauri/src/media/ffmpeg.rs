@@ -194,7 +194,7 @@ pub fn ffmpeg_health() -> FfmpegHealth {
 // ────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // ── Pure resolution policy (deterministic, parallel-safe — no env) ───────
@@ -251,7 +251,15 @@ mod tests {
     // these focus on actually executing the binary.
 
     use std::sync::Mutex;
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    /// THE process-wide lock for `SUNDAYREC_FFMPEG`/`SUNDAYREC_FFPROBE`
+    /// mutation in tests. Env vars are process-global, so every test module
+    /// that touches them must serialise on THIS lock — two modules with their
+    /// own locks do not exclude each other, and under parallel execution one
+    /// module's `remove_var` can strike while another module's export is
+    /// mid-flight. That resolved ffmpeg from PATH (present via homebrew
+    /// locally, absent on CI) → the CI-only "export spawn: No such file"
+    /// failure on the longest-running editor smoke test (2026-08-04).
+    pub(crate) static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Path to the fetched dev sidecar, if `npm run ffmpeg` has populated it AND
     /// the binary actually RUNS. On macOS a fetched sidecar's ad-hoc code

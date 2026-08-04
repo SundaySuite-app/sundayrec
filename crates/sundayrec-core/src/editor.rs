@@ -16,6 +16,7 @@
 //!   - [`video_filter_complex`]   — keep segments (+ processing) → A/V filter graph
 //!   - [`ffmetadata`]             — chapter metadata → the `;FFMETADATA1` sidecar text
 //!   - [`save_output_path`]       — collision-avoiding output path policy
+//!   - [`resolve_output_dir`]     — "same folder as the source" destination policy
 //!   - [`resolve_save_ext`]       — extension policy incl. FORCE_WAV refusal
 //!   - format constants ([`FORCE_WAV_FORMATS`], [`AUDIO_SAVE_EXTS`])
 //!
@@ -187,13 +188,88 @@ pub fn resolve_save_ext(raw_ext: &str, replace: bool) -> Result<String, SaveExtE
 
 // ── Codec arguments ───────────────────────────────────────────────────────────
 
-/// Build the ffmpeg `-c:a …` (and bitrate/depth) arguments for an output
+/// The lossy encoders' sample-rate ceiling. Above this a lossy render buys
+/// nothing an ear can hear while costing bitrate, and several encoders refuse
+/// the rate outright.
+pub const LOSSY_RATE_CEILING: u32 = 48_000;
+
+/// Rates `libopus` accepts (it always encodes at 48 kHz internally).
+const OPUS_RATES: &[u32] = &[8_000, 12_000, 16_000, 24_000, 48_000];
+/// Rates the AC-3 family accepts.
+const AC3_RATES: &[u32] = &[32_000, 44_100, 48_000];
+/// Rates MPEG-1/2 Audio Layer I/II accept.
+const MP2_RATES: &[u32] = &[16_000, 22_050, 24_000, 32_000, 44_100, 48_000];
+/// Rates LAME (MP3) accepts.
+const MP3_RATES: &[u32] = &[
+    8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000,
+];
+/// Rates AAC accepts, up to our lossy ceiling.
+const AAC_RATES: &[u32] = &[
+    8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000,
+];
+
+/// Snap a candidate rate to the nearest rate an encoder actually accepts,
+/// preferring the higher one on a tie. Pinning `-ar` is only an improvement if
+/// it can never hand an encoder a rate it refuses: without this, an 8 kHz source
+/// exported to AC-3 would go from "ffmpeg quietly negotiates 48 kHz" to a hard
+/// failure.
+fn snap_rate(candidate: u32, supported: &[u32]) -> u32 {
+    supported
+        .iter()
+        .copied()
+        .min_by_key(|r| (r.abs_diff(candidate), u32::MAX - *r))
+        .unwrap_or(candidate)
+}
+
+/// The sample rate an export should PIN for `fmt`, given the source's rate.
+///
+/// Two hazards this closes:
+///   1. **Silent upsampling.** `loudnorm` runs its internal graph at 192 kHz, so
+///      an export with a mastering preset and no `-ar` lands a WAV/FLAC at
+///      192 kHz — four times the size of the service, for nothing.
+///   2. **Silent downsampling.** The reverse pin ("always 48 k") would throw away
+///      a 96 kHz master. Lossless targets therefore keep the source rate exactly.
+///
+/// Lossy targets cap at [`LOSSY_RATE_CEILING`] and then snap to a rate the
+/// specific encoder accepts. `None` (rate unknown — the probe failed) means "emit
+/// no `-ar`", i.e. exactly the pre-Phase-4 behaviour.
+pub fn output_sample_rate(fmt: &str, source_rate: Option<u32>) -> Option<u32> {
+    let src = source_rate.filter(|r| *r > 0)?;
+    Some(match fmt {
+        // amr is hard-wired to 8 kHz by its own codec args.
+        "amr" | "3ga" => 8_000,
+        // Lossless / PCM targets: preserve the source rate EXACTLY. (The
+        // no-encoder set transcodes to `pcm_s16le`, which is equally rate-free.)
+        "wav" | "flac" | "mka" | "aiff" | "aif" | "au" | "snd" | "wv" | "tta" | "ape" | "dts"
+        | "mpc" | "ra" | "ram" | "spx" | "gsm" => src,
+        // Lossy: cap, then snap to what the encoder can take.
+        "opus" => snap_rate(src.min(LOSSY_RATE_CEILING), OPUS_RATES),
+        "ac3" | "eac3" => snap_rate(src.min(LOSSY_RATE_CEILING), AC3_RATES),
+        "mp1" | "mp2" => snap_rate(src.min(LOSSY_RATE_CEILING), MP2_RATES),
+        "aac" | "m4a" | "m4b" | "m4r" | "caf" => snap_rate(src.min(LOSSY_RATE_CEILING), AAC_RATES),
+        // libvorbis/wmav2 take arbitrary rates; mp3 (and any unknown ext, which
+        // falls through to LAME) snaps to the LAME table.
+        "ogg" | "oga" | "wma" => src.min(LOSSY_RATE_CEILING),
+        _ => snap_rate(src.min(LOSSY_RATE_CEILING), MP3_RATES),
+    })
+}
+
+/// Build the ffmpeg `-c:a …` (and bitrate/depth/rate) arguments for an output
 /// extension, porting `editor.codecArgs` exactly (same encoder choices and the
 /// same `bitrate ?? <default>` fallbacks). `bit_depth` only affects WAV.
-pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec<String> {
+///
+/// `source_rate` is the probed sample rate of the recording; it pins `-ar` via
+/// [`output_sample_rate`] so neither the loudnorm-192 kHz artefact nor a silent
+/// downsample of a 96 kHz master can reach the file. `None` omits `-ar`.
+pub fn codec_args(
+    fmt: &str,
+    bitrate: Option<u32>,
+    bit_depth: Option<u8>,
+    source_rate: Option<u32>,
+) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let br = |dflt: u32| format!("{}k", bitrate.unwrap_or(dflt));
-    match fmt {
+    let mut args: Vec<String> = match fmt {
         "wav" => vec![
             s("-c:a"),
             s(if bit_depth == Some(24) {
@@ -228,7 +304,14 @@ pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec
         "ape" | "dts" | "mpc" | "ra" | "ram" | "spx" | "gsm" => vec![s("-c:a"), s("pcm_s16le")],
         // mp3 (and any unknown ext) → LAME at a transparent 256k default.
         _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(256)],
+    };
+    // amr already carries its forced `-ar 8000`; never emit a second one.
+    if !args.iter().any(|a| a == "-ar") {
+        if let Some(rate) = output_sample_rate(fmt, source_rate) {
+            args.extend([s("-ar"), rate.to_string()]);
+        }
     }
+    args
 }
 
 /// Standard MP4 output codec args — mirrors `editor.MP4_CODEC_ARGS`. Kept as the
@@ -373,6 +456,23 @@ pub fn videotoolbox_codec_args(
     a
 }
 
+/// Should a failed video export be retried with the SOFTWARE encoder?
+///
+/// The hardware (VideoToolbox) encoder is an opt-in speed-up, and it can refuse
+/// work the software encoder happily takes: no hardware session available
+/// (another app owns it), an unsupported pixel format out of the filter graph,
+/// H.265 on a mac whose media engine predates it. Those all surface the same
+/// way — ffmpeg exits non-zero — and the user, who only ticked "faster export",
+/// would be left with no file at all.
+///
+/// So: retry exactly once, and only when hardware was the thing that failed. A
+/// software render that fails has nothing left to fall back to (retrying it
+/// would just fail identically and double the wait), and a successful render is
+/// never re-run.
+pub fn should_retry_with_software(hw_used: bool, exit_ok: bool) -> bool {
+    hw_used && !exit_ok
+}
+
 // ── Filter graph construction ─────────────────────────────────────────────────
 
 /// Format a seconds value the way Electron's `.toFixed(4)` did — fixed 4
@@ -390,6 +490,55 @@ fn atrim(input_ref: &str, seg: &KeepSegment) -> String {
     )
 }
 
+// ── De-click join fades ──────────────────────────────────────────────────────
+
+/// Length (seconds) of the fade applied at an INTERIOR cut boundary. 15 ms is
+/// the shortest fade that reliably kills the click of a mid-waveform splice
+/// while staying far below the ~50 ms at which a listener starts to perceive
+/// the fade itself — cut a word in half and it still sounds like a cut, not a
+/// duck.
+pub const JOIN_FADE_SEC: f64 = 0.015;
+
+/// The `afade` filters for ONE keep segment, in SEGMENT-LOCAL time (the
+/// preceding `asetpts=PTS-STARTPTS` has already reset the segment to t=0).
+///
+/// The rule is about the ORIGINAL file, not the segment index: fade IN when the
+/// segment's start is not the true file start, fade OUT when its end is not the
+/// true file end. So a single keep trimmed at both ends gets both fades, the
+/// first of two keeps gets only the out-fade, and an untouched whole-file keep
+/// gets none. Durations are untouched (a fade is a gain envelope, not a trim),
+/// so chapter remapping and the kept-duration bookkeeping stay exact.
+///
+/// A segment too short to hold the fades keeps its hard edges — better a click
+/// than a sub-30 ms sliver that is *all* envelope.
+fn join_fades(seg: &KeepSegment, total_duration: f64) -> Vec<String> {
+    let dur = seg.end - seg.start;
+    let mut out = Vec::new();
+    if !dur.is_finite() || dur <= 2.0 * JOIN_FADE_SEC {
+        return out;
+    }
+    if seg.start > KEEP_EPSILON {
+        out.push(format!("afade=t=in:st=0:d={JOIN_FADE_SEC}"));
+    }
+    if total_duration.is_finite() && seg.end < total_duration - KEEP_EPSILON {
+        out.push(format!(
+            "afade=t=out:st={}:d={JOIN_FADE_SEC}",
+            ts(dur - JOIN_FADE_SEC)
+        ));
+    }
+    out
+}
+
+/// [`atrim`] plus this segment's de-click [`join_fades`].
+fn atrim_faded(input_ref: &str, seg: &KeepSegment, total_duration: f64) -> String {
+    let mut chain = atrim(input_ref, seg);
+    for f in join_fades(seg, total_duration) {
+        chain.push(',');
+        chain.push_str(&f);
+    }
+    chain
+}
+
 /// The audio filter graph for an *export* (the general case): trims, optional
 /// processing filters, optional intro/outro concat. Mirrors `exportEdited`'s
 /// `concatParts` builder. Returns the `-filter_complex` string and the output
@@ -399,12 +548,20 @@ fn atrim(input_ref: &str, seg: &KeepSegment) -> String {
 /// when an intro is prepended). `proc_filters` is the per-preset processing
 /// chain (may be empty). `has_intro`/`has_outro` toggle the surrounding concat;
 /// the intro is always input 0, the outro the input after the main one.
+///
+/// `total_duration` is the SOURCE recording's length — it decides which segment
+/// edges are interior cuts and therefore get a de-click fade (see
+/// [`join_fades`]). `post_filters` run LAST, on the final pad after any
+/// intro/outro concat: that is where the dither belongs, because it has to see
+/// every sample that reaches the encoder.
 pub fn audio_export_filter_complex(
     keeps: &[KeepSegment],
     main_input_idx: usize,
     proc_filters: &[String],
+    post_filters: &[String],
     has_intro: bool,
     has_outro: bool,
+    total_duration: f64,
 ) -> (String, String) {
     let main_ref = format!("[{main_input_idx}:a]");
     let outro_idx = main_input_idx + 1;
@@ -412,12 +569,15 @@ pub fn audio_export_filter_complex(
 
     if keeps.len() == 1 {
         let seg = &keeps[0];
-        let mut chain = vec![atrim(&main_ref, seg)];
+        let mut chain = vec![atrim_faded(&main_ref, seg, total_duration)];
         chain.extend(proc_filters.iter().cloned());
         filter_parts.push(format!("{}[main_out]", chain.join(",")));
     } else {
         for (i, seg) in keeps.iter().enumerate() {
-            filter_parts.push(format!("{}[seg{i}]", atrim(&main_ref, seg)));
+            filter_parts.push(format!(
+                "{}[seg{i}]",
+                atrim_faded(&main_ref, seg, total_duration)
+            ));
         }
         let seg_inputs: String = (0..keeps.len()).map(|i| format!("[seg{i}]")).collect();
         if !proc_filters.is_empty() {
@@ -445,7 +605,7 @@ pub fn audio_export_filter_complex(
         ));
     }
 
-    let map_arg = if has_intro || has_outro {
+    let mut map_arg = if has_intro || has_outro {
         let mut inputs = String::new();
         if has_intro {
             inputs.push_str("[intro_fmt]");
@@ -460,6 +620,13 @@ pub fn audio_export_filter_complex(
     } else {
         "[main_out]".to_string()
     };
+
+    // The post chain (dither) is the LAST thing before the encoder — after the
+    // jingle concat, so the jingles are dithered on the way to 16-bit too.
+    if !post_filters.is_empty() {
+        concat_parts.push(format!("{map_arg}{}[out]", post_filters.join(",")));
+        map_arg = "[out]".to_string();
+    }
 
     (concat_parts.join(";"), map_arg)
 }
@@ -476,13 +643,50 @@ pub fn is_simple_audio_export(
     keeps.len() == 1 && proc_filters.is_empty() && !has_intro && !has_outro
 }
 
-/// The single-segment `-af` value for the simple audio path.
-pub fn audio_simple_af(seg: &KeepSegment) -> String {
-    format!(
-        "atrim=start={}:end={},asetpts=PTS-STARTPTS",
-        ts(seg.start),
-        ts(seg.end)
-    )
+/// The single-segment `-af` value for the simple audio path, including this
+/// segment's de-click [`join_fades`] (a "trim the first 10 minutes off" export
+/// is exactly the case where the cut edge is audible).
+pub fn audio_simple_af(seg: &KeepSegment, total_duration: f64) -> String {
+    // Same chain as the filter_complex path, minus the input/output labels.
+    atrim_faded("", seg, total_duration)
+}
+
+/// The COMPLETE output-argument list for the simple single-segment audio path
+/// ([`is_simple_audio_export`]): stream selection + `-af` + codec.
+///
+/// The stream selection is load-bearing. The other two branches
+/// ([`audio_export_filter_complex`] / [`video_filter_complex`]) end in an
+/// explicit `-map`, but this one used to emit a bare `-af`, leaving ffmpeg's
+/// automatic stream selection in charge — and for a VIDEO-bearing source
+/// exported to an audio container that picks the video stream too (mp3 gets an
+/// attached-picture-shaped mess, and containers that refuse video fail outright).
+/// `-vn` drops video and `-map 0:a:0` pins the first audio stream of the main
+/// input (input 0 — the simple path has no intro/outro, so the main file is
+/// always index 0; an optional FFMETADATA input is appended *after* it).
+pub fn audio_simple_export_args(
+    seg: &KeepSegment,
+    fmt: &str,
+    bitrate: Option<u32>,
+    bit_depth: Option<u8>,
+    source_rate: Option<u32>,
+    total_duration: f64,
+) -> Vec<String> {
+    // Trim (+ join fades) then, for a 16-bit PCM target, the dither — last, so
+    // it sees exactly what the encoder will.
+    let mut af = audio_simple_af(seg, total_duration);
+    if let Some(d) = crate::mastering::dither_filter_for(fmt, bit_depth) {
+        af.push(',');
+        af.push_str(&d);
+    }
+    let mut args = vec![
+        "-vn".to_string(),
+        "-map".to_string(),
+        "0:a:0".to_string(),
+        "-af".to_string(),
+        af,
+    ];
+    args.extend(codec_args(fmt, bitrate, bit_depth, source_rate));
+    args
 }
 
 /// The audio filter graph for a *save* (no intro/outro/processing — the
@@ -660,6 +864,38 @@ where
     }
 }
 
+/// Resolve the directory an export writes into, given the renderer's requested
+/// folder and the source file.
+///
+/// An EMPTY `output_folder` means "Samme mappe" — the export modal's DEFAULT
+/// destination, which never picks a folder (only "Velg mappe…" does). Treating
+/// that empty string as a real path is what broke export out of the box: it
+/// reached the IPC path guard, failed `require_absolute` ("path must be
+/// absolute"), and every default export died before ffmpeg ever ran. Empty now
+/// resolves to the source file's own directory, which is what the pill promises.
+///
+/// A non-empty folder is returned untouched. The split is done on BOTH
+/// separators (not `std::path`) so the policy stays platform-neutral and
+/// testable on any host, exactly like [`join`]. The caller guarantees
+/// `input_path` is absolute (the IPC guard rejects anything else), so the
+/// derived parent is absolute too — `collision_free_path` gets an absolute dir
+/// in both cases.
+pub fn resolve_output_dir(output_folder: &str, input_path: &str) -> String {
+    let folder = output_folder.trim();
+    if !folder.is_empty() {
+        return folder.to_string();
+    }
+    match input_path.rfind(['/', '\\']) {
+        // A separator at index 0 means the file sits at the filesystem root —
+        // the directory is the root itself, not the empty string.
+        Some(0) => input_path[..1].to_string(),
+        Some(i) => input_path[..i].to_string(),
+        // No separator at all: a bare filename. Can't happen through the IPC
+        // guard (absolute paths only); `join` then yields a plain relative name.
+        None => String::new(),
+    }
+}
+
 /// Join a directory and filename with a forward slash, collapsing a trailing
 /// separator. Kept tiny + platform-neutral so the path policy is testable
 /// without `std::path` host quirks (the shell uses real `PathBuf::join`).
@@ -695,7 +931,7 @@ pub fn ffprobe_load_args(input_path: &str) -> Vec<String> {
         "-v",
         "error",
         "-show_entries",
-        "format=duration:stream=codec_type,channels,sample_fmt",
+        "format=duration:stream=codec_type,channels,sample_fmt,sample_rate",
         "-of",
         "default=noprint_wrappers=1:nokey=0",
         input_path,
@@ -714,17 +950,23 @@ pub struct ProbeResult {
     pub has_audio: bool,
     pub channels: Option<u32>,
     pub sample_fmt: Option<String>,
+    /// The first audio stream's sample rate (Hz), when ffprobe reported one.
+    /// The export pins `-ar` to this so a 96 kHz service is never silently
+    /// resampled; the loader can also show it.
+    pub sample_rate: Option<u32>,
 }
 
 /// Parse the `key=value` lines ffprobe prints for [`ffprobe_load_args`]. ffprobe
 /// emits one block per stream plus the format block, so we take the first audio
-/// stream's channels/sample_fmt and OR the video presence across all streams.
+/// stream's channels/sample_fmt/sample_rate and OR the video presence across all
+/// streams.
 pub fn parse_probe_output(stdout: &str) -> ProbeResult {
     let mut duration_sec = 0.0;
     let mut has_video = false;
     let mut has_audio = false;
     let mut channels: Option<u32> = None;
     let mut sample_fmt: Option<String> = None;
+    let mut sample_rate: Option<u32> = None;
     // ffprobe prints stream blocks then the format block; a `codec_type=audio`
     // line opens an audio stream whose subsequent `channels=`/`sample_fmt=`
     // belong to it. Track the current stream kind to attribute fields.
@@ -751,6 +993,9 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
             {
                 sample_fmt = Some(val.to_string());
             }
+            "sample_rate" if current_audio && sample_rate.is_none() => {
+                sample_rate = val.parse::<u32>().ok().filter(|r| *r > 0);
+            }
             "duration" => {
                 if let Ok(d) = val.parse::<f64>() {
                     if d.is_finite() && d > 0.0 {
@@ -767,14 +1012,64 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
         has_audio,
         channels,
         sample_fmt,
+        sample_rate,
     }
 }
 
-/// ffmpeg arguments to extract the audio of `input_path` as an 8 kHz mono WAV to
-/// `out_path`, for renderer-side waveform/peaks. Mirrors `extractAudioForPeaks`'s
-/// `-vn -ac 1 -ar 8000 -f wav` exactly (8 kHz keeps the buffer tiny — plenty for
-/// peaks). The seam streams this to a temp WAV then decodes it.
-pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
+/// ffprobe arguments that print the first video stream's pixel dimensions.
+///
+/// Only the HARDWARE video-export path needs these: VideoToolbox has no CRF, so
+/// it must be given a target bitrate, and the sensible bitrate depends on the
+/// resolution ([`default_video_bitrate_kbps`]). The software path is CRF-driven
+/// and never runs this probe.
+pub fn ffprobe_video_size_args(input_path: &str) -> Vec<String> {
+    [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "default=noprint_wrappers=1:nokey=0",
+        input_path,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// Parse the `width=`/`height=` lines ffprobe prints for
+/// [`ffprobe_video_size_args`]. `None` when either is missing or not a positive
+/// integer — the caller then falls back to a default bitrate rather than
+/// guessing a resolution.
+pub fn parse_video_size(stdout: &str) -> Option<(u32, u32)> {
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+    for line in stdout.lines() {
+        let Some((key, val)) = line.trim().split_once('=') else {
+            continue;
+        };
+        match key {
+            "width" if width.is_none() => width = val.parse::<u32>().ok().filter(|v| *v > 0),
+            "height" if height.is_none() => height = val.parse::<u32>().ok().filter(|v| *v > 0),
+            _ => {}
+        }
+    }
+    Some((width?, height?))
+}
+
+/// ffmpeg arguments to decode `input_path` to 8 kHz mono `s16le` **on stdout**
+/// for the waveform.
+///
+/// The decode is the Electron `extractAudioForPeaks` one (`-vn -ac 1 -ar 8000`;
+/// 8 kHz is plenty for a waveform) minus the round-trip through disk: no temp
+/// dir, no WAV header, and the seam folds each stdout chunk straight into a
+/// [`PeakAccumulator`], so peak extraction costs a few kB of RAM regardless of
+/// the recording's length. The old path decoded a 2 h 96 kHz FLAC into a ~115 MB
+/// WAV in a per-call temp dir that was never deleted, then read the whole thing
+/// back into memory before down-sampling it away.
+pub fn peaks_pipe_args(input_path: &str) -> Vec<String> {
     [
         "-nostdin",
         "-hide_banner",
@@ -786,9 +1081,8 @@ pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
         "-ar",
         "8000",
         "-f",
-        "wav",
-        "-y",
-        out_path,
+        "s16le",
+        "pipe:1",
     ]
     .into_iter()
     .map(String::from)
@@ -798,14 +1092,14 @@ pub fn peaks_extract_args(input_path: &str, out_path: &str) -> Vec<String> {
 /// ffmpeg arguments to transcode `input_path` to a compact, **seekable, stereo**
 /// AAC `.m4a` proxy at the source rate (48 kHz cap is the browser's comfort zone)
 /// for AUDIBLE playback of files too big / too exotic for the inline Web-Audio
-/// path. Unlike [`peaks_extract_args`] (8 kHz MONO — fine for a waveform but
+/// path. Unlike [`peaks_pipe_args`] (8 kHz MONO — fine for a waveform but
 /// telephone-quality to LISTEN to), this keeps stereo + full speech/music
 /// bandwidth, yet stays small enough to stream from disk via an `<audio>` element
 /// (no multi-GB Web-Audio PCM buffer → no OOM). `+faststart` puts the moov atom up
 /// front so the element can start + seek immediately.
 ///
 /// NOTE: the renderer wiring (play oversized/exotic files via an `<audio>` element
-/// pointed at this proxy, keeping the 8 kHz WAV only for the waveform) is a
+/// pointed at this proxy, keeping the 8 kHz decode only for the waveform) is a
 /// RIGG-VERIFISER follow-up — it changes the editor's playback transport, which
 /// cannot be validated in a headless build. The arg builder is ready + tested.
 pub fn playback_proxy_args(input_path: &str, out_path: &str) -> Vec<String> {
@@ -974,6 +1268,170 @@ pub fn downsample_peaks(samples: &[f32], buckets: usize) -> Vec<f32> {
     out
 }
 
+// ── Streaming peaks (P3) ─────────────────────────────────────────────────────
+
+/// The rate [`peaks_pipe_args`] decodes at (Hz).
+pub const PEAKS_SAMPLE_RATE: u32 = 8000;
+
+/// Peak buckets per second — the rate the renderer's waveform indexes against
+/// (`pi = sec * 100`). Changing this desynchronises the waveform from the
+/// timeline, so it is a wire constant, not a tuning knob.
+pub const PEAKS_PER_SEC: usize = 100;
+
+/// Samples per peak bucket at [`PEAKS_SAMPLE_RATE`]: 8000 / 100 = 80.
+pub const PEAKS_BUCKET_SAMPLES: usize = (PEAKS_SAMPLE_RATE as usize) / PEAKS_PER_SEC;
+
+/// Folds a stream of little-endian `s16` bytes into 100-per-second peak buckets
+/// **as the bytes arrive** — the streaming equivalent of "decode everything into
+/// a `Vec<f32>`, then [`downsample_peaks`] it".
+///
+/// Two things it has to get right that a naive `chunks_exact(2)` per read does
+/// not: a sample can straddle a chunk boundary (an odd-length read leaves half a
+/// sample behind, which must be carried into the next chunk), and the final
+/// bucket is almost never full (its partial tail must still be emitted, or the
+/// waveform ends up to 10 ms short of the recording).
+#[derive(Debug, Clone)]
+pub struct PeakAccumulator {
+    bucket_size: usize,
+    /// The high byte of a sample split across a chunk boundary.
+    carry: Option<u8>,
+    /// Samples folded into the bucket currently being built.
+    filled: usize,
+    /// Running max-abs of the current bucket, already normalised to 0..1.
+    current: f32,
+    peaks: Vec<f32>,
+}
+
+impl PeakAccumulator {
+    /// A fresh accumulator emitting one peak per `bucket_size` samples. A zero
+    /// `bucket_size` is clamped to 1 so the accumulator can never spin.
+    pub fn new(bucket_size: usize) -> Self {
+        Self {
+            bucket_size: bucket_size.max(1),
+            carry: None,
+            filled: 0,
+            current: 0.0,
+            peaks: Vec::new(),
+        }
+    }
+
+    /// Fold one raw stdout chunk of `s16le` bytes in. Any trailing odd byte is
+    /// carried to the next call.
+    pub fn push_bytes(&mut self, chunk: &[u8]) {
+        let mut i = 0;
+        // Complete a sample whose low byte arrived in the previous chunk.
+        if let Some(lo) = self.carry.take() {
+            if let Some(&hi) = chunk.first() {
+                self.push_sample(i16::from_le_bytes([lo, hi]));
+                i = 1;
+            } else {
+                // Empty chunk — keep holding the half sample.
+                self.carry = Some(lo);
+                return;
+            }
+        }
+        let rest = &chunk[i..];
+        let pairs = rest.len() / 2;
+        for p in 0..pairs {
+            let b = &rest[p * 2..p * 2 + 2];
+            self.push_sample(i16::from_le_bytes([b[0], b[1]]));
+        }
+        if rest.len() % 2 == 1 {
+            self.carry = Some(rest[rest.len() - 1]);
+        }
+    }
+
+    fn push_sample(&mut self, sample: i16) {
+        // `i16::MIN.abs()` overflows — go through f32 like `downsample_peaks`'s
+        // input did (the WAV reader divided by 32768 before taking `abs`).
+        let a = (sample as f32 / 32768.0).abs();
+        if a > self.current {
+            self.current = a;
+        }
+        self.filled += 1;
+        if self.filled >= self.bucket_size {
+            self.peaks.push(self.current.min(1.0));
+            self.current = 0.0;
+            self.filled = 0;
+        }
+    }
+
+    /// Peaks emitted so far — the tail bucket is NOT included (use
+    /// [`finish`](Self::finish)). Handy for progress reporting.
+    pub fn len(&self) -> usize {
+        self.peaks.len()
+    }
+
+    /// Whether no complete bucket has been emitted yet.
+    pub fn is_empty(&self) -> bool {
+        self.peaks.is_empty()
+    }
+
+    /// Flush the partial tail bucket (if any) and yield the peaks. A stream that
+    /// never delivered a single sample yields an empty vec, matching
+    /// [`downsample_peaks`] on empty input.
+    pub fn finish(mut self) -> Vec<f32> {
+        if self.filled > 0 {
+            self.peaks.push(self.current.min(1.0));
+        }
+        self.peaks
+    }
+}
+
+/// Quantise 0..1 peaks to one byte each for the on-disk cache: `round(p * 255)`,
+/// clamped. 255 doubles as the clip marker (a full-scale sample is exactly what
+/// the renderer's clip badge looks for), and the byte form is what keeps a 2 h
+/// cache in the low megabytes instead of a float-per-peak JSON.
+pub fn quantize_peaks(peaks: &[f32]) -> Vec<u8> {
+    peaks
+        .iter()
+        .map(|p| {
+            // NaN has no ordering, so `clamp` would panic on it — call it silence.
+            // ±∞ clamps to the ends like any out-of-range value.
+            let v = if p.is_nan() { 0.0 } else { *p };
+            (v.clamp(0.0, 1.0) * 255.0).round() as u8
+        })
+        .collect()
+}
+
+/// Inverse of [`quantize_peaks`] — the renderer only ever draws these, so the
+/// ≤ 1/510 rounding error is invisible on a waveform.
+pub fn dequantize_peaks(bytes: &[u8]) -> Vec<f32> {
+    bytes.iter().map(|b| *b as f32 / 255.0).collect()
+}
+
+/// The cache-key rule shared by the peaks + segments sidecars: a cache is usable
+/// only when it was written by THIS format version, at the same peak rate, for a
+/// file of exactly the same size and modification time. Anything else (the file
+/// was re-recorded, re-exported in place, or the cache predates a format change)
+/// means recompute.
+///
+/// Pass `per_sec: None` for caches that carry no rate (segments).
+pub fn cache_is_fresh(
+    cached_version: u32,
+    expected_version: u32,
+    cached_size: u64,
+    cached_mtime_ms: u64,
+    cached_per_sec: Option<usize>,
+    actual_size: u64,
+    actual_mtime_ms: u64,
+) -> bool {
+    cached_version == expected_version
+        && cached_size == actual_size
+        && cached_mtime_ms == actual_mtime_ms
+        && cached_per_sec.is_none_or(|p| p == PEAKS_PER_SEC)
+}
+
+/// Filename prefix of the per-call temp dirs the OLD peaks path created (and
+/// never deleted — one leaked 8 kHz WAV per editor open). Nothing writes these
+/// any more; the sweep removes the leftovers a previous version left behind.
+pub const EDITOR_TEMP_DIR_PREFIX: &str = "sundayrec-editor-";
+
+/// Whether a temp-dir entry name is one of those legacy peaks temp dirs.
+pub fn is_editor_temp_dir_name(name: &str) -> bool {
+    name.starts_with(EDITOR_TEMP_DIR_PREFIX)
+}
+
 // ── Sidecar path policy (P1 parity) ──────────────────────────────────────────
 //
 // The Electron editor persisted per-recording editor state in three JSON
@@ -996,6 +1454,11 @@ pub enum Sidecar {
     CutsDraft,
     /// `<base>.transcript.json` — the saved transcript.
     Transcript,
+    /// `<base>.peaks.json` — the quantised waveform cache (P3). Derived data,
+    /// not user state: deleting it costs one recompute, nothing else.
+    Peaks,
+    /// `<base>.segments.json` — the content-detection cache (P3). Same deal.
+    Segments,
 }
 
 impl Sidecar {
@@ -1005,6 +1468,8 @@ impl Sidecar {
             Sidecar::Meta => ".meta.json",
             Sidecar::CutsDraft => ".cuts-draft.json",
             Sidecar::Transcript => ".transcript.json",
+            Sidecar::Peaks => ".peaks.json",
+            Sidecar::Segments => ".segments.json",
         }
     }
 }
@@ -1361,24 +1826,33 @@ mod tests {
 
     #[test]
     fn wav_codec_respects_bit_depth() {
-        assert_eq!(codec_args("wav", None, Some(24)), vec!["-c:a", "pcm_s24le"]);
-        assert_eq!(codec_args("wav", None, Some(16)), vec!["-c:a", "pcm_s16le"]);
-        assert_eq!(codec_args("wav", None, None), vec!["-c:a", "pcm_s16le"]);
+        assert_eq!(
+            codec_args("wav", None, Some(24), None),
+            vec!["-c:a", "pcm_s24le"]
+        );
+        assert_eq!(
+            codec_args("wav", None, Some(16), None),
+            vec!["-c:a", "pcm_s16le"]
+        );
+        assert_eq!(
+            codec_args("wav", None, None, None),
+            vec!["-c:a", "pcm_s16le"]
+        );
     }
 
     #[test]
     fn aac_codec_uses_bitrate_with_default_256() {
         // Transparent default for speech+music; the caller can still override.
         assert_eq!(
-            codec_args("aac", None, None),
+            codec_args("aac", None, None, None),
             vec!["-c:a", "aac", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("m4a", None, None),
+            codec_args("m4a", None, None, None),
             vec!["-c:a", "aac", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("m4a", Some(320), None),
+            codec_args("m4a", Some(320), None, None),
             vec!["-c:a", "aac", "-b:a", "320k"]
         );
     }
@@ -1386,7 +1860,7 @@ mod tests {
     #[test]
     fn opus_default_is_160k() {
         assert_eq!(
-            codec_args("opus", None, None),
+            codec_args("opus", None, None, None),
             vec!["-c:a", "libopus", "-b:a", "160k"]
         );
     }
@@ -1394,7 +1868,7 @@ mod tests {
     #[test]
     fn ogg_default_is_256k() {
         assert_eq!(
-            codec_args("ogg", None, None),
+            codec_args("ogg", None, None, None),
             vec!["-c:a", "libvorbis", "-b:a", "256k"]
         );
     }
@@ -1402,11 +1876,11 @@ mod tests {
     #[test]
     fn unknown_codec_defaults_to_mp3_256() {
         assert_eq!(
-            codec_args("weird", None, None),
+            codec_args("weird", None, None, None),
             vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("mp3", None, None),
+            codec_args("mp3", None, None, None),
             vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
     }
@@ -1414,7 +1888,7 @@ mod tests {
     #[test]
     fn lossless_formats_carry_no_bitrate() {
         for fmt in ["wav", "flac", "aiff", "tta", "wv"] {
-            let a = codec_args(fmt, None, None);
+            let a = codec_args(fmt, None, None, None);
             assert!(
                 !a.iter().any(|x| x == "-b:a"),
                 "{fmt} is lossless → no -b:a; got: {a:?}"
@@ -1424,7 +1898,120 @@ mod tests {
 
     #[test]
     fn no_encoder_formats_transcode_to_pcm() {
-        assert_eq!(codec_args("dts", None, None), vec!["-c:a", "pcm_s16le"]);
+        assert_eq!(
+            codec_args("dts", None, None, None),
+            vec!["-c:a", "pcm_s16le"]
+        );
+    }
+
+    // ── sample-rate pinning (P4) ─────────────────────────────────────────────
+
+    /// The `-ar` value in an arg list, if any.
+    fn ar_of(args: &[String]) -> Option<&str> {
+        let i = args.iter().position(|a| a == "-ar")?;
+        args.get(i + 1).map(String::as_str)
+    }
+
+    #[test]
+    fn unknown_source_rate_emits_no_ar() {
+        // The pre-Phase-4 behaviour, kept for the case where the probe failed:
+        // better to let ffmpeg negotiate than to guess a rate.
+        for fmt in ["wav", "flac", "mp3", "aac", "opus"] {
+            assert_eq!(
+                ar_of(&codec_args(fmt, None, None, None)),
+                None,
+                "{fmt} with an unknown source rate must not pin -ar"
+            );
+        }
+    }
+
+    #[test]
+    fn lossless_targets_preserve_the_source_rate() {
+        // A 96 kHz service must NOT be silently downsampled …
+        assert_eq!(
+            ar_of(&codec_args("flac", None, None, Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("wav", None, Some(24), Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("aiff", None, None, Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("wv", None, None, Some(88_200))),
+            Some("88200")
+        );
+        // … nor silently UPsampled to loudnorm's internal 192 kHz.
+        assert_eq!(
+            ar_of(&codec_args("wav", None, None, Some(48_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("flac", None, None, Some(44_100))),
+            Some("44100")
+        );
+    }
+
+    #[test]
+    fn lossy_targets_cap_at_48k_but_keep_lower_rates() {
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(96_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(44_100))),
+            Some("44100")
+        );
+        assert_eq!(
+            ar_of(&codec_args("aac", None, None, Some(96_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("m4a", None, None, Some(44_100))),
+            Some("44100")
+        );
+        assert_eq!(
+            ar_of(&codec_args("ogg", None, None, Some(192_000))),
+            Some("48000")
+        );
+    }
+
+    #[test]
+    fn restricted_encoders_snap_to_a_rate_they_accept() {
+        // libopus only encodes at 8/12/16/24/48 kHz — 44.1 k would be refused.
+        assert_eq!(
+            ar_of(&codec_args("opus", None, None, Some(44_100))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("opus", None, None, Some(16_000))),
+            Some("16000")
+        );
+        // AC-3 has no rate below 32 kHz; an 8 kHz source must not hard-fail the
+        // export (ffmpeg used to negotiate this for us when -ar was absent).
+        assert_eq!(
+            ar_of(&codec_args("ac3", None, None, Some(8_000))),
+            Some("32000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("ac3", None, None, Some(96_000))),
+            Some("48000")
+        );
+        // LAME has no 96/88.2 kHz either, and no exotic in-between rates.
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(37_800))),
+            Some("32000")
+        );
+    }
+
+    #[test]
+    fn amr_keeps_its_forced_8k_without_a_duplicate_ar() {
+        let a = codec_args("amr", None, None, Some(96_000));
+        assert_eq!(a.iter().filter(|x| *x == "-ar").count(), 1, "{a:?}");
+        assert_eq!(ar_of(&a), Some("8000"));
     }
 
     // ── format breadth + video codecs ────────────────────────────────────────────
@@ -1515,6 +2102,18 @@ mod tests {
         assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
     }
 
+    #[test]
+    fn only_a_failed_hardware_render_is_retried_in_software() {
+        // The one case worth a second run: hardware was used and ffmpeg failed.
+        assert!(should_retry_with_software(true, false));
+        // Hardware succeeded — nothing to retry.
+        assert!(!should_retry_with_software(true, true));
+        // Software failed — the fallback IS software, so a retry would fail the
+        // same way and cost the user a second full render.
+        assert!(!should_retry_with_software(false, false));
+        assert!(!should_retry_with_software(false, true));
+    }
+
     // ── filter graphs ──────────────────────────────────────────────────────────
 
     #[test]
@@ -1575,16 +2174,57 @@ mod tests {
     }
 
     #[test]
+    fn simple_export_args_pin_the_audio_stream() {
+        let seg = KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        };
+        let args = audio_simple_export_args(&seg, "mp3", Some(128), None, None, 10.0);
+        // Without these two the export of a VIDEO source to an audio container
+        // let ffmpeg's automatic stream selection pull in the video stream.
+        assert!(args.contains(&"-vn".to_string()), "args: {args:?}");
+        let map_at = args
+            .iter()
+            .position(|a| a == "-map")
+            .expect("simple path must map explicitly");
+        assert_eq!(args[map_at + 1], "0:a:0");
+        // The trim + codec still ride along, unchanged.
+        let af_at = args.iter().position(|a| a == "-af").unwrap();
+        assert_eq!(args[af_at + 1], audio_simple_af(&seg, 10.0));
+        assert!(args.ends_with(&["-b:a".to_string(), "128k".to_string()]));
+    }
+
+    #[test]
+    fn simple_export_args_carry_wav_bit_depth() {
+        let seg = KeepSegment {
+            start: 1.0,
+            end: 2.0,
+        };
+        let args = audio_simple_export_args(&seg, "wav", None, Some(24), None, 2.0);
+        assert!(args.contains(&"-vn".to_string()));
+        assert!(args.ends_with(&["-c:a".to_string(), "pcm_s24le".to_string()]));
+    }
+
+    #[test]
     fn export_filter_single_keep_with_processing() {
         let keeps = vec![KeepSegment {
             start: 1.0,
             end: 2.0,
         }];
-        let (fc, map) =
-            audio_export_filter_complex(&keeps, 0, &["volume=2".to_string()], false, false);
+        let (fc, map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &["volume=2".to_string()],
+            &[],
+            false,
+            false,
+            2.0,
+        );
+        // Trimmed at the START only (the keep runs to the file's end) → one fade.
         assert_eq!(
             fc,
-            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,volume=2[main_out]"
+            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,\
+             afade=t=in:st=0:d=0.015,volume=2[main_out]"
         );
         assert_eq!(map, "[main_out]");
     }
@@ -1596,7 +2236,7 @@ mod tests {
             start: 0.0,
             end: 10.0,
         }];
-        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], true, true);
+        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, 10.0);
         assert!(fc.starts_with("[0:a]aformat=sample_fmts=fltp[intro_fmt];"));
         assert!(fc.contains("[1:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[main_out]"));
         assert!(fc.contains("[2:a]aformat=sample_fmts=fltp[outro_fmt]"));
@@ -1616,10 +2256,135 @@ mod tests {
                 end: 10.0,
             },
         ];
-        let (fc, _map) =
-            audio_export_filter_complex(&keeps, 0, &["loudnorm".to_string()], false, false);
+        let (fc, _map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &["loudnorm".to_string()],
+            &[],
+            false,
+            false,
+            10.0,
+        );
         assert!(fc.contains("[seg0][seg1]concat=n=2:v=0:a=1[concat_out]"));
         assert!(fc.contains("[concat_out]loudnorm[main_out]"));
+    }
+
+    // ── de-click join fades (P4) ─────────────────────────────────────────────
+
+    #[test]
+    fn a_cut_gives_the_two_new_edges_fades_and_nothing_else() {
+        // Cut 5–6 s out of a 10 s file: seg0 ends at an interior edge (fade out),
+        // seg1 starts at one (fade in). The file's own start/end stay hard.
+        let keeps = build_keeps(&[cut(5.0, 6.0)], 10.0);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert_eq!(
+            fc,
+            "[0:a]atrim=start=0.0000:end=5.0000,asetpts=PTS-STARTPTS,\
+             afade=t=out:st=4.9850:d=0.015[seg0];\
+             [0:a]atrim=start=6.0000:end=10.0000,asetpts=PTS-STARTPTS,\
+             afade=t=in:st=0:d=0.015[seg1];\
+             [seg0][seg1]concat=n=2:v=0:a=1[main_out]"
+        );
+        // Exactly two fades — not one per segment edge.
+        assert_eq!(fc.matches("afade=").count(), 2, "{fc}");
+    }
+
+    #[test]
+    fn an_uncut_export_has_no_fades_at_all() {
+        // Whole file kept → both edges are the real file edges → no envelope.
+        let keeps = build_keeps(&[], 10.0);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert!(!fc.contains("afade"), "{fc}");
+        assert!(!audio_simple_af(&keeps[0], 10.0).contains("afade"));
+    }
+
+    #[test]
+    fn a_keep_trimmed_at_both_ends_fades_both_ways() {
+        // Head + tail cut (the "trim to sermon" shape) → one keep, two fades.
+        let keeps = build_keeps(&[cut(0.0, 2.0), cut(8.0, 10.0)], 10.0);
+        assert_eq!(keeps.len(), 1);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert!(fc.contains("afade=t=in:st=0:d=0.015"), "{fc}");
+        // Segment-local time: the 6 s segment fades out at 6 − 0.015.
+        assert!(fc.contains("afade=t=out:st=5.9850:d=0.015"), "{fc}");
+    }
+
+    #[test]
+    fn the_simple_path_fades_its_trimmed_start_too() {
+        // "Cut the first 10 minutes" takes the simple `-af` path — the very case
+        // where the splice is a hard mid-waveform edge.
+        let seg = KeepSegment {
+            start: 600.0,
+            end: 3600.0,
+        };
+        let af = audio_simple_af(&seg, 3600.0);
+        assert_eq!(
+            af,
+            "atrim=start=600.0000:end=3600.0000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015"
+        );
+        let args = audio_simple_export_args(&seg, "mp3", None, None, Some(48_000), 3600.0);
+        assert!(args.iter().any(|a| a.contains("afade=t=in")), "{args:?}");
+    }
+
+    #[test]
+    fn a_sliver_segment_keeps_its_hard_edges() {
+        // Shorter than two fades → an all-envelope blip. Better a click.
+        let seg = KeepSegment {
+            start: 5.0,
+            end: 5.02,
+        };
+        assert!(!audio_simple_af(&seg, 10.0).contains("afade"));
+    }
+
+    // ── dither post-filter (P4) ──────────────────────────────────────────────
+
+    #[test]
+    fn dither_is_the_last_filter_on_a_16bit_wav_export() {
+        let seg = KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        };
+        let args = audio_simple_export_args(&seg, "wav", None, Some(16), Some(48_000), 10.0);
+        let af = &args[args.iter().position(|a| a == "-af").unwrap() + 1];
+        assert!(
+            af.ends_with(",aresample=osf=s16:dither_method=triangular"),
+            "dither must be the LAST filter; got: {af}"
+        );
+        // 24-bit WAV, FLAC and mp3 have nothing to dither.
+        for (fmt, depth) in [("wav", Some(24)), ("flac", None), ("mp3", None)] {
+            let a = audio_simple_export_args(&seg, fmt, None, depth, Some(48_000), 10.0);
+            let af = &a[a.iter().position(|x| x == "-af").unwrap() + 1];
+            assert!(
+                !af.contains("aresample"),
+                "{fmt} must not dither; got: {af}"
+            );
+        }
+    }
+
+    #[test]
+    fn post_filters_run_after_the_jingle_concat_on_a_new_pad() {
+        let keeps = vec![KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        }];
+        let dither = vec!["aresample=osf=s16:dither_method=triangular".to_string()];
+        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &dither, true, true, 10.0);
+        assert!(
+            fc.ends_with(
+                "[intro_fmt][main_out][outro_fmt]concat=n=3:v=0:a=1[final_out];\
+                 [final_out]aresample=osf=s16:dither_method=triangular[out]"
+            ),
+            "{fc}"
+        );
+        assert_eq!(map, "[out]");
+
+        // Without jingles it hangs off [main_out] instead.
+        let (fc2, map2) = audio_export_filter_complex(&keeps, 0, &[], &dither, false, false, 10.0);
+        assert!(
+            fc2.ends_with(";[main_out]aresample=osf=s16:dither_method=triangular[out]"),
+            "{fc2}"
+        );
+        assert_eq!(map2, "[out]");
     }
 
     #[test]
@@ -1767,6 +2532,47 @@ mod tests {
         assert_eq!(join("", "a.mp3"), "a.mp3");
     }
 
+    #[test]
+    fn empty_output_folder_resolves_to_the_source_directory() {
+        // The "Samme mappe" default sends '' — it must land next to the source,
+        // not blow up on the absolute-path guard.
+        assert_eq!(
+            resolve_output_dir("", "/Users/x/Opptak/gudstjeneste.mp4"),
+            "/Users/x/Opptak"
+        );
+        // Windows separators resolve the same way (no std::path involved).
+        assert_eq!(
+            resolve_output_dir("", r"C:\Opptak\gudstjeneste.mp4"),
+            r"C:\Opptak"
+        );
+        // Whitespace-only is still "same folder" (a picker never yields it, but
+        // the guard downstream would reject it as a path).
+        assert_eq!(resolve_output_dir("   ", "/rec/a.wav"), "/rec");
+    }
+
+    #[test]
+    fn explicit_output_folder_is_returned_unchanged() {
+        assert_eq!(
+            resolve_output_dir("/Users/x/Skrivebord", "/Users/x/Opptak/a.mp4"),
+            "/Users/x/Skrivebord"
+        );
+    }
+
+    #[test]
+    fn source_at_the_filesystem_root_resolves_to_the_root() {
+        assert_eq!(resolve_output_dir("", "/a.mp3"), "/");
+        // …and the joined output stays absolute (no "//" and no bare name).
+        assert_eq!(
+            collision_free_path(
+                &resolve_output_dir("", "/a.mp3"),
+                "a_redigert",
+                "mp3",
+                |_| { false }
+            ),
+            "/a_redigert.mp3"
+        );
+    }
+
     // ── timeout ─────────────────────────────────────────────────────────────────
 
     #[test]
@@ -1790,6 +2596,25 @@ mod tests {
         assert!(args.iter().any(|a| a.contains("codec_type")));
         // the input path is the final argument
         assert_eq!(args.last().unwrap(), "/rec/a.mp4");
+    }
+
+    #[test]
+    fn video_size_probe_targets_the_first_video_stream_and_parses_it() {
+        let args = ffprobe_video_size_args("/rec/service.mp4");
+        assert!(args.windows(2).any(|w| w == ["-select_streams", "v:0"]));
+        assert!(args.iter().any(|a| a.contains("width,height")));
+        assert_eq!(args.last().unwrap(), "/rec/service.mp4");
+
+        assert_eq!(
+            parse_video_size("width=3840\nheight=2160\n"),
+            Some((3840, 2160))
+        );
+        // A missing or nonsense dimension is "unknown", not a zero-size video:
+        // the caller must fall back to a default bitrate, never to `0k`.
+        assert_eq!(parse_video_size("width=1920\n"), None);
+        assert_eq!(parse_video_size("width=N/A\nheight=1080\n"), None);
+        assert_eq!(parse_video_size("width=0\nheight=0\n"), None);
+        assert_eq!(parse_video_size(""), None);
     }
 
     #[test]
@@ -1825,14 +2650,53 @@ mod tests {
     }
 
     #[test]
-    fn peaks_extract_args_match_electron_8khz_mono_wav() {
-        let args = peaks_extract_args("/rec/a.mp4", "/tmp/p.wav");
+    fn ffprobe_load_args_ask_for_the_sample_rate() {
+        // P4 pins the export's `-ar` to the source rate — it can only do that if
+        // the probe asked for it.
+        let args = ffprobe_load_args("/rec/a.flac");
+        assert!(
+            args.iter().any(|a| a.contains("sample_rate")),
+            "the probe must request sample_rate: {args:?}"
+        );
+    }
+
+    #[test]
+    fn parse_probe_output_reads_the_first_audio_sample_rate() {
+        let out = "codec_type=video\nsample_rate=N/A\n\
+                   codec_type=audio\nchannels=2\nsample_fmt=s32\nsample_rate=96000\n\
+                   codec_type=audio\nchannels=1\nsample_rate=44100\n\
+                   duration=3600.0\n";
+        let p = parse_probe_output(out);
+        // The video block's N/A must not claim the field, and the SECOND audio
+        // stream must not overwrite the first.
+        assert_eq!(p.sample_rate, Some(96000));
+        assert_eq!(p.channels, Some(2));
+    }
+
+    #[test]
+    fn parse_probe_output_sample_rate_is_none_when_unreported() {
+        let out = "codec_type=audio\nchannels=1\nsample_rate=N/A\nduration=10.0\n";
+        assert_eq!(parse_probe_output(out).sample_rate, None);
+        let out0 = "codec_type=audio\nchannels=1\nsample_rate=0\nduration=10.0\n";
+        assert_eq!(parse_probe_output(out0).sample_rate, None);
+    }
+
+    #[test]
+    fn peaks_pipe_args_are_the_same_decode_straight_to_stdout() {
+        let args = peaks_pipe_args("/rec/a.mp4");
         let joined = args.join(" ");
+        // Same decode as the WAV variant …
         assert!(joined.contains("-vn"));
         assert!(joined.contains("-ac 1"));
         assert!(joined.contains("-ar 8000"));
-        assert!(joined.contains("-f wav"));
-        assert_eq!(args.last().unwrap(), "/tmp/p.wav");
+        // … but raw samples to a pipe, so there is no temp WAV to leak.
+        assert!(joined.contains("-f s16le"), "raw PCM, not a WAV: {joined}");
+        assert_eq!(args.last().unwrap(), "pipe:1");
+        assert!(
+            !joined.contains("-y"),
+            "nothing is written to disk, so there is no file to overwrite: {joined}"
+        );
+        assert!(args.contains(&"-nostdin".to_string()));
     }
 
     #[test]
@@ -1953,6 +2817,166 @@ mod tests {
         // more buckets than samples → one peak per sample.
         let peaks = downsample_peaks(&s, 100);
         assert_eq!(peaks.len(), 3);
+    }
+
+    // ── streaming peak accumulator ─────────────────────────────────────────────
+
+    /// A deterministic synthetic s16 signal + its raw little-endian bytes.
+    fn synthetic_s16(n: usize) -> (Vec<i16>, Vec<u8>) {
+        let samples: Vec<i16> = (0..n)
+            .map(|i| {
+                // A shape with sign changes and a few near-full-scale spikes, so
+                // max-abs actually has to pick.
+                let base = ((i as f64 * 0.37).sin() * 20000.0) as i16;
+                if i % 173 == 0 {
+                    -32000
+                } else {
+                    base
+                }
+            })
+            .collect();
+        let bytes = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        (samples, bytes)
+    }
+
+    #[test]
+    fn peak_accumulator_empty_input_is_empty() {
+        assert!(PeakAccumulator::new(80).finish().is_empty());
+        let mut acc = PeakAccumulator::new(80);
+        acc.push_bytes(&[]);
+        assert!(acc.is_empty());
+        assert!(acc.finish().is_empty());
+    }
+
+    #[test]
+    fn peak_accumulator_matches_downsample_peaks_on_the_same_buffer() {
+        // The streaming path must produce EXACTLY what the old
+        // decode-to-WAV-then-downsample path did, or the waveform changes shape
+        // the day the cache is regenerated.
+        const BUCKET: usize = 80;
+        let (samples, bytes) = synthetic_s16(BUCKET * 25);
+        let floats: Vec<f32> = samples.iter().map(|s| *s as f32 / 32768.0).collect();
+        let expected = downsample_peaks(&floats, floats.len() / BUCKET);
+
+        let mut acc = PeakAccumulator::new(BUCKET);
+        acc.push_bytes(&bytes);
+        let got = acc.finish();
+
+        assert_eq!(got.len(), expected.len());
+        for (i, (g, e)) in got.iter().zip(expected.iter()).enumerate() {
+            assert!(
+                (g - e).abs() < 1e-6,
+                "bucket {i}: streamed {g} vs batch {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn peak_accumulator_carries_samples_split_across_chunk_boundaries() {
+        // ffmpeg's stdout hands us whatever fits the pipe buffer — a 2-byte
+        // sample lands half in one read and half in the next all the time. Chunk
+        // the SAME bytes at every odd/awkward size and demand identical output.
+        const BUCKET: usize = 80;
+        let (_, bytes) = synthetic_s16(BUCKET * 7 + 13);
+        let mut whole = PeakAccumulator::new(BUCKET);
+        whole.push_bytes(&bytes);
+        let expected = whole.finish();
+
+        for chunk in [1usize, 2, 3, 5, 7, 79, 81, 159, 161, 1023] {
+            let mut acc = PeakAccumulator::new(BUCKET);
+            for part in bytes.chunks(chunk) {
+                acc.push_bytes(part);
+            }
+            let got = acc.finish();
+            assert_eq!(
+                got, expected,
+                "chunking at {chunk} bytes changed the peaks — a split sample was dropped or mis-paired"
+            );
+        }
+    }
+
+    #[test]
+    fn peak_accumulator_flushes_the_partial_tail_bucket() {
+        // 3 full buckets + 10 leftover samples ⇒ 4 peaks, so the waveform reaches
+        // the end of the recording instead of stopping up to 10 ms short.
+        const BUCKET: usize = 80;
+        let (_, bytes) = synthetic_s16(BUCKET * 3 + 10);
+        let mut acc = PeakAccumulator::new(BUCKET);
+        acc.push_bytes(&bytes);
+        assert_eq!(acc.len(), 3, "only complete buckets are emitted eagerly");
+        assert_eq!(acc.finish().len(), 4);
+    }
+
+    #[test]
+    fn peak_accumulator_holds_a_lone_odd_byte_until_its_partner_arrives() {
+        let mut acc = PeakAccumulator::new(1);
+        acc.push_bytes(&[0x00]); // low byte of 0x7F00 …
+        assert!(acc.is_empty(), "half a sample is not a sample");
+        acc.push_bytes(&[]); // an empty read must not lose the carry
+        assert!(acc.is_empty());
+        acc.push_bytes(&[0x7F]); // … high byte
+        let peaks = acc.finish();
+        assert_eq!(peaks.len(), 1);
+        assert!((peaks[0] - (0x7F00 as f32 / 32768.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn peak_accumulator_clamps_full_scale_negative_to_one() {
+        // `i16::MIN.abs()` overflows; the value must land at 1.0, not panic.
+        let mut acc = PeakAccumulator::new(1);
+        acc.push_bytes(&i16::MIN.to_le_bytes());
+        assert_eq!(acc.finish(), vec![1.0]);
+    }
+
+    #[test]
+    fn peaks_bucket_size_is_the_100_per_second_rate() {
+        assert_eq!(PEAKS_BUCKET_SAMPLES, 80);
+        assert_eq!(PEAKS_SAMPLE_RATE as usize / PEAKS_PER_SEC, 80);
+    }
+
+    // ── peak quantisation + cache freshness ────────────────────────────────────
+
+    #[test]
+    fn quantize_round_trips_within_a_byte() {
+        let peaks = [0.0f32, 0.25, 0.5, 0.751, 1.0];
+        let bytes = quantize_peaks(&peaks);
+        assert_eq!(bytes.first(), Some(&0));
+        assert_eq!(
+            bytes.last(),
+            Some(&255),
+            "full scale doubles as the clip mark"
+        );
+        for (p, q) in peaks.iter().zip(dequantize_peaks(&bytes)) {
+            assert!((p - q).abs() <= 1.0 / 255.0, "{p} → {q}");
+        }
+    }
+
+    #[test]
+    fn quantize_clamps_out_of_range_and_nan() {
+        assert_eq!(
+            quantize_peaks(&[-0.5, 2.0, f32::NAN, f32::INFINITY]),
+            vec![0, 255, 0, 255]
+        );
+    }
+
+    #[test]
+    fn cache_is_fresh_only_for_the_same_version_size_and_mtime() {
+        let fresh = |v, s, m, p| cache_is_fresh(v, 1, s, m, p, 4242, 1700);
+        assert!(fresh(1, 4242, 1700, Some(PEAKS_PER_SEC)));
+        assert!(fresh(1, 4242, 1700, None), "segments carry no rate");
+        // An older/newer format, a re-recorded file, an in-place re-export, or a
+        // cache written at a different peak rate: all recompute.
+        assert!(!fresh(0, 4242, 1700, None));
+        assert!(!fresh(1, 4243, 1700, None));
+        assert!(!fresh(1, 4242, 1701, None));
+        assert!(!fresh(1, 4242, 1700, Some(50)));
+    }
+
+    #[test]
+    fn legacy_editor_temp_dir_names_are_recognised_for_the_sweep() {
+        assert!(is_editor_temp_dir_name("sundayrec-editor-0192abc"));
+        assert!(!is_editor_temp_dir_name("sundayrec-playback-proxy-1.m4a"));
+        assert!(!is_editor_temp_dir_name("Downloads"));
     }
 
     // ── sidecar path policy ──────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import type { RecordingMetadata } from '../../../types'
+import { peekSharedAudioCtx } from './audio-ctx'
 
 // ── Shared types ────────────────────────────────────────────────────────────
 export interface Cut { start: number; end: number }
@@ -8,12 +9,14 @@ export interface HandleDrag { cutIdx: number; side: 'start' | 'end' }
 // ── Immutable format sets ─────────────────────────────────────────────────────
 // Formats always routed to the video editor path (HTML video element + ffmpeg peaks)
 export const VIDEO_EXTS = new Set(['.mp4', '.mov', '.m4v', '.avi', '.wmv', '.ts', '.mts', '.m2ts', '.flv', '.3gp', '.asf', '.f4v'])
-// Ambiguous containers (can be video or audio) — probe to decide
-export const PROBE_EXTS = new Set(['.mkv', '.webm', '.mka'])
-// Audio formats the browser (Web Audio API) can decode natively
-export const WEB_AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.m4b', '.m4r', '.ogg', '.oga', '.opus', '.webm', '.aiff', '.aif', '.caf'])
-// .aiff/.aif/.caf: CoreAudio-native — WKWebView decodes them fine; they used
-// to fall through to the 8 kHz mono extract at ANY size (2026-07-31 audit).
+// Audio formats the WEBVIEW itself streams from disk via `asset://` — the
+// editor's playback transport. WKWebView (CoreAudio) and WebView2 (Media
+// Foundation) both decode these natively, so the <audio> element plays the
+// ORIGINAL file at full fidelity with no transcode and no PCM in memory.
+// Deliberately NARROWER than "what a browser can decode": ogg/oga/opus/webm are
+// left out because WKWebView does not ship those decoders — they go through the
+// on-demand AAC proxy instead (see routePlayback in play-regions.ts).
+export const PLAYER_EXTS = new Set(['.flac', '.wav', '.mp3', '.m4a', '.m4b', '.m4r', '.aac', '.aiff', '.aif', '.caf'])
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 export const $ = (id: string) => document.getElementById(id)
@@ -57,9 +60,6 @@ export const E = {
   // normalize, intro/outro swap, mastering preset, metadata edits, …).
   editorDirty: false,
 
-  // Holds the unsubscribe fn returned by window.api.on('editor-export-progress', …)
-  exportProgressUnsub: null as (() => void) | null | undefined,
-
   // Video routing
   isVideoFile: false,
   videoEl: null as HTMLVideoElement | null,
@@ -74,19 +74,25 @@ export const E = {
   vpStart: 0,
   vpEnd: 0,
 
-  // Playback
-  audioCtx: null as AudioContext | null,
-  sourceNodes: [] as AudioBufferSourceNode[],
-  audioBuffer: null as AudioBuffer | null,
-  // Full-fidelity playback transport for oversized/exotic audio: an <audio>
-  // element streaming a seekable AAC proxy from disk (asset://). When set it
-  // drives playback instead of the 8 kHz Web-Audio buffer (which then only
-  // backs the waveform). null = no proxy → the AudioBuffer drives playback.
-  /** The loaded buffer came from the 8 kHz ffmpeg extract (oversized/exotic
-   *  file) — its peaks under-read the true peak; Normalize probes the
-   *  original instead. */
-  usedFfmpegExtract: false,
-  proxyAudioEl: null as HTMLAudioElement | null,
+  // Playback — the MAIN recording ALWAYS plays through a media element (never a
+  // decoded AudioBuffer): the <audio> element below for audio files, `videoEl`
+  // for video. Only the short intro/outro jingles still go through Web Audio,
+  // on the ONE shared context in audio-ctx.ts.
+  /** The persistent <audio> element streaming the main recording from disk via
+   *  `asset://` — the ORIGINAL file when the webview can decode it, otherwise
+   *  the on-demand AAC proxy. Created once and reused across loads. */
+  playerEl: null as HTMLAudioElement | null,
+  /** Which file `playerEl` is streaming: the untouched recording, or the
+   *  transcoded fallback proxy. Drives the quality notice only. */
+  playbackSource: 'original' as 'original' | 'proxy',
+  /** The jingle region currently sounding through Web Audio (`null` = none).
+   *  While set, the playhead clock is the shared AudioContext, not the element. */
+  jingleRegion: null as 'intro' | 'outro' | null,
+  jingleSource: null as AudioBufferSourceNode | null,
+  /** Play was requested but the element has not started yet (still buffering).
+   *  Guards the position readers from reporting a not-yet-seeked `currentTime`
+   *  of 0 — that used to silently reset the playhead to the file start. */
+  mainPlayPending: false,
   playStartCtxTime: 0,
   playStartSec: 0,
   isPlaying: false,
@@ -161,16 +167,36 @@ export const E = {
 }
 
 /**
- * The media element driving playback when one is active: the video element for
- * video files, or the streamed AAC proxy for oversized/exotic audio that can't
- * go through Web Audio. `null` → the decoded `AudioBuffer` drives playback
- * (normal-size, browser-decodable audio). Centralising the transport choice
- * here keeps seek / stop / animate / scrub all in agreement — each just asks
- * "is there a media element?" instead of re-deriving `isVideoFile && videoEl`.
+ * The media element driving playback of the MAIN recording: the streamed
+ * <audio> element for audio files, the <video> element for video. `null` only
+ * before a file is loaded (or if the transport could not be prepared at all).
+ * Centralising the transport choice here keeps seek / stop / animate / scrub all
+ * in agreement — each just asks "which element?" instead of re-deriving
+ * `isVideoFile && videoEl`.
  */
 export function playbackMediaEl(): HTMLMediaElement | null {
-  if (E.proxyAudioEl) return E.proxyAudioEl
+  if (E.playerEl) return E.playerEl
   return E.isVideoFile ? E.videoEl : null
+}
+
+/**
+ * Where the playhead is RIGHT NOW, in extended-timeline seconds (negative =
+ * inside intro, > duration = inside outro). Three clocks feed it and picking the
+ * wrong one is how playhead/audio drift apart:
+ *   • a jingle is sounding → the shared AudioContext clock,
+ *   • play requested but the element hasn't started → the requested position
+ *     (`currentTime` is still 0 and reading it wipes the user's seek),
+ *   • otherwise → the element's own `currentTime`.
+ */
+export function currentPlaybackSec(): number {
+  if (!E.isPlaying) return E.playStartSec
+  if (E.jingleRegion) {
+    const ctx = peekSharedAudioCtx()
+    return ctx ? E.playStartSec + (ctx.currentTime - E.playStartCtxTime) : E.playStartSec
+  }
+  if (E.mainPlayPending) return E.playStartSec
+  const el = playbackMediaEl()
+  return el ? el.currentTime : E.playStartSec
 }
 
 // ── Dirty-state helpers ───────────────────────────────────────────────────

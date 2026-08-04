@@ -16,7 +16,11 @@ diagnosis: EditorChannelDiagnosis,
  */
 vocalChainPreset: string, 
 /**
- * Mastering preset id to apply (e.g. `speech-clear`).
+ * Mastering preset id to apply. EMPTY from [`auto_process`] — one click
+ * recommends the vocal chain only; stacking a mastering chain on top of it
+ * double-processes (two highpasses, two compressors). Kept in the DTO
+ * because the renderer applies whatever it is told, and a future
+ * recommender may fill it in.
  */
 masterPreset: string, 
 /**

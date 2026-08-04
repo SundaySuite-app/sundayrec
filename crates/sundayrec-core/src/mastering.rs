@@ -229,23 +229,34 @@ fn parse_float_lenient(s: &str) -> Option<f64> {
 
 // ── Filter-chain builders ──────────────────────────────────────────────────────
 
-/// Pass-1 (measurement) filters: the preset chain + `loudnorm(…:print_format=json)`.
-/// Mirrors `buildMeasurePassFilters`.
-pub fn build_measure_pass_filters(preset: &MasterPreset) -> String {
+/// The pass-1 `loudnorm` filter ALONE — the preset's target triple plus
+/// `print_format=json`, with no preset chain in front of it.
+///
+/// Split out of [`build_measure_pass_filters`] because an *export* measures a
+/// different signal than a straight master does: the honest pass 1 has to run
+/// over the CUT + vocal-chained + gain-shifted graph the export will actually
+/// encode, not the raw file. The seam builds that graph itself and appends this
+/// filter to it; [`build_measure_pass_filters`] is the whole-file convenience
+/// wrapper the mastering flow still uses.
+pub fn loudnorm_measure_filter(preset: &MasterPreset) -> String {
     format!(
-        "{},loudnorm=I={}:LRA={}:TP={}:print_format=json",
-        preset.filters,
+        "loudnorm=I={}:LRA={}:TP={}:print_format=json",
         fmt_num(preset.target_lufs),
         fmt_num(preset.target_lra),
         fmt_num(preset.true_peak_db)
     )
 }
 
-/// Pass-2 (apply) filters: the preset chain + a `loudnorm` carrying the measured
-/// values in `linear=true` mode. Mirrors `buildApplyPassFilters`. The measured
-/// values are formatted to 2 decimals exactly as the TS `.toFixed(2)` did.
-pub fn build_apply_pass_filters(preset: &MasterPreset, m: &LoudnessMeasurement) -> String {
-    let loudnorm = format!(
+/// The pass-2 `loudnorm` filter ALONE — target triple + the measured values in
+/// `linear=true` mode. The counterpart of [`loudnorm_measure_filter`]; the
+/// measured values are formatted to 2 decimals exactly as the TS `.toFixed(2)`
+/// did.
+///
+/// `linear=true` is what makes the second pass a single, deterministic gain
+/// change (no programme-dependent riding), which is only honest when the values
+/// were measured over the SAME signal this filter now sees.
+pub fn loudnorm_apply_filter(preset: &MasterPreset, m: &LoudnessMeasurement) -> String {
+    format!(
         "loudnorm=I={}:LRA={}:TP={}:measured_I={:.2}:measured_LRA={:.2}:measured_TP={:.2}\
          :measured_thresh={:.2}:offset={:.2}:linear=true:print_format=summary",
         fmt_num(preset.target_lufs),
@@ -256,8 +267,19 @@ pub fn build_apply_pass_filters(preset: &MasterPreset, m: &LoudnessMeasurement) 
         m.input_tp,
         m.input_thresh,
         m.target_offset
-    );
-    format!("{},{loudnorm}", preset.filters)
+    )
+}
+
+/// Pass-1 (measurement) filters: the preset chain + `loudnorm(…:print_format=json)`.
+/// Mirrors `buildMeasurePassFilters`.
+pub fn build_measure_pass_filters(preset: &MasterPreset) -> String {
+    format!("{},{}", preset.filters, loudnorm_measure_filter(preset))
+}
+
+/// Pass-2 (apply) filters: the preset chain + a `loudnorm` carrying the measured
+/// values in `linear=true` mode. Mirrors `buildApplyPassFilters`.
+pub fn build_apply_pass_filters(preset: &MasterPreset, m: &LoudnessMeasurement) -> String {
+    format!("{},{}", preset.filters, loudnorm_apply_filter(preset, m))
 }
 
 /// Single-pass preview filters — target loudnorm only, lower CPU. Mirrors
@@ -299,20 +321,55 @@ pub fn master_codec_args(ext: &str, bitrate: Option<u32>) -> Vec<String> {
     }
 }
 
-/// When mastering to a 16-bit PCM target (WAV), append a triangular-dither
-/// resample so the internal float → 16-bit conversion doesn't fold quantization
-/// distortion into the quiet passages a sermon is full of (pauses, soft speech).
-/// This is what Audacity does on export to a lower bit depth.
+/// The triangular-dither resample, as one ffmpeg filter string.
 ///
-/// No-op for lossy targets (dithering before MP3/AAC is pointless) and for
-/// formats whose bit depth we don't pin here. Crucially it uses `aresample`'s
-/// `dither_method`, which is part of core swresample and present in EVERY ffmpeg
-/// build — unlike `resampler=soxr`, which depends on an optional `--enable-libsoxr`
-/// and so is unsafe to bake into a path we can't probe.
+/// `aresample`'s `dither_method` is part of core swresample and present in EVERY
+/// ffmpeg build — unlike `resampler=soxr`, which depends on an optional
+/// `--enable-libsoxr` and so is unsafe to bake into a path we can't probe. It
+/// also folds the (possible) sample-RATE conversion into the same step, so a
+/// loudnorm-192 kHz internal graph reaches a 48 kHz 16-bit target in ONE
+/// resample rather than two.
+pub const DITHER_FILTER: &str = "aresample=osf=s16:dither_method=triangular";
+
+/// The dither post-filter for an output format, or `None` when the target isn't
+/// a 16-bit PCM one. THE shared table: both the mastering apply and the editor's
+/// export ask this, so the two can never disagree about what gets dithered.
+///
+/// Why it matters: without it the internal float → 16-bit conversion folds
+/// quantization distortion into the quiet passages a sermon is full of (pauses,
+/// soft speech). This is what Audacity does on export to a lower bit depth.
+///
+/// The format set mirrors [`crate::editor::codec_args`]'s 16-bit PCM encoders:
+/// WAV (unless 24-bit was asked for), the AIFF family (`pcm_s16be`), au/snd, and
+/// the "no encoder available → transcode to `pcm_s16le`" set. Everything else is
+/// lossless-at-source-depth (FLAC/WavPack/TTA keep the input's bit depth) or
+/// lossy, where dithering before the encoder is pointless.
+pub fn dither_filter_for(fmt: &str, bit_depth: Option<u8>) -> Option<String> {
+    match fmt {
+        // WAV is only 24-bit when explicitly asked for; anything else is s16.
+        "wav" if bit_depth == Some(24) => None,
+        "wav" | "aiff" | "aif" | "au" | "snd" => Some(DITHER_FILTER.to_string()),
+        // No reliable encoder → `codec_args` transcodes these to `pcm_s16le`.
+        "ape" | "dts" | "mpc" | "ra" | "ram" | "spx" | "gsm" => Some(DITHER_FILTER.to_string()),
+        _ => None,
+    }
+}
+
+/// Append the dither filter to a mastering chain when the output extension is a
+/// 16-bit PCM target. Used by the mastering *apply* path.
+///
+/// Deliberately narrower than [`dither_filter_for`]: [`master_codec_args`] only
+/// reaches a 16-bit PCM encoder for `wav` (every other extension there lands on
+/// FLAC or a lossy codec, and an `.aiff` output would actually be encoded as
+/// MP3), so asking the shared table about the rest would dither in front of a
+/// lossy encode. The filter STRING still comes from one place.
 pub fn append_dither_for_ext(filters: String, ext: &str) -> String {
-    match ext {
-        "wav" => format!("{filters},aresample=osf=s16:dither_method=triangular"),
-        _ => filters,
+    match (ext == "wav")
+        .then(|| dither_filter_for(ext, None))
+        .flatten()
+    {
+        Some(d) => format!("{filters},{d}"),
+        None => filters,
     }
 }
 
@@ -627,6 +684,63 @@ mod tests {
         assert_eq!(append_dither_for_ext("chain".into(), "mp3"), "chain");
         assert_eq!(append_dither_for_ext("chain".into(), "aac"), "chain");
         assert_eq!(append_dither_for_ext("chain".into(), "flac"), "chain");
+        // The master path encodes an `.aiff` request as MP3 (see
+        // `master_codec_args`), so it must NOT dither in front of it even though
+        // the editor's wider table calls aiff a 16-bit PCM target.
+        assert_eq!(append_dither_for_ext("chain".into(), "aiff"), "chain");
+    }
+
+    #[test]
+    fn dither_table_covers_every_16bit_pcm_target() {
+        // 16-bit PCM targets dither …
+        for fmt in ["wav", "aiff", "aif", "au", "snd", "dts", "gsm"] {
+            assert_eq!(
+                dither_filter_for(fmt, None).as_deref(),
+                Some(DITHER_FILTER),
+                "{fmt} encodes to 16-bit PCM → it must dither"
+            );
+        }
+        // … a 24-bit WAV does not (no bit-depth reduction to dither) …
+        assert!(dither_filter_for("wav", Some(24)).is_none());
+        assert_eq!(
+            dither_filter_for("wav", Some(16)).as_deref(),
+            Some(DITHER_FILTER)
+        );
+        // … and neither do the lossless-at-source-depth or lossy targets.
+        for fmt in [
+            "flac", "wv", "tta", "mka", "mp3", "aac", "m4a", "opus", "ogg",
+        ] {
+            assert!(
+                dither_filter_for(fmt, None).is_none(),
+                "{fmt} must not dither"
+            );
+        }
+    }
+
+    #[test]
+    fn loudnorm_filters_split_out_of_the_preset_chain() {
+        // The two-pass export builds its own graph and appends JUST the loudnorm;
+        // the whole-file wrappers must stay byte-identical to `chain,loudnorm`.
+        let p = get_preset_by_id("speech-clear").unwrap();
+        let m = LoudnessMeasurement {
+            input_i: -23.45,
+            input_lra: 9.4,
+            input_tp: -3.1,
+            input_thresh: -33.5,
+            target_offset: 7.45,
+        };
+        assert!(!loudnorm_measure_filter(&p).contains(&p.filters));
+        assert!(loudnorm_measure_filter(&p).starts_with("loudnorm=I=-16:LRA=8:TP=-1"));
+        assert_eq!(
+            build_measure_pass_filters(&p),
+            format!("{},{}", p.filters, loudnorm_measure_filter(&p))
+        );
+        assert_eq!(
+            build_apply_pass_filters(&p, &m),
+            format!("{},{}", p.filters, loudnorm_apply_filter(&p, &m))
+        );
+        assert!(loudnorm_apply_filter(&p, &m).contains("measured_I=-23.45"));
+        assert!(loudnorm_apply_filter(&p, &m).contains(":linear=true"));
     }
 
     #[test]

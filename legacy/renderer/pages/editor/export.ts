@@ -4,6 +4,7 @@ import { E, $, clearDirty } from './state'
 import { clearEditorDraft } from './cuts'
 import { saveMetadata } from './metadata'
 import { renderMixer, loadPresetIntoMixer, mixerProcessing } from './mixer'
+import { buildExportRequest, exportLevelSummary } from './export-params'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -17,18 +18,7 @@ export function openExportModal(): void {
   if (typeSection) typeSection.style.display = E.isVideoFile ? '' : 'none'
   applyExportSides()
 
-  // Update gain summary — only shown when peak normalize has been applied.
-  const procRow  = $('export-proc-row')
-  const summary  = $('export-proc-summary')
-  if (procRow && summary) {
-    if (E.audioGainDb !== 0) {
-      const sign = E.audioGainDb >= 0 ? '+' : ''
-      summary.textContent = `${t('editor.normalizeApplied', 'Normalisert')} (${sign}${E.audioGainDb.toFixed(1)} dB → -1 dBFS)`
-      procRow.style.display = ''
-    } else {
-      procRow.style.display = 'none'
-    }
-  }
+  renderLevelSummary()
   const ioRow     = $('export-io-row')
   const ioSummary = $('export-io-summary')
   if (ioRow && ioSummary) {
@@ -40,15 +30,12 @@ export function openExportModal(): void {
       if (E.includeIntroOutro && settings.editorOutroPath) {
         parts.push('Outro: ' + (settings.editorOutroPath.split(/[/\\]/).pop() ?? ''))
       }
-    } else if (!E.videoExportAudioOnly) {
-      // Audio-only extract from a video drops the jingles, so only show them
-      // when actually re-encoding the video.
-      if (E.includeIntroOutro && E.videoIntroPath) {
-        parts.push('Video-intro: ' + (E.videoIntroPath.split(/[/\\]/).pop() ?? ''))
-      }
-      if (E.includeIntroOutro && E.videoOutroPath) {
-        parts.push('Video-outro: ' + (E.videoOutroPath.split(/[/\\]/).pop() ?? ''))
-      }
+    } else if (!E.videoExportAudioOnly && (E.videoIntroPath || E.videoOutroPath)) {
+      // A VIDEO export drops the jingles in the seam — the modal used to list
+      // them anyway, promising something the finished mp4 never contained.
+      // (Audio-only extract from a video drops them too, and says nothing:
+      // there is no video-jingle expectation to correct there.)
+      parts.push(t('editor.jinglesVideoUnsupported', 'Jingler støttes ikke for video ennå'))
     }
     ioSummary.textContent = parts.length ? parts.join(' · ') : ''
     ioRow.style.display   = parts.length ? '' : 'none'
@@ -61,6 +48,32 @@ export function openExportModal(): void {
 
   const exportModal = $('editor-export-modal')
   if (exportModal) exportModal.style.display = 'flex'
+}
+
+/**
+ * Paint the export modal's LEVEL row from the current state.
+ *
+ * With a mastering preset active the backend skips the peak-normalize gain
+ * entirely (loudnorm owns the delivery level), so claiming "Normalisert
+ * (+x dB)" there would be a promise the export doesn't keep. The decision
+ * itself is the pure `exportLevelSummary`; this only localises it. Re-runnable:
+ * one-click auto-enhance changes the preset while the modal is open.
+ */
+function renderLevelSummary(): void {
+  const procRow = $('export-proc-row')
+  const summary = $('export-proc-summary')
+  if (!procRow || !summary) return
+  const level = exportLevelSummary(E.masterPreset, E.audioGainDb)
+  if (level.kind === 'masterOwnsLevel') {
+    summary.textContent = t('editor.volumeByMastering', 'Volum styres av mastring')
+    procRow.style.display = ''
+  } else if (level.kind === 'normalized') {
+    const sign = level.gainDb >= 0 ? '+' : ''
+    summary.textContent = `${t('editor.normalizeApplied', 'Normalisert')} (${sign}${level.gainDb.toFixed(1)} dB → -1 dBFS)`
+    procRow.style.display = ''
+  } else {
+    procRow.style.display = 'none'
+  }
 }
 
 /** Sync the export modal's audio-vs-video sides to `E.isVideoFile` +
@@ -99,12 +112,14 @@ function setupEnhanceSection(): void {
 
   const vocalSel  = $('enhance-vocal-chain')    as HTMLSelectElement | null
   const chanSel   = $('enhance-channel-repair') as HTMLSelectElement | null
+  const masterSel = $('enhance-master-preset')  as HTMLSelectElement | null
   const summary   = $('enhance-summary')
   const diagLine  = $('enhance-channel-diag')
 
   // Sync current state into the controls.
   if (vocalSel) vocalSel.value = E.vocalChainPreset
   if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+  if (masterSel) masterSel.value = E.masterPreset
   const mixerToggleSync = $('opt-use-mixer') as HTMLInputElement | null
   const mixerControlsSync = $('mixer-controls')
   if (mixerToggleSync) mixerToggleSync.checked = E.useMixer
@@ -172,6 +187,13 @@ function setupEnhanceSection(): void {
     E.channelRepairLeftDb = 0
     E.channelRepairRightDb = 0
   })
+  // Mastering is an EXPLICIT choice, never an automatic one (auto-enhance
+  // recommends the vocal chain only — stacking both double-processes). Picking
+  // one hands the output level to loudnorm, which the level row must reflect.
+  masterSel?.addEventListener('change', () => {
+    E.masterPreset = masterSel.value
+    renderLevelSummary()
+  })
 
   // One-click: analyse + apply the recommended best-result bundle.
   $('btn-auto-enhance')?.addEventListener('click', async () => {
@@ -189,7 +211,10 @@ function setupEnhanceSection(): void {
       if (summary) { summary.textContent = t('editor.autoEnhanceFail', 'Kunne ikke analysere lyden (krever editor-bygg).'); (summary as HTMLElement).style.display = '' }
       return
     }
-    // Apply the recommendation to export state + controls.
+    // Apply the recommendation to export state + controls. `masterPreset` is
+    // EMPTY from auto-process on purpose (the vocal chain alone — stacking a
+    // mastering chain on it double-processes); '' flows through
+    // `buildExportRequest`'s orUndefined as "no mastering".
     E.vocalChainPreset = res.vocalChainPreset
     E.masterPreset     = res.masterPreset
     const rec = res.diagnosis.recommended
@@ -198,6 +223,9 @@ function setupEnhanceSection(): void {
     E.channelRepairRightDb = rec.rightDb
     if (vocalSel) vocalSel.value = E.vocalChainPreset
     if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+    if (masterSel) masterSel.value = E.masterPreset
+    // The level row depends on the preset we just changed.
+    renderLevelSummary()
     if (summary) { summary.textContent = res.summary; (summary as HTMLElement).style.display = '' }
   })
 
@@ -455,35 +483,56 @@ export function closeExportModal(): void {
   if (exportModal) exportModal.style.display = 'none'
 }
 
+/** Localised label for a backend progress phase code. */
+function exportPhaseText(phase: string): string {
+  return phase === 'measuring'
+    ? t('editor.exportPhaseMeasuring', 'Måler lydstyrke…')
+    : t('editor.exportPhaseEncoding', 'Eksporterer…')
+}
+
+let cancelWired = false
+
+/** Wire the progress row's Avbryt button once. The backend kills the render's
+ *  ffmpeg and the export rejects with `cancelled`, which describeExportError
+ *  turns into a calm Norwegian sentence. */
+function wireExportCancel(): void {
+  if (cancelWired) return
+  cancelWired = true
+  const cancelBtn = $('btn-editor-export-cancel') as HTMLButtonElement | null
+  cancelBtn?.addEventListener('click', async () => {
+    cancelBtn.disabled = true
+    cancelBtn.textContent = t('editor.exportCancelling', 'Avbryter…')
+    await window.api.editorCancelExport()
+  })
+}
+
 export async function runExport(): Promise<void> {
   closeExportModal()
   const btn      = $('btn-editor-save') as HTMLButtonElement
   const progRow  = $('editor-export-progress-row')
   const progBar  = $('editor-export-progress-bar')
   const progLbl  = $('editor-export-progress-label')
+  const cancelBtn = $('btn-editor-export-cancel') as HTMLButtonElement | null
   const resultRow = $('editor-result-row')
 
+  wireExportCancel()
   if (btn)     { btn.disabled = true; btn.textContent = t('editor.exportExporting') || 'Eksporterer…' }
   if (progRow) progRow.style.display = ''
-  // The backend emits no export-progress events yet, so show an indeterminate
-  // sliding stripe instead of a bar frozen at 0% (which looked hung). The
-  // export-progress listener removes this class if a concrete % ever arrives.
+  // Start indeterminate: ffmpeg's first -progress tick is a moment away (and the
+  // mastering measure pass has no percentage at all), so a bar pinned at 0%
+  // would read as hung. The listener below swaps in the real bar on tick one.
   if (progBar) { progBar.style.width = ''; progBar.classList.add('progress-indeterminate') }
   if (progLbl) progLbl.textContent = t('editor.exportExporting') || 'Eksporterer…'
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = t('editor.exportCancel', 'Avbryt') }
   if (resultRow) { resultRow.style.display = 'none' }
 
   const fmt = (document.querySelector<HTMLElement>('#export-fmt-section .export-fmt-btn.active')?.dataset.fmt ?? 'mp3') as 'mp3'|'wav'|'flac'|'aac'
-  const dest = document.querySelector<HTMLElement>('.export-dest-btn.active')?.dataset.dest ?? 'same'
   // AAC has its OWN bitrate dropdown; mp3 (and the fallback) use #export-bitrate.
   // Reading #export-bitrate for every format made the AAC dropdown a dead control
   // (the user's AAC choice was silently ignored — the hidden mp3 select won).
   const bitrateSel = fmt === 'aac' ? 'export-aac-bitrate' : 'export-bitrate'
   const bitrate   = parseInt((($(bitrateSel)          as HTMLSelectElement)?.value  ?? '256'))
   const bitDepth  = parseInt((($('export-bitdepth')   as HTMLSelectElement)?.value  ?? '16')) as 16|24
-
-  const mode: 'new' | 'replace' | 'folder' =
-    dest === 'replace' ? 'replace' :
-    dest === 'folder'  ? 'folder'  : 'new'
 
   // Auto-save metadata before export
   if (E.metaDirty) await saveMetadata()
@@ -497,46 +546,59 @@ export async function runExport(): Promise<void> {
   // The advanced mixer (when enabled) overrides the preset → send full processing.
   const processing = E.useMixer ? mixerProcessing() : undefined
   const vocalChainPreset = E.useMixer ? undefined : (E.vocalChainPreset || undefined)
+  const isVideoExport = E.isVideoFile && !E.videoExportAudioOnly
 
-  if (E.isVideoFile && !E.videoExportAudioOnly) {
-    result = await window.api.editorExportVideo({
-      inputPath:    E.filePath,
-      cutRegions:   E.cuts,
-      duration:     E.duration,
-      mode,
-      outputFolder: E.exportOutputFolder || undefined,
-      gainDb:     E.audioGainDb || undefined,
-      introPath:  (E.includeIntroOutro && E.videoIntroPath) ? E.videoIntroPath : undefined,
-      outroPath:  (E.includeIntroOutro && E.videoOutroPath) ? E.videoOutroPath : undefined,
-      metadata:   E.meta,
-      masterPreset:     E.masterPreset || undefined,
-      vocalChainPreset,
-      processing,
-      channelRepair,
-      videoFormat: E.videoFormat,
-      videoCodec:  E.videoCodec,
-    })
-  } else {
-    result = await window.api.editorExportFile({
-      inputPath:    E.filePath,
-      cutRegions:   E.cuts,
-      duration:     E.duration,
-      mode,
-      outputFolder: E.exportOutputFolder || undefined,
-      outputFormat: fmt,
-      outputBitrate:  bitrate,
-      outputBitDepth: bitDepth,
-      gainDb:     E.audioGainDb || undefined,
-      // Audio intro/outro jingles apply only to native audio files — when
-      // extracting audio out of a video we export the bare track.
-      introPath:  (!E.isVideoFile && E.includeIntroOutro && settings.editorIntroPath) ? settings.editorIntroPath : undefined,
-      outroPath:  (!E.isVideoFile && E.includeIntroOutro && settings.editorOutroPath) ? settings.editorOutroPath : undefined,
-      metadata:   E.meta,
-      masterPreset:     E.masterPreset || undefined,
-      vocalChainPreset,
-      processing,
-      channelRepair,
-    })
+  const params = buildExportRequest({
+    kind:         isVideoExport ? 'video' : 'audio',
+    inputPath:    E.filePath,
+    cutRegions:   E.cuts,
+    duration:     E.duration,
+    // '' = the default "Samme mappe" pill → the backend writes beside the source.
+    outputFolder: E.exportOutputFolder,
+    format:       fmt,
+    bitrate,
+    bitDepth,
+    videoFormat:  E.videoFormat,
+    videoCodec:   E.videoCodec,
+    gainDb:       E.audioGainDb,
+    // Jingles apply only to native AUDIO files. A video export drops them in the
+    // seam (the video graph has nowhere to splice them), and extracting audio out
+    // of a video exports the bare track — so sending a path either way only risks
+    // failing the export on the backend's path guard for a file it then ignores.
+    // The UI says so: `editor.jinglesVideoUnsupported`.
+    introPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorIntroPath : undefined,
+    outroPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorOutroPath : undefined,
+    metadata:     E.meta,
+    masterPreset: E.masterPreset,
+    vocalChainPreset,
+    processing,
+    channelRepair,
+  })
+
+  // Live progress for the duration of THIS export only — a module-level
+  // subscription would keep writing to the bar after the row is hidden.
+  const unsub = window.api.on?.('editor-export-progress', (payload: unknown) => {
+    const { pct, phase } = (payload ?? {}) as { pct?: number; phase?: string }
+    if (typeof pct !== 'number' || !isFinite(pct)) return
+    const shown = Math.max(0, Math.min(100, pct))
+    const label = exportPhaseText(phase ?? '')
+    if (shown > 0) {
+      // A concrete % arrived → swap the sliding stripe for a real bar.
+      if (progBar) { progBar.classList.remove('progress-indeterminate'); progBar.style.width = shown + '%' }
+      if (progLbl) progLbl.textContent = `${label} ${Math.round(shown)}%`
+    } else if (progLbl) {
+      // The mastering measure pass reports 0 with no percentage of its own —
+      // name the phase but keep the stripe moving rather than pinning a 0% bar.
+      progLbl.textContent = label
+    }
+  })
+
+  try {
+    result = isVideoExport
+      ? await window.api.editorExportVideo(params)
+      : await window.api.editorExportFile(params)
+  } finally {
+    unsub?.()
   }
 
   if (progRow) progRow.style.display = 'none'
@@ -564,13 +626,32 @@ export async function runExport(): Promise<void> {
   }
 }
 
+// The codes the backend embeds in an export failure. Order matters only in that
+// the first match wins; none of these is a substring of another.
+const EXPORT_ERROR_CODES = [
+  'force_wav_replace_unsafe',
+  'no_audio_remaining',
+  'cancelled',
+  'timeout',
+  'invalid_path',
+  'file_not_found',
+  'invalid_duration',
+  'invalid_cut_regions',
+] as const
+
 /**
- * Map an export error code from the main process to a user-friendly Norwegian
- * sentence. Falls back to the raw code so an unfamiliar error still surfaces
- * something the user can search for.
+ * Map an export error from the backend to a user-friendly Norwegian sentence.
+ * Falls back to the raw text so an unfamiliar error still surfaces something
+ * the user can search for.
+ *
+ * Matched by CONTAINMENT, not equality: `AppError` serializes as
+ * "<category>: <code>" (e.g. "recording error: timeout"), so the old
+ * `switch (err)` on the bare code never fired and every friendly message below
+ * was dead — the user got "✕ Feil: validation: no_audio_remaining".
  */
 export function describeExportError(err: string | undefined): string {
-  switch (err) {
+  const code = err ? EXPORT_ERROR_CODES.find((c) => err.includes(c)) : undefined
+  switch (code) {
     case 'force_wav_replace_unsafe':
       return '✕ ' + t('editor.errReplaceUnsafe', 'Kan ikke overskrive originalfilen i dette formatet. Bruk "Lagre som ny fil" i stedet.')
     case 'no_audio_remaining':

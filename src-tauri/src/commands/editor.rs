@@ -7,11 +7,11 @@
 //! handles gracefully (the panel shows a "not built into this build" hint).
 
 use crate::editor::{
-    self, EditorAudioExtract, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorExportProgress,
     EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
-    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, MasterEngine,
+    EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
@@ -23,44 +23,60 @@ pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaI
     editor::load_recording(&input_path).await
 }
 
-/// Decode the audio to a renderer waveform (peaks + sample rate).
+/// Decode the audio to a renderer waveform (peaks + sample rate). Streamed and
+/// cached in a `<stem>.peaks.json` sidecar — a reopen never re-decodes.
 #[tauri::command]
 pub async fn editor_peaks(input_path: String) -> AppResult<EditorPeaks> {
     super::path_guard::checked_input_file(&input_path)?;
     editor::peaks(&input_path).await
 }
 
-/// Extract a large/exotic recording to a small decodable 8 kHz mono WAV (bytes +
-/// duration) — the renderer's preview buffer when the file is over the inline
-/// limit or in a codec the browser can't decode.
-#[tauri::command]
-pub async fn editor_extract_audio(input_path: String) -> AppResult<EditorAudioExtract> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_audio(&input_path).await
-}
-
-/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
-/// full-fidelity playback; returns the temp-file path the renderer streams via
-/// `asset://` (an `<audio>` element). The 8 kHz WAV stays the waveform source and
 /// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
-/// basis when the loaded buffer is the 8 kHz extract.
+/// basis, since the waveform peaks are an 8 kHz mono downmix that under-reads
+/// the real peak by several dB.
 #[tauri::command]
 pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
     crate::editor::probe_true_peak_db(&input_path).await
 }
 
-/// export still runs on the original, so quality is untouched. HARDWARE-UNVERIFIED.
+/// Transcode a large/exotic recording to a seekable stereo AAC proxy for
+/// full-fidelity playback; returns the temp-file path the renderer streams via
+/// `asset://` (an `<audio>` element). Export still runs on the original, so
+/// quality is untouched. HARDWARE-UNVERIFIED.
 #[tauri::command]
 pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {
     super::path_guard::checked_input_file(&input_path)?;
     editor::extract_playback_proxy(&input_path).await
 }
 
-/// Content-detect timeline segments (silence/speech/music + promoted sermon).
+/// Widen the webview's `asset://` scope to ONE media file so the editor can put
+/// it in an `<audio>`/`<video>` `src`. The static scope globs in
+/// `tauri.conf.json` cover the standard user folders only — a recording on an
+/// external volume matches none of them and would fail to load with no visible
+/// reason. The path goes through the same `path_guard` as every other editor
+/// command first, so the renderer can never widen the scope into `~/.ssh` & co.
 #[tauri::command]
-pub async fn editor_segments(input_path: String) -> AppResult<Vec<EditorSegment>> {
+pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    super::path_guard::checked_input_file(&path)?;
+    editor::allow_asset_path(&path, |p| {
+        use tauri::Manager;
+        app.asset_protocol_scope()
+            .allow_file(p)
+            .map_err(|e| crate::error::AppError::Internal(format!("asset scope allow: {e}")))
+    })
+}
+
+/// Content-detect timeline segments (silence/speech/music + promoted sermon).
+/// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
+/// opptak» button) skips the cache read and re-runs the analysis; the automatic
+/// post-open run leaves it unset and gets the cached answer for free.
+#[tauri::command]
+pub async fn editor_segments(
+    input_path: String,
+    force: Option<bool>,
+) -> AppResult<Vec<EditorSegment>> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::segments(&input_path).await
+    editor::segments(&input_path, force.unwrap_or(false)).await
 }
 
 /// The built-in mastering presets for the editor's preset dropdown. Pure core
@@ -110,18 +126,53 @@ pub async fn editor_mastering_analyze(
     editor::mastering_analyze(&input_path, &preset_id).await
 }
 
-/// Apply the cut-plan (+ optional mastering) and render to the chosen format.
+/// Apply the cut-plan (+ optional mastering) and render to the chosen format,
+/// emitting `editor://export-progress` ticks the renderer draws as a real bar.
 #[tauri::command]
-pub async fn editor_export(request: EditorExportRequest) -> AppResult<EditorExportResult> {
+pub async fn editor_export(
+    app: tauri::AppHandle,
+    db: State<'_, crate::db::Db>,
+    engine: State<'_, ExportEngine>,
+    request: EditorExportRequest,
+) -> AppResult<EditorExportResult> {
     super::path_guard::checked_input_file(&request.input_path)?;
-    super::path_guard::checked_path(&request.output_folder)?;
+    // An EMPTY folder is the export modal's default destination ("Samme mappe")
+    // and means "next to the source" — the seam resolves it. Guarding it as a
+    // path was the whole out-of-the-box export failure: `require_absolute`
+    // rejected '' with "path must be absolute" before ffmpeg ever ran.
+    if !request.output_folder.is_empty() {
+        super::path_guard::checked_path(&request.output_folder)?;
+    }
     for clip in [&request.intro_path, &request.outro_path]
         .into_iter()
         .flatten()
     {
         super::path_guard::checked_input_file(clip)?;
     }
-    editor::export(&request).await
+    // Hardware video encode is a per-install preference, not part of the export
+    // request: the renderer never has to know whether this machine has
+    // VideoToolbox. A settings read that fails is simply "off" (the default).
+    let hw_encode = crate::settings::load(&db.pool)
+        .await
+        .map(|s| s.editor_hw_encode)
+        .unwrap_or(false);
+    editor::export(&engine, &request, hw_encode, move |pct, phase| {
+        let _ = app.emit(
+            "editor://export-progress",
+            EditorExportProgress {
+                pct,
+                phase: phase.to_string(),
+            },
+        );
+    })
+    .await
+}
+
+/// Abort the in-flight export (kills the render's ffmpeg). Returns whether one
+/// was actually running.
+#[tauri::command]
+pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<bool> {
+    editor::cancel_export(&engine).await
 }
 
 /// Extract a single video frame at `sec` seconds as a base64 JPEG (480px wide)

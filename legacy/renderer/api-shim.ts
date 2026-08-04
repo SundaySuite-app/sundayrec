@@ -20,9 +20,9 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
-// the loader falls back to an ffmpeg → 8 kHz WAV decode for anything the browser
-// can't decode directly. Keep these in sync with the drag-drop sets in
-// editor-page.ts / editor/state.ts.
+// the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
+// as the original) for anything the webview can't decode directly. Keep these in
+// sync with the drag-drop sets in editor-page.ts / editor/state.ts.
 const AUDIO_EXT = [
   "mp3", "mp1", "mp2", "wav", "flac", "aac", "m4a", "m4b", "m4r", "ogg", "oga",
   "opus", "aiff", "aif", "wma", "mka", "ac3", "eac3", "amr", "3ga", "caf", "wv",
@@ -264,6 +264,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   askOpenEditor: true,
   editorIntroPath: undefined,
   editorOutroPath: undefined,
+  editorHwEncode: false,
   cloudGoogleDrive: undefined,
   cloudDropbox: undefined,
   cloudOneDrive: undefined,
@@ -395,6 +396,11 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
     slots: sanitizeSlots(s.slots),
     specialRecordings: sanitizeSpecials(s.specialRecordings),
+    // Editor video export: opt into the macOS VideoToolbox hardware encoder.
+    // Read by `editor_export`; must be synced or Rust's `#[serde(default)]`
+    // re-defaults it to `false` on every settings_save and the toggle never
+    // sticks (the same trap `filenamePattern`/`wakeFromSleep` fell into).
+    editorHwEncode: s.editorHwEncode ?? false,
   };
 }
 
@@ -970,7 +976,6 @@ const api: Record<string, unknown> = {
     if (r.tooLarge) return { tooLarge: true };
     return new Uint8Array(r.bytes ?? []);
   },
-  editorSaveFile: async () => ({ ok: false }),
   editorPickFile: async () =>
     pickPath({
       filters: [
@@ -1028,7 +1033,11 @@ const api: Record<string, unknown> = {
   // One-click "best result": diagnose + recommended preset bundle.
   editorAutoProcess: async (fp: string) =>
     call("editor_auto_process", { inputPath: fp }, null),
-  editorCancelExport: async () => true,
+  // Kill the in-flight export's ffmpeg. Returns whether one was running; the
+  // export itself then rejects with `cancelled`, which the editor maps to a
+  // calm "Eksport avbrutt." (This was a stub returning `true` — the Avbryt
+  // button did nothing and a 90-minute render was unkillable.)
+  editorCancelExport: async () => call("editor_cancel_export", undefined, false),
   editorPickOutputFolder: async () => pickPath({ directory: true }),
   // Sidecars (meta / cutsDraft / transcript) are clean JSON key-value via
   // editor_read/write/delete_sidecar — no media decode needed.
@@ -1055,8 +1064,10 @@ const api: Record<string, unknown> = {
   // editor_segments → EditorSegment[]. The consumer (editor/detection.ts) casts
   // the result directly to Suggestion[] and assigns E.suggestions, so return the
   // ARRAY, not a { segments } wrapper (which would make E.suggestions an object).
-  editorDetectSegments: async (fp: string) =>
-    call("editor_segments", { inputPath: fp }, []),
+  // The result is cached in a `<stem>.segments.json` sidecar; `force` (the
+  // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
+  editorDetectSegments: async (fp: string, force?: boolean) =>
+    call("editor_segments", { inputPath: fp, force: force ?? false }, []),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).
@@ -1084,37 +1095,56 @@ const api: Record<string, unknown> = {
     call("companion_clear_llm_key", undefined, false).then(() => true),
   editorSetVideoPath: async (fp: string) =>
     call("editor_load_recording", { inputPath: fp }, { ok: false }),
-  // editor_peaks → { peaks, sampleRate } — the VIDEO loader uses this for the
-  // waveform (playback is via the <video> asset:// element).
+  // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
+  // An ffprobe-only probe: it gives the audio loader the authoritative duration
+  // WITHOUT reading a byte of media, which is what lets the editor paint a
+  // timeline for a multi-GB recording instantly. `null` on any failure.
+  editorLoadRecording: async (fp: string) =>
+    call<{
+      durationSec: number;
+      hasVideo: boolean;
+      hasAudio: boolean;
+      channels: number | null;
+      sampleFmt: string | null;
+      sampleRate: number | null;
+    } | null>("editor_load_recording", { inputPath: fp }, null),
+  // editor_allow_asset_path → widens the webview's `asset://` scope to ONE file.
+  // The static scope globs cover the standard user folders only; recordings on
+  // an external drive/share match none of them and the <audio> src fails with an
+  // opaque media error. Call this before pointing any element at a path. Returns
+  // false when the grant was refused (guarded path / feature-off) — the caller
+  // still tries the element, since paths inside the static scope work regardless.
+  editorAllowAssetPath: async (fp: string) => {
+    try {
+      await invoke("editor_allow_asset_path", { path: fp });
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] editor_allow_asset_path failed", e);
+      return false;
+    }
+  },
+  // editor_peaks → { peaks, sampleRate } — the waveform for BOTH the audio and
+  // the video loader (playback is always a media element on asset://). Streamed
+  // out of ffmpeg 100 peaks/s and cached in a `<stem>.peaks.json` sidecar, so a
+  // reopen costs a JSON read instead of a full decode.
   editorExtractAudioPeaks: async (fp: string) =>
     call("editor_peaks", { inputPath: fp }, null),
-  // editor_extract_audio → { bytes, duration }: a small decodable 8 kHz mono WAV
-  // for AUDIO files too large for inline Web Audio decode (> EDITOR_INLINE_LIMIT)
-  // or in a codec the browser can't decode. Mapped to the loader's
-  // { data, duration } shape (cuts/export still run on the original file).
-  editorExtractAudioWav: async (fp: string) => {
-    const r = await call<{ bytes?: number[] | null; duration?: number } | null>(
-      "editor_extract_audio",
-      { inputPath: fp },
-      null,
-    );
-    if (!r || !r.bytes) return null;
-    return { data: new Uint8Array(r.bytes), duration: r.duration ?? 0 };
-  },
-  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file for
-  // full-fidelity playback of oversized/exotic files (the <audio> element
-  // streams it from disk via asset://, so no multi-GB Web-Audio PCM buffer).
-  // Returns the proxy path, or null if the transcode failed (caller then keeps
-  // the 8 kHz buffer for playback). The 8 kHz WAV remains the waveform source.
+  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file. The
+  // LAST-RESORT playback transport: used only when the webview has no decoder
+  // for the container, or when the original refused to open. Normal playback
+  // streams the ORIGINAL over asset://; this streams the same way, so neither
+  // path builds a multi-GB Web-Audio PCM buffer. Returns the proxy path, or null
+  // when even the transcode failed (the editor then says playback is
+  // unavailable — cuts and export still run on the original).
   editorExtractPlaybackProxy: async (fp: string) =>
     call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
   // editor_probe_peak → true max_volume (dBFS) of the ORIGINAL file via
-  // volumedetect — Normalize's honest basis on the 8 kHz-extract path.
+  // volumedetect. Normalize's honest basis: the waveform peaks are an 8 kHz mono
+  // downmix that under-reads the real peak by several dB.
   editorProbePeak: async (fp: string) =>
     call<number | null>("editor_probe_peak", { inputPath: fp }, null),
   editorPickVideoFile: async () =>
     pickPath({ name: "Video", extensions: VIDEO_EXT }),
-  editorSaveVideo: async () => ({ ok: false }),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest just like
   // editorExportFile (the old raw-passthrough shape didn't match the request).
@@ -1139,7 +1169,10 @@ const api: Record<string, unknown> = {
         masterPreset: (o.masterPreset as string) || null,
         introPath: o.introPath ?? null,
         outroPath: o.outroPath ?? null,
-        gainDb: null,
+        // The normalize gain the user set applies to a video export's AUDIO
+        // track exactly as it does to an audio export — this used to be
+        // hard-coded `null`, so "Normaliser" was silently a no-op for video.
+        gainDb: o.gainDb ?? null,
         chapters,
         title: (m.title as string) || null,
         speaker: (m.speaker as string) || null,

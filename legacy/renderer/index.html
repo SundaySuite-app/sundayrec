@@ -1589,6 +1589,18 @@
             <label class="toggle"><input type="checkbox" id="opt-video-keep-audio" checked /><span class="toggle-track"></span></label>
           </div>
 
+          <!-- Hardware video encode (VideoToolbox) — opt-in, macOS only. Applies
+               to the EDITOR's video export, not to recording (recording has its
+               own encoder picker above). A hardware render that fails is retried
+               once in software, so this can only make an export faster. -->
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-title" data-i18n="video.hwEncode">Maskinvare-koding (VideoToolbox)</div>
+              <div class="toggle-desc" data-i18n="video.hwEncodeDesc">Bruker maskinvare-koding (VideoToolbox) for raskere video-eksport på Mac. Faller automatisk tilbake til programvare hvis det feiler.</div>
+            </div>
+            <label class="toggle"><input type="checkbox" id="opt-editor-hw-encode" /><span class="toggle-track"></span></label>
+          </div>
+
           <!-- Unified-recorder toggle — default ON since v4.51. Single
                ffmpeg opens both camera and microphone in one process so
                A/V sync is frame-accurate from the first frame. Power
@@ -2030,6 +2042,9 @@
     <div id="editor-loading" class="editor-loading" style="display:none">
       <div class="editor-loading-spin"></div>
       <div data-i18n="editor.loading">Laster inn lydfil…</div>
+      <!-- Extra line, filled by the loader only when a step takes real time
+           (transcoding a playback proxy). Silent waits read as a hang. -->
+      <div id="editor-loading-detail" class="editor-loading-detail" style="display:none"></div>
     </div>
 
     <!-- Workspace -->
@@ -2168,6 +2183,10 @@
         </button>
         <span class="editor-normalize-status" id="editor-normalize-status" data-i18n="editor.normalizeHint">Justerer toppunktet til -1 dBFS for trygg sluttmiks.</span>
         <button class="editor-normalize-reset" id="btn-normalize-reset" type="button" style="display:none" data-i18n="editor.normalizeReset">↺ Tilbakestill</button>
+        <!-- Honesty note: preview streams the ORIGINAL file through the media
+             element, which has no gain stage — the normalize gain is an export
+             filter. Saying so beats a user turning it up and hearing nothing. -->
+        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
       </div>
 
       <!-- Intro/Outro panel (collapsible — primary path is drag-and-drop onto timeline) -->
@@ -2202,8 +2221,11 @@
               <button class="btn-ghost btn-sm" id="btn-editor-clear-outro" style="display:none">✕</button>
             </div>
           </div>
-          <!-- Video intro/outro (shown for video files) -->
+          <!-- Video intro/outro (shown for video files). The export seam drops
+               jingles for video containers, so the rows are disabled with a hint
+               rather than accepting files the finished mp4 never contains. -->
           <div id="editor-video-io-section" style="display:none">
+            <div class="form-hint" id="editor-video-io-unsupported" style="display:none;margin-bottom:6px" data-i18n="editor.jinglesVideoUnsupported">Jingler støttes ikke for video ennå</div>
             <div class="editor-io-file-row">
               <span class="editor-io-file-label">VIDEO-INTRO</span>
               <span class="editor-io-file-path" id="editor-video-intro-display">Ingen fil valgt</span>
@@ -2462,6 +2484,7 @@
             <div class="editor-export-progress-bar" id="editor-export-progress-bar"></div>
           </div>
           <span class="editor-export-progress-label" id="editor-export-progress-label">Eksporterer…</span>
+          <button class="btn-ghost btn-sm" id="btn-editor-export-cancel" data-i18n="editor.exportCancel">Avbryt</button>
         </div>
         <div id="editor-result-row" class="editor-result-row" style="display:none">
           <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
@@ -2557,9 +2580,12 @@
     <!-- Destination -->
     <div class="export-section-label" data-i18n="editor.exportDest">Destinasjon</div>
     <div class="export-dest-row">
+      <!-- "Samme mappe" sends an EMPTY folder; the backend resolves that to the
+           source file's directory. "Erstatt original" was removed: the mode was
+           dropped by the IPC shim and never implemented, so it quietly wrote a
+           new file anyway. -->
       <button class="export-dest-btn active" data-dest="same" data-i18n="editor.exportDestSame">Samme mappe</button>
       <button class="export-dest-btn" data-dest="folder" data-i18n="editor.exportDestFolder">Velg mappe…</button>
-      <button class="export-dest-btn" data-dest="replace" data-i18n="editor.exportDestReplace">Erstatt original</button>
     </div>
     <div id="export-folder-path" class="export-folder-path" style="display:none"></div>
 
@@ -2584,6 +2610,14 @@
         <option value="voice-light">Stemme — lett</option>
         <option value="voice-podcast">Podkast-stemme (anbefalt)</option>
         <option value="voice-noisy-room">Støyete rom</option>
+      </select>
+      <label class="export-field-label" data-i18n="editor.masterPreset" style="display:block;margin-bottom:4px">Mastering (utgivelsesnivå)</label>
+      <select id="enhance-master-preset" class="export-select" style="margin-bottom:8px;width:100%">
+        <option value="">Ingen</option>
+        <option value="speech-natural">Tale — naturlig (−19 LUFS)</option>
+        <option value="speech-clear">Tale — tydelig (−16 LUFS)</option>
+        <option value="speech-punchy">Tale — kraftig (−14 LUFS)</option>
+        <option value="music-speech">Musikk + tale (−16 LUFS)</option>
       </select>
       <label class="export-field-label" data-i18n="editor.channelRepair" style="display:block;margin-bottom:4px">Kanalreparasjon</label>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">

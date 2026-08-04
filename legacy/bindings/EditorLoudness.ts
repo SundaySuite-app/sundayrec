@@ -18,6 +18,16 @@ inputLra: number,
  */
 inputTp: number, 
 /**
+ * Measurement threshold (LUFS). Carried so an apply can REUSE this
+ * measurement instead of re-running the pass that produced it — it is one
+ * of the five values `loudnorm`'s linear mode needs.
+ */
+inputThresh: number, 
+/**
+ * Suggested gain offset (LU) — the fifth value the linear-mode apply needs.
+ */
+targetOffset: number, 
+/**
  * The preset this was measured against (its target LUFS for the delta UI).
  */
 targetLufs: number, };

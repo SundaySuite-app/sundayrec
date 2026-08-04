@@ -22,7 +22,13 @@ export function shouldShowSegment(type: string): boolean {
  *  outcome of analysis. Speech / music / silence honour the user's toggles. */
 /** Runs segment detection. `auto` = true skips the button-disabled UI dance
  *  (used for auto-run after file load — we don't want to spook the user with
- *  a disabled button they didn't click). */
+ *  a disabled button they didn't click).
+ *
+ *  `auto` also decides whether the backend may answer from its
+ *  `<stem>.segments.json` cache: the automatic post-open run happily takes the
+ *  cached answer (that's what makes a reopen instant), while a click on
+ *  «Analyser opptak» FORCES a fresh pass — the user pressing that button is
+ *  asking for the work to be done, not for last time's answer. */
 export async function runDetection(auto = false): Promise<void> {
   if (!E.filePath) return
   const btn       = $('btn-detect-segments') as HTMLButtonElement | null
@@ -37,7 +43,7 @@ export async function runDetection(auto = false): Promise<void> {
   const fpAtStart = E.filePath
   let raw: Suggestion[] = []
   try {
-    raw = (await window.api.editorDetectSegments(E.filePath)) as Suggestion[]
+    raw = (await window.api.editorDetectSegments(E.filePath, !auto)) as Suggestion[]
   } catch {
     raw = []
   }

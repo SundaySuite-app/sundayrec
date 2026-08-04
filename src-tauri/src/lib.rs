@@ -162,6 +162,10 @@ pub fn run() {
         // the UI can cancel a long render by id. The pure JobRegistry inside is
         // tested in core; the real ffmpeg children are held feature-on.
         .manage(editor::MasterEngine::new())
+        // The export engine holds the ONE in-flight render so
+        // `editor_cancel_export` can kill it. Compiles in every build; only the
+        // spawn that fills it is feature-gated.
+        .manage(editor::ExportEngine::new())
         // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
         // pending consent before the 300 s timeout.
         .manage(cloud::ConnectGuard::new())
@@ -364,8 +368,8 @@ pub fn run() {
             // R1 non-destructive editor (DTOs pure; ffmpeg runs gated by `editor`).
             commands::editor::editor_load_recording,
             commands::editor::editor_peaks,
-            commands::editor::editor_extract_audio,
             commands::editor::editor_extract_playback_proxy,
+            commands::editor::editor_allow_asset_path,
             commands::editor::editor_probe_peak,
             commands::editor::editor_segments,
             commands::editor::editor_master_presets,
@@ -374,6 +378,7 @@ pub fn run() {
             commands::editor::editor_auto_process,
             commands::editor::editor_mastering_analyze,
             commands::editor::editor_export,
+            commands::editor::editor_cancel_export,
             commands::editor::editor_extract_frame,
             // P1 parity: sidecar persistence, stream probe, inline guard,
             // temp-file cleanup, and the full mastering preview/apply/cancel flow.
