@@ -4,7 +4,7 @@ import { E, $, clearDirty } from './state'
 import { clearEditorDraft } from './cuts'
 import { saveMetadata } from './metadata'
 import { renderMixer, loadPresetIntoMixer, mixerProcessing } from './mixer'
-import { buildExportRequest } from './export-params'
+import { buildExportRequest, exportLevelSummary } from './export-params'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -18,18 +18,7 @@ export function openExportModal(): void {
   if (typeSection) typeSection.style.display = E.isVideoFile ? '' : 'none'
   applyExportSides()
 
-  // Update gain summary — only shown when peak normalize has been applied.
-  const procRow  = $('export-proc-row')
-  const summary  = $('export-proc-summary')
-  if (procRow && summary) {
-    if (E.audioGainDb !== 0) {
-      const sign = E.audioGainDb >= 0 ? '+' : ''
-      summary.textContent = `${t('editor.normalizeApplied', 'Normalisert')} (${sign}${E.audioGainDb.toFixed(1)} dB → -1 dBFS)`
-      procRow.style.display = ''
-    } else {
-      procRow.style.display = 'none'
-    }
-  }
+  renderLevelSummary()
   const ioRow     = $('export-io-row')
   const ioSummary = $('export-io-summary')
   if (ioRow && ioSummary) {
@@ -62,6 +51,32 @@ export function openExportModal(): void {
 
   const exportModal = $('editor-export-modal')
   if (exportModal) exportModal.style.display = 'flex'
+}
+
+/**
+ * Paint the export modal's LEVEL row from the current state.
+ *
+ * With a mastering preset active the backend skips the peak-normalize gain
+ * entirely (loudnorm owns the delivery level), so claiming "Normalisert
+ * (+x dB)" there would be a promise the export doesn't keep. The decision
+ * itself is the pure `exportLevelSummary`; this only localises it. Re-runnable:
+ * one-click auto-enhance changes the preset while the modal is open.
+ */
+function renderLevelSummary(): void {
+  const procRow = $('export-proc-row')
+  const summary = $('export-proc-summary')
+  if (!procRow || !summary) return
+  const level = exportLevelSummary(E.masterPreset, E.audioGainDb)
+  if (level.kind === 'masterOwnsLevel') {
+    summary.textContent = t('editor.volumeByMastering', 'Volum styres av mastring')
+    procRow.style.display = ''
+  } else if (level.kind === 'normalized') {
+    const sign = level.gainDb >= 0 ? '+' : ''
+    summary.textContent = `${t('editor.normalizeApplied', 'Normalisert')} (${sign}${level.gainDb.toFixed(1)} dB → -1 dBFS)`
+    procRow.style.display = ''
+  } else {
+    procRow.style.display = 'none'
+  }
 }
 
 /** Sync the export modal's audio-vs-video sides to `E.isVideoFile` +
@@ -100,12 +115,14 @@ function setupEnhanceSection(): void {
 
   const vocalSel  = $('enhance-vocal-chain')    as HTMLSelectElement | null
   const chanSel   = $('enhance-channel-repair') as HTMLSelectElement | null
+  const masterSel = $('enhance-master-preset')  as HTMLSelectElement | null
   const summary   = $('enhance-summary')
   const diagLine  = $('enhance-channel-diag')
 
   // Sync current state into the controls.
   if (vocalSel) vocalSel.value = E.vocalChainPreset
   if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+  if (masterSel) masterSel.value = E.masterPreset
   const mixerToggleSync = $('opt-use-mixer') as HTMLInputElement | null
   const mixerControlsSync = $('mixer-controls')
   if (mixerToggleSync) mixerToggleSync.checked = E.useMixer
@@ -173,6 +190,13 @@ function setupEnhanceSection(): void {
     E.channelRepairLeftDb = 0
     E.channelRepairRightDb = 0
   })
+  // Mastering is an EXPLICIT choice, never an automatic one (auto-enhance
+  // recommends the vocal chain only — stacking both double-processes). Picking
+  // one hands the output level to loudnorm, which the level row must reflect.
+  masterSel?.addEventListener('change', () => {
+    E.masterPreset = masterSel.value
+    renderLevelSummary()
+  })
 
   // One-click: analyse + apply the recommended best-result bundle.
   $('btn-auto-enhance')?.addEventListener('click', async () => {
@@ -190,7 +214,10 @@ function setupEnhanceSection(): void {
       if (summary) { summary.textContent = t('editor.autoEnhanceFail', 'Kunne ikke analysere lyden (krever editor-bygg).'); (summary as HTMLElement).style.display = '' }
       return
     }
-    // Apply the recommendation to export state + controls.
+    // Apply the recommendation to export state + controls. `masterPreset` is
+    // EMPTY from auto-process on purpose (the vocal chain alone — stacking a
+    // mastering chain on it double-processes); '' flows through
+    // `buildExportRequest`'s orUndefined as "no mastering".
     E.vocalChainPreset = res.vocalChainPreset
     E.masterPreset     = res.masterPreset
     const rec = res.diagnosis.recommended
@@ -199,6 +226,9 @@ function setupEnhanceSection(): void {
     E.channelRepairRightDb = rec.rightDb
     if (vocalSel) vocalSel.value = E.vocalChainPreset
     if (chanSel)  chanSel.value  = E.channelRepairMode === 'gainDb' ? '' : E.channelRepairMode
+    if (masterSel) masterSel.value = E.masterPreset
+    // The level row depends on the preset we just changed.
+    renderLevelSummary()
     if (summary) { summary.textContent = res.summary; (summary as HTMLElement).style.display = '' }
   })
 

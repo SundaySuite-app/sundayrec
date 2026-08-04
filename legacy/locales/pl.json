@@ -598,6 +598,8 @@
     "normalizePeak": "Normalizuj poziom dźwięku",
     "normalizeHint": "Ustawia szczyt na -1 dBFS dla bezpiecznego miksu końcowego.",
     "normalizeApplied": "Znormalizowane",
+    "volumeByMastering": "Głośnością steruje mastering",
+    "masterPreset": "Mastering (poziom publikacji)",
     "normalizeResult": "Szczyt teraz -1 dBFS — bezpieczny do eksportu.",
     "normalizeAlready": "Szczyt jest już na poziomie -1 dBFS — żadna zmiana nie jest potrzebna.",
     "normalizeReset": "↺ Przywróć",

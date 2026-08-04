@@ -188,13 +188,88 @@ pub fn resolve_save_ext(raw_ext: &str, replace: bool) -> Result<String, SaveExtE
 
 // ── Codec arguments ───────────────────────────────────────────────────────────
 
-/// Build the ffmpeg `-c:a …` (and bitrate/depth) arguments for an output
+/// The lossy encoders' sample-rate ceiling. Above this a lossy render buys
+/// nothing an ear can hear while costing bitrate, and several encoders refuse
+/// the rate outright.
+pub const LOSSY_RATE_CEILING: u32 = 48_000;
+
+/// Rates `libopus` accepts (it always encodes at 48 kHz internally).
+const OPUS_RATES: &[u32] = &[8_000, 12_000, 16_000, 24_000, 48_000];
+/// Rates the AC-3 family accepts.
+const AC3_RATES: &[u32] = &[32_000, 44_100, 48_000];
+/// Rates MPEG-1/2 Audio Layer I/II accept.
+const MP2_RATES: &[u32] = &[16_000, 22_050, 24_000, 32_000, 44_100, 48_000];
+/// Rates LAME (MP3) accepts.
+const MP3_RATES: &[u32] = &[
+    8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000,
+];
+/// Rates AAC accepts, up to our lossy ceiling.
+const AAC_RATES: &[u32] = &[
+    8_000, 11_025, 12_000, 16_000, 22_050, 24_000, 32_000, 44_100, 48_000,
+];
+
+/// Snap a candidate rate to the nearest rate an encoder actually accepts,
+/// preferring the higher one on a tie. Pinning `-ar` is only an improvement if
+/// it can never hand an encoder a rate it refuses: without this, an 8 kHz source
+/// exported to AC-3 would go from "ffmpeg quietly negotiates 48 kHz" to a hard
+/// failure.
+fn snap_rate(candidate: u32, supported: &[u32]) -> u32 {
+    supported
+        .iter()
+        .copied()
+        .min_by_key(|r| (r.abs_diff(candidate), u32::MAX - *r))
+        .unwrap_or(candidate)
+}
+
+/// The sample rate an export should PIN for `fmt`, given the source's rate.
+///
+/// Two hazards this closes:
+///   1. **Silent upsampling.** `loudnorm` runs its internal graph at 192 kHz, so
+///      an export with a mastering preset and no `-ar` lands a WAV/FLAC at
+///      192 kHz — four times the size of the service, for nothing.
+///   2. **Silent downsampling.** The reverse pin ("always 48 k") would throw away
+///      a 96 kHz master. Lossless targets therefore keep the source rate exactly.
+///
+/// Lossy targets cap at [`LOSSY_RATE_CEILING`] and then snap to a rate the
+/// specific encoder accepts. `None` (rate unknown — the probe failed) means "emit
+/// no `-ar`", i.e. exactly the pre-Phase-4 behaviour.
+pub fn output_sample_rate(fmt: &str, source_rate: Option<u32>) -> Option<u32> {
+    let src = source_rate.filter(|r| *r > 0)?;
+    Some(match fmt {
+        // amr is hard-wired to 8 kHz by its own codec args.
+        "amr" | "3ga" => 8_000,
+        // Lossless / PCM targets: preserve the source rate EXACTLY. (The
+        // no-encoder set transcodes to `pcm_s16le`, which is equally rate-free.)
+        "wav" | "flac" | "mka" | "aiff" | "aif" | "au" | "snd" | "wv" | "tta" | "ape" | "dts"
+        | "mpc" | "ra" | "ram" | "spx" | "gsm" => src,
+        // Lossy: cap, then snap to what the encoder can take.
+        "opus" => snap_rate(src.min(LOSSY_RATE_CEILING), OPUS_RATES),
+        "ac3" | "eac3" => snap_rate(src.min(LOSSY_RATE_CEILING), AC3_RATES),
+        "mp1" | "mp2" => snap_rate(src.min(LOSSY_RATE_CEILING), MP2_RATES),
+        "aac" | "m4a" | "m4b" | "m4r" | "caf" => snap_rate(src.min(LOSSY_RATE_CEILING), AAC_RATES),
+        // libvorbis/wmav2 take arbitrary rates; mp3 (and any unknown ext, which
+        // falls through to LAME) snaps to the LAME table.
+        "ogg" | "oga" | "wma" => src.min(LOSSY_RATE_CEILING),
+        _ => snap_rate(src.min(LOSSY_RATE_CEILING), MP3_RATES),
+    })
+}
+
+/// Build the ffmpeg `-c:a …` (and bitrate/depth/rate) arguments for an output
 /// extension, porting `editor.codecArgs` exactly (same encoder choices and the
 /// same `bitrate ?? <default>` fallbacks). `bit_depth` only affects WAV.
-pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec<String> {
+///
+/// `source_rate` is the probed sample rate of the recording; it pins `-ar` via
+/// [`output_sample_rate`] so neither the loudnorm-192 kHz artefact nor a silent
+/// downsample of a 96 kHz master can reach the file. `None` omits `-ar`.
+pub fn codec_args(
+    fmt: &str,
+    bitrate: Option<u32>,
+    bit_depth: Option<u8>,
+    source_rate: Option<u32>,
+) -> Vec<String> {
     let s = |v: &str| v.to_string();
     let br = |dflt: u32| format!("{}k", bitrate.unwrap_or(dflt));
-    match fmt {
+    let mut args: Vec<String> = match fmt {
         "wav" => vec![
             s("-c:a"),
             s(if bit_depth == Some(24) {
@@ -229,7 +304,14 @@ pub fn codec_args(fmt: &str, bitrate: Option<u32>, bit_depth: Option<u8>) -> Vec
         "ape" | "dts" | "mpc" | "ra" | "ram" | "spx" | "gsm" => vec![s("-c:a"), s("pcm_s16le")],
         // mp3 (and any unknown ext) → LAME at a transparent 256k default.
         _ => vec![s("-c:a"), s("libmp3lame"), s("-b:a"), br(256)],
+    };
+    // amr already carries its forced `-ar 8000`; never emit a second one.
+    if !args.iter().any(|a| a == "-ar") {
+        if let Some(rate) = output_sample_rate(fmt, source_rate) {
+            args.extend([s("-ar"), rate.to_string()]);
+        }
     }
+    args
 }
 
 /// Standard MP4 output codec args — mirrors `editor.MP4_CODEC_ARGS`. Kept as the
@@ -391,6 +473,55 @@ fn atrim(input_ref: &str, seg: &KeepSegment) -> String {
     )
 }
 
+// ── De-click join fades ──────────────────────────────────────────────────────
+
+/// Length (seconds) of the fade applied at an INTERIOR cut boundary. 15 ms is
+/// the shortest fade that reliably kills the click of a mid-waveform splice
+/// while staying far below the ~50 ms at which a listener starts to perceive
+/// the fade itself — cut a word in half and it still sounds like a cut, not a
+/// duck.
+pub const JOIN_FADE_SEC: f64 = 0.015;
+
+/// The `afade` filters for ONE keep segment, in SEGMENT-LOCAL time (the
+/// preceding `asetpts=PTS-STARTPTS` has already reset the segment to t=0).
+///
+/// The rule is about the ORIGINAL file, not the segment index: fade IN when the
+/// segment's start is not the true file start, fade OUT when its end is not the
+/// true file end. So a single keep trimmed at both ends gets both fades, the
+/// first of two keeps gets only the out-fade, and an untouched whole-file keep
+/// gets none. Durations are untouched (a fade is a gain envelope, not a trim),
+/// so chapter remapping and the kept-duration bookkeeping stay exact.
+///
+/// A segment too short to hold the fades keeps its hard edges — better a click
+/// than a sub-30 ms sliver that is *all* envelope.
+fn join_fades(seg: &KeepSegment, total_duration: f64) -> Vec<String> {
+    let dur = seg.end - seg.start;
+    let mut out = Vec::new();
+    if !dur.is_finite() || dur <= 2.0 * JOIN_FADE_SEC {
+        return out;
+    }
+    if seg.start > KEEP_EPSILON {
+        out.push(format!("afade=t=in:st=0:d={JOIN_FADE_SEC}"));
+    }
+    if total_duration.is_finite() && seg.end < total_duration - KEEP_EPSILON {
+        out.push(format!(
+            "afade=t=out:st={}:d={JOIN_FADE_SEC}",
+            ts(dur - JOIN_FADE_SEC)
+        ));
+    }
+    out
+}
+
+/// [`atrim`] plus this segment's de-click [`join_fades`].
+fn atrim_faded(input_ref: &str, seg: &KeepSegment, total_duration: f64) -> String {
+    let mut chain = atrim(input_ref, seg);
+    for f in join_fades(seg, total_duration) {
+        chain.push(',');
+        chain.push_str(&f);
+    }
+    chain
+}
+
 /// The audio filter graph for an *export* (the general case): trims, optional
 /// processing filters, optional intro/outro concat. Mirrors `exportEdited`'s
 /// `concatParts` builder. Returns the `-filter_complex` string and the output
@@ -400,12 +531,20 @@ fn atrim(input_ref: &str, seg: &KeepSegment) -> String {
 /// when an intro is prepended). `proc_filters` is the per-preset processing
 /// chain (may be empty). `has_intro`/`has_outro` toggle the surrounding concat;
 /// the intro is always input 0, the outro the input after the main one.
+///
+/// `total_duration` is the SOURCE recording's length — it decides which segment
+/// edges are interior cuts and therefore get a de-click fade (see
+/// [`join_fades`]). `post_filters` run LAST, on the final pad after any
+/// intro/outro concat: that is where the dither belongs, because it has to see
+/// every sample that reaches the encoder.
 pub fn audio_export_filter_complex(
     keeps: &[KeepSegment],
     main_input_idx: usize,
     proc_filters: &[String],
+    post_filters: &[String],
     has_intro: bool,
     has_outro: bool,
+    total_duration: f64,
 ) -> (String, String) {
     let main_ref = format!("[{main_input_idx}:a]");
     let outro_idx = main_input_idx + 1;
@@ -413,12 +552,15 @@ pub fn audio_export_filter_complex(
 
     if keeps.len() == 1 {
         let seg = &keeps[0];
-        let mut chain = vec![atrim(&main_ref, seg)];
+        let mut chain = vec![atrim_faded(&main_ref, seg, total_duration)];
         chain.extend(proc_filters.iter().cloned());
         filter_parts.push(format!("{}[main_out]", chain.join(",")));
     } else {
         for (i, seg) in keeps.iter().enumerate() {
-            filter_parts.push(format!("{}[seg{i}]", atrim(&main_ref, seg)));
+            filter_parts.push(format!(
+                "{}[seg{i}]",
+                atrim_faded(&main_ref, seg, total_duration)
+            ));
         }
         let seg_inputs: String = (0..keeps.len()).map(|i| format!("[seg{i}]")).collect();
         if !proc_filters.is_empty() {
@@ -446,7 +588,7 @@ pub fn audio_export_filter_complex(
         ));
     }
 
-    let map_arg = if has_intro || has_outro {
+    let mut map_arg = if has_intro || has_outro {
         let mut inputs = String::new();
         if has_intro {
             inputs.push_str("[intro_fmt]");
@@ -461,6 +603,13 @@ pub fn audio_export_filter_complex(
     } else {
         "[main_out]".to_string()
     };
+
+    // The post chain (dither) is the LAST thing before the encoder — after the
+    // jingle concat, so the jingles are dithered on the way to 16-bit too.
+    if !post_filters.is_empty() {
+        concat_parts.push(format!("{map_arg}{}[out]", post_filters.join(",")));
+        map_arg = "[out]".to_string();
+    }
 
     (concat_parts.join(";"), map_arg)
 }
@@ -477,13 +626,12 @@ pub fn is_simple_audio_export(
     keeps.len() == 1 && proc_filters.is_empty() && !has_intro && !has_outro
 }
 
-/// The single-segment `-af` value for the simple audio path.
-pub fn audio_simple_af(seg: &KeepSegment) -> String {
-    format!(
-        "atrim=start={}:end={},asetpts=PTS-STARTPTS",
-        ts(seg.start),
-        ts(seg.end)
-    )
+/// The single-segment `-af` value for the simple audio path, including this
+/// segment's de-click [`join_fades`] (a "trim the first 10 minutes off" export
+/// is exactly the case where the cut edge is audible).
+pub fn audio_simple_af(seg: &KeepSegment, total_duration: f64) -> String {
+    // Same chain as the filter_complex path, minus the input/output labels.
+    atrim_faded("", seg, total_duration)
 }
 
 /// The COMPLETE output-argument list for the simple single-segment audio path
@@ -503,15 +651,24 @@ pub fn audio_simple_export_args(
     fmt: &str,
     bitrate: Option<u32>,
     bit_depth: Option<u8>,
+    source_rate: Option<u32>,
+    total_duration: f64,
 ) -> Vec<String> {
+    // Trim (+ join fades) then, for a 16-bit PCM target, the dither — last, so
+    // it sees exactly what the encoder will.
+    let mut af = audio_simple_af(seg, total_duration);
+    if let Some(d) = crate::mastering::dither_filter_for(fmt, bit_depth) {
+        af.push(',');
+        af.push_str(&d);
+    }
     let mut args = vec![
         "-vn".to_string(),
         "-map".to_string(),
         "0:a:0".to_string(),
         "-af".to_string(),
-        audio_simple_af(seg),
+        af,
     ];
-    args.extend(codec_args(fmt, bitrate, bit_depth));
+    args.extend(codec_args(fmt, bitrate, bit_depth, source_rate));
     args
 }
 
@@ -1609,24 +1766,33 @@ mod tests {
 
     #[test]
     fn wav_codec_respects_bit_depth() {
-        assert_eq!(codec_args("wav", None, Some(24)), vec!["-c:a", "pcm_s24le"]);
-        assert_eq!(codec_args("wav", None, Some(16)), vec!["-c:a", "pcm_s16le"]);
-        assert_eq!(codec_args("wav", None, None), vec!["-c:a", "pcm_s16le"]);
+        assert_eq!(
+            codec_args("wav", None, Some(24), None),
+            vec!["-c:a", "pcm_s24le"]
+        );
+        assert_eq!(
+            codec_args("wav", None, Some(16), None),
+            vec!["-c:a", "pcm_s16le"]
+        );
+        assert_eq!(
+            codec_args("wav", None, None, None),
+            vec!["-c:a", "pcm_s16le"]
+        );
     }
 
     #[test]
     fn aac_codec_uses_bitrate_with_default_256() {
         // Transparent default for speech+music; the caller can still override.
         assert_eq!(
-            codec_args("aac", None, None),
+            codec_args("aac", None, None, None),
             vec!["-c:a", "aac", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("m4a", None, None),
+            codec_args("m4a", None, None, None),
             vec!["-c:a", "aac", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("m4a", Some(320), None),
+            codec_args("m4a", Some(320), None, None),
             vec!["-c:a", "aac", "-b:a", "320k"]
         );
     }
@@ -1634,7 +1800,7 @@ mod tests {
     #[test]
     fn opus_default_is_160k() {
         assert_eq!(
-            codec_args("opus", None, None),
+            codec_args("opus", None, None, None),
             vec!["-c:a", "libopus", "-b:a", "160k"]
         );
     }
@@ -1642,7 +1808,7 @@ mod tests {
     #[test]
     fn ogg_default_is_256k() {
         assert_eq!(
-            codec_args("ogg", None, None),
+            codec_args("ogg", None, None, None),
             vec!["-c:a", "libvorbis", "-b:a", "256k"]
         );
     }
@@ -1650,11 +1816,11 @@ mod tests {
     #[test]
     fn unknown_codec_defaults_to_mp3_256() {
         assert_eq!(
-            codec_args("weird", None, None),
+            codec_args("weird", None, None, None),
             vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
         assert_eq!(
-            codec_args("mp3", None, None),
+            codec_args("mp3", None, None, None),
             vec!["-c:a", "libmp3lame", "-b:a", "256k"]
         );
     }
@@ -1662,7 +1828,7 @@ mod tests {
     #[test]
     fn lossless_formats_carry_no_bitrate() {
         for fmt in ["wav", "flac", "aiff", "tta", "wv"] {
-            let a = codec_args(fmt, None, None);
+            let a = codec_args(fmt, None, None, None);
             assert!(
                 !a.iter().any(|x| x == "-b:a"),
                 "{fmt} is lossless → no -b:a; got: {a:?}"
@@ -1672,7 +1838,120 @@ mod tests {
 
     #[test]
     fn no_encoder_formats_transcode_to_pcm() {
-        assert_eq!(codec_args("dts", None, None), vec!["-c:a", "pcm_s16le"]);
+        assert_eq!(
+            codec_args("dts", None, None, None),
+            vec!["-c:a", "pcm_s16le"]
+        );
+    }
+
+    // ── sample-rate pinning (P4) ─────────────────────────────────────────────
+
+    /// The `-ar` value in an arg list, if any.
+    fn ar_of(args: &[String]) -> Option<&str> {
+        let i = args.iter().position(|a| a == "-ar")?;
+        args.get(i + 1).map(String::as_str)
+    }
+
+    #[test]
+    fn unknown_source_rate_emits_no_ar() {
+        // The pre-Phase-4 behaviour, kept for the case where the probe failed:
+        // better to let ffmpeg negotiate than to guess a rate.
+        for fmt in ["wav", "flac", "mp3", "aac", "opus"] {
+            assert_eq!(
+                ar_of(&codec_args(fmt, None, None, None)),
+                None,
+                "{fmt} with an unknown source rate must not pin -ar"
+            );
+        }
+    }
+
+    #[test]
+    fn lossless_targets_preserve_the_source_rate() {
+        // A 96 kHz service must NOT be silently downsampled …
+        assert_eq!(
+            ar_of(&codec_args("flac", None, None, Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("wav", None, Some(24), Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("aiff", None, None, Some(96_000))),
+            Some("96000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("wv", None, None, Some(88_200))),
+            Some("88200")
+        );
+        // … nor silently UPsampled to loudnorm's internal 192 kHz.
+        assert_eq!(
+            ar_of(&codec_args("wav", None, None, Some(48_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("flac", None, None, Some(44_100))),
+            Some("44100")
+        );
+    }
+
+    #[test]
+    fn lossy_targets_cap_at_48k_but_keep_lower_rates() {
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(96_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(44_100))),
+            Some("44100")
+        );
+        assert_eq!(
+            ar_of(&codec_args("aac", None, None, Some(96_000))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("m4a", None, None, Some(44_100))),
+            Some("44100")
+        );
+        assert_eq!(
+            ar_of(&codec_args("ogg", None, None, Some(192_000))),
+            Some("48000")
+        );
+    }
+
+    #[test]
+    fn restricted_encoders_snap_to_a_rate_they_accept() {
+        // libopus only encodes at 8/12/16/24/48 kHz — 44.1 k would be refused.
+        assert_eq!(
+            ar_of(&codec_args("opus", None, None, Some(44_100))),
+            Some("48000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("opus", None, None, Some(16_000))),
+            Some("16000")
+        );
+        // AC-3 has no rate below 32 kHz; an 8 kHz source must not hard-fail the
+        // export (ffmpeg used to negotiate this for us when -ar was absent).
+        assert_eq!(
+            ar_of(&codec_args("ac3", None, None, Some(8_000))),
+            Some("32000")
+        );
+        assert_eq!(
+            ar_of(&codec_args("ac3", None, None, Some(96_000))),
+            Some("48000")
+        );
+        // LAME has no 96/88.2 kHz either, and no exotic in-between rates.
+        assert_eq!(
+            ar_of(&codec_args("mp3", None, None, Some(37_800))),
+            Some("32000")
+        );
+    }
+
+    #[test]
+    fn amr_keeps_its_forced_8k_without_a_duplicate_ar() {
+        let a = codec_args("amr", None, None, Some(96_000));
+        assert_eq!(a.iter().filter(|x| *x == "-ar").count(), 1, "{a:?}");
+        assert_eq!(ar_of(&a), Some("8000"));
     }
 
     // ── format breadth + video codecs ────────────────────────────────────────────
@@ -1828,7 +2107,7 @@ mod tests {
             start: 0.0,
             end: 10.0,
         };
-        let args = audio_simple_export_args(&seg, "mp3", Some(128), None);
+        let args = audio_simple_export_args(&seg, "mp3", Some(128), None, None, 10.0);
         // Without these two the export of a VIDEO source to an audio container
         // let ffmpeg's automatic stream selection pull in the video stream.
         assert!(args.contains(&"-vn".to_string()), "args: {args:?}");
@@ -1839,7 +2118,7 @@ mod tests {
         assert_eq!(args[map_at + 1], "0:a:0");
         // The trim + codec still ride along, unchanged.
         let af_at = args.iter().position(|a| a == "-af").unwrap();
-        assert_eq!(args[af_at + 1], audio_simple_af(&seg));
+        assert_eq!(args[af_at + 1], audio_simple_af(&seg, 10.0));
         assert!(args.ends_with(&["-b:a".to_string(), "128k".to_string()]));
     }
 
@@ -1849,7 +2128,7 @@ mod tests {
             start: 1.0,
             end: 2.0,
         };
-        let args = audio_simple_export_args(&seg, "wav", None, Some(24));
+        let args = audio_simple_export_args(&seg, "wav", None, Some(24), None, 2.0);
         assert!(args.contains(&"-vn".to_string()));
         assert!(args.ends_with(&["-c:a".to_string(), "pcm_s24le".to_string()]));
     }
@@ -1860,11 +2139,20 @@ mod tests {
             start: 1.0,
             end: 2.0,
         }];
-        let (fc, map) =
-            audio_export_filter_complex(&keeps, 0, &["volume=2".to_string()], false, false);
+        let (fc, map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &["volume=2".to_string()],
+            &[],
+            false,
+            false,
+            2.0,
+        );
+        // Trimmed at the START only (the keep runs to the file's end) → one fade.
         assert_eq!(
             fc,
-            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,volume=2[main_out]"
+            "[0:a]atrim=start=1.0000:end=2.0000,asetpts=PTS-STARTPTS,\
+             afade=t=in:st=0:d=0.015,volume=2[main_out]"
         );
         assert_eq!(map, "[main_out]");
     }
@@ -1876,7 +2164,7 @@ mod tests {
             start: 0.0,
             end: 10.0,
         }];
-        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], true, true);
+        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &[], true, true, 10.0);
         assert!(fc.starts_with("[0:a]aformat=sample_fmts=fltp[intro_fmt];"));
         assert!(fc.contains("[1:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[main_out]"));
         assert!(fc.contains("[2:a]aformat=sample_fmts=fltp[outro_fmt]"));
@@ -1896,10 +2184,135 @@ mod tests {
                 end: 10.0,
             },
         ];
-        let (fc, _map) =
-            audio_export_filter_complex(&keeps, 0, &["loudnorm".to_string()], false, false);
+        let (fc, _map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &["loudnorm".to_string()],
+            &[],
+            false,
+            false,
+            10.0,
+        );
         assert!(fc.contains("[seg0][seg1]concat=n=2:v=0:a=1[concat_out]"));
         assert!(fc.contains("[concat_out]loudnorm[main_out]"));
+    }
+
+    // ── de-click join fades (P4) ─────────────────────────────────────────────
+
+    #[test]
+    fn a_cut_gives_the_two_new_edges_fades_and_nothing_else() {
+        // Cut 5–6 s out of a 10 s file: seg0 ends at an interior edge (fade out),
+        // seg1 starts at one (fade in). The file's own start/end stay hard.
+        let keeps = build_keeps(&[cut(5.0, 6.0)], 10.0);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert_eq!(
+            fc,
+            "[0:a]atrim=start=0.0000:end=5.0000,asetpts=PTS-STARTPTS,\
+             afade=t=out:st=4.9850:d=0.015[seg0];\
+             [0:a]atrim=start=6.0000:end=10.0000,asetpts=PTS-STARTPTS,\
+             afade=t=in:st=0:d=0.015[seg1];\
+             [seg0][seg1]concat=n=2:v=0:a=1[main_out]"
+        );
+        // Exactly two fades — not one per segment edge.
+        assert_eq!(fc.matches("afade=").count(), 2, "{fc}");
+    }
+
+    #[test]
+    fn an_uncut_export_has_no_fades_at_all() {
+        // Whole file kept → both edges are the real file edges → no envelope.
+        let keeps = build_keeps(&[], 10.0);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert!(!fc.contains("afade"), "{fc}");
+        assert!(!audio_simple_af(&keeps[0], 10.0).contains("afade"));
+    }
+
+    #[test]
+    fn a_keep_trimmed_at_both_ends_fades_both_ways() {
+        // Head + tail cut (the "trim to sermon" shape) → one keep, two fades.
+        let keeps = build_keeps(&[cut(0.0, 2.0), cut(8.0, 10.0)], 10.0);
+        assert_eq!(keeps.len(), 1);
+        let (fc, _map) = audio_export_filter_complex(&keeps, 0, &[], &[], false, false, 10.0);
+        assert!(fc.contains("afade=t=in:st=0:d=0.015"), "{fc}");
+        // Segment-local time: the 6 s segment fades out at 6 − 0.015.
+        assert!(fc.contains("afade=t=out:st=5.9850:d=0.015"), "{fc}");
+    }
+
+    #[test]
+    fn the_simple_path_fades_its_trimmed_start_too() {
+        // "Cut the first 10 minutes" takes the simple `-af` path — the very case
+        // where the splice is a hard mid-waveform edge.
+        let seg = KeepSegment {
+            start: 600.0,
+            end: 3600.0,
+        };
+        let af = audio_simple_af(&seg, 3600.0);
+        assert_eq!(
+            af,
+            "atrim=start=600.0000:end=3600.0000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.015"
+        );
+        let args = audio_simple_export_args(&seg, "mp3", None, None, Some(48_000), 3600.0);
+        assert!(args.iter().any(|a| a.contains("afade=t=in")), "{args:?}");
+    }
+
+    #[test]
+    fn a_sliver_segment_keeps_its_hard_edges() {
+        // Shorter than two fades → an all-envelope blip. Better a click.
+        let seg = KeepSegment {
+            start: 5.0,
+            end: 5.02,
+        };
+        assert!(!audio_simple_af(&seg, 10.0).contains("afade"));
+    }
+
+    // ── dither post-filter (P4) ──────────────────────────────────────────────
+
+    #[test]
+    fn dither_is_the_last_filter_on_a_16bit_wav_export() {
+        let seg = KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        };
+        let args = audio_simple_export_args(&seg, "wav", None, Some(16), Some(48_000), 10.0);
+        let af = &args[args.iter().position(|a| a == "-af").unwrap() + 1];
+        assert!(
+            af.ends_with(",aresample=osf=s16:dither_method=triangular"),
+            "dither must be the LAST filter; got: {af}"
+        );
+        // 24-bit WAV, FLAC and mp3 have nothing to dither.
+        for (fmt, depth) in [("wav", Some(24)), ("flac", None), ("mp3", None)] {
+            let a = audio_simple_export_args(&seg, fmt, None, depth, Some(48_000), 10.0);
+            let af = &a[a.iter().position(|x| x == "-af").unwrap() + 1];
+            assert!(
+                !af.contains("aresample"),
+                "{fmt} must not dither; got: {af}"
+            );
+        }
+    }
+
+    #[test]
+    fn post_filters_run_after_the_jingle_concat_on_a_new_pad() {
+        let keeps = vec![KeepSegment {
+            start: 0.0,
+            end: 10.0,
+        }];
+        let dither = vec!["aresample=osf=s16:dither_method=triangular".to_string()];
+        let (fc, map) = audio_export_filter_complex(&keeps, 1, &[], &dither, true, true, 10.0);
+        assert!(
+            fc.ends_with(
+                "[intro_fmt][main_out][outro_fmt]concat=n=3:v=0:a=1[final_out];\
+                 [final_out]aresample=osf=s16:dither_method=triangular[out]"
+            ),
+            "{fc}"
+        );
+        assert_eq!(map, "[out]");
+
+        // Without jingles it hangs off [main_out] instead.
+        let (fc2, map2) = audio_export_filter_complex(&keeps, 0, &[], &dither, false, false, 10.0);
+        assert!(
+            fc2.ends_with(";[main_out]aresample=osf=s16:dither_method=triangular[out]"),
+            "{fc2}"
+        );
+        assert_eq!(map2, "[out]");
     }
 
     #[test]

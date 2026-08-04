@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildExportRequest, type ExportRequestInput } from './export-params'
+import { buildExportRequest, exportLevelSummary, type ExportRequestInput } from './export-params'
 
 const base: ExportRequestInput = {
   kind: 'audio',
@@ -113,5 +113,27 @@ describe('buildExportRequest', () => {
     expect(params.cutRegions).toEqual([{ start: 10, end: 20 }])
     expect(params.duration).toBe(3600)
     expect(params.metadata).toEqual({ title: 'Søndag' })
+  })
+})
+
+describe('exportLevelSummary', () => {
+  it('says mastering owns the level whenever a preset is active', () => {
+    // The backend SKIPS the normalize `volume=` filter under a mastering preset
+    // (loudnorm sets the delivery level), so the modal must not promise a gain
+    // the export never applies — even when one was computed.
+    expect(exportLevelSummary('speech-clear', 4.2)).toEqual({ kind: 'masterOwnsLevel' })
+    expect(exportLevelSummary('music-speech', 0)).toEqual({ kind: 'masterOwnsLevel' })
+  })
+
+  it('reports the normalize gain when no preset is active', () => {
+    expect(exportLevelSummary('', 4.2)).toEqual({ kind: 'normalized', gainDb: 4.2 })
+    expect(exportLevelSummary(undefined, -1.5)).toEqual({ kind: 'normalized', gainDb: -1.5 })
+  })
+
+  it('hides the row when there is nothing to say', () => {
+    expect(exportLevelSummary('', 0)).toEqual({ kind: 'hidden' })
+    expect(exportLevelSummary(undefined, 0)).toEqual({ kind: 'hidden' })
+    // A NaN gain (a failed peak probe) is "nothing to say", not "+NaN dB".
+    expect(exportLevelSummary('', Number.NaN)).toEqual({ kind: 'hidden' })
   })
 })

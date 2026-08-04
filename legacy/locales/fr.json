@@ -598,6 +598,8 @@
     "normalizePeak": "Normaliser le niveau",
     "normalizeHint": "Ajuste la crête à -1 dBFS pour un mix final sûr.",
     "normalizeApplied": "Normalisé",
+    "volumeByMastering": "Le niveau est géré par le mastering",
+    "masterPreset": "Mastering (niveau de diffusion)",
     "normalizeResult": "Crête désormais à -1 dBFS — sûr pour l’export.",
     "normalizeAlready": "La crête est déjà à -1 dBFS — aucune modification nécessaire.",
     "normalizeReset": "↺ Réinitialiser",

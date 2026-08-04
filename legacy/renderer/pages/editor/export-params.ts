@@ -97,3 +97,31 @@ export function buildExportRequest(input: ExportRequestInput): Record<string, un
     outputBitDepth: input.bitDepth,
   }
 }
+
+// ── Export modal: what the "level" row says ─────────────────────────────────
+
+/**
+ * What the export modal's processing row should state about the output LEVEL.
+ *
+ * The honest answer depends on the mastering preset, because the backend skips
+ * the peak-normalize `volume=` filter whenever a preset is active: loudnorm
+ * sets the delivery loudness, so a gain shift in front of it changes nothing in
+ * the finished file. The modal used to claim "Normalisert (+4.2 dB)" anyway —
+ * a promise about the export that the export did not keep.
+ *
+ * Returned as a decision rather than a string so it can be asserted without a
+ * DOM or the i18n table; the caller localises it.
+ */
+export type ExportLevelSummary =
+  | { kind: 'hidden' }
+  | { kind: 'masterOwnsLevel' }
+  | { kind: 'normalized'; gainDb: number }
+
+export function exportLevelSummary(
+  masterPreset: string | undefined,
+  gainDb: number,
+): ExportLevelSummary {
+  if (masterPreset) return { kind: 'masterOwnsLevel' }
+  if (Number.isFinite(gainDb) && gainDb !== 0) return { kind: 'normalized', gainDb }
+  return { kind: 'hidden' }
+}

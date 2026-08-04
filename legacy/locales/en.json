@@ -598,6 +598,8 @@
     "normalizePeak": "Normalize peak level",
     "normalizeHint": "Adjusts the peak to -1 dBFS for a safe final mix.",
     "normalizeApplied": "Normalized",
+    "volumeByMastering": "Level is set by mastering",
+    "masterPreset": "Mastering (delivery level)",
     "normalizeResult": "Peak now at -1 dBFS — safe for export.",
     "normalizeAlready": "The peak is already at -1 dBFS — no change needed.",
     "normalizeReset": "↺ Reset",

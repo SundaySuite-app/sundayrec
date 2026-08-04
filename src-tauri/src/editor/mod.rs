@@ -391,7 +391,11 @@ pub struct EditorAutoProcess {
     pub diagnosis: EditorChannelDiagnosis,
     /// Vocal-chain preset id to apply (e.g. `voice-podcast`).
     pub vocal_chain_preset: String,
-    /// Mastering preset id to apply (e.g. `speech-clear`).
+    /// Mastering preset id to apply. EMPTY from [`auto_process`] — one click
+    /// recommends the vocal chain only; stacking a mastering chain on top of it
+    /// double-processes (two highpasses, two compressors). Kept in the DTO
+    /// because the renderer applies whatever it is told, and a future
+    /// recommender may fill it in.
     pub master_preset: String,
     /// A short Norwegian summary of what was decided, for a toast/hint.
     pub summary: String,
@@ -1567,10 +1571,16 @@ pub async fn diagnose_channels(input_path: &str) -> AppResult<EditorChannelDiagn
 }
 
 /// One-click "auto-improve": ONE astats pass yields both the channel diagnosis
-/// AND the noise floor, so we recommend the full best-result setup — channel
-/// repair + a NOISE-AWARE vocal chain (the heavier `voice-noisy-room` when the
-/// floor is high, else `voice-podcast`) + clear-speech mastering — with a
-/// Norwegian summary. The renderer applies the result in one click.
+/// AND the noise floor, so we recommend channel repair + a NOISE-AWARE vocal
+/// chain (the heavier `voice-noisy-room` when the floor is high, else
+/// `voice-podcast`) with a Norwegian summary. The renderer applies the result in
+/// one click.
+///
+/// It deliberately does NOT recommend a mastering preset. Stacking one on top of
+/// the vocal chain ran the material through two highpasses, two compressors and
+/// two EQ curves — the classic over-processed "one-click" result (pumping, thin
+/// low end). The vocal chain alone is the honest default; mastering stays an
+/// explicit choice in the export modal, where its loudness target is the point.
 #[cfg(feature = "editor")]
 pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     let stderr = run_astats_stderr(input_path).await?;
@@ -1591,12 +1601,15 @@ pub async fn auto_process(input_path: &str) -> AppResult<EditorAutoProcess> {
     } else {
         "podkast-stemme"
     };
-    let summary =
-        format!("Automatisk lydforbedring: {repair_note}, {chain_note} + tydelig mastering.");
+    let summary = format!(
+        "Automatisk lydforbedring: {repair_note}, {chain_note}. \
+         Mastering velges separat (den setter utgivelsesnivået)."
+    );
     Ok(EditorAutoProcess {
         diagnosis,
         vocal_chain_preset: preset.to_string(),
-        master_preset: "speech-clear".into(),
+        // Empty on purpose — see the doc comment: no double processing.
+        master_preset: String::new(),
         summary,
     })
 }
@@ -1860,7 +1873,9 @@ where
         collision_free_path, ffmetadata, is_simple_audio_export, metadata_args, resolve_output_dir,
         video_filter_complex, Chapter as CoreChapter, CutRegion, RecordingMetadata,
     };
-    use sundayrec_core::mastering::{build_apply_pass_filters, get_preset_by_id};
+    use sundayrec_core::mastering::{
+        dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
+    };
 
     if !Path::new(&req.input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
@@ -1898,29 +1913,33 @@ where
     // KEPT part of a 3-hour recording must not be timed as if it were 3 hours).
     let kept_duration: f64 = keeps.iter().map(|k| k.end - k.start).sum();
 
-    // 2. Optional mastering: measure (pass 1) → apply chain (pass 2 filters).
-    //    When no preset, the processing chain is empty (plain trim).
-    let mut proc_filters: Vec<String> = match &req.master_preset {
-        Some(id) => {
-            let preset = get_preset_by_id(id)
-                .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?;
-            // A full-file loudness measure on a long service takes minutes with
-            // NOTHING to show for it; say so instead of leaving the bar at 0.
-            on_progress(0.0, EXPORT_PHASE_MEASURING);
-            let measured = measure_loudness(&req.input_path, &preset).await?;
-            // The apply chain is the preset filters + a measured-value loudnorm.
-            vec![build_apply_pass_filters(&preset, &measured)]
-        }
-        None => Vec::new(),
+    // 1b. The source's sample rate, so the encoder can be pinned to it. Without
+    //     this a mastered lossless export lands at loudnorm's internal 192 kHz.
+    //     Best-effort: a failed probe (no ffprobe sidecar, exotic container)
+    //     simply means "emit no -ar", i.e. the pre-Phase-4 behaviour.
+    let source_rate: Option<u32> = if is_video {
+        None // the video path encodes AAC via `video_codec_args` — no -ar there.
+    } else {
+        load_recording(&req.input_path)
+            .await
+            .ok()
+            .and_then(|i| i.sample_rate)
     };
-    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
-    // filter ahead of any mastering chain. The waveform/preview already reflect
-    // this gain; this makes the rendered file match.
-    if let Some(g) = req.gain_db {
-        if g.is_finite() && g.abs() > f64::EPSILON {
-            proc_filters.insert(0, format!("volume={g:.2}dB"));
-        }
-    }
+
+    // 2. The pre-loudnorm graph G — everything that shapes the signal BEFORE
+    //    delivery loudness is set:
+    //      vocal chain → (normalize gain, only without a preset) → preset chain.
+    //
+    //    An empty preset id is "no mastering" (the renderer sends `undefined`,
+    //    but a stray '' must not read as an unknown preset).
+    let preset = match req.master_preset.as_deref().map(str::trim) {
+        Some(id) if !id.is_empty() => Some(
+            get_preset_by_id(id)
+                .ok_or_else(|| AppError::Validation(format!("unknown_preset: {id}")))?,
+        ),
+        _ => None,
+    };
+
     // Vocal chain (channel repair + cleanup/sweetening) runs BEFORE the mastering
     // loudnorm: shape the tone/dynamics first, set delivery loudness last. A full
     // `processing` object wins; otherwise resolve the one-click preset id.
@@ -1944,13 +1963,92 @@ where
             }
         }
     }
-    if let Some(chain) = chain {
-        let mut parts = chain.build_filters();
-        if !parts.is_empty() {
-            parts.append(&mut proc_filters);
-            proc_filters = parts;
+    let mut pre_filters: Vec<String> = chain.map(|c| c.build_filters()).unwrap_or_default();
+    // Peak-normalization gain (the editor's "Normalize" button) → a `volume`
+    // filter. It is SKIPPED when a mastering preset is active: loudnorm sets the
+    // delivery level, so a volume shift in front of it changes nothing but the
+    // measured input. (The export modal says so instead of claiming
+    // "Normalisert" — see `editor.volumeByMastering`.)
+    if preset.is_none() {
+        if let Some(g) = req.gain_db {
+            if g.is_finite() && g.abs() > f64::EPSILON {
+                pre_filters.push(format!("volume={g:.2}dB"));
+            }
         }
     }
+    if let Some(p) = &preset {
+        pre_filters.push(p.filters.clone());
+    }
+
+    // The kill-timer for EACH ffmpeg pass, from the media it actually renders.
+    let timeout_ms = export_timeout_ms_for(kept_duration);
+
+    // 2b. HONEST pass 1. The loudness that matters is the loudness of what we
+    //     are about to ENCODE — the cut, vocal-chained, gain-shifted signal —
+    //     not of the raw uncut original. Measuring the original (what this did
+    //     before) systematically misses the target: trim the quiet 20-minute
+    //     pre-service ambience off the front and the measured integrated
+    //     loudness is several LU below what the export actually contains.
+    //
+    //     So pass 1 runs the SAME graph G, plus a print_format=json loudnorm,
+    //     into the null muxer; pass 2 re-runs G with those measured values in
+    //     `linear=true` mode. Intro/outro are deliberately absent: the loudnorm
+    //     sits on the main content pad, before the jingles are concatenated, so
+    //     measuring them in would skew the target by the jingle's own level.
+    let mut proc_filters = pre_filters.clone();
+    if let Some(p) = &preset {
+        // A full-file loudness measure on a long service takes minutes with
+        // NOTHING to show for it; say so instead of leaving the bar at 0.
+        on_progress(0.0, EXPORT_PHASE_MEASURING);
+        let mut measure_filters = pre_filters.clone();
+        measure_filters.push(loudnorm_measure_filter(p));
+        let (fc, map) = audio_export_filter_complex(
+            &keeps,
+            0,
+            &measure_filters,
+            &[],
+            false,
+            false,
+            req.duration,
+        );
+        let measure_args: Vec<String> = vec![
+            "-nostdin".into(),
+            "-hide_banner".into(),
+            "-i".into(),
+            req.input_path.clone(),
+            "-filter_complex".into(),
+            fc,
+            "-map".into(),
+            map,
+            "-progress".into(),
+            "pipe:1".into(),
+            "-nostats".into(),
+            "-f".into(),
+            "null".into(),
+            "-".into(),
+        ];
+        // Pass 1 owns the first half of the bar and its own timeout budget.
+        let stderr = run_export_ffmpeg(
+            engine,
+            &measure_args,
+            kept_duration,
+            timeout_ms,
+            &on_progress,
+            EXPORT_PHASE_MEASURING,
+            (0.0, 50.0),
+        )
+        .await?;
+        let measured = sundayrec_core::mastering::parse_loudnorm_json(&stderr)
+            .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))?;
+        proc_filters.push(loudnorm_apply_filter(p, &measured));
+        on_progress(50.0, EXPORT_PHASE_ENCODING);
+    }
+    // The dither (16-bit PCM targets only) is a POST filter: it must see the
+    // finished signal, jingles included, on its way into the encoder.
+    let post_filters: Vec<String> = dither_filter_for(fmt, req.bit_depth)
+        .filter(|_| !is_video)
+        .into_iter()
+        .collect();
 
     // 3. Core picks the output directory ('' = "Samme mappe" → next to the
     //    source) and then the collision-free file name inside it.
@@ -2003,7 +2101,15 @@ where
     // input (`-map_metadata <idx>`). `None` when there are no chapters.
     let meta_path: Option<String> = match ffmetadata(&meta, kept_duration) {
         Some(text) => {
-            let p = std::env::temp_dir().join(format!("{base}_chapters.ffmeta"));
+            // UNIQUE per export: the old `<stem>_chapters.ffmeta` collided
+            // whenever the same recording was exported twice at once (or two
+            // recordings shared a stem across folders) — one export then read
+            // the other's chapters, or read a half-written file. Same
+            // uuid-v7-per-temp-file idiom as the playback proxy / master preview.
+            let p = std::env::temp_dir().join(format!(
+                "sundayrec-chapters-{}.ffmeta",
+                uuid::Uuid::now_v7().simple()
+            ));
             std::fs::write(&p, text)
                 .map_err(|e| AppError::Recording(format!("write chapters metadata: {e}")))?;
             Some(p.to_string_lossy().into_owned())
@@ -2037,24 +2143,29 @@ where
         args.extend(sundayrec_core::editor::video_codec_args(fmt, codec, None));
     } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
         // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
-        // for a video source exported to an audio format (see the core fn).
+        // for a video source exported to an audio format (see the core fn). The
+        // simple path folds its own join fade + dither into the `-af`.
         args.extend(audio_simple_export_args(
             &keeps[0],
             fmt,
             req.bitrate,
             req.bit_depth,
+            source_rate,
+            req.duration,
         ));
     } else {
         let (fc, map) = audio_export_filter_complex(
             &keeps,
             main_input_idx,
             &proc_filters,
+            &post_filters,
             has_intro,
             has_outro,
+            req.duration,
         );
         args.extend(["-filter_complex".into(), fc]);
         args.extend(["-map".into(), map]);
-        args.extend(codec_args(fmt, req.bitrate, req.bit_depth));
+        args.extend(codec_args(fmt, req.bitrate, req.bit_depth, source_rate));
     }
     // Pull chapters from the metadata input; title/speaker/description as tags.
     if meta_path.is_some() {
@@ -2075,8 +2186,23 @@ where
             .await
             .unwrap_or(0.0);
     }
-    let timeout_ms = export_timeout_ms_for(kept_duration);
-    let result = run_export_ffmpeg(engine, &args, total_sec, timeout_ms, &on_progress).await;
+    // With a mastering preset the measure pass already spent the first half of
+    // the bar; without one the render owns all of it.
+    let span = if preset.is_some() {
+        (50.0, 99.0)
+    } else {
+        (0.0, 99.0)
+    };
+    let result = run_export_ffmpeg(
+        engine,
+        &args,
+        total_sec,
+        timeout_ms,
+        &on_progress,
+        EXPORT_PHASE_ENCODING,
+        span,
+    )
+    .await;
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
     }
@@ -2108,9 +2234,14 @@ fn export_timeout_ms_for(kept_duration: f64) -> u64 {
         .unwrap_or_else(|| sundayrec_core::editor::export_timeout_ms(kept_duration))
 }
 
-/// Spawn the export ffmpeg, stream its `-progress` to `on_progress`, and wait
-/// for it under the kill-timer. The live child is parked in `engine` so
-/// [`cancel_export`] can reach it.
+/// Spawn one export ffmpeg pass, stream its `-progress` to `on_progress`, and
+/// wait for it under the kill-timer. The live child is parked in `engine` so
+/// [`cancel_export`] can reach it. Returns the tail of ffmpeg's stderr — which
+/// is where the mastering measure pass finds its `loudnorm` JSON block.
+///
+/// `phase` labels the ticks; `span` maps this pass's 0–100 % onto its slice of
+/// the overall bar, so a two-pass mastered export reads 0→50 (measuring) then
+/// 50→99 (encoding) instead of running 0→99 twice.
 ///
 /// Errors carry the same bare codes the renderer's `describeExportError` maps:
 /// `"timeout"` when the kill-timer fired, `"cancelled"` when the user aborted.
@@ -2121,7 +2252,9 @@ async fn run_export_ffmpeg<F>(
     total_sec: f64,
     timeout_ms: u64,
     on_progress: &F,
-) -> AppResult<()>
+    phase: &str,
+    span: (f32, f32),
+) -> AppResult<String>
 where
     F: Fn(f32, &str),
 {
@@ -2190,12 +2323,15 @@ where
                     if total_sec <= 0.0 {
                         continue;
                     }
-                    // Cap at 99: the output isn't usable until ffmpeg exits and
-                    // the container is finalised, so 100 belongs to the caller.
-                    let pct = ((cur / total_sec) * 100.0).clamp(0.0, 99.0) as f32;
+                    // This pass's fraction, mapped onto its slice of the bar.
+                    // The final slice stops at 99: the output isn't usable until
+                    // ffmpeg exits and the container is finalised, so 100
+                    // belongs to the caller.
+                    let frac = (cur / total_sec).clamp(0.0, 1.0) as f32;
+                    let pct = (span.0 + frac * (span.1 - span.0)).clamp(0.0, 99.0);
                     if pct > last_pct {
                         last_pct = pct;
-                        on_progress(pct, EXPORT_PHASE_ENCODING);
+                        on_progress(pct, phase);
                     }
                 }
             }
@@ -2227,11 +2363,11 @@ where
     };
     let tail = stderr_task.await.unwrap_or_default();
     if !status.success() {
-        let tail: String = tail.chars().rev().take(500).collect::<String>();
-        let tail: String = tail.chars().rev().collect();
-        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
+        let short: String = tail.chars().rev().take(500).collect::<String>();
+        let short: String = short.chars().rev().collect();
+        return Err(AppError::Recording(format!("ffmpeg failed: {short}")));
     }
-    Ok(())
+    Ok(tail)
 }
 
 /// Extract a single video frame at `sec` seconds, scaled to 480px wide, and
@@ -3148,6 +3284,171 @@ mod tests {
             }
         }
 
+        /// An export request with the knobs the quality tests turn. `cuts` are
+        /// `(start, end)` pairs on the source timeline.
+        fn export_request(
+            input_path: &str,
+            output_folder: &str,
+            format: &str,
+            cuts: &[(f64, f64)],
+            duration: f64,
+        ) -> EditorExportRequest {
+            EditorExportRequest {
+                input_path: input_path.to_string(),
+                cut_regions: cuts
+                    .iter()
+                    .map(|(start, end)| EditorCutRegion {
+                        start: *start,
+                        end: *end,
+                    })
+                    .collect(),
+                duration,
+                format: format.to_string(),
+                output_folder: output_folder.to_string(),
+                bitrate: None,
+                bit_depth: None,
+                master_preset: None,
+                intro_path: None,
+                outro_path: None,
+                gain_db: None,
+                chapters: Vec::new(),
+                title: None,
+                speaker: None,
+                description: None,
+                vocal_chain_preset: None,
+                processing: None,
+                channel_repair: None,
+                video_codec: None,
+            }
+        }
+
+        /// Generate an audio-only lavfi source with an 18 dB LOUDNESS STEP in
+        /// the middle: a quiet first half (~-38 dBFS) and a loud second half
+        /// (~-20 dBFS), at `rate` Hz for `secs` seconds. (lavfi's `sine` is
+        /// itself ~-18 dBFS, hence the absolute levels.)
+        ///
+        /// The step is what makes it a real loudness-measurement subject: keep
+        /// one half and the integrated loudness of what gets ENCODED is ~18 LU
+        /// away from the loudness of the whole file — so a two-pass that
+        /// measures the file instead of the edit misses by a mile, while each
+        /// half on its own is uniform enough (LRA ≈ 0) for the honest two-pass
+        /// to land on the target within a fraction of a LU.
+        fn lavfi_dynamic_tone(
+            ffmpeg: &std::path::Path,
+            dir: &std::path::Path,
+            name: &str,
+            rate: u32,
+            secs: f64,
+        ) -> String {
+            let src = dir.join(name);
+            let gen = std::process::Command::new(ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("sine=frequency=440:sample_rate={rate}:duration={secs}"),
+                    "-af",
+                    // Single quotes protect the commas from the FILTER parser
+                    // (this reaches ffmpeg as one argv element — no shell).
+                    &format!(
+                        "volume='if(lt(t,{}),0.1,0.8)':eval=frame",
+                        (secs / 2.0).round()
+                    ),
+                    "-y",
+                ])
+                .arg(&src)
+                .output()
+                .expect("ffmpeg should run to generate the dynamic tone source");
+            assert!(
+                gen.status.success(),
+                "dynamic tone generation failed: {}",
+                String::from_utf8_lossy(&gen.stderr)
+            );
+            src.to_string_lossy().into_owned()
+        }
+
+        /// Measure a file's INTEGRATED loudness (LUFS) with a plain loudnorm
+        /// analysis pass — the same measurement a broadcaster would run on the
+        /// delivered file. `window` restricts it to `(start, duration)` seconds.
+        fn measure_integrated_lufs(
+            ffmpeg: &std::path::Path,
+            path: &std::path::Path,
+            window: Option<(f64, f64)>,
+        ) -> f64 {
+            let mut cmd = std::process::Command::new(ffmpeg);
+            cmd.args(["-nostdin", "-hide_banner"]);
+            if let Some((start, dur)) = window {
+                cmd.args(["-ss", &format!("{start}"), "-t", &format!("{dur}")]);
+            }
+            let out = cmd
+                .arg("-i")
+                .arg(path)
+                .args([
+                    "-af",
+                    "loudnorm=I=-16:LRA=8:TP=-1:print_format=json",
+                    "-f",
+                    "null",
+                    "-",
+                ])
+                .output()
+                .expect("ffmpeg should run the verification measure pass");
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            sundayrec_core::mastering::parse_loudnorm_json(&stderr)
+                .unwrap_or_else(|| panic!("no loudnorm JSON in verification pass: {stderr}"))
+                .input_i
+        }
+
+        /// `(codec_name, sample_rate)` of the first audio stream.
+        fn probe_audio_stream(ffprobe: &std::path::Path, path: &std::path::Path) -> (String, u32) {
+            let probe = std::process::Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a:0",
+                    "-show_entries",
+                    "stream=codec_name,sample_rate",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                ])
+                .arg(path)
+                .output()
+                .expect("ffprobe should run on the export output");
+            let text = String::from_utf8_lossy(&probe.stdout).into_owned();
+            let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+            let codec = lines.next().unwrap_or_default().to_string();
+            let rate = lines
+                .next()
+                .and_then(|r| r.parse::<u32>().ok())
+                .unwrap_or_else(|| panic!("ffprobe reported no sample rate: {text}"));
+            (codec, rate)
+        }
+
+        /// Drive the REAL export seam with both sidecars wired through the env
+        /// overrides (the production fallback path).
+        fn run_export_blocking(
+            ffmpeg: &std::path::Path,
+            ffprobe: &std::path::Path,
+            req: &EditorExportRequest,
+        ) -> (AppResult<EditorExportResult>, Ticks) {
+            let engine = ExportEngine::new();
+            let (ticks, on_progress) = sink();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
+            }
+            let r = rt.block_on(export(&engine, req, on_progress));
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            (r, ticks)
+        }
+
         /// A progress sink that records every `(pct, phase)` the seam reports.
         type Ticks = Arc<Mutex<Vec<(f32, String)>>>;
 
@@ -3339,6 +3640,237 @@ mod tests {
             eprintln!(
                 "editor export smoke: default destination wrote {}",
                 written.display()
+            );
+        }
+
+        // ── P4: export QUALITY, measured on the finished file ────────────────
+
+        /// THE claim of Phase 4: a mastered export actually lands on the
+        /// preset's loudness target.
+        ///
+        /// It could not before. Pass 1 measured the RAW UNCUT original through
+        /// the preset chain alone, then pass 2 applied those numbers to a signal
+        /// that had since been trimmed, vocal-chained and volume-shifted — so
+        /// the target was missed by however much the edit changed the loudness.
+        ///
+        /// The fixture makes that error impossible to miss: the export keeps the
+        /// QUIET half of a stepped tone, so the loudness of what is encoded is
+        /// ~18 LU below the loudness of the file. Measure the file and the
+        /// finished mp3 lands ~18 LU dark; measure the edit and it lands on
+        /// -16 LUFS. A normalize gain is thrown in too — with a preset active it
+        /// must be ignored (loudnorm owns the level), and applying it would
+        /// shift the result by another 6 LU.
+        #[test]
+        fn mastered_export_lands_on_the_preset_target_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "dynamic.wav", 48_000, 12.0);
+
+            let target = sundayrec_core::mastering::get_preset_by_id("speech-clear")
+                .unwrap()
+                .target_lufs;
+            // The fixture only proves anything while the file and the KEPT half
+            // measure far apart — that gap is exactly the error the old pass-1
+            // baked into every mastered export.
+            let src_path = std::path::Path::new(&src);
+            let whole_file = measure_integrated_lufs(&ffmpeg, src_path, None);
+            let kept_part = measure_integrated_lufs(&ffmpeg, src_path, Some((0.0, 6.0)));
+            assert!(
+                (whole_file - kept_part).abs() > 10.0,
+                "fixture no longer exercises the bug: the whole file measures \
+                 {whole_file:.2} LUFS and the kept half {kept_part:.2} LUFS — \
+                 measuring the wrong one would barely matter"
+            );
+
+            // Keep the QUIET half; cut the loud one.
+            let mut req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp3",
+                &[(6.0, 12.0)],
+                12.0,
+            );
+            req.master_preset = Some("speech-clear".into());
+            // A normalize gain the export must IGNORE — loudnorm owns the level.
+            req.gain_db = Some(6.0);
+
+            let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a mastered export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+
+            let measured = measure_integrated_lufs(&ffmpeg, path, None);
+            let delta = measured - target;
+            assert!(
+                delta.abs() <= 1.0,
+                "mastered export missed its target: measured {measured:.2} LUFS vs target \
+                 {target:.2} (Δ {delta:+.2} LU) — the two-pass measured the wrong signal \
+                 (whole file {whole_file:.2}, kept half {kept_part:.2})"
+            );
+
+            // The bar walks measure (0–50) → encode (50–100), never backwards.
+            assert_monotonic(&ticks);
+            let seen = ticks.lock().unwrap();
+            assert!(
+                seen.iter()
+                    .any(|(_, phase)| phase == EXPORT_PHASE_MEASURING),
+                "a mastered export must report the measure phase; ticks: {seen:?}"
+            );
+            eprintln!(
+                "editor export smoke: mastered mp3 measured {measured:.2} LUFS \
+                 (target {target:.2}, Δ {delta:+.2} LU; whole file {whole_file:.2}, \
+                 kept half {kept_part:.2} LUFS before mastering)"
+            );
+        }
+
+        /// A 16-bit WAV export must be pcm_s16le AT THE SOURCE RATE. Without the
+        /// `-ar` pin, a mastered export inherits loudnorm's internal 192 kHz.
+        #[test]
+        fn wav16_export_is_s16_at_the_source_rate_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "src48.wav", 48_000, 6.0);
+
+            let mut req = export_request(&src, &dir.path().to_string_lossy(), "wav", &[], 6.0);
+            req.bit_depth = Some(16);
+            // The mastering preset is what used to drag the output to 192 kHz.
+            req.master_preset = Some("speech-clear".into());
+
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a wav export should succeed");
+            let (codec, rate) =
+                probe_audio_stream(&ffprobe, std::path::Path::new(&out.output_path));
+            assert_eq!(codec, "pcm_s16le", "wav16 must encode as pcm_s16le");
+            assert_eq!(
+                rate, 48_000,
+                "the export must stay at the source rate, not loudnorm's 192 kHz"
+            );
+            eprintln!("editor export smoke: wav16 landed as {codec} @ {rate} Hz");
+        }
+
+        /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
+        /// This one also exercises the filter_complex path's `-ar` (two keeps).
+        #[test]
+        fn flac_export_of_a_96k_source_stays_96k_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "src96.flac", 96_000, 6.0);
+
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "flac",
+                &[(2.0, 3.0)],
+                6.0,
+            );
+            let (result, _ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a flac export should succeed");
+            let (codec, rate) =
+                probe_audio_stream(&ffprobe, std::path::Path::new(&out.output_path));
+            assert_eq!(codec, "flac");
+            assert_eq!(rate, 96_000, "a 96 kHz service must survive the export");
+            eprintln!("editor export smoke: 96 kHz flac survived as {codec} @ {rate} Hz");
+        }
+
+        /// The de-click fades are asserted as strings in the core tests; here we
+        /// only prove the graph they produce actually RUNS — a multi-cut export
+        /// (three keeps, four interior fades) completes and lands the expected
+        /// duration.
+        #[test]
+        fn multi_cut_export_with_join_fades_runs_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "fades.wav", 48_000, 8.0);
+
+            // Two interior cuts → three keeps → an out-fade + in-fade per splice.
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp3",
+                &[(2.0, 3.0), (5.0, 6.0)],
+                8.0,
+            );
+            let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a multi-cut export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            let report = probe_report(&ffprobe, path);
+            let dur: f64 = report
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            // 8 s − 2 s cut = 6 s; the fades are gain envelopes, not trims, so
+            // the duration must be untouched by them.
+            assert!(
+                (5.5..6.5).contains(&dur),
+                "fades must not change the length: got {dur}s, expected ~6 s"
+            );
+            assert_monotonic(&ticks);
+            eprintln!("editor export smoke: 3-keep fade graph rendered {dur:.2}s");
+        }
+
+        /// One-click auto-improve recommends the vocal chain ONLY. Stacking a
+        /// mastering preset on it double-processed every recording.
+        #[test]
+        fn auto_process_recommends_no_mastering_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_dynamic_tone(&ffmpeg, dir.path(), "auto.wav", 48_000, 4.0);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let res = {
+                let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                // SAFETY: serialised by ENV_LOCK; removed before releasing it.
+                unsafe {
+                    std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                    std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+                }
+                let r = rt.block_on(auto_process(&src));
+                unsafe {
+                    std::env::remove_var("SUNDAYREC_FFMPEG");
+                    std::env::remove_var("SUNDAYREC_FFPROBE");
+                }
+                r.expect("auto-process should analyse the lavfi source")
+            };
+            assert_eq!(
+                res.master_preset, "",
+                "one click must not stack a mastering chain on the vocal chain"
+            );
+            assert!(
+                res.vocal_chain_preset.starts_with("voice-"),
+                "a vocal chain is still recommended; got {}",
+                res.vocal_chain_preset
+            );
+            assert!(
+                !res.summary.contains("tydelig mastering"),
+                "the summary must not promise mastering it no longer applies: {}",
+                res.summary
+            );
+            eprintln!(
+                "editor auto-process smoke: chain {}, no mastering",
+                res.vocal_chain_preset
             );
         }
 

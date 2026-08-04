@@ -598,6 +598,8 @@
     "normalizePeak": "Pegel normalisieren",
     "normalizeHint": "Setzt den Spitzenpegel auf -1 dBFS für eine sichere Endmischung.",
     "normalizeApplied": "Normalisiert",
+    "volumeByMastering": "Die Lautheit steuert das Mastering",
+    "masterPreset": "Mastering (Ausgabepegel)",
     "normalizeResult": "Spitzenpegel jetzt -1 dBFS — sicher für den Export.",
     "normalizeAlready": "Der Spitzenpegel liegt bereits bei -1 dBFS — keine Änderung erforderlich.",
     "normalizeReset": "↺ Zurücksetzen",

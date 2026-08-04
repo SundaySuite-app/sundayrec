@@ -598,6 +598,8 @@
     "normalizePeak": "Normalisera ljudnivå",
     "normalizeHint": "Justerar toppvärdet till -1 dBFS för en säker slutmix.",
     "normalizeApplied": "Normaliserad",
+    "volumeByMastering": "Volymen styrs av mastringen",
+    "masterPreset": "Mastring (utgivningsnivå)",
     "normalizeResult": "Toppvärdet är nu -1 dBFS — säkert för export.",
     "normalizeAlready": "Toppvärdet ligger redan på -1 dBFS — ingen ändring behövs.",
     "normalizeReset": "↺ Återställ",
