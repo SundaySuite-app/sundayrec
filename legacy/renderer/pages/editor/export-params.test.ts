@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildExportRequest, exportLevelSummary, type ExportRequestInput } from './export-params'
+import {
+  buildExportRequest,
+  exportLevelSummary,
+  jinglesSupportedForFile,
+  type ExportRequestInput,
+} from './export-params'
 
 const base: ExportRequestInput = {
   kind: 'audio',
@@ -73,6 +78,12 @@ describe('buildExportRequest', () => {
     expect(buildExportRequest(base).gainDb).toBeUndefined()
   })
 
+  it('sends the normalize gain on the VIDEO path too', () => {
+    // The shim's video branch hard-coded `gainDb: null`, so "Normaliser" was a
+    // silent no-op for video exports while working for audio ones.
+    expect(buildExportRequest({ ...base, kind: 'video', gainDb: -3.5 }).gainDb).toBe(-3.5)
+  })
+
   it('omits empty optional strings so the backend sees null, not ""', () => {
     const params = buildExportRequest({
       ...base,
@@ -113,6 +124,34 @@ describe('buildExportRequest', () => {
     expect(params.cutRegions).toEqual([{ start: 10, end: 20 }])
     expect(params.duration).toBe(3600)
     expect(params.metadata).toEqual({ title: 'Søndag' })
+  })
+})
+
+describe('jinglesSupportedForFile', () => {
+  it('says no on sight for the unambiguous video extensions', () => {
+    expect(jinglesSupportedForFile('/Users/x/Opptak/gudstjeneste.mp4')).toBe(false)
+    expect(jinglesSupportedForFile('/Users/x/Opptak/gudstjeneste.MOV')).toBe(false)
+    expect(jinglesSupportedForFile('/Users/x/gudstjeneste.m2ts')).toBe(false)
+  })
+
+  it('says yes for audio files', () => {
+    expect(jinglesSupportedForFile('/Users/x/Opptak/gudstjeneste.mp3')).toBe(true)
+    expect(jinglesSupportedForFile('/Users/x/Opptak/gudstjeneste.flac')).toBe(true)
+  })
+
+  it('honours the resolved probe for the ambiguous containers', () => {
+    // .mkv carries video but is NOT in VIDEO_EXTS — the loader decides it by
+    // probing the streams, and the seam still strips jingles from an mkv export.
+    expect(jinglesSupportedForFile('C:\\Opptak\\gudstjeneste.mkv')).toBe(true)
+    expect(jinglesSupportedForFile('C:\\Opptak\\gudstjeneste.mkv', true)).toBe(false)
+    // An audio-only .mka probes as audio and keeps its jingles.
+    expect(jinglesSupportedForFile('/Users/x/gudstjeneste.mka', false)).toBe(true)
+  })
+
+  it('does not read a dotted FOLDER name as the extension', () => {
+    // '/Users/x/Sunday v1.0/gudstjeneste' has a dot in the directory only.
+    expect(jinglesSupportedForFile('/Users/x/Sunday v1.0/gudstjeneste')).toBe(true)
+    expect(jinglesSupportedForFile('/Users/x/Sunday v1.0/opptak.mp4')).toBe(false)
   })
 })
 

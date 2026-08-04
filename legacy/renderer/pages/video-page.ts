@@ -73,6 +73,7 @@ export function setupVideoPage(): void {
     el.addEventListener('change', () => { updateKeepAudioVisibility(); autoSave() })
   })
   document.getElementById('opt-video-keep-audio')?.addEventListener('change', autoSave)
+  document.getElementById('opt-editor-hw-encode')?.addEventListener('change', autoSave)
 
   // Toggle custom bitrate row
   const toggleBitrateRow = () => {
@@ -201,6 +202,10 @@ export function applyVideoSettingsToUI(): void {
   const keepAudioEl = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
   if (keepAudioEl) keepAudioEl.checked = settings.videoKeepAudio !== false
   updateKeepAudioVisibility()
+
+  // Editor video-export hardware encoder — opt-in, default off.
+  const hwEncodeEl = document.getElementById('opt-editor-hw-encode') as HTMLInputElement | null
+  if (hwEncodeEl) hwEncodeEl.checked = settings.editorHwEncode === true
 
   // Unified-recorder toggle — default ON since v4.51. Treat `undefined`
   // Perfekt A/V-synk (unified recorder) er ALLTID på — valget er fjernet fra UI.
@@ -396,6 +401,9 @@ async function saveVideoSettings(): Promise<void> {
   const keepAudioEl = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
   const keepAudio   = keepAudioEl ? keepAudioEl.checked : true
 
+  const hwEncodeEl  = document.getElementById('opt-editor-hw-encode') as HTMLInputElement | null
+  const editorHwEncode = hwEncodeEl ? hwEncodeEl.checked : false
+
   // Perfekt A/V-synk er alltid på (valget er fjernet).
   const useUnifiedRecorder = true
 
@@ -412,6 +420,7 @@ async function saveVideoSettings(): Promise<void> {
     videoBitrate:      bitrate,
     videoSeparate:     separate,
     videoKeepAudio:    keepAudio,
+    editorHwEncode,
     useUnifiedRecorder,
   }
 

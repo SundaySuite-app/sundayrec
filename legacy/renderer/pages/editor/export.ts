@@ -30,15 +30,12 @@ export function openExportModal(): void {
       if (E.includeIntroOutro && settings.editorOutroPath) {
         parts.push('Outro: ' + (settings.editorOutroPath.split(/[/\\]/).pop() ?? ''))
       }
-    } else if (!E.videoExportAudioOnly) {
-      // Audio-only extract from a video drops the jingles, so only show them
-      // when actually re-encoding the video.
-      if (E.includeIntroOutro && E.videoIntroPath) {
-        parts.push('Video-intro: ' + (E.videoIntroPath.split(/[/\\]/).pop() ?? ''))
-      }
-      if (E.includeIntroOutro && E.videoOutroPath) {
-        parts.push('Video-outro: ' + (E.videoOutroPath.split(/[/\\]/).pop() ?? ''))
-      }
+    } else if (!E.videoExportAudioOnly && (E.videoIntroPath || E.videoOutroPath)) {
+      // A VIDEO export drops the jingles in the seam — the modal used to list
+      // them anyway, promising something the finished mp4 never contained.
+      // (Audio-only extract from a video drops them too, and says nothing:
+      // there is no video-jingle expectation to correct there.)
+      parts.push(t('editor.jinglesVideoUnsupported', 'Jingler støttes ikke for video ennå'))
     }
     ioSummary.textContent = parts.length ? parts.join(' · ') : ''
     ioRow.style.display   = parts.length ? '' : 'none'
@@ -564,14 +561,13 @@ export async function runExport(): Promise<void> {
     videoFormat:  E.videoFormat,
     videoCodec:   E.videoCodec,
     gainDb:       E.audioGainDb,
-    // Video keeps its own jingles; audio intro/outro apply only to native audio
-    // files — when extracting audio out of a video we export the bare track.
-    introPath: isVideoExport
-      ? (E.includeIntroOutro ? E.videoIntroPath : undefined)
-      : ((!E.isVideoFile && E.includeIntroOutro) ? settings.editorIntroPath : undefined),
-    outroPath: isVideoExport
-      ? (E.includeIntroOutro ? E.videoOutroPath : undefined)
-      : ((!E.isVideoFile && E.includeIntroOutro) ? settings.editorOutroPath : undefined),
+    // Jingles apply only to native AUDIO files. A video export drops them in the
+    // seam (the video graph has nowhere to splice them), and extracting audio out
+    // of a video exports the bare track — so sending a path either way only risks
+    // failing the export on the backend's path guard for a file it then ignores.
+    // The UI says so: `editor.jinglesVideoUnsupported`.
+    introPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorIntroPath : undefined,
+    outroPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorOutroPath : undefined,
     metadata:     E.meta,
     masterPreset: E.masterPreset,
     vocalChainPreset,

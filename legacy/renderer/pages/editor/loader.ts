@@ -2,6 +2,7 @@ import { settings } from '../../state'
 import { t } from '../../i18n'
 import type { RecordingMetadata } from '../../../types'
 import { E, $, clearDirty, VIDEO_EXTS } from './state'
+import { jinglesSupportedForFile } from './export-params'
 import { routePlayback } from './play-regions'
 import { sharedAudioCtx } from './audio-ctx'
 import { computeClipTimes, computeJinglePeaks, setNormalizeUI } from './peaks'
@@ -18,7 +19,24 @@ import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnai
 import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
 import { updateStageButton } from './stage-ui'
 
-// ── File loading (pick, decode, intro/outro buffers, metadata sidecar) ──────
+// ── File loading (probe, waveform, transport, sidecars) ─────────────────────
+//
+// Opening a recording is four independent things, in this order:
+//
+//   1. ffprobe for the duration — container headers only, so the timeline is
+//      ready in milliseconds even for a multi-gigabyte service.
+//   2. The TRANSPORT: a media element streaming the ORIGINAL over `asset://`.
+//      A transcoded AAC proxy is the fallback, taken only when the webview has
+//      no decoder for the container (`routePlayback`) or when the original
+//      turns out not to open. Nothing decodes the recording into renderer
+//      memory — the old path built an AudioBuffer (or an 8 kHz extract) of the
+//      whole file, which is why big files sounded like a telephone.
+//   3. The waveform: the backend streams the decode into 100 peaks/s and caches
+//      it beside the recording, so every reopen is a JSON read.
+//   4. Sidecars — metadata, transcript, unsaved cuts — none of them blocking.
+//
+// `E.loadSeq` guards all of it: every await re-checks it, so a user who opens a
+// second file mid-load never gets the first one's peaks, duration or transport.
 
 export async function pickAndLoad(): Promise<void> {
   const fp = await window.api.editorPickFile()
@@ -265,6 +283,7 @@ export async function loadFile(fp: string): Promise<void> {
   const videoIoSection = $('editor-video-io-section')
   if (audioIoSection) audioIoSection.style.display = E.isVideoFile ? 'none' : ''
   if (videoIoSection) videoIoSection.style.display = E.isVideoFile ? '' : 'none'
+  applyJingleSupportUI()
 
   if (E.isVideoFile) {
     // Load the video via the Tauri asset:// protocol (the old Electron renderer
@@ -598,6 +617,34 @@ export async function loadIntroOutroBuffers(seq: number): Promise<void> {
     }
   }
   if (seq === E.loadSeq) drawWaveform()
+}
+
+/**
+ * Grey out the intro/outro rows the export cannot honour, and say why.
+ *
+ * The seam drops `introPath`/`outroPath` for video containers — silently, until
+ * now: the pickers accepted a jingle, the export modal listed it, and the
+ * finished mp4 did not contain it. The rows stay VISIBLE (so the feature is
+ * discoverable when it lands) but are disabled behind the
+ * `editor.jinglesVideoUnsupported` hint. Idempotent; called on every load.
+ */
+function applyJingleSupportUI(): void {
+  const supported = jinglesSupportedForFile(E.filePath, E.isVideoFile)
+  const hint = $('editor-video-io-unsupported')
+  if (hint) hint.style.display = supported ? 'none' : ''
+  const section = $('editor-video-io-section')
+  if (!section) return
+  const reason = supported
+    ? ''
+    : t('editor.jinglesVideoUnsupported', 'Jingler støttes ikke for video ennå')
+  section.querySelectorAll<HTMLElement>('.editor-io-file-row').forEach(row => {
+    row.style.opacity = supported ? '' : '.45'
+    if (reason) row.title = reason
+    else row.removeAttribute('title')
+  })
+  section.querySelectorAll<HTMLButtonElement>('button').forEach(btn => {
+    btn.disabled = !supported
+  })
 }
 
 export function updateVideoIntroOutroDisplay(): void {

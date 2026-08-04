@@ -456,6 +456,23 @@ pub fn videotoolbox_codec_args(
     a
 }
 
+/// Should a failed video export be retried with the SOFTWARE encoder?
+///
+/// The hardware (VideoToolbox) encoder is an opt-in speed-up, and it can refuse
+/// work the software encoder happily takes: no hardware session available
+/// (another app owns it), an unsupported pixel format out of the filter graph,
+/// H.265 on a mac whose media engine predates it. Those all surface the same
+/// way — ffmpeg exits non-zero — and the user, who only ticked "faster export",
+/// would be left with no file at all.
+///
+/// So: retry exactly once, and only when hardware was the thing that failed. A
+/// software render that fails has nothing left to fall back to (retrying it
+/// would just fail identically and double the wait), and a successful render is
+/// never re-run.
+pub fn should_retry_with_software(hw_used: bool, exit_ok: bool) -> bool {
+    hw_used && !exit_ok
+}
+
 // ── Filter graph construction ─────────────────────────────────────────────────
 
 /// Format a seconds value the way Electron's `.toFixed(4)` did — fixed 4
@@ -997,6 +1014,49 @@ pub fn parse_probe_output(stdout: &str) -> ProbeResult {
         sample_fmt,
         sample_rate,
     }
+}
+
+/// ffprobe arguments that print the first video stream's pixel dimensions.
+///
+/// Only the HARDWARE video-export path needs these: VideoToolbox has no CRF, so
+/// it must be given a target bitrate, and the sensible bitrate depends on the
+/// resolution ([`default_video_bitrate_kbps`]). The software path is CRF-driven
+/// and never runs this probe.
+pub fn ffprobe_video_size_args(input_path: &str) -> Vec<String> {
+    [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "default=noprint_wrappers=1:nokey=0",
+        input_path,
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
+/// Parse the `width=`/`height=` lines ffprobe prints for
+/// [`ffprobe_video_size_args`]. `None` when either is missing or not a positive
+/// integer — the caller then falls back to a default bitrate rather than
+/// guessing a resolution.
+pub fn parse_video_size(stdout: &str) -> Option<(u32, u32)> {
+    let mut width: Option<u32> = None;
+    let mut height: Option<u32> = None;
+    for line in stdout.lines() {
+        let Some((key, val)) = line.trim().split_once('=') else {
+            continue;
+        };
+        match key {
+            "width" if width.is_none() => width = val.parse::<u32>().ok().filter(|v| *v > 0),
+            "height" if height.is_none() => height = val.parse::<u32>().ok().filter(|v| *v > 0),
+            _ => {}
+        }
+    }
+    Some((width?, height?))
 }
 
 /// ffmpeg arguments to decode `input_path` to 8 kHz mono `s16le` **on stdout**
@@ -2042,6 +2102,18 @@ mod tests {
         assert!(h264.windows(2).any(|w| w == ["-c:v", "h264_videotoolbox"]));
     }
 
+    #[test]
+    fn only_a_failed_hardware_render_is_retried_in_software() {
+        // The one case worth a second run: hardware was used and ffmpeg failed.
+        assert!(should_retry_with_software(true, false));
+        // Hardware succeeded — nothing to retry.
+        assert!(!should_retry_with_software(true, true));
+        // Software failed — the fallback IS software, so a retry would fail the
+        // same way and cost the user a second full render.
+        assert!(!should_retry_with_software(false, false));
+        assert!(!should_retry_with_software(false, true));
+    }
+
     // ── filter graphs ──────────────────────────────────────────────────────────
 
     #[test]
@@ -2524,6 +2596,25 @@ mod tests {
         assert!(args.iter().any(|a| a.contains("codec_type")));
         // the input path is the final argument
         assert_eq!(args.last().unwrap(), "/rec/a.mp4");
+    }
+
+    #[test]
+    fn video_size_probe_targets_the_first_video_stream_and_parses_it() {
+        let args = ffprobe_video_size_args("/rec/service.mp4");
+        assert!(args.windows(2).any(|w| w == ["-select_streams", "v:0"]));
+        assert!(args.iter().any(|a| a.contains("width,height")));
+        assert_eq!(args.last().unwrap(), "/rec/service.mp4");
+
+        assert_eq!(
+            parse_video_size("width=3840\nheight=2160\n"),
+            Some((3840, 2160))
+        );
+        // A missing or nonsense dimension is "unknown", not a zero-size video:
+        // the caller must fall back to a default bitrate, never to `0k`.
+        assert_eq!(parse_video_size("width=1920\n"), None);
+        assert_eq!(parse_video_size("width=N/A\nheight=1080\n"), None);
+        assert_eq!(parse_video_size("width=0\nheight=0\n"), None);
+        assert_eq!(parse_video_size(""), None);
     }
 
     #[test]

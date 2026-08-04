@@ -12,6 +12,33 @@
 //      dropped by the shim and never implemented in Rust, so "Erstatt original"
 //      silently behaved like "ny fil". The pill is gone; so is the field.
 
+import { VIDEO_EXTS } from './state'
+
+/**
+ * Can intro/outro jingles be applied when exporting `filePath`?
+ *
+ * The export seam concatenates jingles onto the AUDIO track, and the video
+ * graph has nowhere to splice them — so `editor::export` filters `introPath`
+ * and `outroPath` out for every video container (mp4/mov/mkv/m4v). That
+ * filtering was SILENT: the video jingle pickers accepted files, the export
+ * modal listed them, and the finished mp4 simply did not contain them.
+ *
+ * Pure. Two inputs because the extension alone is not the whole truth:
+ * {@link VIDEO_EXTS} covers the unambiguous containers the loader routes on
+ * sight, but `.mkv`/`.webm` are decided by an ffprobe of the actual streams —
+ * so the loader passes the RESOLVED `E.isVideoFile` once it knows, and the
+ * extension answers before it does.
+ */
+export function jinglesSupportedForFile(filePath: string, resolvedIsVideo = false): boolean {
+  if (resolvedIsVideo) return false
+  const name = filePath.split(/[/\\]/).pop() ?? ''
+  const dot = name.lastIndexOf('.')
+  // No extension → nothing says "video"; treat it as audio (the loader probes
+  // the streams for real, and a jingle-less audio export is harmless anyway).
+  if (dot <= 0) return true
+  return !VIDEO_EXTS.has(name.slice(dot).toLowerCase())
+}
+
 /** One cut region on the recording timeline (seconds). */
 export interface ExportCutRegion {
   start: number

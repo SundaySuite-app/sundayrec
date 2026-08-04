@@ -299,6 +299,10 @@ export interface Settings {
   askOpenEditor?: boolean
   editorIntroPath?: string
   editorOutroPath?: string
+  /** Use the Apple VideoToolbox hardware encoder for the editor's VIDEO export?
+   *  Default false (software x264/x265). macOS only; a hardware render that
+   *  fails is retried once in software, so this only ever affects speed. */
+  editorHwEncode?: boolean
 
   // Episode thumbnail (cover art) — default applies to every published
   // episode unless overridden by a per-recording sidecar (<name>.thumb.{ext}).

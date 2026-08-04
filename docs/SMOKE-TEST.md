@@ -487,14 +487,31 @@ and whether the machine truly wakes are HARDWARE-UNVERIFIED.
 
 The editor I/O seam (`src-tauri/src/editor`) drives the bundled ffmpeg/ffprobe
 sidecar over the unit-tested `sundayrec-core::{editor, mastering,
-audio_analysis}` decisions: load (ffprobe duration/channels/format/streams),
-peaks (8 kHz mono WAV decode → core down-sample), segments (16 kHz s16le decode →
-VAD/sermon classifier), mastering analyze (pass-1 loudnorm measure), and export
-(core cut-plan + mastering gain → mp3/aac/wav/flac/mp4). NO new native dep —
-ffmpeg is a sidecar and the WAV/PCM is parsed by hand. All ffmpeg runs are
-**HARDWARE-UNVERIFIED** (need real media), so the commands are behind the
-**default-off `editor`** feature; the shipping build returns `feature_disabled`
-and the panel shows a calm "not built into this build" hint.
+audio_analysis}` decisions: load (ffprobe duration/channels/format/rate/streams),
+peaks (8 kHz mono decode **streamed on a pipe** → core down-sample, cached in a
+`<stem>.peaks.json` sidecar), segments (16 kHz s16le decode → VAD/sermon
+classifier, cached the same way), mastering analyze (pass-1 loudnorm measure),
+and export (core cut-plan + processing + mastering → mp3/aac/wav/flac/mp4/mov).
+NO new native dep — ffmpeg is a sidecar and the PCM is folded into peaks by hand.
+
+Three things the editor overhaul settled, and what you are checking here:
+
+- **Playback is the ORIGINAL**, streamed by a media element over `asset://`.
+  The 8 kHz decode feeds the WAVEFORM only; nothing decodes the recording into
+  renderer memory. A transcoded AAC proxy is the fallback, taken only when the
+  webview has no decoder for the container or the original won't open — and it
+  announces itself with a notice.
+- **Caches**: peaks and segments land in sidecars beside the recording, keyed on
+  size+mtime. A second open of the same file must not re-decode it.
+- **Export is honest**: it always runs on the untouched original; a mastering
+  target measures the CUT signal (not the raw file) before it normalises;
+  "Normaliser" is skipped under a mastering preset and the modal says so; the
+  destination defaults to "Samme mappe"; progress is real and the render is
+  cancellable and kill-timed.
+
+The ffmpeg runs are **HARDWARE-UNVERIFIED** (they need real media), so the
+commands sit behind the `editor` feature; a build without it returns
+`feature_disabled` and the panel shows a calm "not built into this build" hint.
 
 ```bash
 cargo build -p sundayrec --features editor    # must compile (gate verifies this)
@@ -504,10 +521,18 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
 1. Record (or import) a short service so it shows in History, open the
    **Redigering** disclosure, and pick the recording (or use **Åpne lydfil…**
    to pick any audio/video file via the native dialog).
-   - **Expected:** the duration + stream info paint (ffprobe load); the waveform
-     `<svg>` band auto-renders from the peaks (// GUI-UNVERIFIED paint — the
-     peaks→geometry mapping `waveform.ts::waveformPath` is unit-tested) and a
-     peak count appears; no `feature_disabled` hint.
+   - **Expected:** the duration paints almost immediately (ffprobe reads
+     container headers only), then the waveform. Press play: it must sound like
+     the file, not like a telephone — that is the `asset://` transport on the
+     original. No quality notice for a normal wav/flac/mp3/m4a.
+     1b. **Reopen the same file.** — **Expected:** the waveform is back in a blink
+     and no "Analyserer bølgeform…" line appears (the peaks sidecar answered).
+     `ls` next to the recording shows `<stem>.peaks.json`. Delete it and reopen to
+     watch the first-open path again.
+     1c. **Open an `.ogg`/`.opus`/`.webm`** (a container WKWebView can't decode).
+   - **Expected:** a "Klargjør avspilling…" line, then playback works and a
+     notice says it is going through a temporary file at full quality, and that
+     export still uses the original.
 2. Click **Finn segmenter** and **Mål lydstyrke**.
    - **Expected:** segments list with one **Preken** (sermon) block highlighted
      gold; a loudness reading like `-23.4 LUFS → -16`.
@@ -515,11 +540,26 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
    inputs, and remove one with **✕**.
    - **Expected:** red cut bands overlay the waveform at the marked spots
      (// GUI-UNVERIFIED); region rows show `m:ss–m:ss`; removed rows disappear.
-4. Choose a format + a mastering target (**Ingen / Podkast −16 / Strømming −14
-   / Naturlig / Musikk + tale**) and click **Eksporter**.
-   - **Expected:** a `*_redigert.<fmt>` file lands next to the source; on
-     playback the marked regions are removed and (with a target) the loudness is
-     normalised. No target + no cuts takes the fast `-af`/copy path.
+4. Open **Eksporter** WITHOUT picking a destination, choose a format + a
+   mastering target (**Ingen / Podkast −16 / Strømming −14 / Naturlig /
+   Musikk + tale**), and export.
+   - **Expected:** the destination pill reads "Samme mappe" and a
+     `*_redigert.<fmt>` file lands next to the source (no "path must be
+     absolute"). The progress bar moves for real — with a mastering target it
+     reads `Måler lydstyrke` up to ~50 % and then `Koder`. On playback the
+     marked regions are gone and the loudness is on target.
+   - With a mastering target the level row must say **"Volum styres av
+     mastring"** rather than promising a normalize gain the export skips.
+     4b. **Cancel a long export** mid-render. — **Expected:** it stops within a
+     second or two and the result row says "Eksport avbrutt" — not a frozen bar.
+     4c. **Video file:** open an mp4, keep "Behold video", export.
+   - **Expected:** the mp4 out has both streams and honours the cuts. The
+     intro/outro rows are greyed with "Jingler støttes ikke for video ennå" —
+     jingles are audio-only, and the export no longer pretends otherwise.
+   - Settings → Video → **Maskinvare-koding (VideoToolbox)** is off by default.
+     Turn it on (macOS) and re-export: same file, faster. If VideoToolbox
+     refuses, the log shows a warning and the export completes in software
+     anyway — a failed hardware render must never cost the user the export.
 5. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
    - **Expected:** a **"Fant lagrede kutt fra forrige økt (N)"** banner appears
@@ -531,12 +571,16 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
    - **Expected:** an `<audio>` control appears playing a temp
      `sundayrec-master-preview-*.mp3` of the first 15 s through the preset chain
      — A/B it against the original before committing to the full export.
-7. **P1 mastering apply + cancel:** (when wired to the full-file `editor_master_apply`
-   flow) start a master, watch the `editor-master-progress` ticks, and abort
-   mid-render via `editor_master_cancel(jobId)`.
+7. **P1 mastering apply + cancel:** start a master, watch the
+   `editor-master-progress` ticks, and abort mid-render with **Avbryt**.
    - **Expected:** progress advances, and a cancel kills the ffmpeg child and
      returns `true` only while the job is live (`false` afterwards — the pure
      `JobRegistry` bookkeeping). A duplicate job id is rejected up front.
+   - The panel measures loudness first and then hands that measurement to the
+     apply, so an Apply on a long service starts encoding straight away instead
+     of reading the whole file a second time. Time it: the gap between the
+     "Original: −23.4 LUFS → −16 LUFS" line and the first progress tick should
+     be short even on a 90-minute recording.
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they
@@ -558,8 +602,10 @@ editor` against real media — never in the gate. Only the core argv-building,
 Targets the "editor is unstable" reports. Run this stress loop after the fixes:
 
 1. **Large file:** open a 100 MB–4 h recording.
-   - **Expected:** it loads via the low-memory extract path (the inline limit is
-     now 100 MB), no multi-second freeze, no OOM/renderer crash.
+   - **Expected:** the timeline appears in well under a second (ffprobe headers)
+     and the waveform follows; no multi-second freeze, no OOM/renderer crash.
+     Renderer memory must stay flat — a 4 h FLAC costs the same as a 4 min one,
+     because neither the recording nor an extract of it is held in memory.
 2. **Rapid play/stop/seek:** play, stop, seek, undo, redo ~20× quickly.
    - **Expected:** no stuck play-icon, no doubled/looping audio, no hang.
 3. **Switch files mid-play:** start playback, then open a different recording
@@ -570,10 +616,12 @@ Targets the "editor is unstable" reports. Run this stress loop after the fixes:
 4. **Undo mid-drag:** drag a cut handle and press Cmd/Ctrl+Z mid-drag.
    - **Expected:** the undo is ignored until the drag ends (no cut-history
      corruption); cuts stay consistent.
-5. **C5 full-fidelity playback is OFF by default.** Oversized/exotic files play
-   the stable 8 kHz preview. To trial the experimental proxy on the rig, set
-   `localStorage['sundayrec.editor.playbackProxy'] = 'on'` in devtools, reload,
-   and re-run steps 1–3 — only promote it to default once it's clean here.
+5. **Full-fidelity playback, no flag.** Every file plays at full quality: the
+   original over `asset://`, or an AAC proxy for containers the webview can't
+   decode. There is no `sundayrec.editor.playbackProxy` opt-in any more — the
+   8 kHz preview transport (and the flag that gated its replacement) is gone.
+   - **Expected:** no file sounds low-fi. If one does, it is a bug, not a
+     setting.
 
 > [HW] These are interactive webview behaviours (AudioContext lifecycle, the
 > `<audio>` proxy transport, canvas redraw) that the headless gate can't see.

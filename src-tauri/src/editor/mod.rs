@@ -17,6 +17,19 @@
 //! core, and (for export) atomically render the cut-plan + mastering gain to a
 //! chosen format.
 //!
+//! ## What this seam does NOT do: feed playback
+//!
+//! The renderer plays the ORIGINAL recording through a media element on
+//! `asset://` ([`allow_asset_path`] widens the scope to the one file). Nothing
+//! here decodes audio *for playback*: [`extract_playback_proxy`] is a LAST
+//! resort for containers the webview has no decoder for, and [`peaks`] decodes
+//! only to 100 buckets/second for the waveform — streamed on a pipe and cached
+//! in a sidecar, so a reopen re-reads a small JSON instead of the media.
+//!
+//! The export is the other side of that: it always runs on the untouched
+//! original, never on a proxy or an extract, so what the user hears while
+//! editing and what lands in the file are the same signal.
+//!
 //! ## Feature flag
 //!
 //! Behind the **default-off `editor`** cargo feature. NO new native dep — ffmpeg
@@ -103,8 +116,29 @@ pub struct EditorLoudness {
     pub input_lra: f64,
     /// True peak (dBTP).
     pub input_tp: f64,
+    /// Measurement threshold (LUFS). Carried so an apply can REUSE this
+    /// measurement instead of re-running the pass that produced it — it is one
+    /// of the five values `loudnorm`'s linear mode needs.
+    pub input_thresh: f64,
+    /// Suggested gain offset (LU) — the fifth value the linear-mode apply needs.
+    pub target_offset: f64,
     /// The preset this was measured against (its target LUFS for the delta UI).
     pub target_lufs: f64,
+}
+
+#[cfg(feature = "editor")]
+impl EditorLoudness {
+    /// The five measured values as the core's `LoudnessMeasurement`.
+    /// `target_lufs` is the PRESET's, not a measurement, and is dropped here.
+    fn to_core(&self) -> sundayrec_core::mastering::LoudnessMeasurement {
+        sundayrec_core::mastering::LoudnessMeasurement {
+            input_i: self.input_i,
+            input_lra: self.input_lra,
+            input_tp: self.input_tp,
+            input_thresh: self.input_thresh,
+            target_offset: self.target_offset,
+        }
+    }
 }
 
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
@@ -731,9 +765,15 @@ pub struct EditorMasterPreviewResult {
     pub preview_path: String,
 }
 
-/// A full two-pass mastering *apply* request — measure (pass 1, here re-measured
-/// from the preset) then apply (pass 2) `inputPath` to `outputPath`, tracked by
-/// `jobId` so the UI can [`master_cancel`] it. Mirrors `master-apply`.
+/// A mastering *apply* request — apply (pass 2) `inputPath` to `outputPath`,
+/// tracked by `jobId` so the UI can [`master_cancel`] it. Mirrors `master-apply`.
+///
+/// Pass 1 (the loudness measure) is supplied by the caller in `measurement`
+/// whenever it already has one: the mastering panel runs
+/// `editor_mastering_analyze` to show "-23.4 LUFS → -16 LUFS" *before* the user
+/// presses Apply, and re-measuring the same unchanged file here is a second
+/// full-length ffmpeg read of a 90-minute service for a byte-identical answer.
+/// Optional for back-compat — absent means "measure it yourself".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(
     export,
@@ -749,6 +789,11 @@ pub struct EditorMasterApplyRequest {
     pub job_id: String,
     /// Output bitrate (kbps) for lossy formats; `None` uses the codec default.
     pub bitrate: Option<u32>,
+    /// A pass-1 loudness measurement of THIS file against THIS preset, from a
+    /// prior `editor_mastering_analyze`. `None` → the seam measures it itself.
+    #[serde(default)]
+    #[ts(optional)]
+    pub measurement: Option<EditorLoudness>,
 }
 
 /// Where the mastered file landed.
@@ -990,6 +1035,7 @@ pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
+    _hw_encode: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -1636,6 +1682,8 @@ pub async fn mastering_analyze(input_path: &str, preset_id: &str) -> AppResult<E
         input_i: m.input_i,
         input_lra: m.input_lra,
         input_tp: m.input_tp,
+        input_thresh: m.input_thresh,
+        target_offset: m.target_offset,
         target_lufs: preset.target_lufs,
     })
 }
@@ -1754,8 +1802,14 @@ where
     };
     use tokio::io::AsyncReadExt;
 
-    // 1. Measure (pass 1) for the linear-mode apply chain.
-    let measured = measure_loudness(&req.input_path, preset).await?;
+    // 1. Pass 1 (measure) for the linear-mode apply chain — but only if the
+    //    caller didn't already do it. The panel measures before it offers Apply,
+    //    so re-measuring here read the whole recording a second time to arrive at
+    //    the same five numbers.
+    let measured = match req.measurement.as_ref() {
+        Some(m) => m.to_core(),
+        None => measure_loudness(&req.input_path, preset).await?,
+    };
 
     // 2. Apply (pass 2): the preset+measured loudnorm, codec from the output ext.
     let ext = std::path::Path::new(&req.output_path)
@@ -1857,10 +1911,17 @@ where
 /// percentage; the command layer adapts it to the `editor://export-progress`
 /// Tauri event. The in-flight child is parked in `engine` so
 /// [`cancel_export`] can kill it. HARDWARE-UNVERIFIED.
+///
+/// `hw_encode` is the user's `editor_hw_encode` setting: on a VIDEO export on
+/// macOS it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a
+/// hardware render that fails is retried once in software (see
+/// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
+/// so the toggle can never cost the user their export.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
+    hw_encode: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -2119,63 +2180,88 @@ where
     // The metadata file is appended after all real inputs (intro/main/outro).
     let meta_input_idx = 1 + has_intro as usize + has_outro as usize;
 
-    // 5. Build the ffmpeg args — all graph/codec decisions are the core's.
-    let mut args: Vec<String> = vec!["-nostdin".into(), "-hide_banner".into()];
-    if let Some(p) = intro {
-        args.extend(["-i".into(), p.to_string()]);
-    }
-    args.extend(["-i".into(), req.input_path.clone()]);
-    if let Some(p) = outro {
-        args.extend(["-i".into(), p.to_string()]);
-    }
-    if let Some(p) = &meta_path {
-        args.extend(["-i".into(), p.clone()]);
-    }
-    if is_video {
-        let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
-        args.extend(["-filter_complex".into(), fc]);
-        args.extend(["-map".into(), v_out, "-map".into(), a_out]);
-        // Codec: H.264 (default) or H.265 when requested, container-aware flags.
-        let codec = match req.video_codec.as_deref() {
-            Some("h265") | Some("hevc") => sundayrec_core::editor::VideoCodec::H265,
-            _ => sundayrec_core::editor::VideoCodec::H264,
-        };
-        args.extend(sundayrec_core::editor::video_codec_args(fmt, codec, None));
-    } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
-        // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
-        // for a video source exported to an audio format (see the core fn). The
-        // simple path folds its own join fade + dither into the `-af`.
-        args.extend(audio_simple_export_args(
-            &keeps[0],
-            fmt,
-            req.bitrate,
-            req.bit_depth,
-            source_rate,
-            req.duration,
-        ));
+    // 4c. Video codec choice: H.264 (default) or H.265 when requested.
+    let video_codec = match req.video_codec.as_deref() {
+        Some("h265") | Some("hevc") => sundayrec_core::editor::VideoCodec::H265,
+        _ => sundayrec_core::editor::VideoCodec::H264,
+    };
+    // Hardware (VideoToolbox) video encode is an opt-in macOS speed-up. It has no
+    // CRF, so it needs a target bitrate, which depends on the source resolution —
+    // probed ONLY when the hardware path is actually taken. An unreadable size
+    // falls back to the 1080p rung rather than to a nonsense `0k`.
+    let want_hw = is_video && hw_encode && cfg!(target_os = "macos");
+    let hw_bitrate_kbps = if want_hw {
+        let (w, h) = probe_video_size(&req.input_path)
+            .await
+            .unwrap_or((1920, 1080));
+        sundayrec_core::editor::default_video_bitrate_kbps(w, h)
     } else {
-        let (fc, map) = audio_export_filter_complex(
-            &keeps,
-            main_input_idx,
-            &proc_filters,
-            &post_filters,
-            has_intro,
-            has_outro,
-            req.duration,
-        );
-        args.extend(["-filter_complex".into(), fc]);
-        args.extend(["-map".into(), map]);
-        args.extend(codec_args(fmt, req.bitrate, req.bit_depth, source_rate));
-    }
-    // Pull chapters from the metadata input; title/speaker/description as tags.
-    if meta_path.is_some() {
-        args.extend(["-map_metadata".into(), meta_input_idx.to_string()]);
-    }
-    args.extend(metadata_args(&meta));
-    // Machine-readable progress on stdout, and `-nostats` to silence the human
-    // stats line we would otherwise have to drain from stderr for no gain.
-    args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
-    args.extend(["-y".into(), out_path.clone()]);
+        0
+    };
+
+    // 5. Build the ffmpeg args — all graph/codec decisions are the core's.
+    //
+    // The argv is a FUNCTION of the encoder choice, because a failed hardware
+    // render is re-run with a command line that differs in nothing but the
+    // encoder. `use_hw` is always false off the video path.
+    let build_args = |use_hw: bool| -> Vec<String> {
+        let mut args: Vec<String> = vec!["-nostdin".into(), "-hide_banner".into()];
+        if let Some(p) = intro {
+            args.extend(["-i".into(), p.to_string()]);
+        }
+        args.extend(["-i".into(), req.input_path.clone()]);
+        if let Some(p) = outro {
+            args.extend(["-i".into(), p.to_string()]);
+        }
+        if let Some(p) = &meta_path {
+            args.extend(["-i".into(), p.clone()]);
+        }
+        if is_video {
+            let (fc, v_out, a_out) = video_filter_complex(0, &keeps, &proc_filters);
+            args.extend(["-filter_complex".into(), fc]);
+            args.extend(["-map".into(), v_out, "-map".into(), a_out]);
+            args.extend(if use_hw {
+                sundayrec_core::editor::videotoolbox_codec_args(fmt, video_codec, hw_bitrate_kbps)
+            } else {
+                sundayrec_core::editor::video_codec_args(fmt, video_codec, None)
+            });
+        } else if is_simple_audio_export(&keeps, &proc_filters, has_intro, has_outro) {
+            // `-vn -map 0:a:0 -af … -c:a …` — the explicit stream selection matters
+            // for a video source exported to an audio format (see the core fn). The
+            // simple path folds its own join fade + dither into the `-af`.
+            args.extend(audio_simple_export_args(
+                &keeps[0],
+                fmt,
+                req.bitrate,
+                req.bit_depth,
+                source_rate,
+                req.duration,
+            ));
+        } else {
+            let (fc, map) = audio_export_filter_complex(
+                &keeps,
+                main_input_idx,
+                &proc_filters,
+                &post_filters,
+                has_intro,
+                has_outro,
+                req.duration,
+            );
+            args.extend(["-filter_complex".into(), fc]);
+            args.extend(["-map".into(), map]);
+            args.extend(codec_args(fmt, req.bitrate, req.bit_depth, source_rate));
+        }
+        // Pull chapters from the metadata input; title/speaker/description as tags.
+        if meta_path.is_some() {
+            args.extend(["-map_metadata".into(), meta_input_idx.to_string()]);
+        }
+        args.extend(metadata_args(&meta));
+        // Machine-readable progress on stdout, and `-nostats` to silence the human
+        // stats line we would otherwise have to drain from stderr for no gain.
+        args.extend(["-progress".into(), "pipe:1".into(), "-nostats".into()]);
+        args.extend(["-y".into(), out_path.clone()]);
+        args
+    };
 
     // 6. The render itself: the total the percentage is measured against is the
     //    kept media plus any jingles concatenated around it (they lengthen the
@@ -2193,9 +2279,9 @@ where
     } else {
         (0.0, 99.0)
     };
-    let result = run_export_ffmpeg(
+    let mut result = run_export_ffmpeg(
         engine,
-        &args,
+        &build_args(want_hw),
         total_sec,
         timeout_ms,
         &on_progress,
@@ -2203,6 +2289,31 @@ where
         span,
     )
     .await;
+    // A hardware render that ffmpeg refused (no VideoToolbox session free, an
+    // unsupported pixel format, HEVC on an older media engine) is retried ONCE in
+    // software. The user only asked for "faster"; they must not lose the export
+    // over it. A user cancel or the kill-timer is NOT an encoder failure — a
+    // retry would ignore the cancel, or spend the timeout budget twice.
+    let hard_abort = matches!(&result, Err(e) if {
+        let s = e.to_string();
+        s.contains("cancelled") || s.contains("timeout")
+    });
+    if !hard_abort && sundayrec_core::editor::should_retry_with_software(want_hw, result.is_ok()) {
+        tracing::warn!(
+            error = %result.as_ref().err().map(|e| e.to_string()).unwrap_or_default(),
+            "VideoToolbox export failed — retrying with the software encoder"
+        );
+        result = run_export_ffmpeg(
+            engine,
+            &build_args(false),
+            total_sec,
+            timeout_ms,
+            &on_progress,
+            EXPORT_PHASE_ENCODING,
+            span,
+        )
+        .await;
+    }
     if let Some(p) = &meta_path {
         let _ = std::fs::remove_file(p); // best-effort temp cleanup
     }
@@ -2402,6 +2513,23 @@ pub async fn extract_frame(input_path: &str, sec: f64) -> AppResult<String> {
 
 // ── seam helpers (feature on) ────────────────────────────────────────────────────
 
+/// The first video stream's pixel dimensions, or `None` when ffprobe can't say.
+/// Only the hardware (VideoToolbox) export path calls this — it targets a
+/// bitrate rather than a CRF, and the sensible bitrate follows the resolution.
+#[cfg(feature = "editor")]
+async fn probe_video_size(input_path: &str) -> Option<(u32, u32)> {
+    use sundayrec_core::editor::{ffprobe_video_size_args, parse_video_size};
+
+    let args = ffprobe_video_size_args(input_path);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = tokio::process::Command::new(crate::media::ffmpeg::ffprobe_path())
+        .args(&arg_refs)
+        .output()
+        .await
+        .ok()?;
+    parse_video_size(&String::from_utf8_lossy(&output.stdout))
+}
+
 /// Measure loudness against `preset` (pass 1), returning the parsed measurement
 /// the apply chain feeds back. Shared by [`mastering_analyze`] + [`export`].
 #[cfg(feature = "editor")]
@@ -2511,7 +2639,7 @@ mod tests {
             video_codec: None,
         };
         let engine = ExportEngine::new();
-        assert!(export(&engine, &req, |_, _| {})
+        assert!(export(&engine, &req, false, |_, _| {})
             .await
             .unwrap_err()
             .to_string()
@@ -3441,7 +3569,7 @@ mod tests {
                 std::env::set_var("SUNDAYREC_FFMPEG", ffmpeg);
                 std::env::set_var("SUNDAYREC_FFPROBE", ffprobe);
             }
-            let r = rt.block_on(export(&engine, req, on_progress));
+            let r = rt.block_on(export(&engine, req, false, on_progress));
             unsafe {
                 std::env::remove_var("SUNDAYREC_FFMPEG");
                 std::env::remove_var("SUNDAYREC_FFPROBE");
@@ -3536,7 +3664,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, on_progress));
+                let result = rt.block_on(export(&engine, &req, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("editor export should succeed against the lavfi source")
             };
@@ -3617,7 +3745,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let result = rt.block_on(export(&engine, &req, on_progress));
+                let result = rt.block_on(export(&engine, &req, false, on_progress));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 result.expect("an export with the default destination must succeed")
             };
@@ -3755,6 +3883,69 @@ mod tests {
                 "the export must stay at the source rate, not loudnorm's 192 kHz"
             );
             eprintln!("editor export smoke: wav16 landed as {codec} @ {rate} Hz");
+        }
+
+        /// A VIDEO export keeps its video stream, honours the cut plan, and drives
+        /// the same progress bar as an audio export.
+        ///
+        /// SOFTWARE encoder only. The hardware (VideoToolbox) path is deliberately
+        /// NOT smoke-tested: it exists on macOS alone, and even there a machine
+        /// with no free encode session fails legitimately — a test that red-lights
+        /// on CI or on a colleague's Linux box would be measuring the runner, not
+        /// the code. The retry that covers exactly that case is unit-tested pure
+        /// (`should_retry_with_software`).
+        #[test]
+        fn video_export_keeps_the_video_stream_and_honours_the_cuts_or_skips() {
+            let (Some(ffmpeg), Some(ffprobe)) =
+                (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+            else {
+                eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+                return;
+            };
+            let dir = tempfile::tempdir().unwrap();
+            let src = lavfi_source(&ffmpeg, dir.path());
+
+            // Cut 0.5 s out of the 2 s source ⇒ ~1.5 s of mp4 out.
+            let req = export_request(
+                &src,
+                &dir.path().to_string_lossy(),
+                "mp4",
+                &[(0.75, 1.25)],
+                2.0,
+            );
+            let (result, ticks) = run_export_blocking(&ffmpeg, &ffprobe, &req);
+            let out = result.expect("a software video export should succeed");
+            let path = std::path::Path::new(&out.output_path);
+            assert!(
+                std::fs::metadata(path)
+                    .expect("video export output exists")
+                    .len()
+                    > 0,
+                "video export produced an empty file"
+            );
+
+            // BOTH streams survive — the whole point of the video path (the audio
+            // path asserts the mirror image: no video leaks into an mp3).
+            let streams = probe_report_streams(&ffprobe, path);
+            assert!(
+                streams.contains("video"),
+                "a video export must carry a video stream; ffprobe: {streams}"
+            );
+            assert!(
+                streams.contains("audio"),
+                "a video export must carry its audio track; ffprobe: {streams}"
+            );
+
+            let dur: f64 = probe_report(&ffprobe, path)
+                .lines()
+                .find_map(|l| l.trim().parse::<f64>().ok())
+                .expect("ffprobe should report a numeric duration");
+            assert!(
+                (1.0..1.9).contains(&dur),
+                "cut video export duration {dur}s should be ~1.5 s (2 s − 0.5 s cut)"
+            );
+            assert_monotonic(&ticks);
+            eprintln!("editor export smoke: video landed as {dur:.2}s mp4 ({streams:?})");
         }
 
         /// The mirror hazard: a 96 kHz master must NOT be quietly downsampled.
@@ -3897,7 +4088,7 @@ mod tests {
                     // 1 ms — even a spawn takes longer than that.
                     std::env::set_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE", "1");
                 }
-                let result = rt.block_on(export(&engine, &req, |_, _| {}));
+                let result = rt.block_on(export(&engine, &req, false, |_, _| {}));
                 unsafe {
                     std::env::remove_var("SUNDAYREC_FFMPEG");
                     std::env::remove_var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE");

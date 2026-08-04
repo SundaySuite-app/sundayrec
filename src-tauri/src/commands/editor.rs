@@ -131,6 +131,7 @@ pub async fn editor_mastering_analyze(
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
+    db: State<'_, crate::db::Db>,
     engine: State<'_, ExportEngine>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
@@ -148,7 +149,14 @@ pub async fn editor_export(
     {
         super::path_guard::checked_input_file(clip)?;
     }
-    editor::export(&engine, &request, move |pct, phase| {
+    // Hardware video encode is a per-install preference, not part of the export
+    // request: the renderer never has to know whether this machine has
+    // VideoToolbox. A settings read that fails is simply "off" (the default).
+    let hw_encode = crate::settings::load(&db.pool)
+        .await
+        .map(|s| s.editor_hw_encode)
+        .unwrap_or(false);
+    editor::export(&engine, &request, hw_encode, move |pct, phase| {
         let _ = app.emit(
             "editor://export-progress",
             EditorExportProgress {

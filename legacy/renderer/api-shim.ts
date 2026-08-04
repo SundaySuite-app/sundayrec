@@ -20,9 +20,9 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
-// the loader falls back to an ffmpeg → 8 kHz WAV decode for anything the browser
-// can't decode directly. Keep these in sync with the drag-drop sets in
-// editor-page.ts / editor/state.ts.
+// the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
+// as the original) for anything the webview can't decode directly. Keep these in
+// sync with the drag-drop sets in editor-page.ts / editor/state.ts.
 const AUDIO_EXT = [
   "mp3", "mp1", "mp2", "wav", "flac", "aac", "m4a", "m4b", "m4r", "ogg", "oga",
   "opus", "aiff", "aif", "wma", "mka", "ac3", "eac3", "amr", "3ga", "caf", "wv",
@@ -264,6 +264,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   askOpenEditor: true,
   editorIntroPath: undefined,
   editorOutroPath: undefined,
+  editorHwEncode: false,
   cloudGoogleDrive: undefined,
   cloudDropbox: undefined,
   cloudOneDrive: undefined,
@@ -395,6 +396,11 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
     slots: sanitizeSlots(s.slots),
     specialRecordings: sanitizeSpecials(s.specialRecordings),
+    // Editor video export: opt into the macOS VideoToolbox hardware encoder.
+    // Read by `editor_export`; must be synced or Rust's `#[serde(default)]`
+    // re-defaults it to `false` on every settings_save and the toggle never
+    // sticks (the same trap `filenamePattern`/`wakeFromSleep` fell into).
+    editorHwEncode: s.editorHwEncode ?? false,
   };
 }
 
@@ -970,7 +976,6 @@ const api: Record<string, unknown> = {
     if (r.tooLarge) return { tooLarge: true };
     return new Uint8Array(r.bytes ?? []);
   },
-  editorSaveFile: async () => ({ ok: false }),
   editorPickFile: async () =>
     pickPath({
       filters: [
@@ -1124,20 +1129,22 @@ const api: Record<string, unknown> = {
   // reopen costs a JSON read instead of a full decode.
   editorExtractAudioPeaks: async (fp: string) =>
     call("editor_peaks", { inputPath: fp }, null),
-  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file for
-  // full-fidelity playback of oversized/exotic files (the <audio> element
-  // streams it from disk via asset://, so no multi-GB Web-Audio PCM buffer).
-  // Returns the proxy path, or null if the transcode failed (caller then keeps
-  // the 8 kHz buffer for playback). The 8 kHz WAV remains the waveform source.
+  // editor_extract_playback_proxy → a seekable stereo AAC .m4a temp file. The
+  // LAST-RESORT playback transport: used only when the webview has no decoder
+  // for the container, or when the original refused to open. Normal playback
+  // streams the ORIGINAL over asset://; this streams the same way, so neither
+  // path builds a multi-GB Web-Audio PCM buffer. Returns the proxy path, or null
+  // when even the transcode failed (the editor then says playback is
+  // unavailable — cuts and export still run on the original).
   editorExtractPlaybackProxy: async (fp: string) =>
     call<string | null>("editor_extract_playback_proxy", { inputPath: fp }, null),
   // editor_probe_peak → true max_volume (dBFS) of the ORIGINAL file via
-  // volumedetect — Normalize's honest basis on the 8 kHz-extract path.
+  // volumedetect. Normalize's honest basis: the waveform peaks are an 8 kHz mono
+  // downmix that under-reads the real peak by several dB.
   editorProbePeak: async (fp: string) =>
     call<number | null>("editor_probe_peak", { inputPath: fp }, null),
   editorPickVideoFile: async () =>
     pickPath({ name: "Video", extensions: VIDEO_EXT }),
-  editorSaveVideo: async () => ({ ok: false }),
   // Video export → editor_export with a video container (mp4/mov/mkv) + codec
   // (h264/h265). Maps the renderer params to EditorExportRequest just like
   // editorExportFile (the old raw-passthrough shape didn't match the request).
@@ -1162,7 +1169,10 @@ const api: Record<string, unknown> = {
         masterPreset: (o.masterPreset as string) || null,
         introPath: o.introPath ?? null,
         outroPath: o.outroPath ?? null,
-        gainDb: null,
+        // The normalize gain the user set applies to a video export's AUDIO
+        // track exactly as it does to an audio export — this used to be
+        // hard-coded `null`, so "Normaliser" was silently a no-op for video.
+        gainDb: o.gainDb ?? null,
         chapters,
         title: (m.title as string) || null,
         speaker: (m.speaker as string) || null,
