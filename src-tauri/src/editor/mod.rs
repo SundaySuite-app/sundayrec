@@ -3112,7 +3112,9 @@ mod tests {
         use std::sync::{Arc, Mutex};
 
         // Serialise the `SUNDAYREC_*` env overrides against the parallel suite.
-        static ENV_LOCK: Mutex<()> = Mutex::new(());
+        // Shared with media/ffmpeg.rs's tests — env vars are process-global,
+        // so ONE lock must serialise every mutator (see its doc comment).
+        use crate::media::ffmpeg::tests::ENV_LOCK;
 
         /// Path to the fetched dev sidecar, if `npm run ffmpeg` populated it.
         /// Same lookup the `media::ffmpeg` integration tests use.
