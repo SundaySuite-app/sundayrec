@@ -139,6 +139,18 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # tauri-build verifies every `externalBin` resource EXISTS even for a
+      # plain `cargo check` — empty stubs satisfy it without downloading the
+      # ~80 MB real sidecars this job never executes (release.yml fetches the
+      # real, checksum-pinned ones).
+      - name: Stub ffmpeg sidecars for tauri-build's existence check
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force binaries | Out-Null
+          New-Item -ItemType File -Force binaries/ffmpeg-x86_64-pc-windows-msvc.exe | Out-Null
+          New-Item -ItemType File -Force binaries/ffprobe-x86_64-pc-windows-msvc.exe | Out-Null
+
       - name: cargo check + clippy (workspace, all targets)
         working-directory: src-tauri
         run: |

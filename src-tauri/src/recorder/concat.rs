@@ -665,8 +665,11 @@ mod tests {
     }
 
     /// The fetched ffmpeg/ffprobe sidecar, when this box has one (`npm run ffmpeg`).
-    /// `ffmpeg_path()` resolves the same binary with no env fiddling, so a test that
-    /// finds it here knows `finalize_deliverable` will use it too.
+    /// NOTE: production resolution (`ffmpeg_path()`) does NOT look here — it goes
+    /// env → exe-dir sidecar → bare PATH name — so a test that runs the real
+    /// binary must point `SUNDAYREC_FFMPEG` at this path under the shared
+    /// `media::ffmpeg::tests::ENV_LOCK`. Relying on a PATH ffmpeg instead passes
+    /// on a dev Mac (homebrew) and fails on CI runners with none.
     fn fetched_sidecar(name: &str) -> Option<PathBuf> {
         let triple = env!("SUNDAYREC_TARGET_TRIPLE");
         let ext = if cfg!(windows) { ".exe" } else { "" };
@@ -706,6 +709,11 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
     }
 
+    // ENV_LOCK is held across the full `finalize_deliverable(...).await` (which
+    // runs the concat to completion) — same justified-false-positive as the
+    // other real-ffmpeg tests: nothing else can observe the env while we hold
+    // the shared lock, and it is restored before release.
+    #[allow(clippy::await_holding_lock)]
     #[tokio::test]
     async fn phantom_fragment_does_not_truncate_the_merge_or_skips() {
         // THE data-loss case, with a real ffmpeg. A phantom fragment in the MIDDLE
@@ -732,9 +740,20 @@ mod tests {
         let phantom_s = dir.path().join("seg_r1.wav").to_string_lossy().into_owned();
 
         let d = deliverable(&primary_s, &[&primary_s, &phantom_s, &later_s]);
-        let out = finalize_deliverable(&d, None, None)
-            .await
-            .expect("the phantom must not fail the finalize");
+        let out = {
+            let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
+            // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let result = finalize_deliverable(&d, None, None).await;
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            result.expect("the phantom must not fail the finalize")
+        };
 
         assert_eq!(out, primary_s);
         let merged = probe_secs(&ffprobe, &primary);
