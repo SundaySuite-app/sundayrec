@@ -474,6 +474,128 @@ body.platform-darwin .ui-toast-stack {
   }
 }
 
+/* ── Auto-apply settings: the «Lagret ✓» receipt ─────────────────────────── */
+
+/* Every settings control now writes on change. The receipt has to be small,
+   local and short-lived: a toast per toggle would be a notification storm, and
+   silence (the old audio/video model) left the user pressing Lagre buttons that
+   did not exist. The visual language is the channel grid's own «Lagret ✓»
+   (.ch-grid-saved), promoted to a shared class. */
+.setting-saved-chip {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--green, #22c55e);
+  opacity: 0;
+  transform: translateY(-1px);
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s ease-out;
+  pointer-events: none;
+}
+.setting-saved-chip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Explicit-save cards ─────────────────────────────────────────────────── */
+
+/* The three surfaces that are NOT auto-apply: the schedule slot editor, the
+   SMTP server fields and the integration URL/key pairs. They look different on
+   purpose — a bordered card with its own Lagre/Avbryt is the signal that
+   nothing here has been written yet. */
+.explicit-save-card {
+  border: 1px solid var(--border, #2a3448);
+  border-radius: 10px;
+  padding: 14px;
+}
+.explicit-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.explicit-save-hint {
+  font-size: 12px;
+  color: var(--warning, #d08700);
+}
+.card.has-unsaved {
+  border-color: var(--warning, #d08700);
+}
+
+/* ── Field-level validation ──────────────────────────────────────────────── */
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red, #f87171);
+}
+.form-input.has-field-error,
+input.has-field-error,
+select.has-field-error,
+textarea.has-field-error {
+  border-color: var(--red, #f87171);
+}
+.form-input.has-field-error:focus-visible {
+  outline-color: var(--red, #f87171);
+}
+
+/* ── Honest feature gates ────────────────────────────────────────────────── */
+
+/* A section whose backend does not exist in this build says so once, at the
+   top, and turns its controls off — instead of offering buttons that fail. */
+.feature-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #2a3448);
+  border-radius: 8px;
+  background: var(--surface2, rgba(255, 255, 255, 0.04));
+}
+.feature-gate-chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text2, #c8d2e6);
+  background: rgba(255, 255, 255, 0.08);
+}
+.feature-gate.is-unconfigured .feature-gate-chip {
+  color: #0f1420;
+  background: var(--warning, #d08700);
+}
+.feature-gate.is-unavailable .feature-gate-chip {
+  color: var(--text2, #c8d2e6);
+  background: rgba(255, 255, 255, 0.1);
+}
+.feature-gate-text {
+  flex: 1 1 240px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.feature-gate-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text3, #8899bb);
+  opacity: 0.85;
+}
+/* `inert` is what actually stops the clicks; this is the visual half. */
+[data-gate-body][inert] {
+  opacity: 0.45;
+  filter: saturate(0.6);
+}
+
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 
 /* styles.css clamps durations globally, but these surfaces are created and
@@ -486,5 +608,8 @@ body.platform-darwin .ui-toast-stack {
   .modal-backdrop.open,
   .page.page-leaving {
     animation: none;
+  }
+  .setting-saved-chip {
+    transition: none;
   }
 }

@@ -400,7 +400,9 @@
     "diagnoseCopy": "📋 Kopier full rapport",
     "diagnoseFull": "Full rapport",
     "diagnoseRunning": "Analyserer…",
-    "diagnoseSaved": "Lagret til"
+    "diagnoseSaved": "Lagret til",
+    "guardDevice": "Bytte lydenhet",
+    "guardEngine": "Bytte opptaksmotor"
   },
   "files": {
     "saveFolder": "Lagringsmappe",
@@ -420,8 +422,6 @@
     "autoDeleteDesc": "Frigjør diskplass automatisk ved å slette gamle opptak",
     "trimSilence": "Trim stillhet",
     "trimSilenceDesc": "Kutter automatisk stille sekunder i starten og slutten av opptaket",
-    "save": "Lagre",
-    "cancel": "Avbryt",
     "confirmAutoDeleteShort": "Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.",
     "behaviourTitle": "Opptaksoppførsel",
     "behaviourDesc": "Finjuster hvordan opptaket starter, beskyttes og deles opp.",
@@ -438,7 +438,7 @@
   "general": {
     "language": "Språk",
     "appLanguage": "APPSPRÅK",
-    "langHint": "Endringen trer i kraft etter at du trykker Lagre.",
+    "langHint": "Endringen trer i kraft med én gang.",
     "profile": "Kirkeprofil",
     "church": "MENIGHET / KIRKE",
     "responsible": "ANSVARLIG PERSON",
@@ -483,7 +483,9 @@
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurasjonsfeil: kamera-preview vil ikke fungere (CSP blokkerer blob:-URL-er). Restart appen — hvis problemet vedvarer, kontakt support.",
     "initError": "Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. Restart appen — hvis problemet vedvarer, kontakt support.",
-    "diagnoseTitle": "Lydenhetsdiagnose"
+    "diagnoseTitle": "Lydenhetsdiagnose",
+    "savedChip": "Lagret ✓",
+    "saveFailed": "Kunne ikke lagre innstillingen"
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
@@ -736,7 +738,8 @@
     "probeFailed": "Kunne ikke lese kameraets oppløsninger — begrenset til 1080p for å unngå oppskalering. 4K krever et kamera som leverer ekte 4K.",
     "resNative": "kameraets maks",
     "resNotSupported": "ikke støttet",
-    "resUnsupportedShort": "Valgt oppløsning støttes ikke — satt til kameraets maks."
+    "resUnsupportedShort": "Valgt oppløsning støttes ikke — satt til kameraets maks.",
+    "guardDevice": "Bytte kamera"
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",
@@ -824,7 +827,11 @@
     "emailGmailConfirmDisconnect": "E-postvarsler vil falle tilbake til SMTP.",
     "emailGmailSendsAs": "Sender via",
     "emailGmailReauth": "⚠ Krever ny pålogging",
-    "emailAdvanced": "Avansert: bruk SMTP i stedet"
+    "emailAdvanced": "Avansert: bruk SMTP i stedet",
+    "errEmail": "Skriv en gyldig e-postadresse, f.eks. navn@kirke.no",
+    "errWebhookUrl": "Webhook-URL må begynne med https://",
+    "errSmtpHost": "Skriv et servernavn, f.eks. smtp.gmail.com",
+    "errSmtpUser": "Brukernavnet er e-postadressen du sender fra"
   },
   "prep": {
     "sectionTitle": "Forhåndsklargjøring og gjennomgang",
@@ -905,7 +912,6 @@
     "enabled": "Aktivert",
     "account": "Konto",
     "autoUpload": "Last opp automatisk etter opptak",
-    "cancel": "Avbryt",
     "connect": "Koble til",
     "desc": "Last opp opptakene automatisk til Google Drive — som ekstra sikkerhet og for enkel deling.",
     "disconnect": "Koble fra",
@@ -914,12 +920,18 @@
     "introDesc": "Her setter du opp automatisk sky-backup og — hvis dere ønsker — en podcast som gjør gudstjenestene tilgjengelige i Spotify og Apple Podcasts. Alt er valgfritt.",
     "lastUpload": "Siste",
     "pickFolder": "Velg mappe…",
-    "save": "Lagre",
-    "title": "Sky-backup"
+    "title": "Sky-backup",
+    "streamSaveDestinations": "Lagre destinasjoner",
+    "streamUnsaved": "Ikke lagret ennå"
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åpne",
-    "sundayEditMissing": "SundayEdit ikke funnet"
+    "sundayEditMissing": "SundayEdit ikke funnet",
+    "errUrl": "Dette er ikke en gyldig adresse (f.eks. https://api.sundaysong.com)",
+    "errUrlScheme": "Adressen må begynne med https://",
+    "errChurchId": "Menighets-ID er en UUID fra SundaySong eller SundayPlan",
+    "errKeyEmpty": "Lim inn nøkkelen først",
+    "keySaved": "✓ API-nøkkel lagret (kryptert)"
   },
   "live": {
     "title": "Direkte sending",
@@ -1008,7 +1020,8 @@
     "settingsTitle": "Prekenhjelp — AI-oppsummering (valgfritt)",
     "settingsDesc": "Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.",
     "keySave": "Lagre",
-    "keyClear": "Fjern"
+    "keyClear": "Fjern",
+    "keyStored": "✓ API-nøkkel lagret (nøkkelring)"
   },
   "search": {
     "title": "Søk & historikk",
@@ -1102,5 +1115,12 @@
     "openSchedule": "Åpne tidsplan",
     "bannerAction": "Vis detaljer",
     "more": "flere"
+  },
+  "guard": {
+    "title": "{what} nå?",
+    "duringRecording": "Et opptak pågår akkurat nå. Endringen kan avbryte eller ødelegge det som tas opp.",
+    "beforeRecording": "Neste planlagte opptak starter om {n} minutter. Endringen rekker å slå ut på det opptaket.",
+    "confirm": "Ja, endre likevel",
+    "cancel": "Ikke nå"
   }
 }

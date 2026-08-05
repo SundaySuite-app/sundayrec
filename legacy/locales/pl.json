@@ -400,7 +400,9 @@
     "diagnoseCopy": "📋 Kopiuj pełny raport",
     "diagnoseFull": "Pełny raport",
     "diagnoseRunning": "Analizowanie…",
-    "diagnoseSaved": "Zapisano w"
+    "diagnoseSaved": "Zapisano w",
+    "guardDevice": "Zmienić urządzenie audio",
+    "guardEngine": "Zmienić silnik nagrywania"
   },
   "files": {
     "saveFolder": "Folder zapisu",
@@ -420,8 +422,6 @@
     "autoDeleteDesc": "Automatycznie zwalnia miejsce na dysku, usuwając stare nagrania",
     "trimSilence": "Wytnij ciszę",
     "trimSilenceDesc": "Automatycznie przycina ciche sekundy na początku i końcu nagrania",
-    "save": "Zapisz",
-    "cancel": "Anuluj",
     "confirmAutoDeleteShort": "Nagrania starsze niż {n} dni są usuwane automatycznie i nie można ich odzyskać.",
     "behaviourTitle": "Zachowanie nagrywania",
     "behaviourDesc": "Dopracuj sposób uruchamiania, ochrony i dzielenia nagrania.",
@@ -438,7 +438,7 @@
   "general": {
     "language": "Język",
     "appLanguage": "JĘZYK APLIKACJI",
-    "langHint": "Zmiana zostanie zastosowana po kliknięciu Zapisz.",
+    "langHint": "Zmiana zaczyna działać natychmiast.",
     "profile": "Profil parafii",
     "church": "PARAFIA / KOŚCIÓŁ",
     "responsible": "OSOBA ODPOWIEDZIALNA",
@@ -483,7 +483,9 @@
     "webhookUrl": "ADRES WEBHOOKA",
     "cspError": "Błąd konfiguracji: podgląd kamery nie będzie działać (CSP blokuje adresy blob:). Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną.",
     "initError": "Błąd uruchamiania: części aplikacji może brakować lub mogą nie działać. Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną.",
-    "diagnoseTitle": "Diagnostyka urządzenia audio"
+    "diagnoseTitle": "Diagnostyka urządzenia audio",
+    "savedChip": "Zapisano ✓",
+    "saveFailed": "Nie udało się zapisać ustawienia"
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
@@ -736,7 +738,8 @@
     "probeFailed": "Nie udało się odczytać rozdzielczości kamery — ograniczono do 1080p, aby uniknąć skalowania w górę. 4K wymaga kamery, która dostarcza prawdziwe 4K.",
     "resNative": "maksimum kamery",
     "resNotSupported": "nieobsługiwana",
-    "resUnsupportedShort": "Wybrana rozdzielczość nie jest obsługiwana — ustawiono maksimum kamery."
+    "resUnsupportedShort": "Wybrana rozdzielczość nie jest obsługiwana — ustawiono maksimum kamery.",
+    "guardDevice": "Zmienić kamerę"
   },
   "onboarding": {
     "welcomeTitle": "Witamy w SundayRec",
@@ -824,7 +827,11 @@
     "emailGmailConfirmDisconnect": "Powiadomienia e-mail wrócą do SMTP.",
     "emailGmailSendsAs": "Wysyłka przez",
     "emailGmailReauth": "⚠ Wymagane ponowne logowanie",
-    "emailAdvanced": "Zaawansowane: użyj SMTP zamiast tego"
+    "emailAdvanced": "Zaawansowane: użyj SMTP zamiast tego",
+    "errEmail": "Wpisz poprawny adres e-mail, np. imie@parafia.pl",
+    "errWebhookUrl": "Adres webhooka musi zaczynać się od https://",
+    "errSmtpHost": "Wpisz nazwę serwera, np. smtp.gmail.com",
+    "errSmtpUser": "Nazwa użytkownika to adres e-mail, z którego wysyłasz"
   },
   "prep": {
     "sectionTitle": "Przygotowanie i przegląd",
@@ -905,7 +912,6 @@
     "enabled": "Włączone",
     "account": "Konto",
     "autoUpload": "Prześlij automatycznie po nagraniu",
-    "cancel": "Anuluj",
     "connect": "Połącz",
     "desc": "Automatycznie przesyłaj nagrania do Google Drive — jako dodatkowe zabezpieczenie i dla łatwego udostępniania.",
     "disconnect": "Rozłącz",
@@ -914,12 +920,18 @@
     "introDesc": "Tutaj skonfigurujesz automatyczną kopię zapasową w chmurze oraz — jeśli chcecie — podcast udostępniający nabożeństwa w Spotify i Apple Podcasts. Wszystko jest opcjonalne.",
     "lastUpload": "Ostatni",
     "pickFolder": "Wybierz folder…",
-    "save": "Zapisz",
-    "title": "Kopia zapasowa w chmurze"
+    "title": "Kopia zapasowa w chmurze",
+    "streamSaveDestinations": "Zapisz cele",
+    "streamUnsaved": "Jeszcze nie zapisano"
   },
   "integrations": {
     "sundayEditFailed": "Nie udało się otworzyć",
-    "sundayEditMissing": "Nie znaleziono SundayEdit"
+    "sundayEditMissing": "Nie znaleziono SundayEdit",
+    "errUrl": "To nie jest poprawny adres (np. https://api.sundaysong.com)",
+    "errUrlScheme": "Adres musi zaczynać się od https://",
+    "errChurchId": "Identyfikator parafii to UUID z SundaySong lub SundayPlan",
+    "errKeyEmpty": "Najpierw wklej klucz",
+    "keySaved": "✓ Klucz API zapisany (zaszyfrowany)"
   },
   "live": {
     "title": "Transmisja na żywo",
@@ -1008,7 +1020,8 @@
     "settingsTitle": "Asystent kazania — podsumowanie AI (opcjonalnie)",
     "settingsDesc": "Rozdziały i cytaty są zawsze tworzone lokalnie na urządzeniu. Aby uzyskać ładniejsze podsumowanie i tytuł, możesz wkleić klucz API Anthropic — jest przechowywany wyłącznie w pęku kluczy systemu (OS keychain), nigdy w ustawieniach. Bez klucza używane jest podsumowanie lokalne.",
     "keySave": "Zapisz",
-    "keyClear": "Usuń"
+    "keyClear": "Usuń",
+    "keyStored": "✓ Klucz API zapisany (pęk kluczy)"
   },
   "search": {
     "title": "Wyszukiwanie i historia",
@@ -1102,5 +1115,12 @@
     "openSchedule": "Otwórz harmonogram",
     "bannerAction": "Pokaż szczegóły",
     "more": "więcej"
+  },
+  "guard": {
+    "title": "{what} teraz?",
+    "duringRecording": "Nagrywanie właśnie trwa. Zmiana może przerwać lub zepsuć to, co jest nagrywane.",
+    "beforeRecording": "Następne zaplanowane nagranie zacznie się za {n} min. Zmiana wpłynie na to nagranie.",
+    "confirm": "Tak, zmień mimo to",
+    "cancel": "Nie teraz"
   }
 }

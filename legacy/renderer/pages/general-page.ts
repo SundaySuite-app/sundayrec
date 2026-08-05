@@ -1,21 +1,71 @@
 import { t, loadLocale, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, setVal, setupDirtyBar } from '../helpers'
+import { setVal } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
+import { toast } from '../ui/toast'
+import {
+  bindSetting,
+  resyncBoundSettings,
+  showSavedChip,
+  type BindSettingOpts,
+} from '../ui/bind-setting'
+import { clearFieldErrors, setFieldError } from '../ui/field-error'
 
-let _markGeneralClean = () => {}
-let _markVarslerClean = () => {}
-
-function markAllClean(): void { _markGeneralClean(); _markVarslerClean() }
+/** Every auto-applying System/Varsler control writes the same way. */
+function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
+  return { apply: () => collectGeneralSettings(), ...extra }
+}
 
 export function setupGeneralPage(): void {
-  const gBar = setupDirtyBar('settings-general')
-  const vBar = setupDirtyBar('settings-notifications')
-  _markGeneralClean = gBar.clean
-  _markVarslerClean = vBar.clean
+  // AUTO-APPLY everywhere except the SMTP server card, which keeps an explicit
+  // Lagre/Avbryt: a half-typed mail host that auto-saved would be a broken
+  // alert path with no sign that anything was wrong.
+  bindSetting('language-select', generalBinding({
+    key: 'language',
+    // The old hint said the change takes effect "after you press Lagre". There
+    // is no Lagre any more, and there does not need to be — switch now.
+    after: (value) => { if (value !== currentLang) void loadLocale(String(value)) },
+  }))
+  bindSetting('church-name',        generalBinding({ key: 'churchName' }))
+  bindSetting('responsible-person', generalBinding({ key: 'responsiblePerson' }))
+
+  bindSetting('opt-notify-start',     generalBinding({ key: 'notifyStart' }))
+  bindSetting('opt-notify-stop',      generalBinding({ key: 'notifyStop' }))
+  bindSetting('opt-reminder-minutes', generalBinding({ key: 'reminderMinutes' }))
+  bindSetting('opt-email-error', generalBinding({
+    key: 'emailOnError',
+    after: () => toggleEmailSection(),
+  }))
+  bindSetting('email-address', generalBinding({
+    key: 'emailAddress',
+    validate: (value) => {
+      const v = String(value ?? '').trim()
+      if (!v) return null
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+        ? null
+        : t('notify.errEmail', 'Skriv en gyldig e-postadresse, f.eks. navn@kirke.no')
+    },
+  }))
+  bindSetting('webhook-url', generalBinding({
+    key: 'webhookUrl',
+    validate: (value) => {
+      const v = String(value ?? '').trim()
+      if (!v) return null
+      return /^https:\/\/\S+$/.test(v)
+        ? null
+        : t('notify.errWebhookUrl', 'Webhook-URL må begynne med https://')
+    },
+  }))
+  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))
+
+  bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
+  bindSetting('opt-show-on-startup', generalBinding({ key: 'showOnStartup' }))
+  bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
+  bindSetting('opt-auto-update',     generalBinding({ key: 'autoUpdate' }))
+
+  setupSmtpCard()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
-  document.getElementById('opt-email-error')?.addEventListener('change', toggleEmailSection)
 
   // Steinberg ASIO attribution is required by the ASIO SDK licence and is only
   // relevant in the Windows build (the only build compiled with ASIO support).
@@ -76,18 +126,62 @@ export function setupGeneralPage(): void {
     if (toast) toast.style.display = 'none'
   })
 
-  document.getElementById('btn-general-save')?.addEventListener('click', saveGeneralSettings)
-  document.getElementById('btn-general-cancel')?.addEventListener('click', () => applyGeneralSettingsToUI())
-
   // "Rediger — standardklipp"-kortet er fjernet i v4.31 — intro/outro settes
   // i editor-fanen og lagres direkte til Settings.editorIntroPath/OutroPath
   // derfra. updateEditorClipUI()-kallet under er en no-op nå men beholdes
   // som safe-shim for tilfelle ekstern kode trigger applyGeneralSettingsToUI.
 
-  document.getElementById('btn-varsler-save')?.addEventListener('click', saveGeneralSettings)
-  document.getElementById('btn-varsler-cancel')?.addEventListener('click', () => applyGeneralSettingsToUI())
-
   wireUpdateIpcListeners()
+}
+
+/**
+ * The SMTP server card — one of the three EXPLICIT-save exceptions.
+ *
+ * Host, username and password are a set: applying them one keystroke at a time
+ * would leave the alert path pointing at a half-typed server, and the failure
+ * would only show up the day a recording actually fails. So this card validates
+ * as a unit and writes on «Lagre»; «Avbryt» puts the stored values back.
+ */
+function setupSmtpCard(): void {
+  const host = document.getElementById('email-smtp') as HTMLInputElement | null
+  const user = document.getElementById('email-user') as HTMLInputElement | null
+  const pass = document.getElementById('email-pass') as HTMLInputElement | null
+  const saveBtn   = document.getElementById('btn-smtp-save')
+  const cancelBtn = document.getElementById('btn-smtp-cancel')
+  if (!host || !saveBtn) return
+
+  saveBtn.addEventListener('click', async () => {
+    clearFieldErrors(document.getElementById('email-smtp-advanced'))
+    const hostVal = host.value.trim()
+    const userVal = user?.value.trim() ?? ''
+    // An empty card is a valid state: it means "no SMTP, use Gmail".
+    if (hostVal && !/^[\w.-]+\.[a-z]{2,}$/i.test(hostVal)) {
+      setFieldError(host, t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com'))
+      return
+    }
+    if (hostVal && !userVal) {
+      setFieldError(user, t('notify.errSmtpUser', 'Brukernavnet er e-postadressen du sender fra'))
+      return
+    }
+    patchSettings({
+      emailSmtp:     hostVal,
+      emailSmtpUser: userVal,
+      emailSmtpPass: pass?.value ?? '',
+      emailSmtpPort: +((document.getElementById('email-port') as HTMLInputElement | null)?.value ?? 587),
+    })
+    const ok = await window.api.saveSettings(settings).catch(() => false)
+    if (!ok) { toast('error', t('general.saveFailed', 'Kunne ikke lagre innstillingen')); return }
+    if (pass) pass.value = ''
+    showSavedChip(saveBtn.parentElement)
+  })
+
+  cancelBtn?.addEventListener('click', () => {
+    clearFieldErrors(document.getElementById('email-smtp-advanced'))
+    setVal('email-smtp', settings.emailSmtp ?? '')
+    setVal('email-user', settings.emailSmtpUser ?? '')
+    setVal('email-port', settings.emailSmtpPort ?? 587)
+    if (pass) pass.value = ''
+  })
 }
 
 // Lifetime `window.api.on` subscriptions + the hourly auto-check interval —
@@ -190,7 +284,6 @@ function wireUpdateIpcListeners(): void {
 }
 
 export function applyGeneralSettingsToUI(): void {
-  markAllClean()
   setVal('language-select', settings.language ?? 'no')
   setVal('church-name',        settings.churchName        ?? '')
   setVal('responsible-person', settings.responsiblePerson ?? '')
@@ -246,12 +339,20 @@ export function applyGeneralSettingsToUI(): void {
 
   setUpdateStatus('', t('update.checkHint', 'Klikk «Se etter oppdateringer» for å sjekke'))
   updateEditorClipUI()
+  // The DOM now mirrors settings — rebase the bindings' baselines.
+  resyncBoundSettings()
 }
 
-async function saveGeneralSettings(): Promise<void> {
-  const newLang = (document.getElementById('language-select') as HTMLSelectElement | null)?.value ?? 'no'
+/**
+ * Read the auto-applying System + Varsler controls into `settings`.
+ *
+ * The SMTP server fields are deliberately NOT read here: they belong to the
+ * explicit-save card (`setupSmtpCard`), and picking them up from a neighbouring
+ * toggle's save would silently commit a half-typed mail server.
+ */
+function collectGeneralSettings(): void {
   patchSettings({
-    language:          newLang,
+    language:          (document.getElementById('language-select') as HTMLSelectElement | null)?.value ?? 'no',
     churchName:        (document.getElementById('church-name')        as HTMLInputElement | null)?.value ?? '',
     responsiblePerson: (document.getElementById('responsible-person') as HTMLInputElement | null)?.value ?? '',
     notifyStart:       !!(document.getElementById('opt-notify-start') as HTMLInputElement | null)?.checked,
@@ -259,10 +360,6 @@ async function saveGeneralSettings(): Promise<void> {
     reminderMinutes:   parseInt((document.getElementById('opt-reminder-minutes') as HTMLSelectElement | null)?.value ?? '0') || 0,
     emailOnError:      !!(document.getElementById('opt-email-error')  as HTMLInputElement | null)?.checked,
     emailAddress:      (document.getElementById('email-address')     as HTMLInputElement | null)?.value ?? '',
-    emailSmtp:         (document.getElementById('email-smtp')        as HTMLInputElement | null)?.value ?? '',
-    emailSmtpPort:     +((document.getElementById('email-port')      as HTMLInputElement | null)?.value ?? 587),
-    emailSmtpUser:     (document.getElementById('email-user')        as HTMLInputElement | null)?.value ?? '',
-    emailSmtpPass:     (document.getElementById('email-pass')        as HTMLInputElement | null)?.value ?? '',
     webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
     webhookOnWarn:     !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
@@ -270,16 +367,6 @@ async function saveGeneralSettings(): Promise<void> {
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked
   })
-  await window.api.saveSettings(settings)
-  // loadLocale is async now (lazy locale chunk); fire-and-forget — it re-applies
-  // translations when the chunk resolves.
-  if (newLang !== currentLang) void loadLocale(newLang)
-  markAllClean()
-  const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
-  const flashBtn = activeTab === 'settings-notifications'
-    ? document.getElementById('btn-varsler-save')
-    : document.getElementById('btn-general-save')
-  flashSaved(flashBtn)
 }
 
 function toggleEmailSection(): void {

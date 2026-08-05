@@ -5,6 +5,14 @@ import { getAudioDevices } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
 import { closeModal, openModal } from '../ui/modal-manager'
+import {
+  bindRadioGroup,
+  bindSetting,
+  confirmIfRecordingImminent,
+  recordingImminentGuard,
+  resyncBoundSettings,
+  showSavedChip,
+} from '../ui/bind-setting'
 import type { ChannelMode } from '../../types'
 
 function updateVolGradient(): void {
@@ -15,21 +23,25 @@ function updateVolGradient(): void {
 }
 
 export function setupAudioPage(): void {
-  // AUTO-SAVE is the ONLY save model on this page: every control persists on
-  // change (the old Lagre/Avbryt footer contradicted it — the footer implied
-  // unsaved work while the write had already happened, and Avbryt could not
-  // revert it). The channel grid shows its own inline «Lagret ✓».
-  const autoSave = () => { void saveAudioSettings() }
+  // AUTO-APPLY is the ONLY save model on this page — and since bindSetting it
+  // is no longer SILENT: each control writes on change and flashes an inline
+  // «Lagret ✓», the same receipt the channel grid has always shown. (The old
+  // Lagre/Avbryt footer contradicted the write that had already happened, and
+  // «Avbryt» could not revert it.)
 
-  // Sample-rate mode cards (auto / r44100 / r48000) → save.
-  document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
-    r.addEventListener('change', autoSave)
+  // Sample-rate mode cards (auto / r44100 / r48000).
+  bindRadioGroup('sampleRate', {
+    key: 'sampleRateMode',
+    apply: () => collectAudioSettings(),
+    after: () => afterAudioSave(),
   })
 
-  // Channel-mode cards (stereo / mono / monoL / monoR) → save. The channel
-  // grid listens on the same radios to re-render its chips/badges.
-  document.querySelectorAll<HTMLInputElement>('input[name="channels"]').forEach(r => {
-    r.addEventListener('change', autoSave)
+  // Channel-mode cards (stereo / mono / monoL / monoR). The channel grid
+  // listens on the same radios to re-render its chips/badges.
+  bindRadioGroup('channels', {
+    key: 'channels',
+    apply: () => collectAudioSettings(),
+    after: () => afterAudioSave(),
   })
 
   // The live channel grid: meters per native channel, tap-to-assign L/R. The
@@ -46,11 +58,23 @@ export function setupAudioPage(): void {
   {
     const card = document.getElementById('classic-audio-card')
     if (card) card.style.display = ''
-    document.getElementById('opt-classic-ffmpeg')?.addEventListener('change', autoSave)
+    // Swapping the capture engine mid-service is exactly the change that costs
+    // you the recording, so it asks first when one is running or imminent.
+    bindSetting('opt-classic-ffmpeg', {
+      key: 'classicFfmpegAudio',
+      apply: () => collectAudioSettings(),
+      confirmIf: recordingImminentGuard(t('audio.guardEngine', 'Bytte opptaksmotor')),
+      after: () => afterAudioSave(),
+    })
     if (/win/i.test(navigator.userAgent)) {
       const row = document.getElementById('classic-dshow-row')
       if (row) row.style.display = ''
-      document.getElementById('opt-classic-dshow')?.addEventListener('change', autoSave)
+      bindSetting('opt-classic-dshow', {
+        key: 'classicDirectshow',
+        apply: () => collectAudioSettings(),
+        confirmIf: recordingImminentGuard(t('audio.guardEngine', 'Bytte opptaksmotor')),
+        after: () => afterAudioSave(),
+      })
     }
   }
   // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
@@ -92,6 +116,7 @@ function onGridChannelCount(count: number): void {
   if (count === 1 && settings.channels !== 'monoL') {
     setRadio('channels', 'monoL')
     void saveAudioSettings()
+    resyncBoundSettings()
   }
   const selCard = document.querySelector('#device-list .device-card.selected') as HTMLElement | null
   const subEl = selCard?.querySelector('.device-sub') as HTMLElement | null
@@ -124,9 +149,25 @@ export function applyAudioSettingsToUI(): void {
   setVal('comp-ratio',     settings.compRatio     ?? 4)
   setVal('comp-attack',    settings.compAttack    ?? 10)
   setVal('comp-release',   settings.compRelease   ?? 200)
+  // The DOM was just rewritten from settings — rebase every binding's "last
+  // committed value" so the next edit is compared against what is on screen.
+  resyncBoundSettings()
 }
 
-async function saveAudioSettings(): Promise<void> {
+/** Refresh Home live: the disk estimate (channels/samplerate) + the device and
+ *  format info-strip cards, so a change shows without navigating away. */
+function afterAudioSave(): void {
+  void refreshHomeDiskSpace()
+  void loadHomeInfoStrip()
+}
+
+/**
+ * Read every audio control the page owns into `settings`. Split out of the old
+ * `saveAudioSettings` so `bindSetting` owns the persistence (one debounced
+ * write, one visible receipt) while the DOM → Settings mapping stays in one
+ * place.
+ */
+function collectAudioSettings(): void {
   const selectedCard = document.querySelector('.device-card.selected') as HTMLElement | null
   const deviceId   = selectedCard?.dataset.deviceId   ?? settings.deviceId   ?? null
   const deviceName = selectedCard?.dataset.deviceLabel ?? settings.deviceName ?? null
@@ -163,11 +204,41 @@ async function saveAudioSettings(): Promise<void> {
   }
 
   patchSettings(patch)
+}
+
+/** Collect + persist in one step, for the paths that are not bound controls
+ *  (the device cards, the grid's mono auto-switch). */
+async function saveAudioSettings(): Promise<void> {
+  collectAudioSettings()
   await window.api.saveSettings(settings)
-  // Refresh Home live: disk estimate (channels/samplerate) + the device/format
-  // info-strip cards so the change shows without navigating away and back.
-  void refreshHomeDiskSpace()
-  void loadHomeInfoStrip()
+  afterAudioSave()
+}
+
+/**
+ * Switch the recording device.
+ *
+ * The device cards are clickable divs, not a form control, so they cannot go
+ * through `bindSetting` — but they get the same guard: swapping the input 4
+ * minutes before the service starts is the single change most likely to cost
+ * you the recording, so it asks first (and only then).
+ */
+async function selectDevice(
+  container: HTMLElement,
+  card: HTMLElement,
+  deviceId: string,
+  deviceName: string | null,
+): Promise<void> {
+  if (settings.deviceId === deviceId) return
+  const proceed = await confirmIfRecordingImminent(t('audio.guardDevice', 'Bytte lydenhet'))
+  if (!proceed) return
+  container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
+  card.classList.add('selected')
+  patchSettings({ deviceId, deviceName })
+  // Persist immediately, then point the live channel grid at the device — the
+  // grid reports the real channel count back (sub-line + auto-mono).
+  await saveAudioSettings()
+  showSavedChip(card.querySelector<HTMLElement>('.device-name'))
+  void startChannelGrid(deviceId, deviceName)
 }
 
 export async function renderDeviceList(containerId: string): Promise<void> {
@@ -204,15 +275,7 @@ export async function renderDeviceList(containerId: string): Promise<void> {
         <div class="device-sub" data-sub-base="ASIO">ASIO</div>
       </div>
       <span class="device-badge ok">ASIO</span>`
-    card.addEventListener('click', () => {
-      container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
-      card.classList.add('selected')
-      patchSettings({ deviceId: devId, deviceName: name })
-      // Persist immediately, then point the live channel grid at the device —
-      // the grid reports the real channel count back (sub-line + auto-mono).
-      void saveAudioSettings()
-      void startChannelGrid(devId, name)
-    })
+    card.addEventListener('click', () => { void selectDevice(container, card, devId, name) })
     container.appendChild(card)
   })
 
@@ -232,13 +295,7 @@ export async function renderDeviceList(containerId: string): Promise<void> {
         <div class="device-sub" data-sub-base="${escHtml(subBase)}">${escHtml(subBase)}</div>
       </div>
       <span class="device-badge ${builtIn ? 'warn' : 'ok'}">${builtIn ? t('audio.notRecommended') : t('audio.connected','Tilkoblet ✓')}</span>`
-    card.addEventListener('click', () => {
-      container.querySelectorAll('.device-card').forEach(c => c.classList.remove('selected'))
-      card.classList.add('selected')
-      patchSettings({ deviceId: d.deviceId, deviceName: d.label })
-      void saveAudioSettings()
-      void startChannelGrid(d.deviceId, d.label)
-    })
+    card.addEventListener('click', () => { void selectDevice(container, card, d.deviceId, d.label) })
     container.appendChild(card)
   })
 

@@ -400,7 +400,9 @@
     "diagnoseCopy": "📋 Copy full report",
     "diagnoseFull": "Full report",
     "diagnoseRunning": "Analyzing…",
-    "diagnoseSaved": "Saved to"
+    "diagnoseSaved": "Saved to",
+    "guardDevice": "Change audio device",
+    "guardEngine": "Switch recording engine"
   },
   "files": {
     "saveFolder": "Save folder",
@@ -420,8 +422,6 @@
     "autoDeleteDesc": "Frees up disk space automatically by removing old recordings",
     "trimSilence": "Trim silence",
     "trimSilenceDesc": "Automatically trims silent seconds at the start and end of the recording",
-    "save": "Save",
-    "cancel": "Cancel",
     "confirmAutoDeleteShort": "Recordings older than {n} days are deleted automatically and cannot be recovered.",
     "behaviourTitle": "Recording behaviour",
     "behaviourDesc": "Fine-tune how the recording starts, is protected, and split.",
@@ -438,7 +438,7 @@
   "general": {
     "language": "Language",
     "appLanguage": "APP LANGUAGE",
-    "langHint": "The change takes effect after you click Save.",
+    "langHint": "The change takes effect immediately.",
     "profile": "Church profile",
     "church": "CONGREGATION / CHURCH",
     "responsible": "PERSON IN CHARGE",
@@ -483,7 +483,9 @@
     "webhookUrl": "WEBHOOK URL",
     "cspError": "Configuration error: camera preview will not work (CSP blocks blob: URLs). Restart the app — if the problem persists, contact support.",
     "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support.",
-    "diagnoseTitle": "Audio device diagnostics"
+    "diagnoseTitle": "Audio device diagnostics",
+    "savedChip": "Saved ✓",
+    "saveFailed": "Could not save the setting"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
@@ -736,7 +738,8 @@
     "probeFailed": "Could not read the camera’s resolutions — limited to 1080p to avoid upscaling. 4K requires a camera that delivers true 4K.",
     "resNative": "the camera’s max",
     "resNotSupported": "not supported",
-    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max."
+    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max.",
+    "guardDevice": "Change camera"
   },
   "onboarding": {
     "welcomeTitle": "Welcome to SundayRec",
@@ -824,7 +827,11 @@
     "emailGmailConfirmDisconnect": "Email notifications will fall back to SMTP.",
     "emailGmailSendsAs": "Sending via",
     "emailGmailReauth": "⚠ Re-login required",
-    "emailAdvanced": "Advanced: use SMTP instead"
+    "emailAdvanced": "Advanced: use SMTP instead",
+    "errEmail": "Enter a valid e-mail address, e.g. name@church.org",
+    "errWebhookUrl": "The webhook URL must start with https://",
+    "errSmtpHost": "Enter a server name, e.g. smtp.gmail.com",
+    "errSmtpUser": "The username is the e-mail address you send from"
   },
   "prep": {
     "sectionTitle": "Auto-prep and review",
@@ -905,7 +912,6 @@
     "streamNoneYet": "No destinations yet. Add one to start streaming.",
     "account": "Account",
     "autoUpload": "Upload automatically after recording",
-    "cancel": "Cancel",
     "connect": "Connect",
     "desc": "Upload recordings automatically to Google Drive — as extra backup and for easy sharing.",
     "disconnect": "Disconnect",
@@ -914,12 +920,18 @@
     "introDesc": "Here you set up automatic cloud backup and — if you wish — a podcast that makes the services available on Spotify and Apple Podcasts. Everything is optional.",
     "lastUpload": "Last",
     "pickFolder": "Choose folder…",
-    "save": "Save",
-    "title": "Cloud backup"
+    "title": "Cloud backup",
+    "streamSaveDestinations": "Save destinations",
+    "streamUnsaved": "Not saved yet"
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
-    "sundayEditMissing": "SundayEdit not found"
+    "sundayEditMissing": "SundayEdit not found",
+    "errUrl": "This is not a valid address (e.g. https://api.sundaysong.com)",
+    "errUrlScheme": "The address must start with https://",
+    "errChurchId": "The church ID is a UUID from SundaySong or SundayPlan",
+    "errKeyEmpty": "Paste the key first",
+    "keySaved": "✓ API key saved (encrypted)"
   },
   "live": {
     "title": "Live broadcast",
@@ -1008,7 +1020,8 @@
     "settingsTitle": "Sermon helper — AI summary (optional)",
     "settingsDesc": "Chapters and quotes are always produced locally on this device. For a nicer summary and title you can paste an Anthropic API key — it's stored only in the OS keychain, never in settings. Without a key, a local summary is used.",
     "keySave": "Save",
-    "keyClear": "Remove"
+    "keyClear": "Remove",
+    "keyStored": "✓ API key saved (keychain)"
   },
   "search": {
     "title": "Search & history",
@@ -1102,5 +1115,12 @@
     "openSchedule": "Open schedule",
     "bannerAction": "Show details",
     "more": "more"
+  },
+  "guard": {
+    "title": "{what} now?",
+    "duringRecording": "A recording is running right now. The change can interrupt or ruin what is being recorded.",
+    "beforeRecording": "The next scheduled recording starts in {n} minutes. The change will affect that recording.",
+    "confirm": "Yes, change anyway",
+    "cancel": "Not now"
   }
 }

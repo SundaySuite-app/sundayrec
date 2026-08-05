@@ -400,7 +400,9 @@
     "diagnoseCopy": "📋 Kopiér fuld rapport",
     "diagnoseFull": "Fuld rapport",
     "diagnoseRunning": "Analyserer…",
-    "diagnoseSaved": "Gemt til"
+    "diagnoseSaved": "Gemt til",
+    "guardDevice": "Skifte lydenhed",
+    "guardEngine": "Skifte optagemotor"
   },
   "files": {
     "saveFolder": "Mappe til at gemme i",
@@ -420,8 +422,6 @@
     "autoDeleteDesc": "Frigør diskplads automatisk ved at slette gamle optagelser",
     "trimSilence": "Klip stilhed væk",
     "trimSilenceDesc": "Beskærer automatisk stille sekunder i starten og slutningen af optagelsen",
-    "save": "Gem",
-    "cancel": "Annuller",
     "confirmAutoDeleteShort": "Optagelser ældre end {n} dage slettes automatisk og kan ikke gendannes.",
     "behaviourTitle": "Optagelsesadfærd",
     "behaviourDesc": "Finjuster, hvordan optagelsen starter, beskyttes og opdeles.",
@@ -438,7 +438,7 @@
   "general": {
     "language": "Sprog",
     "appLanguage": "APPENS SPROG",
-    "langHint": "Ændringen træder i kraft, når du trykker på Gem.",
+    "langHint": "Ændringen træder i kraft med det samme.",
     "profile": "Kirkeprofil",
     "church": "MENIGHED / KIRKE",
     "responsible": "ANSVARLIG PERSON",
@@ -483,7 +483,9 @@
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfejl: kamera-forhåndsvisningen vil ikke fungere (CSP blokerer blob:-URL’er). Genstart appen — hvis problemet fortsætter, kontakt support.",
     "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support.",
-    "diagnoseTitle": "Diagnose af lydenhed"
+    "diagnoseTitle": "Diagnose af lydenhed",
+    "savedChip": "Gemt ✓",
+    "saveFailed": "Kunne ikke gemme indstillingen"
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
@@ -736,7 +738,8 @@
     "probeFailed": "Kunne ikke læse kameraets opløsninger — begrænset til 1080p for at undgå opskalering. 4K kræver et kamera, der leverer ægte 4K.",
     "resNative": "kameraets maks.",
     "resNotSupported": "understøttes ikke",
-    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks."
+    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks.",
+    "guardDevice": "Skifte kamera"
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",
@@ -824,7 +827,11 @@
     "emailGmailConfirmDisconnect": "E-mailnotifikationer falder tilbage til SMTP.",
     "emailGmailSendsAs": "Sender via",
     "emailGmailReauth": "⚠ Kræver ny tilslutning",
-    "emailAdvanced": "Avanceret: brug SMTP i stedet"
+    "emailAdvanced": "Avanceret: brug SMTP i stedet",
+    "errEmail": "Skriv en gyldig e-mailadresse, f.eks. navn@kirke.dk",
+    "errWebhookUrl": "Webhook-URL’en skal begynde med https://",
+    "errSmtpHost": "Skriv et servernavn, f.eks. smtp.gmail.com",
+    "errSmtpUser": "Brugernavnet er den e-mailadresse, du sender fra"
   },
   "prep": {
     "sectionTitle": "Forberedelse og gennemgang",
@@ -905,7 +912,6 @@
     "enabled": "Aktiveret",
     "account": "Konto",
     "autoUpload": "Upload automatisk efter optagelse",
-    "cancel": "Annuller",
     "connect": "Forbind",
     "desc": "Upload optagelserne automatisk til Google Drive — som ekstra sikkerhed og til nem deling.",
     "disconnect": "Afbryd",
@@ -914,12 +920,18 @@
     "introDesc": "Her sætter du automatisk cloud-backup op og — hvis I ønsker det — en podcast, der gør gudstjenesterne tilgængelige på Spotify og Apple Podcasts. Alt er valgfrit.",
     "lastUpload": "Seneste",
     "pickFolder": "Vælg mappe…",
-    "save": "Gem",
-    "title": "Cloud-backup"
+    "title": "Cloud-backup",
+    "streamSaveDestinations": "Gem destinationer",
+    "streamUnsaved": "Ikke gemt endnu"
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åbne",
-    "sundayEditMissing": "SundayEdit blev ikke fundet"
+    "sundayEditMissing": "SundayEdit blev ikke fundet",
+    "errUrl": "Dette er ikke en gyldig adresse (f.eks. https://api.sundaysong.com)",
+    "errUrlScheme": "Adressen skal begynde med https://",
+    "errChurchId": "Menigheds-ID er et UUID fra SundaySong eller SundayPlan",
+    "errKeyEmpty": "Indsæt nøglen først",
+    "keySaved": "✓ API-nøgle gemt (krypteret)"
   },
   "live": {
     "title": "Direkte udsendelse",
@@ -1008,7 +1020,8 @@
     "settingsTitle": "Prædikenhjælp — AI-opsummering (valgfrit)",
     "settingsDesc": "Kapitler og citater laves altid lokalt på enheden. Vil du have en finere opsummering og titel, kan du indsætte en Anthropic API-nøgle — den gemmes kun i nøgleringen (OS keychain), aldrig i indstillinger. Uden nøgle bruges en lokal opsummering.",
     "keySave": "Gem",
-    "keyClear": "Fjern"
+    "keyClear": "Fjern",
+    "keyStored": "✓ API-nøgle gemt (nøglering)"
   },
   "search": {
     "title": "Søg & historik",
@@ -1102,5 +1115,12 @@
     "openSchedule": "Åbn tidsplan",
     "bannerAction": "Vis detaljer",
     "more": "flere"
+  },
+  "guard": {
+    "title": "{what} nu?",
+    "duringRecording": "En optagelse kører lige nu. Ændringen kan afbryde eller ødelægge det, der optages.",
+    "beforeRecording": "Næste planlagte optagelse starter om {n} minutter. Ændringen når at påvirke den optagelse.",
+    "confirm": "Ja, ændr alligevel",
+    "cancel": "Ikke nu"
   }
 }

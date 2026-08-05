@@ -555,21 +555,9 @@ select:focus:not(:focus-visible) {
   min-width: 36px; text-align: right;
 }
 
-/* ── Page footer (sticky Save/Cancel bar on settings pages) ─────── */
-.page-footer {
-  display: flex; gap: 8px; align-items: center;
-  padding: 0 20px;
-  background: var(--surface); border-top: 1px solid var(--border);
-  border-radius: var(--r);
-  position: sticky; bottom: 0;
-  max-height: 0; overflow: hidden;
-  opacity: 0; pointer-events: none;
-  transition: max-height .18s ease, padding .18s ease, opacity .15s ease;
-}
-.page-footer.dirty {
-  max-height: 60px; padding: 10px 20px;
-  opacity: 1; pointer-events: auto;
-}
+/* The sticky Save/Cancel «page-footer» is gone (Fase 3, 2026-08): settings
+   auto-apply with an inline «Lagret ✓», and the three staged surfaces use
+   .explicit-save-card in ui.css instead. Rules removed with the markup. */
 
 /* ── Record button ─────────────────────────────────────────────── */
 .btn-record {

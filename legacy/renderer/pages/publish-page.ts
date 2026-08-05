@@ -5,6 +5,7 @@ import { notifyLivePageDestinationsChanged } from './live-page'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
+import { bindRadioGroup, bindSetting, showSavedChip } from '../ui/bind-setting'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
 type ServiceStatus = Record<CloudServiceId, CloudStatus>
@@ -91,7 +92,7 @@ export function setupPublishPage(): void {
   document.querySelectorAll<HTMLInputElement>('[data-cloud-auto]').forEach(chk => {
     chk.addEventListener('change', () => {
       const service = chk.dataset.cloudAuto as CloudServiceId
-      saveServiceSettings(service, { autoUpload: chk.checked })
+      saveServiceSettings(service, { autoUpload: chk.checked }, chk)
     })
   })
 
@@ -99,7 +100,7 @@ export function setupPublishPage(): void {
   document.querySelectorAll<HTMLInputElement>('[data-cloud-enabled]').forEach(chk => {
     chk.addEventListener('change', () => {
       const service = chk.dataset.cloudEnabled as CloudServiceId
-      saveServiceSettings(service, { enabled: chk.checked })
+      saveServiceSettings(service, { enabled: chk.checked }, chk)
     })
   })
 
@@ -107,8 +108,7 @@ export function setupPublishPage(): void {
   document.addEventListener('cloud-manual-upload', async (e: Event) => {
     const detail = (e as CustomEvent).detail as { service: CloudServiceId; filePath: string }
     await window.api.cloudUploadFile(detail.service, detail.filePath)
-    // Sky-backup is now on the Publisering tab; fall back to files-save if not present.
-    flashSaved(document.getElementById('btn-publish-save') ?? document.getElementById('btn-files-save'))
+    flashSaved(null)
   })
 
   wireCloudIpcListeners()
@@ -394,13 +394,20 @@ document.getElementById('cloud-folder-modal-close')?.addEventListener('click', (
   closeModal('cloud-folder-modal')
 })
 
-function saveServiceSettings(service: CloudServiceId, patch: Partial<CloudServiceSettings>): void {
+function saveServiceSettings(
+  service: CloudServiceId,
+  patch: Partial<CloudServiceSettings>,
+  chipFor?: HTMLElement | null,
+): void {
   const key = service === 'google-drive' ? 'cloudGoogleDrive'
             : service === 'dropbox'       ? 'cloudDropbox'
             :                               'cloudOneDrive'
   const existing = settings[key] ?? { enabled: false, autoUpload: false }
   patchSettings({ [key]: { ...existing, ...patch } })
-  window.api.saveSettings(settings).catch(console.error)
+  window.api.saveSettings(settings).then(
+    () => showSavedChip(chipFor?.closest<HTMLElement>('.cloud-toggle-row') ?? null),
+    console.error,
+  )
 }
 
 function showServiceError(service: CloudServiceId, message: string): void {
@@ -469,21 +476,32 @@ function setupStreamDestinations(): void {
       draftOnly: true,
     })
     renderStreamDestinations()
-    markPublishDirtyHint()
+    markStreamDirty(true)
   })
 
-  // Save is wired in files-page (saveFilesSettings) — we hook in via the
-  // existing button click. We must also persist the destinations + push
-  // keys to the encrypted store. files-page's saveFilesSettings runs
-  // patchSettings without touching streamDestinations, so a second save here
-  // is safe (both saves merge into the same Settings object via patchSettings).
-  document.getElementById('btn-publish-save')?.addEventListener('click', () => {
+  // EXPLICIT save — one of the three exceptions to auto-apply. A destination is
+  // a URL + a stream key that only work as a set, and the key leaves the app for
+  // the OS keychain on save; committing it a keystroke at a time would push a
+  // dozen truncated keys into the keychain and leave the last one wrong.
+  document.getElementById('btn-stream-dest-save')?.addEventListener('click', () => {
     void saveStreamDestinations()
   })
-  document.getElementById('btn-publish-cancel')?.addEventListener('click', () => {
+  document.getElementById('btn-stream-dest-cancel')?.addEventListener('click', () => {
     removedDestIds.clear()
     draftDestinations = cloneFromSettings()
     renderStreamDestinations()
+    markStreamDirty(false)
+  })
+
+  // Quality + framerate are plain settings, not part of the destination set —
+  // they auto-apply like everything else.
+  bindRadioGroup('stream-resolution', {
+    key: 'streamResolution',
+    apply: (value) => patchSettings({ streamResolution: value as '480p' | '720p' | '1080p' }),
+  })
+  bindSetting('stream-framerate', {
+    key: 'streamFramerate',
+    apply: (value) => patchSettings({ streamFramerate: (Number(value) || 30) as 25 | 30 }),
   })
 }
 
@@ -491,6 +509,7 @@ function applyStreamSettingsToUI(): void {
   draftDestinations = cloneFromSettings()
   removedDestIds.clear()
   renderStreamDestinations()
+  markStreamDirty(false)
   // Quality + framerate radios
   const res = settings.streamResolution ?? '720p'
   const radio = document.querySelector<HTMLInputElement>(`input[name="stream-resolution"][value="${res}"]`)
@@ -549,8 +568,8 @@ function renderStreamDestinations(): void {
     `
 
     row.querySelectorAll<HTMLInputElement>('input[data-stream-field]').forEach(inp => {
-      inp.addEventListener('input', () => updateDraftFromRow(idx, row))
-      inp.addEventListener('change', () => updateDraftFromRow(idx, row))
+      inp.addEventListener('input', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
+      inp.addEventListener('change', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
     })
     row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', async () => {
       const ok = await confirmDialog({
@@ -564,7 +583,7 @@ function renderStreamDestinations(): void {
       if (removed && !removed.draftOnly) removedDestIds.add(removed.id)
       draftDestinations.splice(idx, 1)
       renderStreamDestinations()
-      markPublishDirtyHint()
+      markStreamDirty(true)
     })
     list.appendChild(row)
   })
@@ -638,14 +657,20 @@ async function saveStreamDestinations(): Promise<void> {
   // flipped, pendingKey is cleared).
   draftDestinations = cloneFromSettings()
   renderStreamDestinations()
+  markStreamDirty(false)
+  showSavedChip(document.getElementById('btn-stream-dest-save')?.parentElement ?? null)
 
   notifyLivePageDestinationsChanged()
 }
 
-function markPublishDirtyHint(): void {
-  // Reuse the existing dirty-bar pattern by dispatching an input event on the
-  // publish footer's parent. The page-footer .dirty class is toggled by
-  // setupDirtyBar listeners on the page element.
-  const page = document.getElementById('settings-publish')
-  page?.dispatchEvent(new Event('input', { bubbles: true }))
+/**
+ * Show/clear the "unsaved destinations" state on the explicit-save card. This
+ * is the ONLY place in settings that still has a dirty state, and it is honest:
+ * nothing has been written until «Lagre destinasjoner» is pressed.
+ */
+function markStreamDirty(dirty: boolean): void {
+  const card = document.getElementById('stream-destinations-card')
+  card?.classList.toggle('has-unsaved', dirty)
+  const hint = document.getElementById('stream-dest-dirty-hint')
+  if (hint) hint.style.display = dirty ? '' : 'none'
 }

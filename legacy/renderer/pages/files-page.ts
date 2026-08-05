@@ -1,113 +1,146 @@
-import { settings, patchSettings } from '../state'
+import { settings, patchSettings, saveSettingsDebounced } from '../state'
 import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
-import { flashSaved, setVal, setRadio, isoDate, setupDirtyBar } from '../helpers'
+import { setVal, setRadio, isoDate } from '../helpers'
 import { t } from '../i18n'
-import { confirmDialog } from '../ui/dialog'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
+import {
+  bindRadioGroup,
+  bindSetting,
+  resyncBoundSettings,
+  showSavedChip,
+  type BindSettingOpts,
+  type GuardDescriptor,
+} from '../ui/bind-setting'
 
-let _markFilesClean = () => {}
-let _markFilesDirty = () => {}
-let _markPublishClean = () => {}
-let _markPublishDirty = () => {}
+/** Deleting recordings on a timer is the one files-setting that destroys data,
+ *  so a retention shorter than a month asks first — wherever it is set from. */
+function autoDeleteGuard(days: number): GuardDescriptor | null {
+  if (!(days > 0 && days < 30)) return null
+  return {
+    title: t('dialog.autoDeleteTitle', 'Slette opptak automatisk?'),
+    message: t(
+      'files.confirmAutoDeleteShort',
+      'Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.',
+    ).replace('{n}', String(days)),
+    confirmLabel: t('dialog.autoDeleteConfirm', 'Ja, slett automatisk'),
+  }
+}
+
+function currentAutoDeleteDays(): number {
+  const el = document.getElementById('auto-delete-days') as HTMLInputElement | null
+  return +(el?.value ?? '') || 90
+}
+
+/** Every files/podcast control writes the same way. */
+function filesBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
+  return {
+    apply: () => collectFilesSettings(),
+    after: () => afterFilesSave(),
+    ...extra,
+  }
+}
 
 export function setupFilesPage(): void {
-  const bar = setupDirtyBar('settings-files')
-  _markFilesClean = bar.clean
-  _markFilesDirty = bar.dirty
-  // Publish tab has its own footer (sky-backup + podcast moved here)
-  const pubBar = setupDirtyBar('settings-publish')
-  _markPublishClean = pubBar.clean
-  _markPublishDirty = pubBar.dirty
-
-  // AUTO-SAVE: every recorder-critical files-control persists immediately on
-  // change (the old flow needed a «Lagre» click; a format/folder change the user
-  // navigated away from was lost → recorder kept defaults). saveFilesSettings
-  // saves the whole Settings object + refreshes the Home format/disk cards.
-  const autoSave = () => { void saveFilesSettings() }
-
+  // AUTO-APPLY with a visible receipt. Before this the tab had a dirty footer
+  // whose «Lagre» was needed for the podcast fields but NOT for the recorder
+  // ones (those already auto-saved) — and «Avbryt» could not revert either.
   document.getElementById('btn-pick-folder')?.addEventListener('click', async () => {
     const folder = await window.api.pickFolder()
-    if (folder) {
-      setVal('save-folder', folder)
-      patchSettings({ saveFolder: folder })
-      _markFilesDirty()
-      autoSave()
-    }
+    if (!folder) return
+    setVal('save-folder', folder)
+    patchSettings({ saveFolder: folder })
+    const ok = await saveSettingsDebounced(120)
+    if (ok) showSavedChip(document.querySelector<HTMLElement>('#settings-files .form-label'))
+    resyncBoundSettings()
+    afterFilesSave()
   })
 
-  document.getElementById('pattern-select')?.addEventListener('change', () => { updateFilenamePreview(); autoSave() })
-  document.querySelectorAll('input[name="format"]').forEach(r =>
-    r.addEventListener('change', () => { toggleMp3Quality(); updateFilenamePreview(); autoSave() })
-  )
-  document.querySelectorAll('input[name="bitrate"]').forEach(r =>
-    r.addEventListener('change', autoSave)
-  )
-  document.getElementById('opt-auto-delete')?.addEventListener('change', function (this: HTMLInputElement) {
-    const row = document.getElementById('auto-delete-days-row')
-    if (row) row.style.display = this.checked ? 'block' : 'none'
-    autoSave()
-  })
-  document.getElementById('auto-delete-days')?.addEventListener('change', autoSave)
-  document.getElementById('opt-trim-silence')?.addEventListener('change', autoSave)
+  bindSetting('pattern-select', filesBinding({
+    key: 'filenamePattern',
+    after: () => { updateFilenamePreview(); afterFilesSave() },
+  }))
+  bindRadioGroup('format', filesBinding({
+    key: 'format',
+    after: () => { toggleMp3Quality(); updateFilenamePreview(); afterFilesSave() },
+  }))
+  bindRadioGroup('bitrate', filesBinding({ key: 'bitrate' }))
 
-  // Opptaksoppførsel — silence-toggle reveals threshold/timeout config inline.
-  document.getElementById('opt-silence')?.addEventListener('change', function (this: HTMLInputElement) {
-    const silCfg = document.getElementById('silence-config')
-    if (silCfg) silCfg.style.display = this.checked ? 'block' : 'none'
-    autoSave()
-  })
+  bindSetting('opt-auto-delete', filesBinding({
+    key: 'autoDeleteDays',
+    confirmIf: (value) => (value === true ? autoDeleteGuard(currentAutoDeleteDays()) : null),
+    after: (value) => {
+      const row = document.getElementById('auto-delete-days-row')
+      if (row) row.style.display = value ? 'block' : 'none'
+      afterFilesSave()
+    },
+    revert: (previous) => {
+      const el = document.getElementById('opt-auto-delete') as HTMLInputElement | null
+      if (el) el.checked = previous === true
+      const row = document.getElementById('auto-delete-days-row')
+      if (row) row.style.display = previous ? 'block' : 'none'
+    },
+  }))
+  bindSetting('auto-delete-days', filesBinding({
+    key: 'autoDeleteDays',
+    confirmIf: (value) => autoDeleteGuard(typeof value === 'number' ? value : 0),
+  }))
+  bindSetting('opt-trim-silence', filesBinding({ key: 'trimSilence' }))
+
+  // Opptaksoppførsel — the silence toggle reveals its threshold/timeout config.
+  bindSetting('opt-silence', filesBinding({
+    key: 'stopOnSilence',
+    after: (value) => {
+      const silCfg = document.getElementById('silence-config')
+      if (silCfg) silCfg.style.display = value ? 'block' : 'none'
+      afterFilesSave()
+    },
+  }))
+  bindSetting('opt-protect', filesBinding({ key: 'protectRecording' }))
   ;['opt-silence-threshold', 'opt-silence-timeout', 'opt-split-minutes', 'opt-manual-max', 'opt-preroll-seconds']
-    .forEach(id => document.getElementById(id)?.addEventListener('change', autoSave))
+    .forEach(id => bindSetting(id, filesBinding({ key: id })))
 
-  document.getElementById('btn-files-save')?.addEventListener('click', saveFilesSettings)
-  document.getElementById('btn-files-cancel')?.addEventListener('click', () => applyFilesSettingsToUI())
-
-  // Podcast: toggle config visibility + regenerate button + copy URL
-  document.getElementById('opt-podcast-enabled')?.addEventListener('change', function (this: HTMLInputElement) {
-    const cfg = document.getElementById('podcast-config')
-    if (cfg) cfg.style.display = this.checked ? 'flex' : 'none'
-    _markPublishDirty()
-  })
+  // ── Podcast (now a section of Deling) ──────────────────────────────────────
+  bindSetting('opt-podcast-enabled', filesBinding({
+    key: 'podcast.enabled',
+    after: (value) => {
+      const cfg = document.getElementById('podcast-config')
+      if (cfg) cfg.style.display = value ? 'flex' : 'none'
+      afterFilesSave()
+    },
+  }))
   ;[
     'podcast-title','podcast-author','podcast-description','podcast-language',
     'podcast-category','podcast-email','podcast-link','podcast-image','podcast-service',
     'podcast-default-master-preset','opt-podcast-auto-prep',
-  ].forEach(id => {
-    document.getElementById(id)?.addEventListener('input',  () => _markPublishDirty())
-    document.getElementById(id)?.addEventListener('change', () => _markPublishDirty())
-  })
+  ].forEach(id => bindSetting(id, filesBinding({ key: 'podcast.' + id })))
 
-  // Prep-and-review intro/outro file pickers
-  document.getElementById('btn-podcast-pick-intro')?.addEventListener('click', async () => {
-    const fp = await window.api.pickAudioFile()
-    if (!fp) return
-    const inp = document.getElementById('podcast-default-intro') as HTMLInputElement | null
-    if (inp) inp.value = fp
-    _markPublishDirty()
-  })
-  document.getElementById('btn-podcast-clear-intro')?.addEventListener('click', () => {
-    const inp = document.getElementById('podcast-default-intro') as HTMLInputElement | null
-    if (inp) inp.value = ''
-    _markPublishDirty()
-  })
-  document.getElementById('btn-podcast-pick-outro')?.addEventListener('click', async () => {
-    const fp = await window.api.pickAudioFile()
-    if (!fp) return
-    const inp = document.getElementById('podcast-default-outro') as HTMLInputElement | null
-    if (inp) inp.value = fp
-    _markPublishDirty()
-  })
-  document.getElementById('btn-podcast-clear-outro')?.addEventListener('click', () => {
-    const inp = document.getElementById('podcast-default-outro') as HTMLInputElement | null
-    if (inp) inp.value = ''
-    _markPublishDirty()
-  })
-
-  // Publish-tab save/cancel — runs the same saveFilesSettings since cloud+podcast
-  // settings are part of the same Settings object and saved through one IPC call.
-  document.getElementById('btn-publish-save')?.addEventListener('click', saveFilesSettings)
-  document.getElementById('btn-publish-cancel')?.addEventListener('click', () => applyFilesSettingsToUI())
+  // Prep-and-review intro/outro file pickers. The text field is read-only, so
+  // its value only ever changes here — commit explicitly after the picker.
+  const commitJingle = async (inputId: string): Promise<void> => {
+    collectFilesSettings()
+    const ok = await saveSettingsDebounced(120)
+    if (ok) showSavedChip(document.getElementById(inputId)?.closest<HTMLElement>('div') ?? null)
+    resyncBoundSettings()
+  }
+  const jingle = (btnId: string, inputId: string, pick: boolean): void => {
+    document.getElementById(btnId)?.addEventListener('click', async () => {
+      const inp = document.getElementById(inputId) as HTMLInputElement | null
+      if (!inp) return
+      if (pick) {
+        const fp = await window.api.pickAudioFile()
+        if (!fp) return
+        inp.value = fp
+      } else {
+        inp.value = ''
+      }
+      await commitJingle(inputId)
+    })
+  }
+  jingle('btn-podcast-pick-intro',  'podcast-default-intro', true)
+  jingle('btn-podcast-clear-intro', 'podcast-default-intro', false)
+  jingle('btn-podcast-pick-outro',  'podcast-default-outro', true)
+  jingle('btn-podcast-clear-outro', 'podcast-default-outro', false)
 
   document.getElementById('btn-podcast-copy-url')?.addEventListener('click', () => {
     const inp = document.getElementById('podcast-feed-url') as HTMLInputElement | null
@@ -125,8 +158,10 @@ export function setupFilesPage(): void {
     const btn    = document.getElementById('btn-podcast-regenerate') as HTMLButtonElement | null
     const status = document.getElementById('podcast-status')
     if (!btn || !status) return
-    // Save first so the latest config is used
-    await saveFilesSettings()
+    // Flush the latest config first so the feed is generated from what is on
+    // screen (auto-apply may still be inside its debounce window).
+    collectFilesSettings()
+    await window.api.saveSettings(settings)
     btn.disabled = true
     status.textContent = 'Genererer…'
     try {
@@ -167,8 +202,6 @@ function showFeedUrl(url: string): void {
 }
 
 export function applyFilesSettingsToUI(): void {
-  _markFilesClean()
-  _markPublishClean()
   setVal('save-folder', settings.saveFolder ?? '')
   const patternEl = document.getElementById('pattern-select') as HTMLSelectElement | null
   if (patternEl) patternEl.value = settings.filenamePattern ?? 'date'
@@ -237,6 +270,8 @@ export function applyFilesSettingsToUI(): void {
 
   toggleMp3Quality()
   updateFilenamePreview()
+  // The DOM now mirrors settings — rebase the bindings' baselines.
+  resyncBoundSettings()
 }
 
 export function toggleMp3Quality(): void {
@@ -266,21 +301,24 @@ export function updateFilenamePreview(): void {
   if (prev) prev.textContent = `${name}.${format}`
 }
 
-async function saveFilesSettings(): Promise<void> {
+/** Refresh Home live: the format/device info-strip and the disk-hours estimate
+ *  (which depends on format/bitrate), so the change shows without navigating
+ *  away and back. */
+function afterFilesSave(): void {
+  void loadHomeInfoStrip()
+  void refreshHomeDiskSpace()
+}
+
+/**
+ * Read the Opptak tab + the podcast section into `settings`. Persistence
+ * belongs to `bindSetting`; the confirmation for a short auto-delete retention
+ * is a guard on the two controls that can set it (see `autoDeleteGuard`), not a
+ * surprise inside the save.
+ */
+function collectFilesSettings(): void {
   const autoDelEl   = document.getElementById('opt-auto-delete') as HTMLInputElement | null
   const autoDelDays = document.getElementById('auto-delete-days') as HTMLInputElement | null
   const days = autoDelEl?.checked ? (+(autoDelDays?.value ?? '') || 90) : 0
-
-  if (days > 0 && days < 30) {
-    const ok = await confirmDialog({
-      title:   t('dialog.autoDeleteTitle', 'Slette opptak automatisk?'),
-      message: t('files.confirmAutoDeleteShort', 'Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.')
-        .replace('{n}', String(days)),
-      confirmLabel: t('dialog.autoDeleteConfirm', 'Ja, slett automatisk'),
-      danger:       true,
-    })
-    if (!ok) return
-  }
 
   const podcastEnabled = !!(document.getElementById('opt-podcast-enabled') as HTMLInputElement | null)?.checked
   const podcast: PodcastSettings = {
@@ -327,18 +365,4 @@ async function saveFilesSettings(): Promise<void> {
     preRollSeconds:        parseInt(prerollSel?.value    ?? '0')   || 0,
     podcast,
   })
-  await window.api.saveSettings(settings)
-  _markFilesClean()
-  _markPublishClean()
-  // Flash the save button on whichever tab is active
-  const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
-  const flashBtn = activeTab === 'settings-publish'
-    ? document.getElementById('btn-publish-save')
-    : document.getElementById('btn-files-save')
-  flashSaved(flashBtn)
-  // Refresh Home live: the format/device info-strip + the disk-hours estimate
-  // (which depends on format/bitrate) — so the change shows without navigating
-  // away and back.
-  void loadHomeInfoStrip()
-  void refreshHomeDiskSpace()
 }

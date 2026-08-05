@@ -1176,10 +1176,6 @@
         </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-files-save" data-i18n="files.save">Lagre</button>
-        <button class="btn-ghost" id="btn-files-cancel" data-i18n="files.cancel">Avbryt</button>
-      </div>
     </div>
 
     <!-- ── Publisering (sky-backup + podcast) ─────────────────────── -->
@@ -1322,6 +1318,14 @@
         <p class="card-desc" data-i18n="publish.streamIntro">Stream gudstjenester live til YouTube, Facebook eller egen RTMP-server.</p>
         <div id="stream-destinations-list" class="stream-destinations-list"></div>
         <button class="btn-secondary btn-sm" id="btn-add-stream-destination" type="button" data-i18n="publish.streamAddDestination">+ Legg til destinasjon</button>
+
+        <!-- EXPLICIT SAVE: en destinasjon er URL + stream-key som bare virker
+             sammen, og nøkkelen skrives til OS-nøkkelringen ved lagring. -->
+        <div class="btn-row explicit-save-row">
+          <button type="button" class="btn-primary btn-sm" id="btn-stream-dest-save" data-i18n="publish.streamSaveDestinations">Lagre destinasjoner</button>
+          <button type="button" class="btn-ghost btn-sm" id="btn-stream-dest-cancel" data-i18n="general.cancel">Avbryt</button>
+          <span class="explicit-save-hint" id="stream-dest-dirty-hint" style="display:none" data-i18n="publish.streamUnsaved">Ikke lagret ennå</span>
+        </div>
 
         <label class="form-label mt" data-i18n="publish.streamQuality">STREAM-KVALITET</label>
         <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
@@ -1485,10 +1489,6 @@
         </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-publish-save" data-i18n="publish.save">Lagre</button>
-        <button class="btn-ghost" id="btn-publish-cancel" data-i18n="publish.cancel">Avbryt</button>
-      </div>
     </div>
 
     <!-- ── Video ─────────────────────────────────────────────────── -->
@@ -1651,10 +1651,6 @@
         </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-video-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-video-cancel" data-i18n="general.cancel">Avbryt</button>
-      </div>
     </div>
 
     <!-- ── Varsler ───────────────────────────────────────────────── -->
@@ -1739,6 +1735,13 @@
               </div>
               <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
               <input type="hidden" id="email-port" value="587" />
+              <!-- EXPLICIT SAVE: host + brukernavn + passord virker bare som et
+                   sett. Auto-lagring per tastetrykk ville pekt varsel-stien mot
+                   en halvskrevet server uten at noe så galt ut. -->
+              <div class="btn-row explicit-save-row">
+                <button type="button" class="btn-primary btn-sm" id="btn-smtp-save" data-i18n="general.save">Lagre</button>
+                <button type="button" class="btn-ghost btn-sm" id="btn-smtp-cancel" data-i18n="general.cancel">Avbryt</button>
+              </div>
             </div>
           </details>
 
@@ -1768,10 +1771,6 @@
              always reported failure. Disabled with an honest reason instead. -->
         <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.testWebhook">Test webhook</button>
         <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
-      </div>
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-varsler-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-varsler-cancel" data-i18n="general.cancel">Avbryt</button>
       </div>
     </div>
 
@@ -1875,10 +1874,6 @@
         </p>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-general-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-general-cancel" data-i18n="general.cancel">Avbryt</button>
-      </div>
     </div>
 
     <div id="settings-integrations" class="inner-page">
@@ -1914,11 +1909,13 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-integrations-song" /><span class="toggle-track"></span></label>
         </div>
-        <div id="integrations-song-key-row" style="margin-top:12px">
+        <!-- EXPLICIT SAVE: en API-nøkkel er bare riktig når den er komplett. -->
+        <div id="integrations-song-key-row" class="explicit-save-card" style="margin-top:12px">
           <label class="form-label">SUNDAYSONG API-NØKKEL</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="password" class="form-input" id="integration-song-apikey" placeholder="Lim inn API-nøkkel…" style="max-width:360px" autocomplete="off" />
-            <button class="btn-ghost btn-sm" id="btn-song-apikey-save">Lagre</button>
+          <input type="password" class="form-input" id="integration-song-apikey" placeholder="Lim inn API-nøkkel…" style="max-width:360px" autocomplete="off" />
+          <div class="btn-row explicit-save-row">
+            <button type="button" class="btn-primary btn-sm" id="btn-song-apikey-save" data-i18n="general.save">Lagre</button>
+            <button type="button" class="btn-ghost btn-sm" id="btn-song-apikey-cancel" data-i18n="general.cancel">Avbryt</button>
           </div>
           <div class="form-hint" id="integration-song-apikey-status"></div>
         </div>
@@ -1926,7 +1923,9 @@
           Menighets-ID (church_id) settes i Tilkobling-feltet under.
         </div>
       </div>
-      <div class="card" id="integrations-connection-card">
+      <!-- EXPLICIT SAVE: menighets-ID og API-adresser er bare meningsfulle
+           ferdig skrevet — de auto-lagres derfor ikke. -->
+      <div class="card explicit-save-card" id="integrations-connection-card">
         <div class="card-title">Tilkobling</div>
         <p class="card-desc">Delte felt brukt av Song- og Plan-integrasjonene.</p>
         <label class="form-label">MENIGHETS-ID (church_id)</label>
@@ -1935,8 +1934,9 @@
         <input type="text" class="form-input" id="integration-song-api-url" placeholder="https://api.sundaysong.com" style="max-width:420px" />
         <label class="form-label mt">SUNDAYPLAN API-URL (valgfri)</label>
         <input type="text" class="form-input" id="integration-plan-api-url" placeholder="https://din-menighet.supabase.co" style="max-width:420px" />
-        <div style="margin-top:12px">
-          <button class="btn-ghost btn-sm" id="btn-integrations-connection-save">Lagre tilkobling</button>
+        <div class="btn-row explicit-save-row">
+          <button type="button" class="btn-primary btn-sm" id="btn-integrations-connection-save">Lagre tilkobling</button>
+          <button type="button" class="btn-ghost btn-sm" id="btn-integrations-connection-cancel" data-i18n="general.cancel">Avbryt</button>
         </div>
       </div>
       <div class="card" id="integrations-plan-card">

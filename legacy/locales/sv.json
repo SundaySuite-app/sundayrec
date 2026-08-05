@@ -400,7 +400,9 @@
     "diagnoseCopy": "📋 Kopiera fullständig rapport",
     "diagnoseFull": "Fullständig rapport",
     "diagnoseRunning": "Analyserar…",
-    "diagnoseSaved": "Sparat till"
+    "diagnoseSaved": "Sparat till",
+    "guardDevice": "Byta ljudenhet",
+    "guardEngine": "Byta inspelningsmotor"
   },
   "files": {
     "saveFolder": "Mapp att spara i",
@@ -420,8 +422,6 @@
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
     "trimSilence": "Klipp bort tystnad",
     "trimSilenceDesc": "Klipper automatiskt bort tysta sekunder i början och slutet av inspelningen",
-    "save": "Spara",
-    "cancel": "Avbryt",
     "confirmAutoDeleteShort": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas.",
     "behaviourTitle": "Inspelningsbeteende",
     "behaviourDesc": "Finjustera hur inspelningen startar, skyddas och delas upp.",
@@ -438,7 +438,7 @@
   "general": {
     "language": "Språk",
     "appLanguage": "APPENS SPRÅK",
-    "langHint": "Ändringen träder i kraft när du klickat på Spara.",
+    "langHint": "Ändringen träder i kraft direkt.",
     "profile": "Församlingsprofil",
     "church": "FÖRSAMLING / KYRKA",
     "responsible": "ANSVARIG",
@@ -483,7 +483,9 @@
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfel: kameraförhandsvisningen kommer inte att fungera (CSP blockerar blob:-URL:er). Starta om appen — om problemet kvarstår, kontakta support.",
     "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support.",
-    "diagnoseTitle": "Diagnostik för ljudenhet"
+    "diagnoseTitle": "Diagnostik för ljudenhet",
+    "savedChip": "Sparat ✓",
+    "saveFailed": "Kunde inte spara inställningen"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
@@ -736,7 +738,8 @@
     "probeFailed": "Kunde inte läsa kamerans upplösningar — begränsat till 1080p för att undvika uppskalning. 4K kräver en kamera som levererar äkta 4K.",
     "resNative": "kamerans max",
     "resNotSupported": "stöds inte",
-    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max."
+    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max.",
+    "guardDevice": "Byta kamera"
   },
   "onboarding": {
     "welcomeTitle": "Välkommen till SundayRec",
@@ -824,7 +827,11 @@
     "emailGmailConfirmDisconnect": "E-postaviseringar faller tillbaka till SMTP.",
     "emailGmailSendsAs": "Skickar via",
     "emailGmailReauth": "⚠ Kräver ny inloggning",
-    "emailAdvanced": "Avancerat: använd SMTP istället"
+    "emailAdvanced": "Avancerat: använd SMTP istället",
+    "errEmail": "Skriv en giltig e-postadress, t.ex. namn@kyrkan.se",
+    "errWebhookUrl": "Webhook-URL:en måste börja med https://",
+    "errSmtpHost": "Skriv ett servernamn, t.ex. smtp.gmail.com",
+    "errSmtpUser": "Användarnamnet är e-postadressen du skickar från"
   },
   "prep": {
     "sectionTitle": "Förberedelse och granskning",
@@ -905,7 +912,6 @@
     "enabled": "Aktiverad",
     "account": "Konto",
     "autoUpload": "Ladda upp automatiskt efter inspelning",
-    "cancel": "Avbryt",
     "connect": "Anslut",
     "desc": "Ladda upp inspelningarna automatiskt till Google Drive — som extra säkerhet och för enkel delning.",
     "disconnect": "Koppla från",
@@ -914,12 +920,18 @@
     "introDesc": "Här ställer du in automatisk molnbackup och — om ni vill — en podcast som gör gudstjänsterna tillgängliga på Spotify och Apple Podcasts. Allt är valfritt.",
     "lastUpload": "Senaste",
     "pickFolder": "Välj mapp…",
-    "save": "Spara",
-    "title": "Molnbackup"
+    "title": "Molnbackup",
+    "streamSaveDestinations": "Spara destinationer",
+    "streamUnsaved": "Inte sparat än"
   },
   "integrations": {
     "sundayEditFailed": "Kunde inte öppna",
-    "sundayEditMissing": "SundayEdit hittades inte"
+    "sundayEditMissing": "SundayEdit hittades inte",
+    "errUrl": "Detta är inte en giltig adress (t.ex. https://api.sundaysong.com)",
+    "errUrlScheme": "Adressen måste börja med https://",
+    "errChurchId": "Församlings-ID är ett UUID från SundaySong eller SundayPlan",
+    "errKeyEmpty": "Klistra in nyckeln först",
+    "keySaved": "✓ API-nyckel sparad (krypterad)"
   },
   "live": {
     "title": "Direktsändning",
@@ -1008,7 +1020,8 @@
     "settingsTitle": "Predikohjälp — AI-sammanfattning (valfritt)",
     "settingsDesc": "Kapitel och citat skapas alltid lokalt på enheten. Vill du ha en finare sammanfattning och titel kan du klistra in en Anthropic API-nyckel — den lagras endast i nyckelringen (OS keychain), aldrig i inställningar. Utan nyckel används en lokal sammanfattning.",
     "keySave": "Spara",
-    "keyClear": "Ta bort"
+    "keyClear": "Ta bort",
+    "keyStored": "✓ API-nyckel sparad (nyckelring)"
   },
   "search": {
     "title": "Sök & historik",
@@ -1102,5 +1115,12 @@
     "openSchedule": "Öppna tidsplan",
     "bannerAction": "Visa detaljer",
     "more": "till"
+  },
+  "guard": {
+    "title": "{what} nu?",
+    "duringRecording": "En inspelning pågår just nu. Ändringen kan avbryta eller förstöra det som spelas in.",
+    "beforeRecording": "Nästa schemalagda inspelning startar om {n} minuter. Ändringen hinner påverka den inspelningen.",
+    "confirm": "Ja, ändra ändå",
+    "cancel": "Inte nu"
   }
 }

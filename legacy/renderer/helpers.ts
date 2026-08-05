@@ -107,13 +107,10 @@ export function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function setupDirtyBar(pageId: string): { clean: () => void; dirty: () => void } {
-  const pageEl = document.getElementById(pageId)
-  const footer = pageEl?.querySelector<HTMLElement>('.page-footer')
-  if (!pageEl || !footer) return { clean: () => {}, dirty: () => {} }
-  const dirty = () => footer.classList.add('dirty')
-  const clean = () => footer.classList.remove('dirty')
-  pageEl.addEventListener('input',  dirty)
-  pageEl.addEventListener('change', dirty)
-  return { clean, dirty }
-}
+// setupDirtyBar was removed with the dirty-footer save model (Fase 3, 2026-08).
+// It marked a `.page-footer` dirty on any input inside a settings tab — but half
+// those controls had already auto-saved, so the footer claimed unsaved work that
+// did not exist, and its «Avbryt» could not undo the write that had. Settings now
+// auto-apply through `ui/bind-setting.ts` with an inline «Lagret ✓», and the three
+// places that genuinely need staging (schedule slot editor, SMTP server fields,
+// integration URL/key pairs) carry their own explicit Lagre/Avbryt card.
