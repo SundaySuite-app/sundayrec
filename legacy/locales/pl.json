@@ -2,8 +2,8 @@
   "nav": {
     "home": "Strona główna",
     "schedule": "Harmonogram",
-    "audio": "Źródło dźwięku",
-    "files": "Pliki",
+    "audio": "Dźwięk",
+    "files": "Nagrywanie",
     "editor": "Edycja",
     "live": "Na żywo",
     "search": "Wyszukiwanie i historia",
@@ -11,7 +11,8 @@
     "publish": "Publikowanie",
     "settings": "Ustawienia",
     "system": "System",
-    "video": "Wideo"
+    "video": "Wideo",
+    "sharing": "Udostępnianie"
   },
   "status": {
     "ready": "Wszystko gotowe",
@@ -485,7 +486,8 @@
     "initError": "Błąd uruchamiania: części aplikacji może brakować lub mogą nie działać. Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną.",
     "diagnoseTitle": "Diagnostyka urządzenia audio",
     "savedChip": "Zapisano ✓",
-    "saveFailed": "Nie udało się zapisać ustawienia"
+    "saveFailed": "Nie udało się zapisać ustawienia",
+    "suiteAdvanced": "Zaawansowane: integracje Sunday suite"
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Następne zaplanowane nagranie zacznie się za {n} min. Zmiana wpłynie na to nagranie.",
     "confirm": "Tak, zmień mimo to",
     "cancel": "Nie teraz"
+  },
+  "sharing": {
+    "publishDesc": "Kopia w chmurze, podcast i transmisja na żywo — dokąd trafia nagranie po nabożeństwie.",
+    "notifyDesc": "Kto dostaje powiadomienie, gdy nagranie się zaczyna, kończy lub nie powiedzie."
   }
 }

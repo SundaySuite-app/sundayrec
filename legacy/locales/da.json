@@ -2,8 +2,8 @@
   "nav": {
     "home": "Hjem",
     "schedule": "Tidsplan",
-    "audio": "Lydkilde",
-    "files": "Filer",
+    "audio": "Lyd",
+    "files": "Optagelse",
     "editor": "Rediger",
     "live": "Live",
     "search": "Søg & historik",
@@ -11,7 +11,8 @@
     "publish": "Udgivelse",
     "settings": "Indstillinger",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Deling"
   },
   "status": {
     "ready": "Alt er klar",
@@ -485,7 +486,8 @@
     "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support.",
     "diagnoseTitle": "Diagnose af lydenhed",
     "savedChip": "Gemt ✓",
-    "saveFailed": "Kunne ikke gemme indstillingen"
+    "saveFailed": "Kunne ikke gemme indstillingen",
+    "suiteAdvanced": "Avanceret: Sunday suite-integrationer"
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Næste planlagte optagelse starter om {n} minutter. Ændringen når at påvirke den optagelse.",
     "confirm": "Ja, ændr alligevel",
     "cancel": "Ikke nu"
+  },
+  "sharing": {
+    "publishDesc": "Sky-backup, podcast og livestream — hvor optagelsen havner efter gudstjenesten.",
+    "notifyDesc": "Hvem der får besked, når en optagelse starter, stopper eller fejler."
   }
 }

@@ -90,6 +90,26 @@ export function applyPageTransition(outgoing: HTMLElement | null, swap: () => vo
 }
 
 /**
+ * Cross-fade between INNER tabs (the settings tab strip).
+ *
+ * Same shape and same 120 ms as `applyPageTransition`, minus the scroll reset:
+ * an inner tab is a section of the page you are already on, so throwing away
+ * the scroll position would be a second, unasked-for change. `swap` must be
+ * synchronous.
+ */
+export function applyInnerTabTransition(outgoing: HTMLElement | null, swap: () => void): void {
+  if (!outgoing || prefersReducedMotion()) {
+    swap()
+    return
+  }
+  outgoing.classList.add('tab-leaving')
+  setTimeout(() => {
+    outgoing.classList.remove('tab-leaving')
+    swap()
+  }, 120)
+}
+
+/**
  * Mark a page as having been shown at least once.
  *
  * `.card { animation: cardIn }` is a nice first impression and an irritant on

@@ -63,7 +63,8 @@ export function setupLivePage(): void {
 
   document.getElementById('live-config-link')?.addEventListener('click', e => {
     e.preventDefault()
-    navigateTo('settings', { tab: 'settings-publish' })
+    // Destinations live in the Deling tab's Publisering section since Fase 3.
+    navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })
   })
 
   // Quality + framerate changes affect the params we pass to streamStart; no

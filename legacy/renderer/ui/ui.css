@@ -500,6 +500,73 @@ body.platform-darwin .ui-toast-stack {
   transform: translateY(0);
 }
 
+/* ── Settings: five tabs, with sections inside ───────────────────────────── */
+
+/* «Deling» holds what used to be two tabs (Publisering, Varsler). A section
+   head is the seam: it says which of the two you are looking at without
+   pretending to be a page of its own. */
+.settings-section-head {
+  margin: 4px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border, #2a3448);
+}
+.settings-section-head:not(:first-child) {
+  margin-top: 32px;
+}
+.settings-section-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text, #e8eefc);
+}
+.settings-section-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.settings-section {
+  display: block;
+}
+
+/* Inner-tab crossfade — the same 120 ms the page transition uses, so moving
+   between tabs reads as one surface changing rather than a jump cut. */
+.inner-page.tab-leaving {
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+/* Avansert disclosure (Sunday-suite at the bottom of System). */
+.adv-disclosure {
+  margin-top: 8px;
+  border-top: 1px solid var(--border, #2a3448);
+  padding-top: 8px;
+}
+.adv-disclosure-summary {
+  cursor: pointer;
+  padding: 12px 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text2, #c8d2e6);
+  list-style: none;
+}
+.adv-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+.adv-disclosure-summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.2em;
+  color: var(--text3, #8899bb);
+  transition: transform 0.18s ease-out;
+}
+.adv-disclosure[open] > .adv-disclosure-summary::before {
+  transform: rotate(90deg);
+}
+.adv-disclosure-summary:hover {
+  color: var(--accent, #ebb84b);
+}
+
 /* ── Explicit-save cards ─────────────────────────────────────────────────── */
 
 /* The three surfaces that are NOT auto-apply: the schedule slot editor, the
@@ -609,7 +676,9 @@ textarea.has-field-error {
   .page.page-leaving {
     animation: none;
   }
-  .setting-saved-chip {
+  .setting-saved-chip,
+  .inner-page.tab-leaving,
+  .adv-disclosure-summary::before {
     transition: none;
   }
 }

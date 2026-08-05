@@ -2,8 +2,8 @@
   "nav": {
     "home": "Start",
     "schedule": "Zeitplan",
-    "audio": "Audioquelle",
-    "files": "Dateien",
+    "audio": "Ton",
+    "files": "Aufnahme",
     "editor": "Bearbeiten",
     "live": "Live",
     "search": "Suche & Verlauf",
@@ -11,7 +11,8 @@
     "publish": "Veröffentlichung",
     "settings": "Einstellungen",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Teilen"
   },
   "status": {
     "ready": "Alles bereit",
@@ -485,7 +486,8 @@
     "initError": "Startfehler: Teile der App können fehlen oder funktionslos sein. Starten Sie die App neu — wenn das Problem weiterhin besteht, kontaktieren Sie den Support.",
     "diagnoseTitle": "Diagnose des Audiogeräts",
     "savedChip": "Gespeichert ✓",
-    "saveFailed": "Die Einstellung konnte nicht gespeichert werden"
+    "saveFailed": "Die Einstellung konnte nicht gespeichert werden",
+    "suiteAdvanced": "Erweitert: Sunday-Suite-Integrationen"
   },
   "error": {
     "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Die nächste geplante Aufnahme startet in {n} Minuten. Die Änderung wirkt sich auf diese Aufnahme aus.",
     "confirm": "Ja, trotzdem ändern",
     "cancel": "Jetzt nicht"
+  },
+  "sharing": {
+    "publishDesc": "Cloud-Backup, Podcast und Livestream — wohin die Aufnahme nach dem Gottesdienst geht.",
+    "notifyDesc": "Wer benachrichtigt wird, wenn eine Aufnahme startet, endet oder fehlschlägt."
   }
 }

@@ -2,8 +2,8 @@
   "nav": {
     "home": "Accueil",
     "schedule": "Planning",
-    "audio": "Source audio",
-    "files": "Fichiers",
+    "audio": "Son",
+    "files": "Enregistrement",
     "editor": "Éditeur",
     "live": "Direct",
     "search": "Recherche et historique",
@@ -11,7 +11,8 @@
     "publish": "Publication",
     "settings": "Réglages",
     "system": "Système",
-    "video": "Vidéo"
+    "video": "Vidéo",
+    "sharing": "Partage"
   },
   "status": {
     "ready": "Tout est prêt",
@@ -485,7 +486,8 @@
     "initError": "Erreur au démarrage : des parties de l’application peuvent manquer ou ne pas fonctionner. Redémarrez l’application — si le problème persiste, contactez le support.",
     "diagnoseTitle": "Diagnostic du périphérique audio",
     "savedChip": "Enregistré ✓",
-    "saveFailed": "Impossible d’enregistrer le réglage"
+    "saveFailed": "Impossible d’enregistrer le réglage",
+    "suiteAdvanced": "Avancé : intégrations Sunday suite"
   },
   "error": {
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Le prochain enregistrement programmé démarre dans {n} minutes. La modification affectera cet enregistrement.",
     "confirm": "Oui, modifier quand même",
     "cancel": "Pas maintenant"
+  },
+  "sharing": {
+    "publishDesc": "Sauvegarde cloud, podcast et diffusion en direct — où va l’enregistrement après le culte.",
+    "notifyDesc": "Qui est prévenu quand un enregistrement démarre, s’arrête ou échoue."
   }
 }

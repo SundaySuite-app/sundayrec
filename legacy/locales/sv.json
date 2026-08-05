@@ -2,8 +2,8 @@
   "nav": {
     "home": "Hem",
     "schedule": "Schema",
-    "audio": "Ljudkälla",
-    "files": "Filer",
+    "audio": "Ljud",
+    "files": "Inspelning",
     "editor": "Redigera",
     "live": "Live",
     "search": "Sök & historik",
@@ -11,7 +11,8 @@
     "publish": "Publicering",
     "settings": "Inställningar",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Delning"
   },
   "status": {
     "ready": "Allt är klart",
@@ -485,7 +486,8 @@
     "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support.",
     "diagnoseTitle": "Diagnostik för ljudenhet",
     "savedChip": "Sparat ✓",
-    "saveFailed": "Kunde inte spara inställningen"
+    "saveFailed": "Kunde inte spara inställningen",
+    "suiteAdvanced": "Avancerat: Sunday suite-integrationer"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Nästa schemalagda inspelning startar om {n} minuter. Ändringen hinner påverka den inspelningen.",
     "confirm": "Ja, ändra ändå",
     "cancel": "Inte nu"
+  },
+  "sharing": {
+    "publishDesc": "Molnbackup, podd och direktsändning — vart inspelningen tar vägen efter gudstjänsten.",
+    "notifyDesc": "Vem som får besked när en inspelning startar, stoppar eller misslyckas."
   }
 }

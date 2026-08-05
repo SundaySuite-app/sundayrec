@@ -887,13 +887,13 @@ export function setupHome(): void {
     navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // Publish-strip cards — all three currently route to the Publisering tab
-  // (cloud + thumbnail UI lives there; Whisper has no dedicated settings
-  // tab yet, so we land users on Publisering and they can browse from
+  // Publish-strip cards — all three route to the Publisering SECTION of the
+  // Deling tab (cloud + thumbnail UI lives there; Whisper has no dedicated
+  // settings surface yet, so we land users there and they can browse from
   // there until we promote Whisper config out of the editor).
   const goPublish = (anchor?: string) => (e: Event) => {
     e.preventDefault()
-    navigateTo('settings', { tab: 'settings-publish', anchor })
+    navigateTo('settings', { tab: 'settings-sharing', anchor: anchor ?? '#settings-publish' })
   }
   document.getElementById('btn-go-cloud')?.addEventListener('click',   goPublish('#settings-publish .cloud-grid'))
   document.getElementById('btn-go-thumb')?.addEventListener('click',   goPublish('#publish-thumb-preview'))

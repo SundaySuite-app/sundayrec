@@ -83,9 +83,10 @@ export function setupEditorPage(): void {
   $('export-publish-configure')?.addEventListener('click', (e) => {
     e.preventDefault()
     closeExportModal()
-    // Publish is a tab inside Settings ("settings-publish") — navigateTo hands
-    // the tab switch to the page's own handler, so its side effects still run.
-    navigateTo('settings', { tab: 'settings-publish' })
+    // Publisering is a SECTION of the Deling tab since Fase 3 — navigateTo
+    // hands the tab switch to the page's own handler, so its side effects
+    // still run, and the anchor lands on the section rather than the tab top.
+    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-publish' })
   })
 
   // Audio format picker pills. Scoped to #export-fmt-section so it doesn't fight

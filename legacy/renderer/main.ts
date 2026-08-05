@@ -20,7 +20,7 @@ import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/l
 import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
-import { applyPageTransition, markPageEntered } from './ui/motion'
+import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -315,19 +315,39 @@ function showPage(id: string): void {
   })
 }
 
+/**
+ * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
+ *
+ * «Publisering» and «Varsler» answered halves of the same question — who gets
+ * the recording afterwards — and are now sections of Deling; «Sunday-suite» is
+ * an Avansert disclosure at the bottom of System. Old tab ids still resolve:
+ * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
+ */
 function setupSettingsTabs(): void {
   document.querySelectorAll<HTMLElement>('#settings-tabs .inner-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#settings-tabs .inner-tab').forEach(t => t.classList.remove('active'))
-      btn.classList.add('active')
-      const tabId = btn.dataset.tab ?? ''
-      document.querySelectorAll<HTMLElement>('#page-settings .inner-page').forEach(p => p.classList.remove('active'))
-      document.getElementById(tabId)?.classList.add('active')
-      if (tabId === 'settings-audio') renderDeviceList('device-list')
-      else stopChannelGrid()
-      if (tabId === 'settings-video') refreshVideoDevices()
-    })
+    btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab ?? ''))
   })
+}
+
+/** Switch to a settings tab with a 120 ms crossfade. Exported so navigation
+ *  can call it directly instead of synthesising a click. */
+export function showSettingsTab(tabId: string): void {
+  const target = document.getElementById(tabId)
+  if (!target) return
+  const outgoing = document.querySelector<HTMLElement>('#page-settings .inner-page.active')
+
+  const swap = (): void => {
+    document.querySelectorAll('#settings-tabs .inner-tab').forEach(t => t.classList.remove('active'))
+    document.querySelector(`#settings-tabs .inner-tab[data-tab="${tabId}"]`)?.classList.add('active')
+    document.querySelectorAll<HTMLElement>('#page-settings .inner-page').forEach(p => p.classList.remove('active'))
+    target.classList.add('active')
+    if (tabId === 'settings-audio') renderDeviceList('device-list')
+    else stopChannelGrid()
+    if (tabId === 'settings-video') refreshVideoDevices()
+  }
+
+  if (outgoing === target) { swap(); return }
+  applyInnerTabTransition(outgoing, swap)
 }
 
 /**

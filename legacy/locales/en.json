@@ -2,8 +2,8 @@
   "nav": {
     "home": "Home",
     "schedule": "Schedule",
-    "audio": "Audio Source",
-    "files": "Files",
+    "audio": "Audio",
+    "files": "Recording",
     "editor": "Edit",
     "live": "Live",
     "search": "Search & history",
@@ -11,7 +11,8 @@
     "publish": "Publishing",
     "settings": "Settings",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Sharing"
   },
   "status": {
     "ready": "Everything is ready",
@@ -485,7 +486,8 @@
     "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support.",
     "diagnoseTitle": "Audio device diagnostics",
     "savedChip": "Saved ✓",
-    "saveFailed": "Could not save the setting"
+    "saveFailed": "Could not save the setting",
+    "suiteAdvanced": "Advanced: Sunday suite integrations"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "The next scheduled recording starts in {n} minutes. The change will affect that recording.",
     "confirm": "Yes, change anyway",
     "cancel": "Not now"
+  },
+  "sharing": {
+    "publishDesc": "Cloud backup, podcast and live streaming — where the recording goes after the service.",
+    "notifyDesc": "Who is told when a recording starts, stops or fails."
   }
 }

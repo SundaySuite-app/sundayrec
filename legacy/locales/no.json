@@ -2,8 +2,8 @@
   "nav": {
     "home": "Hjem",
     "schedule": "Tidsplan",
-    "audio": "Lydkilde",
-    "files": "Filer",
+    "audio": "Lyd",
+    "files": "Opptak",
     "editor": "Rediger",
     "live": "Direkte",
     "search": "Søk & historikk",
@@ -11,7 +11,8 @@
     "publish": "Publisering",
     "settings": "Innstillinger",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Deling"
   },
   "status": {
     "ready": "Alt er klart",
@@ -485,7 +486,8 @@
     "initError": "Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. Restart appen — hvis problemet vedvarer, kontakt support.",
     "diagnoseTitle": "Lydenhetsdiagnose",
     "savedChip": "Lagret ✓",
-    "saveFailed": "Kunne ikke lagre innstillingen"
+    "saveFailed": "Kunne ikke lagre innstillingen",
+    "suiteAdvanced": "Avansert: Sunday-suite-integrasjoner"
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
@@ -1122,5 +1124,9 @@
     "beforeRecording": "Neste planlagte opptak starter om {n} minutter. Endringen rekker å slå ut på det opptaket.",
     "confirm": "Ja, endre likevel",
     "cancel": "Ikke nå"
+  },
+  "sharing": {
+    "publishDesc": "Sky-backup, podkast og direktesending — hvor opptaket havner etter gudstjenesten.",
+    "notifyDesc": "Hvem får beskjed når et opptak starter, stopper eller feiler."
   }
 }

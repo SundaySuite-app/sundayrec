@@ -41,10 +41,29 @@ function resolve(anchor: string): HTMLElement | null {
   return document.getElementById(anchor)
 }
 
+/**
+ * Where the retired settings tabs went.
+ *
+ * Fase 3 folded seven tabs into five. The blocks kept their ids and moved, so
+ * every `navigateTo('settings', { tab: 'settings-publish' })` in the app — and
+ * any we haven't found — still lands on the right thing: the alias resolves the
+ * tab and supplies a default anchor pointing at the section itself.
+ *
+ * Keep this map. It is cheaper than hunting every call site every time the
+ * information architecture moves, and a deep link that silently opens the wrong
+ * tab is worse than one that fails loudly.
+ */
+export const TAB_ALIASES: Record<string, { tab: string; anchor: string }> = {
+  'settings-publish':       { tab: 'settings-sharing', anchor: '#settings-publish' },
+  'settings-notifications': { tab: 'settings-sharing', anchor: '#settings-notifications' },
+  'settings-integrations':  { tab: 'settings-general', anchor: '#settings-integrations' },
+}
+
 /** Switch the inner tab of a page without going through a synthetic click. */
 export function selectInnerTab(pageId: string, tabId: string): void {
+  const resolved = TAB_ALIASES[tabId]?.tab ?? tabId
   const btn = document.querySelector<HTMLElement>(
-    `#page-${pageId} .inner-tab[data-tab="${tabId}"]`,
+    `#page-${pageId} .inner-tab[data-tab="${resolved}"]`,
   )
   // The tab buttons carry the page's own side effects (device-list refresh,
   // channel-grid teardown) in their click handlers, so clicking is the correct
@@ -63,13 +82,20 @@ export function navigateTo(page: string, opts: NavigateOpts = {}): void {
 
   if (opts.tab) selectInnerTab(page, opts.tab)
 
-  if (!opts.anchor) return
-  const anchor = opts.anchor
+  // A retired tab id with no anchor of its own still deserves to land on its
+  // section rather than at the top of the tab it was merged into.
+  const alias = opts.tab ? TAB_ALIASES[opts.tab] : undefined
+  const anchor = opts.anchor ?? alias?.anchor
+  if (!anchor) return
   const shouldHighlight = opts.highlight !== false
 
   requestAnimationFrame(() => {
     const el = resolve(anchor)
     if (!el) return
+    // Something moved behind a disclosure (Sunday-suite) must be OPENED, not
+    // just scrolled to — otherwise the deep link lands on a closed summary.
+    const details = el.closest('details')
+    if (details && !details.open) details.open = true
     // A card is what the user recognises as "the setting"; fall back to the
     // element itself when it is not inside one.
     const card = (el.closest('.card') as HTMLElement | null) ?? el
