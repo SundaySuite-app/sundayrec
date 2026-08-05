@@ -52,7 +52,7 @@
     "wakesBefore": "Maskinen vekkes automatisk kl. {time}",
     "testRecording": "🎙️ Test-opptak (30 sek)",
     "checkSystem": "✅ Sjekk system nå",
-    "testProgress": "Tar opp test… {n}/{total} s",
+    "testProgress": "Tar opp test… ca. {n}/{total} s",
     "testSignalOk": "✅ Lyd OK",
     "testSignalLow": "⚠️ Svak lyd — sjekk gain på mikser",
     "testSignalSilent": "⚠️ Stillhet — mikser av?",
@@ -91,7 +91,8 @@
     "cloudQueued": "i kø",
     "cloudAllSynced": "Alle synkronisert",
     "nextShort": "neste",
-    "wakesLead": "({min} min før)"
+    "wakesLead": "({min} min før)",
+    "openInEditor": "Åpne i redigering"
   },
   "update": {
     "checking": "Sjekker etter oppdateringer…",
@@ -140,7 +141,8 @@
     "noteSave": "Lagre notat",
     "noteTitle": "Notat",
     "revealFile": "Vis i Finder / Utforsker",
-    "revealVideo": "Vis videofil i Finder"
+    "revealVideo": "Vis videofil i Finder",
+    "actions": "Handlinger"
   },
   "review": {
     "queueTitle": "Klare for gjennomgang og publisering",

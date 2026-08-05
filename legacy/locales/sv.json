@@ -52,7 +52,7 @@
     "wakesBefore": "Datorn väcks automatiskt kl. {time}",
     "testRecording": "🎙️ Testinspelning (30 s)",
     "checkSystem": "✅ Kontrollera systemet nu",
-    "testProgress": "Spelar in test… {n}/{total} s",
+    "testProgress": "Spelar in test… ca {n}/{total} s",
     "testSignalOk": "✅ Ljud OK",
     "testSignalLow": "⚠️ Svag signal — kontrollera gain på mixern",
     "testSignalSilent": "⚠️ Tystnad — är mixern avstängd?",
@@ -91,7 +91,8 @@
     "cloudQueued": "i kö",
     "cloudAllSynced": "Alla synkroniserade",
     "nextShort": "nästa",
-    "wakesLead": "({min} min innan)"
+    "wakesLead": "({min} min innan)",
+    "openInEditor": "Öppna i redigering"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -140,7 +141,8 @@
     "noteSave": "Spara anteckning",
     "noteTitle": "Anteckning",
     "revealFile": "Visa i Finder / Utforskaren",
-    "revealVideo": "Visa videofilen i Finder"
+    "revealVideo": "Visa videofilen i Finder",
+    "actions": "Åtgärder"
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",

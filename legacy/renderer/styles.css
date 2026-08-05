@@ -2127,6 +2127,65 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   padding-top: 2px;
 }
 
+/* ── Info-card loading skeletons ─────────────────────────────────────
+   refreshHome fires six requests in parallel; the cards used to sit on a
+   literal "—" until each landed, which reads as "no device / no disk space"
+   rather than "still asking". A pulsing block reads as "loading" without
+   claiming a value. */
+@keyframes cardSkeleton { 0%, 100% { opacity: .35; } 50% { opacity: .7; } }
+.info-card.is-loading .info-card-value,
+.info-card.is-loading .info-card-sub {
+  color: transparent;
+  background: var(--surface2);
+  border-radius: 5px;
+  animation: cardSkeleton 1.2s ease-in-out infinite;
+}
+.info-card.is-loading .info-card-value { width: 62%; height: 15px; }
+.info-card.is-loading .info-card-sub   { width: 82%; height: 11px; margin-top: 5px; }
+/* Children (the signal dot, the separate-audio switch) must not show through. */
+.info-card.is-loading .info-card-sub > *,
+.info-card.is-loading .info-card-action,
+.info-card.is-loading .info-card-audio-sep { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .info-card.is-loading .info-card-value,
+  .info-card.is-loading .info-card-sub { animation: none; }
+}
+
+/* ── Progress bar for the long audio checks ──────────────────────────
+   The 30 s test recording is a determinate ESTIMATE (the backend reports no
+   progress, so the bar is honest about being "ca."); the 60 s capture bench is
+   indeterminate with an elapsed counter beside it. */
+.health-progress {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.health-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width .4s linear;
+}
+.health-progress.indeterminate .health-progress-fill {
+  width: 35%;
+  transition: none;
+  animation: healthSweep 1.4s ease-in-out infinite;
+}
+@keyframes healthSweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .health-progress.indeterminate .health-progress-fill {
+    animation: none;
+    width: 100%;
+    opacity: .5;
+  }
+}
+
 /* Alert CARDS (missed recording, pre-start check) reuse the banner skin but are
    not themselves clickable — they carry explicit buttons, so the whole-surface
    click affordance would be a lie about where the action is. */
@@ -3166,8 +3225,10 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: var(--surface1);
 }
 /* Whole card is the separate-audio toggle when in video mode */
-#home-format-card.format-toggleable { cursor: pointer; }
-#home-format-card.format-toggleable:hover { border-color: var(--border2); }
+/* `format-toggleable` (whole-card pointer affordance) is gone with the
+   whole-card click handler: the switch inside the card is the control now, so a
+   pointer cursor over the card would promise an interaction that no longer
+   exists. */
 
 /* ── Recording overlay video preview ───────────────────────────── */
 .rec-video-section {

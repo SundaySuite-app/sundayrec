@@ -52,7 +52,7 @@
     "wakesBefore": "Der Computer wird automatisch um {time} Uhr aufgeweckt",
     "testRecording": "🎙️ Testaufnahme (30 s)",
     "checkSystem": "✅ System jetzt prüfen",
-    "testProgress": "Testaufnahme läuft… {n}/{total} s",
+    "testProgress": "Testaufnahme läuft… ca. {n}/{total} s",
     "testSignalOk": "✅ Ton OK",
     "testSignalLow": "⚠️ Schwaches Signal — Pegel am Mischpult prüfen",
     "testSignalSilent": "⚠️ Stille — ist das Mischpult aus?",
@@ -91,7 +91,8 @@
     "cloudQueued": "in der Warteschlange",
     "cloudAllSynced": "Alle synchronisiert",
     "nextShort": "nächste",
-    "wakesLead": "({min} Min. vorher)"
+    "wakesLead": "({min} Min. vorher)",
+    "openInEditor": "Im Editor öffnen"
   },
   "update": {
     "checking": "Suche nach Updates…",
@@ -140,7 +141,8 @@
     "noteSave": "Notiz speichern",
     "noteTitle": "Notiz",
     "revealFile": "Im Finder / Explorer anzeigen",
-    "revealVideo": "Videodatei im Finder anzeigen"
+    "revealVideo": "Videodatei im Finder anzeigen",
+    "actions": "Aktionen"
   },
   "review": {
     "queueTitle": "Bereit zur Prüfung und Veröffentlichung",

@@ -52,7 +52,7 @@
     "wakesBefore": "L’ordinateur se réveille automatiquement à {time}",
     "testRecording": "🎙️ Test d’enregistrement (30 s)",
     "checkSystem": "✅ Vérifier le système maintenant",
-    "testProgress": "Enregistrement de test… {n}/{total} s",
+    "testProgress": "Enregistrement de test… env. {n}/{total} s",
     "testSignalOk": "✅ Audio OK",
     "testSignalLow": "⚠️ Signal faible — vérifiez le gain sur la table de mixage",
     "testSignalSilent": "⚠️ Silence — la table de mixage est-elle éteinte ?",
@@ -91,7 +91,8 @@
     "cloudQueued": "en attente",
     "cloudAllSynced": "Tout est synchronisé",
     "nextShort": "suivant",
-    "wakesLead": "({min} min avant)"
+    "wakesLead": "({min} min avant)",
+    "openInEditor": "Ouvrir dans l’éditeur"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -140,7 +141,8 @@
     "noteSave": "Enregistrer la note",
     "noteTitle": "Note",
     "revealFile": "Afficher dans le Finder / l’Explorateur",
-    "revealVideo": "Afficher le fichier vidéo dans le Finder"
+    "revealVideo": "Afficher le fichier vidéo dans le Finder",
+    "actions": "Actions"
   },
   "review": {
     "queueTitle": "Prêts pour relecture et publication",

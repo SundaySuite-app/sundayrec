@@ -60,6 +60,14 @@ let previewStream:        MediaStream | null = null
 // Doing this by DOM-relocation (rather than duplicating elements) means every
 // existing event handler / live-update / ID reference keeps working without
 // modification. The function is idempotent — safe to call repeatedly.
+// FLAGGED for future refactor: this relocation physically moves live nodes
+// between two layouts and remembers where each came from. It works, and every
+// handler survives because the elements are the same objects — but it makes the
+// DOM's shape depend on a boolean and on the order the moves happened in, which
+// is why "restore" has to walk the record backwards. A CSS-grid layout with both
+// arrangements expressible in place would remove the bookkeeping entirely.
+// Deliberately NOT touched in the 2026-08 UX overhaul: it is load-bearing for
+// video mode and deserves its own change with its own testing.
 interface MoveRecord { el: HTMLElement; parent: Element; next: Node | null }
 let _videoLayoutMoves: MoveRecord[] = []
 let _videoLayoutActive = false
@@ -187,8 +195,6 @@ export function updateAudioSeparateButton(): void {
   label.textContent = keepAudio ? t('home.audioSeparate', 'Separat lydfil') : t('home.audioNoFile', 'Ingen lydfil')
   // Grey out the whole FORMAT card when video is on but separate audio is off
   card?.classList.toggle('format-inactive', videoOn && !keepAudio)
-  // Whole card acts as the toggle in video mode (pointer affordance)
-  card?.classList.toggle('format-toggleable', videoOn)
 }
 
 // ── Silent preflight (proactive issue surfacing) ─────────────────────────
@@ -509,14 +515,15 @@ function fmtFileSizeBytes(bytes: number): string {
   return `${Math.round(bytes / 1e3)} KB`
 }
 
+/**
+ * "Fullført — 1t 12m · 84 MB · ☁ GD" after a take.
+ *
+ * This used to reach into the EDITOR PROMPT's toast and overwrite its title
+ * element — two unrelated messages sharing one surface, so the summary only
+ * appeared if the prompt happened to be showing, and it destroyed that prompt's
+ * own headline when it did. It now has its own toast, and touches nothing else.
+ */
 function showRecordingFinishedSummary(entry: RecordingEntry): void {
-  const toast = document.getElementById('editor-prompt-toast')
-  if (!toast) return
-
-  const titleEl = toast.querySelector('.update-toast-title')
-  if (!titleEl) return
-
-  // Build summary line
   const parts: string[] = []
   if (entry.durationSec != null && entry.durationSec > 0)
     parts.push(fmtDurationSec(entry.durationSec))
@@ -527,10 +534,52 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
   const uploadedServices = (entry.cloudUploaded ?? []).map(s => cloudNames[s] ?? s)
   if (uploadedServices.length) parts.push('☁ ' + uploadedServices.join(' ☁ '))
 
-  if (parts.length) {
-    titleEl.textContent = t('history.complete', 'Fullført') + ' — ' + parts.join(' · ')
+  const done = t('history.complete', 'Fullført')
+  const msg = parts.length ? `${done} — ${parts.join(' · ')}` : done
+
+  // Only offer the editor here when the editor PROMPT isn't going to (it is
+  // shown by pages/recording.ts unless the user turned it off). Two buttons
+  // opening the same file is one button too many.
+  const promptWillShow = settings.askOpenEditor !== false
+  const path = entry.path
+  toast('success', msg, path && !promptWillShow
+    ? {
+        action: {
+          label: t('home.openInEditor', 'Åpne i redigering'),
+          onClick: () => window.openEditorWithFile(path),
+        },
+      }
+    : {})
+}
+
+// ── Progress bar shared by the two long audio checks ────────────────────────
+//
+// Neither check reports real progress from the backend, so the UI must not
+// pretend otherwise: the 30 s test recording shows a determinate bar the copy
+// explicitly calls an estimate ("ca."), and the 60 s capture bench — which
+// previously showed NOTHING for a full minute — gets an indeterminate bar plus
+// a truthful elapsed-seconds counter.
+
+function healthProgress(mode: 'determinate' | 'indeterminate' | 'off', pct = 0): void {
+  const bar = document.getElementById('health-progress')
+  const fill = document.getElementById('health-progress-fill')
+  if (!bar || !fill) return
+  if (mode === 'off') {
+    bar.style.display = 'none'
+    bar.classList.remove('indeterminate')
+    bar.removeAttribute('aria-valuenow')
+    fill.style.width = '0'
+    return
+  }
+  bar.style.display = ''
+  bar.classList.toggle('indeterminate', mode === 'indeterminate')
+  if (mode === 'determinate') {
+    const clamped = Math.max(0, Math.min(100, pct))
+    fill.style.width = `${clamped}%`
+    bar.setAttribute('aria-valuenow', String(Math.round(clamped)))
   } else {
-    titleEl.textContent = t('history.complete', 'Fullført')
+    fill.style.width = ''
+    bar.removeAttribute('aria-valuenow')
   }
 }
 
@@ -553,13 +602,18 @@ export function setupHome(): void {
     let elapsed = 0
     const TOTAL = 30
     status.style.color = 'var(--text2)'
+    // "ca." because this counter is a local timer, not backend progress: the
+    // command returns when it returns, and the number can reach 30/30 while the
+    // recording is still finishing.
     const fmtProgress = (n: number): string =>
-      t('home.testProgress', 'Tar opp test… {n}/{total} s')
+      t('home.testProgress', 'Tar opp test… ca. {n}/{total} s')
         .replace('{n}', String(n)).replace('{total}', String(TOTAL))
     status.textContent = fmtProgress(0)
+    healthProgress('determinate', 0)
     const tick = setInterval(() => {
       elapsed++
-      status.textContent = fmtProgress(elapsed)
+      status.textContent = fmtProgress(Math.min(elapsed, TOTAL))
+      healthProgress('determinate', (elapsed / TOTAL) * 100)
       if (elapsed >= TOTAL) clearInterval(tick)
     }, 1000)
     try {
@@ -597,6 +651,8 @@ export function setupHome(): void {
       status.textContent = `❌ ${(err as Error).message}`
       status.style.color = 'var(--red)'
     } finally {
+      clearInterval(tick)
+      healthProgress('off')
       btn.disabled = false
       btn.textContent = originalText
     }
@@ -659,13 +715,25 @@ export function setupHome(): void {
     const status = document.getElementById('health-status-settings')
     if (!btn || !status) return
     btn.disabled = true
-    status.textContent = t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')
+    // 60 seconds used to pass with a single static line and no other sign of
+    // life — indistinguishable from a hang. An indeterminate bar says "working",
+    // the counter says how long it has been working, and neither claims to know
+    // how far along the backend is (it does not report that).
+    const benchStarted = Date.now()
+    const benchLine = (): string => {
+      const secs = Math.floor((Date.now() - benchStarted) / 1000)
+      return `${t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')} (${secs} s)`
+    }
+    status.textContent = benchLine()
+    healthProgress('indeterminate')
+    const benchTick = setInterval(() => { status.textContent = benchLine() }, 1000)
     // The bench must measure the RECORDING PATH alone: release every
     // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
     // getUserMedia on the same device skews the source itself).
     releaseRendererAudioCaptures()
     try {
       const r = await window.api.runCaptureBench(60)
+      clearInterval(benchTick)
       const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
       const pct = r.expectedSec ? (loss / r.expectedSec * 100) : 0
       status.textContent = `${r.verdict === 'pass' ? '✅' : r.verdict === 'warn' ? '⚠️' : '❌'} ` +
@@ -676,6 +744,9 @@ export function setupHome(): void {
         (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
     } catch (err) {
       status.textContent = '❌ ' + errText(err)
+    } finally {
+      clearInterval(benchTick)
+      healthProgress('off')
     }
     if (!window.__isRecording) startVU() // give the home meter back
     btn.disabled = false
@@ -722,11 +793,14 @@ export function setupHome(): void {
     }
   })
 
-  // Separate audio toggle — keep high-quality audio file alongside combined MP4.
-  // The whole FORMAT card is the toggle in video mode: click the switch OR
-  // anywhere on the card. Mirrors Innstillinger → Video → "Behold separat lydfil".
-  // When toggled here, propagate to the Video-tab toggle if it's already mounted
-  // so both stay in sync without requiring a page navigation.
+  // Separate audio toggle — keep a high-quality audio file alongside the
+  // combined MP4. Mirrors Innstillinger → Video → "Behold separat lydfil", and
+  // propagates to that toggle live so the two never disagree.
+  //
+  // The SWITCH is the control. Clicking anywhere on the FORMAT card used to
+  // flip this setting too, which meant a volunteer who tapped the card to read
+  // its bitrate silently changed what the next recording would produce — an
+  // invisible state change from a gesture that looked like inspection.
   const toggleSeparateAudio = async (): Promise<void> => {
     const nowKeep = !(settings.videoKeepAudio ?? true)
     patchSettings({ videoKeepAudio: nowKeep })
@@ -736,15 +810,13 @@ export function setupHome(): void {
     const videoToggle = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
     if (videoToggle && videoToggle.checked !== nowKeep) videoToggle.checked = nowKeep
   }
-  document.getElementById('home-format-card')?.addEventListener('click', e => {
-    // Let the "Endre" link navigate to the format settings instead of toggling
-    if ((e.target as HTMLElement)?.closest('#btn-go-audio-fmt')) return
-    // Separate-audio only exists in video mode (audio-only has no combined file)
-    if (!(settings.videoEnabled ?? false)) return
-    void toggleSeparateAudio()
+  const separateSwitch = document.getElementById('btn-audio-separate')
+  separateSwitch?.addEventListener('click', e => {
+    e.stopPropagation()
+    if (settings.videoEnabled ?? false) void toggleSeparateAudio()
   })
   // Keyboard activation for the switch (role="switch", tabindex=0)
-  document.getElementById('btn-audio-separate')?.addEventListener('keydown', e => {
+  separateSwitch?.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       if (settings.videoEnabled ?? false) void toggleSeparateAudio()
@@ -925,12 +997,36 @@ function wireHomeIpcListeners(): void {
   }))
 }
 
+/** The info cards that wait on an async load, so they can show a skeleton
+ *  instead of a "—" that reads as a real (and alarming) answer. */
+const SKELETON_CARDS = ['home-audio-card', 'home-format-card', 'home-storage-card']
+
+function setCardLoading(id: string, loading: boolean): void {
+  document.getElementById(id)?.classList.toggle('is-loading', loading)
+}
+
+/**
+ * Skeleton only what is genuinely unknown. A card that already shows a real
+ * value keeps showing it while the refresh runs — flashing a shimmer over
+ * correct data on every return to Home would be motion for its own sake.
+ */
+function markUnknownCardsLoading(): void {
+  for (const id of SKELETON_CARDS) {
+    const value = document.getElementById(id)?.querySelector('.info-card-value')?.textContent?.trim()
+    if (!value || value === '—') setCardLoading(id, true)
+  }
+}
+
 export async function refreshHome(): Promise<void> {
   // The next recording comes from the store (event-fed, polled as a fallback) —
   // Home only asks it to re-check on arrival and renders whatever it has now.
   renderNextRecording()
   startCountdownTicker()
   void refreshNextRecording()
+
+  // Each loader clears its own card when its data lands, so a slow disk query
+  // doesn't hold the device card hostage.
+  markUnknownCardsLoading()
 
   await Promise.all([
     loadDiskSpace(),
@@ -1048,6 +1144,7 @@ function startCountdownTicker(): void {
 
 async function loadDiskSpace(): Promise<void> {
   const disk       = await window.api.getDiskSpace()
+  setCardLoading('home-storage-card', false)
   const storageVal = document.getElementById('home-storage-value')
   const storageSub = document.getElementById('home-storage-sub')
 
@@ -1226,6 +1323,8 @@ export function loadVideoInfoStrip(): void {
 
 export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
+  setCardLoading('home-audio-card', false)
+  setCardLoading('home-format-card', false)
   const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
   const nameEl   = document.getElementById('home-device-name')
   const statusEl = document.getElementById('home-device-status-text')

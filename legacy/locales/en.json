@@ -52,7 +52,7 @@
     "wakesBefore": "The computer wakes automatically at {time}",
     "testRecording": "🎙️ Test recording (30 s)",
     "checkSystem": "✅ Check system now",
-    "testProgress": "Recording test… {n}/{total} s",
+    "testProgress": "Recording test… approx. {n}/{total} s",
     "testSignalOk": "✅ Audio OK",
     "testSignalLow": "⚠️ Weak signal — check gain on the mixer",
     "testSignalSilent": "⚠️ Silence — is the mixer off?",
@@ -91,7 +91,8 @@
     "cloudQueued": "queued",
     "cloudAllSynced": "All synced",
     "nextShort": "next",
-    "wakesLead": "({min} min before)"
+    "wakesLead": "({min} min before)",
+    "openInEditor": "Open in editor"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -140,7 +141,8 @@
     "noteSave": "Save note",
     "noteTitle": "Note",
     "revealFile": "Show in Finder / Explorer",
-    "revealVideo": "Show video file in Finder"
+    "revealVideo": "Show video file in Finder",
+    "actions": "Actions"
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
