@@ -2885,6 +2885,13 @@
         </div>
         <div class="rec-savepath" id="rec-savepath"></div>
       </div>
+      <!-- Silence warning. Its own line, inside the overlay: it used to share the
+           #rec-reconnect banner with the reconnect warning, so whichever event
+           fired last erased the other — two different problems, one element. -->
+      <div class="rec-silence" id="rec-silence" style="display:none">
+        <span class="rec-silence-icon" aria-hidden="true">!</span>
+        <span class="rec-silence-text" id="rec-silence-text" data-i18n="recording.silenceWarn">Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.</span>
+      </div>
       <div class="rec-autostop" id="rec-autostop" style="display:none">
         <div class="rec-autostop-label">Auto-stopp om</div>
         <div class="rec-autostop-countdown" id="rec-autostop-countdown">—</div>
@@ -2894,6 +2901,8 @@
         </div>
       </div>
       <button class="btn-stop-big" id="btn-stop-overlay" data-i18n="recording.stop">Trykk for å stoppe opptaket</button>
+      <!-- Shown while the engine finalizes the file after a stop press. -->
+      <div class="rec-finalizing-hint" id="rec-finalizing-hint" style="display:none" data-i18n="recording.finalizingHint">Vent litt — lyden skrives ferdig til fil.</div>
     </div>
 
     <!-- Video preview inside recording overlay (only shown when video is active) -->

@@ -13,6 +13,7 @@ import { t } from '../i18n'
 import { fmtDate, flashMsg } from '../helpers'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { confirmDialog } from '../ui/dialog'
+import { firstMount, resetMount } from '../ui/motion'
 import {
   baseNoExt,
   filterRecordings,
@@ -111,7 +112,12 @@ export function renderHistoryRows(
 ): void {
   if (!tbody) return
   tbody.innerHTML = ''
+  // Stagger the rows in on ARRIVAL only. A re-render (delete, note, filter
+  // chip, a finished recording) must not replay the entrance for rows that
+  // never left the screen.
+  const animate = firstMount(tbody)
   if (!rows.length) {
+    resetMount(tbody)
     const td = Object.assign(document.createElement('td'), {
       // The thead has FIVE columns (Tidspunkt · Varighet · Filnavn · Status ·
       // handlinger). This said 6, which stretched the empty-state cell past
@@ -134,8 +140,8 @@ export function renderHistoryRows(
   const grouped = pairRecordings(rows)
   grouped.forEach(({ r, videoEntry }, idx) => {
     const tr = document.createElement('tr')
-    tr.className = 'hist-row'
-    tr.style.animationDelay = `${idx * 0.04}s`
+    tr.className = animate ? 'hist-row row-in' : 'hist-row'
+    if (animate) tr.style.animationDelay = `${idx * 0.04}s`
     const badgeCls = r.status === 'ok' || r.status === 'complete' ? 'ok' : r.status === 'error' ? 'error' : 'sched'
     tr.dataset.status = badgeCls
     const badge    = Object.assign(document.createElement('span'), { className: `badge badge-${badgeCls}`, textContent: t(`history.${r.status}`, r.status) })

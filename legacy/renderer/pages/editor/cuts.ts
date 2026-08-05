@@ -8,6 +8,7 @@ import { gainFactor } from './peaks'
 import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap, updateMinimapViewport } from './waveform'
 import { startPlay, stopPlay, updateTimecode } from './playback'
+import { firstMount, resetMount } from '../../ui/motion'
 import { updateHeaderSummary } from '../editor-page'
 
 // Cut-region model. (Mutations + rendering land here in a later phase; for now
@@ -156,6 +157,9 @@ export function renderCutList(): void {
   if (E.cuts.length === 0) {
     panel.style.display = 'none'
     undo.style.display  = 'none'
+    // Emptied (undo-all, or a new file loaded) — the next cut is an arrival
+    // again and gets to slide in.
+    resetMount(list)
     return
   }
 
@@ -163,12 +167,16 @@ export function renderCutList(): void {
   undo.style.display  = ''
 
   list.innerHTML = ''
+  // The list re-renders on EVERY cut add, delete, drag-resize and undo. Sliding
+  // all of the rows in again each time turned a two-cut edit into a small
+  // parade; the entrance now plays once, when the panel first appears.
+  const animate = firstMount(list)
 
   E.cuts.forEach((c, i) => {
     const dur = c.end - c.start
     const row = document.createElement('div')
-    row.className = 'editor-cut-row'
-    row.style.animationDelay = `${i * 0.05}s`
+    row.className = animate ? 'editor-cut-row row-in' : 'editor-cut-row'
+    if (animate) row.style.animationDelay = `${i * 0.05}s`
 
     // Thumbnail
     const thumb = document.createElement('div')

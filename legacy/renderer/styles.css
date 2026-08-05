@@ -1173,6 +1173,20 @@ select.form-input {
      another page must not cover the live meters. */
   z-index: var(--z-overlay);
   overflow-y: auto;   /* allow scroll if window is shorter than content */
+  /* The whole app disappearing behind a full-screen surface in one frame reads
+     as a glitch, not as a transition. 150 ms of fade + a 2 % scale is enough to
+     say "this replaced that". It is presentation ONLY — ui/motion.ts adds
+     .is-open in the same frame the overlay is shown, and the meters, waveform
+     and timer start immediately regardless of what the pixels are doing.
+     No fixed-position descendants live in here, so the transform is safe. */
+  opacity: 0;
+  transform: scale(.98);
+  transition: opacity .15s ease-out, transform .15s ease-out;
+}
+.recording-overlay.is-open   { opacity: 1; transform: scale(1); }
+.recording-overlay.is-leaving { opacity: 0; transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) {
+  .recording-overlay { transition: none; }
 }
 /* Traffic-light clearance is a macOS-only concern (hiddenInset titlebar).
    On Windows it was 36px of dead space at the top of every recording. */
@@ -1278,6 +1292,40 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: rgba(239,68,68,.2); border-color: var(--red);
   box-shadow: 0 0 20px rgba(239,68,68,.2);
 }
+/* Finalizing: the take is over but the file is still being written. The button
+   is out of play (a second press means nothing) and says so, and the whole
+   overlay dims a shade so it reads as "winding down", not "still recording". */
+.btn-stop-big:disabled {
+  cursor: default; opacity: .75;
+  background: rgba(255,255,255,.04); border-color: var(--border2); color: var(--text2);
+  box-shadow: none;
+}
+.btn-stop-big:disabled:hover {
+  background: rgba(255,255,255,.04); border-color: var(--border2); box-shadow: none;
+}
+.rec-finalizing-hint {
+  font-size: 12px; color: var(--text3); text-align: center;
+  animation: recFinalizePulse 1.6s ease-in-out infinite;
+}
+@keyframes recFinalizePulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+/* The pulsing REC dot must not keep claiming a take is live once it isn't. */
+.recording-overlay.is-finalizing .rec-dot-big { animation: none; opacity: .3; }
+.recording-overlay.is-finalizing .rec-live    { opacity: .45; }
+
+/* Silence warning — its own line inside the overlay (see index.html). */
+.rec-silence {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px 18px; border-radius: var(--rsm);
+  background: var(--orange-bg, rgba(249,115,22,.12));
+  border: 1px solid rgba(249,115,22,.3);
+}
+.rec-silence-icon {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(249,115,22,.25); color: var(--orange, #f97316);
+  font-size: 12px; font-weight: 800;
+}
+.rec-silence-text { font-size: 13px; font-weight: 600; color: var(--orange, #f97316); }
 .rec-savepath {
   font-size: 11px; color: var(--text4); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1644,21 +1692,27 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .btn-sm:active        { transform: scale(.97); }
 .btn-editor-tool:active { transform: scale(.93); }
 
-/* ── History row fade-in stagger ─────────────────────────────────── */
+/* ── List entrances ──────────────────────────────────────────────────
+   Opt-IN via .row-in, added by the renderer only when the list is being
+   populated for the first time (ui/motion.ts firstMount). These used to be
+   unconditional on the row classes, so every refresh re-staggered the whole
+   list: rename a file, delete a note, finish a recording — and five rows that
+   were already on screen flew in again from the left. An entrance animation is
+   a statement that something ARRIVED; replaying it on a refresh makes the app
+   feel like it forgets what it just showed you. */
 @keyframes fadeInRow {
   from { opacity: 0; transform: translateX(-6px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-.hist-row {
+.hist-row.row-in {
   animation: fadeInRow .2s cubic-bezier(.22,1,.36,1) both;
 }
 
-/* ── Cut list slide-in ───────────────────────────────────────────── */
 @keyframes cutSlideIn {
   from { opacity: 0; transform: translateX(10px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-.editor-cut-row {
+.editor-cut-row.row-in {
   animation: cutSlideIn .2s cubic-bezier(.22,1,.36,1) both;
 }
 

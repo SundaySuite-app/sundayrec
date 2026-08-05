@@ -18,11 +18,26 @@ export function prefersReducedMotion(): boolean {
 }
 
 /**
+ * Exits that have started but not finished, keyed by element. `showEl` calls
+ * the stored canceller so a re-show inside the exit window doesn't get undone a
+ * moment later by the previous hide's `display:none`.
+ */
+const pendingHides = new WeakMap<HTMLElement, () => void>()
+
+/**
  * Reveal an element by adding `cls` (default `is-open`) and clearing any inline
  * `display:none` left behind by the old style.display idiom.
  */
 export function showEl(el: HTMLElement | null, cls = 'is-open'): void {
   if (!el) return
+  // Abandon an exit that is still in flight. Without this, hide→show inside the
+  // exit window leaves the OLD hide's finish handler armed, and it fires a
+  // moment later and hides an element that is now supposed to be on screen.
+  // The recording overlay makes this concrete: the engine can emit a terminal
+  // state and a fresh `recording` state within the same few hundred ms (split
+  // restart, resync after a transient error), and an invisible overlay over a
+  // live take means a running recording with no stop button.
+  pendingHides.get(el)?.()
   el.style.display = ''
   el.classList.remove('is-leaving')
   // Force a reflow so a hide→show inside the same frame still transitions.
@@ -44,22 +59,34 @@ export function hideEl(el: HTMLElement | null, cls = 'is-open'): void {
   }
   el.classList.remove(cls)
   if (prefersReducedMotion()) {
+    pendingHides.delete(el)
     finish()
     return
   }
   el.classList.add('is-leaving')
   let done = false
-  const once = (): void => {
-    if (done) return
-    done = true
-    el.removeEventListener('transitionend', onEnd)
-    finish()
-  }
   const onEnd = (e: TransitionEvent): void => {
     if (e.target === el) once()
   }
+  const timer = setTimeout(() => once(), 220)
+  const detach = (): void => {
+    done = true
+    clearTimeout(timer)
+    el.removeEventListener('transitionend', onEnd)
+    pendingHides.delete(el)
+  }
+  const once = (): void => {
+    if (done) return
+    detach()
+    finish()
+  }
+  // Abandon the exit WITHOUT hiding — showEl's escape hatch.
+  pendingHides.set(el, () => {
+    if (done) return
+    detach()
+    el.classList.remove('is-leaving')
+  })
   el.addEventListener('transitionend', onEnd)
-  setTimeout(once, 220)
 }
 
 /**
@@ -107,6 +134,29 @@ export function applyInnerTabTransition(outgoing: HTMLElement | null, swap: () =
     outgoing.classList.remove('tab-leaving')
     swap()
   }, 120)
+}
+
+/**
+ * True the FIRST time a list container is populated, false on every refresh
+ * after that — so entrance animations play on arrival and never again.
+ *
+ * A list that re-staggers on every refresh is the UI equivalent of forgetting
+ * what it just showed you: finish a recording and the four rows that were
+ * already on screen fly in again alongside the new one.
+ *
+ * Renderers that clear the list (empty state, a new file in the editor) call
+ * `resetMount` so the next population counts as an arrival again.
+ */
+export function firstMount(container: Element | null): boolean {
+  if (!(container instanceof HTMLElement)) return false
+  if (container.dataset.mounted === '1') return false
+  container.dataset.mounted = '1'
+  return true
+}
+
+/** Re-arm `firstMount` for a container that has been emptied. */
+export function resetMount(container: Element | null): void {
+  if (container instanceof HTMLElement) delete container.dataset.mounted
 }
 
 /**

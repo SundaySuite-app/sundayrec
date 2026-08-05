@@ -7,6 +7,7 @@ import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
+import { firstMount, resetMount } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
 import {
   dismissMissed,
@@ -1201,7 +1202,12 @@ export async function renderRecentRecordings(): Promise<void> {
   const history = ((await window.api.getHistory()) ?? []) as RecordingEntry[]
   const recent = history.slice(0, 5)
   tbody.innerHTML = ''
+  // Entrance on ARRIVAL only. This list is re-rendered after every finished
+  // recording, every delete and every editor save — restaggering all five rows
+  // each time made the page look like it was reloading itself.
+  const animate = firstMount(tbody)
   if (!recent.length) {
+    resetMount(tbody)
     const td = Object.assign(document.createElement('td'), {
       colSpan: 4,
       textContent: t('history.empty', 'Ingen opptak ennå')
@@ -1212,8 +1218,8 @@ export async function renderRecentRecordings(): Promise<void> {
   }
   recent.forEach((r, idx) => {
     const tr = document.createElement('tr')
-    tr.className = 'hist-row'
-    tr.style.animationDelay = `${idx * 0.04}s`
+    tr.className = animate ? 'hist-row row-in' : 'hist-row'
+    if (animate) tr.style.animationDelay = `${idx * 0.04}s`
     const badgeCls = r.status === 'ok' || r.status === 'complete' ? 'ok' : r.status === 'error' ? 'error' : 'sched'
     tr.dataset.status = badgeCls
 

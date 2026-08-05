@@ -379,14 +379,43 @@ body.platform-darwin .ui-toast-stack {
    manager; these rules add the entrance/exit the old style.display toggling
    could never have. `.open` is added a frame after display, `.is-leaving` for
    the duration of the exit. */
+/* The backdrop carries `backdrop-filter: blur(6px)` (styles.css). Fading the
+   element's opacity does NOT ramp that blur — the filtered backdrop is composited
+   at full strength from the first frame, so the page behind the modal snapped
+   out of focus while the dark wash was still arriving. These keyframes animate
+   the blur radius alongside the opacity so the two agree. */
 .modal-backdrop.open {
-  animation: ui-fade-in 0.15s ease-out;
+  animation: ui-backdrop-in 0.15s ease-out;
 }
 .modal-backdrop.is-leaving {
-  animation: ui-fade-out 0.15s ease-in forwards;
+  animation: ui-backdrop-out 0.15s ease-in forwards;
 }
 .modal-backdrop.is-leaving .modal {
   animation: ui-dialog-out 0.15s ease-in forwards;
+}
+@keyframes ui-backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+}
+@keyframes ui-backdrop-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
 }
 
 /* ── Page transitions ────────────────────────────────────────────────────── */
@@ -742,6 +771,9 @@ textarea.has-field-error {
   .modal-backdrop.open,
   .page.page-leaving {
     animation: none;
+  }
+  .recording-overlay {
+    transition: none;
   }
   .setting-saved-chip,
   .inner-page.tab-leaving,
