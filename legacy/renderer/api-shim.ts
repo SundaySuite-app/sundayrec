@@ -143,6 +143,12 @@ async function editorCall<T extends object>(
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
 // (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
+//
+// Deliberately NOT mapped (2026-08-05 channel audit): `backend-warning`. Its
+// consumer in pages/home.ts is live, but a search of src-tauri turns up no
+// emitter for it under any name — mapping it to the nearest-looking channel
+// would only manufacture wrong warnings. It stays unmapped until the backend
+// actually emits something.
 const EVENT_MAP: Record<string, string> = {
   "recording-overlay-start": "recording://started",
   "recording-overlay-stop": "recording://state",
@@ -162,6 +168,14 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "video-preview-frame": "preview://frame",
+  // A camera that failed to start / lost its device. The backend's only live
+  // camera-failure emitter is the preview module's `preview://error`
+  // (media/preview.rs), whose `PreviewError.message` is already user-facing.
+  // The consumer (pages/recording.ts) swaps the dead placeholder for "Kamera
+  // feilet — opptar kun lyd". Caveat worth knowing: the in-recording preview is
+  // a file sink, not this module, so this only fires when a backend preview is
+  // actually running (the Direktesending page starts one).
+  "video-capture-error": "preview://error",
   "master-progress": "editor-master-progress",
   "whisper-progress": "whisper://progress",
   "whisper-model-progress": "whisper://model-progress",

@@ -21,7 +21,10 @@
     "warn": "KREVER HANDLING",
     "noSchedule": "Ingen opptak planlagt",
     "preflightErrors": "{n} feil må rettes før opptaket",
-    "preflightWarns": "{n} ting å se på før opptaket"
+    "preflightWarns": "{n} ting å se på før opptaket",
+    "preflightAction": "Se innstillinger",
+    "dismiss": "Skjul",
+    "preflightMore": "flere — se Innstillinger → Lyd"
   },
   "home": {
     "readyTitle": "Alt er klart",
@@ -62,13 +65,6 @@
     "signalLoud": "Høyt",
     "signalGood": "Bra",
     "signalWeak": "Svakt",
-    "banner": {
-      "errors": "feil oppdaget",
-      "warns": "advarsel",
-      "more": "flere — se Innstillinger → Lyd → Sjekk system",
-      "clickToFix": "klikk for å fikse",
-      "clickForDetails": "klikk for detaljer"
-    },
     "cloudLabel": "SKY-BACKUP",
     "thumbLabel": "EPISODEBILDE",
     "whisperLabel": "TRANSKRIPSJON",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "Et planlagt opptak ble ikke tatt opp",
-    "bannerMany": "{n} planlagte opptak ble ikke tatt opp"
+    "bannerMany": "{n} planlagte opptak ble ikke tatt opp",
+    "hint": "Sjekk at maskinen var på, at SundayRec kjørte og at «Vekk maskin automatisk» er slått på.",
+    "dismiss": "Greit",
+    "openSchedule": "Åpne tidsplan",
+    "bannerAction": "Vis detaljer",
+    "more": "flere"
   }
 }

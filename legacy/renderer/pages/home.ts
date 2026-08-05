@@ -7,16 +7,23 @@ import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
+import { banner, dismissBanner, toast } from '../ui/toast'
 import {
+  dismissMissed,
+  dismissPreflight,
   getNextRecordingState,
   initNextRecordingStore,
   refreshNextRecording,
+  setPreflightFindings,
   subscribe as subscribeNextRecording,
 } from '../status/next-recording'
 import {
   formatCountdown,
+  formatMissed,
+  formatMissedBanner,
   formatNextDate,
   formatNextTitle,
+  formatPreflightHeadline,
   formatSidebarStatus,
   formatWakeHint,
   intlParts,
@@ -24,6 +31,7 @@ import {
   type FormatCtx,
   type NextRecordingState,
 } from '../status/next-recording-core'
+import type { PreflightFinding } from '../../bindings/PreflightFinding'
 import type { RecordingEntry } from './history'
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -188,7 +196,11 @@ export function updateAudioSeparateButton(): void {
 // We run the same preflight check the user can trigger manually from the
 // Lyd settings page, but silently in the background after home loads. Any
 // findings — typically "disk almost full", "mic permission denied", "saved
-// device not found" — are shown as a non-dismissable banner above the hero.
+// device not found" — go into the shared store, so they land on the SAME card
+// the backend's pre-start check (scheduler://preflight, 30 min before a
+// scheduled start) renders. Two sources, one surface: the user should not have
+// to learn two different renderings of the same finding.
+//
 // Runs ONCE per app launch (not per home-tab visit) to avoid pestering the
 // user with stale issues they've already seen.
 
@@ -198,64 +210,10 @@ async function runSilentPreflightOnce(): Promise<void> {
   if (silentPreflightHasRun) return
   silentPreflightHasRun = true
   try {
-    const r = await window.api.runPreflight() as {
-      findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }>
-    }
-    renderSilentPreflightBanner(r.findings ?? [])
+    const r = await window.api.runPreflight() as { findings?: PreflightFinding[] }
+    if (r.findings?.length) setPreflightFindings(r.findings)
   } catch {
     // Preflight unavailable — silently ignore (not user-facing failure)
-  }
-}
-
-function renderSilentPreflightBanner(findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }>): void {
-  // Remove any prior banner first so we don't stack.
-  document.getElementById('silent-preflight-banner')?.remove()
-  if (findings.length === 0) return
-
-  const errors = findings.filter(f => f.severity === 'error')
-  const warns  = findings.filter(f => f.severity === 'warn')
-
-  const banner = document.createElement('div')
-  banner.id = 'silent-preflight-banner'
-  banner.className = errors.length > 0 ? 'home-banner home-banner-error' : 'home-banner home-banner-warn'
-
-  const titleEl = document.createElement('div')
-  titleEl.className = 'home-banner-title'
-  titleEl.textContent = errors.length > 0
-    ? `❌ ${errors.length} ${t('home.banner.errors', 'feil oppdaget')} — ${t('home.banner.clickToFix', 'klikk for å fikse')}`
-    : `⚠️ ${warns.length} ${t('home.banner.warns', 'advarsel')} — ${t('home.banner.clickForDetails', 'klikk for detaljer')}`
-  banner.appendChild(titleEl)
-
-  // Show first 2 messages inline; rest are visible in Lyd → Sjekk system
-  const list = document.createElement('ul')
-  list.className = 'home-banner-list'
-  for (const f of [...errors, ...warns].slice(0, 2)) {
-    const li = document.createElement('li')
-    li.textContent = f.message
-    list.appendChild(li)
-  }
-  if (findings.length > 2) {
-    const li = document.createElement('li')
-    li.textContent = `+ ${findings.length - 2} ${t('home.banner.more', 'flere — se Innstillinger → Lyd → Sjekk system')}`
-    li.className = 'home-banner-list-more'
-    list.appendChild(li)
-  }
-  banner.appendChild(list)
-
-  banner.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('.inner-tab[data-tab="settings-audio"]')?.click()
-  })
-
-  // Insert at the very top of page-home, above the hero
-  const pageHome = document.getElementById('page-home')
-  const reviewCard = document.getElementById('review-queue-card')
-  if (pageHome) {
-    if (reviewCard && reviewCard.parentNode === pageHome) {
-      pageHome.insertBefore(banner, reviewCard)
-    } else {
-      pageHome.insertBefore(banner, pageHome.firstChild)
-    }
   }
 }
 
@@ -454,68 +412,82 @@ export async function startVideoPreview(): Promise<void> {
 /** Exported so other pages can trigger a disk-space refresh after changing format/channels/samplerate */
 export { loadDiskSpace as refreshHomeDiskSpace }
 
-// ── Backend warning toast ────────────────────────────────────────────────────
+// ── Status alert cards: missed recordings + pre-start check ─────────────────
 
-let _backendWarningTimers: ReturnType<typeof setTimeout>[] = []
+function alertItem(text: string, className?: string): HTMLLIElement {
+  const li = document.createElement('li')
+  li.textContent = text
+  if (className) li.className = className
+  return li
+}
 
-function showBackendWarning(msg: string, severity: 'warn' | 'error'): void {
-  // Remove existing toasts of same severity so they don't pile up
-  document.querySelectorAll<HTMLElement>(`.backend-warning-toast.severity-${severity}`).forEach(el => el.remove())
+/** How many findings/missed rows a card lists before collapsing the rest. */
+const ALERT_LIST_MAX = 4
 
-  const toast = document.createElement('div')
-  toast.className = `backend-warning-toast severity-${severity}`
-  toast.style.cssText = [
-    'display:flex', 'align-items:flex-start', 'gap:10px',
-    'padding:10px 14px', 'border-radius:8px', 'font-size:13px',
-    'line-height:1.4', 'position:relative', 'box-shadow:0 2px 8px rgba(0,0,0,.25)',
-    'margin:8px 0',
-    'animation:toast-in .2s ease',
-    severity === 'error'
-      ? 'background:var(--red,#ef4444);color:#fff;border:1px solid rgba(255,255,255,.2)'
-      : 'background:var(--yellow,#fbbf24);color:#1a1a1a;border:1px solid rgba(0,0,0,.15)',
-  ].join(';')
+/**
+ * Render both alert cards from the shared state.
+ *
+ * A missed recording ALSO raises a persistent banner: the card is on Home, and
+ * "the church service did not get recorded" is not news that should wait until
+ * someone navigates there.
+ */
+function renderStatusAlerts(state: NextRecordingState): void {
+  const ctx = fmtCtx()
 
-  const icon = document.createElement('span')
-  icon.textContent = severity === 'error' ? '✕' : '⚠'
-  icon.style.cssText = 'flex-shrink:0;font-size:14px;margin-top:1px'
+  // ── Missed recordings ─────────────────────────────────────────────────────
+  const missedCard = document.getElementById('missed-card')
+  const missedTitle = document.getElementById('missed-card-title')
+  const missedList = document.getElementById('missed-card-list')
+  const missedHeadline = formatMissedBanner(state, ctx)
 
-  const msgEl = document.createElement('span')
-  msgEl.style.cssText = 'flex:1'
-  msgEl.textContent = msg
-
-  const closeBtn = document.createElement('button')
-  closeBtn.textContent = '×'
-  closeBtn.style.cssText = [
-    'background:none;border:none;cursor:pointer;padding:0;font-size:16px',
-    'line-height:1;opacity:.7;flex-shrink:0;margin-left:4px',
-    severity === 'error' ? 'color:#fff' : 'color:#1a1a1a',
-  ].join(';')
-  closeBtn.addEventListener('click', () => toast.remove())
-
-  toast.appendChild(icon)
-  toast.appendChild(msgEl)
-  toast.appendChild(closeBtn)
-
-  // Insert below the global error banner (or at top of main if banner not present)
-  const main     = document.getElementById('main')
-  const errorBanner = document.getElementById('global-error-banner')
-  if (main && errorBanner?.nextSibling) {
-    main.insertBefore(toast, errorBanner.nextSibling)
-  } else if (main) {
-    main.insertBefore(toast, main.firstChild)
+  if (missedCard) missedCard.style.display = missedHeadline ? '' : 'none'
+  if (missedHeadline) {
+    if (missedTitle) missedTitle.textContent = missedHeadline
+    if (missedList) {
+      const rows = state.missed.slice(0, ALERT_LIST_MAX).map(m => alertItem(formatMissed(m, ctx)))
+      const rest = state.missed.length - rows.length
+      if (rest > 0) {
+        rows.push(alertItem(`+ ${rest} ${t('missed.more', 'flere')}`, 'home-banner-list-more'))
+      }
+      missedList.replaceChildren(...rows)
+    }
+    banner('scheduler-missed', 'error', missedHeadline, [
+      {
+        label: t('missed.bannerAction', 'Vis detaljer'),
+        onClick: () => navigateTo('home', { anchor: 'missed-card' }),
+      },
+    ])
+  } else {
+    dismissBanner('scheduler-missed')
   }
 
-  if (severity === 'warn') {
-    const tid = setTimeout(() => {
-      toast.remove()
-      // Remove fired timer from the bookkeeping array so it doesn't grow
-      // unbounded as warnings accumulate over a long session.
-      const idx = _backendWarningTimers.indexOf(tid)
-      if (idx >= 0) _backendWarningTimers.splice(idx, 1)
-    }, 8000)
-    _backendWarningTimers.push(tid)
+  // ── Pre-start check ───────────────────────────────────────────────────────
+  const pfCard = document.getElementById('preflight-card')
+  const pfTitle = document.getElementById('preflight-card-title')
+  const pfList = document.getElementById('preflight-card-list')
+  const pf = formatPreflightHeadline(state.preflight, ctx)
+
+  if (pfCard) {
+    pfCard.style.display = pf ? '' : 'none'
+    // Errors and warnings are different news; the card says which.
+    pfCard.classList.toggle('home-banner-error', pf?.severity === 'error')
+    pfCard.classList.toggle('home-banner-warn', pf?.severity !== 'error')
   }
-  // 'error' stays until dismissed
+  if (pf) {
+    if (pfTitle) pfTitle.textContent = pf.text
+    if (pfList) {
+      // Errors first — they are what stops a recording.
+      const sorted = [...state.preflight].sort(
+        (a, b) => (a.severity === 'error' ? 0 : 1) - (b.severity === 'error' ? 0 : 1),
+      )
+      const rows = sorted.slice(0, ALERT_LIST_MAX).map(f => alertItem(f.message))
+      const rest = sorted.length - rows.length
+      if (rest > 0) {
+        rows.push(alertItem(`+ ${rest} ${t('status.preflightMore', 'flere — se Innstillinger → Lyd')}`, 'home-banner-list-more'))
+      }
+      pfList.replaceChildren(...rows)
+    }
+  }
 }
 
 // ── Post-recording summary helpers ──────────────────────────────────────────
@@ -877,10 +849,24 @@ export function setupHome(): void {
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
 
+  // Alert-card actions. The cards themselves are rendered by the store
+  // subscriber below; these buttons only ever change state.
+  document.getElementById('btn-missed-dismiss')?.addEventListener('click', () => dismissMissed())
+  document.getElementById('btn-missed-schedule')?.addEventListener('click', () => {
+    navigateTo('schedule')
+  })
+  document.getElementById('btn-preflight-dismiss')?.addEventListener('click', () => dismissPreflight())
+  document.getElementById('btn-preflight-settings')?.addEventListener('click', () => {
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-run-preflight-settings', highlight: false })
+  })
+
   // One subscription for the whole app lifetime: the sidebar status is chrome,
   // visible from every page, so it must keep up whether or not Home is open.
   initNextRecordingStore()
-  subscribeNextRecording(renderNextRecording)
+  subscribeNextRecording(state => {
+    renderNextRecording(state)
+    renderStatusAlerts(state)
+  })
 
   wireHomeIpcListeners()
 }
@@ -894,10 +880,16 @@ function wireHomeIpcListeners(): void {
   if (homeIpcWired) return
   homeIpcWired = true
 
-  // Backend warning toast — shown for cloud/preroll/wake/disk/device issues
+  // Backend warning — cloud/preroll/wake/disk/device issues.
+  //
+  // NOTE (2026-08-05 channel audit): no Rust emitter for this channel exists
+  // yet, so nothing can arrive on it today. The subscription is kept (rather
+  // than deleted) because it is the intended receiver the day the backend
+  // starts emitting; what WAS deleted is the 60-line hand-rolled toast it used
+  // to build with inline styles, now that there is a real toast service.
   homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
-    const d = data as { msg: string; severity: 'warn' | 'error'; category: string }
-    if (d?.msg) showBackendWarning(d.msg, d.severity ?? 'warn')
+    const d = data as { msg?: string; severity?: 'warn' | 'error' } | undefined
+    if (d?.msg) toast(d.severity === 'error' ? 'error' : 'warn', d.msg)
   }))
 
   // Post-recording summary in existing editor prompt toast. (recording.ts also

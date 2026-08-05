@@ -21,7 +21,10 @@
     "warn": "ACTION REQUISE",
     "noSchedule": "Aucun enregistrement prévu",
     "preflightErrors": "{n} erreurs à corriger avant l’enregistrement",
-    "preflightWarns": "{n} points à vérifier avant l’enregistrement"
+    "preflightWarns": "{n} points à vérifier avant l’enregistrement",
+    "preflightAction": "Ouvrir les réglages",
+    "dismiss": "Masquer",
+    "preflightMore": "autres — voir Réglages → Audio"
   },
   "home": {
     "readyTitle": "Tout est prêt",
@@ -62,13 +65,6 @@
     "signalLoud": "Fort",
     "signalGood": "Bon",
     "signalWeak": "Faible",
-    "banner": {
-      "errors": "erreurs détectées",
-      "warns": "avertissements",
-      "more": "autres — voir Paramètres → Audio → Vérifier le système",
-      "clickToFix": "cliquez pour corriger",
-      "clickForDetails": "cliquez pour les détails"
-    },
     "cloudLabel": "SAUVEGARDE CLOUD",
     "thumbLabel": "IMAGE D'ÉPISODE",
     "whisperLabel": "TRANSCRIPTION",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "Un enregistrement planifié n’a pas eu lieu",
-    "bannerMany": "{n} enregistrements planifiés n’ont pas eu lieu"
+    "bannerMany": "{n} enregistrements planifiés n’ont pas eu lieu",
+    "hint": "Vérifiez que l’ordinateur était allumé, que SundayRec fonctionnait et que « Réveiller l’ordinateur automatiquement » est activé.",
+    "dismiss": "Compris",
+    "openSchedule": "Ouvrir le planning",
+    "bannerAction": "Voir les détails",
+    "more": "autres"
   }
 }

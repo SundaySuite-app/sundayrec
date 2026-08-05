@@ -21,7 +21,10 @@
     "warn": "WYMAGANE DZIAŁANIE",
     "noSchedule": "Brak zaplanowanego nagrania",
     "preflightErrors": "{n} błędów do naprawienia przed nagraniem",
-    "preflightWarns": "{n} rzeczy do sprawdzenia przed nagraniem"
+    "preflightWarns": "{n} rzeczy do sprawdzenia przed nagraniem",
+    "preflightAction": "Otwórz ustawienia",
+    "dismiss": "Ukryj",
+    "preflightMore": "więcej — zobacz Ustawienia → Dźwięk"
   },
   "home": {
     "readyTitle": "Wszystko gotowe",
@@ -62,13 +65,6 @@
     "signalLoud": "Głośno",
     "signalGood": "Dobrze",
     "signalWeak": "Słabo",
-    "banner": {
-      "errors": "błędów wykrytych",
-      "warns": "ostrzeżeń",
-      "more": "więcej — zobacz Ustawienia → Dźwięk → Sprawdź system",
-      "clickToFix": "kliknij, aby naprawić",
-      "clickForDetails": "kliknij, aby zobaczyć szczegóły"
-    },
     "cloudLabel": "KOPIA W CHMURZE",
     "thumbLabel": "OKŁADKA ODCINKA",
     "whisperLabel": "TRANSKRYPCJA",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "Zaplanowane nagranie nie zostało wykonane",
-    "bannerMany": "Zaplanowane nagrania ({n}) nie zostały wykonane"
+    "bannerMany": "Zaplanowane nagrania ({n}) nie zostały wykonane",
+    "hint": "Sprawdź, czy komputer był włączony, czy SundayRec działał i czy opcja „Automatyczne wybudzanie komputera” jest włączona.",
+    "dismiss": "Rozumiem",
+    "openSchedule": "Otwórz harmonogram",
+    "bannerAction": "Pokaż szczegóły",
+    "more": "więcej"
   }
 }

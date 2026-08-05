@@ -2127,6 +2127,24 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   padding-top: 2px;
 }
 
+/* Alert CARDS (missed recording, pre-start check) reuse the banner skin but are
+   not themselves clickable — they carry explicit buttons, so the whole-surface
+   click affordance would be a lie about where the action is. */
+.home-alert-card { cursor: default; }
+.home-alert-card:hover { transform: none; box-shadow: none; }
+.home-banner-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text2);
+  margin-top: 8px;
+}
+.home-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ── Auto-trim suggestion banner ─────────────────────────────────── */
 .editor-suggestion-banner {
   display: flex; align-items: center; gap: 14px;

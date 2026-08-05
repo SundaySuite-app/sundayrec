@@ -21,7 +21,10 @@
     "warn": "HANDLING PÅKRÆVET",
     "noSchedule": "Ingen optagelse planlagt",
     "preflightErrors": "{n} fejl skal rettes før optagelsen",
-    "preflightWarns": "{n} ting at se på før optagelsen"
+    "preflightWarns": "{n} ting at se på før optagelsen",
+    "preflightAction": "Åbn indstillinger",
+    "dismiss": "Skjul",
+    "preflightMore": "flere — se Indstillinger → Lyd"
   },
   "home": {
     "readyTitle": "Alt klart",
@@ -62,13 +65,6 @@
     "signalLoud": "Højt",
     "signalGood": "Godt",
     "signalWeak": "Svagt",
-    "banner": {
-      "errors": "fejl fundet",
-      "warns": "advarsler",
-      "more": "flere — se Indstillinger → Lyd → Kør systemtjek",
-      "clickToFix": "klik for at rette",
-      "clickForDetails": "klik for detaljer"
-    },
     "cloudLabel": "CLOUD-BACKUP",
     "thumbLabel": "EPISODEBILLEDE",
     "whisperLabel": "TRANSSKRIPTION",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "En planlagt optagelse blev ikke gennemført",
-    "bannerMany": "{n} planlagte optagelser blev ikke gennemført"
+    "bannerMany": "{n} planlagte optagelser blev ikke gennemført",
+    "hint": "Kontrollér at maskinen var tændt, at SundayRec kørte, og at “Væk computeren automatisk” er slået til.",
+    "dismiss": "Forstået",
+    "openSchedule": "Åbn tidsplan",
+    "bannerAction": "Vis detaljer",
+    "more": "flere"
   }
 }

@@ -21,7 +21,10 @@
     "warn": "ACTION NEEDED",
     "noSchedule": "No recording scheduled",
     "preflightErrors": "{n} errors to fix before the recording",
-    "preflightWarns": "{n} things to check before the recording"
+    "preflightWarns": "{n} things to check before the recording",
+    "preflightAction": "Open settings",
+    "dismiss": "Hide",
+    "preflightMore": "more — see Settings → Audio"
   },
   "home": {
     "readyTitle": "All set",
@@ -62,13 +65,6 @@
     "signalLoud": "Loud",
     "signalGood": "Good",
     "signalWeak": "Weak",
-    "banner": {
-      "errors": "errors detected",
-      "warns": "warnings",
-      "more": "more — see Settings → Audio → Run system check",
-      "clickToFix": "click to fix",
-      "clickForDetails": "click for details"
-    },
     "cloudLabel": "CLOUD BACKUP",
     "thumbLabel": "EPISODE ARTWORK",
     "whisperLabel": "TRANSCRIPTION",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "A scheduled recording never ran",
-    "bannerMany": "{n} scheduled recordings never ran"
+    "bannerMany": "{n} scheduled recordings never ran",
+    "hint": "Check that the machine was on, that SundayRec was running and that “Wake the computer automatically” is enabled.",
+    "dismiss": "Got it",
+    "openSchedule": "Open schedule",
+    "bannerAction": "Show details",
+    "more": "more"
   }
 }

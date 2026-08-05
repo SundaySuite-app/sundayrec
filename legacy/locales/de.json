@@ -21,7 +21,10 @@
     "warn": "AKTION ERFORDERLICH",
     "noSchedule": "Keine Aufnahme geplant",
     "preflightErrors": "{n} Fehler müssen vor der Aufnahme behoben werden",
-    "preflightWarns": "{n} Punkte sollten Sie vor der Aufnahme prüfen"
+    "preflightWarns": "{n} Punkte sollten Sie vor der Aufnahme prüfen",
+    "preflightAction": "Einstellungen öffnen",
+    "dismiss": "Ausblenden",
+    "preflightMore": "weitere — siehe Einstellungen → Ton"
   },
   "home": {
     "readyTitle": "Alles bereit",
@@ -62,13 +65,6 @@
     "signalLoud": "Laut",
     "signalGood": "Gut",
     "signalWeak": "Schwach",
-    "banner": {
-      "errors": "Fehler erkannt",
-      "warns": "Warnungen",
-      "more": "mehr — siehe Einstellungen → Audio → Systemprüfung",
-      "clickToFix": "zum Beheben klicken",
-      "clickForDetails": "für Details klicken"
-    },
     "cloudLabel": "CLOUD-BACKUP",
     "thumbLabel": "EPISODENBILD",
     "whisperLabel": "TRANSKRIPTION",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "Eine geplante Aufnahme wurde nicht ausgeführt",
-    "bannerMany": "{n} geplante Aufnahmen wurden nicht ausgeführt"
+    "bannerMany": "{n} geplante Aufnahmen wurden nicht ausgeführt",
+    "hint": "Prüfen Sie, ob der Computer eingeschaltet war, SundayRec lief und „Computer automatisch aufwecken“ aktiviert ist.",
+    "dismiss": "Verstanden",
+    "openSchedule": "Zeitplan öffnen",
+    "bannerAction": "Details anzeigen",
+    "more": "weitere"
   }
 }

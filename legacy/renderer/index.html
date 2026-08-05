@@ -112,6 +112,31 @@
   <!-- ══ HJEM ══════════════════════════════════════════════════ -->
   <section id="page-home" class="page active">
 
+    <!-- Missed recordings (scheduler://missed). The backend has always emitted
+         this; until now the only trace was a native notification you had to be
+         at the machine to see. Filled + shown by home.ts from the shared
+         next-recording store. -->
+    <div id="missed-card" class="home-banner home-banner-error home-alert-card" style="display:none" role="alert">
+      <div class="home-banner-title" id="missed-card-title"></div>
+      <ul class="home-banner-list" id="missed-card-list"></ul>
+      <div class="home-banner-hint" data-i18n="missed.hint">Sjekk at maskinen var på, at SundayRec kjørte og at «Vekk maskin automatisk» er slått på.</div>
+      <div class="home-banner-actions">
+        <button type="button" class="btn-ghost btn-sm" id="btn-missed-schedule" data-i18n="missed.openSchedule">Åpne tidsplan</button>
+        <button type="button" class="btn-ghost btn-sm" id="btn-missed-dismiss" data-i18n="missed.dismiss">Greit</button>
+      </div>
+    </div>
+
+    <!-- Pre-start check (scheduler://preflight, fired 30 min before a scheduled
+         start) — and the same findings when Home runs the check itself. -->
+    <div id="preflight-card" class="home-banner home-banner-warn home-alert-card" style="display:none" role="alert">
+      <div class="home-banner-title" id="preflight-card-title"></div>
+      <ul class="home-banner-list" id="preflight-card-list"></ul>
+      <div class="home-banner-actions">
+        <button type="button" class="btn-ghost btn-sm" id="btn-preflight-settings" data-i18n="status.preflightAction">Se innstillinger</button>
+        <button type="button" class="btn-ghost btn-sm" id="btn-preflight-dismiss" data-i18n="status.dismiss">Skjul</button>
+      </div>
+    </div>
+
     <!-- Review queue card — only visible when items are pending review -->
     <div class="card review-queue-card" id="review-queue-card" style="display:none">
       <div class="review-queue-header">

@@ -21,7 +21,10 @@
     "warn": "ÅTGÄRD KRÄVS",
     "noSchedule": "Ingen inspelning schemalagd",
     "preflightErrors": "{n} fel måste åtgärdas före inspelningen",
-    "preflightWarns": "{n} saker att se över före inspelningen"
+    "preflightWarns": "{n} saker att se över före inspelningen",
+    "preflightAction": "Öppna inställningar",
+    "dismiss": "Dölj",
+    "preflightMore": "till — se Inställningar → Ljud"
   },
   "home": {
     "readyTitle": "Allt klart",
@@ -62,13 +65,6 @@
     "signalLoud": "Högt",
     "signalGood": "Bra",
     "signalWeak": "Svagt",
-    "banner": {
-      "errors": "fel upptäckta",
-      "warns": "varningar",
-      "more": "fler — se Inställningar → Ljud → Kör systemkontroll",
-      "clickToFix": "klicka för att åtgärda",
-      "clickForDetails": "klicka för detaljer"
-    },
     "cloudLabel": "MOLN-BACKUP",
     "thumbLabel": "AVSNITTSBILD",
     "whisperLabel": "TRANSKRIBERING",
@@ -1098,6 +1094,11 @@
   },
   "missed": {
     "bannerOne": "En planerad inspelning blev aldrig av",
-    "bannerMany": "{n} planerade inspelningar blev aldrig av"
+    "bannerMany": "{n} planerade inspelningar blev aldrig av",
+    "hint": "Kontrollera att datorn var på, att SundayRec kördes och att ”Väck datorn automatiskt” är påslaget.",
+    "dismiss": "Okej",
+    "openSchedule": "Öppna tidsplan",
+    "bannerAction": "Visa detaljer",
+    "more": "till"
   }
 }
