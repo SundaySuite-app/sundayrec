@@ -16,6 +16,7 @@ import {
   refreshNextRecording,
   setPreflightFindings,
   subscribe as subscribeNextRecording,
+  syncScheduleSettings,
 } from '../status/next-recording'
 import {
   formatCountdown,
@@ -1018,9 +1019,12 @@ function markUnknownCardsLoading(): void {
 }
 
 export async function refreshHome(): Promise<void> {
-  // The next recording comes from the store (event-fed, polled as a fallback) —
-  // Home only asks it to re-check on arrival and renders whatever it has now.
-  renderNextRecording()
+  // The next recording comes from the store (event-fed, polled as a fallback).
+  // `syncScheduleSettings` re-derives against the settings this app now has —
+  // `setupHome` subscribes before `loadSettings` has run, so without this the
+  // hero could show "set up a schedule" for one frame to a user who has one.
+  // It renders synchronously through the subscription; the poll then confirms.
+  syncScheduleSettings()
   startCountdownTicker()
   void refreshNextRecording()
 
