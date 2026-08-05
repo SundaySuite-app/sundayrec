@@ -414,7 +414,7 @@ function sDone(body: HTMLElement): void {
       <div class="ob-tip"><strong>${esc(t('onboarding.tipHomeTitle', 'Hjem'))}</strong> — ${esc(t('onboarding.tipHomeText', 'Sjekk status, kjør test-opptak, og se neste planlagte opptak'))}</div>
       <div class="ob-tip"><strong>${esc(t('onboarding.tipScheduleTitle', 'Tidsplan'))}</strong> — ${esc(t('onboarding.tipScheduleText', 'Legg til ukentlige opptak og spesialdager (jul, påske)'))}</div>
       <div class="ob-tip"><strong>${esc(t('onboarding.tipAudioTitle', 'Innstillinger → Lyd'))}</strong> — ${esc(t('onboarding.tipAudioText', 'Bytt mikser, juster volum og kjør test-opptak'))}</div>
-      <div class="ob-tip"><strong>${esc(t('onboarding.tipPublishTitle', 'Innstillinger → Publisering'))}</strong> <em>${esc(t('onboarding.tipPublishOptional', '(valgfritt)'))}</em> — ${esc(t('onboarding.tipPublishText', 'Koble til Google Drive / Dropbox / OneDrive for automatisk sky-backup'))}</div>
+      <div class="ob-tip"><strong>${esc(t('onboarding.tipPublishTitle', 'Innstillinger → Deling'))}</strong> <em>${esc(t('onboarding.tipPublishOptional', '(valgfritt)'))}</em> — ${esc(t('onboarding.tipPublishText', 'Koble til Google Drive / Dropbox / OneDrive for automatisk sky-backup'))}</div>
     </div>
     <div class="ob-actions">
       <button class="btn-primary" id="ob-done" style="justify-content:center">${esc(t('onboarding.doneOpen', 'Åpne SundayRec →'))}</button>
