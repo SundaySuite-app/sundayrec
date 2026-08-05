@@ -94,7 +94,8 @@
     "nextShort": "next",
     "wakesLead": "({min} min before)",
     "openInEditor": "Open in editor",
-    "thumbComing": "Episode artwork is coming — not used yet"
+    "thumbComing": "Episode artwork is coming — not used yet",
+    "prerollActive": "Pre-roll buffer active ({n} s)"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -261,7 +262,7 @@
     "manualMaxDesc": "Stops automatically after the set time — keeps files from getting huge if you forget to stop",
     "splitOff": "Off",
     "preRollTitle": "Pre-roll buffer",
-    "preRollDesc": "Captures the last N seconds before you pressed record — catches the start even if you're a touch late",
+    "preRollDesc": "Starts the recording N seconds in the past, so the opening of the talk is there even if you press a little late. Requires the buffer to actually be running — it starts automatically once you enable it below.",
     "sleepChecking": "Checking sleep settings…",
     "sleepStatusOk": "Sleep settings look good — wake-up will work",
     "sleepStatusMacWarn": "Autopoweroff is on — your Mac may shut down during sleep",
@@ -284,7 +285,9 @@
     "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present.",
     "errTimeFormat": "Write the time as HH:MM, e.g. 11:00.",
     "errSameTime": "The stop time cannot be the same as the start.",
-    "errMaxRange": "Maximum duration must be between 1 and 480 minutes."
+    "errMaxRange": "Maximum duration must be between 1 and 480 minutes.",
+    "prerollEnabledTitle": "Enable pre-roll buffer (experimental)",
+    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. That can disturb the live level meters on Home and Live, which use the same microphone. Turn it on if you need the seconds before the button press — Home shows when the buffer is running."
   },
   "wake": {
     "capability": {

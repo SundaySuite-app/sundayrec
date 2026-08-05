@@ -4,6 +4,7 @@ import { setVal, setRadio } from '../helpers'
 import { getAudioDevices } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
+import { reconcilePreroll } from '../preroll-lifecycle'
 import { closeModal, openModal } from '../ui/modal-manager'
 import {
   bindRadioGroup,
@@ -238,6 +239,10 @@ async function selectDevice(
   // grid reports the real channel count back (sub-line + auto-mono).
   await saveAudioSettings()
   showSavedChip(card.querySelector<HTMLElement>('.device-name'))
+  // The rolling pre-roll buffer addresses the device by name — re-point it at
+  // the new one (or take it down if the new device can't be resolved). Done
+  // BEFORE the channel grid reopens the device, so the two never race for it.
+  await reconcilePreroll(true)
   void startChannelGrid(deviceId, deviceName)
 }
 

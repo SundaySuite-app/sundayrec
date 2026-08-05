@@ -94,7 +94,8 @@
     "nextShort": "suivant",
     "wakesLead": "({min} min avant)",
     "openInEditor": "Ouvrir dans l’éditeur",
-    "thumbComing": "La vignette d’épisode arrive — pas encore utilisée"
+    "thumbComing": "La vignette d’épisode arrive — pas encore utilisée",
+    "prerollActive": "Tampon de pré-enregistrement actif ({n} s)"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -260,8 +261,8 @@
     "manualMaxTitle": "Durée maximale — enregistrements manuels",
     "manualMaxDesc": "S’arrête automatiquement après la durée définie — évite les fichiers gigantesques si vous oubliez d’arrêter",
     "splitOff": "Désactivé",
-    "preRollTitle": "Tampon pré-enregistrement",
-    "preRollDesc": "Enregistre les N secondes précédant l’appui — capture le début du sermon même si vous cliquez un peu trop tard",
+    "preRollTitle": "Tampon de pré-enregistrement",
+    "preRollDesc": "Démarre l'enregistrement N secondes plus tôt, pour que le début de la prédication soit là même si vous appuyez un peu tard. Nécessite que le tampon tourne réellement — il démarre automatiquement dès que vous l'activez ci-dessous.",
     "sleepChecking": "Vérification des paramètres de veille…",
     "sleepStatusOk": "Paramètres de veille OK — le réveil fonctionnera",
     "sleepStatusMacWarn": "Autopoweroff est activé — le Mac peut s’éteindre pendant la veille",
@@ -284,7 +285,9 @@
     "weeklyDesc": "Enregistrements fixes répétés chaque semaine — par exemple le culte chaque dimanche. La machine démarre et arrête l’enregistrement automatiquement, même si personne n’est présent.",
     "errTimeFormat": "Saisissez l’heure au format HH:MM, par ex. 11:00.",
     "errSameTime": "L’heure de fin ne peut pas être identique à l’heure de début.",
-    "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes."
+    "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes.",
+    "prerollEnabledTitle": "Activer le tampon de pré-enregistrement (expérimental)",
+    "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Cela peut perturber les vumètres en direct sur Accueil et Diffusion, qui utilisent le même microphone. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne."
   },
   "wake": {
     "capability": {

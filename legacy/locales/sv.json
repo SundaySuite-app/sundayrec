@@ -94,7 +94,8 @@
     "nextShort": "nästa",
     "wakesLead": "({min} min innan)",
     "openInEditor": "Öppna i redigering",
-    "thumbComing": "Avsnittsbild kommer — används inte än"
+    "thumbComing": "Avsnittsbild kommer — används inte än",
+    "prerollActive": "Förhandsbuffert aktiv ({n} s)"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -260,8 +261,8 @@
     "manualMaxTitle": "Maxlängd — manuella inspelningar",
     "manualMaxDesc": "Stoppar automatiskt efter angiven tid — så att filerna inte växer sig orimligt stora om du glömmer stoppa",
     "splitOff": "Av",
-    "preRollTitle": "Pre-roll-buffert",
-    "preRollDesc": "Spelar in N sekunder bakåt i tiden — fångar början på predikan även om du trycker lite för sent",
+    "preRollTitle": "Förhandsbuffert",
+    "preRollDesc": "Startar inspelningen N sekunder bakåt i tiden, så att början av talet är med även om du trycker lite för sent. Kräver att bufferten faktiskt körs — den startar automatiskt när du slår på den nedan.",
     "sleepChecking": "Kontrollerar viloinställningar…",
     "sleepStatusOk": "Viloinställningarna är OK — väckning fungerar",
     "sleepStatusMacWarn": "Autopoweroff är aktiverat — Macen kan stängas av under viloläget",
@@ -284,7 +285,9 @@
     "weeklyDesc": "Fasta inspelningar som upprepas varje vecka — till exempel gudstjänst varje söndag. Datorn startar och stoppar inspelningen automatiskt, även om ingen är på plats.",
     "errTimeFormat": "Skriv tiden som TT:MM, t.ex. 11:00.",
     "errSameTime": "Stopptiden kan inte vara densamma som starten.",
-    "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter."
+    "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter.",
+    "prerollEnabledTitle": "Aktivera förhandsbuffert (experimentell)",
+    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen hela tiden i bakgrunden. Det kan störa de levande nivåmätarna på Hem och Livesändning, som använder samma mikrofon. Slå på den om du behöver sekunderna före knapptrycket — Hem visar när bufferten körs."
   },
   "wake": {
     "capability": {

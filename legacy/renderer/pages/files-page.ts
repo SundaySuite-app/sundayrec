@@ -4,6 +4,7 @@ import { setVal, setRadio, isoDate } from '../helpers'
 import { t } from '../i18n'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
+import { reconcilePreroll } from '../preroll-lifecycle'
 import {
   bindRadioGroup,
   bindSetting,
@@ -97,8 +98,22 @@ export function setupFilesPage(): void {
     },
   }))
   bindSetting('opt-protect', filesBinding({ key: 'protectRecording' }))
-  ;['opt-silence-threshold', 'opt-silence-timeout', 'opt-split-minutes', 'opt-manual-max', 'opt-preroll-seconds']
+  ;['opt-silence-threshold', 'opt-silence-timeout', 'opt-split-minutes', 'opt-manual-max']
     .forEach(id => bindSetting(id, filesBinding({ key: id })))
+
+  // Pre-roll: both controls decide whether a background microphone owner runs,
+  // so both reconcile the rolling buffer after the save lands. Without this the
+  // setting would go on saving a number that changes nothing (its state before
+  // this phase: `start_recording` harvested a buffer nothing ever started).
+  ;['opt-preroll-seconds', 'opt-preroll-enabled'].forEach(id =>
+    bindSetting(id, filesBinding({
+      key: id,
+      after: () => {
+        afterFilesSave()
+        void reconcilePreroll()
+      },
+    })),
+  )
 
   // ── Podcast (now a section of Deling) ──────────────────────────────────────
   bindSetting('opt-podcast-enabled', filesBinding({
@@ -237,6 +252,8 @@ export function applyFilesSettingsToUI(): void {
   if (splitMinSel)   splitMinSel.value   = String(settings.splitMinutes          ?? 0)
   if (manualMaxSel)  manualMaxSel.value  = String(settings.manualMaxMinutes      ?? 0)
   if (prerollSel)    prerollSel.value    = String(settings.preRollSeconds        ?? 0)
+  const prerollOnEl = document.getElementById('opt-preroll-enabled') as HTMLInputElement | null
+  if (prerollOnEl)   prerollOnEl.checked = settings.prerollEnabled === true
 
   // Podcast
   const p = settings.podcast
@@ -363,6 +380,7 @@ function collectFilesSettings(): void {
     splitMinutes:          parseInt(splitMinSel?.value   ?? '0')   || 0,
     manualMaxMinutes:      parseInt(manualMaxSel?.value  ?? '0')   || 0,
     preRollSeconds:        parseInt(prerollSel?.value    ?? '0')   || 0,
+    prerollEnabled:        !!(document.getElementById('opt-preroll-enabled') as HTMLInputElement | null)?.checked,
     podcast,
   })
 }

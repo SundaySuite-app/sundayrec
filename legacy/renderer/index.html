@@ -296,6 +296,9 @@
           <div class="info-card-label" data-i18n="home.audioDevice">LYDKILDE</div>
           <div class="info-card-value" id="home-device-name">—</div>
           <div class="info-card-sub" id="home-device-status"><span class="signal-dot" id="home-device-signal"></span><span id="home-device-status-text"></span></div>
+          <!-- The rolling pre-roll buffer holds the microphone in the background;
+               it must never do so invisibly. Shown only while it is really running. -->
+          <div class="info-card-sub preroll-chip" id="home-preroll-chip" style="display:none">⏺ <span id="home-preroll-text"></span></div>
         </div>
         <a href="#" class="info-card-action" id="btn-go-audio-page" data-i18n="home.changeSettings">Endre</a>
       </div>
@@ -1186,14 +1189,21 @@
         </div>
         <div class="toggle-row">
           <div>
-            <div class="toggle-title" data-i18n="schedule.preRollTitle">Pre-roll buffer</div>
-            <div class="toggle-desc" data-i18n="schedule.preRollDesc">Starter opptak N sekunder bakover i tid — fanger begynnelsen av talen selv om du trykker litt for sent</div>
+            <div class="toggle-title" data-i18n="schedule.preRollTitle">Forhåndsbuffer</div>
+            <div class="toggle-desc" data-i18n="schedule.preRollDesc">Starter opptaket N sekunder bakover i tid, så begynnelsen av talen er med selv om du trykker litt for sent. Krever at bufferen faktisk kjører — den starter automatisk når du slår den på nedenfor.</div>
           </div>
           <select class="form-input split-select" id="opt-preroll-seconds">
             <option value="0" data-i18n="schedule.splitOff">Av</option>
             <option value="15">15 sek</option>
             <option value="30">30 sek</option>
           </select>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="schedule.prerollEnabledTitle">Aktiver forhåndsbuffer (eksperimentell)</div>
+            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen hele tiden i bakgrunnen. Det kan forstyrre de levende nivåmålerne på Hjem og Direktesending, som bruker samme mikrofon. Slå den på hvis du trenger sekundene før knappetrykket — Hjem viser når bufferen kjører.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-preroll-enabled" /><span class="toggle-track"></span></label>
         </div>
       </div>
 

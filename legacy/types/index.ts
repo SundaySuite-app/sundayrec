@@ -244,6 +244,11 @@ export interface Settings {
   /** Auto-stop manual recordings after N minutes. Valid: 0–1440 (24h). 0 = disabled */
   manualMaxMinutes: number // 0 = off; auto-stop manual recordings after N minutes
   preRollSeconds: number   // 0 = off; 15 or 30 — capture N seconds before manual record press
+  /** Advanced opt-in for the rolling pre-roll buffer. Default OFF: the buffer is
+   *  a CONTINUOUS background capture on the same microphone the live meters use,
+   *  and the renderer's getUserMedia meters are not part of the backend's
+   *  device hand-off. See renderer/preroll-lifecycle.ts for the full reasoning. */
+  prerollEnabled?: boolean
 
   // System behaviour
   launchAtLogin: boolean

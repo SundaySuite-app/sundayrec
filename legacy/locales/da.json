@@ -94,7 +94,8 @@
     "nextShort": "næste",
     "wakesLead": "({min} min før)",
     "openInEditor": "Åbn i redigering",
-    "thumbComing": "Episodebillede kommer — bruges ikke endnu"
+    "thumbComing": "Episodebillede kommer — bruges ikke endnu",
+    "prerollActive": "Forhåndsbuffer aktiv ({n} s)"
   },
   "update": {
     "checking": "Søger efter opdateringer…",
@@ -260,8 +261,8 @@
     "manualMaxTitle": "Maks. varighed — manuelle optagelser",
     "manualMaxDesc": "Stopper automatisk efter den angivne tid — undgår enorme filer, hvis du glemmer at stoppe",
     "splitOff": "Fra",
-    "preRollTitle": "Pre-roll-buffer",
-    "preRollDesc": "Optager N sekunder tilbage i tid — fanger begyndelsen af prædikenen, selv hvis du trykker lidt for sent",
+    "preRollTitle": "Forhåndsbuffer",
+    "preRollDesc": "Starter optagelsen N sekunder tilbage i tiden, så begyndelsen af talen er med, selv om du trykker lidt for sent. Kræver at bufferen faktisk kører — den starter automatisk, når du slår den til nedenfor.",
     "sleepChecking": "Tjekker dvaleindstillinger…",
     "sleepStatusOk": "Dvaleindstillinger er OK — opvågning virker",
     "sleepStatusMacWarn": "Autopoweroff er aktiveret — din Mac kan slukke under dvale",
@@ -284,7 +285,9 @@
     "weeklyDesc": "Faste optagelser, der gentages hver uge — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper optagelsen automatisk, selv om ingen er til stede.",
     "errTimeFormat": "Skriv klokkeslættet som TT:MM, f.eks. 11:00.",
     "errSameTime": "Stoptidspunktet kan ikke være det samme som starten.",
-    "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter."
+    "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter.",
+    "prerollEnabledTitle": "Aktivér forhåndsbuffer (eksperimentel)",
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åben hele tiden i baggrunden. Det kan forstyrre de levende niveaumålere på Hjem og Livestream, som bruger samme mikrofon. Slå den til, hvis du har brug for sekunderne før knaptrykket — Hjem viser, når bufferen kører."
   },
   "wake": {
     "capability": {

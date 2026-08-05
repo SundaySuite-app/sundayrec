@@ -7,6 +7,7 @@ import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
+import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { firstMount, resetMount } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
 import {
@@ -978,11 +979,31 @@ function wireHomeIpcListeners(): void {
   // updates instantly when a new prep lands or the user publishes/discards.
   setupReviewQueueListeners()
 
+  // The pre-roll buffer's own surface on the LYDKILDE card.
+  homeIpcUnsubs.push(subscribePrerollStatus(renderPrerollChip))
+
   // Tray menu hooks used to live here as `tray-open-review-queue` /
   // `tray-run-preflight` listeners — Electron channel names no Rust code has
   // ever emitted, so both were unreachable. The Rust tray emits ONE
   // `tray://action` event; it is adapted in tray-actions.ts, wired once in
   // main.ts, and calls openReviewQueueFromTray / the preflight button from there.
+}
+
+/** Render the pre-roll chip on the LYDKILDE card. The rolling buffer holds the
+ *  microphone in the background, so while it runs it says so — driven by the
+ *  BACKEND's status, never by the setting alone (the backend declines to start
+ *  when it can't match the device, and a chip that claimed otherwise would be
+ *  exactly the kind of lie this phase is removing). */
+function renderPrerollChip(active: boolean, seconds: number): void {
+  const chip = document.getElementById('home-preroll-chip')
+  const text = document.getElementById('home-preroll-text')
+  if (!chip) return
+  if (!active) { chip.style.display = 'none'; return }
+  if (text) {
+    text.textContent = t('home.prerollActive', 'Forhåndsbuffer aktiv ({n} s)')
+      .replace('{n}', String(seconds))
+  }
+  chip.style.display = ''
 }
 
 /** Bring the review-queue card to the front, freshly loaded — the destination of

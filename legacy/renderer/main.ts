@@ -23,6 +23,7 @@ import { setupModalManager } from './ui/modal-manager'
 import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
 import { navigateTo } from './ui/navigate'
 import { initTrayActions } from './tray-actions'
+import { initPrerollLifecycle } from './preroll-lifecycle'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -78,6 +79,13 @@ declare global {
       cancelAutostop:      () => Promise<void>
       /** The live auto-stop deadline (epoch ms), or null when none is armed. */
       scheduledStopMs:     () => Promise<number | null>
+      /** Start the rolling pre-roll buffer. Resolves false when the backend
+       *  declined (pre-roll off in its settings copy, or no device matched). */
+      prerollStart?:       () => Promise<boolean>
+      /** Stop the rolling pre-roll buffer (safe when nothing is running). */
+      prerollStop?:        () => Promise<void>
+      /** Whether the rolling pre-roll buffer is actually running. */
+      prerollStatus?:      () => Promise<{ active: boolean }>
       runTestRecording:    () => Promise<{ ok: boolean; signal?: 'silent' | 'low' | 'normal'; rmsDb?: number; error?: string }>
       runCaptureBench:     (secs: number) => Promise<import('../bindings/SelfTestReport').SelfTestReport>
       probeDeviceChannels: (deviceName: string) => Promise<number>
@@ -504,6 +512,12 @@ async function init(): Promise<void> {
 
   // Load settings, which triggers locale + UI apply
   await loadSettings()
+
+  // The pre-roll rolling buffer. AFTER loadSettings, because the decision reads
+  // `prerollEnabled` / `preRollSeconds` / the device — and defaults-off means an
+  // unhydrated settings cache would (correctly, but pointlessly) decide "stop"
+  // and then have to change its mind.
+  initPrerollLifecycle()
 
   // Show first-run onboarding wizard for new users
   checkAndShowOnboarding()

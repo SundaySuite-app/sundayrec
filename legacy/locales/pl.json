@@ -94,7 +94,8 @@
     "nextShort": "następne",
     "wakesLead": "({min} min wcześniej)",
     "openInEditor": "Otwórz w edytorze",
-    "thumbComing": "Okładka odcinka wkrótce — jeszcze nieużywana"
+    "thumbComing": "Okładka odcinka wkrótce — jeszcze nieużywana",
+    "prerollActive": "Bufor wstępny aktywny ({n} s)"
   },
   "update": {
     "checking": "Sprawdzanie aktualizacji…",
@@ -260,8 +261,8 @@
     "manualMaxTitle": "Maks. czas trwania — nagrania ręczne",
     "manualMaxDesc": "Zatrzymuje się automatycznie po wyznaczonym czasie — chroni przed ogromnymi plikami, jeśli zapomnisz zatrzymać",
     "splitOff": "Wył.",
-    "preRollTitle": "Bufor pre-roll",
-    "preRollDesc": "Nagrywa N sekund wstecz — uchwyci początek kazania, nawet jeśli klikniesz odrobinę za późno",
+    "preRollTitle": "Bufor wstępny",
+    "preRollDesc": "Rozpoczyna nagrywanie N sekund wstecz, więc początek kazania jest zapisany, nawet jeśli naciśniesz trochę za późno. Wymaga działającego bufora — uruchamia się automatycznie po włączeniu go poniżej.",
     "sleepChecking": "Sprawdzanie ustawień uśpienia…",
     "sleepStatusOk": "Ustawienia uśpienia są OK — wybudzanie działa",
     "sleepStatusMacWarn": "Autopoweroff jest włączony — Mac może się wyłączyć w trakcie uśpienia",
@@ -284,7 +285,9 @@
     "weeklyDesc": "Stałe nagrania powtarzane co tydzień — na przykład nabożeństwo w każdą niedzielę. Komputer uruchamia i zatrzymuje nagrywanie automatycznie, nawet gdy nikogo nie ma.",
     "errTimeFormat": "Wpisz godzinę w formacie GG:MM, np. 11:00.",
     "errSameTime": "Godzina zakończenia nie może być taka sama jak rozpoczęcia.",
-    "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut."
+    "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut.",
+    "prerollEnabledTitle": "Włącz bufor wstępny (eksperymentalny)",
+    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Może to zakłócać wskaźniki poziomu na ekranie Start i Transmisja, które korzystają z tego samego mikrofonu. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia przycisku — ekran Start pokazuje, kiedy bufor działa."
   },
   "wake": {
     "capability": {

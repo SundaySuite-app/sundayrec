@@ -546,6 +546,13 @@ export function releaseRendererAudioCaptures(): void {
   try { stopHomeVU() } catch {}
   try { stopAudioPageMonitoring() } catch {}
   try { stopLiveVuMeter() } catch {}
+  // NOT the pre-roll buffer. It is a mic owner too, but stopping it HERE would
+  // destroy the very thing it exists for: `start_recording` harvests the clip
+  // from the running loop (`preroll.is_active()`), and a loop we killed a tick
+  // earlier harvests nothing. The hand-over is already correct in Rust — harvest
+  // (graceful `q`) → `preroll.stop()` unconditionally → `vu.stop()` → a 400 ms
+  // settle → the capture engine opens the device. The renderer's job is only to
+  // keep the buffer DOWN while a recording runs; see preroll-lifecycle.ts.
 }
 
 /** Time-based release easing for the meter fall: the fraction of the remaining

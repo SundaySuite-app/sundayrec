@@ -348,6 +348,13 @@ select:focus:not(:focus-visible) {
   overflow-wrap: anywhere; word-break: break-word;
   line-height: 1.35;
 }
+/* The pre-roll buffer is a background microphone owner. When it runs, it says so
+   — amber rather than the muted --text3, because "something is holding your mic"
+   is a fact the eye should catch, not a footnote. */
+.info-card-sub.preroll-chip {
+  color: var(--gold, #ebb84b);
+  font-weight: 600;
+}
 .info-card-action {
   font-size: 11px; font-weight: 600; color: var(--accent2);
   text-decoration: none; white-space: nowrap; flex-shrink: 0;

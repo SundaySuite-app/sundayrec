@@ -286,6 +286,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   reminderMinutes: 0,
   manualMaxMinutes: 0,
   preRollSeconds: 0,
+  prerollEnabled: false,
   launchAtLogin: false,
   showOnStartup: false,
   minimizeToTray: true,
@@ -728,6 +729,25 @@ const api: Record<string, unknown> = {
   cancelAutostop: async () => invoke<void>("recording_cancel_autostop"),
   scheduledStopMs: async () =>
     call<number | null>("recording_scheduled_stop_ms", undefined, null),
+  // ── Pre-roll rolling buffer ────────────────────────────────────────────
+  // `start_recording` has always harvested a pre-roll clip, but nothing ever
+  // started the loop that produces one — so `preRollSeconds` captured nothing.
+  // `preroll_start` answers `false` when the BACKEND's settings say pre-roll is
+  // off or no device matched, which is what the Home chip reports (never a
+  // claim that the buffer is running when it isn't). See preroll-lifecycle.ts
+  // for why this is behind an opt-in.
+  prerollStart: async () => call<boolean>("preroll_start", undefined, false),
+  prerollStop: async () => {
+    try {
+      await invoke("preroll_stop");
+    } catch (e) {
+      console.warn("[api-shim] preroll_stop failed", e);
+    }
+  },
+  prerollStatus: async () =>
+    call<import("../bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
+      active: false,
+    }),
   // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
   // must match that shape ({ ok: false }) — the old { level, message } fallback
   // didn't match what the consumer reads.
