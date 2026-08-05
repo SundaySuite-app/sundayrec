@@ -4,6 +4,7 @@ import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { navigateTo } from '../ui/navigate'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
@@ -30,12 +31,12 @@ export function setupEditorPage(): void {
   E.videoEl   = $('editor-video') as HTMLVideoElement | null
 
   $('btn-editor-open')?.addEventListener('click',    () => pickAndLoad())
-  $('btn-editor-change')?.addEventListener('click',  () => {
-    if (!confirmDiscardIfDirty('open')) return
+  $('btn-editor-change')?.addEventListener('click',  async () => {
+    if (!(await confirmDiscardIfDirty('open'))) return
     pickAndLoad()
   })
-  $('btn-editor-close')?.addEventListener('click', () => {
-    if (!confirmDiscardIfDirty('close')) return
+  $('btn-editor-close')?.addEventListener('click', async () => {
+    if (!(await confirmDiscardIfDirty('close'))) return
     closeCurrentFile()
   })
 
@@ -521,12 +522,20 @@ function setupReviewBanner(): void {
       } else {
         btn.disabled = false
         btn.textContent = orig
-        alert(`Kunne ikke publisere: ${r.error ?? 'ukjent feil'}`)
+        await alertDialog({
+          title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
+          message: r.error ?? undefined,
+          tone:    'error',
+        })
       }
     } catch (err) {
       btn.disabled = false
       btn.textContent = orig
-      alert(`Kunne ikke publisere: ${(err as Error).message}`)
+      await alertDialog({
+        title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
+        message: (err as Error).message,
+        tone:    'error',
+      })
     }
   })
 
@@ -539,7 +548,13 @@ function setupReviewBanner(): void {
 
   $('btn-review-discard')?.addEventListener('click', async () => {
     if (!reviewPrepId) return
-    if (!confirm('Forkast denne episoden? Selve opptaket beholdes, men det vil ikke publiseres.')) return
+    const ok = await confirmDialog({
+      title:        t('dialog.discardEpisodeTitle', 'Forkast denne episoden?'),
+      message:      t('dialog.discardEpisodeBody', 'Selve opptaket beholdes, men det blir ikke publisert.'),
+      confirmLabel: t('dialog.discardEpisode', 'Forkast'),
+      danger:       true,
+    })
+    if (!ok) return
     await window.api.reviewQueueDiscard(reviewPrepId)
     reviewPrepId = null
     reviewPrep = null
@@ -635,15 +650,13 @@ function setupKeyboardShortcuts(): void {
     // skip the `peaks` guard so Cmd+O still works.
     if (mod && e.code === 'KeyO') {
       e.preventDefault()
-      if (!confirmDiscardIfDirty('open')) return
-      pickAndLoad()
+      void confirmDiscardIfDirty('open').then(ok => { if (ok) pickAndLoad() })
       return
     }
     if (mod && e.code === 'KeyW') {
       e.preventDefault()
       if (!E.filePath) return
-      if (!confirmDiscardIfDirty('close')) return
-      closeCurrentFile()
+      void confirmDiscardIfDirty('close').then(ok => { if (ok) closeCurrentFile() })
       return
     }
     if (mod && (e.code === 'KeyS' || e.code === 'KeyE')) {
@@ -784,7 +797,7 @@ function setupDragDrop(): void {
     if (!AUDIO_EXTS.has(ext) && !VIDEO_DROP_EXTS.has(ext)) return
     const fp = (file as File & { path?: string }).path
     if (!fp) return
-    if (!confirmDiscardIfDirty('open')) return
+    if (!(await confirmDiscardIfDirty('open'))) return
     // Drag-and-drop is an explicit user action — trust the folder for this
     // session so path-defense doesn't silently refuse legitimate picks from
     // external drives or non-standard locations.
@@ -944,19 +957,22 @@ export function updateHeaderSummary(): void {
 }
 
 /**
- * Prompt the user before discarding unsaved edits. Returns true if the
- * user wants to proceed (no dirty state, or they confirmed); false if
- * they cancelled.
+ * Ask before discarding unsaved edits. Resolves true when it is safe to
+ * proceed (nothing dirty, or the user confirmed), false when they backed out.
  *
- * Uses native confirm() — same idiom as the existing review-discard
- * button on line ~487. A custom modal would be nicer but lower priority.
+ * Async since the native confirm() went away — every caller is an event
+ * handler, so awaiting costs nothing.
  */
-function confirmDiscardIfDirty(intent: 'open' | 'close'): boolean {
+async function confirmDiscardIfDirty(intent: 'open' | 'close'): Promise<boolean> {
   if (!E.editorDirty) return true
-  const msg = intent === 'close'
-    ? t('editor.confirmClose', 'Du har ulagrede endringer. Lukk likevel?')
-    : t('editor.confirmOpenOther', 'Du har ulagrede endringer. Åpne ny fil likevel?')
-  return confirm(msg)
+  return confirmDialog({
+    title: intent === 'close'
+      ? t('editor.confirmClose', 'Du har ulagrede endringer. Lukk likevel?')
+      : t('editor.confirmOpenOther', 'Du har ulagrede endringer. Åpne ny fil likevel?'),
+    message:      t('dialog.discardEditsBody', 'Kuttene du har gjort går tapt. Selve opptaksfilen røres ikke.'),
+    confirmLabel: t('dialog.discardEdits', 'Forkast endringene'),
+    danger:       true,
+  })
 }
 
 /**

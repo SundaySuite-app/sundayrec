@@ -2,6 +2,7 @@ import { settings, patchSettings } from '../state'
 import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
 import { flashSaved, setVal, setRadio, isoDate, setupDirtyBar } from '../helpers'
 import { t } from '../i18n'
+import { confirmDialog } from '../ui/dialog'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
 
@@ -271,9 +272,14 @@ async function saveFilesSettings(): Promise<void> {
   const days = autoDelEl?.checked ? (+(autoDelDays?.value ?? '') || 90) : 0
 
   if (days > 0 && days < 30) {
-    const msg = t('files.confirmAutoDeleteShort', 'Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes. Er du sikker?')
-      .replace('{n}', String(days))
-    if (!confirm(msg)) return
+    const ok = await confirmDialog({
+      title:   t('dialog.autoDeleteTitle', 'Slette opptak automatisk?'),
+      message: t('files.confirmAutoDeleteShort', 'Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.')
+        .replace('{n}', String(days)),
+      confirmLabel: t('dialog.autoDeleteConfirm', 'Ja, slett automatisk'),
+      danger:       true,
+    })
+    if (!ok) return
   }
 
   const podcastEnabled = !!(document.getElementById('opt-podcast-enabled') as HTMLInputElement | null)?.checked

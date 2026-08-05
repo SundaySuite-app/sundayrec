@@ -1,6 +1,7 @@
 import { t, loadLocale, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, setVal, setupDirtyBar } from '../helpers'
+import { confirmDialog } from '../ui/dialog'
 
 let _markGeneralClean = () => {}
 let _markVarslerClean = () => {}
@@ -39,7 +40,13 @@ export function setupGeneralPage(): void {
   // instead, so there is nothing to wire here until the feature is built.
 
   document.getElementById('btn-email-gmail-disconnect')?.addEventListener('click', async () => {
-    if (!confirm(t('notify.emailGmailConfirmDisconnect', 'Koble fra Google-kontoen? E-postvarsler vil falle tilbake til SMTP.'))) return
+    const ok = await confirmDialog({
+      title:        t('dialog.gmailDisconnectTitle', 'Koble fra Google-kontoen?'),
+      message:      t('notify.emailGmailConfirmDisconnect', 'E-postvarsler vil falle tilbake til SMTP.'),
+      confirmLabel: t('dialog.disconnect', 'Koble fra'),
+      danger:       true,
+    })
+    if (!ok) return
     await window.api.gmailDisconnect()
     await refreshGmailStatus()
   })

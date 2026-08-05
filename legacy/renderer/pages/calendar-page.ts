@@ -1,6 +1,7 @@
 import { t, tArr, currentLang } from '../i18n'
 import { settings } from '../state'
 import { escHtml, isoDate, flashMsg } from '../helpers'
+import { confirmDialog } from '../ui/dialog'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
 
@@ -152,7 +153,13 @@ function openDayDetail(iso: string, holiday: string): void {
           const idx = +(btn as HTMLElement).dataset.index!
           const target = settings.specialRecordings?.[idx]
           if (!target) return
-          if (!confirm(t('calendar.confirmDelete', `Slette opptak: ${target.name} (${target.date})?`))) return
+          const ok = await confirmDialog({
+            title:        t('calendar.confirmDelete', 'Slette planlagt opptak?'),
+            message:      `${target.name} — ${target.date}`,
+            confirmLabel: t('dialog.delete', 'Slett'),
+            danger:       true,
+          })
+          if (!ok) return
           if (editingIndex === idx) {
             editingIndex = -1
             if (addBtn) addBtn.textContent = '+ ' + t('calendar.addRecording', 'Legg til opptak')
@@ -239,7 +246,13 @@ export function renderPlannedList(): void {
       const idx = +(btn as HTMLElement).dataset.index!
       const target = settings.specialRecordings?.[idx]
       if (!target) return
-      if (!confirm(t('calendar.confirmDelete', `Slette opptak: ${target.name} (${target.date})?`))) return
+      const ok = await confirmDialog({
+        title:        t('calendar.confirmDelete', 'Slette planlagt opptak?'),
+        message:      `${target.name} — ${target.date}`,
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       settings.specialRecordings!.splice(idx, 1)
       await window.api.saveSettings(settings)
       renderCalendar()

@@ -16,6 +16,7 @@
 import { t } from '../i18n'
 import type { TranscriptData, TranscriptSegment, RecordingMetadata } from '../../types'
 import { closeModal, openModal } from '../ui/modal-manager'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
@@ -348,13 +349,20 @@ async function openTranscribeModal(): Promise<void> {
   try {
     const status = await window.api.whisperStatus()
     if (!status.binaryAvailable) {
-      alert(t('transcript.errNoBinary', 'Whisper er ikke tilgjengelig på denne plattformen. Kontakt support.'))
+      await alertDialog({
+        title: t('transcript.errNoBinary', 'Whisper er ikke tilgjengelig på denne plattformen. Kontakt support.'),
+        tone:  'error',
+      })
       return
     }
     modelStatuses = status.models
     renderModelList()
   } catch (err) {
-    alert(t('transcript.errStatusFailed', 'Kunne ikke sjekke Whisper-status') + ': ' + (err as Error).message)
+    await alertDialog({
+      title:   t('transcript.errStatusFailed', 'Kunne ikke sjekke Whisper-status'),
+      message: (err as Error).message,
+      tone:    'error',
+    })
     return
   }
 
@@ -462,7 +470,11 @@ async function startTranscription(): Promise<void> {
   const modelStatus = modelStatuses.find(m => m.id === selectedModelId)
   if (!modelStatus) {
     closeProgressModal()
-    alert('Ukjent modell: ' + selectedModelId)
+    await alertDialog({
+      title:   t('transcript.errUnknownModel', 'Ukjent modell'),
+      message: selectedModelId,
+      tone:    'error',
+    })
     return
   }
   if (!modelStatus.installed || !modelStatus.sizeOk) {
@@ -471,7 +483,11 @@ async function startTranscription(): Promise<void> {
     if (!dl.ok) {
       closeProgressModal()
       if (dl.error !== 'cancelled') {
-        alert(t('transcript.errDownload', 'Modell-nedlasting feilet') + ': ' + dl.error)
+        await alertDialog({
+          title:   t('transcript.errDownload', 'Modell-nedlasting feilet'),
+          message: dl.error,
+          tone:    'error',
+        })
       }
       return
     }
@@ -495,7 +511,11 @@ async function startTranscription(): Promise<void> {
     closeProgressModal()
     if (!res.ok || !res.transcript) {
       if (res.error !== 'cancelled') {
-        alert(t('transcript.errFailed', 'Transkribering feilet') + ': ' + (res.error ?? 'ukjent'))
+        await alertDialog({
+          title:   t('transcript.errFailed', 'Transkribering feilet'),
+          message: res.error ?? undefined,
+          tone:    'error',
+        })
       }
       return
     }
@@ -581,7 +601,13 @@ function closeProgressModal(): void {
 
 async function deleteTranscript(): Promise<void> {
   if (!currentFilePath || !currentTranscript) return
-  if (!confirm(t('transcript.confirmDelete', 'Slett transkripsjonen?'))) return
+  const ok = await confirmDialog({
+    title:        t('transcript.confirmDelete', 'Slett transkripsjonen?'),
+    message:      t('dialog.deleteTranscriptBody', 'Selve opptaket beholdes. Du kan transkribere på nytt senere.'),
+    confirmLabel: t('dialog.delete', 'Slett'),
+    danger:       true,
+  })
+  if (!ok) return
   try {
     await window.api.editorDeleteTranscript?.(currentFilePath)
   } catch {}

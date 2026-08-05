@@ -1,5 +1,6 @@
 import { settings } from './state'
 import { t } from './i18n'
+import { confirmDialog } from './ui/dialog'
 
 /**
  * Called right after the user schedules an automatic recording (a weekly slot or a
@@ -13,15 +14,12 @@ import { t } from './i18n'
 export async function remindAutostartIfNeeded(): Promise<void> {
   if (settings.launchAtLogin) return // already armed — nothing to nag about
 
-  const ok = confirm(
-    t(
-      'schedule.autostartReminder',
-      'Opptaket er lagt til.\n\n' +
-        'Men «Start automatisk med Windows/Mac» er AV — da starter ikke planlagte ' +
-        'opptak hvis maskinen har vært slått av eller programmet er lukket.\n\n' +
-        'Vil du slå på automatisk start nå, så programmet alltid er klart?',
-    ),
-  )
+  const ok = await confirmDialog({
+    title:        t('dialog.autostartTitle', 'Slå på automatisk start?'),
+    message:      t('schedule.autostartReminder', 'Opptaket er lagt til, men «Start automatisk med Windows/Mac» er av. Da starter ikke planlagte opptak hvis maskinen har vært slått av eller programmet er lukket.'),
+    confirmLabel: t('dialog.autostartConfirm', 'Slå på'),
+    cancelLabel:  t('dialog.notNow', 'Ikke nå'),
+  })
   if (!ok) return
 
   settings.launchAtLogin = true

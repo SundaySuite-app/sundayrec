@@ -12,6 +12,7 @@
 import { t } from '../i18n'
 import { fmtDate, flashMsg } from '../helpers'
 import { closeModal, openModal } from '../ui/modal-manager'
+import { confirmDialog } from '../ui/dialog'
 
 /** A recording as the renderer consumes it (adapted from the Rust RecordingRow
  *  in the api-shim). */
@@ -291,7 +292,13 @@ export function setupHistoryTools(rerender: () => void): void {
 
   document.getElementById('btn-clear-history')?.addEventListener('click', async e => {
     e.preventDefault()
-    if (!confirm(t('history.confirmClear', 'Slett hele historikken?'))) return
+    const ok = await confirmDialog({
+      title:        t('history.confirmClear', 'Slett hele historikken?'),
+      message:      t('dialog.clearHistoryBody', 'Selve opptaksfilene beholdes — det er bare listen over dem som slettes.'),
+      confirmLabel: t('dialog.delete', 'Slett'),
+      danger:       true,
+    })
+    if (!ok) return
     await window.api.clearHistory()
     fullHistory = []
     rerender()
@@ -301,7 +308,13 @@ export function setupHistoryTools(rerender: () => void): void {
     e.preventDefault()
     const errors = fullHistory.filter(r => r.status === 'error')
     if (!errors.length) return
-    if (!confirm(t('history.confirmDeleteErrors', `Slett ${errors.length} feiloppføringer?`).replace('{n}', String(errors.length)))) return
+    const ok = await confirmDialog({
+      title:        t('history.confirmDeleteErrors', 'Slett feiloppføringer?').replace('{n}', String(errors.length)),
+      message:      t('dialog.deleteErrorsBody', '{n} oppføringer med feil fjernes fra listen.').replace('{n}', String(errors.length)),
+      confirmLabel: t('dialog.delete', 'Slett'),
+      danger:       true,
+    })
+    if (!ok) return
     for (const r of errors) {
       if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
     }

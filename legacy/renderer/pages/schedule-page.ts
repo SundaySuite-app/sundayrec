@@ -1,6 +1,7 @@
 import { t, tArr } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
 import type { ScheduleSlot } from '../../types'
 
@@ -179,11 +180,11 @@ function platformLabel(key: string): string {
 }
 
 async function onTestWakeClick(): Promise<void> {
-  const sure = confirm(
-    t('wake.test.confirm',
-      'Maskinen vil sove i opptil 60 sekunder og deretter prøve å våkne av seg selv.\n\n' +
-      'Lukk uferdig arbeid først. Fortsette?')
-  )
+  const sure = await confirmDialog({
+    title:        t('dialog.wakeTestTitle', 'Teste vekking fra dvale?'),
+    message:      t('wake.test.confirm', 'Maskinen vil sove i opptil 60 sekunder og deretter prøve å våkne av seg selv. Lukk uferdig arbeid først.'),
+    confirmLabel: t('dialog.wakeTestConfirm', 'Start testen'),
+  })
   if (!sure) return
   const testBtn   = document.getElementById('btn-test-wake')         as HTMLButtonElement | null
   const cancelBtn = document.getElementById('btn-cancel-test-wake')  as HTMLButtonElement | null
@@ -391,7 +392,12 @@ export function renderSlotsList(): void {
   )
   list.querySelectorAll('.slot-del').forEach(s =>
     s.addEventListener('click', async () => {
-      if (!confirm(t('schedule.confirmDeleteSlot', 'Slett dette tidspunktet?'))) return
+      const ok = await confirmDialog({
+        title:        t('schedule.confirmDeleteSlot', 'Slett dette tidspunktet?'),
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       settings.slots!.splice(+(s as HTMLElement).dataset.index!, 1)
       await window.api.saveSettings(settings).catch(err => console.error('[schedule] saveSettings failed:', err))
       renderSlotsList()
@@ -426,14 +432,21 @@ async function saveSlot(): Promise<void> {
   const stop  = (document.getElementById('slot-stop')  as HTMLInputElement | null)?.value ?? ''
   const maxEl = document.getElementById('slot-max') as HTMLInputElement | null
   const maxV  = maxEl ? (+maxEl.value || null) : null
-  if (!days.length) { alert(t('schedule.errNoDays')); return }
+  if (!days.length) {
+    await alertDialog({ title: t('schedule.errNoDays', 'Velg minst én dag.'), tone: 'error' })
+    return
+  }
   // Strict HH:MM validation — a keyboard-injection or unusual locale could
   // produce something like "9.30" that scheduler.ts later defaults to 11:00.
   const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/
   if (!start || !stop || !HHMM.test(start) || !HHMM.test(stop)) {
-    alert(t('schedule.errTimes')); return
+    await alertDialog({ title: t('schedule.errTimes', 'Ugyldig tidspunkt'), tone: 'error' })
+    return
   }
-  if (start === stop) { alert(t('schedule.errTimes')); return }
+  if (start === stop) {
+    await alertDialog({ title: t('schedule.errTimes', 'Ugyldig tidspunkt'), tone: 'error' })
+    return
+  }
   const slot: ScheduleSlot = { days, start, stop, ...(maxV ? { max: maxV } : {}) }
   if (!settings.slots) settings.slots = []
   const wasAdd = editingSlotIndex < 0

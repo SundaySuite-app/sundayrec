@@ -3,6 +3,7 @@ import { flashSaved, escHtml } from '../helpers'
 import { t } from '../i18n'
 import { notifyLivePageDestinationsChanged } from './live-page'
 import { closeModal, openModal } from '../ui/modal-manager'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
@@ -551,9 +552,14 @@ function renderStreamDestinations(): void {
       inp.addEventListener('input', () => updateDraftFromRow(idx, row))
       inp.addEventListener('change', () => updateDraftFromRow(idx, row))
     })
-    row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', () => {
-      const confirmMsg = t('publish.streamConfirmDelete', 'Slette denne destinasjonen?')
-      if (!confirm(confirmMsg)) return
+    row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title:        t('publish.streamConfirmDelete', 'Slette denne destinasjonen?'),
+        message:      draftDestinations[idx]?.name || undefined,
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       const removed = draftDestinations[idx]
       if (removed && !removed.draftOnly) removedDestIds.add(removed.id)
       draftDestinations.splice(idx, 1)
@@ -595,12 +601,11 @@ async function saveStreamDestinations(): Promise<void> {
         } else if (r.error === 'safeStorage_unavailable') {
           // Refuse to silently lose the key — surface to user so they can
           // decide (use a different machine, or accept the risk on a personal box).
-          alert(
-            'Stream-key kunne ikke lagres sikkert på denne maskinen.\n\n' +
-            'Mac Keychain / Windows Credential Manager er ikke tilgjengelig. ' +
-            'Stream-keys lagres derfor IKKE for å unngå at de havner som ' +
-            'klartekst på disk. Logg inn på en bruker med systemnøkkelring og prøv igjen.'
-          )
+          await alertDialog({
+            title:   t('dialog.streamKeyUnsafeTitle', 'Stream-nøkkelen ble ikke lagret'),
+            message: t('dialog.streamKeyUnsafeBody', 'Systemets nøkkelring (Mac Keychain / Windows Credential Manager) er ikke tilgjengelig. Nøkkelen lagres derfor ikke, slik at den ikke havner som klartekst på disk. Logg inn som en bruker med nøkkelring og prøv igjen.'),
+            tone:    'error',
+          })
         } else {
           console.error('[publish] streamSetKey failed', d.id, r.error)
         }
