@@ -470,6 +470,9 @@ export function applyGeneralSettingsToUI(): void {
   updateEditorClipUI()
   // The DOM now mirrors settings — rebase the bindings' baselines.
   resyncBoundSettings()
+  // Settings only just arrived: re-evaluate the e-mail gate now that we can see
+  // whether SMTP is filled in (setupGeneralPage runs before loadSettings).
+  void refreshEmailGate()
 }
 
 /**

@@ -341,9 +341,15 @@ function setupSettingsTabs(): void {
   })
 }
 
-/** Switch to a settings tab with a 120 ms crossfade. Exported so navigation
- *  can call it directly instead of synthesising a click. */
-export function showSettingsTab(tabId: string): void {
+/**
+ * Switch to a settings tab with a 120 ms crossfade.
+ *
+ * Deliberately NOT exported: `navigate.ts` reaches a tab by clicking its
+ * button, which is the only way to be sure the button's own side effects (the
+ * device-list refresh, the channel-grid teardown) run exactly once. Exporting a
+ * second entry point would fork that.
+ */
+function showSettingsTab(tabId: string): void {
   const target = document.getElementById(tabId)
   if (!target) return
   const outgoing = document.querySelector<HTMLElement>('#page-settings .inner-page.active')
