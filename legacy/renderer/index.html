@@ -444,6 +444,21 @@
       <p class="subtitle" data-i18n="schedule.subtitle">Faste ukentlige opptak + spesialdager (jul, påske, konfirmasjon o.l.).</p>
     </div>
 
+    <!-- ── Vekking: the one thing that decides whether a scheduled recording
+         happens at all, and it used to live three clicks down inside
+         «Avanserte innstillinger». A planned recording on a sleeping machine
+         is not a recording, so the state belongs at the top of the page that
+         plans them. «Detaljer» opens the full section below. -->
+    <div class="card wake-summary-card" id="wake-summary-card">
+      <span class="wake-status-dot" id="wake-summary-dot"></span>
+      <div class="wake-summary-text">
+        <div class="wake-summary-title" id="wake-summary-title" data-i18n="wake.summary.checking">Sjekker oppvåkning…</div>
+        <div class="wake-summary-sub" id="wake-summary-sub"></div>
+        <div class="wake-summary-test" id="wake-summary-test"></div>
+      </div>
+      <button type="button" class="btn-ghost btn-sm" id="btn-wake-summary-details" data-i18n="wake.summary.details">Detaljer</button>
+    </div>
+
     <!-- Calendar — shown first for immediate overview -->
     <div class="cal-layout">
       <div class="card cal-card">

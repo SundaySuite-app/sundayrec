@@ -230,7 +230,6 @@
     "cancel": "Abbrechen",
     "noSlots": "Noch keine Zeiten hinzugefügt.",
     "errNoDays": "Mindestens einen Tag auswählen.",
-    "errTimes": "Start- und Stoppzeit dürfen nicht identisch sein.",
     "durationPrefix": "Dauer",
     "crossesMidnight": "Überschreitet Mitternacht",
     "checkTimes": "Zeiten prüfen",
@@ -240,7 +239,7 @@
     "dayLabel": "TAG",
     "atTime": "um",
     "nextPreviewPrefix": "Nächste Aufnahme",
-    "autostartReminder": "Die Aufnahme wurde hinzugefügt, aber „Automatisch mit Windows/Mac starten“ ist aus. Geplante Aufnahmen starten dann nicht, wenn der Rechner ausgeschaltet war oder das Programm geschlossen ist.",
+    "autostartReminder": "Die Aufnahme wurde hinzugefügt. SundayRec startet jedoch nicht automatisch mit dem Rechner, sodass eine geplante Aufnahme ausbleibt, wenn der Rechner aus war oder die App geschlossen ist. Wir können den Autostart jetzt einschalten — er nimmt keinen Platz auf dem Bildschirm ein, die App läuft still im Hintergrund.",
     "noSlotsTitle": "Noch keine wöchentlichen Aufnahmen eingerichtet",
     "noSlotsHint": "Klicken Sie unten auf „Zeit hinzufügen“, um eine feste wöchentliche Aufnahme einzurichten — z. B. sonntags um 11 Uhr.",
     "sleepFixNoAdmin": "Administratorrechte erforderlich — führen Sie SundayRec als Administrator aus",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — kann aus Ruhezustand aufgeweckt werden; Kaltstart aus vollständig ausgeschaltetem Zustand erfordert BIOS-Konfiguration",
     "platformLinux": "Linux — automatisches Aufwachen wird nicht unterstützt",
     "platformOther": "Plattform wird für automatisches Aufwachen nicht unterstützt",
-    "weeklyDesc": "Feste Aufnahmen, die sich jede Woche wiederholen — zum Beispiel der Gottesdienst jeden Sonntag. Der Rechner startet und stoppt die Aufnahme automatisch, auch wenn niemand anwesend ist."
+    "weeklyDesc": "Feste Aufnahmen, die sich jede Woche wiederholen — zum Beispiel der Gottesdienst jeden Sonntag. Der Rechner startet und stoppt die Aufnahme automatisch, auch wenn niemand anwesend ist.",
+    "errTimeFormat": "Geben Sie die Uhrzeit als HH:MM an, z. B. 11:00.",
+    "errSameTime": "Die Stoppzeit darf nicht mit der Startzeit übereinstimmen.",
+    "errMaxRange": "Die maximale Dauer muss zwischen 1 und 480 Minuten liegen."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test fehlgeschlagen",
       "cancelled": "Abgebrochen.",
       "delay": "Verzögerung"
+    },
+    "summary": {
+      "checking": "Aufwachen wird geprüft…",
+      "details": "Details",
+      "offTitle": "Automatisches Aufwecken ist aus",
+      "offSub": "Geplante Aufnahmen starten nur, wenn der Rechner läuft und die App geöffnet ist. Schalten Sie das Aufwecken unter «Details» ein, wenn der Rechner schlafen darf.",
+      "batteryTitle": "Der Rechner läuft im Akkubetrieb",
+      "standbyTitle": "Tiefschlaf ist aktiviert",
+      "mismatchTitle": "Dem Betriebssystem fehlen einige Weckzeiten",
+      "okTitle": "Der Rechner wacht automatisch auf",
+      "okNext": "Nächstes Aufwecken {when} — {n} Minuten vor Aufnahmebeginn.",
+      "okNoNext": "Derzeit keine anstehende Aufnahme, für die aufgewacht werden muss.",
+      "neverTested": "Noch nie getestet. Führen Sie «Wake jetzt testen» unter «Details» vor dem ersten Gottesdienst aus."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Einstellungen → Veröffentlichung",
     "tipPublishOptional": "(optional)",
     "tipPublishText": "Google Drive / Dropbox / OneDrive für automatisches Cloud-Backup verbinden",
-    "doneOpen": "SundayRec öffnen →"
+    "doneOpen": "SundayRec öffnen →",
+    "back": "‹ Zurück",
+    "testWaitHint": "Die Schaltfläche wird freigegeben, sobald die Anzeige Ton erfasst.",
+    "testHeardHint": "Ton erkannt — Sie können fortfahren.",
+    "testBlockedHint": "Der Audiotest konnte nicht starten. Fahren Sie fort und prüfen Sie den Ton später unter «Einstellungen → Ton».",
+    "testSkipAfterError": "Ohne Audiotest fortfahren →"
   },
   "time": {
     "yr": "J",
@@ -1096,8 +1116,8 @@
     "closeAria": "Schließen",
     "notNow": "Nicht jetzt",
     "disconnect": "Trennen",
-    "autostartTitle": "Automatischen Start aktivieren?",
-    "autostartConfirm": "Aktivieren",
+    "autostartTitle": "Soll die Aufnahme von selbst starten?",
+    "autostartConfirm": "Autostart einschalten",
     "gmailDisconnectTitle": "Google-Konto trennen?",
     "clearHistoryBody": "Die Aufnahmedateien selbst bleiben erhalten — nur die Liste wird geleert.",
     "deleteErrorsBody": "{n} fehlerhafte Einträge werden aus der Liste entfernt. Die Aufnahmedateien bleiben unberührt.",

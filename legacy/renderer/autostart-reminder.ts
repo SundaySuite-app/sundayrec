@@ -14,10 +14,17 @@ import { confirmDialog } from './ui/dialog'
 export async function remindAutostartIfNeeded(): Promise<void> {
   if (settings.launchAtLogin) return // already armed — nothing to nag about
 
+  // The copy is deliberately about THIS recording, not about a setting. The
+  // volunteer just scheduled something; the question they can answer is "will
+  // it happen?", not "do you want launchAtLogin enabled?". Both buttons say
+  // what they do, so neither one is the scary unlabelled option.
   const ok = await confirmDialog({
-    title:        t('dialog.autostartTitle', 'Slå på automatisk start?'),
-    message:      t('schedule.autostartReminder', 'Opptaket er lagt til, men «Start automatisk med Windows/Mac» er av. Da starter ikke planlagte opptak hvis maskinen har vært slått av eller programmet er lukket.'),
-    confirmLabel: t('dialog.autostartConfirm', 'Slå på'),
+    title:        t('dialog.autostartTitle', 'Skal opptaket starte av seg selv?'),
+    message:      t(
+      'schedule.autostartReminder',
+      'Opptaket er lagt til. Men SundayRec starter ikke automatisk med maskinen, så et planlagt opptak uteblir hvis maskinen har vært avslått eller programmet er lukket. Vi kan slå på automatisk oppstart nå — det tar ingen plass på skjermen, programmet kjører stille i bakgrunnen.',
+    ),
+    confirmLabel: t('dialog.autostartConfirm', 'Slå på autostart'),
     cancelLabel:  t('dialog.notNow', 'Ikke nå'),
   })
   if (!ok) return

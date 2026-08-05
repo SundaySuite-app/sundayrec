@@ -567,6 +567,59 @@ body.platform-darwin .ui-toast-stack {
   color: var(--accent, #ebb84b);
 }
 
+/* ── Onboarding: back navigation + the audio-test gate ───────────────────── */
+
+/* «‹ Tilbake» is quieter than «Hopp over» — going back is a correction, not a
+   decision, and it should not compete with the step's own primary action. */
+.ob-back-btn {
+  opacity: 0.75;
+  font-size: 12px;
+}
+.ob-back-btn:hover {
+  opacity: 1;
+}
+/* Why the «Lyden fungerer →» button is not clickable yet. */
+.ob-hint {
+  margin-top: -4px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text3, #8899bb);
+}
+.ob-actions .btn-primary[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Wake summary (top of Tidsplan) ──────────────────────────────────────── */
+
+.wake-summary-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.wake-summary-text {
+  flex: 1;
+  min-width: 0;
+}
+.wake-summary-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #e8eefc);
+}
+.wake-summary-sub,
+.wake-summary-test {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.wake-summary-card .wake-status-dot {
+  margin-top: 5px;
+  flex: none;
+}
+
 /* ── Explicit-save cards ─────────────────────────────────────────────────── */
 
 /* The three surfaces that are NOT auto-apply: the schedule slot editor, the

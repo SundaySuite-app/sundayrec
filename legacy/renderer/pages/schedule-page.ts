@@ -1,7 +1,8 @@
 import { t, tArr, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
-import { alertDialog, confirmDialog } from '../ui/dialog'
+import { confirmDialog } from '../ui/dialog'
+import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
 import {
   getNextRecordingState,
@@ -44,7 +45,20 @@ export function setupSchedulePage(): void {
   // Render the "neste opptak" line from the shared store, now and on every
   // scheduler event.
   initNextRecordingStore()
-  subscribeNextRecording(renderNextRecordingPreview)
+  subscribeNextRecording(state => {
+    renderNextRecordingPreview(state)
+    renderWakeSummary(state)
+  })
+
+  // «Detaljer» opens the full wake section rather than duplicating it.
+  document.getElementById('btn-wake-summary-details')?.addEventListener('click', () => {
+    const section = document.getElementById('adv-section')
+    if (section && section.style.display === 'none') {
+      document.getElementById('btn-adv-toggle')?.click()
+    }
+    document.querySelector('.adv-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+  void refreshWakeSummaryFacts()
 
   document.getElementById('btn-add-slot')?.addEventListener('click', () => openSlotEditor(-1))
   document.getElementById('btn-slot-save')?.addEventListener('click', saveSlot)
@@ -83,7 +97,7 @@ export function setupSchedulePage(): void {
     }
     // Auto-lagre toggelen umiddelbart (samme mønster som lyd/fil/video-sidene):
     // brukeren skulle ikke måtte klikke «Lagre» for at valget tar effekt.
-    void saveScheduleSettings()
+    void saveScheduleSettings().then(() => refreshWakeSummaryFacts())
   })
   // wake-hibernate-* collapsible was removed when the Avanserte-section was
   // restructured into "Vekk maskin fra dvale" in v4.31. Handler dropped.
@@ -157,6 +171,138 @@ export function setupSchedulePage(): void {
     progEl.textContent = data.message ?? data.phase ?? ''
   })
   window.addEventListener('beforeunload', () => cleanupProgress?.())
+}
+
+// ── Wake summary (top-of-page card) ─────────────────────────────────────────
+
+/**
+ * The facts the summary card needs, cached between renders.
+ *
+ * Fetched from the same `wake_verify_scheduled` / `wake_failure_history`
+ * commands the detailed section uses — not a second source of truth. The card
+ * re-renders from the next-recording store on every scheduler event without
+ * re-fetching, so a countdown ticking does not hammer the backend.
+ */
+let wakeFacts: {
+  loaded: boolean
+  hasMismatch: boolean
+  onBattery: boolean | null
+  standbyEnabled: boolean | null
+  expected: number
+  observed: number
+  lastTest: { kind: 'test_ok' | 'test_fail'; timestamp: number; reason?: string; deltaSec?: number } | null
+} = { loaded: false, hasMismatch: false, onBattery: null, standbyEnabled: null, expected: 0, observed: 0, lastTest: null }
+
+async function refreshWakeSummaryFacts(): Promise<void> {
+  if (!settings.wakeFromSleep) {
+    wakeFacts = { ...wakeFacts, loaded: true }
+    renderWakeSummary()
+    return
+  }
+  try {
+    const [status, history] = await Promise.all([
+      window.api.wakeVerifyScheduled(),
+      window.api.wakeFailureHistory(),
+    ])
+    const last = history.find(e => e.kind === 'test_ok' || e.kind === 'test_fail')
+    wakeFacts = {
+      loaded: true,
+      hasMismatch: status.hasMismatch,
+      onBattery: status.onBattery,
+      standbyEnabled: status.standbyEnabled,
+      expected: status.expectedWakes.length,
+      observed: status.observedWakes.length,
+      lastTest: last
+        ? { kind: last.kind as 'test_ok' | 'test_fail', timestamp: last.timestamp, reason: last.reason, deltaSec: last.deltaSec }
+        : null,
+    }
+  } catch (err) {
+    console.warn('[wake-summary] fetch failed:', err)
+    wakeFacts = { ...wakeFacts, loaded: true }
+  }
+  renderWakeSummary()
+}
+
+/**
+ * Paint the summary. Three states, in order of what the operator needs to know:
+ * OFF (planned recordings only fire if someone leaves the machine awake), a
+ * concrete problem (battery, deep sleep, wakes the OS did not accept), or OK
+ * with the actual wake time from the shared store.
+ */
+function renderWakeSummary(state: NextRecordingState = getNextRecordingState()): void {
+  const dot = document.getElementById('wake-summary-dot')
+  const titleEl = document.getElementById('wake-summary-title')
+  const subEl = document.getElementById('wake-summary-sub')
+  const testEl = document.getElementById('wake-summary-test')
+  if (!dot || !titleEl || !subEl || !testEl) return
+
+  const setState = (cls: string, title: string, sub: string): void => {
+    dot.className = `wake-status-dot ${cls}`
+    titleEl.textContent = title
+    subEl.textContent = sub
+  }
+
+  if (!settings.wakeFromSleep) {
+    setState(
+      'off',
+      t('wake.summary.offTitle', 'Automatisk oppvåkning er av'),
+      t('wake.summary.offSub', 'Planlagte opptak starter bare hvis maskinen står på og programmet kjører. Slå på oppvåkning under Detaljer hvis maskinen får sove.'),
+    )
+  } else if (!wakeFacts.loaded) {
+    setState('', t('wake.summary.checking', 'Sjekker oppvåkning…'), '')
+  } else if (wakeFacts.onBattery === true) {
+    setState(
+      'error',
+      t('wake.summary.batteryTitle', 'Maskinen går på batteri'),
+      t('wake.power.onBattery', 'På batteri — wake vil sannsynligvis ikke fungere.'),
+    )
+  } else if (wakeFacts.standbyEnabled === true) {
+    setState(
+      'error',
+      t('wake.summary.standbyTitle', 'Dyp dvale er slått på'),
+      t('wake.standby.warning', 'Standby (dyp dvale) er aktivert — kan sabotere wake på Apple Silicon.'),
+    )
+  } else if (wakeFacts.hasMismatch) {
+    setState(
+      'error',
+      t('wake.summary.mismatchTitle', 'Operativsystemet mangler noen oppvåkninger'),
+      `${wakeFacts.observed}/${wakeFacts.expected} ${t('wake.verify.mismatch', 'bekreftet i OS — noen mangler. Klikk «Planlegg oppvåkning» for å sette dem på nytt.')}`,
+    )
+  } else {
+    // The wake time itself comes from the shared store, so this card and the
+    // hero can never disagree about when the machine gets up.
+    const wakeAt = state.wake?.atMs ?? null
+    const when = wakeAt
+      ? new Date(wakeAt).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+          weekday: 'short', hour: '2-digit', minute: '2-digit',
+        })
+      : null
+    setState(
+      'ok',
+      t('wake.summary.okTitle', 'Maskinen vekkes automatisk'),
+      when
+        ? t('wake.summary.okNext', 'Neste oppvåkning {when} — {n} minutter før opptaket starter.')
+            .replace('{when}', when)
+            .replace('{n}', String(state.wake?.leadMinutes ?? 10))
+        : t('wake.summary.okNoNext', 'Ingen kommende opptak å våkne til akkurat nå.'),
+    )
+  }
+
+  if (!settings.wakeFromSleep || !wakeFacts.loaded) {
+    testEl.textContent = ''
+    return
+  }
+  const last = wakeFacts.lastTest
+  if (!last) {
+    testEl.textContent = t('wake.summary.neverTested', 'Aldri testet. Kjør «Test wake nå» under Detaljer før første gudstjeneste.')
+    return
+  }
+  const when = new Date(last.timestamp).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+  testEl.textContent = last.kind === 'test_ok'
+    ? `${t('wake.lastTest.ok', 'Siste test OK')} (${when})`
+    : `${t('wake.lastTest.fail', 'Siste test feilet')} (${when}${last.reason ? ', ' + last.reason : ''})`
 }
 
 // ── Wake-reliability helpers ────────────────────────────────────────────────
@@ -315,6 +461,8 @@ async function refreshWakeReliability(): Promise<void> {
     }
 
     card.style.display = ''
+    // Keep the top-of-page summary in step with the detail it summarises.
+    void refreshWakeSummaryFacts()
   } catch (err) {
     console.error('[wake-reliability] refresh failed:', err)
   }
@@ -402,6 +550,7 @@ export function renderSlotsList(): void {
 
 function openSlotEditor(index: number): void {
   editingSlotIndex = index
+  clearFieldErrors(document.getElementById('slot-editor'))
   const slot: ScheduleSlot = index >= 0 && settings.slots?.[index]
     ? settings.slots[index]
     : { days: [6], start: '11:00', stop: '12:00' }
@@ -420,33 +569,54 @@ function openSlotEditor(index: number): void {
   updateSlotDurationDisplay()
 }
 
+/**
+ * Save the slot being edited.
+ *
+ * Validation is FIELD-LEVEL: a red line under the field that is wrong, tied to
+ * it with aria-describedby. It used to be a modal saying «Ugyldig tidspunkt»,
+ * which named neither which of the two time fields was wrong nor what was wrong
+ * with it — and covered the form while you read it. Dialogs are for decisions
+ * ("delete this slot?"); a correction belongs next to the thing to correct.
+ */
 async function saveSlot(): Promise<void> {
+  const editor = document.getElementById('slot-editor')
+  clearFieldErrors(editor)
+
+  const dayPicker = document.getElementById('day-picker')
+  const startEl = document.getElementById('slot-start') as HTMLInputElement | null
+  const stopEl  = document.getElementById('slot-stop')  as HTMLInputElement | null
   const days  = [...document.querySelectorAll<HTMLElement>('#day-picker .day-btn.selected')].map(b => +b.dataset.day!)
-  const start = (document.getElementById('slot-start') as HTMLInputElement | null)?.value ?? ''
-  const stop  = (document.getElementById('slot-stop')  as HTMLInputElement | null)?.value ?? ''
+  const start = startEl?.value ?? ''
+  const stop  = stopEl?.value ?? ''
   const maxEl = document.getElementById('slot-max') as HTMLInputElement | null
   const maxV  = maxEl ? (+maxEl.value || null) : null
+
   if (!days.length) {
-    await alertDialog({ title: t('schedule.errNoDays', 'Velg minst én dag.'), tone: 'error' })
+    setFieldError(dayPicker, t('schedule.errNoDays', 'Velg minst én dag.'))
     return
   }
-  // Strict HH:MM validation — a keyboard-injection or unusual locale could
-  // produce something like "9.30" that scheduler.ts later defaults to 11:00.
+  // Strict HH:MM — a keyboard-injection or an unusual locale can produce
+  // something like "9.30" that scheduler.ts would silently default to 11:00.
   const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/
-  if (!start || !stop || !HHMM.test(start) || !HHMM.test(stop)) {
-    await alertDialog({ title: t('schedule.errTimes', 'Ugyldig tidspunkt'), tone: 'error' })
-    return
-  }
+  const badTime = t('schedule.errTimeFormat', 'Skriv klokkeslettet som TT:MM, f.eks. 11:00.')
+  let invalid = false
+  if (!start || !HHMM.test(start)) { setFieldError(startEl, badTime); invalid = true }
+  if (!stop  || !HHMM.test(stop))  { setFieldError(stopEl,  badTime); invalid = true }
+  if (invalid) return
   if (start === stop) {
-    await alertDialog({ title: t('schedule.errTimes', 'Ugyldig tidspunkt'), tone: 'error' })
+    setFieldError(stopEl, t('schedule.errSameTime', 'Stopptidspunktet kan ikke være det samme som starten.'))
     return
   }
+  if (maxV !== null && (maxV < 1 || maxV > 480)) {
+    setFieldError(maxEl, t('schedule.errMaxRange', 'Maks varighet må være mellom 1 og 480 minutter.'))
+    return
+  }
+
   const slot: ScheduleSlot = { days, start, stop, ...(maxV ? { max: maxV } : {}) }
   if (!settings.slots) settings.slots = []
   const wasAdd = editingSlotIndex < 0
   if (editingSlotIndex >= 0) settings.slots[editingSlotIndex] = slot
   else settings.slots.push(slot)
-  const editor = document.getElementById('slot-editor')
   if (editor) editor.style.display = 'none'
   await window.api.saveSettings(settings)
   renderSlotsList()

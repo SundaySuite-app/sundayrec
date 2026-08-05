@@ -230,7 +230,6 @@
     "cancel": "Annuller",
     "noSlots": "Ingen tidspunkter tilføjet endnu.",
     "errNoDays": "Vælg mindst én dag.",
-    "errTimes": "Start- og stoptid må ikke være ens.",
     "durationPrefix": "Varighed",
     "crossesMidnight": "Krydser midnat",
     "checkTimes": "tjek tidspunkterne",
@@ -240,7 +239,7 @@
     "dayLabel": "DAG",
     "atTime": "kl.",
     "nextPreviewPrefix": "Næste optagelse",
-    "autostartReminder": "Optagelsen er tilføjet, men »Start automatisk med Windows/Mac« er slået fra. Så starter planlagte optagelser ikke, hvis maskinen har været slukket, eller programmet er lukket.",
+    "autostartReminder": "Optagelsen er tilføjet. Men SundayRec starter ikke automatisk med maskinen, så en planlagt optagelse udebliver, hvis maskinen har været slukket, eller programmet er lukket. Vi kan slå autostart til nu — det fylder intet på skærmen, programmet kører stille i baggrunden.",
     "noSlotsTitle": "Ingen ugentlige optagelser oprettet endnu",
     "noSlotsHint": "Klik på „Tilføj tidspunkt“ nedenfor for at oprette en fast ugentlig optagelse — f.eks. søndag kl. 11.",
     "sleepFixNoAdmin": "Kræver administratorrettigheder — kør SundayRec som administrator",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — kan vækkes fra dvale; opstart fra helt slukket kræver BIOS-konfig",
     "platformLinux": "Linux — automatisk wake understøttes ikke",
     "platformOther": "Platformen understøttes ikke til automatisk wake",
-    "weeklyDesc": "Faste optagelser, der gentages hver uge — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper optagelsen automatisk, selv om ingen er til stede."
+    "weeklyDesc": "Faste optagelser, der gentages hver uge — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper optagelsen automatisk, selv om ingen er til stede.",
+    "errTimeFormat": "Skriv klokkeslættet som TT:MM, f.eks. 11:00.",
+    "errSameTime": "Stoptidspunktet kan ikke være det samme som starten.",
+    "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test mislykkedes",
       "cancelled": "Annulleret.",
       "delay": "forsinkelse"
+    },
+    "summary": {
+      "checking": "Tjekker opvågning…",
+      "details": "Detaljer",
+      "offTitle": "Automatisk opvågning er slået fra",
+      "offSub": "Planlagte optagelser starter kun, hvis maskinen er tændt og programmet kører. Slå opvågning til under Detaljer, hvis maskinen må sove.",
+      "batteryTitle": "Maskinen kører på batteri",
+      "standbyTitle": "Dyb dvale er slået til",
+      "mismatchTitle": "Operativsystemet mangler nogle opvågninger",
+      "okTitle": "Maskinen vågner automatisk",
+      "okNext": "Næste opvågning {when} — {n} minutter før optagelsen starter.",
+      "okNoNext": "Ingen kommende optagelse at vågne til lige nu.",
+      "neverTested": "Aldrig testet. Kør «Test wake nu» under Detaljer før første gudstjeneste."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Indstillinger → Udgivelse",
     "tipPublishOptional": "(valgfrit)",
     "tipPublishText": "Forbind Google Drive / Dropbox / OneDrive til automatisk cloud-backup",
-    "doneOpen": "Åbn SundayRec →"
+    "doneOpen": "Åbn SundayRec →",
+    "back": "‹ Tilbage",
+    "testWaitHint": "Knappen låses op, så snart måleren fanger lyd.",
+    "testHeardHint": "Lyd registreret — du kan gå videre.",
+    "testBlockedHint": "Lydtesten kunne ikke starte. Gå videre, og test lyden fra Indstillinger → Lyd senere.",
+    "testSkipAfterError": "Fortsæt uden lydtest →"
   },
   "time": {
     "yr": "år",
@@ -1096,8 +1116,8 @@
     "closeAria": "Luk",
     "notNow": "Ikke nu",
     "disconnect": "Afbryd",
-    "autostartTitle": "Slå automatisk start til?",
-    "autostartConfirm": "Slå til",
+    "autostartTitle": "Skal optagelsen starte af sig selv?",
+    "autostartConfirm": "Slå autostart til",
     "gmailDisconnectTitle": "Afbryd Google-kontoen?",
     "clearHistoryBody": "Selve optagelsesfilerne beholdes — det er kun listen over dem, der ryddes.",
     "deleteErrorsBody": "{n} poster med fejl fjernes fra listen. Optagelsesfilerne røres ikke.",

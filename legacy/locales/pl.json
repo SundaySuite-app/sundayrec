@@ -230,7 +230,6 @@
     "cancel": "Anuluj",
     "noSlots": "Nie dodano jeszcze żadnych godzin.",
     "errNoDays": "Wybierz co najmniej jeden dzień.",
-    "errTimes": "Godzina rozpoczęcia i zakończenia nie mogą być takie same.",
     "durationPrefix": "Czas trwania",
     "crossesMidnight": "Przekracza północ",
     "checkTimes": "sprawdź godziny",
@@ -240,7 +239,7 @@
     "dayLabel": "DZIEŃ",
     "atTime": "o godz.",
     "nextPreviewPrefix": "Następne nagranie",
-    "autostartReminder": "Nagranie zostało dodane, ale „Uruchamiaj automatycznie z Windows/Mac” jest wyłączone. Zaplanowane nagrania nie wystartują, jeśli komputer był wyłączony lub program jest zamknięty.",
+    "autostartReminder": "Nagranie zostało dodane. Ale SundayRec nie uruchamia się automatycznie z komputerem, więc zaplanowane nagranie się nie odbędzie, jeśli komputer był wyłączony lub program zamknięty. Możemy teraz włączyć autostart — nie zajmuje miejsca na ekranie, program działa cicho w tle.",
     "noSlotsTitle": "Nie utworzono jeszcze żadnych cotygodniowych nagrań",
     "noSlotsHint": "Kliknij „Dodaj godzinę” poniżej, aby uruchomić stałe cotygodniowe nagranie — np. w niedzielę o 11.",
     "sleepFixNoAdmin": "Wymaga uprawnień administratora — uruchom SundayRec jako administrator",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — można wybudzić z uśpienia; uruchomienie z pełnego wyłączenia wymaga konfiguracji BIOS",
     "platformLinux": "Linux — automatyczne wybudzanie nie jest obsługiwane",
     "platformOther": "Platforma nieobsługiwana dla automatycznego wybudzania",
-    "weeklyDesc": "Stałe nagrania powtarzane co tydzień — na przykład nabożeństwo w każdą niedzielę. Komputer uruchamia i zatrzymuje nagrywanie automatycznie, nawet gdy nikogo nie ma."
+    "weeklyDesc": "Stałe nagrania powtarzane co tydzień — na przykład nabożeństwo w każdą niedzielę. Komputer uruchamia i zatrzymuje nagrywanie automatycznie, nawet gdy nikogo nie ma.",
+    "errTimeFormat": "Wpisz godzinę w formacie GG:MM, np. 11:00.",
+    "errSameTime": "Godzina zakończenia nie może być taka sama jak rozpoczęcia.",
+    "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test nieudany",
       "cancelled": "Anulowano.",
       "delay": "opóźnienie"
+    },
+    "summary": {
+      "checking": "Sprawdzanie wybudzania…",
+      "details": "Szczegóły",
+      "offTitle": "Automatyczne wybudzanie jest wyłączone",
+      "offSub": "Zaplanowane nagrania ruszą tylko, gdy komputer jest włączony, a program działa. Włącz wybudzanie w Szczegółach, jeśli komputer może zasypiać.",
+      "batteryTitle": "Komputer działa na baterii",
+      "standbyTitle": "Włączony jest głęboki uśpienie",
+      "mismatchTitle": "W systemie brakuje części wybudzeń",
+      "okTitle": "Komputer wybudzi się automatycznie",
+      "okNext": "Następne wybudzenie {when} — {n} min przed startem nagrania.",
+      "okNoNext": "Na razie nie ma nadchodzącego nagrania, do którego trzeba się wybudzić.",
+      "neverTested": "Nigdy nie testowano. Uruchom „Testuj wybudzanie” w Szczegółach przed pierwszym nabożeństwem."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Ustawienia → Publikowanie",
     "tipPublishOptional": "(opcjonalnie)",
     "tipPublishText": "Połącz Google Drive / Dropbox / OneDrive, aby mieć automatyczną kopię w chmurze",
-    "doneOpen": "Otwórz SundayRec →"
+    "doneOpen": "Otwórz SundayRec →",
+    "back": "‹ Wstecz",
+    "testWaitHint": "Przycisk odblokuje się, gdy miernik wykryje dźwięk.",
+    "testHeardHint": "Wykryto dźwięk — możesz przejść dalej.",
+    "testBlockedHint": "Test dźwięku nie mógł się uruchomić. Przejdź dalej i sprawdź dźwięk później w Ustawienia → Dźwięk.",
+    "testSkipAfterError": "Kontynuuj bez testu dźwięku →"
   },
   "time": {
     "yr": "r",
@@ -1096,8 +1116,8 @@
     "closeAria": "Zamknij",
     "notNow": "Nie teraz",
     "disconnect": "Odłącz",
-    "autostartTitle": "Włączyć automatyczny start?",
-    "autostartConfirm": "Włącz",
+    "autostartTitle": "Czy nagranie ma ruszyć samo?",
+    "autostartConfirm": "Włącz autostart",
     "gmailDisconnectTitle": "Odłączyć konto Google?",
     "clearHistoryBody": "Same pliki nagrań zostają — czyszczona jest tylko ich lista.",
     "deleteErrorsBody": "{n} wpisów z błędami zostanie usuniętych z listy. Pliki nagrań pozostaną nienaruszone.",

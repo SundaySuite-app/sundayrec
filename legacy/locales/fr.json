@@ -230,7 +230,6 @@
     "cancel": "Annuler",
     "noSlots": "Aucun horaire ajouté pour l’instant.",
     "errNoDays": "Sélectionnez au moins un jour.",
-    "errTimes": "L’heure de début et de fin ne peuvent pas être identiques.",
     "durationPrefix": "Durée",
     "crossesMidnight": "Passe minuit",
     "checkTimes": "vérifiez les horaires",
@@ -240,7 +239,7 @@
     "dayLabel": "JOUR",
     "atTime": "à",
     "nextPreviewPrefix": "Prochain enregistrement",
-    "autostartReminder": "L’enregistrement a été ajouté, mais « Démarrer automatiquement avec Windows/Mac » est désactivé. Les enregistrements programmés ne démarreront pas si la machine a été éteinte ou si le programme est fermé.",
+    "autostartReminder": "L’enregistrement a été ajouté. Mais SundayRec ne démarre pas automatiquement avec la machine : un enregistrement programmé n’aura donc pas lieu si la machine était éteinte ou l’application fermée. Nous pouvons activer le démarrage automatique maintenant — il ne prend aucune place à l’écran, l’application tourne discrètement en arrière-plan.",
     "noSlotsTitle": "Aucun enregistrement hebdomadaire configuré",
     "noSlotsHint": "Cliquez sur « Ajouter un horaire » ci-dessous pour mettre en place un enregistrement hebdomadaire — par ex. dimanche à 11 h.",
     "sleepFixNoAdmin": "Nécessite des droits administrateur — lancez SundayRec en tant qu’administrateur",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — peut sortir de veille ; un démarrage à froid nécessite une configuration BIOS",
     "platformLinux": "Linux — le réveil automatique n’est pas pris en charge",
     "platformOther": "Plateforme non prise en charge pour le réveil automatique",
-    "weeklyDesc": "Enregistrements fixes répétés chaque semaine — par exemple le culte chaque dimanche. La machine démarre et arrête l’enregistrement automatiquement, même si personne n’est présent."
+    "weeklyDesc": "Enregistrements fixes répétés chaque semaine — par exemple le culte chaque dimanche. La machine démarre et arrête l’enregistrement automatiquement, même si personne n’est présent.",
+    "errTimeFormat": "Saisissez l’heure au format HH:MM, par ex. 11:00.",
+    "errSameTime": "L’heure de fin ne peut pas être identique à l’heure de début.",
+    "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test échoué",
       "cancelled": "Annulé.",
       "delay": "délai"
+    },
+    "summary": {
+      "checking": "Vérification du réveil…",
+      "details": "Détails",
+      "offTitle": "Le réveil automatique est désactivé",
+      "offSub": "Les enregistrements programmés ne démarrent que si la machine est allumée et l’application ouverte. Activez le réveil sous « Détails » si la machine peut se mettre en veille.",
+      "batteryTitle": "La machine est sur batterie",
+      "standbyTitle": "La veille profonde est activée",
+      "mismatchTitle": "Il manque certains réveils au système d’exploitation",
+      "okTitle": "La machine se réveille automatiquement",
+      "okNext": "Prochain réveil {when} — {n} minutes avant le début de l’enregistrement.",
+      "okNoNext": "Aucun enregistrement à venir nécessitant un réveil pour le moment.",
+      "neverTested": "Jamais testé. Lancez « Tester le réveil » sous Détails avant le premier culte."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Réglages → Publication",
     "tipPublishOptional": "(facultatif)",
     "tipPublishText": "Connectez Google Drive / Dropbox / OneDrive pour la sauvegarde cloud automatique",
-    "doneOpen": "Ouvrir SundayRec →"
+    "doneOpen": "Ouvrir SundayRec →",
+    "back": "‹ Retour",
+    "testWaitHint": "Le bouton se débloque dès que l’indicateur capte du son.",
+    "testHeardHint": "Son détecté — vous pouvez continuer.",
+    "testBlockedHint": "Le test audio n’a pas pu démarrer. Continuez et testez le son depuis Réglages → Son plus tard.",
+    "testSkipAfterError": "Continuer sans le test audio →"
   },
   "time": {
     "yr": "an",
@@ -1096,8 +1116,8 @@
     "closeAria": "Fermer",
     "notNow": "Pas maintenant",
     "disconnect": "Déconnecter",
-    "autostartTitle": "Activer le démarrage automatique ?",
-    "autostartConfirm": "Activer",
+    "autostartTitle": "L’enregistrement doit-il démarrer tout seul ?",
+    "autostartConfirm": "Activer le démarrage auto",
     "gmailDisconnectTitle": "Déconnecter le compte Google ?",
     "clearHistoryBody": "Les fichiers d’enregistrement sont conservés — seule la liste est effacée.",
     "deleteErrorsBody": "{n} entrées en erreur seront retirées de la liste. Les fichiers d’enregistrement ne sont pas touchés.",

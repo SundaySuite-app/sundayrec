@@ -230,7 +230,6 @@
     "cancel": "Avbryt",
     "noSlots": "Ingen tidspunkt lagt til ennå.",
     "errNoDays": "Velg minst én dag.",
-    "errTimes": "Starttid og stopptid kan ikke være like.",
     "durationPrefix": "Varighet",
     "crossesMidnight": "Krysser midnatt",
     "checkTimes": "sjekk tidspunktene",
@@ -240,7 +239,7 @@
     "dayLabel": "DAG",
     "atTime": "kl.",
     "nextPreviewPrefix": "Neste opptak",
-    "autostartReminder": "Opptaket er lagt til, men «Start automatisk med Windows/Mac» er av. Da starter ikke planlagte opptak hvis maskinen har vært slått av eller programmet er lukket.",
+    "autostartReminder": "Opptaket er lagt til. Men SundayRec starter ikke automatisk med maskinen, så et planlagt opptak uteblir hvis maskinen har vært avslått eller programmet er lukket. Vi kan slå på automatisk oppstart nå — det tar ingen plass på skjermen, programmet kjører stille i bakgrunnen.",
     "noSlotsTitle": "Ingen ukentlige opptak satt opp ennå",
     "noSlotsHint": "Klikk «Legg til tidspunkt» nedenfor for å starte et fast ukentlig opptak — f.eks. søndag kl. 11.",
     "sleepFixNoAdmin": "Krever administratorrettigheter — kjør SundayRec som administrator",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — kan vekkes fra dvale; oppstart fra fullstendig avslått krever BIOS-konfig",
     "platformLinux": "Linux — automatisk wake støttes ikke",
     "platformOther": "Plattform støttes ikke for automatisk wake",
-    "weeklyDesc": "Faste opptak som gjentas hver uke — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper opptaket automatisk, selv om ingen er til stede."
+    "weeklyDesc": "Faste opptak som gjentas hver uke — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper opptaket automatisk, selv om ingen er til stede.",
+    "errTimeFormat": "Skriv klokkeslettet som TT:MM, f.eks. 11:00.",
+    "errSameTime": "Stopptidspunktet kan ikke være det samme som starten.",
+    "errMaxRange": "Maks varighet må være mellom 1 og 480 minutter."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test feilet",
       "cancelled": "Avbrutt.",
       "delay": "forsinkelse"
+    },
+    "summary": {
+      "checking": "Sjekker oppvåkning…",
+      "details": "Detaljer",
+      "offTitle": "Automatisk oppvåkning er av",
+      "offSub": "Planlagte opptak starter bare hvis maskinen står på og programmet kjører. Slå på oppvåkning under Detaljer hvis maskinen får sove.",
+      "batteryTitle": "Maskinen går på batteri",
+      "standbyTitle": "Dyp dvale er slått på",
+      "mismatchTitle": "Operativsystemet mangler noen oppvåkninger",
+      "okTitle": "Maskinen vekkes automatisk",
+      "okNext": "Neste oppvåkning {when} — {n} minutter før opptaket starter.",
+      "okNoNext": "Ingen kommende opptak å våkne til akkurat nå.",
+      "neverTested": "Aldri testet. Kjør «Test wake nå» under Detaljer før første gudstjeneste."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Innstillinger → Publisering",
     "tipPublishOptional": "(valgfritt)",
     "tipPublishText": "Koble til Google Drive / Dropbox / OneDrive for automatisk sky-backup",
-    "doneOpen": "Åpne SundayRec →"
+    "doneOpen": "Åpne SundayRec →",
+    "back": "‹ Tilbake",
+    "testWaitHint": "Knappen åpner seg så snart måleren fanger opp lyd.",
+    "testHeardHint": "Lyd registrert — du kan gå videre.",
+    "testBlockedHint": "Lydtesten kunne ikke starte. Gå videre og test lyden fra Innstillinger → Lyd senere.",
+    "testSkipAfterError": "Fortsett uten lydtest →"
   },
   "time": {
     "yr": "år",
@@ -1096,8 +1116,8 @@
     "closeAria": "Lukk",
     "notNow": "Ikke nå",
     "disconnect": "Koble fra",
-    "autostartTitle": "Slå på automatisk start?",
-    "autostartConfirm": "Slå på",
+    "autostartTitle": "Skal opptaket starte av seg selv?",
+    "autostartConfirm": "Slå på autostart",
     "gmailDisconnectTitle": "Koble fra Google-kontoen?",
     "clearHistoryBody": "Selve opptaksfilene beholdes — det er bare listen over dem som slettes.",
     "deleteErrorsBody": "{n} oppføringer med feil fjernes fra listen. Opptaksfilene røres ikke.",

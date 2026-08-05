@@ -230,7 +230,6 @@
     "cancel": "Cancel",
     "noSlots": "No times added yet.",
     "errNoDays": "Pick at least one day.",
-    "errTimes": "Start and stop time can't be the same.",
     "durationPrefix": "Duration",
     "crossesMidnight": "Crosses midnight",
     "checkTimes": "check the times",
@@ -240,7 +239,7 @@
     "dayLabel": "DAY",
     "atTime": "at",
     "nextPreviewPrefix": "Next recording",
-    "autostartReminder": "The recording has been added, but “Start automatically with Windows/Mac” is off. Scheduled recordings will not start if the machine has been switched off or the app is closed.",
+    "autostartReminder": "The recording has been added. But SundayRec does not start automatically with the machine, so a scheduled recording will not happen if the machine has been off or the app is closed. We can turn auto-start on now — it takes no space on screen, the app runs quietly in the background.",
     "noSlotsTitle": "No weekly recordings set up yet",
     "noSlotsHint": "Click “Add a time” below to start a recurring weekly recording — e.g. Sunday at 11.",
     "sleepFixNoAdmin": "Needs administrator rights — run SundayRec as administrator",
@@ -270,7 +269,10 @@
     "platformWin": "Windows — can wake from sleep; cold-start from full shutdown requires BIOS configuration",
     "platformLinux": "Linux — automatic wake is not supported",
     "platformOther": "Platform not supported for automatic wake",
-    "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present."
+    "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present.",
+    "errTimeFormat": "Write the time as HH:MM, e.g. 11:00.",
+    "errSameTime": "The stop time cannot be the same as the start.",
+    "errMaxRange": "Maximum duration must be between 1 and 480 minutes."
   },
   "wake": {
     "capability": {
@@ -307,6 +309,19 @@
       "failure": "✕ Test failed",
       "cancelled": "Cancelled.",
       "delay": "delay"
+    },
+    "summary": {
+      "checking": "Checking wake-up…",
+      "details": "Details",
+      "offTitle": "Automatic wake-up is off",
+      "offSub": "Scheduled recordings only start if the machine is on and the app is running. Turn wake-up on under Details if the machine is allowed to sleep.",
+      "batteryTitle": "The machine is on battery",
+      "standbyTitle": "Deep sleep is enabled",
+      "mismatchTitle": "The operating system is missing some wake-ups",
+      "okTitle": "The machine wakes up automatically",
+      "okNext": "Next wake-up {when} — {n} minutes before the recording starts.",
+      "okNoNext": "No upcoming recording to wake up for right now.",
+      "neverTested": "Never tested. Run «Test wake now» under Details before the first service."
     }
   },
   "calendar": {
@@ -792,7 +807,12 @@
     "tipPublishTitle": "Settings → Publishing",
     "tipPublishOptional": "(optional)",
     "tipPublishText": "Connect Google Drive / Dropbox / OneDrive for automatic cloud backup",
-    "doneOpen": "Open SundayRec →"
+    "doneOpen": "Open SundayRec →",
+    "back": "‹ Back",
+    "testWaitHint": "The button unlocks as soon as the meter picks up sound.",
+    "testHeardHint": "Sound detected — you can continue.",
+    "testBlockedHint": "The audio test could not start. Continue and test the sound from Settings → Audio later.",
+    "testSkipAfterError": "Continue without the audio test →"
   },
   "time": {
     "yr": "yr",
@@ -1096,8 +1116,8 @@
     "closeAria": "Close",
     "notNow": "Not now",
     "disconnect": "Disconnect",
-    "autostartTitle": "Turn on automatic start?",
-    "autostartConfirm": "Turn on",
+    "autostartTitle": "Should the recording start by itself?",
+    "autostartConfirm": "Turn on auto-start",
     "gmailDisconnectTitle": "Disconnect the Google account?",
     "clearHistoryBody": "The recording files are kept — only the list of them is cleared.",
     "deleteErrorsBody": "{n} entries with errors are removed from the list. The recording files are untouched.",
