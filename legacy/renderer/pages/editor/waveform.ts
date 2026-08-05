@@ -25,11 +25,31 @@ export function syncCanvasSize(): void {
  *  where caller would otherwise re-trigger drawWaveform 60+ times per second.
  *  Synchronous drawWaveform() still works for one-shot updates (load/seek/etc). */
 let drawWaveformRaf = 0
+let pendingMinimapViewport = false
+
 export function scheduleDrawWaveform(): void {
+  scheduleDraw(false)
+}
+
+/** Same coalescing, plus the minimap's viewport rectangle. For zoom/pan, where
+ *  a trackpad delivers wheel events FASTER than the display refreshes: the
+ *  viewport maths stays synchronous (so zoom stays anchored exactly under the
+ *  cursor and pan stays exact), but the two repaints happen once per frame
+ *  instead of once per event. A two-finger flick used to fire 100+ full-canvas
+ *  redraws a second on a long file. */
+export function scheduleViewportDraw(): void {
+  scheduleDraw(true)
+}
+
+function scheduleDraw(withMinimap: boolean): void {
+  if (withMinimap) pendingMinimapViewport = true
   if (drawWaveformRaf) return
   drawWaveformRaf = requestAnimationFrame(() => {
     drawWaveformRaf = 0
+    const minimap = pendingMinimapViewport
+    pendingMinimapViewport = false
     drawWaveform()
+    if (minimap) updateMinimapViewport()
   })
 }
 

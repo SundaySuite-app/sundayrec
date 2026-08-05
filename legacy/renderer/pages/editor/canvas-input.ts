@@ -1,16 +1,69 @@
 import { E } from './state'
 import { xToSec, xToMainSec, secToX, clampMain, clampPlayable, maxPlayableSec } from './geometry'
 import { addCut, deleteCut, pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
-import { drawWaveform, scheduleDrawWaveform, drawMinimap, updateMinimapViewport } from './waveform'
+import { drawWaveform, scheduleDrawWaveform, scheduleViewportDraw, drawMinimap } from './waveform'
 import { stopPlay, updateTimecode, seekMediaTo } from './playback'
 import { shouldShowSegment } from './detection'
 import { panBy } from './viewport'
 
 // ── Canvas mouse/wheel input + minimap drag ─────────────────────────────────
 
+// Every handler here needs the canvas' position on screen, and every one of
+// them used to ask the layout engine for it — getBoundingClientRect forces a
+// style+layout flush, and mousemove fires as fast as the mouse reports (125 Hz
+// on plenty of hardware) with wheel events on a trackpad faster still. The rect
+// only changes when the canvas moves or resizes, so it is cached and
+// invalidated by exactly those events (ResizeObserver on the canvas — the same
+// prior art as audio/waveform.ts — plus scroll/resize on the window).
+let cachedRect: DOMRect | null = null
+let rectWatchTarget: HTMLElement | null = null
+let rectObserver: ResizeObserver | null = null
+
+export function invalidateCanvasRect(): void {
+  cachedRect = null
+}
+
+function watchCanvasRect(canvas: HTMLElement): void {
+  if (rectWatchTarget === canvas) return
+  rectWatchTarget = canvas
+  rectObserver?.disconnect()
+  // Not every environment implements ResizeObserver (jsdom in tests, ancient
+  // WebKit); the scroll/resize listeners below still keep the cache honest.
+  if (typeof ResizeObserver === 'function') {
+    rectObserver = new ResizeObserver(invalidateCanvasRect)
+    rectObserver.observe(canvas)
+  }
+}
+
+let rectListenersBound = false
+function bindRectInvalidation(): void {
+  if (rectListenersBound) return
+  rectListenersBound = true
+  window.addEventListener('resize', invalidateCanvasRect)
+  // Capture phase: the editor lives inside #main, which is the element that
+  // actually scrolls — a listener on window alone would never hear it.
+  document.addEventListener('scroll', invalidateCanvasRect, { capture: true, passive: true })
+}
+
+/** The canvas' viewport rect, measured at most once per layout change. */
+function canvasRect(): DOMRect {
+  if (rectWatchTarget !== E.canvas) {
+    // The editor page can be torn down and rebuilt with a fresh canvas.
+    cachedRect = null
+    watchCanvasRect(E.canvas)
+  }
+  if (cachedRect) return cachedRect
+  bindRectInvalidation()
+  cachedRect = E.canvas.getBoundingClientRect()
+  return cachedRect
+}
+
 export function onCanvasDown(e: MouseEvent): void {
   if (!E.peaks || e.button !== 0) return
-  const rect = E.canvas.getBoundingClientRect()
+  // One fresh measurement per interaction: a drag that starts from a stale rect
+  // would seek to the wrong second, and that is not a cost worth saving.
+  invalidateCanvasRect()
+  const rect = canvasRect()
   const extSec  = xToSec(e.clientX - rect.left, rect.width)
   const mainSec = xToMainSec(e.clientX - rect.left, rect.width)
 
@@ -46,7 +99,7 @@ export function onCanvasDown(e: MouseEvent): void {
 
 export function onCanvasMove(e: MouseEvent): void {
   if (!E.peaks) return
-  const rect = E.canvas.getBoundingClientRect()
+  const rect = canvasRect()
   const extSec  = xToSec(e.clientX - rect.left, rect.width)
   const mainSec = xToMainSec(e.clientX - rect.left, rect.width)
 
@@ -98,7 +151,7 @@ export function onCanvasMove(e: MouseEvent): void {
 
 export function onCanvasUp(e: MouseEvent): void {
   if (!E.peaks) return
-  const rect  = E.canvas.getBoundingClientRect()
+  const rect  = canvasRect()
   const extSec = xToSec(e.clientX - rect.left, rect.width)
   const upMainSec = xToMainSec(e.clientX - rect.left, rect.width)
 
@@ -186,18 +239,34 @@ export function onCanvasLeave(): void {
 export function onCanvasContextMenu(e: MouseEvent): void {
   e.preventDefault()
   if (!E.peaks) return
-  const rect = E.canvas.getBoundingClientRect()
+  const rect = canvasRect()
   const mainSec = xToMainSec(e.clientX - rect.left, rect.width)
   const idx  = E.cuts.findIndex(c => mainSec >= c.start && mainSec <= c.end)
   if (idx >= 0) deleteCut(idx)
 }
 
+/**
+ * Wheel zoom / pan.
+ *
+ * A trackpad emits wheel events well above the display refresh rate, and this
+ * used to run a full synchronous canvas redraw plus a minimap update for every
+ * one of them — on a 90-minute file, most of those frames were painted and
+ * thrown away before anything reached the screen, which is precisely why a
+ * two-finger flick felt like it was fighting back.
+ *
+ * The fix is NOT to accumulate the deltas and apply them later: the zoom is
+ * anchored to the time under the cursor, and deferring the maths would apply
+ * later events against a viewport that hasn't moved yet, drifting the anchor.
+ * The viewport is updated synchronously per event — exactly as before, so the
+ * anchoring is bit-for-bit the old behaviour — and only the two repaints are
+ * coalesced into one rAF.
+ */
 export function onCanvasWheel(e: WheelEvent): void {
   e.preventDefault()
   if (e.ctrlKey || e.metaKey) {
     // Zoom centered on mouse position (main coords only — intro/outro slots
     // have their own fixed scale).
-    const rect = E.canvas.getBoundingClientRect()
+    const rect = canvasRect()
     const mouseSec = xToMainSec(e.clientX - rect.left, rect.width)
     const factor   = e.deltaY > 0 ? 1.25 : 0.75
     const span     = (E.vpEnd - E.vpStart) * factor
@@ -205,8 +274,7 @@ export function onCanvasWheel(e: WheelEvent): void {
     E.vpStart = Math.max(0, mouseSec - frac * span)
     E.vpEnd   = Math.min(E.duration, E.vpStart + span)
     if (E.vpEnd - E.vpStart < 0.5) { E.vpEnd = E.vpStart + 0.5 }
-    drawWaveform()
-    updateMinimapViewport()
+    scheduleViewportDraw()
   } else {
     panBy(e.deltaY * (E.vpEnd - E.vpStart) / 800)
   }
@@ -276,6 +344,7 @@ export function jumpViewportToMouse(e: MouseEvent): void {
   const half   = (E.vpEnd - E.vpStart) / 2
   E.vpStart = Math.max(0, Math.min(E.duration - half * 2, center - half))
   E.vpEnd   = E.vpStart + half * 2
-  drawWaveform()
-  updateMinimapViewport()
+  // Fires from a window-level mousemove for the whole minimap drag — same
+  // coalescing as the wheel path.
+  scheduleViewportDraw()
 }

@@ -191,26 +191,64 @@ export function setCurrentTranscriptTime(sec: number): void {
   highlightSegment(idx)
 }
 
+// Reading the transcript while it plays is a legitimate thing to do, and an
+// auto-scroll that yanks the panel back every few seconds makes it impossible.
+// After a manual scroll the follow behaviour steps aside for this long.
+const FOLLOW_PAUSE_AFTER_USER_SCROLL_MS = 3000
+// scrollIntoView({behavior:'smooth'}) emits scroll events of its own for the
+// length of the animation. Without this window every auto-scroll would look
+// like a user scroll and permanently disable the next one.
+const PROGRAMMATIC_SCROLL_WINDOW_MS = 800
+
+let lastUserScrollMs = 0
+let programmaticScrollUntil = 0
+let scrollTrackedContainer: HTMLElement | null = null
+
+/** Passive scroll listener on the segment list, bound once per container (the
+ *  panel is rebuilt from innerHTML on every render, so the element changes). */
+function trackUserScroll(container: HTMLElement): void {
+  if (scrollTrackedContainer === container) return
+  scrollTrackedContainer = container
+  container.addEventListener(
+    'scroll',
+    () => {
+      if (performance.now() < programmaticScrollUntil) return
+      lastUserScrollMs = performance.now()
+    },
+    { passive: true },
+  )
+}
+
 let lastHighlightedIdx = -1
+let highlightScrollRaf = 0
+
 function highlightSegment(idx: number): void {
   if (idx === lastHighlightedIdx) return
   lastHighlightedIdx = idx
   const container = $('editor-transcript-segments')
   if (!container) return
+  trackUserScroll(container)
   container.querySelectorAll('.editor-transcript-segment').forEach((el, i) => {
     el.classList.toggle('is-current', i === idx)
   })
-  // Scroll into view if not visible
-  if (idx >= 0) {
+
+  if (idx < 0) return
+  // The two getBoundingClientRect reads below are layout FLUSHES, and this runs
+  // from the playback rAF — right after the class writes above dirtied style.
+  // Deferring them to their own frame keeps the read/write phases apart instead
+  // of forcing a synchronous relayout in the middle of the playback loop.
+  if (highlightScrollRaf) cancelAnimationFrame(highlightScrollRaf)
+  highlightScrollRaf = requestAnimationFrame(() => {
+    highlightScrollRaf = 0
+    if (performance.now() - lastUserScrollMs < FOLLOW_PAUSE_AFTER_USER_SCROLL_MS) return
     const el = container.children[idx] as HTMLElement | undefined
-    if (el) {
-      const rect = el.getBoundingClientRect()
-      const cRect = container.getBoundingClientRect()
-      if (rect.top < cRect.top || rect.bottom > cRect.bottom) {
-        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-      }
-    }
-  }
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const cRect = container.getBoundingClientRect()
+    if (rect.top >= cRect.top && rect.bottom <= cRect.bottom) return
+    programmaticScrollUntil = performance.now() + PROGRAMMATIC_SCROLL_WINDOW_MS
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
 }
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
