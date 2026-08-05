@@ -67,8 +67,17 @@ export async function setupMasteringPanel(): Promise<void> {
     const { currentSec, totalSec } = data as { currentSec: number; totalSec: number }
     const bar   = $('master-progress-bar')
     const label = $('master-status-label')
-    const pct = totalSec > 0 ? Math.min(99, Math.round((currentSec / totalSec) * 100)) : 0
-    if (bar)   bar.style.width = pct + '%'
+    // `totalSec === 0` is the backend saying "I could not probe this file's
+    // duration" — an unknown denominator, not 0 %. Pinning the bar at 0 for the
+    // whole apply is exactly what made a working mastering run look hung; show
+    // the sliding stripe and the elapsed position instead.
+    if (!(totalSec > 0)) {
+      if (bar) { bar.style.width = ''; bar.classList.add('progress-indeterminate') }
+      if (label) label.textContent = t('master.applying', 'Mastrer…')
+      return
+    }
+    const pct = Math.min(99, Math.round((currentSec / totalSec) * 100))
+    if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = pct + '%' }
     if (label) label.textContent = `${t('master.applying', 'Mastrer…')} ${pct}%`
   })
   if (typeof unsub === 'function') masterProgressUnsubscribe = unsub
@@ -101,7 +110,7 @@ export async function runMasterPreview(): Promise<void> {
 
   if (btn) { btn.disabled = true; btn.textContent = t('master.applying', 'Lager forhåndsvisning…') }
   if (row) row.style.display = ''
-  if (bar) bar.style.width = '20%'
+  if (bar) { bar.classList.remove('progress-indeterminate'); bar.style.width = '20%' }
   if (label) label.textContent = t('master.applying', 'Lager forhåndsvisning…')
 
   const start = Math.max(0, Math.min(E.duration > 15 ? E.duration - 15 : 0, clampMain(E.playStartSec)))
@@ -119,7 +128,7 @@ export async function runMasterPreview(): Promise<void> {
     }
     if (btnListenO) btnListenO.style.display = ''
     if (label) label.textContent = t('master.done', '✓ Forhåndsvisning klar')
-    if (bar)   bar.style.width   = '100%'
+    if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = '100%' }
   } catch (err) {
     if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${(err as Error).message}`
   } finally {
@@ -174,7 +183,7 @@ export async function runMasterApply(): Promise<void> {
   if (btnPrv)    { btnPrv.disabled    = true }
   if (btnCancel) { btnCancel.style.display = '' }
   if (row)       { row.style.display = '' }
-  if (bar)       { bar.style.width   = '5%' }
+  if (bar)       { bar.classList.remove('progress-indeterminate'); bar.style.width = '5%' }
   if (label)     { label.textContent = t('master.applying', 'Mastrer…') + ' (måler lydstyrke…)' }
   if (resRow)    { resRow.style.display = 'none' }
 
@@ -190,7 +199,7 @@ export async function runMasterApply(): Promise<void> {
     }
     const beforeLufs = measureRes.measurement.inputI
     if (label) label.textContent = `${t('master.applying', 'Mastrer…')} (${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ${preset.targetLufs} LUFS)`
-    if (bar) bar.style.width = '15%'
+    if (bar) { bar.classList.remove('progress-indeterminate'); bar.style.width = '15%' }
 
     // Pass 2: apply
     const applyRes = await window.api.masterApply({
@@ -202,7 +211,7 @@ export async function runMasterApply(): Promise<void> {
     })
 
     if (applyRes.ok && applyRes.outputPath) {
-      if (bar)   bar.style.width   = '100%'
+      if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = '100%' }
       if (label) label.textContent = t('master.done', '✓ Mastret') +
         ` — ${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ` +
         `${t('master.lufsAfter', 'Etter')}: ${preset.targetLufs} LUFS`

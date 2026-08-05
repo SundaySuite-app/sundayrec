@@ -3,16 +3,27 @@
 // Loaded as a module script BEFORE ./main.ts in index.html, so `window.api`
 // exists before the renderer boots.
 //
-// PHASE 3 (in progress): methods are being wired to real Tauri `invoke()`
-// commands (134 exist in src-tauri/src/lib.rs; the contract is documented in
-// reference/hooks.ts + reference/bindings). Each wired method calls the backend
-// through `call()` and falls back to a safe default on any error, so a missing/
-// mismatched command degrades to the old empty-state instead of throwing. Methods
-// not yet wired keep their safe stub (marked `// TODO Phase 3: <command>`).
+// Most methods below are wired to real Tauri `invoke()` commands (the contract
+// is documented in reference/hooks.ts + reference/bindings). Each wired method
+// calls the backend through `call()` and falls back to a safe default on any
+// error, so a missing/mismatched command degrades to the old empty-state
+// instead of throwing. A handful of methods are still deliberate stubs — no
+// Rust command backs them (yet, or ever, for a feature that didn't survive the
+// port) — and return a fixed value; those are called out inline where they sit.
 //
-// NOTE: VU metering + audio/video device enumeration are CLIENT-SIDE in the
-// ported renderer (Web Audio getUserMedia / enumerateDevices), so they already
-// work in the Tauri WKWebView with no backend wiring (just a mic/camera grant).
+// NOTE: VU metering has THREE separate paths — audio/video device enumeration
+// is client-side (Web Audio getUserMedia / enumerateDevices) throughout, but
+// don't assume that covers metering too:
+//   1. Home / Live / Onboarding meters open their own client-side getUserMedia
+//      + Web Audio analyser — no backend involved.
+//   2. The channel grid (audio-page) uses the BACKEND cpal VU engine via
+//      startVu/stopVu + the `vu-levels` event, because getUserMedia caps a
+//      device at 2 channels and the grid needs every channel a digital mixer
+//      (e.g. a 32-channel Qu-5) actually exposes.
+//   3. The recording overlay's meter is driven by the ACTIVE RECORDING's own
+//      `recording://levels` telemetry (see pages/recording.ts) — never a
+//      second getUserMedia stream, so the mic keeps exactly one owner for the
+//      whole take.
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -138,6 +149,12 @@ const EVENT_MAP: Record<string, string> = {
   "recording-finished": "recording://finished",
   "recording-error": "recording://error",
   "recording-warning": "recording://warning",
+  // Non-terminal: the stop-on-silence detector's early warning, ahead of the
+  // auto-stop timeout. Was emitted by the backend (RecordingEvent {code:
+  // "silence_detected", …} from both capture engines) but unmapped here, so
+  // users with stop-on-silence enabled got no warning before the auto-stop —
+  // consumed in pages/recording.ts alongside recording-warning.
+  "recording-silence": "recording://silence",
   "recording-quality": "recording://quality",
   "recording-progress": "recording://progress",
   "recording-levels": "recording://levels",
@@ -145,8 +162,6 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "video-preview-frame": "preview://frame",
-  "video-preview-stopped": "preview://stopped",
-  "video-preview-meta": "preview://meta",
   "master-progress": "editor-master-progress",
   "whisper-progress": "whisper://progress",
   "whisper-model-progress": "whisper://model-progress",
@@ -195,21 +210,28 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
     }
     return p;
   },
-  // EditorMasterProgress { job_id, current_sec, total_sec } (snake_case) → the
-  // mastering panel reads currentSec/totalSec. Without this, `totalSec` was
-  // undefined so the progress bar stayed frozen at 0% for the WHOLE mastering
-  // apply (looked hung even though it was working). (Found by the event-seam audit.)
+  // EditorMasterProgress → the mastering panel reads jobId/currentSec/totalSec.
+  //
+  // The DTO is `#[serde(rename_all = "camelCase")]` (editor/mod.rs), so the
+  // payload ALREADY arrives camelCase. This adapter used to read the snake_case
+  // names only and spread the results on top — overwriting three perfectly good
+  // fields with `undefined` and leaving the bar frozen at 0 % for the entire
+  // mastering apply. It is now camelCase-first, with the snake_case read kept
+  // purely as a fallback in case an older/renamed emitter ever shows up.
   "master-progress": (p) => {
     const d = (p ?? {}) as {
+      jobId?: string;
+      currentSec?: number;
+      totalSec?: number;
       job_id?: string;
       current_sec?: number;
       total_sec?: number;
     };
     return {
       ...d,
-      jobId: d.job_id,
-      currentSec: d.current_sec,
-      totalSec: d.total_sec,
+      jobId: d.jobId ?? d.job_id,
+      currentSec: d.currentSec ?? d.current_sec,
+      totalSec: d.totalSec ?? d.total_sec,
     };
   },
 };
@@ -298,9 +320,18 @@ function loadSettings(): Record<string, unknown> {
   }
 }
 
+// SECURITY (2026-08 audit): the Rust backend has a real keychain slot for the
+// SMTP password (secrets::SecretProvider::SmtpPassword, cleared via
+// email_clear_smtp_password) but no command to SET it — the port never wired
+// a save path there. This function was the ONLY place the raw password
+// landed, so every save wrote it to localStorage in cleartext, forever. Strip
+// it before persisting; `emailSmtpPass` lives in the in-memory `settings`
+// singleton for the current session only, matching the field's own doc
+// comment in types/index.ts ("runtime only — always '' in store").
 function saveSettingsLocal(s: unknown): boolean {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(s));
+    const { emailSmtpPass: _droppedSmtpPass, ...persisted } = (s ?? {}) as Record<string, unknown>;
+    localStorage.setItem(LS_KEY, JSON.stringify(persisted));
     return true;
   } catch {
     return false;
@@ -591,23 +622,6 @@ const api: Record<string, unknown> = {
     void syncLaunchAtLogin(s); // register/remove the OS login item to match the toggle
     return ok;
   },
-  // Direct control for the "Slå på"-from-a-reminder path (also persists the flag).
-  setLaunchAtLogin: async (enabled: boolean) => {
-    const s = loadSettings();
-    s.launchAtLogin = !!enabled;
-    saveSettingsLocal(s);
-    lastLaunchAtLogin = null; // force the sync through even if dedup thinks it's unchanged
-    await syncLaunchAtLogin(s);
-    return true;
-  },
-  getLaunchAtLogin: async () => call<boolean>("get_launch_at_login", undefined, false),
-  exportProfile: async () => loadSettings(),
-  importProfile: async () => true,
-  resetSettings: async () => {
-    localStorage.removeItem(LS_KEY);
-    return true;
-  },
-
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -830,8 +844,6 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
-  getLogs: async () => [],
-  getLogFilePath: async () => null,
   // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
   // permissions/audio-engine/last-error and returns structured `findings` (the
   // SR-* error codes) + a full markdown report. On failure → an empty report so
@@ -888,7 +900,6 @@ const api: Record<string, unknown> = {
     );
     return (inv.audio_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
-  diagnoseAudio: async () => ({ dshow: [], wasapi: [], wasapiAvailable: false }),
   // list_devices → { video_inputs: FfmpegDevice[] }; old renderer wants
   // { name, index }[]. FfmpegDevice already carries both fields.
   listVideoDevices: async () => {
@@ -899,10 +910,42 @@ const api: Record<string, unknown> = {
     );
     return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
-  // The SETUP-phase camera preview is now client-side getUserMedia (home.ts) —
-  // no backend needed — so these are no-ops.
-  videoPreviewStart: async () => true,
-  videoPreviewStop: async () => true,
+  // The SETUP-phase camera preview on HOME is client-side getUserMedia
+  // (home.ts) — no backend involvement there. But the Direkte (live) page's
+  // IDLE preview (live-page.ts startIdleCameraPreview/stopIdleCameraPreview)
+  // calls THIS method, and it was a no-op stub that always reported success
+  // while the `video-preview-frame` listener sat waiting for frames that never
+  // arrived — a silently-dead preview (the backend `start_preview`/
+  // `stop_preview` commands are real and already emit `preview://frame`,
+  // mapped + base64-decoded above). `device` prefers the stored ffmpeg device
+  // INDEX (a digit string resolves without enumeration, matching the
+  // recorder's own device-token resolution); falls back to the device NAME for
+  // a fuzzy match, or `null` for the default camera.
+  videoPreviewStart: async (opts: unknown) => {
+    const o = (opts ?? {}) as {
+      videoDeviceName?: string | null;
+      videoDeviceIndex?: number | null;
+      videoFramerate?: number | null;
+    };
+    const device =
+      o.videoDeviceIndex != null ? String(o.videoDeviceIndex) : o.videoDeviceName || null;
+    try {
+      await invoke("start_preview", { device, fps: o.videoFramerate ?? null });
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] start_preview failed", e);
+      return false;
+    }
+  },
+  videoPreviewStop: async () => {
+    try {
+      await invoke("stop_preview");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] stop_preview failed", e);
+      return false;
+    }
+  },
   // DURING recording the backend owns the camera and writes a preview JPEG to a
   // file; the renderer polls this (~base64 JPEG, or null when no fresh frame).
   recordingPreviewFrame: async () =>
@@ -1006,7 +1049,9 @@ const api: Record<string, unknown> = {
           inputPath: o.inputPath,
           cutRegions: o.cutRegions ?? [],
           duration: o.duration ?? 0,
-          container: fmt,
+          // No `container` field: `EditorExportRequest` has never had one, so
+          // serde dropped it silently. `format` is the only container the
+          // backend reads.
           format: fmt,
           outputFolder: o.outputFolder ?? "",
           bitrate: o.outputBitrate ?? null,
@@ -1093,8 +1138,6 @@ const api: Record<string, unknown> = {
     call("companion_set_llm_key", { key }, false).then(() => true),
   companionClearLlmKey: async () =>
     call("companion_clear_llm_key", undefined, false).then(() => true),
-  editorSetVideoPath: async (fp: string) =>
-    call("editor_load_recording", { inputPath: fp }, { ok: false }),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1321,7 +1364,6 @@ const api: Record<string, unknown> = {
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
   transcriptListAll: async () => [],
-  transcriptResolveSource: async () => null,
   // whisper_list_models gives the catalogue; whisper_model_status the per-model
   // on-disk {installed, sizeOk}. The renderer's model picker needs both merged
   // (the old Electron whisper-status did this server-side) — without the
@@ -1423,7 +1465,6 @@ const api: Record<string, unknown> = {
   planUpdateService: async () => ({ ok: false }),
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
-  notifyError: noop,
   notifyWeakSignal: noop,
 
   // ── Event subscriptions ─────────────────────────────────────────────────

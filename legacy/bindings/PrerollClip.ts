@@ -3,14 +3,16 @@
 /**
  * A harvested, trimmed pre-roll clip ready to prepend to a recording.
  *
- * `raw_path` is the *trimmed* AAC `.m4a` produced by [`PrerollEngine::harvest`]
- * (not the raw WAV — that is consumed + deleted during harvest). `trim_ms` and
- * `start_offset_ms` are the core mat's verdict, kept on the clip for diagnostics
- * and for the future concat step.
+ * `raw_path` is the *trimmed* clip produced by [`PrerollEngine::harvest`] in the
+ * format the caller requested — the recording's own capture format, so the
+ * prepend is a lossless `-c copy` (today PCM `.wav`; the raw rolling capture it
+ * came from is consumed + deleted during harvest). `trim_ms` and
+ * `start_offset_ms` are the core mat's verdict, kept on the clip for
+ * diagnostics.
  */
 export type PrerollClip = { 
 /**
- * Absolute path to the trimmed `.m4a` clip.
+ * Absolute path to the trimmed clip.
  */
 raw_path: string, 
 /**

@@ -4,7 +4,11 @@ import { E, $, clearDirty } from './state'
 import { clearEditorDraft } from './cuts'
 import { saveMetadata } from './metadata'
 import { renderMixer, loadPresetIntoMixer, mixerProcessing } from './mixer'
-import { buildExportRequest, exportLevelSummary } from './export-params'
+import {
+  buildExportRequest,
+  exportLevelSummary,
+  EXPORT_PHASE_MEASURING,
+} from './export-params'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -483,24 +487,34 @@ export function closeExportModal(): void {
   if (exportModal) exportModal.style.display = 'none'
 }
 
-/** Localised label for a backend progress phase code. */
+/** Localised label for a backend progress phase code. The codes themselves live
+ *  in export-params.ts (one definition, pinned against the Rust seam by a test
+ *  on each side) — never spell them out again here. */
 function exportPhaseText(phase: string): string {
-  return phase === 'measuring'
+  return phase === EXPORT_PHASE_MEASURING
     ? t('editor.exportPhaseMeasuring', 'Måler lydstyrke…')
     : t('editor.exportPhaseEncoding', 'Eksporterer…')
 }
 
 let cancelWired = false
 
-/** Wire the progress row's Avbryt button once. The backend kills the render's
- *  ffmpeg and the export rejects with `cancelled`, which describeExportError
- *  turns into a calm Norwegian sentence. */
+/**
+ * Wire the progress row's Avbryt button once. The backend kills the render's
+ * ffmpeg AND raises a cancel flag the export checks before every remaining
+ * pass, so the export rejects with `cancelled`, which describeExportError turns
+ * into a calm Norwegian sentence.
+ *
+ * The button is deliberately NOT disabled on click. It used to be — permanently,
+ * because nothing re-enabled it — so a cancel that landed in one of the export's
+ * child-less gaps (the source probe, the loudnorm-JSON parse, the jingle probes)
+ * left the user staring at "Avbryter…" on a dead button while the export ran to
+ * completion. A second click is harmless: cancel is idempotent.
+ */
 function wireExportCancel(): void {
   if (cancelWired) return
   cancelWired = true
   const cancelBtn = $('btn-editor-export-cancel') as HTMLButtonElement | null
   cancelBtn?.addEventListener('click', async () => {
-    cancelBtn.disabled = true
     cancelBtn.textContent = t('editor.exportCancelling', 'Avbryter…')
     await window.api.editorCancelExport()
   })
@@ -626,17 +640,25 @@ export async function runExport(): Promise<void> {
   }
 }
 
-// The codes the backend embeds in an export failure. Order matters only in that
-// the first match wins; none of these is a substring of another.
+// The codes the backend actually embeds in an export failure. Order matters only
+// in that the first match wins; none of these is a substring of another.
+//
+// Every entry here is grep-verified against a real emitter in the Rust seam.
+// Three used to be listed that NOTHING emits — `force_wav_replace_unsafe` and
+// `invalid_cut_regions` died with the Electron save/replace layer, and
+// `invalid_path` only ever came from the cloud-integrations commands — so their
+// friendly messages were unreachable while two codes the export DOES produce
+// fell through to the raw "✕ Feil: validation: invalid_format: xyz".
 const EXPORT_ERROR_CODES = [
-  'force_wav_replace_unsafe',
   'no_audio_remaining',
   'cancelled',
   'timeout',
-  'invalid_path',
   'file_not_found',
   'invalid_duration',
-  'invalid_cut_regions',
+  // editor/mod.rs: the export format gate (`is_supported_export_format`).
+  'invalid_format',
+  // commands/path_guard.rs: a relative output folder / jingle path.
+  'path must be absolute',
 ] as const
 
 /**
@@ -652,20 +674,24 @@ const EXPORT_ERROR_CODES = [
 export function describeExportError(err: string | undefined): string {
   const code = err ? EXPORT_ERROR_CODES.find((c) => err.includes(c)) : undefined
   switch (code) {
-    case 'force_wav_replace_unsafe':
-      return '✕ ' + t('editor.errReplaceUnsafe', 'Kan ikke overskrive originalfilen i dette formatet. Bruk "Lagre som ny fil" i stedet.')
     case 'no_audio_remaining':
       return '✕ ' + t('editor.errNoAudioRemaining', 'Ingen lyd igjen — kuttene dekker hele opptaket. Fjern minst ett kutt før du eksporterer.')
     case 'cancelled':
       return '✕ ' + t('editor.errCancelled', 'Eksport avbrutt.')
     case 'timeout':
       return '✕ ' + t('editor.errTimeout', 'Eksporten tok for lang tid og ble stoppet. Prøv igjen, eller del filen i flere mindre opptak.')
-    case 'invalid_path':
     case 'file_not_found':
       return '✕ ' + t('editor.errFileNotFound', 'Originalfilen er ikke tilgjengelig — er disken frakoblet?')
     case 'invalid_duration':
-    case 'invalid_cut_regions':
       return '✕ ' + t('editor.errCutData', 'Intern feil i kuttdataene. Prøv å laste filen på nytt.')
+    // No locale key yet for these two — `t` returns the fallback for a missing
+    // key, so the Norwegian sentence ships today and adding
+    // `editor.errInvalidFormat` / `editor.errPathNotAbsolute` to the locale
+    // files later needs no code change here.
+    case 'invalid_format':
+      return '✕ ' + t('editor.errInvalidFormat', 'Formatet støttes ikke for eksport. Velg et annet format i eksportvinduet.')
+    case 'path must be absolute':
+      return '✕ ' + t('editor.errPathNotAbsolute', 'Ugyldig mappe eller filbane. Velg destinasjonsmappen på nytt.')
     default:
       return (t('editor.saveError') || '✕ Feil') + (err ? ': ' + err : '')
   }

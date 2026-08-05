@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Run the exact gate CI runs (.github/workflows/ci.yml) locally on this Mac, so
-# you can verify a branch BEFORE tagging. CI now triggers only on v* tags, so a
-# green run here means a green release CI without spending any Actions minutes.
+# you can verify a branch BEFORE pushing (CI runs on every push to main and
+# every PR — the repo is public, so Actions minutes are free).
 #
 # Benign differences from CI (everything else is identical):
 #   - runs on your arch (aarch64-apple-darwin), not the ubuntu x86 runner
 #   - skips `npm ci` — uses your existing node_modules (run `npm ci` yourself if
 #     you suspect dependency drift from package-lock.json)
 #   - skips the apt system deps (webkit/gtk/alsa) — already present on macOS
+#   - does NOT mirror CI's separate `audit` job (npm audit + cargo audit) or the
+#     `windows-check` job — advisories/Windows compile surface on the PR instead
 #
 # Each step below is the same command CI runs, in the same order. Reuses the
 # package.json scripts so this mirror can't silently drift from them.

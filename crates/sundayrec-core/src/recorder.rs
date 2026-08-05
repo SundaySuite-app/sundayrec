@@ -15,11 +15,12 @@
 //!     transition table rejects illegal jumps so a bug in the engine surfaces as
 //!     a refused transition rather than a silently-wrong state.
 //!   - [`RecordingSession`] — the session state holder. It accumulates segment
-//!     paths across reconnects AND splits, decides whether an unexpected ffmpeg
-//!     death warrants a reconnect (and with how much back-off), and decides when
-//!     a split is due. Every method that depends on time takes `now_ms` as an
-//!     argument — there is NO clock in here, so the engine's tests can drive it
-//!     deterministically (and ts-rs/`no_std`-ish purity is preserved).
+//!     paths across reconnects AND splits and decides whether an unexpected
+//!     ffmpeg death warrants a reconnect (and with how much back-off). Every
+//!     method that depends on time takes `now_ms` as an argument — there is NO
+//!     clock in here, so the engine's tests can drive it deterministically (and
+//!     ts-rs/`no_std`-ish purity is preserved). The split/auto-stop *deadlines*
+//!     are real tokio timers in the engine, not predicates here.
 //!
 //! ## Ported vs improved vs deferred
 //!
@@ -211,9 +212,6 @@ pub struct RecordingSession {
     /// Original session start (epoch ms) — NEVER updated on reconnect/split, so
     /// the whole-session duration spans every deliverable.
     session_start_ms: u64,
-    /// Wall-clock (ms) the CURRENT segment started — reset on every reconnect
-    /// and split, so [`should_split`](Self::should_split) measures per-segment.
-    current_segment_start_ms: u64,
     /// How many reconnects have happened (Electron `reconnectCount`).
     reconnect_count: u32,
     /// How many *split* rotations have happened (drives the `_N` suffix).
@@ -238,7 +236,6 @@ impl RecordingSession {
         };
         Self {
             session_start_ms: start_ms,
-            current_segment_start_ms: start_ms,
             reconnect_count: 0,
             split_count: 0,
             base_path,
@@ -251,12 +248,6 @@ impl RecordingSession {
     /// reset the clock.
     pub fn session_start_ms(&self) -> u64 {
         self.session_start_ms
-    }
-
-    /// Total elapsed session time at `now_ms` (saturating, for the history
-    /// row's `duration_ms`).
-    pub fn elapsed_ms(&self, now_ms: u64) -> u64 {
-        now_ms.saturating_sub(self.session_start_ms)
     }
 
     /// How many reconnects have occurred.
@@ -383,8 +374,6 @@ impl RecordingSession {
         if let Some(current) = self.deliverables.last_mut() {
             current.fragments.push(next_segment.clone());
         }
-        // A reconnect starts a fresh segment clock for split purposes.
-        self.current_segment_start_ms = now_ms;
         RecoveryDecision::Reconnect {
             delay_ms: reconnect_delay(zero_based),
             attempt,
@@ -392,34 +381,11 @@ impl RecordingSession {
         }
     }
 
-    /// Whether a split is due: split is enabled (`split_minutes > 0`) AND the
-    /// CURRENT segment has run at least `split_minutes`. Pure — `now_ms` is the
-    /// engine's clock.
-    pub fn should_split(&self, now_ms: u64, split_minutes: u32) -> bool {
-        if split_minutes == 0 {
-            return false;
-        }
-        let elapsed = now_ms.saturating_sub(self.current_segment_start_ms);
-        elapsed >= u64::from(split_minutes) * 60_000
-    }
-
-    /// Whether the manual-max auto-stop is due: enabled (`manual_max_minutes >
-    /// 0`) AND the WHOLE session has run at least that long. (Electron's
-    /// `maxTimer`, which used `sessionStartTime` — so reconnects/splits don't
-    /// extend the cap.)
-    pub fn should_auto_stop(&self, now_ms: u64, manual_max_minutes: u32) -> bool {
-        if manual_max_minutes == 0 {
-            return false;
-        }
-        self.elapsed_ms(now_ms) >= u64::from(manual_max_minutes) * 60_000
-    }
-
     /// Rotate to a fresh split segment: a split CLOSES the current deliverable
     /// and OPENS a new one. Bumps the split count, appends a new [`Deliverable`]
-    /// whose first fragment is the `_N` path, resets the per-segment clock, and
-    /// returns the new path the engine should spawn ffmpeg against. Call this
-    /// when [`should_split`](Self::should_split) returns true (after finalising
-    /// the current segment with a graceful `q`).
+    /// whose first fragment is the `_N` path, and returns the new path the engine
+    /// should spawn ffmpeg against. Called when the engine's split timer fires
+    /// (after finalising the current segment with a graceful stop).
     ///
     /// `now_ms` becomes the new deliverable's `started_at_ms` — each split file
     /// gets its own history `started_at` (Electron stamped each split file with
@@ -434,7 +400,6 @@ impl RecordingSession {
             fragments: vec![next.clone()],
             started_at_ms: now_ms,
         });
-        self.current_segment_start_ms = now_ms;
         next
     }
 }
@@ -614,6 +579,39 @@ pub fn concat_needed(fragments: &[String], has_preroll: bool) -> bool {
     fragments.len() > 1 || has_preroll
 }
 
+/// Filter a deliverable's fragment list down to the files that actually EXIST,
+/// keeping the primary (`fragments[0]`) unconditionally.
+///
+/// WHY: a fragment path is appended to the session the moment a reconnect is
+/// DECIDED — before the respawn is known to have succeeded — and a respawn can
+/// fail repeatedly, or its capture can be aborted before writing a byte (the
+/// native rate-mismatch guard deletes the empty WAV it just opened). Those
+/// phantom `_rN` paths are still in the deliverable, and feeding them to the
+/// concat demuxer loses audio SILENTLY: ffmpeg stops demuxing at the missing
+/// entry but still exits 0, so the truncated merge replaces the primary and the
+/// real fragments that came after it are deleted as "merged".
+/// The crash-recovery twin ([`crate::recovery::recoverable_deliverables`])
+/// already filters by existence; this is the same rule for the LIVE finalize.
+///
+/// The primary is kept even when missing because it is the concat TARGET and the
+/// deliverable's identity (its delivery path and history row derive from it) —
+/// re-pointing it here would silently rename the user's recording. A missing
+/// primary is caught downstream by the finished-file validity gate instead.
+///
+/// Pure: the caller supplies the `exists` predicate (a real filesystem probe in
+/// production, a fixed set in tests).
+pub fn existing_concat_fragments<F: Fn(&str) -> bool>(
+    fragments: &[String],
+    exists: F,
+) -> Vec<String> {
+    fragments
+        .iter()
+        .enumerate()
+        .filter(|(i, f)| *i == 0 || exists(f))
+        .map(|(_, f)| f.clone())
+        .collect()
+}
+
 /// The ordered list of ffmpeg concat inputs for a deliverable: the optional
 /// pre-roll clip FIRST (only the first deliverable ever passes `Some` here — the
 /// engine decides), then the deliverable's fragments in start order.
@@ -791,33 +789,7 @@ mod tests {
         ));
     }
 
-    // ── Split policy ────────────────────────────────────────────────────────────
-
-    #[test]
-    fn should_split_off_when_zero() {
-        let s = RecordingSession::new("/rec/x.mp3", 0);
-        assert!(!s.should_split(999_999_999, 0));
-    }
-
-    #[test]
-    fn should_split_at_boundary() {
-        let s = RecordingSession::new("/rec/x.mp3", 0);
-        // 30-minute split. Just under → no; exactly at / over → yes.
-        assert!(!s.should_split(30 * 60_000 - 1, 30));
-        assert!(s.should_split(30 * 60_000, 30));
-        assert!(s.should_split(45 * 60_000, 30));
-    }
-
-    #[test]
-    fn split_measures_per_segment_not_whole_session() {
-        let mut s = RecordingSession::new("/rec/x.mp3", 0);
-        // 10 minutes in, rotate a split segment (clock resets).
-        let _ = s.begin_split_segment(10 * 60_000);
-        // 5 minutes into the NEW segment (= 15 min total) is not yet a 10-min split.
-        assert!(!s.should_split(15 * 60_000, 10));
-        // 10 minutes into the new segment (= 20 min total) is.
-        assert!(s.should_split(20 * 60_000, 10));
-    }
+    // ── Split rotation ──────────────────────────────────────────────────────────
 
     #[test]
     fn begin_split_segment_numbers_and_appends() {
@@ -837,19 +809,6 @@ mod tests {
         assert_eq!(dels[1].primary_path, "/rec/sermon_2.mp3");
         assert_eq!(dels[2].primary_path, "/rec/sermon_3.mp3");
         assert!(dels.iter().all(|d| d.fragments.len() == 1));
-    }
-
-    // ── manual-max auto-stop ────────────────────────────────────────────────────
-
-    #[test]
-    fn auto_stop_uses_whole_session_and_respects_off() {
-        let mut s = RecordingSession::new("/rec/x.mp3", 0);
-        assert!(!s.should_auto_stop(999_999_999, 0)); // disabled
-        assert!(!s.should_auto_stop(120 * 60_000 - 1, 120));
-        assert!(s.should_auto_stop(120 * 60_000, 120));
-        // A reconnect mid-session does NOT extend the cap (session_start fixed).
-        let _ = s.on_unexpected_exit(60 * 60_000, None);
-        assert!(s.should_auto_stop(120 * 60_000, 120));
     }
 
     // ── Segment accumulation across reconnect + split ───────────────────────────
@@ -873,10 +832,9 @@ mod tests {
                 "/rec/g_3.mp3",
             ]
         );
-        // primary is always the FIRST deliverable's original path; duration spans
-        // the whole session.
+        // primary is always the FIRST deliverable's original path; the session
+        // start is fixed, so reconnects/splits never reset the duration clock.
         assert_eq!(s.primary_path(), "/rec/g.mp3");
-        assert_eq!(s.elapsed_ms(65 * 60_000), 65 * 60_000);
         assert_eq!(s.session_start_ms(), 0);
     }
 
@@ -1079,6 +1037,61 @@ mod tests {
             is_plausible_output(50 * 1024 * 1024),
             "a real take clears it"
         );
+    }
+
+    // ── Phantom-fragment filter (the live finalize's existence gate) ────────────
+
+    fn frags(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn existing_fragments_keeps_everything_when_all_present() {
+        let f = frags(&["/rec/g.wav", "/rec/g_r1.wav", "/rec/g_r2.wav"]);
+        assert_eq!(existing_concat_fragments(&f, |_| true), f);
+    }
+
+    #[test]
+    fn existing_fragments_drops_a_missing_middle_fragment() {
+        // A respawn that failed after its `_r1` path was already appended: the
+        // file never existed, so it must not enter the concat list — the
+        // surviving fragments still stitch in order.
+        let f = frags(&["/rec/g.wav", "/rec/g_r1.wav", "/rec/g_r2.wav"]);
+        assert_eq!(
+            existing_concat_fragments(&f, |p| p != "/rec/g_r1.wav"),
+            ["/rec/g.wav", "/rec/g_r2.wav"]
+        );
+    }
+
+    #[test]
+    fn existing_fragments_drops_a_missing_last_fragment() {
+        // The native rate-mismatch abort deletes the empty WAV it just opened,
+        // leaving the last `_rN` path phantom.
+        let f = frags(&["/rec/g.wav", "/rec/g_r1.wav"]);
+        assert_eq!(
+            existing_concat_fragments(&f, |p| p != "/rec/g_r1.wav"),
+            ["/rec/g.wav"]
+        );
+        // With only the primary left, no concat is needed at all.
+        assert!(!concat_needed(
+            &existing_concat_fragments(&f, |p| p != "/rec/g_r1.wav"),
+            false
+        ));
+    }
+
+    #[test]
+    fn existing_fragments_always_keeps_the_primary() {
+        // The primary is the concat TARGET and the deliverable's identity — it is
+        // never dropped, even if the probe says it's missing (the downstream
+        // validity gate is what refuses a phantom recording).
+        let f = frags(&["/rec/g.wav", "/rec/g_r1.wav"]);
+        assert_eq!(
+            existing_concat_fragments(&f, |_| false),
+            ["/rec/g.wav"],
+            "primary survives an all-missing probe"
+        );
+        // …and an empty list stays empty (no panic on `fragments[0]`).
+        assert!(existing_concat_fragments(&[], |_| true).is_empty());
     }
 
     #[test]

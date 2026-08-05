@@ -63,8 +63,10 @@ jobs:
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
           # set up by the windows-only steps below (see docs/BUILD_ASIO.md). The
           # recorder falls back to WASAPI automatically when no ASIO driver exists.
-          # `whisper` stays OFF here until the MSVC whisper.cpp build is verified
-          # on a Windows runner (separate follow-up; CPU-only when it lands).
+          # `whisper` stays OFF here pending a RUNTIME verification on a real
+          # Windows box (the MSVC *compile* is proven green on every push by
+          # ci.yml's windows-check job, which checks default features incl.
+          # whisper — enabling it here is an owner decision + rig test).
           - platform: windows-latest
             args: "-- --no-default-features --features editor,tray,asio,updater"
 

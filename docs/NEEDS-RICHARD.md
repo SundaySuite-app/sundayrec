@@ -12,37 +12,44 @@ gate cannot provide. None block the default build or the gate. The consolidated
 
 A precise, up-to-date list of the account/key/identity work standing between the
 code-complete state and a **signed, auto-updating, public release**. See
-`docs/RELEASE-AUDIT.md` for the pipeline audit and `docs/DISTRIBUTION.md` /
-`docs/GOOGLE-OAUTH-SETUP.md` for the step-by-step. Status is from the project
-notes (2026-06-01); confirm before acting.
+`docs/archive/RELEASE-AUDIT-2026-06-01.md` for the pipeline audit and
+`docs/DISTRIBUTION.md` / `docs/GOOGLE-OAUTH-SETUP.md` for the step-by-step.
+Status updated 2026-08: releases are **signed + auto-updating in prod**; the
+only remaining release blocker is **notarization** (item 3).
 
 1. **GitHub Actions billing block — LØST (2026-07-08).** Repoet er nå
    offentlig, og Actions-minutter er gratis for offentlige repoer (også
    macOS/Windows-runnerne). CI kjører nå på push til `main` + PR-er i tillegg
    til `v*`-tagger; `release.yml` kjører på tag som før.
 
-2. **Apple Developer ID signing — re-export the `.p12`.** Per the project notes
-   the Desktop `.p12` on the Desktop has the **wrong password**; re-export the
-   "Developer ID Application" cert from **Keychain Access** with a known password,
-   then set the secrets: `APPLE_CERTIFICATE` (base64 of the `.p12`),
-   `APPLE_CERTIFICATE_PASSWORD` (the new password), `APPLE_SIGNING_IDENTITY`
-   (`Developer ID Application: … (784GN847G4)` — Team ID 784GN847G4 is on file).
-   Plugs into `release.yml` env (lines 80–82). Without it the build is unsigned
-   (Gatekeeper-blocked on download). See DISTRIBUTION.md "macOS code signing".
+2. **Apple Developer ID signing — ✅ RESOLVED (~2026-07-31).** The cert was
+   re-exported and the secrets are set: `MAC_CERTS` (base64 of the `.p12`) +
+   `MAC_CERTS_PASSWORD`, mapped to tauri-action's `APPLE_CERTIFICATE` /
+   `APPLE_CERTIFICATE_PASSWORD` in `release.yml` env (lines 143–145;
+   `APPLE_SIGNING_IDENTITY` — `Developer ID Application: … (784GN847G4)` — is
+   hardcoded there). Published releases are **signed** since ~07-31. See
+   DISTRIBUTION.md "macOS code signing".
 
-3. **Notarization credentials.** `notarytool` needs `APPLE_ID` (account email),
-   `APPLE_PASSWORD`, and `APPLE_TEAM_ID` (`784GN847G4`). ⚠️ The
+3. **Notarization — the real remaining blocker: the Apple Program License
+   Agreement.** Apple's notary service returns **403 "A required agreement is
+   missing or has expired"** until the updated PLA is accepted on
+   developer.apple.com (team `784GN847G4`). Notarization is therefore
+   **deliberately disabled**: the `notarytool` env lines (`APPLE_ID`,
+   `APPLE_PASSWORD` ← `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) are
+   commented out in `release.yml` (lines 146–155) — the comment block there
+   documents how to re-enable them once the agreement is signed. ⚠️ The
    **app-specific password was leaked in chat** — **revoke it** at
-   appleid.apple.com → Sign-In and Security → App-Specific Passwords, **generate a
-   new one**, and store it only as the `APPLE_PASSWORD` GitHub secret. Plugs into
-   `release.yml` env (lines 83–85).
+   appleid.apple.com → Sign-In and Security → App-Specific Passwords, **generate
+   a new one**, and store it only as the `APPLE_APP_SPECIFIC_PASSWORD` GitHub
+   secret.
 
-4. **Tauri updater — now wired in config; only the secrets remain.** _(updated:
-   the `plugins.updater` block (pubkey + endpoints) is in `tauri.conf.json`,
-   `includeUpdaterJson: true` is set in `release.yml`, and the keypair exists —
-   key-id `4f08a2f48edd9a17`, backup `~/.tauri/sundayrec_updater.key`.)_ The only
-   outstanding step is adding the `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`)
-   secrets (env already wired in `release.yml`). See `docs/RELEASE-CHECKLIST.md`.
+4. **Tauri updater — ✅ DONE, proven in prod.** The `plugins.updater` block
+   (pubkey + endpoints) is in `tauri.conf.json`, `includeUpdaterJson: true` is
+   set in `release.yml`, the keypair exists (key-id `4f08a2f48edd9a17`, backup
+   `~/.tauri/sundayrec_updater.key`), and the `TAURI_SIGNING_PRIVATE_KEY`
+   (+ `…_PASSWORD`) secrets are set. The updater has been **live in published
+   releases since v0.4.x** — the `latest.json` feed is verified in prod (v0.8.0
+   current). See `docs/RELEASE-CHECKLIST.md`.
 
 5. **Google OAuth console client (Desktop app type).** Cloud connect/upload +
    the cloud-Gmail email path need a Google OAuth client of type **Desktop app**
@@ -89,25 +96,26 @@ subset.
   needed for the OS to _deliver_ `sundayrec://` URLs to the running app (the
   `on_open_url` listener is wired; the scheme must be registered with the OS).
 
-## R7 — Auto-update (`--features updater`)
+## R7 — Auto-update (`--features updater`) — ✅ DONE, proven in prod
 
-- **A SIGNED release + an updater keypair.** The `updater` feature compiles the
-  seam (`src-tauri/src/update/mod.rs`) + registers `tauri-plugin-updater`; the
-  status model + dev-check guard + percent math + semver "is newer" decision are
-  the unit-tested `sundayrec-core::update`. A **real** update needs:
-  1. `npm run tauri signer generate -- -w ~/.tauri/sundayrec_updater.key`
-     (do this ONCE; back the key up — losing it means users can't auto-update
-     and need a manual reinstall with a new key).
-  2. The **public** key in `tauri.conf.json` under `plugins.updater.pubkey`, and
-     an `endpoints` array pointing at the `latest.json` the release CI publishes.
-  3. The release CI secrets `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) and
-     `includeUpdaterJson: true` — see docs/DISTRIBUTION.md "Auto-update signing".
-- The feed fetch, signature verify, download and relaunch are NETWORK/GUI-
-  UNVERIFIED — they only run in a release build against the signed feed
-  (smoke §R7). A dev build short-circuits the check (no signed release exists).
-- _(resolved)_ `tauri.conf.json` now carries the `plugins.updater` block
-  (pubkey + endpoints) — see item 4 above. The remaining gap is only the
-  `TAURI_SIGNING_PRIVATE_KEY` (+ password) CI secrets.
+- **All of it is in place and live since v0.4.x.** The `updater` feature
+  compiles the seam (`src-tauri/src/update/mod.rs`) + registers
+  `tauri-plugin-updater`; the status model + dev-check guard + percent math +
+  semver "is newer" decision are the unit-tested `sundayrec-core::update`. The
+  once-only setup is done:
+  1. ✅ Keypair generated (`~/.tauri/sundayrec_updater.key`, key-id
+     `4f08a2f48edd9a17` — keep the backup; losing it means users can't
+     auto-update and need a manual reinstall with a new key).
+  2. ✅ The **public** key is in `tauri.conf.json` under
+     `plugins.updater.pubkey`, with the `endpoints` array pointing at the
+     `latest.json` the release CI publishes.
+  3. ✅ The release CI secrets `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) are
+     set and `includeUpdaterJson: true` is in `release.yml` — see
+     docs/DISTRIBUTION.md "Auto-update signing".
+- The feed fetch, signature verify, download and relaunch are **verified in
+  prod**: the `latest.json` feed serves published releases (v0.8.0 current) and
+  real installs update from it. A dev build still short-circuits the check by
+  design.
 
 ## PU-3 — Podcast RSS publish (`--features publish`)
 
@@ -332,20 +340,23 @@ None of it blocks the default build or the gate.
 
 ### Signing, notarization & auto-update
 
-- **Apple Developer ID + notarization** (macOS release): the Developer ID
-  Application cert (`APPLE_CERTIFICATE` / `APPLE_CERTIFICATE_PASSWORD` /
-  `APPLE_SIGNING_IDENTITY`) + an App-Store-Connect API key or
-  `APPLE_ID`/`APPLE_PASSWORD`/`APPLE_TEAM_ID` for `notarytool`. Without these the
-  release CI builds an unsigned `.app`/`.dmg` (Gatekeeper-blocked on download).
+- **Apple Developer ID signing — ✅ DONE** (macOS release): the Developer ID
+  Application cert is set as `MAC_CERTS` / `MAC_CERTS_PASSWORD` (mapped in
+  `release.yml:143-145`); releases are signed since ~2026-07-31.
+- **Notarization — ⏸ the remaining blocker:** accept the updated Apple Program
+  License Agreement on developer.apple.com (notary returns 403 until then),
+  then uncomment the `notarytool` env lines in `release.yml:146-155` (see
+  item 3 above).
 - **Windows code-signing cert** (Windows release): for a non-SmartScreen-warned
   installer.
-- **Updater keypair** (`--features updater`, R7): `~/.tauri/sundayrec_updater.key`
-  (private, backed up) + the public key in `tauri.conf.json` `plugins.updater`
-  - the `TAURI_SIGNING_PRIVATE_KEY` CI secret + `includeUpdaterJson: true`. See
-    the R7 section above and docs/DISTRIBUTION.md "Auto-update signing".
-- All of these are **account/secret/identity** work, NOT code — the release
-  pipeline (`release.yml`, updater plugin, signing hooks) is wired to consume
-  them the moment they're provided.
+- **Updater keypair — ✅ DONE, live since v0.4.x** (`--features updater`, R7):
+  `~/.tauri/sundayrec_updater.key` (private, backed up) + the public key in
+  `tauri.conf.json` `plugins.updater` + the `TAURI_SIGNING_PRIVATE_KEY` CI
+  secret + `includeUpdaterJson: true` — feed verified in prod. See the R7
+  section above and docs/DISTRIBUTION.md "Auto-update signing".
+- What remains here is **account work only** (the Apple PLA + optionally a
+  Windows cert), NOT code — the release pipeline consumes the credentials the
+  moment they're provided.
 
 ## Settings-sync + IPC-seam audit (natt 2026-06-05)
 

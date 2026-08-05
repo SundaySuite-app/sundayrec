@@ -158,7 +158,7 @@ export function updateAudioSeparateButton(): void {
   btn.style.display = videoOn ? 'inline-flex' : 'none'
   btn.classList.toggle('audio-separate-on', keepAudio)
   btn.setAttribute('aria-checked', keepAudio ? 'true' : 'false')
-  label.textContent = keepAudio ? 'Separat lydfil' : 'Ingen lydfil'
+  label.textContent = keepAudio ? t('home.audioSeparate', 'Separat lydfil') : t('home.audioNoFile', 'Ingen lydfil')
   // Grey out the whole FORMAT card when video is on but separate audio is off
   card?.classList.toggle('format-inactive', videoOn && !keepAudio)
   // Whole card acts as the toggle in video mode (pointer affordance)
@@ -204,8 +204,8 @@ function renderSilentPreflightBanner(findings: Array<{ severity: 'warn' | 'error
   const titleEl = document.createElement('div')
   titleEl.className = 'home-banner-title'
   titleEl.textContent = errors.length > 0
-    ? `❌ ${errors.length} ${t('home.banner.errors', 'feil oppdaget')} — klikk for å fikse`
-    : `⚠️ ${warns.length} ${t('home.banner.warns', 'advarsel')} — klikk for detaljer`
+    ? `❌ ${errors.length} ${t('home.banner.errors', 'feil oppdaget')} — ${t('home.banner.clickToFix', 'klikk for å fikse')}`
+    : `⚠️ ${warns.length} ${t('home.banner.warns', 'advarsel')} — ${t('home.banner.clickForDetails', 'klikk for detaljer')}`
   banner.appendChild(titleEl)
 
   // Show first 2 messages inline; rest are visible in Lyd → Sjekk system
@@ -265,7 +265,7 @@ export async function refreshHomeVideoDevices(): Promise<void> {
     })
 
     if (!devices.length) {
-      if (phTxt) phTxt.textContent = 'Ingen kameraer funnet — sjekk tilkobling'
+      if (phTxt) phTxt.textContent = t('home.cameraNoneFound', 'Ingen kameraer funnet — sjekk tilkobling')
       sel.disabled = false
       return
     }
@@ -277,16 +277,17 @@ export async function refreshHomeVideoDevices(): Promise<void> {
 
     // Bug 6: inform user when previously saved camera is no longer available
     if (savedName && !match && phTxt) {
-      phTxt.textContent = `Kamera "${savedName}" ikke funnet — velg et annet`
+      phTxt.textContent = t('home.cameraSavedMissing', 'Kamera "{name}" ikke funnet — velg et annet').replace('{name}', savedName)
     } else if (phTxt) {
-      phTxt.textContent = sel.value ? 'Starter kamera…' : 'Velg kamera og trykk oppdater'
+      phTxt.textContent = sel.value ? t('home.cameraStarting', 'Starter kamera…') : t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
     }
   } catch (err) {
     console.warn('[home] device list failed:', err)
-    sel.innerHTML = '<option value="">Feil ved lasting</option>'
+    sel.innerHTML = ''
+    sel.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: t('home.cameraListError', 'Feil ved lasting') }))
     sel.disabled = false
     const phTxt2 = document.getElementById('video-preview-placeholder-text')
-    if (phTxt2) phTxt2.textContent = 'Kunne ikke hente kameraliste — sjekk tillatelser'
+    if (phTxt2) phTxt2.textContent = t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser')
     const phDiv2 = document.getElementById('video-preview-placeholder')
     if (phDiv2) phDiv2.style.display = ''
   }
@@ -310,7 +311,7 @@ async function applyHomeVideoDeviceSelection(): Promise<void> {
   } else {
     const phDiv = document.getElementById('video-preview-placeholder')
     const phTxt = document.getElementById('video-preview-placeholder-text')
-    if (phTxt) phTxt.textContent = 'Velg kamera og trykk oppdater'
+    if (phTxt) phTxt.textContent = t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
     if (phDiv) phDiv.style.display = ''
   }
 }
@@ -368,14 +369,14 @@ export async function startVideoPreview(): Promise<void> {
   const video  = document.getElementById('video-preview-video') as HTMLVideoElement | null
 
   if (!settings.videoDeviceName) {
-    if (phTxt) phTxt.textContent = 'Velg kamera og trykk oppdater'
+    if (phTxt) phTxt.textContent = t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
     if (phDiv) phDiv.style.display = ''
     return
   }
 
   if (previewActive) return
   previewActive = true
-  if (phTxt) phTxt.textContent = 'Starter kamera…'
+  if (phTxt) phTxt.textContent = t('home.cameraStarting', 'Starter kamera…')
   if (phDiv) phDiv.style.display = ''
 
   try {
@@ -425,7 +426,7 @@ export async function startVideoPreview(): Promise<void> {
     previewActive = false
     const name = (err as DOMException)?.name
     if (phTxt) phTxt.textContent = name === 'NotAllowedError'
-      ? 'Kameratilgang nektet — sjekk Systeminnstillinger'
+      ? t('home.cameraDenied', 'Kameratilgang nektet — sjekk Systeminnstillinger')
       : t('home.cameraNoResponse', 'Kamera svarte ikke — prøv å oppdatere')
     if (phDiv) phDiv.style.display = ''
     if (video) video.style.display = 'none'
@@ -633,14 +634,14 @@ export function setupHome(): void {
     try {
       const r = await window.api.runPreflight() as { findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }> }
       if (!r.findings || r.findings.length === 0) {
-        status.textContent = '✅ Alt ser bra ut — systemet er klart for opptak.'
+        status.textContent = t('home.preflightAllOk', '✅ Alt ser bra ut — systemet er klart for opptak.')
         status.style.color = 'var(--green)'
       } else {
         const errors = r.findings.filter(f => f.severity === 'error').length
         const warns  = r.findings.filter(f => f.severity === 'warn').length
         const parts: string[] = []
-        if (errors > 0) parts.push(`${errors} feil`)
-        if (warns  > 0) parts.push(`${warns} advarsel`)
+        if (errors > 0) parts.push(`${errors} ${t('home.preflightErrors', 'feil')}`)
+        if (warns  > 0) parts.push(`${warns} ${t('home.preflightWarns', 'advarsel')}`)
         status.textContent = `${errors > 0 ? '❌' : '⚠️'} ${parts.join(', ')}`
         status.style.color = errors > 0 ? 'var(--red)' : 'var(--orange, #ffb46b)'
 
@@ -891,19 +892,6 @@ export function setupHome(): void {
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
 
   wireHomeIpcListeners()
-
-  // OPPGAVE 1 — Generic ESC key handler: closes all open modals/backdrops
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return
-    document.querySelectorAll<HTMLElement>('.modal-backdrop, .ob-overlay').forEach(m => {
-      if (m.style.display !== 'none' && m.offsetParent !== null) {
-        // The note modal has its own close logic — dispatch custom event so it can clean up
-        m.dispatchEvent(new CustomEvent('modal-close'))
-        m.style.display = 'none'
-      }
-    })
-  })
-
 }
 
 // The `window.api.on` subscriptions below live for the app's lifetime, but the
@@ -934,8 +922,11 @@ function wireHomeIpcListeners(): void {
   setupReviewQueueListeners()
 
   // Tray menu hooks: clicking "📬 N episoder klare" or "Sjekk system nå" in the
-  // tray must surface the relevant UI. main.ts in main-process emits these
-  // channels — see src/main/tray.ts.
+  // tray must surface the relevant UI. The Rust tray (src-tauri/src/tray/mod.rs)
+  // emits a single "tray://action" event carrying an action-id payload, not
+  // these per-action channel names — these listeners predate that port and are
+  // presently unreachable pending an api-shim adapter from tray://action to
+  // the named channels below.
   homeIpcUnsubs.push(window.api.on('tray-open-review-queue', () => {
     window.showPage('home')
     refreshReviewQueue().then(() => {
@@ -972,10 +963,6 @@ export async function refreshHome(): Promise<void> {
   // disk-space warning" requested by the external review.
   void runSilentPreflightOnce()
 
-  // Hide video progress row (only shown during active recording)
-  const progressRow = document.getElementById('video-progress-row')
-  if (progressRow) progressRow.style.display = 'none'
-
   updateVideoToggleButton()
   applyVideoFlipState()
   loadVideoInfoStrip()
@@ -991,7 +978,7 @@ export async function refreshHome(): Promise<void> {
     }).catch((err) => {
       console.warn('[home] device list failed:', err)
       const phTxt = document.getElementById('video-preview-placeholder-text')
-      if (phTxt) phTxt.textContent = 'Kunne ikke hente kameraliste — sjekk tillatelser'
+      if (phTxt) phTxt.textContent = t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser')
       const phDiv = document.getElementById('video-preview-placeholder')
       if (phDiv) phDiv.style.display = ''
     })
@@ -1249,10 +1236,10 @@ export function loadVideoInfoStrip(): void {
   if (nameEl)   nameEl.textContent  = settings.videoDeviceName ?? '—'
   if (statusEl) {
     if (settings.videoDeviceName) {
-      statusEl.textContent = 'Kilde konfigurert'
+      statusEl.textContent = t('home.videoSourceConfigured', 'Kilde konfigurert')
       statusEl.style.color = 'var(--green)'
     } else {
-      statusEl.textContent = 'Ingen kamera valgt'
+      statusEl.textContent = t('home.videoNoCamera', 'Ingen kamera valgt')
       statusEl.style.color = 'var(--text3)'
     }
   }
@@ -1367,9 +1354,9 @@ function renderCloudCard(): boolean {
         const q = await window.api.cloudQueueStatus()
         const pending = q.entries?.filter(e => e.status === 'pending' || e.status === 'retrying').length ?? 0
         const failed  = q.entries?.filter(e => e.status === 'failed').length ?? 0
-        if (failed > 0)       { subEl.textContent = `${failed} feilet`;   subEl.style.color = 'var(--red)' }
-        else if (pending > 0) { subEl.textContent = `${pending} i kø`;    subEl.style.color = 'var(--text2)' }
-        else                  { subEl.textContent = 'Alle synkronisert';   subEl.style.color = 'var(--green)' }
+        if (failed > 0)       { subEl.textContent = `${failed} ${t('home.cloudFailed', 'feilet')}`;   subEl.style.color = 'var(--red)' }
+        else if (pending > 0) { subEl.textContent = `${pending} ${t('home.cloudQueued', 'i kø')}`;    subEl.style.color = 'var(--text2)' }
+        else                  { subEl.textContent = t('home.cloudAllSynced', 'Alle synkronisert');   subEl.style.color = 'var(--green)' }
       } catch {
         // Queue status unavailable — leave the static "Aktiv" label.
       }

@@ -17,8 +17,12 @@
 //!   - [`ffmetadata`]             — chapter metadata → the `;FFMETADATA1` sidecar text
 //!   - [`save_output_path`]       — collision-avoiding output path policy
 //!   - [`resolve_output_dir`]     — "same folder as the source" destination policy
-//!   - [`resolve_save_ext`]       — extension policy incl. FORCE_WAV refusal
-//!   - format constants ([`FORCE_WAV_FORMATS`], [`AUDIO_SAVE_EXTS`])
+//!
+//! The Electron module also carried a SAVE/REPLACE layer (in-place overwrite of
+//! the original, with a FORCE_WAV refusal and a platform-specific atomic-replace
+//! plan). The Tauri editor never overwrites a recording — every render goes to a
+//! collision-free NEW file — so that layer was removed once the audit confirmed
+//! it had no callers outside its own tests.
 //!
 //! All time arithmetic uses the same `0.05 s` keep-gap epsilon and `.4`-decimal
 //! `atrim`/`trim` formatting as the Electron module, so the produced filter
@@ -29,28 +33,6 @@ use std::collections::HashSet;
 /// Minimum gap (seconds) below which a keep-segment is dropped as a rounding
 /// artefact. Matches the Electron `cursor + 0.05` epsilon exactly.
 pub const KEEP_EPSILON: f64 = 0.05;
-
-/// Audio formats with no encoder in ffmpeg-static — losslessly saving these
-/// means transcoding to WAV. Replace-mode on these would silently write WAV
-/// bytes under a non-WAV extension and corrupt the file, so we refuse it.
-/// Mirrors the Electron `FORCE_WAV_FORMATS` set.
-pub fn force_wav_formats() -> HashSet<&'static str> {
-    ["ape", "dts", "mpc", "ra", "ram", "spx", "gsm", "amr", "3ga"]
-        .into_iter()
-        .collect()
-}
-
-/// Extensions we keep on a "save" (audio). Anything outside this set falls back
-/// to `mp3`. Mirrors the Electron `AUDIO_SAVE_EXTS` set.
-pub fn audio_save_exts() -> HashSet<&'static str> {
-    [
-        "mp3", "mp1", "mp2", "wav", "flac", "aac", "m4a", "m4b", "m4r", "ogg", "oga", "opus",
-        "aiff", "aif", "wma", "mka", "ac3", "eac3", "amr", "3ga", "caf", "wv", "tta", "au", "snd",
-        "ape", "dts", "mpc", "ra", "ram", "spx", "gsm",
-    ]
-    .into_iter()
-    .collect()
-}
 
 // ── Keep-segment planning ────────────────────────────────────────────────────
 
@@ -153,37 +135,6 @@ pub fn sermon_cut_regions(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     cuts
-}
-
-// ── Save extension policy ─────────────────────────────────────────────────────
-
-/// Why a save was refused outright (no fixable output exists).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SaveExtError {
-    /// Replace-mode on a FORCE_WAV format would corrupt the original file.
-    ForceWavReplaceUnsafe,
-}
-
-/// Decide the output extension for an audio save, mirroring `saveEdited`:
-///   - unknown extension → `mp3`,
-///   - a FORCE_WAV format → `wav`,
-///   - otherwise keep the source extension.
-///
-/// In `replace` mode a FORCE_WAV source is refused (`ForceWavReplaceUnsafe`) —
-/// the caller should offer "save as new" instead.
-pub fn resolve_save_ext(raw_ext: &str, replace: bool) -> Result<String, SaveExtError> {
-    let ext = raw_ext.to_lowercase();
-    let force = force_wav_formats();
-    if replace && force.contains(ext.as_str()) {
-        return Err(SaveExtError::ForceWavReplaceUnsafe);
-    }
-    if !audio_save_exts().contains(ext.as_str()) {
-        Ok("mp3".to_string())
-    } else if force.contains(ext.as_str()) {
-        Ok("wav".to_string())
-    } else {
-        Ok(ext)
-    }
 }
 
 // ── Codec arguments ───────────────────────────────────────────────────────────
@@ -312,13 +263,6 @@ pub fn codec_args(
         }
     }
     args
-}
-
-/// Standard MP4 output codec args — mirrors `editor.MP4_CODEC_ARGS`. Kept as the
-/// H.264/mp4 default; [`video_codec_args`] generalises this to other containers
-/// and to H.265.
-pub fn mp4_codec_args() -> Vec<String> {
-    video_codec_args("mp4", VideoCodec::H264, None)
 }
 
 /// The video codec for a video export.
@@ -689,23 +633,6 @@ pub fn audio_simple_export_args(
     args
 }
 
-/// The audio filter graph for a *save* (no intro/outro/processing — the
-/// `saveEdited` path). Returns `None` for the single-keep case (caller uses a
-/// plain `-af`), or the filter_complex string + `[out]` map for multi-keep.
-pub fn audio_save_filter_complex(keeps: &[KeepSegment]) -> Option<String> {
-    if keeps.len() <= 1 {
-        return None;
-    }
-    let mut parts: Vec<String> = keeps
-        .iter()
-        .enumerate()
-        .map(|(i, seg)| format!("{}[seg{i}]", atrim("[0:a]", seg)))
-        .collect();
-    let inputs: String = (0..keeps.len()).map(|i| format!("[seg{i}]")).collect();
-    parts.push(format!("{inputs}concat=n={}:v=0:a=1[out]", keeps.len()));
-    Some(parts.join(";"))
-}
-
 /// The video filter graph (trim + audio-processing) for a single main input.
 /// Mirrors `buildVideoFilterComplex`. Returns `(filter_complex, v_out, a_out)`.
 pub fn video_filter_complex(
@@ -917,6 +844,33 @@ pub const MAX_EDIT_MS: u64 = 10 * 60 * 1000;
 pub fn export_timeout_ms(duration: f64) -> u64 {
     let scaled = (duration * 1000.0 * 0.6).round() as u64;
     MAX_EDIT_MS.max(scaled)
+}
+
+/// Floor for a non-export editor ffmpeg op. Deliberately generous: a first-open
+/// waveform decode of a cold multi-gigabyte recording on a slow external volume
+/// is minutes of honest work, and killing THAT is a worse bug than the hang.
+pub const EDITOR_OP_FLOOR: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// The kill-timer for a whole-file editor ffmpeg op that is NOT the export:
+/// the waveform decode, the playback-proxy transcode, the `astats` channel
+/// diagnosis, the mastering loudness measure.
+///
+/// None of these had a timer at all, so a wedged ffmpeg (a stalled network
+/// volume, a half-mounted share) hung `editor_peaks` / the proxy / «Diagnostiser»
+/// forever with no cancel button anywhere near them — the editor simply never
+/// finished opening the file.
+///
+/// `duration_hint` is the media length in seconds when the caller cheaply knows
+/// it (a header-only ffprobe). The budget is `max(EDITOR_OP_FLOOR, 4× duration)`:
+/// every one of these ops reads the file at many times real time, so 4× is a
+/// wide margin that still bounds the hang. An unknown duration falls back to the
+/// floor. A non-finite or negative hint is ignored rather than trusted.
+pub fn editor_op_timeout(duration_hint: Option<f64>) -> std::time::Duration {
+    let scaled = duration_hint
+        .filter(|d| d.is_finite() && *d > 0.0)
+        .map(|d| std::time::Duration::from_secs_f64(d * 4.0))
+        .unwrap_or(EDITOR_OP_FLOOR);
+    scaled.max(EDITOR_OP_FLOOR)
 }
 
 // ── ffprobe / decode argv (the I/O seam runs these; the args are tested) ────────
@@ -1239,13 +1193,17 @@ pub fn frame_extract_args(input_path: &str, sec: f64) -> Vec<String> {
     .collect()
 }
 
-/// Number of f32 peak buckets we down-sample the decoded mono PCM into for the
-/// renderer waveform. Matches the Electron renderer's ~2000-bar waveform.
-pub const PEAK_BUCKETS: usize = 2000;
-
 /// Down-sample `samples` to `buckets` peak amplitudes (max-abs per bucket), the
 /// shape the renderer waveform draws. Pure + tested. An empty input yields an
 /// empty vec; fewer samples than buckets yields one peak per sample.
+///
+/// RETAINED AS THE REFERENCE IMPLEMENTATION for the streaming
+/// [`PeakAccumulator`]: nothing in the app calls this any more (the seam folds
+/// peaks as the decode arrives), but
+/// `peak_accumulator_matches_downsample_peaks_on_the_same_buffer` proves the
+/// streaming path produces byte-identical buckets to the old
+/// decode-everything-then-down-sample path. Delete it and that equivalence
+/// proof goes with it.
 pub fn downsample_peaks(samples: &[f32], buckets: usize) -> Vec<f32> {
     if samples.is_empty() || buckets == 0 {
         return Vec::new();
@@ -1567,44 +1525,6 @@ where
     out
 }
 
-// ── Atomic safe-replace decision (P1 parity) ─────────────────────────────────
-
-/// The platform-specific plan for atomically replacing a target file with a
-/// freshly rendered temp file, mirroring `safeReplaceFile`:
-///   - POSIX `rename()` replaces the target atomically (no missing-file gap),
-///   - Windows `rename()` fails if the target exists, so we rename the target
-///     to a `.__editor_bak`, move the temp into place, then unlink the backup
-///     (restoring the backup on failure).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SafeReplacePlan {
-    /// One atomic `rename(temp → target)` (POSIX).
-    Rename { temp: String, target: String },
-    /// `rename(target → bak)`, `rename(temp → target)`, `unlink(bak)` (Windows).
-    BackupSwap {
-        temp: String,
-        target: String,
-        bak: String,
-    },
-}
-
-/// Build the safe-replace plan for `temp → target`. `windows` selects the
-/// backup-swap path; the `bak` path is `target + ".__editor_bak"` exactly as
-/// the Electron code formed it. Pure — the seam executes the renames/unlink.
-pub fn safe_replace_plan(temp: &str, target: &str, windows: bool) -> SafeReplacePlan {
-    if windows {
-        SafeReplacePlan::BackupSwap {
-            temp: temp.to_string(),
-            target: target.to_string(),
-            bak: format!("{target}{EDITOR_BAK_SUFFIX}"),
-        }
-    } else {
-        SafeReplacePlan::Rename {
-            temp: temp.to_string(),
-            target: target.to_string(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1794,32 +1714,6 @@ mod tests {
     fn sermon_cut_is_empty_when_no_sermon_detected() {
         let segs = vec![ds(0.0, 100.0, "music"), ds(100.0, 200.0, "speech")];
         assert!(sermon_cut_regions(&segs, 200.0).is_empty());
-    }
-
-    // ── resolve_save_ext ───────────────────────────────────────────────────────
-
-    #[test]
-    fn unknown_ext_falls_back_to_mp3() {
-        assert_eq!(resolve_save_ext("xyz", false).unwrap(), "mp3");
-    }
-
-    #[test]
-    fn known_ext_is_preserved() {
-        assert_eq!(resolve_save_ext("FLAC", false).unwrap(), "flac");
-        assert_eq!(resolve_save_ext("wav", false).unwrap(), "wav");
-    }
-
-    #[test]
-    fn force_wav_format_transcodes_to_wav_when_saving_new() {
-        assert_eq!(resolve_save_ext("ape", false).unwrap(), "wav");
-    }
-
-    #[test]
-    fn force_wav_replace_is_refused() {
-        assert_eq!(
-            resolve_save_ext("ape", true),
-            Err(SaveExtError::ForceWavReplaceUnsafe)
-        );
     }
 
     // ── codec_args ───────────────────────────────────────────────────────────
@@ -2017,10 +1911,12 @@ mod tests {
     // ── format breadth + video codecs ────────────────────────────────────────────
 
     #[test]
-    fn mp4_codec_args_use_transparent_audio_bitrate() {
+    fn mp4_h264_codec_args_use_transparent_audio_bitrate() {
         // H.264 video unchanged; the muxed audio track is a transparent 256k AAC.
+        // (Asserted through `video_codec_args` directly — the `mp4_codec_args`
+        // alias it used to go through had no callers and was removed.)
         assert_eq!(
-            mp4_codec_args(),
+            video_codec_args("mp4", VideoCodec::H264, None),
             vec![
                 "-c:v",
                 "libx264",
@@ -2115,36 +2011,6 @@ mod tests {
     }
 
     // ── filter graphs ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn save_filter_complex_is_none_for_single_keep() {
-        let keeps = vec![KeepSegment {
-            start: 0.0,
-            end: 10.0,
-        }];
-        assert!(audio_save_filter_complex(&keeps).is_none());
-    }
-
-    #[test]
-    fn save_filter_complex_concats_multiple_keeps() {
-        let keeps = vec![
-            KeepSegment {
-                start: 0.0,
-                end: 10.0,
-            },
-            KeepSegment {
-                start: 20.0,
-                end: 30.0,
-            },
-        ];
-        let fc = audio_save_filter_complex(&keeps).unwrap();
-        assert_eq!(
-            fc,
-            "[0:a]atrim=start=0.0000:end=10.0000,asetpts=PTS-STARTPTS[seg0];\
-             [0:a]atrim=start=20.0000:end=30.0000,asetpts=PTS-STARTPTS[seg1];\
-             [seg0][seg1]concat=n=2:v=0:a=1[out]"
-        );
-    }
 
     #[test]
     fn simple_export_path_detection() {
@@ -2584,6 +2450,35 @@ mod tests {
     fn export_timeout_scales_for_long_recordings() {
         // 4 h = 14400 s → 0.6× = 8640 s = 8_640_000 ms > 600_000 floor.
         assert_eq!(export_timeout_ms(14400.0), 8_640_000);
+    }
+
+    #[test]
+    fn editor_op_timeout_without_a_hint_is_the_floor() {
+        assert_eq!(editor_op_timeout(None), EDITOR_OP_FLOOR);
+    }
+
+    #[test]
+    fn editor_op_timeout_floors_short_media() {
+        // A 30 s clip's 4× is 2 minutes… which IS the floor; a 10 s clip's isn't.
+        assert_eq!(editor_op_timeout(Some(10.0)), EDITOR_OP_FLOOR);
+    }
+
+    #[test]
+    fn editor_op_timeout_scales_with_long_media() {
+        // 90-minute service → 4× = 6 h.
+        assert_eq!(
+            editor_op_timeout(Some(5400.0)),
+            std::time::Duration::from_secs(21_600)
+        );
+    }
+
+    #[test]
+    fn editor_op_timeout_ignores_a_nonsense_hint() {
+        // A failed probe must never produce a ZERO budget (instant kill) or
+        // panic `from_secs_f64` on a NaN/∞ — both fall back to the floor.
+        for bad in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(editor_op_timeout(Some(bad)), EDITOR_OP_FLOOR, "{bad}");
+        }
     }
 
     // ── probe / decode argv ────────────────────────────────────────────────────
@@ -3049,30 +2944,5 @@ mod tests {
         let folders = vec!["/a/".to_string(), "/a".to_string()];
         let out = dedupe_cleanup_dirs(&folders, |s| s.trim_end_matches('/').to_string());
         assert_eq!(out, vec!["/a".to_string()]);
-    }
-
-    // ── atomic safe-replace ────────────────────────────────────────────────────────
-
-    #[test]
-    fn safe_replace_posix_is_single_rename() {
-        assert_eq!(
-            safe_replace_plan("/rec/a.__editor_tmp", "/rec/a.mp3", false),
-            SafeReplacePlan::Rename {
-                temp: "/rec/a.__editor_tmp".into(),
-                target: "/rec/a.mp3".into(),
-            }
-        );
-    }
-
-    #[test]
-    fn safe_replace_windows_uses_backup_swap() {
-        assert_eq!(
-            safe_replace_plan("/rec/a.__editor_tmp", "/rec/a.mp3", true),
-            SafeReplacePlan::BackupSwap {
-                temp: "/rec/a.__editor_tmp".into(),
-                target: "/rec/a.mp3".into(),
-                bak: "/rec/a.mp3.__editor_bak".into(),
-            }
-        );
     }
 }

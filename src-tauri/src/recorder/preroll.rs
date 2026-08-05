@@ -23,19 +23,25 @@
 //! [`PrerollEngine::harvest`] flips the active flag off, takes the live handle,
 //! stops ffmpeg gracefully (`q` on stdin, mirroring the Electron `stopProc`),
 //! measures the captured duration, file size, and asks the core mat whether (and
-//! how much) to keep. On success it RE-ENCODES the kept window to an AAC `.m4a`
-//! ([`build_preroll_trim_args`]) and returns a [`PrerollClip`].
+//! how much) to keep. On success it re-encodes the kept window into the format
+//! the CALLER asks for ([`build_preroll_trim_args`]) and returns a
+//! [`PrerollClip`].
 //!
-//! ## How the clip is prepended to the recording (Fase 3.2 scope — honest)
+//! ## How the clip is prepended to the recording
 //!
-//! [`RecorderEngine::start`] calls [`harvest`] when `pre_roll_seconds > 0`. This
-//! module PRODUCES the trimmed clip (a real, playable `.m4a` at the recording's
-//! sample-rate/channels) and hands the recorder its path + duration. **The final
-//! ffmpeg `concat` that splices the clip in front of the main recording is NOT
-//! wired in this phase** — it is a follow-up that belongs with the multi-segment
-//! concat-merge the recorder already defers (see `engine.rs` "Deferred"). For
-//! F3.2 the recorder logs the produced clip and tracks it on the session; the
-//! concat step is documented as a TODO. See [`PrerollClip`].
+//! The recorder's start command calls [`PrerollEngine::harvest`] when
+//! `pre_roll_seconds > 0`, asking for the format the recording itself captures
+//! in — today `pcm_s16le` in a `.wav`, at the recording's own sample rate and
+//! channel count (see `commands/recorder.rs`). That match is what makes the
+//! prepend LOSSLESS: the supervisor hands the clip to
+//! [`crate::recorder::concat::finalize_deliverable`], which puts it FIRST in the
+//! `-c copy` concat of the session's first deliverable. Concat is wired — the
+//! clip really does end up in the delivered recording. A clip that is missing,
+//! too small, or format-incompatible with the capture is dropped there with a
+//! warning rather than taking the recording down.
+//!
+//! Pre-roll applies to AUDIO-ONLY sessions: the clip has no video stream, so
+//! prepending it to a video deliverable would concat mismatched layouts.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED
 //!
@@ -85,14 +91,16 @@ pub struct PrerollSettings {
 
 /// A harvested, trimmed pre-roll clip ready to prepend to a recording.
 ///
-/// `raw_path` is the *trimmed* AAC `.m4a` produced by [`PrerollEngine::harvest`]
-/// (not the raw WAV — that is consumed + deleted during harvest). `trim_ms` and
-/// `start_offset_ms` are the core mat's verdict, kept on the clip for diagnostics
-/// and for the future concat step.
+/// `raw_path` is the *trimmed* clip produced by [`PrerollEngine::harvest`] in the
+/// format the caller requested — the recording's own capture format, so the
+/// prepend is a lossless `-c copy` (today PCM `.wav`; the raw rolling capture it
+/// came from is consumed + deleted during harvest). `trim_ms` and
+/// `start_offset_ms` are the core mat's verdict, kept on the clip for
+/// diagnostics.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../src/lib/bindings/PrerollClip.ts")]
 pub struct PrerollClip {
-    /// Absolute path to the trimmed `.m4a` clip.
+    /// Absolute path to the trimmed clip.
     pub raw_path: String,
     /// Milliseconds of audio kept (the prepend length).
     #[ts(type = "number")]
@@ -205,10 +213,11 @@ impl PrerollEngine {
     /// nothing usable was captured (no loop running, segment too small/short, or
     /// the trim re-encode failed). Consumes the raw WAV (deleted) and produces a
     /// trimmed clip at the recording's `sample_rate`/`channels`, **encoded with
-    /// `audio_codec` into a `container_ext` file** so the F3.3a concat that
-    /// prepends it to the recording is a lossless `-c copy` (Fase 3.3a). For the
-    /// unified recorder that means `audio_codec = "aac"` and `container_ext` the
-    /// recording's output extension (e.g. `"m4a"`, `"mp4"`).
+    /// `audio_codec` into a `container_ext` file** so the concat that prepends it
+    /// to the recording is a lossless `-c copy`. The caller passes the format the
+    /// recording CAPTURES in, not the one it delivers in — today that is
+    /// `audio_codec = "pcm_s16le"` / `container_ext = "wav"` (the capture is
+    /// decoupled from the delivery encode; see [`crate::recorder::concat`]).
     ///
     /// ⚠️ HARDWARE-UNVERIFIED — stops a real capture + re-encodes via ffmpeg.
     pub async fn harvest(

@@ -1,37 +1,41 @@
 # Distribution & auto-update
 
 SundayRec ships as installers for macOS and Windows via GitHub Releases. The
-release pipeline (`.github/workflows/release.yml`) is in place; making it
-**signed + auto-updating** is a matter of **secrets and accounts only you can
-provide**. This doc is the checklist.
+release pipeline (`.github/workflows/release.yml`) is **live**: releases are
+macOS-signed and auto-updating; the one remaining gap is **notarization**
+(deliberately disabled — see below). This doc is the checklist.
 
 ## How it works
 
 1. You bump the version (in `package.json`, `src-tauri/tauri.conf.json`, and
    `src-tauri/Cargo.toml` — keep them in sync) and push a tag `vX.Y.Z`.
 2. `release.yml` builds on macOS (Apple Silicon) and Windows, fetches the
-   ffmpeg/ffprobe sidecars, signs + notarizes macOS (once the secrets exist),
-   and creates a **draft** GitHub Release with the installers attached.
-3. You review the draft and publish it.
+   ffmpeg/ffprobe sidecars, signs macOS (notarization is deliberately disabled
+   pending the Apple agreement — see below), and creates a **draft** GitHub
+   Release with the installers attached.
+3. You review the draft and publish it as **Latest**.
 
 > **Deploy gotcha (same as the Electron SundayRec):** the build uploads as a
-> **draft / prerelease**. "Publishing" is a separate manual step — review the
-> draft, then mark it published/latest. A built-but-unpublished release is not
-> served to anyone.
+> **draft** (with `prerelease: false`). "Publishing" is a separate manual step —
+> review the draft, then publish it so it becomes **Latest**. A
+> built-but-unpublished release is not served to anyone (the updater feed only
+> sees published releases). This flow is proven in prod: every release since
+> v0.4.x has been published as Latest this way (v0.8.0 is current).
 
 ## Phase status
 
-| Capability                   | State                                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                              |
-| macOS signing + notarization | 🔑 activates when the Apple secrets below are added                                   |
-| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                             |
-| Auto-update (`latest.json`)  | ✅ plugin + pubkey + `includeUpdaterJson` wired; needs only `TAURI_SIGNING_*` secrets |
+| Capability                   | State                                                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                         |
+| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                         |
+| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; env lines commented out in `release.yml:146-155` pending re-acceptance  |
+| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                        |
+| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `includeUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod |
 
-Until the Apple secrets are added, the workflow still runs and produces
-**unsigned** installers (tauri-action skips signing when the secrets are
-absent). Unsigned apps warn on first launch: macOS → right-click ▸ Open;
-Windows → "More info" ▸ "Run anyway".
+macOS builds are **signed but not notarized**: Gatekeeper warns on first
+launch → right-click ▸ Open. Windows is unsigned → "More info" ▸ "Run anyway".
+Notarization returns once the Apple Program License Agreement is re-accepted
+(see below).
 
 ## Required GitHub repository secrets
 
@@ -39,35 +43,30 @@ Settings → Secrets and variables → Actions → New repository secret.
 
 ### macOS code signing + notarization
 
-You already do this for the Electron SundayRec, so the same Developer ID cert
-and credentials apply.
+You already did this for the Electron SundayRec — the same Developer ID cert
+applies, and the workflow reuses the Electron-era secret names (mapped to
+tauri-action's `APPLE_*` env vars in `release.yml:143-144`).
+`APPLE_SIGNING_IDENTITY` is hardcoded in the workflow, not a secret.
 
-| Secret                       | Value                                                                                                                        |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `APPLE_CERTIFICATE`          | Base64 of your "Developer ID Application" cert exported as `.p12`: `base64 -i cert.p12 \| pbcopy`.                           |
-| `APPLE_CERTIFICATE_PASSWORD` | The password you set when exporting the `.p12`.                                                                              |
-| `APPLE_SIGNING_IDENTITY`     | e.g. `Developer ID Application: Richard Fossland (TEAMID)`. Find it with `security find-identity -v -p codesigning`.         |
-| `APPLE_ID`                   | Your Apple Developer account email.                                                                                          |
-| `APPLE_PASSWORD`             | An **app-specific password** (appleid.apple.com → Sign-In and Security → App-Specific Passwords), not your account password. |
-| `APPLE_TEAM_ID`              | Your 10-character Apple Team ID.                                                                                             |
+| Secret                                                       | Value                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAC_CERTS`                                                  | ✅ set. Base64 of the "Developer ID Application" cert exported as `.p12`: `base64 -i cert.p12 \| pbcopy` (maps to `APPLE_CERTIFICATE`). Releases are signed since ~2026-07-31.                                                                                                                             |
+| `MAC_CERTS_PASSWORD`                                         | ✅ set. The password from the `.p12` export (maps to `APPLE_CERTIFICATE_PASSWORD`).                                                                                                                                                                                                                        |
+| `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID` | ⏸ **Notarization — currently unused.** The env lines are commented out in `release.yml:146-155` because Apple's notary service returns 403 until the updated Program License Agreement is accepted on developer.apple.com (team 784GN847G4). Re-enable by uncommenting those lines once the PLA is signed. |
 
-### Auto-update signing (Phase 9 — not needed yet)
+### Auto-update signing (✅ LIVE since v0.4.x)
 
-The updater is off until Phase 9. When you get there:
+The updater is **live in published releases**: the plugin is installed, the
+public key + `endpoints` are in `tauri.conf.json` under `plugins.updater`,
+`includeUpdaterJson: true` is set in `release.yml`, and the signing secrets are
+in place — the `latest.json` feed is verified in prod (v0.8.0 is current).
+Nothing here remains to set up; the only outstanding release-pipeline gap is
+macOS **notarization** (previous section).
 
-1. Install the plugin: `npm run tauri add updater`.
-2. Generate the keypair (store the private key safely, **never** in the repo):
-   ```bash
-   npm run tauri signer generate -- -w ~/.tauri/sundayrec_updater.key
-   ```
-3. Put the **public** key in `tauri.conf.json` under `plugins.updater.pubkey`
-   and configure the `endpoints` to the GitHub `latest` release.
-4. Add these secrets and flip `includeUpdaterJson: true` in `release.yml`:
-
-| Secret                               | Value                                                                                                     |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `TAURI_SIGNING_PRIVATE_KEY`          | Contents of `~/.tauri/sundayrec_updater.key`: `cat ~/.tauri/sundayrec_updater.key \| pbcopy`, then paste. |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password you set for that key (empty string if generated without one).                                |
+| Secret                               | Value                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | ✅ set. Contents of `~/.tauri/sundayrec_updater.key` (key-id `4f08a2f48edd9a17`) — keep the local backup safe. |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | ✅ set. The password chosen for that key (empty string if generated without one).                              |
 
 > Keep the private key safe — losing it means existing installs can no longer
 > auto-update (they'd need a manual reinstall with a new key).

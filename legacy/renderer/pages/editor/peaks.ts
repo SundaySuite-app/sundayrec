@@ -43,12 +43,21 @@ export function computeClipTimes(peaks: Float32Array): number[] {
 
 // ── Peak normalization helpers ────────────────────────────────────────────
 //
-// We work off the in-memory `peaks` array (downsampled at 100 Hz) rather
-// than calling ffmpeg's `volumedetect`. The peaks data is downsampled from
-// the actual audio samples, so its maximum is a tight upper bound on the
-// true peak — accurate enough for a normalize button. The actual export
-// uses ffmpeg's `volume={N}dB` filter applied to the original (un-downsampled)
-// samples, so the rendered file is sample-accurate regardless.
+// `computePeakGain` works off the in-memory `peaks` array — the backend's
+// 100 buckets/second down-sample of an 8 kHz MONO decode.
+//
+// That array UNDER-READS the true peak, sometimes by several dB. It is not a
+// bound of any kind, tight or otherwise: the 8 kHz resample low-passes away the
+// transients that usually carry the actual maximum, and the mono downmix can
+// cancel out a peak that only exists in one channel. Normalizing straight off it
+// therefore over-applies gain — which is exactly why `editor_probe_peak`
+// (ffmpeg `volumedetect` over the ORIGINAL file) exists and is the preferred
+// basis; these helpers are the fallback for when that probe fails.
+//
+// The export itself is unaffected by the estimate's accuracy in one respect:
+// ffmpeg's `volume={N}dB` runs on the original, un-downsampled samples, so the
+// rendered file is a sample-accurate application of whatever gain we chose. It
+// is the CHOICE of N that the peaks array can get wrong.
 
 /**
  * Compute the gain (in dB) needed to bring the maximum absolute peak in

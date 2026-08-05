@@ -31,8 +31,8 @@ pub mod db;
 pub mod diagnostics;
 // R1 non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/export
 // over the unit-tested `sundayrec_core::{editor,mastering,audio_analysis}`. The
-// DTOs + `feature_disabled` stubs compile in the default build; the impure ffmpeg
-// runs are gated behind the default-off `editor` feature (HARDWARE-UNVERIFIED).
+// `editor` feature is in `default` (the Rediger screen ships); building with
+// `--no-default-features` keeps the DTOs + `feature_disabled` stubs compiling.
 pub mod editor;
 // PU-1 email alerts — default-off `email` feature (NETWORK-UNVERIFIED). The pure
 // templates/throttle/MIME live in `sundayrec_core::email`; this seam sends.
@@ -61,23 +61,26 @@ pub mod settings;
 // `feature_disabled` in the default build.
 pub mod streaming;
 pub mod test_recording;
-// PU-2 menubar tray + `sundayrec://` deep-link handling — default-off `tray`
-// feature (GUI-UNVERIFIED). The menu-model + link parse are in `sundayrec_core`;
-// this seam maps them to tauri menu/tray + the scheme handler.
+// PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
+// `default` and both release builds (install failure only logs a warning). The
+// menu-model + link parse are in `sundayrec_core`; this seam maps them to tauri
+// menu/tray + the scheme handler.
 #[cfg(feature = "tray")]
 pub mod tray;
-// R7 auto-update — default-off `updater` feature (NETWORK/GUI-UNVERIFIED). The
-// status model + dev-check guard + semver decision are `sundayrec_core::update`;
-// this seam drives `tauri-plugin-updater` (check/download/install) + relaunch.
-// The DTO + `UpdateEngine` compile in every build; `update_check`/
+// R7 auto-update — `updater` feature, in `default` and LIVE-VERIFIED (signed
+// releases + latest.json; macOS relaunch via the `open -n` helper). The status
+// model + dev-check guard + semver decision are `sundayrec_core::update`; this
+// seam drives `tauri-plugin-updater` (check/download/install) + relaunch. The
+// DTO + `UpdateEngine` compile in every build; `update_check`/
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
 pub mod util;
 pub mod wake;
-// PU-5 whisper transcription — default-off `whisper` feature (HARDWARE-UNVERIFIED).
-// The model registry/argv/normalise are `sundayrec_core::whisper`; this seam runs
-// inference (whisper-rs). The pure list/status entry points compile without it;
-// `transcribe` returns `feature_disabled` when off.
+// PU-5 whisper transcription — `whisper` feature, in `default` and the macOS
+// release (Metal path verified on a real M1 Pro; Windows-runtime still an owner
+// rig test). The model registry/argv/normalise are `sundayrec_core::whisper`;
+// this seam runs inference (whisper-rs). The pure list/status entry points
+// compile without it; `transcribe` returns `feature_disabled` when off.
 pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -156,7 +159,7 @@ pub fn run() {
         .manage(ndi::NdiOutputEngine::new())
         // R7: the update engine holds the live check/download status the
         // renderer polls. Compiles in every build; the network/install seam is
-        // gated behind the default-off `updater` feature.
+        // gated behind the `updater` feature (in `default`).
         .manage(update::UpdateEngine::new())
         // P1 editor parity: the mastering-apply engine tracks in-flight jobs so
         // the UI can cancel a long render by id. The pure JobRegistry inside is
@@ -256,7 +259,7 @@ pub fn run() {
             app.state::<scheduler::SchedulerEngine>()
                 .start(app.handle().clone());
 
-            // PU-2: install the menubar tray (default-off `tray` feature). The
+            // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. We keep the returned
             // `TrayIcon` alive by leaking it for the process lifetime (it lives

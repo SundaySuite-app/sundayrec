@@ -14,6 +14,28 @@
 
 import { VIDEO_EXTS } from './state'
 
+// ── Export progress phases (wire constants) ─────────────────────────────────
+//
+// The backend labels every `editor-export-progress` tick with a bare phase CODE
+// the renderer localises. The codes are defined ONCE here and matched nowhere
+// else in the renderer, so a rename can only happen in one place.
+//
+// The Rust side of the wire is `EXPORT_PHASE_MEASURING` / `EXPORT_PHASE_ENCODING`
+// in `src-tauri/src/editor/mod.rs`, pinned to these same two strings by
+// `export_phase_codes_match_the_renderer_literals`. Nothing type-checks across
+// the IPC boundary: rename one side only and the export label silently degrades
+// to the encoding fallback for the whole mastering measure pass. The two tests
+// (that one, and `export_phases_are_the_wire_codes` here) are what break loudly.
+
+/** Mastering pass 1 — a full-length loudness read with no percentage of its own. */
+export const EXPORT_PHASE_MEASURING = 'measuring'
+/** The render itself — percentage against the kept duration. */
+export const EXPORT_PHASE_ENCODING = 'encoding'
+
+/** Every phase code the backend can send, for exhaustiveness checks + the test. */
+export const EXPORT_PHASES = [EXPORT_PHASE_MEASURING, EXPORT_PHASE_ENCODING] as const
+export type ExportPhase = (typeof EXPORT_PHASES)[number]
+
 /**
  * Can intro/outro jingles be applied when exporting `filePath`?
  *

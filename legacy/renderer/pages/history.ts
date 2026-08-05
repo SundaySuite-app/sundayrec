@@ -139,7 +139,7 @@ export function renderHistoryRows(
     if (showReveal && r.path) {
       const aReveal = document.createElement('a')
       aReveal.href = '#'; aReveal.className = 'hist-action'
-      aReveal.title = 'Vis i Finder / Utforsker'
+      aReveal.title = t('history.revealFile', 'Vis i Finder / Utforsker')
       aReveal.innerHTML = '<svg viewBox="0 0 20 20"><path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5zM5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"/></svg>'
       aReveal.addEventListener('click', e => { e.preventDefault(); window.api.revealFile(r.path!) })
       tdActions.appendChild(aReveal)
@@ -154,7 +154,7 @@ export function renderHistoryRows(
     if (showReveal && videoEntry?.path) {
       const aRevealVid = document.createElement('a')
       aRevealVid.href = '#'; aRevealVid.className = 'hist-action'
-      aRevealVid.title = 'Vis videofil i Finder'
+      aRevealVid.title = t('history.revealVideo', 'Vis videofil i Finder')
       aRevealVid.innerHTML = '<svg viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553-1.106A1 1 0 0115 5v10a1 1 0 01-1.553.832l-5-3.333a1 1 0 010-1.664l5-3.333a1 1 0 01.106-.072z"/></svg>'
       aRevealVid.addEventListener('click', e => { e.preventDefault(); window.api.revealFile(videoEntry.path!) })
       tdActions.appendChild(aRevealVid)

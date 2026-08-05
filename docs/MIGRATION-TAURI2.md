@@ -59,6 +59,13 @@
 | Wake/power                     | pmset/PowerShell + powerSaveBlocker/powerMonitor     | `std::process::Command` + IOKit/WinAPI FFI                                         |
 | SMTP                           | nodemailer                                           | **`lettre`**                                                                       |
 
+> **⚠️ SUPERSEDED av v0.6.0 (PR #65) — lydfangst:** tabellen over beholdes som
+> skrevet (historisk plan), men ffmpeg-raden gjelder ikke lenger lyd-capture.
+> I dag er lydfangsten en **native cpal-motor** (CoreAudio/WASAPI) som skriver
+> WAV direkte (cpal → ring → egen WAV-skriver). ffmpeg består for
+> **video-sesjoner + offline-arbeid** (leveranse-encode, preroll) og
+> nødbryteren `classic_ffmpeg_audio`.
+
 **Sentrale arkitektur-valg (bygg det riktig):**
 
 - **VU/metering i Rust (cpal), ikke webview.** Mer robust, plattform-uavhengig,
@@ -89,6 +96,10 @@ Hver fase: **Mål · Kilde å speile (adferd) · Rust/Tauri-mapping · Exit-krit
 - **Spike B — recorder-plumbing:** liten Rust-prototype av unified ffmpeg-capture
   (mac avfoundation `vid:aud` / win dshow 2×`-i` + aresample), stderr-parsing,
   stdin `'q'`, watchdog. Speil `unified-recorder.ts`, `recorder-utils.ts`.
+  **⚠️ SUPERSEDED av v0.6.0 (PR #65):** ffmpeg-capture-beskrivelsen over er
+  historisk — lydfangsten er i dag en **native cpal-motor** (CoreAudio/WASAPI)
+  som skriver WAV direkte; ffmpeg gjelder kun video-sesjoner + offline-arbeid
+  (leveranse-encode, preroll) og nødbryteren `classic_ffmpeg_audio`.
 - **Skall:** scaffold Tauri 2 + React 19 + Tailwind v4; `sundayrec-core` Rust-crate;
   ffmpeg-sidecar (kopier SundayEdits `fetch-ffmpeg.mjs` + `externalBin`); sqlx-schema;
   keyring; ts-rs-søm; logger; feilmodell; CI som signerer Mac + bygger Win + `latest.json`.

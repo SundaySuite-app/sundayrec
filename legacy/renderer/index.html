@@ -251,10 +251,6 @@
             <button type="button" data-vsize="m" title="Middels video"><svg width="15" height="15" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg></button>
             <button type="button" data-vsize="l" title="Stor video" class="active"><svg width="15" height="15" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
           </div>
-          <div id="video-progress-row" class="video-progress-badge" style="display:none">
-            <span class="rec-dot-sm" style="width:5px;height:5px"></span>
-            <span id="video-progress-bytes">0 MB</span>
-          </div>
         </div>
 
       </div>
@@ -1674,7 +1670,9 @@
                   <div class="email-oauth-title" data-i18n="notify.emailGmailTitle">Logg inn med Google</div>
                   <div class="email-oauth-sub" id="email-gmail-status" data-i18n="notify.emailGmailDesc">Send via din Gmail-konto — ingen SMTP-konfig.</div>
                 </div>
-                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" data-i18n="notify.emailGmailConnect">Koble til</button>
+                <!-- Not wired to a working backend yet (2026-08 audit) — disabled
+                     with an honest reason rather than a fake "connection failed". -->
+                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.emailGmailConnect">Koble til</button>
                 <button type="button" class="btn-ghost btn-sm" id="btn-email-gmail-disconnect" style="display:none" data-i18n="notify.emailGmailDisconnect">Koble fra</button>
               </div>
             </div>
@@ -1700,7 +1698,10 @@
             </div>
           </details>
 
-          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" data-i18n="general.testEmail">Test e-post</button>
+          <!-- Not wired to a working backend yet (2026-08 audit): the old stub
+               always reported failure. Disabled with an honest reason instead. -->
+          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="general.testEmail">Test e-post</button>
+          <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
         </div>
       </div>
 
@@ -1719,7 +1720,10 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-webhook-on-warn" /><span class="toggle-track"></span></label>
         </div>
-        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" data-i18n="notify.testWebhook">Test webhook</button>
+        <!-- Not wired to a working backend yet (2026-08 audit): the old stub
+             always reported failure. Disabled with an honest reason instead. -->
+        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.testWebhook">Test webhook</button>
+        <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
       </div>
       <div class="page-footer">
         <button class="btn-primary" id="btn-varsler-save" data-i18n="general.save">Lagre</button>

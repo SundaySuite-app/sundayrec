@@ -433,11 +433,20 @@ function applyReviewModeDefaults(): void {
     drawWaveform()
     drawMinimap()
   }
-  // Pre-select master preset
-  const presetSel = $('editor-master-preset') as HTMLSelectElement | null
-  if (presetSel && reviewPrep.masterPreset) {
-    presetSel.value = reviewPrep.masterPreset
-    presetSel.dispatchEvent(new Event('change'))
+  // Pre-select the mastering preset the review prep recommends.
+  //
+  // This used to poke `#editor-master-preset`, an id that has never existed in
+  // index.html — so the preselect was a silent no-op and a review-mode export
+  // shipped unmastered. The real control is the export modal's
+  // `#enhance-master-preset`, and `setupEnhanceSection` syncs it FROM `E` every
+  // time the modal opens: setting `E.masterPreset` is what actually takes
+  // effect, both in the select and in the modal's level row (which reads `E`).
+  // The select is also updated directly, for the case where the modal is
+  // already open when review mode loads a file into it.
+  if (reviewPrep.masterPreset) {
+    E.masterPreset = reviewPrep.masterPreset
+    const presetSel = $('enhance-master-preset') as HTMLSelectElement | null
+    if (presetSel) presetSel.value = E.masterPreset
   }
 }
 

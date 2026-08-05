@@ -201,6 +201,15 @@ async fn supervisor(
     notify: Arc<Notify>,
     next_cache: Arc<Mutex<Option<NaiveDateTime>>>,
 ) {
+    // The late-start safety net (`check_missed`) fires once at startup — an
+    // app (re)launched at 11:20 for an 11:00 service must still start the
+    // recording (Electron recovered up to 60 min in). It ALSO fires after a
+    // suspected system sleep / clock jump (see the oversleep check below):
+    // `next_occurrence` only looks FORWARD, so a start that passed while the
+    // lid was closed would otherwise wait a whole week. The command
+    // `scheduler_check_missed` exists but nothing invoked it — the net was
+    // built and never wired (found in the 2026-08-04 night sweep).
+    let mut startup_missed_check_done = false;
     loop {
         let pool = match app.try_state::<Db>() {
             Some(db) => db.pool.clone(),
@@ -210,6 +219,17 @@ async fn supervisor(
                 continue;
             }
         };
+
+        if !startup_missed_check_done {
+            startup_missed_check_done = true;
+            match check_missed(&app, &pool).await {
+                Ok(missed) if !missed.is_empty() => {
+                    tracing::info!("scheduler: startup missed-check reported {}", missed.len());
+                }
+                Ok(_) => {}
+                Err(e) => tracing::warn!("scheduler: startup missed-check failed: {e}"),
+            }
+        }
 
         let mut settings = settings::load(&pool).await.unwrap_or_default();
 
@@ -281,8 +301,25 @@ async fn supervisor(
         let sleep_ms = capped_supervisor_sleep_ms(wait_ms);
         let fire_now = supervisor_should_fire(wait_ms);
 
+        let slept_from = Local::now().naive_local();
         tokio::select! {
             _ = tokio::time::sleep(StdDuration::from_millis(sleep_ms)) => {
+                // Oversleep = the wall clock advanced far beyond the requested
+                // sleep → the machine slept (or the clock jumped). A start that
+                // passed during that gap is invisible to the forward-only
+                // `next_occurrence`, so run the late-start net before the
+                // normal recompute.
+                let wall_elapsed_ms = (Local::now().naive_local() - slept_from).num_milliseconds();
+                if wall_elapsed_ms.saturating_sub(sleep_ms as i64) > 120_000 {
+                    tracing::info!(
+                        wall_elapsed_ms,
+                        sleep_ms,
+                        "scheduler: overslept — running the missed-recording net"
+                    );
+                    if let Err(e) = check_missed(&app, &pool).await {
+                        tracing::warn!("scheduler: post-sleep missed-check failed: {e}");
+                    }
+                }
                 if fire_now {
                     fire(&app, &pool, &settings, &kept, &ev).await;
                     tokio::time::sleep(FIRE_GUARD).await;
