@@ -3,6 +3,9 @@ import {
   buildExportRequest,
   exportLevelSummary,
   jinglesSupportedForFile,
+  EXPORT_PHASES,
+  EXPORT_PHASE_ENCODING,
+  EXPORT_PHASE_MEASURING,
   type ExportRequestInput,
 } from './export-params'
 
@@ -174,5 +177,17 @@ describe('exportLevelSummary', () => {
     expect(exportLevelSummary(undefined, 0)).toEqual({ kind: 'hidden' })
     // A NaN gain (a failed peak probe) is "nothing to say", not "+NaN dB".
     expect(exportLevelSummary('', Number.NaN)).toEqual({ kind: 'hidden' })
+  })
+})
+
+describe('export progress phases', () => {
+  it('are the exact wire codes the Rust seam emits', () => {
+    // These strings cross the IPC boundary untyped. The Rust side pins the same
+    // two values in `export_phase_codes_match_the_renderer_literals`
+    // (src-tauri/src/editor/mod.rs), so renaming either side alone fails a test
+    // instead of silently mislabelling the mastering measure pass as "encoding".
+    expect(EXPORT_PHASE_MEASURING).toBe('measuring')
+    expect(EXPORT_PHASE_ENCODING).toBe('encoding')
+    expect(EXPORT_PHASES).toEqual(['measuring', 'encoding'])
   })
 })

@@ -5,33 +5,10 @@
 //! recorder.ts and preroll.ts. Collecting them here means tuning happens in one
 //! place — and any cross-platform difference is explicit rather than buried.
 
-use serde::{Deserialize, Serialize};
-use ts_rs::TS;
-
-/// Capture host platform for the one platform-dependent timeout (startup).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TimeoutPlatform.ts")]
-#[serde(rename_all = "lowercase")]
-pub enum TimeoutPlatform {
-    Windows,
-    Other,
-}
-
 /// All recording-pipeline timeouts, in milliseconds.
 pub struct RecorderTimeouts;
 
 impl RecorderTimeouts {
-    /// How long to wait for the first ffmpeg progress line before treating
-    /// startup as failed. macOS is consistently fast; Windows dshow can take
-    /// several seconds to enumerate devices on first launch — hence the higher
-    /// Windows value.
-    pub fn startup_ms(platform: TimeoutPlatform) -> u64 {
-        match platform {
-            TimeoutPlatform::Windows => 10_000,
-            TimeoutPlatform::Other => 5_000,
-        }
-    }
-
     /// Startup watchdog: ffmpeg has spawned but must produce its FIRST progress
     /// (`size=`) within this window, or the start is treated as failed (a wedged
     /// output, an unavailable/permission-blocked device). Without this the UI
@@ -48,20 +25,6 @@ impl RecorderTimeouts {
     /// against burning CPU over a 90-min recording.
     pub const STUCK_POLL_MS: u64 = 15_000;
 
-    /// Maximum delay between reconnect attempts. With the default reconnect-delay
-    /// formula (`min(2000 + attempt*1500, 10000)`, see `reconnect::reconnect_delay`)
-    /// we hit this cap at attempt 6 (2000 + 6*1500 = 11000 → capped).
-    pub const RECONNECT_MAX_DELAY_MS: u64 = 10_000;
-
-    /// Throttle progress IPC from backend → renderer. ffmpeg emits a progress
-    /// line every second; 5 s is the lowest fidelity the status bar cares about
-    /// without flooding the channel.
-    pub const PROGRESS_THROTTLE_MS: u64 = 5_000;
-
-    /// Per-receiver timeout for NDI shutdown — prevents a libndi deadlock from
-    /// blocking stream-stop forever.
-    pub const NDI_STOP_TIMEOUT_MS: u64 = 2_000;
-
     /// Background silence-warning delay. After this much continuous silence we
     /// fire a warning once (per stretch), even when stop-on-silence is off — so
     /// a muted mixer doesn't yield a silent file with no alert.
@@ -74,6 +37,25 @@ impl RecorderTimeouts {
     /// (no `+faststart` whole-file rewrite happens at capture stop any more), and
     /// both containers stay playable even through a kill.
     pub const STOP_FINALIZE_MS: u64 = 120_000;
+
+    /// LAST-RESORT backstop for the detached abort of a stopped recording's
+    /// supervisor task (the host `RecorderEngine::stop`). The supervisor is NOT
+    /// done when stop returns — it still has to run the whole finalize chain, and
+    /// aborting it mid-chain kills the `kill_on_drop` ffmpeg children with it: no
+    /// delivery file, no history row, no `recording://finished`, UI stuck.
+    ///
+    /// Derived from the real bounds of that chain, not guessed:
+    ///   - capture stop / container finalise ≤ [`Self::STOP_FINALIZE_MS`] (2 min),
+    ///   - concat + delivery encode ≤ the 15-min concat watchdog
+    ///     (`recorder::concat::CONCAT_WATCHDOG`) — a 60–90 min service's WAV→mp3
+    ///     encode legitimately runs 30–120+ s, far past the old fixed 15 s,
+    ///   - ≈3 min margin for the DB write, probes and slow-disk I/O.
+    ///
+    /// A pathological session can still exceed it (several wedged ffmpeg steps
+    /// each burning their own 15-min watchdog back to back) — but by then every
+    /// one of those steps is itself hung and doomed, which is exactly when a
+    /// hard abort is the right answer. That is the point: abort only a TRUE hang.
+    pub const STOP_ABORT_BACKSTOP_MS: u64 = 20 * 60_000;
 }
 
 #[cfg(test)]
@@ -81,22 +63,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn windows_startup_is_longer() {
-        assert_eq!(
-            RecorderTimeouts::startup_ms(TimeoutPlatform::Windows),
-            10_000
-        );
-        assert_eq!(RecorderTimeouts::startup_ms(TimeoutPlatform::Other), 5_000);
-    }
-
-    #[test]
     fn fixed_timeouts_match_electron() {
         assert_eq!(RecorderTimeouts::STUCK_PROGRESS_MS, 60_000);
         assert_eq!(RecorderTimeouts::STUCK_POLL_MS, 15_000);
-        assert_eq!(RecorderTimeouts::RECONNECT_MAX_DELAY_MS, 10_000);
-        assert_eq!(RecorderTimeouts::PROGRESS_THROTTLE_MS, 5_000);
-        assert_eq!(RecorderTimeouts::NDI_STOP_TIMEOUT_MS, 2_000);
         assert_eq!(RecorderTimeouts::SILENCE_WARN_MS, 60_000);
         assert_eq!(RecorderTimeouts::STOP_FINALIZE_MS, 120_000);
+    }
+
+    #[test]
+    fn stop_abort_backstop_covers_the_whole_finalize_chain() {
+        assert_eq!(RecorderTimeouts::STOP_ABORT_BACKSTOP_MS, 1_200_000);
+        // The derivation, asserted: capture finalise + the 15-min concat/delivery
+        // watchdog must fit inside the backstop with margin to spare, so a normal
+        // long-service delivery encode is never aborted mid-flight. (The host
+        // asserts the same against the real `CONCAT_WATCHDOG` constant.)
+        const CONCAT_WATCHDOG_MS: u64 = 15 * 60_000;
+        const _: () = assert!(
+            RecorderTimeouts::STOP_ABORT_BACKSTOP_MS
+                > RecorderTimeouts::STOP_FINALIZE_MS + CONCAT_WATCHDOG_MS
+        );
     }
 }

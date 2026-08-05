@@ -39,9 +39,9 @@ use tauri::{AppHandle, Emitter};
 use crate::audio::asio::build_route_plan;
 use crate::error::{AppError, AppResult};
 use crate::recorder::engine::{
-    emit_error, emit_warning, now_ms, sleep_opt, wait_opt, RecorderStatePayload, RecordingLevels,
-    RecordingOpts, RecordingProgress, SegmentOutcome, LEVELS_EVENT, PROGRESS_EVENT, SILENCE_EVENT,
-    STARTED_EVENT, STATE_EVENT,
+    emit_error, emit_warning, error_code_str, now_ms, sleep_opt, wait_opt, RecorderStatePayload,
+    RecordingLevels, RecordingOpts, RecordingProgress, SegmentOutcome, LEVELS_EVENT,
+    PROGRESS_EVENT, SILENCE_EVENT, STARTED_EVENT, STATE_EVENT,
 };
 use crate::recorder::native_capture::stream::{
     build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
@@ -412,10 +412,14 @@ pub(crate) async fn run_native_segment(
                             WriterErrorKind::DiskFull => RecordingErrorCode::DiskFull,
                             WriterErrorKind::Io => RecordingErrorCode::DeviceError,
                         };
+                        // Derive the wire code from the shared table (never a
+                        // literal) so it can't drift from the classification the
+                        // recovery policy just made — the ffmpeg twin does the same.
+                        let code_str = error_code_str(code);
                         if sundayrec_core::recorder::is_fatal_reconnect_error(code) {
-                            emit_error(app, "disk_full", &message);
+                            emit_error(app, code_str, &message);
                         } else {
-                            emit_warning(app, "device_error", &message);
+                            emit_warning(app, code_str, &message);
                         }
                         stop_native_bounded(&mut seg).await;
                         break SegmentOutcome::UnexpectedExit { last_error: Some(code) };

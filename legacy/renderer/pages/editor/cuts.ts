@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { E, $, markDirty, type Cut } from './state'
 import { pushSnapshot, undoSnapshot, redoSnapshot } from './cut-history'
+import { createDraftScheduler } from './draft-scheduler'
 import { computeKeepSegs } from './keep-segments'
 import { addCutToList } from './cut-ops'
 import { gainFactor } from './peaks'
@@ -37,22 +38,35 @@ export function pushCutHistory(): void {
   scheduleDraftSave()
 }
 
-let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+/** Debounce window — long enough that a drag doesn't spam IPC, short enough
+ *  that a crash costs at most a couple of seconds of editing. */
+const DRAFT_SAVE_DEBOUNCE_MS = 2000
+
+// The pending write captures its file path AND its cut list up front (see
+// draft-scheduler.ts for why both). A timer armed for file A can therefore only
+// ever write A's cuts to A's sidecar, even if it fires in the middle of B's load.
+const draftSaver = createDraftScheduler<Cut[]>({
+  delayMs: DRAFT_SAVE_DEBOUNCE_MS,
+  save: (fp, cuts) => { window.api.editorSaveCutsDraft(fp, cuts).catch(() => {}) },
+})
+
 export function scheduleDraftSave(): void {
   if (!E.filePath) return
-  if (draftSaveTimer) clearTimeout(draftSaveTimer)
-  // Debounce 2 s — avoid IPC spam during rapid drag operations
-  draftSaveTimer = setTimeout(() => {
-    draftSaveTimer = null
-    const fp = E.filePath
-    if (!fp) return
-    window.api.editorSaveCutsDraft(fp, E.cuts).catch(() => {})
-  }, 2000)
+  // Snapshot: the live array keeps being mutated (drags edit cuts in place), and
+  // the write must describe the state at the moment it was requested.
+  draftSaver.schedule(E.filePath, E.cuts.map(c => ({ ...c })))
+}
+
+/** Disarm any pending draft write. Called at the top of `loadFile` and from
+ *  `teardownPlayback` — once we start tearing the current file down, a queued
+ *  write for it is at best pointless and at worst lands on the NEXT file. */
+export function cancelDraftSave(): void {
+  draftSaver.cancel()
 }
 
 /** Called after a successful save/export to remove the draft. */
 export function clearEditorDraft(): void {
-  if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null }
+  draftSaver.cancel()
   if (E.filePath) window.api.editorDeleteCutsDraft(E.filePath).catch(() => {})
 }
 

@@ -886,6 +886,15 @@ pub struct ExportEngine {
     /// ever populated feature-on, but the slot compiles either way so
     /// [`cancel_export`] can answer "nothing to cancel" in the default build.
     child: std::sync::Mutex<Option<tokio::process::Child>>,
+    /// "The user pressed Avbryt." Set by [`cancel_export`] whether or not a
+    /// child was parked at that instant, and checked before every spawn.
+    ///
+    /// Killing the parked child alone LOSES a cancel: a mastered export spends
+    /// real time between passes with the slot empty (the source probe, the
+    /// loudnorm-JSON parse, the jingle duration probes), and a cancel landing in
+    /// one of those gaps killed nothing and was then forgotten — the export
+    /// simply carried on and the next pass spawned as if nothing had happened.
+    cancelled: std::sync::atomic::AtomicBool,
 }
 
 impl Default for ExportEngine {
@@ -899,6 +908,7 @@ impl ExportEngine {
     pub fn new() -> Self {
         Self {
             child: std::sync::Mutex::new(None),
+            cancelled: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -912,6 +922,26 @@ impl ExportEngine {
     /// else already took it — i.e. a cancel won the race.
     fn take(&self) -> Option<tokio::process::Child> {
         self.child.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+
+    /// Record that a cancel was asked for, so a pass that has not spawned yet
+    /// still sees it.
+    fn request_cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Whether a cancel is pending for the export currently in flight.
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Clear the flag at the START of an export — the engine outlives every
+    /// export (it is Tauri managed state), so a cancel of the PREVIOUS one must
+    /// not abort the next.
+    fn reset_cancel(&self) {
+        self.cancelled
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -1044,11 +1074,17 @@ where
     disabled("export")
 }
 
-/// Abort the in-flight export. Returns whether one was actually running.
+/// Abort the in-flight export. Returns whether a render was actually killed.
 /// Compiles in both feature states — the slot is empty in the default build, so
 /// even there this answers a calm "nothing to cancel" rather than erroring
 /// (same idiom as [`master_cancel`]).
+///
+/// The flag is raised EITHER WAY. Between an export's passes the child slot is
+/// legitimately empty (probe / parse / jingle-duration awaits), and a cancel
+/// that only kills a parked child is silently dropped in exactly those windows;
+/// [`export`] checks the flag before every spawn, so the abort survives the gap.
 pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
+    engine.request_cancel();
     match engine.take() {
         // `kill()` on a tokio child both signals AND reaps it, so the aborted
         // ffmpeg leaves no zombie behind.
@@ -1161,6 +1197,12 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
     // temp dirs older versions leaked here.
     sweep_editor_temp_once();
 
+    // The kill-timer for the decode, scaled from the media length. Without one a
+    // wedged ffmpeg (a stalled network volume, a half-mounted share) leaves the
+    // read loop below waiting for an EOF that never comes — the editor hangs on
+    // "Analyserer bølgeform…" with no cancel anywhere in reach.
+    let op_timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
+
     let args = peaks_pipe_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
@@ -1180,21 +1222,43 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
     });
 
     let mut acc = PeakAccumulator::new(PEAKS_BUCKET_SAMPLES);
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = stdout
-            .read(&mut buf)
-            .await
-            .map_err(|e| AppError::Recording(format!("peaks decode read: {e}")))?;
-        if n == 0 {
-            break;
+    // Read AND wait under the one timer: timing only the `wait()` would still
+    // hang, because a wedged ffmpeg's stdout never reaches EOF. `child` is
+    // borrowed (not moved) so it is still ours to kill if the timer fires.
+    let child_ref = &mut child;
+    let waited = tokio::time::timeout(op_timeout, async move {
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = stdout
+                .read(&mut buf)
+                .await
+                .map_err(|e| AppError::Recording(format!("peaks decode read: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            acc.push_bytes(&buf[..n]);
         }
-        acc.push_bytes(&buf[..n]);
-    }
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| AppError::Recording(format!("peaks decode wait: {e}")))?;
+        let status = child_ref
+            .wait()
+            .await
+            .map_err(|e| AppError::Recording(format!("peaks decode wait: {e}")))?;
+        Ok::<_, AppError>((acc, status))
+    })
+    .await;
+
+    let (acc, status) = match waited {
+        Ok(r) => r?,
+        Err(_elapsed) => {
+            // Kill it ourselves rather than relying on the drop: `kill()` also
+            // reaps, so the abandoned decode leaves no zombie holding the file.
+            let _ = child.kill().await;
+            tracing::warn!(
+                timeout_ms = op_timeout.as_millis() as u64,
+                "peaks decode exceeded its kill-timer"
+            );
+            return Err(AppError::Recording("timeout: peaks decode".into()));
+        }
+    };
     let stderr_buf = match drain {
         Some(h) => h.await.unwrap_or_default(),
         None => String::new(),
@@ -1250,7 +1314,11 @@ pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
     ));
     let out_str = out_path.to_string_lossy().into_owned();
     let args = playback_proxy_args(input_path, &out_str);
-    run_ffmpeg(&args).await?;
+    // A full transcode of the recording — budget it against the media length so
+    // a stalled source volume can't leave the editor "Klargjør avspilling…"
+    // forever with no way out.
+    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
+    run_ffmpeg(&args, timeout, "playback proxy").await?;
     if !out_path.exists() {
         return Err(AppError::Recording(
             "playback proxy produced no file".into(),
@@ -1563,11 +1631,11 @@ async fn run_astats_stderr(input_path: &str) -> AppResult<String> {
         "null",
         "-",
     ];
-    let child = crate::media::ffmpeg::spawn_ffmpeg(&args).await?;
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| AppError::Recording(format!("astats wait: {e}")))?;
+    // A full-file read to a null sink — timed against the media length, so a
+    // wedged ffmpeg can't hang «Diagnostiser» / one-click auto-enhance forever.
+    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
+    let owned: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    let out = ffmpeg_output_timed(&owned, timeout, "astats").await?;
     Ok(String::from_utf8_lossy(&out.stderr).into_owned())
 }
 
@@ -1724,7 +1792,10 @@ pub async fn master_preview(
     ));
     let out_str = out_path.to_string_lossy().into_owned();
     let args = preview_args(&req.input_path, &preset, start, dur, &out_str);
-    run_ffmpeg(&args).await?;
+    // A preview renders one clamped window (seconds of media), so the floor is
+    // the whole budget — no probe needed just to time a 15-second render.
+    let timeout = sundayrec_core::editor::editor_op_timeout(None);
+    run_ffmpeg(&args, timeout, "master preview").await?;
     if !out_path.exists() {
         return Err(AppError::Recording(
             "master preview produced no file".into(),
@@ -1853,9 +1924,17 @@ where
         .unwrap_or_else(|e| e.into_inner())
         .insert(req.job_id.clone(), child);
 
-    // Stream -progress; total duration is unknown without a probe, so we report
-    // current with total 0 (the renderer shows an indeterminate bar) — matches
-    // the Electron behaviour when the Duration line hasn't been parsed yet.
+    // The denominator for the percentage. This used to be hard-coded 0.0, which
+    // pinned the mastering bar at 0 % for the WHOLE apply — a 90-minute service
+    // looked hung for the entire render. A header-only ffprobe is nothing next
+    // to the encode it is measuring, so we just ask. `0.0` still means
+    // "unknown" (an unprobeable container) and the renderer keeps the
+    // indeterminate stripe for it.
+    let total_sec = crate::media::ffmpeg::probe_duration_secs(&req.input_path)
+        .await
+        .unwrap_or(0.0);
+
+    // Stream -progress.
     if let Some(mut out) = stdout.take() {
         let mut buf = String::new();
         let mut chunk = [0u8; 4096];
@@ -1865,7 +1944,7 @@ where
                 Ok(n) => {
                     buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
                     if let Some(cur) = parse_progress_time(&buf) {
-                        on_progress(cur, 0.0);
+                        on_progress(cur, total_sec);
                     }
                     // keep the tail so a split line still parses next read
                     if buf.len() > 4096 {
@@ -1938,6 +2017,10 @@ where
         dither_filter_for, get_preset_by_id, loudnorm_apply_filter, loudnorm_measure_filter,
     };
 
+    // A cancel of the PREVIOUS export must not abort this one — the engine is
+    // long-lived managed state, the flag is per-export.
+    engine.reset_cancel();
+
     if !Path::new(&req.input_path).exists() {
         return Err(AppError::Validation("file_not_found".into()));
     }
@@ -1978,6 +2061,7 @@ where
     //     this a mastered lossless export lands at loudnorm's internal 192 kHz.
     //     Best-effort: a failed probe (no ffprobe sidecar, exotic container)
     //     simply means "emit no -ar", i.e. the pre-Phase-4 behaviour.
+    bail_if_cancelled(engine)?;
     let source_rate: Option<u32> = if is_video {
         None // the video path encodes AAC via `video_codec_args` — no -ar there.
     } else {
@@ -2189,6 +2273,7 @@ where
     // CRF, so it needs a target bitrate, which depends on the source resolution —
     // probed ONLY when the hardware path is actually taken. An unreadable size
     // falls back to the 1080p rung rather than to a nonsense `0k`.
+    bail_if_cancelled(engine)?;
     let want_hw = is_video && hw_encode && cfg!(target_os = "macos");
     let hw_bitrate_kbps = if want_hw {
         let (w, h) = probe_video_size(&req.input_path)
@@ -2268,6 +2353,7 @@ where
     //    output, so leaving them out would make the bar stall near 100 %).
     let mut total_sec = kept_duration;
     for clip in [intro, outro].into_iter().flatten() {
+        bail_if_cancelled(engine)?;
         total_sec += crate::media::ffmpeg::probe_duration_secs(clip)
             .await
             .unwrap_or(0.0);
@@ -2336,6 +2422,18 @@ where
 /// The override exists for the real-ffmpeg smoke test, which has to prove the
 /// timeout path actually kills the child — waiting out the 10-minute floor to
 /// learn that is not a test anyone runs. Never set in production.
+/// Stop the export here if the user has pressed Avbryt, with the SAME bare
+/// `cancelled` code a killed child produces — the renderer's
+/// `describeExportError` and the hardware-retry guard both match on it, so a
+/// gap-cancel must be indistinguishable from a mid-render one.
+#[cfg(feature = "editor")]
+fn bail_if_cancelled(engine: &ExportEngine) -> AppResult<()> {
+    if engine.is_cancelled() {
+        return Err(AppError::Recording("cancelled".into()));
+    }
+    Ok(())
+}
+
 #[cfg(feature = "editor")]
 fn export_timeout_ms_for(kept_duration: f64) -> u64 {
     std::env::var("SUNDAYREC_EXPORT_TIMEOUT_MS_OVERRIDE")
@@ -2371,6 +2469,11 @@ where
 {
     use sundayrec_core::mastering::parse_progress_time;
     use tokio::io::AsyncReadExt;
+
+    // The one gate every export pass goes through: never spawn a render the
+    // user has already cancelled (pass 2 after a cancel during the pass-1 parse,
+    // or the software retry after a cancel during the hardware attempt).
+    bail_if_cancelled(engine)?;
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut child = tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
@@ -2408,6 +2511,14 @@ where
         tail
     });
     engine.hold(child);
+    // Lost-cancel guard: a cancel that landed between the check above and this
+    // hold found an EMPTY slot, killed nothing, and would otherwise let the
+    // render it was aimed at run to completion. The child is reachable now.
+    if engine.is_cancelled() {
+        if let Some(mut c) = engine.take() {
+            let _ = c.kill().await;
+        }
+    }
 
     // The whole read-then-wait is under the kill-timer: if ffmpeg wedges, the
     // stdout read never returns EOF, so timing only the `wait()` would hang.
@@ -2551,27 +2662,70 @@ async fn measure_loudness(
         "null".to_string(),
         "-".to_string(),
     ];
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| AppError::Recording(format!("loudness measure wait: {e}")))?;
+    // Pass 1 reads the whole recording; on a 90-minute service that is minutes
+    // of honest work, but an ffmpeg that never returns must not hang the
+    // mastering panel (or the export that shares this function) indefinitely.
+    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
+    let out = ffmpeg_output_timed(&args, timeout, "loudness measure").await?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     parse_loudnorm_json(&stderr)
         .ok_or_else(|| AppError::Recording("could not parse loudnorm measurement".into()))
 }
 
-/// Spawn ffmpeg with `args`, wait for it, and map a non-zero exit to an error
-/// carrying the tail of stderr (what the Electron `spawnFfmpeg` did).
+/// The media length of `input_path` in seconds, for scaling an op's kill-timer.
+/// A header-only ffprobe, so it costs nothing next to the full-file read it is
+/// budgeting for — and it is ITSELF capped, because the whole point of the
+/// kill-timers is that a stalled volume must not hang the editor, and a probe
+/// with no timer would just move the hang one process earlier. `None` (unknown
+/// duration) simply falls back to [`editor_op_timeout`]'s floor.
 #[cfg(feature = "editor")]
-async fn run_ffmpeg(args: &[String]) -> AppResult<()> {
+async fn duration_hint(input_path: &str) -> Option<f64> {
+    const PROBE_CAP: std::time::Duration = std::time::Duration::from_secs(20);
+    tokio::time::timeout(
+        PROBE_CAP,
+        crate::media::ffmpeg::probe_duration_secs(input_path),
+    )
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Spawn ffmpeg with `args`, wait for it under `timeout`, and return its
+/// collected output. A non-zero exit is the caller's to interpret (the astats /
+/// loudnorm passes read their answer out of stderr and don't care about the
+/// exit code); the timeout is not.
+///
+/// On timeout the `wait_with_output` future is dropped, and `spawn_ffmpeg` sets
+/// `kill_on_drop(true)` — so the wedged ffmpeg is killed and reaped rather than
+/// left behind holding the stalled volume open. The error carries the bare
+/// `timeout` code the renderer already maps to a calm Norwegian sentence.
+#[cfg(feature = "editor")]
+async fn ffmpeg_output_timed(
+    args: &[String],
+    timeout: std::time::Duration,
+    what: &str,
+) -> AppResult<std::process::Output> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| AppError::Recording(format!("ffmpeg wait: {e}")))?;
+    match tokio::time::timeout(timeout, child.wait_with_output()).await {
+        Ok(r) => r.map_err(|e| AppError::Recording(format!("{what} wait: {e}"))),
+        Err(_elapsed) => {
+            tracing::warn!(
+                what,
+                timeout_ms = timeout.as_millis() as u64,
+                "editor ffmpeg op exceeded its kill-timer"
+            );
+            Err(AppError::Recording(format!("timeout: {what}")))
+        }
+    }
+}
+
+/// Spawn ffmpeg with `args`, wait for it under `timeout`, and map a non-zero
+/// exit to an error carrying the tail of stderr (what the Electron
+/// `spawnFfmpeg` did).
+#[cfg(feature = "editor")]
+async fn run_ffmpeg(args: &[String], timeout: std::time::Duration, what: &str) -> AppResult<()> {
+    let out = ffmpeg_output_timed(args, timeout, what).await?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let tail: String = stderr.chars().rev().take(500).collect::<String>();
@@ -2718,6 +2872,7 @@ mod tests {
             preset_id: "speech-clear".into(),
             job_id: "j1".into(),
             bitrate: None,
+            measurement: None,
         };
         assert!(master_apply(&engine, &apply, |_, _| {})
             .await
@@ -3095,6 +3250,39 @@ mod tests {
             .block_on(cancel_export(&engine))
             .unwrap();
         assert!(!was);
+    }
+
+    /// A cancel that lands BETWEEN two export passes finds an empty child slot.
+    /// It must still be remembered, or the next pass spawns as if the user had
+    /// never pressed Avbryt (the mastered export's probe / loudnorm-parse /
+    /// jingle-probe gaps are seconds wide on a long service).
+    #[test]
+    fn cancel_export_is_remembered_when_no_child_is_parked() {
+        let engine = ExportEngine::new();
+        assert!(!engine.is_cancelled(), "a fresh engine is not cancelled");
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Nothing to kill…
+        assert!(!rt.block_on(cancel_export(&engine)).unwrap());
+        // …but the intent survives the gap.
+        assert!(engine.is_cancelled());
+
+        // And the NEXT export clears it — the engine is long-lived managed
+        // state, so a sticky flag would abort every later export instantly.
+        engine.reset_cancel();
+        assert!(!engine.is_cancelled());
+    }
+
+    /// The progress phase codes cross the IPC boundary as bare strings and are
+    /// matched by LITERAL in the renderer (`legacy/renderer/pages/editor/
+    /// export-params.ts` → `EXPORT_PHASE_MEASURING` / `EXPORT_PHASE_ENCODING`,
+    /// asserted there by `export-params.test.ts`). Renaming one side silently
+    /// downgrades the export label to the encoding fallback, which no type
+    /// checker catches; this pins the wire values so a rename breaks loudly.
+    #[test]
+    fn export_phase_codes_match_the_renderer_literals() {
+        assert_eq!(EXPORT_PHASE_MEASURING, "measuring");
+        assert_eq!(EXPORT_PHASE_ENCODING, "encoding");
     }
 
     // ── Real-ffmpeg editor smoke test (feature-on; skips without the sidecar) ─────

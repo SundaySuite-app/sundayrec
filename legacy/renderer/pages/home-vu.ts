@@ -7,8 +7,16 @@ import { t } from '../i18n'
 const vu = makeVuState()
 let vuRetries = 0
 const MAX_VU_RETRIES = 5
+// The gUM-failure retry timer (see tryStartVU's .catch). Must be cancelled by
+// stopVU() — otherwise a retry fired 5 s after a failed open could reopen the
+// mic mid-recording: #vu-l always exists (pages are display-toggled, not
+// removed), so the old guard `!vu.stream && document.getElementById('vu-l')`
+// never actually blocked a retry once the recorder's ffmpeg was the one
+// holding the device (single-mic-owner invariant, 2026-07-31 audit).
+let vuRetryTimer: ReturnType<typeof setTimeout> | null = null
 
 export function stopVU(): void {
+  if (vuRetryTimer) { clearTimeout(vuRetryTimer); vuRetryTimer = null }
   stopVuState(vu)
   const fills = ['vu-l', 'vu-r'].map(id => document.getElementById(id))
   const peaks = ['vu-peak-l', 'vu-peak-r'].map(id => document.getElementById(id))
@@ -78,7 +86,12 @@ function tryStartVU(): void {
     .catch(() => {
       vuRetries++
       if (vuRetries < MAX_VU_RETRIES) {
-        setTimeout(() => { if (!vu.stream && document.getElementById('vu-l')) tryStartVU() }, 5000)
+        vuRetryTimer = setTimeout(() => {
+          vuRetryTimer = null
+          // Also bail if a recording started while we were waiting — the
+          // recorder's ffmpeg now owns the mic (single-mic-owner invariant).
+          if (!vu.stream && !window.__isRecording && document.getElementById('vu-l')) tryStartVU()
+        }, 5000)
       }
     })
 }

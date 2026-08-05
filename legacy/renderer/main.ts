@@ -1,4 +1,4 @@
-import { loadLocale, setApplyHook } from './i18n'
+import { loadLocale, setApplyHook, t } from './i18n'
 import { updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
 
@@ -60,9 +60,6 @@ declare global {
     api: {
       getSettings:         () => Promise<Settings>
       saveSettings:        (s: Settings) => Promise<boolean>
-      exportProfile:       () => Promise<unknown>
-      importProfile:       (json: string) => Promise<boolean>
-      resetSettings:       () => Promise<boolean>
       getNextRecording:    () => Promise<{ date: string } | null>
       getHistory:          () => Promise<unknown[]>
       deleteHistoryEntry:  (ts: number) => Promise<void>
@@ -129,7 +126,6 @@ declare global {
         label: string; reason?: string; deltaSec?: number
       }[]>
       wakeClearFailureHistory: () => Promise<boolean>
-      notifyError:         (data: unknown) => void
       notifyWeakSignal:    () => void
       on:                  (channel: string, fn: (...args: unknown[]) => void) => (() => void) | undefined
       toAssetUrl:             (path: string) => string
@@ -186,7 +182,6 @@ declare global {
       overlayPickImage:      () => Promise<{ path: string; name: string } | null>
 
       transcriptListAll:       () => Promise<Array<{ filePath: string; transcript: import('../types').TranscriptData }>>
-      transcriptResolveSource: (basePath: string) => Promise<string | null>
 
       editorReadTranscript:    (filePath: string) => Promise<import('../types').TranscriptData | null>
       editorWriteTranscript:   (filePath: string, t: unknown) => Promise<boolean>
@@ -214,7 +209,6 @@ declare global {
       videoPreviewStart: (opts: unknown) => Promise<boolean>
       videoPreviewStop:  () => Promise<void>
       recordingPreviewFrame: () => Promise<string | null>
-      editorSetVideoPath:      (filePath: string) => Promise<boolean>
       editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null; sampleRate: number | null } | null>
       editorAllowAssetPath:    (filePath: string) => Promise<boolean>
       editorExtractAudioPeaks: (filePath: string) => Promise<{ peaks: number[]; sampleRate: number } | null>
@@ -227,9 +221,6 @@ declare global {
       masterMeasure:           (inputPath: string, presetId: string) => Promise<{ ok: boolean; measurement?: LoudnessMeasurementView; error?: string }>
       masterApply:             (params: { inputPath: string; outputPath: string; presetId: string; measurement?: LoudnessMeasurementView; jobId: string }) => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       masterCancel:            (jobId: string) => Promise<boolean>
-      getLogs:                 ()                 => Promise<unknown[]>
-      getLogFilePath:          ()                 => Promise<string | null>
-      diagnoseAudio?:          () => Promise<{ dshow: string[]; wasapi: string[]; wasapiAvailable: boolean }>
       runDiagnostics:          () => Promise<{ markdown: string; findings: { code: string; severity: 'ok' | 'info' | 'warning' | 'critical'; title: string; detail: string; hint: string }[]; savedTo: string | null; captureOk: boolean | null; videoOk: boolean | null }>
 
       // Thumbnail (podcast cover art)
@@ -349,7 +340,7 @@ function verifyBlobUrlsAllowed(): void {
       console.error('[main] CSP smoke test FAILED — blob: URLs are blocked. Check Content-Security-Policy meta tag in index.html — img-src must include blob:.')
       const banner = document.getElementById('global-error-banner')
       const msg    = document.getElementById('global-error-msg')
-      if (msg)    msg.textContent = 'Konfigurasjonsfeil: kamera-preview vil ikke fungere (CSP blokkerer blob:-URL-er). Restart appen — hvis problemet vedvarer, kontakt support.'
+      if (msg)    msg.textContent = t('general.cspError', 'Konfigurasjonsfeil: kamera-preview vil ikke fungere (CSP blokkerer blob:-URL-er). Restart appen — hvis problemet vedvarer, kontakt support.')
       if (banner) banner.style.display = ''
     }
   }
@@ -478,8 +469,7 @@ window.addEventListener('error', e => {
 init().catch(err => {
   console.error('Init failed:', err)
   showGlobalErrorBanner(
-    'Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. ' +
-    'Restart appen — hvis problemet vedvarer, kontakt support. (' +
-    (err instanceof Error ? err.message : String(err)) + ')',
+    t('general.initError', 'Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. Restart appen — hvis problemet vedvarer, kontakt support.') +
+    ' (' + (err instanceof Error ? err.message : String(err)) + ')',
   )
 })

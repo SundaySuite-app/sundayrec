@@ -1,6 +1,6 @@
 import { t, loadLocale, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, flashMsg, setVal, setupDirtyBar } from '../helpers'
+import { flashSaved, setVal, setupDirtyBar } from '../helpers'
 
 let _markGeneralClean = () => {}
 let _markVarslerClean = () => {}
@@ -32,28 +32,11 @@ export function setupGeneralPage(): void {
     if (clearBtn)  clearBtn.style.display = 'none'
   })
 
-  // Gmail OAuth — alternative to SMTP. Click "Logg inn med Google" → opens
-  // Google's consent screen in the system browser; once back, the row shows
-  // "Sender via <email>" and the Avansert SMTP section becomes optional.
-  document.getElementById('btn-email-gmail-connect')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-email-gmail-connect') as HTMLButtonElement | null
-    if (!btn) return
-    btn.disabled = true
-    const oldText = btn.textContent
-    btn.textContent = t('notify.emailGmailConnecting', 'Kobler til…')
-    try {
-      const r = await window.api.gmailConnect()
-      if (!r.ok) {
-        alert(t('notify.emailGmailFailed', 'Kunne ikke koble til Google: ') + (r.error ?? ''))
-      }
-    } catch (err) {
-      alert(t('notify.emailGmailFailed', 'Kunne ikke koble til Google: ') + (err as Error).message)
-    } finally {
-      btn.disabled = false
-      btn.textContent = oldText
-      await refreshGmailStatus()
-    }
-  })
+  // Gmail OAuth connect (btn-email-gmail-connect) has no working backend yet
+  // (2026-08 audit: gmailConnect was a permanent-failure stub with no `ok`
+  // field, so a click always produced an empty "Kunne ikke koble til Google: "
+  // alert) — the button is disabled in the markup with an honest reason
+  // instead, so there is nothing to wire here until the feature is built.
 
   document.getElementById('btn-email-gmail-disconnect')?.addEventListener('click', async () => {
     if (!confirm(t('notify.emailGmailConfirmDisconnect', 'Koble fra Google-kontoen? E-postvarsler vil falle tilbake til SMTP.'))) return
@@ -62,34 +45,17 @@ export function setupGeneralPage(): void {
   })
 
   // Note: btn-export / btn-import / btn-restore handlers were removed in v4.31
-  // when the System tab was simplified. The corresponding IPC handlers
-  // (export-profile / import-profile / reset-settings) remain available for
-  // any future re-introduction or tests.
+  // when the System tab was simplified. The corresponding shim methods
+  // (exportProfile / importProfile / resetSettings) had zero callers left after
+  // that and were deleted from api-shim.ts + the window.api type (2026-08
+  // audit) — re-add both the UI and the shim method together if this ever
+  // comes back.
 
-  document.getElementById('btn-test-email')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-test-email')
-    if (btn) { (btn as HTMLButtonElement).disabled = true }
-    const result = await window.api.testEmail()
-    const msgKey = result.ok ? 'general.testEmailOk' : 'general.testEmailFail'
-    const fallback = result.ok ? '✓ Testmelding sendt' : '✕ Sending feilet'
-    flashMsg(btn, t(msgKey, fallback), result.ok)
-    if (btn) { (btn as HTMLButtonElement).disabled = false }
-  })
-
-  document.getElementById('btn-test-webhook')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-test-webhook') as HTMLButtonElement | null
-    if (!btn) return
-    // Force-save the webhook URL first so the user doesn't have to click Save
-    // before testing a freshly-pasted URL.
-    const url = (document.getElementById('webhook-url') as HTMLInputElement | null)?.value.trim() ?? ''
-    if (!url) { flashMsg(btn, '✕ ' + t('general.pasteUrlFirst', 'Lim inn URL først'), false); return }
-    btn.disabled = true
-    patchSettings({ webhookUrl: url })
-    await window.api.saveSettings(settings)
-    const result = await window.api.testWebhook() as { ok: boolean; error?: string }
-    flashMsg(btn, result.ok ? '✓ Sendt — sjekk kanalen' : `✕ ${result.error ?? 'Feil'}`, result.ok)
-    btn.disabled = false
-  })
+  // btn-test-email / btn-test-webhook have no working backend yet (2026-08
+  // audit: testEmail/testWebhook were permanent-failure stubs, so every click
+  // showed a fake "✕ Sending feilet" no matter what the user configured) — both
+  // are disabled in the markup with an honest reason instead of wiring up a
+  // guaranteed failure.
 
   document.getElementById('btn-check-updates')?.addEventListener('click', async () => {
     setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))

@@ -12,7 +12,7 @@ import { snapOutOfCut } from './canvas-input'
 import { stopPlay, startPlay, seekMediaTo, updateTimecode, updateTotalTime } from './playback'
 import { renderAnalyzePanel, runDetection } from './detection'
 import { renderMetaPanel, renderChapterList } from './metadata'
-import { renderCutList, updateRemainingDisplay } from './cuts'
+import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 import { loadTranscriptForFile } from '../editor-transcript'
 import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
@@ -234,6 +234,14 @@ export async function loadFile(fp: string): Promise<void> {
   const seq = ++E.loadSeq
   stopPlay()
 
+  // FIRST, before a single field is reset: disarm the previous file's pending
+  // draft write. It is debounced 2 s, so switching files quickly left a timer
+  // armed that fired mid-load and wrote the (now empty) cut list into a sidecar
+  // — in the worst case the NEW file's, moments before its draft-restore read
+  // it. The scheduler also captures its own path/payload, so this is the second
+  // of two belts; see draft-scheduler.ts.
+  cancelDraftSave()
+
   E.cuts = []
   E.cutHistory = []
   E.cutHistoryIdx = -1
@@ -289,8 +297,10 @@ export async function loadFile(fp: string): Promise<void> {
     // Load the video via the Tauri asset:// protocol (the old Electron renderer
     // used a custom `media://current` scheme that doesn't exist in WKWebView, so
     // the video editor never showed a frame). convertFileSrc handles the path.
-    await window.api.editorSetVideoPath(fp)
-    if (seq !== E.loadSeq) return
+    //
+    // (There is no `editorSetVideoPath` step any more: the shim mapped it to a
+    // full `editor_load_recording` ffprobe whose result was thrown away — one
+    // extra process per video open, buying nothing.)
     // Widen the asset:// scope to this one file first — a service recorded onto
     // an external drive matches none of the static scope globs, and the <video>
     // src then fails with nothing but an opaque media error.
@@ -377,8 +387,9 @@ export async function loadFile(fp: string): Promise<void> {
   // Load intro/outro buffers from settings (non-blocking, audio only)
   if (!E.isVideoFile) loadIntroOutroBuffers(seq)
 
-  // Load metadata sidecar
-  loadMetadataSidecar(fp, fname)
+  // Load metadata sidecar (fire-and-forget — it carries `seq` so a slow read
+  // for THIS file can't overwrite a newer file's metadata when it lands).
+  void loadMetadataSidecar(fp, fname, seq)
   void loadTranscriptForFile(fp)
 
   // Restore unsaved cuts from a previous editing session that ended abruptly.
@@ -483,6 +494,8 @@ export async function loadFile(fp: string): Promise<void> {
  * the element itself is kept for reuse.
  */
 export function teardownPlayback(): void {
+  // Tearing the current file down invalidates any queued draft write for it.
+  cancelDraftSave()
   const notice = document.getElementById('editor-quality-notice')
   if (notice) notice.style.display = 'none'
   setLoadingDetail(null)
@@ -687,8 +700,24 @@ export function updateEditorIntroOutroDisplay(): void {
   }
 }
 
-export async function loadMetadataSidecar(fp: string, fname: string): Promise<void> {
+/**
+ * Read the `.meta` sidecar for `fp` and paint the metadata/chapter panels.
+ *
+ * `seq` is the caller's `E.loadSeq` at the time it started, re-checked after the
+ * await like every other step in this file (see the header's invariant). It was
+ * the one loader step that did NOT: called fire-and-forget, a slow read for file
+ * A resolved after the user had opened B and stamped A's title, speaker,
+ * description and chapters onto B — which then got SAVED under B on the next
+ * metadata edit. Omitting `seq` keeps the old unguarded behaviour for any caller
+ * that genuinely has no load in flight.
+ */
+export async function loadMetadataSidecar(
+  fp: string,
+  fname: string,
+  seq?: number,
+): Promise<void> {
   const raw = await window.api.editorReadMeta(fp)
+  if (seq !== undefined && seq !== E.loadSeq) return
   if (raw && typeof raw === 'object') {
     E.meta = raw as RecordingMetadata
   } else {

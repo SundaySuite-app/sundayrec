@@ -1,19 +1,27 @@
 /**
- * Recording session UI — overlay, VU meter, silence detection, split timer.
+ * Recording session UI — overlay, VU meter, silence-warning banner, split timer.
  *
- * In the v4.1 architecture, recording is handled by ffmpeg in the main process.
- * This module manages ONLY the UI state and the monitoring stream for VU display.
- * Audio chunks are no longer sent via IPC.
+ * Recording itself runs entirely in the native Rust capture engine
+ * (src-tauri/src/recorder — cpal capture → ring buffer → the app's own WAV/
+ * container writer, with a legacy ffmpeg-audio escape hatch behind a settings
+ * flag). This module only drives the UI: it never opens its own microphone
+ * stream for metering — the overlay's level meter, waveform and clip
+ * indicators are driven entirely by the recording's own `recording://levels`
+ * telemetry (see startLevelsMeter), so the mic has exactly ONE owner (the
+ * recorder) for the whole take.
  *
  * Start flow:
- *   1. window.api.startRecordingNow(opts) → main spawns ffmpeg
+ *   1. window.api.startRecordingNow(opts) → Tauri `plan_recording_opts` +
+ *      `start_recording` spawn the native capture engine
  *   2. showOverlay() → recording UI becomes visible
- *   3. startMonitoring(opts) → opens a separate getUserMedia stream for VU only
+ *   3. startMonitoring(opts) → releases every renderer-side mic consumer and
+ *      subscribes to the engine's own telemetry (no new getUserMedia stream)
  *
  * Stop flow:
- *   1. window.api.stopRecordingNow() → main sends 'q' to ffmpeg
- *   2. stopMonitoring() → closes monitoring stream
- *   3. Main sends 'recording-finished' → renderer hides overlay, shows history
+ *   1. window.api.stopRecordingNow() → Tauri `stop_recording` asks the engine
+ *      to finalize (a graceful stop request, not a raw ffmpeg stdin 'q')
+ *   2. stopMonitoring() → unsubscribes from the telemetry + tears down the UI timers
+ *   3. The backend emits `recording://finished` → renderer hides overlay, shows history
  */
 import { t } from '../i18n'
 import { settings } from '../state'
@@ -73,11 +81,14 @@ function dbToEnvHeight(db: number): number {
   return (Math.max(-60, Math.min(0, db)) + 60) / 60
 }
 
-// ── Level meter driven by the recording's own `recording://levels` (ffmpeg
-//    astats) — NOT a second getUserMedia mic stream. Opening the built-in mic
-//    twice (ffmpeg capture + a getUserMedia monitor) made macOS re-configure the
-//    shared device and drop samples → choppy ("hakkete") recordings. Reading the
-//    already-captured signal's levels means the mic is opened EXACTLY once. ──────
+// ── Level meter driven by the recording's own `recording://levels` telemetry
+//    (computed by the native capture engine directly off its ring buffer; a
+//    legacy ffmpeg-astats path only exists behind the classic_ffmpeg_audio
+//    escape hatch) — NOT a second getUserMedia mic stream. Opening the built-in
+//    mic twice (the recorder's capture + a getUserMedia monitor) made macOS
+//    re-configure the shared device and drop samples → choppy ("hakkete")
+//    recordings. Reading the already-captured signal's levels means the mic is
+//    opened EXACTLY once. ──────
 const meter = {
   tL: -60, tR: -60,   // latest target dBFS from the last event
   smL: -60, smR: -60, // smoothed (rise instant, fall eased)
@@ -204,6 +215,24 @@ export function setupRecording(): void {
       console.warn('[recording] transient recorder error:', d?.error, d?.message)
       showReconnectBanner()
     }),
+    // NON-terminal, same as recording-warning: the stop-on-silence detector
+    // fired a warning ahead of the auto-stop timeout, so the user gets a chance
+    // to notice before the take ends. Reuses the SAME banner as the reconnect
+    // path — it disappears with the overlay when the recording ends (either the
+    // user acts, or the silence timeout auto-stops and recording-finished tears
+    // the whole overlay down anyway).
+    window.api.on('recording-silence', (data) => {
+      const d = data as { code?: string; message?: string } | undefined
+      console.warn('[recording] silence detected:', d?.code, d?.message)
+      // The backend message is a hardcoded Norwegian string (not run through
+      // this app's i18n) — fall back to our own localized copy whenever the
+      // payload carries that generic text (or nothing at all).
+      const isGeneric = !d?.message || d.message === 'Stillhet oppdaget i lydsignalet'
+      const msg = isGeneric
+        ? t('recording.silenceWarn', 'Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.')
+        : d.message
+      showReconnectBanner(msg)
+    }),
     window.api.on('recording-quality', (data) => {
       // Session-end truth verdict FAILED: the delivered file provably holds
       // less audio than the session lasted (or the drop counters crossed the
@@ -300,7 +329,7 @@ async function openManualModal(): Promise<void> {
     // "No video for this recording" option
     const noVideoOpt = document.createElement('option')
     noVideoOpt.value = '__none__'
-    noVideoOpt.textContent = 'Ingen video (bare lyd)'
+    noVideoOpt.textContent = t('recording.videoNone', 'Ingen video (bare lyd)')
     videoSel.appendChild(noVideoOpt)
 
     videoDevices.forEach(d => {
@@ -323,13 +352,14 @@ async function openManualModal(): Promise<void> {
 
     if (!videoDevices.length) {
       if (videoHint) {
-        videoHint.textContent = 'Ingen kameraer funnet — sjekk tilkobling'
+        videoHint.textContent = t('home.cameraNoneFound', 'Ingen kameraer funnet — sjekk tilkobling')
         videoHint.style.display = ''
       }
     }
   } catch {
     if (videoSel) {
-      videoSel.innerHTML = '<option value="__none__">Feil ved lasting av kameraer</option>'
+      videoSel.innerHTML = ''
+      videoSel.appendChild(Object.assign(document.createElement('option'), { value: '__none__', textContent: t('recording.videoListError', 'Feil ved lasting av kameraer') }))
       videoSel.disabled  = false
     }
   }
@@ -558,8 +588,8 @@ async function startMonitoring(_opts: RecordingOpts): Promise<void> {
 }
 
 /** Animate the overlay meters + waveform from `recording://levels` (per-channel
- *  peak dBFS from the recording's ffmpeg astats). Rise is instant, fall is eased;
- *  a null right channel hides the R row and labels the bar "Mono". */
+ *  peak dBFS from the native capture engine's own ring buffer). Rise is instant,
+ *  fall is eased; a null right channel hides the R row and labels the bar "Mono". */
 function startLevelsMeter(): void {
   const fillL = document.getElementById('rec-vu-l')
   const pkElL = document.getElementById('rec-vu-peak-l')
@@ -682,7 +712,7 @@ function showOverlay(opts: RecordingOpts): void {
     const recPh           = document.getElementById('rec-video-placeholder')
     if (recVideoSection) recVideoSection.style.display = ''
     if (recImg)  { recImg.src = ''; recImg.style.display = 'none' }
-    if (recPh)   { recPh.textContent = 'Starter kamera…'; recPh.style.display = '' }
+    if (recPh)   { recPh.textContent = t('home.cameraStarting', 'Starter kamera…'); recPh.style.display = '' }
 
     recPreviewUnsub?.()
     recCaptureErrUnsub?.()
@@ -713,7 +743,7 @@ function showOverlay(opts: RecordingOpts): void {
     }, recPollMs)
     recPreviewUnsub = () => clearInterval(recPollTimer)
     recCaptureErrUnsub = window.api.on('video-capture-error', () => {
-      if (recPh) { recPh.textContent = 'Kamera feilet — opptar kun lyd'; recPh.style.display = '' }
+      if (recPh) { recPh.textContent = t('recording.cameraFailedAudioOnly', 'Kamera feilet — opptar kun lyd'); recPh.style.display = '' }
       if (recImg) recImg.style.display = 'none'
     })
   }
@@ -789,9 +819,6 @@ function hideOverlay(): void {
   previewRestartTimer = setTimeout(() => {
     previewRestartTimer = null
     if (!isRecording) {
-      // Reset video progress display
-      const progressRow = document.getElementById('video-progress-row')
-      if (progressRow) progressRow.style.display = 'none'
       startVideoPreview()
       startHomeVU()
     }
@@ -844,9 +871,28 @@ function resyncOverlayToLiveSession(): void {
   startMonitoringLite()
 }
 
-function showReconnectBanner(): void {
+/** Show the recording overlay's non-terminal warning banner (#rec-reconnect).
+ *  Reused for every transient, non-terminal recorder event — reconnect AND
+ *  silence — rather than a separate banner per event type. With no `message`
+ *  this is the true-reconnect case: restore its default "kobler til på nytt" +
+ *  countdown. With a `message` (e.g. the silence warning), swap in that text
+ *  and hide the countdown, which has no meaning outside a reconnect. */
+function showReconnectBanner(message?: string): void {
   const el = document.getElementById('rec-reconnect')
-  if (el) el.style.display = 'flex'
+  if (!el) return
+  const textEl      = el.querySelector<HTMLElement>('.rec-reconnect-text')
+  const countdownEl = document.getElementById('rec-reconnect-countdown')
+  const unitEl      = el.querySelector<HTMLElement>('.rec-reconnect-unit')
+  if (message) {
+    if (textEl) textEl.textContent = message
+    if (countdownEl) countdownEl.style.display = 'none'
+    if (unitEl) unitEl.style.display = 'none'
+  } else {
+    if (textEl) textEl.textContent = t('recording.reconnecting', 'Lydkilde frakoblet — kobler til på nytt')
+    if (countdownEl) countdownEl.style.display = ''
+    if (unitEl) unitEl.style.display = ''
+  }
+  el.style.display = 'flex'
 }
 
 function hideReconnectBanner(): void {
@@ -874,7 +920,7 @@ function updateScheduledStopCountdown(): void {
   el.textContent = diff > 0 ? fmtCountdown(diff) : '—'
 }
 
-let lastSigCls = ' ' // sentinel ≠ any real class so the first call writes
+let lastSigCls = '§init§' // sentinel ≠ any real class so the first call writes
 function updateRecSignalStatus(dbL: number, dbR: number): void {
   const db  = Math.max(dbL, dbR)
   const dot = document.getElementById('rec-sig-dot')

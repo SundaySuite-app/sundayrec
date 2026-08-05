@@ -424,6 +424,25 @@ pub struct RecorderEngine {
     /// accumulated automatically by the stderr reader and persisted at session
     /// end. Surfaced by the diagnose tool; `None` until the first recording.
     last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
+    /// Monotonic session counter, bumped by every [`RecorderEngine::start`].
+    ///
+    /// `start()` stops the previous recording and immediately launches a new
+    /// supervisor — but the OLD supervisor is still alive, finalising for up to
+    /// minutes. Both write the SAME shared `last_state` / `scheduled_stop`, so the
+    /// stale one's terminal emit used to clobber the live session (UI jumps to
+    /// "Stopped", the countdown is cleared) while it kept recording. Each
+    /// supervisor captures its generation at launch and only touches shared state
+    /// while [`is_current_session`] still holds.
+    session_generation: Arc<AtomicU64>,
+}
+
+/// Is a supervisor's captured `generation` still the engine's current one?
+///
+/// `false` means a NEWER recording has since started, so this supervisor is a
+/// straggler finishing its finalize chain and must not write shared state.
+/// Pure over the atomic so the guard itself is unit-tested.
+fn is_current_session(generation: u64, current: &AtomicU64) -> bool {
+    generation == current.load(Ordering::SeqCst)
 }
 
 impl Default for RecorderEngine {
@@ -441,6 +460,7 @@ impl RecorderEngine {
             scheduled_stop: Arc::new(scheduled_stop),
             audio_engine: Arc::new(Mutex::new((None, None))),
             last_telemetry: Arc::new(Mutex::new(None)),
+            session_generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -509,6 +529,12 @@ impl RecorderEngine {
         preroll_clip: Option<PrerollClip>,
     ) -> AppResult<()> {
         self.stop();
+        // Claim the next generation right after stopping the previous session: the
+        // old supervisor is still finalising in parallel, and from this moment its
+        // writes to the shared state/countdown are suppressed (see
+        // `is_current_session`). Bumping even on a start that later fails is
+        // correct — the previous session is stopped either way.
+        let generation = self.session_generation.fetch_add(1, Ordering::SeqCst) + 1;
 
         // Fail FAST + CLEAR on blocked TCC access: the microphone (always needed)
         // and the camera (only when video is on). avfoundation on a denied device
@@ -776,6 +802,7 @@ impl RecorderEngine {
         let scheduled_stop = Arc::clone(&self.scheduled_stop);
         let last_telemetry = Arc::clone(&self.last_telemetry);
         let audio_engine = Arc::clone(&self.audio_engine);
+        let session_generation = Arc::clone(&self.session_generation);
         let supervisor = tauri::async_runtime::spawn(async move {
             run_session(
                 sup_app,
@@ -792,6 +819,8 @@ impl RecorderEngine {
                 scheduled_stop,
                 last_telemetry,
                 audio_engine,
+                session_generation,
+                generation,
             )
             .await;
         });
@@ -817,20 +846,30 @@ impl RecorderEngine {
         Ok(())
     }
 
-    /// Request a graceful stop. The supervisor sends ffmpeg `q` so the container
-    /// finalises, writes history, then exits. Safe to call when idle. We do NOT
-    /// abort the supervisor here (that would race the `q` and corrupt the MP4);
-    /// the supervisor winds itself down. A detached grace-timer aborts it only
-    /// if it's still alive after a generous window (a hung ffmpeg).
+    /// Request a graceful stop. The supervisor stops the capture so the container
+    /// finalises, delivers the file, writes history, then exits. Safe to call when
+    /// idle. We do NOT abort the supervisor here (that would race the stop and
+    /// truncate the recording); the supervisor winds itself down. A detached
+    /// grace-timer aborts it only if it's still alive after a TRUE-hang window.
     pub fn stop(&self) {
         let session = lock_recover(&self.session).take();
         if let Some(session) = session {
             let _ = session.stop_tx.try_send(());
             let supervisor = session.supervisor;
             tauri::async_runtime::spawn(async move {
-                // Generous: a graceful stop may need to finalise a large MP4 and
-                // (rarely) reap a reconnecting child. Only hard-abort a true hang.
-                tokio::time::sleep(Duration::from_secs(15)).await;
+                // The supervisor is far from done here: stopping the capture is
+                // bounded by STOP_FINALIZE_MS, and the finalize chain that follows
+                // (concat → delivery encode → history → sidecar) is bounded by the
+                // 15-minute concat watchdog per step. A 60–90 min service's WAV→mp3
+                // encode alone runs 30–120+ s, so the old fixed 15 s aborted the
+                // supervisor MID-DELIVERY — killing its `kill_on_drop` ffmpeg with
+                // it: no file, no history row, no `recording://finished`. The
+                // backstop is derived from those real bounds; see
+                // `RecorderTimeouts::STOP_ABORT_BACKSTOP_MS`.
+                tokio::time::sleep(Duration::from_millis(
+                    RecorderTimeouts::STOP_ABORT_BACKSTOP_MS,
+                ))
+                .await;
                 supervisor.abort();
             });
         }
@@ -956,8 +995,11 @@ pub(crate) fn select_capture_backend(
 }
 
 /// One spawned capture attempt — the ffmpeg child or the native stack.
+/// Both variants are boxed: on Windows a `tokio::process::Child` is ~272 bytes
+/// (process handles), which trips `clippy::large_enum_variant` there while
+/// staying invisible on macOS/Linux CI.
 pub(crate) enum CaptureChild {
-    Ffmpeg(tokio::process::Child),
+    Ffmpeg(Box<tokio::process::Child>),
     Native(Box<crate::recorder::native_capture::segment::NativeSegment>),
 }
 
@@ -977,7 +1019,9 @@ async fn spawn_capture(
     match backend {
         CaptureBackend::Ffmpeg => {
             let args = build_record_args(platform, audio, video, opts, output_path);
-            Ok(CaptureChild::Ffmpeg(spawn_ffmpeg_owned(&args).await?))
+            Ok(CaptureChild::Ffmpeg(Box::new(
+                spawn_ffmpeg_owned(&args).await?,
+            )))
         }
         CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
             crate::recorder::native_capture::segment::spawn_native_segment(
@@ -1012,6 +1056,8 @@ async fn run_session(
     scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     last_telemetry: Arc<Mutex<Option<RecordingTelemetry>>>,
     audio_engine: Arc<Mutex<(Option<String>, Option<String>)>>,
+    session_generation: Arc<AtomicU64>,
+    generation: u64,
 ) {
     // The backend can demote itself once: native start failure → ffmpeg (the
     // automatic escape hatch — a recording must start even if cpal can't).
@@ -1031,12 +1077,29 @@ async fn run_session(
         .then(|| start_ms + u64::from(opts.manual_max_minutes) * 60_000);
     scheduled_stop.send_replace(initial_stop);
     let mut stop_watch = scheduled_stop.subscribe();
+    // This session's OWN state, mirrored on every transition. `last_state` is
+    // SHARED with whatever session is current, so a straggler must read its own
+    // outcome from here for the end-of-session verdict, not from the live one.
+    let own_state = Arc::new(Mutex::new(RecorderState::Idle));
     // Emit a state transition, always stamping the CURRENT auto-stop deadline so
     // the UI countdown stays in sync on every transition (start, reconnect, stop).
     // A TERMINAL state (Stopped/Failed) clears the deadline first, so a finished
     // OR failed recording never ships a lingering countdown — the clear lives
     // here (one place) instead of being scattered before each Failed exit.
     let emit_state = |to: RecorderState, reconnect_count: u32| {
+        *lock_recover(&own_state) = to;
+        // Generation guard: `start()` may already have stopped us and launched a
+        // NEW recording while this supervisor finalises (up to minutes). Its
+        // terminal emit would otherwise clear the live countdown and drop the UI
+        // to "Stopped" mid-recording. A straggler stays silent.
+        if !is_current_session(generation, &session_generation) {
+            tracing::debug!(
+                generation,
+                ?to,
+                "recorder: suppressing state emit from a superseded session"
+            );
+            return;
+        }
         if to.is_terminal() {
             scheduled_stop.send_replace(None);
             // Telemetry persist/verdict happens at run_session's SINGLE exit
@@ -1107,6 +1170,11 @@ async fn run_session(
         // Each split closes one; session end finalises the rest. The pre-roll clip is
         // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
         let mut finalized: usize = 0;
+        // Did EVERY deliverable reach the user's format? A split deliverable that
+        // failed its delivery an hour ago must still keep the recovery manifest
+        // alive at the clean stop — otherwise its capture is deleted with the
+        // manifest and the retry is forfeited.
+        let mut all_delivered = true;
         // Clear any stale preview frame from a previous video recording so the tile
         // doesn't briefly show last time's image before ffmpeg writes a fresh one.
         if opts.video_device_name.is_some() {
@@ -1219,7 +1287,7 @@ async fn run_session(
                 CaptureChild::Ffmpeg(c) => {
                     run_segment(
                         &app,
-                        c,
+                        *c,
                         &opts,
                         &session,
                         Arc::clone(&segment_bytes),
@@ -1258,7 +1326,7 @@ async fn run_session(
                     // The split CLOSES the current deliverable. Finalise it (concat
                     // its fragments + write its history row) BEFORE opening the next.
                     let close_ms = now_ms();
-                    finalize_pending(
+                    all_delivered &= finalize_pending(
                         &app,
                         &pool,
                         &session,
@@ -1296,7 +1364,9 @@ async fn run_session(
                             tracing::error!("recorder: split respawn failed: {e}");
                             emit_error(&app, "device_error", &e.to_string());
                             emit_state(RecorderState::Failed, session.reconnect_count());
-                            finalize_pending(
+                            // A failing exit keeps the manifest either way (only the
+                            // clean stop deletes it), so the verdict is moot here.
+                            let _ = finalize_pending(
                                 &app,
                                 &pool,
                                 &session,
@@ -1367,7 +1437,29 @@ async fn run_session(
                             )
                             .await;
                             match result {
-                                Ok(()) => emit_state(RecorderState::Stopped, 0),
+                                Ok(()) => {
+                                    // Record→edit hand-off, same as the unified path
+                                    // (this branch used to `break 'run` past it, so a
+                                    // two-process recording never offered "open in
+                                    // editor"). Same guard: only a real, non-empty
+                                    // muxed file — a mux failure or a camera that
+                                    // never opened leaves `output_path` absent, and
+                                    // those return Ok(()) too.
+                                    if tokio::fs::metadata(&opts.output_path)
+                                        .await
+                                        .map(|m| m.len() > 0)
+                                        .unwrap_or(false)
+                                    {
+                                        let _ = app.emit(
+                                            FINISHED_EVENT,
+                                            RecordingFinished {
+                                                file_path: opts.output_path.clone(),
+                                                has_video: true,
+                                            },
+                                        );
+                                    }
+                                    emit_state(RecorderState::Stopped, 0)
+                                }
                                 Err(e) => {
                                     emit_error(&app, "device_error", &e.to_string());
                                     emit_state(RecorderState::Failed, 0);
@@ -1391,7 +1483,8 @@ async fn run_session(
                                 .unwrap_or("device_disconnected");
                             emit_error(&app, code, "Opptaket kunne ikke gjenopprettes");
                             emit_state(RecorderState::Failed, session.reconnect_count());
-                            finalize_pending(
+                            // Fail-stop keeps the manifest (no delete on this path).
+                            let _ = finalize_pending(
                                 &app,
                                 &pool,
                                 &session,
@@ -1510,7 +1603,10 @@ async fn run_session(
                                                     &next_segment,
                                                 )
                                                 .await;
-                                                finalize_pending(
+                                                // The session CONTINUES in a new
+                                                // deliverable — this one's verdict
+                                                // must reach the clean stop.
+                                                all_delivered &= finalize_pending(
                                                     &app,
                                                     &pool,
                                                     &session,
@@ -1596,7 +1692,8 @@ async fn run_session(
                                                     RecorderState::Failed,
                                                     session.reconnect_count(),
                                                 );
-                                                finalize_pending(
+                                                // Fail-stop keeps the manifest.
+                                                let _ = finalize_pending(
                                                     &app,
                                                     &pool,
                                                     &session,
@@ -1631,7 +1728,7 @@ async fn run_session(
         // Graceful end of session: finalise the last (and any not-yet-finalised)
         // deliverable — concat its fragments + write its history row.
         emit_state(RecorderState::Stopping, session.reconnect_count());
-        finalize_pending(
+        all_delivered &= finalize_pending(
             &app,
             &pool,
             &session,
@@ -1644,9 +1741,21 @@ async fn run_session(
             &delivered_bytes,
         )
         .await;
-        // Clean finish: every deliverable is finalised + history-rowed, so the
-        // recovery manifest is no longer needed.
-        crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+        if all_delivered {
+            // Clean finish: every deliverable reached the user's format and has its
+            // history row, so the recovery manifest is no longer needed.
+            crate::recorder::recovery::delete_manifest(&app, &session_id).await;
+        } else {
+            // A stop is only "clean" for the deliverables that actually delivered.
+            // One that fell back to its raw capture still has salvageable audio on
+            // disk — deleting the manifest here would forfeit the next launch's
+            // retry (the recovery scan finds captures only THROUGH the manifest).
+            tracing::warn!(
+                session_id = %session_id,
+                "recorder: a deliverable did not reach the delivery format — keeping the \
+                 recovery manifest so the next launch retries it"
+            );
+        }
         // Drop the now-empty per-session capture folder. `remove_dir` removes it ONLY
         // if empty — a FAILED delivery transcode left its WAV/MKV behind (finalize_one
         // fell back to it as the history file), so the folder stays and the capture
@@ -1678,7 +1787,9 @@ async fn run_session(
         &telemetry,
         &last_telemetry,
         start_ms,
-        &last_state,
+        // THIS session's outcome, not the shared mirror — a superseded supervisor
+        // must not report the live recording's state as its own exit.
+        &own_state,
         &delivered_bytes,
     );
 }
@@ -2451,7 +2562,7 @@ fn finalize_session_telemetry(
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     last_telemetry: &Arc<Mutex<Option<RecordingTelemetry>>>,
     start_ms: u64,
-    last_state: &Arc<Mutex<RecorderState>>,
+    final_state: &Arc<Mutex<RecorderState>>,
     delivered_bytes: &AtomicU64,
 ) {
     use sundayrec_core::selftest::{
@@ -2460,7 +2571,7 @@ fn finalize_session_telemetry(
     };
     use tauri::Manager;
 
-    let final_state = *lock_recover(last_state);
+    let final_state = *lock_recover(final_state);
 
     // Snapshot + stamp the host-known fields.
     let mut t = lock_recover(telemetry).clone();
@@ -2540,6 +2651,11 @@ fn finalize_session_telemetry(
 ///
 /// Called at every split (closing one deliverable) and once at session end (the
 /// last). Idempotent: a second call with nothing pending is a no-op.
+///
+/// Returns `true` only when EVERY deliverable in the batch actually reached the
+/// user's chosen format (see [`finalize_one`]). The caller ANDs these across the
+/// whole session and keeps the crash-recovery manifest when any failed — a clean
+/// stop with a failed delivery still has audio to salvage on the next launch.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_pending(
     app: &AppHandle,
@@ -2552,9 +2668,10 @@ async fn finalize_pending(
     opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
-) {
+) -> bool {
     let deliverables = session.deliverables();
     let total = deliverables.len();
+    let mut all_delivered = true;
     for index in *finalized..total {
         let d = &deliverables[index];
         // This deliverable ends when the NEXT one started, or at `end_ms` if it's
@@ -2563,7 +2680,7 @@ async fn finalize_pending(
             .get(index + 1)
             .map(|next| next.started_at_ms)
             .unwrap_or(end_ms);
-        finalize_one(
+        all_delivered &= finalize_one(
             app,
             pool,
             d,
@@ -2578,6 +2695,7 @@ async fn finalize_pending(
         .await;
     }
     *finalized = total;
+    all_delivered
 }
 
 /// Finalise ONE deliverable: concat-stitch its fragments into its primary file
@@ -2593,6 +2711,12 @@ async fn finalize_pending(
 /// If the finished file is missing / zero-byte / undecodable, NO history row is
 /// written (a phantom "recording" that won't play is worse than none) and an
 /// `empty_output` error is surfaced to the UI.
+///
+/// Returns whether the deliverable actually DELIVERED: `false` when the
+/// concat/transcode failed (the history row then points at the raw capture, not
+/// the user's format) or the finished file failed the validity gate. The caller
+/// keeps the crash-recovery manifest on `false` so the next launch retries the
+/// delivery from the surviving capture instead of forfeiting it.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_one(
     app: &AppHandle,
@@ -2605,7 +2729,7 @@ async fn finalize_one(
     opts: &RecordingOpts,
     telemetry: &Arc<Mutex<RecordingTelemetry>>,
     delivered_bytes: &AtomicU64,
-) {
+) -> bool {
     // Truth measurement, part 1: this deliverable SHOULD hold its wall-clock
     // span. What it ACTUALLY holds is probed below; the session-end verdict
     // compares the sums. Accumulated up front so a failed finalize still
@@ -2647,6 +2771,10 @@ async fn finalize_one(
         }
     };
 
+    // `delivered` = the recording reached the user's chosen format. A fallback to
+    // the raw capture keeps the audio but is NOT a delivery — the manifest must
+    // survive so the next launch can retry the transcode.
+    let mut delivered = true;
     let final_path =
         match finalize_deliverable(deliverable, preroll_path, Some(&delivery_spec)).await {
             Ok(p) => p,
@@ -2655,6 +2783,7 @@ async fn finalize_one(
                     deliverable = %deliverable.primary_path,
                     "recorder: finalise failed, keeping primary as history file: {e}"
                 );
+                delivered = false;
                 deliverable.primary_path.clone()
             }
         };
@@ -2670,7 +2799,7 @@ async fn finalize_one(
             "empty_output",
             "Opptaket ble tomt eller skadet — ingen fil ble lagret.",
         );
-        return;
+        return false;
     }
 
     // Best-effort: the finished file's actual size on disk.
@@ -2687,7 +2816,7 @@ async fn finalize_one(
     }
     delivered_bytes.fetch_add(byte_size.unwrap_or(0).max(0) as u64, Ordering::Relaxed);
 
-    let Some(pool) = pool else { return };
+    let Some(pool) = pool else { return delivered };
     let started_at = deliverable.started_at_ms;
     let duration_ms = end_ms.saturating_sub(started_at) as f64;
     let row = RecordingRow {
@@ -2712,6 +2841,7 @@ async fn finalize_one(
     if opts.keep_separate_audio && opts.video_device_name.is_some() {
         extract_separate_audio(pool, &final_path, started_at, duration_ms, opts, audio).await;
     }
+    delivered
 }
 
 /// Build the one-shot ffmpeg args that extract a standalone audio file from a
@@ -2887,7 +3017,11 @@ fn looks_like_error_prelowered(l: &str) -> bool {
 
 /// Stable snake_case string for a [`RecordingErrorCode`] — matches the serde
 /// rename so the renderer's localisation switch lines up with the bindings.
-fn error_code_str(code: RecordingErrorCode) -> &'static str {
+///
+/// `pub(crate)` so every emit site derives its code from the SAME table: the
+/// native capture path used to hardcode literals, which silently mislabelled
+/// every non-disk writer failure.
+pub(crate) fn error_code_str(code: RecordingErrorCode) -> &'static str {
     match code {
         RecordingErrorCode::DeviceNotFound => "device_not_found",
         RecordingErrorCode::DevicePermissionDenied => "device_permission_denied",
@@ -3182,6 +3316,58 @@ mod tests {
             .map(|i| args[i + 1].clone())
             .unwrap();
         assert!(af.contains("aresample=async=1000:first_pts=0"));
+    }
+
+    // ── Post-stop abort backstop (must outlast a real finalize chain) ─────────
+
+    #[test]
+    fn stop_abort_backstop_outlasts_the_real_finalize_chain() {
+        // The detached abort in `stop()` may only reap a TRUE hang. The bound it
+        // has to clear is the capture finalise plus the concat/delivery watchdog
+        // — asserted against the REAL constants, so raising either one without
+        // raising the backstop fails here instead of silently killing a long
+        // service's delivery encode mid-flight (the old fixed 15 s did exactly
+        // that: a 60–90 min WAV→mp3 takes 30–120+ s).
+        let backstop = Duration::from_millis(RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
+        let chain = Duration::from_millis(RecorderTimeouts::STOP_FINALIZE_MS)
+            + crate::recorder::concat::CONCAT_WATCHDOG;
+        assert!(
+            backstop > chain,
+            "backstop {backstop:?} must exceed the finalize chain {chain:?}"
+        );
+        // …and it must still be a bound, not "never".
+        assert!(backstop <= Duration::from_secs(60 * 60));
+    }
+
+    // ── Session-generation guard (a straggler must not clobber the live run) ──
+
+    #[test]
+    fn session_generation_guard_suppresses_a_superseded_session() {
+        let current = AtomicU64::new(0);
+        // The first recording claims generation 1 and is current.
+        let first = current.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(is_current_session(first, &current));
+        // `start()` is called again: it bumps the counter while the first
+        // supervisor is STILL finalising (concat + delivery can run for minutes).
+        let second = current.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(
+            !is_current_session(first, &current),
+            "the finalising straggler must go silent"
+        );
+        assert!(
+            is_current_session(second, &current),
+            "only the live session may write shared state"
+        );
+    }
+
+    #[test]
+    fn session_generation_starts_current_for_a_fresh_engine() {
+        // A brand-new engine has generation 0; nothing has been superseded, and
+        // the first claimed generation is immediately current.
+        let engine = RecorderEngine::new();
+        assert_eq!(engine.session_generation.load(Ordering::SeqCst), 0);
+        let g = engine.session_generation.fetch_add(1, Ordering::SeqCst) + 1;
+        assert!(is_current_session(g, &engine.session_generation));
     }
 
     #[test]

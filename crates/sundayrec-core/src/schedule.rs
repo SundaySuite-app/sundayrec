@@ -229,14 +229,26 @@ pub fn slot_active_now(
 ) -> bool {
     let (sh, sm) = parse_hm(start, (11, 0));
     let (eh, em) = parse_hm(stop, (12, 0));
+    let crosses = crosses_midnight(start, stop);
     let today = weekday_mon0(now);
     for &d in days {
-        if today != d {
-            continue;
-        }
-        let (Some(start_t), Some(stop_t)) = (at_time(now, sh, sm), at_time(now, eh, em)) else {
+        // The slot's start day: either today, or — for a crossing slot where
+        // `now` is in the early hours — YESTERDAY (the 23:00–01:00 slot is
+        // still active at 00:10). The Electron port checked only `today == d`
+        // with a same-day stop, so a crossing slot could never late-start:
+        // `now < stop_t` went false the instant `now >= start`.
+        let start_t = if today == d {
+            at_time(now, sh, sm)
+        } else if crosses && weekday_mon0(now - Duration::days(1)) == d {
+            at_time(now - Duration::days(1), sh, sm)
+        } else {
             continue;
         };
+        let Some(start_t) = start_t else { continue };
+        // The stop belongs to the day AFTER the start for a crossing slot.
+        let stop_t =
+            at_time(start_t, eh, em).map(|t| if crosses { t + Duration::days(1) } else { t });
+        let Some(stop_t) = stop_t else { continue };
         let late = (now - start_t).num_milliseconds();
         if late >= 0 && late <= window_ms && now < stop_t {
             return true;
@@ -259,6 +271,13 @@ pub fn special_active_now(
         parse_date_time(date, stop, (12, 0)),
     ) else {
         return false;
+    };
+    // A stop at-or-before the start means the special runs past midnight — the
+    // stop belongs to the NEXT day (same rule the slot event builder applies).
+    let stop_dt = if stop_dt <= start_dt {
+        stop_dt + Duration::days(1)
+    } else {
+        stop_dt
     };
     let late = (now - start_dt).num_milliseconds();
     late >= 0 && late <= window_ms && now < stop_dt
@@ -531,11 +550,15 @@ pub fn upcoming_events(
         let src = TriggerKind::Special(i);
         let start = parse_date_time(&sp.date, &sp.start, (11, 0));
         push(start, ScheduledEventKind::Start, src);
-        push(
-            parse_date_time(&sp.date, &sp.stop, (12, 0)),
-            ScheduledEventKind::Stop,
-            src,
-        );
+        // A stop at-or-before the start crosses midnight → next day. Slots
+        // already shift their stop weekday; specials parsed the stop onto the
+        // SAME date, which put it before the start (an idempotent no-op) — a
+        // 23:00–00:30 special ran to the 240-min backstop instead of 1.5 h.
+        let stop = parse_date_time(&sp.date, &sp.stop, (12, 0)).map(|t| match start {
+            Some(s) if t <= s => t + Duration::days(1),
+            _ => t,
+        });
+        push(stop, ScheduledEventKind::Stop, src);
         if let Some(start) = start {
             if reminder_min > 0 {
                 push(
@@ -865,6 +888,88 @@ mod tests {
             dt("2026-06-07 12:01"),
             MISSED_WINDOW_MS
         ));
+    }
+
+    #[test]
+    fn slot_active_now_handles_midnight_crossing() {
+        // 2026-06-07 is a Sunday (mon0 day 6). A 23:00–01:00 slot: the stop is
+        // on MONDAY — the old same-day stop made `now < stop` false the moment
+        // the slot started, so a crossing slot could never late-start.
+        // 23:05 Sunday, 60-min window → active (stop is Monday 01:00).
+        assert!(slot_active_now(
+            "23:00",
+            "01:00",
+            &[6],
+            dt("2026-06-07 23:05"),
+            MISSED_WINDOW_MS
+        ));
+        // 00:10 MONDAY: the slot that started Sunday 23:00 is still running and
+        // 70 min late is outside the 60-min window → not a late-start …
+        assert!(!slot_active_now(
+            "23:00",
+            "01:00",
+            &[6],
+            dt("2026-06-08 00:10"),
+            MISSED_WINDOW_MS
+        ));
+        // … but 90-min window catches it (relaunch shortly after midnight).
+        assert!(slot_active_now(
+            "23:00",
+            "01:00",
+            &[6],
+            dt("2026-06-08 00:10"),
+            90 * 60 * 1000
+        ));
+        // Past the Monday 01:00 stop → never active.
+        assert!(!slot_active_now(
+            "23:00",
+            "01:00",
+            &[6],
+            dt("2026-06-08 01:05"),
+            i64::MAX / 4
+        ));
+    }
+
+    #[test]
+    fn special_active_now_handles_midnight_crossing() {
+        // A 23:00–00:30 special: the stop belongs to the next day. The old
+        // same-date parse put the stop BEFORE the start → never active.
+        assert!(special_active_now(
+            "2026-12-31",
+            "23:00",
+            "00:30",
+            dt("2026-12-31 23:20"),
+            MISSED_WINDOW_MS
+        ));
+        // Past the (next-day) stop → inactive.
+        assert!(!special_active_now(
+            "2026-12-31",
+            "23:00",
+            "00:30",
+            dt("2027-01-01 00:35"),
+            MISSED_WINDOW_MS
+        ));
+    }
+
+    #[test]
+    fn special_stop_event_crosses_midnight() {
+        // The event builder must schedule the 23:00–00:30 special's STOP on the
+        // next day — the same-date parse made it a pre-start no-op, so the
+        // recording ran to the 240-min backstop instead of 1.5 h.
+        let sp = SpecialRecording {
+            id: None,
+            date: "2026-12-31".into(),
+            name: "Nyttårsgudstjeneste".into(),
+            start: "23:00".into(),
+            stop: "00:30".into(),
+            device_id: None,
+        };
+        let events = upcoming_events(&[], std::slice::from_ref(&sp), dt("2026-12-31 20:00"), 0, 7);
+        let stop = events
+            .iter()
+            .find(|e| matches!(e.kind, ScheduledEventKind::Stop))
+            .expect("a stop event must exist");
+        assert_eq!(stop.at, dt("2027-01-01 00:30"));
     }
 
     #[test]

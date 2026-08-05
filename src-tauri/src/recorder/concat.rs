@@ -6,29 +6,32 @@
 //! [`build_concat_list`], [`build_concat_args`], [`escape_concat_path`]). It is a
 //! faithful port of the Electron `mergeSegments` + pre-roll-concat path:
 //!
-//!   1. ask the core whether a concat is even needed (a single fragment with no
+//!   1. drop fragment paths that don't exist on disk
+//!      ([`existing_concat_fragments`] — a failed respawn leaves a phantom `_rN`
+//!      behind, and the demuxer would silently TRUNCATE the merge there),
+//!   2. ask the core whether a concat is even needed (a single fragment with no
 //!      pre-roll is already the finished file → return it untouched),
-//!   2. write the concat-demuxer list to a temp `.txt` next to the primary file,
-//!   3. run ffmpeg `-f concat -safe 0 -i list -c copy -y tmp` under a 15-minute
+//!   3. write the concat-demuxer list to a temp `.txt` next to the primary file,
+//!   4. run ffmpeg `-f concat -safe 0 -i list -c copy -y tmp` under a 15-minute
 //!      watchdog (a concat-copy of even a very long service is fast; anything
 //!      longer means ffmpeg is hung),
-//!   4. atomically replace the deliverable's primary file with the muxed temp
-//!      (rename on POSIX; copy+unlink on Windows, where rename across an existing
-//!      target can fail — mirrors Electron),
-//!   5. delete the now-merged fragment files (`fragments[1..]`) + the list.
+//!   5. atomically replace the deliverable's primary file with the muxed temp,
+//!   6. delete the now-merged fragment files (`fragments[1..]`) + the list,
+//!   7. DELIVER: encode/remux the merged capture into the user's chosen format
+//!      ([`DeliverySpec`]), then drop the capture.
 //!
-//! ## Codec matching — why this is a lossless `-c copy`
+//! ## Codec matching — why the stitch is a lossless `-c copy`
 //!
-//! The unified recorder encodes **AAC @ 48 kHz** for every segment
-//! ([`build_unified_capture_args`] hardcodes `-c:a aac`), and every reconnect /
-//! split fragment is the SAME ffmpeg invocation, so all fragments share one
-//! codec. The pre-roll harvest re-encodes its clip to the recording's audio
-//! format too (see [`crate::recorder::preroll`] — `build_preroll_trim_args` is
-//! driven with the recording's codec/sample-rate/channels), so the pre-roll clip
-//! matches as well. With every input sharing a codec, the concat demuxer's
-//! `-c copy` is a true stream-copy: the main recording is never transcoded. The
-//! pre-roll clip and the recording use the same `.m4a`/AAC container the recorder
-//! writes, so the demuxer accepts them without re-encoding.
+//! The capture format is decoupled from the delivery format: audio captures to
+//! lossless PCM **WAV**, video to **Matroska** — every fragment of one
+//! deliverable comes from the same capture spec (the engine pins the negotiated
+//! sample rate across a deliverable's reconnects, and starts a NEW deliverable if
+//! the device comes back at a different rate), so all fragments share one format
+//! and the concat demuxer's `-c copy` is a true stream-copy. The pre-roll clip is
+//! harvested in the same PCM WAV format and checked for copy-compatibility
+//! ([`wav_prepend_compatible`]) before it is prepended. The user's actual codec
+//! (mp3/m4a/flac/…, or the mp4/mov remux for video) is applied ONCE, in the final
+//! delivery step — see [`DeliverySpec`] for why the encode is deferred to here.
 //!
 //! ## ⚠️ HARDWARE-UNVERIFIED (process side)
 //!
@@ -42,8 +45,8 @@ use std::time::Duration;
 
 use sundayrec_core::capture::audio_encode_args;
 use sundayrec_core::recorder::{
-    build_concat_args, build_concat_list, concat_inputs, concat_needed, is_plausible_output,
-    Deliverable,
+    build_concat_args, build_concat_list, concat_inputs, concat_needed, existing_concat_fragments,
+    is_plausible_output, Deliverable,
 };
 use sundayrec_core::recovery::DeliveryMode;
 
@@ -85,10 +88,15 @@ pub(crate) struct DeliverySpec {
     pub hvc1_tag: bool,
 }
 
-/// Hard limit on the concat-copy ffmpeg run. A stream-copy of even a multi-hour
-/// service is fast; anything past this means ffmpeg is wedged. Ports the Electron
-/// `mergeSegments` 15-minute watchdog.
-const CONCAT_WATCHDOG: Duration = Duration::from_secs(15 * 60);
+/// Hard limit on the concat-copy ffmpeg run (and, reusing the same bound, on the
+/// delivery encode/remux). A stream-copy of even a multi-hour service is fast and
+/// a long service's WAV→mp3 encode is minutes at worst; anything past this means
+/// ffmpeg is wedged. Ports the Electron `mergeSegments` 15-minute watchdog.
+///
+/// `pub(crate)` so [`sundayrec_core::timeouts::RecorderTimeouts::STOP_ABORT_BACKSTOP_MS`]
+/// — the post-stop supervisor abort that must never fire mid-delivery — can be
+/// asserted against the real value it is derived from.
+pub(crate) const CONCAT_WATCHDOG: Duration = Duration::from_secs(15 * 60);
 
 /// `true` on Windows — selects the concat-path escaping (`\` → `/`) and the
 /// copy+unlink atomic replace (vs POSIX rename).
@@ -148,13 +156,44 @@ pub(crate) async fn finalize_deliverable(
         None => None,
     };
 
+    // Phantom-fragment guard: a `_rN` path joins the deliverable when a reconnect
+    // is DECIDED, not when its respawn succeeds — so a failed respawn (or a
+    // capture aborted before writing a byte) leaves a path with no file.
+    //
+    // This is SILENT DATA LOSS, not a loud failure: the concat demuxer logs
+    // "Impossible to open", stops demuxing at that entry, and STILL EXITS 0. The
+    // truncated merge then passes the validity gate, atomically replaces the
+    // primary, and the real fragments after the phantom are deleted as "merged".
+    // A 90-minute service can finish 2 minutes long and look successful.
+    // Filter by existence, exactly like the crash-recovery twin does
+    // (`recovery::recoverable_deliverables`).
+    let fragments = {
+        // Probe once (async), then hand the pure filter a plain set predicate.
+        let mut present: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for f in &deliverable.fragments {
+            if tokio::fs::metadata(f).await.is_ok() {
+                present.insert(f.as_str());
+            }
+        }
+        for f in deliverable.fragments.iter().skip(1) {
+            if !present.contains(f.as_str()) {
+                tracing::warn!(
+                    fragment = %f,
+                    deliverable = %primary,
+                    "concat: fragment file does not exist — dropped from the concat list"
+                );
+            }
+        }
+        existing_concat_fragments(&deliverable.fragments, |p| present.contains(p))
+    };
+
     // ── Step 1: produce the merged capture file at `primary` ─────────────────────
     // When a concat is needed (multiple fragments or a pre-roll to prepend) we
     // stitch them losslessly (`-c copy`) into `primary`; otherwise the single
     // fragment already IS `primary`. In the decoupled-audio path these are WAV
     // capture files; in the legacy/video path they are the delivery container.
-    if concat_needed(&deliverable.fragments, preroll.is_some()) {
-        let inputs = concat_inputs(&deliverable.fragments, preroll);
+    if concat_needed(&fragments, preroll.is_some()) {
+        let inputs = concat_inputs(&fragments, preroll);
         let primary_path = PathBuf::from(&primary);
         let (list_path, tmp_path) = scratch_paths(&primary_path);
 
@@ -195,7 +234,7 @@ pub(crate) async fn finalize_deliverable(
 
         // 1e. Delete the now-merged fragment files (fragments[1..]) + the list.
         //     `fragments[0]` == primary_path, which now holds the merged result.
-        for frag in deliverable.fragments.iter().skip(1) {
+        for frag in fragments.iter().skip(1) {
             let _ = tokio::fs::remove_file(frag).await;
         }
         let _ = tokio::fs::remove_file(&list_path).await;
@@ -595,6 +634,139 @@ mod tests {
             "merge temp must be cleaned up, not orphaned"
         );
         assert!(!list_path.exists(), "concat list must be cleaned up");
+    }
+
+    #[tokio::test]
+    async fn phantom_fragment_is_dropped_instead_of_poisoning_the_concat() {
+        // A `_r1` path that never became a file (failed respawn / aborted capture)
+        // must NOT reach the concat demuxer. With it filtered out only the primary
+        // remains → no concat is needed → the primary is returned untouched, and
+        // the recording is delivered instead of falling back to the raw capture.
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("seg.wav");
+        tokio::fs::write(&primary, vec![1u8; 8192]).await.unwrap();
+        let primary_s = primary.to_string_lossy().into_owned();
+        let phantom_s = dir.path().join("seg_r1.wav").to_string_lossy().into_owned();
+
+        let d = deliverable(&primary_s, &[&primary_s, &phantom_s]);
+        let out = finalize_deliverable(&d, None, None).await.unwrap();
+
+        assert_eq!(out, primary_s, "primary returned untouched");
+        assert_eq!(
+            tokio::fs::read(&primary).await.unwrap(),
+            vec![1u8; 8192],
+            "no concat ran, so the primary is byte-identical"
+        );
+        let (list_path, tmp_path) = scratch_paths(&primary);
+        assert!(
+            !list_path.exists() && !tmp_path.exists(),
+            "no scratch litter"
+        );
+    }
+
+    /// The fetched ffmpeg/ffprobe sidecar, when this box has one (`npm run ffmpeg`).
+    /// NOTE: production resolution (`ffmpeg_path()`) does NOT look here — it goes
+    /// env → exe-dir sidecar → bare PATH name — so a test that runs the real
+    /// binary must point `SUNDAYREC_FFMPEG` at this path under the shared
+    /// `media::ffmpeg::tests::ENV_LOCK`. Relying on a PATH ffmpeg instead passes
+    /// on a dev Mac (homebrew) and fails on CI runners with none.
+    fn fetched_sidecar(name: &str) -> Option<PathBuf> {
+        let triple = env!("SUNDAYREC_TARGET_TRIPLE");
+        let ext = if cfg!(windows) { ".exe" } else { "" };
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(format!("{name}-{triple}{ext}"));
+        p.is_file().then_some(p)
+    }
+
+    /// Write a real `secs`-second s16 PCM WAV at `path` via lavfi (no hardware).
+    fn sine_wav(ffmpeg: &Path, path: &Path, secs: u32) {
+        let ok = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-v", "error", "-f", "lavfi", "-i"])
+            .arg(format!("sine=frequency=440:duration={secs}"))
+            .args(["-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", "-y"])
+            .arg(path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "lavfi source generation must succeed");
+    }
+
+    /// A media file's duration in seconds, via the fetched ffprobe.
+    fn probe_secs(ffprobe: &Path, path: &Path) -> f64 {
+        let out = std::process::Command::new(ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(path)
+            .output()
+            .expect("ffprobe runs");
+        String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
+    }
+
+    // ENV_LOCK is held across the full `finalize_deliverable(...).await` (which
+    // runs the concat to completion) — same justified-false-positive as the
+    // other real-ffmpeg tests: nothing else can observe the env while we hold
+    // the shared lock, and it is restored before release.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn phantom_fragment_does_not_truncate_the_merge_or_skips() {
+        // THE data-loss case, with a real ffmpeg. A phantom fragment in the MIDDLE
+        // of the concat list does NOT make ffmpeg fail: it logs "Impossible to
+        // open", stops demuxing there, and still exits 0 — so the old code accepted
+        // a merged file holding only the fragments BEFORE the phantom, atomically
+        // replaced the primary with it, and then DELETED the real later fragments.
+        // A 90-minute service could come out 2 minutes long, "successfully".
+        // Filtering the phantom first is what keeps the later audio.
+        let (Some(ffmpeg), Some(ffprobe)) = (fetched_sidecar("ffmpeg"), fetched_sidecar("ffprobe"))
+        else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let primary = dir.path().join("seg.wav");
+        let later = dir.path().join("seg_r2.wav");
+        sine_wav(&ffmpeg, &primary, 2);
+        sine_wav(&ffmpeg, &later, 3);
+        let primary_s = primary.to_string_lossy().into_owned();
+        let later_s = later.to_string_lossy().into_owned();
+        // `seg_r1` was appended when a reconnect was decided; its respawn failed, so
+        // the file never existed.
+        let phantom_s = dir.path().join("seg_r1.wav").to_string_lossy().into_owned();
+
+        let d = deliverable(&primary_s, &[&primary_s, &phantom_s, &later_s]);
+        let out = {
+            let _guard = crate::media::ffmpeg::tests::ENV_LOCK.lock().unwrap();
+            // SAFETY: serialised by ENV_LOCK; restored before releasing the lock.
+            unsafe {
+                std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg);
+                std::env::set_var("SUNDAYREC_FFPROBE", &ffprobe);
+            }
+            let result = finalize_deliverable(&d, None, None).await;
+            unsafe {
+                std::env::remove_var("SUNDAYREC_FFMPEG");
+                std::env::remove_var("SUNDAYREC_FFPROBE");
+            }
+            result.expect("the phantom must not fail the finalize")
+        };
+
+        assert_eq!(out, primary_s);
+        let merged = probe_secs(&ffprobe, &primary);
+        assert!(
+            (merged - 5.0).abs() < 0.2,
+            "merged must hold BOTH real fragments (2 s + 3 s), got {merged} s"
+        );
+        assert!(!later.exists(), "the merged fragment is consumed");
+        let (list_path, tmp_path) = scratch_paths(&primary);
+        assert!(
+            !tmp_path.exists() && !list_path.exists(),
+            "no scratch litter"
+        );
     }
 
     #[tokio::test]

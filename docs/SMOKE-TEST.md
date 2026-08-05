@@ -88,24 +88,37 @@ verify here — there should be **no** repeated cloud log spam.
 
 ---
 
-## 3. Pick an input device → VU meter moves [HW]
+## 3. Channel grid → live meters move → two-tap L/R [HW]
 
-1. Open the device picker.
-2. Choose a microphone from the audio input list (enumerated via ffmpeg
-   `avfoundation` on macOS).
-   - **Expected:** the list is non-empty and names match your real inputs.
-3. Speak / tap the mic.
-   - **Expected:** the VU meter (cpal-driven, per channel) moves in real time. A
-     dead-flat meter while you speak = the OS denied mic access (see §0) or the
-     wrong device is selected.
+Since **v0.7.0** the dropdown device picker + "Test lyd" button are gone — the
+audio settings surface is a **channel grid** with a live meter per channel.
+
+1. Open **Innstillinger → Lyd**.
+   - **Expected:** the channel grid appears — one tile per input channel of the
+     device, each with its own **live meter** (driven by the `vu://levels`
+     events).
+2. Speak / tap the mic (or send signal on a mixer channel).
+   - **Expected:** the channels **with signal light up** — their meters move in
+     real time. Dead-flat meters on every channel while you speak = the OS
+     denied mic access (see §0) or the wrong device is active.
+3. Assign channels with **two taps**: first tap sets **L**, second tap sets
+   **R**.
+   - **Expected:** the choice is saved immediately with a «Lagret ✓»
+     confirmation (there is no separate save footer), and the channel status
+     shows on the home card.
 
 ---
 
 ## 4. Camera preview [HW]
 
-1. Select a camera/video device.
-   - **Expected:** the MJPEG preview (ffmpeg avfoundation → base64 frames over the
-     Tauri event channel) shows live video within a second or two.
+The shipped renderer polls `recording_preview_frame` **during recording only** —
+there is no idle device-select preview surface. Verify the preview as part of a
+video recording:
+
+1. Start a recording with a camera selected (§5 with video).
+   - **Expected:** the preview area shows live video (ffmpeg MJPEG → base64
+     frames, polled via `recording_preview_frame`) within a second or two of
+     the recording starting.
 2. No preview + the app still alive = check camera permission (§0). App vanishes
    = permission string missing/denied and the OS killed it.
 
@@ -113,29 +126,44 @@ verify here — there should be **no** repeated cloud log spam.
 
 ## 5. Record 30 s → stop → history row [HW]
 
+Since **v0.6.0** audio capture is the **native Rust engine** (cpal → ring
+buffer → own WAV writer) — ffmpeg is not in the audio capture path. ffmpeg
+still captures **video** sessions and serves the `classic_ffmpeg_audio` escape
+hatch.
+
 1. Start a recording with mic (+ camera if testing A/V).
-   - **Expected:** status flips to recording; with `RUST_LOG=debug` you see ffmpeg
-     `size=` progress lines being parsed.
+   - **Expected:** status flips to recording; with `RUST_LOG=debug` the
+     progress you see comes from the **native writer's byte counter** (not
+     ffmpeg `size=` lines — those only appear in video /
+     `classic_ffmpeg_audio` sessions).
 2. Let it run ~30 seconds, talking so the silence-watcher does **not** fire.
 3. Stop the recording.
-   - **Expected:** a graceful stop (a `q` is sent to ffmpeg's stdin, not a kill),
-     and a **new history row** appears with a plausible **duration (~30 s)** and
+   - **Expected:** a graceful stop — the engine raises the stop flag and does a
+     **bounded join** of the capture/writer threads (no process kill). ffmpeg
+     only appears at stop if a **delivery encode** (e.g. WAV → FLAC/AAC) runs.
+     A **new history row** appears with a plausible **duration (~30 s)** and
      **file size (> 0)**.
 4. Confirm the file exists on disk at the path shown.
 
-> [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device.
-> A basic single-segment 30 s capture is the smoke-test target here.
+> [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device
+> (preroll still runs via ffmpeg). A basic single-segment 30 s capture is the
+> smoke-test target here.
 
 ---
 
 ## 5b. Recording-health telemetry — prove the stutter/lag fixes [HW]
 
 This is the **verification loop** for the 2026-06 perf/stability work. The app now
-records its own health automatically during every recording (Pillar 0): ffmpeg
-`drop=`/`dup=`, xrun/discontinuity lines, and — the key "recording mode lags"
-signal — how often the live-levels IPC channel was **full** (`levels_dropped`).
-It persists to `last-recording.json` + a rolling `recording-telemetry-history.json`
-and surfaces in the diagnose report.
+records its own health automatically during every recording (Pillar 0).
+**Scope note (v0.6.0+):** the ffmpeg-stderr metrics — `drop=`/`dup=` and
+xrun/discontinuity lines — apply to **video / ffmpeg sessions only** (video
+capture and the `classic_ffmpeg_audio` escape hatch). **Native audio sessions**
+instead report `ring_overrun_samples` plus an **exact frame-count cross-check**
+(frames written vs ffprobe/wall clock, with a verdict + REC-LOSS alarm). The
+key "recording mode lags" signal — how often the live-levels IPC channel was
+**full** (`levels_dropped`) — applies to both. Everything persists to
+`last-recording.json` + a rolling `recording-telemetry-history.json` and
+surfaces in the diagnose report.
 
 **Read the numbers after a normal recording:**
 
@@ -144,7 +172,9 @@ and surfaces in the diagnose report.
    - **Expected:** a **"Siste opptak (teknisk)"** section with `Dropp`, `xruns`,
      `IPC-overbelastning (tapte nivå-oppdateringer)` and `Avsluttet rent`, plus a
      newest-first **Trend** across recent recordings.
-   - **Healthy target:** `Dropp 0`, `xruns 0`, `IPC-overbelastning 0`, clean exit.
+   - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
+     type: **native audio** → `ring_overrun_samples 0` + the frame-count
+     cross-check verdict exact; **video / ffmpeg** → `Dropp 0`, `xruns 0`.
    - A degraded recording also raises finding **SR-CAPTURE-01** with the counts.
 
 **Prove the telemetry has teeth (it must DETECT a bad recording):**
@@ -168,7 +198,9 @@ and surfaces in the diagnose report.
 > thresholds (`selftest::FAIL_GAP_SEC` …) are conservative defaults — calibrate
 > them from the FIRST known-good capture on the Behringer rig (a clean 15 s take's
 > numbers are the reference). The parsers/verdict are pure + unit-tested; only the
-> real ffmpeg stderr wording + the thresholds need rig confirmation.
+> real ffmpeg stderr wording + the thresholds need rig confirmation. (The
+> stderr-phrase matching only fires in video / `classic_ffmpeg_audio` sessions —
+> native sessions are judged by overruns + the frame-count cross-check.)
 
 ---
 

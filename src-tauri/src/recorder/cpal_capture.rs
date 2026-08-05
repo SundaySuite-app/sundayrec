@@ -46,9 +46,13 @@
 //!
 //! ## Scope (the rest falls back to the dshow path)
 //!
-//! Audio-only AND video+cpal-audio are supported. **Split, reconnect, preroll,
-//! live levels and stop-on-silence are NOT** wired on the cpal path (they assume
-//! an ffmpeg-managed input / a `q` stop). Manual-max auto-stop IS honoured. A cpal
+//! Audio-only AND video+cpal-audio are supported. Live L/R **levels ARE** wired
+//! (the callback meters the ROUTED signal into a peak-hold that a 33 ms sampler
+//! emits as `recording://levels`), and manual-max auto-stop is honoured through
+//! the shared `scheduled_stop` watch. **Split, reconnect, preroll and
+//! stop-on-silence are NOT** wired here — they assume an ffmpeg-managed input /
+//! a `q` stop, so `engine::start` routes a session needing them to dshow (ASIO
+//! excepted: dshow can't open it, so the feature is logged as inactive). A cpal
 //! stream error ends the session cleanly (finalise what we have) rather than
 //! reconnecting — same honest boundary as the two-process path. When cpal can't
 //! START, the engine falls back to the dshow capture automatically (see
@@ -217,7 +221,7 @@ mod imp {
         T: cpal::SizedSample,
         f32: FromSample<T>,
     {
-        use ringbuf::traits::Producer;
+        use ringbuf::traits::{Observer, Producer};
         let out_ch = plan.len();
         let mut conv: Vec<f32> = Vec::with_capacity(4096);
         let mut scratch: Vec<f32> = Vec::with_capacity(4096);
@@ -247,9 +251,23 @@ mod imp {
                     }
                     peaks.observe(ch, pk);
                 }
-                let pushed = prod.push_slice(&scratch);
-                if pushed < scratch.len() {
-                    dropped.fetch_add((scratch.len() - pushed) as u64, Ordering::Relaxed);
+                // FRAME-ALIGNED push: on overrun, drop whole frames only. A
+                // partial frame in the ring would permanently swap the L/R
+                // interleaving for the rest of the file — the writer reads a flat
+                // sample stream and has no way to resynchronise. Mirrors the
+                // native engine's fix in `native_capture::stream`.
+                let frame_samples = out_ch.max(1);
+                let want = scratch.len();
+                let fit = prod.vacant_len();
+                let take = if fit >= want {
+                    want
+                } else {
+                    (fit / frame_samples) * frame_samples
+                };
+                let pushed = prod.push_slice(&scratch[..take]);
+                debug_assert_eq!(pushed, take, "aligned push must fit fully");
+                if take < want {
+                    dropped.fetch_add((want - take) as u64, Ordering::Relaxed);
                 }
             },
             err_fn,
@@ -647,17 +665,39 @@ mod imp {
             );
         }
 
+        // The session's real span: captured from the first sample to the finished
+        // container. Both history rows below are stamped with it — they used to
+        // ship `started_at: 0.0` (sorting the recording to 1970 in every
+        // start-time-ordered view) and a 0 ms sidecar duration.
+        let ended_ms = now_ms();
+        let duration_ms = ended_ms.saturating_sub(start_ms) as f64;
+
         // ── Separate-audio sidecar (H2): extract the clean audio next to a video
         // recording, exactly like the dshow path (`engine::extract_separate_audio`). ─
         if has_video && opts.keep_separate_audio {
             if let Some(pool) = &pool {
                 let audio = FfmpegDevice::new(device_name.clone(), "cpal", None);
-                extract_separate_audio(pool, &opts.output_path, start_ms, 0.0, &opts, &audio).await;
+                extract_separate_audio(
+                    pool,
+                    &opts.output_path,
+                    start_ms,
+                    duration_ms,
+                    &opts,
+                    &audio,
+                )
+                .await;
             }
         }
 
         // ── History + finished event ─────────────────────────────────────────
-        write_history(&pool, &opts.output_path, &device_name).await;
+        write_history(
+            &pool,
+            &opts.output_path,
+            &device_name,
+            start_ms,
+            duration_ms,
+        )
+        .await;
         if tokio::fs::metadata(&opts.output_path)
             .await
             .map(|m| m.len() > 0)
@@ -721,7 +761,17 @@ mod imp {
     }
 
     /// Best-effort history row for the finished file (None pool / DB error = no-op).
-    async fn write_history(pool: &Option<SqlitePool>, final_path: &str, device_name: &str) {
+    ///
+    /// `started_ms` is the session's epoch-ms start and `duration_ms` its measured
+    /// span — the same convention `engine::finalize_one` writes (`RecordingRow`'s
+    /// REAL columns hold epoch milliseconds as f64, see `db::store::now_ms`).
+    async fn write_history(
+        pool: &Option<SqlitePool>,
+        final_path: &str,
+        device_name: &str,
+        started_ms: u64,
+        duration_ms: f64,
+    ) {
         let byte_size = tokio::fs::metadata(final_path)
             .await
             .map(|m| m.len() as i64)
@@ -731,8 +781,8 @@ mod imp {
             id: String::new(),
             file_path: final_path.to_string(),
             device_name: Some(device_name.to_string()),
-            started_at: 0.0,
-            duration_ms: None,
+            started_at: started_ms as f64,
+            duration_ms: Some(duration_ms),
             byte_size,
             created_at: 0.0,
             note: None,

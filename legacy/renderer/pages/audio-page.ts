@@ -154,8 +154,11 @@ async function saveAudioSettings(): Promise<void> {
     classicDirectshow,
     classicFfmpegAudio,
     // Keep the numeric sampleRate in sync for client-side use (VU monitor + disk
-    // estimate). Auto → 48 kHz as a reasonable estimate; the recorder itself uses
-    // sampleRateMode (auto = native, no forced rate).
+    // estimate). Only auto / 44.1 kHz / 48 kHz exist in this picker today (no
+    // 96 kHz option), so the two-way ternary below is exhaustive: auto and
+    // r48000 both map to 48 kHz as a reasonable client-side estimate — the
+    // recorder itself uses sampleRateMode (auto = native, no forced rate), not
+    // this field. Revisit if a higher-rate mode is ever added to the UI.
     sampleRate:     srMode === 'r44100' ? 44100 : 48000,
   }
 

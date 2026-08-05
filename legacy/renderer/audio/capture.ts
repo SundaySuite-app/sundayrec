@@ -1,27 +1,17 @@
 /**
- * Audio monitoring pipeline (renderer-side).
+ * Audio device + routing helpers (renderer-side).
  *
- * In the v4.1 architecture, recording is handled entirely by ffmpeg in the main
- * process (native-recorder.ts). This module is ONLY responsible for:
- *   • Enumerating audio devices for the settings UI
- *   • Opening a lightweight monitoring stream for the VU meter display
+ * Recording is handled entirely by the native Rust capture engine
+ * (src-tauri/src/recorder) — this module never opens a monitoring stream for
+ * the recording itself. What's left, and still live, is what the VU meters on
+ * Home/Live/Onboarding actually call:
+ *   • getAudioDevices()  — enumerate mic inputs for device pickers
+ *   • rVuChannel()       — which splitter output feeds the RIGHT VU analyser
+ *   • buildInputRouter() — route an arbitrary device channel pair to a
+ *     2-channel node for metering (custom channel maps on digital mixers)
  *
  * A renderer crash no longer affects the recording.
  */
-
-import type { RecordingOpts } from '../../types'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export interface MonitorSession {
-  stream:      MediaStream
-  audioCtx:    AudioContext
-  vuAnalyserL: AnalyserNode
-  vuAnalyserR: AnalyserNode
-  inputRouter: AudioNode
-  src:         MediaStreamAudioSourceNode
-  opts:        RecordingOpts
-}
 
 // ── Device helpers ───────────────────────────────────────────────────────────
 
@@ -31,29 +21,6 @@ export async function getAudioDevices(): Promise<MediaDeviceInfo[]> {
     s.getTracks().forEach(t => t.stop())
     return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput')
   } catch { return [] }
-}
-
-export async function detectDeviceChannels(deviceId: string | null | undefined, deviceLabel?: string | null): Promise<number> {
-  if (!deviceId || deviceId === 'default' || deviceId === '') return 2
-  // The REAL channel count comes from the ffmpeg backend — getUserMedia caps a
-  // device at 2, which hid the channel picker for digital mixers (the Qu-5
-  // exposes 32 input channels over avfoundation; WebKit reported 2, so the
-  // picker never appeared — 2026-07-31).
-  if (deviceLabel) {
-    try {
-      const n = await window.api.probeDeviceChannels(deviceLabel)
-      if (typeof n === 'number' && n >= 1) return Math.max(2, n)
-    } catch { /* fall through to the getUserMedia estimate */ }
-  }
-  try {
-    const s = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: { ideal: deviceId }, channelCount: { ideal: 32 } },
-      video: false
-    })
-    const ch = s.getAudioTracks()[0]?.getSettings().channelCount ?? 2
-    s.getTracks().forEach(t => t.stop())
-    return Math.max(2, ch)
-  } catch { return 2 }
 }
 
 // ── VU meter channel helper ──────────────────────────────────────────────────
@@ -93,112 +60,4 @@ export function buildInputRouter(
   splitter.connect(merger, Math.min(chL, actualCh - 1), 0)
   splitter.connect(merger, Math.min(chR, actualCh - 1), 1)
   return merger
-}
-
-// ── getUserMedia with fallback chain ─────────────────────────────────────────
-
-async function getUserMediaWithFallback(
-  deviceId: string | null,
-  baseConstraints: MediaTrackConstraints
-): Promise<MediaStream> {
-  if (deviceId) {
-    try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: { ...baseConstraints, deviceId: { exact: deviceId } }, video: false
-      })
-    } catch {}
-    try {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: { ...baseConstraints, deviceId: { ideal: deviceId } }, video: false
-      })
-    } catch {}
-    console.warn('[monitor] Stored deviceId not available, falling back to default device')
-  }
-  return await navigator.mediaDevices.getUserMedia({ audio: baseConstraints, video: false })
-}
-
-// ── Start / stop monitoring ──────────────────────────────────────────────────
-
-export async function startMonitorStream(opts: RecordingOpts): Promise<MonitorSession> {
-  const realDeviceId = opts.deviceId && opts.deviceId !== 'default' && opts.deviceId !== ''
-    ? opts.deviceId : null
-
-  const chL = opts.channelL ?? 0
-  const chR = opts.channelR ?? 1
-  const neededCh = Math.max(
-    opts.channels === 'stereo' || opts.channels === 'monoL' || opts.channels === 'monoR' ? 2 : 1,
-    chL + 1, chR + 1
-  )
-
-  const constraints: MediaTrackConstraints = {
-    channelCount:     { ideal: neededCh },
-    echoCancellation: false,
-    noiseSuppression: false,
-    autoGainControl:  false
-  }
-
-  const stream = await getUserMediaWithFallback(realDeviceId, constraints)
-
-  const requestedRate = opts.sampleRate ?? 48000
-  const audioCtx = new AudioContext({ latencyHint: 'interactive', sampleRate: requestedRate })
-  if (audioCtx.sampleRate !== requestedRate) {
-    console.warn(`[monitor] Requested ${requestedRate}Hz but got ${audioCtx.sampleRate}Hz`)
-  }
-
-  const src        = audioCtx.createMediaStreamSource(stream)
-  const inputRouter = buildInputRouter(audioCtx, src, stream, chL, chR)
-
-  // VU analysers — tapped after input routing
-  const vuSplitter  = audioCtx.createChannelSplitter(2)
-  const vuAnalyserL = audioCtx.createAnalyser(); vuAnalyserL.fftSize = 1024
-  const vuAnalyserR = audioCtx.createAnalyser(); vuAnalyserR.fftSize = 1024
-  inputRouter.connect(vuSplitter)
-  vuSplitter.connect(vuAnalyserL, 0)
-  // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
-  vuSplitter.connect(vuAnalyserR, rVuChannel(stream))
-
-  return { stream, audioCtx, vuAnalyserL, vuAnalyserR, inputRouter, src, opts }
-}
-
-export async function stopMonitorStream(session: MonitorSession): Promise<void> {
-  session.stream.getTracks().forEach(t => t.stop())
-  await session.audioCtx.close().catch(() => {})
-}
-
-export async function reconnectMonitorStream(session: MonitorSession): Promise<boolean> {
-  const { opts, audioCtx, inputRouter, src: oldSrc } = session
-  const realDeviceId = opts.deviceId && opts.deviceId !== 'default' ? opts.deviceId : null
-  const chL = opts.channelL ?? 0
-  const chR = opts.channelR ?? 1
-  const neededCh = Math.max(
-    opts.channels === 'stereo' || opts.channels === 'monoL' || opts.channels === 'monoR' ? 2 : 1,
-    chL + 1, chR + 1
-  )
-  try {
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        ...(realDeviceId ? { deviceId: { ideal: realDeviceId } } : {}),
-        channelCount: { ideal: neededCh },
-        echoCancellation: false, noiseSuppression: false, autoGainControl: false
-      },
-      video: false
-    })
-    const newSrc    = audioCtx.createMediaStreamSource(newStream)
-    const newRouter = buildInputRouter(audioCtx, newSrc, newStream, chL, chR)
-    // Disconnect old graph before replacing; oldSrc.disconnect() covers both the
-    // simple case (inputRouter === src) and the splitter/merger path
-    try { oldSrc.disconnect() }     catch {}
-    try { inputRouter.disconnect() } catch {}
-    const vuSplitter = audioCtx.createChannelSplitter(2)
-    newRouter.connect(vuSplitter)
-    vuSplitter.connect(session.vuAnalyserL, 0)
-    vuSplitter.connect(session.vuAnalyserR, rVuChannel(newStream))
-    session.stream.getTracks().forEach(t => { t.onended = null; t.stop() })
-    session.stream      = newStream
-    session.inputRouter = newRouter
-    session.src         = newSrc
-    return true
-  } catch {
-    return false
-  }
 }
