@@ -19,7 +19,9 @@
     "recording": "Tar opp nå",
     "ok": "KLAR FOR OPPTAK",
     "warn": "KREVER HANDLING",
-    "noSchedule": "Ingen opptak planlagt"
+    "noSchedule": "Ingen opptak planlagt",
+    "preflightErrors": "{n} feil må rettes før opptaket",
+    "preflightWarns": "{n} ting å se på før opptaket"
   },
   "home": {
     "readyTitle": "Alt er klart",
@@ -91,7 +93,9 @@
     "videoNoCamera": "Ingen kamera valgt",
     "cloudFailed": "feilet",
     "cloudQueued": "i kø",
-    "cloudAllSynced": "Alle synkronisert"
+    "cloudAllSynced": "Alle synkronisert",
+    "nextShort": "neste",
+    "wakesLead": "({min} min før)"
   },
   "update": {
     "checking": "Sjekker etter oppdateringer…",
@@ -201,7 +205,7 @@
       "Søn"
     ],
     "wakeTitle": "Vekk datamaskinen fra dvale",
-    "wakeDesc": "Starter automatisk noen minutter før opptaket begynner",
+    "wakeDesc": "Maskinen vekkes automatisk 10 minutter før opptaket starter",
     "wakeBtn": "Planlegg oppvåkning",
     "wakeStatusOk": "{n} oppvåkning planlagt",
     "wakeStatusNone": "Ingen kommende opptak å planlegge",
@@ -1091,5 +1095,9 @@
   },
   "toast": {
     "dismiss": "Lukk"
+  },
+  "missed": {
+    "bannerOne": "Et planlagt opptak ble ikke tatt opp",
+    "bannerMany": "{n} planlagte opptak ble ikke tatt opp"
   }
 }

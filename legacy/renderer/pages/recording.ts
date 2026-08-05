@@ -750,10 +750,10 @@ function showOverlay(opts: RecordingOpts): void {
       overlay.classList.add('video-active')
     }
   }
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot recording'
-  if (lbl) lbl.textContent = t('status.recording', 'Tar opp')
+  // The sidebar dot/label is NOT written here: it renders `status/next-recording`,
+  // which learns about this take from the recorder's own state events. Writing it
+  // from both places is what let the sidebar say "Alt er klart" mid-recording
+  // (whichever handler ran last won).
   document.getElementById('btn-start-recording')?.classList.add('recording')
 
   scheduledStop  = opts.scheduledStopTime ? new Date(opts.scheduledStopTime) : null
@@ -831,10 +831,7 @@ function hideOverlay(): void {
   const autostopEl = document.getElementById('rec-autostop')
   if (autostopEl) autostopEl.style.display = 'none'
   document.getElementById('btn-start-recording')?.classList.remove('recording')
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot'
-  if (lbl) lbl.textContent = t('status.ready', 'Alt er klart')
+  // Sidebar status: see showOverlay — the store owns that element now.
 }
 
 // Bring the overlay back for a session the ENGINE says is live but the UI lost
@@ -853,10 +850,10 @@ function resyncOverlayToLiveSession(): void {
   stopVideoPreview()
   const overlay = document.getElementById('recording-overlay')
   if (overlay) overlay.style.display = 'flex'
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot recording'
-  if (lbl) lbl.textContent = t('status.recording', 'Tar opp')
+  // The sidebar dot/label is NOT written here: it renders `status/next-recording`,
+  // which learns about this take from the recorder's own state events. Writing it
+  // from both places is what let the sidebar say "Alt er klart" mid-recording
+  // (whichever handler ran last won).
   document.getElementById('btn-start-recording')?.classList.add('recording')
   const deviceEl = document.getElementById('rec-device-name')
   if (deviceEl && !deviceEl.textContent) deviceEl.textContent = settings.deviceName ?? ''

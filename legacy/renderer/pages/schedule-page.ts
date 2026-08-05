@@ -1,57 +1,51 @@
-import { t, tArr } from '../i18n'
+import { t, tArr, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
+import {
+  getNextRecordingState,
+  initNextRecordingStore,
+  subscribe as subscribeNextRecording,
+  syncScheduleSettings,
+} from '../status/next-recording'
+import {
+  formatSchedulePreview,
+  intlParts,
+  type NextRecordingState,
+} from '../status/next-recording-core'
 import type { ScheduleSlot } from '../../types'
 
 let editingSlotIndex = -1
 
-function updateNextRecordingPreview(): void {
+/**
+ * "Neste opptak: …" under the slot list.
+ *
+ * This used to be ~40 lines of hand-rolled weekday arithmetic that walked
+ * `settings.slots` only — so a one-off special (Christmas Eve, a concert) was
+ * invisible here even though it was the very next thing the app would record,
+ * and the answer could differ from the hero on Home. It now renders the same
+ * scheduler-fed state as every other "next recording" surface, and specials
+ * come along for free because the backend already counts them.
+ */
+function renderNextRecordingPreview(
+  state: NextRecordingState = getNextRecordingState(),
+): void {
   const previewEl = document.getElementById('schedule-next-preview')
   if (!previewEl) return
-
-  const slots = settings.slots ?? []
-  if (!slots.length) { previewEl.textContent = ''; return }
-
-  const now      = new Date()
-  // JS Date: Sunday=0 … Saturday=6; schedule.days is Mon=0..Sun=6
-  // Build a Sun-Sat array: Sun is index 6 in schedule.days, Mon..Sat are 0..5
-  const _sched = tArr('schedule.days', ['Man','Tir','Ons','Tor','Fre','Lør','Søn'])
-  const dayNames = [_sched[6], _sched[0], _sched[1], _sched[2], _sched[3], _sched[4], _sched[5]]
-
-  let nextMs   = Infinity
-  let nextLabel = ''
-
-  for (const slot of slots) {
-    for (const day of (slot.days ?? [])) {
-      const target  = new Date(now)
-      // 0=Sun in JS Date, but schedule days are Mon=0..Sun=6
-      // Convert slot day (Mon=0..Sun=6) to JS day (Sun=0..Sat=6)
-      const jsDayOfSlot = (day + 1) % 7
-
-      const [h, m] = (slot.start || '09:00').split(':').map(Number)
-      const diffDays = (jsDayOfSlot - now.getDay() + 7) % 7
-      const slotTodayMinutes = h * 60 + m
-      const nowMinutes       = now.getHours() * 60 + now.getMinutes()
-
-      // If the slot is today but already past (or now), push to next week
-      const daysToAdd = diffDays === 0 && nowMinutes >= slotTodayMinutes ? 7 : diffDays
-
-      target.setDate(target.getDate() + daysToAdd)
-      target.setHours(h, m, 0, 0)
-
-      if (target.getTime() < nextMs) {
-        nextMs    = target.getTime()
-        nextLabel = `${dayNames[target.getDay()]} ${target.getDate()}. ${t('schedule.atTime', 'kl.')} ${slot.start}`
-      }
-    }
-  }
-
-  previewEl.textContent = nextLabel ? `${t('schedule.nextPreviewPrefix', 'Neste opptak')}: ${nextLabel}` : ''
+  previewEl.textContent = formatSchedulePreview(state, {
+    t,
+    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    nowMs: Date.now(),
+  })
 }
 
 export function setupSchedulePage(): void {
+  // Render the "neste opptak" line from the shared store, now and on every
+  // scheduler event.
+  initNextRecordingStore()
+  subscribeNextRecording(renderNextRecordingPreview)
+
   document.getElementById('btn-add-slot')?.addEventListener('click', () => openSlotEditor(-1))
   document.getElementById('btn-slot-save')?.addEventListener('click', saveSlot)
   document.getElementById('slot-start')?.addEventListener('change', () => {
@@ -374,7 +368,7 @@ export function renderSlotsList(): void {
       <div style="font-weight:600;color:var(--text2);margin-bottom:3px">📅 ${escHtml(emptyTitle)}</div>
       <div>${escHtml(emptyHint)}</div>
     </div>`
-    updateNextRecordingPreview()
+    syncScheduleSettings()
     return
   }
   list.innerHTML = slots.map((s, i) => {
@@ -403,7 +397,7 @@ export function renderSlotsList(): void {
       renderSlotsList()
     })
   )
-  updateNextRecordingPreview()
+  syncScheduleSettings()
 }
 
 function openSlotEditor(index: number): void {
@@ -456,7 +450,7 @@ async function saveSlot(): Promise<void> {
   if (editor) editor.style.display = 'none'
   await window.api.saveSettings(settings)
   renderSlotsList()
-  updateNextRecordingPreview()
+  syncScheduleSettings()
   // Remind to enable auto-start so this weekly recording can actually fire.
   if (wasAdd) void remindAutostartIfNeeded()
 }

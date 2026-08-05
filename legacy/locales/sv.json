@@ -19,7 +19,9 @@
     "recording": "Spelar in nu",
     "ok": "REDO ATT SPELA IN",
     "warn": "ÅTGÄRD KRÄVS",
-    "noSchedule": "Ingen inspelning schemalagd"
+    "noSchedule": "Ingen inspelning schemalagd",
+    "preflightErrors": "{n} fel måste åtgärdas före inspelningen",
+    "preflightWarns": "{n} saker att se över före inspelningen"
   },
   "home": {
     "readyTitle": "Allt klart",
@@ -91,7 +93,9 @@
     "videoNoCamera": "Ingen kamera vald",
     "cloudFailed": "misslyckades",
     "cloudQueued": "i kö",
-    "cloudAllSynced": "Alla synkroniserade"
+    "cloudAllSynced": "Alla synkroniserade",
+    "nextShort": "nästa",
+    "wakesLead": "({min} min innan)"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -201,7 +205,7 @@
       "Sön"
     ],
     "wakeTitle": "Väck datorn ur viloläge",
-    "wakeDesc": "Startar automatiskt några minuter innan inspelningen börjar",
+    "wakeDesc": "Datorn väcks automatiskt 10 minuter innan inspelningen börjar",
     "wakeBtn": "Schemalägg väckning",
     "wakeStatusOk": "{n} väckning schemalagd",
     "wakeStatusNone": "Inga kommande inspelningar att schemalägga",
@@ -1091,5 +1095,9 @@
   },
   "toast": {
     "dismiss": "Stäng"
+  },
+  "missed": {
+    "bannerOne": "En planerad inspelning blev aldrig av",
+    "bannerMany": "{n} planerade inspelningar blev aldrig av"
   }
 }

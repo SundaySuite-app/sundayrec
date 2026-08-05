@@ -19,7 +19,9 @@
     "recording": "Trwa nagrywanie",
     "ok": "GOTOWY DO NAGRYWANIA",
     "warn": "WYMAGANE DZIAŁANIE",
-    "noSchedule": "Brak zaplanowanego nagrania"
+    "noSchedule": "Brak zaplanowanego nagrania",
+    "preflightErrors": "{n} błędów do naprawienia przed nagraniem",
+    "preflightWarns": "{n} rzeczy do sprawdzenia przed nagraniem"
   },
   "home": {
     "readyTitle": "Wszystko gotowe",
@@ -91,7 +93,9 @@
     "videoNoCamera": "Nie wybrano kamery",
     "cloudFailed": "nieudane",
     "cloudQueued": "w kolejce",
-    "cloudAllSynced": "Wszystko zsynchronizowane"
+    "cloudAllSynced": "Wszystko zsynchronizowane",
+    "nextShort": "następne",
+    "wakesLead": "({min} min wcześniej)"
   },
   "update": {
     "checking": "Sprawdzanie aktualizacji…",
@@ -201,7 +205,7 @@
       "Nd"
     ],
     "wakeTitle": "Wybudź komputer z uśpienia",
-    "wakeDesc": "Uruchamia się automatycznie kilka minut przed rozpoczęciem nagrywania",
+    "wakeDesc": "Komputer wybudzi się automatycznie 10 minut przed rozpoczęciem nagrania",
     "wakeBtn": "Zaplanuj wybudzenie",
     "wakeStatusOk": "Zaplanowane wybudzenia: {n}",
     "wakeStatusNone": "Brak nadchodzących nagrań do zaplanowania",
@@ -1091,5 +1095,9 @@
   },
   "toast": {
     "dismiss": "Zamknij"
+  },
+  "missed": {
+    "bannerOne": "Zaplanowane nagranie nie zostało wykonane",
+    "bannerMany": "Zaplanowane nagrania ({n}) nie zostały wykonane"
   }
 }

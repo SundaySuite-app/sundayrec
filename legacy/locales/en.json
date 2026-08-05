@@ -19,7 +19,9 @@
     "recording": "Recording now",
     "ok": "READY TO RECORD",
     "warn": "ACTION NEEDED",
-    "noSchedule": "No recording scheduled"
+    "noSchedule": "No recording scheduled",
+    "preflightErrors": "{n} errors to fix before the recording",
+    "preflightWarns": "{n} things to check before the recording"
   },
   "home": {
     "readyTitle": "All set",
@@ -91,7 +93,9 @@
     "videoNoCamera": "No camera selected",
     "cloudFailed": "failed",
     "cloudQueued": "queued",
-    "cloudAllSynced": "All synced"
+    "cloudAllSynced": "All synced",
+    "nextShort": "next",
+    "wakesLead": "({min} min before)"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -201,7 +205,7 @@
       "Sun"
     ],
     "wakeTitle": "Wake the computer from sleep",
-    "wakeDesc": "Starts automatically a few minutes before the recording begins",
+    "wakeDesc": "The computer wakes automatically 10 minutes before the recording starts",
     "wakeBtn": "Schedule wake-up",
     "wakeStatusOk": "{n} wake-up scheduled",
     "wakeStatusNone": "No upcoming recordings to schedule",
@@ -1091,5 +1095,9 @@
   },
   "toast": {
     "dismiss": "Close"
+  },
+  "missed": {
+    "bannerOne": "A scheduled recording never ran",
+    "bannerMany": "{n} scheduled recordings never ran"
   }
 }

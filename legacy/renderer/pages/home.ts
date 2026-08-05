@@ -7,6 +7,23 @@ import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
+import {
+  getNextRecordingState,
+  initNextRecordingStore,
+  refreshNextRecording,
+  subscribe as subscribeNextRecording,
+} from '../status/next-recording'
+import {
+  formatCountdown,
+  formatNextDate,
+  formatNextTitle,
+  formatSidebarStatus,
+  formatWakeHint,
+  intlParts,
+  type DeviceStatus,
+  type FormatCtx,
+  type NextRecordingState,
+} from '../status/next-recording-core'
 import type { RecordingEntry } from './history'
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -860,6 +877,11 @@ export function setupHome(): void {
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
 
+  // One subscription for the whole app lifetime: the sidebar status is chrome,
+  // visible from every page, so it must keep up whether or not Home is open.
+  initNextRecordingStore()
+  subscribeNextRecording(renderNextRecording)
+
   wireHomeIpcListeners()
 }
 
@@ -912,12 +934,16 @@ function wireHomeIpcListeners(): void {
 }
 
 export async function refreshHome(): Promise<void> {
-  const next = await window.api.getNextRecording()
+  // The next recording comes from the store (event-fed, polled as a fallback) —
+  // Home only asks it to re-check on arrival and renders whatever it has now.
+  renderNextRecording()
+  startCountdownTicker()
+  void refreshNextRecording()
+
   await Promise.all([
-    loadNextRecording(next),
     loadDiskSpace(),
     renderRecentRecordings(),
-    checkStatus(next),
+    checkStatus(),
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
@@ -960,69 +986,72 @@ export async function refreshHome(): Promise<void> {
   }
 }
 
-async function loadNextRecording(prefetchedNext?: { date: string } | null): Promise<void> {
-  if (countdownTimer) clearInterval(countdownTimer)
-  const next    = prefetchedNext !== undefined ? prefetchedNext : await window.api.getNextRecording()
-  const dateEl  = document.getElementById('next-date')
-  const cntEl   = document.getElementById('next-countdown')
+// ── "Next recording" rendering (store-driven) ───────────────────────────────
+//
+// The hero title, the countdown, the wake badge and the sidebar status label
+// all render `status/next-recording`'s state. None of them computes anything:
+// before this they each fetched and formatted the next start themselves and
+// could disagree — the sidebar showing one time while the hero showed another,
+// the countdown frozen mid-take, the wake badge promising a time the backend
+// never planned.
+
+/** The one place the app's language becomes a date format. */
+function fmtCtx(nowMs = Date.now()): FormatCtx {
+  return {
+    t,
+    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    nowMs,
+  }
+}
+
+/** Device connectivity is the sidebar's other input; `checkStatus` owns it. */
+let deviceStatus: DeviceStatus = { connected: true }
+
+function renderSidebarStatus(state: NextRecordingState, ctx: FormatCtx): void {
+  const dot = document.getElementById('status-dot')
+  const lbl = document.getElementById('status-label')
+  const s = formatSidebarStatus(state, ctx, deviceStatus)
+  if (dot) dot.className = 'status-dot' + (s.dot ? ` ${s.dot}` : '')
+  if (lbl) lbl.textContent = s.text
+}
+
+function renderNextRecording(state: NextRecordingState = getNextRecordingState()): void {
+  const ctx = fmtCtx()
+
   const titleEl = document.getElementById('hero-ready-title')
-
+  const dateEl = document.getElementById('next-date')
+  const cntEl = document.getElementById('next-countdown')
   const heroNextEl = document.getElementById('hero-next-section')
-  if (!next) {
-    if (dateEl)    dateEl.textContent  = '—'
-    if (cntEl)     cntEl.textContent   = ''
-    // When no schedule is configured, nudge the user toward Tidsplan
-    const slots = (settings.slots ?? []).length
-    const specials = (settings.specialRecordings ?? []).length
-    if (titleEl) {
-      titleEl.textContent = (slots === 0 && specials === 0)
-        ? t('home.readyNoSchedule', 'Klar — sett opp en tidsplan for å starte automatisk')
-        : t('home.readyTitle', 'Alt er klart')
-    }
-    if (heroNextEl) heroNextEl.style.display = 'none'
-    return
-  }
-  if (heroNextEl) heroNextEl.style.display = ''
-
-  const d      = new Date(next.date)
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
-
-  if (titleEl) {
-    const dayName = d.toLocaleDateString(locale, { weekday: 'long' })
-    const timeStr = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-    const tpl     = t('home.readyTitleDay', 'Alt er klart til {day} {time}')
-    titleEl.textContent = tpl.replace('{day}', dayName).replace('{time}', timeStr)
-  }
-
-  if (dateEl) {
-    dateEl.textContent = d.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
-  }
-
-  const tick = () => {
-    if (!cntEl) return
-    // Skip while recording: the overlay covers home, but this 1 Hz text write
-    // used to invalidate layout for the whole hidden page every second of a
-    // take (there is no CSS containment). Resumes the moment recording ends.
-    if (window.__isRecording) return
-    const diff   = d.getTime() - Date.now()
-    const suffix = t('home.untilStart', 'til oppstart')
-    cntEl.textContent = diff > 0 ? `${fmtCountdown(diff)} ${suffix}` : ''
-  }
-  tick()
-  countdownTimer = setInterval(tick, 1000)
-
   const wakeBadge = document.getElementById('next-wake-badge')
+
+  if (titleEl) titleEl.textContent = formatNextTitle(state, ctx)
+  if (heroNextEl) heroNextEl.style.display = state.next ? '' : 'none'
+  if (dateEl) dateEl.textContent = formatNextDate(state, ctx)
+  if (cntEl) cntEl.textContent = formatCountdown(state, ctx, fmtCountdown)
+
   if (wakeBadge) {
-    if (settings.wakeFromSleep) {
-      const wakeTime = new Date(d.getTime() - 10 * 60 * 1000)
-      const locale   = currentLang === 'no' ? 'nb-NO' : currentLang
-      const wakeStr  = wakeTime.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-      wakeBadge.textContent = t('home.wakesBefore', 'Maskinen vekkes automatisk kl. {time}').replace('{time}', wakeStr)
-      wakeBadge.style.display = ''
-    } else {
-      wakeBadge.style.display = 'none'
-    }
+    const hint = formatWakeHint(state, ctx)
+    wakeBadge.textContent = hint ?? ''
+    wakeBadge.style.display = hint ? '' : 'none'
   }
+
+  renderSidebarStatus(state, ctx)
+}
+
+/**
+ * 1 Hz countdown tick, running only while Home is the visible page
+ * (`deactivateHome` clears it). It no longer stops during a recording: the one
+ * moment you most want to know when the next service starts is mid-take, and
+ * that was exactly when the number used to freeze. One text write a second is
+ * a price worth paying for a number that is true.
+ */
+function startCountdownTicker(): void {
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    const cntEl = document.getElementById('next-countdown')
+    if (!cntEl) return
+    cntEl.textContent = formatCountdown(getNextRecordingState(), fmtCtx(), fmtCountdown)
+  }, 1000)
 }
 
 async function loadDiskSpace(): Promise<void> {
@@ -1131,7 +1160,7 @@ export async function renderRecentRecordings(): Promise<void> {
   })
 }
 
-async function checkStatus(prefetchedNext?: { date: string } | null): Promise<void> {
+async function checkStatus(): Promise<void> {
   const devices = await getAudioDevices()
   let connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
 
@@ -1148,8 +1177,6 @@ async function checkStatus(prefetchedNext?: { date: string } | null): Promise<vo
     }
   }
 
-  const isRec = window.__isRecording ?? false
-
   const heroOk   = document.getElementById('hero-ok')
   const heroWarn = document.getElementById('hero-warn')
   if (heroOk)   heroOk.style.display   = connected ? 'flex' : 'none'
@@ -1164,27 +1191,10 @@ async function checkStatus(prefetchedNext?: { date: string } | null): Promise<vo
     }
   }
 
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot' + (isRec ? ' recording' : connected ? '' : ' warn')
-  if (lbl) {
-    if (isRec) {
-      lbl.textContent = t('status.recording', 'Tar opp nå')
-    } else if (!connected) {
-      const name = settings.deviceName ? `: ${settings.deviceName}` : ''
-      lbl.textContent = t('status.warning', 'Lydkilde mangler') + name
-    } else {
-      const next = prefetchedNext !== undefined ? prefetchedNext : await window.api.getNextRecording()
-      if (next) {
-        const d = new Date(next.date)
-        const locale = currentLang === 'no' ? 'nb-NO' : currentLang
-        const dateStr = d.toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-        lbl.textContent = dateStr
-      } else {
-        lbl.textContent = t('status.noSchedule', 'Ingen opptak planlagt')
-      }
-    }
-  }
+  // The sidebar dot/label is rendered from the shared state, not computed here:
+  // this function's only contribution is whether the device is present.
+  deviceStatus = { connected, name: settings.deviceName ?? null }
+  renderSidebarStatus(getNextRecordingState(), fmtCtx())
 }
 
 export function loadVideoInfoStrip(): void {

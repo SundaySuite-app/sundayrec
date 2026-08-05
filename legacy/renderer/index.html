@@ -515,7 +515,10 @@
         <div class="toggle-row" style="margin-top:12px">
           <div>
             <div class="toggle-title" data-i18n="schedule.wakeTitle">Vekk maskin automatisk før planlagte opptak</div>
-            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes ~2 min før opptaket starter.</div>
+            <!-- 10 minutes is the backend's WAKE_LEAD_MINUTES (crates/sundayrec-core/src/wake.rs),
+                 not a UI guess. This line used to promise "~2 min" while the machine
+                 actually woke at 10, and the home badge said something else again. -->
+            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes automatisk 10 minutter før opptaket starter.</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-wake" /><span class="toggle-track"></span></label>
         </div>
