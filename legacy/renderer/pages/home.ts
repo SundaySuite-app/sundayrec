@@ -9,7 +9,7 @@ import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-ho
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { buildHealthFindings } from '../status/health-findings'
-import { firstMount, resetMount } from '../ui/motion'
+import { firstMount, resetMount, showEl, hideEl } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
 import {
   dismissMissed,
@@ -255,7 +255,9 @@ export async function refreshHomeVideoDevices(): Promise<void> {
   const sel   = document.getElementById('home-video-device-select') as HTMLSelectElement | null
   if (!sel) return
   sel.disabled = true
-  sel.innerHTML = '<option value="">Leter etter kameraer…</option>'
+  sel.replaceChildren(Object.assign(document.createElement('option'), {
+    value: '', textContent: t('home.cameraSearching', 'Leter etter kameraer…'),
+  }))
   const phTxt = document.getElementById('video-preview-placeholder-text')
 
   try {
@@ -263,7 +265,7 @@ export async function refreshHomeVideoDevices(): Promise<void> {
     sel.innerHTML = ''
 
     const blank = document.createElement('option')
-    blank.value = ''; blank.textContent = 'Velg kamera…'
+    blank.value = ''; blank.textContent = t('home.cameraSelect', 'Velg kamera…')
     sel.appendChild(blank)
 
     devices.forEach(d => {
@@ -474,7 +476,7 @@ function renderStatusAlerts(state: NextRecordingState): void {
   const missedList = document.getElementById('missed-card-list')
   const missedHeadline = formatMissedBanner(state, ctx)
 
-  if (missedCard) missedCard.style.display = missedHeadline ? '' : 'none'
+  if (missedHeadline) showEl(missedCard); else hideEl(missedCard)
   if (missedHeadline) {
     if (missedTitle) missedTitle.textContent = missedHeadline
     if (missedList) {
@@ -502,7 +504,7 @@ function renderStatusAlerts(state: NextRecordingState): void {
   const pf = formatPreflightHeadline(state.preflight, ctx)
 
   if (pfCard) {
-    pfCard.style.display = pf ? '' : 'none'
+    if (pf) showEl(pfCard); else hideEl(pfCard)
     // Errors and warnings are different news; the card says which.
     pfCard.classList.toggle('home-banner-error', pf?.severity === 'error')
     pfCard.classList.toggle('home-banner-warn', pf?.severity !== 'error')
@@ -1474,7 +1476,7 @@ function renderCloudCard(): boolean {
   // Show queue length if any cloud uploads are pending — this is the most
   // useful runtime info: "1 venter på opplasting" vs "Alle synkronisert".
   if (subEl) {
-    subEl.textContent = 'Aktiv'
+    subEl.textContent = t('home.cloudActive', 'Aktiv')
     subEl.style.color = ''
     void (async () => {
       try {

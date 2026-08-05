@@ -298,7 +298,7 @@ function updateLiveSignalStatus(dbL: number, dbR: number, state: VuState): void 
   const now = performance.now()
   if (now - lastLivePeakAt < LIVE_PEAK_TEXT_MIN_INTERVAL_MS) return
   const pkMax = Math.max(state.peakL, state.peakR)
-  const peakTxt = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  const peakTxt = pkMax > -59 ? `${t('home.peakLabel', 'Maks')}: ${pkMax.toFixed(1)} dBFS` : ''
   if (peakTxt === lastLivePeakTxt) return
   lastLivePeakTxt = peakTxt
   lastLivePeakAt = now

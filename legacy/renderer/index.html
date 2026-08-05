@@ -116,7 +116,7 @@
          this; until now the only trace was a native notification you had to be
          at the machine to see. Filled + shown by home.ts from the shared
          next-recording store. -->
-    <div id="missed-card" class="home-banner home-banner-error home-alert-card" style="display:none" role="alert">
+    <div id="missed-card" class="home-banner home-banner-error home-alert-card ui-reveal" style="display:none" role="alert">
       <div class="home-banner-title" id="missed-card-title"></div>
       <ul class="home-banner-list" id="missed-card-list"></ul>
       <div class="home-banner-hint" data-i18n="missed.hint">Sjekk at maskinen var på, at SundayRec kjørte og at «Vekk maskin automatisk» er slått på.</div>
@@ -128,7 +128,7 @@
 
     <!-- Pre-start check (scheduler://preflight, fired 30 min before a scheduled
          start) — and the same findings when Home runs the check itself. -->
-    <div id="preflight-card" class="home-banner home-banner-warn home-alert-card" style="display:none" role="alert">
+    <div id="preflight-card" class="home-banner home-banner-warn home-alert-card ui-reveal" style="display:none" role="alert">
       <div class="home-banner-title" id="preflight-card-title"></div>
       <ul class="home-banner-list" id="preflight-card-list"></ul>
       <div class="home-banner-actions">
@@ -195,7 +195,7 @@
     <!-- Full-width VU section with signal status -->
     <div class="vu-section">
       <div class="vu-section-head">
-        <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå</span>
+        <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå — live</span>
         <div class="signal-row">
           <span class="signal-dot" id="signal-dot"></span>
           <span class="signal-text" id="signal-text">—</span>
@@ -444,7 +444,7 @@
 
     <div class="page-header">
       <h1 data-i18n="nav.schedule">Tidsplan</h1>
-      <p class="subtitle" data-i18n="schedule.subtitle">Faste ukentlige opptak + spesialdager (jul, påske, konfirmasjon o.l.).</p>
+      <p class="subtitle" data-i18n="schedule.subtitle">Faste opptak som gjentas automatisk hver uke.</p>
     </div>
 
     <!-- ── Vekking: the one thing that decides whether a scheduled recording
@@ -478,7 +478,7 @@
         <div id="cal-weekdays" class="cal-weekdays"></div>
         <div id="cal-grid" class="cal-grid"></div>
         <div class="cal-legend">
-          <span class="leg-dot leg-weekly"></span><span data-i18n="calendar.legendWeekly">Ukentlig</span>&nbsp;&nbsp;
+          <span class="leg-dot leg-weekly"></span><span data-i18n="calendar.legendWeekly">Ukentlig opptak</span>&nbsp;&nbsp;
           <span class="leg-dot leg-special"></span><span data-i18n="calendar.legendSpecial">Spesialopptak</span>&nbsp;&nbsp;
           <span class="leg-dot leg-holiday"></span><span data-i18n="calendar.legendHoliday">Kirkehøytid</span>
         </div>
@@ -488,7 +488,7 @@
           <div class="cal-day-detail-title" id="cal-day-detail-title">Mandag 2. juni</div>
           <div class="cal-day-events" id="cal-day-events"></div>
           <div class="form-row">
-            <label class="form-label" data-i18n="calendar.name">NAVN PÅ OPPTAK</label>
+            <label class="form-label" data-i18n="calendar.name">NAVN (forslag fra kirkekalenderen)</label>
             <input type="text" class="form-input" id="special-name" placeholder="Gudstjeneste" />
           </div>
           <div class="form-row two-col">
@@ -508,7 +508,7 @@
           <span data-i18n="calendar.hintShort">Klikk på en dag for å legge til opptak</span>
         </div>
         <div class="card">
-          <div class="card-title" data-i18n="calendar.planned">Kommende spesialopptak</div>
+          <div class="card-title" data-i18n="calendar.planned">Planlagte spesialopptak</div>
           <div id="planned-list"></div>
         </div>
       </div>
@@ -525,7 +525,7 @@
 
     <!-- Slot editor (inline) -->
     <div class="card" id="slot-editor" style="display:none">
-      <div class="card-title" data-i18n="schedule.edit">Rediger tidspunkt</div>
+      <div class="card-title" data-i18n="schedule.edit">Rediger</div>
       <div class="form-row">
         <label class="form-label" data-i18n="schedule.dayLabel">DAG</label>
         <div class="day-picker" id="day-picker"></div>
@@ -543,12 +543,12 @@
       <div id="slot-duration-display" style="display:none;font-size:12px;padding:2px 0 6px;color:var(--text3)"></div>
       <div class="form-row" style="margin-top:4px">
         <div>
-          <label class="form-label" data-i18n="schedule.max">MAKS VARIGHET (min, valgfritt)</label>
+          <label class="form-label" data-i18n="schedule.max">MAKS</label>
           <input type="number" class="form-input" id="slot-max" placeholder="—" min="0" max="480" style="max-width:120px" />
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.save">Lagre</button>
+        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.save">Lagre tidsplan</button>
         <button class="btn-ghost" id="btn-slot-cancel" data-i18n="schedule.cancel">Avbryt</button>
       </div>
     </div>
@@ -565,11 +565,11 @@
         <!-- Master toggle ─────────────────────────────────────────────── -->
         <div class="toggle-row" style="margin-top:12px">
           <div>
-            <div class="toggle-title" data-i18n="schedule.wakeTitle">Vekk maskin automatisk før planlagte opptak</div>
+            <div class="toggle-title" data-i18n="schedule.wakeTitle">Vekk datamaskinen fra dvale</div>
             <!-- 10 minutes is the backend's WAKE_LEAD_MINUTES (crates/sundayrec-core/src/wake.rs),
                  not a UI guess. This line used to promise "~2 min" while the machine
                  actually woke at 10, and the home badge said something else again. -->
-            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes automatisk 10 minutter før opptaket starter.</div>
+            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes automatisk 10 minutter før opptaket starter</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-wake" /><span class="toggle-track"></span></label>
         </div>
@@ -653,17 +653,17 @@
 
           <!-- Always-off note kept at the bottom of wake-details -->
           <div id="sleep-always-off-note" class="sleep-config-detail wake-tip" style="margin-top:12px" data-i18n="schedule.sleepAlwaysOffNote">
-            Vil du at maskinen alltid skal starte opptak? La den stå i dvale (ikke slå den av) og aktiver «Oppstart med Windows/Mac» i Generelt-siden.
+            Vil du at maskinen alltid skal starte opptak? La den stå i dvale (ikke slå den av) og aktiver «Start automatisk med Windows/Mac» under System.
           </div>
 
           <!-- Kept invisible — old reliability card host is no longer rendered separately,
                but schedule-page.ts toggles a #wake-reliability-card element on/off to gate
                the dynamic refresh. We retain the id with display:contents so refresh runs. -->
-          <div id="wake-reliability-card" style="display:none"></div>
+          <div id="wake-reliability-card" class="ui-reveal" style="display:none"></div>
         </div>
 
         <div class="btn-row" style="margin-top:16px">
-          <button class="btn-primary" id="btn-schedule-save" data-i18n="schedule.save">Lagre innstillinger</button>
+          <button class="btn-primary" id="btn-schedule-save" data-i18n="schedule.save">Lagre tidsplan</button>
         </div>
       </div>
     </div>
@@ -676,7 +676,7 @@
     <div class="page-header live-page-header">
       <div>
         <h1 data-i18n="live.title">Direkte sending</h1>
-        <p class="subtitle" data-i18n="live.subtitle">Stream gudstjenester direkte til YouTube, Facebook eller egen RTMP-server.</p>
+        <p class="subtitle" data-i18n="live.subtitle">Stream til YouTube, Facebook eller egen RTMP-server</p>
       </div>
       <span id="live-status-pill" class="live-status-pill is-idle">
         <span class="live-status-pill-dot"></span>
@@ -706,7 +706,7 @@
         </div>
         <div class="vu-section live-vu-section">
           <div class="vu-section-head">
-            <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå</span>
+            <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå — live</span>
             <div class="signal-row">
               <span class="signal-dot" id="live-signal-dot"></span>
               <span class="signal-text" id="live-signal-text">—</span>
@@ -970,7 +970,7 @@
             <input type="radio" name="sampleRate" value="auto" id="sr-auto" checked />
             <div class="option-card-name" data-i18n="audio.sampleRateAuto">Automatisk</div>
             <div class="option-card-badge" data-i18n="audio.recommended">Anbefalt</div>
-            <div class="option-card-desc"><span data-i18n="audio.sampleRateAutoDesc">Følger lydkortet</span><span id="sr-auto-actual"></span></div>
+            <div class="option-card-desc"><span data-i18n="audio.sampleRateAutoDesc">Følger lydkortet — ingen resampling</span><span id="sr-auto-actual"></span></div>
           </label>
           <label class="option-card">
             <input type="radio" name="sampleRate" value="r44100" id="sr-44" />
@@ -1027,17 +1027,17 @@
     <!-- ── Filer ───────────────────────────────────────────────── -->
     <div id="settings-files" class="inner-page">
       <div class="card">
-        <div class="card-title" data-i18n="files.saveFolder">Hvor opptakene lagres</div>
+        <div class="card-title" data-i18n="files.saveFolder">Lagringsmappe</div>
         <p class="card-desc" data-i18n="files.saveFolderDesc">Alle opptak havner her som lokale filer. Tips: velg en mappe på en ekstern disk hvis du tar opp ofte og har stor harddisk.</p>
         <label class="form-label" data-i18n="files.saveTo">LAGRES I</label>
         <div class="folder-row">
           <input type="text" class="form-input" id="save-folder" readonly />
-          <button class="btn-secondary" id="btn-pick-folder" data-i18n="files.browse">Velg mappe…</button>
+          <button class="btn-secondary" id="btn-pick-folder" data-i18n="files.browse">Velg mappe</button>
         </div>
       </div>
       <div class="card">
-        <div class="card-title" data-i18n="files.pattern">Filnavn</div>
-        <p class="card-desc" data-i18n="files.smartNameDesc">Programmet gjenkjenner kirkelige høytider og kan bruke det riktige norske navnet automatisk (f.eks. «Påskedag»).</p>
+        <div class="card-title" data-i18n="files.pattern">NAVNMØNSTER</div>
+        <p class="card-desc" data-i18n="files.smartNameDesc">Programmet gjenkjenner kirkelige høytider og bruker det riktige norske navnet automatisk.</p>
         <label class="form-label" data-i18n="files.nameFormat">NAVNEFORMAT</label>
         <select class="form-input" id="pattern-select" style="max-width:360px">
           <option value="date" data-i18n="files.patternDate">Dato (standard)</option>
@@ -1096,7 +1096,7 @@
         </div>
         <div class="toggle-row mt">
           <div>
-            <div class="toggle-title" data-i18n="files.autoDelete">Slett automatisk</div>
+            <div class="toggle-title" data-i18n="files.autoDelete">Slett automatisk etter 90 dager</div>
             <div class="toggle-desc" data-i18n="files.autoDeleteDesc">Frigjør diskplass automatisk ved å slette gamle opptak</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-auto-delete" /><span class="toggle-track"></span></label>
@@ -1176,7 +1176,7 @@
         <div class="toggle-row">
           <div>
             <div class="toggle-title" data-i18n="schedule.splitTitle">Del opp filer per time</div>
-            <div class="toggle-desc" data-i18n="schedule.splitDesc">Lager ny lydfil for hvert intervall — enklere å redigere etterpå</div>
+            <div class="toggle-desc" data-i18n="schedule.splitDesc">Lager ny lydfil for hver time — enklere å redigere etterpå</div>
           </div>
           <select class="form-input split-select" id="opt-split-minutes">
             <option value="0"  data-i18n="schedule.splitOff">Av</option>
@@ -1841,7 +1841,7 @@
         <div class="card-title" data-i18n="general.profile">Kirkeprofil</div>
         <p class="card-desc" style="margin-bottom:12px" data-i18n="general.profileDesc">Brukes i filnavn, varslings-e-poster og podcast-RSS. Disse feltene er valgfrie men anbefalt.</p>
         <label class="form-label" data-i18n="general.church">MENIGHET / KIRKE</label>
-        <input type="text" class="form-input" id="church-name" data-i18n-placeholder="general.churchPlaceholder" placeholder="Alta Frikirke" />
+        <input type="text" class="form-input" id="church-name" data-i18n-placeholder="general.churchPlaceholder" placeholder="Eksempel: Alta Frikirke" />
         <label class="form-label mt" data-i18n="general.responsible">ANSVARLIG PERSON</label>
         <input type="text" class="form-input" id="responsible-person" data-i18n-placeholder="general.responsiblePlaceholder" placeholder="Navn" />
         <div class="form-hint" data-i18n="general.responsibleHint">Personen som får e-post hvis opptaket feiler (krever e-postvarsler under Deling → Varsler).</div>
@@ -1891,7 +1891,7 @@
           <label class="toggle"><input type="checkbox" id="opt-auto-update" checked /><span class="toggle-track"></span></label>
         </div>
         <div class="btn-row mt">
-          <button class="btn-secondary" id="btn-check-updates" data-i18n="general.checkNow">Se etter oppdateringer</button>
+          <button class="btn-secondary" id="btn-check-updates" data-i18n="general.checkNow">Se etter oppdateringer nå</button>
           <button class="btn-primary" id="btn-restart-install" style="display:none" data-i18n="update.restartInstall">↺ Start på nytt og installer</button>
         </div>
       </div>
@@ -2070,8 +2070,8 @@
         </div>
       </div>
       <div id="history-more-panel" class="history-more-panel" style="display:none">
-        <a href="#" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feiloppføringer</a>
-        <a href="#" id="btn-prune-history" data-i18n="history.pruneBtn">Fjern oppføringer uten fil</a>
+        <a href="#" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feil</a>
+        <a href="#" id="btn-prune-history" data-i18n="history.pruneBtn">Rydd opp</a>
       </div>
       <div id="history-stats" style="display:none;gap:16px;font-size:12px;color:var(--text3);margin-bottom:8px;flex-wrap:wrap">
         <span id="stat-count"></span>
@@ -2086,7 +2086,7 @@
       </div>
       <table class="rec-table">
         <thead><tr>
-          <th data-sort="time" aria-sort="descending"><span data-i18n="history.date">Tidspunkt</span><span class="th-sort-arrow" aria-hidden="true">↓</span></th>
+          <th data-sort="time" aria-sort="descending"><span data-i18n="history.date">Dato</span><span class="th-sort-arrow" aria-hidden="true">↓</span></th>
           <th data-sort="duration" aria-sort="none"><span data-i18n="history.duration">Varighet</span><span class="th-sort-arrow" aria-hidden="true"></span></th>
           <th data-i18n="history.filename">Filnavn</th>
           <th data-i18n="history.status">Status</th>
@@ -2445,7 +2445,7 @@
       <!-- Remaining duration after cuts -->
       <div id="editor-remaining" class="editor-remaining" style="display:none">
         <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
-        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat:</span>
+        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
         <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
       </div>
 
@@ -2463,7 +2463,7 @@
           <button class="btn-ghost btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
         </div>
         <div id="editor-transcript-body" class="editor-transcript-body">
-          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen — tar 5-15 minutter avhengig av lengde og valgt modell.</div>
+          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
         </div>
       </div>
 
@@ -2481,10 +2481,10 @@
       </div>
 
       <!-- Transcribe modal: choose model + language -->
-      <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+      <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-modal-title">
         <div class="modal modal-sm transcribe-modal">
           <div class="modal-header">
-            <span class="modal-title" data-i18n="transcript.modalTitle">Transkriber tale til tekst</span>
+            <span class="modal-title" id="transcribe-modal-title" data-i18n="transcript.modalTitle">Transkriber tale til tekst</span>
             <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
           </div>
           <p class="modal-desc" data-i18n="transcript.modalDesc">Bruker lokal AI (whisper.cpp) — ingen data sendes til skyen. Velg modell og språk.</p>
@@ -2518,7 +2518,7 @@
       </div>
 
       <!-- Transcribe progress modal -->
-      <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
+      <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-progress-title" data-no-escape>
         <div class="modal modal-sm transcribe-progress-modal">
           <!-- No ✕: a job is running, and "Avbryt" is the only honest way out. -->
           <div class="modal-header">
@@ -2546,7 +2546,7 @@
           <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
           <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
         </div>
-        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast / streaming.</div>
+        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
 
         <div class="editor-master-preset-row">
           <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
@@ -2615,7 +2615,7 @@
           <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
           <span id="editor-result-text"></span>
         </div>
-        <button class="btn-primary" id="btn-editor-save" data-i18n="editor.save">Lagre redigert fil</button>
+        <button class="btn-primary" id="btn-editor-save" data-i18n="editor.save">Eksporter</button>
       </div>
 
     </div><!-- /workspace -->
@@ -2637,10 +2637,10 @@
 </div>
 
 <!-- Editor export modal -->
-<div id="editor-export-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
+<div id="editor-export-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="editor-export-modal-title" data-no-escape>
   <div class="modal export-modal">
     <div class="modal-header">
-      <span class="modal-title" data-i18n="editor.exportTitle">Eksporter</span>
+      <span class="modal-title" id="editor-export-modal-title" data-i18n="editor.exportTitle">Eksporter…</span>
       <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
 
@@ -2786,10 +2786,10 @@
 <!-- ══ MODALS ════════════════════════════════════════════════════ -->
 
 <!-- Manual recording modal -->
-<div id="modal-manual" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="modal-manual" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-manual-title">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title" data-i18n="manual.title">Start opptak</span>
+      <span class="modal-title" id="modal-manual-title" data-i18n="manual.title">Start manuelt opptak</span>
       <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <p data-i18n="manual.subtitle">Opptaket starter med en gang og du stopper det selv når du er ferdig.</p>
@@ -2968,10 +2968,10 @@
 </div>
 
 <!-- Audio diagnostic modal -->
-<div id="audio-diagnose-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="audio-diagnose-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="audio-diagnose-modal-title">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title" data-i18n="general.diagnoseTitle">Lydenhetsdiagnose</span>
+      <span class="modal-title" id="audio-diagnose-modal-title" data-i18n="general.diagnoseTitle">Lydenhetsdiagnose</span>
       <button class="modal-close" id="btn-audio-diagnose-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <pre id="audio-diagnose-body" class="diagnose-body"></pre>
@@ -2980,10 +2980,10 @@
 </div>
 
 <!-- Note modal -->
-<div id="modal-note" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="modal-note" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-note-title">
   <div class="modal modal-sm">
     <div class="modal-header">
-      <span class="modal-title" data-i18n="history.noteTitle">Notat</span>
+      <span class="modal-title" id="modal-note-title" data-i18n="history.noteTitle">Notat</span>
       <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <p data-i18n="history.noteDesc">Skriv et notat til dette opptaket (valgfritt)</p>
@@ -2999,7 +2999,7 @@
 </div>
 
 <!-- Cloud folder picker modal -->
-<div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cloud-folder-modal-title">
   <div class="modal modal-sm cloud-folder-modal">
     <div class="modal-header">
       <span class="modal-title" id="cloud-folder-modal-title">Velg mappe…</span>

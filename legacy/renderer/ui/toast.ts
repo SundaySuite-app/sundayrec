@@ -74,6 +74,15 @@ export function toast(kind: ToastKind, msg: string, opts: ToastOpts = {}): () =>
 
   const el = document.createElement('div')
   el.className = `ui-toast ui-toast-${kind}`
+  // The stack is polite, which is right for "Lagret ✓". An error is the one
+  // message that must interrupt: a screen reader user who is mid-sentence
+  // elsewhere would otherwise hear about the failed recording minutes later.
+  // The nearest live-region declaration wins, so setting it on the toast
+  // itself overrides the polite stack for this node only.
+  if (kind === 'error') {
+    el.setAttribute('role', 'alert')
+    el.setAttribute('aria-live', 'assertive')
+  }
 
   const icon = document.createElement('span')
   icon.className = 'ui-toast-icon'
@@ -162,6 +171,10 @@ function ensureBanners(): HTMLElement | null {
   banners = document.createElement('div')
   banners.id = 'app-banners'
   banners.className = 'ui-banner-region'
+  // A banner appears without the user having done anything — the region has to
+  // announce itself, or the condition is visible only to people who can see it.
+  banners.setAttribute('role', 'status')
+  banners.setAttribute('aria-live', 'polite')
   main.insertBefore(banners, main.firstChild)
   return banners
 }

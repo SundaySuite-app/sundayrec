@@ -145,8 +145,8 @@ export async function setupIntegrationsPage(): Promise<void> {
     if (companionStatus) {
       const configured = await window.api.companionLlmConfigured()
       companionStatus.textContent = configured
-        ? '✓ API-nøkkel lagret (nøkkelring)'
-        : 'Ingen nøkkel — lokal oppsummering brukes'
+        ? t('companion.keyStored', '✓ API-nøkkel lagret (nøkkelring)')
+        : t('companion.keyNone', 'Ingen nøkkel — lokal oppsummering brukes')
     }
   } catch { /* leave status blank */ }
 
@@ -172,7 +172,7 @@ export async function setupIntegrationsPage(): Promise<void> {
     const statusEl = $('integration-companion-apikey-status')
     await window.api.companionClearLlmKey()
     if (inp) inp.value = ''
-    if (statusEl) statusEl.textContent = 'Ingen nøkkel — lokal oppsummering brukes'
+    if (statusEl) statusEl.textContent = t('companion.keyNone', 'Ingen nøkkel — lokal oppsummering brukes')
   })
 
   // ── Connection: explicit save (church_id + the two API URLs) ──────────────

@@ -4,6 +4,7 @@ import { flashSaved, escHtml } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
+import { showEl, hideEl } from '../ui/motion'
 import {
   getNextRecordingState,
   initNextRecordingStore,
@@ -92,8 +93,7 @@ export function setupSchedulePage(): void {
       void loadSleepConfig()
       void refreshWakeReliability()
     } else {
-      const card = document.getElementById('wake-reliability-card')
-      if (card) card.style.display = 'none'
+      hideEl(document.getElementById('wake-reliability-card'))
     }
     // Auto-lagre toggelen umiddelbart (samme mønster som lyd/fil/video-sidene):
     // brukeren skulle ikke måtte klikke «Lagre» for at valget tar effekt.
@@ -460,7 +460,7 @@ async function refreshWakeReliability(): Promise<void> {
       }
     }
 
-    card.style.display = ''
+    showEl(card)
     // Keep the top-of-page summary in step with the detail it summarises.
     void refreshWakeSummaryFacts()
   } catch (err) {

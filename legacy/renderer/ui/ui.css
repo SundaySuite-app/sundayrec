@@ -444,6 +444,36 @@ body.platform-darwin .ui-toast-stack {
   transform: translateY(-4px);
 }
 
+/* `.ui-reveal` is `.ui-collapsible` with an entrance as well as an exit: the
+   element starts transparent and only `.is-open` brings it in. Put it on cards
+   that appear because STATE changed rather than because the user clicked —
+   a missed recording, a failed pre-start check — where popping into the layout
+   mid-glance reads as a glitch. Requires showEl/hideEl (ui/motion.ts): the
+   markup keeps its `style="display:none"`, and showEl clears it before adding
+   the class, so the transition has something to run from. */
+.ui-reveal {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+.ui-reveal.is-open {
+  opacity: 1;
+  transform: none;
+}
+.ui-reveal.is-leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-reveal,
+  .ui-reveal.is-leaving {
+    transition: none;
+    transform: none;
+  }
+}
+
 /* ── Keyframes ───────────────────────────────────────────────────────────── */
 
 @keyframes ui-fade-in {

@@ -32,6 +32,7 @@ import {
   save as saveDialog,
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { navigateTo } from "./ui/navigate";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -322,6 +323,12 @@ const LS_KEY = "sundayrec.settings";
 // Dev/verification hook (inert in normal use): `?goto=<page>` skips first-run
 // onboarding and navigates to the named page after boot, so each screen can be
 // screenshotted headlessly. Without the query param this is completely inactive.
+//
+// Since Fase 7 it also accepts `?goto=<page>:<tab>` for pages with inner tabs —
+// `?goto=settings:audio`, `?goto=settings:sharing`. The tab may be written bare
+// (`audio`) or fully qualified (`settings-audio`); retired ids from before the
+// 7→5 tab fold (`publish`, `notifications`, `integrations`) still work, because
+// navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
 
 function loadSettings(): Record<string, unknown> {
@@ -1826,16 +1833,26 @@ void (async () => {
 // with the renderer's global declarations. Phase 3 adds real imports here.
 export {};
 
-// Verification navigation (only with `?goto=<page>`): poll until main.ts has
-// installed window.showPage, then navigate. Inert without the query param.
+// Verification navigation (only with `?goto=<page>[:<tab>]`): poll until main.ts
+// has installed window.showPage, then navigate. Inert without the query param.
 if (VERIFY_GOTO) {
+  const [gotoPage, rawTab] = VERIFY_GOTO.split(":");
+  // `settings:audio` and `settings:settings-audio` mean the same thing.
+  const gotoTab = rawTab
+    ? rawTab.startsWith(`${gotoPage}-`)
+      ? rawTab
+      : `${gotoPage}-${rawTab}`
+    : undefined;
   const tryGoto = (): void => {
     const w = window as any;
-    if (typeof w.showPage === "function") {
-      w.showPage(VERIFY_GOTO);
-    } else {
+    if (typeof w.showPage !== "function") {
       setTimeout(tryGoto, 50);
+      return;
     }
+    // No highlight pulse: this path exists to produce clean screenshots, and a
+    // 4.4 s glow on the card would be in half of them.
+    if (gotoTab) navigateTo(gotoPage, { tab: gotoTab, highlight: false });
+    else w.showPage(gotoPage);
   };
   setTimeout(tryGoto, 150);
 }
