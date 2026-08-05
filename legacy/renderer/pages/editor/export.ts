@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { settings } from '../../state'
 import { E, $, clearDirty } from './state'
+import { closeModal, openModal } from '../../ui/modal-manager'
 import { clearEditorDraft } from './cuts'
 import { saveMetadata } from './metadata'
 import { renderMixer, loadPresetIntoMixer, mixerProcessing } from './mixer'
@@ -50,8 +51,7 @@ export function openExportModal(): void {
   // Render publishing section
   void renderPublishOptions()
 
-  const exportModal = $('editor-export-modal')
-  if (exportModal) exportModal.style.display = 'flex'
+  openModal('editor-export-modal')
 }
 
 /**
@@ -483,8 +483,7 @@ export async function runPublishingForExport(outputPath: string): Promise<void> 
 }
 
 export function closeExportModal(): void {
-  const exportModal = $('editor-export-modal')
-  if (exportModal) exportModal.style.display = 'none'
+  closeModal('editor-export-modal')
 }
 
 /** Localised label for a backend progress phase code. The codes themselves live

@@ -33,6 +33,7 @@ import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
 import { stopVuMeter as stopLiveVuMeter } from './live-page'
 import { stopChannelGrid as stopAudioPageMonitoring } from './channel-grid'
 import { renderRecentRecordings, stopVideoPreview, startVideoPreview } from './home'
+import { closeModal, openModal } from '../ui/modal-manager'
 import { showEditorPrompt } from './editor-page'
 import type { RecordingOpts } from '../../types'
 
@@ -104,9 +105,7 @@ export function setupRecording(): void {
   // Opening the stop-confirm modal also focuses the SAFE cancel button so
   // an accidental Enter keeps the recording going.
   function openStopConfirm(): void {
-    const m = document.getElementById('modal-confirm-stop')
-    if (!m) return
-    m.style.display = 'flex'
+    openModal('modal-confirm-stop')
     // Defer focus to next tick so the browser has rendered the modal
     setTimeout(() => {
       (document.getElementById('btn-confirm-cancel') as HTMLButtonElement | null)?.focus()
@@ -128,16 +127,16 @@ export function setupRecording(): void {
   })
 
   document.getElementById('btn-confirm-stop')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-confirm-stop'); if (m) m.style.display = 'none'
+    closeModal('modal-confirm-stop')
     doStopRecording()
   })
 
   document.getElementById('btn-confirm-cancel')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-confirm-stop'); if (m) m.style.display = 'none'
+    closeModal('modal-confirm-stop')
   })
 
   document.getElementById('btn-manual-cancel')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-manual'); if (m) m.style.display = 'none'
+    closeModal('modal-manual')
   })
 
   document.getElementById('btn-manual-start')?.addEventListener('click', handleManualStart)
@@ -275,9 +274,7 @@ export function setupRecording(): void {
 // ── Manual recording modal ───────────────────────────────────────────────────
 
 async function openManualModal(): Promise<void> {
-  const modal = document.getElementById('modal-manual')
-  if (!modal) return
-  modal.style.display = 'flex'
+  openModal('modal-manual')
 
   // R4: warm the backend ffmpeg device enumeration now, while the user is picking
   // options in the modal, so the recorder's start path reuses it (within its short
@@ -367,7 +364,6 @@ async function openManualModal(): Promise<void> {
 
 async function handleManualStart(): Promise<void> {
   const btn = document.getElementById('btn-manual-start') as HTMLButtonElement | null
-  const mm  = document.getElementById('modal-manual')
   if (btn) btn.disabled = true
 
   const devSel      = document.getElementById('manual-device')    as HTMLSelectElement | null
@@ -410,7 +406,7 @@ async function handleManualStart(): Promise<void> {
   try {
     res = await window.api.startRecordingNow(opts)
   } catch (err) {
-    if (mm) mm.style.display = 'none'
+    closeModal('modal-manual')
     showGlobalError(err instanceof Error ? err.message : String(err))
     if (btn) btn.disabled = false
     // The start failed — give the home meter back.
@@ -419,7 +415,7 @@ async function handleManualStart(): Promise<void> {
   }
 
   if (res?.ok) {
-    if (mm) mm.style.display = 'none'
+    closeModal('modal-manual')
     showOverlay(opts)
     try { await startMonitoring(opts) }
     catch (err) {

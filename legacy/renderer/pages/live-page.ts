@@ -11,6 +11,7 @@
  * (start/stop the preview-refresh interval, subscribe/unsubscribe to stats).
  */
 
+import { navigateTo } from '../ui/navigate'
 import { t } from '../i18n'
 import { settings } from '../state'
 import { escHtml } from '../helpers'
@@ -62,10 +63,7 @@ export function setupLivePage(): void {
 
   document.getElementById('live-config-link')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    // Open the Publisering tab
-    const btn = document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-publish"]')
-    btn?.click()
+    navigateTo('settings', { tab: 'settings-publish' })
   })
 
   // Quality + framerate changes affect the params we pass to streamStart; no

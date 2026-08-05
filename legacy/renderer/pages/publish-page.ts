@@ -2,6 +2,7 @@ import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
 import { t } from '../i18n'
 import { notifyLivePageDestinationsChanged } from './live-page'
+import { closeModal, openModal } from '../ui/modal-manager'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
@@ -350,14 +351,13 @@ function labelForStatus(s: CloudQueueStatus['entries'][number]['status']): strin
 }
 
 async function openFolderPicker(service: CloudServiceId): Promise<void> {
-  const modal = document.getElementById('cloud-folder-modal')
   const list  = document.getElementById('cloud-folder-list')
   const title = document.getElementById('cloud-folder-modal-title')
-  if (!modal || !list || !title) return
+  if (!list || !title) return
 
   title.textContent = `${t('publish.pickFolderTitle', 'Velg mappe')} — ${SERVICE_NAMES[service]}`
   list.innerHTML = `<div class="cloud-folder-loading">${t('publish.loading', 'Laster…')}</div>`
-  modal.style.display = 'flex'
+  openModal('cloud-folder-modal')
 
   try {
     const folders = await window.api.cloudListFolders(service)
@@ -368,7 +368,7 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
     rootItem.textContent = '📁 Rotmappe'
     rootItem.onclick = async () => {
       await window.api.cloudSetFolder(service, '', 'Rotmappe', '')
-      modal.style.display = 'none'
+      closeModal('cloud-folder-modal')
       refreshStatus()
     }
     list.appendChild(rootItem)
@@ -379,7 +379,7 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
       item.textContent = `📁 ${f.name}`
       item.onclick = async () => {
         await window.api.cloudSetFolder(service, f.id, f.name, f.path)
-        modal.style.display = 'none'
+        closeModal('cloud-folder-modal')
         refreshStatus()
       }
       list.appendChild(item)
@@ -390,8 +390,7 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
 }
 
 document.getElementById('cloud-folder-modal-close')?.addEventListener('click', () => {
-  const modal = document.getElementById('cloud-folder-modal')
-  if (modal) modal.style.display = 'none'
+  closeModal('cloud-folder-modal')
 })
 
 function saveServiceSettings(service: CloudServiceId, patch: Partial<CloudServiceSettings>): void {

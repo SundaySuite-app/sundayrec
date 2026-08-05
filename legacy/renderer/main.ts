@@ -19,6 +19,8 @@ import { setupIntegrationsPage } from './pages/integrations-page'
 import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/live-page'
 import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
+import { setupModalManager } from './ui/modal-manager'
+import { applyPageTransition, markPageEntered } from './ui/motion'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -285,20 +287,32 @@ function showPage(id: string): void {
   if (id !== 'editor') deactivateEditor()
   if (id !== 'live') deactivateLivePage()
   if (id !== 'settings') stopChannelGrid()
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
-  document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'))
-  document.getElementById(`page-${id}`)?.classList.add('active')
-  document.querySelector(`.nav-link[data-page="${id}"]`)?.classList.add('active')
-  if (id === 'home')     refreshHome()
-  if (id === 'schedule') renderCalendar()
-  if (id === 'editor')   reactivateEditor()
-  if (id === 'live')     reactivateLivePage()
-  if (id === 'search')   activateSearchPage()
-  if (id === 'settings') {
-    const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
-    if (!activeTab || activeTab === 'settings-audio') renderDeviceList('device-list')
-    if (activeTab === 'settings-video') refreshVideoDevices()
-  }
+
+  const outgoing = document.querySelector<HTMLElement>('.page.active')
+  const target   = document.getElementById(`page-${id}`)
+  if (outgoing === target) return
+
+  // Fade the outgoing page out first, then swap. applyPageTransition also
+  // resets #main's scroll — arriving on a short page after scrolling a long
+  // one used to leave you staring at blank space.
+  applyPageTransition(outgoing, () => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'))
+    target?.classList.add('active')
+    document.querySelector(`.nav-link[data-page="${id}"]`)?.classList.add('active')
+    markPageEntered(target)
+
+    if (id === 'home')     refreshHome()
+    if (id === 'schedule') renderCalendar()
+    if (id === 'editor')   reactivateEditor()
+    if (id === 'live')     reactivateLivePage()
+    if (id === 'search')   activateSearchPage()
+    if (id === 'settings') {
+      const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
+      if (!activeTab || activeTab === 'settings-audio') renderDeviceList('device-list')
+      if (activeTab === 'settings-video') refreshVideoDevices()
+    }
+  })
 }
 
 function setupSettingsTabs(): void {
@@ -351,28 +365,6 @@ function verifyBlobUrlsAllowed(): void {
   img.src = url
 }
 
-// Esc closes the topmost visible modal. Modals that shouldn't be Esc-closable
-// (transcribe progress, export progress) opt out with data-no-escape on the
-// backdrop. Cancel-buttons are found via [data-modal-cancel] or, as a fallback,
-// the well-known IDs we already use (btn-*-cancel).
-function setupGlobalEscape(): void {
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return
-    const backdrops = Array.from(document.querySelectorAll<HTMLElement>('.modal-backdrop'))
-      .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-no-escape'))
-    if (!backdrops.length) return
-    // Topmost = last in DOM order (modals are appended sequentially)
-    const top = backdrops[backdrops.length - 1]
-    const cancel = top.querySelector<HTMLButtonElement>(
-      '[data-modal-cancel], [id$="-cancel"], [id^="btn-cancel-"], .modal-close',
-    )
-    if (cancel) cancel.click()
-    else top.style.display = 'none'
-    e.preventDefault()
-    e.stopPropagation()
-  })
-}
-
 async function init(): Promise<void> {
   // Set globals consumed by sub-modules
   window.showPage       = showPage
@@ -421,7 +413,8 @@ async function init(): Promise<void> {
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()
-  setupGlobalEscape()
+  // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
+  setupModalManager()
   enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile
@@ -436,7 +429,9 @@ async function init(): Promise<void> {
   // Show first-run onboarding wizard for new users
   checkAndShowOnboarding()
 
-  // Initial page load
+  // Initial page load. The home page is marked `active` in the markup, so it
+  // never goes through showPage — latch its entrance animation here instead.
+  markPageEntered(document.querySelector<HTMLElement>('.page.active'))
   await refreshHome()
   renderDeviceList('device-list')
   renderDayPickers()

@@ -462,7 +462,7 @@
     "save": "Spara",
     "cancel": "Avbryt",
     "currentVersion": "Aktuell version:",
-    "saved": "✓ Sparat",
+    "saved": "Sparat",
     "testEmail": "Testa e-post",
     "askOpenEditor": "Fråga om redigering efter inspelning",
     "askOpenEditorDesc": "Visar en uppmaning att öppna filen i Redigera när inspelningen är klar",
@@ -480,7 +480,8 @@
     "responsibleHint": "Personen som får e-post om inspelningen misslyckas (kräver e-postaviseringar i fliken Aviseringar).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfel: kameraförhandsvisningen kommer inte att fungera (CSP blockerar blob:-URL:er). Starta om appen — om problemet kvarstår, kontakta support.",
-    "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support."
+    "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support.",
+    "diagnoseTitle": "Diagnostik för ljudenhet"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Avbryt",
+    "confirm": "Fortsätt",
+    "delete": "Ta bort",
+    "noOptions": "Inga alternativ hittades.",
+    "closeAria": "Stäng"
+  },
+  "toast": {
+    "dismiss": "Stäng"
   }
 }

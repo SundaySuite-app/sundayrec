@@ -15,6 +15,7 @@
 
 import { t } from '../i18n'
 import type { TranscriptData, TranscriptSegment, RecordingMetadata } from '../../types'
+import { closeModal, openModal } from '../ui/modal-manager'
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
@@ -62,8 +63,8 @@ export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   // getter (no module-coupling) and seeks via the same callback as the segments.
   setupCompanionPanel(() => currentTranscript)
   setCompanionSeek(onSeek)
-  $('btn-transcribe')?.addEventListener('click', openModal)
-  $('btn-transcribe-cancel')?.addEventListener('click', closeModal)
+  $('btn-transcribe')?.addEventListener('click', openTranscribeModal)
+  $('btn-transcribe-cancel')?.addEventListener('click', closeTranscribeModal)
   $('btn-transcribe-start')?.addEventListener('click', startTranscription)
   $('btn-transcribe-progress-cancel')?.addEventListener('click', cancelActiveJob)
   $('btn-transcript-export')?.addEventListener('click', exportSrt)
@@ -339,10 +340,8 @@ async function generateChaptersFromTranscript(): Promise<void> {
 
 // ─── Modal: choose model + language ─────────────────────────────────────────
 
-async function openModal(): Promise<void> {
+async function openTranscribeModal(): Promise<void> {
   if (!currentFilePath) return
-  const modal = $('transcribe-modal')
-  if (!modal) return
 
   // Load fresh model statuses every time the modal opens — user may have
   // downloaded one in a different session and we want to show "Installed".
@@ -359,12 +358,11 @@ async function openModal(): Promise<void> {
     return
   }
 
-  modal.style.display = 'flex'
+  openModal('transcribe-modal')
 }
 
-function closeModal(): void {
-  const modal = $('transcribe-modal')
-  if (modal) modal.style.display = 'none'
+function closeTranscribeModal(): void {
+  closeModal('transcribe-modal')
 }
 
 function renderModelList(): void {
@@ -452,7 +450,7 @@ function formatSize(bytes: number): string {
 
 async function startTranscription(): Promise<void> {
   if (!currentFilePath) return
-  closeModal()
+  closeTranscribeModal()
 
   const language = ($('transcribe-language') as HTMLSelectElement | null)?.value ?? 'auto'
   const translate = ($('transcribe-translate') as HTMLInputElement | null)?.checked ?? false
@@ -539,10 +537,9 @@ function cancelActiveJob(): void {
 }
 
 function showProgressModal(title: string, percent: number): void {
-  const modal = $('transcribe-progress-modal')
   setProgressTitle(title)
   updateProgressUI(percent)
-  if (modal) modal.style.display = 'flex'
+  openModal('transcribe-progress-modal')
 }
 
 function setProgressTitle(title: string): void {
@@ -577,8 +574,7 @@ function updateDownloadUI(p: { id: string; bytesDownloaded: number; bytesTotal: 
 }
 
 function closeProgressModal(): void {
-  const modal = $('transcribe-progress-modal')
-  if (modal) modal.style.display = 'none'
+  closeModal('transcribe-progress-modal')
 }
 
 // ─── Sidecar helpers ────────────────────────────────────────────────────────

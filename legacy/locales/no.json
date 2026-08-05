@@ -462,7 +462,7 @@
     "save": "Lagre",
     "cancel": "Avbryt",
     "currentVersion": "Nåværende versjon:",
-    "saved": "✓ Lagret",
+    "saved": "Lagret",
     "testEmail": "Test e-post",
     "askOpenEditor": "Spør om redigering etter opptak",
     "askOpenEditorDesc": "Vis varsel om å åpne filen i Rediger etter at opptaket er fullført",
@@ -480,7 +480,8 @@
     "responsibleHint": "Personen som får e-post hvis opptaket feiler (krever e-postvarsler i Varsler-fanen).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurasjonsfeil: kamera-preview vil ikke fungere (CSP blokkerer blob:-URL-er). Restart appen — hvis problemet vedvarer, kontakt support.",
-    "initError": "Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. Restart appen — hvis problemet vedvarer, kontakt support."
+    "initError": "Oppstartsfeil: deler av appen kan mangle eller være uten funksjon. Restart appen — hvis problemet vedvarer, kontakt support.",
+    "diagnoseTitle": "Lydenhetsdiagnose"
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Avbryt",
+    "confirm": "Fortsett",
+    "delete": "Slett",
+    "noOptions": "Ingen alternativer funnet.",
+    "closeAria": "Lukk"
+  },
+  "toast": {
+    "dismiss": "Lukk"
   }
 }

@@ -11,6 +11,7 @@
 
 import { t } from '../i18n'
 import { fmtDate, flashMsg } from '../helpers'
+import { closeModal, openModal } from '../ui/modal-manager'
 
 /** A recording as the renderer consumes it (adapted from the Rust RecordingRow
  *  in the api-shim). */
@@ -318,32 +319,29 @@ export function setupHistoryTools(rerender: () => void): void {
 }
 
 function showNoteModal(currentNote: string, onSave: (note: string) => void): void {
-  const modal    = document.getElementById('modal-note') as HTMLDivElement | null
   const textarea = document.getElementById('note-textarea') as HTMLTextAreaElement | null
-  if (!modal || !textarea) return
+  if (!textarea) return
   textarea.value = currentNote
-  modal.style.display = 'flex'
+  // Escape, backdrop-click, the focus trap and `inert` on the page behind are
+  // the modal manager's job now — this function only owns save-vs-discard.
+  openModal('modal-note')
   setTimeout(() => textarea.focus(), 50)
 
   const saveBtn   = document.getElementById('btn-note-save')
   const cancelBtn = document.getElementById('btn-note-cancel')
 
   const close = () => {
-    modal.style.display = 'none'
+    closeModal('modal-note')
     saveBtn?.removeEventListener('click', handleSave)
     cancelBtn?.removeEventListener('click', handleCancel)
-    modal.removeEventListener('click', handleBackdrop)
-    document.removeEventListener('keydown', handleKey)
+    textarea.removeEventListener('keydown', handleKey)
   }
-  const handleSave    = () => { onSave(textarea.value); close() }
-  const handleCancel  = () => close()
-  const handleBackdrop = (e: MouseEvent) => { if (e.target === modal) close() }
-  const handleKey     = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') close()
+  const handleSave   = () => { onSave(textarea.value); close() }
+  const handleCancel = () => close()
+  const handleKey    = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { onSave(textarea.value); close() }
   }
   saveBtn?.addEventListener('click', handleSave)
   cancelBtn?.addEventListener('click', handleCancel)
-  modal.addEventListener('click', handleBackdrop)
-  document.addEventListener('keydown', handleKey)
+  textarea.addEventListener('keydown', handleKey)
 }

@@ -3,6 +3,7 @@ import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
+import { navigateTo } from '../ui/navigate'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
@@ -81,10 +82,9 @@ export function setupEditorPage(): void {
   $('export-publish-configure')?.addEventListener('click', (e) => {
     e.preventDefault()
     closeExportModal()
-    // Publish is a tab inside Settings ("settings-publish") — navigate to
-    // Settings and let the tab handler land on the right inner page.
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('.inner-tab[data-tab="settings-publish"]')?.click()
+    // Publish is a tab inside Settings ("settings-publish") — navigateTo hands
+    // the tab switch to the page's own handler, so its side effects still run.
+    navigateTo('settings', { tab: 'settings-publish' })
   })
 
   // Audio format picker pills. Scoped to #export-fmt-section so it doesn't fight

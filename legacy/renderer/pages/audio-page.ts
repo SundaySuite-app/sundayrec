@@ -4,6 +4,7 @@ import { setVal, setRadio } from '../helpers'
 import { getAudioDevices } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
+import { closeModal, openModal } from '../ui/modal-manager'
 import type { ChannelMode } from '../../types'
 
 function updateVolGradient(): void {
@@ -57,8 +58,7 @@ export function setupAudioPage(): void {
 
   document.getElementById('btn-audio-diagnose')?.addEventListener('click', runAudioDiagnosis)
   document.getElementById('btn-audio-diagnose-close')?.addEventListener('click', () => {
-    const modal = document.getElementById('audio-diagnose-modal')
-    if (modal) modal.style.display = 'none'
+    closeModal('audio-diagnose-modal')
   })
 }
 
@@ -291,9 +291,8 @@ async function runAudioDiagnosis(): Promise<void> {
   try {
     const report = await window.api.runDiagnostics()
 
-    const modal = document.getElementById('audio-diagnose-modal')
-    const body  = document.getElementById('audio-diagnose-body')
-    if (!modal || !body) return
+    const body = document.getElementById('audio-diagnose-body')
+    if (!body) return
 
     const badge = (sev: string): string =>
       sev === 'critical' ? '🔴' : sev === 'warning' ? '⚠️' : sev === 'info' ? 'ℹ️' : '✅'
@@ -325,7 +324,7 @@ async function runAudioDiagnosis(): Promise<void> {
       } catch { /* clipboard blocked — the report is still visible to copy by hand */ }
     })
 
-    modal.style.display = 'flex'
+    openModal('audio-diagnose-modal')
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = t('audio.diagnose', 'Diagnose') }
   }

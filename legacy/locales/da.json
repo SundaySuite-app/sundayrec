@@ -462,7 +462,7 @@
     "save": "Gem",
     "cancel": "Annullér",
     "currentVersion": "Nuværende version:",
-    "saved": "✓ Gemt",
+    "saved": "Gemt",
     "testEmail": "Test e-mail",
     "askOpenEditor": "Spørg om redigering efter optagelse",
     "askOpenEditorDesc": "Viser en besked om at åbne filen i Rediger, når optagelsen er færdig",
@@ -480,7 +480,8 @@
     "responsibleHint": "Personen, der får en mail, hvis optagelsen fejler (kræver mailnotifikationer i fanen Notifikationer).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfejl: kamera-forhåndsvisningen vil ikke fungere (CSP blokerer blob:-URL’er). Genstart appen — hvis problemet fortsætter, kontakt support.",
-    "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support."
+    "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support.",
+    "diagnoseTitle": "Diagnose af lydenhed"
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Annullér",
+    "confirm": "Fortsæt",
+    "delete": "Slet",
+    "noOptions": "Ingen muligheder fundet.",
+    "closeAria": "Luk"
+  },
+  "toast": {
+    "dismiss": "Luk"
   }
 }

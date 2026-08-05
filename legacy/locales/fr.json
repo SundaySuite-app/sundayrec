@@ -462,7 +462,7 @@
     "save": "Enregistrer",
     "cancel": "Annuler",
     "currentVersion": "Version actuelle :",
-    "saved": "✓ Enregistré",
+    "saved": "Enregistré",
     "testEmail": "Tester l’e-mail",
     "askOpenEditor": "Proposer l’édition après l’enregistrement",
     "askOpenEditorDesc": "Affiche une invitation à ouvrir le fichier dans l’éditeur une fois l’enregistrement terminé",
@@ -480,7 +480,8 @@
     "responsibleHint": "La personne qui reçoit un e-mail si l’enregistrement échoue (nécessite les notifications par e-mail dans l’onglet Notifications).",
     "webhookUrl": "URL DU WEBHOOK",
     "cspError": "Erreur de configuration : l’aperçu caméra ne fonctionnera pas (la CSP bloque les URL blob:). Redémarrez l’application — si le problème persiste, contactez le support.",
-    "initError": "Erreur au démarrage : des parties de l’application peuvent manquer ou ne pas fonctionner. Redémarrez l’application — si le problème persiste, contactez le support."
+    "initError": "Erreur au démarrage : des parties de l’application peuvent manquer ou ne pas fonctionner. Redémarrez l’application — si le problème persiste, contactez le support.",
+    "diagnoseTitle": "Diagnostic du périphérique audio"
   },
   "error": {
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Annuler",
+    "confirm": "Continuer",
+    "delete": "Supprimer",
+    "noOptions": "Aucune option trouvée.",
+    "closeAria": "Fermer"
+  },
+  "toast": {
+    "dismiss": "Fermer"
   }
 }

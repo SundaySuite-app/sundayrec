@@ -462,7 +462,7 @@
     "save": "Zapisz",
     "cancel": "Anuluj",
     "currentVersion": "Aktualna wersja:",
-    "saved": "✓ Zapisano",
+    "saved": "Zapisano",
     "testEmail": "Test e-mail",
     "askOpenEditor": "Pytaj o edycję po zakończeniu nagrania",
     "askOpenEditorDesc": "Po zakończeniu nagrania wyświetla pytanie o otwarcie pliku w edytorze",
@@ -480,7 +480,8 @@
     "responsibleHint": "Osoba, która otrzyma e-mail, jeśli nagranie się nie powiedzie (wymaga powiadomień e-mail w zakładce Powiadomienia).",
     "webhookUrl": "ADRES WEBHOOKA",
     "cspError": "Błąd konfiguracji: podgląd kamery nie będzie działać (CSP blokuje adresy blob:). Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną.",
-    "initError": "Błąd uruchamiania: części aplikacji może brakować lub mogą nie działać. Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną."
+    "initError": "Błąd uruchamiania: części aplikacji może brakować lub mogą nie działać. Uruchom aplikację ponownie — jeśli problem będzie się powtarzał, skontaktuj się z pomocą techniczną.",
+    "diagnoseTitle": "Diagnostyka urządzenia audio"
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Anuluj",
+    "confirm": "Kontynuuj",
+    "delete": "Usuń",
+    "noOptions": "Nie znaleziono opcji.",
+    "closeAria": "Zamknij"
+  },
+  "toast": {
+    "dismiss": "Zamknij"
   }
 }

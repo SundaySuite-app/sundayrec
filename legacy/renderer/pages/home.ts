@@ -6,6 +6,7 @@ import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
+import { navigateTo } from '../ui/navigate'
 import type { RecordingEntry } from './history'
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -433,15 +434,6 @@ export async function startVideoPreview(): Promise<void> {
   }
 }
 
-function highlightCard(card: HTMLElement | null): void {
-  if (!card) return
-  card.classList.remove('setting-highlight')
-  void card.offsetWidth // restart animation if already active
-  card.classList.add('setting-highlight')
-  requestAnimationFrame(() => card.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  setTimeout(() => card.classList.remove('setting-highlight'), 4400)
-}
-
 /** Exported so other pages can trigger a disk-space refresh after changing format/channels/samplerate */
 export { loadDiskSpace as refreshHomeDiskSpace }
 
@@ -704,11 +696,7 @@ export function setupHome(): void {
   // Home → Settings → Lyd quick-jump (replaces the old inline test buttons)
   document.getElementById('btn-go-health')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() => {
-      document.getElementById('btn-test-recording-settings')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-test-recording-settings', highlight: false })
   })
 
   // Video toggle button — always toggles, loads devices inline if turning on
@@ -813,8 +801,7 @@ export function setupHome(): void {
 
   const goVideoSettings = (e: Event) => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-video"]')?.click()
+    navigateTo('settings', { tab: 'settings-video' })
   }
   document.getElementById('btn-go-video-source')?.addEventListener('click', goVideoSettings)
   document.getElementById('btn-go-video-quality')?.addEventListener('click', goVideoSettings)
@@ -822,57 +809,39 @@ export function setupHome(): void {
   document.getElementById('btn-go-audio-page')?.addEventListener('click', e => {
     e.preventDefault()
     e.stopPropagation()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.querySelector('#settings-audio .card')))
+    navigateTo('settings', { tab: 'settings-audio', anchor: '#settings-audio .card' })
   })
   // Tapping the LYDKILDE card itself lands on the CHANNEL GRID — the «is the
   // right channel feeding the recording?» check, one tap from Home.
   document.getElementById('home-audio-card')?.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.getElementById('channel-grid-card')))
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'channel-grid-card' })
   })
   document.getElementById('btn-go-audio-fmt')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-files"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.getElementById('format-group')?.closest('.card') as HTMLElement ?? null))
+    navigateTo('settings', { tab: 'settings-files', anchor: 'format-group' })
   })
   document.getElementById('btn-go-general-page')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-files"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.querySelector('#settings-files .card')))
+    navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
   // Publish-strip cards — all three currently route to the Publisering tab
   // (cloud + thumbnail UI lives there; Whisper has no dedicated settings
   // tab yet, so we land users on Publisering and they can browse from
   // there until we promote Whisper config out of the editor).
-  const goPublish = (highlightSel?: string) => (e: Event) => {
+  const goPublish = (anchor?: string) => (e: Event) => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-publish"]')?.click()
-    if (highlightSel) {
-      requestAnimationFrame(() => highlightCard(document.querySelector(highlightSel)))
-    }
+    navigateTo('settings', { tab: 'settings-publish', anchor })
   }
   document.getElementById('btn-go-cloud')?.addEventListener('click',   goPublish('#settings-publish .cloud-grid'))
   document.getElementById('btn-go-thumb')?.addEventListener('click',   goPublish('#publish-thumb-preview'))
   document.getElementById('btn-go-whisper')?.addEventListener('click', goPublish())
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
+    navigateTo('settings', { tab: 'settings-audio' })
   })
   document.getElementById('btn-how-to-fix-audio')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
+    navigateTo('settings', { tab: 'settings-audio' })
   })
 
   // "Se alle →" jumps to the merged «Søk & historikk» tab — the full history +
@@ -880,7 +849,7 @@ export function setupHome(): void {
   // Home only shows the 5 most recent recordings.
   document.getElementById('home-see-all')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('search')
+    navigateTo('search')
   })
 
   const onDeviceChange = (): void => {

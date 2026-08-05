@@ -7,6 +7,9 @@
   <title>SundayRec</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
+  <!-- Shared UI services (dialogs, toasts, banners, managed modals). Loaded
+       after styles.css so it inherits the design tokens defined there. -->
+  <link rel="stylesheet" href="./ui/ui.css" />
 </head>
 <body>
 
@@ -2374,7 +2377,10 @@
       <!-- Transcribe modal: choose model + language -->
       <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
         <div class="modal modal-sm transcribe-modal">
-          <h2 data-i18n="transcript.modalTitle">Transkriber tale til tekst</h2>
+          <div class="modal-header">
+            <span class="modal-title" data-i18n="transcript.modalTitle">Transkriber tale til tekst</span>
+            <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+          </div>
           <p class="modal-desc" data-i18n="transcript.modalDesc">Bruker lokal AI (whisper.cpp) — ingen data sendes til skyen. Velg modell og språk.</p>
 
           <label class="form-label" data-i18n="transcript.modelLabel">MODELL</label>
@@ -2408,7 +2414,10 @@
       <!-- Transcribe progress modal -->
       <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
         <div class="modal modal-sm transcribe-progress-modal">
-          <h2 id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</h2>
+          <!-- No ✕: a job is running, and "Avbryt" is the only honest way out. -->
+          <div class="modal-header">
+            <span class="modal-title" id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</span>
+          </div>
           <div class="transcribe-progress-bar-wrap">
             <div id="transcribe-progress-bar" class="transcribe-progress-bar"></div>
           </div>
@@ -2518,7 +2527,10 @@
 <!-- Editor export modal -->
 <div id="editor-export-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
   <div class="modal export-modal">
-    <h2 data-i18n="editor.exportTitle">Eksporter</h2>
+    <div class="modal-header">
+      <span class="modal-title" data-i18n="editor.exportTitle">Eksporter</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
 
     <!-- Export type — only for video files: keep video, or extract audio only. -->
     <div id="export-type-section" style="display:none">
@@ -2664,7 +2676,10 @@
 <!-- Manual recording modal -->
 <div id="modal-manual" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
   <div class="modal">
-    <h2 data-i18n="manual.title">Start opptak</h2>
+    <div class="modal-header">
+      <span class="modal-title" data-i18n="manual.title">Start opptak</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
     <p data-i18n="manual.subtitle">Opptaket starter med en gang og du stopper det selv når du er ferdig.</p>
 
     <!-- Audio source -->
@@ -2807,7 +2822,11 @@
 <!-- Stop confirm — primary action is "continue" so an accidental Enter doesn't stop -->
 <div id="modal-confirm-stop" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-stop-title">
   <div class="modal modal-sm">
-    <h2 id="modal-confirm-stop-title" data-i18n="recording.confirmTitle">Stopp opptak?</h2>
+    <!-- No ✕: this is a two-way decision mid-recording, and a third, ambiguous
+         exit is exactly what you don't want on that screen. -->
+    <div class="modal-header">
+      <span class="modal-title" id="modal-confirm-stop-title" data-i18n="recording.confirmTitle">Stopp opptak?</span>
+    </div>
     <p data-i18n="recording.confirmBody">Opptaket vil bli lagret frem til nå.</p>
     <div class="btn-row mt">
       <button class="btn-primary" id="btn-confirm-cancel" data-i18n="recording.confirmCancel" autofocus>Fortsett opptak</button>
@@ -2831,8 +2850,8 @@
 <div id="audio-diagnose-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Lydenhetsdiagnose</span>
-      <button class="modal-close" id="btn-audio-diagnose-close">×</button>
+      <span class="modal-title" data-i18n="general.diagnoseTitle">Lydenhetsdiagnose</span>
+      <button class="modal-close" id="btn-audio-diagnose-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <pre id="audio-diagnose-body" class="diagnose-body"></pre>
     <p class="diagnose-hint" data-i18n="general.diagnoseHint">Kopier dette og send til support hvis opptak ikke fungerer.</p>
@@ -2842,7 +2861,10 @@
 <!-- Note modal -->
 <div id="modal-note" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
   <div class="modal modal-sm">
-    <h2 data-i18n="history.noteTitle">Notat</h2>
+    <div class="modal-header">
+      <span class="modal-title" data-i18n="history.noteTitle">Notat</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
     <p data-i18n="history.noteDesc">Skriv et notat til dette opptaket (valgfritt)</p>
     <textarea id="note-textarea" class="form-input" rows="3"
       data-i18n-placeholder="history.notePlaceholder"
@@ -2858,9 +2880,9 @@
 <!-- Cloud folder picker modal -->
 <div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true">
   <div class="modal modal-sm cloud-folder-modal">
-    <div class="cloud-folder-modal-header">
-      <h2 id="cloud-folder-modal-title">Velg mappe…</h2>
-      <button id="cloud-folder-modal-close" class="btn-ghost cloud-folder-modal-close" aria-label="Lukk">×</button>
+    <div class="modal-header">
+      <span class="modal-title" id="cloud-folder-modal-title">Velg mappe…</span>
+      <button id="cloud-folder-modal-close" class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <div id="cloud-folder-list" class="cloud-folder-list"></div>
   </div>

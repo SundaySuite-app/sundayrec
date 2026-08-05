@@ -462,7 +462,7 @@
     "save": "Speichern",
     "cancel": "Abbrechen",
     "currentVersion": "Aktuelle Version:",
-    "saved": "✓ Gespeichert",
+    "saved": "Gespeichert",
     "testEmail": "E-Mail testen",
     "askOpenEditor": "Nach der Aufnahme zur Bearbeitung nachfragen",
     "askOpenEditorDesc": "Zeigt nach Abschluss der Aufnahme eine Aufforderung, die Datei im Editor zu öffnen",
@@ -480,7 +480,8 @@
     "responsibleHint": "Die Person, die eine E-Mail erhält, wenn die Aufnahme fehlschlägt (erfordert E-Mail-Benachrichtigungen im Tab „Benachrichtigungen“).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfehler: Die Kameravorschau wird nicht funktionieren (CSP blockiert blob:-URLs). Starten Sie die App neu — wenn das Problem weiterhin besteht, kontaktieren Sie den Support.",
-    "initError": "Startfehler: Teile der App können fehlen oder funktionslos sein. Starten Sie die App neu — wenn das Problem weiterhin besteht, kontaktieren Sie den Support."
+    "initError": "Startfehler: Teile der App können fehlen oder funktionslos sein. Starten Sie die App neu — wenn das Problem weiterhin besteht, kontaktieren Sie den Support.",
+    "diagnoseTitle": "Diagnose des Audiogeräts"
   },
   "error": {
     "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Abbrechen",
+    "confirm": "Fortfahren",
+    "delete": "Löschen",
+    "noOptions": "Keine Optionen gefunden.",
+    "closeAria": "Schließen"
+  },
+  "toast": {
+    "dismiss": "Schließen"
   }
 }

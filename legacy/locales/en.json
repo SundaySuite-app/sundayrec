@@ -460,7 +460,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "currentVersion": "Current version:",
-    "saved": "✓ Saved",
+    "saved": "Saved",
     "testEmail": "Test email",
     "askOpenEditor": "Ask about editing after recording",
     "askOpenEditorDesc": "Show a prompt to open the file in the Editor once a recording finishes",
@@ -480,7 +480,8 @@
     "responsibleHint": "The person who gets an email if a recording fails (requires email notifications in the Notifications tab).",
     "webhookUrl": "WEBHOOK URL",
     "cspError": "Configuration error: camera preview will not work (CSP blocks blob: URLs). Restart the app — if the problem persists, contact support.",
-    "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support."
+    "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support.",
+    "diagnoseTitle": "Audio device diagnostics"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
@@ -1050,5 +1051,16 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "confirm": "Continue",
+    "delete": "Delete",
+    "noOptions": "No options found.",
+    "closeAria": "Close"
+  },
+  "toast": {
+    "dismiss": "Close"
   }
 }
