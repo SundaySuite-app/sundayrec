@@ -96,6 +96,20 @@ function tryStartVU(): void {
     })
 }
 
+// Write cache for the signal line. updateSignalStatus runs at 60 Hz off the VU
+// tick and used to write className on three elements and textContent on two —
+// every frame, forever, for a value that changes a few times a minute. Each
+// write dirties style and layout; the cache turns the steady state into five
+// comparisons and zero DOM touches. `§init§` is a sentinel that can never equal
+// a real class, so the first call after a (re)start always paints.
+const CLS_INIT = '§init§'
+let lastSigCls  = CLS_INIT
+let lastPeakTxt = CLS_INIT
+let lastPeakAt  = 0
+/** The peak readout falls at 25 dB/s, i.e. it would change its 0.1-dB string on
+ *  nearly every frame. Throttled like the dB text in audio/vu.ts. */
+const PEAK_TEXT_MIN_INTERVAL_MS = 150
+
 function resetSignalStatus(): void {
   const dot  = document.getElementById('signal-dot')
   const homeDot = document.getElementById('home-device-signal')
@@ -105,28 +119,41 @@ function resetSignalStatus(): void {
   if (homeDot) homeDot.className = 'signal-dot'
   if (text) { text.className = 'signal-text'; text.textContent = '—' }
   if (peak) peak.textContent = ''
+  lastSigCls = CLS_INIT
+  lastPeakTxt = CLS_INIT
+  lastPeakAt = 0
 }
 
 function updateSignalStatus(dbL: number, dbR: number, state: VuState): void {
-  const db   = Math.max(dbL, dbR)
-  const dot  = document.getElementById('signal-dot')
-  const homeDot = document.getElementById('home-device-signal')
-  const text = document.getElementById('signal-text')
-  const peak = document.getElementById('signal-peak')
-  if (!dot || !text) return
-
+  const db = Math.max(dbL, dbR)
   let cls = '', label = '—'
   if      (db >= -3)  { cls = 'klipping'; label = t('home.signalClipping', 'Klipper!') }
   else if (db >= -12) { cls = 'hoyt';     label = t('home.signalLoud',     'Høyt')     }
   else if (db >= -40) { cls = 'god';      label = t('home.signalGood',     'Bra')      }
   else if (db > -55)  { cls = 'svak';     label = t('home.signalWeak',     'Svakt')    }
-  dot.className  = 'signal-dot'  + (cls ? ' ' + cls : '')
-  if (homeDot) homeDot.className = 'signal-dot' + (cls ? ' ' + cls : '')
-  text.className = 'signal-text' + (cls ? ' ' + cls : '')
-  text.textContent = label
 
+  if (cls !== lastSigCls) {
+    const dot  = document.getElementById('signal-dot')
+    const text = document.getElementById('signal-text')
+    if (!dot || !text) return
+    lastSigCls = cls
+    const suffix = cls ? ' ' + cls : ''
+    dot.className  = 'signal-dot' + suffix
+    text.className = 'signal-text' + suffix
+    text.textContent = label
+    const homeDot = document.getElementById('home-device-signal')
+    if (homeDot) homeDot.className = 'signal-dot' + suffix
+  }
+
+  const now = performance.now()
+  if (now - lastPeakAt < PEAK_TEXT_MIN_INTERVAL_MS) return
   const pkMax = Math.max(state.peakL, state.peakR)
-  if (peak) peak.textContent = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  const peakTxt = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  if (peakTxt === lastPeakTxt) return
+  lastPeakTxt = peakTxt
+  lastPeakAt = now
+  const peak = document.getElementById('signal-peak')
+  if (peak) peak.textContent = peakTxt
 }
 
 // Click clip indicators to reset

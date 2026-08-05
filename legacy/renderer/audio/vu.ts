@@ -2,6 +2,9 @@
  * VU meter — shared logic for both the home page and the recording overlay.
  */
 
+import { createLevelSmoother } from './smoothing'
+import type { LevelSmoother } from './smoothing'
+
 export interface VuState {
   animFrame:   number | null
   stream:      MediaStream | null
@@ -16,16 +19,22 @@ export interface VuState {
    *  reused every frame so the 60 Hz tick produces zero GC pressure. */
   bufL: Float32Array | null
   bufR: Float32Array | null
+  /** dt-based release smoothers (audio/smoothing.ts). smL/smR stay the public
+   *  readout; these own the motion. */
+  smootherL: LevelSmoother
+  smootherR: LevelSmoother
+  /** performance.now() of the previous tick, for the smoother's dt. */
+  lastTickMs: number
 }
 
-const SMOOTH    = 0.55
 const PEAK_HOLD = 1500   // ms
 const PEAK_FALL = 25     // dB/sec
 
 export function makeVuState(): VuState {
   return { animFrame: null, stream: null, ctx: null, analyserL: null, analyserR: null,
     pkL: -60, pkR: -60, pkTL: 0, pkTR: 0, smL: -60, smR: -60, peakL: -60, peakR: -60,
-    bufL: null, bufR: null }
+    bufL: null, bufR: null,
+    smootherL: createLevelSmoother(), smootherR: createLevelSmoother(), lastTickMs: 0 }
 }
 
 /**
@@ -143,13 +152,15 @@ export function setVUBar(
   }
 }
 
-export function tickVU(
+/** One tick of the meter. Returns false when the analysers are gone (the loop
+ *  then stops instead of rescheduling itself forever). */
+function tickVuOnce(
   state: VuState,
   fillL: HTMLElement | null, peakL: HTMLElement | null, dbL: HTMLElement | null,
   fillR: HTMLElement | null, peakR: HTMLElement | null, dbR: HTMLElement | null,
   onSignal?: (dbL: number, dbR: number, state: VuState) => void
-): void {
-  if (!state.analyserL || !state.analyserR) return
+): boolean {
+  if (!state.analyserL || !state.analyserR) return false
   // Lazily size the reusable sample buffers to match the analyser fftSize.
   // analyser.fftSize is constant for the lifetime of the analyser, so this
   // allocates exactly once per (re)attach.
@@ -161,8 +172,15 @@ export function tickVU(
   }
   const now  = Date.now()
   const rawL = getDbFS(state.analyserL, state.bufL), rawR = getDbFS(state.analyserR, state.bufR)
-  state.smL = rawL > state.smL ? rawL : state.smL * SMOOTH + rawL * (1 - SMOOTH)
-  state.smR = rawR > state.smR ? rawR : state.smR * SMOOTH + rawR * (1 - SMOOTH)
+  // Rise instant, fall eased on real elapsed time (audio/smoothing.ts). The old
+  // `sm*0.55 + raw*0.45` defined the release in FRAMES: at 30 fps it took twice
+  // as long as at 60, so every dropped frame also changed the motion law —
+  // the same jank amplifier the recording overlay shed in v0.5.0.
+  const nowPerf = performance.now()
+  const dt = state.lastTickMs ? nowPerf - state.lastTickMs : 16.7
+  state.lastTickMs = nowPerf
+  state.smL = state.smootherL.step(rawL, dt)
+  state.smR = state.smootherR.step(rawR, dt)
   const pL = computePeak(state.smL, state.pkL, state.pkTL, now)
   const pR = computePeak(state.smR, state.pkR, state.pkTR, now)
   state.pkL = pL.p; state.pkTL = pL.t; state.pkR = pR.p; state.pkTR = pR.t
@@ -171,8 +189,26 @@ export function tickVU(
   setVUBar(fillL, peakL, dbL, state.smL, state.pkL)
   setVUBar(fillR, peakR, dbR, state.smR, state.pkR)
   onSignal?.(state.smL, state.smR, state)
-  state.animFrame = requestAnimationFrame(() =>
-    tickVU(state, fillL, peakL, dbL, fillR, peakR, dbR, onSignal))
+  return true
+}
+
+export function tickVU(
+  state: VuState,
+  fillL: HTMLElement | null, peakL: HTMLElement | null, dbL: HTMLElement | null,
+  fillR: HTMLElement | null, peakR: HTMLElement | null, dbR: HTMLElement | null,
+  onSignal?: (dbL: number, dbR: number, state: VuState) => void
+): void {
+  // ONE closure per (re)start. The old shape re-entered tickVU from a fresh
+  // arrow function every single frame purely to re-bind the same seven
+  // arguments — 60 short-lived closures/second per meter, for nothing.
+  const loop = (): void => {
+    if (!tickVuOnce(state, fillL, peakL, dbL, fillR, peakR, dbR, onSignal)) {
+      state.animFrame = null
+      return
+    }
+    state.animFrame = requestAnimationFrame(loop)
+  }
+  loop()
 }
 
 export function stopVuState(state: VuState): void {
@@ -183,4 +219,6 @@ export function stopVuState(state: VuState): void {
   state.bufL = null; state.bufR = null
   state.pkL = -60; state.pkR = -60; state.pkTL = 0; state.pkTR = 0
   state.smL = -60; state.smR = -60; state.peakL = -60; state.peakR = -60
+  state.smootherL.reset(); state.smootherR.reset()
+  state.lastTickMs = 0
 }

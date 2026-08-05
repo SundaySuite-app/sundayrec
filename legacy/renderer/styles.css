@@ -4431,7 +4431,11 @@ body.recording-active .status-dot.recording {
      a red hairline of the gradient's top edge peeking out on silent channels. */
   position: absolute; inset: -1px; background: var(--surface2);
   transform: scaleY(1); transform-origin: top;
-  transition: transform .05s ease-out;
+  /* NO transition. The rAF writer (pages/channel-grid.ts) sets this transform
+     up to 30×/s, and a .05s transition was restarted by every one of those
+     writes — it never finished, so all it did was add a lag the writer then
+     fought. The release is time-based in JS now (audio/smoothing.ts), the same
+     fix the VU bars got in v0.5.0 (see .vu-bar-fill above). */
   will-change: transform;
 }
 .ch-col-num { font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -4446,7 +4450,6 @@ body.recording-active .status-dot.recording {
 .ch-col.assigned .ch-col-badge { opacity: 1; }
 .ch-col.skeleton .ch-col-track { animation: chSkeleton 1.2s ease-in-out infinite; }
 @keyframes chSkeleton { 0%,100% { opacity: .35; } 50% { opacity: .7; } }
-.ch-grid.static .ch-col .ch-col-mask { transition: none; }
 
 .ch-grid-status {
   display: flex; gap: 10px; align-items: center; margin-top: 8px;

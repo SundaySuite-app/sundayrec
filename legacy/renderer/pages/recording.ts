@@ -27,6 +27,7 @@ import { t } from '../i18n'
 import { settings } from '../state'
 import { getAudioDevices } from '../audio/capture'
 import { setVUBar } from '../audio/vu'
+import { RELEASE_TAU_MS, alphaFor } from '../audio/smoothing'
 import { RecordingWaveform } from '../audio/waveform'
 import { fmtCountdown, flashMsg, isoDate } from '../helpers'
 import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
@@ -504,9 +505,11 @@ export function releaseRendererAudioCaptures(): void {
 
 /** Time-based release easing for the meter fall: the fraction of the remaining
  *  distance to cover after `dt` ms, for a τ≈80 ms exponential release. Pure —
- *  unit-tested. */
+ *  unit-tested. Kept as a named export (this is where the idea started, and the
+ *  overlay's loop reads better with it) but the maths now lives in
+ *  audio/smoothing.ts, so every meter in the app shares ONE release law. */
 export function easeFallAlpha(dtMs: number): number {
-  return 1 - Math.exp(-dtMs / 80)
+  return alphaFor(dtMs, RELEASE_TAU_MS)
 }
 
 /** Meter + waveform + timer WITHOUT RecordingOpts — for sessions the renderer

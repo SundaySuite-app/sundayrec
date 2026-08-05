@@ -247,11 +247,22 @@ export function stopVuMeter(): void {
   const fills = ['live-vu-l', 'live-vu-r'].map(id => document.getElementById(id))
   const peaks = ['live-vu-peak-l', 'live-vu-peak-r'].map(id => document.getElementById(id))
   const dbs   = ['live-vu-db-l', 'live-vu-db-r'].map(id => document.getElementById(id))
-  fills.forEach(el => { if (el) el.style.width = '100%' })
+  // The fill is a transform-driven mask (audio/vu.ts) — resetting `width` left
+  // the stale scaleX in place and froze these bars after a stop, the exact bug
+  // already fixed on home (home-vu.ts stopVU) but never here.
+  fills.forEach(el => { if (el) el.style.transform = 'scaleX(1)' })
   peaks.forEach(el => { if (el) el.style.opacity = '0' })
   dbs.forEach(el   => { if (el) el.textContent = '—' })
   resetLiveSignalStatus()
 }
+
+// Same 60 Hz write-cache discipline as home-vu.ts: the signal line changes a few
+// times a minute, so the steady state must cost comparisons, not DOM writes.
+const LIVE_CLS_INIT = '§init§'
+let lastLiveSigCls  = LIVE_CLS_INIT
+let lastLivePeakTxt = LIVE_CLS_INIT
+let lastLivePeakAt  = 0
+const LIVE_PEAK_TEXT_MIN_INTERVAL_MS = 150
 
 function resetLiveSignalStatus(): void {
   const dot  = document.getElementById('live-signal-dot')
@@ -260,24 +271,39 @@ function resetLiveSignalStatus(): void {
   if (dot)  dot.className = 'signal-dot'
   if (text) { text.className = 'signal-text'; text.textContent = '—' }
   if (peak) peak.textContent = ''
+  lastLiveSigCls = LIVE_CLS_INIT
+  lastLivePeakTxt = LIVE_CLS_INIT
+  lastLivePeakAt = 0
 }
 
 function updateLiveSignalStatus(dbL: number, dbR: number, state: VuState): void {
-  const db   = Math.max(dbL, dbR)
-  const dot  = document.getElementById('live-signal-dot')
-  const text = document.getElementById('live-signal-text')
-  const peak = document.getElementById('live-signal-peak')
-  if (!dot || !text) return
+  const db = Math.max(dbL, dbR)
   let cls = '', label = '—'
   if      (db >= -3)  { cls = 'klipping'; label = t('home.signalClipping', 'Klipper!') }
   else if (db >= -12) { cls = 'hoyt';     label = t('home.signalLoud',     'Høyt')     }
   else if (db >= -40) { cls = 'god';      label = t('home.signalGood',     'Bra')      }
   else if (db > -55)  { cls = 'svak';     label = t('home.signalWeak',     'Svakt')    }
-  dot.className  = 'signal-dot'  + (cls ? ' ' + cls : '')
-  text.className = 'signal-text' + (cls ? ' ' + cls : '')
-  text.textContent = label
+
+  if (cls !== lastLiveSigCls) {
+    const dot  = document.getElementById('live-signal-dot')
+    const text = document.getElementById('live-signal-text')
+    if (!dot || !text) return
+    lastLiveSigCls = cls
+    const suffix = cls ? ' ' + cls : ''
+    dot.className  = 'signal-dot' + suffix
+    text.className = 'signal-text' + suffix
+    text.textContent = label
+  }
+
+  const now = performance.now()
+  if (now - lastLivePeakAt < LIVE_PEAK_TEXT_MIN_INTERVAL_MS) return
   const pkMax = Math.max(state.peakL, state.peakR)
-  if (peak) peak.textContent = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  const peakTxt = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  if (peakTxt === lastLivePeakTxt) return
+  lastLivePeakTxt = peakTxt
+  lastLivePeakAt = now
+  const peak = document.getElementById('live-signal-peak')
+  if (peak) peak.textContent = peakTxt
 }
 
 // ── Stats subscription ───────────────────────────────────────────────────
