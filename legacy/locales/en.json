@@ -196,7 +196,8 @@
     "ageDayOne": "1 day ago",
     "ageDays": "{n} days ago",
     "ageOldest": "Over 14 days ago",
-    "confident": "confident"
+    "confident": "confident",
+    "errNotFound": "This episode is no longer in the review queue — it may already have been published or discarded."
   },
   "schedule": {
     "title": "Weekly schedule",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Advanced audio mixer (overrides voice processing)",
     "videoCodec": "Video codec",
     "videoFormat": "Video format",
-    "vocalChain": "Voice processing"
+    "vocalChain": "Voice processing",
+    "exportDoneToast": "Exported{name}",
+    "gotoReviewOne": "Review queue (1 episode) →",
+    "gotoReviewN": "Review queue ({n} episodes) →"
   },
   "master": {
     "title": "Mastering (prepare for publishing)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "After",
     "openFolder": "Open folder",
-    "listen": "Listen"
+    "listen": "Listen",
+    "useExportHint": "— to export with mastering, use the Export button"
   },
   "manual": {
     "title": "Start manual recording",
@@ -908,7 +913,8 @@
     "jumpToClip": "Click to jump to first clip",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "fitAll": "Show entire file"
+    "fitAll": "Show entire file",
+    "kbdHints": "Show keyboard shortcuts"
   },
   "publish": {
     "descPlaceholder": "E.g. Services from Example Church, every Sunday at 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Could not publish",
     "deleteEntryTitle": "Remove “{name}” from the list?",
     "deleteEntryBody": "The recording file itself stays on disk — only the list entry is removed. This cannot be undone.",
-    "deleteEntryBodyPair": "Both the audio and the video file stay on disk — only the two list entries are removed. This cannot be undone."
+    "deleteEntryBodyPair": "Both the audio and the video file stay on disk — only the two list entries are removed. This cannot be undone.",
+    "discardFailedTitle": "Could not discard the episode"
   },
   "toast": {
     "dismiss": "Close"

@@ -61,6 +61,9 @@ export function setupEditorPage(): void {
   // collapsible panel header (externalized from an inline onclick attribute,
   // which the strict CSP — script-src 'self' — would block).
   document.querySelector('.editor-io-include-label')?.addEventListener('click', (e) => e.stopPropagation())
+
+  setupKbdHints()
+  setupMasteringCollapse()
   $('btn-editor-play')?.addEventListener('click',    () => togglePlay(false))
   $('btn-editor-preview')?.addEventListener('click', () => togglePlay(true))
   $('btn-zoom-in')?.addEventListener('click',   () => zoomBy(0.5))
@@ -387,6 +390,59 @@ export function openEditorWithFile(fp: string, seekToSec?: number): void {
   loadFile(fp)
 }
 
+// ── Editor chrome: keyboard hints + the secondary mastering panel ──────────
+
+/** localStorage key for the keyboard-hint strip. Default closed. */
+const KBD_HINTS_KEY = 'sundayrec.editor.kbdHints'
+
+/**
+ * Put the nine keyboard-shortcut chips behind the toolbar's "?".
+ *
+ * They used to sit above the waveform permanently, for the whole session: nine
+ * chips of chrome between the operator and the thing they came to edit, useful
+ * once and furniture forever after. Closed by default; the choice is
+ * remembered, so someone who wants them keeps them.
+ */
+function setupKbdHints(): void {
+  const btn   = $('btn-editor-kbd-toggle')
+  const hints = $('editor-kbd-hints')
+  if (!btn || !hints) return
+  const apply = (open: boolean): void => {
+    hints.hidden = !open
+    btn.setAttribute('aria-expanded', String(open))
+  }
+  let open = false
+  try { open = localStorage.getItem(KBD_HINTS_KEY) === 'open' } catch { /* private mode */ }
+  apply(open)
+  btn.addEventListener('click', () => {
+    open = !open
+    apply(open)
+    try { localStorage.setItem(KBD_HINTS_KEY, open ? 'open' : 'closed') } catch { /* private mode */ }
+  })
+}
+
+/**
+ * The workspace mastering panel is the SECONDARY path — it writes a separate
+ * `_mastert` file. Mastering that ends up in the exported file is chosen in the
+ * export dialog's Lydforbedring section, which is where the operator already
+ * is when they think about it. Two panels offering "mastering" with different
+ * outcomes is one too many, so this one collapses and points at the other; it
+ * stays fully functional for the separate-file flow.
+ */
+function setupMasteringCollapse(): void {
+  const header  = $('editor-master-header')
+  const section = $('editor-master-section')
+  if (!header || !section) return
+  const toggle = (): void => {
+    const collapsed = section.classList.toggle('editor-master-section--collapsed')
+    header.setAttribute('aria-expanded', String(!collapsed))
+  }
+  header.addEventListener('click', toggle)
+  header.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() }
+  })
+}
+
 // ── Review mode state (prep-and-review v5.0) ──────────────────────────────
 // When non-null, the editor is in "review mode" — it pre-applies suggested
 // cuts/preset/jingles from the queue entry and shows the green publish banner.
@@ -500,6 +556,17 @@ function loadAndUpdateReviewBanner(): void {
   }
 }
 
+/** Turn a review-queue error code into a sentence. The one code the backend
+ *  produces on its own is "the id is no longer in the queue" — which reads as
+ *  a mystery unless we say what it means. */
+function describeReviewError(code: string | undefined): string | undefined {
+  if (!code) return undefined
+  if (code === 'review_entry_not_found') {
+    return t('review.errNotFound', 'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.')
+  }
+  return code
+}
+
 function setupReviewBanner(): void {
   $('btn-review-publish')?.addEventListener('click', async () => {
     if (!reviewPrepId) return
@@ -525,7 +592,7 @@ function setupReviewBanner(): void {
         btn.textContent = orig
         await alertDialog({
           title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
-          message: r.error ?? undefined,
+          message: describeReviewError(r.error),
           tone:    'error',
         })
       }
@@ -556,7 +623,18 @@ function setupReviewBanner(): void {
       danger:       true,
     })
     if (!ok) return
-    await window.api.reviewQueueDiscard(reviewPrepId)
+    // The backend answers with a bool: false means the entry was already gone
+    // from the queue. Silently pretending it worked would send the user home
+    // believing they had made a decision that never landed.
+    const done = await window.api.reviewQueueDiscard(reviewPrepId)
+    if (!done) {
+      await alertDialog({
+        title:   t('dialog.discardFailedTitle', 'Kunne ikke forkaste episoden'),
+        message: describeReviewError('review_entry_not_found'),
+        tone:    'error',
+      })
+      return
+    }
     reviewPrepId = null
     reviewPrep = null
     loadAndUpdateReviewBanner()
@@ -903,6 +981,11 @@ export function showState(state: 'empty' | 'loading' | 'workspace'): void {
  * entries. The link navigates to home (where the prep queue lives).
  */
 function renderRecentFiles(): void {
+  // The review-queue link is decided on its own — it used to be skipped
+  // entirely by the early return below, so a fresh install with a queued
+  // episode but no recent-file history never saw it.
+  void refreshEmptyStateReviewLink()
+
   const wrap = $('editor-empty-recents')
   const list = $('editor-empty-recents-list')
   if (!wrap || !list) return
@@ -927,11 +1010,36 @@ function renderRecentFiles(): void {
     })
     list.appendChild(item)
   }
+}
 
-  // Review-queue link: best-effort — we just always offer it if there's
-  // a non-empty history. The review queue itself lives on home page.
-  const reviewWrap = $('editor-empty-review')
-  if (reviewWrap) reviewWrap.style.display = ''
+/**
+ * Show the "Gjennomgangs-kø →" link only when there is something in the queue.
+ *
+ * It used to be shown unconditionally — a link promising a queue that, until
+ * this branch wired `review_queue_list` up, was always empty. Now the queue is
+ * real, so ask it: an empty queue gets no link, and a non-empty one says how
+ * many are waiting.
+ */
+async function refreshEmptyStateReviewLink(): Promise<void> {
+  const wrap = $('editor-empty-review')
+  const link = $('editor-empty-review-link')
+  if (!wrap) return
+  wrap.style.display = 'none'
+  try {
+    const entries = await window.api.reviewQueueList()
+    const pending = entries.filter(e =>
+      e.prep.status !== 'published' && e.prep.status !== 'discarded')
+    if (pending.length === 0) return
+    if (link) {
+      link.textContent = pending.length === 1
+        ? t('editor.gotoReviewOne', 'Gjennomgangs-kø (1 episode) →')
+        : t('editor.gotoReviewN', 'Gjennomgangs-kø ({n} episoder) →').replace('{n}', String(pending.length))
+    }
+    wrap.style.display = ''
+  } catch (err) {
+    // A queue we cannot read is not a queue we should advertise.
+    console.warn('[editor] review queue lookup failed:', err)
+  }
 }
 
 /**

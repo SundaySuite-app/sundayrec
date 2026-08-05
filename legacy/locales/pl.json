@@ -196,7 +196,8 @@
     "ageDayOne": "1 dzień temu",
     "ageDays": "{n} dni temu",
     "ageOldest": "Ponad 14 dni temu",
-    "confident": "pewności"
+    "confident": "pewności",
+    "errNotFound": "Tego odcinka nie ma już w kolejce przeglądu — mógł zostać już opublikowany lub odrzucony."
   },
   "schedule": {
     "title": "Harmonogram tygodniowy",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Zaawansowany mikser dźwięku (zastępuje obróbkę głosu)",
     "videoCodec": "Kodek wideo",
     "videoFormat": "Format wideo",
-    "vocalChain": "Obróbka głosu"
+    "vocalChain": "Obróbka głosu",
+    "exportDoneToast": "Wyeksportowano{name}",
+    "gotoReviewOne": "Kolejka przeglądu (1 odcinek) →",
+    "gotoReviewN": "Kolejka przeglądu ({n} odcinków) →"
   },
   "master": {
     "title": "Mastering (przygotuj do publikacji)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Oryginał",
     "lufsAfter": "Po",
     "openFolder": "Otwórz folder",
-    "listen": "Słuchaj"
+    "listen": "Słuchaj",
+    "useExportHint": "— aby wyeksportować z masteringiem, użyj przycisku Eksportuj"
   },
   "manual": {
     "title": "Rozpocznij nagrywanie ręczne",
@@ -908,7 +913,8 @@
     "jumpToClip": "Kliknij, aby przejść do pierwszego klipu",
     "zoomIn": "Powiększ",
     "zoomOut": "Pomniejsz",
-    "fitAll": "Pokaż cały plik"
+    "fitAll": "Pokaż cały plik",
+    "kbdHints": "Pokaż skróty klawiszowe"
   },
   "publish": {
     "descPlaceholder": "Np. Nabożeństwa z Kościoła Przykładowego, w każdą niedzielę o 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Nie udało się opublikować",
     "deleteEntryTitle": "Usunąć „{name}” z listy?",
     "deleteEntryBody": "Sam plik nagrania pozostaje na dysku — usuwany jest tylko wpis z listy. Tej operacji nie można cofnąć.",
-    "deleteEntryBodyPair": "Plik dźwiękowy i plik wideo pozostają na dysku — usuwane są tylko dwa wpisy z listy. Tej operacji nie można cofnąć."
+    "deleteEntryBodyPair": "Plik dźwiękowy i plik wideo pozostają na dysku — usuwane są tylko dwa wpisy z listy. Tej operacji nie można cofnąć.",
+    "discardFailedTitle": "Nie udało się odrzucić odcinka"
   },
   "toast": {
     "dismiss": "Zamknij"

@@ -196,7 +196,8 @@
     "ageDayOne": "vor 1 Tag",
     "ageDays": "vor {n} Tagen",
     "ageOldest": "vor über 14 Tagen",
-    "confident": "sicher"
+    "confident": "sicher",
+    "errNotFound": "Diese Folge ist nicht mehr in der Prüfliste — sie wurde möglicherweise bereits veröffentlicht oder verworfen."
   },
   "schedule": {
     "title": "Wochenplan",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Erweiterter Audiomixer (überschreibt die Stimmbearbeitung)",
     "videoCodec": "Video-Codec",
     "videoFormat": "Videoformat",
-    "vocalChain": "Stimmbearbeitung"
+    "vocalChain": "Stimmbearbeitung",
+    "exportDoneToast": "Exportiert{name}",
+    "gotoReviewOne": "Prüfliste (1 Folge) →",
+    "gotoReviewN": "Prüfliste ({n} Folgen) →"
   },
   "master": {
     "title": "Mastering (Vorbereitung zur Veröffentlichung)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Danach",
     "openFolder": "Ordner öffnen",
-    "listen": "Anhören"
+    "listen": "Anhören",
+    "useExportHint": "— zum Exportieren mit Mastering die Schaltfläche „Exportieren“ verwenden"
   },
   "manual": {
     "title": "Manuelle Aufnahme starten",
@@ -908,7 +913,8 @@
     "jumpToClip": "Klicken, um zum ersten Clip zu springen",
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
-    "fitAll": "Gesamte Datei anzeigen"
+    "fitAll": "Gesamte Datei anzeigen",
+    "kbdHints": "Tastenkürzel anzeigen"
   },
   "publish": {
     "descPlaceholder": "z. B. Gottesdienste der Beispiel-Kirche, jeden Sonntag um 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Veröffentlichung fehlgeschlagen",
     "deleteEntryTitle": "„{name}“ aus der Liste entfernen?",
     "deleteEntryBody": "Die Aufnahmedatei selbst bleibt auf der Festplatte — nur der Listeneintrag wird entfernt. Sie können dies nicht rückgängig machen.",
-    "deleteEntryBodyPair": "Sowohl die Audio- als auch die Videodatei bleiben auf der Festplatte — nur die beiden Listeneinträge werden entfernt. Sie können dies nicht rückgängig machen."
+    "deleteEntryBodyPair": "Sowohl die Audio- als auch die Videodatei bleiben auf der Festplatte — nur die beiden Listeneinträge werden entfernt. Sie können dies nicht rückgängig machen.",
+    "discardFailedTitle": "Die Folge konnte nicht verworfen werden"
   },
   "toast": {
     "dismiss": "Schließen"

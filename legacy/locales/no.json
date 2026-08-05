@@ -196,7 +196,8 @@
     "ageDayOne": "1 dag siden",
     "ageDays": "{n} dager siden",
     "ageOldest": "Over 14 dager siden",
-    "confident": "sikker"
+    "confident": "sikker",
+    "errNotFound": "Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet."
   },
   "schedule": {
     "title": "Ukentlig tidsplan",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Avansert lydmikser (overstyrer stemmebehandling)",
     "videoCodec": "Video-kodek",
     "videoFormat": "Video-format",
-    "vocalChain": "Stemmebehandling"
+    "vocalChain": "Stemmebehandling",
+    "exportDoneToast": "Eksportert{name}",
+    "gotoReviewOne": "Gjennomgangs-kø (1 episode) →",
+    "gotoReviewN": "Gjennomgangs-kø ({n} episoder) →"
   },
   "master": {
     "title": "Mastering (klargjør for publisering)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Etter",
     "openFolder": "Åpne mappe",
-    "listen": "Lytt"
+    "listen": "Lytt",
+    "useExportHint": "— for eksport med mastring: bruk Eksporter-knappen"
   },
   "manual": {
     "title": "Start manuelt opptak",
@@ -908,7 +913,8 @@
     "jumpToClip": "Klikk for å hoppe til første klipp",
     "zoomIn": "Zoom inn",
     "zoomOut": "Zoom ut",
-    "fitAll": "Vis hele filen"
+    "fitAll": "Vis hele filen",
+    "kbdHints": "Vis hurtigtaster"
   },
   "publish": {
     "descPlaceholder": "Eks: Gudstjenester fra Eksempel kirke, hver søndag kl 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Kunne ikke publisere",
     "deleteEntryTitle": "Slett «{name}» fra listen?",
     "deleteEntryBody": "Selve opptaksfilen beholdes på disken — det er bare oppføringen i listen som fjernes. Dette kan ikke angres.",
-    "deleteEntryBodyPair": "Både lyd- og videofilen beholdes på disken — det er bare de to oppføringene i listen som fjernes. Dette kan ikke angres."
+    "deleteEntryBodyPair": "Både lyd- og videofilen beholdes på disken — det er bare de to oppføringene i listen som fjernes. Dette kan ikke angres.",
+    "discardFailedTitle": "Kunne ikke forkaste episoden"
   },
   "toast": {
     "dismiss": "Lukk"

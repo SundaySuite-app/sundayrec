@@ -10,6 +10,7 @@ import {
   exportLevelSummary,
   EXPORT_PHASE_MEASURING,
 } from './export-params'
+import { toast } from '../../ui/toast'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -626,6 +627,20 @@ export async function runExport(): Promise<void> {
     const fname = (result.outputPath ?? '').split(/[/\\]/).pop() ?? ''
     if (text) text.textContent = (t('editor.saveOk') || '✓ Eksportert') + (fname ? ' — ' + fname : '')
     if (row) row.setAttribute('data-ok', 'true')
+    // The export modal closes on the way in, and the result line lives at the
+    // very bottom of a workspace several screens tall — a successful export
+    // used to announce itself somewhere the user could not see. Say it where
+    // they ARE looking, with the one thing they want next (the file), and
+    // bring the result line into view behind it.
+    const out = result.outputPath
+    toast(
+      'success',
+      t('editor.exportDoneToast', 'Eksportert{name}').replace('{name}', fname ? ` — ${fname}` : ''),
+      out
+        ? { action: { label: t('general.showInFolder', 'Vis i mappe'), onClick: () => { void window.api.revealFile(out) } } }
+        : undefined,
+    )
+    row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     clearEditorDraft()  // export succeeded — drop the autosave sidecar
     clearDirty()
     // Run publishing if user picked "Eksporter og publiser"

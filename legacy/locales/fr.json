@@ -196,7 +196,8 @@
     "ageDayOne": "il y a 1 jour",
     "ageDays": "il y a {n} jours",
     "ageOldest": "il y a plus de 14 jours",
-    "confident": "sûr"
+    "confident": "sûr",
+    "errNotFound": "Cet épisode n'est plus dans la file de relecture — il a peut-être déjà été publié ou écarté."
   },
   "schedule": {
     "title": "Planning hebdomadaire",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Mixeur audio avancé (remplace le traitement de la voix)",
     "videoCodec": "Codec vidéo",
     "videoFormat": "Format vidéo",
-    "vocalChain": "Traitement de la voix"
+    "vocalChain": "Traitement de la voix",
+    "exportDoneToast": "Exporté{name}",
+    "gotoReviewOne": "File de relecture (1 épisode) →",
+    "gotoReviewN": "File de relecture ({n} épisodes) →"
   },
   "master": {
     "title": "Mastering (préparation à la publication)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Après",
     "openFolder": "Ouvrir le dossier",
-    "listen": "Écouter"
+    "listen": "Écouter",
+    "useExportHint": "— pour exporter avec mastering, utilisez le bouton Exporter"
   },
   "manual": {
     "title": "Démarrer un enregistrement manuel",
@@ -908,7 +913,8 @@
     "jumpToClip": "Cliquer pour aller au premier clip",
     "zoomIn": "Zoomer",
     "zoomOut": "Dézoomer",
-    "fitAll": "Afficher tout le fichier"
+    "fitAll": "Afficher tout le fichier",
+    "kbdHints": "Afficher les raccourcis clavier"
   },
   "publish": {
     "descPlaceholder": "Ex : Services de l’Église Exemple, chaque dimanche à 11h",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Publication impossible",
     "deleteEntryTitle": "Retirer « {name} » de la liste ?",
     "deleteEntryBody": "Le fichier d'enregistrement reste sur le disque — seule l'entrée de la liste est retirée. Vous ne pourrez pas annuler cette action.",
-    "deleteEntryBodyPair": "Le fichier audio et le fichier vidéo restent sur le disque — seules les deux entrées de la liste sont retirées. Vous ne pourrez pas annuler cette action."
+    "deleteEntryBodyPair": "Le fichier audio et le fichier vidéo restent sur le disque — seules les deux entrées de la liste sont retirées. Vous ne pourrez pas annuler cette action.",
+    "discardFailedTitle": "Impossible d'écarter l'épisode"
   },
   "toast": {
     "dismiss": "Fermer"

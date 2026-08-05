@@ -196,7 +196,8 @@
     "ageDayOne": "1 dag sedan",
     "ageDays": "{n} dagar sedan",
     "ageOldest": "Över 14 dagar sedan",
-    "confident": "säker"
+    "confident": "säker",
+    "errNotFound": "Avsnittet finns inte längre i granskningskön — det kan redan ha publicerats eller kastats."
   },
   "schedule": {
     "title": "Veckoschema",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Avancerad ljudmixer (åsidosätter röstbehandlingen)",
     "videoCodec": "Videokodek",
     "videoFormat": "Videoformat",
-    "vocalChain": "Röstbehandling"
+    "vocalChain": "Röstbehandling",
+    "exportDoneToast": "Exporterad{name}",
+    "gotoReviewOne": "Granskningskö (1 avsnitt) →",
+    "gotoReviewN": "Granskningskö ({n} avsnitt) →"
   },
   "master": {
     "title": "Mastring (förbered för publicering)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Efter",
     "openFolder": "Öppna mapp",
-    "listen": "Lyssna"
+    "listen": "Lyssna",
+    "useExportHint": "— för export med mastring: använd Exportera-knappen"
   },
   "manual": {
     "title": "Starta manuell inspelning",
@@ -908,7 +913,8 @@
     "jumpToClip": "Klicka för att hoppa till första klippning",
     "zoomIn": "Zooma in",
     "zoomOut": "Zooma ut",
-    "fitAll": "Visa hela filen"
+    "fitAll": "Visa hela filen",
+    "kbdHints": "Visa kortkommandon"
   },
   "publish": {
     "descPlaceholder": "T.ex. Gudstjänster från Exempelkyrkan, varje söndag kl. 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Kunde inte publicera",
     "deleteEntryTitle": "Ta bort ”{name}” från listan?",
     "deleteEntryBody": "Själva inspelningsfilen ligger kvar på disken — bara listposten tas bort. Detta kan inte ångras.",
-    "deleteEntryBodyPair": "Både ljud- och videofilen ligger kvar på disken — bara de två listposterna tas bort. Detta kan inte ångras."
+    "deleteEntryBodyPair": "Både ljud- och videofilen ligger kvar på disken — bara de två listposterna tas bort. Detta kan inte ångras.",
+    "discardFailedTitle": "Kunde inte kasta avsnittet"
   },
   "toast": {
     "dismiss": "Stäng"

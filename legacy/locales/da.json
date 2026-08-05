@@ -196,7 +196,8 @@
     "ageDayOne": "1 dag siden",
     "ageDays": "{n} dage siden",
     "ageOldest": "Over 14 dage siden",
-    "confident": "sikker"
+    "confident": "sikker",
+    "errNotFound": "Episoden ligger ikke længere i gennemgangskøen — den kan allerede være udgivet eller kasseret."
   },
   "schedule": {
     "title": "Ugentlig tidsplan",
@@ -660,7 +661,10 @@
     "useMixer": "🎛 Avanceret lydmixer (tilsidesætter stemmebehandlingen)",
     "videoCodec": "Videocodec",
     "videoFormat": "Videoformat",
-    "vocalChain": "Stemmebehandling"
+    "vocalChain": "Stemmebehandling",
+    "exportDoneToast": "Eksporteret{name}",
+    "gotoReviewOne": "Gennemgangskø (1 episode) →",
+    "gotoReviewN": "Gennemgangskø ({n} episoder) →"
   },
   "master": {
     "title": "Mastering (klargør til udgivelse)",
@@ -677,7 +681,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Efter",
     "openFolder": "Åbn mappe",
-    "listen": "Lyt"
+    "listen": "Lyt",
+    "useExportHint": "— for eksport med mastering: brug Eksportér-knappen"
   },
   "manual": {
     "title": "Start manuel optagelse",
@@ -908,7 +913,8 @@
     "jumpToClip": "Klik for at hoppe til første klip",
     "zoomIn": "Zoom ind",
     "zoomOut": "Zoom ud",
-    "fitAll": "Vis hele filen"
+    "fitAll": "Vis hele filen",
+    "kbdHints": "Vis tastaturgenveje"
   },
   "publish": {
     "descPlaceholder": "F.eks. Gudstjenester fra Eksempel kirke, hver søndag kl. 11",
@@ -1159,7 +1165,8 @@
     "publishFailedTitle": "Kunne ikke udgive",
     "deleteEntryTitle": "Fjern «{name}» fra listen?",
     "deleteEntryBody": "Selve optagelsesfilen bliver på disken — kun listeposten fjernes. Dette kan ikke fortrydes.",
-    "deleteEntryBodyPair": "Både lyd- og videofilen bliver på disken — kun de to listeposter fjernes. Dette kan ikke fortrydes."
+    "deleteEntryBodyPair": "Både lyd- og videofilen bliver på disken — kun de to listeposter fjernes. Dette kan ikke fortrydes.",
+    "discardFailedTitle": "Kunne ikke kassere episoden"
   },
   "toast": {
     "dismiss": "Luk"
