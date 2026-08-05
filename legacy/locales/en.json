@@ -502,7 +502,8 @@
     "diagnoseTitle": "Audio device diagnostics",
     "savedChip": "Saved ✓",
     "saveFailed": "Could not save the setting",
-    "suiteAdvanced": "Advanced: Sunday suite integrations"
+    "suiteAdvanced": "Advanced: Sunday suite integrations",
+    "showInFolder": "Show in folder"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "No topic chapters found in the talk",
     "detectChapters": "✦ Generate chapters from topics",
     "detecting": "Analyzing topics…",
-    "errUnknownModel": "Unknown model"
+    "errUnknownModel": "Unknown model",
+    "exportTxt": "↧ Text",
+    "exportDone": "Transcript saved",
+    "exportFailed": "Could not save the transcript"
   },
   "companion": {
     "title": "Sermon helper",

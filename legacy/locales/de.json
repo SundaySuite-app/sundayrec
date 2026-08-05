@@ -502,7 +502,8 @@
     "diagnoseTitle": "Diagnose des Audiogeräts",
     "savedChip": "Gespeichert ✓",
     "saveFailed": "Die Einstellung konnte nicht gespeichert werden",
-    "suiteAdvanced": "Erweitert: Sunday-Suite-Integrationen"
+    "suiteAdvanced": "Erweitert: Sunday-Suite-Integrationen",
+    "showInFolder": "Im Ordner anzeigen"
   },
   "error": {
     "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Keine Themenkapitel im Vortrag gefunden",
     "detectChapters": "✦ Kapitel aus Themen generieren",
     "detecting": "Analysiert Themen…",
-    "errUnknownModel": "Unbekanntes Modell"
+    "errUnknownModel": "Unbekanntes Modell",
+    "exportTxt": "↧ Text",
+    "exportDone": "Transkript gespeichert",
+    "exportFailed": "Das Transkript konnte nicht gespeichert werden"
   },
   "companion": {
     "title": "Predigthilfe",

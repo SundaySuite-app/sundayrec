@@ -502,7 +502,8 @@
     "diagnoseTitle": "Diagnostic du périphérique audio",
     "savedChip": "Enregistré ✓",
     "saveFailed": "Impossible d’enregistrer le réglage",
-    "suiteAdvanced": "Avancé : intégrations Sunday suite"
+    "suiteAdvanced": "Avancé : intégrations Sunday suite",
+    "showInFolder": "Afficher dans le dossier"
   },
   "error": {
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Aucun chapitre thématique trouvé dans le discours",
     "detectChapters": "✦ Générer des chapitres à partir des thèmes",
     "detecting": "Analyse des thèmes…",
-    "errUnknownModel": "Modèle inconnu"
+    "errUnknownModel": "Modèle inconnu",
+    "exportTxt": "↧ Texte",
+    "exportDone": "Transcription enregistrée",
+    "exportFailed": "Impossible d'enregistrer la transcription"
   },
   "companion": {
     "title": "Aide au sermon",

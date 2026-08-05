@@ -502,7 +502,8 @@
     "diagnoseTitle": "Diagnostik för ljudenhet",
     "savedChip": "Sparat ✓",
     "saveFailed": "Kunde inte spara inställningen",
-    "suiteAdvanced": "Avancerat: Sunday suite-integrationer"
+    "suiteAdvanced": "Avancerat: Sunday suite-integrationer",
+    "showInFolder": "Visa i mapp"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Hittade inga temakapitel i talet",
     "detectChapters": "✦ Generera kapitel från teman",
     "detecting": "Analyserar teman…",
-    "errUnknownModel": "Okänd modell"
+    "errUnknownModel": "Okänd modell",
+    "exportTxt": "↧ Text",
+    "exportDone": "Transkription sparad",
+    "exportFailed": "Kunde inte spara transkriptionen"
   },
   "companion": {
     "title": "Predikohjälp",

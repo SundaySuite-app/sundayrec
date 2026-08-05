@@ -14,9 +14,10 @@
  */
 
 import { t } from '../i18n'
-import type { TranscriptData, TranscriptSegment, RecordingMetadata } from '../../types'
+import type { TranscriptData, RecordingMetadata } from '../../types'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
+import { toast } from '../ui/toast'
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
@@ -68,8 +69,9 @@ export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   $('btn-transcribe-cancel')?.addEventListener('click', closeTranscribeModal)
   $('btn-transcribe-start')?.addEventListener('click', startTranscription)
   $('btn-transcribe-progress-cancel')?.addEventListener('click', cancelActiveJob)
-  $('btn-transcript-export')?.addEventListener('click', exportSrt)
-  $('btn-transcript-export-vtt')?.addEventListener('click', exportVtt)
+  $('btn-transcript-export')?.addEventListener('click', () => { void exportSubtitleFile('srt') })
+  $('btn-transcript-export-vtt')?.addEventListener('click', () => { void exportSubtitleFile('vtt') })
+  $('btn-transcript-export-txt')?.addEventListener('click', () => { void exportSubtitleFile('txt') })
   $('btn-transcript-delete')?.addEventListener('click', deleteTranscript)
   $('btn-transcript-sundayedit')?.addEventListener('click', sendToSundayEdit)
 
@@ -218,12 +220,14 @@ function renderPanel(): void {
   if (!body) return
   const exportBtn    = $('btn-transcript-export')     as HTMLElement | null
   const exportVttBtn = $('btn-transcript-export-vtt') as HTMLElement | null
+  const exportTxtBtn = $('btn-transcript-export-txt') as HTMLElement | null
   const deleteBtn    = $('btn-transcript-delete')     as HTMLElement | null
 
   if (!currentTranscript || currentTranscript.segments.length === 0) {
     body.innerHTML = `<div class="editor-transcript-empty">${t('transcript.empty', 'Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.')}</div>`
     if (exportBtn)    exportBtn.style.display    = 'none'
     if (exportVttBtn) exportVttBtn.style.display = 'none'
+    if (exportTxtBtn) exportTxtBtn.style.display = 'none'
     if (deleteBtn)    deleteBtn.style.display    = 'none'
     const companionSection = $('editor-companion-section')
     if (companionSection) companionSection.style.display = 'none'
@@ -268,6 +272,7 @@ function renderPanel(): void {
 
   if (exportBtn)    exportBtn.style.display    = ''
   if (exportVttBtn) exportVttBtn.style.display = ''
+  if (exportTxtBtn) exportTxtBtn.style.display = ''
   if (deleteBtn)    deleteBtn.style.display    = ''
 
   // R8: reveal the companion section and (re)render its header controls. We
@@ -615,51 +620,39 @@ async function deleteTranscript(): Promise<void> {
   renderPanel()
 }
 
-function exportSrt(): void {
-  exportSubtitleFile('srt')
-}
-
-function exportVtt(): void {
-  exportSubtitleFile('vtt')
-}
-
-/** Single entry-point for both SRT and VTT export. They share the timing
- *  format up to a single character (`,` vs `.` for milliseconds) and VTT
- *  needs a header line. */
-function exportSubtitleFile(fmt: 'srt' | 'vtt'): void {
+/**
+ * Export the transcript as SRT / VTT / plain text.
+ *
+ * This used to build the file in the renderer and hand it to a synthetic
+ * `<a download>` — a *browser* download inside a desktop app: the file landed
+ * in whatever the webview considered its download dir (on macOS often nowhere
+ * the user could find it), with no say in the name or folder. Now the user
+ * picks the destination in the native save dialog and the backend
+ * (`whisper_export_transcript`, pure formatting + one fs write) renders it, so
+ * SRT/VTT/TXT come out byte-identical to every other place we emit them.
+ */
+async function exportSubtitleFile(fmt: 'srt' | 'vtt' | 'txt'): Promise<void> {
   if (!currentTranscript || !currentFilePath) return
-  const body = fmt === 'srt'
-    ? transcriptToSrt(currentTranscript.segments)
-    : transcriptToVtt(currentTranscript.segments)
   const baseName = currentFilePath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') ?? 'transcript'
-  const mime = fmt === 'vtt' ? 'text/vtt' : 'text/plain'
-  const blob = new Blob([body], { type: `${mime};charset=utf-8` })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${baseName}.${fmt}`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function srtTimestamp(sec: number): string {
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.floor(sec % 60)
-  const ms = Math.round((sec - Math.floor(sec)) * 1000)
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`
-}
-
-function vttTimestamp(sec: number): string {
-  return srtTimestamp(sec).replace(',', '.')
-}
-
-function transcriptToSrt(segs: TranscriptSegment[]): string {
-  return segs.map((s, i) => `${i + 1}\n${srtTimestamp(s.start)} --> ${srtTimestamp(s.end)}\n${s.text}\n`).join('\n')
-}
-
-function transcriptToVtt(segs: TranscriptSegment[]): string {
-  // WebVTT format — supported by HTML5 <track>, YouTube, Vimeo, native iOS/macOS players.
-  const cues = segs.map((s, i) => `${i + 1}\n${vttTimestamp(s.start)} --> ${vttTimestamp(s.end)}\n${s.text}\n`).join('\n')
-  return `WEBVTT\n\n${cues}`
+  const path = await window.api.pickSavePath({
+    defaultPath: `${currentFilePath.replace(/\.[^./\\]+$/, '')}.${fmt}`,
+    name:        fmt.toUpperCase(),
+    extensions:  [fmt],
+  })
+  if (!path) return
+  const res = await window.api.whisperExportTranscript(currentTranscript, fmt, path)
+  if (res.ok) {
+    toast('success', t('transcript.exportDone', 'Transkripsjon lagret').replace('{name}', baseName), {
+      action: {
+        label:   t('general.showInFolder', 'Vis i mappe'),
+        onClick: () => { void window.api.revealFile(path) },
+      },
+    })
+  } else {
+    await alertDialog({
+      title:   t('transcript.exportFailed', 'Kunne ikke lagre transkripsjonen'),
+      message: res.error,
+      tone:    'error',
+    })
+  }
 }

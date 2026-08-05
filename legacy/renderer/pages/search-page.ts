@@ -73,7 +73,7 @@ async function loadTranscriptIndex(): Promise<void> {
   try {
     const raw = await window.api.transcriptListAll()
     cachedIndex = raw
-      .map(r => ({ basePath: r.filePath, meta: r.transcript }))
+      .map(r => ({ basePath: r.basePath, meta: r.transcript }))
       .sort((a, b) => b.meta.createdAt - a.meta.createdAt)
   } catch (err) {
     setStatus(`✕ ${t('search.indexFailed', 'Klarte ikke laste indeks')}: ${(err as Error).message}`)

@@ -502,7 +502,8 @@
     "diagnoseTitle": "Diagnostyka urządzenia audio",
     "savedChip": "Zapisano ✓",
     "saveFailed": "Nie udało się zapisać ustawienia",
-    "suiteAdvanced": "Zaawansowane: integracje Sunday suite"
+    "suiteAdvanced": "Zaawansowane: integracje Sunday suite",
+    "showInFolder": "Pokaż w folderze"
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Nie znaleziono rozdziałów tematycznych w przemówieniu",
     "detectChapters": "✦ Generuj rozdziały z tematów",
     "detecting": "Analizowanie tematów…",
-    "errUnknownModel": "Nieznany model"
+    "errUnknownModel": "Nieznany model",
+    "exportTxt": "↧ Tekst",
+    "exportDone": "Transkrypcja zapisana",
+    "exportFailed": "Nie udało się zapisać transkrypcji"
   },
   "companion": {
     "title": "Asystent kazania",

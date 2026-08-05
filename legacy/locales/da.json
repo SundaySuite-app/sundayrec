@@ -502,7 +502,8 @@
     "diagnoseTitle": "Diagnose af lydenhed",
     "savedChip": "Gemt ✓",
     "saveFailed": "Kunne ikke gemme indstillingen",
-    "suiteAdvanced": "Avanceret: Sunday suite-integrationer"
+    "suiteAdvanced": "Avanceret: Sunday suite-integrationer",
+    "showInFolder": "Vis i mappe"
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Fandt ingen temakapitler i talen",
     "detectChapters": "✦ Generér kapitler ud fra temaer",
     "detecting": "Analyserer temaer…",
-    "errUnknownModel": "Ukendt model"
+    "errUnknownModel": "Ukendt model",
+    "exportTxt": "↧ Tekst",
+    "exportDone": "Transskription gemt",
+    "exportFailed": "Kunne ikke gemme transskriptionen"
   },
   "companion": {
     "title": "Prædikenhjælp",

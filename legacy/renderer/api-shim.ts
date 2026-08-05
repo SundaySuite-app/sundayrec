@@ -27,7 +27,10 @@
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  open as openDialog,
+  save as saveDialog,
+} from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
@@ -588,6 +591,11 @@ type RecordingRow = {
   created_at: number;
   note: string | null;
 };
+
+/** The bit of `ReviewQueueEntry` the shim itself needs (picking by id). The
+ *  full shape is the renderer's `ReviewQueueEntry` / the ts-rs binding — the
+ *  backend already serialises it camelCase, so it passes through untouched. */
+type ReviewQueueEntryLike = { id: string };
 
 // Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
 // so deleteHistoryEntry(timestamp) can call recordings_delete(id).
@@ -1429,7 +1437,55 @@ const api: Record<string, unknown> = {
     pickPath({ name: "Bilde", extensions: IMAGE_EXT }),
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
-  transcriptListAll: async () => [],
+  // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this
+  // ONE call — while it returned `[]` the sermon search silently found nothing
+  // and the "N transkripsjoner indeksert" status stayed blank. `transcripts_list`
+  // (commands/db.rs) walks the history, reads each `<name>.transcript.json`
+  // sidecar and returns `{ basePath, transcript }` — `basePath` is the recording
+  // path with its media extension stripped, which is exactly the join key
+  // `baseNoExt(row.path)` the history rows use. Fallback `[]` keeps a missing
+  // sidecar dir from breaking the page.
+  transcriptListAll: async () =>
+    call<Array<{ basePath: string; transcript: unknown }>>(
+      "transcripts_list",
+      undefined,
+      [],
+    ),
+  // Render a transcript to SRT/VTT/TXT at a user-chosen path. Pure formatting +
+  // one fs write in the backend (works in every build — no `whisper` feature).
+  whisperExportTranscript: async (
+    data: unknown,
+    format: "srt" | "vtt" | "txt",
+    path: string,
+  ) => {
+    try {
+      await invoke("whisper_export_transcript", { data, format, path });
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  // Native "save as" picker (the dialog plugin's counterpart to `pickPath`).
+  // A cancel yields null — never throws, same contract as the open pickers.
+  pickSavePath: async (opts: {
+    defaultPath?: string;
+    name?: string;
+    extensions?: string[];
+  }) => {
+    try {
+      const res = await saveDialog({
+        defaultPath: opts.defaultPath,
+        filters:
+          opts.extensions && opts.name
+            ? [{ name: opts.name, extensions: opts.extensions }]
+            : undefined,
+      });
+      return typeof res === "string" ? res : null;
+    } catch (e) {
+      console.warn("[api-shim] save dialog failed", e);
+      return null;
+    }
+  },
   // whisper_list_models gives the catalogue; whisper_model_status the per-model
   // on-disk {installed, sizeOk}. The renderer's model picker needs both merged
   // (the old Electron whisper-status did this server-side) — without the
@@ -1509,10 +1565,38 @@ const api: Record<string, unknown> = {
     call("whisper_cancel_transcribe", { jobId }, false),
 
   // ── Review queue ────────────────────────────────────────────────────────
-  reviewQueueList: async () => [],
-  reviewQueueGet: async () => null,
-  reviewQueuePublish: async () => ({ ok: false }),
-  reviewQueueDiscard: async () => ({ ok: false }),
+  // `review_queue_list` (commands/review.rs) returns the persisted queue
+  // newest-first with `ageInDays` filled in — already the renderer's
+  // `ReviewQueueEntry` shape (camelCase), so no adaptation is needed. An empty
+  // queue is the normal case: the home card hides itself on `[]`.
+  reviewQueueList: async () =>
+    call<ReviewQueueEntryLike[]>("review_queue_list", undefined, []),
+  // No `review_queue_get` command exists — the queue is a single JSON blob, so
+  // reading one entry means reading the list and picking. Cheap (a handful of
+  // entries) and keeps the backend surface as it is.
+  reviewQueueGet: async (id: string) => {
+    const all = await call<ReviewQueueEntryLike[]>(
+      "review_queue_list",
+      undefined,
+      [],
+    );
+    return all.find((e) => e?.id === id) ?? null;
+  },
+  // `review_mark_published` returns a bool: false = no such id in the queue
+  // (already published, or the queue was cleared). Surface that as a real
+  // reason instead of a silent no-op — the editor shows `error` in a dialog.
+  reviewQueuePublish: async (id: string) => {
+    try {
+      const ok = await invoke<boolean>("review_mark_published", { id });
+      return ok
+        ? { ok: true as const }
+        : { ok: false as const, error: "review_entry_not_found" };
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  reviewQueueDiscard: async (id: string) =>
+    call<boolean>("review_mark_discarded", { id }, false),
   reviewQueueUpdateTrim: async () => true,
   reviewQueueUpdateMasterPreset: async () => true,
   reviewQueueUpdateJingles: async () => true,

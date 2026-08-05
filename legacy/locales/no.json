@@ -502,7 +502,8 @@
     "diagnoseTitle": "Lydenhetsdiagnose",
     "savedChip": "Lagret ✓",
     "saveFailed": "Kunne ikke lagre innstillingen",
-    "suiteAdvanced": "Avansert: Sunday-suite-integrasjoner"
+    "suiteAdvanced": "Avansert: Sunday-suite-integrasjoner",
+    "showInFolder": "Vis i mappe"
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
@@ -1031,7 +1032,10 @@
     "chaptersNoneFound": "Fant ingen tema-kapitler i talen",
     "detectChapters": "✦ Generer kapitler fra tema",
     "detecting": "Analyserer tema…",
-    "errUnknownModel": "Ukjent modell"
+    "errUnknownModel": "Ukjent modell",
+    "exportTxt": "↧ Tekst",
+    "exportDone": "Transkripsjon lagret",
+    "exportFailed": "Kunne ikke lagre transkripsjonen"
   },
   "companion": {
     "title": "Prekenhjelp",
