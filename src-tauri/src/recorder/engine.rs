@@ -995,8 +995,11 @@ pub(crate) fn select_capture_backend(
 }
 
 /// One spawned capture attempt — the ffmpeg child or the native stack.
+/// Both variants are boxed: on Windows a `tokio::process::Child` is ~272 bytes
+/// (process handles), which trips `clippy::large_enum_variant` there while
+/// staying invisible on macOS/Linux CI.
 pub(crate) enum CaptureChild {
-    Ffmpeg(tokio::process::Child),
+    Ffmpeg(Box<tokio::process::Child>),
     Native(Box<crate::recorder::native_capture::segment::NativeSegment>),
 }
 
@@ -1016,7 +1019,9 @@ async fn spawn_capture(
     match backend {
         CaptureBackend::Ffmpeg => {
             let args = build_record_args(platform, audio, video, opts, output_path);
-            Ok(CaptureChild::Ffmpeg(spawn_ffmpeg_owned(&args).await?))
+            Ok(CaptureChild::Ffmpeg(Box::new(
+                spawn_ffmpeg_owned(&args).await?,
+            )))
         }
         CaptureBackend::NativeAudio { host } => Ok(CaptureChild::Native(Box::new(
             crate::recorder::native_capture::segment::spawn_native_segment(
@@ -1282,7 +1287,7 @@ async fn run_session(
                 CaptureChild::Ffmpeg(c) => {
                     run_segment(
                         &app,
-                        c,
+                        *c,
                         &opts,
                         &session,
                         Arc::clone(&segment_bytes),
