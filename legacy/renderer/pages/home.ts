@@ -1457,8 +1457,18 @@ function renderThumbCard(): boolean {
     nameEl.textContent = base
   }
   if (subEl) {
-    subEl.textContent = 'Brennes inn i podcast-MP3'
-    subEl.style.color = 'var(--green)'
+    // HONEST: nothing burns this image into anything — the whole thumbnail
+    // backend is unwritten (every thumbnail* IPC method is a stub), so the old
+    // green «Brennes inn i podcast-MP3» was a promise the app cannot keep. The
+    // card only appears at all for users carrying a path from an older build.
+    subEl.textContent = t('home.thumbComing', 'Episodebilde kommer — brukes ikke ennå')
+    subEl.style.color = 'var(--text3)'
+  }
+  // The «Endre» action would land on a panel that is itself gated as «kommer».
+  const action = document.getElementById('btn-go-thumb')
+  if (action) {
+    action.setAttribute('inert', '')
+    action.classList.add('gate-off')
   }
   // Swap the placeholder SVG for an actual <img> preview via the asset://
   // protocol (WKWebView blocks file://). Falling back to the icon keeps the slot

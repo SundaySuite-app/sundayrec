@@ -10,6 +10,8 @@ import {
   type BindSettingOpts,
 } from '../ui/bind-setting'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
+import { applyFeatureGate } from '../ui/feature-gate'
+import { canSendTestEmail, emailGateStatus } from '../ui/feature-gate-core'
 
 /** Every auto-applying System/Varsler control writes the same way. */
 function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
@@ -34,7 +36,7 @@ export function setupGeneralPage(): void {
   bindSetting('opt-reminder-minutes', generalBinding({ key: 'reminderMinutes' }))
   bindSetting('opt-email-error', generalBinding({
     key: 'emailOnError',
-    after: () => toggleEmailSection(),
+    after: () => { toggleEmailSection(); void refreshEmailGate() },
   }))
   bindSetting('email-address', generalBinding({
     key: 'emailAddress',
@@ -64,6 +66,8 @@ export function setupGeneralPage(): void {
   bindSetting('opt-auto-update',     generalBinding({ key: 'autoUpdate' }))
 
   setupSmtpCard()
+  void refreshEmailGate()
+  setupWebhookTest()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
@@ -135,6 +139,128 @@ export function setupGeneralPage(): void {
 }
 
 /**
+ * The e-mail gate — driven by the REAL `email_status` command.
+ *
+ * The night sweep hard-disabled «Send test» and the Gmail button in the markup
+ * with a hardcoded "not available in this version" title, because the old shim
+ * stubs reported a fabricated failure. That was honest but blind: it said the
+ * same thing in a build WITH `--features email` as in one without.
+ *
+ * `email_status` answers both halves — whether the send path was compiled in
+ * (`featureBuilt`) and whether a Gmail token is stored (`gmailConnected`) — so
+ * the section can state which of the two is missing, and «Send test» is enabled
+ * exactly when a transport exists and there is somewhere to send it.
+ */
+async function refreshEmailGate(): Promise<void> {
+  const facts = {
+    featureBuilt: false,
+    gmailConnected: false,
+    smtpConfigured: !!(settings.emailSmtp ?? '').trim() && !!(settings.emailSmtpUser ?? '').trim(),
+  }
+  try {
+    const status = await window.api.emailStatus()
+    facts.featureBuilt = !!status.featureBuilt
+    facts.gmailConnected = !!status.gmailConnected
+  } catch {
+    /* keep the pessimistic defaults — a failed status check is not a send path */
+  }
+
+  const gate = emailGateStatus(facts)
+  applyFeatureGate('email-notify-card', {
+    status: gate,
+    chipText: gate === 'unavailable'
+      ? t('gate.chipUnavailable', 'Ikke tilgjengelig')
+      : t('gate.chipUnconfigured', 'Ikke konfigurert'),
+    explanation: gate === 'unavailable'
+      ? t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
+      : t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.'),
+  })
+
+  // «Send test» is enabled ONLY when a transport exists and we know where to
+  // send it. The recipient check lives in the same pure helper as the gate.
+  const recipient = (document.getElementById('email-address') as HTMLInputElement | null)?.value.trim()
+    ?? settings.emailAddress ?? ''
+  const testBtn = document.getElementById('btn-test-email') as HTMLButtonElement | null
+  if (testBtn) {
+    const allowed = canSendTestEmail(facts, !!recipient)
+    testBtn.disabled = !allowed
+    testBtn.title = allowed
+      ? ''
+      : recipient
+        ? t('notify.gateTestNoTransport', 'Sett opp en sendemetode først.')
+        : t('notify.gateTestNoRecipient', 'Skriv inn en mottakeradresse først.')
+    if (allowed && !testBtn.dataset.wired) {
+      testBtn.dataset.wired = '1'
+      testBtn.addEventListener('click', () => void sendTestEmail())
+    }
+  }
+}
+
+/** Send the backend's localized "email works" message through whichever
+ *  transport is actually available. Only reachable when the gate says ok. */
+async function sendTestEmail(): Promise<void> {
+  const btn = document.getElementById('btn-test-email') as HTMLButtonElement | null
+  const recipient = (document.getElementById('email-address') as HTMLInputElement | null)?.value.trim() ?? ''
+  if (!recipient) return
+  const useGmail = !(settings.emailSmtp ?? '').trim()
+  if (btn) btn.disabled = true
+  try {
+    const res = await window.api.testEmail({
+      transport: useGmail ? 'gmail' : 'smtp',
+      recipient,
+      language: settings.language ?? 'no',
+      host: settings.emailSmtp,
+      port: settings.emailSmtpPort,
+      user: settings.emailSmtpUser,
+      pass: (document.getElementById('email-pass') as HTMLInputElement | null)?.value || undefined,
+      from: settings.emailSmtpUser || recipient,
+    })
+    toast(res.ok ? 'success' : 'error',
+      res.ok
+        ? t('notify.testEmailSent', 'Test-e-post sendt til {to}').replace('{to}', recipient)
+        : t('notify.testEmailFailed', 'Test-e-posten gikk ikke gjennom: {err}').replace('{err}', res.error ?? '—'))
+  } finally {
+    if (btn) btn.disabled = false
+  }
+}
+
+/**
+ * The webhook test is NOT gated: `email_test_webhook` is a real command on
+ * every build (a plain 10 s POST, no cargo feature). The night sweep disabled
+ * the button along with the e-mail ones because the shim stubbed it; the stub
+ * is gone, so the button works — it just needs a URL to aim at.
+ */
+function setupWebhookTest(): void {
+  const btn = document.getElementById('btn-test-webhook') as HTMLButtonElement | null
+  const urlEl = document.getElementById('webhook-url') as HTMLInputElement | null
+  if (!btn || !urlEl) return
+
+  const sync = (): void => {
+    const url = urlEl.value.trim()
+    btn.disabled = !/^https:\/\/\S+$/.test(url)
+    btn.title = btn.disabled ? t('notify.gateWebhookNoUrl', 'Lim inn en webhook-URL først.') : ''
+  }
+  urlEl.addEventListener('input', sync)
+  urlEl.addEventListener('change', sync)
+  sync()
+
+  btn.addEventListener('click', async () => {
+    const url = urlEl.value.trim()
+    if (!url) return
+    btn.disabled = true
+    try {
+      const res = await window.api.testWebhook(url)
+      toast(res.ok ? 'success' : 'error',
+        res.ok
+          ? t('notify.testWebhookOk', 'Webhooken svarte — varsler kommer fram.')
+          : t('notify.testWebhookFailed', 'Webhooken svarte ikke. Sjekk adressen.'))
+    } finally {
+      sync()
+    }
+  })
+}
+
+/**
  * The SMTP server card — one of the three EXPLICIT-save exceptions.
  *
  * Host, username and password are a set: applying them one keystroke at a time
@@ -173,6 +299,9 @@ function setupSmtpCard(): void {
     if (!ok) { toast('error', t('general.saveFailed', 'Kunne ikke lagre innstillingen')); return }
     if (pass) pass.value = ''
     showSavedChip(saveBtn.parentElement)
+    // A newly-filled SMTP server can flip the gate from «ikke konfigurert» to
+    // usable — re-check rather than making the user reopen the tab.
+    void refreshEmailGate()
   })
 
   cancelBtn?.addEventListener('click', () => {

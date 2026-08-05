@@ -93,7 +93,8 @@
     "cloudAllSynced": "Wszystko zsynchronizowane",
     "nextShort": "następne",
     "wakesLead": "({min} min wcześniej)",
-    "openInEditor": "Otwórz w edytorze"
+    "openInEditor": "Otwórz w edytorze",
+    "thumbComing": "Okładka odcinka wkrótce — jeszcze nieużywana"
   },
   "update": {
     "checking": "Sprawdzanie aktualizacji…",
@@ -477,7 +478,6 @@
     "helpDesc": "Otwórz ponownie przewodnik konfiguracji — przydatne, gdy obowiązki przejmuje nowa osoba lub gdy chcesz po prostu sprawdzić, czy wszystko jest dobrze ustawione.",
     "helpTitle": "Pomoc i szkolenie",
     "langCardDesc": "Wybierz preferowany język. SundayRec obsługuje siedem języków — wszystkie menu i powiadomienia dostosowują się natychmiast.",
-    "notifyUnavailable": "Powiadomienia nie są jeszcze dostępne w tej wersji.",
     "openOnboarding": "Otwórz przewodnik konfiguracji",
     "profileDesc": "Używane w nazwach plików, e-mailach z powiadomieniami i kanale RSS podcastu. Pola są opcjonalne, ale zalecane.",
     "responsibleHint": "Osoba, która otrzyma e-mail, jeśli nagranie się nie powiedzie (wymaga powiadomień e-mail w zakładce Powiadomienia).",
@@ -833,7 +833,17 @@
     "errEmail": "Wpisz poprawny adres e-mail, np. imie@parafia.pl",
     "errWebhookUrl": "Adres webhooka musi zaczynać się od https://",
     "errSmtpHost": "Wpisz nazwę serwera, np. smtp.gmail.com",
-    "errSmtpUser": "Nazwa użytkownika to adres e-mail, z którego wysyłasz"
+    "errSmtpUser": "Nazwa użytkownika to adres e-mail, z którego wysyłasz",
+    "gateNoFeature": "Wysyłka e-maili nie jest wbudowana w tę wersję. Na razie o nieudanych nagraniach informuje strona główna lub webhook.",
+    "gateNoTransport": "Nie skonfigurowano jeszcze metody wysyłki. Zaloguj się przez Google lub uzupełnij pola SMTP w sekcji Zaawansowane.",
+    "gateTestNoTransport": "Najpierw skonfiguruj metodę wysyłki.",
+    "gateTestNoRecipient": "Najpierw wpisz adres odbiorcy.",
+    "gateWebhookNoUrl": "Najpierw wklej adres webhooka.",
+    "gmailUnavailable": "Logowanie Google jest niedostępne w tej wersji.",
+    "testEmailSent": "Testowy e-mail wysłany do {to}",
+    "testEmailFailed": "Testowy e-mail nie dotarł: {err}",
+    "testWebhookOk": "Webhook odpowiedział — powiadomienia dotrą.",
+    "testWebhookFailed": "Webhook nie odpowiedział. Sprawdź adres."
   },
   "prep": {
     "sectionTitle": "Przygotowanie i przegląd",
@@ -924,7 +934,9 @@
     "pickFolder": "Wybierz folder…",
     "title": "Kopia zapasowa w chmurze",
     "streamSaveDestinations": "Zapisz cele",
-    "streamUnsaved": "Jeszcze nie zapisano"
+    "streamUnsaved": "Jeszcze nie zapisano",
+    "gateCloudExplain": "Kopia w chmurze nie jest skonfigurowana w tej wersji — brakuje klucza Google potrzebnego do połączenia konta.",
+    "gateCloudHint": "Poproś o wersję z włączoną kopią w chmurze, jeśli parafia tego potrzebuje."
   },
   "integrations": {
     "sundayEditFailed": "Nie udało się otworzyć",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Lokalny plik nagrania trafia do Ostatnie nagrania po zakończeniu transmisji — wyższy bitrate niż live, gotowy do montażu lub podcastu.",
     "overlays": "Nakładki — grafika i prezentacja",
     "overlaysDesc": "Dodaj logo kościoła, słowa z EasyWorship (przez przechwytywanie ekranu na tej samej maszynie) lub inną grafikę na obrazie transmisji. Nakładki wpływają tylko na transmisję — nagrania są czyste.",
-    "addOverlay": "+ Dodaj nakładkę"
+    "addOverlay": "+ Dodaj nakładkę",
+    "gateStats": "Statystyki nie są jeszcze dostępne — transmisja nie raportuje w tej wersji bitrate’u, liczby klatek ani klatek utraconych.",
+    "blockedNoDestinations": "Nie skonfigurowano jeszcze celu — dodaj YouTube, Facebooka lub własny serwer RTMP.",
+    "blockedNoEnabled": "Żaden cel nie jest włączony. Włącz przynajmniej jeden na liście powyżej.",
+    "blockedNoKey": "Cel nie ma klucza transmisji. Bez niego YouTube/Facebook nie wpuszczą sygnału.",
+    "blockedGoSettings": "Otwórz Udostępnianie → Publikowanie"
   },
   "transcript": {
     "title": "Transkrypcja",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Kopia w chmurze, podcast i transmisja na żywo — dokąd trafia nagranie po nabożeństwie.",
     "notifyDesc": "Kto dostaje powiadomienie, gdy nagranie się zaczyna, kończy lub nie powiedzie."
+  },
+  "gate": {
+    "chipComing": "Wkrótce",
+    "chipUnconfigured": "Nieskonfigurowane",
+    "chipUnavailable": "Niedostępne",
+    "comingExplanation": "{what} nie jest jeszcze gotowe. Panel jest tu, bo funkcja jest planowana — na razie przyciski nic nie robią, więc są wyłączone."
   }
 }

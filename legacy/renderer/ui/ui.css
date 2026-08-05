@@ -658,9 +658,23 @@ textarea.has-field-error {
   opacity: 0.85;
 }
 /* `inert` is what actually stops the clicks; this is the visual half. */
-[data-gate-body][inert] {
+.gate-off {
   opacity: 0.45;
   filter: saturate(0.6);
+}
+
+/* The one place a disabled control still has to explain itself: the live
+   START button, which used to grey out with no reason given anywhere. */
+.blocked-reason {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.blocked-reason a {
+  color: var(--accent, #ebb84b);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────────────── */

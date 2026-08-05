@@ -21,6 +21,8 @@ import { rVuChannel } from '../audio/capture'
 import type { StreamDestinationStored } from '../../types'
 import { setupLiveOverlays, reactivateLiveOverlays } from './live-overlays'
 import { normalizeFrameData } from '../../shared/normalize-frame-data'
+import { applyFeatureGate } from '../ui/feature-gate'
+import { liveBlockReason } from '../ui/feature-gate-core'
 
 // ── State ────────────────────────────────────────────────────────────────
 interface StreamStats {
@@ -60,6 +62,19 @@ function emptyStats(): StreamStats {
 export function setupLivePage(): void {
   document.getElementById('btn-live-start')?.addEventListener('click', () => onStartStopClick(true))
   document.getElementById('btn-live-start-stream-only')?.addEventListener('click', () => onStartStopClick(false))
+
+  // HONEST GATE: nothing in the backend emits `streaming://stats` — grep the
+  // Rust and there is no such event, only `stream_status` on demand. The four
+  // numbers below therefore sat at 0 for the whole broadcast, which reads as
+  // "your stream is sending 0 kbps" rather than "nobody wrote this yet".
+  applyFeatureGate('live-stats-card', {
+    status: 'unavailable',
+    chipText: t('gate.chipComing', 'Kommer'),
+    explanation: t(
+      'live.gateStats',
+      'Statistikk er ikke tilgjengelig ennå — direktesendingen rapporterer ikke bitrate, bilderate eller tapte rammer tilbake til appen i denne versjonen.',
+    ),
+  })
 
   document.getElementById('live-config-link')?.addEventListener('click', e => {
     e.preventDefault()
@@ -514,12 +529,56 @@ function updateStartButton(active: boolean): void {
   updateStartButtonState()
 }
 
+/**
+ * Enable/disable START — and SAY WHY when it is disabled.
+ *
+ * The button knew perfectly well that no destination had a stream key. It just
+ * greyed out and left the operator to guess, five minutes before a service,
+ * with no hint that the answer was two pages away. Now the specific missing
+ * piece is named under the button, with a link straight to it.
+ */
 function updateStartButtonState(): void {
   const btn = document.getElementById('btn-live-start') as HTMLButtonElement | null
+  const reasonEl = document.getElementById('live-start-reason')
   if (!btn) return
-  if (lastStats.active) { btn.disabled = false; return }
-  const hasActive = (settings.streamDestinations ?? []).some(d => sessionEnabled.get(d.id) && d.hasKey)
-  btn.disabled = !hasActive
+  if (lastStats.active) {
+    btn.disabled = false
+    if (reasonEl) reasonEl.style.display = 'none'
+    return
+  }
+
+  const dests = settings.streamDestinations ?? []
+  const enabled = dests.filter(d => sessionEnabled.get(d.id))
+  const reason = liveBlockReason({
+    total: dests.length,
+    enabled: enabled.length,
+    ready: enabled.filter(d => d.hasKey).length,
+  })
+  btn.disabled = reason !== null
+
+  if (!reasonEl) return
+  if (!reason) { reasonEl.style.display = 'none'; return }
+
+  const text =
+    reason === 'noDestinations'
+      ? t('live.blockedNoDestinations', 'Ingen destinasjon er satt opp ennå — legg til YouTube, Facebook eller en egen RTMP-server.')
+      : reason === 'noEnabled'
+        ? t('live.blockedNoEnabled', 'Ingen destinasjon er slått på. Aktiver minst én i listen over.')
+        : t('live.blockedNoKey', 'Destinasjonen mangler stream-key. Uten nøkkelen slipper ikke YouTube/Facebook sendingen inn.')
+
+  reasonEl.textContent = ''
+  reasonEl.append(text + ' ')
+  if (reason !== 'noEnabled') {
+    const link = document.createElement('a')
+    link.href = '#'
+    link.textContent = t('live.blockedGoSettings', 'Åpne Deling → Publisering')
+    link.addEventListener('click', e => {
+      e.preventDefault()
+      navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })
+    })
+    reasonEl.appendChild(link)
+  }
+  reasonEl.style.display = ''
 }
 
 // ── Status pill helpers ──────────────────────────────────────────────────

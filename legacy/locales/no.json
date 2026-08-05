@@ -93,7 +93,8 @@
     "cloudAllSynced": "Alle synkronisert",
     "nextShort": "neste",
     "wakesLead": "({min} min før)",
-    "openInEditor": "Åpne i redigering"
+    "openInEditor": "Åpne i redigering",
+    "thumbComing": "Episodebilde kommer — brukes ikke ennå"
   },
   "update": {
     "checking": "Sjekker etter oppdateringer…",
@@ -477,7 +478,6 @@
     "helpDesc": "Åpne oppstartsveilederen på nytt — nyttig hvis det kommer ny ansvarlig person, eller hvis du bare vil sjekke at alt er riktig satt opp.",
     "helpTitle": "Hjelp og opplæring",
     "langCardDesc": "Velg språket du foretrekker. SundayRec støtter syv språk — alle menyer og varsler tilpasses umiddelbart.",
-    "notifyUnavailable": "Varsler er ikke tilgjengelig i denne versjonen ennå.",
     "openOnboarding": "Åpne oppstartsveileder",
     "profileDesc": "Brukes i filnavn, varslings-e-poster og podcast-RSS. Disse feltene er valgfrie men anbefalt.",
     "responsibleHint": "Personen som får e-post hvis opptaket feiler (krever e-postvarsler i Varsler-fanen).",
@@ -833,7 +833,17 @@
     "errEmail": "Skriv en gyldig e-postadresse, f.eks. navn@kirke.no",
     "errWebhookUrl": "Webhook-URL må begynne med https://",
     "errSmtpHost": "Skriv et servernavn, f.eks. smtp.gmail.com",
-    "errSmtpUser": "Brukernavnet er e-postadressen du sender fra"
+    "errSmtpUser": "Brukernavnet er e-postadressen du sender fra",
+    "gateNoFeature": "E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.",
+    "gateNoTransport": "Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.",
+    "gateTestNoTransport": "Sett opp en sendemetode først.",
+    "gateTestNoRecipient": "Skriv inn en mottakeradresse først.",
+    "gateWebhookNoUrl": "Lim inn en webhook-URL først.",
+    "gmailUnavailable": "Google-innlogging er ikke tilgjengelig i denne versjonen.",
+    "testEmailSent": "Test-e-post sendt til {to}",
+    "testEmailFailed": "Test-e-posten gikk ikke gjennom: {err}",
+    "testWebhookOk": "Webhooken svarte — varsler kommer fram.",
+    "testWebhookFailed": "Webhooken svarte ikke. Sjekk adressen."
   },
   "prep": {
     "sectionTitle": "Forhåndsklargjøring og gjennomgang",
@@ -924,7 +934,9 @@
     "pickFolder": "Velg mappe…",
     "title": "Sky-backup",
     "streamSaveDestinations": "Lagre destinasjoner",
-    "streamUnsaved": "Ikke lagret ennå"
+    "streamUnsaved": "Ikke lagret ennå",
+    "gateCloudExplain": "Sky-backup er ikke konfigurert i denne bygningen — den mangler Google-nøkkelen som trengs for å koble til en konto.",
+    "gateCloudHint": "Be om en build med sky-backup slått på hvis menigheten trenger dette."
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åpne",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Lokal opptaksfil havner i Siste opptak når strømmen stopper — høyere bitrate enn livestreamen, klar for redigering eller podkast.",
     "overlays": "Overlays — grafikk og presentasjon",
     "overlaysDesc": "Legg over kirkens logo, lyrics fra EasyWorship (via skjerm-capture på samme maskin), eller annen grafikk på det som sendes ut. Overlays påvirker bare direktesendingen — opptak gjøres rent.",
-    "addOverlay": "+ Legg til overlay"
+    "addOverlay": "+ Legg til overlay",
+    "gateStats": "Statistikk er ikke tilgjengelig ennå — direktesendingen rapporterer ikke bitrate, bilderate eller tapte rammer tilbake til appen i denne versjonen.",
+    "blockedNoDestinations": "Ingen destinasjon er satt opp ennå — legg til YouTube, Facebook eller en egen RTMP-server.",
+    "blockedNoEnabled": "Ingen destinasjon er slått på. Aktiver minst én i listen over.",
+    "blockedNoKey": "Destinasjonen mangler stream-key. Uten nøkkelen slipper ikke YouTube/Facebook sendingen inn.",
+    "blockedGoSettings": "Åpne Deling → Publisering"
   },
   "transcript": {
     "title": "Transkribering",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Sky-backup, podkast og direktesending — hvor opptaket havner etter gudstjenesten.",
     "notifyDesc": "Hvem får beskjed når et opptak starter, stopper eller feiler."
+  },
+  "gate": {
+    "chipComing": "Kommer",
+    "chipUnconfigured": "Ikke konfigurert",
+    "chipUnavailable": "Ikke tilgjengelig",
+    "comingExplanation": "{what} er ikke bygget ennå. Panelet står her fordi funksjonen er planlagt — inntil videre gjør knappene ingenting, så de er slått av."
   }
 }

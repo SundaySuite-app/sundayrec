@@ -729,7 +729,7 @@
 
       <!-- Right column: stats + destinations + quality -->
       <div class="live-side-col">
-        <div class="card live-stats-card">
+        <div class="card live-stats-card" id="live-stats-card">
           <div class="card-title" data-i18n="live.statsTitle">Statistikk</div>
           <div class="live-stats-grid">
             <div class="live-stat">
@@ -816,6 +816,9 @@
       <button class="live-start-btn-secondary" id="btn-live-start-stream-only" type="button">
         <span data-i18n="live.startStreamOnly">Bare direktesending (uten lokal opptak)</span>
       </button>
+      <!-- Why the start button is greyed out. It used to be disabled with the
+           reason known only to updateStartButtonState(). -->
+      <div class="blocked-reason" id="live-start-reason" style="display:none"></div>
       <div class="live-error" id="live-error" style="display:none"></div>
       <div class="live-action-hint" data-i18n="live.alsoRecordHint">
         Lokal opptaksfil havner i Siste opptak når strømmen stopper —
@@ -1197,7 +1200,7 @@
       </div>
 
       <!-- ── Standard episodebilde (cover art) ──────────────────── -->
-      <div class="card">
+      <div class="card" id="publish-thumb-card">
         <div class="card-title" data-i18n="thumbnail.default.title">Standard episodebilde</div>
         <p class="card-desc" data-i18n="thumbnail.default.subtitle">Brukes som cover art for alle prekener med mindre du overstyrer per episode.</p>
         <div class="thumb-panel">
@@ -1217,7 +1220,7 @@
         <input type="file" id="publish-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
       </div>
       <!-- ── Sky-backup (Google Drive / Dropbox / OneDrive) ──────── -->
-      <div class="card">
+      <div class="card" id="cloud-backup-card">
         <div class="card-title" data-i18n="publish.title">Sky-backup</div>
         <p class="card-desc" data-i18n="publish.desc">Last opp opptakene automatisk til Google Drive — som ekstra sikkerhet og for enkel deling.</p>
 
@@ -1537,7 +1540,7 @@
           </select>
         </div>
       </div>
-      <div class="card">
+      <div class="card" id="email-notify-card">
         <div class="card-title" data-i18n="notify.emailTitle">E-postvarsler</div>
         <div class="toggle-row">
           <div>
@@ -1562,9 +1565,11 @@
                   <div class="email-oauth-title" data-i18n="notify.emailGmailTitle">Logg inn med Google</div>
                   <div class="email-oauth-sub" id="email-gmail-status" data-i18n="notify.emailGmailDesc">Send via din Gmail-konto — ingen SMTP-konfig.</div>
                 </div>
-                <!-- Not wired to a working backend yet (2026-08 audit) — disabled
-                     with an honest reason rather than a fake "connection failed". -->
-                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.emailGmailConnect">Koble til</button>
+                <!-- Still no backend: the Gmail OAuth path goes through
+                     cloud_connect, which this build has no client id for.
+                     Disabled with a reason about THIS button, not about
+                     notifications in general. -->
+                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" disabled title="Google-innlogging er ikke tilgjengelig i denne versjonen." data-i18n-title="notify.gmailUnavailable" data-i18n="notify.emailGmailConnect">Koble til</button>
                 <button type="button" class="btn-ghost btn-sm" id="btn-email-gmail-disconnect" style="display:none" data-i18n="notify.emailGmailDisconnect">Koble fra</button>
               </div>
             </div>
@@ -1597,14 +1602,14 @@
             </div>
           </details>
 
-          <!-- Not wired to a working backend yet (2026-08 audit): the old stub
-               always reported failure. Disabled with an honest reason instead. -->
-          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="general.testEmail">Test e-post</button>
-          <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
+          <!-- Enabled/disabled by the feature gate from the REAL email_status,
+               not by a hardcoded attribute: it is pressable exactly when a
+               transport exists and there is a recipient. -->
+          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled data-i18n="general.testEmail">Test e-post</button>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="webhook-notify-card">
         <div class="card-title" data-i18n="notify.webhookTitle">Webhook (Slack / Discord / Teams)</div>
         <div class="card-desc notify-webhook-intro" data-i18n="notify.webhookIntro">
           Send varsler til en chat-kanal i tillegg til e-post. Lim inn webhook-URL fra Slack, Discord eller Teams.
@@ -1619,10 +1624,10 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-webhook-on-warn" /><span class="toggle-track"></span></label>
         </div>
-        <!-- Not wired to a working backend yet (2026-08 audit): the old stub
-             always reported failure. Disabled with an honest reason instead. -->
-        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.testWebhook">Test webhook</button>
-        <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
+        <!-- WIRED (Fase 3c): email_test_webhook is real on every build — a
+             plain 10 s POST behind no cargo feature. The stub that always
+             reported failure is gone; the button just needs a URL. -->
+        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled data-i18n="notify.testWebhook">Test webhook</button>
       </div>
     </div>
 

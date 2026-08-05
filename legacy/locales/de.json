@@ -93,7 +93,8 @@
     "cloudAllSynced": "Alle synchronisiert",
     "nextShort": "nächste",
     "wakesLead": "({min} Min. vorher)",
-    "openInEditor": "Im Editor öffnen"
+    "openInEditor": "Im Editor öffnen",
+    "thumbComing": "Episodenbild folgt — wird noch nicht verwendet"
   },
   "update": {
     "checking": "Suche nach Updates…",
@@ -477,7 +478,6 @@
     "helpDesc": "Öffnen Sie den Einrichtungsassistenten erneut — nützlich, wenn eine neue verantwortliche Person übernimmt oder Sie einfach prüfen möchten, ob alles richtig eingerichtet ist.",
     "helpTitle": "Hilfe und Schulung",
     "langCardDesc": "Wählen Sie Ihre bevorzugte Sprache. SundayRec unterstützt sieben Sprachen — alle Menüs und Benachrichtigungen passen sich sofort an.",
-    "notifyUnavailable": "Benachrichtigungen sind in dieser Version noch nicht verfügbar.",
     "openOnboarding": "Einrichtungsassistent öffnen",
     "profileDesc": "Wird in Dateinamen, Benachrichtigungs-E-Mails und im Podcast-RSS verwendet. Diese Felder sind optional, aber empfohlen.",
     "responsibleHint": "Die Person, die eine E-Mail erhält, wenn die Aufnahme fehlschlägt (erfordert E-Mail-Benachrichtigungen im Tab „Benachrichtigungen“).",
@@ -833,7 +833,17 @@
     "errEmail": "Geben Sie eine gültige E-Mail-Adresse ein, z. B. name@kirche.de",
     "errWebhookUrl": "Die Webhook-URL muss mit https:// beginnen",
     "errSmtpHost": "Geben Sie einen Servernamen ein, z. B. smtp.gmail.com",
-    "errSmtpUser": "Der Benutzername ist die E-Mail-Adresse, von der Sie senden"
+    "errSmtpUser": "Der Benutzername ist die E-Mail-Adresse, von der Sie senden",
+    "gateNoFeature": "Der E-Mail-Versand ist in dieser Version nicht enthalten. Hinweise auf fehlgeschlagene Aufnahmen kommen vorerst über die Startseite oder einen Webhook.",
+    "gateNoTransport": "Es ist noch keine Versandmethode eingerichtet. Melden Sie sich mit Google an oder füllen Sie die SMTP-Felder unter «Erweitert» aus.",
+    "gateTestNoTransport": "Richten Sie zuerst eine Versandmethode ein.",
+    "gateTestNoRecipient": "Geben Sie zuerst eine Empfängeradresse ein.",
+    "gateWebhookNoUrl": "Fügen Sie zuerst eine Webhook-URL ein.",
+    "gmailUnavailable": "Die Google-Anmeldung ist in dieser Version nicht verfügbar.",
+    "testEmailSent": "Test-E-Mail an {to} gesendet",
+    "testEmailFailed": "Die Test-E-Mail kam nicht durch: {err}",
+    "testWebhookOk": "Der Webhook hat geantwortet — Meldungen kommen an.",
+    "testWebhookFailed": "Der Webhook hat nicht geantwortet. Prüfen Sie die Adresse."
   },
   "prep": {
     "sectionTitle": "Vorbereitung und Überprüfung",
@@ -924,7 +934,9 @@
     "pickFolder": "Ordner wählen…",
     "title": "Cloud-Backup",
     "streamSaveDestinations": "Ziele speichern",
-    "streamUnsaved": "Noch nicht gespeichert"
+    "streamUnsaved": "Noch nicht gespeichert",
+    "gateCloudExplain": "Cloud-Backup ist in dieser Version nicht eingerichtet — der Google-Schlüssel zum Verbinden eines Kontos fehlt.",
+    "gateCloudHint": "Fordern Sie eine Version mit aktiviertem Cloud-Backup an, wenn die Gemeinde das braucht."
   },
   "integrations": {
     "sundayEditFailed": "Konnte nicht geöffnet werden",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Die lokale Aufnahme erscheint nach dem Stream in Letzte Aufnahmen — höhere Bitrate als der Livestream, bereit für Bearbeitung oder Podcast.",
     "overlays": "Overlays — Grafiken und Präsentation",
     "overlaysDesc": "Lege Logo, Liedtexte aus EasyWorship (via Bildschirmaufnahme auf gleicher Maschine) oder andere Grafiken über das gesendete Bild. Overlays wirken nur auf den Livestream — Aufnahmen bleiben sauber.",
-    "addOverlay": "+ Overlay hinzufügen"
+    "addOverlay": "+ Overlay hinzufügen",
+    "gateStats": "Statistiken sind noch nicht verfügbar — der Livestream meldet in dieser Version weder Bitrate noch Bildrate oder verlorene Bilder an die App zurück.",
+    "blockedNoDestinations": "Es ist noch kein Ziel eingerichtet — fügen Sie YouTube, Facebook oder einen eigenen RTMP-Server hinzu.",
+    "blockedNoEnabled": "Kein Ziel ist eingeschaltet. Aktivieren Sie mindestens eines in der Liste oben.",
+    "blockedNoKey": "Dem Ziel fehlt der Stream-Key. Ohne ihn lassen YouTube/Facebook die Übertragung nicht durch.",
+    "blockedGoSettings": "Teilen → Veröffentlichen öffnen"
   },
   "transcript": {
     "title": "Transkription",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Cloud-Backup, Podcast und Livestream — wohin die Aufnahme nach dem Gottesdienst geht.",
     "notifyDesc": "Wer benachrichtigt wird, wenn eine Aufnahme startet, endet oder fehlschlägt."
+  },
+  "gate": {
+    "chipComing": "In Arbeit",
+    "chipUnconfigured": "Nicht eingerichtet",
+    "chipUnavailable": "Nicht verfügbar",
+    "comingExplanation": "{what} ist noch nicht gebaut. Das Feld steht hier, weil die Funktion geplant ist — bis dahin bewirken die Schaltflächen nichts und sind deshalb deaktiviert."
   }
 }

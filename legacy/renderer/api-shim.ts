@@ -765,9 +765,58 @@ const api: Record<string, unknown> = {
     pickPath({ name: "Lyd", extensions: AUDIO_EXT }),
 
   // ── Email / webhook ─────────────────────────────────────────────────────
-  testWebhook: async () => ({ ok: false }),
-  testEmail: async () => ({ ok: false }),
-  clearSmtpPassword: async () => true,
+  //
+  // These were `async () => ({ ok: false })` stubs: every click produced a
+  // fabricated "sending failed" no matter what the user had configured. Both
+  // commands exist and are registered (commands/email.rs), so they are wired —
+  // and the panel now asks `emailStatus` FIRST and disables the button when
+  // there is no send path, instead of inventing a failure.
+  //
+  // `email_test_webhook` is real on every build (plain reqwest POST, no cargo
+  // feature); `email_send_test` needs `--features email` and returns a clear
+  // `feature_disabled` error otherwise, which `emailStatus.featureBuilt`
+  // predicts so we never provoke it.
+  emailStatus: async () =>
+    call<{ featureBuilt: boolean; gmailConnected: boolean }>("email_status", undefined, {
+      featureBuilt: false,
+      gmailConnected: false,
+    }),
+  testWebhook: async (url: string) => {
+    try {
+      const ok = await invoke<boolean>("email_test_webhook", { url });
+      return ok ? { ok: true } : { ok: false, error: "unreachable" };
+    } catch (e) {
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
+  testEmail: async (params: {
+    transport: "gmail" | "smtp";
+    recipient: string;
+    language?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    pass?: string;
+    from?: string;
+  }) => {
+    try {
+      await invoke("email_send_test", {
+        transport: params.transport === "gmail" ? "Gmail" : "Smtp",
+        recipient: params.recipient,
+        language: params.language,
+        host: params.host,
+        port: params.port,
+        user: params.user,
+        pass: params.pass,
+        from: params.from,
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
+  clearSmtpPassword: async () =>
+    call<boolean>("email_clear_smtp_password", undefined, false),
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
@@ -1310,7 +1359,10 @@ const api: Record<string, unknown> = {
   cloudUploadFile: async () => ({ ok: false }),
   cloudListFolders: async () => [],
   cloudSetFolder: async () => true,
-  cloudIsConfigured: async () => false,
+  // Wired to the REAL predicate (commands/cloud.rs) instead of a hard-coded
+  // `false`. It answers whether this build has a Google OAuth client id at all,
+  // which is what the cloud panel's gate needs to say something true.
+  cloudIsConfigured: async () => call<boolean>("cloud_is_configured", undefined, false),
   cloudQueueStatus: async () => ({ entries: [] }),
   cloudQueueRetry: async () => true,
   cloudQueueRemove: async () => true,

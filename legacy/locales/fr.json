@@ -93,7 +93,8 @@
     "cloudAllSynced": "Tout est synchronisé",
     "nextShort": "suivant",
     "wakesLead": "({min} min avant)",
-    "openInEditor": "Ouvrir dans l’éditeur"
+    "openInEditor": "Ouvrir dans l’éditeur",
+    "thumbComing": "La vignette d’épisode arrive — pas encore utilisée"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -477,7 +478,6 @@
     "helpDesc": "Rouvrez l’assistant de configuration — utile si une nouvelle personne prend le relais, ou si vous voulez simplement vérifier que tout est bien configuré.",
     "helpTitle": "Aide et formation",
     "langCardDesc": "Choisissez votre langue préférée. SundayRec prend en charge sept langues — tous les menus et notifications s’adaptent immédiatement.",
-    "notifyUnavailable": "Les notifications ne sont pas encore disponibles dans cette version.",
     "openOnboarding": "Ouvrir l’assistant de configuration",
     "profileDesc": "Utilisé dans les noms de fichiers, les e-mails de notification et le flux RSS du podcast. Ces champs sont facultatifs mais recommandés.",
     "responsibleHint": "La personne qui reçoit un e-mail si l’enregistrement échoue (nécessite les notifications par e-mail dans l’onglet Notifications).",
@@ -833,7 +833,17 @@
     "errEmail": "Saisissez une adresse e-mail valide, par ex. nom@eglise.fr",
     "errWebhookUrl": "L’URL du webhook doit commencer par https://",
     "errSmtpHost": "Saisissez un nom de serveur, par ex. smtp.gmail.com",
-    "errSmtpUser": "Le nom d’utilisateur est l’adresse e-mail depuis laquelle vous envoyez"
+    "errSmtpUser": "Le nom d’utilisateur est l’adresse e-mail depuis laquelle vous envoyez",
+    "gateNoFeature": "L’envoi d’e-mails n’est pas intégré à cette version. Les alertes sur les enregistrements échoués passent pour l’instant par la page d’accueil ou un webhook.",
+    "gateNoTransport": "Aucune méthode d’envoi n’est configurée. Connectez-vous avec Google, ou renseignez les champs SMTP sous Avancé.",
+    "gateTestNoTransport": "Configurez d’abord une méthode d’envoi.",
+    "gateTestNoRecipient": "Saisissez d’abord une adresse de destinataire.",
+    "gateWebhookNoUrl": "Collez d’abord une URL de webhook.",
+    "gmailUnavailable": "La connexion Google n’est pas disponible dans cette version.",
+    "testEmailSent": "E-mail de test envoyé à {to}",
+    "testEmailFailed": "L’e-mail de test n’est pas passé : {err}",
+    "testWebhookOk": "Le webhook a répondu — les alertes passeront.",
+    "testWebhookFailed": "Le webhook n’a pas répondu. Vérifiez l’adresse."
   },
   "prep": {
     "sectionTitle": "Préparation et révision",
@@ -924,7 +934,9 @@
     "pickFolder": "Choisir un dossier…",
     "title": "Sauvegarde cloud",
     "streamSaveDestinations": "Enregistrer les destinations",
-    "streamUnsaved": "Pas encore enregistré"
+    "streamUnsaved": "Pas encore enregistré",
+    "gateCloudExplain": "La sauvegarde cloud n’est pas configurée dans cette version — la clé Google nécessaire pour connecter un compte est absente.",
+    "gateCloudHint": "Demandez une version avec la sauvegarde cloud activée si la paroisse en a besoin."
   },
   "integrations": {
     "sundayEditFailed": "Impossible d’ouvrir",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Le fichier local arrive dans Enregistrements récents à l'arrêt — bitrate plus élevé que la diffusion, prêt pour montage ou podcast.",
     "overlays": "Superpositions — graphiques et présentation",
     "overlaysDesc": "Ajoutez le logo de l'église, les paroles d'EasyWorship (via capture d'écran sur la même machine), ou d'autres graphiques sur le flux. Les superpositions n'affectent que la diffusion — les enregistrements restent propres.",
-    "addOverlay": "+ Ajouter une superposition"
+    "addOverlay": "+ Ajouter une superposition",
+    "gateStats": "Les statistiques ne sont pas encore disponibles — la diffusion ne renvoie ni débit, ni images par seconde, ni images perdues à l’application dans cette version.",
+    "blockedNoDestinations": "Aucune destination n’est configurée — ajoutez YouTube, Facebook ou votre propre serveur RTMP.",
+    "blockedNoEnabled": "Aucune destination n’est activée. Activez-en au moins une dans la liste ci-dessus.",
+    "blockedNoKey": "La destination n’a pas de clé de flux. Sans elle, YouTube/Facebook refusent la diffusion.",
+    "blockedGoSettings": "Ouvrir Partage → Publication"
   },
   "transcript": {
     "title": "Transcription",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Sauvegarde cloud, podcast et diffusion en direct — où va l’enregistrement après le culte.",
     "notifyDesc": "Qui est prévenu quand un enregistrement démarre, s’arrête ou échoue."
+  },
+  "gate": {
+    "chipComing": "À venir",
+    "chipUnconfigured": "Non configuré",
+    "chipUnavailable": "Indisponible",
+    "comingExplanation": "{what} n’est pas encore développé. Le panneau reste ici car la fonction est prévue — d’ici là les boutons ne font rien, ils sont donc désactivés."
   }
 }

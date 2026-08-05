@@ -93,7 +93,8 @@
     "cloudAllSynced": "Alla synkroniserade",
     "nextShort": "nästa",
     "wakesLead": "({min} min innan)",
-    "openInEditor": "Öppna i redigering"
+    "openInEditor": "Öppna i redigering",
+    "thumbComing": "Avsnittsbild kommer — används inte än"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -477,7 +478,6 @@
     "helpDesc": "Öppna startguiden igen — praktiskt om en ny ansvarig person tar över, eller om du bara vill kontrollera att allt är rätt inställt.",
     "helpTitle": "Hjälp och utbildning",
     "langCardDesc": "Välj det språk du föredrar. SundayRec stöder sju språk — alla menyer och aviseringar anpassas direkt.",
-    "notifyUnavailable": "Aviseringar är inte tillgängliga i den här versionen ännu.",
     "openOnboarding": "Öppna startguiden",
     "profileDesc": "Används i filnamn, aviseringsmejl och podcast-RSS. Fälten är valfria men rekommenderas.",
     "responsibleHint": "Personen som får e-post om inspelningen misslyckas (kräver e-postaviseringar i fliken Aviseringar).",
@@ -833,7 +833,17 @@
     "errEmail": "Skriv en giltig e-postadress, t.ex. namn@kyrkan.se",
     "errWebhookUrl": "Webhook-URL:en måste börja med https://",
     "errSmtpHost": "Skriv ett servernamn, t.ex. smtp.gmail.com",
-    "errSmtpUser": "Användarnamnet är e-postadressen du skickar från"
+    "errSmtpUser": "Användarnamnet är e-postadressen du skickar från",
+    "gateNoFeature": "E-postutskick är inte inbyggt i den här versionen. Larm om misslyckade inspelningar får tills vidare hämtas från Hem-sidan eller en webhook.",
+    "gateNoTransport": "Ingen sändningsmetod är uppsatt än. Logga in med Google, eller fyll i SMTP-fälten under Avancerat.",
+    "gateTestNoTransport": "Sätt upp en sändningsmetod först.",
+    "gateTestNoRecipient": "Skriv in en mottagaradress först.",
+    "gateWebhookNoUrl": "Klistra in en webhook-URL först.",
+    "gmailUnavailable": "Google-inloggning är inte tillgänglig i den här versionen.",
+    "testEmailSent": "Test-e-post skickad till {to}",
+    "testEmailFailed": "Test-e-posten gick inte fram: {err}",
+    "testWebhookOk": "Webhooken svarade — larm kommer fram.",
+    "testWebhookFailed": "Webhooken svarade inte. Kontrollera adressen."
   },
   "prep": {
     "sectionTitle": "Förberedelse och granskning",
@@ -924,7 +934,9 @@
     "pickFolder": "Välj mapp…",
     "title": "Molnbackup",
     "streamSaveDestinations": "Spara destinationer",
-    "streamUnsaved": "Inte sparat än"
+    "streamUnsaved": "Inte sparat än",
+    "gateCloudExplain": "Molnbackup är inte konfigurerat i det här bygget — Google-nyckeln som krävs för att ansluta ett konto saknas.",
+    "gateCloudHint": "Be om ett bygge med molnbackup påslaget om församlingen behöver det."
   },
   "integrations": {
     "sundayEditFailed": "Kunde inte öppna",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Lokal inspelningsfil hamnar i Senaste inspelningar när strömmen stannar — högre bitrate än livestreamen, redo för redigering eller podd.",
     "overlays": "Overlays — grafik och presentation",
     "overlaysDesc": "Lägg kyrkans logo, sångtexter från EasyWorship (via skärminspelning på samma maskin), eller annan grafik ovanpå det som sänds. Overlays påverkar bara direktsändningen — inspelningar görs rena.",
-    "addOverlay": "+ Lägg till overlay"
+    "addOverlay": "+ Lägg till overlay",
+    "gateStats": "Statistik är inte tillgänglig än — direktsändningen rapporterar inte bitrate, bildfrekvens eller tappade bildrutor tillbaka till appen i den här versionen.",
+    "blockedNoDestinations": "Ingen destination är uppsatt än — lägg till YouTube, Facebook eller en egen RTMP-server.",
+    "blockedNoEnabled": "Ingen destination är påslagen. Aktivera minst en i listan ovan.",
+    "blockedNoKey": "Destinationen saknar stream-key. Utan nyckeln släpper YouTube/Facebook inte in sändningen.",
+    "blockedGoSettings": "Öppna Delning → Publicering"
   },
   "transcript": {
     "title": "Transkribering",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Molnbackup, podd och direktsändning — vart inspelningen tar vägen efter gudstjänsten.",
     "notifyDesc": "Vem som får besked när en inspelning startar, stoppar eller misslyckas."
+  },
+  "gate": {
+    "chipComing": "Kommer",
+    "chipUnconfigured": "Inte konfigurerat",
+    "chipUnavailable": "Inte tillgängligt",
+    "comingExplanation": "{what} är inte byggt ännu. Panelen finns här för att funktionen är planerad — tills vidare gör knapparna ingenting, så de är avstängda."
   }
 }

@@ -75,12 +75,24 @@ declare global {
       probeDeviceChannels: (deviceName: string) => Promise<number>
       scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
-      testWebhook:         () => Promise<{ ok: boolean; error?: string }>
+      testWebhook:         (url: string) => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
       clearSmtpPassword:   () => Promise<boolean>
-      testEmail:           () => Promise<{ ok: boolean; error?: string }>
+      /** Whether this build can send e-mail at all, and whether Gmail is
+       *  connected — read BEFORE offering a «Send test» (see feature-gate). */
+      emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
+      testEmail:           (params: {
+        transport: 'gmail' | 'smtp'
+        recipient: string
+        language?: string
+        host?: string
+        port?: number
+        user?: string
+        pass?: string
+        from?: string
+      }) => Promise<{ ok: boolean; error?: string }>
       updateHistoryNote:   (ts: number, note: string) => Promise<void>
       getAppVersion:       () => Promise<string>
       checkForUpdates:     () => Promise<void>

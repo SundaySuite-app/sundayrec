@@ -93,7 +93,8 @@
     "cloudAllSynced": "All synced",
     "nextShort": "next",
     "wakesLead": "({min} min before)",
-    "openInEditor": "Open in editor"
+    "openInEditor": "Open in editor",
+    "thumbComing": "Episode artwork is coming — not used yet"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -477,7 +478,6 @@
     "helpDesc": "Reopen the setup guide — useful when a new person takes over, or if you just want to check that everything is set up correctly.",
     "helpTitle": "Help and training",
     "langCardDesc": "Choose your preferred language. SundayRec supports seven languages — all menus and notifications adapt immediately.",
-    "notifyUnavailable": "Notifications are not available in this version yet.",
     "openOnboarding": "Open setup guide",
     "profileDesc": "Used in file names, notification emails and the podcast RSS. These fields are optional but recommended.",
     "responsibleHint": "The person who gets an email if a recording fails (requires email notifications in the Notifications tab).",
@@ -833,7 +833,17 @@
     "errEmail": "Enter a valid e-mail address, e.g. name@church.org",
     "errWebhookUrl": "The webhook URL must start with https://",
     "errSmtpHost": "Enter a server name, e.g. smtp.gmail.com",
-    "errSmtpUser": "The username is the e-mail address you send from"
+    "errSmtpUser": "The username is the e-mail address you send from",
+    "gateNoFeature": "E-mail sending is not built into this version. Alerts about failed recordings have to come from the Home page or a webhook for now.",
+    "gateNoTransport": "No sending method is set up yet. Sign in with Google, or fill in the SMTP fields under Advanced.",
+    "gateTestNoTransport": "Set up a sending method first.",
+    "gateTestNoRecipient": "Enter a recipient address first.",
+    "gateWebhookNoUrl": "Paste a webhook URL first.",
+    "gmailUnavailable": "Google sign-in is not available in this version.",
+    "testEmailSent": "Test e-mail sent to {to}",
+    "testEmailFailed": "The test e-mail did not go through: {err}",
+    "testWebhookOk": "The webhook answered — alerts will get through.",
+    "testWebhookFailed": "The webhook did not answer. Check the address."
   },
   "prep": {
     "sectionTitle": "Auto-prep and review",
@@ -924,7 +934,9 @@
     "pickFolder": "Choose folder…",
     "title": "Cloud backup",
     "streamSaveDestinations": "Save destinations",
-    "streamUnsaved": "Not saved yet"
+    "streamUnsaved": "Not saved yet",
+    "gateCloudExplain": "Cloud backup is not configured in this build — it lacks the Google key needed to connect an account.",
+    "gateCloudHint": "Ask for a build with cloud backup enabled if the church needs it."
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
@@ -958,7 +970,12 @@
     "alsoRecordHint": "Local recording lands in Recent recordings when the stream stops — higher bitrate than the livestream, ready for editing or podcast.",
     "overlays": "Overlays — graphics and presentation",
     "overlaysDesc": "Add the church logo, lyrics from EasyWorship (via screen capture on the same machine), or other graphics on top of what is being streamed. Overlays only affect the livestream — recordings stay clean.",
-    "addOverlay": "+ Add overlay"
+    "addOverlay": "+ Add overlay",
+    "gateStats": "Statistics are not available yet — the live stream does not report bitrate, frame rate or dropped frames back to the app in this version.",
+    "blockedNoDestinations": "No destination is set up yet — add YouTube, Facebook or your own RTMP server.",
+    "blockedNoEnabled": "No destination is switched on. Enable at least one in the list above.",
+    "blockedNoKey": "The destination has no stream key. Without it YouTube/Facebook will not let the broadcast in.",
+    "blockedGoSettings": "Open Sharing → Publishing"
   },
   "transcript": {
     "title": "Transcription",
@@ -1128,5 +1145,11 @@
   "sharing": {
     "publishDesc": "Cloud backup, podcast and live streaming — where the recording goes after the service.",
     "notifyDesc": "Who is told when a recording starts, stops or fails."
+  },
+  "gate": {
+    "chipComing": "Coming",
+    "chipUnconfigured": "Not configured",
+    "chipUnavailable": "Not available",
+    "comingExplanation": "{what} is not built yet. The panel is here because the feature is planned — until then the buttons do nothing, so they are switched off."
   }
 }

@@ -16,6 +16,7 @@ import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 import { loadTranscriptForFile } from '../editor-transcript'
 import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
+import { applyComingSoonGate } from '../../ui/feature-gate'
 import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
 import { updateStageButton } from './stage-ui'
 
@@ -462,6 +463,10 @@ export async function loadFile(fp: string): Promise<void> {
   if (!E.isVideoFile) {
     const els = panelElementsByPrefix('editor')
     if (els) void refreshThumbPanel(els, { kind: 'episode', getRecordingPath: () => E.filePath })
+    // No Rust side exists for thumbnails at all — every thumbnail* shim method
+    // is a stub, so «Velg bilde» opened a picker whose result went nowhere.
+    // Gated as «kommer» rather than left looking functional.
+    applyComingSoonGate(thumbSection, t('thumbnail.section.title', 'Episodebilde'))
   }
 
   // Auto-run segment analysis. Runs in the background so the editor is

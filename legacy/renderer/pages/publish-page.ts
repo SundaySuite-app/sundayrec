@@ -6,6 +6,8 @@ import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { bindRadioGroup, bindSetting, showSavedChip } from '../ui/bind-setting'
+import { applyComingSoonGate, applyFeatureGate } from '../ui/feature-gate'
+import { cloudGateStatus } from '../ui/feature-gate-core'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
 type ServiceStatus = Record<CloudServiceId, CloudStatus>
@@ -34,13 +36,16 @@ export function setupPublishPage(): void {
   refreshQueue()
   setupStreamDestinations()
 
-  // Default-thumbnail panel ("Standard episodebilde") — sits at the top of
-  // the publish settings tab.
+  // Default-thumbnail panel ("Standard episodebilde") — sits at the top of the
+  // Deling tab's Publisering section. There is NO Rust side for thumbnails at
+  // all (every thumbnail* shim method is a stub), so the panel is gated as
+  // «kommer» rather than left looking like a drop zone that swallows images.
   const thumbEls = panelElementsByPrefix('publish')
   if (thumbEls) {
     setupThumbPanel(thumbEls, { kind: 'default' })
     void refreshThumbPanel(thumbEls, { kind: 'default' })
   }
+  applyComingSoonGate('publish-thumb-card', t('thumbnail.default.title', 'Standard episodebilde'))
 
   // Connect/disconnect buttons
   document.querySelectorAll<HTMLElement>('[data-cloud-connect]').forEach(btn => {
@@ -152,6 +157,22 @@ async function refreshConfigured(): Promise<void> {
   }))
   // Re-render so unconfigured cards show a notice
   renderAllCards(currentStatus)
+
+  // HONEST GATE. `cloud_is_configured` is a real backend predicate: it answers
+  // whether this build carries a Google OAuth client id at all. When it does
+  // not, «Koble til» cannot work for anyone — so say that once, at the top of
+  // the section, and turn the buttons off, instead of letting the user press a
+  // button that opens nothing and reports an error they cannot act on.
+  const anyConfigured = Object.values(configured).some(Boolean)
+  applyFeatureGate('cloud-backup-card', {
+    status: cloudGateStatus(anyConfigured),
+    chipText: t('gate.chipUnconfigured', 'Ikke konfigurert'),
+    explanation: t(
+      'publish.gateCloudExplain',
+      'Sky-backup er ikke konfigurert i denne bygningen — den mangler Google-nøkkelen som trengs for å koble til en konto.',
+    ),
+    docsHint: t('publish.gateCloudHint', 'Be om en build med sky-backup slått på hvis menigheten trenger dette.'),
+  })
 }
 
 async function refreshQueue(): Promise<void> {
