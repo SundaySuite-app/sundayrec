@@ -732,7 +732,8 @@
     "silenceWarn": "Wykryto ciszę — nagrywanie zatrzyma się automatycznie, jeśli cisza będzie trwać.",
     "videoNone": "Bez wideo (tylko dźwięk)",
     "videoListError": "Błąd ładowania kamer",
-    "cameraFailedAudioOnly": "Awaria kamery — nagrywany jest tylko dźwięk"
+    "cameraFailedAudioOnly": "Awaria kamery — nagrywany jest tylko dźwięk",
+    "autostopFailed": "Nie udało się zmienić automatycznego zatrzymania. Nagrywanie trwa — zatrzymaj ręcznie w razie potrzeby."
   },
   "video": {
     "minBitrateWarn": "Minimalny bitrate to 500 kbps",

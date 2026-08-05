@@ -716,6 +716,18 @@ const api: Record<string, unknown> = {
     }
   },
   stopRecordingNow: async () => call("stop_recording", undefined, true).then(() => true),
+  // ── Auto-stop, owned by the recorder ───────────────────────────────────
+  // The overlay's "+30 min" / "Avbryt auto-stopp" used to be renderer-local
+  // setTimeouts that RE-implemented (and disagreed with) the engine's real
+  // deadline. These three commands are the truth: extend/cancel move the
+  // engine's watch value, the running loop re-pins its timer and re-emits
+  // `recording://state` with the new `scheduled_stop_ms`, and the getter lets a
+  // remounting overlay rehydrate the countdown without waiting for a transition.
+  extendAutostop: async (minutes: number) =>
+    invoke<void>("recording_extend_autostop", { minutes }),
+  cancelAutostop: async () => invoke<void>("recording_cancel_autostop"),
+  scheduledStopMs: async () =>
+    call<number | null>("recording_scheduled_stop_ms", undefined, null),
   // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
   // must match that shape ({ ok: false }) — the old { level, message } fallback
   // didn't match what the consumer reads.

@@ -732,7 +732,8 @@
     "silenceWarn": "Silence détecté — l’enregistrement s’arrêtera automatiquement si le silence persiste.",
     "videoNone": "Pas de vidéo (audio seulement)",
     "videoListError": "Erreur de chargement des caméras",
-    "cameraFailedAudioOnly": "Échec de la caméra — enregistrement audio uniquement"
+    "cameraFailedAudioOnly": "Échec de la caméra — enregistrement audio uniquement",
+    "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire."
   },
   "video": {
     "minBitrateWarn": "Le débit minimal est de 500 kbps",

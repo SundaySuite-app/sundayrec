@@ -72,10 +72,23 @@ function readJpegDims(arr: Uint8Array): { w: number; h: number } | null {
   return null
 }
 
-let scheduledStop:  Date | null = null
-let stopOverridden  = false
-let schedStopTimer: ReturnType<typeof setTimeout>  | null = null
-let schedCntTimer:  ReturnType<typeof setInterval> | null = null
+// ── Auto-stop ────────────────────────────────────────────────────────────────
+//
+// The deadline belongs to the RECORDER, not to this file. `+30 min` and
+// `Avbryt auto-stopp` used to be renderer-local setTimeouts that re-implemented
+// the engine's timer: two clocks, one recording, and whichever fired first won.
+// Extending by 30 minutes armed a fresh renderer timeout while the engine's own
+// deadline sat untouched — so a take could stop at the original time anyway, and
+// the flag that was supposed to paper over that (`stopOverridden`) did it by
+// SWALLOWING the terminal state, leaving the overlay up over a dead recording.
+//
+// Now both buttons call the real commands (`recording_extend_autostop` /
+// `recording_cancel_autostop`); the engine moves its deadline, re-pins its timer
+// and re-emits `recording://state` with the new `scheduled_stop_ms`. This module
+// only RENDERS that number — the countdown ticks locally, nothing here stops a
+// recording, and there is nothing left to swallow.
+let scheduledStop: Date | null = null
+let schedCntTimer: ReturnType<typeof setInterval> | null = null
 
 // Premium scrolling waveform for the recording overlay, driven by the
 // recording's own level telemetry (see startLevelsMeter).
@@ -147,19 +160,16 @@ export function setupRecording(): void {
 
   document.getElementById('btn-manual-start')?.addEventListener('click', handleManualStart)
 
+  // Both buttons ask the ENGINE to move its deadline and then wait for the
+  // `recording://state` it re-emits — no optimistic local guess, so what the
+  // countdown shows is what the recorder will actually do. A failed invoke says
+  // so instead of silently pretending the extension took.
   document.getElementById('btn-extend-30')?.addEventListener('click', () => {
-    stopOverridden = true
-    scheduledStop  = new Date(Date.now() + 30 * 60000)
-    if (schedStopTimer) clearTimeout(schedStopTimer)
-    schedStopTimer = setTimeout(() => { if (isRecording) doStopRecording() }, 30 * 60000)
-    updateScheduledStopCountdown()
+    void withAutostopButton('btn-extend-30', () => window.api.extendAutostop(EXTEND_MINUTES))
   })
 
   document.getElementById('btn-cancel-autostop')?.addEventListener('click', () => {
-    stopOverridden = true; scheduledStop = null
-    if (schedStopTimer) { clearTimeout(schedStopTimer); schedStopTimer = null }
-    if (schedCntTimer)  { clearInterval(schedCntTimer);  schedCntTimer = null }
-    const s = document.getElementById('rec-autostop'); if (s) s.style.display = 'none'
+    void withAutostopButton('btn-cancel-autostop', () => window.api.cancelAutostop())
   })
 
   const ipcCleanups = [
@@ -180,7 +190,15 @@ export function setupRecording(): void {
       // (preparing/recording/reconnecting/…), not just on stop. Only tear the
       // overlay down on a TERMINAL state, or a preparing→recording mid-session
       // event would hide the live overlay.
-      const st = (data as { state?: string } | undefined)?.state
+      const payload = data as { state?: string; scheduled_stop_ms?: number | null } | undefined
+      const st = payload?.state
+      // The auto-stop deadline rides along on EVERY state emit — including the
+      // one the engine fires purely because the deadline moved (live extend /
+      // cancel). Applying it before the branch below is what makes the countdown
+      // backend-authoritative rather than a local guess.
+      if (payload && 'scheduled_stop_ms' in payload) {
+        applyScheduledStop(payload.scheduled_stop_ms ?? null)
+      }
       if (st === 'recording' || st === 'reconnecting') {
         // Resync: the engine says a session is LIVE. If the UI thinks it's idle
         // (a torn-down overlay after a transient error), bring the overlay back —
@@ -190,12 +208,11 @@ export function setupRecording(): void {
         return
       }
       if (st !== 'stopped' && st !== 'failed' && st !== 'idle') return
-      // `stopOverridden` means the user overrode a SCHEDULED stop — which says
-      // nothing about a stop they just asked for by hand. A terminal state
-      // while we are finalizing is the very event the overlay is waiting for,
-      // so it must never be swallowed here (that would strand the finalizing
-      // state until the 30 s fallback).
-      if (stopOverridden && !finalizing) return
+      // Nothing is filtered here any more. The old `stopOverridden` guard existed
+      // to hide the stop that the renderer's private auto-stop timer could no
+      // longer prevent; with the deadline owned by the engine there is no
+      // spurious terminal state to swallow — and swallowing one was how the
+      // overlay used to strand over a finished recording.
       stopMonitoring().catch(err => console.error('[recording] monitoring stop error:', err)).finally(() => hideOverlay())
     }),
     window.api.on('recording-finished', (entry) => {
@@ -882,9 +899,12 @@ function showOverlay(opts: RecordingOpts): void {
   // (whichever handler ran last won).
   document.getElementById('btn-start-recording')?.classList.add('recording')
 
-  scheduledStop  = opts.scheduledStopTime ? new Date(opts.scheduledStopTime) : null
-  stopOverridden = false
-  updateScheduledStopUI()
+  // The deadline comes from the ENGINE, not from the opts this screen was
+  // handed: the engine clamps `manual_max_minutes` and is the only thing that
+  // will actually stop the take. Ask it directly rather than guessing from
+  // `scheduledStopTime`, and every later change arrives on `recording://state`.
+  applyScheduledStop(null)
+  rehydrateScheduledStop()
 
   // Device name display
   const deviceEl = document.getElementById('rec-device-name')
@@ -965,10 +985,8 @@ function hideOverlay(): void {
     // actually gone (hideEl's own fallback is 220 ms).
     setTimeout(() => { if (!isRecording) overlay.classList.remove('video-active') }, 240)
   }
-  scheduledStop  = null
-  stopOverridden = false
-  if (schedStopTimer) { clearTimeout(schedStopTimer);  schedStopTimer = null }
-  if (schedCntTimer)  { clearInterval(schedCntTimer);  schedCntTimer  = null }
+  scheduledStop = null
+  if (schedCntTimer) { clearInterval(schedCntTimer); schedCntTimer = null }
   const autostopEl = document.getElementById('rec-autostop')
   if (autostopEl) autostopEl.style.display = 'none'
   document.getElementById('btn-start-recording')?.classList.remove('recording')
@@ -1003,6 +1021,10 @@ function resyncOverlayToLiveSession(): void {
   // emitting levels; without this a resynced (or scheduler-started) session
   // showed a dead overlay.
   startMonitoringLite()
+  // …and the auto-stop row, read from the engine rather than guessed. The old
+  // resync left the countdown blank until the next lifecycle transition, so a
+  // scheduler-started take looked like it would run forever.
+  rehydrateScheduledStop()
 }
 
 /** Show the recording overlay's reconnect banner (#rec-reconnect) — the
@@ -1046,17 +1068,57 @@ function hideSilenceLine(): void {
   if (el) el.style.display = 'none'
 }
 
+/** How much "+30 min" adds. One constant so the button label, the invoke and
+ *  the toast can never drift apart. */
+const EXTEND_MINUTES = 30
+
+/** Run an auto-stop command with the button disabled for the round trip, and
+ *  surface a failure instead of leaving the user believing it took. The engine
+ *  re-emits `recording://state`, so the countdown updates from the event — this
+ *  never writes `scheduledStop` itself. */
+async function withAutostopButton(id: string, run: () => Promise<void>): Promise<void> {
+  const btn = document.getElementById(id) as HTMLButtonElement | null
+  if (btn) btn.disabled = true
+  try {
+    await run()
+  } catch (err) {
+    console.error('[recording] auto-stop command failed:', err)
+    toast('error', t('recording.autostopFailed',
+      'Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.'))
+  } finally {
+    if (btn) btn.disabled = false
+  }
+}
+
+/** Adopt the engine's auto-stop deadline (absolute epoch ms, or null for none)
+ *  and re-render the countdown row. The ONE place `scheduledStop` is written. */
+function applyScheduledStop(deadlineMs: number | null): void {
+  const next = typeof deadlineMs === 'number' && deadlineMs > 0 ? new Date(deadlineMs) : null
+  if (next?.getTime() === scheduledStop?.getTime()) return
+  scheduledStop = next
+  updateScheduledStopUI()
+}
+
+/** Ask the engine for its current deadline. Used where no state event is due —
+ *  the overlay opening on a manual start, and the resync after a lost session —
+ *  so the countdown is right immediately instead of only after the next
+ *  lifecycle transition (which may be an hour away). */
+function rehydrateScheduledStop(): void {
+  window.api.scheduledStopMs()
+    .then(ms => applyScheduledStop(ms))
+    .catch(err => console.warn('[recording] auto-stop rehydrate failed:', err))
+}
+
 function updateScheduledStopUI(): void {
   const section = document.getElementById('rec-autostop')
   if (!section) return
+  if (schedCntTimer) { clearInterval(schedCntTimer); schedCntTimer = null }
   if (!scheduledStop) { section.style.display = 'none'; return }
   section.style.display = 'flex'
   updateScheduledStopCountdown()
-  if (schedCntTimer) clearInterval(schedCntTimer)
+  // A display timer only — the engine owns the stop. Nothing in this file can
+  // end a recording on a clock any more.
   schedCntTimer = setInterval(updateScheduledStopCountdown, 1000)
-  if (schedStopTimer) clearTimeout(schedStopTimer)
-  const ms = scheduledStop.getTime() - Date.now()
-  if (ms > 0) schedStopTimer = setTimeout(() => { if (isRecording) doStopRecording() }, ms)
 }
 
 function updateScheduledStopCountdown(): void {

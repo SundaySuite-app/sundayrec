@@ -732,7 +732,8 @@
     "silenceWarn": "Tystnad upptäckt — inspelningen stoppas automatiskt om tystnaden fortsätter.",
     "videoNone": "Ingen video (endast ljud)",
     "videoListError": "Fel vid inläsning av kameror",
-    "cameraFailedAudioOnly": "Kameran misslyckades — spelar endast in ljud"
+    "cameraFailedAudioOnly": "Kameran misslyckades — spelar endast in ljud",
+    "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver."
   },
   "video": {
     "minBitrateWarn": "Minsta bithastighet är 500 kbps",

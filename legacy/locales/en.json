@@ -732,7 +732,8 @@
     "silenceWarn": "Silence detected — the recording will stop automatically if the silence continues.",
     "videoNone": "No video (audio only)",
     "videoListError": "Error loading cameras",
-    "cameraFailedAudioOnly": "Camera failed — recording audio only"
+    "cameraFailedAudioOnly": "Camera failed — recording audio only",
+    "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to."
   },
   "video": {
     "minBitrateWarn": "Minimum bitrate is 500 kbps",

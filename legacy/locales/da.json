@@ -732,7 +732,8 @@
     "silenceWarn": "Stilhed registreret — optagelsen stopper automatisk, hvis stilheden fortsætter.",
     "videoNone": "Ingen video (kun lyd)",
     "videoListError": "Fejl ved indlæsning af kameraer",
-    "cameraFailedAudioOnly": "Kameraet fejlede — optager kun lyd"
+    "cameraFailedAudioOnly": "Kameraet fejlede — optager kun lyd",
+    "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal."
   },
   "video": {
     "minBitrateWarn": "Mindste bitrate er 500 kbps",

@@ -72,6 +72,12 @@ declare global {
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
+      /** Push the running recording's auto-stop deadline out by N minutes. */
+      extendAutostop:      (minutes: number) => Promise<void>
+      /** Clear the auto-stop so the recording runs until a manual stop. */
+      cancelAutostop:      () => Promise<void>
+      /** The live auto-stop deadline (epoch ms), or null when none is armed. */
+      scheduledStopMs:     () => Promise<number | null>
       runTestRecording:    () => Promise<{ ok: boolean; signal?: 'silent' | 'low' | 'normal'; rmsDb?: number; error?: string }>
       runCaptureBench:     (secs: number) => Promise<import('../bindings/SelfTestReport').SelfTestReport>
       probeDeviceChannels: (deviceName: string) => Promise<number>

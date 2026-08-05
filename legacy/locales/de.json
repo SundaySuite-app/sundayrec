@@ -732,7 +732,8 @@
     "silenceWarn": "Stille erkannt — die Aufnahme stoppt automatisch, wenn die Stille anhält.",
     "videoNone": "Kein Video (nur Audio)",
     "videoListError": "Fehler beim Laden der Kameras",
-    "cameraFailedAudioOnly": "Kamera ausgefallen — es wird nur Audio aufgenommen"
+    "cameraFailedAudioOnly": "Kamera ausgefallen — es wird nur Audio aufgenommen",
+    "autostopFailed": "Automatischer Stopp konnte nicht geändert werden. Die Aufnahme läuft weiter — bei Bedarf manuell stoppen."
   },
   "video": {
     "minBitrateWarn": "Mindestbitrate ist 500 kbps",
