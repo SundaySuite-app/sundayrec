@@ -422,6 +422,13 @@ export function applyGeneralSettingsToUI(): void {
   if (reminderSel) reminderSel.value = String(settings.reminderMinutes ?? 0)
   setCheckbox('opt-email-error',   !!settings.emailOnError)
   setCheckbox('opt-autostart',        !!settings.launchAtLogin)
+  // …then correct it from the OS. The stored boolean and the real login item
+  // drift: a user can remove the item by hand, a reinstall or migration can drop
+  // it, and `set_launch_at_login` can fail. A checkbox that stays ticked while no
+  // login item exists is a promise that scheduled recordings survive a reboot —
+  // the one promise this app cannot afford to break quietly. `get_launch_at_login`
+  // reads the OS; the setting follows it, not the other way round.
+  void syncAutostartFromOs()
   setCheckbox('opt-show-on-startup',  !!settings.showOnStartup)
   setCheckbox('opt-auto-update',      settings.autoUpdate !== false)
   setCheckbox('opt-ask-open-editor',  settings.askOpenEditor !== false)
@@ -548,6 +555,28 @@ async function refreshGmailStatus(): Promise<void> {
 function setCheckbox(id: string, val: boolean): void {
   const el = document.getElementById(id) as HTMLInputElement | null
   if (el) el.checked = val
+}
+
+/**
+ * Make the "Start automatisk" checkbox tell the truth about the OS login item.
+ *
+ * `get_launch_at_login` asks the OS; when it disagrees with the stored setting,
+ * the OS wins and the setting is corrected in place (no debounced save storm —
+ * `patchSettings` + the checkbox, and the next real save carries it). Silent on
+ * any failure: a probe we could not run is not evidence either way.
+ */
+async function syncAutostartFromOs(): Promise<void> {
+  try {
+    const real = await window.api.getLaunchAtLogin?.()
+    if (typeof real !== 'boolean') return
+    setCheckbox('opt-autostart', real)
+    if (real !== !!settings.launchAtLogin) {
+      console.info('[general] launch-at-login differed from the OS — trusting the OS:', real)
+      patchSettings({ launchAtLogin: real })
+    }
+  } catch {
+    /* the OS could not be asked — leave the stored value alone */
+  }
 }
 
 export function updateEditorClipUI(): void {

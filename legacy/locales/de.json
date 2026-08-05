@@ -430,11 +430,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopiert",
     "diagnoseCopy": "📋 Vollständigen Bericht kopieren",
-    "diagnoseFull": "Vollständiger Bericht",
+    "diagnoseFull": "Vollständiger Systembericht",
     "diagnoseRunning": "Analysiert…",
     "diagnoseSaved": "Gespeichert unter",
     "guardDevice": "Audiogerät wechseln",
-    "guardEngine": "Aufnahme-Engine wechseln"
+    "guardEngine": "Aufnahme-Engine wechseln",
+    "diagDevicesFound": "Audiogeräte gefunden",
+    "diagStoredDevice": "Gewähltes Gerät",
+    "diagStoredMissing": "nicht gefunden",
+    "diagNoStored": "Standardgerät",
+    "diagMicPermission": "Mikrofonzugriff",
+    "diagFfmpeg": "Audio-Engine (ffmpeg)",
+    "diagFfmpegMissing": "Nicht gefunden",
+    "diagFfmpegOk": "Verfügbar",
+    "diagLoopback": "WASAPI-Loopback",
+    "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht"
   },
   "files": {
     "saveFolder": "Speicherordner",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Nicht eingerichtet",
     "chipUnavailable": "Nicht verfügbar",
     "comingExplanation": "{what} ist noch nicht gebaut. Das Feld steht hier, weil die Funktion geplant ist — bis dahin bewirken die Schaltflächen nichts und sind deshalb deaktiviert."
+  },
+  "health": {
+    "micDenied": "Mikrofonzugriff ist verweigert. Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon und aktivieren Sie SundayRec.",
+    "micRestricted": "Der Mikrofonzugriff ist durch die Systemverwaltung oder Kindersicherung gesperrt. Aufnahmen funktionieren erst nach Aufhebung der Sperre.",
+    "cameraDenied": "Kamerazugriff ist verweigert. Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Kamera und aktivieren Sie SundayRec.",
+    "cameraRestricted": "Der Kamerazugriff ist durch die Systemverwaltung oder Kindersicherung gesperrt. Videoaufnahmen funktionieren erst nach Aufhebung der Sperre.",
+    "ffmpegMissing": "Die mitgelieferte Audio-Engine (ffmpeg) wurde nicht gefunden. Video, Export und Bearbeitung funktionieren nicht — installieren Sie die App neu.",
+    "granted": "Erteilt",
+    "denied": "Verweigert — Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon öffnen",
+    "restricted": "Durch die Systemverwaltung gesperrt",
+    "notAsked": "Noch nicht gefragt — die erste Aufnahme löst die Abfrage aus",
+    "cannotTell": "Auf dieser Plattform nicht feststellbar"
+  },
+  "deeplink": {
+    "imported": "„{name}“ im Editor geöffnet.",
+    "theRecording": "die Aufnahme",
+    "captionsOk": "Untertitel für „{name}“ empfangen.",
+    "openEditor": "Im Editor öffnen",
+    "captionsNoRecording": "Untertitel empfangen, aber ohne Angabe, zu welcher Aufnahme sie gehören. Öffnen Sie die Aufnahme im Editor und importieren Sie den Text dort.",
+    "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}"
   }
 }

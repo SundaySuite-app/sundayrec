@@ -430,11 +430,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopierat",
     "diagnoseCopy": "📋 Kopiera fullständig rapport",
-    "diagnoseFull": "Fullständig rapport",
+    "diagnoseFull": "Fullständig systemrapport",
     "diagnoseRunning": "Analyserar…",
     "diagnoseSaved": "Sparat till",
     "guardDevice": "Byta ljudenhet",
-    "guardEngine": "Byta inspelningsmotor"
+    "guardEngine": "Byta inspelningsmotor",
+    "diagDevicesFound": "Ljudenheter hittade",
+    "diagStoredDevice": "Vald enhet",
+    "diagStoredMissing": "hittades inte",
+    "diagNoStored": "Standardenhet",
+    "diagMicPermission": "Mikrofonåtkomst",
+    "diagFfmpeg": "Ljudmotor (ffmpeg)",
+    "diagFfmpegMissing": "Hittades inte",
+    "diagFfmpegOk": "Tillgänglig",
+    "diagLoopback": "WASAPI-loopback",
+    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser"
   },
   "files": {
     "saveFolder": "Mapp att spara i",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Inte konfigurerat",
     "chipUnavailable": "Inte tillgängligt",
     "comingExplanation": "{what} är inte byggt ännu. Panelen finns här för att funktionen är planerad — tills vidare gör knapparna ingenting, så de är avstängda."
+  },
+  "health": {
+    "micDenied": "Mikrofonåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Mikrofon och slå på SundayRec.",
+    "micRestricted": "Mikrofonåtkomst är spärrad av systemadministratör eller föräldrakontroll. Inspelning fungerar inte förrän spärren hävs.",
+    "cameraDenied": "Kameraåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Kamera och slå på SundayRec.",
+    "cameraRestricted": "Kameraåtkomst är spärrad av systemadministratör eller föräldrakontroll. Videoinspelning fungerar inte förrän spärren hävs.",
+    "ffmpegMissing": "Den inbyggda ljudmotorn (ffmpeg) hittades inte. Video, export och redigering fungerar inte — installera om appen.",
+    "granted": "Beviljad",
+    "denied": "Nekad — öppna Systeminställningar → Integritet och säkerhet → Mikrofon",
+    "restricted": "Spärrad av systemadministratör",
+    "notAsked": "Inte tillfrågad ännu — första inspelningen utlöser frågan",
+    "cannotTell": "Kan inte avgöras på denna plattform"
+  },
+  "deeplink": {
+    "imported": "Öppnade ”{name}” i redigeraren.",
+    "theRecording": "inspelningen",
+    "captionsOk": "Textning mottagen för ”{name}”.",
+    "openEditor": "Öppna i redigeraren",
+    "captionsNoRecording": "Textning mottagen, men utan att ange vilken inspelning den hör till. Öppna inspelningen i redigeraren och importera texten där.",
+    "captionsFailed": "Textningen kunde inte sparas: {err}"
   }
 }

@@ -958,6 +958,16 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
+  // The purpose-built audio probe behind the Lyd tab's "Diagnose" button: one
+  // enumeration, shaped into the flat name lists the panel renders. (The generic
+  // `run_diagnostics` below is the whole-system report, still used for the
+  // copy-to-support markdown.)
+  diagnoseAudio: async () =>
+    call<import("../bindings/AudioDiagnostics").AudioDiagnostics>(
+      "diagnose_audio",
+      undefined,
+      { dshow: [], wasapi: [], wasapiAvailable: false },
+    ),
   // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
   // permissions/audio-engine/last-error and returns structured `findings` (the
   // SR-* error codes) + a full markdown report. On failure → an empty report so
@@ -982,6 +992,39 @@ const api: Record<string, unknown> = {
       captureOk: null,
       videoOk: null,
     }),
+
+  // ── Health probes ───────────────────────────────────────────────────────
+  // Two commands that existed since the port and were never called from
+  // anywhere. `media_permissions` is the one that matters: a denied microphone
+  // makes getUserMedia fail generically and avfoundation emit "Input/output
+  // error", so the user was told the device was MISSING when macOS was simply
+  // refusing it. AVFoundation knew all along.
+  mediaPermissions: async () =>
+    call<import("../bindings/MediaPermissions").MediaPermissions>(
+      "media_permissions",
+      undefined,
+      { camera: "unknown", microphone: "unknown" },
+    ),
+  ffmpegHealth: async () =>
+    call<import("../bindings/FfmpegHealth").FfmpegHealth>("ffmpeg_health", undefined, {
+      available: true, // unknown ⇒ don't manufacture an alarm
+      version: null,
+      path: "",
+    }),
+  // Whether the OS login item is REALLY registered. The System tab used to show
+  // the stored boolean, which drifts the moment a user removes the login item
+  // by hand (or a migration/reinstall drops it) — a checkbox claiming scheduled
+  // recordings survive a reboot when they don't.
+  getLaunchAtLogin: async () => call<boolean>("get_launch_at_login", undefined, false),
+  // Trackpad haptics (macOS Force Touch). Infallible by contract on the Rust
+  // side; swallow anything here so a haptic can never surface as a UI error.
+  hapticPerform: async (pattern: string) => {
+    try {
+      await invoke("haptic_perform", { pattern });
+    } catch {
+      /* a missing haptic engine is not a problem worth reporting */
+    }
+  },
 
   // ── Audio / video devices ───────────────────────────────────────────────
   // ASIO driver names = the asio-backend entries of the unified tagged device

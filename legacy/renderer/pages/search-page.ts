@@ -59,6 +59,14 @@ export function setupSearchPage(): void {
   setupHistoryTools(runSearch)
 }
 
+/** Drop the cached transcript index so the next visit rebuilds it. Called when
+ *  a `sundayrec://captions` hand-off writes a new sidecar behind our back —
+ *  otherwise the fresh transcript would stay invisible to search until a
+ *  restart or a manual re-index. */
+export function invalidateTranscriptIndex(): void {
+  cachedIndex = null
+}
+
 /** Called from showPage('search'): refresh the history (cheap — picks up new
  *  recordings), build the transcript index on first visit, then render. */
 export function activateSearchPage(): void {

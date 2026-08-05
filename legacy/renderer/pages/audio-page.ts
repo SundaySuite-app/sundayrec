@@ -341,42 +341,101 @@ export function errText(err: unknown): string {
   return String(err)
 }
 
-// Comprehensive diagnose: calls the unified backend `run_diagnostics`, which
-// gathers system/devices/ffmpeg/disk/permissions/audio-engine/last-error and
-// returns coded findings (SR-*) + a full markdown report. The modal shows the
-// colour-coded findings on top and the raw report below, with a copy button so
-// the user can paste it to support — the "fishing" the diagnose tool is for.
+/** One structured row of the audio-diagnosis modal. */
+function diagRow(label: string, value: string, ok: boolean | null): string {
+  const mark = ok === null ? '·' : ok ? '✓' : '✕'
+  const cls = ok === null ? 'diag-row-neutral' : ok ? 'diag-row-ok' : 'diag-row-bad'
+  return `<div class="diag-row ${cls}"><span class="diag-row-mark">${mark}</span>` +
+    `<span class="diag-row-label">${escHtml(label)}</span>` +
+    `<span class="diag-row-value">${escHtml(value)}</span></div>`
+}
+
+/**
+ * The Lyd tab's "Diagnose" button.
+ *
+ * It used to call the generic whole-system `run_diagnostics` and dump its
+ * markdown into a `<pre>` — the answer to "is my microphone OK?" delivered as a
+ * wall of text about disks, updates and last errors. The purpose-built
+ * `diagnose_audio` command (one enumeration → the audio-input names the panel
+ * actually asks about) had no caller at all.
+ *
+ * Now the modal leads with the audio answer, rendered as rows: which devices
+ * ffmpeg can see, whether the CONFIGURED device is among them, the microphone
+ * permission, and the ffmpeg sidecar. The full markdown report is still there —
+ * behind a disclosure, with the copy button — because that is what support asks
+ * for, not what the user came to read.
+ */
 async function runAudioDiagnosis(): Promise<void> {
   const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
   if (btn) { btn.disabled = true; btn.textContent = t('audio.diagnoseRunning', 'Analyserer…') }
 
   try {
-    const report = await window.api.runDiagnostics()
+    const [audio, permissions, ffmpeg, report] = await Promise.all([
+      window.api.diagnoseAudio?.() ?? Promise.resolve(null),
+      window.api.mediaPermissions?.().catch(() => null) ?? Promise.resolve(null),
+      window.api.ffmpegHealth?.().catch(() => null) ?? Promise.resolve(null),
+      window.api.runDiagnostics(),
+    ])
 
     const body = document.getElementById('audio-diagnose-body')
     if (!body) return
 
-    const badge = (sev: string): string =>
-      sev === 'critical' ? '🔴' : sev === 'warning' ? '⚠️' : sev === 'info' ? 'ℹ️' : '✅'
+    const inputs = audio?.dshow ?? []
+    const stored = settings.deviceName ?? null
+    // The device is addressed by a fuzzy name match in the recorder, so compare
+    // the same way rather than demanding an exact string.
+    const needle = stored?.toLowerCase().slice(0, 8) ?? ''
+    const storedFound = !stored || inputs.some(n =>
+      n.toLowerCase().includes(needle) || stored.toLowerCase().includes(n.toLowerCase().slice(0, 8)))
 
-    const findingsHtml = (report.findings ?? [])
-      .map(f => `
-        <div class="diag-finding diag-${escHtml(f.severity)}">
-          <div class="diag-finding-head">${badge(f.severity)} <code>${escHtml(f.code)}</code> — <strong>${escHtml(f.title)}</strong></div>
-          ${f.detail ? `<div class="diag-finding-detail">${escHtml(f.detail)}</div>` : ''}
-          ${f.hint ? `<div class="diag-finding-hint">👉 ${escHtml(f.hint)}</div>` : ''}
-        </div>`)
-      .join('')
+    const mic = permissions?.microphone
+    const micOk = mic === undefined || mic === 'unknown' ? null : !(mic === 'denied' || mic === 'restricted')
+    const micText = mic === 'authorized' ? t('health.granted', 'Gitt')
+      : mic === 'denied' ? t('health.denied', 'Avslått — åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon')
+      : mic === 'restricted' ? t('health.restricted', 'Sperret av systemadministrator')
+      : mic === 'notDetermined' ? t('health.notAsked', 'Ikke spurt ennå — første opptak utløser spørsmålet')
+      : t('health.cannotTell', 'Kan ikke avgjøres på denne plattformen')
+
+    const rows = [
+      diagRow(
+        t('audio.diagDevicesFound', 'Lydenheter funnet'),
+        String(inputs.length),
+        inputs.length > 0,
+      ),
+      stored
+        ? diagRow(
+            t('audio.diagStoredDevice', 'Valgt enhet'),
+            storedFound ? stored : `${stored} — ${t('audio.diagStoredMissing', 'ikke funnet')}`,
+            storedFound,
+          )
+        : diagRow(t('audio.diagStoredDevice', 'Valgt enhet'), t('audio.diagNoStored', 'Standardenhet'), null),
+      diagRow(t('audio.diagMicPermission', 'Mikrofontilgang'), micText, micOk),
+      diagRow(
+        t('audio.diagFfmpeg', 'Lydmotor (ffmpeg)'),
+        ffmpeg?.available === false
+          ? t('audio.diagFfmpegMissing', 'Ikke funnet')
+          : (ffmpeg?.version ?? t('audio.diagFfmpegOk', 'Tilgjengelig')),
+        ffmpeg ? ffmpeg.available : null,
+      ),
+      audio?.wasapiAvailable
+        ? diagRow(t('audio.diagLoopback', 'WASAPI-loopback'), String(audio.wasapi.length), true)
+        : '',
+    ].join('')
+
+    const deviceList = inputs.length
+      ? `<ul class="diag-device-list">${inputs.map(n => `<li>${escHtml(n)}</li>`).join('')}</ul>`
+      : `<div class="diag-row diag-row-bad"><span class="diag-row-mark">✕</span><span class="diag-row-label">${escHtml(t('audio.noDevices', 'Ingen lydenheter funnet'))}</span></div>`
 
     const savedLine = report.savedTo
       ? `<div class="diag-saved">${t('audio.diagnoseSaved', 'Lagret til')}: <code>${escHtml(report.savedTo)}</code></div>`
       : ''
 
     body.innerHTML = `
-      <div class="diag-findings">${findingsHtml}</div>
+      <div class="diag-rows">${rows}</div>
+      <details class="diag-details"><summary>${escHtml(t('audio.diagDeviceListTitle', 'Alle lydenheter opptakeren ser'))}</summary>${deviceList}</details>
       <button type="button" class="btn-secondary" id="btn-diagnose-copy" style="margin:8px 0">${t('audio.diagnoseCopy', '📋 Kopier full rapport')}</button>
       ${savedLine}
-      <details style="margin-top:8px"><summary>${t('audio.diagnoseFull', 'Full rapport')}</summary><pre class="diag-report">${escHtml(report.markdown)}</pre></details>`
+      <details class="diag-details"><summary>${escHtml(t('audio.diagnoseFull', 'Full systemrapport'))}</summary><pre class="diag-report">${escHtml(report.markdown)}</pre></details>`
 
     document.getElementById('btn-diagnose-copy')?.addEventListener('click', async () => {
       try {

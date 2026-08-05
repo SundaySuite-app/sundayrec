@@ -430,11 +430,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopieret",
     "diagnoseCopy": "📋 Kopiér fuld rapport",
-    "diagnoseFull": "Fuld rapport",
+    "diagnoseFull": "Fuld systemrapport",
     "diagnoseRunning": "Analyserer…",
     "diagnoseSaved": "Gemt til",
     "guardDevice": "Skifte lydenhed",
-    "guardEngine": "Skifte optagemotor"
+    "guardEngine": "Skifte optagemotor",
+    "diagDevicesFound": "Lydenheder fundet",
+    "diagStoredDevice": "Valgt enhed",
+    "diagStoredMissing": "ikke fundet",
+    "diagNoStored": "Standardenhed",
+    "diagMicPermission": "Mikrofonadgang",
+    "diagFfmpeg": "Lydmotor (ffmpeg)",
+    "diagFfmpegMissing": "Ikke fundet",
+    "diagFfmpegOk": "Tilgængelig",
+    "diagLoopback": "WASAPI-loopback",
+    "diagDeviceListTitle": "Alle lydenheder optageren kan se"
   },
   "files": {
     "saveFolder": "Mappe til at gemme i",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Ikke konfigureret",
     "chipUnavailable": "Ikke tilgængelig",
     "comingExplanation": "{what} er ikke bygget endnu. Panelet står her, fordi funktionen er planlagt — indtil videre gør knapperne ingenting, så de er slået fra."
+  },
+  "health": {
+    "micDenied": "Mikrofonadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Mikrofon og slå SundayRec til.",
+    "micRestricted": "Mikrofonadgang er spærret af systemadministrator eller forældrekontrol. Optagelse virker ikke, før spærringen ophæves.",
+    "cameraDenied": "Kameraadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Kamera og slå SundayRec til.",
+    "cameraRestricted": "Kameraadgang er spærret af systemadministrator eller forældrekontrol. Videooptagelse virker ikke, før spærringen ophæves.",
+    "ffmpegMissing": "Den indbyggede lydmotor (ffmpeg) blev ikke fundet. Video, eksport og redigering virker ikke — installer appen igen.",
+    "granted": "Givet",
+    "denied": "Afvist — åbn Systemindstillinger → Anonymitet og sikkerhed → Mikrofon",
+    "restricted": "Spærret af systemadministrator",
+    "notAsked": "Ikke spurgt endnu — den første optagelse udløser spørgsmålet",
+    "cannotTell": "Kan ikke afgøres på denne platform"
+  },
+  "deeplink": {
+    "imported": "Åbnede »{name}« i redigering.",
+    "theRecording": "optagelsen",
+    "captionsOk": "Tekstning modtaget for »{name}«.",
+    "openEditor": "Åbn i redigering",
+    "captionsNoRecording": "Tekstning modtaget, men uden at angive hvilken optagelse den hører til. Åbn optagelsen i redigering og importér teksten der.",
+    "captionsFailed": "Tekstningen kunne ikke gemmes: {err}"
   }
 }

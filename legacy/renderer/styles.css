@@ -4426,6 +4426,29 @@ button > svg:first-child { flex-shrink: 0; }
 .diag-finding-hint { font-size: 12px; margin-top: 2px; }
 .diag-report { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; background: rgba(0,0,0,0.18); padding: 8px; border-radius: 6px; }
 
+/* Lyd → Diagnose: the audio answer as READABLE ROWS. The modal used to lead with
+   a <pre> dump of the whole-system markdown — "is my microphone OK?" answered
+   with a wall of text about disks and updates. Each row is one question with one
+   answer and a mark you can read at a glance. */
+.diag-rows { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.diag-row {
+  display: grid; grid-template-columns: 18px minmax(120px, auto) 1fr;
+  align-items: baseline; gap: 8px;
+  padding: 7px 10px; border-radius: 8px; font-size: 13px;
+  background: rgba(127,127,127,0.07);
+}
+.diag-row-mark { font-weight: 700; text-align: center; }
+.diag-row-label { color: var(--text2, #aaa); }
+.diag-row-value { overflow-wrap: anywhere; }
+.diag-row-ok      .diag-row-mark { color: #2db66c; }
+.diag-row-bad     { background: rgba(229,72,77,0.10); }
+.diag-row-bad     .diag-row-mark { color: #e5484d; }
+.diag-row-neutral .diag-row-mark { color: var(--text3, #888); }
+.diag-details { margin-top: 8px; font-size: 12px; }
+.diag-details > summary { cursor: pointer; color: var(--text2, #aaa); padding: 4px 0; }
+.diag-device-list { margin: 4px 0 0 0; padding-left: 20px; font-size: 12px; color: var(--text2, #aaa); }
+.diag-device-list li { padding: 1px 0; overflow-wrap: anywhere; }
+
 /* ── Recording-active: silence invisible animations behind the overlay ──────
    showPage() is never called while the recording overlay is up, so the home
    page stays laid out AND animating underneath it: the hero card's box-shadow

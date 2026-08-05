@@ -430,11 +430,21 @@
     "channelNum": "Kanał {n}",
     "diagnoseCopied": "✓ Skopiowano",
     "diagnoseCopy": "📋 Kopiuj pełny raport",
-    "diagnoseFull": "Pełny raport",
+    "diagnoseFull": "Pełny raport systemowy",
     "diagnoseRunning": "Analizowanie…",
     "diagnoseSaved": "Zapisano w",
     "guardDevice": "Zmienić urządzenie audio",
-    "guardEngine": "Zmienić silnik nagrywania"
+    "guardEngine": "Zmienić silnik nagrywania",
+    "diagDevicesFound": "Znalezione urządzenia audio",
+    "diagStoredDevice": "Wybrane urządzenie",
+    "diagStoredMissing": "nie znaleziono",
+    "diagNoStored": "Urządzenie domyślne",
+    "diagMicPermission": "Dostęp do mikrofonu",
+    "diagFfmpeg": "Silnik dźwięku (ffmpeg)",
+    "diagFfmpegMissing": "Nie znaleziono",
+    "diagFfmpegOk": "Dostępny",
+    "diagLoopback": "Pętla WASAPI",
+    "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator"
   },
   "files": {
     "saveFolder": "Folder zapisu",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Nieskonfigurowane",
     "chipUnavailable": "Niedostępne",
     "comingExplanation": "{what} nie jest jeszcze gotowe. Panel jest tu, bo funkcja jest planowana — na razie przyciski nic nie robią, więc są wyłączone."
+  },
+  "health": {
+    "micDenied": "Odmówiono dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon i włącz SundayRec.",
+    "micRestricted": "Dostęp do mikrofonu jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie nie zadziała, dopóki blokada nie zostanie zdjęta.",
+    "cameraDenied": "Odmówiono dostępu do kamery. Otwórz Ustawienia systemowe → Prywatność i ochrona → Aparat i włącz SundayRec.",
+    "cameraRestricted": "Dostęp do kamery jest zablokowany przez administratora systemu lub kontrolę rodzicielską. Nagrywanie wideo nie zadziała, dopóki blokada nie zostanie zdjęta.",
+    "ffmpegMissing": "Nie znaleziono wbudowanego silnika dźwięku (ffmpeg). Wideo, eksport i edycja nie będą działać — zainstaluj aplikację ponownie.",
+    "granted": "Przyznany",
+    "denied": "Odmówiono — otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon",
+    "restricted": "Zablokowany przez administratora systemu",
+    "notAsked": "Jeszcze nie zapytano — pierwsze nagranie wywoła pytanie",
+    "cannotTell": "Nie można ustalić na tej platformie"
+  },
+  "deeplink": {
+    "imported": "Otwarto „{name}” w edytorze.",
+    "theRecording": "nagranie",
+    "captionsOk": "Odebrano napisy dla „{name}”.",
+    "openEditor": "Otwórz w edytorze",
+    "captionsNoRecording": "Odebrano napisy, ale bez wskazania, do którego nagrania należą. Otwórz nagranie w edytorze i zaimportuj tekst tam.",
+    "captionsFailed": "Nie udało się zapisać napisów: {err}"
   }
 }

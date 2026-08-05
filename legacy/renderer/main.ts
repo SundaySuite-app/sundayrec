@@ -17,13 +17,14 @@ import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './p
 import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
 import { setupIntegrationsPage } from './pages/integrations-page'
 import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/live-page'
-import { setupSearchPage, activateSearchPage } from './pages/search-page'
+import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
 import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
 import { navigateTo } from './ui/navigate'
 import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
+import { initDeeplinks } from './deeplinks'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -116,6 +117,19 @@ declare global {
       getPlatform:         () => Promise<string>
       /** Push the UI language to the Rust menubar tray (it renders its own labels). */
       traySetLanguage?:    (code: string) => Promise<void>
+      /** macOS camera + microphone authorization (AVFoundation), for preflight. */
+      mediaPermissions?:   () => Promise<{
+        camera: import('../bindings/AuthStatus').AuthStatus
+        microphone: import('../bindings/AuthStatus').AuthStatus
+      }>
+      /** Whether the bundled ffmpeg sidecar resolved, and where. */
+      ffmpegHealth?:       () => Promise<{ available: boolean; version: string | null; path: string }>
+      /** Whether the OS login item is really registered (not the stored boolean). */
+      getLaunchAtLogin?:   () => Promise<boolean>
+      /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */
+      hapticPerform?:      (pattern: string) => Promise<void>
+      /** The purpose-built audio-device probe behind Lyd → Diagnose. */
+      diagnoseAudio?:      () => Promise<{ dshow: string[]; wasapi: string[]; wasapiAvailable: boolean }>
       scheduleOsWakes:      () => Promise<unknown>
       scheduleOsWakesAdmin: () => Promise<unknown>
       getSleepConfig:       () => Promise<unknown>
@@ -477,6 +491,14 @@ async function init(): Promise<void> {
   setupSettingsTabs()
   // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
   setupModalManager()
+
+  // `sundayrec://` hand-offs from SundayEdit. Rust has parsed (and, for
+  // captions, already applied) these since the port; nothing ever listened, so
+  // the window came forward and then appeared to do nothing.
+  initDeeplinks({
+    openInEditor: (path: string) => openEditorWithFile(path),
+    refreshTranscripts: invalidateTranscriptIndex,
+  })
 
   // The menubar tray's one event, routed to the SAME entry points the in-app
   // buttons use — a tray "Start opptak nå" opens the very modal the Home button

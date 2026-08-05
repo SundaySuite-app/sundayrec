@@ -430,11 +430,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopiert",
     "diagnoseCopy": "📋 Kopier full rapport",
-    "diagnoseFull": "Full rapport",
+    "diagnoseFull": "Full systemrapport",
     "diagnoseRunning": "Analyserer…",
     "diagnoseSaved": "Lagret til",
     "guardDevice": "Bytte lydenhet",
-    "guardEngine": "Bytte opptaksmotor"
+    "guardEngine": "Bytte opptaksmotor",
+    "diagDevicesFound": "Lydenheter funnet",
+    "diagStoredDevice": "Valgt enhet",
+    "diagStoredMissing": "ikke funnet",
+    "diagNoStored": "Standardenhet",
+    "diagMicPermission": "Mikrofontilgang",
+    "diagFfmpeg": "Lydmotor (ffmpeg)",
+    "diagFfmpegMissing": "Ikke funnet",
+    "diagFfmpegOk": "Tilgjengelig",
+    "diagLoopback": "WASAPI-loopback",
+    "diagDeviceListTitle": "Alle lydenheter opptakeren ser"
   },
   "files": {
     "saveFolder": "Lagringsmappe",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Ikke konfigurert",
     "chipUnavailable": "Ikke tilgjengelig",
     "comingExplanation": "{what} er ikke bygget ennå. Panelet står her fordi funksjonen er planlagt — inntil videre gjør knappene ingenting, så de er slått av."
+  },
+  "health": {
+    "micDenied": "Mikrofontilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon og slå på SundayRec.",
+    "micRestricted": "Mikrofontilgang er sperret av systemadministrator eller foreldrekontroll. Opptak vil ikke virke før sperren oppheves.",
+    "cameraDenied": "Kameratilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Kamera og slå på SundayRec.",
+    "cameraRestricted": "Kameratilgang er sperret av systemadministrator eller foreldrekontroll. Videoopptak vil ikke virke før sperren oppheves.",
+    "ffmpegMissing": "Den innebygde lydmotoren (ffmpeg) ble ikke funnet. Video, eksport og redigering vil ikke virke — installer appen på nytt.",
+    "granted": "Gitt",
+    "denied": "Avslått — åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon",
+    "restricted": "Sperret av systemadministrator",
+    "notAsked": "Ikke spurt ennå — første opptak utløser spørsmålet",
+    "cannotTell": "Kan ikke avgjøres på denne plattformen"
+  },
+  "deeplink": {
+    "imported": "Åpnet «{name}» i redigering.",
+    "theRecording": "opptaket",
+    "captionsOk": "Teksting mottatt for «{name}».",
+    "openEditor": "Åpne i redigering",
+    "captionsNoRecording": "Teksting mottatt, men uten å si hvilket opptak den hører til. Åpne opptaket i redigering og importer teksten der.",
+    "captionsFailed": "Teksting kunne ikke lagres: {err}"
   }
 }

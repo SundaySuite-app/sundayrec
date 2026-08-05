@@ -430,11 +430,21 @@
     "channelNum": "Channel {n}",
     "diagnoseCopied": "✓ Copied",
     "diagnoseCopy": "📋 Copy full report",
-    "diagnoseFull": "Full report",
+    "diagnoseFull": "Full system report",
     "diagnoseRunning": "Analyzing…",
     "diagnoseSaved": "Saved to",
     "guardDevice": "Change audio device",
-    "guardEngine": "Switch recording engine"
+    "guardEngine": "Switch recording engine",
+    "diagDevicesFound": "Audio devices found",
+    "diagStoredDevice": "Selected device",
+    "diagStoredMissing": "not found",
+    "diagNoStored": "System default",
+    "diagMicPermission": "Microphone access",
+    "diagFfmpeg": "Audio engine (ffmpeg)",
+    "diagFfmpegMissing": "Not found",
+    "diagFfmpegOk": "Available",
+    "diagLoopback": "WASAPI loopback",
+    "diagDeviceListTitle": "Every audio device the recorder can see"
   },
   "files": {
     "saveFolder": "Save folder",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Not configured",
     "chipUnavailable": "Not available",
     "comingExplanation": "{what} is not built yet. The panel is here because the feature is planned — until then the buttons do nothing, so they are switched off."
+  },
+  "health": {
+    "micDenied": "Microphone access is denied. Open System Settings → Privacy & Security → Microphone and enable SundayRec.",
+    "micRestricted": "Microphone access is blocked by a system administrator or parental controls. Recording will not work until the block is lifted.",
+    "cameraDenied": "Camera access is denied. Open System Settings → Privacy & Security → Camera and enable SundayRec.",
+    "cameraRestricted": "Camera access is blocked by a system administrator or parental controls. Video recording will not work until the block is lifted.",
+    "ffmpegMissing": "The bundled audio engine (ffmpeg) was not found. Video, export and editing will not work — reinstall the app.",
+    "granted": "Granted",
+    "denied": "Denied — open System Settings → Privacy & Security → Microphone",
+    "restricted": "Blocked by a system administrator",
+    "notAsked": "Not asked yet — the first recording triggers the prompt",
+    "cannotTell": "Cannot be determined on this platform"
+  },
+  "deeplink": {
+    "imported": "Opened “{name}” in the editor.",
+    "theRecording": "the recording",
+    "captionsOk": "Captions received for “{name}”.",
+    "openEditor": "Open in editor",
+    "captionsNoRecording": "Captions received, but without saying which recording they belong to. Open the recording in the editor and import the text there.",
+    "captionsFailed": "Captions could not be saved: {err}"
   }
 }

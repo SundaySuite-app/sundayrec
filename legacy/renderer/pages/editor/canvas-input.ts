@@ -5,6 +5,7 @@ import { drawWaveform, scheduleDrawWaveform, scheduleViewportDraw, drawMinimap }
 import { stopPlay, updateTimecode, seekMediaTo } from './playback'
 import { shouldShowSegment } from './detection'
 import { panBy } from './viewport'
+import { limitPulse, resetHaptics, snapPulse } from './haptics'
 
 // ── Canvas mouse/wheel input + minimap drag ─────────────────────────────────
 
@@ -63,6 +64,9 @@ export function onCanvasDown(e: MouseEvent): void {
   // One fresh measurement per interaction: a drag that starts from a stale rect
   // would seek to the wrong second, and that is not a cost worth saving.
   invalidateCanvasRect()
+  // A new interaction: forget which boundary was last felt, so the first snap of
+  // this drag always taps even if it is the same edge as the previous drag's.
+  resetHaptics()
   const rect = canvasRect()
   const extSec  = xToSec(e.clientX - rect.left, rect.width)
   const mainSec = xToMainSec(e.clientX - rect.left, rect.width)
@@ -109,11 +113,21 @@ export function onCanvasMove(e: MouseEvent): void {
   if (E.handleDrag) {
     const c = E.cuts[E.handleDrag.cutIdx]
     const snapped = e.shiftKey ? mainSec : snapToSegmentBoundary(mainSec, rect.width)
+    // The trackpad clicks when the handle locks onto a detected boundary — the
+    // moment the edit becomes precise. Throttled + de-duplicated per boundary
+    // (see ./haptics), so a 125 Hz drag is one tap per edge, not a buzz.
+    snapPulse(mainSec, snapped)
+    let applied: number
     if (E.handleDrag.side === 'start') {
-      c.start = Math.max(0, Math.min(c.end - 0.1, snapped))
+      applied = Math.max(0, Math.min(c.end - 0.1, snapped))
+      c.start = applied
     } else {
-      c.end   = Math.min(E.duration, Math.max(c.start + 0.1, snapped))
+      applied = Math.min(E.duration, Math.max(c.start + 0.1, snapped))
+      c.end   = applied
     }
+    // Pinned against the far edge or the 0.1 s minimum width: a detent, not a
+    // snap. Different pattern, because it means "you cannot go further".
+    if (applied !== snapped) limitPulse()
     updateRemainingDisplay()
     scheduleDrawWaveform()
     return
@@ -170,7 +184,10 @@ export function onCanvasUp(e: MouseEvent): void {
     E.playheadDragging = false
     // Snap playhead out of any cut region the user dragged into — cuts are
     // "skip me" zones, so resting the playhead inside one is meaningless.
+    const before = E.playStartSec
     E.playStartSec = snapOutOfCut(E.playStartSec)
+    // Being pushed out of a cut is a hard boundary, not a fine alignment.
+    if (E.playStartSec !== before) limitPulse()
     updateTimecode(E.playStartSec)
     seekMediaTo(clampMain(E.playStartSec))
     drawWaveform()
@@ -185,6 +202,9 @@ export function onCanvasUp(e: MouseEvent): void {
   if (Math.abs(upMainSec - E.dragStartSec) > 0.1) {
     const s = e.shiftKey ? E.dragStartSec : snapToSegmentBoundary(E.dragStartSec, rect.width)
     const eSec = e.shiftKey ? upMainSec : snapToSegmentBoundary(upMainSec, rect.width)
+    // One tap when the new cut's END lands on a boundary — the edge the user
+    // was watching as they released.
+    snapPulse(upMainSec, eSec)
     addCut(s, eSec)
     renderCutList()
   } else {

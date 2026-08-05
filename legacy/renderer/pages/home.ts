@@ -8,6 +8,7 @@ import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
+import { buildHealthFindings } from '../status/health-findings'
 import { firstMount, resetMount } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
 import {
@@ -215,12 +216,36 @@ export function updateAudioSeparateButton(): void {
 
 let silentPreflightHasRun = false
 
+/**
+ * The OS-permission + sidecar findings, in front of whatever `run_preflight`
+ * found. A blocked microphone must be visible BEFORE the user meets a generic
+ * getUserMedia failure, and `run_preflight` does not ask AVFoundation — the two
+ * commands that do (`media_permissions`, `ffmpeg_health`) had no caller at all.
+ * Best-effort: an unavailable probe adds nothing rather than blocking the card.
+ */
+export async function collectHealthFindings(): Promise<PreflightFinding[]> {
+  const [permissions, ffmpeg] = await Promise.all([
+    window.api.mediaPermissions?.().catch(() => null) ?? null,
+    window.api.ffmpegHealth?.().catch(() => null) ?? null,
+  ])
+  return buildHealthFindings({
+    permissions,
+    ffmpeg,
+    videoEnabled: !!settings.videoEnabled,
+    t,
+  })
+}
+
 async function runSilentPreflightOnce(): Promise<void> {
   if (silentPreflightHasRun) return
   silentPreflightHasRun = true
   try {
-    const r = await window.api.runPreflight() as { findings?: PreflightFinding[] }
-    if (r.findings?.length) setPreflightFindings(r.findings)
+    const [health, r] = await Promise.all([
+      collectHealthFindings(),
+      window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
+    ])
+    const findings = [...health, ...(r.findings ?? [])]
+    if (findings.length) setPreflightFindings(findings)
   } catch {
     // Preflight unavailable — silently ignore (not user-facing failure)
   }
@@ -672,7 +697,13 @@ export function setupHome(): void {
     list.style.display = 'none'
     list.innerHTML = ''
     try {
-      const r = await window.api.runPreflight() as { findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }> }
+      // Same two sources as the silent run — the manual button must not be able
+      // to report "alt ser bra ut" while the OS is blocking the microphone.
+      const [health, raw] = await Promise.all([
+        collectHealthFindings(),
+        window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
+      ])
+      const r = { findings: [...health, ...(raw.findings ?? [])] }
       if (!r.findings || r.findings.length === 0) {
         status.textContent = t('home.preflightAllOk', '✅ Alt ser bra ut — systemet er klart for opptak.')
         status.style.color = 'var(--green)'

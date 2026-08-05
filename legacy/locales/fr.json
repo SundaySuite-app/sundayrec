@@ -430,11 +430,21 @@
     "channelNum": "Canal {n}",
     "diagnoseCopied": "✓ Copié",
     "diagnoseCopy": "📋 Copier le rapport complet",
-    "diagnoseFull": "Rapport complet",
+    "diagnoseFull": "Rapport système complet",
     "diagnoseRunning": "Analyse en cours…",
     "diagnoseSaved": "Enregistré dans",
     "guardDevice": "Changer de périphérique audio",
-    "guardEngine": "Changer de moteur d’enregistrement"
+    "guardEngine": "Changer de moteur d’enregistrement",
+    "diagDevicesFound": "Périphériques audio trouvés",
+    "diagStoredDevice": "Périphérique sélectionné",
+    "diagStoredMissing": "introuvable",
+    "diagNoStored": "Périphérique par défaut",
+    "diagMicPermission": "Accès au microphone",
+    "diagFfmpeg": "Moteur audio (ffmpeg)",
+    "diagFfmpegMissing": "Introuvable",
+    "diagFfmpegOk": "Disponible",
+    "diagLoopback": "Bouclage WASAPI",
+    "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur"
   },
   "files": {
     "saveFolder": "Dossier de sauvegarde",
@@ -1205,5 +1215,25 @@
     "chipUnconfigured": "Non configuré",
     "chipUnavailable": "Indisponible",
     "comingExplanation": "{what} n’est pas encore développé. Le panneau reste ici car la fonction est prévue — d’ici là les boutons ne font rien, ils sont donc désactivés."
+  },
+  "health": {
+    "micDenied": "L'accès au microphone est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Microphone et activez SundayRec.",
+    "micRestricted": "L'accès au microphone est bloqué par un administrateur système ou le contrôle parental. L'enregistrement ne fonctionnera pas tant que le blocage persiste.",
+    "cameraDenied": "L'accès à la caméra est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Caméra et activez SundayRec.",
+    "cameraRestricted": "L'accès à la caméra est bloqué par un administrateur système ou le contrôle parental. L'enregistrement vidéo ne fonctionnera pas tant que le blocage persiste.",
+    "ffmpegMissing": "Le moteur audio intégré (ffmpeg) est introuvable. La vidéo, l'export et le montage ne fonctionneront pas — réinstallez l'application.",
+    "granted": "Accordé",
+    "denied": "Refusé — ouvrez Réglages Système → Confidentialité et sécurité → Microphone",
+    "restricted": "Bloqué par un administrateur système",
+    "notAsked": "Pas encore demandé — le premier enregistrement déclenche la demande",
+    "cannotTell": "Impossible à déterminer sur cette plateforme"
+  },
+  "deeplink": {
+    "imported": "« {name} » ouvert dans l'éditeur.",
+    "theRecording": "l'enregistrement",
+    "captionsOk": "Sous-titres reçus pour « {name} ».",
+    "openEditor": "Ouvrir dans l'éditeur",
+    "captionsNoRecording": "Sous-titres reçus, mais sans indiquer à quel enregistrement ils appartiennent. Ouvrez l'enregistrement dans l'éditeur et importez le texte là.",
+    "captionsFailed": "Les sous-titres n'ont pas pu être enregistrés : {err}"
   }
 }
