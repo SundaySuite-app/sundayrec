@@ -63,6 +63,18 @@ pub fn get_launch_at_login<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> bool 
     app.autolaunch().is_enabled().unwrap_or(false)
 }
 
+/// Tell the menubar tray which UI language to render its menu + tooltip in.
+///
+/// The UI language lives in the RENDERER's settings blob, not the backend's
+/// curated recording settings (`backendRecordingSettings` never carried it), so
+/// the tray cannot read it from the database — the renderer pushes it here at
+/// startup and on every language change. A no-op in a build without the `tray`
+/// feature, so the renderer can call it unconditionally.
+#[tauri::command]
+pub fn tray_set_language(app: tauri::AppHandle, code: String) {
+    crate::tray_note_language(&app, &code);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,8 +1,8 @@
 import { loadLocale, setApplyHook, t } from './i18n'
-import { updateSettings } from './state'
+import { settings, updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
 
-import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
+import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
 import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList } from './pages/audio-page'
 import { stopChannelGrid } from './pages/channel-grid'
@@ -10,7 +10,7 @@ import { setupSchedulePage, applyScheduleSettingsToUI, renderDayPickers, renderS
 import { setupCalendarPage, renderCalendar, renderPlannedList } from './pages/calendar-page'
 import { setupFilesPage, applyFilesSettingsToUI, updateFilenamePreview, toggleMp3Quality } from './pages/files-page'
 import { setupGeneralPage, applyGeneralSettingsToUI } from './pages/general-page'
-import { setupRecording } from './pages/recording'
+import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
 import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
@@ -21,6 +21,8 @@ import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
 import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
+import { navigateTo } from './ui/navigate'
+import { initTrayActions } from './tray-actions'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -98,6 +100,8 @@ declare global {
       checkForUpdates:     () => Promise<void>
       installUpdate:       () => void
       getPlatform:         () => Promise<string>
+      /** Push the UI language to the Rust menubar tray (it renders its own labels). */
+      traySetLanguage?:    (code: string) => Promise<void>
       scheduleOsWakes:      () => Promise<unknown>
       scheduleOsWakesAdmin: () => Promise<unknown>
       getSleepConfig:       () => Promise<unknown>
@@ -459,6 +463,31 @@ async function init(): Promise<void> {
   setupSettingsTabs()
   // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
   setupModalManager()
+
+  // The menubar tray's one event, routed to the SAME entry points the in-app
+  // buttons use — a tray "Start opptak nå" opens the very modal the Home button
+  // opens, so there is one start path, not two. (Rust handles show/stop/quit
+  // itself; these are the ids it hands to the renderer.)
+  initTrayActions({
+    startRecording: () => void openManualModal(),
+    stopRecording: () => void doStopRecording(),
+    openReviewQueue: openReviewQueueFromTray,
+    // Rust does NOT handle this one (it falls through `emit_action`'s catch-all),
+    // and the save folder is a renderer setting anyway.
+    openRecordingsFolder: () => {
+      const folder = settings.saveFolder
+      if (folder) void window.api.openFolder(folder)
+      else navigateTo('settings', { tab: 'settings-files', anchor: '#save-folder' })
+    },
+    runPreflight: () => {
+      navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-run-preflight-settings', highlight: false })
+      requestAnimationFrame(() => document.getElementById('btn-run-preflight-settings')?.click())
+    },
+    runDiagnostics: () => {
+      navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-audio-diagnose', highlight: false })
+      requestAnimationFrame(() => document.getElementById('btn-audio-diagnose')?.click())
+    },
+  })
   enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile

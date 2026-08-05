@@ -830,6 +830,17 @@ const api: Record<string, unknown> = {
   getAppVersion: async () =>
     (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
   getPlatform: async () => platform,
+  // The menubar tray renders its labels in Rust, from a language it cannot read:
+  // the UI language lives in THIS renderer's settings blob and was never part of
+  // the curated `settings_save` payload. i18n.ts pushes it here on every locale
+  // load. Best-effort — a build without the `tray` feature answers with a no-op.
+  traySetLanguage: async (code: string) => {
+    try {
+      await invoke("tray_set_language", { code });
+    } catch (e) {
+      console.debug("[api-shim] tray_set_language unavailable", e);
+    }
+  },
   checkForUpdates: async () => {
     emitLocal("update-checking");
     try {

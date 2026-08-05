@@ -285,8 +285,9 @@ export function setupRecording(): void {
     // so it no longer stays stuck at "0 MB".
     window.api.on('recording-reconnecting', () => showReconnectBanner()),
     window.api.on('recording-reconnected',  () => hideReconnectBanner()),
-    window.api.on('tray-start-recording',   () => openManualModal()),
-    window.api.on('tray-stop-recording',    () => doStopRecording()),
+    // The tray's start/stop no longer arrive on these Electron-era channels —
+    // the Rust tray emits ONE `tray://action` event, adapted in tray-actions.ts,
+    // which calls openManualModal / doStopRecording directly (both exported).
     window.api.on('cloud-upload-done', (data) => {
       const d = data as { service?: string; ok?: boolean; error?: string } | undefined
       if (!d?.ok) {
@@ -301,7 +302,7 @@ export function setupRecording(): void {
 
 // ── Manual recording modal ───────────────────────────────────────────────────
 
-async function openManualModal(): Promise<void> {
+export async function openManualModal(): Promise<void> {
   openModal('modal-manual')
 
   // R4: warm the backend ffmpeg device enumeration now, while the user is picking
@@ -786,7 +787,7 @@ function exitFinalizing(): void {
   if (hint) hint.style.display = 'none'
 }
 
-async function doStopRecording(): Promise<void> {
+export async function doStopRecording(): Promise<void> {
   // A second press while the engine is finalizing is not another stop request.
   if (finalizing) return
   enterFinalizing()

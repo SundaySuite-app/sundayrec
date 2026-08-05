@@ -978,25 +978,20 @@ function wireHomeIpcListeners(): void {
   // updates instantly when a new prep lands or the user publishes/discards.
   setupReviewQueueListeners()
 
-  // Tray menu hooks: clicking "📬 N episoder klare" or "Sjekk system nå" in the
-  // tray must surface the relevant UI. The Rust tray (src-tauri/src/tray/mod.rs)
-  // emits a single "tray://action" event carrying an action-id payload, not
-  // these per-action channel names — these listeners predate that port and are
-  // presently unreachable pending an api-shim adapter from tray://action to
-  // the named channels below.
-  homeIpcUnsubs.push(window.api.on('tray-open-review-queue', () => {
-    window.showPage('home')
-    refreshReviewQueue().then(() => {
-      document.getElementById('review-queue-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }).catch(() => {})
-  }))
-  homeIpcUnsubs.push(window.api.on('tray-run-preflight', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() => {
-      document.getElementById('btn-run-preflight-settings')?.click()
-    })
-  }))
+  // Tray menu hooks used to live here as `tray-open-review-queue` /
+  // `tray-run-preflight` listeners — Electron channel names no Rust code has
+  // ever emitted, so both were unreachable. The Rust tray emits ONE
+  // `tray://action` event; it is adapted in tray-actions.ts, wired once in
+  // main.ts, and calls openReviewQueueFromTray / the preflight button from there.
+}
+
+/** Bring the review-queue card to the front, freshly loaded — the destination of
+ *  the tray's "📬 N episoder klare" row. Exported for tray-actions.ts. */
+export function openReviewQueueFromTray(): void {
+  navigateTo('home', { anchor: '#review-queue-card' })
+  refreshReviewQueue().catch(err =>
+    console.warn('[home] review-queue refresh from tray failed:', err),
+  )
 }
 
 /** The info cards that wait on an async load, so they can show a skeleton

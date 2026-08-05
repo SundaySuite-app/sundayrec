@@ -116,6 +116,66 @@ pub fn icon_for(state: &TrayState) -> TrayIcon {
     }
 }
 
+/// The status-badge colour (RGB) composited onto the base app icon for a
+/// [`TrayIcon`] variant, or `None` for [`TrayIcon::Idle`] (the bare app icon).
+///
+/// Dedicated tray-icon assets were never bundled (docs/NEEDS-RICHARD.md PU-2),
+/// so instead of shipping three PNGs the shell paints a small corner dot onto
+/// the app's own icon at runtime — see [`with_status_badge`]. Red = recording
+/// (the universal record colour), amber = something is wrong.
+pub fn badge_rgb(icon: TrayIcon) -> Option<[u8; 3]> {
+    match icon {
+        TrayIcon::Recording => Some([0xE5, 0x39, 0x35]),
+        TrayIcon::Error => Some([0xF5, 0xA6, 0x23]),
+        TrayIcon::Idle => None,
+    }
+}
+
+/// Composite an opaque circular status badge into the bottom-right corner of an
+/// RGBA icon, returning a NEW buffer (the input is untouched, so the app's own
+/// icon can be badged repeatedly without accumulating dots).
+///
+/// The badge is a filled disc of diameter `⌊min(w,h) * 0.44⌋` (never smaller
+/// than 4 px), inset by one badge-radius' worth of margin, with a 1-px darker
+/// rim so it stays visible against a light icon. Purely arithmetic — no image
+/// crate, no assets, and unit-testable without a GUI.
+///
+/// Returns the input unchanged when `rgba` is not exactly `width * height * 4`
+/// bytes (a malformed icon must never panic the tray).
+pub fn with_status_badge(rgba: &[u8], width: u32, height: u32, badge: [u8; 3]) -> Vec<u8> {
+    let expected = (width as usize) * (height as usize) * 4;
+    if rgba.len() != expected || width == 0 || height == 0 {
+        return rgba.to_vec();
+    }
+    let mut out = rgba.to_vec();
+    let short = width.min(height) as f32;
+    let diameter = (short * 0.44).floor().max(4.0);
+    let r = diameter / 2.0;
+    // Inset so the disc sits just inside the bottom-right corner.
+    let cx = width as f32 - r - short * 0.06;
+    let cy = height as f32 - r - short * 0.06;
+    let rim = (r - 1.0).max(0.0);
+
+    for y in 0..height {
+        for x in 0..width {
+            let dx = x as f32 + 0.5 - cx;
+            let dy = y as f32 + 0.5 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist > r {
+                continue;
+            }
+            // Inside the rim band → darken the badge colour for contrast.
+            let px = ((y as usize) * (width as usize) + x as usize) * 4;
+            let shade = if dist > rim { 0.55 } else { 1.0 };
+            out[px] = (badge[0] as f32 * shade) as u8;
+            out[px + 1] = (badge[1] as f32 * shade) as u8;
+            out[px + 2] = (badge[2] as f32 * shade) as u8;
+            out[px + 3] = 0xFF;
+        }
+    }
+    out
+}
+
 /// The tooltip text. Mirrors `tray.ts` `updateTooltip`: a base line plus, when a
 /// next recording is known, a "Neste opptak: <label>" line.
 pub fn tooltip(state: &TrayState, lang: TrayLang) -> String {
@@ -558,5 +618,138 @@ mod tests {
         };
         assert_eq!(icon_for(&state), TrayIcon::Recording);
         assert_eq!(icon_for(&TrayState::default()), TrayIcon::Idle);
+    }
+
+    // ── Live transitions (the menu is REBUILT on every state change now, so the
+    //    model has to be correct at each step of a real session, not just for
+    //    hand-built snapshots). ────────────────────────────────────────────────
+
+    #[test]
+    fn a_full_session_walks_start_stop_error_and_queue() {
+        let lang = TrayLang::No;
+        let mut state = TrayState {
+            next_recording_label: Some("søn. 11:00".into()),
+            ..Default::default()
+        };
+
+        // 1. Idle with a schedule → start + the info row.
+        let acts = actions(&build_menu(&state, lang));
+        assert!(acts.contains(&TrayAction::StartRecording));
+        assert!(acts.contains(&TrayAction::None), "next-recording info row");
+        assert_eq!(icon_for(&state), TrayIcon::Idle);
+
+        // 2. Recording begins → stop replaces start, the info row goes.
+        state.is_recording = true;
+        let acts = actions(&build_menu(&state, lang));
+        assert!(acts.contains(&TrayAction::StopRecording));
+        assert!(!acts.contains(&TrayAction::StartRecording));
+        assert!(!acts.contains(&TrayAction::None));
+        assert_eq!(icon_for(&state), TrayIcon::Recording);
+
+        // 3. Recording ends and an episode lands in the review queue.
+        state.is_recording = false;
+        state.review_queue_count = 2;
+        let menu = build_menu(&state, lang);
+        let acts = actions(&menu);
+        assert!(acts.contains(&TrayAction::StartRecording));
+        assert!(acts.contains(&TrayAction::OpenReviewQueue));
+        assert_eq!(icon_for(&state), TrayIcon::Idle);
+
+        // 4. Something breaks → the status row becomes clickable, icon goes amber.
+        state.has_error = true;
+        let menu = build_menu(&state, lang);
+        assert!(matches!(
+            &menu[0],
+            TrayItem::Item {
+                action: TrayAction::ShowOnError,
+                enabled: true,
+                ..
+            }
+        ));
+        assert_eq!(icon_for(&state), TrayIcon::Error);
+
+        // 5. Cleared + queue emptied → back to the opening shape.
+        state.has_error = false;
+        state.review_queue_count = 0;
+        let acts = actions(&build_menu(&state, lang));
+        assert!(!acts.contains(&TrayAction::OpenReviewQueue));
+        assert_eq!(
+            build_menu(&state, lang),
+            build_menu(
+                &TrayState {
+                    next_recording_label: Some("søn. 11:00".into()),
+                    ..Default::default()
+                },
+                lang
+            )
+        );
+    }
+
+    #[test]
+    fn losing_the_next_label_only_drops_the_info_row() {
+        let with = TrayState {
+            next_recording_label: Some("søn. 11:00".into()),
+            ..Default::default()
+        };
+        let without = TrayState::default();
+        let a = build_menu(&with, TrayLang::No);
+        let b = build_menu(&without, TrayLang::No);
+        assert_eq!(a.len(), b.len() + 1);
+        assert_eq!(
+            actions(&b)
+                .iter()
+                .filter(|x| **x == TrayAction::None)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn changing_language_rebuilds_every_label() {
+        let state = TrayState {
+            review_queue_count: 2,
+            ..Default::default()
+        };
+        let no = build_menu(&state, TrayLang::No);
+        let fr = build_menu(&state, TrayLang::Fr);
+        // Same SHAPE, different words — a language switch must be a pure relabel.
+        assert_eq!(actions(&no), actions(&fr));
+        assert_ne!(no, fr);
+    }
+
+    #[test]
+    fn badge_colours_follow_the_icon_variant() {
+        assert_eq!(badge_rgb(TrayIcon::Idle), None);
+        assert!(badge_rgb(TrayIcon::Recording).is_some());
+        assert!(badge_rgb(TrayIcon::Error).is_some());
+        assert_ne!(badge_rgb(TrayIcon::Recording), badge_rgb(TrayIcon::Error));
+    }
+
+    #[test]
+    fn status_badge_paints_the_corner_and_leaves_the_rest_alone() {
+        // 32×32 fully transparent icon.
+        let w = 32u32;
+        let h = 32u32;
+        let base = vec![0u8; (w * h * 4) as usize];
+        let out = with_status_badge(&base, w, h, [0xE5, 0x39, 0x35]);
+        assert_eq!(out.len(), base.len());
+
+        let at = |x: u32, y: u32| {
+            let i = ((y * w + x) * 4) as usize;
+            [out[i], out[i + 1], out[i + 2], out[i + 3]]
+        };
+        // Top-left is untouched…
+        assert_eq!(at(0, 0), [0, 0, 0, 0]);
+        // …and the bottom-right carries an opaque, reddish dot.
+        let corner = at(w - 7, h - 7);
+        assert_eq!(corner[3], 0xFF);
+        assert!(corner[0] > corner[1] && corner[0] > corner[2]);
+    }
+
+    #[test]
+    fn status_badge_rejects_a_malformed_buffer_instead_of_panicking() {
+        let bogus = vec![1u8, 2, 3];
+        assert_eq!(with_status_badge(&bogus, 32, 32, [1, 2, 3]), bogus);
+        assert!(with_status_badge(&[], 0, 0, [1, 2, 3]).is_empty());
     }
 }
