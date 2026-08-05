@@ -6,7 +6,7 @@
     "files": "Nagrywanie",
     "editor": "Edycja",
     "live": "Na żywo",
-    "search": "Wyszukiwanie i historia",
+    "search": "Historia",
     "notifications": "Powiadomienia",
     "publish": "Publikowanie",
     "settings": "Ustawienia",
@@ -124,7 +124,6 @@
     "error": "Błąd",
     "scheduled": "Zaplanowane",
     "empty": "Brak nagrań",
-    "confirmClear": "Usunąć całą historię?",
     "pruneBtn": "Wyczyść",
     "clearBtn": "Usuń wszystkie",
     "pruneNone": "Nie ma czego czyścić",
@@ -135,7 +134,6 @@
     "addNote": "Dodaj notatkę",
     "editNote": "Edytuj notatkę",
     "notePlaceholder": "Wpisz notatkę…",
-    "confirmDeleteErrors": "Usunąć wpisy z błędami?",
     "deleteEntry": "Usuń wpis",
     "ok": "Ukończone",
     "noteCancel": "Anuluj",
@@ -144,7 +142,20 @@
     "noteTitle": "Notatka",
     "revealFile": "Pokaż w Finderze / Eksploratorze",
     "revealVideo": "Pokaż plik wideo w Finderze",
-    "actions": "Akcje"
+    "actions": "Akcje",
+    "filterGroup": "Filtruj nagrania",
+    "filterAll": "Wszystkie",
+    "filterAudio": "Dźwięk",
+    "filterVideo": "Wideo",
+    "filterTranscript": "Z transkrypcją",
+    "thisRecording": "to nagranie",
+    "deleteFailed": "Nie udało się usunąć",
+    "clearNone": "Lista jest pusta",
+    "errorsNone": "Brak wpisów z błędem",
+    "confirmClearN": "Usunąć wszystkie {n} wpisów?",
+    "confirmDeleteErrorsOne": "Usunąć 1 wpis z błędem?",
+    "confirmDeleteErrorsN": "Usunąć {n} wpisów z błędem?",
+    "emptyFiltered": "Brak nagrań w tym filtrze"
   },
   "review": {
     "queueTitle": "Gotowe do przeglądu i publikacji",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ Klucz API zapisany (pęk kluczy)"
   },
   "search": {
-    "title": "Wyszukiwanie i historia",
+    "title": "Historia",
     "subtitle": "Przeszukuj tekst kazania lub nazwę pliku i przeglądaj całą historię nagrań. Kliknij trafienie, aby otworzyć nagranie w tym miejscu.",
     "placeholder": "Szukaj w kazaniu lub nazwie pliku…",
     "reindex": "↻ Odśwież indeks",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "Czy nagranie ma ruszyć samo?",
     "autostartConfirm": "Włącz autostart",
     "gmailDisconnectTitle": "Odłączyć konto Google?",
-    "clearHistoryBody": "Same pliki nagrań zostają — czyszczona jest tylko ich lista.",
-    "deleteErrorsBody": "{n} wpisów z błędami zostanie usuniętych z listy. Pliki nagrań pozostaną nienaruszone.",
+    "clearHistoryBody": "Same pliki nagrań pozostają — usuwana jest tylko ich lista. Tej operacji nie można cofnąć.",
+    "deleteErrorsBody": "{n} wpisów z błędem zostanie usuniętych z listy. Tej operacji nie można cofnąć.",
     "autoDeleteTitle": "Usuwać nagrania automatycznie?",
     "autoDeleteConfirm": "Tak, usuwaj automatycznie",
     "wakeTestTitle": "Przetestować wybudzanie z uśpienia?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Odrzucić ten odcinek?",
     "discardEpisodeBody": "Nagranie zostaje, ale nie zostanie opublikowane.",
     "discardEpisode": "Odrzuć",
-    "publishFailedTitle": "Nie udało się opublikować"
+    "publishFailedTitle": "Nie udało się opublikować",
+    "deleteEntryTitle": "Usunąć „{name}” z listy?",
+    "deleteEntryBody": "Sam plik nagrania pozostaje na dysku — usuwany jest tylko wpis z listy. Tej operacji nie można cofnąć.",
+    "deleteEntryBodyPair": "Plik dźwiękowy i plik wideo pozostają na dysku — usuwane są tylko dwa wpisy z listy. Tej operacji nie można cofnąć."
   },
   "toast": {
     "dismiss": "Zamknij"

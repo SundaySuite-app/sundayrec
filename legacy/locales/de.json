@@ -6,7 +6,7 @@
     "files": "Aufnahme",
     "editor": "Bearbeiten",
     "live": "Live",
-    "search": "Suche & Verlauf",
+    "search": "Verlauf",
     "notifications": "Benachrichtigungen",
     "publish": "Veröffentlichung",
     "settings": "Einstellungen",
@@ -124,7 +124,6 @@
     "error": "Fehler",
     "scheduled": "Geplant",
     "empty": "Noch keine Aufnahmen",
-    "confirmClear": "Gesamten Verlauf löschen?",
     "pruneBtn": "Aufräumen",
     "clearBtn": "Alle löschen",
     "pruneNone": "Nichts zu bereinigen",
@@ -135,7 +134,6 @@
     "addNote": "Notiz hinzufügen",
     "editNote": "Notiz bearbeiten",
     "notePlaceholder": "Notiz schreiben…",
-    "confirmDeleteErrors": "Fehlereinträge löschen?",
     "deleteEntry": "Eintrag löschen",
     "ok": "Abgeschlossen",
     "noteCancel": "Abbrechen",
@@ -144,7 +142,20 @@
     "noteTitle": "Notiz",
     "revealFile": "Im Finder / Explorer anzeigen",
     "revealVideo": "Videodatei im Finder anzeigen",
-    "actions": "Aktionen"
+    "actions": "Aktionen",
+    "filterGroup": "Aufnahmen filtern",
+    "filterAll": "Alle",
+    "filterAudio": "Audio",
+    "filterVideo": "Video",
+    "filterTranscript": "Mit Transkript",
+    "thisRecording": "diese Aufnahme",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "clearNone": "Die Liste ist leer",
+    "errorsNone": "Keine fehlerhaften Einträge",
+    "confirmClearN": "Alle {n} Einträge löschen?",
+    "confirmDeleteErrorsOne": "1 fehlerhaften Eintrag löschen?",
+    "confirmDeleteErrorsN": "{n} fehlerhafte Einträge löschen?",
+    "emptyFiltered": "Keine Aufnahmen in diesem Filter"
   },
   "review": {
     "queueTitle": "Bereit zur Prüfung und Veröffentlichung",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ API-Schlüssel gespeichert (Schlüsselbund)"
   },
   "search": {
-    "title": "Suche & Verlauf",
+    "title": "Verlauf",
     "subtitle": "Durchsuche Predigttext oder Dateinamen und sieh den gesamten Aufnahmeverlauf. Klicke auf einen Texttreffer, um die Aufnahme an dieser Stelle zu öffnen.",
     "placeholder": "Predigttext oder Dateiname suchen…",
     "reindex": "↻ Index aktualisieren",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "Soll die Aufnahme von selbst starten?",
     "autostartConfirm": "Autostart einschalten",
     "gmailDisconnectTitle": "Google-Konto trennen?",
-    "clearHistoryBody": "Die Aufnahmedateien selbst bleiben erhalten — nur die Liste wird geleert.",
-    "deleteErrorsBody": "{n} fehlerhafte Einträge werden aus der Liste entfernt. Die Aufnahmedateien bleiben unberührt.",
+    "clearHistoryBody": "Die Aufnahmedateien selbst bleiben erhalten — nur die Liste wird gelöscht. Sie können dies nicht rückgängig machen.",
+    "deleteErrorsBody": "{n} fehlerhafte Einträge werden aus der Liste entfernt. Sie können dies nicht rückgängig machen.",
     "autoDeleteTitle": "Aufnahmen automatisch löschen?",
     "autoDeleteConfirm": "Ja, automatisch löschen",
     "wakeTestTitle": "Aufwachen aus dem Ruhezustand testen?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Diese Episode verwerfen?",
     "discardEpisodeBody": "Die Aufnahme bleibt erhalten, wird aber nicht veröffentlicht.",
     "discardEpisode": "Verwerfen",
-    "publishFailedTitle": "Veröffentlichung fehlgeschlagen"
+    "publishFailedTitle": "Veröffentlichung fehlgeschlagen",
+    "deleteEntryTitle": "„{name}“ aus der Liste entfernen?",
+    "deleteEntryBody": "Die Aufnahmedatei selbst bleibt auf der Festplatte — nur der Listeneintrag wird entfernt. Sie können dies nicht rückgängig machen.",
+    "deleteEntryBodyPair": "Sowohl die Audio- als auch die Videodatei bleiben auf der Festplatte — nur die beiden Listeneinträge werden entfernt. Sie können dies nicht rückgängig machen."
   },
   "toast": {
     "dismiss": "Schließen"

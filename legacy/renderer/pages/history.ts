@@ -13,22 +13,22 @@ import { t } from '../i18n'
 import { fmtDate, flashMsg } from '../helpers'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { confirmDialog } from '../ui/dialog'
+import {
+  baseNoExt,
+  filterRecordings,
+  historyTotals,
+  pairRecordings,
+  sortRecordings,
+  type HistoryFilter,
+  type HistorySortKey,
+  type RecordingEntry,
+  type SortDir,
+} from './history-core'
 
-/** A recording as the renderer consumes it (adapted from the Rust RecordingRow
- *  in the api-shim). */
-export interface RecordingEntry {
-  date?:          string
-  startTime?:     string
-  duration?:      string
-  filename?:      string
-  path?:          string
-  status:         string
-  timestamp?:     number
-  note?:          string
-  fileSizeBytes?: number
-  durationSec?:   number
-  cloudUploaded?: string[]
-}
+// Re-exported so the page modules keep importing history state from one place;
+// the logic itself lives in the (DOM-free, unit-tested) core.
+export { baseNoExt }
+export type { RecordingEntry }
 
 /** One transcript hit to render as a sub-row under its recording: the seek
  *  target (seconds) + the pre-highlighted snippet HTML. Built by search-page. */
@@ -39,17 +39,36 @@ export interface HistoryHit {
 
 let fullHistory: RecordingEntry[] = []
 
+// ── View state (sort + filter) ──────────────────────────────────────────────
+// Newest first is the default: the recording you just made is the one you want.
+let sortKey: HistorySortKey = 'time'
+let sortDir: SortDir        = 'desc'
+let activeFilter: HistoryFilter = 'all'
+/** Base paths (no extension) that have a transcript sidecar — fed by
+ *  search-page once its index is loaded, so the «Med transkript» chip can
+ *  answer without a second IPC round-trip. */
+let transcriptBases = new Set<string>()
+
 /** The current in-memory history (newest-first), for callers that need to
  *  filter it themselves (e.g. the unified search). */
 export function getFullHistory(): RecordingEntry[] {
   return fullHistory
 }
 
-/** A recording's base path without extension — the join key against a
- *  transcript's `basePath`. */
-export function baseNoExt(p: string | undefined): string {
-  if (!p) return ''
-  return p.replace(/\.[^./\\]+$/, '')
+/** Tell the history which recordings have a transcript (from `transcripts_list`). */
+export function setTranscriptBasePaths(bases: Set<string>): void {
+  transcriptBases = bases
+}
+
+function hasTranscript(r: RecordingEntry): boolean {
+  return transcriptBases.has(baseNoExt(r.path))
+}
+
+/** Apply the active chip filter + column sort. The caller has already narrowed
+ *  by the search query; this is the last step before rendering, so the table
+ *  and the stats line always describe the same set of rows. */
+export function applyHistoryView(rows: RecordingEntry[]): RecordingEntry[] {
+  return sortRecordings(filterRecordings(rows, activeFilter, hasTranscript), sortKey, sortDir)
 }
 
 /** Fetch the full history into the module cache. Rendering is driven by the
@@ -61,26 +80,21 @@ export async function loadHistory(): Promise<void> {
 export function updateHistoryStats(history: RecordingEntry[]): void {
   const statsEl = document.getElementById('history-stats')
   if (!statsEl) return
-  const ok = history.filter(r => r.status === 'ok')
-  if (!ok.length) { statsEl.style.display = 'none'; return }
+  const totals = historyTotals(history)
+  if (!totals.count) { statsEl.style.display = 'none'; return }
   statsEl.style.display = 'flex'
   const countEl    = document.getElementById('stat-count')
   const durationEl = document.getElementById('stat-duration')
   const lastEl     = document.getElementById('stat-last')
-  if (countEl) countEl.textContent = `${ok.length} ${t('history.totalCount', 'opptak')}`
-  let totalSec = 0
-  for (const r of ok) {
-    // formatDuration returns "Xt Ym" (e.g. "1t 30m" or "75m")
-    const m = (r.duration || '').match(/^(?:(\d+)t\s*)?(\d+)m$/)
-    if (!m) continue
-    totalSec += (parseInt(m[1] ?? '0') || 0) * 3600 + parseInt(m[2]) * 60
-  }
-  const th = Math.floor(totalSec / 3600), tm = Math.round((totalSec % 3600) / 60)
+  if (countEl) countEl.textContent = `${totals.count} ${t('history.totalCount', 'opptak')}`
+  const th = Math.floor(totals.totalSec / 3600)
+  const tm = Math.round((totals.totalSec % 3600) / 60)
   if (durationEl) durationEl.textContent = th > 0
     ? `${th} t ${tm} min ${t('history.totalDuration', 'totalt')}`
     : `${tm} min ${t('history.totalDuration', 'totalt')}`
-  if (lastEl && ok[0]?.date)
-    lastEl.textContent = `${t('history.lastRecording', 'sist')} ${fmtDate(ok[0].date)}`
+  if (lastEl) lastEl.textContent = totals.lastDate
+    ? `${t('history.lastRecording', 'sist')} ${fmtDate(totals.lastDate)}`
+    : ''
 }
 
 /**
@@ -99,35 +113,25 @@ export function renderHistoryRows(
   tbody.innerHTML = ''
   if (!rows.length) {
     const td = Object.assign(document.createElement('td'), {
-      colSpan: 6,
-      textContent: t('history.empty', 'Ingen opptak ennå')
+      // The thead has FIVE columns (Tidspunkt · Varighet · Filnavn · Status ·
+      // handlinger). This said 6, which stretched the empty-state cell past
+      // the table's right edge.
+      colSpan: 5,
+      // "Ingen opptak ennå" is a lie when the archive is full and it is the
+      // chip that emptied the table — say which of the two it is.
+      textContent: activeFilter === 'all'
+        ? t('history.empty', 'Ingen opptak ennå')
+        : t('history.emptyFiltered', 'Ingen opptak i dette filteret')
     })
     td.style.cssText = 'color:var(--text3);text-align:center;padding:20px'
     const tr = document.createElement('tr')
     tr.appendChild(td); tbody.appendChild(tr)
     return
   }
-  // Group audio+video pairs from the same session into a single row.
-  // finishSessionAsync adds audio first, then video (note='Video'), so in the
-  // newest-first history list the video entry appears just before the audio entry.
-  const grouped: Array<{ r: RecordingEntry; videoEntry: RecordingEntry | null }> = []
-  {
-    let i = 0
-    while (i < rows.length) {
-      const curr = rows[i], next = rows[i + 1]
-      const isPair = next && curr.date === next.date && curr.startTime === next.startTime &&
-        ((curr.note === 'Video' && next.note !== 'Video') ||
-         (next.note === 'Video' && curr.note !== 'Video'))
-      if (isPair) {
-        const [audio, video] = curr.note === 'Video' ? [next, curr] : [curr, next]
-        grouped.push({ r: audio, videoEntry: video })
-        i += 2
-      } else {
-        grouped.push({ r: curr, videoEntry: null })
-        i++
-      }
-    }
-  }
+  // Collapse the audio + video files of one session into a single row. Keyed on
+  // the shared base path, not on row adjacency — see history-core for why the
+  // old positional heuristic could not work under the Tauri shim.
+  const grouped = pairRecordings(rows)
   grouped.forEach(({ r, videoEntry }, idx) => {
     const tr = document.createElement('tr')
     tr.className = 'hist-row'
@@ -192,10 +196,39 @@ export function renderHistoryRows(
     aDel.href = '#'; aDel.className = 'hist-action hist-del'
     aDel.title = t('history.deleteEntry', 'Slett oppføring')
     aDel.innerHTML = '<svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"/></svg>'
+    // Deleting used to happen on the first click, with no confirmation at all —
+    // one mis-aimed click on a 15-px icon and the entry was gone. It now asks,
+    // says exactly what is lost (the list entry, not the file), and locks the
+    // row's actions while the deletes are in flight so a double-click can't
+    // fire two rounds of IPC against a row that is already going away.
+    let deleting = false
     aDel.addEventListener('click', async e => {
       e.preventDefault()
-      if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
-      if (videoEntry?.timestamp) await window.api.deleteHistoryEntry(videoEntry.timestamp)
+      if (deleting) return
+      const name = r.filename ?? t('history.thisRecording', 'dette opptaket')
+      const ok = await confirmDialog({
+        title:        t('dialog.deleteEntryTitle', 'Slett «{name}» fra listen?').replace('{name}', name),
+        message:      videoEntry
+          ? t('dialog.deleteEntryBodyPair', 'Både lyd- og videofilen beholdes på disken — det er bare de to oppføringene i listen som fjernes. Dette kan ikke angres.')
+          : t('dialog.deleteEntryBody', 'Selve opptaksfilen beholdes på disken — det er bare oppføringen i listen som fjernes. Dette kan ikke angres.'),
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
+      deleting = true
+      tr.classList.add('hist-row-busy')
+      tr.setAttribute('aria-busy', 'true')
+      try {
+        if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
+        if (videoEntry?.timestamp) await window.api.deleteHistoryEntry(videoEntry.timestamp)
+      } catch (err) {
+        deleting = false
+        tr.classList.remove('hist-row-busy')
+        tr.removeAttribute('aria-busy')
+        flashMsg(aDel, t('history.deleteFailed', 'Kunne ikke slette'), true)
+        console.warn('[history] delete failed:', err)
+        return
+      }
       const delIdx = fullHistory.findIndex(h => h.timestamp === r.timestamp)
       if (delIdx >= 0) fullHistory.splice(delIdx, 1)
       if (videoEntry?.timestamp) {
@@ -207,7 +240,12 @@ export function renderHistoryRows(
       if (sub && sub.classList.contains('hist-transcript-hits')) sub.remove()
       tr.remove()
       if (!tbody.querySelector('tr')) renderHistoryRows(tbody, [], false)
-      updateHistoryStats(fullHistory)
+      // Recompute from the rows THIS render is showing, minus the two just
+      // deleted — passing the whole unfiltered history made the summary line
+      // describe a different set of recordings than the table under it.
+      updateHistoryStats(rows.filter(x =>
+        x.timestamp !== r.timestamp &&
+        (videoEntry?.timestamp === undefined || x.timestamp !== videoEntry.timestamp)))
     })
     tdActions.appendChild(aDel)
     tdActions.style.cssText = 'white-space:nowrap;display:flex;align-items:center;gap:3px'
@@ -282,6 +320,9 @@ function fmtClock(sec: number): string {
  * stats refresh after a mutation without losing the current search query.
  */
 export function setupHistoryTools(rerender: () => void): void {
+  setupSortHeaders(rerender)
+  setupFilterChips(rerender)
+
   document.getElementById('btn-prune-history')?.addEventListener('click', async e => {
     e.preventDefault()
     const removed = await window.api.pruneHistory()
@@ -292,9 +333,14 @@ export function setupHistoryTools(rerender: () => void): void {
 
   document.getElementById('btn-clear-history')?.addEventListener('click', async e => {
     e.preventDefault()
+    // Name the count: "Slett hele historikken?" gives no sense of scale, and
+    // the difference between losing 3 entries and losing 300 is the whole
+    // decision.
+    const n = fullHistory.length
+    if (!n) { flashMsg(document.getElementById('btn-clear-history'), t('history.clearNone', 'Listen er tom'), true); return }
     const ok = await confirmDialog({
-      title:        t('history.confirmClear', 'Slett hele historikken?'),
-      message:      t('dialog.clearHistoryBody', 'Selve opptaksfilene beholdes — det er bare listen over dem som slettes.'),
+      title:        t('history.confirmClearN', 'Slett alle {n} oppføringene?').replace('{n}', String(n)),
+      message:      t('dialog.clearHistoryBody', 'Selve opptaksfilene beholdes — det er bare listen over dem som slettes. Dette kan ikke angres.'),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
@@ -307,10 +353,15 @@ export function setupHistoryTools(rerender: () => void): void {
   document.getElementById('btn-delete-errors')?.addEventListener('click', async e => {
     e.preventDefault()
     const errors = fullHistory.filter(r => r.status === 'error')
-    if (!errors.length) return
+    if (!errors.length) {
+      flashMsg(document.getElementById('btn-delete-errors'), t('history.errorsNone', 'Ingen feiloppføringer'), true)
+      return
+    }
     const ok = await confirmDialog({
-      title:        t('history.confirmDeleteErrors', 'Slett feiloppføringer?').replace('{n}', String(errors.length)),
-      message:      t('dialog.deleteErrorsBody', '{n} oppføringer med feil fjernes fra listen.').replace('{n}', String(errors.length)),
+      title:        errors.length === 1
+        ? t('history.confirmDeleteErrorsOne', 'Slett 1 feiloppføring?')
+        : t('history.confirmDeleteErrorsN', 'Slett {n} feiloppføringer?').replace('{n}', String(errors.length)),
+      message:      t('dialog.deleteErrorsBody', '{n} oppføringer med feil fjernes fra listen. Dette kan ikke angres.').replace('{n}', String(errors.length)),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
@@ -329,6 +380,77 @@ export function setupHistoryTools(rerender: () => void): void {
     if (panel) panel.style.display = open ? 'none' : 'flex'
     btn?.setAttribute('aria-expanded', String(!open))
   })
+}
+
+// ── Sorting ─────────────────────────────────────────────────────────────────
+
+/** The two sortable columns, by the `data-sort` value on their `<th>`. */
+const SORTABLE: Record<string, HistorySortKey> = { time: 'time', duration: 'duration' }
+
+/**
+ * Make the Tidspunkt/Varighet headers clickable. Clicking the active column
+ * flips direction; clicking the other switches to it at its natural default
+ * (newest first / longest first) — going to "oldest first" should take a
+ * deliberate second click, never be where a single click lands you.
+ */
+function setupSortHeaders(rerender: () => void): void {
+  for (const th of document.querySelectorAll<HTMLElement>('#search-history-wrap th[data-sort]')) {
+    const key = SORTABLE[th.dataset.sort ?? '']
+    if (!key) continue
+    th.classList.add('th-sortable')
+    th.tabIndex = 0
+    th.setAttribute('role', 'button')
+    const activate = (): void => {
+      if (sortKey === key) sortDir = sortDir === 'desc' ? 'asc' : 'desc'
+      else { sortKey = key; sortDir = 'desc' }
+      renderSortIndicators()
+      rerender()
+    }
+    th.addEventListener('click', activate)
+    th.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate() }
+    })
+  }
+  renderSortIndicators()
+}
+
+function renderSortIndicators(): void {
+  for (const th of document.querySelectorAll<HTMLElement>('#search-history-wrap th[data-sort]')) {
+    const key = SORTABLE[th.dataset.sort ?? '']
+    const active = key === sortKey
+    th.classList.toggle('th-sort-active', active)
+    th.dataset.dir = active ? sortDir : ''
+    // aria-sort is what a screen reader announces; the arrow is what everyone
+    // else reads. Both, or the column is only sorted for sighted users.
+    th.setAttribute('aria-sort', active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none')
+    const arrow = th.querySelector('.th-sort-arrow')
+    if (arrow) arrow.textContent = active ? (sortDir === 'asc' ? '↑' : '↓') : ''
+  }
+}
+
+// ── Filter chips ────────────────────────────────────────────────────────────
+
+const FILTERS: HistoryFilter[] = ['all', 'audio', 'video', 'transcript']
+
+function setupFilterChips(rerender: () => void): void {
+  for (const chip of document.querySelectorAll<HTMLElement>('#history-filter-chips .hist-chip')) {
+    const value = chip.dataset.filter as HistoryFilter | undefined
+    if (!value || !FILTERS.includes(value)) continue
+    chip.addEventListener('click', () => {
+      activeFilter = value
+      renderFilterChips()
+      rerender()
+    })
+  }
+  renderFilterChips()
+}
+
+function renderFilterChips(): void {
+  for (const chip of document.querySelectorAll<HTMLElement>('#history-filter-chips .hist-chip')) {
+    const active = chip.dataset.filter === activeFilter
+    chip.classList.toggle('hist-chip-active', active)
+    chip.setAttribute('aria-pressed', String(active))
+  }
 }
 
 function showNoteModal(currentNote: string, onSave: (note: string) => void): void {

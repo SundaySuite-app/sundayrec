@@ -57,7 +57,7 @@
     </a></li>
     <li><a href="#" class="nav-link" data-page="search">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
-      <span data-i18n="nav.search">Søk</span>
+      <span data-i18n="nav.search">Historikk</span>
     </a></li>
   </ul>
   <div class="sidebar-bottom">
@@ -2029,7 +2029,7 @@
        ────────────────────────────────────────────────────────────────── -->
   <section id="page-search" class="page">
     <div class="page-header">
-      <h1 data-i18n="search.title">Søk &amp; historikk</h1>
+      <h1 data-i18n="search.title">Historikk</h1>
       <p class="page-subtitle" data-i18n="search.subtitle">Søk i preken-tekst eller filnavn, og se hele opptakshistorikken. Klikk et tekst-treff for å åpne opptaket på det punktet.</p>
     </div>
 
@@ -2068,10 +2068,16 @@
         <span id="stat-duration"></span>
         <span id="stat-last"></span>
       </div>
+      <div id="history-filter-chips" class="hist-chips" role="group" aria-label="Filtrer opptak" data-i18n-aria-label="history.filterGroup">
+        <button type="button" class="hist-chip hist-chip-active" data-filter="all" aria-pressed="true" data-i18n="history.filterAll">Alle</button>
+        <button type="button" class="hist-chip" data-filter="audio" aria-pressed="false" data-i18n="history.filterAudio">Lyd</button>
+        <button type="button" class="hist-chip" data-filter="video" aria-pressed="false" data-i18n="history.filterVideo">Video</button>
+        <button type="button" class="hist-chip" data-filter="transcript" aria-pressed="false" data-i18n="history.filterTranscript">Med transkript</button>
+      </div>
       <table class="rec-table">
         <thead><tr>
-          <th data-i18n="history.date">Tidspunkt</th>
-          <th data-i18n="history.duration">Varighet</th>
+          <th data-sort="time" aria-sort="descending"><span data-i18n="history.date">Tidspunkt</span><span class="th-sort-arrow" aria-hidden="true">↓</span></th>
+          <th data-sort="duration" aria-sort="none"><span data-i18n="history.duration">Varighet</span><span class="th-sort-arrow" aria-hidden="true"></span></th>
           <th data-i18n="history.filename">Filnavn</th>
           <th data-i18n="history.status">Status</th>
           <th style="width:32px"></th>

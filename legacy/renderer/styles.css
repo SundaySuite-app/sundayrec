@@ -763,6 +763,35 @@ select:focus:not(:focus-visible) {
 .rec-table tr:last-child td { border-bottom: none; }
 .rec-table tr:hover td { background: rgba(255,255,255,.03); cursor: default; }
 
+/* Sortable column headers (Tidspunkt / Varighet) */
+.rec-table th[data-sort] { white-space: nowrap; }
+.th-sortable {
+  cursor: pointer; user-select: none;
+  transition: color .12s;
+}
+.th-sortable:hover,
+.th-sortable:focus-visible { color: var(--text); }
+.th-sortable.th-sort-active { color: var(--accent); }
+.th-sort-arrow { display: inline-block; width: 10px; margin-left: 4px; font-size: 10px; }
+
+/* Filter chips above the table */
+.hist-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.hist-chip {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.hist-chip:hover { background: var(--surface3); color: var(--text); }
+.hist-chip-active {
+  background: rgba(235,184,75,.16); border-color: rgba(235,184,75,.5);
+  color: var(--accent);
+}
+
+/* A row whose delete is in flight: visibly leaving, and not clickable again. */
+.hist-row-busy { opacity: .45; }
+.hist-row-busy .hist-action { pointer-events: none; }
+
 /* Status column color coding */
 .hist-row[data-status="ok"]    .badge { color: var(--green); }
 .hist-row[data-status="error"] .badge { color: var(--red); }

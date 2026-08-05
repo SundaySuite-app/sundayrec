@@ -6,7 +6,7 @@
     "files": "Recording",
     "editor": "Edit",
     "live": "Live",
-    "search": "Search & history",
+    "search": "History",
     "notifications": "Notifications",
     "publish": "Publishing",
     "settings": "Settings",
@@ -124,7 +124,6 @@
     "error": "Error",
     "scheduled": "Scheduled",
     "empty": "No recordings yet",
-    "confirmClear": "Delete the entire history?",
     "pruneBtn": "Clean up",
     "clearBtn": "Delete all",
     "pruneNone": "Nothing to clean",
@@ -135,7 +134,6 @@
     "addNote": "Add note",
     "editNote": "Edit note",
     "notePlaceholder": "Write a note…",
-    "confirmDeleteErrors": "Delete error entries?",
     "deleteEntry": "Delete entry",
     "ok": "Complete",
     "noteCancel": "Cancel",
@@ -144,7 +142,20 @@
     "noteTitle": "Note",
     "revealFile": "Show in Finder / Explorer",
     "revealVideo": "Show video file in Finder",
-    "actions": "Actions"
+    "actions": "Actions",
+    "filterGroup": "Filter recordings",
+    "filterAll": "All",
+    "filterAudio": "Audio",
+    "filterVideo": "Video",
+    "filterTranscript": "With transcript",
+    "thisRecording": "this recording",
+    "deleteFailed": "Could not delete",
+    "clearNone": "The list is empty",
+    "errorsNone": "No failed entries",
+    "confirmClearN": "Delete all {n} entries?",
+    "confirmDeleteErrorsOne": "Delete 1 failed entry?",
+    "confirmDeleteErrorsN": "Delete {n} failed entries?",
+    "emptyFiltered": "No recordings match this filter"
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ API key saved (keychain)"
   },
   "search": {
-    "title": "Search & history",
+    "title": "History",
     "subtitle": "Search sermon text or filename, and browse your full recording history. Click a text hit to open the recording at that point.",
     "placeholder": "Search sermon text or filename…",
     "reindex": "↻ Refresh index",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "Should the recording start by itself?",
     "autostartConfirm": "Turn on auto-start",
     "gmailDisconnectTitle": "Disconnect the Google account?",
-    "clearHistoryBody": "The recording files are kept — only the list of them is cleared.",
-    "deleteErrorsBody": "{n} entries with errors are removed from the list. The recording files are untouched.",
+    "clearHistoryBody": "The recording files themselves stay — only the list of them is deleted. This cannot be undone.",
+    "deleteErrorsBody": "{n} failed entries are removed from the list. This cannot be undone.",
     "autoDeleteTitle": "Delete recordings automatically?",
     "autoDeleteConfirm": "Yes, delete automatically",
     "wakeTestTitle": "Test waking from sleep?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Discard this episode?",
     "discardEpisodeBody": "The recording is kept, but it will not be published.",
     "discardEpisode": "Discard",
-    "publishFailedTitle": "Could not publish"
+    "publishFailedTitle": "Could not publish",
+    "deleteEntryTitle": "Remove “{name}” from the list?",
+    "deleteEntryBody": "The recording file itself stays on disk — only the list entry is removed. This cannot be undone.",
+    "deleteEntryBodyPair": "Both the audio and the video file stay on disk — only the two list entries are removed. This cannot be undone."
   },
   "toast": {
     "dismiss": "Close"

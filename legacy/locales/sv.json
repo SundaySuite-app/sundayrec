@@ -6,7 +6,7 @@
     "files": "Inspelning",
     "editor": "Redigera",
     "live": "Live",
-    "search": "Sök & historik",
+    "search": "Historik",
     "notifications": "Aviseringar",
     "publish": "Publicering",
     "settings": "Inställningar",
@@ -124,7 +124,6 @@
     "error": "Fel",
     "scheduled": "Schemalagd",
     "empty": "Inga inspelningar ännu",
-    "confirmClear": "Radera all historik?",
     "pruneBtn": "Städa upp",
     "clearBtn": "Radera alla",
     "pruneNone": "Inget att städa",
@@ -135,7 +134,6 @@
     "addNote": "Lägg till anteckning",
     "editNote": "Redigera anteckning",
     "notePlaceholder": "Skriv en anteckning…",
-    "confirmDeleteErrors": "Ta bort felposter?",
     "deleteEntry": "Radera post",
     "ok": "Slutförd",
     "noteCancel": "Avbryt",
@@ -144,7 +142,20 @@
     "noteTitle": "Anteckning",
     "revealFile": "Visa i Finder / Utforskaren",
     "revealVideo": "Visa videofilen i Finder",
-    "actions": "Åtgärder"
+    "actions": "Åtgärder",
+    "filterGroup": "Filtrera inspelningar",
+    "filterAll": "Alla",
+    "filterAudio": "Ljud",
+    "filterVideo": "Video",
+    "filterTranscript": "Med transkription",
+    "thisRecording": "den här inspelningen",
+    "deleteFailed": "Kunde inte radera",
+    "clearNone": "Listan är tom",
+    "errorsNone": "Inga felposter",
+    "confirmClearN": "Radera alla {n} posterna?",
+    "confirmDeleteErrorsOne": "Radera 1 felpost?",
+    "confirmDeleteErrorsN": "Radera {n} felposter?",
+    "emptyFiltered": "Inga inspelningar i det här filtret"
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ API-nyckel sparad (nyckelring)"
   },
   "search": {
-    "title": "Sök & historik",
+    "title": "Historik",
     "subtitle": "Sök i predikotext eller filnamn och se hela inspelningshistoriken. Klicka på en textträff för att öppna inspelningen på den punkten.",
     "placeholder": "Sök i predikan eller filnamn…",
     "reindex": "↻ Uppdatera index",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "Ska inspelningen starta av sig själv?",
     "autostartConfirm": "Slå på autostart",
     "gmailDisconnectTitle": "Koppla från Google-kontot?",
-    "clearHistoryBody": "Själva inspelningsfilerna behålls — det är bara listan över dem som rensas.",
-    "deleteErrorsBody": "{n} poster med fel tas bort från listan. Inspelningsfilerna rörs inte.",
+    "clearHistoryBody": "Själva inspelningsfilerna ligger kvar — bara listan över dem raderas. Detta kan inte ångras.",
+    "deleteErrorsBody": "{n} felposter tas bort från listan. Detta kan inte ångras.",
     "autoDeleteTitle": "Ta bort inspelningar automatiskt?",
     "autoDeleteConfirm": "Ja, ta bort automatiskt",
     "wakeTestTitle": "Testa väckning ur viloläge?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Förkasta det här avsnittet?",
     "discardEpisodeBody": "Inspelningen behålls, men den publiceras inte.",
     "discardEpisode": "Förkasta",
-    "publishFailedTitle": "Kunde inte publicera"
+    "publishFailedTitle": "Kunde inte publicera",
+    "deleteEntryTitle": "Ta bort ”{name}” från listan?",
+    "deleteEntryBody": "Själva inspelningsfilen ligger kvar på disken — bara listposten tas bort. Detta kan inte ångras.",
+    "deleteEntryBodyPair": "Både ljud- och videofilen ligger kvar på disken — bara de två listposterna tas bort. Detta kan inte ångras."
   },
   "toast": {
     "dismiss": "Stäng"

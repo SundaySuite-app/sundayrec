@@ -6,7 +6,7 @@
     "files": "Opptak",
     "editor": "Rediger",
     "live": "Direkte",
-    "search": "Søk & historikk",
+    "search": "Historikk",
     "notifications": "Varsler",
     "publish": "Publisering",
     "settings": "Innstillinger",
@@ -124,7 +124,6 @@
     "error": "Feil",
     "scheduled": "Planlagt",
     "empty": "Ingen opptak ennå",
-    "confirmClear": "Slett hele historikken?",
     "pruneBtn": "Rydd opp",
     "clearBtn": "Slett alle",
     "pruneNone": "Ingen å rydde",
@@ -135,7 +134,6 @@
     "addNote": "Legg til notat",
     "editNote": "Rediger notat",
     "notePlaceholder": "Skriv notat…",
-    "confirmDeleteErrors": "Slett feiloppføringer?",
     "deleteEntry": "Slett oppføring",
     "ok": "Fullført",
     "noteCancel": "Avbryt",
@@ -144,7 +142,20 @@
     "noteTitle": "Notat",
     "revealFile": "Vis i Finder / Utforsker",
     "revealVideo": "Vis videofil i Finder",
-    "actions": "Handlinger"
+    "actions": "Handlinger",
+    "filterGroup": "Filtrer opptak",
+    "filterAll": "Alle",
+    "filterAudio": "Lyd",
+    "filterVideo": "Video",
+    "filterTranscript": "Med transkript",
+    "thisRecording": "dette opptaket",
+    "deleteFailed": "Kunne ikke slette",
+    "clearNone": "Listen er tom",
+    "errorsNone": "Ingen feiloppføringer",
+    "confirmClearN": "Slett alle {n} oppføringene?",
+    "confirmDeleteErrorsOne": "Slett 1 feiloppføring?",
+    "confirmDeleteErrorsN": "Slett {n} feiloppføringer?",
+    "emptyFiltered": "Ingen opptak i dette filteret"
   },
   "review": {
     "queueTitle": "Klare for gjennomgang og publisering",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ API-nøkkel lagret (nøkkelring)"
   },
   "search": {
-    "title": "Søk & historikk",
+    "title": "Historikk",
     "subtitle": "Søk i preken-tekst eller filnavn, og se hele opptakshistorikken. Klikk et tekst-treff for å åpne opptaket på det punktet.",
     "placeholder": "Søk i preken eller filnavn…",
     "reindex": "↻ Oppdater indeks",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "Skal opptaket starte av seg selv?",
     "autostartConfirm": "Slå på autostart",
     "gmailDisconnectTitle": "Koble fra Google-kontoen?",
-    "clearHistoryBody": "Selve opptaksfilene beholdes — det er bare listen over dem som slettes.",
-    "deleteErrorsBody": "{n} oppføringer med feil fjernes fra listen. Opptaksfilene røres ikke.",
+    "clearHistoryBody": "Selve opptaksfilene beholdes — det er bare listen over dem som slettes. Dette kan ikke angres.",
+    "deleteErrorsBody": "{n} oppføringer med feil fjernes fra listen. Dette kan ikke angres.",
     "autoDeleteTitle": "Slette opptak automatisk?",
     "autoDeleteConfirm": "Ja, slett automatisk",
     "wakeTestTitle": "Teste vekking fra dvale?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Forkast denne episoden?",
     "discardEpisodeBody": "Selve opptaket beholdes, men det blir ikke publisert.",
     "discardEpisode": "Forkast",
-    "publishFailedTitle": "Kunne ikke publisere"
+    "publishFailedTitle": "Kunne ikke publisere",
+    "deleteEntryTitle": "Slett «{name}» fra listen?",
+    "deleteEntryBody": "Selve opptaksfilen beholdes på disken — det er bare oppføringen i listen som fjernes. Dette kan ikke angres.",
+    "deleteEntryBodyPair": "Både lyd- og videofilen beholdes på disken — det er bare de to oppføringene i listen som fjernes. Dette kan ikke angres."
   },
   "toast": {
     "dismiss": "Lukk"

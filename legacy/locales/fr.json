@@ -6,7 +6,7 @@
     "files": "Enregistrement",
     "editor": "Éditeur",
     "live": "Direct",
-    "search": "Recherche et historique",
+    "search": "Historique",
     "notifications": "Notifications",
     "publish": "Publication",
     "settings": "Réglages",
@@ -124,7 +124,6 @@
     "error": "Erreur",
     "scheduled": "Planifié",
     "empty": "Aucun enregistrement pour l’instant",
-    "confirmClear": "Supprimer tout l’historique ?",
     "pruneBtn": "Nettoyer",
     "clearBtn": "Tout supprimer",
     "pruneNone": "Rien à nettoyer",
@@ -135,7 +134,6 @@
     "addNote": "Ajouter une note",
     "editNote": "Modifier la note",
     "notePlaceholder": "Écrire une note…",
-    "confirmDeleteErrors": "Supprimer les entrées en erreur ?",
     "deleteEntry": "Supprimer l’entrée",
     "ok": "Terminé",
     "noteCancel": "Annuler",
@@ -144,7 +142,20 @@
     "noteTitle": "Note",
     "revealFile": "Afficher dans le Finder / l’Explorateur",
     "revealVideo": "Afficher le fichier vidéo dans le Finder",
-    "actions": "Actions"
+    "actions": "Actions",
+    "filterGroup": "Filtrer les enregistrements",
+    "filterAll": "Tout",
+    "filterAudio": "Audio",
+    "filterVideo": "Vidéo",
+    "filterTranscript": "Avec transcription",
+    "thisRecording": "cet enregistrement",
+    "deleteFailed": "Suppression impossible",
+    "clearNone": "La liste est vide",
+    "errorsNone": "Aucune entrée en erreur",
+    "confirmClearN": "Supprimer les {n} entrées ?",
+    "confirmDeleteErrorsOne": "Supprimer 1 entrée en erreur ?",
+    "confirmDeleteErrorsN": "Supprimer {n} entrées en erreur ?",
+    "emptyFiltered": "Aucun enregistrement dans ce filtre"
   },
   "review": {
     "queueTitle": "Prêts pour relecture et publication",
@@ -1067,7 +1078,7 @@
     "keyStored": "✓ Clé API enregistrée (trousseau)"
   },
   "search": {
-    "title": "Recherche et historique",
+    "title": "Historique",
     "subtitle": "Recherchez dans le texte du sermon ou le nom de fichier, et parcourez tout l'historique des enregistrements. Cliquez sur un résultat pour ouvrir l'enregistrement à ce point.",
     "placeholder": "Rechercher dans le sermon ou le nom de fichier…",
     "reindex": "↻ Actualiser l’index",
@@ -1123,8 +1134,8 @@
     "autostartTitle": "L’enregistrement doit-il démarrer tout seul ?",
     "autostartConfirm": "Activer le démarrage auto",
     "gmailDisconnectTitle": "Déconnecter le compte Google ?",
-    "clearHistoryBody": "Les fichiers d’enregistrement sont conservés — seule la liste est effacée.",
-    "deleteErrorsBody": "{n} entrées en erreur seront retirées de la liste. Les fichiers d’enregistrement ne sont pas touchés.",
+    "clearHistoryBody": "Les fichiers d'enregistrement sont conservés — seule la liste est supprimée. Vous ne pourrez pas annuler cette action.",
+    "deleteErrorsBody": "{n} entrées en erreur sont retirées de la liste. Vous ne pourrez pas annuler cette action.",
     "autoDeleteTitle": "Supprimer les enregistrements automatiquement ?",
     "autoDeleteConfirm": "Oui, supprimer automatiquement",
     "wakeTestTitle": "Tester le réveil depuis la veille ?",
@@ -1145,7 +1156,10 @@
     "discardEpisodeTitle": "Abandonner cet épisode ?",
     "discardEpisodeBody": "L’enregistrement est conservé, mais il ne sera pas publié.",
     "discardEpisode": "Abandonner",
-    "publishFailedTitle": "Publication impossible"
+    "publishFailedTitle": "Publication impossible",
+    "deleteEntryTitle": "Retirer « {name} » de la liste ?",
+    "deleteEntryBody": "Le fichier d'enregistrement reste sur le disque — seule l'entrée de la liste est retirée. Vous ne pourrez pas annuler cette action.",
+    "deleteEntryBodyPair": "Le fichier audio et le fichier vidéo restent sur le disque — seules les deux entrées de la liste sont retirées. Vous ne pourrez pas annuler cette action."
   },
   "toast": {
     "dismiss": "Fermer"
