@@ -1594,6 +1594,29 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .btn-editor-tool svg  { width: 16px; height: 16px; }
 .editor-drag-hint { font-size: 12px; color: var(--text3); flex: 1; text-align: center; }
 
+/* ── Toolbar view popover (what the timeline draws) ───────────────── */
+.editor-view-menu { position: relative; display: flex; }
+.btn-editor-tool.active {
+  background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent2);
+}
+.editor-view-popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+  min-width: 208px;
+  padding: 10px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--rsm);
+  box-shadow: 0 10px 28px rgba(0,0,0,.45);
+}
+.editor-view-popover[hidden] { display: none; }
+.editor-view-popover-title {
+  font-size: 11px; color: var(--text3); text-transform: uppercase;
+  letter-spacing: .05em; margin-bottom: 8px;
+}
+.editor-view-popover-empty {
+  font-size: 12px; color: var(--text3); line-height: 1.45; max-width: 220px;
+}
+
 .editor-canvas-wrap {
   position: relative; border-radius: 8px; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border2);
@@ -1808,13 +1831,14 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 }
 .editor-transcript-title { font-weight: 700; font-size: 13px; }
 .editor-transcript-body { font-size: 13px; color: var(--text2); line-height: 1.5; }
+/* One muted line, not a boxed placeholder. An empty panel that fills a card's
+   worth of height is the loudest thing on a screen full of real content — and
+   the action it points at («Transkriber») is already in the header above it. */
 .editor-transcript-empty {
-  padding: 12px;
-  background: var(--surface2);
-  border-radius: var(--rsm);
+  padding: 2px 0;
   color: var(--text3);
-  text-align: center;
   font-size: 12px;
+  line-height: 1.45;
 }
 .editor-transcript-meta {
   font-size: 11px; color: var(--text3);
@@ -2426,11 +2450,12 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 /* ── Editor — Peak normalize panel ────────────────────────────────
    Single button + status + reset link. Sits directly below the main
    waveform canvas so the visible gain change is obviously tied to it. */
+/* A control ROW, not a card. One button plus one line of status does not earn
+   a bordered panel of its own — that is what made the stack below the waveform
+   read as eight sections when it is really one toolbar's worth of controls. */
 .editor-normalize-panel {
-  margin-top: 10px;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  background: var(--surface); border: 1px solid var(--border2);
-  border-radius: var(--r); padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 2px 0;
 }
 
 .btn-normalize {
@@ -3849,17 +3874,13 @@ button > svg:first-child { flex-shrink: 0; }
 .editor-analyze-body {
   padding: 10px 12px; background: var(--surface1);
 }
+/* «Sist analysert …» is a receipt, so it reads like one: last line of the
+   card, small and muted, rather than the heading it used to be. */
 .editor-analyze-summary {
-  font-size: 12px; color: var(--text2); margin-bottom: 10px;
+  font-size: 11px; color: var(--text3); margin-top: 8px;
 }
 .editor-analyze-controls {
-  display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 0; border-top: 1px dashed var(--border);
-  margin-top: 4px;
-}
-.editor-analyze-controls-title {
-  font-size: 11px; color: var(--text3); text-transform: uppercase;
-  letter-spacing: .05em; margin-bottom: 2px;
+  display: flex; flex-direction: column; gap: 7px;
 }
 .editor-analyze-toggle {
   display: flex; align-items: center; gap: 8px;
@@ -4275,8 +4296,10 @@ button > svg:first-child { flex-shrink: 0; }
   margin-top: 8px;
   flex-wrap: wrap;
 }
+/* 200×200 of dashed nothing was the tallest empty state in the workspace.
+   140 is still a comfortable drop target and still shows the square crop. */
 .thumb-preview {
-  width: 200px; height: 200px; min-width: 200px;
+  width: 140px; height: 140px; min-width: 140px;
   display: flex; align-items: center; justify-content: center;
   background: var(--bg1, #0d0d11);
   border: 2px dashed var(--border, #2a2a35);

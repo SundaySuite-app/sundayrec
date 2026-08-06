@@ -593,6 +593,7 @@
     "analyzeSpeech": "Talesegmenter",
     "analyzeMusic": "Musiksegmenter",
     "analyzeSilence": "Stilhed",
+    "layersNotAnalyzed": "Kør «Analysér optagelse» under Klippeværktøj for at se tale, musik og stilhed her.",
     "markSermon": "↦ Markér prædiken automatisk",
     "markSermonHint": "Trimmer alt før og efter det fremhævede prædikenblok.",
     "sermonPickerLabel": "Er dette ikke prædikenen?",
@@ -958,7 +959,8 @@
     "zoomIn": "Zoom ind",
     "zoomOut": "Zoom ud",
     "fitAll": "Vis hele filen",
-    "kbdHints": "Vis tastaturgenveje"
+    "kbdHints": "Vis tastaturgenveje",
+    "timelineLayers": "Hvad tidslinjen viser"
   },
   "publish": {
     "descPlaceholder": "F.eks. Gudstjenester fra Eksempel kirke, hver søndag kl. 11",

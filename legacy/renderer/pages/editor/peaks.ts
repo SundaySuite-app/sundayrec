@@ -111,6 +111,11 @@ export function setNormalizeUI(gainDb: number, alreadyAtTarget: boolean): void {
   const label  = $('btn-normalize-label')
   const status = $('editor-normalize-status')
   const reset  = $('btn-normalize-reset')
+  // "Normalisering høres ved eksport, ikke i forhåndslytting" is the answer to
+  // "why did nothing change when I pressed it" — a sentence worth its own line
+  // once there IS a gain to be surprised by, and pure furniture before that.
+  const exportHint = $('editor-normalize-export-hint')
+  if (exportHint) exportHint.style.display = gainDb !== 0 ? '' : 'none'
   if (!btn || !label || !status) return
 
   if (gainDb !== 0) {

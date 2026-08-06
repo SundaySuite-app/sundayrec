@@ -593,6 +593,7 @@
     "analyzeSpeech": "Speech segments",
     "analyzeMusic": "Music segments",
     "analyzeSilence": "Silence",
+    "layersNotAnalyzed": "Run «Analyse recording» under Clip tools to see speech, music and silence here.",
     "markSermon": "↦ Mark sermon automatically",
     "markSermonHint": "Trims everything before and after the highlighted sermon block.",
     "analyzedAt": "Last analyzed",
@@ -958,7 +959,8 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "fitAll": "Show entire file",
-    "kbdHints": "Show keyboard shortcuts"
+    "kbdHints": "Show keyboard shortcuts",
+    "timelineLayers": "What the timeline shows"
   },
   "publish": {
     "descPlaceholder": "E.g. Services from Example Church, every Sunday at 11",

@@ -106,7 +106,13 @@ export function renderAnalyzePanel(): void {
     }
   }
 
-  if (controls) controls.style.display = E.lastAnalyzedAt > 0 ? '' : 'none'
+  // The three layer toggles now live in the toolbar's view popover. Before the
+  // recording has been analysed there are no segments to draw, so the popover
+  // shows a sentence saying where to get some instead of three dead checkboxes.
+  const analyzed = E.lastAnalyzedAt > 0
+  if (controls) controls.style.display = analyzed ? '' : 'none'
+  const layersEmpty = $('editor-view-popover-empty')
+  if (layersEmpty) layersEmpty.style.display = analyzed ? 'none' : ''
 
   // Show "Bruk forslag" / sermon-picker only when we have a sermon detected.
   const hasSermon = E.suggestions.some(s => s.type === 'sermon')

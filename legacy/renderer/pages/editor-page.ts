@@ -23,6 +23,7 @@ import { toast } from '../ui/toast'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
 import { setupEditorTabs, flagEditorTab } from './editor/tabs'
+import { setupViewMenu } from './editor/view-menu'
 import { pickAndLoad, loadFile, reloadIntroOutro, teardownPlayback, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
 
 // ── Setup ─────────────────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ export function setupEditorPage(): void {
 
   setupKbdHints()
   setupEditorTabs()
+  setupViewMenu()
   setupMasteringCollapse()
   $('btn-editor-play')?.addEventListener('click',    () => togglePlay(false))
   $('btn-editor-preview')?.addEventListener('click', () => togglePlay(true))

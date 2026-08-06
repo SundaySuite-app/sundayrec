@@ -593,6 +593,7 @@
     "analyzeSpeech": "Segments parlés",
     "analyzeMusic": "Segments musicaux",
     "analyzeSilence": "Silence",
+    "layersNotAnalyzed": "Lancez «Analyser l'enregistrement» dans Outils de coupe pour voir ici la parole, la musique et le silence.",
     "markSermon": "↦ Marquer le sermon automatiquement",
     "markSermonHint": "Coupe tout avant et après le bloc de prédication mis en évidence.",
     "sermonPickerLabel": "N’est-ce pas la prédication ?",
@@ -958,7 +959,8 @@
     "zoomIn": "Zoomer",
     "zoomOut": "Dézoomer",
     "fitAll": "Afficher tout le fichier",
-    "kbdHints": "Afficher les raccourcis clavier"
+    "kbdHints": "Afficher les raccourcis clavier",
+    "timelineLayers": "Ce que la timeline affiche"
   },
   "publish": {
     "descPlaceholder": "Ex : Services de l’Église Exemple, chaque dimanche à 11h",

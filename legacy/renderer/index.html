@@ -2283,6 +2283,48 @@
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3z"/></svg>
           </button>
         </div>
+
+        <!-- What the timeline draws. This is a VIEW setting, not a task, so it
+             belongs on the toolbar next to zoom — it used to be three
+             checkboxes inside the «Analyser opptak» card, where it read as
+             part of the analysis job rather than as a way of looking at it. -->
+        <div class="editor-view-menu" id="editor-view-menu">
+          <button class="btn-editor-tool" id="btn-editor-view-menu" type="button"
+                  aria-expanded="false" aria-haspopup="true" aria-controls="editor-view-popover"
+                  title="Hva vises på tidslinjen" data-i18n-title="tooltip.timelineLayers">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M10 3l7 3.5-7 3.5-7-3.5L10 3z" stroke-linejoin="round"/>
+              <path d="M3 10.5L10 14l7-3.5M3 14L10 17.5 17 14" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="editor-view-popover" id="editor-view-popover" hidden
+               role="group" aria-labelledby="editor-view-popover-title">
+            <div class="editor-view-popover-title" id="editor-view-popover-title"
+                 data-i18n="editor.analyzeShowOnTimeline">På tidslinjen vises:</div>
+            <div id="editor-analyze-controls" class="editor-analyze-controls" style="display:none">
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-speech" checked />
+                <span class="editor-analyze-swatch" style="background:rgba(72,187,120,0.35)"></span>
+                <span data-i18n="editor.analyzeSpeech">Tale-segmenter</span>
+              </label>
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-music" checked />
+                <span class="editor-analyze-swatch" style="background:rgba(99,179,237,0.4)"></span>
+                <span data-i18n="editor.analyzeMusic">Musikk-segmenter</span>
+              </label>
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-silence" />
+                <span class="editor-analyze-swatch" style="background:rgba(150,150,160,0.25)"></span>
+                <span data-i18n="editor.analyzeSilence">Stillhet</span>
+              </label>
+            </div>
+            <!-- Before the recording has been analysed there is nothing to draw,
+                 and an empty popover would read as broken. -->
+            <div class="editor-view-popover-empty" id="editor-view-popover-empty"
+                 data-i18n="editor.layersNotAnalyzed">Kjør «Analyser opptak» under Klipp-verktøy for å se tale, musikk og stillhet her.</div>
+          </div>
+        </div>
+
         <div class="editor-drag-hint" data-i18n="editor.dragHint">Klikk og dra for å markere et kutt</div>
         <button class="btn-ghost btn-sm" id="btn-editor-undo-all" data-i18n="editor.cutsNone" style="display:none">Fjern alle kutt</button>
         <button class="btn-editor-tool btn-editor-kbd-toggle" id="btn-editor-kbd-toggle" type="button"
@@ -2371,7 +2413,10 @@
       <!-- ── Tab: Lyd ─────────────────────────────────────────────────── -->
       <div class="editor-tabpanel" id="editor-tabpanel-audio" role="tabpanel" aria-labelledby="editor-tab-audio">
 
-      <!-- Lydnivå: peak normalization (Premiere-style "Normalize Max Peaks") -->
+      <!-- Lydnivå: peak normalization (Premiere-style "Normalize Max Peaks").
+           A control ROW, not a card: it is one button and one line of status,
+           and wrapping that in its own bordered panel made a single toggle look
+           like a section of the app. -->
       <div id="editor-normalize-panel" class="editor-normalize-panel">
         <button class="btn-normalize" id="btn-normalize-peak" type="button">
           <svg class="btn-normalize-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
@@ -2384,7 +2429,7 @@
         <!-- Honesty note: preview streams the ORIGINAL file through the media
              element, which has no gain stage — the normalize gain is an export
              filter. Saying so beats a user turning it up and hearing nothing. -->
-        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
+        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" style="display:none" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
       </div>
 
       <!-- Intro/Outro panel (collapsible — primary path is drag-and-drop onto timeline) -->
@@ -2592,31 +2637,15 @@
           <div id="editor-segments-analyzing" style="display:none" class="editor-segments-analyzing">
             <span class="editor-segments-spinner"></span> <span data-i18n="editor.analyzing">Analyserer…</span>
           </div>
-          <div id="editor-analyze-summary" class="editor-analyze-summary" style="display:none"></div>
-          <div id="editor-analyze-controls" class="editor-analyze-controls" style="display:none">
-            <div class="editor-analyze-controls-title" data-i18n="editor.analyzeShowOnTimeline">På tidslinjen vises:</div>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-speech" checked />
-              <span class="editor-analyze-swatch" style="background:rgba(72,187,120,0.35)"></span>
-              <span data-i18n="editor.analyzeSpeech">Tale-segmenter</span>
-            </label>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-music" checked />
-              <span class="editor-analyze-swatch" style="background:rgba(99,179,237,0.4)"></span>
-              <span data-i18n="editor.analyzeMusic">Musikk-segmenter</span>
-            </label>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-silence" />
-              <span class="editor-analyze-swatch" style="background:rgba(150,150,160,0.25)"></span>
-              <span data-i18n="editor.analyzeSilence">Stillhet</span>
-            </label>
-          </div>
           <button class="btn-ghost btn-sm" id="btn-apply-auto-trim" style="display:none" data-i18n="editor.markSermon">↦ Marker preken automatisk</button>
           <div id="editor-auto-trim-hint" class="editor-analyze-hint" style="display:none" data-i18n="editor.markSermonHint">Trimmer alt før og etter den uthevede preken-blokken.</div>
           <div id="editor-sermon-picker-wrap" class="editor-sermon-picker-wrap" style="display:none">
             <label class="editor-sermon-picker-lbl" data-i18n="editor.sermonPickerLabel">Er ikke dette prekenen?</label>
             <select id="editor-sermon-picker" class="editor-sermon-picker"></select>
           </div>
+          <!-- «Sist analysert 31.5 14:23 · 3 tale-segmenter funnet». A receipt,
+               not a heading — it used to open the card in full-size body text. -->
+          <div id="editor-analyze-summary" class="editor-analyze-summary" style="display:none"></div>
         </div>
       </div>
 

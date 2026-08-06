@@ -593,6 +593,7 @@
     "analyzeSpeech": "Talsegment",
     "analyzeMusic": "Musiksegment",
     "analyzeSilence": "Tystnad",
+    "layersNotAnalyzed": "Kör «Analysera inspelning» under Klippverktyg för att se tal, musik och tystnad här.",
     "markSermon": "↦ Markera predikan automatiskt",
     "markSermonHint": "Trimmer allt före och efter det markerade predikoblocket.",
     "sermonPickerLabel": "Är detta inte predikan?",
@@ -958,7 +959,8 @@
     "zoomIn": "Zooma in",
     "zoomOut": "Zooma ut",
     "fitAll": "Visa hela filen",
-    "kbdHints": "Visa kortkommandon"
+    "kbdHints": "Visa kortkommandon",
+    "timelineLayers": "Vad tidslinjen visar"
   },
   "publish": {
     "descPlaceholder": "T.ex. Gudstjänster från Exempelkyrkan, varje söndag kl. 11",

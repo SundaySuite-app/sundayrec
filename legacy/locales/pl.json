@@ -593,6 +593,7 @@
     "analyzeSpeech": "Segmenty mowy",
     "analyzeMusic": "Segmenty muzyki",
     "analyzeSilence": "Cisza",
+    "layersNotAnalyzed": "Uruchom «Analizuj nagranie» w Narzędziach cięcia, aby zobaczyć tu mowę, muzykę i ciszę.",
     "markSermon": "↦ Zaznacz kazanie automatycznie",
     "markSermonHint": "Przycina wszystko przed i po wyróżnionym bloku kazania.",
     "sermonPickerLabel": "Czy to nie kazanie?",
@@ -958,7 +959,8 @@
     "zoomIn": "Powiększ",
     "zoomOut": "Pomniejsz",
     "fitAll": "Pokaż cały plik",
-    "kbdHints": "Pokaż skróty klawiszowe"
+    "kbdHints": "Pokaż skróty klawiszowe",
+    "timelineLayers": "Co pokazuje oś czasu"
   },
   "publish": {
     "descPlaceholder": "Np. Nabożeństwa z Kościoła Przykładowego, w każdą niedzielę o 11",

@@ -593,6 +593,7 @@
     "analyzeSpeech": "Sprachsegmente",
     "analyzeMusic": "Musiksegmente",
     "analyzeSilence": "Stille",
+    "layersNotAnalyzed": "Führe «Aufnahme analysieren» unter Schnittwerkzeuge aus, um hier Sprache, Musik und Stille zu sehen.",
     "markSermon": "↦ Predigt automatisch markieren",
     "markSermonHint": "Schneidet alles vor und nach dem hervorgehobenen Predigtblock weg.",
     "sermonPickerLabel": "Ist dies nicht die Predigt?",
@@ -958,7 +959,8 @@
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
     "fitAll": "Gesamte Datei anzeigen",
-    "kbdHints": "Tastenkürzel anzeigen"
+    "kbdHints": "Tastenkürzel anzeigen",
+    "timelineLayers": "Was die Zeitleiste zeigt"
   },
   "publish": {
     "descPlaceholder": "z. B. Gottesdienste der Beispiel-Kirche, jeden Sonntag um 11",
