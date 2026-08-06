@@ -563,7 +563,8 @@
     "showInFolder": "Show in folder"
   },
   "error": {
-    "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
+    "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
+    "ipcFailed": "Something in the background did not respond, so this view may be incomplete."
   },
   "editor": {
     "title": "Edit audio file",

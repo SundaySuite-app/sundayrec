@@ -563,7 +563,8 @@
     "showInFolder": "Afficher dans le dossier"
   },
   "error": {
-    "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application."
+    "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
+    "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet."
   },
   "editor": {
     "title": "Éditer le fichier audio",

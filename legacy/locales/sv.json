@@ -563,7 +563,8 @@
     "showInFolder": "Visa i mapp"
   },
   "error": {
-    "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
+    "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet.",
+    "ipcFailed": "Något i bakgrunden svarade inte, så den här vyn kan vara ofullständig."
   },
   "editor": {
     "title": "Redigera ljudfil",

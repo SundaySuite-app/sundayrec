@@ -563,7 +563,8 @@
     "showInFolder": "Vis i mappe"
   },
   "error": {
-    "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
+    "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.",
+    "ipcFailed": "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig."
   },
   "editor": {
     "title": "Rediger lydfil",

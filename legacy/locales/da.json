@@ -563,7 +563,8 @@
     "showInFolder": "Vis i mappe"
   },
   "error": {
-    "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
+    "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",
+    "ipcFailed": "Noget i baggrunden svarede ikke, så denne visning kan være ufuldstændig."
   },
   "editor": {
     "title": "Rediger lydfil",

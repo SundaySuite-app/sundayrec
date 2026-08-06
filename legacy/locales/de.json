@@ -563,7 +563,8 @@
     "showInFolder": "Im Ordner anzeigen"
   },
   "error": {
-    "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu."
+    "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu.",
+    "ipcFailed": "Etwas im Hintergrund hat nicht geantwortet, daher ist diese Ansicht möglicherweise unvollständig."
   },
   "editor": {
     "title": "Audiodatei bearbeiten",

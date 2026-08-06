@@ -563,7 +563,8 @@
     "showInFolder": "Pokaż w folderze"
   },
   "error": {
-    "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
+    "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
+    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny."
   },
   "editor": {
     "title": "Edytuj plik audio",
