@@ -37,6 +37,65 @@ launch → right-click ▸ Open. Windows is unsigned → "More info" ▸ "Run an
 Notarization returns once the Apple Program License Agreement is re-accepted
 (see below).
 
+## The bundled ffmpeg (what we ship, and under what licence)
+
+Every installer carries an `ffmpeg` + `ffprobe` sidecar. `scripts/fetch-ffmpeg.mjs`
+downloads them per platform; `src-tauri/tauri.conf.json` bundles them via
+`externalBin`.
+
+**Version: 8.1.2** (since 2026-08-06). Before that we shipped **6.0** — a 2023
+release — not by choice but because the sidecar came from the `ffmpeg-static`
+npm package, which has been frozen there for years. That package (and
+`@ffprobe-installer/ffprobe`) is gone.
+
+**Not 9.0.** ffmpeg 9.0 shipped 2026-08-04, two days before this upgrade. A
+church recording gets one take; a two-day-old major release is not what it runs
+on. 8.1 is the current maintained release branch and is where we stay until
+9.x has a few point releases behind it.
+
+| Platform   | Source                                                                   | Archive                                                                                                                               |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS      | [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) release channel | `/download/macos/<arch>/<buildid>_8.1.2/{ffmpeg,ffprobe}.zip` — signed + notarized by the publisher                                   |
+| Linux (CI) | same                                                                     | `/download/linux/<arch>/<buildid>_8.1.2/…` — never shipped; the ubuntu job needs a real binary so the real-ffmpeg smokes actually run |
+| Windows    | [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) release **essentials**   | `/builds/packages/ffmpeg-8.1.2-essentials_build.zip` (`<stem>/bin/*.exe`)                                                             |
+
+Both publish a `.sha256` next to the archive, and both keep versioned archives
+around — the URLs above are pinned to an exact build, not to "latest", so a
+rebuild a year from now fetches the same bytes.
+
+**Licensing: GPL, unchanged.** Both builds are configured `--enable-gpl
+--enable-version3`, same as the 6.0 build we shipped before, so SundayRec's
+distribution obligations are what they already were: the GPL applies to the
+ffmpeg binaries we redistribute, and anyone we hand an installer to is entitled
+to the corresponding source. Point them at the publisher's build page (linked
+above) and ffmpeg's own release tarball for 8.1.2. Nothing here is `--enable-nonfree`.
+The gyan "essentials" build is a subset of the full one; it carries everything
+this app asks for (native aac/flac/pcm/mjpeg, libmp3lame, libx264, dshow,
+lavfi, and every filter we use is built-in).
+
+**Installer size grew.** ffmpeg 8 static builds are simply larger than 6.0's:
+the macOS pair went ~63 MB → ~131 MB, Windows ~110 MB → ~204 MB before
+installer compression. That is inherent to the version, not to the source
+chosen — there is no small 8.x static build. It is also the size the updater
+downloads per release.
+
+### Two-layer integrity pinning
+
+1. **Archive** — the publisher's SHA-256 for each `.zip` is hard-pinned in
+   `scripts/fetch-ffmpeg.mjs`. A mismatch aborts before anything is unpacked.
+   Bumping `FFMPEG_VERSION` means re-reading those `.sha256` files.
+2. **Bundled binary** — `scripts/ffmpeg-checksums.json` pins the SHA-256 of the
+   exact unpacked bytes, keyed `<name>-<rust host triple>`. A mismatch is a hard
+   failure; a **missing** key logs the computed hash and proceeds.
+
+That missing-key behaviour is the pinning workflow: **macOS arm64 is pinned**
+(computed on the owner's machine). **Windows and Linux are not yet** — their
+hashes get printed by the first CI/release run that fetches them. Copy the two
+`⚠ … computed <hash>` lines out of that run's "Fetch … sidecars" step into
+`scripts/ffmpeg-checksums.json` and commit. Linux is optional (it never ships);
+Windows should be pinned before the next release is published, exactly as the
+6.0-era Windows pins were captured.
+
 ## Required GitHub repository secrets
 
 Settings → Secrets and variables → Actions → New repository secret.

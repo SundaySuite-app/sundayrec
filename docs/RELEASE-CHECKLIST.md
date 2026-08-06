@@ -65,6 +65,13 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 - [ ] Watch the run; it produces a **draft** Release. **Publishing is a separate
       manual step** — review the draft, then mark it published/latest (same
       gotcha as the Electron SundayRec; a draft is served to no one).
+- [ ] **Pin the Windows ffmpeg hash** (one-off, until it's in the file): the
+      Windows job's "Fetch bundled ffmpeg/ffprobe sidecars" step prints
+      `⚠ … no pinned SHA-256 for ffmpeg-x86_64-pc-windows-msvc — computed <hash>`
+      for both binaries. Copy those two lines into
+      `scripts/ffmpeg-checksums.json` and commit, so the NEXT release verifies
+      the bytes instead of trusting the download. See `DISTRIBUTION.md` ▸ "The
+      bundled ffmpeg".
 - [ ] When you publish the draft, confirm **"Set as the latest release" is
       ticked and "Set as a pre-release" is NOT** — the auto-updater reads
       `/releases/latest`, which excludes pre-releases. A pre-release (or a still-
