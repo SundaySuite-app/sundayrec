@@ -3,6 +3,7 @@ import { settings, patchSettings } from '../state'
 import { setVal } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { toast } from '../ui/toast'
+import { openModal } from '../ui/modal-manager'
 import {
   bindSetting,
   resyncBoundSettings,
@@ -105,6 +106,7 @@ export function setupGeneralPage(): void {
   setupSmtpCard()
   void refreshEmailGate()
   setupWebhookTest()
+  setupTelemetryCard()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
@@ -495,6 +497,153 @@ function setupSmtpCard(): void {
     // keychain is not touched — that is what «Fjern» is for.
     if (pass) pass.value = ''
   })
+}
+
+/**
+ * «Personvern og diagnostikk» — the opt-in telemetry card (E3.7).
+ *
+ * Consent state lives entirely behind telemetry_consent_get/set (the
+ * `app_setting` bag in src-tauri — see crates/sundayrec-core/telemetry/
+ * consent.rs), NOT in the `Settings` blob `bindSetting` normally reads and
+ * writes through `collectGeneralSettings()`. So the toggle below uses the
+ * same `apply: () => {}` / `persist: async () => …` shape
+ * integrations-page.ts already established for exactly this situation (a
+ * control whose truth lives outside Settings).
+ *
+ * No `confirmIf` on enabling: the toggle's own description plus the details
+ * this card links to (the preview, the privacy notice) already give informed
+ * consent, and layering a second "are you sure?" on top of a purely opt-IN
+ * action would be friction with no matching friction on the way back out —
+ * which is itself a shape of dark pattern this feature is trying to avoid.
+ */
+function setupTelemetryCard(): void {
+  void refreshTelemetryCard()
+
+  bindSetting('opt-telemetry-consent', {
+    key: 'telemetryConsent',
+    apply: () => {},
+    persist: async () => {
+      const checked = (document.getElementById('opt-telemetry-consent') as HTMLInputElement | null)?.checked ?? false
+      const result = await window.api.telemetryConsentSet(checked)
+      if (!result) return false
+      void refreshTelemetryCard()
+      return true
+    },
+  })
+
+  document.getElementById('btn-telemetry-preview')?.addEventListener('click', () => void showTelemetryPreview())
+  document.getElementById('btn-telemetry-delete')?.addEventListener('click', () => void deleteTelemetryData())
+  document.getElementById('telemetry-privacy-link')?.addEventListener('click', e => {
+    e.preventDefault()
+    void window.api.openPrivacyPolicy()
+  })
+}
+
+/**
+ * Paint the toggle + queue line from the REAL backend state, and rebase
+ * `bindSetting`'s baseline for the toggle to match.
+ *
+ * That last part matters: `bindSetting` captures its "previous value"
+ * baseline synchronously when `setupTelemetryCard()` calls it, which is
+ * BEFORE this async read can possibly resolve — so without
+ * `resyncBoundSettings()` here, a consent that was already granted in an
+ * earlier session would paint the checkbox as checked while the binder still
+ * believed the baseline was unchecked. The very next click (unchecking it)
+ * would then look like "no real change" and silently not persist. Mirrors
+ * exactly what `applyGeneralSettingsToUI()` does after its own `setCheckbox`
+ * calls, for the same reason.
+ */
+async function refreshTelemetryCard(): Promise<void> {
+  const toggle = document.getElementById('opt-telemetry-consent') as HTMLInputElement | null
+  const consent = await window.api.telemetryConsentGet().catch(() => null)
+  if (toggle) toggle.checked = !!consent?.active
+  resyncBoundSettings()
+
+  const statusEl = document.getElementById('telemetry-queue-status')
+  if (!statusEl) return
+  if (!consent?.active) { statusEl.style.display = 'none'; return }
+
+  const q = await window.api.telemetryQueueStatus().catch(() => null)
+  const parts: string[] = []
+  if (q && q.pending > 0) {
+    parts.push(q.pending === 1
+      ? t('general.telemetryQueuePendingOne', '1 rapport venter på å bli sendt.')
+      : t('general.telemetryQueuePendingMany', '{n} rapporter venter på å bli sendt.').replace('{n}', String(q.pending)))
+  }
+  if (q && q.failed > 0) {
+    parts.push(t('general.telemetryQueueFailed', '{n} kunne ikke sendes.').replace('{n}', String(q.failed)))
+  }
+  if (q?.oldestAt) {
+    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(currentLang)))
+  }
+  if (q?.lastError) {
+    parts.push(t('general.telemetryQueueLastError', 'Siste feil: {error}').replace('{error}', q.lastError))
+  }
+  statusEl.textContent = parts.join(' ')
+  statusEl.style.display = parts.length ? '' : 'none'
+}
+
+/**
+ * «Vis hva som sendes» — the transparency affordance the privacy text
+ * promises. Opens the modal FIRST (with a placeholder), then fills it — the
+ * preview is a real IPC round-trip, and an instant open with "…" reads better
+ * than a click that visibly does nothing for a beat.
+ *
+ * A failed fetch shows an honest error, never a fabricated payload: the whole
+ * point of this surface is that what it displays is real (see
+ * telemetry_preview_payload's own doc comment in
+ * src-tauri/src/commands/telemetry.rs).
+ */
+async function showTelemetryPreview(): Promise<void> {
+  const body = document.getElementById('telemetry-preview-body')
+  const hint = document.getElementById('telemetry-preview-hint')
+  if (!body || !hint) return
+  body.textContent = '…'
+  hint.textContent = ''
+  openModal('telemetry-preview-modal')
+
+  const preview = await window.api.telemetryPreviewPayload().catch(() => null)
+  if (!preview) {
+    body.textContent = ''
+    hint.textContent = t('general.telemetryPreviewFailed', 'Kunne ikke hente forhåndsvisningen.')
+    return
+  }
+  body.textContent = preview.json
+  const hints = [
+    preview.isNextPayload
+      ? t('general.telemetryPreviewNextHint', 'Dette er nøyaktig det som sendes neste gang.')
+      : t('general.telemetryPreviewHistoryHint', 'Diagnostikk er av. Dette viser formen på dataene fra din egen historikk lokalt — ingenting sendes.'),
+  ]
+  if (preview.isEmpty) hints.push(t('general.telemetryPreviewEmptyHint', 'Ingenting å sende akkurat nå.'))
+  hint.textContent = hints.join(' ')
+}
+
+/**
+ * «Slett mine data» — regenerates the install id and clears the local
+ * outbox. The confirm copy says exactly this and nothing more: today's
+ * version cannot reach into Sunday Suite's server and delete rows already
+ * received (that arrives in a later version), and claiming otherwise would
+ * be the one thing a privacy control must never do.
+ */
+async function deleteTelemetryData(): Promise<void> {
+  const ok = await confirmDialog({
+    title: t('general.telemetryDeleteConfirmTitle', 'Slette dine data?'),
+    message: t(
+      'general.telemetryDeleteConfirmBody',
+      'Dette bytter ut den anonyme install-IDen din med en ny, og tømmer rapporter i kø som ikke er sendt ennå — begge deler skjer lokalt, med én gang. Data som allerede er sendt til Sunday Suite kan foreløpig ikke slettes på forespørsel; den slettes automatisk etter 90 dager som normalt. Sletting på forespørsel på serversiden kommer i en senere versjon.',
+    ),
+    confirmLabel: t('general.telemetryDeleteConfirmYes', 'Ja, tøm og bytt ID'),
+    cancelLabel: t('general.telemetryDeleteConfirmNo', 'Avbryt'),
+    danger: true,
+  })
+  if (!ok) return
+
+  const success = await window.api.telemetryRegenerateInstallId().catch(() => false)
+  toast(success ? 'success' : 'error',
+    success
+      ? t('general.telemetryDeletedToast', 'Dataene er tømt lokalt, og du har fått en ny anonym ID.')
+      : t('general.telemetryDeleteFailedToast', 'Kunne ikke slette dataene. Prøv igjen.'))
+  if (success) void refreshTelemetryCard()
 }
 
 // Lifetime `window.api.on` subscriptions + the hourly auto-check interval —
