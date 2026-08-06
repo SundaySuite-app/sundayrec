@@ -96,18 +96,12 @@ export function applyFeatureGate(
   }
 }
 
-/** The «kommer» gate, used by the three thumbnail panels — no Rust side exists
- *  at all, so there is nothing to configure and nothing to wait for but us. */
-export function applyComingSoonGate(sectionEl: HTMLElement | string | null, what: string): void {
-  applyFeatureGate(sectionEl, {
-    status: 'unavailable',
-    chipText: t('gate.chipComing', 'Kommer'),
-    explanation: t(
-      'gate.comingExplanation',
-      '{what} er ikke bygget ennå. Panelet står her fordi funksjonen er planlagt — inntil videre gjør knappene ingenting, så de er slått av.',
-    ).replace('{what}', what),
-  })
-}
+// `applyComingSoonGate` lived here — the «Kommer» chip, worn by the three
+// thumbnail panels and by nothing else. All three had the same cause (no Rust
+// side at all) and all three lost it in Fase 6, so the helper had no callers
+// left and its documentation described a state of affairs that had stopped
+// being true. Keeping it would have been an invitation to reach for a chip
+// instead of writing the missing half; the locale keys went with it.
 
 /** Convenience for the common "no backend in this build" case. */
 export function unavailableGate(

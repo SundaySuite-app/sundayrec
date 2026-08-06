@@ -98,7 +98,6 @@
     "nextShort": "nästa",
     "wakesLead": "({min} min innan)",
     "openInEditor": "Öppna i redigering",
-    "thumbComing": "Avsnittsbild kommer — används inte än",
     "prerollActive": "Förhandsbuffert aktiv ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Vem som får besked när en inspelning startar, stoppar eller misslyckas."
   },
   "gate": {
-    "chipComing": "Kommer",
     "chipUnconfigured": "Inte konfigurerat",
-    "chipUnavailable": "Inte tillgängligt",
-    "comingExplanation": "{what} är inte byggt ännu. Panelen finns här för att funktionen är planerad — tills vidare gör knapparna ingenting, så de är avstängda."
+    "chipUnavailable": "Inte tillgängligt"
   },
   "health": {
     "micDenied": "Mikrofonåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Mikrofon och slå på SundayRec.",

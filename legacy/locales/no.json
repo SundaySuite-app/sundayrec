@@ -98,7 +98,6 @@
     "nextShort": "neste",
     "wakesLead": "({min} min før)",
     "openInEditor": "Åpne i redigering",
-    "thumbComing": "Episodebilde kommer — brukes ikke ennå",
     "prerollActive": "Forhåndsbuffer aktiv ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Hvem får beskjed når et opptak starter, stopper eller feiler."
   },
   "gate": {
-    "chipComing": "Kommer",
     "chipUnconfigured": "Ikke konfigurert",
-    "chipUnavailable": "Ikke tilgjengelig",
-    "comingExplanation": "{what} er ikke bygget ennå. Panelet står her fordi funksjonen er planlagt — inntil videre gjør knappene ingenting, så de er slått av."
+    "chipUnavailable": "Ikke tilgjengelig"
   },
   "health": {
     "micDenied": "Mikrofontilgang er avslått. Åpne Systeminnstillinger → Personvern og sikkerhet → Mikrofon og slå på SundayRec.",

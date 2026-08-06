@@ -5,4 +5,11 @@ import type { ImageFormat } from "./ImageFormat";
  * The measured facts about a stored cover, feeding the panel's warnings
  * (< 1400 px, non-square, > 5 MB).
  */
-export type ThumbnailInfo = { width: number, height: number, byteSize: bigint, format: ImageFormat, };
+export type ThumbnailInfo = { width: number, height: number, 
+/**
+ * `u32`, not `u64`, on purpose: [`MAX_BYTES`] caps this at 20 MB, and ts-rs
+ * maps `u64` to `bigint` — which the panel's `byteSize > 5 * 1024 * 1024`
+ * comparison and its `fmtBytes(b: number)` would both reject, for a value
+ * that arrives over JSON IPC as an ordinary number anyway.
+ */
+byteSize: number, format: ImageFormat, };

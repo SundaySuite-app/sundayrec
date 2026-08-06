@@ -48,6 +48,12 @@ const VIDEO_EXT = [
   "3gp", "asf", "f4v",
 ];
 const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif"];
+// Cover art is the same list MINUS gif. An animated overlay logo is a
+// reasonable thing to want; an animated podcast cover is not something Apple
+// Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
+// regardless (`sundayrec-core::image_probe`), so this only spares the user the
+// round trip of picking one and being told no.
+const COVER_EXT = ["png", "jpg", "jpeg", "webp"];
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
@@ -143,6 +149,32 @@ async function editorCall<T extends object>(
   } catch (e) {
     return { ok: false, error: ipcErrText(e) };
   }
+}
+
+/** The cover-art picker. Cancel → `null`, which the thumbnail panel reads as
+ *  "leave the current image alone". */
+async function pickCoverImage(): Promise<string | null> {
+  return pickPath({ name: "Bilde", extensions: COVER_EXT });
+}
+
+/** The three validation codes the thumbnail panel localizes, as the backend
+ *  spells them. Anything else is a genuine surprise and is passed through. */
+const THUMBNAIL_ERROR_CODES = ["empty_file", "too_large", "unsupported_format"];
+
+/**
+ * A rejected `thumbnail_*` invoke → the `{ error }` member of the panel's
+ * union.
+ *
+ * The commands return `AppError::Validation("<code>")`, which reaches us as
+ * `"validation: <code>"`. The panel's `errorLabel()` matches on the BARE code
+ * and echoes anything it doesn't recognise verbatim, so handing it the prefixed
+ * string would print «validation: too_large» at the user instead of «Filen er
+ * for stor (over 20 MB)».
+ */
+function thumbnailError(e: unknown): { error: string } {
+  const msg = ipcErrText(e);
+  const known = THUMBNAIL_ERROR_CODES.find((code) => msg.includes(code));
+  return { error: known ?? msg };
 }
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
@@ -1513,13 +1545,48 @@ const api: Record<string, unknown> = {
   masterCancel: async (jobId: string) =>
     call("editor_master_cancel", { jobId }, true).then(() => true),
 
-  // ── Thumbnail ───────────────────────────────────────────────────────────
-  thumbnailSetDefault: async () => ({ ok: false }),
-  thumbnailClearDefault: async () => true,
-  thumbnailSetEpisode: async () => ({ ok: false }),
-  thumbnailClearEpisode: async () => true,
-  thumbnailResolve: async () => null,
-  thumbnailGetDefaultInfo: async () => null,
+  // ── Episode image / cover art (thumbnail_*) ─────────────────────────────
+  //
+  // These six were stubs from the port until Fase 6, and the stubs did worse
+  // than nothing: `{ ok: false }` is not a member of the union the panel reads
+  // (`{path,info,dataUrl} | {error}`), so `'error' in result` was false and a
+  // failure rendered as SILENCE — picker opens, file chosen, nothing happens,
+  // nothing said. The three surfaces were gated «Kommer» because of it.
+  //
+  // The PICKER lives here, not in the panel: `thumbnail-panel.ts` calls
+  // `setDefault()` / `setEpisode(rp)` with no path and treats `null` as "user
+  // cancelled, keep what's on screen".
+  thumbnailSetDefault: async (sourcePath?: string) => {
+    const src = sourcePath ?? (await pickCoverImage());
+    if (!src) return null;
+    try {
+      return await invoke("thumbnail_set_default", { sourcePath: src });
+    } catch (e) {
+      return thumbnailError(e);
+    }
+  },
+  thumbnailClearDefault: async () =>
+    call<boolean>("thumbnail_clear_default", undefined, false),
+  thumbnailSetEpisode: async (recordingPath: string, sourcePath?: string) => {
+    const src = sourcePath ?? (await pickCoverImage());
+    if (!src) return null;
+    try {
+      return await invoke("thumbnail_set_episode", {
+        recordingPath,
+        sourcePath: src,
+      });
+    } catch (e) {
+      return thumbnailError(e);
+    }
+  },
+  thumbnailClearEpisode: async (recordingPath: string) =>
+    call<boolean>("thumbnail_clear_episode", { recordingPath }, false),
+  // Both lookups fall back to `null` = "no cover set", which is exactly what
+  // the panel renders as its drop-hint placeholder.
+  thumbnailResolve: async (recordingPath: string) =>
+    call("thumbnail_resolve", { recordingPath }, null),
+  thumbnailGetDefaultInfo: async () =>
+    call("thumbnail_get_default_info", undefined, null),
 
   // ── Cloud ───────────────────────────────────────────────────────────────
   cloudConnect: async () => okFalse,

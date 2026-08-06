@@ -98,7 +98,6 @@
     "nextShort": "nächste",
     "wakesLead": "({min} Min. vorher)",
     "openInEditor": "Im Editor öffnen",
-    "thumbComing": "Episodenbild folgt — wird noch nicht verwendet",
     "prerollActive": "Vorlauf-Puffer aktiv ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Wer benachrichtigt wird, wenn eine Aufnahme startet, endet oder fehlschlägt."
   },
   "gate": {
-    "chipComing": "In Arbeit",
     "chipUnconfigured": "Nicht eingerichtet",
-    "chipUnavailable": "Nicht verfügbar",
-    "comingExplanation": "{what} ist noch nicht gebaut. Das Feld steht hier, weil die Funktion geplant ist — bis dahin bewirken die Schaltflächen nichts und sind deshalb deaktiviert."
+    "chipUnavailable": "Nicht verfügbar"
   },
   "health": {
     "micDenied": "Mikrofonzugriff ist verweigert. Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon und aktivieren Sie SundayRec.",

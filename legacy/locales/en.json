@@ -98,7 +98,6 @@
     "nextShort": "next",
     "wakesLead": "({min} min before)",
     "openInEditor": "Open in editor",
-    "thumbComing": "Episode artwork is coming — not used yet",
     "prerollActive": "Pre-roll buffer active ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Who is told when a recording starts, stops or fails."
   },
   "gate": {
-    "chipComing": "Coming",
     "chipUnconfigured": "Not configured",
-    "chipUnavailable": "Not available",
-    "comingExplanation": "{what} is not built yet. The panel is here because the feature is planned — until then the buttons do nothing, so they are switched off."
+    "chipUnavailable": "Not available"
   },
   "health": {
     "micDenied": "Microphone access is denied. Open System Settings → Privacy & Security → Microphone and enable SundayRec.",

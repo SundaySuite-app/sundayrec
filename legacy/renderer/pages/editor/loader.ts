@@ -16,7 +16,7 @@ import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 import { loadTranscriptForFile } from '../editor-transcript'
 import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
-import { applyComingSoonGate } from '../../ui/feature-gate'
+
 import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
 import { updateStageButton } from './stage-ui'
 
@@ -462,11 +462,11 @@ export async function loadFile(fp: string): Promise<void> {
   if (thumbSection) thumbSection.style.display = E.isVideoFile ? 'none' : ''
   if (!E.isVideoFile) {
     const els = panelElementsByPrefix('editor')
+    // The «kommer» gate that stood here through v0.9.0 is gone: `thumbnail_*`
+    // is real (src-tauri/src/commands/thumbnail.rs), so picking an image now
+    // stores one beside the recording instead of opening a picker whose result
+    // went nowhere.
     if (els) void refreshThumbPanel(els, { kind: 'episode', getRecordingPath: () => E.filePath })
-    // No Rust side exists for thumbnails at all — every thumbnail* shim method
-    // is a stub, so «Velg bilde» opened a picker whose result went nowhere.
-    // Gated as «kommer» rather than left looking functional.
-    applyComingSoonGate(thumbSection, t('thumbnail.section.title', 'Episodebilde'))
   }
 
   // Auto-run segment analysis. Runs in the background so the editor is

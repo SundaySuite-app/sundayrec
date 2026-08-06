@@ -314,11 +314,12 @@ export interface Settings {
    *  fails is retried once in software, so this only ever affects speed. */
   editorHwEncode?: boolean
 
-  // Episode thumbnail (cover art) — default applies to every published
-  // episode unless overridden by a per-recording sidecar (<name>.thumb.{ext}).
-  // Absolute path under app.getPath('userData')/thumbnails/default.{jpg|png|webp}.
-  // The image is copied here on pick so the source can be moved/deleted later.
-  defaultThumbnailPath?: string | null
+  // (`defaultThumbnailPath` lived here — an Electron-era field describing a
+  // `userData/thumbnails/default.{ext}` layout that the Tauri build never wrote
+  // and never read, and whose per-recording sibling was `<name>.thumb.{ext}`
+  // rather than the `<stem>.cover.{ext}` the real backend uses. The default
+  // cover is now `thumbnail_get_default_info`, so the field described nothing
+  // that existed while contradicting something that does.)
 
   // Cloud backup
   cloudGoogleDrive?: CloudServiceSettings

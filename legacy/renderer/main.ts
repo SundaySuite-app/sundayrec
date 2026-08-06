@@ -1,6 +1,8 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
+import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
+import type { ThumbnailView } from '../bindings/ThumbnailView'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
@@ -26,14 +28,14 @@ import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
 import { initDeeplinks } from './deeplinks'
 
-// Shared thumbnail IPC result shapes
-export interface ThumbnailInfo {
-  width:    number
-  height:   number
-  byteSize: number
-  format:   'jpeg' | 'png' | 'webp'
-}
-export type ThumbnailResult = { path: string; info: ThumbnailInfo; dataUrl: string } | { error: string }
+// Shared thumbnail IPC result shapes.
+//
+// These were hand-written for a backend that did not exist. It exists now
+// (src-tauri/src/commands/thumbnail.rs), so they are the GENERATED types — a
+// change to the Rust DTO surfaces here as a tsc error instead of as a panel
+// reading a field the backend stopped sending.
+export type ThumbnailInfo = ThumbnailInfoDto
+export type ThumbnailResult = ThumbnailView | { error: string }
 
 /** The pass-1 loudnorm measurement (`EditorLoudness`). All five measured values
  *  ride along so `masterApply` can REUSE the measurement `masterMeasure` just
@@ -47,12 +49,10 @@ export interface LoudnessMeasurementView {
   /** The preset's target, not a measurement — carried for the "x → y LUFS" UI. */
   targetLufs:   number
 }
-export interface ThumbnailResolved {
-  path:    string
-  info:    ThumbnailInfo
-  dataUrl: string
-  kind?:   'episode' | 'default'   // present on resolve, absent on getDefaultInfo
-}
+/** What `thumbnailResolve` returns — the same view, with `kind` telling the
+ *  panel whether it got this episode's own image or the shared default.
+ *  `kind` is absent from `thumbnailGetDefaultInfo` (nothing to distinguish). */
+export type ThumbnailResolved = ThumbnailView
 
 // Expose globals that sub-modules need
 declare global {

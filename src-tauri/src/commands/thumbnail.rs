@@ -93,7 +93,11 @@ pub enum ThumbnailKind {
 pub struct ThumbnailInfo {
     pub width: u32,
     pub height: u32,
-    pub byte_size: u64,
+    /// `u32`, not `u64`, on purpose: [`MAX_BYTES`] caps this at 20 MB, and ts-rs
+    /// maps `u64` to `bigint` — which the panel's `byteSize > 5 * 1024 * 1024`
+    /// comparison and its `fmtBytes(b: number)` would both reject, for a value
+    /// that arrives over JSON IPC as an ordinary number anyway.
+    pub byte_size: u32,
     pub format: ImageFormat,
 }
 
@@ -196,7 +200,7 @@ fn view_of(path: &Path, kind: Option<ThumbnailKind>) -> AppResult<ThumbnailView>
         info: ThumbnailInfo {
             width: probe.width,
             height: probe.height,
-            byte_size: bytes.len() as u64,
+            byte_size: bytes.len() as u32,
             format,
         },
         data_url: format!(
@@ -501,7 +505,7 @@ mod tests {
         let v = set_episode(&rec, &write(&media, "art.png", &bytes)).unwrap();
 
         assert!(v.data_url.starts_with("data:image/png;base64,"));
-        assert_eq!(v.info.byte_size, bytes.len() as u64);
+        assert_eq!(v.info.byte_size, bytes.len() as u32);
         // …and it really is the file, not a placeholder.
         use base64::{engine::general_purpose::STANDARD, Engine as _};
         let encoded = v.data_url.split_once(",").unwrap().1;

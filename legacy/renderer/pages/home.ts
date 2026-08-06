@@ -1451,19 +1451,21 @@ async function loadPublishInfoStrip(): Promise<void> {
   const strip = document.getElementById('publish-info-strip')
   if (!strip) return
 
-  const cloudShown   = renderCloudCard()
-  const thumbShown   = renderThumbCard()
-  // Whisper status is async (queries main for installed models) — we run
-  // it without awaiting so the synchronous cards above don't block on it.
+  const cloudShown = renderCloudCard()
+  // Both of these ask the backend something, so they run concurrently and the
+  // one synchronous card decides whether the strip appears immediately.
+  const thumbShownPromise = renderThumbCard()
   const whisperShownPromise = renderWhisperCard()
 
-  // Show the strip as soon as ONE card decided it has something to render.
-  // Without this the strip would briefly flash on every load while we wait
-  // on whisper-status.
-  if (cloudShown || thumbShown) {
+  // Show the strip as soon as ONE card has decided it has something to render,
+  // so it doesn't flash in on every load once the async answers land.
+  if (cloudShown) {
     strip.style.display = ''
   }
-  const whisperShown = await whisperShownPromise
+  const [thumbShown, whisperShown] = await Promise.all([
+    thumbShownPromise,
+    whisperShownPromise,
+  ])
   strip.style.display = (cloudShown || thumbShown || whisperShown) ? '' : 'none'
 }
 
@@ -1507,12 +1509,25 @@ function renderCloudCard(): boolean {
   return true
 }
 
-/** @returns true when the thumbnail card was rendered visible. */
-function renderThumbCard(): boolean {
+/**
+ * The «Standard episodebilde» card.
+ *
+ * It used to read `settings.defaultThumbnailPath` — a field NOTHING has ever
+ * written in the Tauri build — so the card appeared only for users carrying a
+ * stale path from the Electron app, showed a file that nothing consumed, and
+ * said so («Episodebilde kommer — brukes ikke ennå») with its «Endre» action
+ * turned off, because it would have landed on a panel that was itself gated.
+ *
+ * All three of those are now false. The card asks the backend what the default
+ * actually is, shows it, and lets you change it.
+ *
+ * @returns true when the card was rendered visible.
+ */
+async function renderThumbCard(): Promise<boolean> {
   const card = document.getElementById('home-thumb-card')
   if (!card) return false
-  const path = settings.defaultThumbnailPath
-  if (!path) {
+  const info = await window.api.thumbnailGetDefaultInfo().catch(() => null)
+  if (!info) {
     card.style.display = 'none'
     return false
   }
@@ -1521,33 +1536,27 @@ function renderThumbCard(): boolean {
   const subEl  = document.getElementById('home-thumb-sub')
   const iconSlot = card.querySelector<HTMLElement>('.home-thumb-icon-slot')
   if (nameEl) {
-    const base = path.split('/').pop() ?? path
-    nameEl.textContent = base
+    nameEl.textContent = info.path.split(/[\\/]/).pop() ?? info.path
   }
   if (subEl) {
-    // HONEST: nothing burns this image into anything — the whole thumbnail
-    // backend is unwritten (every thumbnail* IPC method is a stub), so the old
-    // green «Brennes inn i podcast-MP3» was a promise the app cannot keep. The
-    // card only appears at all for users carrying a path from an older build.
-    subEl.textContent = t('home.thumbComing', 'Episodebilde kommer — brukes ikke ennå')
-    subEl.style.color = 'var(--text3)'
+    subEl.textContent = `${info.info.width}×${info.info.height} px`
+    subEl.style.color = ''
   }
-  // The «Endre» action would land on a panel that is itself gated as «kommer».
   const action = document.getElementById('btn-go-thumb')
   if (action) {
-    action.setAttribute('inert', '')
-    action.classList.add('gate-off')
+    action.removeAttribute('inert')
+    action.classList.remove('gate-off')
   }
-  // Swap the placeholder SVG for an actual <img> preview via the asset://
-  // protocol (WKWebView blocks file://). Falling back to the icon keeps the slot
-  // from collapsing if the file disappeared (error listener — NOT an inline
-  // onerror attribute, which the strict CSP (script-src 'self') would block).
+  // The backend hands back a self-contained data URL, so there is no asset://
+  // scope to satisfy and nothing to fail silently on an external volume. The
+  // error listener stays (an <img> can still reject malformed bytes) and is a
+  // listener rather than an inline onerror, which the strict CSP would block.
   if (iconSlot) {
     const img = document.createElement('img')
     img.className = 'thumb-card-icon thumb-card-icon-home'
     img.alt = ''
     img.addEventListener('error', () => { img.style.display = 'none' })
-    img.src = window.api.toAssetUrl(path)
+    img.src = info.dataUrl
     iconSlot.replaceChildren(img)
   }
   return true

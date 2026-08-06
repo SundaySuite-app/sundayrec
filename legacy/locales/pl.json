@@ -98,7 +98,6 @@
     "nextShort": "następne",
     "wakesLead": "({min} min wcześniej)",
     "openInEditor": "Otwórz w edytorze",
-    "thumbComing": "Okładka odcinka wkrótce — jeszcze nieużywana",
     "prerollActive": "Bufor wstępny aktywny ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Kto dostaje powiadomienie, gdy nagranie się zaczyna, kończy lub nie powiedzie."
   },
   "gate": {
-    "chipComing": "Wkrótce",
     "chipUnconfigured": "Nieskonfigurowane",
-    "chipUnavailable": "Niedostępne",
-    "comingExplanation": "{what} nie jest jeszcze gotowe. Panel jest tu, bo funkcja jest planowana — na razie przyciski nic nie robią, więc są wyłączone."
+    "chipUnavailable": "Niedostępne"
   },
   "health": {
     "micDenied": "Odmówiono dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon i włącz SundayRec.",

@@ -98,7 +98,6 @@
     "nextShort": "suivant",
     "wakesLead": "({min} min avant)",
     "openInEditor": "Ouvrir dans l’éditeur",
-    "thumbComing": "La vignette d’épisode arrive — pas encore utilisée",
     "prerollActive": "Tampon de pré-enregistrement actif ({n} s)"
   },
   "update": {
@@ -1241,10 +1240,8 @@
     "notifyDesc": "Qui est prévenu quand un enregistrement démarre, s’arrête ou échoue."
   },
   "gate": {
-    "chipComing": "À venir",
     "chipUnconfigured": "Non configuré",
-    "chipUnavailable": "Indisponible",
-    "comingExplanation": "{what} n’est pas encore développé. Le panneau reste ici car la fonction est prévue — d’ici là les boutons ne font rien, ils sont donc désactivés."
+    "chipUnavailable": "Indisponible"
   },
   "health": {
     "micDenied": "L'accès au microphone est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Microphone et activez SundayRec.",
