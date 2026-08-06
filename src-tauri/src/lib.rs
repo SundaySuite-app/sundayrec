@@ -27,6 +27,12 @@ pub mod audio;
 pub mod bridge_live;
 pub mod cloud;
 pub mod commands;
+// E2.1 observability — the panic hook + the bounded crash ring under
+// `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render
+// to the operator as a normal empty state (the renderer's `call()` swallowed the
+// rejected invoke), and a panic in a spawned task vanished with its dropped
+// `JoinHandle`. Now both leave a record.
+pub mod crash;
 pub mod db;
 pub mod diagnostics;
 // R1 non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/export
@@ -114,6 +120,13 @@ pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // E2.1: the panic hook goes in FIRST — before logging, before the plugins,
+    // before anything that can itself panic. It chains to the default hook, so a
+    // dev terminal prints exactly what it always did; what is new is that the
+    // panic also lands in `<app-data>/crashes/` on a machine with no terminal
+    // at all (release Windows has no console; a macOS .app discards stdout).
+    crash::install_hook();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
@@ -237,6 +250,11 @@ pub fn run() {
                 .map_err(|e| format!("resolving app data dir: {e}"))?;
             std::fs::create_dir_all(&db_dir)
                 .map_err(|e| format!("creating app data dir {}: {e}", db_dir.display()))?;
+            // E2.1: the panic hook resolved its own directory before any app
+            // existed. Confirm the two computations agree — they are the same
+            // rule, so a mismatch means an assumption broke and the records are
+            // not where the rest of the diagnostics look.
+            crash::verify_dir_matches(&db_dir);
             let db_path = db_dir.join("sundayrec.sqlite");
             let pool = tauri::async_runtime::block_on(db::store::open_pool(&db_path))
                 .map_err(|e| format!("opening database at {}: {e}", db_path.display()))?;
@@ -270,13 +288,27 @@ pub fn run() {
                 let recovery_task = tauri::async_runtime::spawn(async move {
                     recorder::recovery::scan_and_recover(recover_app, recover_pool).await;
                 });
-                // Watch the handle so a panicked scan lands in the log instead
-                // of vanishing with the dropped JoinHandle.
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = recovery_task.await {
-                        tracing::error!("crash-recovery scan task failed: {e}");
-                    }
+                // Watch the handle so a panicked scan lands in the log AND the
+                // crash ring instead of vanishing with the dropped JoinHandle.
+                // A one-shot: there is nothing to restart, so it is watched, not
+                // supervised.
+                crash::watch_handle("recorder::recovery::scan", recovery_task);
+            }
+
+            // DIAGNOSTIC SEAM: `SUNDAYREC_TEST_PANIC=1` panics a watched task 2 s
+            // after startup — the only way to end-to-end prove a path that is by
+            // definition never taken on purpose. Follows the
+            // `SUNDAYREC_TEST_RELAUNCH` precedent below: inert unless explicitly
+            // set, and DEBUG-ONLY so a shipped build cannot be talked into
+            // crashing itself by an environment variable.
+            #[cfg(debug_assertions)]
+            if std::env::var("SUNDAYREC_TEST_PANIC").as_deref() == Ok("1") {
+                let panic_task = tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tracing::warn!("SUNDAYREC_TEST_PANIC=1: panicking on purpose");
+                    panic!("SUNDAYREC_TEST_PANIC=1: deliberate panic to prove the crash ring");
                 });
+                crash::watch_handle("test::deliberate_panic", panic_task);
             }
 
             app.manage(db::Db::new(pool));

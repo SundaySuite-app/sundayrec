@@ -46,6 +46,7 @@
 //!   - [`overlay`]      — ffmpeg `filter_complex` generation for lower-thirds: image + drawtext, position/opacity (R3)
 //!   - [`ndi`]          — NDI source-discovery model + the pure loopback-TCP rawvideo input-arg builder (R3)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
+//!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 
 pub mod audio;
 pub mod audio_analysis;
@@ -81,6 +82,7 @@ pub mod progress;
 pub mod reconnect;
 pub mod recorder;
 pub mod recovery;
+pub mod redact;
 pub mod review_queue;
 pub mod schedule;
 pub mod selftest;
