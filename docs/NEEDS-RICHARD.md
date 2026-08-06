@@ -1,12 +1,22 @@
 # Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
-fully unit-tested; the impure seams compile behind **default-off** cargo
-features (`email`, `tray`, `publish`, `editor`, `whisper`, `streaming`, `ndi`,
-`bridge`, `updater`) or are already wired (scheduler/wake). The items below need
-a real account / desktop session / device / signing identity that the headless
-gate cannot provide. None block the default build or the gate. The consolidated
-"what only Richard can provide" checklist is at the bottom of this file.
+fully unit-tested; the impure seams sit behind cargo features. **Six of them are
+now in `default`** — `editor`, `whisper`, `tray`, `updater`, `email` and
+`streaming` — so the Rediger-screen, transcription, the tray, auto-update,
+failure e-mail and Direkte all ship in a normal build. The remaining
+**default-off** features are `publish`, `ndi` and `bridge`; scheduler/wake are
+always compiled. The items below need a real account / desktop session / device
+/ signing identity that the headless gate cannot provide. None block the default
+build or the gate. The consolidated "what only Richard can provide" checklist is
+at the bottom of this file.
+
+> **Status 2026-08-06 (`feat/make-it-real`, v0.10.0).** `email` and `streaming`
+> joined `default` in this round, several seams listed below as "remaining glue"
+> are now wired, and the IPC surface was audited end to end — see
+> `docs/COMMAND_AUDIT_2026-08.md` for which commands the UI can and cannot
+> reach, and the morning report `SundayRec-MAKE-IT-REAL-2026-08-06.md` (one
+> directory above the repo) for the rig checklist and the owner decisions.
 
 ## ⭐ Release blockers — current checklist (only Richard can do these)
 
@@ -61,19 +71,26 @@ only remaining release blocker is **notarization** (item 3).
 The per-feature seam detail follows below; this checklist is the release-gating
 subset.
 
-## PU-1 — Email alerts (`--features email`)
+## PU-1 — Email alerts (`email`, now in `default`)
 
+- **✅ The feature ships.** `email` joined `default` (and both release feature
+  lists) in 2026-08. Before that it was in no published build: an unattended
+  volunteer operator could configure e-mail alerts in the UI and get nothing,
+  forever.
+- **✅ The keychain write path exists.** `email_set_smtp_password` /
+  `email_has_smtp_password` / `email_clear_smtp_password` are wired to the
+  **Innstillinger → Varsler** card. The SMTP password is still intentionally NOT
+  in the settings bag — it lives in the OS keychain, and a stored password takes
+  precedence over anything typed into the field. `email_smtp_from` lets the
+  From: address differ from the account.
 - **A Gmail OAuth connection or SMTP credentials.** The Gmail path reuses the
-  cloud OAuth refresh token (connect Gmail first); the SMTP path needs a host,
-  port, user, and app-password. **(R7 update)** the `email*` Settings fields
-  (`emailOnError`/`emailAddress`/`emailSmtp`/`emailSmtpPort`/`emailSmtpUser`) now
-  exist in the typed model + the **Generelt → E-postvarsler** UI, and the
-  `email_send_test` command takes the transport config. The SMTP **password** is
-  intentionally NOT in the settings bag — it lives in the OS keychain via the
-  `email` seam (mirrors the Electron `setSmtpPassword`); a keychain-write command
-  for the SMTP password from the UI is the small remaining glue.
-- **Deliverability check.** Confirm a real "✓ email works" message arrives and
-  the throttle suppresses a 2nd identical alert within 10 min (smoke §8).
+  cloud OAuth refresh token (connect Gmail first, which still needs the OAuth
+  client id — item 5 above); the SMTP path needs a host, port, user, and
+  app-password and works today.
+- **👤 Deliverability check (rig).** Confirm a real "✓ email works" message
+  arrives from **Test e-post**, that a killed recording produces a failure
+  e-mail, and that the throttle suppresses a 2nd identical alert within 10 min
+  (smoke §8).
 
 ## PU-2 — Tray + deep links (`--features tray`)
 
@@ -198,10 +215,11 @@ subset.
     `.__editor_tmp`/`.__editor_bak` crash-recovery sweep) + the FORCE_WAV
     replace refusal (`resolve_save_ext` is already tested in core) is the next
     increment.
-  - **Export progress events + cancel.** The Electron flow streamed `time=`
-    progress + a `cancelExport(jobId)`. The seam currently `wait_with_output()`s;
-    streaming progress to a Tauri event + a cancel handle is glue once the UI
-    shows a progress bar (`export_timeout_ms` is already the tested kill-timer).
+  - ~~**Export progress events + cancel.**~~ **DONE.** `editor_export` streams
+    `time=` progress as `editor://export-progress`, `editor_cancel_export` is a
+    real cancel handle, and the 2026-08 progress round put a monotone
+    percentage + an ETA on the bar (`export_timeout_ms` is still the tested
+    kill-timer).
 
 ## Bridge Integration #2 — Live cue bridge (`--features bridge`)
 
@@ -219,27 +237,30 @@ subset.
   emitting a Tauri event for the UI is the remaining glue. The Supabase URL +
   anon key also need to flow from settings (the integration `connection` config).
 
-## R3 — Live streaming (`--features streaming`)
+## R3 — Live streaming (`streaming`, now in `default`)
 
 - **A real camera + a real RTMP endpoint + a stream key.** The `streaming`
   feature compiles the ffmpeg spawn seam (`src-tauri/src/streaming/mod.rs`)
-  in/out — NO new native dep (ffmpeg is a sidecar). The default build + the CI
-  gate carry no streaming path; `stream_start`/`stream_stop` return
-  `feature_disabled` there. Only the `sundayrec-core::{streaming,overlay}`
+  in/out — NO new native dep (ffmpeg is a sidecar). **It joined `default` in
+  2026-08**: the Direkte page had shipped with an enabled START button in every
+  release, and pressing it returned the raw string `feature_disabled`. The RTMP
+  push itself is still NETWORK/HARDWARE-UNVERIFIED and the page now says so out
+  loud. Only the `sundayrec-core::{streaming,overlay}`
   decisions (the multi-destination `tee` muxer argv with `onfail=ignore`, the
   libx264/aac encode + keyframe-every-2s GOP + bitrate/bufsize math, the
   platform audio-map, the optional local-MP4 branch, the 0.5fps preview, the
   lower-third image/drawtext `filter_complex`, the key/URL validation, the
   key-redacted loggable copy) are unit-tested.
-- **Auto-recovery + live stats are NOT yet ported.** The Electron `streamer.ts`
-  restarted ffmpeg up to 3× on an unexpected crash (USB drop / brief RTMP
-  disconnect over a 90-min sermon) and parsed `frame=…fps=…bitrate=…` from
-  stderr at ~1 Hz to drive the UI stats + per-destination `connecting/live/
-failed` state. The R3 seam spawns + kills cleanly and reports `active`; wiring
-  the stderr-parse → `StreamStatus` updates (emit a `streaming://stats` event)
-  and the crash auto-restart loop is the remaining glue once the panel shows a
-  live stats row. The watchdog/restart _decisions_ should be lifted into the
-  core first (mirrors the recorder's reconnect policy), then wired here.
+- **✅ Auto-recovery + live stats are ported.** The stderr parse
+  (`frame=…fps=…bitrate=…`), the per-destination `connecting/live/failed`
+  state, the capped reconnect backoff and the tee-slave-failure step-down all
+  live in `sundayrec-core::streaming` and are driven by the supervisor in
+  `src-tauri/src/streaming/mod.rs`. `streaming://stats` — the event the Direkte
+  page had listened for since the port and **nobody ever sent** — is now emitted
+  at 1 Hz plus on every transition, with a tail push after stop. The panel's
+  three remaining lies (destination field mismatch, a Live-pill stuck on, raw
+  error codes) were fixed at the same time. **Still HARDWARE-UNVERIFIED**: the
+  behaviour under a real RTMP disconnect has never been observed.
 - **`alsoRecord` history row.** The "Start direktesending + opptak" local MP4 is
   built into the argv (the 3-way split branch), but registering the finished
   file in recording history (the Electron `registerAlsoRecordInHistory` + the
@@ -312,10 +333,12 @@ None of it blocks the default build or the gate.
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
-- **Stream** (`--features streaming`, smoke §R3): a real camera + a real RTMP
-  endpoint + a stream key; auto-recovery + live stats are still glue.
-- **Whisper** (`--features whisper`, smoke §10b): a C/C++ toolchain + CMake, a
-  downloaded model (download/SHA-verify glue still pending), and a real recording.
+- **Stream** (`streaming`, in `default`, smoke §R3): a real camera + a real RTMP
+  endpoint + a stream key. Auto-recovery + live stats are wired now; what is
+  missing is having seen them survive a real disconnect.
+- **Whisper** (`whisper`, in `default`, smoke §10b): a C/C++ toolchain + CMake,
+  a downloaded model (download + SHA-256 verify are wired, with a real
+  percentage), and a real recording.
 - **Cloud upload** (smoke §7): a connected Google Drive + network — the resumable
   worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
 - **OS wake-timers** (smoke §11): a real box for the `pmset`/`schtasks`/`powercfg`
@@ -389,19 +412,21 @@ re-defaultes av `#[serde(default)]` ved HVER lagring.
   eller skal vi fjerne velgeren og alltid kjøre native? Jeg gjør ingen av delene
   uten svar.
 
-- **`stream_start` kan aldri lykkes slik den er wiret** (kun relevant i et
-  `--features streaming`-bygg; default-bygget returnerer `feature_disabled`).
-  Frontend sender `{resolution, framerate, videoBitrateKbps, destinations,
-alsoRecord}`, men Rust-kommandoen krever i tillegg `videoToken: String`,
-  `snapshotPath: String`, `overlays: Vec<OverlayConfig>` (alle påkrevd) og venter
-  `alsoRecordPath`, ikke `alsoRecord`. Disse er capture-kilde-tokens (samme
-  enhets-oppløsnings-maskineri som opptakeren) + overlay-config — kan ikke wires
-  riktig «blindt» uten en RTMP-rigg å verifisere mot. **Streaming er fortsatt et
-  rigg-only / ufullført domene** (som dokumentert ellers i denne fila); jeg lot
-  det stå framfor å sende uverifiserbar kode. Resten av seamen (~60 kommandoer)
-  ble verifisert KORREKT.
+- ~~**`stream_start` kan aldri lykkes slik den er wiret.**~~ **LØST 2026-08.**
+  Kommandoen resolver nå kamera-/mikrofon-tokens selv, fra de lagrede
+  enhets-NAVNENE, med samme ffmpeg-enumerering og uklare navnematch som
+  opptakeren bruker. Shim-en sender `{destinations, resolution, framerate,
+videoBitrateKbps, audioBitrateKbps, alsoRecord, overlays}` og signaturen
+  stemmer. `streaming` er dessuten i `default` nå, så knappen er ikke lenger et
+  `feature_disabled`-svar. Selve RTMP-pushen er fortsatt uverifisert mot rigg.
 
-**IKKE en bug (avklart):** e-post/webhook/cloud/integrasjoner leser ikke-kuraterte
-felt på backend, men frontend-metodene deres er bevisste no-op-stubs i
-`api-shim.ts` → backend drives aldri av dem. Kurert-subset-tilnærmingen er
-konsistent med at disse domenene er stubbet.
+**LENGER IKKE SANT (rettet 2026-08):** notatet under sa at «e-post/webhook/cloud/
+integrasjoner … frontend-metodene deres er bevisste no-op-stubs i `api-shim.ts`
+→ backend drives aldri av dem». Det gjelder nå **kun cloud og integrasjoner**.
+E-post og webhook er ekte: `email_send_test`, `email_test_webhook` og
+nøkkelring-kommandoene er koblet opp, og — viktigere — det ble funnet at
+kirke-/e-post-/webhook-innstillingene **aldri nådde sqlite i det hele tatt**
+(de lå kun i `localStorage`, så backend leste defaults). Det kuraterte
+subsettet i `syncBackendRecordingSettings` er utvidet deretter. Se
+`docs/COMMAND_AUDIT_2026-08.md` §4.2 for integrasjons-stubbene, som fortsatt
+står — med et fullt synlig panel over seg.
