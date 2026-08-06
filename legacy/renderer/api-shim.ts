@@ -1197,6 +1197,26 @@ const api: Record<string, unknown> = {
       videoOk: null,
     }),
 
+  // ── Log file (E2.6) ─────────────────────────────────────────────────────
+  // Backs the System tab's «Vis logg» / «Kopier siste logg». Both Rust
+  // commands are deliberately path-less (see commands/logs.rs's doc comment:
+  // the log directory is computed in-process), so there is nothing for either
+  // wrapper to supply beyond the byte cap.
+  logsReveal: async () => {
+    try {
+      await invoke("logs_reveal");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] logs_reveal failed", e);
+      return false;
+    }
+  },
+  // Clamped server-side to logfile::TAIL_MAX_BYTES (512 KB) no matter what is
+  // asked for. Empty string is a valid answer ("nothing logged yet"), so this
+  // goes through `call()` with an empty-string fallback rather than throwing.
+  logsTail: async (maxBytes: number) =>
+    call<string>("logs_tail", { maxBytes }, ""),
+
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone
