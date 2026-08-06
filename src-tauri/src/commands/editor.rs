@@ -76,8 +76,14 @@ pub async fn editor_peaks(app: tauri::AppHandle, input_path: String) -> AppResul
 /// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
 /// basis, since the waveform peaks are an 8 kHz mono downmix that under-reads
 /// the real peak by several dB.
+///
+/// **Path policy: `UserChosenRead`** — the same guard every sibling editor
+/// command runs. Found unguarded by the E1.3 coverage ratchet: it is the one
+/// editor command whose `input_path` reached ffmpeg without validation, and it
+/// had its own bare `Path::exists()` check standing in for one.
 #[tauri::command]
 pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
+    super::path_guard::checked_input_file(&input_path)?;
     crate::editor::probe_true_peak_db(&input_path).await
 }
 
