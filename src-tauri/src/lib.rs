@@ -421,11 +421,13 @@ pub fn run() {
             commands::editor::editor_master_preview,
             commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
-            // PU-1 email alerts (status pure; send gated by `email`).
+            // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
             commands::email::email_send_test,
             commands::email::email_test_webhook,
             commands::email::email_clear_smtp_password,
+            commands::email::email_set_smtp_password,
+            commands::email::email_has_smtp_password,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,
