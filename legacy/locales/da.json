@@ -1050,11 +1050,18 @@
     "overlays": "Overlays — grafik og præsentation",
     "overlaysDesc": "Læg kirkens logo, sangtekster fra EasyWorship (via skærmoptagelse på samme maskine), eller anden grafik oven på det der sendes. Overlays påvirker kun livestreamet — optagelser bliver rene.",
     "addOverlay": "+ Tilføj overlay",
-    "gateStats": "Statistik er ikke tilgængelig endnu — livestreamen rapporterer ikke bitrate, billedfrekvens eller tabte billeder tilbage til appen i denne version.",
     "blockedNoDestinations": "Der er endnu ingen destination — tilføj YouTube, Facebook eller jeres egen RTMP-server.",
     "blockedNoEnabled": "Ingen destination er slået til. Aktivér mindst én i listen ovenfor.",
     "blockedNoKey": "Destinationen mangler stream-key. Uden nøglen lukker YouTube/Facebook ikke sendingen ind.",
-    "blockedGoSettings": "Åbn Deling → Publicering"
+    "blockedGoSettings": "Åbn Deling → Publicering",
+    "statusStopped": "Stoppet",
+    "qualityReduced": "Reduceret kvalitet for at holde streamen stabil.",
+    "notRigVerified": "Livestreaming er endnu ikke verificeret på et rigtigt rig — prøv det på en hverdag, før du stoler på det en søndag.",
+    "errFeatureDisabled": "Denne version af appen kan ikke livestreame. Alt andet virker som normalt — opdatér til en nyere version for at sende live.",
+    "errNoCamera": "Fandt ikke kameraet. Tjek at det er tilsluttet, og vælg det under Indstillinger → Video.",
+    "errAlreadyActive": "En livestream kører allerede.",
+    "errInvalidDestination": "En destination er sat forkert op — tjek RTMP-adressen og stream-nøglen under Deling → Udgivelse.",
+    "errSpawnFailed": "Kunne ikke starte videomotoren (ffmpeg). Genstart appen, og sig til hvis det sker igen."
   },
   "transcript": {
     "title": "Transskribering",

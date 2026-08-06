@@ -609,15 +609,21 @@ const cloudStatusStub = {
   dropbox: { connected: false },
   oneDrive: { connected: false },
 };
+// The IDLE `StreamStatus` — the fallback when `stream_status` itself fails.
+// Field-for-field with the Rust struct (src-tauri/src/streaming/mod.rs), because
+// the live page now branches on `active` to decide between «—» and a real
+// measurement: a stub missing `startedAt`/`lastLine` would make an unreachable
+// backend look like a cleanly stopped stream.
 const streamStatusStub = {
   active: false,
-  uptime: 0,
-  // Field names match what live-page.ts reads (s.bitrateKbps / s.dropped / s.fps),
-  // so idle stats show "0 kbps" / "0" like the old app — not "undefined".
+  startedAt: null,
   bitrateKbps: 0,
   fps: 0,
   dropped: 0,
+  lastLine: "",
   destinations: [],
+  targetBitrateKbps: 0,
+  bitrateStep: 0,
 };
 
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───

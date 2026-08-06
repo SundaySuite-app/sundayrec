@@ -1050,11 +1050,18 @@
     "overlays": "Superpositions — graphiques et présentation",
     "overlaysDesc": "Ajoutez le logo de l'église, les paroles d'EasyWorship (via capture d'écran sur la même machine), ou d'autres graphiques sur le flux. Les superpositions n'affectent que la diffusion — les enregistrements restent propres.",
     "addOverlay": "+ Ajouter une superposition",
-    "gateStats": "Les statistiques ne sont pas encore disponibles — la diffusion ne renvoie ni débit, ni images par seconde, ni images perdues à l’application dans cette version.",
     "blockedNoDestinations": "Aucune destination n’est configurée — ajoutez YouTube, Facebook ou votre propre serveur RTMP.",
     "blockedNoEnabled": "Aucune destination n’est activée. Activez-en au moins une dans la liste ci-dessus.",
     "blockedNoKey": "La destination n’a pas de clé de flux. Sans elle, YouTube/Facebook refusent la diffusion.",
-    "blockedGoSettings": "Ouvrir Partage → Publication"
+    "blockedGoSettings": "Ouvrir Partage → Publication",
+    "statusStopped": "Arrêtée",
+    "qualityReduced": "Qualité réduite pour garder le direct stable.",
+    "notRigVerified": "La diffusion en direct n’a pas encore été vérifiée sur une vraie installation — essayez-la en semaine avant de compter dessus un dimanche.",
+    "errFeatureDisabled": "Cette version de l’application ne peut pas diffuser en direct. Tout le reste fonctionne normalement — mettez à jour vers une version plus récente pour diffuser.",
+    "errNoCamera": "Aucune caméra trouvée. Vérifiez qu’elle est branchée et sélectionnez-la dans Réglages → Vidéo.",
+    "errAlreadyActive": "Une diffusion en direct est déjà en cours.",
+    "errInvalidDestination": "Une destination est mal configurée — vérifiez son adresse RTMP et sa clé de flux dans Partage → Publication.",
+    "errSpawnFailed": "Impossible de démarrer le moteur vidéo (ffmpeg). Redémarrez l’application et signalez-le si cela se reproduit."
   },
   "transcript": {
     "title": "Transcription",

@@ -1050,11 +1050,18 @@
     "overlays": "Overlays — Grafiken und Präsentation",
     "overlaysDesc": "Lege Logo, Liedtexte aus EasyWorship (via Bildschirmaufnahme auf gleicher Maschine) oder andere Grafiken über das gesendete Bild. Overlays wirken nur auf den Livestream — Aufnahmen bleiben sauber.",
     "addOverlay": "+ Overlay hinzufügen",
-    "gateStats": "Statistiken sind noch nicht verfügbar — der Livestream meldet in dieser Version weder Bitrate noch Bildrate oder verlorene Bilder an die App zurück.",
     "blockedNoDestinations": "Es ist noch kein Ziel eingerichtet — fügen Sie YouTube, Facebook oder einen eigenen RTMP-Server hinzu.",
     "blockedNoEnabled": "Kein Ziel ist eingeschaltet. Aktivieren Sie mindestens eines in der Liste oben.",
     "blockedNoKey": "Dem Ziel fehlt der Stream-Key. Ohne ihn lassen YouTube/Facebook die Übertragung nicht durch.",
-    "blockedGoSettings": "Teilen → Veröffentlichen öffnen"
+    "blockedGoSettings": "Teilen → Veröffentlichen öffnen",
+    "statusStopped": "Gestoppt",
+    "qualityReduced": "Qualität reduziert, um den Stream stabil zu halten.",
+    "notRigVerified": "Livestreaming ist noch nicht auf echter Technik verifiziert — probiere es an einem Wochentag aus, bevor du dich sonntags darauf verlässt.",
+    "errFeatureDisabled": "Diese Version der App kann nicht livestreamen. Alles andere funktioniert normal — aktualisiere auf eine neuere Version, um live zu gehen.",
+    "errNoCamera": "Keine Kamera gefunden. Prüfe, ob sie angeschlossen ist, und wähle sie unter Einstellungen → Video.",
+    "errAlreadyActive": "Ein Livestream läuft bereits.",
+    "errInvalidDestination": "Ein Ziel ist falsch konfiguriert — prüfe RTMP-Adresse und Stream-Key unter Teilen → Veröffentlichung.",
+    "errSpawnFailed": "Die Video-Engine (ffmpeg) konnte nicht gestartet werden. Starte die App neu und sag Bescheid, falls es wieder passiert."
   },
   "transcript": {
     "title": "Transkription",

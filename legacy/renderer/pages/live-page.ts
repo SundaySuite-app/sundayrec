@@ -4,7 +4,9 @@
  * Pulls destinations from settings, renders an enable-toggle for each, shows a
  * 16:9 preview that reloads from disk every 2 s while streaming, and surfaces
  * live stats (bitrate / fps / dropped frames / uptime) from the `stream-stats`
- * IPC event.
+ * IPC event — which, as of Fase 6, the backend actually emits. Before that the
+ * subscription below was real and the event never existed, so the statistics
+ * card was gated «Kommer» rather than show four zeros through a live service.
  *
  * Lifecycle mirrors editor-page: setupLivePage() wires DOM once at boot,
  * reactivateLivePage()/deactivateLivePage() handle entering/leaving the tab
@@ -23,41 +25,33 @@ import { pickLR } from '../audio/vu-feed-core'
 import type { StreamDestinationStored } from '../../types'
 import { setupLiveOverlays, reactivateLiveOverlays } from './live-overlays'
 import { normalizeFrameData } from '../../shared/normalize-frame-data'
-import { applyFeatureGate } from '../ui/feature-gate'
 import { liveBlockReason } from '../ui/feature-gate-core'
+import {
+  classifyStartError,
+  emptyStreamStatus,
+  formatBitrate,
+  formatDropped,
+  formatFps,
+  formatUptime,
+  isQualityReduced,
+  livePillState,
+  mapDestinationStates,
+  type LiveDestinationRow,
+  type LiveStartErrorCode,
+  type StreamStatusView,
+} from './live-stats-core'
 
 // ── State ────────────────────────────────────────────────────────────────
-interface StreamStats {
-  active:      boolean
-  startedAt:   number | null
-  bitrateKbps: number
-  fps:         number
-  dropped:     number
-  lastLine:    string
-  destinations: Array<{ id: string; state: string }>
-}
 
 let previewInterval: ReturnType<typeof setInterval> | null = null
 let uptimeInterval:  ReturnType<typeof setInterval> | null = null
 let unsubStats: (() => void) | undefined
 let previewPathCached = ''
-let lastStats: StreamStats = emptyStats()
+let lastStats: StreamStatusView = emptyStreamStatus()
 /** Per-destination enabled state — keyed by destination id. Mirrors settings
  *  but lets the user toggle a destination off for one session without
  *  persisting. We persist only when the user changes it from Innstillinger. */
 const sessionEnabled = new Map<string, boolean>()
-
-function emptyStats(): StreamStats {
-  return {
-    active:      false,
-    startedAt:   null,
-    bitrateKbps: 0,
-    fps:         0,
-    dropped:     0,
-    lastLine:    '',
-    destinations: [],
-  }
-}
 
 // ── Setup ────────────────────────────────────────────────────────────────
 
@@ -65,18 +59,13 @@ export function setupLivePage(): void {
   document.getElementById('btn-live-start')?.addEventListener('click', () => onStartStopClick(true))
   document.getElementById('btn-live-start-stream-only')?.addEventListener('click', () => onStartStopClick(false))
 
-  // HONEST GATE: nothing in the backend emits `streaming://stats` — grep the
-  // Rust and there is no such event, only `stream_status` on demand. The four
-  // numbers below therefore sat at 0 for the whole broadcast, which reads as
-  // "your stream is sending 0 kbps" rather than "nobody wrote this yet".
-  applyFeatureGate('live-stats-card', {
-    status: 'unavailable',
-    chipText: t('gate.chipComing', 'Kommer'),
-    explanation: t(
-      'live.gateStats',
-      'Statistikk er ikke tilgjengelig ennå — direktesendingen rapporterer ikke bitrate, bilderate eller tapte rammer tilbake til appen i denne versjonen.',
-    ),
-  })
+  // The statistics card is NO LONGER GATED. It carried a «Kommer» chip for an
+  // honest reason — nothing in the backend emitted `streaming://stats`, so the
+  // four numbers were frozen at 0 for the whole broadcast — and that reason is
+  // gone: the supervisor now pushes a full StreamStatus at ~1 Hz plus on every
+  // state transition (src-tauri/src/streaming/mod.rs). The card shows real
+  // measurements while live and «—» while idle, which is the distinction the
+  // gate existed to make.
 
   document.getElementById('live-config-link')?.addEventListener('click', e => {
     e.preventDefault()
@@ -320,42 +309,37 @@ function updateLiveSignalStatus(dbL: number, dbR: number, state: VuState): void 
 function subscribeStats(): void {
   if (unsubStats) return
   unsubStats = window.api.on('stream-stats', (data: unknown) => {
-    const s = data as StreamStats
-    lastStats = s
-    renderStats(s)
-    renderDestinationStates(s.destinations)
-    if (s.active) {
-      setStatusPill('is-live', t('live.statusLive', '🔴 Live'))
-    } else if (lastStats.lastLine) {
-      // Not active but we have a last line — likely stopped or failed.
-      setStatusPill('is-idle', t('live.statusReady', 'Klar'))
-    }
-    updateStartButton(s.active)
-    if (!s.active) {
-      // Hide the live overlay when ffmpeg has exited.
-      const tag = document.getElementById('live-preview-overlay-tag')
-      if (tag) tag.style.display = 'none'
-    } else {
-      const tag = document.getElementById('live-preview-overlay-tag')
-      if (tag) tag.style.display = ''
-    }
+    applyStatus({ ...emptyStreamStatus(), ...(data as Partial<StreamStatusView>) })
   }) ?? undefined
+}
+
+/**
+ * The ONE place a status becomes pixels — used by both the live event and the
+ * activation poll, so the two can no longer disagree about what a stopped
+ * stream looks like. (They did: the event handler only touched the pill when
+ * the stream was active, so a stream that stopped while the tab was open kept
+ * a red «🔴 Live» pill until the user navigated away and back.)
+ */
+function applyStatus(s: StreamStatusView): void {
+  lastStats = s
+  renderStats(s)
+  renderDestinationStates(s)
+  setStatusPill(livePillState(s), pillLabel(s))
+  updateStartButton(s.active)
+  const tag = document.getElementById('live-preview-overlay-tag')
+  if (tag) tag.style.display = s.active ? '' : 'none'
+}
+
+function pillLabel(s: StreamStatusView): string {
+  if (s.active) return t('live.statusLive', '🔴 Live')
+  if (s.lastLine.trim()) return t('live.statusStopped', 'Stoppet')
+  return t('live.statusReady', 'Klar')
 }
 
 async function refreshStatus(): Promise<void> {
   try {
     const s = await window.api.streamStatus()
-    lastStats = s as StreamStats
-    renderStats(lastStats)
-    renderDestinationStates(lastStats.destinations)
-    if (lastStats.active) {
-      setStatusPill('is-live', t('live.statusLive', '🔴 Live'))
-      const tag = document.getElementById('live-preview-overlay-tag')
-      if (tag) tag.style.display = ''
-    } else {
-      setStatusPill('is-idle', t('live.statusReady', 'Klar'))
-    }
-    updateStartButton(lastStats.active)
+    applyStatus({ ...emptyStreamStatus(), ...(s as Partial<StreamStatusView>) })
   } catch (err) {
     console.warn('[live-page] refreshStatus failed', err)
   }
@@ -396,14 +380,12 @@ function startPreviewInterval(): void {
 
 function startUptimeInterval(): void {
   if (uptimeInterval) return
+  // The clock ticks locally rather than waiting for the backend — the stats
+  // feed is paced to ~1 Hz and a seconds counter that stutters when the network
+  // does looks like the stream is stuttering.
   uptimeInterval = setInterval(() => {
     const el = document.getElementById('live-stat-uptime')
-    if (!el) return
-    if (!lastStats.active || !lastStats.startedAt) { el.textContent = '00:00'; return }
-    const sec = Math.floor((Date.now() - lastStats.startedAt) / 1000)
-    const mm  = String(Math.floor(sec / 60)).padStart(2, '0')
-    const ss  = String(sec % 60).padStart(2, '0')
-    el.textContent = `${mm}:${ss}`
+    if (el) el.textContent = formatUptime(lastStats, Date.now())
   }, 1000)
 }
 
@@ -453,21 +435,55 @@ function renderDestinations(): void {
   updateStartButtonState()
 }
 
-function renderDestinationStates(arr: Array<{ id: string; state: string }>): void {
-  for (const s of arr) {
-    const row = document.querySelector<HTMLElement>(`.live-destination-row[data-dest-id="${CSS.escape(s.id)}"]`)
+/**
+ * Paint each destination's dot from the backend's per-destination health.
+ *
+ * This used to read `{ id, state }` off the status — two fields that have never
+ * existed on the Rust `StreamStatus`, which carries `{ name, ok }` in tee-slave
+ * order. Every dot was therefore assigned `undefined` on every event and never
+ * moved, so a YouTube ingest that dropped mid-service looked exactly like one
+ * that was fine. The join lives in `mapDestinationStates` (pure, tested).
+ */
+function renderDestinationStates(s: StreamStatusView): void {
+  const rows: LiveDestinationRow[] = (settings.streamDestinations ?? []).map(d => ({
+    id: d.id,
+    name: d.name || d.rtmpUrl || '—',
+    enabled: sessionEnabled.get(d.id) ?? d.enabled,
+  }))
+  const states = mapDestinationStates(rows, s)
+  for (const [id, state] of states) {
+    const row = document.querySelector<HTMLElement>(`.live-destination-row[data-dest-id="${CSS.escape(id)}"]`)
     const dot = row?.querySelector<HTMLElement>('.live-dest-dot')
-    if (dot) dot.dataset.state = s.state
+    if (dot) dot.dataset.state = state
   }
 }
 
 // ── Stats rendering ──────────────────────────────────────────────────────
 
-function renderStats(s: StreamStats): void {
+function renderStats(s: StreamStatusView): void {
   const setText = (id: string, v: string): void => { const el = document.getElementById(id); if (el) el.textContent = v }
-  setText('live-stat-bitrate', `${s.bitrateKbps} kbps`)
-  setText('live-stat-fps',     String(s.fps))
-  setText('live-stat-dropped', String(s.dropped))
+  setText('live-stat-bitrate', formatBitrate(s))
+  setText('live-stat-fps',     formatFps(s))
+  setText('live-stat-dropped', formatDropped(s))
+  setText('live-stat-uptime',  formatUptime(s, Date.now()))
+
+  // The supervisor's own commentary: reconnect attempts, a destination that
+  // dropped, an adaptive step-down. It was maintained in the Rust status from
+  // the start and had nowhere to go.
+  const note = document.getElementById('live-stats-note')
+  if (!note) return
+  const lines: string[] = []
+  if (isQualityReduced(s)) {
+    lines.push(t('live.qualityReduced', 'Redusert kvalitet for å holde strømmen stabil.'))
+  }
+  if (s.lastLine.trim()) lines.push(s.lastLine.trim())
+  if (lines.length) {
+    note.textContent = lines.join('  •  ')
+    note.style.display = ''
+  } else {
+    note.textContent = ''
+    note.style.display = 'none'
+  }
 }
 
 // ── Start / stop ─────────────────────────────────────────────────────────
@@ -521,7 +537,7 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
       alsoRecord,
     })
     if (!result.ok) {
-      showError(result.error ?? t('live.connectionFailed', 'Tilkobling feilet'))
+      showError(startErrorText(result.error ?? ''))
       setStatusPill('is-idle', t('live.statusReady', 'Klar'))
       // Stream-start failed — restart idle preview so the user isn't
       // staring at a black box wondering what's going on.
@@ -532,13 +548,50 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
     // now in case it just became available.
     refreshPreviewPath()
   } catch (err) {
-    showError((err as Error).message)
+    showError(startErrorText((err as Error).message))
     setStatusPill('is-idle', t('live.statusReady', 'Klar'))
     startIdleCameraPreview()
   } finally {
     btn.disabled = false
     if (streamOnlyBtn) streamOnlyBtn.disabled = false
   }
+}
+
+/**
+ * A sentence for the operator, not a sentence for the compiler.
+ *
+ * `stream_start` fails with `AppError` strings meant for a developer. The worst
+ * of them shipped in every release: a build without `--features streaming`
+ * answered the START button with
+ *
+ *     feature_disabled: streaming.start requires a build with `--features streaming`
+ *
+ * printed verbatim into the error strip, which is neither actionable nor
+ * comprehensible to someone twenty minutes from a service. The classification
+ * is pure + tested (`classifyStartError`); this only picks the wording.
+ */
+function startErrorText(raw: string): string {
+  const messages: Record<LiveStartErrorCode, string> = {
+    featureDisabled: t(
+      'live.errFeatureDisabled',
+      'Denne versjonen av appen kan ikke direktesende. Alt annet virker som normalt — oppdater til en nyere versjon for å sende direkte.',
+    ),
+    noCamera: t(
+      'live.errNoCamera',
+      'Fant ikke kameraet. Sjekk at det er koblet til, og velg det under Innstillinger → Video.',
+    ),
+    alreadyActive: t('live.errAlreadyActive', 'En direktesending kjører allerede.'),
+    invalidDestination: t(
+      'live.errInvalidDestination',
+      'En destinasjon er satt opp feil — sjekk RTMP-adressen og stream-key under Deling → Publisering.',
+    ),
+    spawnFailed: t(
+      'live.errSpawnFailed',
+      'Klarte ikke å starte videomotoren (ffmpeg). Start appen på nytt, og gi beskjed hvis det gjentar seg.',
+    ),
+    unknown: raw.trim() || t('live.connectionFailed', 'Tilkobling feilet'),
+  }
+  return messages[classifyStartError(raw)]
 }
 
 function updateStartButton(active: boolean): void {

@@ -4018,6 +4018,15 @@ button > svg:first-child { flex-shrink: 0; }
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
+/* The supervisor's line — reconnecting, a destination dropped, quality stepped
+   down. Quiet by default: it only appears when there is something to say. */
+.live-stats-note {
+  margin-top: 10px;
+  font-size: 11px; line-height: 1.4;
+  color: var(--text2);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
 
 /* Destinations card */
 .live-destinations-card {
@@ -4135,6 +4144,19 @@ button > svg:first-child { flex-shrink: 0; }
   color: var(--muted, #8a8a92);
   line-height: 1.5;
   padding: 4px 2px;
+  text-align: center;
+}
+/* Info-tone, not alarm-tone: the feature works as designed, it has simply
+   never been proven against real hardware. Loud enough to read before pressing
+   Start, quiet enough not to imply the button is broken. */
+.live-action-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text2);
+  background: rgba(235,184,75,.08);
+  border: 1px solid rgba(235,184,75,.25);
+  border-radius: var(--rsm);
+  padding: 8px 12px;
   text-align: center;
 }
 .live-error {

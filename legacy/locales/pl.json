@@ -1050,11 +1050,18 @@
     "overlays": "Nakładki — grafika i prezentacja",
     "overlaysDesc": "Dodaj logo kościoła, słowa z EasyWorship (przez przechwytywanie ekranu na tej samej maszynie) lub inną grafikę na obrazie transmisji. Nakładki wpływają tylko na transmisję — nagrania są czyste.",
     "addOverlay": "+ Dodaj nakładkę",
-    "gateStats": "Statystyki nie są jeszcze dostępne — transmisja nie raportuje w tej wersji bitrate’u, liczby klatek ani klatek utraconych.",
     "blockedNoDestinations": "Nie skonfigurowano jeszcze celu — dodaj YouTube, Facebooka lub własny serwer RTMP.",
     "blockedNoEnabled": "Żaden cel nie jest włączony. Włącz przynajmniej jeden na liście powyżej.",
     "blockedNoKey": "Cel nie ma klucza transmisji. Bez niego YouTube/Facebook nie wpuszczą sygnału.",
-    "blockedGoSettings": "Otwórz Udostępnianie → Publikowanie"
+    "blockedGoSettings": "Otwórz Udostępnianie → Publikowanie",
+    "statusStopped": "Zatrzymano",
+    "qualityReduced": "Obniżona jakość, aby transmisja pozostała stabilna.",
+    "notRigVerified": "Transmisja na żywo nie została jeszcze sprawdzona na prawdziwym sprzęcie — wypróbuj ją w dzień powszedni, zanim zaufasz jej w niedzielę.",
+    "errFeatureDisabled": "Ta wersja aplikacji nie obsługuje transmisji na żywo. Wszystko inne działa normalnie — zaktualizuj do nowszej wersji, aby nadawać na żywo.",
+    "errNoCamera": "Nie znaleziono kamery. Sprawdź, czy jest podłączona, i wybierz ją w Ustawienia → Wideo.",
+    "errAlreadyActive": "Transmisja na żywo już trwa.",
+    "errInvalidDestination": "Jedno z miejsc docelowych jest źle skonfigurowane — sprawdź adres RTMP i klucz transmisji w Udostępnianie → Publikowanie.",
+    "errSpawnFailed": "Nie udało się uruchomić silnika wideo (ffmpeg). Uruchom aplikację ponownie i daj znać, jeśli powtórzy się to ponownie."
   },
   "transcript": {
     "title": "Transkrypcja",

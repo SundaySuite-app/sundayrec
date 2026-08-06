@@ -764,9 +764,13 @@
             </div>
             <div class="live-stat">
               <div class="live-stat-label" data-i18n="live.dropped">Tapte rammer</div>
-              <div class="live-stat-value" id="live-stat-dropped">0</div>
+              <div class="live-stat-value" id="live-stat-dropped">—</div>
             </div>
           </div>
+          <!-- The supervisor's commentary: reconnect attempts, a destination
+               that dropped, an adaptive quality step-down. Maintained in the
+               Rust status from the start; until Fase 6 it had nowhere to go. -->
+          <div class="live-stats-note" id="live-stats-note" style="display:none"></div>
         </div>
 
         <div class="card live-destinations-card">
@@ -838,6 +842,13 @@
            reason known only to updateStartButtonState(). -->
       <div class="blocked-reason" id="live-start-reason" style="display:none"></div>
       <div class="live-error" id="live-error" style="display:none"></div>
+      <!-- Said out loud rather than discovered on a Sunday: the RTMP push has
+           never been run against a real camera and a real ingest endpoint. The
+           feature ships (a button that raises `feature_disabled` is worse than
+           an honest one), and this line is the rest of the truth. -->
+      <div class="live-action-note" data-i18n="live.notRigVerified">
+        Direktesending er ikke riggverifisert ennå — prøv den på en vanlig ukedag før du stoler på den en søndag.
+      </div>
       <div class="live-action-hint" data-i18n="live.alsoRecordHint">
         Lokal opptaksfil havner i Siste opptak når strømmen stopper —
         høyere bitrate enn livestreamen, klar for redigering eller podkast.

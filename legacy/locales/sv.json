@@ -1050,11 +1050,18 @@
     "overlays": "Overlays — grafik och presentation",
     "overlaysDesc": "Lägg kyrkans logo, sångtexter från EasyWorship (via skärminspelning på samma maskin), eller annan grafik ovanpå det som sänds. Overlays påverkar bara direktsändningen — inspelningar görs rena.",
     "addOverlay": "+ Lägg till overlay",
-    "gateStats": "Statistik är inte tillgänglig än — direktsändningen rapporterar inte bitrate, bildfrekvens eller tappade bildrutor tillbaka till appen i den här versionen.",
     "blockedNoDestinations": "Ingen destination är uppsatt än — lägg till YouTube, Facebook eller en egen RTMP-server.",
     "blockedNoEnabled": "Ingen destination är påslagen. Aktivera minst en i listan ovan.",
     "blockedNoKey": "Destinationen saknar stream-key. Utan nyckeln släpper YouTube/Facebook inte in sändningen.",
-    "blockedGoSettings": "Öppna Delning → Publicering"
+    "blockedGoSettings": "Öppna Delning → Publicering",
+    "statusStopped": "Stoppad",
+    "qualityReduced": "Sänkt kvalitet för att hålla strömmen stabil.",
+    "notRigVerified": "Direktsändning är ännu inte verifierad på en riktig rigg — testa den en vardag innan du litar på den en söndag.",
+    "errFeatureDisabled": "Den här versionen av appen kan inte direktsända. Allt annat fungerar som vanligt — uppdatera till en nyare version för att sända live.",
+    "errNoCamera": "Hittade ingen kamera. Kontrollera att den är ansluten och välj den under Inställningar → Video.",
+    "errAlreadyActive": "En direktsändning pågår redan.",
+    "errInvalidDestination": "En destination är felaktigt inställd — kontrollera RTMP-adressen och stream-nyckeln under Delning → Publicering.",
+    "errSpawnFailed": "Kunde inte starta videomotorn (ffmpeg). Starta om appen och säg till om det händer igen."
   },
   "transcript": {
     "title": "Transkribering",

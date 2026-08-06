@@ -225,7 +225,12 @@ declare global {
       gmailDisconnect:    () => Promise<{ ok: boolean }>
       gmailStatus:        () => Promise<{ connected: boolean; email?: string; needsReauth?: boolean }>
 
-      streamStatus:       () => Promise<{ active: boolean; startedAt: number | null; bitrateKbps: number; fps: number; dropped: number; lastLine: string; destinations: Array<{ id: string; state: string }> }>
+      // Mirrors the Rust `StreamStatus` (src-tauri/src/streaming/mod.rs) — which
+      // is where the destinations shape came from, and where it never matched:
+      // this said `{ id, state }` while the backend has always sent `{ name, ok }`,
+      // so the live page assigned `undefined` to every destination dot on every
+      // event and no dot ever moved. Two fields were missing outright, too.
+      streamStatus:       () => Promise<{ active: boolean; startedAt: number | null; bitrateKbps: number; fps: number; dropped: number; lastLine: string; destinations: Array<{ name: string; ok: boolean }>; targetBitrateKbps: number; bitrateStep: number }>
       streamStart:        (params: { resolution?: string; framerate?: number; videoBitrateKbps?: number; destinations: Array<{ id: string; name: string; rtmpUrl: string; enabled: boolean; hasKey?: boolean }>; overlays?: unknown[]; alsoRecord?: boolean }) => Promise<{ ok: boolean; error?: string }>
       streamStop:         () => Promise<boolean>
       streamPreviewPath:  () => Promise<string>
