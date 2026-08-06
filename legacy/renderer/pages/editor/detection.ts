@@ -3,6 +3,7 @@ import { E, $, markDirty, type Suggestion } from './state'
 import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap } from './waveform'
 import { pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
+import { flagEditorTab } from './tabs'
 
 // Segment detection / analyze panel. (Full detection logic lands here in a
 // later phase; for now just the display predicate the waveform renderer needs.)
@@ -37,6 +38,7 @@ export async function runDetection(auto = false): Promise<void> {
   if (analyzing)   analyzing.style.display = ''
 
   E.suggestions = []
+  flagEditorTab('clip', false)
   renderAnalyzePanel()
   hideSuggestionBanner()
 
@@ -63,6 +65,13 @@ export async function runDetection(auto = false): Promise<void> {
   // (silence/music head or tail bigger than 0.5 s). Don't show if the user
   // already has cuts — they're clearly editing manually.
   if (E.cuts.length === 0) showSuggestionBanner()
+
+  // The auto-run finishes minutes after the file opened, quite possibly while
+  // the operator is on another tab. The banner above is always visible, but
+  // the sermon picker and «Marker preken automatisk» live in Klipp-verktøy —
+  // so say that there is now something there. No-op when that tab is already
+  // the one on screen.
+  if (E.suggestions.length > 0) flagEditorTab('clip', true)
 }
 
 /**

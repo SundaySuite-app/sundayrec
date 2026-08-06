@@ -2375,6 +2375,54 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 #editor-workspace > * { min-width: 0; width: 100%; box-sizing: border-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
+/* ── Editor workspace tabs ────────────────────────────────────────
+   Lyd · Innhold · Klipp-verktøy. Same segmented-control language as the
+   settings `.inner-tabs`, but its own class so the editor can be tighter
+   (this strip sits mid-page under a waveform, not at the top of a page) and
+   so tuning one never moves the other. */
+.editor-tabs {
+  display: flex; gap: 2px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--rsm);
+  padding: 3px;
+  margin: 10px 0 2px;
+  width: fit-content;
+}
+.editor-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 14px;
+  border-radius: calc(var(--rsm) - 1px);
+  background: transparent; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text3); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.editor-tab:hover { color: var(--text2); }
+.editor-tab.active {
+  background: var(--surface3);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  border-bottom: 2px solid var(--accent);
+}
+/* The attention dot: something finished on a tab you are not looking at. */
+.editor-tab-badge {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(235,184,75,.18);
+}
+.editor-tab-badge[hidden] { display: none; }
+
+/* Panels are always mounted; `hidden` is the only thing a switch changes. */
+.editor-tabpanel {
+  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0; width: 100%; box-sizing: border-box;
+}
+.editor-tabpanel[hidden] { display: none; }
+.editor-tabpanel > * { min-width: 0; width: 100%; box-sizing: border-box; }
+
 /* ── Editor — Peak normalize panel ────────────────────────────────
    Single button + status + reset link. Sits directly below the main
    waveform canvas so the visible gain change is obviously tied to it. */

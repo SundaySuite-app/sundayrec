@@ -2310,6 +2310,67 @@
         <canvas id="editor-canvas" class="editor-canvas"></canvas>
       </div>
 
+      <!-- Auto-trim suggestion banner (shown after auto-analyse completes).
+           ALWAYS visible: the auto-run happens on file open, and a suggestion
+           the operator only sees after picking the right tab is a suggestion
+           they never see. Its tab gets a badge instead (tabs.ts). -->
+      <div id="editor-suggestion-banner" class="editor-suggestion-banner" style="display:none">
+        <div class="editor-suggestion-icon">✨</div>
+        <div class="editor-suggestion-body">
+          <div class="editor-suggestion-title" data-i18n="editor.suggestionTitle">Forslag klart</div>
+          <div class="editor-suggestion-detail" id="editor-suggestion-detail"></div>
+        </div>
+        <div class="editor-suggestion-actions">
+          <button class="btn-primary btn-sm" id="btn-suggestion-apply" data-i18n="editor.suggestionApply">Bruk forslag</button>
+          <button class="btn-ghost btn-sm" id="btn-suggestion-dismiss" data-i18n="editor.suggestionDismiss">Lukk</button>
+        </div>
+      </div>
+
+      <!-- Cut list -->
+      <div class="editor-cuts-panel" id="editor-cuts-panel" style="display:none">
+        <div class="editor-cuts-header" data-i18n="editor.cutsTitle">Kuttede regioner</div>
+        <div id="editor-cuts-list"></div>
+      </div>
+
+      <!-- Remaining duration after cuts -->
+      <div id="editor-remaining" class="editor-remaining" style="display:none">
+        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
+        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
+        <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
+      </div>
+
+      <!-- ── Workspace tabs ──────────────────────────────────────────────
+           Everything below the waveform used to be a vertical stack of eight
+           cards, several of them empty most of the time. The owner's word for
+           it was «rotete». The stack is now three tabs; what stays outside
+           them is what you always need while cutting: transport, minimap,
+           toolbar, waveform, the cut list and the pinned export bar.
+
+           The panels are MOUNTED at all times — switching a tab flips
+           `hidden`, nothing is created or destroyed, so peaks, the transcript,
+           the mastering job and the cover-art panel all survive a switch. -->
+      <div class="editor-tabs" id="editor-tabs" role="tablist"
+           aria-label="Verktøy for opptaket" data-i18n-aria-label="editor.tabsAria">
+        <button type="button" class="editor-tab active" role="tab" id="editor-tab-audio"
+                data-tab="audio" aria-selected="true" aria-controls="editor-tabpanel-audio" tabindex="0">
+          <span data-i18n="editor.tabAudio">Lyd</span>
+        </button>
+        <button type="button" class="editor-tab" role="tab" id="editor-tab-content"
+                data-tab="content" aria-selected="false" aria-controls="editor-tabpanel-content" tabindex="-1">
+          <span data-i18n="editor.tabContent">Innhold</span>
+        </button>
+        <button type="button" class="editor-tab" role="tab" id="editor-tab-clip"
+                data-tab="clip" aria-selected="false" aria-controls="editor-tabpanel-clip" tabindex="-1">
+          <span data-i18n="editor.tabClip">Klipp-verktøy</span>
+          <!-- Lit when a detection suggestion arrives while this tab is not the
+               active one, so the badge is the only thing that has to be seen. -->
+          <span class="editor-tab-badge" id="editor-tab-badge-clip" hidden></span>
+        </button>
+      </div>
+
+      <!-- ── Tab: Lyd ─────────────────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-audio" role="tabpanel" aria-labelledby="editor-tab-audio">
+
       <!-- Lydnivå: peak normalization (Premiere-style "Normalize Max Peaks") -->
       <div id="editor-normalize-panel" class="editor-normalize-panel">
         <button class="btn-normalize" id="btn-normalize-peak" type="button">
@@ -2379,11 +2440,55 @@
         </div>
       </div>
 
-      <!-- Cut list -->
-      <div class="editor-cuts-panel" id="editor-cuts-panel" style="display:none">
-        <div class="editor-cuts-header" data-i18n="editor.cutsTitle">Kuttede regioner</div>
-        <div id="editor-cuts-list"></div>
+      <!-- Mastering, SECONDARY surface. The primary way to master is the
+           Lydforbedring section inside the Eksporter dialog, which masters on
+           the way out. This panel writes a separate `_mastert` file and stays
+           for that flow only — so it is collapsed by default and says where
+           the main path is. -->
+      <div id="editor-master-section" class="editor-master-section editor-master-section--collapsed" style="display:none">
+        <div class="editor-master-header" id="editor-master-header" role="button" tabindex="0"
+             aria-expanded="false">
+          <svg class="editor-master-chevron" id="editor-master-chevron" viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:.6"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
+          <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
+        </div>
+        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
+
+        <div class="editor-master-preset-row">
+          <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
+          <select id="master-preset-select" class="form-input form-input-sm"></select>
+        </div>
+        <div id="master-preset-desc" class="editor-master-desc"></div>
+
+        <div class="editor-master-actions">
+          <button class="btn-ghost btn-sm" id="btn-master-preview" data-i18n="master.preview">Lytt på forhåndsvisning</button>
+          <button class="btn-ghost btn-sm" id="btn-master-listen-orig" data-i18n="master.previewListenOrig" style="display:none">Lytt original</button>
+          <button class="btn-primary btn-sm" id="btn-master-apply" data-i18n="master.apply">Mastre fil</button>
+          <button class="btn-ghost btn-sm" id="btn-master-cancel" data-i18n="master.cancel" style="display:none">Avbryt</button>
+        </div>
+
+        <div id="master-status-row" class="editor-master-status" style="display:none">
+          <div class="editor-export-progress-bar-wrap">
+            <div class="editor-export-progress-bar" id="master-progress-bar"></div>
+          </div>
+          <span class="editor-export-progress-label" id="master-status-label">…</span>
+        </div>
+
+        <div id="master-result-row" class="editor-master-result" style="display:none">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
+          <span id="master-result-text"></span>
+          <button class="btn-ghost btn-sm" id="btn-master-open-folder" data-i18n="master.openFolder" style="display:none">Åpne mappe</button>
+          <button class="btn-ghost btn-sm" id="btn-master-listen-done" data-i18n="master.listen" style="display:none">Lytt</button>
+        </div>
+
+        <audio id="master-preview-audio" style="display:none" controls></audio>
       </div>
+
+      </div><!-- /tabpanel -->
+
+
+      <!-- ── Tab: Innhold ────────────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-content" role="tabpanel" aria-labelledby="editor-tab-content" hidden>
 
       <!-- Metadata panel -->
       <div class="editor-meta-panel" id="editor-meta-panel">
@@ -2411,6 +2516,67 @@
           <button class="btn-ghost btn-sm" id="btn-meta-save" data-i18n="editor.metaSave">Lagre metadata</button>
         </div>
       </div>
+
+      <!-- Transcription panel -->
+      <div id="editor-transcript-section" class="editor-transcript-section">
+        <div class="editor-transcript-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h8a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+          <span class="editor-transcript-title" data-i18n="transcript.title">Transkribering</span>
+          <span style="flex:1"></span>
+          <button class="btn-primary btn-sm" id="btn-transcribe" data-i18n="transcript.start">▶ Transkriber</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-export" style="display:none" data-i18n="transcript.export">↧ SRT</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-sundayedit" style="display:none" title="Send til SundayEdit for pro-teksting">→ SundayEdit</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
+        </div>
+        <div id="editor-transcript-body" class="editor-transcript-body">
+          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
+        </div>
+      </div>
+
+      <!-- R8 AI sermon companion: chapters + highlights + Norwegian summary from
+           the transcript. Hidden until a transcript exists. The optional summary
+           uses an Anthropic seam when a key is set; otherwise a local fallback. -->
+      <div id="editor-companion-section" class="editor-companion-section" style="display:none">
+        <div class="editor-transcript-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M10 2l1.9 4.6L17 7.2l-3.6 3.1L14.5 16 10 13.3 5.5 16l1.1-5.7L3 7.2l5.1-.6L10 2z"/></svg>
+          <span class="editor-transcript-title" data-i18n="companion.title">Prekenhjelp</span>
+          <span style="flex:1"></span>
+          <span id="editor-companion-header-controls" class="editor-companion-header-controls"></span>
+        </div>
+        <div id="editor-companion-body" class="editor-companion-body"></div>
+      </div>
+
+      <!-- Episode-bilde (cover art) — between mastering and save bar -->
+      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
+        <div class="editor-master-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
+          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
+        </div>
+        <div class="thumb-panel">
+          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
+            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
+          </div>
+          <div class="thumb-side">
+            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
+            <div class="thumb-info" id="editor-thumb-info"></div>
+            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
+            <div class="thumb-button-row">
+              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
+              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
+              <button class="btn-ghost btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
+      </div>
+
+      </div><!-- /tabpanel -->
+
+
+      <!-- ── Tab: Klipp-verktøy ──────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-clip" role="tabpanel" aria-labelledby="editor-tab-clip" hidden>
 
       <!-- Analyse panel (merged: segments + chapters) -->
       <div class="editor-chapters-panel" id="editor-segments-panel">
@@ -2454,57 +2620,11 @@
         </div>
       </div>
 
-      <!-- Auto-trim suggestion banner (shown after auto-analyse completes) -->
-      <div id="editor-suggestion-banner" class="editor-suggestion-banner" style="display:none">
-        <div class="editor-suggestion-icon">✨</div>
-        <div class="editor-suggestion-body">
-          <div class="editor-suggestion-title" data-i18n="editor.suggestionTitle">Forslag klart</div>
-          <div class="editor-suggestion-detail" id="editor-suggestion-detail"></div>
-        </div>
-        <div class="editor-suggestion-actions">
-          <button class="btn-primary btn-sm" id="btn-suggestion-apply" data-i18n="editor.suggestionApply">Bruk forslag</button>
-          <button class="btn-ghost btn-sm" id="btn-suggestion-dismiss" data-i18n="editor.suggestionDismiss">Lukk</button>
-        </div>
-      </div>
+      </div><!-- /tabpanel -->
 
-      <!-- Remaining duration after cuts -->
-      <div id="editor-remaining" class="editor-remaining" style="display:none">
-        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
-        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
-        <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
-      </div>
-
-      <!-- Transcription panel -->
-      <div id="editor-transcript-section" class="editor-transcript-section">
-        <div class="editor-transcript-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h8a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
-          <span class="editor-transcript-title" data-i18n="transcript.title">Transkribering</span>
-          <span style="flex:1"></span>
-          <button class="btn-primary btn-sm" id="btn-transcribe" data-i18n="transcript.start">▶ Transkriber</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export" style="display:none" data-i18n="transcript.export">↧ SRT</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-sundayedit" style="display:none" title="Send til SundayEdit for pro-teksting">→ SundayEdit</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
-        </div>
-        <div id="editor-transcript-body" class="editor-transcript-body">
-          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
-        </div>
-      </div>
-
-      <!-- R8 AI sermon companion: chapters + highlights + Norwegian summary from
-           the transcript. Hidden until a transcript exists. The optional summary
-           uses an Anthropic seam when a key is set; otherwise a local fallback. -->
-      <div id="editor-companion-section" class="editor-companion-section" style="display:none">
-        <div class="editor-transcript-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M10 2l1.9 4.6L17 7.2l-3.6 3.1L14.5 16 10 13.3 5.5 16l1.1-5.7L3 7.2l5.1-.6L10 2z"/></svg>
-          <span class="editor-transcript-title" data-i18n="companion.title">Prekenhjelp</span>
-          <span style="flex:1"></span>
-          <span id="editor-companion-header-controls" class="editor-companion-header-controls"></span>
-        </div>
-        <div id="editor-companion-body" class="editor-companion-body"></div>
-      </div>
-
+      <!-- Transcribe dialogs. Direct children of the workspace, not of a
+           tab panel: a modal inside a `hidden` panel is a modal that never
+           opens. -->
       <!-- Transcribe modal: choose model + language -->
       <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-modal-title">
         <div class="modal modal-sm transcribe-modal">
@@ -2557,74 +2677,6 @@
             <button class="btn-ghost" id="btn-transcribe-progress-cancel" data-i18n="transcript.cancel">Avbryt</button>
           </div>
         </div>
-      </div>
-
-      <!-- Mastering, SECONDARY surface. The primary way to master is the
-           Lydforbedring section inside the Eksporter dialog, which masters on
-           the way out. This panel writes a separate `_mastert` file and stays
-           for that flow only — so it is collapsed by default and says where
-           the main path is. -->
-      <div id="editor-master-section" class="editor-master-section editor-master-section--collapsed" style="display:none">
-        <div class="editor-master-header" id="editor-master-header" role="button" tabindex="0"
-             aria-expanded="false">
-          <svg class="editor-master-chevron" id="editor-master-chevron" viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:.6"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-          <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
-          <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
-        </div>
-        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
-
-        <div class="editor-master-preset-row">
-          <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
-          <select id="master-preset-select" class="form-input form-input-sm"></select>
-        </div>
-        <div id="master-preset-desc" class="editor-master-desc"></div>
-
-        <div class="editor-master-actions">
-          <button class="btn-ghost btn-sm" id="btn-master-preview" data-i18n="master.preview">Lytt på forhåndsvisning</button>
-          <button class="btn-ghost btn-sm" id="btn-master-listen-orig" data-i18n="master.previewListenOrig" style="display:none">Lytt original</button>
-          <button class="btn-primary btn-sm" id="btn-master-apply" data-i18n="master.apply">Mastre fil</button>
-          <button class="btn-ghost btn-sm" id="btn-master-cancel" data-i18n="master.cancel" style="display:none">Avbryt</button>
-        </div>
-
-        <div id="master-status-row" class="editor-master-status" style="display:none">
-          <div class="editor-export-progress-bar-wrap">
-            <div class="editor-export-progress-bar" id="master-progress-bar"></div>
-          </div>
-          <span class="editor-export-progress-label" id="master-status-label">…</span>
-        </div>
-
-        <div id="master-result-row" class="editor-master-result" style="display:none">
-          <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-          <span id="master-result-text"></span>
-          <button class="btn-ghost btn-sm" id="btn-master-open-folder" data-i18n="master.openFolder" style="display:none">Åpne mappe</button>
-          <button class="btn-ghost btn-sm" id="btn-master-listen-done" data-i18n="master.listen" style="display:none">Lytt</button>
-        </div>
-
-        <audio id="master-preview-audio" style="display:none" controls></audio>
-      </div>
-
-      <!-- Episode-bilde (cover art) — between mastering and save bar -->
-      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
-        <div class="editor-master-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
-          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
-        </div>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="editor-thumb-info"></div>
-            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
       </div>
 
       <!-- Save bar -->

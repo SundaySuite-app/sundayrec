@@ -22,6 +22,7 @@ import { PICK, jinglePathFor, jingleValueFor } from './editor/review-jingles'
 import { toast } from '../ui/toast'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
+import { setupEditorTabs, flagEditorTab } from './editor/tabs'
 import { pickAndLoad, loadFile, reloadIntroOutro, teardownPlayback, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
 
 // ── Setup ─────────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export function setupEditorPage(): void {
   document.querySelector('.editor-io-include-label')?.addEventListener('click', (e) => e.stopPropagation())
 
   setupKbdHints()
+  setupEditorTabs()
   setupMasteringCollapse()
   $('btn-editor-play')?.addEventListener('click',    () => togglePlay(false))
   $('btn-editor-preview')?.addEventListener('click', () => togglePlay(true))
@@ -1152,6 +1154,7 @@ function closeCurrentFile(): void {
   E.suggestions = []
   E.clipTimes = []
   E.lastAnalyzedAt = 0
+  flagEditorTab('clip', false)
   E.meta = { title: '', speaker: '', description: '', chapters: [] }
   clearDirty()
   if (E.videoEl) {
