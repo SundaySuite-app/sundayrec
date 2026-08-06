@@ -865,6 +865,27 @@ pub struct EditorExportProgress {
     pub phase: String,
 }
 
+/// A decode-progress tick for the three whole-file passes that used to report
+/// nothing at all: the waveform decode (`editor://peaks-progress`), the content
+/// analysis (`editor://analysis-progress`) and the playback-proxy transcode
+/// (`editor://proxy-progress`).
+///
+/// `fraction` is 0..1 and monotonically non-decreasing within one pass. It is a
+/// measured quantity in every case, not a guess: the two decode passes divide
+/// bytes-read by the byte count the probed duration implies (both pipes are a
+/// fixed rate — 8 kHz and 16 kHz mono s16le), and the transcode divides
+/// ffmpeg's own `out_time` by the same duration.
+///
+/// One shape for all three because the renderer treats them identically, and a
+/// `phase` field would be inventing a distinction the UI does not draw: each of
+/// these is a single pass, named by the surface that started it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../src/lib/bindings/EditorDecodeProgress.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct EditorDecodeProgress {
+    pub fraction: f32,
+}
+
 /// Progress phase: the mastering measure pass (no percentage available).
 pub const EXPORT_PHASE_MEASURING: &str = "measuring";
 /// Progress phase: the actual render (percentage against the kept duration).
@@ -1017,13 +1038,19 @@ pub async fn load_recording(_input_path: &str) -> AppResult<EditorMediaInfo> {
 
 /// Decode the audio to a renderer waveform (peaks + sample rate).
 #[cfg(not(feature = "editor"))]
-pub async fn peaks(_input_path: &str) -> AppResult<EditorPeaks> {
+pub async fn peaks<F>(_input_path: &str, _on_progress: F) -> AppResult<EditorPeaks>
+where
+    F: Fn(f32),
+{
     disabled("peaks")
 }
 
 /// Transcode a large/exotic recording to a seekable stereo AAC playback proxy.
 #[cfg(not(feature = "editor"))]
-pub async fn extract_playback_proxy(_input_path: &str) -> AppResult<String> {
+pub async fn extract_playback_proxy<F>(_input_path: &str, _on_progress: F) -> AppResult<String>
+where
+    F: Fn(f32),
+{
     disabled("extractPlaybackProxy")
 }
 
@@ -1044,7 +1071,14 @@ where
 
 /// Content-detect segments (silence/speech/music + promoted sermon block).
 #[cfg(not(feature = "editor"))]
-pub async fn segments(_input_path: &str, _force: bool) -> AppResult<Vec<EditorSegment>> {
+pub async fn segments<F>(
+    _input_path: &str,
+    _force: bool,
+    _on_progress: F,
+) -> AppResult<Vec<EditorSegment>>
+where
+    F: Fn(f32),
+{
     disabled("segments")
 }
 
@@ -1171,9 +1205,17 @@ fn read_peaks_cache(input_path: &str, size_bytes: u64, mtime_ms: u64) -> Option<
 /// every single reopen. Now: a few kB of buffer, no temp file, and one decode
 /// per recording for the life of the file.
 ///
+/// `on_progress` receives the decode's 0..1 fraction — bytes read over the byte
+/// count the probed duration implies at this pipe's fixed rate. That is a
+/// measurement, not an estimate: the pipe is 8 kHz mono s16le, so every second
+/// of audio is exactly 16 000 bytes. Callers that want no progress pass `|_| {}`.
+///
 /// HARDWARE-UNVERIFIED (the decode itself is proven only by the smoke test).
 #[cfg(feature = "editor")]
-pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
+pub async fn peaks<F>(input_path: &str, on_progress: F) -> AppResult<EditorPeaks>
+where
+    F: Fn(f32),
+{
     use sundayrec_core::editor::{
         peaks_pipe_args, quantize_peaks, PeakAccumulator, PEAKS_BUCKET_SAMPLES, PEAKS_PER_SEC,
         PEAKS_SAMPLE_RATE,
@@ -1201,7 +1243,14 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
     // wedged ffmpeg (a stalled network volume, a half-mounted share) leaves the
     // read loop below waiting for an EOF that never comes — the editor hangs on
     // "Analyserer bølgeform…" with no cancel anywhere in reach.
-    let op_timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
+    let hint = duration_hint(input_path).await;
+    let op_timeout = sundayrec_core::editor::editor_op_timeout(hint);
+    // The denominator for progress: the probe's duration at the pipe's fixed
+    // rate. `None` (an unprobeable container) means no fraction can be honest,
+    // and the read loop reports nothing rather than a made-up one.
+    let expected_bytes = hint
+        .filter(|d| *d > 0.0)
+        .map(|d| d * f64::from(PEAKS_SAMPLE_RATE) * 2.0);
 
     let args = peaks_pipe_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1226,8 +1275,13 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
     // hang, because a wedged ffmpeg's stdout never reaches EOF. `child` is
     // borrowed (not moved) so it is still ours to kill if the timer fires.
     let child_ref = &mut child;
+    // Borrowed, not moved: the sink is needed once more after the loop, for the
+    // final tick that guarantees the bar reaches the end.
+    let progress_ref = &on_progress;
     let waited = tokio::time::timeout(op_timeout, async move {
         let mut buf = vec![0u8; 64 * 1024];
+        let mut read_bytes: u64 = 0;
+        let mut ticked = 0.0f32;
         loop {
             let n = stdout
                 .read(&mut buf)
@@ -1237,6 +1291,18 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
                 break;
             }
             acc.push_bytes(&buf[..n]);
+            // One tick per PERCENT, not per read: a 2 h FLAC is ~1 800 reads of
+            // this loop and an event each would be a telemetry flood into the
+            // very pipeline it is reporting on (the v0.5.0 lesson). The command
+            // layer throttles by time on top of this.
+            read_bytes += n as u64;
+            if let Some(expected) = expected_bytes {
+                let frac = ((read_bytes as f64 / expected) as f32).clamp(0.0, 0.99);
+                if frac >= ticked + 0.01 {
+                    ticked = frac;
+                    progress_ref(frac);
+                }
+            }
         }
         let status = child_ref
             .wait()
@@ -1268,6 +1334,11 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
         let tail: String = tail.chars().rev().collect();
         return Err(AppError::Recording(format!("peaks decode failed: {tail}")));
     }
+    // The decode IS done, whatever the byte arithmetic came to (an ffprobe
+    // duration is a container header and can be a little short or long). Say so
+    // once, unconditionally, so the bar always reaches the end — and so a source
+    // whose duration could not be probed still gets one honest event.
+    on_progress(1.0);
 
     let peaks = acc.finish();
     // Best-effort cache write: a read-only folder or a full disk costs a
@@ -1299,7 +1370,10 @@ pub async fn peaks(input_path: &str) -> AppResult<EditorPeaks> {
 /// Export still runs on the original file, so quality is untouched.
 /// HARDWARE-UNVERIFIED — the renderer wiring is a RIGG-VERIFISER follow-up.
 #[cfg(feature = "editor")]
-pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
+pub async fn extract_playback_proxy<F>(input_path: &str, on_progress: F) -> AppResult<String>
+where
+    F: Fn(f32),
+{
     use sundayrec_core::editor::{playback_proxy_args, PLAYBACK_PROXY_PREFIX};
 
     if !std::path::Path::new(input_path).exists() {
@@ -1316,9 +1390,18 @@ pub async fn extract_playback_proxy(input_path: &str) -> AppResult<String> {
     let args = playback_proxy_args(input_path, &out_str);
     // A full transcode of the recording — budget it against the media length so
     // a stalled source volume can't leave the editor "Klargjør avspilling…"
-    // forever with no way out.
-    let timeout = sundayrec_core::editor::editor_op_timeout(duration_hint(input_path).await);
-    run_ffmpeg(&args, timeout, "playback proxy").await?;
+    // forever with no way out. The same duration is the progress denominator:
+    // this is a minute-plus wait on a long service and it used to show nothing.
+    let hint = duration_hint(input_path).await;
+    let timeout = sundayrec_core::editor::editor_op_timeout(hint);
+    run_ffmpeg_progress(
+        &args,
+        hint.unwrap_or(0.0),
+        timeout,
+        "playback proxy",
+        on_progress,
+    )
+    .await?;
     if !out_path.exists() {
         return Err(AppError::Recording(
             "playback proxy produced no file".into(),
@@ -1490,9 +1573,21 @@ fn read_segments_cache(
 /// it. Now the bytes are folded into the f32 vec as they arrive, so only the
 /// classifier's own buffer is ever held.
 ///
+/// `on_progress` receives the pass's 0..1 fraction, measured the same way the
+/// waveform decode measures its own: bytes off the pipe over the byte count the
+/// probed duration implies at 16 kHz mono s16le. «Analyser opptak» was the last
+/// button in the editor that could run for minutes with nothing but a spinner.
+///
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
-pub async fn segments(input_path: &str, force: bool) -> AppResult<Vec<EditorSegment>> {
+pub async fn segments<F>(
+    input_path: &str,
+    force: bool,
+    on_progress: F,
+) -> AppResult<Vec<EditorSegment>>
+where
+    F: Fn(f32),
+{
     use sundayrec_core::audio_analysis::{
         classify_and_group, detect_segments, extract_features, FRAME_MS, SAMPLE_RATE,
     };
@@ -1507,6 +1602,13 @@ pub async fn segments(input_path: &str, force: bool) -> AppResult<Vec<EditorSegm
             return Ok(cached);
         }
     }
+
+    // Same denominator as the waveform decode — see `peaks`. `None` when the
+    // container has no probeable duration: then no fraction would be honest.
+    let expected_bytes = duration_hint(input_path)
+        .await
+        .filter(|d| *d > 0.0)
+        .map(|d| d * f64::from(SAMPLE_RATE) * 2.0);
 
     let args = analysis_decode_args(input_path);
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -1528,6 +1630,8 @@ pub async fn segments(input_path: &str, force: bool) -> AppResult<Vec<EditorSegm
     let mut pcm: Vec<f32> = Vec::new();
     let mut buf = vec![0u8; 64 * 1024];
     let mut carry: Option<u8> = None;
+    let mut read_bytes: u64 = 0;
+    let mut ticked = 0.0f32;
     loop {
         let n = stdout
             .read(&mut buf)
@@ -1535,6 +1639,18 @@ pub async fn segments(input_path: &str, force: bool) -> AppResult<Vec<EditorSegm
             .map_err(|e| AppError::Recording(format!("analysis decode read: {e}")))?;
         if n == 0 {
             break;
+        }
+        // One tick per percent — see the identical guard in `peaks`. The pass
+        // also has a tail (feature extraction + classification) that this
+        // fraction does NOT cover, which is why the decode is capped at 0.99
+        // and the caller only sees 1.0 once the segments actually exist.
+        read_bytes += n as u64;
+        if let Some(expected) = expected_bytes {
+            let frac = ((read_bytes as f64 / expected) as f32).clamp(0.0, 0.99);
+            if frac >= ticked + 0.01 {
+                ticked = frac;
+                on_progress(frac);
+            }
         }
         let mut chunk = &buf[..n];
         if let Some(lo) = carry.take() {
@@ -1588,6 +1704,7 @@ pub async fn segments(input_path: &str, force: bool) -> AppResult<Vec<EditorSegm
     if let Ok(json) = serde_json::to_string(&cache) {
         let _ = write_sidecar_raw(input_path, EditorSidecar::Segments, &json);
     }
+    on_progress(1.0);
     Ok(segments)
 }
 
@@ -2720,6 +2837,109 @@ async fn ffmpeg_output_timed(
     }
 }
 
+/// Run ffmpeg like [`run_ffmpeg`], but with `-progress` on stdout parsed into an
+/// 0..1 fraction against `total_sec`.
+///
+/// The `-progress pipe:1 -nostats` pair is spliced in front of the OUTPUT path
+/// (the last argument) rather than added by the core's arg builders: these are
+/// global options, the builders are pinned by their own tests, and only this one
+/// caller wants the machine-readable stream. `total_sec <= 0` (an unprobeable
+/// container) means the fraction cannot be honest, so the run reports nothing
+/// and the caller's bar stays indeterminate.
+///
+/// Reads COMPLETE lines only, for the reason `run_export_ffmpeg` documents at
+/// length: re-scanning an accumulating buffer keeps re-reporting the first
+/// `out_time` in it and freezes the bar for the first few dozen ticks.
+#[cfg(feature = "editor")]
+async fn run_ffmpeg_progress<F>(
+    args: &[String],
+    total_sec: f64,
+    timeout: std::time::Duration,
+    what: &str,
+    on_progress: F,
+) -> AppResult<()>
+where
+    F: Fn(f32),
+{
+    use sundayrec_core::mastering::parse_progress_time;
+    use tokio::io::AsyncReadExt;
+
+    let mut with_progress = args.to_vec();
+    let out_at = with_progress.len().saturating_sub(1);
+    with_progress.splice(
+        out_at..out_at,
+        ["-progress", "pipe:1", "-nostats"].map(String::from),
+    );
+    let arg_refs: Vec<&str> = with_progress.iter().map(String::as_str).collect();
+    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
+    let mut stdout = child.stdout.take();
+    // stderr still has to be drained concurrently or a full pipe wedges ffmpeg.
+    let drain = child.stderr.take().map(|mut stderr| {
+        tauri::async_runtime::spawn(async move {
+            let mut bytes = Vec::new();
+            let _ = stderr.read_to_end(&mut bytes).await;
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    });
+
+    let child_ref = &mut child;
+    let progress_ref = &on_progress;
+    let waited = tokio::time::timeout(timeout, async move {
+        if let Some(mut out) = stdout.take() {
+            let mut buf = String::new();
+            let mut chunk = [0u8; 4096];
+            let mut last = 0.0f32;
+            loop {
+                match out.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => buf.push_str(&String::from_utf8_lossy(&chunk[..n])),
+                    Err(_) => break,
+                }
+                while let Some(nl) = buf.find('\n') {
+                    let line: String = buf.drain(..=nl).collect();
+                    let Some(cur) = parse_progress_time(&line) else {
+                        continue;
+                    };
+                    if total_sec <= 0.0 {
+                        continue;
+                    }
+                    let frac = ((cur / total_sec) as f32).clamp(0.0, 0.99);
+                    if frac > last {
+                        last = frac;
+                        progress_ref(frac);
+                    }
+                }
+            }
+        }
+        child_ref.wait().await
+    })
+    .await;
+
+    let status = match waited {
+        Ok(r) => r.map_err(|e| AppError::Recording(format!("{what} wait: {e}")))?,
+        Err(_elapsed) => {
+            let _ = child.kill().await;
+            tracing::warn!(
+                what,
+                timeout_ms = timeout.as_millis() as u64,
+                "editor ffmpeg op exceeded its kill-timer"
+            );
+            return Err(AppError::Recording(format!("timeout: {what}")));
+        }
+    };
+    let stderr_buf = match drain {
+        Some(h) => h.await.unwrap_or_default(),
+        None => String::new(),
+    };
+    if !status.success() {
+        let tail: String = stderr_buf.chars().rev().take(500).collect::<String>();
+        let tail: String = tail.chars().rev().collect();
+        return Err(AppError::Recording(format!("ffmpeg failed: {tail}")));
+    }
+    on_progress(1.0);
+    Ok(())
+}
+
 /// Spawn ffmpeg with `args`, wait for it under `timeout`, and map a non-zero
 /// exit to an error carrying the tail of stderr (what the Electron
 /// `spawnFfmpeg` did).
@@ -2756,12 +2976,12 @@ mod tests {
     #[cfg(not(feature = "editor"))]
     #[tokio::test]
     async fn peaks_segments_mastering_export_disabled_without_feature() {
-        assert!(peaks("/x.mp4")
+        assert!(peaks("/x.mp4", |_| {})
             .await
             .unwrap_err()
             .to_string()
             .contains("feature_disabled"));
-        assert!(segments("/x.mp4", false)
+        assert!(segments("/x.mp4", false, |_| {})
             .await
             .unwrap_err()
             .to_string()
@@ -3135,7 +3355,7 @@ mod tests {
 
         let got = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(peaks(&media))
+            .block_on(peaks(&media, |_| {}))
             .expect("a cache hit must not need ffmpeg");
         assert_eq!(got.sample_rate, 8000);
         assert_eq!(got.peaks.len(), 5);
@@ -3169,7 +3389,7 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let got = rt
-            .block_on(segments(&media, false))
+            .block_on(segments(&media, false, |_| {}))
             .expect("a cache hit must not need ffmpeg");
         assert_eq!(got, vec![sentinel]);
 
@@ -3177,7 +3397,7 @@ mod tests {
         // cache, which on this undecodable file means it fails loudly rather than
         // quietly handing back the cached answer.
         assert!(
-            rt.block_on(segments(&media, true)).is_err(),
+            rt.block_on(segments(&media, true, |_| {})).is_err(),
             "force must bypass the cache and actually re-run the analysis"
         );
     }
@@ -3187,12 +3407,12 @@ mod tests {
     fn cache_reads_are_missing_file_errors_not_silent_empties() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         assert!(rt
-            .block_on(peaks("/no/such/file.wav"))
+            .block_on(peaks("/no/such/file.wav", |_| {}))
             .unwrap_err()
             .to_string()
             .contains("file_not_found"));
         assert!(rt
-            .block_on(segments("/no/such/file.wav", false))
+            .block_on(segments("/no/such/file.wav", false, |_| {}))
             .unwrap_err()
             .to_string()
             .contains("file_not_found"));
@@ -3415,14 +3635,41 @@ mod tests {
             let rt = tokio::runtime::Runtime::new().unwrap();
 
             let before_dirs = legacy_temp_dir_count();
+            // Collect the decode's progress ticks: the Fase 9 bar is only as
+            // honest as this sink, and "it compiles" is not evidence that any
+            // event ever leaves the read loop.
+            let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
+            let sink = ticks.clone();
             let first = {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(peaks(&src));
+                let r = rt.block_on(peaks(&src, move |f| sink.lock().unwrap().push(f)));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("peaks should stream out of the lavfi source")
             };
+
+            {
+                let seen = ticks.lock().unwrap();
+                assert!(
+                    !seen.is_empty(),
+                    "the waveform decode reported no progress at all — the bar \
+                     would sit on «Analyserer bølgeform…» with nothing moving"
+                );
+                assert_eq!(
+                    seen.last().copied(),
+                    Some(1.0),
+                    "the last tick must be 1.0 so the bar always reaches the end; got {seen:?}"
+                );
+                let mut prev = 0.0f32;
+                for f in seen.iter() {
+                    assert!(
+                        (0.0..=1.0).contains(f) && *f >= prev,
+                        "progress must be monotone within 0..1; got {seen:?}"
+                    );
+                    prev = *f;
+                }
+            }
 
             assert_eq!(first.sample_rate, 8000);
             // 2 s × 100 peaks/s. ±2 for the encoder's frame padding.
@@ -3454,7 +3701,7 @@ mod tests {
             );
 
             // … and a second call comes back identical.
-            let second = rt.block_on(peaks(&src)).expect("second call");
+            let second = rt.block_on(peaks(&src, |_| {})).expect("second call");
             assert_eq!(second.peaks.len(), first.peaks.len());
 
             eprintln!(
@@ -3482,7 +3729,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(peaks(&src));
+                let r = rt.block_on(peaks(&src, |_| {}));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("first (computing) call");
             }
@@ -3494,7 +3741,7 @@ mod tests {
             cache.peaks = vec![255, 0, 255, 0];
             std::fs::write(&cache_path, serde_json::to_string(&cache).unwrap()).unwrap();
 
-            let again = rt.block_on(peaks(&src)).expect("cached call");
+            let again = rt.block_on(peaks(&src, |_| {})).expect("cached call");
             assert_eq!(again.peaks.len(), 4, "a recompute would have given ~200");
             assert!((again.peaks[0] - 1.0).abs() < 1e-6);
             assert_eq!(again.peaks[1], 0.0);
@@ -3512,14 +3759,21 @@ mod tests {
             let src = lavfi_silence_then_tone(&ffmpeg, dir.path());
             let rt = tokio::runtime::Runtime::new().unwrap();
 
+            let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
+            let sink = ticks.clone();
             let computed = {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(segments(&src, false));
+                let r = rt.block_on(segments(&src, false, move |f| sink.lock().unwrap().push(f)));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("detection should run on the silence+tone source")
             };
+            assert_eq!(
+                ticks.lock().unwrap().last().copied(),
+                Some(1.0),
+                "«Analyser opptak» must end on a full bar"
+            );
 
             let cache_path = sidecar_of(&src, ".segments.json");
             assert!(
@@ -3545,7 +3799,7 @@ mod tests {
             };
             std::fs::write(&cache_path, serde_json::to_string(&poisoned).unwrap()).unwrap();
             assert_eq!(
-                rt.block_on(segments(&src, false)).unwrap(),
+                rt.block_on(segments(&src, false, |_| {})).unwrap(),
                 vec![sentinel],
                 "the automatic run must take the cached answer"
             );
@@ -3556,7 +3810,7 @@ mod tests {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
-                let r = rt.block_on(segments(&src, true));
+                let r = rt.block_on(segments(&src, true, |_| {}));
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("a forced re-analysis should run")
             };

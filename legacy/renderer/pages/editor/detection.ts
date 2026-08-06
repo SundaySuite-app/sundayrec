@@ -3,6 +3,8 @@ import { E, $, markDirty, type Suggestion } from './state'
 import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap } from './waveform'
 import { pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
+import { flagEditorTab } from './tabs'
+import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // Segment detection / analyze panel. (Full detection logic lands here in a
 // later phase; for now just the display predicate the waveform renderer needs.)
@@ -29,16 +31,51 @@ export function shouldShowSegment(type: string): boolean {
  *  cached answer (that's what makes a reopen instant), while a click on
  *  «Analyser opptak» FORCES a fresh pass — the user pressing that button is
  *  asking for the work to be done, not for last time's answer. */
+/** One analysis at a time. The automatic post-open run does NOT disable the
+ *  button, so a user could start a second pass on top of it — two full ffmpeg
+ *  decodes of the same multi-gigabyte recording at once, and two writers
+ *  fighting over one progress bar. The click is dropped instead: the run already
+ *  in flight is about to produce the same answer. */
+let detectionInFlight = false
+
 export async function runDetection(auto = false): Promise<void> {
   if (!E.filePath) return
+  if (detectionInFlight) return
+  detectionInFlight = true
   const btn       = $('btn-detect-segments') as HTMLButtonElement | null
   const analyzing = $('editor-segments-analyzing')
   if (!auto && btn) { btn.disabled = true; btn.textContent = t('editor.analyzing', 'Analyserer…') }
   if (analyzing)   analyzing.style.display = ''
 
   E.suggestions = []
+  flagEditorTab('clip', false)
   renderAnalyzePanel()
   hideSuggestionBanner()
+
+  // A spinner is all this card had, for a pass that reads the WHOLE recording —
+  // minutes on a service, and indistinguishable from a hang. The backend now
+  // reports its decode position, so say how far along it is and roughly how much
+  // longer. Indeterminate until the first tick: a cached answer returns before
+  // any arrives, and the backend reports nothing for a container whose duration
+  // it could not probe.
+  const host = $('editor-analyze-progress')
+  let progressUi: ProgressHandle | null = null
+  if (host) {
+    host.style.display = ''
+    progressUi = attachProgress(host, { compact: true })
+    progressUi.update(null)
+  }
+  const unsub = window.api.on?.('editor-analysis-progress', (payload: unknown) => {
+    const f = (payload as { fraction?: number } | null)?.fraction
+    if (typeof f !== 'number' || !isFinite(f)) return
+    progressUi?.update(Math.max(0, Math.min(1, f)))
+  })
+  const stopProgress = (): void => {
+    unsub?.()
+    progressUi?.destroy()
+    progressUi = null
+    if (host) host.style.display = 'none'
+  }
 
   const fpAtStart = E.filePath
   let raw: Suggestion[] = []
@@ -46,6 +83,9 @@ export async function runDetection(auto = false): Promise<void> {
     raw = (await window.api.editorDetectSegments(E.filePath, !auto)) as Suggestion[]
   } catch {
     raw = []
+  } finally {
+    detectionInFlight = false
+    stopProgress()
   }
   // Guard against the user closing/swapping the file mid-analysis: drop the
   // result if we're no longer on the same recording.
@@ -63,6 +103,13 @@ export async function runDetection(auto = false): Promise<void> {
   // (silence/music head or tail bigger than 0.5 s). Don't show if the user
   // already has cuts — they're clearly editing manually.
   if (E.cuts.length === 0) showSuggestionBanner()
+
+  // The auto-run finishes minutes after the file opened, quite possibly while
+  // the operator is on another tab. The banner above is always visible, but
+  // the sermon picker and «Marker preken automatisk» live in Klipp-verktøy —
+  // so say that there is now something there. No-op when that tab is already
+  // the one on screen.
+  if (E.suggestions.length > 0) flagEditorTab('clip', true)
 }
 
 /**
@@ -97,7 +144,13 @@ export function renderAnalyzePanel(): void {
     }
   }
 
-  if (controls) controls.style.display = E.lastAnalyzedAt > 0 ? '' : 'none'
+  // The three layer toggles now live in the toolbar's view popover. Before the
+  // recording has been analysed there are no segments to draw, so the popover
+  // shows a sentence saying where to get some instead of three dead checkboxes.
+  const analyzed = E.lastAnalyzedAt > 0
+  if (controls) controls.style.display = analyzed ? '' : 'none'
+  const layersEmpty = $('editor-view-popover-empty')
+  if (layersEmpty) layersEmpty.style.display = analyzed ? 'none' : ''
 
   // Show "Bruk forslag" / sermon-picker only when we have a sermon detected.
   const hasSermon = E.suggestions.some(s => s.type === 'sermon')

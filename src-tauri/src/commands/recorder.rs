@@ -171,22 +171,32 @@ pub async fn start_recording(
 /// ⚠️ HARDWARE-UNVERIFIED — opens a real mic in the background.
 #[tauri::command]
 pub async fn preroll_start(
+    app: AppHandle,
     preroll: State<'_, PrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
 ) -> AppResult<bool> {
-    // Belt-and-braces: the rolling capture opens the mic via ffmpeg; make sure
-    // the channel-grid/VU stream isn't holding it (renderer also stops first).
+    // The buffer is about to become the ONE owner of the input device; the VU
+    // engine must let go first. (The native buffer then emits `vu://levels`
+    // itself, so the meters keep running — see `audio::vu::emit_vu_levels`.)
+    let metered = vu.is_running();
     vu.stop();
     let settings = crate::settings::load(&db.pool).await?;
     match preroll_settings_from(&settings) {
         Some(ps) => {
-            preroll.start(ps);
+            // Whoever was metering still wants meters: remember it, so stopping
+            // the buffer later hands the device back instead of leaving the bars
+            // frozen with nothing emitting.
+            if metered {
+                vu.adopt(settings.device_name.clone());
+            }
+            preroll.start(app, ps);
             Ok(true)
         }
         None => {
-            // Pre-roll disabled or no device — make sure nothing is left running.
-            preroll.stop();
+            // Pre-roll disabled or no device — make sure nothing is left running,
+            // and give the meters their device back if the buffer had it.
+            release_preroll_to_meters(&app, &preroll, &vu).await;
             Ok(false)
         }
     }
@@ -195,9 +205,31 @@ pub async fn preroll_start(
 /// Stop the rolling pre-roll capture loop without harvesting (deletes the temp
 /// capture). Safe to call when nothing is running.
 #[tauri::command]
-pub fn preroll_stop(preroll: State<'_, PrerollEngine>) -> AppResult<()> {
-    preroll.stop();
+pub async fn preroll_stop(
+    app: AppHandle,
+    preroll: State<'_, PrerollEngine>,
+    vu: State<'_, crate::audio::vu::VuEngine>,
+) -> AppResult<()> {
+    release_preroll_to_meters(&app, &preroll, &vu).await;
     Ok(())
+}
+
+/// Stop the buffer, WAIT for the device to be free, and hand metering back to
+/// the VU engine if a meter had adopted the buffer's stream.
+///
+/// The order is the whole point: while the native buffer runs it IS the
+/// `vu://levels` emitter, so a `start_vu` during that time opens nothing. When
+/// the buffer goes away there would be no emitter left and the meters would
+/// freeze silently — unless someone re-opens a real session, which is this. It
+/// must happen strictly AFTER the release, or the two are momentarily both
+/// owners of the microphone.
+async fn release_preroll_to_meters(
+    app: &AppHandle,
+    preroll: &PrerollEngine,
+    vu: &crate::audio::vu::VuEngine,
+) {
+    preroll.stop_and_release().await;
+    vu.resume_adopted(app.clone()).await;
 }
 
 /// The pre-roll loop status, for the settings UI's "preroll aktiv" indicator.

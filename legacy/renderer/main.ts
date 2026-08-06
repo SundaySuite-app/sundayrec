@@ -1,6 +1,9 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
+import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
+import type { ThumbnailView } from '../bindings/ThumbnailView'
+import type { TrashEntry } from '../bindings/TrashEntry'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
@@ -26,14 +29,14 @@ import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
 import { initDeeplinks } from './deeplinks'
 
-// Shared thumbnail IPC result shapes
-export interface ThumbnailInfo {
-  width:    number
-  height:   number
-  byteSize: number
-  format:   'jpeg' | 'png' | 'webp'
-}
-export type ThumbnailResult = { path: string; info: ThumbnailInfo; dataUrl: string } | { error: string }
+// Shared thumbnail IPC result shapes.
+//
+// These were hand-written for a backend that did not exist. It exists now
+// (src-tauri/src/commands/thumbnail.rs), so they are the GENERATED types — a
+// change to the Rust DTO surfaces here as a tsc error instead of as a panel
+// reading a field the backend stopped sending.
+export type ThumbnailInfo = ThumbnailInfoDto
+export type ThumbnailResult = ThumbnailView | { error: string }
 
 /** The pass-1 loudnorm measurement (`EditorLoudness`). All five measured values
  *  ride along so `masterApply` can REUSE the measurement `masterMeasure` just
@@ -47,12 +50,10 @@ export interface LoudnessMeasurementView {
   /** The preset's target, not a measurement — carried for the "x → y LUFS" UI. */
   targetLufs:   number
 }
-export interface ThumbnailResolved {
-  path:    string
-  info:    ThumbnailInfo
-  dataUrl: string
-  kind?:   'episode' | 'default'   // present on resolve, absent on getDefaultInfo
-}
+/** What `thumbnailResolve` returns — the same view, with `kind` telling the
+ *  panel whether it got this episode's own image or the shared default.
+ *  `kind` is absent from `thumbnailGetDefaultInfo` (nothing to distinguish). */
+export type ThumbnailResolved = ThumbnailView
 
 // Expose globals that sub-modules need
 declare global {
@@ -71,6 +72,15 @@ declare global {
       deleteHistoryEntry:  (ts: number) => Promise<void>
       clearHistory:        () => Promise<void>
       pruneHistory:        () => Promise<number>
+      /** Move recordings (with sidecars + video sibling) into the papirkurv.
+       *  Rejects rather than reporting a delete that did not happen. */
+      trashMove:           (paths: string[]) => Promise<TrashEntry[]>
+      /** Everything currently recoverable, newest first. */
+      trashList:           () => Promise<TrashEntry[]>
+      /** Put one entry back where it came from. */
+      trashRestore:        (id: string) => Promise<TrashEntry>
+      /** Destroy entries permanently — an empty list empties the papirkurv. */
+      trashPurge:          (ids: string[]) => Promise<number>
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
@@ -97,6 +107,12 @@ declare global {
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
       clearSmtpPassword:   () => Promise<boolean>
+      /** Store the SMTP password in the OS keychain (undefined/'' clears it).
+       *  Resolves true when a password is now stored. Rejects on a keychain
+       *  failure — the caller must show it, not swallow it. */
+      emailSetSmtpPassword: (password?: string) => Promise<boolean>
+      /** Whether an SMTP password is stored. The secret never crosses back. */
+      emailHasSmtpPassword: () => Promise<boolean>
       /** Whether this build can send e-mail at all, and whether Gmail is
        *  connected — read BEFORE offering a «Send test» (see feature-gate). */
       emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
@@ -192,6 +208,9 @@ declare global {
       editorSaveCutsDraft:    (filePath: string, cuts: unknown) => Promise<void>
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       pickAudioFile:          ()                 => Promise<string | null>
+      /** The backend-tagged input list — the renderer's ONLY audio-device
+       *  enumeration since the getUserMedia label blink-open was removed. */
+      listAudioDevices:       ()                 => Promise<import('../bindings/TaggedAudioInput').TaggedAudioInput[]>
       listAsioDrivers:        ()                 => Promise<string[]>
       listAsioInputChannels:  (deviceId: string) => Promise<{ index: number; label: string }[]>
       listFfmpegAudioDevices: () => Promise<{ name: string; index: number }[]>
@@ -216,7 +235,12 @@ declare global {
       gmailDisconnect:    () => Promise<{ ok: boolean }>
       gmailStatus:        () => Promise<{ connected: boolean; email?: string; needsReauth?: boolean }>
 
-      streamStatus:       () => Promise<{ active: boolean; startedAt: number | null; bitrateKbps: number; fps: number; dropped: number; lastLine: string; destinations: Array<{ id: string; state: string }> }>
+      // Mirrors the Rust `StreamStatus` (src-tauri/src/streaming/mod.rs) — which
+      // is where the destinations shape came from, and where it never matched:
+      // this said `{ id, state }` while the backend has always sent `{ name, ok }`,
+      // so the live page assigned `undefined` to every destination dot on every
+      // event and no dot ever moved. Two fields were missing outright, too.
+      streamStatus:       () => Promise<{ active: boolean; startedAt: number | null; bitrateKbps: number; fps: number; dropped: number; lastLine: string; destinations: Array<{ name: string; ok: boolean }>; targetBitrateKbps: number; bitrateStep: number }>
       streamStart:        (params: { resolution?: string; framerate?: number; videoBitrateKbps?: number; destinations: Array<{ id: string; name: string; rtmpUrl: string; enabled: boolean; hasKey?: boolean }>; overlays?: unknown[]; alsoRecord?: boolean }) => Promise<{ ok: boolean; error?: string }>
       streamStop:         () => Promise<boolean>
       streamPreviewPath:  () => Promise<string>
@@ -253,8 +277,12 @@ declare global {
       reviewQueueGet:                 (id: string) => Promise<import('../types').ReviewQueueEntry | null>
       reviewQueuePublish:             (id: string) => Promise<{ ok: boolean; error?: string }>
       reviewQueueDiscard:             (id: string) => Promise<boolean>
+      // The three review-queue field pushes. All three answer `false` when the
+      // id has left the queue — treat that as "not saved", never as a no-op.
       reviewQueueUpdateTrim:          (id: string, trim: { startSec: number; endSec: number }) => Promise<boolean>
       reviewQueueUpdateMasterPreset:  (id: string, presetId: string) => Promise<boolean>
+      /** PARTIAL patch: an omitted key leaves that jingle alone, `null` clears
+       *  it, a string sets it. Send one key per call. */
       reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>

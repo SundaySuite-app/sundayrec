@@ -109,6 +109,15 @@ classicDirectshow: boolean,
  */
 classicFfmpegAudio: boolean, 
 /**
+ * Escape hatch: force the legacy **ffmpeg** pre-roll buffer (a 90-second
+ * rolling avfoundation/dshow capture) instead of the native cpal one.
+ * Default `false` — the native buffer holds the device with the same stack
+ * the recorder uses, harvests its clip by byte copy, and doubles as the
+ * `vu://levels` emitter so the meters and the buffer can coexist. Flip on
+ * only if the native buffer misbehaves on a specific rig.
+ */
+classicFfmpegPreroll: boolean, 
+/**
  * Container/codec for the standalone audio file extracted alongside a video
  * recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
  * safe choice for a "keep the clean audio" sidecar).
@@ -334,6 +343,18 @@ emailSmtpPort: number,
  * seam, never persisted to the settings bag.
  */
 emailSmtpUser: string, 
+/**
+ * Explicit envelope/`From:` address for alert mail. Empty = derive it, which
+ * is what every pre-existing config does: the renderer used to synthesise
+ * `emailSmtpUser || recipient` client-side. Providers increasingly reject a
+ * `From:` that isn't the authenticated identity (or a verified alias), and
+ * the login username is not always a mailbox — SendGrid wants `apikey`,
+ * Fastmail/Migadu use `user@domain` handles — so the address has to be
+ * settable on its own. The derivation stays as the fallback (see
+ * `commands::email::resolve_from_address`) so old configs keep working
+ * untouched.
+ */
+emailSmtpFrom: string, 
 /**
  * Path to an intro clip prepended on export, or `None`. Electron used
  * `undefined`; we keep it `Option` so an unset value stays absent.

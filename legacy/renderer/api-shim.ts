@@ -11,19 +11,19 @@
 // Rust command backs them (yet, or ever, for a feature that didn't survive the
 // port) — and return a fixed value; those are called out inline where they sit.
 //
-// NOTE: VU metering has THREE separate paths — audio/video device enumeration
-// is client-side (Web Audio getUserMedia / enumerateDevices) throughout, but
-// don't assume that covers metering too:
-//   1. Home / Live / Onboarding meters open their own client-side getUserMedia
-//      + Web Audio analyser — no backend involved.
-//   2. The channel grid (audio-page) uses the BACKEND cpal VU engine via
-//      startVu/stopVu + the `vu-levels` event, because getUserMedia caps a
-//      device at 2 channels and the grid needs every channel a digital mixer
-//      (e.g. a 32-channel Qu-5) actually exposes.
-//   3. The recording overlay's meter is driven by the ACTIVE RECORDING's own
-//      `recording://levels` telemetry (see pages/recording.ts) — never a
-//      second getUserMedia stream, so the mic keeps exactly one owner for the
-//      whole take.
+// NOTE: NOTHING in the renderer opens an audio input device any more. Audio
+// metering and audio-device enumeration are both backend-only:
+//   1. Every meter (Home, Direkte, onboarding, the channel grid) reads ONE
+//      backend VU session via startVu/stopVu + the `vu-levels` event, shared
+//      through audio/vu-feed.ts. getUserMedia capped a device at 2 channels and
+//      — worse — left WebKit holding a multi-channel input in that 2-channel
+//      format long after the meter was "stopped" (the 2026-07-31 Qu-5 incident).
+//   2. The recording overlay's meter is driven by the ACTIVE RECORDING's own
+//      `recording://levels` telemetry (see pages/recording.ts), so the mic keeps
+//      exactly one owner for the whole take.
+//   3. Audio input devices come from `list_audio_devices` (below); only the
+//      CAMERA preview is still client-side getUserMedia (pages/home.ts), which
+//      is a video device and never contends for the microphone.
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -33,6 +33,7 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { navigateTo } from "./ui/navigate";
+import type { TrashEntry } from "../bindings/TrashEntry";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -48,6 +49,12 @@ const VIDEO_EXT = [
   "3gp", "asf", "f4v",
 ];
 const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif"];
+// Cover art is the same list MINUS gif. An animated overlay logo is a
+// reasonable thing to want; an animated podcast cover is not something Apple
+// Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
+// regardless (`sundayrec-core::image_probe`), so this only spares the user the
+// round trip of picking one and being told no.
+const COVER_EXT = ["png", "jpg", "jpeg", "webp"];
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
@@ -145,15 +152,45 @@ async function editorCall<T extends object>(
   }
 }
 
+/** The cover-art picker. Cancel → `null`, which the thumbnail panel reads as
+ *  "leave the current image alone". */
+async function pickCoverImage(): Promise<string | null> {
+  return pickPath({ name: "Bilde", extensions: COVER_EXT });
+}
+
+/** The three validation codes the thumbnail panel localizes, as the backend
+ *  spells them. Anything else is a genuine surprise and is passed through. */
+const THUMBNAIL_ERROR_CODES = ["empty_file", "too_large", "unsupported_format"];
+
+/**
+ * A rejected `thumbnail_*` invoke → the `{ error }` member of the panel's
+ * union.
+ *
+ * The commands return `AppError::Validation("<code>")`, which reaches us as
+ * `"validation: <code>"`. The panel's `errorLabel()` matches on the BARE code
+ * and echoes anything it doesn't recognise verbatim, so handing it the prefixed
+ * string would print «validation: too_large» at the user instead of «Filen er
+ * for stor (over 20 MB)».
+ */
+function thumbnailError(e: unknown): { error: string } {
+  const msg = ipcErrText(e);
+  const known = THUMBNAIL_ERROR_CODES.find((code) => msg.includes(code));
+  return { error: known ?? msg };
+}
+
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
 // (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
 //
-// Deliberately NOT mapped (2026-08-05 channel audit): `backend-warning`. Its
-// consumer in pages/home.ts is live, but a search of src-tauri turns up no
-// emitter for it under any name — mapping it to the nearest-looking channel
-// would only manufacture wrong warnings. It stays unmapped until the backend
-// actually emits something.
+// `backend-warning` was the one entry deliberately left OUT by the 2026-08-05
+// channel audit: its consumer in pages/home.ts was live, but no src-tauri
+// emitter existed under any name, and mapping it to the nearest-looking channel
+// would only have manufactured wrong warnings. As of Fase 2 the backend really
+// does emit — `crate::notify::warn` on `backend://warning`, from six sources
+// (pre-roll gave up, cloud upload failed, cloud token revoked, crash recovery
+// skipped a file, the configured device is missing, the disk is filling) — so
+// the channel is mapped for real.
 const EVENT_MAP: Record<string, string> = {
+  'backend-warning': 'backend://warning',
   "recording-overlay-start": "recording://started",
   "recording-overlay-stop": "recording://state",
   "recording-finished": "recording://finished",
@@ -185,6 +222,13 @@ const EVENT_MAP: Record<string, string> = {
   "whisper-model-progress": "whisper://model-progress",
   "stream-stats": "streaming://stats",
   "editor-export-progress": "editor://export-progress",
+  // Fase 9: the three editor passes that used to run for minutes behind a
+  // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
+  // separate channels only because they drive separate surfaces (the loading
+  // screen, the «Analyser opptak» card, the playback-proxy wait).
+  "editor-peaks-progress": "editor://peaks-progress",
+  "editor-analysis-progress": "editor://analysis-progress",
+  "editor-proxy-progress": "editor://proxy-progress",
 };
 
 // Per-event payload ADAPTERS: the Tauri backend emits typed Rust structs whose
@@ -300,6 +344,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   emailSmtp: "",
   emailSmtpPort: 587,
   emailSmtpUser: "",
+  emailSmtpFrom: "",
   emailSmtpPass: "",
   autoUpdate: true,
   askOpenEditor: true,
@@ -407,6 +452,10 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     classicDirectshow: s.classicDirectshow ?? false,
     // Escape hatch: force legacy ffmpeg audio capture over the native engine.
     classicFfmpegAudio: s.classicFfmpegAudio ?? false,
+    // Escape hatch: force the legacy rolling-ffmpeg pre-roll buffer over the
+    // native one. Carried through so a settings save can't silently reset a
+    // hatch the owner set on a rig (`settings_save` takes the WHOLE object).
+    classicFfmpegPreroll: s.classicFfmpegPreroll ?? false,
     separateAudioFormat: s.format ?? "wav",
     channels: s.channels ?? "stereo",
     inputChannelL: clampCh(chMap.channelL),
@@ -457,6 +506,29 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // re-defaults it to `false` on every settings_save and the toggle never
     // sticks (the same trap `filenamePattern`/`wakeFromSleep` fell into).
     editorHwEncode: s.editorHwEncode ?? false,
+    // E-mail alerts. These live in localStorage like the rest of the UI's
+    // settings, but the thing that SENDS an alert is the backend — it has no
+    // way to read localStorage, so an operator could fill in the whole panel
+    // and the failure mail would still go nowhere (the same trap
+    // `filenamePattern` and `wakeFromSleep` fell into). The password is
+    // deliberately NOT here: it lives in the OS keychain via
+    // `email_set_smtp_password`.
+    emailOnError: s.emailOnError ?? false,
+    emailAddress: s.emailAddress ?? "",
+    emailSmtp: s.emailSmtp ?? "",
+    emailSmtpPort: s.emailSmtpPort ?? 587,
+    emailSmtpUser: s.emailSmtpUser ?? "",
+    emailSmtpFrom: s.emailSmtpFrom ?? "",
+    // Same reasoning for the chat webhook — the backend posts it on failure.
+    webhookUrl: s.webhookUrl ?? "",
+    webhookOnWarning: s.webhookOnWarn ?? false,
+    // The alert mail is rendered backend-side FROM these: the subject is
+    // «Opptaksfeil — {church} — {dato}» and the greeting «Hei {navn},». Without
+    // them the mail would greet nobody on behalf of "SundayRec". `churchName`
+    // also feeds the `church` filename pattern, which had the same blind spot.
+    churchName: typeof s.churchName === "string" ? s.churchName : "",
+    responsiblePerson: typeof s.responsiblePerson === "string" ? s.responsiblePerson : "",
+    language: typeof s.language === "string" ? s.language : "no",
   };
 }
 
@@ -577,15 +649,21 @@ const cloudStatusStub = {
   dropbox: { connected: false },
   oneDrive: { connected: false },
 };
+// The IDLE `StreamStatus` — the fallback when `stream_status` itself fails.
+// Field-for-field with the Rust struct (src-tauri/src/streaming/mod.rs), because
+// the live page now branches on `active` to decide between «—» and a real
+// measurement: a stub missing `startedAt`/`lastLine` would make an unreachable
+// backend look like a cleanly stopped stream.
 const streamStatusStub = {
   active: false,
-  uptime: 0,
-  // Field names match what live-page.ts reads (s.bitrateKbps / s.dropped / s.fps),
-  // so idle stats show "0 kbps" / "0" like the old app — not "undefined".
+  startedAt: null,
   bitrateKbps: 0,
   fps: 0,
   dropped: 0,
+  lastLine: "",
   destinations: [],
+  targetBitrateKbps: 0,
+  bitrateStep: 0,
 };
 
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
@@ -663,11 +741,31 @@ const api: Record<string, unknown> = {
   },
 
   // ── History (recordings_list → RecordingEntry[]) ─────────────────────────
+  //
+  // A trashed recording keeps its history row on purpose (see
+  // `src-tauri/src/trash/mod.rs`: the row is what makes a restore give back the
+  // note, duration and cloud markers). Filtering it out HERE — rather than in
+  // one of the three renderer consumers — is what keeps Historikk, the unified
+  // search and the home page's «Siste 5» from disagreeing about whether a
+  // recording exists.
   getHistory: async () => {
     historyIdByTs.clear();
     const rows = await call<RecordingRow[]>("recordings_list", undefined, []);
-    return rows.map(rowToEntry);
+    const trashed = new Set(
+      (await call<TrashEntry[]>("trash_list", undefined, [])).map((e) => e.originalPath),
+    );
+    return rows.filter((r) => !trashed.has(r.file_path)).map(rowToEntry);
   },
+
+  // ── Papirkurv ────────────────────────────────────────────────────────────
+  // These deliberately do NOT swallow their errors into a fallback: a delete
+  // that reports success while the file is still there, or an «Angre» that
+  // quietly does nothing, is worse than an error message.
+  trashMove: async (paths: string[]) =>
+    invoke<TrashEntry[]>("trash_move", { paths }),
+  trashList: async () => call<TrashEntry[]>("trash_list", undefined, []),
+  trashRestore: async (id: string) => invoke<TrashEntry>("trash_restore", { id }),
+  trashPurge: async (ids: string[]) => invoke<number>("trash_purge", { ids }),
   deleteHistoryEntry: async (ts: number) => {
     const id = historyIdByTs.get(ts);
     if (!id) return false;
@@ -754,6 +852,8 @@ const api: Record<string, unknown> = {
   prerollStatus: async () =>
     call<import("../bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
       active: false,
+      engine: "native",
+      channels: 0,
     }),
   // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
   // must match that shape ({ ok: false }) — the old { level, message } fallback
@@ -763,7 +863,8 @@ const api: Record<string, unknown> = {
   // Precision capture bench: real recording argv for N s → ffprobed +
   // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
   // button can show the actual error text.
-  // Real input channel count via the ffmpeg backend (getUserMedia caps at 2).
+  // Real input channel count via the ffmpeg backend — the device's own count,
+  // not a stereo pair.
   probeDeviceChannels: async (deviceName: string) =>
     invoke<number>("probe_device_channels", { deviceName }),
   // Engine-side VU metering: starts the cpal stream on the device (negotiated
@@ -864,6 +965,22 @@ const api: Record<string, unknown> = {
   },
   clearSmtpPassword: async () =>
     call<boolean>("email_clear_smtp_password", undefined, false),
+
+  // The keychain write path. Until now the SMTP password had nowhere to live:
+  // `saveSettingsLocal` strips it (it used to be persisted to localStorage in
+  // cleartext) and no command could store it, so it survived only until the tab
+  // was left. `email_set_smtp_password` puts it in the OS keychain; passing
+  // undefined/"" clears it. Resolves true when a password is now stored.
+  // NOT wrapped in `call`: a keychain write that fails must be visible to the
+  // caller (it shows an error toast), not silently swallowed into `false`.
+  emailSetSmtpPassword: async (password?: string) =>
+    (await invoke<boolean>("email_set_smtp_password", {
+      password: password && password.length > 0 ? password : null,
+    })) as boolean,
+  // Whether a password is stored — drives the "(lagret)" state. The secret
+  // itself never crosses into the webview.
+  emailHasSmtpPassword: async () =>
+    call<boolean>("email_has_smtp_password", undefined, false),
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
@@ -1003,7 +1120,7 @@ const api: Record<string, unknown> = {
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone
-  // makes getUserMedia fail generically and avfoundation emit "Input/output
+  // makes the device open fail generically and avfoundation emit "Input/output
   // error", so the user was told the device was MISSING when macOS was simply
   // refusing it. AVFoundation knew all along.
   mediaPermissions: async () =>
@@ -1034,9 +1151,21 @@ const api: Record<string, unknown> = {
   },
 
   // ── Audio / video devices ───────────────────────────────────────────────
-  // ASIO driver names = the asio-backend entries of the unified tagged device
-  // list (empty on macOS / when the `asio` feature is off / no driver installed,
-  // so the picker simply shows no ASIO cards). See `audio::asio`.
+  // The unified, backend-tagged input list: ASIO devices first (Windows, when a
+  // driver is present), then the host's CoreAudio/WASAPI devices, with the
+  // WASAPI stereo-pair shadow of an ASIO interface de-duplicated. This is the
+  // ONLY device enumeration the renderer has — `enumerateDevices()` needed a
+  // getUserMedia grant to reveal labels, and that blink-open made the webview a
+  // microphone owner every time a picker rendered (audio/capture.ts).
+  listAudioDevices: async () =>
+    call<import("../bindings/TaggedAudioInput").TaggedAudioInput[]>(
+      "list_audio_devices",
+      undefined,
+      [],
+    ),
+  // ASIO driver names = the asio-backend entries of that same list (empty on
+  // macOS / when the `asio` feature is off / no driver installed, so the picker
+  // simply shows no ASIO cards). See `audio::asio`.
   listAsioDrivers: async () => {
     const devs = await call<{ name: string; backend: string }[]>(
       "list_audio_devices",
@@ -1444,13 +1573,48 @@ const api: Record<string, unknown> = {
   masterCancel: async (jobId: string) =>
     call("editor_master_cancel", { jobId }, true).then(() => true),
 
-  // ── Thumbnail ───────────────────────────────────────────────────────────
-  thumbnailSetDefault: async () => ({ ok: false }),
-  thumbnailClearDefault: async () => true,
-  thumbnailSetEpisode: async () => ({ ok: false }),
-  thumbnailClearEpisode: async () => true,
-  thumbnailResolve: async () => null,
-  thumbnailGetDefaultInfo: async () => null,
+  // ── Episode image / cover art (thumbnail_*) ─────────────────────────────
+  //
+  // These six were stubs from the port until Fase 6, and the stubs did worse
+  // than nothing: `{ ok: false }` is not a member of the union the panel reads
+  // (`{path,info,dataUrl} | {error}`), so `'error' in result` was false and a
+  // failure rendered as SILENCE — picker opens, file chosen, nothing happens,
+  // nothing said. The three surfaces were gated «Kommer» because of it.
+  //
+  // The PICKER lives here, not in the panel: `thumbnail-panel.ts` calls
+  // `setDefault()` / `setEpisode(rp)` with no path and treats `null` as "user
+  // cancelled, keep what's on screen".
+  thumbnailSetDefault: async (sourcePath?: string) => {
+    const src = sourcePath ?? (await pickCoverImage());
+    if (!src) return null;
+    try {
+      return await invoke("thumbnail_set_default", { sourcePath: src });
+    } catch (e) {
+      return thumbnailError(e);
+    }
+  },
+  thumbnailClearDefault: async () =>
+    call<boolean>("thumbnail_clear_default", undefined, false),
+  thumbnailSetEpisode: async (recordingPath: string, sourcePath?: string) => {
+    const src = sourcePath ?? (await pickCoverImage());
+    if (!src) return null;
+    try {
+      return await invoke("thumbnail_set_episode", {
+        recordingPath,
+        sourcePath: src,
+      });
+    } catch (e) {
+      return thumbnailError(e);
+    }
+  },
+  thumbnailClearEpisode: async (recordingPath: string) =>
+    call<boolean>("thumbnail_clear_episode", { recordingPath }, false),
+  // Both lookups fall back to `null` = "no cover set", which is exactly what
+  // the panel renders as its drop-hint placeholder.
+  thumbnailResolve: async (recordingPath: string) =>
+    call("thumbnail_resolve", { recordingPath }, null),
+  thumbnailGetDefaultInfo: async () =>
+    call("thumbnail_get_default_info", undefined, null),
 
   // ── Cloud ───────────────────────────────────────────────────────────────
   cloudConnect: async () => okFalse,
@@ -1690,9 +1854,30 @@ const api: Record<string, unknown> = {
   },
   reviewQueueDiscard: async (id: string) =>
     call<boolean>("review_mark_discarded", { id }, false),
-  reviewQueueUpdateTrim: async () => true,
-  reviewQueueUpdateMasterPreset: async () => true,
-  reviewQueueUpdateJingles: async () => true,
+  // The three field pushes back INTO the queue entry. Each returns the
+  // backend's own bool verbatim: `false` = that id is no longer in the queue
+  // (published, discarded, or auto-discarded while the editor sat open), which
+  // the editor turns into a toast instead of a local mutation nobody saved.
+  // These three were `async () => true` — the intro/outro dropdowns reported
+  // success and changed nothing on disk.
+  //
+  // `false` is also the `call` fallback, on purpose: a rejected invoke is not a
+  // silent success either.
+  reviewQueueUpdateTrim: async (
+    id: string,
+    trim: { startSec: number; endSec: number },
+  ) => call<boolean>("review_update_trim", { id, trim }, false),
+  reviewQueueUpdateMasterPreset: async (id: string, presetId: string) =>
+    call<boolean>("review_update_master_preset", { id, presetId }, false),
+  // `jingles` is a PARTIAL patch and the backend reads three states per field:
+  // an omitted key leaves that jingle alone, an explicit `null` clears it, a
+  // string sets it. Send ONE key per call (which is what the two dropdowns do)
+  // and the other jingle is guaranteed untouched. See `JinglesPatch` in
+  // src-tauri/src/commands/review.rs for the contract.
+  reviewQueueUpdateJingles: async (
+    id: string,
+    jingles: { introPath?: string | null; outroPath?: string | null },
+  ) => call<boolean>("review_update_jingles", { id, jingles }, false),
 
   // ── Integrations (Sunday-suite) ─────────────────────────────────────────
   getIntegrationSettings: async () => ({ enabled: false }),

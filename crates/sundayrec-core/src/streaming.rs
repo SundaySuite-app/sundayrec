@@ -707,6 +707,42 @@ pub fn should_restart_to_readd(
         && secs_since_failure >= STREAM_REHEAL_GRACE_SECS
 }
 
+// ── Live-stats push cadence ────────────────────────────────────────────────────
+//
+// ffmpeg prints a progress line several times a second, and every one of them
+// updates the shared status. Pushing each to the webview would be the recorder's
+// old "hele appen er treg under opptak" mistake in a new place — the numbers on
+// screen (bitrate / fps / dropped / uptime) are read by a human, and a human
+// reads them about once a second. So the STEADY-STATE feed is paced; state
+// TRANSITIONS (start, reconnect, a destination dropping, giving up, stop) bypass
+// the pacing entirely, because a status pill that flips up to a second late is a
+// status pill that lies for up to a second.
+
+/// Steady-state minimum gap between live-stats pushes to the renderer (ms).
+/// ~1 Hz: the four numbers on the Direkte page are read, not animated.
+pub const STREAM_STATS_MIN_INTERVAL_MS: u64 = 1000;
+
+/// Whether a live-stats snapshot should be pushed to the renderer now.
+///
+/// - `last_emit_ms` — when the previous push happened on the caller's monotonic
+///   millisecond clock, or `None` if nothing has been pushed yet (→ always emit,
+///   so the first progress line paints immediately instead of a second late),
+/// - `now_ms` — the same clock, now,
+/// - `min_interval_ms` — the steady-state pacing, normally
+///   [`STREAM_STATS_MIN_INTERVAL_MS`].
+///
+/// A `now_ms` BEFORE `last_emit_ms` (a clock that moved backwards) emits rather
+/// than stalling: the alternative is a feed that silently freezes for however far
+/// back the clock jumped, which is exactly the failure this whole phase exists to
+/// stop repeating.
+pub fn should_emit_stats(last_emit_ms: Option<u64>, now_ms: u64, min_interval_ms: u64) -> bool {
+    match last_emit_ms {
+        None => true,
+        Some(last) if now_ms < last => true,
+        Some(last) => now_ms - last >= min_interval_ms,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1225,5 +1261,51 @@ mod tests {
         assert!(!should_restart_to_readd(true, true, 999, 20, 20));
         assert!(!should_restart_to_readd(true, true, 999, 21, 20));
         const { assert!(STREAM_REHEAL_GRACE_SECS >= 15) };
+    }
+
+    // ── live-stats push cadence ──
+
+    #[test]
+    fn first_stats_push_is_never_withheld() {
+        // No previous push → paint at once. A first progress line held back for a
+        // second is a second of "0 kbps" on a stream that is already flowing.
+        assert!(should_emit_stats(None, 0, STREAM_STATS_MIN_INTERVAL_MS));
+        assert!(should_emit_stats(
+            None,
+            999_999,
+            STREAM_STATS_MIN_INTERVAL_MS
+        ));
+    }
+
+    #[test]
+    fn stats_pushes_are_paced_to_the_interval() {
+        let iv = STREAM_STATS_MIN_INTERVAL_MS;
+        // ffmpeg's several-per-second progress lines inside the window: withheld.
+        assert!(!should_emit_stats(Some(10_000), 10_000, iv));
+        assert!(!should_emit_stats(Some(10_000), 10_100, iv));
+        assert!(!should_emit_stats(Some(10_000), 10_999, iv));
+        // Exactly at the interval, and beyond it: through.
+        assert!(should_emit_stats(Some(10_000), 11_000, iv));
+        assert!(should_emit_stats(Some(10_000), 25_000, iv));
+    }
+
+    #[test]
+    fn a_backwards_clock_emits_instead_of_freezing_the_feed() {
+        // Never let a clock that moved backwards silently stall the feed —
+        // the whole point of this phase is that stats stop being a lie.
+        assert!(should_emit_stats(
+            Some(50_000),
+            10,
+            STREAM_STATS_MIN_INTERVAL_MS
+        ));
+    }
+
+    #[test]
+    fn the_stats_interval_is_about_one_hertz() {
+        // Fast enough to read as live, slow enough that a 90-minute service
+        // doesn't spend the webview's main thread on IPC (the recorder's
+        // 2026-07-31 "hele appen er treg under opptak" lesson).
+        const { assert!(STREAM_STATS_MIN_INTERVAL_MS >= 500) };
+        const { assert!(STREAM_STATS_MIN_INTERVAL_MS <= 2000) };
     }
 }

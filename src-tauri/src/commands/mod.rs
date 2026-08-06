@@ -27,6 +27,8 @@ pub mod review;
 pub mod scheduler;
 pub mod settings;
 pub mod streaming;
+pub mod thumbnail;
+pub mod trash;
 pub mod update;
 pub mod wake;
 pub mod whisper;

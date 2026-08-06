@@ -98,7 +98,6 @@
     "nextShort": "suivant",
     "wakesLead": "({min} min avant)",
     "openInEditor": "Ouvrir dans l’éditeur",
-    "thumbComing": "La vignette d’épisode arrive — pas encore utilisée",
     "prerollActive": "Tampon de pré-enregistrement actif ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Ajouter une note",
     "editNote": "Modifier la note",
     "notePlaceholder": "Écrire une note…",
-    "deleteEntry": "Supprimer l’entrée",
     "ok": "Terminé",
     "noteCancel": "Annuler",
     "noteDesc": "Écrivez une note pour cet enregistrement (facultatif)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "Supprimer 1 entrée en erreur ?",
     "confirmDeleteErrorsN": "Supprimer {n} entrées en erreur ?",
     "emptyFiltered": "Aucun enregistrement dans ce filtre"
+  },
+  "trash": {
+    "title": "Corbeille",
+    "open": "Corbeille",
+    "back": "← Retour à l'historique",
+    "emptyAll": "Vider la corbeille",
+    "keepNote": "Les enregistrements supprimés restent ici 30 jours. Ensuite ils disparaissent définitivement.",
+    "empty": "La corbeille est vide.",
+    "alreadyEmpty": "La corbeille est vide",
+    "deleteEntry": "Mettre à la corbeille",
+    "movedOne": "«{name}» est dans la corbeille",
+    "movedN": "{n} enregistrements sont dans la corbeille",
+    "undo": "Annuler",
+    "undoFailed": "Impossible de tout récupérer — regardez dans la corbeille.",
+    "clearHistoryBody": "Les enregistrements passent à la corbeille, où ils restent {d} jours avant d'être supprimés définitivement.",
+    "deleteErrorsBody": "{n} entrées en erreur sont retirées. Les fichiers encore présents passent à la corbeille.",
+    "restore": "Restaurer",
+    "restoreFailed": "Restauration impossible",
+    "deleteForever": "Supprimer définitivement",
+    "confirmPurgeOne": "Supprimer «{name}» définitivement ?",
+    "confirmEmptyN": "Supprimer {n} enregistrements définitivement ?",
+    "confirmEmptyBody": "Les fichiers sont supprimés du disque. Cette action est irréversible.",
+    "deletedAt": "Supprimé",
+    "today": "aujourd'hui",
+    "yesterday": "hier",
+    "daysAgo": "il y a {n} jours",
+    "daysLeft": "{n} jours restants",
+    "dueNow": "sera supprimé au prochain nettoyage",
+    "related": "+ {n} fichiers associés"
   },
   "review": {
     "queueTitle": "Prêts pour relecture et publication",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Saisissez l’heure au format HH:MM, par ex. 11:00.",
     "errSameTime": "L’heure de fin ne peut pas être identique à l’heure de début.",
     "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes.",
-    "prerollEnabledTitle": "Activer le tampon de pré-enregistrement (expérimental)",
-    "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Cela peut perturber les vumètres en direct sur Accueil et Diffusion, qui utilisent le même microphone. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne."
+    "prerollEnabledTitle": "Activer le tampon de pré-enregistrement",
+    "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Tant qu'il tourne, c'est lui qui alimente les vumètres sur Accueil et Diffusion, qui continuent donc de fonctionner. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Introuvable",
     "diagFfmpegOk": "Disponible",
     "diagLoopback": "Bouclage WASAPI",
-    "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur"
+    "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur",
+    "benchJudging": "Analyse de la mesure …"
   },
   "files": {
     "saveFolder": "Dossier de sauvegarde",
@@ -594,6 +622,7 @@
     "analyzeSpeech": "Segments parlés",
     "analyzeMusic": "Segments musicaux",
     "analyzeSilence": "Silence",
+    "layersNotAnalyzed": "Lancez «Analyser l'enregistrement» dans Outils de coupe pour voir ici la parole, la musique et le silence.",
     "markSermon": "↦ Marquer le sermon automatiquement",
     "markSermonHint": "Coupe tout avant et après le bloc de prédication mis en évidence.",
     "sermonPickerLabel": "N’est-ce pas la prédication ?",
@@ -607,6 +636,10 @@
     "willBeTrimmed": "sera supprimé",
     "willRemain": "de prédication restant",
     "analyzedAt": "Dernière analyse",
+    "tabsAria": "Outils de l'enregistrement",
+    "tabAudio": "Audio",
+    "tabContent": "Contenu",
+    "tabClip": "Outils de coupe",
     "speechSegments": "segments parlés trouvés",
     "ioTitle": "Intro et Outro",
     "ioDragHint": "— ou glissez le fichier sur la chronologie",
@@ -868,6 +901,13 @@
     "days": "jours"
   },
   "notify": {
+    "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n'est pas conservé.",
+    "cloudUploadFailed": "La sauvegarde dans le cloud a échoué : {file}",
+    "cloudReauthRequired": "Le stockage cloud doit être reconnecté — reconnectez-vous dans les réglages.",
+    "recoverySkipped": "Un enregistrement interrompu n'a pas pu être entièrement récupéré : {file}",
+    "deviceMissing": "Le périphérique audio « {device} » n'est pas connecté.",
+    "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein.",
+    "reviewOverdue": "Un épisode attend une relecture depuis {days} jours : {episode}",
     "systemTitle": "Notifications système",
     "emailTitle": "Notifications par e-mail",
     "smtpServer": "SERVICE E-MAIL (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "NOM D’UTILISATEUR (ADRESSE E-MAIL)",
     "smtpPass": "MOT DE PASSE / MOT DE PASSE D’APP",
     "smtpPassHint": "Gmail nécessite un « mot de passe d’application » dans les paramètres de sécurité du compte.",
+    "smtpFrom": "ADRESSE D’EXPÉDITEUR (FACULTATIF)",
+    "smtpFromHint": "Laissez vide pour envoyer depuis le nom d’utilisateur ci-dessus.",
+    "savePassToKeychain": "Enregistrer dans le trousseau",
+    "smtpPassStored": "Le mot de passe est enregistré dans le trousseau de cet ordinateur.",
+    "smtpPassSaved": "••••••••  (enregistré)",
+    "passEmpty": "Saisissez d’abord le mot de passe.",
+    "passSaved": "Le mot de passe est enregistré dans le trousseau.",
+    "passSaveFailed": "Impossible d’enregistrer le mot de passe dans le trousseau.",
+    "passCleared": "Le mot de passe a été supprimé du trousseau.",
+    "passClearFailed": "Impossible de supprimer le mot de passe du trousseau.",
+    "errNoPassword": "Mot de passe SMTP manquant. Saisissez-le, puis cliquez sur « Enregistrer dans le trousseau ».",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Envoyez des notifications à un canal de discussion en plus de l’e-mail. Collez l’URL du webhook depuis Slack, Discord ou Teams.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Zoomer",
     "zoomOut": "Dézoomer",
     "fitAll": "Afficher tout le fichier",
-    "kbdHints": "Afficher les raccourcis clavier"
+    "kbdHints": "Afficher les raccourcis clavier",
+    "timelineLayers": "Ce que la timeline affiche"
   },
   "publish": {
     "descPlaceholder": "Ex : Services de l’Église Exemple, chaque dimanche à 11h",
@@ -1032,11 +1084,18 @@
     "overlays": "Superpositions — graphiques et présentation",
     "overlaysDesc": "Ajoutez le logo de l'église, les paroles d'EasyWorship (via capture d'écran sur la même machine), ou d'autres graphiques sur le flux. Les superpositions n'affectent que la diffusion — les enregistrements restent propres.",
     "addOverlay": "+ Ajouter une superposition",
-    "gateStats": "Les statistiques ne sont pas encore disponibles — la diffusion ne renvoie ni débit, ni images par seconde, ni images perdues à l’application dans cette version.",
     "blockedNoDestinations": "Aucune destination n’est configurée — ajoutez YouTube, Facebook ou votre propre serveur RTMP.",
     "blockedNoEnabled": "Aucune destination n’est activée. Activez-en au moins une dans la liste ci-dessus.",
     "blockedNoKey": "La destination n’a pas de clé de flux. Sans elle, YouTube/Facebook refusent la diffusion.",
-    "blockedGoSettings": "Ouvrir Partage → Publication"
+    "blockedGoSettings": "Ouvrir Partage → Publication",
+    "statusStopped": "Arrêtée",
+    "qualityReduced": "Qualité réduite pour garder le direct stable.",
+    "notRigVerified": "La diffusion en direct n’a pas encore été vérifiée sur une vraie installation — essayez-la en semaine avant de compter dessus un dimanche.",
+    "errFeatureDisabled": "Cette version de l’application ne peut pas diffuser en direct. Tout le reste fonctionne normalement — mettez à jour vers une version plus récente pour diffuser.",
+    "errNoCamera": "Aucune caméra trouvée. Vérifiez qu’elle est branchée et sélectionnez-la dans Réglages → Vidéo.",
+    "errAlreadyActive": "Une diffusion en direct est déjà en cours.",
+    "errInvalidDestination": "Une destination est mal configurée — vérifiez son adresse RTMP et sa clé de flux dans Partage → Publication.",
+    "errSpawnFailed": "Impossible de démarrer le moteur vidéo (ffmpeg). Redémarrez l’application et signalez-le si cela se reproduit."
   },
   "transcript": {
     "title": "Transcription",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Modèle inconnu",
     "exportTxt": "↧ Texte",
     "exportDone": "Transcription enregistrée",
-    "exportFailed": "Impossible d'enregistrer la transcription"
+    "exportFailed": "Impossible d'enregistrer la transcription",
+    "cancelling": "Annulation…",
+    "preparingModel": "Préparation du modèle…"
   },
   "companion": {
     "title": "Aide au sermon",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "L’enregistrement doit-il démarrer tout seul ?",
     "autostartConfirm": "Activer le démarrage auto",
     "gmailDisconnectTitle": "Déconnecter le compte Google ?",
-    "clearHistoryBody": "Les fichiers d'enregistrement sont conservés — seule la liste est supprimée. Vous ne pourrez pas annuler cette action.",
-    "deleteErrorsBody": "{n} entrées en erreur sont retirées de la liste. Vous ne pourrez pas annuler cette action.",
     "autoDeleteTitle": "Supprimer les enregistrements automatiquement ?",
     "autoDeleteConfirm": "Oui, supprimer automatiquement",
     "wakeTestTitle": "Tester le réveil depuis la veille ?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "L’enregistrement est conservé, mais il ne sera pas publié.",
     "discardEpisode": "Abandonner",
     "publishFailedTitle": "Publication impossible",
-    "deleteEntryTitle": "Retirer « {name} » de la liste ?",
-    "deleteEntryBody": "Le fichier d'enregistrement reste sur le disque — seule l'entrée de la liste est retirée. Vous ne pourrez pas annuler cette action.",
-    "deleteEntryBodyPair": "Le fichier audio et le fichier vidéo restent sur le disque — seules les deux entrées de la liste sont retirées. Vous ne pourrez pas annuler cette action.",
     "discardFailedTitle": "Impossible d'écarter l'épisode"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Qui est prévenu quand un enregistrement démarre, s’arrête ou échoue."
   },
   "gate": {
-    "chipComing": "À venir",
     "chipUnconfigured": "Non configuré",
-    "chipUnavailable": "Indisponible",
-    "comingExplanation": "{what} n’est pas encore développé. Le panneau reste ici car la fonction est prévue — d’ici là les boutons ne font rien, ils sont donc désactivés."
+    "chipUnavailable": "Indisponible"
   },
   "health": {
     "micDenied": "L'accès au microphone est refusé. Ouvrez Réglages Système → Confidentialité et sécurité → Microphone et activez SundayRec.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Ouvrir dans l'éditeur",
     "captionsNoRecording": "Sous-titres reçus, mais sans indiquer à quel enregistrement ils appartiennent. Ouvrez l'enregistrement dans l'éditeur et importez le texte là.",
     "captionsFailed": "Les sous-titres n'ont pas pu être enregistrés : {err}"
+  },
+  "progress": {
+    "etaCalculating": "estimation …",
+    "etaUnder10s": "moins de 10 s restantes",
+    "etaSeconds": "environ {n} s restantes",
+    "etaMinutes": "environ {n} min restantes",
+    "etaHours": "environ {h} h restantes",
+    "etaHoursMinutes": "environ {h} h {m} min restantes",
+    "preparing": "Préparation …"
   }
 }

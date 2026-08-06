@@ -187,6 +187,14 @@ pub struct Settings {
     /// scheduled for removal once the rig has verified 0 % loss.
     #[serde(default)]
     pub classic_ffmpeg_audio: bool,
+    /// Escape hatch: force the legacy **ffmpeg** pre-roll buffer (a 90-second
+    /// rolling avfoundation/dshow capture) instead of the native cpal one.
+    /// Default `false` — the native buffer holds the device with the same stack
+    /// the recorder uses, harvests its clip by byte copy, and doubles as the
+    /// `vu://levels` emitter so the meters and the buffer can coexist. Flip on
+    /// only if the native buffer misbehaves on a specific rig.
+    #[serde(default)]
+    pub classic_ffmpeg_preroll: bool,
     /// Container/codec for the standalone audio file extracted alongside a video
     /// recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
     /// safe choice for a "keep the clean audio" sidecar).
@@ -379,6 +387,17 @@ pub struct Settings {
     /// seam, never persisted to the settings bag.
     #[serde(default)]
     pub email_smtp_user: String,
+    /// Explicit envelope/`From:` address for alert mail. Empty = derive it, which
+    /// is what every pre-existing config does: the renderer used to synthesise
+    /// `emailSmtpUser || recipient` client-side. Providers increasingly reject a
+    /// `From:` that isn't the authenticated identity (or a verified alias), and
+    /// the login username is not always a mailbox — SendGrid wants `apikey`,
+    /// Fastmail/Migadu use `user@domain` handles — so the address has to be
+    /// settable on its own. The derivation stays as the fallback (see
+    /// `commands::email::resolve_from_address`) so old configs keep working
+    /// untouched.
+    #[serde(default)]
+    pub email_smtp_from: String,
 
     // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
     /// Path to an intro clip prepended on export, or `None`. Electron used
@@ -517,6 +536,7 @@ impl Default for Settings {
             keep_separate_audio: false,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
+            classic_ffmpeg_preroll: false,
             separate_audio_format: default_separate_audio_format(),
             av_sync: true,
 
@@ -576,6 +596,7 @@ impl Default for Settings {
             email_smtp: String::new(),
             email_smtp_port: default_smtp_port(),
             email_smtp_user: String::new(),
+            email_smtp_from: String::new(),
 
             editor_intro_path: None,
             editor_outro_path: None,

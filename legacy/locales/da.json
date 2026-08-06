@@ -98,7 +98,6 @@
     "nextShort": "næste",
     "wakesLead": "({min} min før)",
     "openInEditor": "Åbn i redigering",
-    "thumbComing": "Episodebillede kommer — bruges ikke endnu",
     "prerollActive": "Forhåndsbuffer aktiv ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Tilføj note",
     "editNote": "Rediger note",
     "notePlaceholder": "Skriv en note…",
-    "deleteEntry": "Slet post",
     "ok": "Fuldført",
     "noteCancel": "Annuller",
     "noteDesc": "Skriv en note til denne optagelse (valgfrit)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "Slet 1 fejlpost?",
     "confirmDeleteErrorsN": "Slet {n} fejlposter?",
     "emptyFiltered": "Ingen optagelser i dette filter"
+  },
+  "trash": {
+    "title": "Papirkurv",
+    "open": "Papirkurv",
+    "back": "← Tilbage til historikken",
+    "emptyAll": "Tøm papirkurven",
+    "keepNote": "Slettede optagelser ligger her i 30 dage. Derefter forsvinder de for altid.",
+    "empty": "Papirkurven er tom.",
+    "alreadyEmpty": "Papirkurven er tom",
+    "deleteEntry": "Flyt til papirkurven",
+    "movedOne": "«{name}» ligger i papirkurven",
+    "movedN": "{n} optagelser ligger i papirkurven",
+    "undo": "Fortryd",
+    "undoFailed": "Kunne ikke hente det hele tilbage — se i papirkurven.",
+    "clearHistoryBody": "Optagelserne flyttes til papirkurven, hvor de ligger i {d} dage, før de slettes for altid.",
+    "deleteErrorsBody": "{n} poster med fejl fjernes. Filer, der findes, flyttes til papirkurven.",
+    "restore": "Gendan",
+    "restoreFailed": "Kunne ikke gendanne",
+    "deleteForever": "Slet for altid",
+    "confirmPurgeOne": "Slet «{name}» for altid?",
+    "confirmEmptyN": "Slet {n} optagelser for altid?",
+    "confirmEmptyBody": "Filerne slettes fra disken. Dette kan ikke fortrydes.",
+    "deletedAt": "Slettet",
+    "today": "i dag",
+    "yesterday": "i går",
+    "daysAgo": "{n} dage siden",
+    "daysLeft": "{n} dage tilbage",
+    "dueNow": "slettes ved næste oprydning",
+    "related": "+ {n} tilhørende filer"
   },
   "review": {
     "queueTitle": "Klar til gennemgang og udgivelse",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Skriv klokkeslættet som TT:MM, f.eks. 11:00.",
     "errSameTime": "Stoptidspunktet kan ikke være det samme som starten.",
     "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter.",
-    "prerollEnabledTitle": "Aktivér forhåndsbuffer (eksperimentel)",
-    "prerollEnabledDesc": "Bufferen holder mikrofonen åben hele tiden i baggrunden. Det kan forstyrre de levende niveaumålere på Hjem og Livestream, som bruger samme mikrofon. Slå den til, hvis du har brug for sekunderne før knaptrykket — Hjem viser, når bufferen kører."
+    "prerollEnabledTitle": "Aktivér forhåndsbuffer",
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åben i baggrunden hele tiden. Mens den kører, er det den, der fodrer niveaumålerne på Hjem og Livestream, så de virker som før. Slå den til, hvis du har brug for sekunderne, før du trykker optag — Hjem viser, når bufferen kører."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Ikke fundet",
     "diagFfmpegOk": "Tilgængelig",
     "diagLoopback": "WASAPI-loopback",
-    "diagDeviceListTitle": "Alle lydenheder optageren kan se"
+    "diagDeviceListTitle": "Alle lydenheder optageren kan se",
+    "benchJudging": "Analyserer måling …"
   },
   "files": {
     "saveFolder": "Mappe til at gemme i",
@@ -594,6 +622,7 @@
     "analyzeSpeech": "Talesegmenter",
     "analyzeMusic": "Musiksegmenter",
     "analyzeSilence": "Stilhed",
+    "layersNotAnalyzed": "Kør «Analysér optagelse» under Klippeværktøj for at se tale, musik og stilhed her.",
     "markSermon": "↦ Markér prædiken automatisk",
     "markSermonHint": "Trimmer alt før og efter det fremhævede prædikenblok.",
     "sermonPickerLabel": "Er dette ikke prædikenen?",
@@ -607,6 +636,10 @@
     "willBeTrimmed": "fjernes",
     "willRemain": "prædiken tilbage",
     "analyzedAt": "Senest analyseret",
+    "tabsAria": "Værktøjer til optagelsen",
+    "tabAudio": "Lyd",
+    "tabContent": "Indhold",
+    "tabClip": "Klippeværktøj",
     "speechSegments": "talesegmenter fundet",
     "ioTitle": "Intro & Outro",
     "ioDragHint": "— eller træk en fil til tidslinjen",
@@ -868,6 +901,13 @@
     "days": "dage"
   },
   "notify": {
+    "prerollDead": "Forbufferen virker ikke — lyd fra før du trykker optag bliver ikke gemt.",
+    "cloudUploadFailed": "Sikkerhedskopien til skyen mislykkedes: {file}",
+    "cloudReauthRequired": "Skylageret skal tilsluttes igen — log ind igen under Indstillinger.",
+    "recoverySkipped": "En afbrudt optagelse kunne ikke gendannes helt: {file}",
+    "deviceMissing": "Lydenheden “{device}” er ikke tilsluttet.",
+    "diskLow": "Der begynder at være lidt plads tilbage på disken — {freeGb} GB ledig. Optagelsen stopper af sig selv, hvis disken bliver fuld.",
+    "reviewOverdue": "En episode har ventet i {days} dage på gennemgang: {episode}",
     "systemTitle": "Systemnotifikationer",
     "emailTitle": "E-mail-notifikationer",
     "smtpServer": "E-MAIL-TJENESTE (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "BRUGERNAVN (E-MAILADRESSE)",
     "smtpPass": "ADGANGSKODE / APP-ADGANGSKODE",
     "smtpPassHint": "Gmail kræver en ”App-adgangskode” fra kontosikkerhedsindstillingerne.",
+    "smtpFrom": "AFSENDERADRESSE (VALGFRIT)",
+    "smtpFromHint": "Lad feltet stå tomt for at sende fra brugernavnet ovenfor.",
+    "savePassToKeychain": "Gem i nøglering",
+    "smtpPassStored": "Adgangskoden er gemt i nøgleringen på denne computer.",
+    "smtpPassSaved": "••••••••  (gemt)",
+    "passEmpty": "Skriv adgangskoden først.",
+    "passSaved": "Adgangskoden er gemt i nøgleringen.",
+    "passSaveFailed": "Kunne ikke gemme adgangskoden i nøgleringen.",
+    "passCleared": "Adgangskoden er fjernet fra nøgleringen.",
+    "passClearFailed": "Kunne ikke fjerne adgangskoden fra nøgleringen.",
+    "errNoPassword": "Adgangskoden til SMTP mangler. Skriv den, og tryk på »Gem i nøglering«.",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Send notifikationer til en chatkanal udover e-mail. Indsæt webhook-URL fra Slack, Discord eller Teams.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Zoom ind",
     "zoomOut": "Zoom ud",
     "fitAll": "Vis hele filen",
-    "kbdHints": "Vis tastaturgenveje"
+    "kbdHints": "Vis tastaturgenveje",
+    "timelineLayers": "Hvad tidslinjen viser"
   },
   "publish": {
     "descPlaceholder": "F.eks. Gudstjenester fra Eksempel kirke, hver søndag kl. 11",
@@ -1032,11 +1084,18 @@
     "overlays": "Overlays — grafik og præsentation",
     "overlaysDesc": "Læg kirkens logo, sangtekster fra EasyWorship (via skærmoptagelse på samme maskine), eller anden grafik oven på det der sendes. Overlays påvirker kun livestreamet — optagelser bliver rene.",
     "addOverlay": "+ Tilføj overlay",
-    "gateStats": "Statistik er ikke tilgængelig endnu — livestreamen rapporterer ikke bitrate, billedfrekvens eller tabte billeder tilbage til appen i denne version.",
     "blockedNoDestinations": "Der er endnu ingen destination — tilføj YouTube, Facebook eller jeres egen RTMP-server.",
     "blockedNoEnabled": "Ingen destination er slået til. Aktivér mindst én i listen ovenfor.",
     "blockedNoKey": "Destinationen mangler stream-key. Uden nøglen lukker YouTube/Facebook ikke sendingen ind.",
-    "blockedGoSettings": "Åbn Deling → Publicering"
+    "blockedGoSettings": "Åbn Deling → Publicering",
+    "statusStopped": "Stoppet",
+    "qualityReduced": "Reduceret kvalitet for at holde streamen stabil.",
+    "notRigVerified": "Livestreaming er endnu ikke verificeret på et rigtigt rig — prøv det på en hverdag, før du stoler på det en søndag.",
+    "errFeatureDisabled": "Denne version af appen kan ikke livestreame. Alt andet virker som normalt — opdatér til en nyere version for at sende live.",
+    "errNoCamera": "Fandt ikke kameraet. Tjek at det er tilsluttet, og vælg det under Indstillinger → Video.",
+    "errAlreadyActive": "En livestream kører allerede.",
+    "errInvalidDestination": "En destination er sat forkert op — tjek RTMP-adressen og stream-nøglen under Deling → Udgivelse.",
+    "errSpawnFailed": "Kunne ikke starte videomotoren (ffmpeg). Genstart appen, og sig til hvis det sker igen."
   },
   "transcript": {
     "title": "Transskribering",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Ukendt model",
     "exportTxt": "↧ Tekst",
     "exportDone": "Transskription gemt",
-    "exportFailed": "Kunne ikke gemme transskriptionen"
+    "exportFailed": "Kunne ikke gemme transskriptionen",
+    "cancelling": "Annullerer…",
+    "preparingModel": "Forbereder model…"
   },
   "companion": {
     "title": "Prædikenhjælp",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "Skal optagelsen starte af sig selv?",
     "autostartConfirm": "Slå autostart til",
     "gmailDisconnectTitle": "Afbryd Google-kontoen?",
-    "clearHistoryBody": "Selve optagelsesfilerne bliver bevaret — kun listen over dem slettes. Dette kan ikke fortrydes.",
-    "deleteErrorsBody": "{n} fejlposter fjernes fra listen. Dette kan ikke fortrydes.",
     "autoDeleteTitle": "Slet optagelser automatisk?",
     "autoDeleteConfirm": "Ja, slet automatisk",
     "wakeTestTitle": "Test opvågning fra dvale?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "Optagelsen beholdes, men den bliver ikke udgivet.",
     "discardEpisode": "Kassér",
     "publishFailedTitle": "Kunne ikke udgive",
-    "deleteEntryTitle": "Fjern «{name}» fra listen?",
-    "deleteEntryBody": "Selve optagelsesfilen bliver på disken — kun listeposten fjernes. Dette kan ikke fortrydes.",
-    "deleteEntryBodyPair": "Både lyd- og videofilen bliver på disken — kun de to listeposter fjernes. Dette kan ikke fortrydes.",
     "discardFailedTitle": "Kunne ikke kassere episoden"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Hvem der får besked, når en optagelse starter, stopper eller fejler."
   },
   "gate": {
-    "chipComing": "Kommer",
     "chipUnconfigured": "Ikke konfigureret",
-    "chipUnavailable": "Ikke tilgængelig",
-    "comingExplanation": "{what} er ikke bygget endnu. Panelet står her, fordi funktionen er planlagt — indtil videre gør knapperne ingenting, så de er slået fra."
+    "chipUnavailable": "Ikke tilgængelig"
   },
   "health": {
     "micDenied": "Mikrofonadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Mikrofon og slå SundayRec til.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Åbn i redigering",
     "captionsNoRecording": "Tekstning modtaget, men uden at angive hvilken optagelse den hører til. Åbn optagelsen i redigering og importér teksten der.",
     "captionsFailed": "Tekstningen kunne ikke gemmes: {err}"
+  },
+  "progress": {
+    "etaCalculating": "beregner …",
+    "etaUnder10s": "under 10 s tilbage",
+    "etaSeconds": "ca. {n} s tilbage",
+    "etaMinutes": "ca. {n} min tilbage",
+    "etaHours": "ca. {h} t tilbage",
+    "etaHoursMinutes": "ca. {h} t {m} min tilbage",
+    "preparing": "Forbereder …"
   }
 }

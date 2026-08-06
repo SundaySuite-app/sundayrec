@@ -90,9 +90,16 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
                         fragment = %busy,
                         "recovery: fragment still growing — a writer is alive; skipping this session for now"
                     );
+                    warn_recovery_skipped(
+                        Some(&app),
+                        "still_writing",
+                        &busy,
+                        "Et avbrutt opptak kunne ikke gjenopprettes ennå — en annen prosess skriver \
+                         fortsatt til filen. Prøver igjen ved neste oppstart.",
+                    );
                     continue;
                 }
-                recovered += recover_session(&pool, &manifest).await;
+                recovered += recover_session(Some(&app), &pool, &manifest).await;
                 // Clean up the manifest + any leftover pre-roll clip.
                 let _ = tokio::fs::remove_file(&path).await;
                 if let Some(clip) = &manifest.preroll_clip_path {
@@ -118,6 +125,13 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
             }
             Err(e) => {
                 tracing::warn!(file = %path.display(), "recovery: corrupt manifest, deleting: {e}");
+                warn_recovery_skipped(
+                    Some(&app),
+                    "corrupt_manifest",
+                    &path.to_string_lossy(),
+                    "Et avbrutt opptak kunne ikke gjenopprettes — opplysningene om økten var \
+                     ødelagte.",
+                );
                 let _ = tokio::fs::remove_file(&path).await;
             }
         }
@@ -126,6 +140,39 @@ pub async fn scan_and_recover(app: AppHandle, pool: SqlitePool) -> usize {
         tracing::info!("recovery: recovered {recovered} interrupted recording(s) on startup");
     }
     recovered
+}
+
+/// Say out loud that startup recovery could not fully salvage something.
+///
+/// Every one of these branches used to be a `tracing::warn!` and nothing else,
+/// which meant an interrupted service that the app decided it could not rescue
+/// was indistinguishable — from the operator's chair — from an interrupted
+/// service it rescued perfectly. The recording is gone or degraded either way;
+/// the difference is whether anyone finds out in time to do something about it.
+///
+/// `reason` names the branch (for the log/webhook); `file` is reduced to its
+/// bare name because this lands in a toast and possibly a public chat channel.
+///
+/// `app` is an `Option` for the same reason `scan_dir` exists in the tests: the
+/// recovery LOOP is exercised directly against a real directory with no Tauri
+/// runtime, and the warning is the one thing in it that needs one. `None` runs
+/// the identical logic silently.
+fn warn_recovery_skipped(app: Option<&AppHandle>, reason: &str, file: &str, msg: &str) {
+    let Some(app) = app else { return };
+    let short = Path::new(file)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(file)
+        .to_string();
+    crate::notify::warn(
+        app,
+        sundayrec_core::notify::BackendWarning::warn(
+            sundayrec_core::notify::code::RECOVERY_SKIPPED,
+        )
+        .msg(msg)
+        .param("file", short)
+        .param("reason", reason),
+    );
 }
 
 /// Two-sample stability probe: stat every fragment, wait a beat, stat again.
@@ -158,7 +205,11 @@ async fn still_being_written(manifest: &SessionManifest) -> Option<String> {
 }
 
 /// Finalise one orphaned session's surviving deliverables into history rows.
-async fn recover_session(pool: &SqlitePool, manifest: &SessionManifest) -> usize {
+async fn recover_session(
+    app: Option<&AppHandle>,
+    pool: &SqlitePool,
+    manifest: &SessionManifest,
+) -> usize {
     let recoverable = recoverable_deliverables(manifest, |p| Path::new(p).exists());
     let mut count = 0usize;
     for (index, dm) in recoverable.iter().enumerate() {
@@ -196,11 +247,24 @@ async fn recover_session(pool: &SqlitePool, manifest: &SessionManifest) -> usize
                     deliverable = %dm.primary_path,
                     "recovery: finalise failed, keeping primary: {e}"
                 );
+                warn_recovery_skipped(
+                    app,
+                    "finalize_failed",
+                    &dm.primary_path,
+                    "Et avbrutt opptak ble berget, men kunne ikke ferdigstilles i valgt format — \
+                     råfilen er beholdt.",
+                );
                 dm.primary_path.clone()
             });
 
         if !output_is_valid(Path::new(&final_path)).await {
             tracing::warn!(file = %final_path, "recovery: finished file invalid — skipping history row");
+            warn_recovery_skipped(
+                app,
+                "invalid_output",
+                &final_path,
+                "Et avbrutt opptak kunne ikke gjenopprettes — filen var ikke spillbar.",
+            );
             continue;
         }
 
@@ -307,7 +371,7 @@ mod tests {
         write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
         write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
 
-        let recovered = recover_session(&pool, &m).await;
+        let recovered = recover_session(None, &pool, &m).await;
         assert_eq!(recovered, 2, "both surviving deliverables recovered");
 
         let rows = list_recordings(&pool).await.unwrap();
@@ -348,7 +412,7 @@ mod tests {
         let rec = recoverable_deliverables(&m, |p| Path::new(p).exists());
         assert_eq!(rec.len(), 1);
 
-        let recovered = recover_session(&pool, &m).await;
+        let recovered = recover_session(None, &pool, &m).await;
         assert_eq!(
             recovered, 1,
             "only the deliverable with a survivor recovers"
@@ -387,7 +451,7 @@ mod tests {
         .await
         .unwrap();
 
-        let recovered = recover_session(&pool, &m).await;
+        let recovered = recover_session(None, &pool, &m).await;
         assert_eq!(
             recovered, 1,
             "only the not-yet-recorded deliverable is added"
@@ -415,7 +479,7 @@ mod tests {
         // Write NO files — every fragment path is missing.
         assert!(!has_recoverable_audio(&m, |p| Path::new(p).exists()));
 
-        let recovered = recover_session(&pool, &m).await;
+        let recovered = recover_session(None, &pool, &m).await;
         assert_eq!(recovered, 0, "nothing on disk → nothing to recover");
         assert!(list_recordings(&pool).await.unwrap().is_empty());
     }
@@ -431,7 +495,7 @@ mod tests {
             delivery_encode: None,
             deliverables: vec![],
         };
-        assert_eq!(recover_session(&pool, &m).await, 0);
+        assert_eq!(recover_session(None, &pool, &m).await, 0);
         assert!(list_recordings(&pool).await.unwrap().is_empty());
     }
 
@@ -451,7 +515,7 @@ mod tests {
             };
             match SessionManifest::from_json(&body) {
                 Ok(manifest) => {
-                    recovered += recover_session(pool, &manifest).await;
+                    recovered += recover_session(None, pool, &manifest).await;
                     let _ = tokio::fs::remove_file(&path).await;
                     if let Some(clip) = &manifest.preroll_clip_path {
                         let _ = tokio::fs::remove_file(clip).await;

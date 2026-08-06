@@ -385,31 +385,41 @@ async fn fire(
                     .await
                     {
                         Ok(Ok(())) => tracing::info!("scheduler: started scheduled recording"),
+                        // A scheduled recording that does not start is the single
+                        // worst thing this app can do quietly: nobody is watching
+                        // the screen at 11:00, and the service is not repeatable.
+                        // These three were native-notification-only — the same
+                        // wording now goes out through the full dispatch (native
+                        // + e-mail + webhook); see `crate::notify`.
                         Ok(Err(e)) => {
                             tracing::error!("scheduler: scheduled start failed: {e}");
-                            notify_user(
+                            dispatch_scheduler_failure(
                                 app,
-                                "SundayRec",
-                                &format!("Planlagt opptak startet ikke: {e}"),
-                            );
+                                "scheduled_start_failed",
+                                format!("Planlagt opptak startet ikke: {e}"),
+                            )
+                            .await;
                         }
                         Err(_) => {
                             tracing::error!("scheduler: scheduled start TIMED OUT after 30s");
-                            notify_user(
+                            dispatch_scheduler_failure(
                                 app,
-                                "SundayRec",
-                                "Planlagt opptak startet ikke (tidsavbrudd) — sjekk kamera/mikrofon.",
-                            );
+                                "scheduled_start_timeout",
+                                "Planlagt opptak startet ikke (tidsavbrudd) — sjekk kamera/mikrofon."
+                                    .to_string(),
+                            )
+                            .await;
                         }
                     }
                 }
                 Err(e) => {
                     tracing::error!("scheduler: could not build opts: {e}");
-                    notify_user(
+                    dispatch_scheduler_failure(
                         app,
-                        "SundayRec",
-                        &format!("Planlagt opptak kunne ikke forberedes: {e}"),
-                    );
+                        "scheduled_prepare_failed",
+                        format!("Planlagt opptak kunne ikke forberedes: {e}"),
+                    )
+                    .await;
                 }
             }
         }
@@ -570,7 +580,8 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
         .document_dir()
         .or_else(|_| app.path().app_data_dir())
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let findings = crate::preflight::run_preflight(pool, &documents).await;
+    let outcome = crate::preflight::run_preflight_detailed(pool, &documents).await;
+    let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()
         .filter(|f| f.severity == PreflightSeverity::Error)
@@ -578,6 +589,24 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
     if let Some(first) = errors.first() {
         notify_user(app, "SundayRec — sjekk før opptak", &first.message);
     }
+
+    // The preflight card only appears if someone opens the app. A configured
+    // mixer that is not plugged in, half an hour before a scheduled recording,
+    // is the single most common and most preventable cause of a lost service —
+    // so it also goes out as a live warning, carrying the device NAME so the
+    // operator knows what to go and find.
+    if !outcome.facts.device_present {
+        let name = outcome.device_name.unwrap_or_default();
+        crate::notify::warn(
+            app,
+            sundayrec_core::notify::BackendWarning::error(
+                sundayrec_core::notify::code::DEVICE_MISSING,
+            )
+            .msg(format!("Lydenheten «{name}» er ikke tilkoblet."))
+            .param("device", name),
+        );
+    }
+
     let _ = app.emit("scheduler://preflight", &findings);
 }
 
@@ -636,11 +665,14 @@ pub async fn check_missed(
                     .await
                 {
                     tracing::error!("scheduler: late-start of missed recording failed: {e}");
-                    notify_user(
+                    // The recovery attempt for an already-missed recording just
+                    // failed too. Same wording, now on every configured channel.
+                    dispatch_scheduler_failure(
                         app,
-                        "SundayRec",
-                        &format!("Forsinket oppstart av planlagt opptak feilet: {e}"),
-                    );
+                        "scheduled_late_start_failed",
+                        format!("Forsinket oppstart av planlagt opptak feilet: {e}"),
+                    )
+                    .await;
                 }
             }
             Err(e) => tracing::error!("scheduler: could not build opts for late-start: {e}"),
@@ -721,11 +753,31 @@ fn fmt_dt(dt: NaiveDateTime) -> String {
     dt.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
+/// Fire a native OS notification. Now a one-line delegation to
+/// [`crate::notify::native`]: the helper used to be private here, which is part
+/// of why the recorder's failures never produced one — there was nothing shared
+/// to call. The reminder + preflight call sites below are unchanged.
 fn notify_user(app: &AppHandle, title: &str, body: &str) {
-    use tauri_plugin_notification::NotificationExt;
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        tracing::warn!("scheduler: notification failed: {e}");
-    }
+    crate::notify::native(app, title, body);
+}
+
+/// A scheduled recording did not happen. Routes the SAME sentence the operator
+/// used to see as a bare native notification through the full dispatch, so it
+/// also reaches the inbox and the chat channel of whoever configured them.
+///
+/// `code` is the stable machine code (webhook `category`); `message` is the
+/// existing Norwegian wording, passed through verbatim — the native leg of the
+/// dispatch shows exactly what this site showed before.
+async fn dispatch_scheduler_failure(app: &AppHandle, code: &str, message: String) {
+    crate::notify::dispatch_failure(
+        app,
+        crate::notify::FailureCtx::now(
+            code,
+            message,
+            sundayrec_core::notify::FailureSource::Scheduler,
+        ),
+    )
+    .await;
 }
 
 /// The localised "recording starts in N minutes" body. Ports the Electron

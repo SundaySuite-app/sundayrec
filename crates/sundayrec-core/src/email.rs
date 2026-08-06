@@ -7,7 +7,8 @@
 //! keep ONLY the deterministic decisions here:
 //!   - which localized template strings to use ([`MailLang`], [`error_strings`])
 //!   - rendering an error/test email to plaintext + HTML ([`render_error`],
-//!     [`render_test`])
+//!     [`render_test`]) and the review reminder the queue's own timeline sends
+//!     ([`render_reminder`] — a sibling template, deliberately not the alarm one)
 //!   - the recipient/throttle/dedup gate ([`AlertGate`]) — Electron sent on
 //!     every failure; this adds a small de-dup so a flapping recorder can't spam
 //!     the responsible person
@@ -123,6 +124,33 @@ pub struct TestStrings {
     pub body: &'static str,
 }
 
+/// The localized building blocks of a REVIEW REMINDER — the mail the queue's
+/// 24 h / 48 h / 7 d timeline sends about an episode nobody has looked at yet.
+///
+/// A sibling of [`ErrorStrings`], not a reuse of it: an error alert is "Sunday
+/// went wrong, go and check the mixer", a reminder is "Sunday went fine and is
+/// still sitting here". Sending the red error template for the second would
+/// train the recipient to ignore the first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReminderStrings {
+    /// `{church}` placeholder.
+    pub subject: &'static str,
+    /// `{church}` placeholder.
+    pub intro: &'static str,
+    pub episode_label: &'static str,
+    pub waiting_label: &'static str,
+    /// The exactly-one-day age, spelled out (no `{days}` to fill).
+    pub day_one: &'static str,
+    /// `{days}` placeholder — every plural form these seven languages need in
+    /// this position ("dager", "Tagen", "dni", …) is the same one.
+    pub day_many: &'static str,
+    pub instruction: &'static str,
+    pub signoff: &'static str,
+    /// `{days}` — the 14-day auto-discard notice. Not a mail: the queue entry is
+    /// already gone by then, so this is what the native notification says.
+    pub auto_discarded: &'static str,
+}
+
 /// The localized error-alert strings for `lang`. Byte-for-byte ported from
 /// `mailer.ts` `MAIL_STRINGS` so existing recipients see the identical wording.
 pub fn error_strings(lang: MailLang) -> ErrorStrings {
@@ -189,6 +217,92 @@ pub fn error_strings(lang: MailLang) -> ErrorStrings {
             date_label: "Date",
             instruction: "Veuillez vérifier que la console audio est connectée et essayez un enregistrement manuel.",
             signoff: "Cordialement, SundayRec",
+        },
+    }
+}
+
+/// The localized review-reminder strings for `lang`. Deliberately quote-free:
+/// button names are named plainly rather than «quoted», so the same sentence
+/// survives the plaintext part, the HTML part and a native notification body
+/// without an escaping question in any of the three.
+pub fn reminder_strings(lang: MailLang) -> ReminderStrings {
+    match lang {
+        MailLang::No => ReminderStrings {
+            subject: "📬 Episode venter på gjennomgang — {church}",
+            intro: "Et opptak fra {church} ligger klart til gjennomgang og publisering:",
+            episode_label: "Episode",
+            waiting_label: "Har ventet",
+            day_one: "1 dag",
+            day_many: "{days} dager",
+            instruction: "Åpne SundayRec, gå over opptaket og trykk Publiser — eller Forkast hvis det ikke skal ut.",
+            signoff: "Hilsen SundayRec",
+            auto_discarded: "Episoden ble forkastet automatisk etter {days} dager uten gjennomgang.",
+        },
+        MailLang::En => ReminderStrings {
+            subject: "📬 Episode waiting for review — {church}",
+            intro: "A recording from {church} is ready for review and publishing:",
+            episode_label: "Episode",
+            waiting_label: "Waiting",
+            day_one: "1 day",
+            day_many: "{days} days",
+            instruction: "Open SundayRec, go through the recording and press Publish — or Discard if it should not go out.",
+            signoff: "Regards, SundayRec",
+            auto_discarded: "The episode was discarded automatically after {days} days without review.",
+        },
+        MailLang::De => ReminderStrings {
+            subject: "📬 Folge wartet auf Durchsicht — {church}",
+            intro: "Eine Aufnahme aus {church} ist bereit zur Durchsicht und Veröffentlichung:",
+            episode_label: "Folge",
+            waiting_label: "Wartet seit",
+            day_one: "1 Tag",
+            day_many: "{days} Tagen",
+            instruction: "Öffnen Sie SundayRec, hören Sie die Aufnahme durch und klicken Sie auf Veröffentlichen — oder auf Verwerfen, wenn sie nicht erscheinen soll.",
+            signoff: "Mit freundlichen Grüßen, SundayRec",
+            auto_discarded: "Die Folge wurde nach {days} Tagen ohne Durchsicht automatisch verworfen.",
+        },
+        MailLang::Sv => ReminderStrings {
+            subject: "📬 Avsnitt väntar på genomgång — {church}",
+            intro: "En inspelning från {church} är klar för genomgång och publicering:",
+            episode_label: "Avsnitt",
+            waiting_label: "Har väntat",
+            day_one: "1 dag",
+            day_many: "{days} dagar",
+            instruction: "Öppna SundayRec, gå igenom inspelningen och tryck på Publicera — eller Kasta om den inte ska ut.",
+            signoff: "Vänliga hälsningar, SundayRec",
+            auto_discarded: "Avsnittet kastades automatiskt efter {days} dagar utan genomgång.",
+        },
+        MailLang::Da => ReminderStrings {
+            subject: "📬 Episode venter på gennemgang — {church}",
+            intro: "En optagelse fra {church} er klar til gennemgang og udgivelse:",
+            episode_label: "Episode",
+            waiting_label: "Har ventet",
+            day_one: "1 dag",
+            day_many: "{days} dage",
+            instruction: "Åbn SundayRec, gennemgå optagelsen og tryk på Udgiv — eller Kassér, hvis den ikke skal ud.",
+            signoff: "Venlig hilsen, SundayRec",
+            auto_discarded: "Episoden blev kasseret automatisk efter {days} dage uden gennemgang.",
+        },
+        MailLang::Pl => ReminderStrings {
+            subject: "📬 Odcinek czeka na przegląd — {church}",
+            intro: "Nagranie z {church} jest gotowe do przeglądu i publikacji:",
+            episode_label: "Odcinek",
+            waiting_label: "Czeka od",
+            day_one: "1 dnia",
+            day_many: "{days} dni",
+            instruction: "Otwórz SundayRec, przejrzyj nagranie i naciśnij Opublikuj — albo Odrzuć, jeśli nie ma być publikowane.",
+            signoff: "Pozdrowienia, SundayRec",
+            auto_discarded: "Odcinek został odrzucony automatycznie po {days} dniach bez przeglądu.",
+        },
+        MailLang::Fr => ReminderStrings {
+            subject: "📬 Épisode en attente de relecture — {church}",
+            intro: "Un enregistrement de {church} est prêt à être relu et publié :",
+            episode_label: "Épisode",
+            waiting_label: "En attente depuis",
+            day_one: "1 jour",
+            day_many: "{days} jours",
+            instruction: "Ouvrez SundayRec, écoutez l'enregistrement et cliquez sur Publier — ou sur Rejeter s'il ne doit pas être diffusé.",
+            signoff: "Cordialement, SundayRec",
+            auto_discarded: "L'épisode a été rejeté automatiquement après {days} jours sans relecture.",
         },
     }
 }
@@ -326,6 +440,88 @@ pub fn render_error(
         text,
         html,
     }
+}
+
+/// The localized "how long it has waited" phrase for `age_days`, singular-safe.
+/// Anything under two days reads as the singular — an entry that crossed the
+/// 24 h threshold is "1 dag", never "0 dager".
+pub fn reminder_age_text(lang: MailLang, age_days: i64) -> String {
+    let s = reminder_strings(lang);
+    if age_days <= 1 {
+        return s.day_one.to_string();
+    }
+    let days = age_days.to_string();
+    let mut vars = HashMap::new();
+    vars.insert("days", days.as_str());
+    fill(s.day_many, &vars)
+}
+
+/// Render a review-reminder mail to subject + plaintext + HTML — the same shape
+/// [`render_error`] produces, so the shell's send path takes either without
+/// caring which.
+///
+/// `episode_label` is what the recipient will recognise the recording by (the
+/// file name, as the queue entry has no title until someone reviews it), and
+/// `age_days` is how long it has been waiting. `church` defaults to "SundayRec"
+/// when blank, exactly as the error template does.
+///
+/// The blockquote is calm rather than red: this mail says nothing is broken.
+pub fn render_reminder(
+    lang: MailLang,
+    church: &str,
+    episode_label: &str,
+    age_days: i64,
+) -> RenderedEmail {
+    let s = reminder_strings(lang);
+    let church = if church.trim().is_empty() {
+        "SundayRec"
+    } else {
+        church
+    };
+    let age = reminder_age_text(lang, age_days);
+
+    let mut vars = HashMap::new();
+    vars.insert("church", church);
+    let subject = fill(s.subject, &vars);
+    let intro = fill(s.intro, &vars);
+
+    let text = [
+        intro.as_str(),
+        "",
+        &format!("{}: {}", s.episode_label, episode_label),
+        &format!("{}: {}", s.waiting_label, age),
+        "",
+        s.instruction,
+        "",
+        s.signoff,
+    ]
+    .join("\n");
+
+    let html = format!(
+        "\n    <p>{}</p>\n    <blockquote style=\"background:#eef3fa;padding:12px;border-left:4px solid #4a7dbf;\">\n      <strong>{}:</strong> {}<br>\n      <strong>{}:</strong> {}\n    </blockquote>\n    <p>{}</p>\n    <p>{}</p>\n  ",
+        esc(&intro),
+        esc(s.episode_label),
+        esc(episode_label),
+        esc(s.waiting_label),
+        esc(&age),
+        esc(s.instruction),
+        esc(s.signoff),
+    );
+
+    RenderedEmail {
+        subject,
+        text,
+        html,
+    }
+}
+
+/// The localized 14-day auto-discard notice (the native notification body — by
+/// then the queue entry is gone, so there is nothing left to remind about).
+pub fn render_auto_discarded(lang: MailLang, days: i64) -> String {
+    let days = days.to_string();
+    let mut vars = HashMap::new();
+    vars.insert("days", days.as_str());
+    fill(reminder_strings(lang).auto_discarded, &vars)
 }
 
 /// Render the localized "email works" test message (subject + plaintext). The
@@ -618,6 +814,101 @@ mod tests {
         let r = render_error(MailLang::En, "   ", "", "today", "boom");
         assert!(r.subject.contains("SundayRec"));
         assert!(r.text.contains("at SundayRec:"));
+    }
+
+    // ── Review reminders ─────────────────────────────────────────────────────
+
+    #[test]
+    fn all_seven_languages_have_complete_reminder_catalogs() {
+        for lang in [
+            MailLang::No,
+            MailLang::En,
+            MailLang::De,
+            MailLang::Sv,
+            MailLang::Da,
+            MailLang::Pl,
+            MailLang::Fr,
+        ] {
+            let r = reminder_strings(lang);
+            assert!(r.subject.contains("{church}"), "{lang:?} subject church");
+            assert!(r.intro.contains("{church}"), "{lang:?} intro church");
+            assert!(r.day_many.contains("{days}"), "{lang:?} plural days");
+            assert!(
+                r.auto_discarded.contains("{days}"),
+                "{lang:?} auto-discard days"
+            );
+            // The singular is spelled out, so a stray {days} there would ship a
+            // literal brace to a reader.
+            assert!(!r.day_one.contains('{'), "{lang:?} singular is literal");
+            assert!(!r.episode_label.is_empty() && !r.waiting_label.is_empty());
+            assert!(!r.instruction.is_empty() && !r.signoff.is_empty());
+            // A reminder must not read as an alarm: no error-template wording.
+            assert!(
+                !r.subject.contains("⚠"),
+                "{lang:?} reminder is not an alert"
+            );
+        }
+    }
+
+    #[test]
+    fn render_reminder_fills_the_norwegian_template() {
+        let r = render_reminder(
+            MailLang::No,
+            "Oslo domkirke",
+            "2026-08-02-gudstjeneste.m4a",
+            2,
+        );
+        assert_eq!(
+            r.subject,
+            "📬 Episode venter på gjennomgang — Oslo domkirke"
+        );
+        assert!(r
+            .text
+            .starts_with("Et opptak fra Oslo domkirke ligger klart"));
+        assert!(r.text.contains("Episode: 2026-08-02-gudstjeneste.m4a"));
+        assert!(r.text.contains("Har ventet: 2 dager"));
+        assert!(r.text.trim_end().ends_with("Hilsen SundayRec"));
+        assert!(r
+            .html
+            .contains("<strong>Episode:</strong> 2026-08-02-gudstjeneste.m4a"));
+    }
+
+    #[test]
+    fn reminder_age_uses_the_singular_at_the_first_threshold() {
+        // The 24 h reminder fires at an age of exactly one day; "0 dager" or
+        // "1 dager" would both be wrong in the very first mail the feature sends.
+        assert_eq!(reminder_age_text(MailLang::No, 1), "1 dag");
+        assert_eq!(reminder_age_text(MailLang::No, 0), "1 dag");
+        assert_eq!(reminder_age_text(MailLang::No, 2), "2 dager");
+        assert_eq!(reminder_age_text(MailLang::No, 7), "7 dager");
+        assert_eq!(reminder_age_text(MailLang::En, 1), "1 day");
+        assert_eq!(reminder_age_text(MailLang::De, 3), "3 Tagen");
+        assert_eq!(reminder_age_text(MailLang::Pl, 5), "5 dni");
+    }
+
+    #[test]
+    fn render_reminder_escapes_html_in_the_episode_label() {
+        // The label is a FILE NAME — user-controlled, and `<` is legal in one on
+        // every platform this ships to.
+        let r = render_reminder(MailLang::En, "St <Mary>", "<script>x</script>.m4a", 3);
+        assert!(r.text.contains("Episode: <script>x</script>.m4a"));
+        assert!(r.html.contains("&lt;script&gt;x&lt;/script&gt;.m4a"));
+        assert!(!r.html.contains("<script>"));
+    }
+
+    #[test]
+    fn render_reminder_defaults_a_blank_church_to_sundayrec() {
+        let r = render_reminder(MailLang::En, "   ", "take.m4a", 1);
+        assert!(r.subject.contains("SundayRec"));
+        assert!(r.text.contains("from SundayRec"));
+    }
+
+    #[test]
+    fn the_auto_discard_notice_carries_the_real_threshold() {
+        let no = render_auto_discarded(MailLang::No, 14);
+        assert!(no.contains("14 dager"));
+        assert!(!no.contains("{days}"), "the placeholder must be filled");
+        assert!(render_auto_discarded(MailLang::Fr, 14).contains("14 jours"));
     }
 
     #[test]

@@ -12,7 +12,9 @@
 //! `stream_status` work regardless (so the user can save keys ahead of a build
 //! that has streaming enabled).
 
-use tauri::{AppHandle, Manager, State};
+use std::sync::Arc;
+
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use sundayrec_core::device_enum::find_best_video_device_match;
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
@@ -26,7 +28,27 @@ use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets;
 use crate::settings;
-use crate::streaming::{self as seam, StreamDestinationView, StreamEngine, StreamStatus};
+use crate::streaming::{
+    self as seam, StreamDestinationView, StreamEngine, StreamStatsEmitter, StreamStatus,
+    STREAM_STATS_EVENT,
+};
+
+/// The AppHandle, wrapped as the seam's status emitter: every live snapshot the
+/// supervisor produces goes out on [`STREAM_STATS_EVENT`], which is what the
+/// renderer's legacy `'stream-stats'` channel has been listening to all along.
+///
+/// This function is the entire fix for the Direkte page's dead statistics. The
+/// stats were parsed, the status was maintained, the binding was generated, the
+/// subscription was live — and nothing ever carried a handle from the command
+/// layer down to the supervisor, so the numbers never left the Rust process.
+/// A failure of plumbing, not of design; the same closure-over-AppHandle shape
+/// the editor's export/mastering progress already uses.
+fn stats_emitter(app: &AppHandle) -> StreamStatsEmitter {
+    let app = app.clone();
+    Arc::new(move |status: &StreamStatus| {
+        let _ = app.emit(STREAM_STATS_EVENT, status);
+    })
+}
 
 /// avfoundation index (`"0"`) or dshow name — the device token ffmpeg addresses.
 /// Mirrors the recorder's `device_token`.
@@ -175,6 +197,7 @@ pub async fn stream_start(
         win_audio_name,
         snapshot_path,
         now_ms() as i64,
+        stats_emitter(&app),
     )
     .await
 }
@@ -182,6 +205,6 @@ pub async fn stream_start(
 /// Stop the running stream. Returns whether one was active. NETWORK/HARDWARE-
 /// UNVERIFIED behind `--features streaming`; returns `feature_disabled` otherwise.
 #[tauri::command]
-pub async fn stream_stop(engine: State<'_, StreamEngine>) -> AppResult<bool> {
-    seam::stop(&engine).await
+pub async fn stream_stop(engine: State<'_, StreamEngine>, app: AppHandle) -> AppResult<bool> {
+    seam::stop(&engine, stats_emitter(&app)).await
 }

@@ -6,7 +6,7 @@ import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { bindRadioGroup, bindSetting, showSavedChip } from '../ui/bind-setting'
-import { applyComingSoonGate, applyFeatureGate } from '../ui/feature-gate'
+import { applyFeatureGate } from '../ui/feature-gate'
 import { cloudGateStatus } from '../ui/feature-gate-core'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
@@ -37,15 +37,14 @@ export function setupPublishPage(): void {
   setupStreamDestinations()
 
   // Default-thumbnail panel ("Standard episodebilde") — sits at the top of the
-  // Deling tab's Publisering section. There is NO Rust side for thumbnails at
-  // all (every thumbnail* shim method is a stub), so the panel is gated as
-  // «kommer» rather than left looking like a drop zone that swallows images.
+  // Deling tab's Publisering section. Gated «kommer» through v0.9.0 because
+  // every thumbnail* shim method was a stub; live since Fase 6, so the drop
+  // zone now stores the image in app data instead of swallowing it.
   const thumbEls = panelElementsByPrefix('publish')
   if (thumbEls) {
     setupThumbPanel(thumbEls, { kind: 'default' })
     void refreshThumbPanel(thumbEls, { kind: 'default' })
   }
-  applyComingSoonGate('publish-thumb-card', t('thumbnail.default.title', 'Standard episodebilde'))
 
   // Connect/disconnect buttons
   document.querySelectorAll<HTMLElement>('[data-cloud-connect]').forEach(btn => {

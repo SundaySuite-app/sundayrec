@@ -98,7 +98,6 @@
     "nextShort": "nästa",
     "wakesLead": "({min} min innan)",
     "openInEditor": "Öppna i redigering",
-    "thumbComing": "Avsnittsbild kommer — används inte än",
     "prerollActive": "Förhandsbuffert aktiv ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Lägg till anteckning",
     "editNote": "Redigera anteckning",
     "notePlaceholder": "Skriv en anteckning…",
-    "deleteEntry": "Radera post",
     "ok": "Slutförd",
     "noteCancel": "Avbryt",
     "noteDesc": "Skriv en anteckning till den här inspelningen (valfritt)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "Radera 1 felpost?",
     "confirmDeleteErrorsN": "Radera {n} felposter?",
     "emptyFiltered": "Inga inspelningar i det här filtret"
+  },
+  "trash": {
+    "title": "Papperskorg",
+    "open": "Papperskorg",
+    "back": "← Tillbaka till historiken",
+    "emptyAll": "Töm papperskorgen",
+    "keepNote": "Raderade inspelningar ligger här i 30 dagar. Sedan försvinner de för gott.",
+    "empty": "Papperskorgen är tom.",
+    "alreadyEmpty": "Papperskorgen är tom",
+    "deleteEntry": "Flytta till papperskorgen",
+    "movedOne": "«{name}» ligger i papperskorgen",
+    "movedN": "{n} inspelningar ligger i papperskorgen",
+    "undo": "Ångra",
+    "undoFailed": "Kunde inte hämta tillbaka allt — se i papperskorgen.",
+    "clearHistoryBody": "Inspelningarna flyttas till papperskorgen, där de ligger i {d} dagar innan de raderas för gott.",
+    "deleteErrorsBody": "{n} poster med fel tas bort. Filer som finns flyttas till papperskorgen.",
+    "restore": "Återställ",
+    "restoreFailed": "Kunde inte återställa",
+    "deleteForever": "Radera för gott",
+    "confirmPurgeOne": "Radera «{name}» för gott?",
+    "confirmEmptyN": "Radera {n} inspelningar för gott?",
+    "confirmEmptyBody": "Filerna raderas från disken. Detta kan inte ångras.",
+    "deletedAt": "Raderad",
+    "today": "i dag",
+    "yesterday": "i går",
+    "daysAgo": "{n} dagar sedan",
+    "daysLeft": "{n} dagar kvar",
+    "dueNow": "raderas vid nästa rensning",
+    "related": "+ {n} tillhörande filer"
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Skriv tiden som TT:MM, t.ex. 11:00.",
     "errSameTime": "Stopptiden kan inte vara densamma som starten.",
     "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter.",
-    "prerollEnabledTitle": "Aktivera förhandsbuffert (experimentell)",
-    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen hela tiden i bakgrunden. Det kan störa de levande nivåmätarna på Hem och Livesändning, som använder samma mikrofon. Slå på den om du behöver sekunderna före knapptrycket — Hem visar när bufferten körs."
+    "prerollEnabledTitle": "Aktivera förhandsbuffert",
+    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen i bakgrunden hela tiden. Medan den körs är det den som matar nivåmätarna på Hem och Livesändning, så de fungerar som förut. Slå på den om du behöver sekunderna innan du trycker på inspelning — Hem visar när bufferten körs."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Hittades inte",
     "diagFfmpegOk": "Tillgänglig",
     "diagLoopback": "WASAPI-loopback",
-    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser"
+    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser",
+    "benchJudging": "Analyserar mätningen …"
   },
   "files": {
     "saveFolder": "Mapp att spara i",
@@ -594,6 +622,7 @@
     "analyzeSpeech": "Talsegment",
     "analyzeMusic": "Musiksegment",
     "analyzeSilence": "Tystnad",
+    "layersNotAnalyzed": "Kör «Analysera inspelning» under Klippverktyg för att se tal, musik och tystnad här.",
     "markSermon": "↦ Markera predikan automatiskt",
     "markSermonHint": "Trimmer allt före och efter det markerade predikoblocket.",
     "sermonPickerLabel": "Är detta inte predikan?",
@@ -607,6 +636,10 @@
     "willBeTrimmed": "tas bort",
     "willRemain": "predikan kvar",
     "analyzedAt": "Senast analyserad",
+    "tabsAria": "Verktyg för inspelningen",
+    "tabAudio": "Ljud",
+    "tabContent": "Innehåll",
+    "tabClip": "Klippverktyg",
     "speechSegments": "talsegment hittade",
     "ioTitle": "Intro & Outro",
     "ioDragHint": "— eller dra filen till tidslinjen",
@@ -868,6 +901,13 @@
     "days": "dagar"
   },
   "notify": {
+    "prerollDead": "Förbufferten fungerar inte — ljud från innan du trycker på inspelning sparas inte.",
+    "cloudUploadFailed": "Säkerhetskopieringen till molnet misslyckades: {file}",
+    "cloudReauthRequired": "Molnlagringen måste anslutas på nytt — logga in igen under Inställningar.",
+    "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
+    "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
+    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
+    "reviewOverdue": "Ett avsnitt har väntat i {days} dagar på genomgång: {episode}",
     "systemTitle": "Systemaviseringar",
     "emailTitle": "E-postaviseringar",
     "smtpServer": "E-POSTTJÄNST (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "ANVÄNDARNAMN (E-POSTADRESS)",
     "smtpPass": "LÖSENORD / APP-LÖSENORD",
     "smtpPassHint": "Gmail kräver ett ”App-lösenord” från kontosäkerhetsinställningarna.",
+    "smtpFrom": "AVSÄNDARADRESS (VALFRITT)",
+    "smtpFromHint": "Lämna tomt för att skicka från användarnamnet ovan.",
+    "savePassToKeychain": "Spara i nyckelringen",
+    "smtpPassStored": "Lösenordet är sparat i nyckelringen på den här datorn.",
+    "smtpPassSaved": "••••••••  (sparat)",
+    "passEmpty": "Skriv in lösenordet först.",
+    "passSaved": "Lösenordet är sparat i nyckelringen.",
+    "passSaveFailed": "Kunde inte spara lösenordet i nyckelringen.",
+    "passCleared": "Lösenordet har tagits bort från nyckelringen.",
+    "passClearFailed": "Kunde inte ta bort lösenordet från nyckelringen.",
+    "errNoPassword": "SMTP-lösenordet saknas. Skriv in det och tryck på ”Spara i nyckelringen”.",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Skicka aviseringar till en chattkanal utöver e-post. Klistra in webhook-URL från Slack, Discord eller Teams.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Zooma in",
     "zoomOut": "Zooma ut",
     "fitAll": "Visa hela filen",
-    "kbdHints": "Visa kortkommandon"
+    "kbdHints": "Visa kortkommandon",
+    "timelineLayers": "Vad tidslinjen visar"
   },
   "publish": {
     "descPlaceholder": "T.ex. Gudstjänster från Exempelkyrkan, varje söndag kl. 11",
@@ -1032,11 +1084,18 @@
     "overlays": "Overlays — grafik och presentation",
     "overlaysDesc": "Lägg kyrkans logo, sångtexter från EasyWorship (via skärminspelning på samma maskin), eller annan grafik ovanpå det som sänds. Overlays påverkar bara direktsändningen — inspelningar görs rena.",
     "addOverlay": "+ Lägg till overlay",
-    "gateStats": "Statistik är inte tillgänglig än — direktsändningen rapporterar inte bitrate, bildfrekvens eller tappade bildrutor tillbaka till appen i den här versionen.",
     "blockedNoDestinations": "Ingen destination är uppsatt än — lägg till YouTube, Facebook eller en egen RTMP-server.",
     "blockedNoEnabled": "Ingen destination är påslagen. Aktivera minst en i listan ovan.",
     "blockedNoKey": "Destinationen saknar stream-key. Utan nyckeln släpper YouTube/Facebook inte in sändningen.",
-    "blockedGoSettings": "Öppna Delning → Publicering"
+    "blockedGoSettings": "Öppna Delning → Publicering",
+    "statusStopped": "Stoppad",
+    "qualityReduced": "Sänkt kvalitet för att hålla strömmen stabil.",
+    "notRigVerified": "Direktsändning är ännu inte verifierad på en riktig rigg — testa den en vardag innan du litar på den en söndag.",
+    "errFeatureDisabled": "Den här versionen av appen kan inte direktsända. Allt annat fungerar som vanligt — uppdatera till en nyare version för att sända live.",
+    "errNoCamera": "Hittade ingen kamera. Kontrollera att den är ansluten och välj den under Inställningar → Video.",
+    "errAlreadyActive": "En direktsändning pågår redan.",
+    "errInvalidDestination": "En destination är felaktigt inställd — kontrollera RTMP-adressen och stream-nyckeln under Delning → Publicering.",
+    "errSpawnFailed": "Kunde inte starta videomotorn (ffmpeg). Starta om appen och säg till om det händer igen."
   },
   "transcript": {
     "title": "Transkribering",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Okänd modell",
     "exportTxt": "↧ Text",
     "exportDone": "Transkription sparad",
-    "exportFailed": "Kunde inte spara transkriptionen"
+    "exportFailed": "Kunde inte spara transkriptionen",
+    "cancelling": "Avbryter…",
+    "preparingModel": "Förbereder modell…"
   },
   "companion": {
     "title": "Predikohjälp",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "Ska inspelningen starta av sig själv?",
     "autostartConfirm": "Slå på autostart",
     "gmailDisconnectTitle": "Koppla från Google-kontot?",
-    "clearHistoryBody": "Själva inspelningsfilerna ligger kvar — bara listan över dem raderas. Detta kan inte ångras.",
-    "deleteErrorsBody": "{n} felposter tas bort från listan. Detta kan inte ångras.",
     "autoDeleteTitle": "Ta bort inspelningar automatiskt?",
     "autoDeleteConfirm": "Ja, ta bort automatiskt",
     "wakeTestTitle": "Testa väckning ur viloläge?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "Inspelningen behålls, men den publiceras inte.",
     "discardEpisode": "Förkasta",
     "publishFailedTitle": "Kunde inte publicera",
-    "deleteEntryTitle": "Ta bort ”{name}” från listan?",
-    "deleteEntryBody": "Själva inspelningsfilen ligger kvar på disken — bara listposten tas bort. Detta kan inte ångras.",
-    "deleteEntryBodyPair": "Både ljud- och videofilen ligger kvar på disken — bara de två listposterna tas bort. Detta kan inte ångras.",
     "discardFailedTitle": "Kunde inte kasta avsnittet"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Vem som får besked när en inspelning startar, stoppar eller misslyckas."
   },
   "gate": {
-    "chipComing": "Kommer",
     "chipUnconfigured": "Inte konfigurerat",
-    "chipUnavailable": "Inte tillgängligt",
-    "comingExplanation": "{what} är inte byggt ännu. Panelen finns här för att funktionen är planerad — tills vidare gör knapparna ingenting, så de är avstängda."
+    "chipUnavailable": "Inte tillgängligt"
   },
   "health": {
     "micDenied": "Mikrofonåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Mikrofon och slå på SundayRec.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Öppna i redigeraren",
     "captionsNoRecording": "Textning mottagen, men utan att ange vilken inspelning den hör till. Öppna inspelningen i redigeraren och importera texten där.",
     "captionsFailed": "Textningen kunde inte sparas: {err}"
+  },
+  "progress": {
+    "etaCalculating": "beräknar …",
+    "etaUnder10s": "under 10 s kvar",
+    "etaSeconds": "ca {n} s kvar",
+    "etaMinutes": "ca {n} min kvar",
+    "etaHours": "ca {h} tim kvar",
+    "etaHoursMinutes": "ca {h} tim {m} min kvar",
+    "preparing": "Förbereder …"
   }
 }

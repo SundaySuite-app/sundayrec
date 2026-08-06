@@ -789,6 +789,113 @@ textarea.has-field-error {
   cursor: pointer;
 }
 
+/* ── Progress + ETA (ui/progress.ts) ─────────────────────────────────────── */
+
+/* One bar for every long job. The fill is driven by `transform: scaleX()` from
+   a single rAF write — NOT `width` + `transition: width`, which relayouts on
+   every tick and visibly stair-steps when a backend emits in bursts. */
+.progress {
+  display: block;
+  width: 100%;
+}
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface3, rgba(255, 255, 255, 0.08));
+}
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 4px;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--accent, #ebb84b), var(--accent2, #7aaaff));
+  transition: transform 0.3s linear;
+  will-change: transform;
+}
+.progress-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text3, #8899bb);
+}
+.progress-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.progress-status {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text2, #c8d2e6);
+  font-variant-numeric: tabular-nums;
+}
+.progress-eta {
+  color: var(--text3, #8899bb);
+}
+/* Both halves collapse when empty, so an unlabelled bar has no dangling gap. */
+.progress-label:empty,
+.progress-pct:empty,
+.progress-eta:empty {
+  display: none;
+}
+.progress-meta:has(.progress-label:empty) {
+  justify-content: flex-end;
+}
+
+/* Inline variant: sits in a toolbar/button row rather than under a heading. */
+.progress--compact .progress-track {
+  height: 4px;
+  border-radius: 2px;
+}
+.progress--compact .progress-fill {
+  border-radius: 2px;
+}
+.progress--compact .progress-meta {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+/* Unknown denominator — a sliding stripe, never a bar frozen at 0 %. The
+   keyframes carry the scaleX themselves, so they can own `transform` outright
+   instead of fighting the determinate write. */
+.progress.is-indeterminate .progress-fill {
+  transition: none;
+  animation: progressSweep 1.1s ease-in-out infinite;
+}
+@keyframes progressSweep {
+  0% {
+    transform: translateX(-110%) scaleX(0.4);
+  }
+  100% {
+    transform: translateX(275%) scaleX(0.4);
+  }
+}
+
+.progress.is-failed .progress-fill {
+  background: var(--red, #e5484d);
+  animation: none;
+}
+
+/* Reduced motion: no sweep, no eased fill. The stripe becomes a dimmed full
+   track — still visibly "busy", but nothing moves. */
+.progress.is-reduced .progress-fill {
+  transition: none;
+}
+.progress.is-reduced.is-indeterminate .progress-fill {
+  animation: none;
+  transform: scaleX(1);
+  opacity: 0.45;
+}
+
 /* ── Reduced motion ──────────────────────────────────────────────────────── */
 
 /* styles.css clamps durations globally, but these surfaces are created and
@@ -807,7 +914,13 @@ textarea.has-field-error {
   }
   .setting-saved-chip,
   .inner-page.tab-leaving,
-  .adv-disclosure-summary::before {
+  .adv-disclosure-summary::before,
+  .progress-fill {
     transition: none;
+  }
+  .progress.is-indeterminate .progress-fill {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.45;
   }
 }

@@ -11,7 +11,13 @@ import {
 } from '../ui/bind-setting'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { applyFeatureGate } from '../ui/feature-gate'
-import { canSendTestEmail, emailGateStatus } from '../ui/feature-gate-core'
+import { attachProgress, type ProgressHandle } from '../ui/progress'
+import {
+  canSendTestEmail,
+  emailBlockReason,
+  emailGateStatus,
+  type EmailFacts,
+} from '../ui/feature-gate-core'
 
 /** Every auto-applying System/Varsler control writes the same way. */
 function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
@@ -47,6 +53,9 @@ export function setupGeneralPage(): void {
         ? null
         : t('notify.errEmail', 'Skriv en gyldig e-postadresse, f.eks. navn@kirke.no')
     },
+    // The recipient is half of what «Test e-post» needs; typing one must light
+    // the button up without a tab reload.
+    after: () => { void refreshEmailGate() },
   }))
   bindSetting('webhook-url', generalBinding({
     key: 'webhookUrl',
@@ -79,12 +88,20 @@ export function setupGeneralPage(): void {
     if (asioCard) asioCard.style.display = ''
   }
 
+  // «Lagre i nøkkelring» — the ONLY way the SMTP password reaches durable
+  // storage. It goes to the OS keychain (macOS Keychain / Windows Credential
+  // Manager), never to localStorage and never into the settings blob.
+  document.getElementById('btn-save-smtp-pass')?.addEventListener('click', () => void saveSmtpPassword())
+
   document.getElementById('btn-clear-smtp-pass')?.addEventListener('click', async () => {
-    await window.api.clearSmtpPassword()
+    const ok = await window.api.clearSmtpPassword().catch(() => false)
+    if (!ok) { toast('error', t('notify.passClearFailed', 'Kunne ikke fjerne passordet fra nøkkelringen.')); return }
     const passInput = document.getElementById('email-pass') as HTMLInputElement | null
-    const clearBtn  = document.getElementById('btn-clear-smtp-pass') as HTMLElement | null
-    if (passInput) { passInput.value = ''; passInput.placeholder = '' }
-    if (clearBtn)  clearBtn.style.display = 'none'
+    if (passInput) passInput.value = ''
+    toast('success', t('notify.passCleared', 'Passordet er fjernet fra nøkkelringen.'))
+    // The stored password was half of the transport — re-check what the card
+    // may still claim it can do.
+    await refreshEmailGate()
   })
 
   // Gmail OAuth connect (btn-email-gmail-connect) has no working backend yet
@@ -138,62 +155,145 @@ export function setupGeneralPage(): void {
   wireUpdateIpcListeners()
 }
 
+/** The password field, if the Varsler tab is in the DOM. */
+function passField(): HTMLInputElement | null {
+  return document.getElementById('email-pass') as HTMLInputElement | null
+}
+
+/** Monotonic ticket so only the newest `refreshEmailGate` run paints. */
+let emailGateSeq = 0
+
 /**
- * The e-mail gate — driven by the REAL `email_status` command.
+ * Paint the password row from the REAL keychain state.
  *
- * The night sweep hard-disabled «Send test» and the Gmail button in the markup
- * with a hardcoded "not available in this version" title, because the old shim
- * stubs reported a fabricated failure. That was honest but blind: it said the
- * same thing in a build WITH `--features email` as in one without.
- *
- * `email_status` answers both halves — whether the send path was compiled in
- * (`featureBuilt`) and whether a Gmail token is stored (`gmailConnected`) — so
- * the section can state which of the two is missing, and «Send test» is enabled
- * exactly when a transport exists and there is somewhere to send it.
+ * The old code read `settings.emailSmtpPassSet`, an Electron-era flag the Tauri
+ * backend never set, so the row could never show "saved" and «Fjern» was
+ * permanently hidden.
  */
-async function refreshEmailGate(): Promise<void> {
-  const facts = {
-    featureBuilt: false,
-    gmailConnected: false,
-    smtpConfigured: !!(settings.emailSmtp ?? '').trim() && !!(settings.emailSmtpUser ?? '').trim(),
+function paintSmtpPasswordState(stored: boolean): void {
+  const input = passField()
+  const clearBtn = document.getElementById('btn-clear-smtp-pass') as HTMLElement | null
+  const storedHint = document.getElementById('email-pass-state') as HTMLElement | null
+  if (input) {
+    input.placeholder = stored ? t('notify.smtpPassSaved', '••••••••  (lagret)') : ''
+  }
+  if (clearBtn) clearBtn.style.display = stored ? 'inline' : 'none'
+  if (storedHint) storedHint.style.display = stored ? '' : 'none'
+}
+
+/** Write the typed password to the OS keychain. Shared by the «Lagre i
+ *  nøkkelring» button and the SMTP card's «Lagre» — a user who types a password
+ *  and presses the card's save button must not have it silently dropped, which
+ *  is exactly what happened before (the shim stripped it on the way to storage
+ *  and no command could store it). Returns false only on a real failure. */
+async function saveSmtpPassword(): Promise<boolean> {
+  const input = passField()
+  const value = input?.value ?? ''
+  if (!value.trim()) {
+    toast('error', t('notify.passEmpty', 'Skriv inn passordet først.'))
+    return false
   }
   try {
-    const status = await window.api.emailStatus()
-    facts.featureBuilt = !!status.featureBuilt
-    facts.gmailConnected = !!status.gmailConnected
+    await window.api.emailSetSmtpPassword(value)
   } catch {
-    /* keep the pessimistic defaults — a failed status check is not a send path */
+    toast('error', t('notify.passSaveFailed', 'Kunne ikke lagre passordet i nøkkelringen.'))
+    return false
+  }
+  // Never keep the plaintext in the DOM once it is safely in the keychain.
+  if (input) input.value = ''
+  toast('success', t('notify.passSaved', 'Passordet er lagret i nøkkelringen.'))
+  await refreshEmailGate()
+  return true
+}
+
+/**
+ * The e-mail card — driven by the REAL `email_status` + keychain state.
+ *
+ * History: the send path sat behind a cargo feature that shipped in no release,
+ * so this card honestly said «Ikke tilgjengelig». The feature is in `default`
+ * now, so the card is live — and being live is not cosmetic: `applyFeatureGate`
+ * makes every gated section `inert`, and this section's controls are the
+ * recipient field, the SMTP fields and the enable toggle. Gating it "until it
+ * is configured" would have made it impossible to configure. So the gate now
+ * fires ONLY for a build that genuinely cannot send, and "not set up yet" is a
+ * hint line next to «Test e-post» that leaves everything usable.
+ */
+async function refreshEmailGate(): Promise<void> {
+  // Several things ask for a refresh (page setup, applying settings, every
+  // `after:` hook, saving the password), so two runs can easily overlap. Read
+  // ALL the async facts first, drop the result if a newer run has started, and
+  // paint in one synchronous block — otherwise two interleaved runs each paint
+  // half the card and it ends up describing a state that never existed. (Seen
+  // for real: the password row said "not stored" while the hint line said the
+  // transport was ready.)
+  const seq = ++emailGateSeq
+  const [stored, status] = await Promise.all([
+    window.api.emailHasSmtpPassword().catch(() => false),
+    // A failed status check is not a send path — fall back to the pessimistic
+    // answer rather than to the previous one.
+    window.api.emailStatus().catch(() => ({ featureBuilt: false, gmailConnected: false })),
+  ])
+  if (seq !== emailGateSeq) return
+
+  paintSmtpPasswordState(stored)
+  const facts: EmailFacts = {
+    featureBuilt: !!status.featureBuilt,
+    gmailConnected: !!status.gmailConnected,
+    smtpConfigured: !!(settings.emailSmtp ?? '').trim() && !!(settings.emailSmtpUser ?? '').trim(),
+    // A password typed but not yet saved still authenticates: the backend
+    // prefers the request's over the keychain's (`resolve_smtp_password`).
+    smtpPasswordAvailable: stored || !!passField()?.value.trim(),
   }
 
-  const gate = emailGateStatus(facts)
   applyFeatureGate('email-notify-card', {
-    status: gate,
-    chipText: gate === 'unavailable'
-      ? t('gate.chipUnavailable', 'Ikke tilgjengelig')
-      : t('gate.chipUnconfigured', 'Ikke konfigurert'),
-    explanation: gate === 'unavailable'
-      ? t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
-      : t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.'),
+    status: emailGateStatus(facts),
+    chipText: t('gate.chipUnavailable', 'Ikke tilgjengelig'),
+    explanation: t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.'),
   })
 
   // «Send test» is enabled ONLY when a transport exists and we know where to
-  // send it. The recipient check lives in the same pure helper as the gate.
+  // send it. The reason it is not is stated out loud rather than left as a
+  // tooltip on a dead button.
   const recipient = (document.getElementById('email-address') as HTMLInputElement | null)?.value.trim()
     ?? settings.emailAddress ?? ''
+  const reason = emailBlockReason(facts, !!recipient)
+  const hintText =
+    reason === 'noTransport'
+      ? t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.')
+      : reason === 'noRecipient'
+        ? t('notify.gateTestNoRecipient', 'Skriv inn en mottakeradresse først.')
+        : ''
+  const hint = document.getElementById('email-status-hint')
+  if (hint) {
+    hint.textContent = hintText
+    hint.style.display = hintText ? '' : 'none'
+  }
+
   const testBtn = document.getElementById('btn-test-email') as HTMLButtonElement | null
   if (testBtn) {
     const allowed = canSendTestEmail(facts, !!recipient)
     testBtn.disabled = !allowed
-    testBtn.title = allowed
-      ? ''
-      : recipient
-        ? t('notify.gateTestNoTransport', 'Sett opp en sendemetode først.')
-        : t('notify.gateTestNoRecipient', 'Skriv inn en mottakeradresse først.')
-    if (allowed && !testBtn.dataset.wired) {
+    testBtn.title = allowed ? '' : hintText
+    if (!testBtn.dataset.wired) {
       testBtn.dataset.wired = '1'
       testBtn.addEventListener('click', () => void sendTestEmail())
     }
   }
+}
+
+/** Backend error codes worth translating instead of showing raw. Anything else
+ *  is a server/network message the user genuinely needs to read verbatim. */
+function emailErrorText(err: string | undefined): string {
+  if (err?.includes('missing_password')) {
+    return t('notify.errNoPassword', 'Mangler SMTP-passord. Skriv det inn og trykk «Lagre i nøkkelring».')
+  }
+  if (err?.includes('feature_disabled')) {
+    return t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
+  }
+  if (err?.includes('no_config: smtp host')) {
+    return t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com')
+  }
+  return err ?? '—'
 }
 
 /** Send the backend's localized "email works" message through whichever
@@ -212,13 +312,18 @@ async function sendTestEmail(): Promise<void> {
       host: settings.emailSmtp,
       port: settings.emailSmtpPort,
       user: settings.emailSmtpUser,
-      pass: (document.getElementById('email-pass') as HTMLInputElement | null)?.value || undefined,
-      from: settings.emailSmtpUser || recipient,
+      // Send the typed password only when there IS one; `undefined` lets the
+      // backend fall back to the keychain, which is the normal case (the field
+      // is emptied as soon as the password is stored).
+      pass: passField()?.value.trim() ? passField()?.value : undefined,
+      // Likewise for the sender: blank means "derive it" backend-side, which
+      // reproduces the old `emailSmtpUser || recipient` exactly.
+      from: (settings.emailSmtpFrom ?? '').trim() || undefined,
     })
     toast(res.ok ? 'success' : 'error',
       res.ok
         ? t('notify.testEmailSent', 'Test-e-post sendt til {to}').replace('{to}', recipient)
-        : t('notify.testEmailFailed', 'Test-e-posten gikk ikke gjennom: {err}').replace('{err}', res.error ?? '—'))
+        : t('notify.testEmailFailed', 'Test-e-posten gikk ikke gjennom: {err}').replace('{err}', emailErrorText(res.error)))
   } finally {
     if (btn) btn.disabled = false
   }
@@ -263,23 +368,39 @@ function setupWebhookTest(): void {
 /**
  * The SMTP server card — one of the three EXPLICIT-save exceptions.
  *
- * Host, username and password are a set: applying them one keystroke at a time
- * would leave the alert path pointing at a half-typed server, and the failure
- * would only show up the day a recording actually fails. So this card validates
- * as a unit and writes on «Lagre»; «Avbryt» puts the stored values back.
+ * Host, username, sender and password are a set: applying them one keystroke at
+ * a time would leave the alert path pointing at a half-typed server, and the
+ * failure would only show up the day a recording actually fails. So this card
+ * validates as a unit and writes on «Lagre»; «Avbryt» puts the stored values
+ * back. The password takes a different route from the rest — the OS keychain,
+ * not the settings blob — but «Lagre» still flushes it, because a user who
+ * types a password and presses Lagre must not have it silently discarded.
  */
 function setupSmtpCard(): void {
   const host = document.getElementById('email-smtp') as HTMLInputElement | null
   const user = document.getElementById('email-user') as HTMLInputElement | null
+  const from = document.getElementById('email-from') as HTMLInputElement | null
   const pass = document.getElementById('email-pass') as HTMLInputElement | null
   const saveBtn   = document.getElementById('btn-smtp-save')
   const cancelBtn = document.getElementById('btn-smtp-cancel')
   if (!host || !saveBtn) return
 
+  // A typed password counts as a transport even before it is saved, so the test
+  // button must react to it — but only on the EDGE (empty ↔ filled), since a
+  // full refresh costs two IPC round-trips and this fires per keystroke.
+  let passWasFilled = false
+  pass?.addEventListener('input', () => {
+    const filled = !!pass.value.trim()
+    if (filled === passWasFilled) return
+    passWasFilled = filled
+    void refreshEmailGate()
+  })
+
   saveBtn.addEventListener('click', async () => {
     clearFieldErrors(document.getElementById('email-smtp-advanced'))
     const hostVal = host.value.trim()
     const userVal = user?.value.trim() ?? ''
+    const fromVal = from?.value.trim() ?? ''
     // An empty card is a valid state: it means "no SMTP, use Gmail".
     if (hostVal && !/^[\w.-]+\.[a-z]{2,}$/i.test(hostVal)) {
       setFieldError(host, t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com'))
@@ -289,18 +410,29 @@ function setupSmtpCard(): void {
       setFieldError(user, t('notify.errSmtpUser', 'Brukernavnet er e-postadressen du sender fra'))
       return
     }
+    if (fromVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromVal)) {
+      setFieldError(from, t('notify.errEmail', 'Skriv en gyldig e-postadresse, f.eks. navn@kirke.no'))
+      return
+    }
     patchSettings({
       emailSmtp:     hostVal,
       emailSmtpUser: userVal,
+      emailSmtpFrom: fromVal,
+      // Runtime-only mirror (stripped before persistence) — the real password
+      // goes to the keychain just below.
       emailSmtpPass: pass?.value ?? '',
       emailSmtpPort: +((document.getElementById('email-port') as HTMLInputElement | null)?.value ?? 587),
     })
     const ok = await window.api.saveSettings(settings).catch(() => false)
     if (!ok) { toast('error', t('general.saveFailed', 'Kunne ikke lagre innstillingen')); return }
+    // Flush a typed password to the keychain as part of the same set. Its own
+    // toast covers the outcome, so only report the field save when there was
+    // nothing to flush.
+    if (pass?.value.trim()) await saveSmtpPassword()
+    else showSavedChip(saveBtn.parentElement)
     if (pass) pass.value = ''
-    showSavedChip(saveBtn.parentElement)
-    // A newly-filled SMTP server can flip the gate from «ikke konfigurert» to
-    // usable — re-check rather than making the user reopen the tab.
+    // A newly-filled SMTP server can flip «Test e-post» from blocked to
+    // pressable — re-check rather than making the user reopen the tab.
     void refreshEmailGate()
   })
 
@@ -308,7 +440,10 @@ function setupSmtpCard(): void {
     clearFieldErrors(document.getElementById('email-smtp-advanced'))
     setVal('email-smtp', settings.emailSmtp ?? '')
     setVal('email-user', settings.emailSmtpUser ?? '')
+    setVal('email-from', settings.emailSmtpFrom ?? '')
     setVal('email-port', settings.emailSmtpPort ?? 587)
+    // «Avbryt» discards the TYPED password only. A password already in the
+    // keychain is not touched — that is what «Fjern» is for.
     if (pass) pass.value = ''
   })
 }
@@ -337,9 +472,15 @@ function wireUpdateIpcListeners(): void {
       if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
     }
   }
+  // The update download's bar + remaining time. Attached on the first progress
+  // event and torn down when the download ends, so a second round starts with a
+  // fresh rate estimate rather than the previous download's.
+  let updateUi: ProgressHandle | null = null
   const hideProgress = (): void => {
-    const wrap = document.getElementById('update-progress-wrap')
-    if (wrap) wrap.style.display = 'none'
+    updateUi?.destroy()
+    updateUi = null
+    const host = document.getElementById('update-progress-host')
+    if (host) host.style.display = 'none'
   }
 
   updateIpcUnsubs.push(window.api.on('update-checking',          () => setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))))
@@ -365,10 +506,12 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-download-progress', (prog: unknown) => {
     const pct  = Math.round((prog as { percent?: number }).percent ?? 0)
-    const wrap = document.getElementById('update-progress-wrap')
-    const bar  = document.getElementById('update-progress-bar') as HTMLElement | null
-    if (wrap) wrap.style.display = 'block'
-    if (bar)  bar.style.width   = pct + '%'
+    const host = document.getElementById('update-progress-host')
+    if (host) {
+      host.style.display = 'block'
+      if (!updateUi) updateUi = attachProgress(host, { compact: true })
+      updateUi.update(Math.max(0, Math.min(1, pct / 100)), t('update.btnDownloading', 'Laster ned…'))
+    }
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
     setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
     setToastProgress(pct)
@@ -436,15 +579,16 @@ export function applyGeneralSettingsToUI(): void {
   setVal('email-smtp',    settings.emailSmtp      ?? '')
   setVal('email-port',    settings.emailSmtpPort  ?? 587)
   setVal('email-user',    settings.emailSmtpUser  ?? '')
+  setVal('email-from',    settings.emailSmtpFrom  ?? '')
   setVal('webhook-url',   settings.webhookUrl     ?? '')
   setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarn)
+  // The password never comes back from storage — the field starts empty and the
+  // «lagret» state is read from the OS keychain, not from a settings flag. (It
+  // used to read `settings.emailSmtpPassSet`, an Electron-era field the Tauri
+  // backend never wrote, so the row could never show that a password existed.)
   const passInput = document.getElementById('email-pass') as HTMLInputElement | null
-  const clearBtn  = document.getElementById('btn-clear-smtp-pass') as HTMLElement | null
-  if (passInput) {
-    passInput.value = ''
-    passInput.placeholder = settings.emailSmtpPassSet ? '••••••••' : ''
-  }
-  if (clearBtn) clearBtn.style.display = settings.emailSmtpPassSet ? 'inline' : 'none'
+  if (passInput) passInput.value = ''
+  void refreshEmailGate()
   toggleEmailSection()
   // Best-effort — failures are non-fatal (the SMTP path still works).
   void refreshGmailStatus()

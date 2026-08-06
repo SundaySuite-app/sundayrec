@@ -98,7 +98,6 @@
     "nextShort": "nächste",
     "wakesLead": "({min} Min. vorher)",
     "openInEditor": "Im Editor öffnen",
-    "thumbComing": "Episodenbild folgt — wird noch nicht verwendet",
     "prerollActive": "Vorlauf-Puffer aktiv ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Notiz hinzufügen",
     "editNote": "Notiz bearbeiten",
     "notePlaceholder": "Notiz schreiben…",
-    "deleteEntry": "Eintrag löschen",
     "ok": "Abgeschlossen",
     "noteCancel": "Abbrechen",
     "noteDesc": "Schreiben Sie eine Notiz zu dieser Aufnahme (optional)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "1 fehlerhaften Eintrag löschen?",
     "confirmDeleteErrorsN": "{n} fehlerhafte Einträge löschen?",
     "emptyFiltered": "Keine Aufnahmen in diesem Filter"
+  },
+  "trash": {
+    "title": "Papierkorb",
+    "open": "Papierkorb",
+    "back": "← Zurück zum Verlauf",
+    "emptyAll": "Papierkorb leeren",
+    "keepNote": "Gelöschte Aufnahmen bleiben 30 Tage hier. Danach sind sie endgültig weg.",
+    "empty": "Der Papierkorb ist leer.",
+    "alreadyEmpty": "Der Papierkorb ist leer",
+    "deleteEntry": "In den Papierkorb verschieben",
+    "movedOne": "«{name}» liegt im Papierkorb",
+    "movedN": "{n} Aufnahmen liegen im Papierkorb",
+    "undo": "Rückgängig",
+    "undoFailed": "Es konnte nicht alles zurückgeholt werden — sieh im Papierkorb nach.",
+    "clearHistoryBody": "Die Aufnahmen wandern in den Papierkorb und bleiben dort {d} Tage, bevor sie endgültig gelöscht werden.",
+    "deleteErrorsBody": "{n} fehlerhafte Einträge werden entfernt. Vorhandene Dateien wandern in den Papierkorb.",
+    "restore": "Wiederherstellen",
+    "restoreFailed": "Wiederherstellen fehlgeschlagen",
+    "deleteForever": "Endgültig löschen",
+    "confirmPurgeOne": "«{name}» endgültig löschen?",
+    "confirmEmptyN": "{n} Aufnahmen endgültig löschen?",
+    "confirmEmptyBody": "Die Dateien werden von der Festplatte gelöscht. Das lässt sich nicht rückgängig machen.",
+    "deletedAt": "Gelöscht",
+    "today": "heute",
+    "yesterday": "gestern",
+    "daysAgo": "vor {n} Tagen",
+    "daysLeft": "noch {n} Tage",
+    "dueNow": "wird beim nächsten Aufräumen gelöscht",
+    "related": "+ {n} zugehörige Dateien"
   },
   "review": {
     "queueTitle": "Bereit zur Prüfung und Veröffentlichung",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Geben Sie die Uhrzeit als HH:MM an, z. B. 11:00.",
     "errSameTime": "Die Stoppzeit darf nicht mit der Startzeit übereinstimmen.",
     "errMaxRange": "Die maximale Dauer muss zwischen 1 und 480 Minuten liegen.",
-    "prerollEnabledTitle": "Vorlauf-Puffer aktivieren (experimentell)",
-    "prerollEnabledDesc": "Der Puffer hält das Mikrofon dauerhaft im Hintergrund geöffnet. Das kann die Live-Pegelanzeigen auf Start und Livestream stören, die dasselbe Mikrofon nutzen. Aktivieren Sie ihn, wenn Sie die Sekunden vor dem Tastendruck brauchen — die Startseite zeigt an, wenn der Puffer läuft."
+    "prerollEnabledTitle": "Vorlauf-Puffer aktivieren",
+    "prerollEnabledDesc": "Der Puffer hält das Mikrofon dauerhaft im Hintergrund geöffnet. Solange er läuft, speist er auch die Pegelanzeigen auf Start und Livestream, die also weiterhin funktionieren. Aktivieren Sie ihn, wenn Sie die Sekunden vor dem Tastendruck brauchen — die Startseite zeigt an, wenn der Puffer läuft."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Nicht gefunden",
     "diagFfmpegOk": "Verfügbar",
     "diagLoopback": "WASAPI-Loopback",
-    "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht"
+    "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht",
+    "benchJudging": "Messung wird ausgewertet …"
   },
   "files": {
     "saveFolder": "Speicherordner",
@@ -594,6 +622,7 @@
     "analyzeSpeech": "Sprachsegmente",
     "analyzeMusic": "Musiksegmente",
     "analyzeSilence": "Stille",
+    "layersNotAnalyzed": "Führe «Aufnahme analysieren» unter Schnittwerkzeuge aus, um hier Sprache, Musik und Stille zu sehen.",
     "markSermon": "↦ Predigt automatisch markieren",
     "markSermonHint": "Schneidet alles vor und nach dem hervorgehobenen Predigtblock weg.",
     "sermonPickerLabel": "Ist dies nicht die Predigt?",
@@ -607,6 +636,10 @@
     "willBeTrimmed": "wird entfernt",
     "willRemain": "Predigt verbleiben",
     "analyzedAt": "Zuletzt analysiert",
+    "tabsAria": "Werkzeuge für die Aufnahme",
+    "tabAudio": "Audio",
+    "tabContent": "Inhalt",
+    "tabClip": "Schnittwerkzeuge",
     "speechSegments": "Sprachsegmente gefunden",
     "ioTitle": "Intro & Outro",
     "ioDragHint": "— oder Datei auf die Zeitleiste ziehen",
@@ -868,6 +901,13 @@
     "days": "Tage"
   },
   "notify": {
+    "prerollDead": "Der Vorlaufpuffer funktioniert nicht — Ton von vor dem Drücken der Aufnahmetaste wird nicht gesichert.",
+    "cloudUploadFailed": "Die Cloud-Sicherung ist fehlgeschlagen: {file}",
+    "cloudReauthRequired": "Der Cloud-Speicher muss neu verbunden werden — melden Sie sich unter Einstellungen erneut an.",
+    "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
+    "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
+    "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
+    "reviewOverdue": "Eine Folge wartet seit {days} Tagen auf Durchsicht: {episode}",
     "systemTitle": "Systembenachrichtigungen",
     "emailTitle": "E-Mail-Benachrichtigungen",
     "smtpServer": "E-MAIL-DIENST (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "BENUTZERNAME (E-MAIL-ADRESSE)",
     "smtpPass": "PASSWORT / APP-PASSWORT",
     "smtpPassHint": "Gmail benötigt ein „App-Passwort\" aus den Kontosicherheitseinstellungen.",
+    "smtpFrom": "ABSENDERADRESSE (OPTIONAL)",
+    "smtpFromHint": "Leer lassen, um vom Benutzernamen oben zu senden.",
+    "savePassToKeychain": "Im Schlüsselbund speichern",
+    "smtpPassStored": "Das Passwort ist im Schlüsselbund dieses Computers gespeichert.",
+    "smtpPassSaved": "••••••••  (gespeichert)",
+    "passEmpty": "Geben Sie zuerst das Passwort ein.",
+    "passSaved": "Das Passwort wurde im Schlüsselbund gespeichert.",
+    "passSaveFailed": "Das Passwort konnte nicht im Schlüsselbund gespeichert werden.",
+    "passCleared": "Das Passwort wurde aus dem Schlüsselbund entfernt.",
+    "passClearFailed": "Das Passwort konnte nicht aus dem Schlüsselbund entfernt werden.",
+    "errNoPassword": "Es ist kein SMTP-Passwort hinterlegt. Geben Sie es ein und klicken Sie auf „Im Schlüsselbund speichern“.",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Senden Sie Benachrichtigungen zusätzlich zur E-Mail an einen Chat-Kanal. Webhook-URL aus Slack, Discord oder Teams einfügen.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
     "fitAll": "Gesamte Datei anzeigen",
-    "kbdHints": "Tastenkürzel anzeigen"
+    "kbdHints": "Tastenkürzel anzeigen",
+    "timelineLayers": "Was die Zeitleiste zeigt"
   },
   "publish": {
     "descPlaceholder": "z. B. Gottesdienste der Beispiel-Kirche, jeden Sonntag um 11",
@@ -1032,11 +1084,18 @@
     "overlays": "Overlays — Grafiken und Präsentation",
     "overlaysDesc": "Lege Logo, Liedtexte aus EasyWorship (via Bildschirmaufnahme auf gleicher Maschine) oder andere Grafiken über das gesendete Bild. Overlays wirken nur auf den Livestream — Aufnahmen bleiben sauber.",
     "addOverlay": "+ Overlay hinzufügen",
-    "gateStats": "Statistiken sind noch nicht verfügbar — der Livestream meldet in dieser Version weder Bitrate noch Bildrate oder verlorene Bilder an die App zurück.",
     "blockedNoDestinations": "Es ist noch kein Ziel eingerichtet — fügen Sie YouTube, Facebook oder einen eigenen RTMP-Server hinzu.",
     "blockedNoEnabled": "Kein Ziel ist eingeschaltet. Aktivieren Sie mindestens eines in der Liste oben.",
     "blockedNoKey": "Dem Ziel fehlt der Stream-Key. Ohne ihn lassen YouTube/Facebook die Übertragung nicht durch.",
-    "blockedGoSettings": "Teilen → Veröffentlichen öffnen"
+    "blockedGoSettings": "Teilen → Veröffentlichen öffnen",
+    "statusStopped": "Gestoppt",
+    "qualityReduced": "Qualität reduziert, um den Stream stabil zu halten.",
+    "notRigVerified": "Livestreaming ist noch nicht auf echter Technik verifiziert — probiere es an einem Wochentag aus, bevor du dich sonntags darauf verlässt.",
+    "errFeatureDisabled": "Diese Version der App kann nicht livestreamen. Alles andere funktioniert normal — aktualisiere auf eine neuere Version, um live zu gehen.",
+    "errNoCamera": "Keine Kamera gefunden. Prüfe, ob sie angeschlossen ist, und wähle sie unter Einstellungen → Video.",
+    "errAlreadyActive": "Ein Livestream läuft bereits.",
+    "errInvalidDestination": "Ein Ziel ist falsch konfiguriert — prüfe RTMP-Adresse und Stream-Key unter Teilen → Veröffentlichung.",
+    "errSpawnFailed": "Die Video-Engine (ffmpeg) konnte nicht gestartet werden. Starte die App neu und sag Bescheid, falls es wieder passiert."
   },
   "transcript": {
     "title": "Transkription",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Unbekanntes Modell",
     "exportTxt": "↧ Text",
     "exportDone": "Transkript gespeichert",
-    "exportFailed": "Das Transkript konnte nicht gespeichert werden"
+    "exportFailed": "Das Transkript konnte nicht gespeichert werden",
+    "cancelling": "Wird abgebrochen…",
+    "preparingModel": "Modell wird vorbereitet…"
   },
   "companion": {
     "title": "Predigthilfe",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "Soll die Aufnahme von selbst starten?",
     "autostartConfirm": "Autostart einschalten",
     "gmailDisconnectTitle": "Google-Konto trennen?",
-    "clearHistoryBody": "Die Aufnahmedateien selbst bleiben erhalten — nur die Liste wird gelöscht. Sie können dies nicht rückgängig machen.",
-    "deleteErrorsBody": "{n} fehlerhafte Einträge werden aus der Liste entfernt. Sie können dies nicht rückgängig machen.",
     "autoDeleteTitle": "Aufnahmen automatisch löschen?",
     "autoDeleteConfirm": "Ja, automatisch löschen",
     "wakeTestTitle": "Aufwachen aus dem Ruhezustand testen?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "Die Aufnahme bleibt erhalten, wird aber nicht veröffentlicht.",
     "discardEpisode": "Verwerfen",
     "publishFailedTitle": "Veröffentlichung fehlgeschlagen",
-    "deleteEntryTitle": "„{name}“ aus der Liste entfernen?",
-    "deleteEntryBody": "Die Aufnahmedatei selbst bleibt auf der Festplatte — nur der Listeneintrag wird entfernt. Sie können dies nicht rückgängig machen.",
-    "deleteEntryBodyPair": "Sowohl die Audio- als auch die Videodatei bleiben auf der Festplatte — nur die beiden Listeneinträge werden entfernt. Sie können dies nicht rückgängig machen.",
     "discardFailedTitle": "Die Folge konnte nicht verworfen werden"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Wer benachrichtigt wird, wenn eine Aufnahme startet, endet oder fehlschlägt."
   },
   "gate": {
-    "chipComing": "In Arbeit",
     "chipUnconfigured": "Nicht eingerichtet",
-    "chipUnavailable": "Nicht verfügbar",
-    "comingExplanation": "{what} ist noch nicht gebaut. Das Feld steht hier, weil die Funktion geplant ist — bis dahin bewirken die Schaltflächen nichts und sind deshalb deaktiviert."
+    "chipUnavailable": "Nicht verfügbar"
   },
   "health": {
     "micDenied": "Mikrofonzugriff ist verweigert. Öffnen Sie Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon und aktivieren Sie SundayRec.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Im Editor öffnen",
     "captionsNoRecording": "Untertitel empfangen, aber ohne Angabe, zu welcher Aufnahme sie gehören. Öffnen Sie die Aufnahme im Editor und importieren Sie den Text dort.",
     "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}"
+  },
+  "progress": {
+    "etaCalculating": "wird berechnet …",
+    "etaUnder10s": "unter 10 s übrig",
+    "etaSeconds": "noch ca. {n} s",
+    "etaMinutes": "noch ca. {n} Min.",
+    "etaHours": "noch ca. {h} Std.",
+    "etaHoursMinutes": "noch ca. {h} Std. {m} Min.",
+    "preparing": "Wird vorbereitet …"
   }
 }

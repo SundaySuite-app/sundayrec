@@ -764,9 +764,13 @@
             </div>
             <div class="live-stat">
               <div class="live-stat-label" data-i18n="live.dropped">Tapte rammer</div>
-              <div class="live-stat-value" id="live-stat-dropped">0</div>
+              <div class="live-stat-value" id="live-stat-dropped">—</div>
             </div>
           </div>
+          <!-- The supervisor's commentary: reconnect attempts, a destination
+               that dropped, an adaptive quality step-down. Maintained in the
+               Rust status from the start; until Fase 6 it had nowhere to go. -->
+          <div class="live-stats-note" id="live-stats-note" style="display:none"></div>
         </div>
 
         <div class="card live-destinations-card">
@@ -838,6 +842,13 @@
            reason known only to updateStartButtonState(). -->
       <div class="blocked-reason" id="live-start-reason" style="display:none"></div>
       <div class="live-error" id="live-error" style="display:none"></div>
+      <!-- Said out loud rather than discovered on a Sunday: the RTMP push has
+           never been run against a real camera and a real ingest endpoint. The
+           feature ships (a button that raises `feature_disabled` is worse than
+           an honest one), and this line is the rest of the truth. -->
+      <div class="live-action-note" data-i18n="live.notRigVerified">
+        Direktesending er ikke riggverifisert ennå — prøv den på en vanlig ukedag før du stoler på den en søndag.
+      </div>
       <div class="live-action-hint" data-i18n="live.alsoRecordHint">
         Lokal opptaksfil havner i Siste opptak når strømmen stopper —
         høyere bitrate enn livestreamen, klar for redigering eller podkast.
@@ -948,11 +959,10 @@
           <button type="button" class="btn-secondary btn-sm" id="btn-audio-diagnose" data-i18n="audio.diagnose">Diagnose</button>
           <span class="health-status" id="health-status-settings" style="margin-left:8px;font-size:13px;color:var(--text3);align-self:center"></span>
         </div>
-        <!-- Shared progress bar for test-recording (determinate, an ESTIMATE)
-             and the capture bench (indeterminate + elapsed seconds). -->
-        <div class="health-progress" id="health-progress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100">
-          <div class="health-progress-fill" id="health-progress-fill"></div>
-        </div>
+        <!-- Shared bar for test-recording (a determinate ESTIMATE, so no time
+             claim beside it) and the capture bench (a real 60 s countdown, then
+             indeterminate for the probe tail). Built by ui/progress.ts. -->
+        <div id="health-progress-host" class="health-progress-host" style="display:none"></div>
         <ul id="preflight-findings-settings" style="display:none;list-style:none;margin:8px 0 0 0;padding:0;font-size:13px"></ul>
       </div>
 
@@ -1200,8 +1210,8 @@
         </div>
         <div class="toggle-row">
           <div>
-            <div class="toggle-title" data-i18n="schedule.prerollEnabledTitle">Aktiver forhåndsbuffer (eksperimentell)</div>
-            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen hele tiden i bakgrunnen. Det kan forstyrre de levende nivåmålerne på Hjem og Direktesending, som bruker samme mikrofon. Slå den på hvis du trenger sekundene før knappetrykket — Hjem viser når bufferen kjører.</div>
+            <div class="toggle-title" data-i18n="schedule.prerollEnabledTitle">Aktiver forhåndsbuffer</div>
+            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem og Direktesending, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører.</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-preroll-enabled" /><span class="toggle-track"></span></label>
         </div>
@@ -1610,12 +1620,23 @@
               <div class="form-hint" data-i18n="notify.smtpHint">Gmail: smtp.gmail.com · Outlook: smtp.office365.com</div>
               <label class="form-label mt" data-i18n="notify.smtpUser">BRUKERNAVN (E-POSTADRESSE)</label>
               <input type="text" class="form-input" id="email-user" placeholder="din@epost.no" />
+              <!-- Optional explicit sender. Blank = brukernavnet (som før). Trengs
+                   når innloggingsnavnet ikke er en postkasse (SendGrid: «apikey»)
+                   eller leverandøren krever en verifisert avsender. -->
+              <label class="form-label mt" data-i18n="notify.smtpFrom">AVSENDERADRESSE (VALGFRITT)</label>
+              <input type="email" class="form-input" id="email-from" placeholder="opptak@kirke.no" />
+              <div class="form-hint" data-i18n="notify.smtpFromHint">La stå tom for å sende fra brukernavnet over.</div>
               <label class="form-label mt" data-i18n="notify.smtpPass">PASSORD / APP-PASSORD</label>
+              <!-- The password goes to the OS keychain (macOS Keychain / Windows
+                   Credential Manager) via email_set_smtp_password — never to
+                   localStorage, never into the settings blob. -->
               <div class="pass-row">
-                <input type="password" class="form-input" id="email-pass" />
+                <input type="password" class="form-input" id="email-pass" autocomplete="off" />
+                <button type="button" class="btn-secondary btn-sm" id="btn-save-smtp-pass" data-i18n="notify.savePassToKeychain">Lagre i nøkkelring</button>
                 <button type="button" class="btn-link" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
               </div>
               <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
+              <div class="form-hint" id="email-pass-state" style="display:none" data-i18n="notify.smtpPassStored">Passordet er lagret i nøkkelringen på denne maskinen.</div>
               <input type="hidden" id="email-port" value="587" />
               <!-- EXPLICIT SAVE: host + brukernavn + passord virker bare som et
                    sett. Auto-lagring per tastetrykk ville pekt varsel-stien mot
@@ -1627,9 +1648,12 @@
             </div>
           </details>
 
-          <!-- Enabled/disabled by the feature gate from the REAL email_status,
-               not by a hardcoded attribute: it is pressable exactly when a
-               transport exists and there is a recipient. -->
+          <!-- Enabled/disabled from the REAL email_status + keychain state, not
+               by a hardcoded attribute: pressable exactly when a transport
+               exists and there is a recipient. When it is NOT pressable the
+               hint below says which of the two is missing — the card itself
+               stays live, because these fields are how you fix it. -->
+          <div class="form-hint" id="email-status-hint" style="margin-top:12px"></div>
           <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled data-i18n="general.testEmail">Test e-post</button>
         </div>
       </div>
@@ -1880,9 +1904,8 @@
           <span class="update-status-dot" id="update-status-dot"></span>
           <span id="update-status-text" class="update-status-text">—</span>
         </div>
-        <div class="update-progress-wrap" id="update-progress-wrap" style="display:none">
-          <div class="update-progress-bar" id="update-progress-bar"></div>
-        </div>
+        <!-- Download bar + «ca. 40 s igjen», from ui/progress.ts. -->
+        <div id="update-progress-host" class="update-progress-host" style="display:none"></div>
         <div class="toggle-row" style="margin-top:8px">
           <div>
             <div class="toggle-title" data-i18n="general.autoUpdate">Oppdater automatisk</div>
@@ -2054,6 +2077,14 @@
         spellcheck="false"
       />
       <button class="btn-secondary btn-sm" id="btn-search-reindex" data-i18n="search.reindex">↻ Oppdater indeks</button>
+      <!-- Label + count are written from TS (history.ts), so it can say
+           «Papirkurv (3)» and stay hidden while the trash is empty. It lives up
+           here rather than in the table's own header because after «Slett
+           alle» the table is replaced by an empty state — and the way back to
+           the recordings you just deleted must not be inside the thing that
+           disappeared. -->
+      <a href="#" class="view-all" id="btn-trash-open" style="display:none"
+         title="Papirkurv" data-i18n-title="trash.open">Papirkurv</a>
     </div>
 
     <div id="search-index-status" class="search-index-status"></div>
@@ -2094,6 +2125,21 @@
         </tr></thead>
         <tbody id="history-tbody"></tbody>
       </table>
+    </div>
+
+    <!-- Papirkurv. Takes the place of the history table while it is open —
+         the search box above filters recordings, not trash, and leaving it
+         over a list it does not touch would be a small lie. -->
+    <div id="trash-view" class="trash-view" style="display:none">
+      <div class="section-header">
+        <h2 data-i18n="trash.title">Papirkurv</h2>
+        <div style="display:flex;gap:10px;align-items:center">
+          <a href="#" class="view-all" id="btn-trash-empty" data-i18n="trash.emptyAll">Tøm papirkurven</a>
+          <button class="btn-ghost btn-sm" id="btn-trash-close" data-i18n="trash.back">← Tilbake til historikken</button>
+        </div>
+      </div>
+      <p class="trash-note" data-i18n="trash.keepNote">Slettede opptak ligger her i 30 dager. Etter det forsvinner de for godt.</p>
+      <div id="trash-list" class="trash-list"></div>
     </div>
 
     <div id="search-empty" class="search-empty" style="display:none">
@@ -2152,6 +2198,8 @@
       <!-- Extra line, filled by the loader only when a step takes real time
            (transcoding a playback proxy). Silent waits read as a hang. -->
       <div id="editor-loading-detail" class="editor-loading-detail" style="display:none"></div>
+      <!-- …and a real bar under it once the backend reports a fraction. -->
+      <div id="editor-loading-progress" class="editor-loading-progress" style="display:none"></div>
     </div>
 
     <!-- Workspace -->
@@ -2258,6 +2306,48 @@
             <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3z"/></svg>
           </button>
         </div>
+
+        <!-- What the timeline draws. This is a VIEW setting, not a task, so it
+             belongs on the toolbar next to zoom — it used to be three
+             checkboxes inside the «Analyser opptak» card, where it read as
+             part of the analysis job rather than as a way of looking at it. -->
+        <div class="editor-view-menu" id="editor-view-menu">
+          <button class="btn-editor-tool" id="btn-editor-view-menu" type="button"
+                  aria-expanded="false" aria-haspopup="true" aria-controls="editor-view-popover"
+                  title="Hva vises på tidslinjen" data-i18n-title="tooltip.timelineLayers">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M10 3l7 3.5-7 3.5-7-3.5L10 3z" stroke-linejoin="round"/>
+              <path d="M3 10.5L10 14l7-3.5M3 14L10 17.5 17 14" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="editor-view-popover" id="editor-view-popover" hidden
+               role="group" aria-labelledby="editor-view-popover-title">
+            <div class="editor-view-popover-title" id="editor-view-popover-title"
+                 data-i18n="editor.analyzeShowOnTimeline">På tidslinjen vises:</div>
+            <div id="editor-analyze-controls" class="editor-analyze-controls" style="display:none">
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-speech" checked />
+                <span class="editor-analyze-swatch" style="background:rgba(72,187,120,0.35)"></span>
+                <span data-i18n="editor.analyzeSpeech">Tale-segmenter</span>
+              </label>
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-music" checked />
+                <span class="editor-analyze-swatch" style="background:rgba(99,179,237,0.4)"></span>
+                <span data-i18n="editor.analyzeMusic">Musikk-segmenter</span>
+              </label>
+              <label class="editor-analyze-toggle">
+                <input type="checkbox" id="editor-show-silence" />
+                <span class="editor-analyze-swatch" style="background:rgba(150,150,160,0.25)"></span>
+                <span data-i18n="editor.analyzeSilence">Stillhet</span>
+              </label>
+            </div>
+            <!-- Before the recording has been analysed there is nothing to draw,
+                 and an empty popover would read as broken. -->
+            <div class="editor-view-popover-empty" id="editor-view-popover-empty"
+                 data-i18n="editor.layersNotAnalyzed">Kjør «Analyser opptak» under Klipp-verktøy for å se tale, musikk og stillhet her.</div>
+          </div>
+        </div>
+
         <div class="editor-drag-hint" data-i18n="editor.dragHint">Klikk og dra for å markere et kutt</div>
         <button class="btn-ghost btn-sm" id="btn-editor-undo-all" data-i18n="editor.cutsNone" style="display:none">Fjern alle kutt</button>
         <button class="btn-editor-tool btn-editor-kbd-toggle" id="btn-editor-kbd-toggle" type="button"
@@ -2285,7 +2375,71 @@
         <canvas id="editor-canvas" class="editor-canvas"></canvas>
       </div>
 
-      <!-- Lydnivå: peak normalization (Premiere-style "Normalize Max Peaks") -->
+      <!-- Auto-trim suggestion banner (shown after auto-analyse completes).
+           ALWAYS visible: the auto-run happens on file open, and a suggestion
+           the operator only sees after picking the right tab is a suggestion
+           they never see. Its tab gets a badge instead (tabs.ts). -->
+      <div id="editor-suggestion-banner" class="editor-suggestion-banner" style="display:none">
+        <div class="editor-suggestion-icon">✨</div>
+        <div class="editor-suggestion-body">
+          <div class="editor-suggestion-title" data-i18n="editor.suggestionTitle">Forslag klart</div>
+          <div class="editor-suggestion-detail" id="editor-suggestion-detail"></div>
+        </div>
+        <div class="editor-suggestion-actions">
+          <button class="btn-primary btn-sm" id="btn-suggestion-apply" data-i18n="editor.suggestionApply">Bruk forslag</button>
+          <button class="btn-ghost btn-sm" id="btn-suggestion-dismiss" data-i18n="editor.suggestionDismiss">Lukk</button>
+        </div>
+      </div>
+
+      <!-- Cut list -->
+      <div class="editor-cuts-panel" id="editor-cuts-panel" style="display:none">
+        <div class="editor-cuts-header" data-i18n="editor.cutsTitle">Kuttede regioner</div>
+        <div id="editor-cuts-list"></div>
+      </div>
+
+      <!-- Remaining duration after cuts -->
+      <div id="editor-remaining" class="editor-remaining" style="display:none">
+        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
+        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
+        <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
+      </div>
+
+      <!-- ── Workspace tabs ──────────────────────────────────────────────
+           Everything below the waveform used to be a vertical stack of eight
+           cards, several of them empty most of the time. The owner's word for
+           it was «rotete». The stack is now three tabs; what stays outside
+           them is what you always need while cutting: transport, minimap,
+           toolbar, waveform, the cut list and the pinned export bar.
+
+           The panels are MOUNTED at all times — switching a tab flips
+           `hidden`, nothing is created or destroyed, so peaks, the transcript,
+           the mastering job and the cover-art panel all survive a switch. -->
+      <div class="editor-tabs" id="editor-tabs" role="tablist"
+           aria-label="Verktøy for opptaket" data-i18n-aria-label="editor.tabsAria">
+        <button type="button" class="editor-tab active" role="tab" id="editor-tab-audio"
+                data-tab="audio" aria-selected="true" aria-controls="editor-tabpanel-audio" tabindex="0">
+          <span data-i18n="editor.tabAudio">Lyd</span>
+        </button>
+        <button type="button" class="editor-tab" role="tab" id="editor-tab-content"
+                data-tab="content" aria-selected="false" aria-controls="editor-tabpanel-content" tabindex="-1">
+          <span data-i18n="editor.tabContent">Innhold</span>
+        </button>
+        <button type="button" class="editor-tab" role="tab" id="editor-tab-clip"
+                data-tab="clip" aria-selected="false" aria-controls="editor-tabpanel-clip" tabindex="-1">
+          <span data-i18n="editor.tabClip">Klipp-verktøy</span>
+          <!-- Lit when a detection suggestion arrives while this tab is not the
+               active one, so the badge is the only thing that has to be seen. -->
+          <span class="editor-tab-badge" id="editor-tab-badge-clip" hidden></span>
+        </button>
+      </div>
+
+      <!-- ── Tab: Lyd ─────────────────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-audio" role="tabpanel" aria-labelledby="editor-tab-audio">
+
+      <!-- Lydnivå: peak normalization (Premiere-style "Normalize Max Peaks").
+           A control ROW, not a card: it is one button and one line of status,
+           and wrapping that in its own bordered panel made a single toggle look
+           like a section of the app. -->
       <div id="editor-normalize-panel" class="editor-normalize-panel">
         <button class="btn-normalize" id="btn-normalize-peak" type="button">
           <svg class="btn-normalize-icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
@@ -2298,7 +2452,7 @@
         <!-- Honesty note: preview streams the ORIGINAL file through the media
              element, which has no gain stage — the normalize gain is an export
              filter. Saying so beats a user turning it up and hearing nothing. -->
-        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
+        <span class="editor-normalize-export-hint" id="editor-normalize-export-hint" style="display:none" data-i18n="editor.normalizeExportHint">Normalisering høres ved eksport, ikke i forhåndslytting.</span>
       </div>
 
       <!-- Intro/Outro panel (collapsible — primary path is drag-and-drop onto timeline) -->
@@ -2354,11 +2508,52 @@
         </div>
       </div>
 
-      <!-- Cut list -->
-      <div class="editor-cuts-panel" id="editor-cuts-panel" style="display:none">
-        <div class="editor-cuts-header" data-i18n="editor.cutsTitle">Kuttede regioner</div>
-        <div id="editor-cuts-list"></div>
+      <!-- Mastering, SECONDARY surface. The primary way to master is the
+           Lydforbedring section inside the Eksporter dialog, which masters on
+           the way out. This panel writes a separate `_mastert` file and stays
+           for that flow only — so it is collapsed by default and says where
+           the main path is. -->
+      <div id="editor-master-section" class="editor-master-section editor-master-section--collapsed" style="display:none">
+        <div class="editor-master-header" id="editor-master-header" role="button" tabindex="0"
+             aria-expanded="false">
+          <svg class="editor-master-chevron" id="editor-master-chevron" viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:.6"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
+          <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
+        </div>
+        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
+
+        <div class="editor-master-preset-row">
+          <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
+          <select id="master-preset-select" class="form-input form-input-sm"></select>
+        </div>
+        <div id="master-preset-desc" class="editor-master-desc"></div>
+
+        <div class="editor-master-actions">
+          <button class="btn-ghost btn-sm" id="btn-master-preview" data-i18n="master.preview">Lytt på forhåndsvisning</button>
+          <button class="btn-ghost btn-sm" id="btn-master-listen-orig" data-i18n="master.previewListenOrig" style="display:none">Lytt original</button>
+          <button class="btn-primary btn-sm" id="btn-master-apply" data-i18n="master.apply">Mastre fil</button>
+          <button class="btn-ghost btn-sm" id="btn-master-cancel" data-i18n="master.cancel" style="display:none">Avbryt</button>
+        </div>
+
+        <div id="master-status-row" class="editor-master-status" style="display:none">
+          <div id="master-progress-host" class="editor-export-progress-host"></div>
+        </div>
+
+        <div id="master-result-row" class="editor-master-result" style="display:none">
+          <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
+          <span id="master-result-text"></span>
+          <button class="btn-ghost btn-sm" id="btn-master-open-folder" data-i18n="master.openFolder" style="display:none">Åpne mappe</button>
+          <button class="btn-ghost btn-sm" id="btn-master-listen-done" data-i18n="master.listen" style="display:none">Lytt</button>
+        </div>
+
+        <audio id="master-preview-audio" style="display:none" controls></audio>
       </div>
+
+      </div><!-- /tabpanel -->
+
+
+      <!-- ── Tab: Innhold ────────────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-content" role="tabpanel" aria-labelledby="editor-tab-content" hidden>
 
       <!-- Metadata panel -->
       <div class="editor-meta-panel" id="editor-meta-panel">
@@ -2385,68 +2580,6 @@
           </div>
           <button class="btn-ghost btn-sm" id="btn-meta-save" data-i18n="editor.metaSave">Lagre metadata</button>
         </div>
-      </div>
-
-      <!-- Analyse panel (merged: segments + chapters) -->
-      <div class="editor-chapters-panel" id="editor-segments-panel">
-        <div class="editor-chapters-header">
-          <div class="editor-chapters-title">
-            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M3 6a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3z" clip-rule="evenodd"/></svg>
-            <span data-i18n="editor.analyzeTitle">Analyser opptak</span>
-          </div>
-          <button class="btn-ghost btn-sm" id="btn-stage-import" style="display:none" title="Importer kapitler fra SundayStage cue-logg">↧ Stage-kapitler</button>
-          <button class="btn-primary btn-sm" id="btn-detect-segments" data-i18n="editor.analyzeRun">▶ Analyser opptak</button>
-        </div>
-        <div class="editor-analyze-body" id="editor-analyze-body">
-          <div id="editor-segments-analyzing" style="display:none" class="editor-segments-analyzing">
-            <span class="editor-segments-spinner"></span> <span data-i18n="editor.analyzing">Analyserer…</span>
-          </div>
-          <div id="editor-analyze-summary" class="editor-analyze-summary" style="display:none"></div>
-          <div id="editor-analyze-controls" class="editor-analyze-controls" style="display:none">
-            <div class="editor-analyze-controls-title" data-i18n="editor.analyzeShowOnTimeline">På tidslinjen vises:</div>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-speech" checked />
-              <span class="editor-analyze-swatch" style="background:rgba(72,187,120,0.35)"></span>
-              <span data-i18n="editor.analyzeSpeech">Tale-segmenter</span>
-            </label>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-music" checked />
-              <span class="editor-analyze-swatch" style="background:rgba(99,179,237,0.4)"></span>
-              <span data-i18n="editor.analyzeMusic">Musikk-segmenter</span>
-            </label>
-            <label class="editor-analyze-toggle">
-              <input type="checkbox" id="editor-show-silence" />
-              <span class="editor-analyze-swatch" style="background:rgba(150,150,160,0.25)"></span>
-              <span data-i18n="editor.analyzeSilence">Stillhet</span>
-            </label>
-          </div>
-          <button class="btn-ghost btn-sm" id="btn-apply-auto-trim" style="display:none" data-i18n="editor.markSermon">↦ Marker preken automatisk</button>
-          <div id="editor-auto-trim-hint" class="editor-analyze-hint" style="display:none" data-i18n="editor.markSermonHint">Trimmer alt før og etter den uthevede preken-blokken.</div>
-          <div id="editor-sermon-picker-wrap" class="editor-sermon-picker-wrap" style="display:none">
-            <label class="editor-sermon-picker-lbl" data-i18n="editor.sermonPickerLabel">Er ikke dette prekenen?</label>
-            <select id="editor-sermon-picker" class="editor-sermon-picker"></select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Auto-trim suggestion banner (shown after auto-analyse completes) -->
-      <div id="editor-suggestion-banner" class="editor-suggestion-banner" style="display:none">
-        <div class="editor-suggestion-icon">✨</div>
-        <div class="editor-suggestion-body">
-          <div class="editor-suggestion-title" data-i18n="editor.suggestionTitle">Forslag klart</div>
-          <div class="editor-suggestion-detail" id="editor-suggestion-detail"></div>
-        </div>
-        <div class="editor-suggestion-actions">
-          <button class="btn-primary btn-sm" id="btn-suggestion-apply" data-i18n="editor.suggestionApply">Bruk forslag</button>
-          <button class="btn-ghost btn-sm" id="btn-suggestion-dismiss" data-i18n="editor.suggestionDismiss">Lukk</button>
-        </div>
-      </div>
-
-      <!-- Remaining duration after cuts -->
-      <div id="editor-remaining" class="editor-remaining" style="display:none">
-        <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
-        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
-        <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
       </div>
 
       <!-- Transcription panel -->
@@ -2480,6 +2613,70 @@
         <div id="editor-companion-body" class="editor-companion-body"></div>
       </div>
 
+      <!-- Episode-bilde (cover art) — between mastering and save bar -->
+      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
+        <div class="editor-master-header">
+          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
+          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
+        </div>
+        <div class="thumb-panel">
+          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
+            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
+          </div>
+          <div class="thumb-side">
+            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
+            <div class="thumb-info" id="editor-thumb-info"></div>
+            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
+            <div class="thumb-button-row">
+              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
+              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
+              <button class="btn-ghost btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
+      </div>
+
+      </div><!-- /tabpanel -->
+
+
+      <!-- ── Tab: Klipp-verktøy ──────────────────────────────────────── -->
+      <div class="editor-tabpanel" id="editor-tabpanel-clip" role="tabpanel" aria-labelledby="editor-tab-clip" hidden>
+
+      <!-- Analyse panel (merged: segments + chapters) -->
+      <div class="editor-chapters-panel" id="editor-segments-panel">
+        <div class="editor-chapters-header">
+          <div class="editor-chapters-title">
+            <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M3 6a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3z" clip-rule="evenodd"/></svg>
+            <span data-i18n="editor.analyzeTitle">Analyser opptak</span>
+          </div>
+          <button class="btn-ghost btn-sm" id="btn-stage-import" style="display:none" title="Importer kapitler fra SundayStage cue-logg">↧ Stage-kapitler</button>
+          <button class="btn-primary btn-sm" id="btn-detect-segments" data-i18n="editor.analyzeRun">▶ Analyser opptak</button>
+        </div>
+        <div class="editor-analyze-body" id="editor-analyze-body">
+          <div id="editor-segments-analyzing" style="display:none" class="editor-segments-analyzing">
+            <span class="editor-segments-spinner"></span> <span data-i18n="editor.analyzing">Analyserer…</span>
+          </div>
+          <!-- Analysis is a second full pass over the recording; on a service it
+               runs for minutes. The bar + ETA go here. -->
+          <div id="editor-analyze-progress" class="editor-analyze-progress" style="display:none"></div>
+          <button class="btn-ghost btn-sm" id="btn-apply-auto-trim" style="display:none" data-i18n="editor.markSermon">↦ Marker preken automatisk</button>
+          <div id="editor-auto-trim-hint" class="editor-analyze-hint" style="display:none" data-i18n="editor.markSermonHint">Trimmer alt før og etter den uthevede preken-blokken.</div>
+          <div id="editor-sermon-picker-wrap" class="editor-sermon-picker-wrap" style="display:none">
+            <label class="editor-sermon-picker-lbl" data-i18n="editor.sermonPickerLabel">Er ikke dette prekenen?</label>
+            <select id="editor-sermon-picker" class="editor-sermon-picker"></select>
+          </div>
+          <!-- «Sist analysert 31.5 14:23 · 3 tale-segmenter funnet». A receipt,
+               not a heading — it used to open the card in full-size body text. -->
+          <div id="editor-analyze-summary" class="editor-analyze-summary" style="display:none"></div>
+        </div>
+      </div>
+
+      </div><!-- /tabpanel -->
+
+      <!-- Transcribe dialogs. Direct children of the workspace, not of a
+           tab panel: a modal inside a `hidden` panel is a modal that never
+           opens. -->
       <!-- Transcribe modal: choose model + language -->
       <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-modal-title">
         <div class="modal modal-sm transcribe-modal">
@@ -2524,91 +2721,18 @@
           <div class="modal-header">
             <span class="modal-title" id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</span>
           </div>
-          <div class="transcribe-progress-bar-wrap">
-            <div id="transcribe-progress-bar" class="transcribe-progress-bar"></div>
-          </div>
-          <div id="transcribe-progress-text" class="transcribe-progress-text"></div>
+          <!-- Bar + percentage + «ca. 2 min igjen», built by ui/progress.ts. -->
+          <div id="transcribe-progress-host"></div>
           <div class="modal-actions">
             <button class="btn-ghost" id="btn-transcribe-progress-cancel" data-i18n="transcript.cancel">Avbryt</button>
           </div>
         </div>
       </div>
 
-      <!-- Mastering, SECONDARY surface. The primary way to master is the
-           Lydforbedring section inside the Eksporter dialog, which masters on
-           the way out. This panel writes a separate `_mastert` file and stays
-           for that flow only — so it is collapsed by default and says where
-           the main path is. -->
-      <div id="editor-master-section" class="editor-master-section editor-master-section--collapsed" style="display:none">
-        <div class="editor-master-header" id="editor-master-header" role="button" tabindex="0"
-             aria-expanded="false">
-          <svg class="editor-master-chevron" id="editor-master-chevron" viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:.6"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-          <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
-          <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
-        </div>
-        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
-
-        <div class="editor-master-preset-row">
-          <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
-          <select id="master-preset-select" class="form-input form-input-sm"></select>
-        </div>
-        <div id="master-preset-desc" class="editor-master-desc"></div>
-
-        <div class="editor-master-actions">
-          <button class="btn-ghost btn-sm" id="btn-master-preview" data-i18n="master.preview">Lytt på forhåndsvisning</button>
-          <button class="btn-ghost btn-sm" id="btn-master-listen-orig" data-i18n="master.previewListenOrig" style="display:none">Lytt original</button>
-          <button class="btn-primary btn-sm" id="btn-master-apply" data-i18n="master.apply">Mastre fil</button>
-          <button class="btn-ghost btn-sm" id="btn-master-cancel" data-i18n="master.cancel" style="display:none">Avbryt</button>
-        </div>
-
-        <div id="master-status-row" class="editor-master-status" style="display:none">
-          <div class="editor-export-progress-bar-wrap">
-            <div class="editor-export-progress-bar" id="master-progress-bar"></div>
-          </div>
-          <span class="editor-export-progress-label" id="master-status-label">…</span>
-        </div>
-
-        <div id="master-result-row" class="editor-master-result" style="display:none">
-          <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
-          <span id="master-result-text"></span>
-          <button class="btn-ghost btn-sm" id="btn-master-open-folder" data-i18n="master.openFolder" style="display:none">Åpne mappe</button>
-          <button class="btn-ghost btn-sm" id="btn-master-listen-done" data-i18n="master.listen" style="display:none">Lytt</button>
-        </div>
-
-        <audio id="master-preview-audio" style="display:none" controls></audio>
-      </div>
-
-      <!-- Episode-bilde (cover art) — between mastering and save bar -->
-      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
-        <div class="editor-master-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
-          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
-        </div>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="editor-thumb-info"></div>
-            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
-      </div>
-
       <!-- Save bar -->
       <div class="editor-save-bar">
         <div id="editor-export-progress-row" class="editor-export-progress-row" style="display:none">
-          <div class="editor-export-progress-bar-wrap">
-            <div class="editor-export-progress-bar" id="editor-export-progress-bar"></div>
-          </div>
-          <span class="editor-export-progress-label" id="editor-export-progress-label">Eksporterer…</span>
+          <div id="editor-export-progress-host" class="editor-export-progress-host"></div>
           <button class="btn-ghost btn-sm" id="btn-editor-export-cancel" data-i18n="editor.exportCancel">Avbryt</button>
         </div>
         <div id="editor-result-row" class="editor-result-row" style="display:none">

@@ -98,7 +98,6 @@
     "nextShort": "następne",
     "wakesLead": "({min} min wcześniej)",
     "openInEditor": "Otwórz w edytorze",
-    "thumbComing": "Okładka odcinka wkrótce — jeszcze nieużywana",
     "prerollActive": "Bufor wstępny aktywny ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Dodaj notatkę",
     "editNote": "Edytuj notatkę",
     "notePlaceholder": "Wpisz notatkę…",
-    "deleteEntry": "Usuń wpis",
     "ok": "Ukończone",
     "noteCancel": "Anuluj",
     "noteDesc": "Napisz notatkę do tego nagrania (opcjonalnie)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "Usunąć 1 wpis z błędem?",
     "confirmDeleteErrorsN": "Usunąć {n} wpisów z błędem?",
     "emptyFiltered": "Brak nagrań w tym filtrze"
+  },
+  "trash": {
+    "title": "Kosz",
+    "open": "Kosz",
+    "back": "← Wróć do historii",
+    "emptyAll": "Opróżnij kosz",
+    "keepNote": "Usunięte nagrania leżą tu 30 dni. Potem znikają na dobre.",
+    "empty": "Kosz jest pusty.",
+    "alreadyEmpty": "Kosz jest pusty",
+    "deleteEntry": "Przenieś do kosza",
+    "movedOne": "«{name}» jest w koszu",
+    "movedN": "{n} nagrań jest w koszu",
+    "undo": "Cofnij",
+    "undoFailed": "Nie udało się przywrócić wszystkiego — sprawdź kosz.",
+    "clearHistoryBody": "Nagrania trafiają do kosza, gdzie leżą {d} dni, zanim zostaną usunięte na dobre.",
+    "deleteErrorsBody": "{n} błędnych wpisów zostaje usuniętych. Istniejące pliki trafiają do kosza.",
+    "restore": "Przywróć",
+    "restoreFailed": "Nie udało się przywrócić",
+    "deleteForever": "Usuń na dobre",
+    "confirmPurgeOne": "Usunąć «{name}» na dobre?",
+    "confirmEmptyN": "Usunąć {n} nagrań na dobre?",
+    "confirmEmptyBody": "Pliki zostaną usunięte z dysku. Tego nie da się cofnąć.",
+    "deletedAt": "Usunięto",
+    "today": "dzisiaj",
+    "yesterday": "wczoraj",
+    "daysAgo": "{n} dni temu",
+    "daysLeft": "pozostało {n} dni",
+    "dueNow": "zniknie przy następnym porządkowaniu",
+    "related": "+ {n} powiązanych plików"
   },
   "review": {
     "queueTitle": "Gotowe do przeglądu i publikacji",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Wpisz godzinę w formacie GG:MM, np. 11:00.",
     "errSameTime": "Godzina zakończenia nie może być taka sama jak rozpoczęcia.",
     "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut.",
-    "prerollEnabledTitle": "Włącz bufor wstępny (eksperymentalny)",
-    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Może to zakłócać wskaźniki poziomu na ekranie Start i Transmisja, które korzystają z tego samego mikrofonu. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia przycisku — ekran Start pokazuje, kiedy bufor działa."
+    "prerollEnabledTitle": "Włącz bufor wstępny",
+    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Gdy działa, to on zasila wskaźniki poziomu na ekranie Start i Transmisja, więc działają one jak wcześniej. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia nagrywania — ekran Start pokazuje, kiedy bufor działa."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Nie znaleziono",
     "diagFfmpegOk": "Dostępny",
     "diagLoopback": "Pętla WASAPI",
-    "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator"
+    "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator",
+    "benchJudging": "Analizowanie pomiaru …"
   },
   "files": {
     "saveFolder": "Folder zapisu",
@@ -594,6 +622,7 @@
     "analyzeSpeech": "Segmenty mowy",
     "analyzeMusic": "Segmenty muzyki",
     "analyzeSilence": "Cisza",
+    "layersNotAnalyzed": "Uruchom «Analizuj nagranie» w Narzędziach cięcia, aby zobaczyć tu mowę, muzykę i ciszę.",
     "markSermon": "↦ Zaznacz kazanie automatycznie",
     "markSermonHint": "Przycina wszystko przed i po wyróżnionym bloku kazania.",
     "sermonPickerLabel": "Czy to nie kazanie?",
@@ -607,6 +636,10 @@
     "willBeTrimmed": "zostanie usunięte",
     "willRemain": "kazania pozostaje",
     "analyzedAt": "Ostatnio analizowane",
+    "tabsAria": "Narzędzia nagrania",
+    "tabAudio": "Dźwięk",
+    "tabContent": "Treść",
+    "tabClip": "Narzędzia cięcia",
     "speechSegments": "znaleziono segmentów mowy",
     "ioTitle": "Intro i outro",
     "ioDragHint": "— lub przeciągnij plik na oś czasu",
@@ -868,6 +901,13 @@
     "days": "dni"
   },
   "notify": {
+    "prerollDead": "Bufor wstępny nie działa — dźwięk sprzed naciśnięcia nagrywania nie jest zachowywany.",
+    "cloudUploadFailed": "Kopia zapasowa w chmurze nie powiodła się: {file}",
+    "cloudReauthRequired": "Magazyn w chmurze wymaga ponownego połączenia — zaloguj się ponownie w ustawieniach.",
+    "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
+    "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
+    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
+    "reviewOverdue": "Odcinek czeka na przegląd od {days} dni: {episode}",
     "systemTitle": "Powiadomienia systemowe",
     "emailTitle": "Powiadomienia e-mail",
     "smtpServer": "USŁUGA E-MAIL (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "NAZWA UŻYTKOWNIKA (E-MAIL)",
     "smtpPass": "HASŁO / HASŁO APLIKACJI",
     "smtpPassHint": "Gmail wymaga „Hasła aplikacji\" w ustawieniach bezpieczeństwa konta.",
+    "smtpFrom": "ADRES NADAWCY (OPCJONALNIE)",
+    "smtpFromHint": "Pozostaw puste, aby wysyłać z nazwy użytkownika powyżej.",
+    "savePassToKeychain": "Zapisz w pęku kluczy",
+    "smtpPassStored": "Hasło jest zapisane w pęku kluczy na tym komputerze.",
+    "smtpPassSaved": "••••••••  (zapisane)",
+    "passEmpty": "Najpierw wpisz hasło.",
+    "passSaved": "Hasło zostało zapisane w pęku kluczy.",
+    "passSaveFailed": "Nie udało się zapisać hasła w pęku kluczy.",
+    "passCleared": "Hasło zostało usunięte z pęku kluczy.",
+    "passClearFailed": "Nie udało się usunąć hasła z pęku kluczy.",
+    "errNoPassword": "Brak hasła SMTP. Wpisz je i kliknij „Zapisz w pęku kluczy”.",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Wysyłaj powiadomienia do kanału czatu oprócz e-maila. Wklej URL webhooka z Slack, Discord lub Teams.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Powiększ",
     "zoomOut": "Pomniejsz",
     "fitAll": "Pokaż cały plik",
-    "kbdHints": "Pokaż skróty klawiszowe"
+    "kbdHints": "Pokaż skróty klawiszowe",
+    "timelineLayers": "Co pokazuje oś czasu"
   },
   "publish": {
     "descPlaceholder": "Np. Nabożeństwa z Kościoła Przykładowego, w każdą niedzielę o 11",
@@ -1032,11 +1084,18 @@
     "overlays": "Nakładki — grafika i prezentacja",
     "overlaysDesc": "Dodaj logo kościoła, słowa z EasyWorship (przez przechwytywanie ekranu na tej samej maszynie) lub inną grafikę na obrazie transmisji. Nakładki wpływają tylko na transmisję — nagrania są czyste.",
     "addOverlay": "+ Dodaj nakładkę",
-    "gateStats": "Statystyki nie są jeszcze dostępne — transmisja nie raportuje w tej wersji bitrate’u, liczby klatek ani klatek utraconych.",
     "blockedNoDestinations": "Nie skonfigurowano jeszcze celu — dodaj YouTube, Facebooka lub własny serwer RTMP.",
     "blockedNoEnabled": "Żaden cel nie jest włączony. Włącz przynajmniej jeden na liście powyżej.",
     "blockedNoKey": "Cel nie ma klucza transmisji. Bez niego YouTube/Facebook nie wpuszczą sygnału.",
-    "blockedGoSettings": "Otwórz Udostępnianie → Publikowanie"
+    "blockedGoSettings": "Otwórz Udostępnianie → Publikowanie",
+    "statusStopped": "Zatrzymano",
+    "qualityReduced": "Obniżona jakość, aby transmisja pozostała stabilna.",
+    "notRigVerified": "Transmisja na żywo nie została jeszcze sprawdzona na prawdziwym sprzęcie — wypróbuj ją w dzień powszedni, zanim zaufasz jej w niedzielę.",
+    "errFeatureDisabled": "Ta wersja aplikacji nie obsługuje transmisji na żywo. Wszystko inne działa normalnie — zaktualizuj do nowszej wersji, aby nadawać na żywo.",
+    "errNoCamera": "Nie znaleziono kamery. Sprawdź, czy jest podłączona, i wybierz ją w Ustawienia → Wideo.",
+    "errAlreadyActive": "Transmisja na żywo już trwa.",
+    "errInvalidDestination": "Jedno z miejsc docelowych jest źle skonfigurowane — sprawdź adres RTMP i klucz transmisji w Udostępnianie → Publikowanie.",
+    "errSpawnFailed": "Nie udało się uruchomić silnika wideo (ffmpeg). Uruchom aplikację ponownie i daj znać, jeśli powtórzy się to ponownie."
   },
   "transcript": {
     "title": "Transkrypcja",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Nieznany model",
     "exportTxt": "↧ Tekst",
     "exportDone": "Transkrypcja zapisana",
-    "exportFailed": "Nie udało się zapisać transkrypcji"
+    "exportFailed": "Nie udało się zapisać transkrypcji",
+    "cancelling": "Anulowanie…",
+    "preparingModel": "Przygotowywanie modelu…"
   },
   "companion": {
     "title": "Asystent kazania",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "Czy nagranie ma ruszyć samo?",
     "autostartConfirm": "Włącz autostart",
     "gmailDisconnectTitle": "Odłączyć konto Google?",
-    "clearHistoryBody": "Same pliki nagrań pozostają — usuwana jest tylko ich lista. Tej operacji nie można cofnąć.",
-    "deleteErrorsBody": "{n} wpisów z błędem zostanie usuniętych z listy. Tej operacji nie można cofnąć.",
     "autoDeleteTitle": "Usuwać nagrania automatycznie?",
     "autoDeleteConfirm": "Tak, usuwaj automatycznie",
     "wakeTestTitle": "Przetestować wybudzanie z uśpienia?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "Nagranie zostaje, ale nie zostanie opublikowane.",
     "discardEpisode": "Odrzuć",
     "publishFailedTitle": "Nie udało się opublikować",
-    "deleteEntryTitle": "Usunąć „{name}” z listy?",
-    "deleteEntryBody": "Sam plik nagrania pozostaje na dysku — usuwany jest tylko wpis z listy. Tej operacji nie można cofnąć.",
-    "deleteEntryBodyPair": "Plik dźwiękowy i plik wideo pozostają na dysku — usuwane są tylko dwa wpisy z listy. Tej operacji nie można cofnąć.",
     "discardFailedTitle": "Nie udało się odrzucić odcinka"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Kto dostaje powiadomienie, gdy nagranie się zaczyna, kończy lub nie powiedzie."
   },
   "gate": {
-    "chipComing": "Wkrótce",
     "chipUnconfigured": "Nieskonfigurowane",
-    "chipUnavailable": "Niedostępne",
-    "comingExplanation": "{what} nie jest jeszcze gotowe. Panel jest tu, bo funkcja jest planowana — na razie przyciski nic nie robią, więc są wyłączone."
+    "chipUnavailable": "Niedostępne"
   },
   "health": {
     "micDenied": "Odmówiono dostępu do mikrofonu. Otwórz Ustawienia systemowe → Prywatność i ochrona → Mikrofon i włącz SundayRec.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Otwórz w edytorze",
     "captionsNoRecording": "Odebrano napisy, ale bez wskazania, do którego nagrania należą. Otwórz nagranie w edytorze i zaimportuj tekst tam.",
     "captionsFailed": "Nie udało się zapisać napisów: {err}"
+  },
+  "progress": {
+    "etaCalculating": "obliczanie …",
+    "etaUnder10s": "mniej niż 10 s",
+    "etaSeconds": "ok. {n} s pozostało",
+    "etaMinutes": "ok. {n} min pozostało",
+    "etaHours": "ok. {h} godz. pozostało",
+    "etaHoursMinutes": "ok. {h} godz. {m} min pozostało",
+    "preparing": "Przygotowywanie …"
   }
 }

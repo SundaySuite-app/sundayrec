@@ -146,7 +146,7 @@ fn set_status(
 /// Mirrors the channels the Electron `processReminders` fired (tray notify,
 /// email, webhook, in-app warning) — but as a *decision*, so the shell does the
 /// I/O. `body` is the localized message; the shell holds the labels.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReminderChannel {
     /// Tray/native notification only.
     Notify,
@@ -159,6 +159,45 @@ pub enum ReminderChannel {
     /// Auto-discard: a notify + a history note (the shell writes the note).
     AutoDiscard,
 }
+
+impl ReminderChannel {
+    /// Whether this rung wants an e-mail. The NATIVE notification is not asked
+    /// about: every rung fires one, exactly as a failure does — the person at
+    /// the machine is never the one we skip.
+    pub fn wants_email(self) -> bool {
+        matches!(
+            self,
+            Self::NotifyEmail | Self::NotifyEmailWebhook | Self::NotifyEmailWebhookWarning
+        )
+    }
+
+    /// Whether this rung wants the chat/webhook POST (48 h and later — a
+    /// channel that pings on day one for every recording gets muted).
+    pub fn wants_webhook(self) -> bool {
+        matches!(
+            self,
+            Self::NotifyEmailWebhook | Self::NotifyEmailWebhookWarning
+        )
+    }
+
+    /// Whether this rung also wants the in-app warning toast (7 d only: by then
+    /// "somebody should look at this" has become "something is wrong here").
+    pub fn wants_warning(self) -> bool {
+        matches!(self, Self::NotifyEmailWebhookWarning)
+    }
+
+    /// Whether this action is the 14-day auto-discard rather than a reminder.
+    /// The entry is already dropped from [`ReminderOutcome::survivors`]; the
+    /// shell only has to say so.
+    pub fn is_auto_discard(self) -> bool {
+        matches!(self, Self::AutoDiscard)
+    }
+}
+
+/// The auto-discard threshold in whole days — the number the shell puts in the
+/// "discarded automatically after N days" notice, derived from
+/// [`AUTO_DISCARD_MS`] so the sentence cannot drift from the behaviour.
+pub const AUTO_DISCARD_DAYS: i64 = AUTO_DISCARD_MS / DAY_MS;
 
 /// Which localized message a reminder action wants. The shell maps this to the
 /// per-language string (`body24`/`body48`/`body7d`/`bodyDiscard`).
@@ -408,6 +447,43 @@ mod tests {
         assert!(dropped.survivors.is_empty());
         assert!(dropped.changed);
         assert!(dropped.actions.is_empty());
+    }
+
+    #[test]
+    fn the_channel_ladder_only_ever_widens() {
+        // Each rung must be a superset of the one below it — a day-7 reminder
+        // that dropped the e-mail leg would be a quieter escalation than day 2.
+        let rungs = [
+            ReminderChannel::NotifyEmail,
+            ReminderChannel::NotifyEmailWebhook,
+            ReminderChannel::NotifyEmailWebhookWarning,
+        ];
+        for w in rungs.windows(2) {
+            assert!(!w[0].wants_email() || w[1].wants_email());
+            assert!(!w[0].wants_webhook() || w[1].wants_webhook());
+            assert!(!w[0].wants_warning() || w[1].wants_warning());
+        }
+        // And the shape of each rung, pinned.
+        assert!(ReminderChannel::NotifyEmail.wants_email());
+        assert!(!ReminderChannel::NotifyEmail.wants_webhook());
+        assert!(ReminderChannel::NotifyEmailWebhook.wants_webhook());
+        assert!(!ReminderChannel::NotifyEmailWebhook.wants_warning());
+        assert!(ReminderChannel::NotifyEmailWebhookWarning.wants_warning());
+        // Notify-only asks for nothing beyond the native leg every rung fires.
+        assert!(!ReminderChannel::Notify.wants_email());
+        assert!(!ReminderChannel::Notify.wants_webhook());
+        // Auto-discard is not a reminder: no mail, no webhook, just the notice.
+        assert!(ReminderChannel::AutoDiscard.is_auto_discard());
+        assert!(!ReminderChannel::AutoDiscard.wants_email());
+        assert!(!ReminderChannel::NotifyEmail.is_auto_discard());
+    }
+
+    #[test]
+    fn the_auto_discard_day_count_matches_the_threshold() {
+        // The shell prints this number in a sentence; deriving it from the same
+        // constant the decision uses is what keeps the sentence true.
+        assert_eq!(AUTO_DISCARD_DAYS, 14);
+        assert_eq!(AUTO_DISCARD_DAYS * DAY_MS, AUTO_DISCARD_MS);
     }
 
     #[test]

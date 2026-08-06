@@ -265,6 +265,11 @@ export interface Settings {
   emailSmtp: string
   emailSmtpPort: number
   emailSmtpUser: string
+  /** Explicit `From:` address. Empty = derive it backend-side (username, else
+   *  recipient) — exactly what the renderer used to synthesise inline. Needed
+   *  when the SMTP login name is not a mailbox (SendGrid's literal `apikey`) or
+   *  the provider insists on a verified sender. Rust: `Settings.email_smtp_from`. */
+  emailSmtpFrom?: string
   emailSmtpPass: string       // runtime only — always '' in store; real value in emailSmtpPassEnc
   emailSmtpPassSet?: boolean  // populated by main before sending to renderer
   emailSmtpPassEnc?: string   // internal: base64-encoded safeStorage ciphertext
@@ -309,11 +314,12 @@ export interface Settings {
    *  fails is retried once in software, so this only ever affects speed. */
   editorHwEncode?: boolean
 
-  // Episode thumbnail (cover art) — default applies to every published
-  // episode unless overridden by a per-recording sidecar (<name>.thumb.{ext}).
-  // Absolute path under app.getPath('userData')/thumbnails/default.{jpg|png|webp}.
-  // The image is copied here on pick so the source can be moved/deleted later.
-  defaultThumbnailPath?: string | null
+  // (`defaultThumbnailPath` lived here — an Electron-era field describing a
+  // `userData/thumbnails/default.{ext}` layout that the Tauri build never wrote
+  // and never read, and whose per-recording sibling was `<name>.thumb.{ext}`
+  // rather than the `<stem>.cover.{ext}` the real backend uses. The default
+  // cover is now `thumbnail_get_default_info`, so the field described nothing
+  // that existed while contradicting something that does.)
 
   // Cloud backup
   cloudGoogleDrive?: CloudServiceSettings

@@ -44,6 +44,34 @@ pub const MIN_VALID_SEGMENT_BYTES: u64 = 4096;
 /// released and reacquired cleanly.
 pub const RESTART_GAP_MS: u64 = 200;
 
+/// Length (seconds) of ONE segment file in the NATIVE rolling buffer.
+///
+/// The native engine never restarts its capture — the device stays open for the
+/// whole buffer life and the WRITER rotates files instead. The segment length is
+/// therefore only a granularity knob: the retained window overshoots the request
+/// by at most one segment, and a rotation costs one file close + one file open.
+/// 15 s keeps that overshoot small (≤ 6 MB at 48 kHz stereo) while rotating only
+/// four times a minute.
+pub const PREROLL_NATIVE_SEGMENT_S: u32 = 15;
+
+/// How many rotating segment files must be retained to guarantee `window_s`
+/// seconds of audio are always available to harvest.
+///
+/// The NEWEST segment is partially written at any instant (it holds anywhere
+/// from 0 to `segment_s` seconds), so covering the window needs
+/// `ceil(window / segment)` FULL segments plus that partial one — hence the
+/// `+ 1`. With the defaults (90 s window, 15 s segments) that is 7 files.
+pub fn preroll_segments_to_retain(window_s: u32, segment_s: u32) -> usize {
+    let seg = segment_s.max(1);
+    window_s.div_ceil(seg) as usize + 1
+}
+
+/// How many of the OLDEST segments to delete after a rotation, given how many
+/// exist and how many to retain. Zero when the buffer has not filled yet.
+pub fn preroll_segments_to_drop(have: usize, retain: usize) -> usize {
+    have.saturating_sub(retain.max(1))
+}
+
 /// Decide how many milliseconds of the captured segment to keep when harvesting.
 ///
 /// Direct port of the Electron `harvest()` (`preroll.ts:116`):
@@ -84,6 +112,110 @@ pub fn harvest_trim_ms(
 /// defensive against a caller passing an inconsistent pair.
 pub fn preroll_start_offset_ms(captured_ms: u64, trim_ms: u64) -> u64 {
     captured_ms.saturating_sub(trim_ms)
+}
+
+// ── The native harvest: byte-exact slicing out of the rotating segments ──────
+
+/// One contiguous byte range to copy out of ONE rotating segment's PCM payload.
+///
+/// `start`/`len` are offsets into the segment's DATA, not the file — the shell
+/// adds [`crate::wav::HEADER_LEN`] when it seeks. Both are always whole multiples
+/// of the frame size, so a stitched clip can never begin or end mid-frame (which
+/// would swap L/R for the rest of the prepend).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrerollSlice {
+    /// Index into the segment list the slices were computed from.
+    pub segment: usize,
+    /// Byte offset into that segment's PCM payload.
+    pub start: u64,
+    /// How many bytes to copy.
+    pub len: u64,
+}
+
+/// How long the buffer holds, from the EXACT frame count its writer recorded.
+///
+/// The ffmpeg buffer had to time itself with a wall clock (`Instant::elapsed`)
+/// because only ffmpeg knew how much audio it had actually captured. The native
+/// writer counts frames, so the buffer's length is now a fact rather than an
+/// estimate — the 300 ms safety margin in [`harvest_trim_ms`] is kept anyway,
+/// since it costs nothing and preserves parity with the tested behaviour.
+pub fn preroll_captured_ms(frames: u64, sample_rate: u32) -> u64 {
+    if sample_rate == 0 {
+        return 0;
+    }
+    frames.saturating_mul(1_000) / u64::from(sample_rate)
+}
+
+/// How many payload bytes `trim_ms` of audio occupies, rounded DOWN to a whole
+/// frame (never ask for a fraction of a frame).
+pub fn preroll_keep_bytes(trim_ms: u64, sample_rate: u32, bytes_per_frame: u64) -> u64 {
+    let bpf = bytes_per_frame.max(1);
+    let frames = trim_ms.saturating_mul(u64::from(sample_rate)) / 1_000;
+    frames.saturating_mul(bpf)
+}
+
+/// The inverse of [`preroll_keep_bytes`]: how long `kept_bytes` of payload is.
+/// Used to report the clip's REAL length after slicing, so `trim_ms` on the
+/// returned clip describes the bytes that exist rather than the bytes asked for.
+pub fn preroll_kept_ms(kept_bytes: u64, sample_rate: u32, bytes_per_frame: u64) -> u64 {
+    let bpf = bytes_per_frame.max(1);
+    if sample_rate == 0 {
+        return 0;
+    }
+    (kept_bytes / bpf).saturating_mul(1_000) / u64::from(sample_rate)
+}
+
+/// Which bytes of which rotating segments make up the LAST `keep_bytes` of the
+/// buffer.
+///
+/// `data_lens` are the segments' PCM payload lengths in chronological order
+/// (oldest first). The result is in the same order and can be concatenated
+/// verbatim behind a fresh WAV header — that concatenation IS the harvested
+/// clip, with no decode, no re-encode and no ffmpeg.
+///
+/// Everything is clamped to whole frames: each segment contributes only its
+/// whole frames, `keep_bytes` is rounded down, and the resulting cut point
+/// therefore always lands on a frame boundary in every segment it touches.
+///
+/// Returns an empty vec when nothing is worth keeping (no segments, no data, or
+/// a window shorter than one frame) — the caller treats that as "no clip".
+pub fn preroll_tail_slices(
+    data_lens: &[u64],
+    bytes_per_frame: u64,
+    keep_bytes: u64,
+) -> Vec<PrerollSlice> {
+    let bpf = bytes_per_frame.max(1);
+    // Defensive: only whole frames of each segment are addressable.
+    let usable: Vec<u64> = data_lens.iter().map(|&l| l / bpf * bpf).collect();
+    let total: u64 = usable.iter().sum();
+    let keep = keep_bytes.min(total) / bpf * bpf;
+    if keep == 0 {
+        return Vec::new();
+    }
+    // Everything before this byte of the concatenated payload is older than the
+    // window and is skipped.
+    let skip = total - keep;
+
+    let mut out = Vec::new();
+    let mut cum = 0u64;
+    for (i, &len) in usable.iter().enumerate() {
+        if len == 0 {
+            continue;
+        }
+        let end = cum + len;
+        if end <= skip {
+            cum = end;
+            continue;
+        }
+        let start = skip.saturating_sub(cum);
+        out.push(PrerollSlice {
+            segment: i,
+            start,
+            len: len - start,
+        });
+        cum = end;
+    }
+    out
 }
 
 /// Build the ffmpeg arguments for ONE rolling pre-roll capture segment.
@@ -310,6 +442,165 @@ mod tests {
         assert_eq!(preroll_start_offset_ms(1_000, 5_000), 0);
     }
 
+    // ── Native harvest slicing ───────────────────────────────────────────────
+
+    /// 48 kHz stereo s16: 4 bytes per frame, 192 000 bytes per second.
+    const BPF: u64 = 4;
+    const RATE: u32 = 48_000;
+
+    fn slice(segment: usize, start: u64, len: u64) -> PrerollSlice {
+        PrerollSlice {
+            segment,
+            start,
+            len,
+        }
+    }
+
+    #[test]
+    fn captured_ms_comes_from_the_frame_count() {
+        assert_eq!(preroll_captured_ms(48_000, RATE), 1_000);
+        assert_eq!(preroll_captured_ms(0, RATE), 0);
+        // 90 s of 48 kHz.
+        assert_eq!(preroll_captured_ms(4_320_000, RATE), 90_000);
+        // A zero rate can only come from a broken negotiation — no panic.
+        assert_eq!(preroll_captured_ms(48_000, 0), 0);
+    }
+
+    #[test]
+    fn keep_bytes_and_kept_ms_round_trip_on_whole_frames() {
+        // 15 s at 48 kHz stereo = 720 000 frames = 2 880 000 bytes.
+        assert_eq!(preroll_keep_bytes(15_000, RATE, BPF), 2_880_000);
+        assert_eq!(preroll_kept_ms(2_880_000, RATE, BPF), 15_000);
+        // A millisecond that is not a whole number of frames rounds DOWN to
+        // frames, never up (asking for more audio than exists).
+        let odd = preroll_keep_bytes(1, 44_100, BPF); // 44.1 frames → 44
+        assert_eq!(odd, 44 * BPF);
+        assert_eq!(odd % BPF, 0);
+    }
+
+    #[test]
+    fn tail_within_a_single_segment() {
+        // One 4-second segment, keep the last second.
+        let lens = [4 * 192_000u64];
+        let keep = preroll_keep_bytes(1_000, RATE, BPF);
+        assert_eq!(
+            preroll_tail_slices(&lens, BPF, keep),
+            vec![slice(0, 3 * 192_000, 192_000)]
+        );
+    }
+
+    #[test]
+    fn tail_cut_inside_the_middle_segment_drops_the_first() {
+        // Three 1-second segments; keep 1.5 s → all of the last two plus the
+        // second half of the middle one. The first is not referenced at all.
+        let lens = [192_000u64, 192_000, 192_000];
+        let keep = preroll_keep_bytes(1_500, RATE, BPF);
+        assert_eq!(
+            preroll_tail_slices(&lens, BPF, keep),
+            vec![slice(1, 96_000, 96_000), slice(2, 0, 192_000)]
+        );
+    }
+
+    #[test]
+    fn tail_cut_inside_the_last_segment_only() {
+        let lens = [192_000u64, 192_000, 192_000];
+        let keep = preroll_keep_bytes(500, RATE, BPF);
+        assert_eq!(
+            preroll_tail_slices(&lens, BPF, keep),
+            vec![slice(2, 96_000, 96_000)]
+        );
+    }
+
+    #[test]
+    fn tail_cut_exactly_on_a_segment_boundary() {
+        // Keeping exactly the last two segments must not emit a zero-length
+        // slice for the one before it.
+        let lens = [192_000u64, 192_000, 192_000];
+        let keep = preroll_keep_bytes(2_000, RATE, BPF);
+        assert_eq!(
+            preroll_tail_slices(&lens, BPF, keep),
+            vec![slice(1, 0, 192_000), slice(2, 0, 192_000)]
+        );
+    }
+
+    #[test]
+    fn asking_for_more_than_exists_keeps_everything() {
+        let lens = [100u64 * BPF, 50 * BPF];
+        let got = preroll_tail_slices(&lens, BPF, u64::MAX);
+        assert_eq!(got, vec![slice(0, 0, 400), slice(1, 0, 200)]);
+        let kept: u64 = got.iter().map(|s| s.len).sum();
+        assert_eq!(kept, lens.iter().sum::<u64>(), "the whole buffer");
+    }
+
+    #[test]
+    fn a_zero_length_window_yields_no_slices() {
+        let lens = [192_000u64];
+        assert!(preroll_tail_slices(&lens, BPF, 0).is_empty());
+        // Less than one frame is also nothing.
+        assert!(preroll_tail_slices(&lens, BPF, BPF - 1).is_empty());
+        // No segments at all, and segments holding nothing.
+        assert!(preroll_tail_slices(&[], BPF, 192_000).is_empty());
+        assert!(preroll_tail_slices(&[0, 0], BPF, 192_000).is_empty());
+    }
+
+    #[test]
+    fn every_slice_is_frame_aligned_at_both_ends() {
+        // Sweep awkward segment sizes and windows: no slice may start or end
+        // mid-frame, and the kept total is always a whole number of frames.
+        let bpf = 6; // 3-channel s16 — a size nothing divides evenly
+        for lens in [
+            vec![1_000u64, 2_000, 3_000],
+            vec![7u64, 13, 4_001],
+            vec![0u64, 5_555, 0, 1],
+        ] {
+            for keep in [1u64, 5, 999, 3_000, 6_000, 12_345, u64::MAX / 2] {
+                let slices = preroll_tail_slices(&lens, bpf, keep);
+                let mut kept = 0u64;
+                for s in &slices {
+                    assert_eq!(s.start % bpf, 0, "start not frame-aligned: {s:?}");
+                    assert_eq!(s.len % bpf, 0, "len not frame-aligned: {s:?}");
+                    assert!(s.start + s.len <= lens[s.segment], "slice past the segment");
+                    kept += s.len;
+                }
+                assert_eq!(kept % bpf, 0);
+                assert!(kept <= keep / bpf * bpf, "kept more than asked for");
+            }
+        }
+    }
+
+    #[test]
+    fn slices_stay_chronological_and_contiguous() {
+        // The clip is a straight concatenation, so the slices must run oldest →
+        // newest with no gap: every slice after the first starts at 0.
+        let lens = [500u64 * BPF, 300 * BPF, 700 * BPF];
+        let slices = preroll_tail_slices(&lens, BPF, 1_000 * BPF);
+        assert!(slices.windows(2).all(|w| w[0].segment < w[1].segment));
+        assert!(slices.iter().skip(1).all(|s| s.start == 0));
+        // Every slice but the first runs to the end of its segment.
+        for s in &slices {
+            assert_eq!(s.start + s.len, lens[s.segment]);
+        }
+    }
+
+    #[test]
+    fn a_harvest_of_the_real_shape_keeps_the_requested_window() {
+        // The production shape: seven 15 s segments at 48 kHz stereo, the
+        // newest partially filled, harvesting a 30 s pre-roll.
+        let full = 15u64 * 192_000;
+        let lens = vec![full, full, full, full, full, full, full / 3];
+        let frames: u64 = lens.iter().sum::<u64>() / BPF;
+        let captured = preroll_captured_ms(frames, RATE);
+        let trim = harvest_trim_ms(captured, 30, lens.iter().sum()).expect("a usable window");
+        assert_eq!(trim, 30_000);
+        let slices = preroll_tail_slices(&lens, BPF, preroll_keep_bytes(trim, RATE, BPF));
+        let kept: u64 = slices.iter().map(|s| s.len).sum();
+        assert_eq!(preroll_kept_ms(kept, RATE, BPF), 30_000);
+        // 30 s spans the partial newest segment plus two full ones.
+        assert_eq!(slices.len(), 3);
+        assert_eq!(slices[0].segment, 4);
+        assert_eq!(preroll_start_offset_ms(captured, trim), captured - 30_000);
+    }
+
     #[test]
     fn capture_args_mac_audio_only_wav() {
         use crate::ffmpeg::Platform;
@@ -466,6 +757,47 @@ mod tests {
         assert_eq!(preroll_restart_delay(1), 10_000);
         assert_eq!(preroll_restart_delay(2), 20_000);
         assert_eq!(preroll_restart_delay(3), 40_000);
+    }
+
+    #[test]
+    fn retain_covers_the_window_plus_the_partial_segment() {
+        // The production pair: a 90 s window in 15 s files → 6 full + 1 partial.
+        assert_eq!(
+            preroll_segments_to_retain(PREROLL_SEGMENT_CAP_S, PREROLL_NATIVE_SEGMENT_S),
+            7
+        );
+        // Exact division still needs the partial-segment slot.
+        assert_eq!(preroll_segments_to_retain(60, 15), 5);
+        // Non-exact rounds UP before the +1 (a 61 s window needs 5 full files).
+        assert_eq!(preroll_segments_to_retain(61, 15), 6);
+        // Degenerate inputs never panic or return 0.
+        assert_eq!(preroll_segments_to_retain(0, 15), 1);
+        assert_eq!(preroll_segments_to_retain(90, 0), 91);
+    }
+
+    #[test]
+    fn retained_window_always_covers_the_request() {
+        // The invariant that matters: (retain − 1) whole segments ≥ the window,
+        // so a harvest can always reach back the full requested distance.
+        for window in [1u32, 5, 15, 16, 30, 45, 60, 89, 90] {
+            let retain = preroll_segments_to_retain(window, PREROLL_NATIVE_SEGMENT_S);
+            let guaranteed = (retain as u32 - 1) * PREROLL_NATIVE_SEGMENT_S;
+            assert!(
+                guaranteed >= window,
+                "retain {retain} guarantees only {guaranteed}s for a {window}s window"
+            );
+        }
+    }
+
+    #[test]
+    fn drop_only_once_the_buffer_has_filled() {
+        assert_eq!(preroll_segments_to_drop(0, 7), 0);
+        assert_eq!(preroll_segments_to_drop(7, 7), 0);
+        assert_eq!(preroll_segments_to_drop(8, 7), 1);
+        // A long-running buffer that somehow fell behind drops the whole excess.
+        assert_eq!(preroll_segments_to_drop(20, 7), 13);
+        // A nonsense retain of 0 still keeps one file (the one being written).
+        assert_eq!(preroll_segments_to_drop(3, 0), 2);
     }
 
     #[test]

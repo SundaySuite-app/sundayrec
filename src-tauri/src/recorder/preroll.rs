@@ -1,36 +1,46 @@
 //! The pre-roll engine (Fase 3.2) — rolling background audio capture + harvest.
 //!
 //! Pre-roll captures the last N seconds *before* the user presses record so a
-//! manual recording can include audio from before the button press. This module
-//! is the I/O shell over the pure [`sundayrec_core::preroll`] mat: it runs a
-//! continuous, self-restarting ffmpeg WAV-capture loop into a temp file, and on
-//! [`PrerollEngine::harvest`] stops the capture and returns the trimmed clip the
-//! recorder prepends.
+//! manual recording can include audio from before the button press.
+//!
+//! ## Two engines, one facade
+//!
+//! [`PrerollEngine`] is the type the commands hold. It owns BOTH implementations
+//! and picks one per start:
+//!   - [`crate::recorder::native_capture::preroll`] (default) — one cpal stream
+//!     for the whole buffer life, rotating WAV segments, a byte-copy harvest,
+//!     and `vu://levels` emitted from the device it already holds;
+//!   - [`ClassicPrerollEngine`] (this module, behind
+//!     `Settings::classic_ffmpeg_preroll`) — the historic rolling ffmpeg
+//!     capture, kept as an escape hatch for a rig where the native path
+//!     misbehaves.
+//!
+//! Everything below documents the CLASSIC engine.
 //!
 //! ## Architecture — one loop task, a shared handle, a harvest hand-off
 //!
-//! [`PrerollEngine::start`] spawns ONE loop task that, while active:
+//! [`ClassicPrerollEngine::start`] spawns ONE loop task that, while active:
 //!   1. resolves the audio device with the REAL ffmpeg enumerator + the core
 //!      fuzzy match (the same path the recorder uses),
 //!   2. spawns an audio-only `pcm_s16le` WAV capture capped at 90 s
 //!      ([`build_preroll_capture_args`]) into a fresh temp file,
 //!   3. publishes the live handle (proc stdin, temp path, start instant) to the
-//!      shared [`PrerollEngine`] state so `harvest` can grab it,
+//!      shared engine state so `harvest` can grab it,
 //!   4. waits for ffmpeg to exit — the natural 90 s cap → restart after
 //!      [`RESTART_GAP_MS`]; a device/spawn error → restart after the exponential
 //!      [`preroll_restart_delay`] back-off.
 //!
-//! [`PrerollEngine::harvest`] flips the active flag off, takes the live handle,
-//! stops ffmpeg gracefully (`q` on stdin, mirroring the Electron `stopProc`),
-//! measures the captured duration, file size, and asks the core mat whether (and
-//! how much) to keep. On success it re-encodes the kept window into the format
-//! the CALLER asks for ([`build_preroll_trim_args`]) and returns a
+//! [`ClassicPrerollEngine::harvest`] flips the active flag off, takes the live
+//! handle, stops ffmpeg gracefully (`q` on stdin, mirroring the Electron
+//! `stopProc`), measures the captured duration, file size, and asks the core mat
+//! whether (and how much) to keep. On success it re-encodes the kept window into
+//! the format the CALLER asks for ([`build_preroll_trim_args`]) and returns a
 //! [`PrerollClip`].
 //!
 //! ## How the clip is prepended to the recording
 //!
-//! The recorder's start command calls [`PrerollEngine::harvest`] when
-//! `pre_roll_seconds > 0`, asking for the format the recording itself captures
+//! The recorder's start command calls the facade's [`PrerollEngine::harvest`]
+//! when `pre_roll_seconds > 0`, asking for the format the recording captures
 //! in — today `pcm_s16le` in a `.wav`, at the recording's own sample rate and
 //! channel count (see `commands/recorder.rs`). That match is what makes the
 //! prepend LOSSLESS: the supervisor hands the clip to
@@ -57,6 +67,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::ffmpeg::Platform;
+use sundayrec_core::notify::{should_warn_preroll_dead, BackendWarning};
 use sundayrec_core::preroll::{
     build_preroll_capture_args, build_preroll_trim_args, harvest_trim_ms, preroll_restart_delay,
     preroll_start_offset_ms, RESTART_GAP_MS,
@@ -85,13 +96,27 @@ pub struct PrerollSettings {
     /// mirror the main recorder (`Settings::resolved_sample_rate`) so the prepend
     /// concat is a clean `-c copy` — see `sundayrec_core::preroll`.
     pub sample_rate: Option<u32>,
-    /// Output channel count (1 = mono, 2 = stereo).
+    /// Output channel count (1 = mono, 2 = stereo). Derived from
+    /// [`Self::channel_mode`]; the ffmpeg engine addresses channels by count
+    /// (`-ac`), the native one by [`crate::audio::asio::build_route_plan`].
     pub channels: u8,
+    /// The recording's channel layout, for the native engine's route plan. The
+    /// buffer MUST write the same layout the capture will, or the harvested clip
+    /// is dropped by the concat's WAV-compatibility guard.
+    pub channel_mode: sundayrec_core::settings::ChannelMode,
+    /// Explicit input-channel picks (a digital mixer's L/R), mirroring the
+    /// recording's own `RecordingOpts`.
+    pub input_channel_l: Option<i32>,
+    pub input_channel_r: Option<i32>,
+    /// The escape hatch (`Settings::classic_ffmpeg_preroll`): run the legacy
+    /// rolling ffmpeg capture instead of the native buffer. Read once per start,
+    /// so flipping it never changes an engine mid-run.
+    pub classic: bool,
 }
 
 /// A harvested, trimmed pre-roll clip ready to prepend to a recording.
 ///
-/// `raw_path` is the *trimmed* clip produced by [`PrerollEngine::harvest`] in the
+/// `raw_path` is the *trimmed* clip produced by the harvest in the
 /// format the caller requested — the recording's own capture format, so the
 /// prepend is a lossless `-c copy` (today PCM `.wav`; the raw rolling capture it
 /// came from is consumed + deleted during harvest). `trim_ms` and
@@ -111,12 +136,176 @@ pub struct PrerollClip {
     pub start_offset_ms: u64,
 }
 
+/// Which implementation is (or would be) running the buffer.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[ts(export, export_to = "../../src/lib/bindings/PrerollEngineKind.ts")]
+#[serde(rename_all = "lowercase")]
+pub enum PrerollEngineKind {
+    /// The cpal buffer: one stream, rotating segments, byte-copy harvest.
+    Native,
+    /// The legacy rolling ffmpeg capture, behind `classic_ffmpeg_preroll`.
+    Classic,
+}
+
 /// The pre-roll status surfaced to the UI ("preroll aktiv").
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../src/lib/bindings/PrerollStatus.ts")]
 pub struct PrerollStatus {
     /// Whether the rolling capture loop is currently active.
     pub active: bool,
+    /// Which engine is running it (or would, when idle) — diagnostics for a rig
+    /// session, so "pre-roll is on" and "pre-roll is on the OLD path" are
+    /// distinguishable without reading a log.
+    pub engine: PrerollEngineKind,
+    /// The native buffer's negotiated input-channel count while it is streaming
+    /// (0 = idle, retrying, or classic). This is the width of the `vu://levels`
+    /// packets it emits.
+    pub channels: u16,
+}
+
+/// The pre-roll engine the commands hold: BOTH implementations behind one
+/// surface, with the choice made per start from the settings hatch.
+///
+/// The public shape is exactly what `preroll_start`/`preroll_stop`/
+/// `preroll_status`/`start_recording` used before the native engine existed, so
+/// the record-start choreography (harvest → stop → `vu.stop()` → settle →
+/// `engine.start`) is untouched.
+pub struct PrerollEngine {
+    native: crate::recorder::native_capture::preroll::NativePrerollEngine,
+    classic: ClassicPrerollEngine,
+    /// What the hatch said at the last start. Only used to answer `status`
+    /// while the buffer is idle ("which engine WOULD run"); the running engine
+    /// is read from the engines themselves so the two can never disagree.
+    preferred: Mutex<PrerollEngineKind>,
+}
+
+impl PrerollEngine {
+    /// Create both engines over the same temp directory.
+    pub fn new(tmp_dir: std::path::PathBuf) -> Self {
+        Self {
+            native: crate::recorder::native_capture::preroll::NativePrerollEngine::new(
+                tmp_dir.clone(),
+            ),
+            classic: ClassicPrerollEngine::new(tmp_dir),
+            preferred: Mutex::new(PrerollEngineKind::Native),
+        }
+    }
+
+    /// Whether EITHER engine is running the buffer.
+    pub fn is_active(&self) -> bool {
+        self.native.is_active() || self.classic.is_active()
+    }
+
+    /// The native buffer's channel count while it is streaming — the width of
+    /// the `vu://levels` packets it emits, which `start_vu` answers with when it
+    /// adopts the buffer instead of opening a second device.
+    pub fn vu_channels(&self) -> Option<u16> {
+        self.native.vu_channels()
+    }
+
+    /// Current status snapshot for the UI.
+    pub fn status(&self) -> PrerollStatus {
+        let engine = if self.native.is_active() {
+            PrerollEngineKind::Native
+        } else if self.classic.is_active() {
+            PrerollEngineKind::Classic
+        } else {
+            *lock_recover(&self.preferred)
+        };
+        PrerollStatus {
+            active: self.is_active(),
+            engine,
+            channels: self.native.vu_channels().unwrap_or(0),
+        }
+    }
+
+    /// Start the buffer on the engine the hatch selects, stopping the other one
+    /// first — a hatch flipped between starts must never leave the previous
+    /// engine holding the device.
+    ///
+    /// ⚠️ HARDWARE-UNVERIFIED — opens a real input device.
+    pub fn start(&self, app: tauri::AppHandle, settings: PrerollSettings) {
+        let kind = if settings.classic {
+            PrerollEngineKind::Classic
+        } else {
+            PrerollEngineKind::Native
+        };
+        *lock_recover(&self.preferred) = kind;
+        match kind {
+            PrerollEngineKind::Native => {
+                self.classic.stop();
+                self.native.start(app, settings);
+            }
+            PrerollEngineKind::Classic => {
+                self.native.stop();
+                self.classic.start(app, settings);
+            }
+        }
+    }
+
+    /// Stop the buffer without harvesting. Best-effort and non-blocking.
+    pub fn stop(&self) {
+        self.native.stop();
+        self.classic.stop();
+    }
+
+    /// Stop the buffer and wait for the input device to be free.
+    ///
+    /// Exact for the native engine (its stream thread is joined). The classic
+    /// engine can only be asked politely — ffmpeg's release is asynchronous —
+    /// so a short settle stands in, the same grace the record start takes.
+    pub async fn stop_and_release(&self) {
+        let was_classic = self.classic.is_active();
+        self.native.stop_and_release().await;
+        self.classic.stop();
+        if was_classic {
+            tokio::time::sleep(Duration::from_millis(400)).await;
+        }
+    }
+
+    /// Harvest the clip to prepend, from whichever engine is running.
+    ///
+    /// The format arguments describe what the RECORDING captures in. The
+    /// classic engine re-encodes into them; the native engine cannot — it copies
+    /// bytes — but it does not need to: it was started from the same settings,
+    /// so it already holds s16 PCM at the recording's rate and channel layout.
+    /// A request for anything else is refused rather than answered with a clip
+    /// in the wrong format. If the device changed under the buffer, the clip's
+    /// header simply won't match and concat's `wav_prepend_compatible` guard
+    /// drops it — the recording is never at risk.
+    pub async fn harvest(
+        &self,
+        requested_seconds: u32,
+        sample_rate: Option<u32>,
+        channels: u8,
+        audio_codec: &str,
+        bitrate_kbps: Option<u32>,
+        container_ext: &str,
+    ) -> Option<PrerollClip> {
+        if self.native.is_active() {
+            if audio_codec != "pcm_s16le" || container_ext != "wav" {
+                tracing::warn!(
+                    audio_codec,
+                    container_ext,
+                    "preroll(native): asked for a format the byte-copy harvest cannot produce — \
+                     stopping the buffer without a clip"
+                );
+                self.native.stop_and_release().await;
+                return None;
+            }
+            return self.native.harvest(requested_seconds).await;
+        }
+        self.classic
+            .harvest(
+                requested_seconds,
+                sample_rate,
+                channels,
+                audio_codec,
+                bitrate_kbps,
+                container_ext,
+            )
+            .await
+    }
 }
 
 /// The live capture handle the loop publishes so `harvest`/`stop` can reach the
@@ -132,7 +321,7 @@ struct PrerollHandle {
 
 /// Engine handle stored in Tauri-managed state. At most one pre-roll loop runs at
 /// a time; starting again stops the previous one first.
-pub struct PrerollEngine {
+pub struct ClassicPrerollEngine {
     /// `true` while the loop should keep capturing/restarting. Cleared by
     /// `harvest`/`stop` so the loop winds down instead of restarting again.
     active: Arc<AtomicBool>,
@@ -144,7 +333,7 @@ pub struct PrerollEngine {
     tmp_dir: std::path::PathBuf,
 }
 
-impl PrerollEngine {
+impl ClassicPrerollEngine {
     /// Create an engine writing its temp captures under `tmp_dir`. The caller
     /// (lib.rs setup) passes the app-data `tmp` directory.
     pub fn new(tmp_dir: std::path::PathBuf) -> Self {
@@ -161,19 +350,17 @@ impl PrerollEngine {
         self.active.load(Ordering::SeqCst)
     }
 
-    /// Current status snapshot for the UI.
-    pub fn status(&self) -> PrerollStatus {
-        PrerollStatus {
-            active: self.is_active(),
-        }
-    }
-
     /// Start the rolling pre-roll capture loop. Stops any previous loop first.
     /// Returns immediately — the loop runs in the background and self-heals; a
     /// missing device just backs off and retries (pre-roll is best-effort).
     ///
+    /// `app` is carried purely so a loop that has given up can SAY so
+    /// ([`crate::notify::warn`]). Best-effort means best-effort, not silent: the
+    /// Home chip could previously not tell a dead buffer from a disabled one,
+    /// and it hid itself in both cases.
+    ///
     /// ⚠️ HARDWARE-UNVERIFIED — opens a real mic.
-    pub fn start(&self, settings: PrerollSettings) {
+    pub fn start(&self, app: tauri::AppHandle, settings: PrerollSettings) {
         self.stop();
         let _ = std::fs::create_dir_all(&self.tmp_dir);
 
@@ -184,7 +371,7 @@ impl PrerollEngine {
         let platform = detect_platform();
 
         let task = tauri::async_runtime::spawn(async move {
-            capture_loop(active, handle_slot, tmp_dir, platform, settings).await;
+            capture_loop(app, active, handle_slot, tmp_dir, platform, settings).await;
         });
         *lock_recover(&self.task) = Some(task);
     }
@@ -317,6 +504,7 @@ impl PrerollEngine {
 ///
 /// ⚠️ HARDWARE-UNVERIFIED.
 async fn capture_loop(
+    app: tauri::AppHandle,
     active: Arc<AtomicBool>,
     handle_slot: Arc<Mutex<Option<PrerollHandle>>>,
     tmp_dir: std::path::PathBuf,
@@ -324,6 +512,10 @@ async fn capture_loop(
     settings: PrerollSettings,
 ) {
     let mut attempt: u32 = 0;
+    // Whether THIS failure streak has already told the user. Cleared by a
+    // successful spawn below, so a device that comes back and dies again warns
+    // again — but a loop retrying every few seconds for an hour warns once.
+    let mut warned_dead = false;
     while active.load(Ordering::SeqCst) {
         // Resolve the device fresh each segment (it may have changed/reconnected).
         let audio = match resolve_audio(&settings.audio_device_name).await {
@@ -332,6 +524,15 @@ async fn capture_loop(
                 // No device → exponential back-off, then retry (don't busy-spin).
                 let delay = preroll_restart_delay(attempt);
                 tracing::warn!(attempt, delay, "preroll: no audio device, backing off");
+                if should_warn_preroll_dead(attempt, warned_dead) {
+                    warned_dead = true;
+                    warn_preroll_dead(
+                        &app,
+                        "no_device",
+                        "Forhåndsbufferen finner ikke lydenheten — det som skjer før du trykker \
+                         opptak blir ikke tatt vare på.",
+                    );
+                }
                 attempt = attempt.saturating_add(1);
                 if !sleep_while_active(&active, delay).await {
                     break;
@@ -355,6 +556,15 @@ async fn capture_loop(
             Err(e) => {
                 let delay = preroll_restart_delay(attempt);
                 tracing::warn!(attempt, delay, "preroll: spawn failed: {e}");
+                if should_warn_preroll_dead(attempt, warned_dead) {
+                    warned_dead = true;
+                    warn_preroll_dead(
+                        &app,
+                        "spawn_failed",
+                        "Forhåndsbufferen får ikke startet opptaket i bakgrunnen — det som skjer \
+                         før du trykker opptak blir ikke tatt vare på.",
+                    );
+                }
                 attempt = attempt.saturating_add(1);
                 if !sleep_while_active(&active, delay).await {
                     break;
@@ -363,8 +573,10 @@ async fn capture_loop(
             }
         };
 
-        // A successful spawn resets the error back-off.
+        // A successful spawn resets the error back-off — and re-arms the warning,
+        // so a device that recovers and dies again is heard about again.
         attempt = 0;
+        warned_dead = false;
         let stdin = child.stdin.take();
         *lock_recover(&handle_slot) = Some(PrerollHandle {
             stdin,
@@ -406,6 +618,22 @@ async fn capture_loop(
     }
 }
 
+/// Tell the user the rolling buffer has given up.
+///
+/// The Home chip renders from [`PrerollStatus::active`], which is true for a
+/// loop that is merely failing forever — so "buffer running" and "buffer dead"
+/// looked identical, and the dead one looked like "pre-roll is switched off".
+/// `reason` distinguishes the two give-up paths for the log/webhook without
+/// needing two locale strings.
+pub(crate) fn warn_preroll_dead(app: &tauri::AppHandle, reason: &str, msg: &str) {
+    crate::notify::warn(
+        app,
+        BackendWarning::warn(sundayrec_core::notify::code::PREROLL_DEAD)
+            .msg(msg)
+            .param("reason", reason),
+    );
+}
+
 /// Resolve the best audio device match for `name` via the real ffmpeg enumerator.
 async fn resolve_audio(name: &str) -> Option<FfmpegDevice> {
     let inv = enumerate_ffmpeg_devices().await.ok()?;
@@ -424,7 +652,7 @@ fn device_token(d: &FfmpegDevice) -> String {
 /// Sleep `delay_ms`, but bail early (returning `false`) if the loop was
 /// deactivated while sleeping. Returns `true` if the full delay elapsed and the
 /// loop should continue.
-async fn sleep_while_active(active: &Arc<AtomicBool>, delay_ms: u64) -> bool {
+pub(crate) async fn sleep_while_active(active: &Arc<AtomicBool>, delay_ms: u64) -> bool {
     // Poll the flag in small slices so a stop during a long back-off is prompt.
     let mut remaining = delay_ms;
     while remaining > 0 {
@@ -520,6 +748,12 @@ pub fn preroll_settings_from(
         // native recording at the `-c copy` join (NEEDS-RICHARD §settings-sync).
         sample_rate: settings.resolved_sample_rate(),
         channels,
+        // The native engine routes channels itself, so it needs the SAME layout
+        // inputs the recording's `RecordingOpts` carry.
+        channel_mode: settings.channels,
+        input_channel_l: settings.input_channel_l,
+        input_channel_r: settings.input_channel_r,
+        classic: settings.classic_ffmpeg_preroll,
     })
 }
 
@@ -533,7 +767,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let engine = PrerollEngine::new(dir.path().to_path_buf());
         assert!(!engine.is_active());
-        assert!(!engine.status().active);
+        let st = engine.status();
+        assert!(!st.active);
+        // The default answer to "which engine" is the native one.
+        assert_eq!(st.engine, PrerollEngineKind::Native);
+        assert_eq!(st.channels, 0);
+        assert_eq!(engine.vu_channels(), None);
     }
 
     #[test]
@@ -543,6 +782,82 @@ mod tests {
         engine.stop();
         engine.stop();
         assert!(!engine.is_active());
+    }
+
+    #[tokio::test]
+    async fn stop_and_release_and_harvest_are_safe_when_idle() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = PrerollEngine::new(dir.path().to_path_buf());
+        engine.stop_and_release().await;
+        // No buffer → no clip, from either engine.
+        assert!(engine
+            .harvest(15, None, 2, "pcm_s16le", None, "wav")
+            .await
+            .is_none());
+        assert!(!engine.is_active());
+    }
+
+    #[test]
+    fn classic_engine_starts_inactive_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = ClassicPrerollEngine::new(dir.path().to_path_buf());
+        assert!(!engine.is_active());
+        engine.stop();
+        assert!(!engine.is_active());
+    }
+
+    #[test]
+    fn the_hatch_selects_the_classic_engine() {
+        let base = Settings {
+            pre_roll_seconds: 15,
+            device_name: Some("Qu-5".into()),
+            ..Default::default()
+        };
+        // Default: native.
+        assert!(!preroll_settings_from(&base).unwrap().classic);
+        // Hatch on: classic.
+        let hatched = Settings {
+            classic_ffmpeg_preroll: true,
+            ..base
+        };
+        assert!(preroll_settings_from(&hatched).unwrap().classic);
+    }
+
+    #[test]
+    fn settings_carry_the_channel_layout_for_the_route_plan() {
+        // The native buffer must write the SAME layout the recording will, so
+        // the mode and the explicit L/R picks travel with the settings.
+        let s = Settings {
+            pre_roll_seconds: 15,
+            device_name: Some("Qu-5".into()),
+            channels: ChannelMode::Stereo,
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..Default::default()
+        };
+        let p = preroll_settings_from(&s).unwrap();
+        assert_eq!(p.channel_mode, ChannelMode::Stereo);
+        assert_eq!(p.input_channel_l, Some(16));
+        assert_eq!(p.input_channel_r, Some(17));
+        assert_eq!(p.channels, 2, "the ffmpeg engine still gets a count");
+    }
+
+    #[test]
+    fn status_serialises_the_engine_as_a_plain_string() {
+        // The renderer reads `active`; the engine tag is a diagnostic it may
+        // ignore, so it must be a stable lowercase string, not a tagged object.
+        let st = PrerollStatus {
+            active: true,
+            engine: PrerollEngineKind::Native,
+            channels: 32,
+        };
+        let json = serde_json::to_string(&st).unwrap();
+        assert!(json.contains("\"engine\":\"native\""), "{json}");
+        assert!(json.contains("\"channels\":32"), "{json}");
+        let back: PrerollStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, st);
+        let classic = serde_json::to_string(&PrerollEngineKind::Classic).unwrap();
+        assert_eq!(classic, "\"classic\"");
     }
 
     #[test]

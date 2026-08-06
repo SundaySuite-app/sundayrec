@@ -1,13 +1,21 @@
 import { settings, patchSettings } from '../state'
 import { t, tArr } from '../i18n'
 import { enhanceTimeInput } from '../time-input'
-import { getAudioDevices, rVuChannel } from '../audio/capture'
-import { makeVuState, tickVU, stopVuState } from '../audio/vu'
+import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
+import { makeVuState, pushVuLevels, stopVuState } from '../audio/vu'
+import { acquireVuFeed } from '../audio/vu-feed'
+import { pickLR } from '../audio/vu-feed-core'
 
 // ── VU state for audio test step ─────────────────────────────────
-let obVu     = makeVuState()
-let obStream: MediaStream | null = null
-let obCtx:   AudioContext | null = null
+//
+// Fed by the shared backend VU feed (audio/vu-feed.ts). The step used to open
+// its own getUserMedia stream through a fixed 2-channel splitter, which both
+// made the webview an owner of the input device (the Qu-5 hazard) and meant the
+// test measured channels 0/1 of a 32-channel mixer no matter which channels the
+// user had picked — a "lyden fungerer ✓" that proved nothing about the take.
+let obVu = makeVuState()
+/** Release handle for the feed subscription; non-null ⇔ the test is running. */
+let obRelease: (() => void) | null = null
 
 /**
  * Has the meter actually seen sound during THIS visit to step 3?
@@ -26,9 +34,12 @@ let obSignalSeen = false
 const OB_SIGNAL_DB = -45
 
 function stopObVU(): void {
+  if (obRelease) {
+    const r = obRelease
+    obRelease = null
+    try { r() } catch { /* gone */ }
+  }
   stopVuState(obVu); obVu = makeVuState()
-  obStream?.getTracks().forEach(t => t.stop()); obStream = null
-  obCtx?.close(); obCtx = null
 }
 
 // ── Device chosen in step 2 ──────────────────────────────────────
@@ -92,7 +103,7 @@ function goTo(step: number): void {
   setTimeout(() => {
     if      (step === 1) s1(body)
     else if (step === 2) void s2(body)
-    else if (step === 3) void s3(body)
+    else if (step === 3) s3(body)
     else if (step === 4) s4(body)
     else                 { allDots(); sDone(body) }
     body.style.transition = 'opacity .22s, transform .22s'
@@ -164,11 +175,11 @@ async function s2(body: HTMLElement): Promise<void> {
   if (!devices.length) {
     list.innerHTML = `<p class="ob-empty">${esc(t('onboarding.deviceNone', 'Ingen lydenheter funnet. Kontroller at mikseren er koblet til via USB.'))}</p>`
   } else {
-    const preferred = devices.find(d => !/built-in|innebygd|default/i.test(d.label)) ?? devices[0]
+    const preferred = devices.find(d => !isBuiltInDevice(d.label)) ?? devices[0]
     if (!pickedId) { pickedId = preferred?.deviceId ?? null; pickedName = preferred?.label ?? null }
 
     list.innerHTML = devices.map(d => {
-      const builtIn  = /built-in|innebygd|default/i.test(d.label)
+      const builtIn  = isBuiltInDevice(d.label)
       const selected = d.deviceId === pickedId
       return `<div class="ob-dev-card${selected ? ' sel' : ''}" data-id="${esc(d.deviceId)}" data-name="${esc(d.label)}">
         <span class="ob-dev-emoji">${builtIn ? '💻' : '🎛️'}</span>
@@ -208,7 +219,7 @@ async function s2(body: HTMLElement): Promise<void> {
 }
 
 // ── Step 3: Audio test ────────────────────────────────────────────
-async function s3(body: HTMLElement): Promise<void> {
+function s3(body: HTMLElement): void {
   obSignalSeen = false
   body.innerHTML = `
     <h2 class="ob-title">${esc(t('onboarding.testTitle', 'Test at lyden fungerer'))}</h2>
@@ -234,31 +245,25 @@ async function s3(body: HTMLElement): Promise<void> {
     if (hint) hint.textContent = t('onboarding.testHeardHint', 'Lyd registrert — du kan gå videre.')
   }
 
-  const devId = pickedId ?? (settings.deviceId ?? null)
-  try {
-    obStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        ...(devId && devId !== 'default' ? { deviceId: { ideal: devId } } : {}),
-        echoCancellation: false, noiseSuppression: false, autoGainControl: false
-      },
-      video: false
-    })
-    obCtx = new AudioContext()
-    const src   = obCtx.createMediaStreamSource(obStream)
-    const split = obCtx.createChannelSplitter(2)
-    obVu = makeVuState()
-    obVu.analyserL = obCtx.createAnalyser(); obVu.analyserL.fftSize = 1024
-    obVu.analyserR = obCtx.createAnalyser(); obVu.analyserR.fftSize = 1024
-    src.connect(split)
-    split.connect(obVu.analyserL, 0)
-    // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
-    split.connect(obVu.analyserR, rVuChannel(obStream))
-
-    tickVU(obVu, null, null, null, null, null, null, (dbL, dbR) => {
-      const db   = Math.max(dbL, dbR)
-      // The gate: one moment of real signal is enough, and it stays unlocked
-      // (a meter that dips back to silence between words must not re-lock the
-      // button under the user's cursor).
+  const devChannels = pickedId ? (settings.deviceChannels?.[pickedId] ?? null) : null
+  const pick = {
+    mode: settings.channels ?? 'stereo',
+    chL: devChannels?.channelL ?? 0,
+    chR: devChannels?.channelR ?? 1,
+  }
+  obVu = makeVuState()
+  obRelease = acquireVuFeed({
+    deviceName: pickedName ?? settings.deviceName ?? null,
+    pick: () => pick,
+    onLevels: (l, r, levels) => {
+      const pk = pickLR(levels.peak_dbfs, pick.mode, pick.chL, pick.chR)
+      pushVuLevels(obVu, l, r, pk.l, pk.r)
+      // The gate reads the RMS, the same quantity the old getDbFS meter gated
+      // on — so -45 dBFS still means what it meant.
+      const db = Math.max(obVu.smL, obVu.smR)
+      // One moment of real signal is enough, and it stays unlocked (a meter
+      // that dips back to silence between words must not re-lock the button
+      // under the user's cursor).
       if (db >= OB_SIGNAL_DB) markSignalSeen()
       const fill = document.getElementById('ob-vu-fill')
       const lbl  = document.getElementById('ob-vu-lbl')
@@ -269,20 +274,22 @@ async function s3(body: HTMLElement): Promise<void> {
       else if (db >= -40) { fill.style.background = 'var(--green)';  lbl.textContent = t('onboarding.vuGood', '✓ Bra signal — lyden fungerer');          lbl.style.color = 'var(--green)' }
       else if (db > -55)  { fill.style.background = 'var(--text3)';  lbl.textContent = t('onboarding.vuWeak', 'Svakt signal — sjekk kabelen');          lbl.style.color = 'var(--text3)' }
       else                { fill.style.background = 'var(--text4)';  lbl.textContent = t('onboarding.vuWaiting', 'Venter på lyd…');                         lbl.style.color = 'var(--text3)' }
-    })
-  } catch {
-    const lbl = document.getElementById('ob-vu-lbl')
-    if (lbl) {
-      lbl.textContent = t('onboarding.vuError', 'Kunne ikke starte lydtest — sjekk at tillatelse er gitt i systeminnstillingene.')
-      lbl.style.color = 'var(--orange)'
-    }
-    // The meter never got to run, so it can never open the button. Don't trap
-    // the user behind a test that cannot be taken: point at the way past.
-    const hint = document.getElementById('ob-n3-hint')
-    if (hint) hint.textContent = t('onboarding.testBlockedHint', 'Lydtesten kunne ikke starte. Gå videre og test lyden fra Innstillinger → Lyd senere.')
-    const skip = document.getElementById('ob-s3')
-    if (skip) skip.textContent = t('onboarding.testSkipAfterError', 'Fortsett uten lydtest →')
-  }
+    },
+    onState: (state) => {
+      if (state !== 'failed') return
+      const lbl = document.getElementById('ob-vu-lbl')
+      if (lbl) {
+        lbl.textContent = t('onboarding.vuError', 'Kunne ikke starte lydtest — sjekk at tillatelse er gitt i systeminnstillingene.')
+        lbl.style.color = 'var(--orange)'
+      }
+      // The meter never got to run, so it can never open the button. Don't trap
+      // the user behind a test that cannot be taken: point at the way past.
+      const hint = document.getElementById('ob-n3-hint')
+      if (hint) hint.textContent = t('onboarding.testBlockedHint', 'Lydtesten kunne ikke starte. Gå videre og test lyden fra Innstillinger → Lyd senere.')
+      const skip = document.getElementById('ob-s3')
+      if (skip) skip.textContent = t('onboarding.testSkipAfterError', 'Fortsett uten lydtest →')
+    },
+  })
 
   document.getElementById('ob-n3')?.addEventListener('click', () => goTo(4))
   document.getElementById('ob-s3')?.addEventListener('click', () => goTo(4))

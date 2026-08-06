@@ -18,8 +18,12 @@ import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode
 import { fitAll, zoomBy } from './editor/viewport'
 import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
+import { PICK, jinglePathFor, jingleValueFor } from './editor/review-jingles'
+import { toast } from '../ui/toast'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
+import { setupEditorTabs, flagEditorTab } from './editor/tabs'
+import { setupViewMenu } from './editor/view-menu'
 import { pickAndLoad, loadFile, reloadIntroOutro, teardownPlayback, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
 
 // ── Setup ─────────────────────────────────────────────────────────────────
@@ -63,6 +67,8 @@ export function setupEditorPage(): void {
   document.querySelector('.editor-io-include-label')?.addEventListener('click', (e) => e.stopPropagation())
 
   setupKbdHints()
+  setupEditorTabs()
+  setupViewMenu()
   setupMasteringCollapse()
   $('btn-editor-play')?.addEventListener('click',    () => togglePlay(false))
   $('btn-editor-preview')?.addEventListener('click', () => togglePlay(true))
@@ -546,14 +552,26 @@ function loadAndUpdateReviewBanner(): void {
   const outroLbl = $('editor-review-outro-label')
   if (introSel) {
     const ip = reviewPrep.introPath
-    introSel.value = ip == null ? 'none' : (ip === settings.editorIntroPath ? 'default' : 'custom')
+    introSel.value = jingleValueFor(ip, settings.editorIntroPath)
     if (introLbl) introLbl.textContent = ip ? ip.split(/[/\\]/).pop() ?? '' : ''
   }
   if (outroSel) {
     const op = reviewPrep.outroPath
-    outroSel.value = op == null ? 'none' : (op === settings.editorOutroPath ? 'default' : 'custom')
+    outroSel.value = jingleValueFor(op, settings.editorOutroPath)
     if (outroLbl) outroLbl.textContent = op ? op.split(/[/\\]/).pop() ?? '' : ''
   }
+}
+
+/** Say that the episode has left the queue, and put the banner's controls back
+ *  where the (unchanged) prep says they belong.
+ *
+ *  Every push can come back `false`: the queue is a shared blob, and 14 days of
+ *  neglect auto-discards an entry while an editor window sits open on it. Before
+ *  the pushes were real this could not happen, because nothing was ever saved. */
+function reviewEntryVanished(): void {
+  toast('warn', t('review.errNotFound',
+    'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.'))
+  loadAndUpdateReviewBanner()
 }
 
 /** Turn a review-queue error code into a sentence. The one code the backend
@@ -641,38 +659,71 @@ function setupReviewBanner(): void {
     window.showPage('home')
   })
 
-  // Jingle selectors
-  $('editor-review-intro-select')?.addEventListener('change', async () => {
+  // Jingle selectors. Both dropdowns run the same three steps — resolve the
+  // value to a path (opening the picker for «Egen fil»), push ONLY that field,
+  // and mirror it locally if and only if the push landed.
+  const wireJingle = (
+    selectId: string,
+    field: 'introPath' | 'outroPath',
+    defaultPath: () => string | undefined,
+  ): void => {
+    $(selectId)?.addEventListener('change', async () => {
+      if (!reviewPrepId) return
+      const sel = $(selectId) as HTMLSelectElement
+      const stored = reviewPrep?.[field]
+      let path = jinglePathFor(sel.value, defaultPath())
+      if (path === PICK) {
+        const fp = await window.api.pickAudioFile()
+        if (!fp) {
+          // Cancelled: back to what is actually stored (which may be «Ingen» —
+          // the old restore assumed «Standard» and quietly changed the choice).
+          sel.value = jingleValueFor(stored, defaultPath())
+          return
+        }
+        path = fp
+      }
+      // One key per call: the backend leaves the OTHER jingle untouched
+      // precisely because it is absent from this patch.
+      const ok = await window.api.reviewQueueUpdateJingles(reviewPrepId, { [field]: path })
+      if (!ok) { reviewEntryVanished(); return }
+      if (reviewPrep) reviewPrep[field] = path ?? undefined
+      loadAndUpdateReviewBanner()
+    })
+  }
+  wireJingle('editor-review-intro-select', 'introPath', () => settings.editorIntroPath)
+  wireJingle('editor-review-outro-select', 'outroPath', () => settings.editorOutroPath)
+
+  // Mastering preset → the queue entry.
+  //
+  // `applyReviewModeDefaults` seeds the export modal's select FROM the prep;
+  // this is the return leg, which never existed — an operator who reviewed the
+  // episode and changed the preset had that choice live only in `E`, so it was
+  // gone the moment the editor closed and the next open re-seeded the old one.
+  //
+  // Only a deliberate human pick pushes: the seeding above and the export
+  // modal's one-click auto-enhance both assign `.value` programmatically, which
+  // does not fire `change`. That is the wanted split — auto-enhance clears
+  // mastering for THIS export rather than proposing a new default for the
+  // episode. The listener is attached once here (the select is static markup);
+  // export.ts keeps its own listener for `E`, and both run.
+  $('enhance-master-preset')?.addEventListener('change', async () => {
     if (!reviewPrepId) return
-    const sel = $('editor-review-intro-select') as HTMLSelectElement
-    let introPath: string | null | undefined
-    if (sel.value === 'default') introPath = settings.editorIntroPath ?? null
-    else if (sel.value === 'none') introPath = null
-    else {
-      const fp = await window.api.pickAudioFile()
-      if (!fp) { sel.value = reviewPrep?.introPath ? 'custom' : 'default'; return }
-      introPath = fp
-    }
-    await window.api.reviewQueueUpdateJingles(reviewPrepId, { introPath })
-    if (reviewPrep) reviewPrep.introPath = introPath ?? undefined
-    loadAndUpdateReviewBanner()
+    const presetId = ($('enhance-master-preset') as HTMLSelectElement).value
+    const ok = await window.api.reviewQueueUpdateMasterPreset(reviewPrepId, presetId)
+    // No banner repaint on failure: the preset the user just picked still
+    // governs the export they are about to run — only the queue entry (which no
+    // longer exists) missed it.
+    if (!ok) { toast('warn', t('review.errNotFound',
+      'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.')); return }
+    if (reviewPrep) reviewPrep.masterPreset = presetId
   })
 
-  $('editor-review-outro-select')?.addEventListener('change', async () => {
-    if (!reviewPrepId) return
-    const sel = $('editor-review-outro-select') as HTMLSelectElement
-    let outroPath: string | null | undefined
-    if (sel.value === 'default') outroPath = settings.editorOutroPath ?? null
-    else if (sel.value === 'none') outroPath = null
-    else {
-      const fp = await window.api.pickAudioFile()
-      if (!fp) { sel.value = reviewPrep?.outroPath ? 'custom' : 'default'; return }
-      outroPath = fp
-    }
-    await window.api.reviewQueueUpdateJingles(reviewPrepId, { outroPath })
-    if (reviewPrep) reviewPrep.outroPath = outroPath ?? undefined
-    loadAndUpdateReviewBanner()
-  })
+  // NOTE: the suggested TRIM is deliberately NOT pushed back. The editor's cuts
+  // and `prep.suggestedTrim` are different models — cuts are a list of removed
+  // ranges anywhere in the file, the trim is one kept span — and collapsing the
+  // former into the latter would silently discard every cut but the outer two.
+  // `reviewQueueUpdateTrim` exists and is tested for the caller that will do the
+  // conversion honestly; wiring it to `E.cuts` here would not be that caller.
 }
 
 /** Called when the user navigates BACK to the editor tab. Repaints the
@@ -1105,6 +1156,7 @@ function closeCurrentFile(): void {
   E.suggestions = []
   E.clipTimes = []
   E.lastAnalyzedAt = 0
+  flagEditorTab('clip', false)
   E.meta = { title: '', speaker: '', description: '', chapters: [] }
   clearDirty()
   if (E.videoEl) {

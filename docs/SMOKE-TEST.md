@@ -23,10 +23,14 @@ sidecars by `scripts/fetch-ffmpeg.mjs` (the `predev`/`pretauri` npm hooks run it
 automatically). To fetch them manually:
 
 ```bash
-npm install            # pulls ffmpeg-static + @ffprobe-installer/ffprobe
-npm run ffmpeg         # copies them to src-tauri/binaries/<name>-<host-triple>
+npm run ffmpeg         # downloads ffmpeg 8.1.2 → src-tauri/binaries/<name>-<host-triple>
 ls src-tauri/binaries  # expect ffmpeg-… and ffprobe-… for your host triple
 ```
+
+The download is version-pinned and SHA-256-verified twice (archive, then the
+unpacked binary — see the script header). A sidecar that is already correct is
+left alone, so repeat runs cost a fraction of a second;
+`node scripts/fetch-ffmpeg.mjs --force` re-fetches.
 
 The binaries are git-ignored (`.gitignore` → `src-tauri/binaries`) and re-fetched
 per machine/platform; the recorder + MJPEG preview resolve them by host triple at

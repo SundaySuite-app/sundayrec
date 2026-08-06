@@ -4,13 +4,15 @@ import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
 import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
-import { getAudioDevices } from '../audio/capture'
+import { getAudioDevices, healStoredDeviceId } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { buildHealthFindings } from '../status/health-findings'
+import { toWarningView } from '../status/backend-warning-core'
 import { firstMount, resetMount, showEl, hideEl } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
+import { attachProgress, type ProgressHandle } from '../ui/progress'
 import {
   dismissMissed,
   dismissPreflight,
@@ -219,7 +221,7 @@ let silentPreflightHasRun = false
 /**
  * The OS-permission + sidecar findings, in front of whatever `run_preflight`
  * found. A blocked microphone must be visible BEFORE the user meets a generic
- * getUserMedia failure, and `run_preflight` does not ask AVFoundation — the two
+ * device-open failure, and `run_preflight` does not ask AVFoundation — the two
  * commands that do (`media_permissions`, `ffmpeg_health`) had no caller at all.
  * Best-effort: an unavailable probe adds nothing rather than blocking the card.
  */
@@ -346,8 +348,8 @@ function showFeedResolution(video: HTMLVideoElement, stream: MediaStream): void 
 
 export function stopVideoPreview(): void {
   previewActive = false
-  // Release the camera (client-side getUserMedia preview) so the recorder can
-  // open it when recording starts.
+  // Release the camera (client-side getUserMedia preview, video only) so the
+  // recorder can open it when recording starts.
   if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null }
   const video = document.getElementById('video-preview-video') as HTMLVideoElement | null
   const img   = document.getElementById('video-preview-img') as HTMLImageElement | null
@@ -359,8 +361,8 @@ export function stopVideoPreview(): void {
   if (phDiv) { phDiv.style.display = '' }
 }
 
-// The live camera preview is a CLIENT-SIDE getUserMedia stream piped into a
-// <video> element — it works in WKWebView with no backend, where the old
+// The live camera preview is a CLIENT-SIDE getUserMedia stream — VIDEO ONLY —
+// piped into a <video> element — it works in WKWebView with no backend, where the old
 // Electron MJPEG-over-IPC preview did not (the Tauri backend writes a preview
 // JPEG to a file, not IPC frames). The RECORDING still uses the backend ffmpeg
 // device; this is preview only, and it's released (stopVideoPreview) the moment
@@ -410,8 +412,12 @@ export async function startVideoPreview(): Promise<void> {
     }
     // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
     // label; fall back to the default camera. enumerateDevices only exposes
-    // labels after a getUserMedia grant, so on first run we just use the default.
+    // camera labels after a camera grant, so on first run we use the default.
     try {
+      // VIDEO ONLY — `videoinput` entries. The AUDIO half of enumerateDevices is
+      // gone from this app entirely (audio/capture.ts): it needed a microphone
+      // grant to reveal labels, and asking for one is what made the webview a
+      // device owner.
       const devs = await navigator.mediaDevices.enumerateDevices()
       const cam  = devs.find(d =>
         d.kind === 'videoinput' && !!settings.videoDeviceName &&
@@ -419,6 +425,9 @@ export async function startVideoPreview(): Promise<void> {
       if (cam?.deviceId) videoConstraint.deviceId = { ideal: cam.deviceId }
     } catch { /* enumerate needs permission first — fall back to default device */ }
 
+    // VIDEO ONLY. This is the last `getUserMedia` in the renderer, and it asks
+    // for `audio: false` — it can never contend for the microphone. Every audio
+    // path (metering, device enumeration, capture) is backend-owned.
     const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false })
     if (!previewActive) { stream.getTracks().forEach(t => t.stop()); return } // stopped while awaiting
     previewStream = stream
@@ -584,33 +593,38 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
 
 // ── Progress bar shared by the two long audio checks ────────────────────────
 //
-// Neither check reports real progress from the backend, so the UI must not
-// pretend otherwise: the 30 s test recording shows a determinate bar the copy
-// explicitly calls an estimate ("ca."), and the 60 s capture bench — which
-// previously showed NOTHING for a full minute — gets an indeterminate bar plus
-// a truthful elapsed-seconds counter.
+// Neither backend streams progress, but the two checks know very different
+// amounts about themselves and the UI says so:
+//
+//   - the 30 s TEST RECORDING has only a local counter, so its bar is an
+//     ESTIMATE. It is attached with the ETA line OFF: deriving «ca. 12 s igjen»
+//     from a guess would dress a guess up as a measurement, and the status line
+//     beside it already says "ca. {n}/{total} s" out loud.
+//   - the 60 s CAPTURE BENCH records for exactly the duration it was asked for,
+//     so elapsed-over-60 is honest and the countdown with it. Past 60 s the
+//     ffprobe-and-judge tail begins, whose length nobody knows — the bar goes
+//     indeterminate there rather than sitting at 100 % pretending to be done.
+//
+// Before v0.9.0 the bench showed NOTHING for a full minute.
 
-function healthProgress(mode: 'determinate' | 'indeterminate' | 'off', pct = 0): void {
-  const bar = document.getElementById('health-progress')
-  const fill = document.getElementById('health-progress-fill')
-  if (!bar || !fill) return
+let healthUi: ProgressHandle | null = null
+
+function healthProgress(
+  mode: 'determinate' | 'indeterminate' | 'off',
+  pct = 0,
+  opts: { eta?: boolean; label?: string } = {},
+): void {
+  const host = document.getElementById('health-progress-host')
+  if (!host) return
   if (mode === 'off') {
-    bar.style.display = 'none'
-    bar.classList.remove('indeterminate')
-    bar.removeAttribute('aria-valuenow')
-    fill.style.width = '0'
+    healthUi?.destroy()
+    healthUi = null
+    host.style.display = 'none'
     return
   }
-  bar.style.display = ''
-  bar.classList.toggle('indeterminate', mode === 'indeterminate')
-  if (mode === 'determinate') {
-    const clamped = Math.max(0, Math.min(100, pct))
-    fill.style.width = `${clamped}%`
-    bar.setAttribute('aria-valuenow', String(Math.round(clamped)))
-  } else {
-    fill.style.width = ''
-    bar.removeAttribute('aria-valuenow')
-  }
+  host.style.display = ''
+  if (!healthUi) healthUi = attachProgress(host, { compact: true, eta: opts.eta ?? false })
+  healthUi.update(mode === 'determinate' ? Math.max(0, Math.min(1, pct / 100)) : null, opts.label)
 }
 
 export function setupHome(): void {
@@ -755,17 +769,27 @@ export function setupHome(): void {
     // life — indistinguishable from a hang. An indeterminate bar says "working",
     // the counter says how long it has been working, and neither claims to know
     // how far along the backend is (it does not report that).
+    const BENCH_SEC = 60
     const benchStarted = Date.now()
+    const benchElapsed = (): number => (Date.now() - benchStarted) / 1000
     const benchLine = (): string => {
-      const secs = Math.floor((Date.now() - benchStarted) / 1000)
+      const secs = Math.floor(benchElapsed())
       return `${t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')} (${secs} s)`
     }
-    status.textContent = benchLine()
-    healthProgress('indeterminate')
-    const benchTick = setInterval(() => { status.textContent = benchLine() }, 1000)
-    // The bench must measure the RECORDING PATH alone: release every
-    // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
-    // getUserMedia on the same device skews the source itself).
+    // The bench records for exactly BENCH_SEC, so this fraction is real and so
+    // is the countdown beside it. When it runs out, the probe-and-judge tail has
+    // started and its length is genuinely unknown — hand over to the stripe.
+    const benchDraw = (): void => {
+      const e = benchElapsed()
+      status.textContent = benchLine()
+      if (e < BENCH_SEC) healthProgress('determinate', (e / BENCH_SEC) * 100, { eta: true })
+      else healthProgress('indeterminate', 0, { eta: true, label: t('audio.benchJudging', 'Analyserer måling …') })
+    }
+    benchDraw()
+    const benchTick = setInterval(benchDraw, 1000)
+    // The bench must measure the RECORDING PATH alone: release every meter's
+    // hold on the VU engine first, so the bench opens the device cleanly rather
+    // than yanking it out from under a running metering session.
     releaseRendererAudioCaptures()
     try {
       const r = await window.api.runCaptureBench(60)
@@ -950,9 +974,13 @@ export function setupHome(): void {
   })
 
   const onDeviceChange = (): void => {
-    // Skip during active recording — opening getUserMedia competes with ffmpeg's AVFoundation session
+    // Skip during active recording — re-enumerating mid-take can only unsettle a
+    // device the capture engine is holding, and the answer cannot change a
+    // running recording anyway.
     if (!window.__isRecording) void checkStatus()
   }
+  // `devicechange` fires for audio devices too — it is the cheapest signal that a
+  // mixer was plugged in or pulled out, and it costs no device open to listen.
   navigator.mediaDevices.addEventListener('devicechange', onDeviceChange)
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
@@ -988,16 +1016,17 @@ function wireHomeIpcListeners(): void {
   if (homeIpcWired) return
   homeIpcWired = true
 
-  // Backend warning — cloud/preroll/wake/disk/device issues.
+  // Backend warning — preroll/cloud/recovery/device/disk issues.
   //
-  // NOTE (2026-08-05 channel audit): no Rust emitter for this channel exists
-  // yet, so nothing can arrive on it today. The subscription is kept (rather
-  // than deleted) because it is the intended receiver the day the backend
-  // starts emitting; what WAS deleted is the 60-line hand-rolled toast it used
-  // to build with inline styles, now that there is a real toast service.
+  // The day referred to by the 2026-08-05 channel audit ("the intended receiver
+  // the day the backend starts emitting") is here: `crate::notify::warn` emits
+  // on `backend://warning`, now mapped in api-shim. The payload carries a stable
+  // `code`, so the toast is LOCALIZED rather than showing the backend's
+  // Norwegian `msg` to a German user — with `msg` kept as the fallback for a
+  // code this renderer build does not know yet. See status/backend-warning-core.
   homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
-    const d = data as { msg?: string; severity?: 'warn' | 'error' } | undefined
-    if (d?.msg) toast(d.severity === 'error' ? 'error' : 'warn', d.msg)
+    const view = toWarningView(data, t)
+    if (view) toast(view.kind, view.text)
   }))
 
   // Post-recording summary in existing editor prompt toast. (recording.ts also
@@ -1089,9 +1118,11 @@ export async function refreshHome(): Promise<void> {
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
-  // LEAK GUARD (2026-07-31 audit): navigating home mid-recording used to
-  // reopen the getUserMedia meter stream — a second microphone owner beside
-  // the recorder's ffmpeg for the rest of the take.
+  // The recorder owns the device during a take (`start_recording` stops the VU
+  // engine itself), and the overlay's meter reads `recording://levels`. Asking
+  // for a metering session here would only be taken away again.
+  // (Historically this guard existed because the home meter was a SECOND
+  // microphone owner — 2026-07-31 leak audit. It no longer opens a device.)
   if (!window.__isRecording) startVU()
 
   // Once-per-session silent preflight. Surfaces critical issues (disk full,
@@ -1312,17 +1343,13 @@ async function checkStatus(): Promise<void> {
   const devices = await getAudioDevices()
   let connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
 
-  // Auto-heal: Windows often reassigns device IDs after reboot or driver update.
-  // If the stored ID is gone but a device with the same label exists, silently update.
-  if (!connected && settings.deviceId && settings.deviceName) {
-    const byLabel = devices.find(d =>
-      d.label && d.label.toLowerCase() === (settings.deviceName ?? '').toLowerCase()
-    )
-    if (byLabel) {
-      patchSettings({ deviceId: byLabel.deviceId })
-      await window.api.saveSettings({ ...settings })
-      connected = true
-    }
+  // Auto-heal: Windows reassigns device ids after a reboot or a driver update,
+  // and settings written before device enumeration moved to the backend hold a
+  // Web Audio hash that resolves against nothing. Both are the same repair —
+  // match by the saved NAME, carry the channel picks across (audio/capture.ts).
+  if (!connected && healStoredDeviceId(devices)) {
+    await window.api.saveSettings({ ...settings })
+    connected = true
   }
 
   const heroOk   = document.getElementById('hero-ok')
@@ -1384,7 +1411,9 @@ export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
   setCardLoading('home-audio-card', false)
   setCardLoading('home-format-card', false)
-  const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
+  const device   = settings.deviceId
+    ? devices.find(d => d.deviceId === settings.deviceId)
+    : (devices.find(d => d.isDefault) ?? devices[0])
   const nameEl   = document.getElementById('home-device-name')
   const statusEl = document.getElementById('home-device-status-text')
     ?? document.getElementById('home-device-status')
@@ -1438,19 +1467,21 @@ async function loadPublishInfoStrip(): Promise<void> {
   const strip = document.getElementById('publish-info-strip')
   if (!strip) return
 
-  const cloudShown   = renderCloudCard()
-  const thumbShown   = renderThumbCard()
-  // Whisper status is async (queries main for installed models) — we run
-  // it without awaiting so the synchronous cards above don't block on it.
+  const cloudShown = renderCloudCard()
+  // Both of these ask the backend something, so they run concurrently and the
+  // one synchronous card decides whether the strip appears immediately.
+  const thumbShownPromise = renderThumbCard()
   const whisperShownPromise = renderWhisperCard()
 
-  // Show the strip as soon as ONE card decided it has something to render.
-  // Without this the strip would briefly flash on every load while we wait
-  // on whisper-status.
-  if (cloudShown || thumbShown) {
+  // Show the strip as soon as ONE card has decided it has something to render,
+  // so it doesn't flash in on every load once the async answers land.
+  if (cloudShown) {
     strip.style.display = ''
   }
-  const whisperShown = await whisperShownPromise
+  const [thumbShown, whisperShown] = await Promise.all([
+    thumbShownPromise,
+    whisperShownPromise,
+  ])
   strip.style.display = (cloudShown || thumbShown || whisperShown) ? '' : 'none'
 }
 
@@ -1494,12 +1525,25 @@ function renderCloudCard(): boolean {
   return true
 }
 
-/** @returns true when the thumbnail card was rendered visible. */
-function renderThumbCard(): boolean {
+/**
+ * The «Standard episodebilde» card.
+ *
+ * It used to read `settings.defaultThumbnailPath` — a field NOTHING has ever
+ * written in the Tauri build — so the card appeared only for users carrying a
+ * stale path from the Electron app, showed a file that nothing consumed, and
+ * said so («Episodebilde kommer — brukes ikke ennå») with its «Endre» action
+ * turned off, because it would have landed on a panel that was itself gated.
+ *
+ * All three of those are now false. The card asks the backend what the default
+ * actually is, shows it, and lets you change it.
+ *
+ * @returns true when the card was rendered visible.
+ */
+async function renderThumbCard(): Promise<boolean> {
   const card = document.getElementById('home-thumb-card')
   if (!card) return false
-  const path = settings.defaultThumbnailPath
-  if (!path) {
+  const info = await window.api.thumbnailGetDefaultInfo().catch(() => null)
+  if (!info) {
     card.style.display = 'none'
     return false
   }
@@ -1508,33 +1552,27 @@ function renderThumbCard(): boolean {
   const subEl  = document.getElementById('home-thumb-sub')
   const iconSlot = card.querySelector<HTMLElement>('.home-thumb-icon-slot')
   if (nameEl) {
-    const base = path.split('/').pop() ?? path
-    nameEl.textContent = base
+    nameEl.textContent = info.path.split(/[\\/]/).pop() ?? info.path
   }
   if (subEl) {
-    // HONEST: nothing burns this image into anything — the whole thumbnail
-    // backend is unwritten (every thumbnail* IPC method is a stub), so the old
-    // green «Brennes inn i podcast-MP3» was a promise the app cannot keep. The
-    // card only appears at all for users carrying a path from an older build.
-    subEl.textContent = t('home.thumbComing', 'Episodebilde kommer — brukes ikke ennå')
-    subEl.style.color = 'var(--text3)'
+    subEl.textContent = `${info.info.width}×${info.info.height} px`
+    subEl.style.color = ''
   }
-  // The «Endre» action would land on a panel that is itself gated as «kommer».
   const action = document.getElementById('btn-go-thumb')
   if (action) {
-    action.setAttribute('inert', '')
-    action.classList.add('gate-off')
+    action.removeAttribute('inert')
+    action.classList.remove('gate-off')
   }
-  // Swap the placeholder SVG for an actual <img> preview via the asset://
-  // protocol (WKWebView blocks file://). Falling back to the icon keeps the slot
-  // from collapsing if the file disappeared (error listener — NOT an inline
-  // onerror attribute, which the strict CSP (script-src 'self') would block).
+  // The backend hands back a self-contained data URL, so there is no asset://
+  // scope to satisfy and nothing to fail silently on an external volume. The
+  // error listener stays (an <img> can still reject malformed bytes) and is a
+  // listener rather than an inline onerror, which the strict CSP would block.
   if (iconSlot) {
     const img = document.createElement('img')
     img.className = 'thumb-card-icon thumb-card-icon-home'
     img.alt = ''
     img.addEventListener('error', () => { img.style.display = 'none' })
-    img.src = window.api.toAssetUrl(path)
+    img.src = info.dataUrl
     iconSlot.replaceChildren(img)
   }
   return true

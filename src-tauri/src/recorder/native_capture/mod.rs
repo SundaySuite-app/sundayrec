@@ -29,7 +29,11 @@
 //!   header patching, byte/frame counters, in-process silence feed).
 //! - [`segment`] — the segment runner: one capture-fragment life, mirroring
 //!   `engine::run_segment`'s select! arms with native stop semantics.
+//! - [`preroll`] — the rolling PRE-ROLL buffer: the same stack writing rotating
+//!   segment files, doubling as the `vu://levels` emitter while it holds the
+//!   device.
 
+pub mod preroll;
 pub mod segment;
 pub mod stream;
 pub mod writer;

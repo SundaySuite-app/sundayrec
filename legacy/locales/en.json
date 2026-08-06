@@ -98,7 +98,6 @@
     "nextShort": "next",
     "wakesLead": "({min} min before)",
     "openInEditor": "Open in editor",
-    "thumbComing": "Episode artwork is coming — not used yet",
     "prerollActive": "Pre-roll buffer active ({n} s)"
   },
   "update": {
@@ -139,7 +138,6 @@
     "addNote": "Add note",
     "editNote": "Edit note",
     "notePlaceholder": "Write a note…",
-    "deleteEntry": "Delete entry",
     "ok": "Complete",
     "noteCancel": "Cancel",
     "noteDesc": "Write a note for this recording (optional)",
@@ -161,6 +159,35 @@
     "confirmDeleteErrorsOne": "Delete 1 failed entry?",
     "confirmDeleteErrorsN": "Delete {n} failed entries?",
     "emptyFiltered": "No recordings match this filter"
+  },
+  "trash": {
+    "title": "Trash",
+    "open": "Trash",
+    "back": "← Back to history",
+    "emptyAll": "Empty the trash",
+    "keepNote": "Deleted recordings stay here for 30 days. After that they are gone for good.",
+    "empty": "The trash is empty.",
+    "alreadyEmpty": "The trash is empty",
+    "deleteEntry": "Move to trash",
+    "movedOne": "«{name}» is in the trash",
+    "movedN": "{n} recordings are in the trash",
+    "undo": "Undo",
+    "undoFailed": "Could not bring everything back — check the trash.",
+    "clearHistoryBody": "The recordings move to the trash, where they stay for {d} days before being deleted for good.",
+    "deleteErrorsBody": "{n} failed entries are removed. Files that still exist move to the trash.",
+    "restore": "Restore",
+    "restoreFailed": "Could not restore",
+    "deleteForever": "Delete for good",
+    "confirmPurgeOne": "Delete «{name}» for good?",
+    "confirmEmptyN": "Delete {n} recordings for good?",
+    "confirmEmptyBody": "The files are deleted from disk. This cannot be undone.",
+    "deletedAt": "Deleted",
+    "today": "today",
+    "yesterday": "yesterday",
+    "daysAgo": "{n} days ago",
+    "daysLeft": "{n} days left",
+    "dueNow": "goes at the next cleanup",
+    "related": "+ {n} related files"
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
@@ -290,8 +317,8 @@
     "errTimeFormat": "Write the time as HH:MM, e.g. 11:00.",
     "errSameTime": "The stop time cannot be the same as the start.",
     "errMaxRange": "Maximum duration must be between 1 and 480 minutes.",
-    "prerollEnabledTitle": "Enable pre-roll buffer (experimental)",
-    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. That can disturb the live level meters on Home and Live, which use the same microphone. Turn it on if you need the seconds before the button press — Home shows when the buffer is running."
+    "prerollEnabledTitle": "Enable pre-roll buffer",
+    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. While it runs it is also what feeds the level meters on Home and Live, so they keep working as before. Turn it on if you need the seconds before you press record — Home shows when the buffer is running."
   },
   "wake": {
     "capability": {
@@ -448,7 +475,8 @@
     "diagFfmpegMissing": "Not found",
     "diagFfmpegOk": "Available",
     "diagLoopback": "WASAPI loopback",
-    "diagDeviceListTitle": "Every audio device the recorder can see"
+    "diagDeviceListTitle": "Every audio device the recorder can see",
+    "benchJudging": "Analysing the measurement …"
   },
   "files": {
     "saveFolder": "Save folder",
@@ -594,9 +622,14 @@
     "analyzeSpeech": "Speech segments",
     "analyzeMusic": "Music segments",
     "analyzeSilence": "Silence",
+    "layersNotAnalyzed": "Run «Analyse recording» under Clip tools to see speech, music and silence here.",
     "markSermon": "↦ Mark sermon automatically",
     "markSermonHint": "Trims everything before and after the highlighted sermon block.",
     "analyzedAt": "Last analyzed",
+    "tabsAria": "Recording tools",
+    "tabAudio": "Audio",
+    "tabContent": "Content",
+    "tabClip": "Clip tools",
     "speechSegments": "speech segments found",
     "ioTitle": "Intro & Outro",
     "ioDragHint": "— or drag a file onto the timeline",
@@ -868,6 +901,13 @@
     "days": "days"
   },
   "notify": {
+    "prerollDead": "The pre-roll buffer is not working — sound from before you press record is not being kept.",
+    "cloudUploadFailed": "The cloud backup failed: {file}",
+    "cloudReauthRequired": "Cloud storage needs to be reconnected — sign in again under Settings.",
+    "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
+    "deviceMissing": "The audio device “{device}” is not connected.",
+    "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
+    "reviewOverdue": "An episode has been waiting {days} days for review: {episode}",
     "systemTitle": "System notifications",
     "emailTitle": "Email notifications",
     "smtpServer": "EMAIL SERVICE (SMTP)",
@@ -875,6 +915,17 @@
     "smtpUser": "USERNAME (EMAIL ADDRESS)",
     "smtpPass": "PASSWORD / APP PASSWORD",
     "smtpPassHint": "Gmail requires an \"App password\" from your account security settings.",
+    "smtpFrom": "SENDER ADDRESS (OPTIONAL)",
+    "smtpFromHint": "Leave blank to send from the username above.",
+    "savePassToKeychain": "Save to keychain",
+    "smtpPassStored": "The password is stored in this computer's keychain.",
+    "smtpPassSaved": "••••••••  (saved)",
+    "passEmpty": "Enter the password first.",
+    "passSaved": "The password is saved in the keychain.",
+    "passSaveFailed": "Could not save the password to the keychain.",
+    "passCleared": "The password has been removed from the keychain.",
+    "passClearFailed": "Could not remove the password from the keychain.",
+    "errNoPassword": "No SMTP password yet. Enter it and press “Save to keychain”.",
     "webhookTitle": "Webhook (Slack / Discord / Teams)",
     "webhookIntro": "Send notifications to a chat channel in addition to email. Paste the webhook URL from Slack, Discord or Teams.",
     "webhookHint": "Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...",
@@ -937,7 +988,8 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "fitAll": "Show entire file",
-    "kbdHints": "Show keyboard shortcuts"
+    "kbdHints": "Show keyboard shortcuts",
+    "timelineLayers": "What the timeline shows"
   },
   "publish": {
     "descPlaceholder": "E.g. Services from Example Church, every Sunday at 11",
@@ -1032,11 +1084,18 @@
     "overlays": "Overlays — graphics and presentation",
     "overlaysDesc": "Add the church logo, lyrics from EasyWorship (via screen capture on the same machine), or other graphics on top of what is being streamed. Overlays only affect the livestream — recordings stay clean.",
     "addOverlay": "+ Add overlay",
-    "gateStats": "Statistics are not available yet — the live stream does not report bitrate, frame rate or dropped frames back to the app in this version.",
     "blockedNoDestinations": "No destination is set up yet — add YouTube, Facebook or your own RTMP server.",
     "blockedNoEnabled": "No destination is switched on. Enable at least one in the list above.",
     "blockedNoKey": "The destination has no stream key. Without it YouTube/Facebook will not let the broadcast in.",
-    "blockedGoSettings": "Open Sharing → Publishing"
+    "blockedGoSettings": "Open Sharing → Publishing",
+    "statusStopped": "Stopped",
+    "qualityReduced": "Quality reduced to keep the stream stable.",
+    "notRigVerified": "Live streaming has not been verified on a real rig yet — try it on a weekday before you rely on it on a Sunday.",
+    "errFeatureDisabled": "This build of the app cannot stream live. Everything else works as normal — update to a newer version to go live.",
+    "errNoCamera": "No camera found. Check that it is connected, and pick it under Settings → Video.",
+    "errAlreadyActive": "A live stream is already running.",
+    "errInvalidDestination": "A destination is misconfigured — check its RTMP address and stream key under Sharing → Publishing.",
+    "errSpawnFailed": "Could not start the video engine (ffmpeg). Restart the app, and say so if it happens again."
   },
   "transcript": {
     "title": "Transcription",
@@ -1075,7 +1134,9 @@
     "errUnknownModel": "Unknown model",
     "exportTxt": "↧ Text",
     "exportDone": "Transcript saved",
-    "exportFailed": "Could not save the transcript"
+    "exportFailed": "Could not save the transcript",
+    "cancelling": "Cancelling…",
+    "preparingModel": "Preparing model…"
   },
   "companion": {
     "title": "Sermon helper",
@@ -1164,8 +1225,6 @@
     "autostartTitle": "Should the recording start by itself?",
     "autostartConfirm": "Turn on auto-start",
     "gmailDisconnectTitle": "Disconnect the Google account?",
-    "clearHistoryBody": "The recording files themselves stay — only the list of them is deleted. This cannot be undone.",
-    "deleteErrorsBody": "{n} failed entries are removed from the list. This cannot be undone.",
     "autoDeleteTitle": "Delete recordings automatically?",
     "autoDeleteConfirm": "Yes, delete automatically",
     "wakeTestTitle": "Test waking from sleep?",
@@ -1187,9 +1246,6 @@
     "discardEpisodeBody": "The recording is kept, but it will not be published.",
     "discardEpisode": "Discard",
     "publishFailedTitle": "Could not publish",
-    "deleteEntryTitle": "Remove “{name}” from the list?",
-    "deleteEntryBody": "The recording file itself stays on disk — only the list entry is removed. This cannot be undone.",
-    "deleteEntryBodyPair": "Both the audio and the video file stay on disk — only the two list entries are removed. This cannot be undone.",
     "discardFailedTitle": "Could not discard the episode"
   },
   "toast": {
@@ -1216,10 +1272,8 @@
     "notifyDesc": "Who is told when a recording starts, stops or fails."
   },
   "gate": {
-    "chipComing": "Coming",
     "chipUnconfigured": "Not configured",
-    "chipUnavailable": "Not available",
-    "comingExplanation": "{what} is not built yet. The panel is here because the feature is planned — until then the buttons do nothing, so they are switched off."
+    "chipUnavailable": "Not available"
   },
   "health": {
     "micDenied": "Microphone access is denied. Open System Settings → Privacy & Security → Microphone and enable SundayRec.",
@@ -1240,5 +1294,14 @@
     "openEditor": "Open in editor",
     "captionsNoRecording": "Captions received, but without saying which recording they belong to. Open the recording in the editor and import the text there.",
     "captionsFailed": "Captions could not be saved: {err}"
+  },
+  "progress": {
+    "etaCalculating": "estimating …",
+    "etaUnder10s": "under 10 s left",
+    "etaSeconds": "about {n} s left",
+    "etaMinutes": "about {n} min left",
+    "etaHours": "about {h} h left",
+    "etaHoursMinutes": "about {h} h {m} min left",
+    "preparing": "Preparing …"
   }
 }

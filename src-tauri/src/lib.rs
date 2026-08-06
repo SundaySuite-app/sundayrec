@@ -34,8 +34,9 @@ pub mod diagnostics;
 // `editor` feature is in `default` (the Rediger screen ships); building with
 // `--no-default-features` keeps the DTOs + `feature_disabled` stubs compiling.
 pub mod editor;
-// PU-1 email alerts — default-off `email` feature (NETWORK-UNVERIFIED). The pure
-// templates/throttle/MIME live in `sundayrec_core::email`; this seam sends.
+// PU-1 email alerts — the `email` feature, now IN `default` and in both release
+// feature lists. The pure templates/throttle/MIME live in
+// `sundayrec_core::email`; this seam sends.
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
@@ -44,6 +45,12 @@ pub mod media;
 // source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
 // returns `feature_disabled` (default) or a clear "NDI SDK not bundled" error.
 pub mod ndi;
+// The notification dispatch seam — ONE place a failure reaches the operator
+// (native + e-mail + webhook) and one place a degradation reaches the screen.
+// Featureless: the `email` leg compiles out cleanly under
+// `--no-default-features` and the routing matrix degrades to native + webhook.
+// The matrix itself is the unit-tested `sundayrec_core::notify`.
+pub mod notify;
 pub mod platform;
 pub mod preflight;
 // PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
@@ -67,6 +74,10 @@ pub mod test_recording;
 // menu/tray + the scheme handler.
 #[cfg(feature = "tray")]
 pub mod tray;
+// Papirkurv — the recoverable delete behind Historikk. Files move to
+// `<saveFolder>/.sundayrec-trash` with their sidecars; the history row survives
+// until the entry is purged, which is the only step that loses anything.
+pub mod trash;
 
 /// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
 /// feature is off, so callers (the review commands) stay `cfg`-free.
@@ -153,7 +164,7 @@ pub fn run() {
     #[cfg(feature = "tray")]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
 
-    builder
+    let builder = builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
         .manage(audio::vu::VuEngine::new())
@@ -195,7 +206,18 @@ pub fn run() {
         .manage(whisper::DownloadGuard::new())
         // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
         // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new())
+        .manage(whisper::TranscribeGuard::new());
+
+    // PU-1: ONE alert throttle window for the whole process lifetime. The gate
+    // (10 min per recipient+error pair) is what stops a flapping device from
+    // mailing the operator forty times; it existed, tested, in the core and was
+    // never MANAGED, so nothing could reach it. `notify::dispatch_failure` reads
+    // it through managed state. Feature-gated because the whole `email` module
+    // is — a `--no-default-features` build has no gate and plans no e-mail leg.
+    #[cfg(feature = "email")]
+    let builder = builder.manage(email::AlertGateState::default());
+
+    builder
         .setup(|app| {
             use tauri::Manager;
 
@@ -214,7 +236,11 @@ pub fn run() {
 
             // Fase 6: drain the durable cloud-upload queue in the background.
             // Idles cleanly when Google OAuth isn't configured (no spinning).
-            cloud::worker::spawn(pool.clone(), cloud::config::GoogleOAuthConfig::resolve());
+            cloud::worker::spawn(
+                app.handle().clone(),
+                pool.clone(),
+                cloud::config::GoogleOAuthConfig::resolve(),
+            );
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
@@ -276,6 +302,28 @@ pub fn run() {
             // fires start/stop/reminder/preflight on the wall clock.
             app.state::<scheduler::SchedulerEngine>()
                 .start(app.handle().clone());
+
+            // Subscribe the notification dispatcher to the recorder's terminal
+            // error event. Until now that event reached the tray badge and the
+            // renderer and stopped there: an unattended failure produced no
+            // native notification, no e-mail and no webhook, which is precisely
+            // the case those three channels exist for. Observational (`listen`),
+            // so no recorder code is touched — see `notify::wire_failure_sources`.
+            notify::wire_failure_sources(app.handle());
+
+            // Arm the review-queue reminder tick. The 24 h / 48 h / 7 d / auto-
+            // discard ladder in `sundayrec_core::review_queue` was complete and
+            // tested, and reachable only through a command with no callers —
+            // so an episode nobody reviewed sat in silence until it deleted
+            // itself a fortnight later. Its own small task, deliberately not the
+            // scheduler supervisor: nothing about a reminder belongs inside the
+            // loop that has to fire a recording start on time.
+            notify::reminders::spawn(app.handle().clone());
+
+            // Expire the Papirkurv. Without this the trash is a folder that
+            // only ever grows — a delete that silently keeps every byte
+            // forever is not a delete, it is a leak with a nice name.
+            trash::sweep::spawn(app.handle().clone());
 
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
@@ -366,6 +414,12 @@ pub fn run() {
             commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
+            // Papirkurv. `trash_move` is what the delete actions in Historikk
+            // now run; `trash_purge` is the only one that loses anything.
+            commands::trash::trash_move,
+            commands::trash::trash_list,
+            commands::trash::trash_restore,
+            commands::trash::trash_purge,
             commands::calendar::liturgical_month,
             commands::cloud::cloud_connection_status,
             commands::cloud::cloud_is_configured,
@@ -421,11 +475,13 @@ pub fn run() {
             commands::editor::editor_master_preview,
             commands::editor::editor_master_apply,
             commands::editor::editor_master_cancel,
-            // PU-1 email alerts (status pure; send gated by `email`).
+            // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
             commands::email::email_send_test,
             commands::email::email_test_webhook,
             commands::email::email_clear_smtp_password,
+            commands::email::email_set_smtp_password,
+            commands::email::email_has_smtp_password,
             commands::scheduler::scheduler_reschedule,
             commands::scheduler::scheduler_status,
             commands::scheduler::scheduler_check_missed,
@@ -461,6 +517,9 @@ pub fn run() {
             commands::review::review_queue_list,
             commands::review::review_mark_published,
             commands::review::review_mark_discarded,
+            commands::review::review_update_trim,
+            commands::review::review_update_master_preset,
+            commands::review::review_update_jingles,
             commands::review::review_process_reminders,
             commands::review::stage_import_manifest,
             // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
@@ -486,6 +545,15 @@ pub fn run() {
             commands::streaming::stream_preview_path,
             commands::streaming::stream_set_key,
             commands::streaming::stream_delete_key,
+            // Episode images (cover art) — default + per-episode override. Pure
+            // header probing in `sundayrec-core::image_probe`; no feature gate,
+            // no ffmpeg. The renderer had these six as stubs since the port.
+            commands::thumbnail::thumbnail_set_default,
+            commands::thumbnail::thumbnail_clear_default,
+            commands::thumbnail::thumbnail_get_default_info,
+            commands::thumbnail::thumbnail_set_episode,
+            commands::thumbnail::thumbnail_clear_episode,
+            commands::thumbnail::thumbnail_resolve,
             // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
             commands::ndi::ndi_list_sources,
             commands::ndi::ndi_start_receiver,
