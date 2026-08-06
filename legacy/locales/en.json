@@ -898,7 +898,20 @@
     "testWaitHint": "The button unlocks as soon as the meter picks up sound.",
     "testHeardHint": "Sound detected — you can continue.",
     "testBlockedHint": "The audio test could not start. Continue and test the sound from Settings → Audio later.",
-    "testSkipAfterError": "Continue without the audio test →"
+    "testSkipAfterError": "Continue without the audio test →",
+    "consentTitle": "Would you like to help us improve SundayRec?",
+    "consentDesc": "You can share anonymous diagnostics and usage statistics with Sunday Suite, who develop SundayRec. It's always optional and changes nothing about how the app works — you can change your answer any time under Settings → System.",
+    "consentDetailsSummary": "What would be collected?",
+    "consentCatCrash": "Crash reports — error type, app and OS version. Never file paths or text from the sermon.",
+    "consentCatQuality": "Quality data — whether a recording came through complete (loss percentage, verdict). Never the audio content.",
+    "consentCatUsage": "Feature usage — which features you use, e.g. «export to MP3». Counts only, never content.",
+    "consentNever": "Never: audio, transcripts, sermon text, names, e-mail, file paths, device names or church names.",
+    "consentReadMore": "Read the full privacy notice →",
+    "consentYes": "Yes, share anonymously",
+    "consentNo": "No thanks",
+    "consentNote": "Whatever you answer, SundayRec works exactly the same.",
+    "promptTitle": "Share anonymous diagnostics?",
+    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System."
   },
   "time": {
     "yr": "yr",

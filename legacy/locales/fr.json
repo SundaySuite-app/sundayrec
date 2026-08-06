@@ -898,7 +898,20 @@
     "testWaitHint": "Le bouton se débloque dès que l’indicateur capte du son.",
     "testHeardHint": "Son détecté — vous pouvez continuer.",
     "testBlockedHint": "Le test audio n’a pas pu démarrer. Continuez et testez le son depuis Réglages → Son plus tard.",
-    "testSkipAfterError": "Continuer sans le test audio →"
+    "testSkipAfterError": "Continuer sans le test audio →",
+    "consentTitle": "Souhaitez-vous nous aider à améliorer SundayRec ?",
+    "consentDesc": "Vous pouvez partager des diagnostics et des statistiques d’utilisation anonymes avec Sunday Suite, qui développe SundayRec. C’est toujours facultatif et cela ne change rien au fonctionnement de l’application — vous pouvez modifier votre réponse à tout moment dans Paramètres → Système.",
+    "consentDetailsSummary": "Qu’est-ce qui serait collecté dans ce cas ?",
+    "consentCatCrash": "Rapports de plantage — type d’erreur, version de l’application et du système. Jamais de chemins de fichiers ni de texte du sermon.",
+    "consentCatQuality": "Données de qualité — si un enregistrement a été complet (pourcentage de perte, verdict). Jamais le contenu audio.",
+    "consentCatUsage": "Utilisation des fonctions — quelles fonctions vous utilisez, par ex. « export en MP3 ». Seulement des comptages, jamais le contenu.",
+    "consentNever": "Jamais : audio, transcriptions, texte du sermon, noms, e-mail, chemins de fichiers, noms d’appareils ou noms d’église.",
+    "consentReadMore": "Lire la politique de confidentialité complète →",
+    "consentYes": "Oui, partager anonymement",
+    "consentNo": "Non merci",
+    "consentNote": "Quelle que soit votre réponse, SundayRec fonctionne exactement pareil.",
+    "promptTitle": "Partager des diagnostics anonymes ?",
+    "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système."
   },
   "time": {
     "yr": "an",

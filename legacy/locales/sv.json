@@ -898,7 +898,20 @@
     "testWaitHint": "Knappen låses upp så snart mätaren fångar upp ljud.",
     "testHeardHint": "Ljud registrerat — du kan gå vidare.",
     "testBlockedHint": "Ljudtestet kunde inte starta. Gå vidare och testa ljudet från Inställningar → Ljud senare.",
-    "testSkipAfterError": "Fortsätt utan ljudtest →"
+    "testSkipAfterError": "Fortsätt utan ljudtest →",
+    "consentTitle": "Vill du hjälpa oss göra SundayRec bättre?",
+    "consentDesc": "Du kan dela anonym diagnostik och användningsstatistik med Sunday Suite, som utvecklar SundayRec. Det är alltid frivilligt och ändrar ingenting i hur appen fungerar — du kan ändra ditt svar när som helst under Inställningar → System.",
+    "consentDetailsSummary": "Vad skulle i så fall samlas in?",
+    "consentCatCrash": "Kraschrapporter — feltyp, app- och OS-version. Aldrig filsökvägar eller text från predikan.",
+    "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall). Aldrig ljudinnehållet.",
+    "consentCatUsage": "Funktionsanvändning — vilka funktioner du använder, t.ex. «export till MP3». Bara antal, aldrig innehåll.",
+    "consentNever": "Aldrig: ljud, transkriptioner, predikotext, namn, e-post, filsökvägar, enhetsnamn eller församlingsnamn.",
+    "consentReadMore": "Läs hela integritetspolicyn →",
+    "consentYes": "Ja, dela anonymt",
+    "consentNo": "Nej tack",
+    "consentNote": "Oavsett vad du svarar fungerar SundayRec precis likadant.",
+    "promptTitle": "Dela anonym diagnostik?",
+    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System."
   },
   "time": {
     "yr": "år",

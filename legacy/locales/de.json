@@ -898,7 +898,20 @@
     "testWaitHint": "Die Schaltfläche wird freigegeben, sobald die Anzeige Ton erfasst.",
     "testHeardHint": "Ton erkannt — Sie können fortfahren.",
     "testBlockedHint": "Der Audiotest konnte nicht starten. Fahren Sie fort und prüfen Sie den Ton später unter «Einstellungen → Ton».",
-    "testSkipAfterError": "Ohne Audiotest fortfahren →"
+    "testSkipAfterError": "Ohne Audiotest fortfahren →",
+    "consentTitle": "Möchten Sie uns helfen, SundayRec zu verbessern?",
+    "consentDesc": "Sie können anonyme Diagnose- und Nutzungsdaten mit Sunday Suite teilen, die SundayRec entwickeln. Das ist immer freiwillig und ändert nichts daran, wie die App funktioniert — Sie können Ihre Antwort jederzeit unter Einstellungen → System ändern.",
+    "consentDetailsSummary": "Was würde in dem Fall gesammelt?",
+    "consentCatCrash": "Absturzberichte — Fehlertyp, App- und Betriebssystemversion. Nie Dateipfade oder Text aus der Predigt.",
+    "consentCatQuality": "Qualitätsdaten — ob eine Aufnahme vollständig war (Verlustanteil, Ergebnis). Nie der Toninhalt.",
+    "consentCatUsage": "Funktionsnutzung — welche Funktionen Sie nutzen, z. B. «Export als MP3». Nur Anzahl, nie Inhalt.",
+    "consentNever": "Nie: Audio, Transkripte, Predigttext, Namen, E-Mail, Dateipfade, Gerätenamen oder Kirchennamen.",
+    "consentReadMore": "Vollständige Datenschutzerklärung lesen →",
+    "consentYes": "Ja, anonym teilen",
+    "consentNo": "Nein danke",
+    "consentNote": "Egal wie Sie antworten — SundayRec funktioniert genau gleich.",
+    "promptTitle": "Anonyme Diagnosedaten teilen?",
+    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten."
   },
   "time": {
     "yr": "J",
