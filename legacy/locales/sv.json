@@ -868,6 +868,12 @@
     "days": "dagar"
   },
   "notify": {
+    "prerollDead": "Förbufferten fungerar inte — ljud från innan du trycker på inspelning sparas inte.",
+    "cloudUploadFailed": "Säkerhetskopieringen till molnet misslyckades: {file}",
+    "cloudReauthRequired": "Molnlagringen måste anslutas på nytt — logga in igen under Inställningar.",
+    "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
+    "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
+    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
     "systemTitle": "Systemaviseringar",
     "emailTitle": "E-postaviseringar",
     "smtpServer": "E-POSTTJÄNST (SMTP)",

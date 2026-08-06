@@ -868,6 +868,12 @@
     "days": "dager"
   },
   "notify": {
+    "prerollDead": "Forhåndsbufferen virker ikke — lyd fra før du trykker opptak blir ikke tatt vare på.",
+    "cloudUploadFailed": "Sikkerhetskopien til skyen feilet: {file}",
+    "cloudReauthRequired": "Skylagringen må kobles til på nytt — logg inn igjen under Innstillinger.",
+    "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
+    "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
+    "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
     "systemTitle": "Systemvarsler",
     "emailTitle": "E-postvarsler",
     "smtpServer": "E-POSTTJENESTE (SMTP)",

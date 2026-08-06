@@ -868,6 +868,12 @@
     "days": "dni"
   },
   "notify": {
+    "prerollDead": "Bufor wstępny nie działa — dźwięk sprzed naciśnięcia nagrywania nie jest zachowywany.",
+    "cloudUploadFailed": "Kopia zapasowa w chmurze nie powiodła się: {file}",
+    "cloudReauthRequired": "Magazyn w chmurze wymaga ponownego połączenia — zaloguj się ponownie w ustawieniach.",
+    "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
+    "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
+    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
     "systemTitle": "Powiadomienia systemowe",
     "emailTitle": "Powiadomienia e-mail",
     "smtpServer": "USŁUGA E-MAIL (SMTP)",

@@ -9,6 +9,7 @@ import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-ho
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { buildHealthFindings } from '../status/health-findings'
+import { toWarningView } from '../status/backend-warning-core'
 import { firstMount, resetMount, showEl, hideEl } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
 import {
@@ -988,16 +989,17 @@ function wireHomeIpcListeners(): void {
   if (homeIpcWired) return
   homeIpcWired = true
 
-  // Backend warning — cloud/preroll/wake/disk/device issues.
+  // Backend warning — preroll/cloud/recovery/device/disk issues.
   //
-  // NOTE (2026-08-05 channel audit): no Rust emitter for this channel exists
-  // yet, so nothing can arrive on it today. The subscription is kept (rather
-  // than deleted) because it is the intended receiver the day the backend
-  // starts emitting; what WAS deleted is the 60-line hand-rolled toast it used
-  // to build with inline styles, now that there is a real toast service.
+  // The day referred to by the 2026-08-05 channel audit ("the intended receiver
+  // the day the backend starts emitting") is here: `crate::notify::warn` emits
+  // on `backend://warning`, now mapped in api-shim. The payload carries a stable
+  // `code`, so the toast is LOCALIZED rather than showing the backend's
+  // Norwegian `msg` to a German user — with `msg` kept as the fallback for a
+  // code this renderer build does not know yet. See status/backend-warning-core.
   homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
-    const d = data as { msg?: string; severity?: 'warn' | 'error' } | undefined
-    if (d?.msg) toast(d.severity === 'error' ? 'error' : 'warn', d.msg)
+    const view = toWarningView(data, t)
+    if (view) toast(view.kind, view.text)
   }))
 
   // Post-recording summary in existing editor prompt toast. (recording.ts also

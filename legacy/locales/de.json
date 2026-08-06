@@ -868,6 +868,12 @@
     "days": "Tage"
   },
   "notify": {
+    "prerollDead": "Der Vorlaufpuffer funktioniert nicht — Ton von vor dem Drücken der Aufnahmetaste wird nicht gesichert.",
+    "cloudUploadFailed": "Die Cloud-Sicherung ist fehlgeschlagen: {file}",
+    "cloudReauthRequired": "Der Cloud-Speicher muss neu verbunden werden — melden Sie sich unter Einstellungen erneut an.",
+    "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
+    "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
+    "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
     "systemTitle": "Systembenachrichtigungen",
     "emailTitle": "E-Mail-Benachrichtigungen",
     "smtpServer": "E-MAIL-DIENST (SMTP)",

@@ -148,12 +148,16 @@ async function editorCall<T extends object>(
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
 // (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
 //
-// Deliberately NOT mapped (2026-08-05 channel audit): `backend-warning`. Its
-// consumer in pages/home.ts is live, but a search of src-tauri turns up no
-// emitter for it under any name — mapping it to the nearest-looking channel
-// would only manufacture wrong warnings. It stays unmapped until the backend
-// actually emits something.
+// `backend-warning` was the one entry deliberately left OUT by the 2026-08-05
+// channel audit: its consumer in pages/home.ts was live, but no src-tauri
+// emitter existed under any name, and mapping it to the nearest-looking channel
+// would only have manufactured wrong warnings. As of Fase 2 the backend really
+// does emit — `crate::notify::warn` on `backend://warning`, from six sources
+// (pre-roll gave up, cloud upload failed, cloud token revoked, crash recovery
+// skipped a file, the configured device is missing, the disk is filling) — so
+// the channel is mapped for real.
 const EVENT_MAP: Record<string, string> = {
+  'backend-warning': 'backend://warning',
   "recording-overlay-start": "recording://started",
   "recording-overlay-stop": "recording://state",
   "recording-finished": "recording://finished",
