@@ -8,9 +8,12 @@
  * continuously, and the user taps the lit columns to assign LEFT/RIGHT.
  *
  * Ownership rules (the 2026-07-31 device-contention lessons):
- *  - The grid's VU stream is stopped before EVERY other device open — the
- *    backend guarantees it (start_recording/bench/test/scan/probe all call
- *    `vu.stop()`), and the renderer stops eagerly as a fast path.
+ *  - The grid does not own the VU session: it holds a subscription on the
+ *    shared feed (audio/vu-feed.ts), which owns the one engine session the
+ *    whole app shares. Releasing the last subscription stops the engine.
+ *  - The VU stream is stopped before EVERY other device open — the backend
+ *    guarantees it (start_recording/bench/test/scan/probe all call
+ *    `vu.stop()`), and the renderer releases eagerly as a fast path.
  *  - Persistence happens ONLY in the explicit tap handler (never from hidden
  *    DOM state) — the structural replacement for the old `pickerActive` guard
  *    that fixed the phantom L=0/R=0 mapping (2026-07-31).
@@ -20,7 +23,9 @@ import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { createLevelSmoother } from '../audio/smoothing'
 import type { LevelSmoother } from '../audio/smoothing'
+import { acquireVuFeed } from '../audio/vu-feed'
 import type { ChannelMode } from '../../types'
+import type { VuLevels } from '../../bindings/VuLevels'
 
 // Pure decisions live in channel-grid-logic.ts (unit-tested without DOM).
 import {
@@ -59,9 +64,10 @@ const state = {
   assign: { l: 0, r: 1, armed: 'l' as 'l' | 'r' },
   cols: [] as Col[],
   chLabels: [] as string[], // ASIO driver labels (sparse ok)
-  unlisten: null as (() => void) | null,
+  /** Release handle for the shared VU feed subscription (audio/vu-feed.ts). */
+  release: null as (() => void) | null,
   raf: 0,
-  latest: null as { peak_dbfs: (number | null)[] } | null,
+  latest: null as VuLevels | null,
   /** Generation token: every (re)start bumps it so stale async completions
    *  from a previous device can't clobber the current grid. */
   gen: 0,
@@ -144,45 +150,66 @@ export async function startChannelGrid(deviceId: string, deviceName: string | nu
   state.channels = skeletonCount
   renderGrid(true)
 
-  // Live: the VU engine negotiates the FULL channel count and starts the
-  // 30 Hz vu-levels feed. One retry after 400 ms — the device may still be
-  // settling out of a just-released WebKit/gUM format hold.
-  try {
-    let count: number
-    try {
-      count = await window.api.startVu(deviceName)
-    } catch {
-      await new Promise<void>(r => setTimeout(r, 400))
+  // Live: the shared feed points the VU engine at this device, which negotiates
+  // the FULL channel count and starts the 30 Hz vu-levels stream (with the
+  // 400 ms retry — the device may still be settling out of a just-released
+  // format hold). The count arrives as a state callback, not a return value,
+  // because the packets may beat `start_vu`'s resolution: the native pre-roll
+  // buffer emits on the very same channel.
+  // Acquire BEFORE releasing the previous subscription: the refcount never
+  // touches zero across a device switch, so the feed reconciles (one restart)
+  // instead of stopping the engine and starting it again.
+  const previous = state.release
+  state.release = acquireVuFeed({
+    deviceName,
+    onLevels: (_l, _r, raw) => {
       if (gen !== state.gen) return
-      count = await window.api.startVu(deviceName)
-    }
-    if (gen !== state.gen) { void window.api.stopVu(); return }
-    state.channels = count
-    state.phase = 'live'
-    renderGrid(false)
-    subscribe()
-    setStatus(t('audio.gridMeta', '{n} kanaler — live signal')
-      .replace('{n}', String(count)))
-    state.onCount?.(count)
-  } catch {
-    if (gen !== state.gen) return
-    // Fallback: static grid (tap-assign still works) + the 3 s scan helper.
-    state.phase = 'fallback'
-    renderGrid(false)
-    setStatus(t('audio.gridFailed', 'Fikk ikke live signal fra enheten — velg kanal manuelt, eller bruk skanning.'))
-    showFallbackRow(true)
-    state.onCount?.(state.channels)
-  }
+      state.latest = raw
+      if (!state.raf) state.raf = requestAnimationFrame(paint)
+    },
+    onState: (feed, count) => {
+      if (gen !== state.gen) return
+      if (feed === 'live') {
+        const n = count > 0 ? count : state.channels
+        if (state.phase !== 'live' || n !== state.channels) {
+          state.channels = n
+          state.phase = 'live'
+          renderGrid(false)
+        }
+        setStatus(t('audio.gridMeta', '{n} kanaler — live signal').replace('{n}', String(n)))
+        showFallbackRow(false)
+        state.onCount?.(n)
+      } else if (feed === 'failed') {
+        // Fallback: static grid (tap-assign still works) + the 3 s scan helper.
+        if (state.phase !== 'fallback') {
+          state.phase = 'fallback'
+          renderGrid(false)
+        }
+        setStatus(t('audio.gridFailed', 'Fikk ikke live signal fra enheten — velg kanal manuelt, eller bruk skanning.'))
+        showFallbackRow(true)
+        state.onCount?.(state.channels)
+      }
+    },
+  })
+  if (previous) { try { previous() } catch { /* gone */ } }
+}
+
+/** Release the grid's feed subscription (the engine stops when it was the last
+ *  one). Idempotent. */
+function releaseFeed(): void {
+  if (!state.release) return
+  const release = state.release
+  state.release = null
+  try { release() } catch { /* gone */ }
 }
 
 /** Stop the VU stream + painting. Safe to call repeatedly / when idle. */
 export function stopChannelGrid(): void {
   state.gen++
   state.phase = 'idle'
-  if (state.unlisten) { try { state.unlisten() } catch { /* gone */ } state.unlisten = null }
+  releaseFeed()
   if (state.raf) { cancelAnimationFrame(state.raf); state.raf = 0 }
   state.latest = null
-  void window.api.stopVu().catch(() => {})
 }
 
 // ── Internals ────────────────────────────────────────────────────────────────
@@ -340,15 +367,6 @@ function renderBadges(): void {
     col.root.classList.toggle('assigned', label !== '')
     col.root.setAttribute('aria-pressed', label !== '' ? 'true' : 'false')
   }
-}
-
-function subscribe(): void {
-  if (state.unlisten) { try { state.unlisten() } catch { /* gone */ } }
-  const un = window.api.on('vu-levels', (payload: unknown) => {
-    state.latest = payload as { peak_dbfs: (number | null)[] }
-    if (!state.raf) state.raf = requestAnimationFrame(paint)
-  })
-  state.unlisten = typeof un === 'function' ? un : null
 }
 
 /** rAF-coalesced painter: quantized, cached transform writes so 32 columns at
