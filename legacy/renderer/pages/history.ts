@@ -524,6 +524,14 @@ function showTrashView(on: boolean): void {
   }
 }
 
+/** Leave the papirkurv. Called when «Søk & historikk» is (re-)activated: the
+ *  tab is called Historikk, so that is what opening it should show — a trash
+ *  view left over from a visit three pages ago is a page that did not do what
+ *  its name said. */
+export function closeTrashView(): void {
+  if (trashViewOpen) showTrashView(false)
+}
+
 function setupTrashView(rerender: () => void): void {
   document.getElementById('btn-trash-open')?.addEventListener('click', e => {
     e.preventDefault()

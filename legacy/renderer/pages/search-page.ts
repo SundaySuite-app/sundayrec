@@ -19,6 +19,7 @@ import { t } from '../i18n'
 import { escHtml } from '../helpers'
 import {
   applyHistoryView,
+  closeTrashView,
   loadHistory,
   getFullHistory,
   renderHistoryRows,
@@ -70,6 +71,9 @@ export function invalidateTranscriptIndex(): void {
 /** Called from showPage('search'): refresh the history (cheap — picks up new
  *  recordings), build the transcript index on first visit, then render. */
 export function activateSearchPage(): void {
+  // The tab is called Historikk — open it on the recordings, never on a
+  // papirkurv left behind by a visit three pages ago.
+  closeTrashView()
   void (async () => {
     await loadHistory()
     if (!cachedIndex && !indexLoading) await loadTranscriptIndex()
