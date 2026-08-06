@@ -572,6 +572,76 @@ pub(crate) mod tests {
         eprintln!("levels chain: encoded + ffprobed OK ({dur:.3} s, {len} bytes)");
     }
 
+    /// HEARTBEAT REGRESSION — the parsers that read ffmpeg's own progress line,
+    /// run against the REAL bundled binary rather than a fixture.
+    ///
+    /// `parse_size_kb` is the recorder's startup latch (`recording://started`)
+    /// AND its watchdog heartbeat; `parse_last_time_secs` is how the truth
+    /// measurement learns how far the capture got. Both key on the free-form
+    /// stats line, which ffmpeg is free to reword between releases — and did:
+    /// 7.1 renamed the size unit `kB` → `KiB`, which against a `kB`-only parser
+    /// means a perfectly healthy recording never announces that it started and
+    /// never appears to grow. Every fixture in the suite still said `kB`, so
+    /// nothing was red; only the real binary tells the truth. This test asks it.
+    #[test]
+    fn the_real_binary_still_prints_a_heartbeat_we_can_read_or_skips() {
+        use sundayrec_core::progress::parse_size_kb;
+        use sundayrec_core::selftest::parse_last_time_secs;
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("heartbeat.wav");
+
+        // No -nostats, no -loglevel: exactly the verbosity the recorder runs at,
+        // so stderr carries the periodic + final progress lines.
+        let run = std::process::Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=3",
+                "-c:a",
+                "pcm_s16le",
+                "-y",
+            ])
+            .arg(&out)
+            .output()
+            .expect("ffmpeg should run");
+        assert!(run.status.success(), "ffmpeg -version-of-a-render failed");
+        let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
+
+        let bytes = parse_size_kb(&stderr).unwrap_or_else(|| {
+            panic!(
+                "parse_size_kb found no size in this ffmpeg's progress output — \
+                 the stats line changed shape. The recorder would never fire \
+                 recording://started and its watchdog would see a dead file.\n\
+                 stderr was:\n{stderr}"
+            )
+        });
+        let on_disk = std::fs::metadata(&out).expect("output exists").len();
+        // The reported size trails the final flush a little; it must be in the
+        // right ORDER OF MAGNITUDE, which a wrong unit multiplier would not be.
+        assert!(
+            bytes > on_disk / 2 && bytes < on_disk * 2,
+            "heartbeat reported {bytes} bytes for a {on_disk}-byte file — \
+             the size unit's multiplier is wrong"
+        );
+
+        let secs = parse_last_time_secs(&stderr)
+            .unwrap_or_else(|| panic!("parse_last_time_secs found no time= in:\n{stderr}"));
+        assert!(
+            (secs - 3.0).abs() <= 0.15,
+            "progress time= read as {secs} s for a 3 s render"
+        );
+        eprintln!("heartbeat: {bytes} bytes / {secs:.2} s read from the real progress line");
+    }
+
     /// 96 kHz DURATION-EXACT REAL-FFMPEG TEST — the sample-loss regression
     /// guard at the rate where the 2026-07-31 incident lost up to 56 %. Runs a
     /// 10 s lavfi sine at 96 kHz through the EXACT recording chain (levels +

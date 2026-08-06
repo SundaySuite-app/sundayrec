@@ -3802,7 +3802,9 @@ mod tests {
                 &telemetry,
             );
             classify_stderr_line(
-                "size=    1024kB time=00:00:10.00 bitrate= 838.9kbits/s",
+                // `KiB` is what ffmpeg ≥ 7.1 (the bundled 8.1.2) prints; the
+                // `kB` spelling is pinned one test down.
+                "size=    1024KiB time=00:00:10.00 bitrate= 838.9kbits/s elapsed=0:00:10.01",
                 &mut ctx,
                 &levels_tx,
                 &tx,
@@ -3827,8 +3829,19 @@ mod tests {
         );
     }
 
+    /// Runs the dispatcher against BOTH size-unit spellings ffmpeg has used:
+    /// `kB` up to 7.0, `KiB` from 7.1 (the bundled 8.1.2). The rename is not
+    /// cosmetic here — `Started` is what becomes `recording://started`, so a
+    /// dispatcher that can't read the current binary's unit leaves the UI
+    /// waiting forever on a recording that is running fine.
     #[test]
     fn reader_progress_is_coalesced_but_bytes_are_live() {
+        for unit in ["kB", "KiB"] {
+            reader_progress_case(unit);
+        }
+    }
+
+    fn reader_progress_case(unit: &str) {
         // The UI byte counter rides ~1/s messages; the watchdog's byte count is
         // written straight to the atomic on EVERY size= line.
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
@@ -3842,7 +3855,7 @@ mod tests {
 
         for kb in [100u64, 200, 300] {
             classify_stderr_line(
-                &format!("size=    {kb}kB time=00:00:01.00 bitrate= 838.9kbits/s"),
+                &format!("size=    {kb}{unit} time=00:00:01.00 bitrate= 838.9kbits/s"),
                 &mut ctx,
                 &levels_tx,
                 &tx,
