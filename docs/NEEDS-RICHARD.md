@@ -319,6 +319,45 @@ to make it live:
 No new account, key, or device is required for this — it is in-repo glue, listed
 here so the search feature is not assumed fully wired end-to-end.
 
+## E2 — Observability: crash ring, log file, capture/video probes (no feature flag)
+
+Etappe 2 added a panic hook + bounded crash ring (E2.1), a supervisor that
+restarts long-lived tasks (E2.2), a rotating file log (E2.3), a renderer-side
+IPC-failure ring (E2.4), and a real capture/video probe in Diagnose (E2.5) —
+see smoke §13 for the full walkthrough. All of it is unit-tested at the
+decision level (`sundayrec-core::diagnostics`, `src-tauri/src/crash.rs`,
+`src-tauri/src/logfile.rs`); what needs a rig is whether real hardware and a
+real long session behave the way the tests assume.
+
+- **Live-exercise `SUNDAYREC_TEST_PANIC`.** Run it end to end on your own
+  machine (smoke §13): quit the installed app, set the env var, launch a debug
+  build, and confirm a `crash-*.json` lands in `<app-data>/crashes/` and
+  **SR-CRASH-01** shows up in Diagnose with the right count/message. Nobody has
+  watched this happen outside the unit tests yet.
+- **Capture probe against the Qu-5.** The digital-mixer channel-count/
+  negotiation incident (2026-07-31) is exactly the kind of device the capture
+  probe (`SR-CAPTURE-02`) exists to catch honestly. Run Diagnose against the
+  Qu-5 with a channel actually carrying signal and with one that is not, and
+  confirm `captureOk` matches reality rather than a stale device handle.
+- **Video probe with the camera held by another app.** Start Zoom/Teams (or
+  anything else that opens the camera) and then run Diagnose with video
+  enabled. `SR-VIDEO-02` should fire with a clear message rather than the probe
+  hanging or crashing on the camera-busy failure — the same class of
+  contention the two software-side refusal paths (a live recording / the VU
+  meter) already guard against, this time from an OS/other-app angle.
+- **Log rotation after a 90-minute service.** `MAX_FILE_BYTES` is 2 MB, which
+  the module's own header comment estimates as "roughly a very chatty
+  three-hour session at `info`" — confirm that estimate against a REAL
+  90-minute service's log volume (does it rotate zero times, once, or more?),
+  and that the rotated files (`sundayrec.1.log` … `.4.log`) are intact and in
+  the right order afterwards.
+- **A Windows pass on the rotation rename path.** `logfile.rs`'s `rotate()`
+  explicitly closes the file handle before renaming — "Windows will not
+  rename an open file" — but that line has never run on a real Windows box.
+  Force several rotations there (a local build with a lowered
+  `MAX_FILE_BYTES`, or just log enough at `debug`) and confirm no rotation is
+  skipped, no file is left open/locked, and no rotated file is lost.
+
 ---
 
 ## Summary — what only Richard can provide
@@ -345,6 +384,11 @@ None of it blocks the default build or the gate.
   shell-outs + admin/UAC prompts + a true sleep/wake cycle.
 - **NDI** (`--features ndi`): the NDI SDK runtime + an FFI binding + a LAN NDI
   source — the seam is a deliberate STUB until the SDK is vendored (see above).
+- **Observability** (no feature flag, smoke §13): live-exercise
+  `SUNDAYREC_TEST_PANIC` end to end, run the capture probe against the Qu-5 and
+  the video probe with the camera held by another app, watch log rotation
+  survive a real 90-minute service, and confirm the Windows rotation-rename
+  path on a real Windows box.
 
 ### Keys & secrets
 

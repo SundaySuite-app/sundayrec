@@ -664,6 +664,98 @@ Targets the "editor is unstable" reports. Run this stress loop after the fixes:
 
 ---
 
+## 13. Observability: crash ring, log file, capture/video probes (no feature) [HW]
+
+Etappe 2 gave the app a memory of its own failures — a panic hook + bounded
+crash ring (E2.1), a supervisor that restarts long-lived tasks and records
+when it had to (E2.2), a rotating file log (E2.3), a renderer-side ring of
+failed IPC calls (E2.4), and a real capture/video probe wired back into
+Diagnose (E2.5). None of it needs a feature flag; all of it is exercised here.
+
+### Trigger a deliberate crash
+
+```bash
+export SUNDAYREC_TEST_PANIC=1
+npm run tauri dev
+```
+
+- **Debug build only** (`#[cfg(debug_assertions)]`) — inert in a release build
+  no matter what the env var says.
+- **Quit any installed SundayRec first.** The single-instance plugin (all
+  builds share the identifier `no.sundayrec.app`) means a second launch just
+  focuses the existing window instead of starting a new process — with the
+  installed app already running, the `tauri dev` process you just started
+  never gets far enough to panic.
+- Two seconds after startup a watched task panics on purpose
+  ("SUNDAYREC_TEST_PANIC=1: deliberate panic to prove the crash ring"). The
+  process itself does **not** crash — `crash::watch_handle` catches the panic
+  at the `JoinHandle` boundary — but it is persisted exactly as a real one
+  would be.
+  - **Expected:** the terminal logs a `PANIC: …` line; a new
+    `crash-<millis>-<seq>.json` appears in `<app-data>/crashes/`; opening
+    **Lyd → Diagnose** shows finding **SR-CRASH-01** ("Appen har krasjet")
+    with the count and the newest message.
+
+### Where the files land
+
+| What                                 | Path                                                  | Kept                                                                          |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Live log                             | `<app-data>/logs/sundayrec.log`                       | rotates at 2 MB                                                               |
+| Rotated logs                         | `<app-data>/logs/sundayrec.1.log` … `sundayrec.4.log` | 5 files total, ~10 MB ceiling                                                 |
+| Panics (process hook + watched-task) | `<app-data>/crashes/crash-<millis>-<seq>.json`        | newest 20                                                                     |
+| Supervised-task restarts             | `<app-data>/crashes/restart-<millis>-<seq>.json`      | newest 20, own ring — a flapping task cannot evict the panic that explains it |
+
+`<app-data>` is the platform app-data dir Tauri resolves (macOS:
+`~/Library/Application Support/…`; Windows: `%APPDATA%\…`).
+
+### «Vis logg» / «Kopier siste logg» (System-fanen → Hjelp og opplæring)
+
+- **Vis logg** reveals the live log file in Finder/Explorer (`logs_reveal` →
+  `tauri_plugin_opener::reveal_item_in_dir`), falling back to opening the
+  folder itself before the first line has been written.
+- **Kopier siste logg** pulls the tail of the live file (`logs_tail`, capped
+  server-side at 512 KB regardless of what the UI asks for) and copies it to
+  the clipboard, with a toast confirming the copy (or that the log is still
+  empty).
+- **Expected:** the file is plain text, newest lines at the bottom; secrets
+  (stream keys, SMTP passwords, OAuth tokens) are redacted on the writer
+  thread before a line ever reaches disk — confirm none show up if you have
+  any of those configured.
+
+### Capture-probe expectations in Diagnose
+
+**Lyd → Diagnose** now runs a real ~2 s capture (and, with video on, grabs one
+real camera frame) through the SAME backend a recording uses, then reports
+`captureOk` / `videoOk` instead of the old permanent "ikke testet".
+
+1. With nothing else using the mic, click **Diagnose**.
+   - **Expected:** the probe runs and reports true/false. A `false` raises
+     **SR-CAPTURE-02** ("Testopptaket fikk ingen lyd") — critical, and
+     distinct from SR-CAPTURE-01 (a recording that happened but stuttered).
+     With video on, a failed frame grab raises **SR-VIDEO-02** ("Kameraet ga
+     ingen bilde").
+2. **Refusal path 1 — during a recording.** Start a recording, then open
+   Diagnose.
+   - **Expected:** the probe does **not** run — the report's
+     `capture_probe_skipped` reads "et opptak pågår — lydprøven ville tatt
+     enheten"; nothing contends with the live take.
+3. **Refusal path 2 — while the VU meter holds the input.** Open
+   **Innstillinger → Lyd** (the channel grid opens the VU stream) and click
+   **Diagnose** without stopping it.
+   - **Expected:** the probe again does not run — `capture_probe_skipped`
+     reads "nivåmåleren bruker mikrofonen — stopp den og kjør Diagnose
+     igjen". Leave the Lyd tab (which stops the meter) and run Diagnose again
+     to see the probe actually execute.
+
+> [HW] The panic/crash-ring plumbing and the finding rules are unit-tested in
+> `sundayrec-core::diagnostics` + `src-tauri/src/crash.rs`; only the
+> end-to-end wiring — does a REAL panic reach a REAL file, does the REAL log
+> rotate on a REAL disk, does the REAL device refuse the probe at the right
+> moments — needs a rig. See `docs/NEEDS-RICHARD.md` for what is still
+> owner-verified only.
+
+---
+
 ## §R3 — Live streaming (RTMP + lower-thirds) — `--features streaming`
 
 ```bash
