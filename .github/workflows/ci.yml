@@ -158,12 +158,12 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
 
       # Approximate the Windows RELEASE feature combo (release.yml builds
-      # --no-default-features --features editor,tray,asio,updater; asio needs
-      # the Steinberg SDK so it is left out here) — a feature-gate seam that
-      # only breaks off-default used to surface at tag time.
+      # --no-default-features --features editor,tray,asio,updater,email; asio
+      # needs the Steinberg SDK so it is left out here) — a feature-gate seam
+      # that only breaks off-default used to surface at tag time.
       - name: cargo check (Windows release feature combo, minus asio)
         working-directory: src-tauri
-        run: cargo check --workspace --no-default-features --features editor,tray,updater
+        run: cargo check --workspace --no-default-features --features editor,tray,updater,email
 
   # Dependency vulnerability scan — advisory DBs for both ecosystems. Runs as
   # its own job so a slow cargo-audit install doesn't hold up the main gate.

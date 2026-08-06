@@ -18,16 +18,21 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # is smoke-tested on a real rig (`--features email` etc.). The headless CI gate
 # builds both `default` and `--no-default-features` so every seam keeps compiling.
 [features]
-# The non-destructive editor (R1) AND whisper transcription (PU-5) ship in the
-# default build so the Rediger screen + "transkriber tale" work out of the box.
+# The non-destructive editor (R1), whisper transcription (PU-5) AND the email
+# alerter (PU-1) ship in the default build so the Rediger screen, "transkriber
+# tale" and "send meg e-post når opptaket feiler" work out of the box.
 # `editor` adds no native dep (ffmpeg is a sidecar). `whisper` links libwhisper
 # (whisper-rs) — verified to build in ~16s on Apple silicon and cached after, so
 # the cost is acceptable for the value; the model is downloaded at runtime via the
 # UI (`whisper_download_model`). Both run real ffmpeg/inference (HARDWARE-
 # UNVERIFIED). Build with `--no-default-features` and they return `feature_disabled`.
-default = ["editor", "whisper", "tray", "updater"]
+default = ["editor", "whisper", "tray", "updater", "email"]
 # PU-1: SMTP/Gmail error+test alerts. Pulls `lettre` for the SMTP transport (the
-# Gmail-API path reuses the already-present `reqwest`).
+# Gmail-API path reuses the already-present `reqwest`) — ~6 small pure-Rust
+# crates, no native dep. NOW IN `default` AND in both release feature lists
+# (.github/workflows/release.yml): an unattended volunteer operator finding out
+# by email that Sunday's recording died is the single highest-value alert the
+# app has, and it shipped in no release while this stayed default-off.
 email = ["dep:lettre"]
 # PU-2: native menubar tray + `sundayrec://` scheme handler.
 tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]

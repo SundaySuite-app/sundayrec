@@ -1,4 +1,4 @@
-//! Email-alert plumbing (PU-1 P2b) — **NETWORK-UNVERIFIED**, default-off `email` feature.
+//! Email-alert plumbing (PU-1 P2b) — **NETWORK-UNVERIFIED**, `email` feature (IN `default`).
 //!
 //! The impure half of the error/test mailer. Every *decision* — the localized
 //! templates, the throttle/dedup gate, the RFC 2822 message + base64url
@@ -16,9 +16,11 @@
 //! ## ⚠️ NETWORK-UNVERIFIED
 //!
 //! The Gmail POST and the SMTP handshake are wired + compile under
-//! `--features email`, but the wire behaviour (a real token, a reachable SMTP
-//! server, deliverability) is only provable on a real account + network — see
-//! docs/SMOKE-TEST.md. The default build excludes this module entirely.
+//! `--features email` (now part of `default` AND of both release feature lists),
+//! but the wire behaviour against a real provider (a real token, a reachable
+//! SMTP server, deliverability) is only provable on a real account + network —
+//! see docs/SMOKE-TEST.md. A `--no-default-features` build excludes this module
+//! entirely and the commands return `feature_disabled`.
 
 use std::sync::Mutex;
 

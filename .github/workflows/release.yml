@@ -56,8 +56,11 @@ jobs:
           # `tray` ships the menubar/tray icon (+ sundayrec:// deep-link). It
           # builds on both runners and degrades gracefully (install failure only
           # logs a warning), so it's safe to ship.
+          # `email` ships the SMTP/Gmail alerter — pure-Rust `lettre`, no native
+          # dep. THESE LISTS ARE EXPLICIT: flipping Cargo.toml's `default` alone
+          # never reaches a release, so both platform lines carry `email` too.
           - platform: macos-latest
-            args: "-- --no-default-features --features editor,tray,updater,whisper"
+            args: "-- --no-default-features --features editor,tray,updater,whisper,email"
           # Windows adds `asio`: a low-latency, single-device multichannel audio
           # backend for pro interfaces (the dshow path splits them into stereo
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
@@ -68,7 +71,7 @@ jobs:
           # ci.yml's windows-check job, which checks default features incl.
           # whisper — enabling it here is an owner decision + rig test).
           - platform: windows-latest
-            args: "-- --no-default-features --features editor,tray,asio,updater"
+            args: "-- --no-default-features --features editor,tray,asio,updater,email"
 
     runs-on: ${{ matrix.platform }}
     steps:

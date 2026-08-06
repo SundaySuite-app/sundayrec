@@ -5,12 +5,11 @@
 //! render the panel WITHOUT having to provoke a failed send. `email_send_test`
 //! dispatches a localized "email works" test message via the chosen transport.
 //!
-//! The send path (SMTP socket / Gmail POST) is behind the **default-off `email`**
-//! feature; in the default build `email_send_test` returns a clear
-//! `feature_disabled` error so the panel shows a calm "not built into this build"
-//! hint. The SMTP password is never persisted — it travels with the test request
-//! and is dropped after the send (mirrors the Electron `smtpPass` arg to
-//! `mailer.ts` `sendTest`). NETWORK-UNVERIFIED behind `--features email`.
+//! The send path (SMTP socket / Gmail POST) is behind the `email` feature, which
+//! is now **in `default` and in both release feature lists** — so a shipped build
+//! can actually send. Only a `--no-default-features` build makes
+//! `email_send_test` return `feature_disabled`, and the panel then shows a calm
+//! "not built into this build" hint. NETWORK-UNVERIFIED against a real provider.
 
 use tauri::State;
 
