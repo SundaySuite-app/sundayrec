@@ -9,23 +9,27 @@
  *
  * ## Why this is opt-in (the microphone has exactly ONE owner)
  *
- * The rolling buffer is a CONTINUOUS ffmpeg capture on the same input device the
- * live meters use. Backend-side the hand-offs are already correct — `preroll_start`
- * stops the cpal VU engine first, and `start_recording` harvests + `preroll.stop()`s
- * + `vu.stop()`s + settles 400 ms before the capture engine opens the device — but
- * the RENDERER's own `getUserMedia` meters (Home "Lydnivå — live", the Direktesending
- * meter, onboarding) are not covered by any of that, and Home is the default page.
- * A buffer that runs while the app is idle would therefore sit on the mic next to
- * the home meter for essentially the whole time the app is open. That is precisely
- * the second-owner pattern the 2026-07-31 audit traced 15–56 % sample loss to, and
- * the Qu-5 rig incident showed a webview-held device can even make the recorder's
+ * The rolling buffer is a CONTINUOUS capture on the same input device the live
+ * meters use. Backend-side the hand-offs are already correct — `preroll_start`
+ * stops the cpal VU engine first, and `start_recording` harvests +
+ * `preroll.stop()`s + `vu.stop()`s + settles 400 ms before the capture engine
+ * opens the device.
+ *
+ * The renderer used to be the hole in that: Home ("Lydnivå — live"), the
+ * Direktesending meter and the onboarding test each opened their OWN
+ * `getUserMedia` stream, which no backend hand-off could see or stop. Home is
+ * the default page, so a buffer running while the app was idle would have sat on
+ * the mic next to the home meter for essentially the whole time the app was
+ * open — the second-owner pattern the 2026-07-31 audit traced 15–56 % sample
+ * loss to, and the one the Qu-5 rig incident showed could make the recorder's
  * open fail outright.
  *
- * Making that safe means redesigning where the home meter gets its levels from,
- * which is not a change to make next to a hardware-verified capture engine. So the
- * buffer ships behind a default-OFF advanced toggle (`prerollEnabled`), the
- * settings copy says plainly what it costs, and Home shows a chip whenever it is
- * running so it is never a silent background microphone.
+ * THAT HOLE IS CLOSED. Every meter now reads the backend VU engine through
+ * audio/vu-feed.ts and the renderer opens no input device at all, so the buffer
+ * no longer has a webview to contend with. It stays behind the default-OFF
+ * advanced toggle (`prerollEnabled`) because a continuous capture while idle is
+ * still a real cost the user should choose, and Home still shows a chip whenever
+ * it is running so it is never a silent background microphone.
  *
  * ## Shape
  *

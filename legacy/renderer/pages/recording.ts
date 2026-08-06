@@ -14,8 +14,8 @@
  *   1. window.api.startRecordingNow(opts) → Tauri `plan_recording_opts` +
  *      `start_recording` spawn the native capture engine
  *   2. showOverlay() → recording UI becomes visible
- *   3. startMonitoring(opts) → releases every renderer-side mic consumer and
- *      subscribes to the engine's own telemetry (no new getUserMedia stream)
+ *   3. startMonitoring(opts) → releases every meter's hold on the VU engine and
+ *      subscribes to the recording's own telemetry (no second device open)
  *
  * Stop flow:
  *   1. window.api.stopRecordingNow() → Tauri `stop_recording` asks the engine
@@ -102,8 +102,8 @@ function dbToEnvHeight(db: number): number {
 // ── Level meter driven by the recording's own `recording://levels` telemetry
 //    (computed by the native capture engine directly off its ring buffer; a
 //    legacy ffmpeg-astats path only exists behind the classic_ffmpeg_audio
-//    escape hatch) — NOT a second getUserMedia mic stream. Opening the built-in
-//    mic twice (the recorder's capture + a getUserMedia monitor) made macOS
+//    escape hatch) — NOT a second open of the device. Opening the built-in mic
+//    twice (the recorder's capture + a monitoring stream) made macOS
 //    re-configure the shared device and drop samples → choppy ("hakkete")
 //    recordings. Reading the already-captured signal's levels means the mic is
 //    opened EXACTLY once. ──────
@@ -439,11 +439,11 @@ async function handleManualStart(): Promise<void> {
     videoDeviceIndex: noVideo ? null : videoIdx,
   }
 
-  // LEAK GUARD (2026-07-31 audit): release EVERY renderer-side audio capture
-  // BEFORE ffmpeg opens the device — the home VU's getUserMedia stream used to
-  // stay open across the whole device-open (it was only stopped inside
-  // startMonitoring, AFTER the spawn), so the recorder always started with a
-  // second microphone owner attached.
+  // Release every meter's hold on the VU engine BEFORE the capture engine opens
+  // the device, so the hand-over is orderly rather than a teardown underneath a
+  // running session. (This started life as a LEAK GUARD — 2026-07-31 audit —
+  // when the home VU's own getUserMedia stream stayed open across the whole
+  // device-open. The renderer holds no microphone at all now.)
   releaseRendererAudioCaptures()
 
   // Do NOT close the modal before we know if the recording started —
@@ -612,9 +612,9 @@ async function startMonitoring(_opts: RecordingOpts): Promise<void> {
     recWaveform.start()
   }
 
-  // Meter + waveform from `recording://levels` (the recording's OWN ffmpeg
-  // astats), so the mic is opened exactly once (ffmpeg) — no second getUserMedia
-  // stream to make macOS drop samples. A mono take collapses to one bar.
+  // Meter + waveform from `recording://levels` (the recording's OWN telemetry),
+  // so the device is opened exactly once — nothing else meters it while a take
+  // is running. A mono take collapses to one bar.
   startLevelsMeter()
 
   // Signal check — warn if the input is near-silent 15 s into recording.
@@ -977,11 +977,10 @@ function hideOverlay(): void {
   if (recVideoWrap) recVideoWrap.style.removeProperty('--rec-video-ar')
 
   // Restart preview + the home "Lydnivå — live" meter after a short delay —
-  // gives time for split auto-restart to cancel it, and lets ffmpeg release
-  // the audio device before we reopen it with getUserMedia. The home VU was
-  // stopped by startMonitoring() (one mic owner at a time) and previously
-  // NEVER came back after a recording — the meter sat dead until the user
-  // re-navigated to home.
+  // gives time for split auto-restart to cancel it, and lets the capture engine
+  // release the audio device before the VU engine asks for it. The home VU was
+  // stopped by startMonitoring() and previously NEVER came back after a
+  // recording — the meter sat dead until the user re-navigated to home.
   if (previewRestartTimer) clearTimeout(previewRestartTimer)
   previewRestartTimer = setTimeout(() => {
     previewRestartTimer = null

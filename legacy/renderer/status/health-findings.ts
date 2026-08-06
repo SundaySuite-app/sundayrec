@@ -3,7 +3,7 @@
  *
  * `media_permissions` and `ffmpeg_health` are two backend commands that nothing
  * in the renderer has ever called. That mattered most for the microphone: a
- * denied mic makes `getUserMedia` fail with a generic browser error and makes
+ * denied mic makes the device open fail with a generic error and makes
  * avfoundation emit "Input/output error" or simply no frames, so the user was
  * told the device was missing when in fact macOS was blocking it. The answer
  * exists — AVFoundation knows — it just never reached a screen.

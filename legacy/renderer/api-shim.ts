@@ -791,7 +791,8 @@ const api: Record<string, unknown> = {
   // Precision capture bench: real recording argv for N s → ffprobed +
   // verdict-judged SelfTestReport (camelCase). Throws on hard failure so the
   // button can show the actual error text.
-  // Real input channel count via the ffmpeg backend (getUserMedia caps at 2).
+  // Real input channel count via the ffmpeg backend — the device's own count,
+  // not a stereo pair.
   probeDeviceChannels: async (deviceName: string) =>
     invoke<number>("probe_device_channels", { deviceName }),
   // Engine-side VU metering: starts the cpal stream on the device (negotiated
@@ -1047,7 +1048,7 @@ const api: Record<string, unknown> = {
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone
-  // makes getUserMedia fail generically and avfoundation emit "Input/output
+  // makes the device open fail generically and avfoundation emit "Input/output
   // error", so the user was told the device was MISSING when macOS was simply
   // refusing it. AVFoundation knew all along.
   mediaPermissions: async () =>

@@ -220,7 +220,7 @@ let silentPreflightHasRun = false
 /**
  * The OS-permission + sidecar findings, in front of whatever `run_preflight`
  * found. A blocked microphone must be visible BEFORE the user meets a generic
- * getUserMedia failure, and `run_preflight` does not ask AVFoundation — the two
+ * device-open failure, and `run_preflight` does not ask AVFoundation — the two
  * commands that do (`media_permissions`, `ffmpeg_health`) had no caller at all.
  * Best-effort: an unavailable probe adds nothing rather than blocking the card.
  */
@@ -347,8 +347,8 @@ function showFeedResolution(video: HTMLVideoElement, stream: MediaStream): void 
 
 export function stopVideoPreview(): void {
   previewActive = false
-  // Release the camera (client-side getUserMedia preview) so the recorder can
-  // open it when recording starts.
+  // Release the camera (client-side getUserMedia preview, video only) so the
+  // recorder can open it when recording starts.
   if (previewStream) { previewStream.getTracks().forEach(t => t.stop()); previewStream = null }
   const video = document.getElementById('video-preview-video') as HTMLVideoElement | null
   const img   = document.getElementById('video-preview-img') as HTMLImageElement | null
@@ -360,8 +360,8 @@ export function stopVideoPreview(): void {
   if (phDiv) { phDiv.style.display = '' }
 }
 
-// The live camera preview is a CLIENT-SIDE getUserMedia stream piped into a
-// <video> element — it works in WKWebView with no backend, where the old
+// The live camera preview is a CLIENT-SIDE getUserMedia stream — VIDEO ONLY —
+// piped into a <video> element — it works in WKWebView with no backend, where the old
 // Electron MJPEG-over-IPC preview did not (the Tauri backend writes a preview
 // JPEG to a file, not IPC frames). The RECORDING still uses the backend ffmpeg
 // device; this is preview only, and it's released (stopVideoPreview) the moment
@@ -411,8 +411,12 @@ export async function startVideoPreview(): Promise<void> {
     }
     // Map the chosen camera (an ffmpeg device NAME) to a browser deviceId by
     // label; fall back to the default camera. enumerateDevices only exposes
-    // labels after a getUserMedia grant, so on first run we just use the default.
+    // camera labels after a camera grant, so on first run we use the default.
     try {
+      // VIDEO ONLY — `videoinput` entries. The AUDIO half of enumerateDevices is
+      // gone from this app entirely (audio/capture.ts): it needed a microphone
+      // grant to reveal labels, and asking for one is what made the webview a
+      // device owner.
       const devs = await navigator.mediaDevices.enumerateDevices()
       const cam  = devs.find(d =>
         d.kind === 'videoinput' && !!settings.videoDeviceName &&
@@ -420,6 +424,9 @@ export async function startVideoPreview(): Promise<void> {
       if (cam?.deviceId) videoConstraint.deviceId = { ideal: cam.deviceId }
     } catch { /* enumerate needs permission first — fall back to default device */ }
 
+    // VIDEO ONLY. This is the last `getUserMedia` in the renderer, and it asks
+    // for `audio: false` — it can never contend for the microphone. Every audio
+    // path (metering, device enumeration, capture) is backend-owned.
     const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint, audio: false })
     if (!previewActive) { stream.getTracks().forEach(t => t.stop()); return } // stopped while awaiting
     previewStream = stream
@@ -764,9 +771,9 @@ export function setupHome(): void {
     status.textContent = benchLine()
     healthProgress('indeterminate')
     const benchTick = setInterval(() => { status.textContent = benchLine() }, 1000)
-    // The bench must measure the RECORDING PATH alone: release every
-    // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
-    // getUserMedia on the same device skews the source itself).
+    // The bench must measure the RECORDING PATH alone: release every meter's
+    // hold on the VU engine first, so the bench opens the device cleanly rather
+    // than yanking it out from under a running metering session.
     releaseRendererAudioCaptures()
     try {
       const r = await window.api.runCaptureBench(60)
@@ -951,9 +958,13 @@ export function setupHome(): void {
   })
 
   const onDeviceChange = (): void => {
-    // Skip during active recording — opening getUserMedia competes with ffmpeg's AVFoundation session
+    // Skip during active recording — re-enumerating mid-take can only unsettle a
+    // device the capture engine is holding, and the answer cannot change a
+    // running recording anyway.
     if (!window.__isRecording) void checkStatus()
   }
+  // `devicechange` fires for audio devices too — it is the cheapest signal that a
+  // mixer was plugged in or pulled out, and it costs no device open to listen.
   navigator.mediaDevices.addEventListener('devicechange', onDeviceChange)
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
@@ -1091,9 +1102,11 @@ export async function refreshHome(): Promise<void> {
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
-  // LEAK GUARD (2026-07-31 audit): navigating home mid-recording used to
-  // reopen the getUserMedia meter stream — a second microphone owner beside
-  // the recorder's ffmpeg for the rest of the take.
+  // The recorder owns the device during a take (`start_recording` stops the VU
+  // engine itself), and the overlay's meter reads `recording://levels`. Asking
+  // for a metering session here would only be taken away again.
+  // (Historically this guard existed because the home meter was a SECOND
+  // microphone owner — 2026-07-31 leak audit. It no longer opens a device.)
   if (!window.__isRecording) startVU()
 
   // Once-per-session silent preflight. Surfaces critical issues (disk full,
