@@ -954,7 +954,12 @@
     "testEmailSent": "Test-e-post skickad till {to}",
     "testEmailFailed": "Test-e-posten gick inte fram: {err}",
     "testWebhookOk": "Webhooken svarade — larm kommer fram.",
-    "testWebhookFailed": "Webhooken svarade inte. Kontrollera adressen."
+    "testWebhookFailed": "Webhooken svarade inte. Kontrollera adressen.",
+    "errWebhookHttp": "Använd https:// för adresser på internet. http:// tillåts bara för utrustning på ditt eget nätverk.",
+    "webhookLocalTitle": "Den här adressen finns på ditt lokala nätverk",
+    "webhookLocalBody": "SundayRec skickar aviseringar till {host}, som ligger på ditt eget nätverk och inte på internet. Tillåt det bara om du vet vilken utrustning som svarar där.",
+    "webhookLocalAllow": "Ja, tillåt lokalt nätverk",
+    "webhookLocalDeny": "Avbryt"
   },
   "prep": {
     "sectionTitle": "Förberedelse och granskning",

@@ -522,6 +522,12 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // Same reasoning for the chat webhook — the backend posts it on failure.
     webhookUrl: s.webhookUrl ?? "",
     webhookOnWarning: s.webhookOnWarn ?? false,
+    // E1.4: the per-URL "yes, that address is on my own network" confirmation.
+    // MUST be synced, and for the opposite reason to the fields above: the
+    // backend refuses a loopback/private/link-local webhook without it, so an
+    // un-synced flag would silently disable a LAN webhook the operator just
+    // approved (and Rust's `#[serde(default)]` would re-clear it on every save).
+    webhookAllowLocal: s.webhookAllowLocal ?? false,
     // The alert mail is rendered backend-side FROM these: the subject is
     // «Opptaksfeil — {church} — {dato}» and the greeting «Hei {navn},». Without
     // them the mail would greet nobody on behalf of "SundayRec". `churchName`

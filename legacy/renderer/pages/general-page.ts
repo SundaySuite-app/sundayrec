@@ -18,6 +18,12 @@ import {
   emailGateStatus,
   type EmailFacts,
 } from '../ui/feature-gate-core'
+import {
+  hostOf,
+  needsLocalConfirmation,
+  nextAllowLocal,
+  webhookUrlError,
+} from '../ui/webhook-url-core'
 
 /** Every auto-applying System/Varsler control writes the same way. */
 function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
@@ -57,14 +63,36 @@ export function setupGeneralPage(): void {
     // the button up without a tab reload.
     after: () => { void refreshEmailGate() },
   }))
+  // The webhook URL carries an SSRF decision, so it is the one text field whose
+  // save can ask a question. A LAN address (192.168.x, printer.local, a bare
+  // hostname) is refused by the backend unless `webhookAllowLocal` is set, and
+  // that flag is set HERE and only here — after the operator has confirmed, for
+  // this address, that it is a device on their own network. Typing a public URL
+  // clears it again: it is an opt-in for one address, not a mode.
   bindSetting('webhook-url', generalBinding({
     key: 'webhookUrl',
     validate: (value) => {
-      const v = String(value ?? '').trim()
-      if (!v) return null
-      return /^https:\/\/\S+$/.test(v)
-        ? null
-        : t('notify.errWebhookUrl', 'Webhook-URL må begynne med https://')
+      const err = webhookUrlError(String(value ?? ''))
+      return err ? t(err.key, err.fallback) : null
+    },
+    confirmIf: (value) => {
+      const url = String(value ?? '').trim()
+      if (!needsLocalConfirmation(url, !!settings.webhookAllowLocal)) return null
+      return {
+        title: t('notify.webhookLocalTitle', 'Denne adressen er på ditt lokale nett'),
+        message: t(
+          'notify.webhookLocalBody',
+          'SundayRec sender varsler til {host}, som ligger på ditt eget nettverk og ikke på internett. Tillat det bare hvis du vet hvilket utstyr som svarer der.',
+        ).replace('{host}', hostOf(url) ?? url),
+        confirmLabel: t('notify.webhookLocalAllow', 'Ja, tillat lokalt nett'),
+        cancelLabel: t('notify.webhookLocalDeny', 'Avbryt'),
+      }
+    },
+    // Reached only when the guard above was absent or answered yes.
+    apply: (value) => {
+      const url = String(value ?? '').trim()
+      patchSettings({ webhookAllowLocal: nextAllowLocal(url, true) })
+      collectGeneralSettings()
     },
   }))
   bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))

@@ -367,6 +367,17 @@ pub struct Settings {
     /// Also POST the webhook on warnings (not just errors)? Default false.
     #[serde(default)]
     pub webhook_on_warning: bool,
+    /// Per-URL opt-in for a webhook on the LOCAL network (E1.4).
+    ///
+    /// The webhook URL is fully user-controlled and its response is discarded —
+    /// a blind SSRF unless something says no. The default policy blocks
+    /// loopback/private/link-local addresses, but a church legitimately
+    /// webhooks a LAN device (a booth control panel, a Home Assistant box that
+    /// lights the "ON AIR" sign), so the settings UI asks out loud and sets this
+    /// flag for the URL the operator confirmed. Re-typing a different address
+    /// clears it — this is an opt-in for ONE address, not a mode.
+    #[serde(default)]
+    pub webhook_allow_local: bool,
 
     // ── Email alerts (R7 — Electron `email*`; the SMTP pass lives in the OS ────
     //    keychain, NEVER here — mirrors `store.ts` `setSmtpPassword`) ───────────
@@ -590,6 +601,9 @@ impl Default for Settings {
             notify_stop: true,
             webhook_url: String::new(),
             webhook_on_warning: false,
+            // Fails CLOSED: a LAN webhook is unreachable until the operator has
+            // been asked and said yes.
+            webhook_allow_local: false,
 
             email_on_error: false,
             email_address: String::new(),
@@ -804,6 +818,8 @@ mod tests {
         assert!(s.notify_stop);
         assert_eq!(s.webhook_url, "");
         assert!(!s.webhook_on_warning);
+        // E1.4: the LAN opt-in must default OFF, or a blind SSRF ships on.
+        assert!(!s.webhook_allow_local);
         // Email (R7)
         assert!(!s.email_on_error);
         assert_eq!(s.email_address, "");

@@ -216,11 +216,15 @@ pub struct FailureRouting<'a> {
     /// The [`crate::email::AlertGate`] says this (recipient, error) pair was
     /// already mailed inside the throttle window.
     pub email_throttled: bool,
-    /// `settings.webhook_url` — POSTed on every failure when it is a valid
-    /// http(s) URL. There is no separate "webhook on error" toggle: configuring
-    /// a webhook at all IS the opt-in (`webhook_on_warning` only widens it to
-    /// warnings — see [`WarningRouting`]).
+    /// `settings.webhook_url` — POSTed on every failure when it passes the
+    /// [`crate::webhook::webhook_gate`]. There is no separate "webhook on error"
+    /// toggle: configuring a webhook at all IS the opt-in
+    /// (`webhook_on_warning` only widens it to warnings — see [`WarningRouting`]).
     pub webhook_url: &'a str,
+    /// `settings.webhook_allow_local` — the operator confirmed this URL points
+    /// at a device on their own network (E1.4). Without it a loopback/private/
+    /// link-local URL plans as "no webhook" rather than as a silent blind SSRF.
+    pub webhook_allow_local: bool,
 }
 
 /// Decide which channels a FAILURE goes out on.
@@ -230,7 +234,8 @@ pub struct FailureRouting<'a> {
 /// setting has ever been able to silence that. E-mail needs all five of its
 /// conditions (asked for it, somewhere to send, a build that can send, a
 /// transport to send with, and not already told a minute ago). The webhook
-/// needs only a valid URL.
+/// needs a URL that passes the SSRF gate — valid, and either public-over-TLS or
+/// a local address the operator explicitly allowed.
 pub fn plan_failure(r: &FailureRouting) -> NotifyPlan {
     NotifyPlan {
         native: true,
@@ -239,7 +244,7 @@ pub fn plan_failure(r: &FailureRouting) -> NotifyPlan {
             && r.email_feature_built
             && r.email_transport_ready
             && !r.email_throttled,
-        webhook: crate::webhook::is_valid_webhook_url(r.webhook_url),
+        webhook: crate::webhook::may_send_webhook(r.webhook_url, r.webhook_allow_local),
     }
 }
 
@@ -250,6 +255,8 @@ pub struct WarningRouting<'a> {
     pub webhook_on_warning: bool,
     /// `settings.webhook_url`.
     pub webhook_url: &'a str,
+    /// `settings.webhook_allow_local` — see [`FailureRouting`].
+    pub webhook_allow_local: bool,
 }
 
 /// What a WARNING does. The in-app event is unconditional (it is the whole
@@ -259,7 +266,8 @@ pub struct WarningRouting<'a> {
 pub fn plan_warning(r: &WarningRouting) -> WarnPlan {
     WarnPlan {
         event: true,
-        webhook: r.webhook_on_warning && crate::webhook::is_valid_webhook_url(r.webhook_url),
+        webhook: r.webhook_on_warning
+            && crate::webhook::may_send_webhook(r.webhook_url, r.webhook_allow_local),
     }
 }
 
@@ -384,6 +392,7 @@ mod tests {
             email_transport_ready: true,
             email_throttled: false,
             webhook_url: "https://hooks.slack.com/services/T/B/X",
+            webhook_allow_local: false,
         }
     }
 
@@ -412,6 +421,7 @@ mod tests {
             email_transport_ready: false,
             email_throttled: true,
             webhook_url: "",
+            webhook_allow_local: false,
         });
         assert_eq!(
             plan,
@@ -500,10 +510,18 @@ mod tests {
                 "{url} should not be POSTed to"
             );
         }
+        // A plain-http LAN URL was accepted here before E1.4 — that was the
+        // blind SSRF. It now needs the operator's per-URL opt-in, and gets
+        // through the moment they grant it.
+        let lan = FailureRouting {
+            webhook_url: "http://192.168.1.9/hook",
+            ..all_on()
+        };
+        assert!(!plan_failure(&lan).webhook);
         assert!(
             plan_failure(&FailureRouting {
-                webhook_url: "http://192.168.1.9/hook",
-                ..all_on()
+                webhook_allow_local: true,
+                ..lan
             })
             .webhook
         );
@@ -516,6 +534,7 @@ mod tests {
         let plan = plan_warning(&WarningRouting {
             webhook_on_warning: false,
             webhook_url: "",
+            webhook_allow_local: false,
         });
         assert!(plan.event, "the toast is the whole point of a warning");
         assert!(!plan.webhook);
@@ -528,6 +547,7 @@ mod tests {
             !plan_warning(&WarningRouting {
                 webhook_on_warning: false,
                 webhook_url: url,
+                webhook_allow_local: false,
             })
             .webhook,
             "a configured webhook alone must not forward warnings"
@@ -536,6 +556,7 @@ mod tests {
             plan_warning(&WarningRouting {
                 webhook_on_warning: true,
                 webhook_url: url,
+                webhook_allow_local: false,
             })
             .webhook
         );
@@ -543,10 +564,75 @@ mod tests {
             !plan_warning(&WarningRouting {
                 webhook_on_warning: true,
                 webhook_url: "nope",
+                webhook_allow_local: false,
             })
             .webhook,
             "the toggle cannot rescue an invalid URL"
         );
+    }
+
+    // ── E1.4: the SSRF gate reaches the matrix ───────────────────────────────
+
+    #[test]
+    fn a_lan_webhook_plans_as_no_webhook_until_it_is_allowed() {
+        // The routing matrix must agree with what the socket will actually do,
+        // or the plan says "webhook: true" and the send silently drops it.
+        let lan = FailureRouting {
+            webhook_url: "http://192.168.1.50/hook",
+            webhook_allow_local: false,
+            ..all_on()
+        };
+        assert!(!plan_failure(&lan).webhook);
+        assert!(
+            plan_failure(&FailureRouting {
+                webhook_allow_local: true,
+                ..lan
+            })
+            .webhook,
+            "the operator's per-URL opt-in must actually enable it"
+        );
+        // …and the same for warnings.
+        assert!(
+            !plan_warning(&WarningRouting {
+                webhook_on_warning: true,
+                webhook_url: "http://localhost:9000/hook",
+                webhook_allow_local: false,
+            })
+            .webhook
+        );
+    }
+
+    #[test]
+    fn plaintext_to_the_open_internet_never_plans_a_webhook() {
+        assert!(
+            !plan_failure(&FailureRouting {
+                webhook_url: "http://hooks.example.com/x",
+                webhook_allow_local: true,
+                ..all_on()
+            })
+            .webhook,
+            "the LAN opt-in must not smuggle church data over cleartext internet"
+        );
+    }
+
+    #[test]
+    fn a_failure_still_reaches_a_normal_https_webhook() {
+        // The regression that matters most: every ordinary Slack/Discord/Teams
+        // webhook must be completely unaffected by E1.4.
+        for url in [
+            "https://hooks.slack.com/services/T/B/X",
+            "https://discord.com/api/webhooks/1/abc",
+            "https://kirka.example.org/sundayrec-hook",
+        ] {
+            assert!(
+                plan_failure(&FailureRouting {
+                    webhook_url: url,
+                    ..all_on()
+                })
+                .webhook,
+                "{url}"
+            );
+        }
     }
 
     // ── Once-semantics ───────────────────────────────────────────────────────

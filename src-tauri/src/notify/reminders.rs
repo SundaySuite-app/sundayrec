@@ -187,6 +187,7 @@ async fn dispatch(
         email_transport_ready: super::email_transport_ready(settings, &recipient),
         email_throttled: false,
         webhook_url: &settings.webhook_url,
+        webhook_allow_local: settings.webhook_allow_local,
     });
 
     if action.channel.wants_email() && permitted.email {
@@ -202,7 +203,12 @@ async fn dispatch(
             message: rendered.text.clone(),
             timestamp: chrono::Local::now().to_rfc3339(),
         };
-        super::post_webhook(&settings.webhook_url, &payload).await;
+        super::post_webhook(
+            &settings.webhook_url,
+            settings.webhook_allow_local,
+            &payload,
+        )
+        .await;
     }
 
     if action.channel.wants_warning() {
@@ -291,6 +297,7 @@ mod tests {
             email_transport_ready: true,
             email_throttled: false,
             webhook_url: "https://hooks.slack.com/services/T/B/X",
+            webhook_allow_local: false,
         });
         assert!(permitted.email && permitted.webhook);
 
@@ -308,6 +315,7 @@ mod tests {
             email_transport_ready: true,
             email_throttled: false,
             webhook_url: "",
+            webhook_allow_local: false,
         });
         assert!(!(ReminderChannel::NotifyEmailWebhookWarning.wants_email() && no_mail.email));
     }

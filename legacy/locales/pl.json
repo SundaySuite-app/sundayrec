@@ -954,7 +954,12 @@
     "testEmailSent": "Testowy e-mail wysłany do {to}",
     "testEmailFailed": "Testowy e-mail nie dotarł: {err}",
     "testWebhookOk": "Webhook odpowiedział — powiadomienia dotrą.",
-    "testWebhookFailed": "Webhook nie odpowiedział. Sprawdź adres."
+    "testWebhookFailed": "Webhook nie odpowiedział. Sprawdź adres.",
+    "errWebhookHttp": "Użyj https:// dla adresów w internecie. http:// jest dozwolone tylko dla sprzętu w Twojej własnej sieci.",
+    "webhookLocalTitle": "Ten adres znajduje się w Twojej sieci lokalnej",
+    "webhookLocalBody": "SundayRec będzie wysyłać powiadomienia na {host}, który znajduje się w Twojej sieci, a nie w internecie. Zezwól na to tylko, jeśli wiesz, jaki sprzęt tam odpowiada.",
+    "webhookLocalAllow": "Tak, zezwól na sieć lokalną",
+    "webhookLocalDeny": "Anuluj"
   },
   "prep": {
     "sectionTitle": "Przygotowanie i przegląd",

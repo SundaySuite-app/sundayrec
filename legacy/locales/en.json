@@ -954,7 +954,12 @@
     "testEmailSent": "Test e-mail sent to {to}",
     "testEmailFailed": "The test e-mail did not go through: {err}",
     "testWebhookOk": "The webhook answered — alerts will get through.",
-    "testWebhookFailed": "The webhook did not answer. Check the address."
+    "testWebhookFailed": "The webhook did not answer. Check the address.",
+    "errWebhookHttp": "Use https:// for addresses on the internet. http:// is only allowed for equipment on your own network.",
+    "webhookLocalTitle": "This address is on your local network",
+    "webhookLocalBody": "SundayRec will send alerts to {host}, which is on your own network rather than the internet. Only allow this if you know what equipment answers there.",
+    "webhookLocalAllow": "Yes, allow the local network",
+    "webhookLocalDeny": "Cancel"
   },
   "prep": {
     "sectionTitle": "Auto-prep and review",
