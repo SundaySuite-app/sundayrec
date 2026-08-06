@@ -26,7 +26,15 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # the cost is acceptable for the value; the model is downloaded at runtime via the
 # UI (`whisper_download_model`). Both run real ffmpeg/inference (HARDWARE-
 # UNVERIFIED). Build with `--no-default-features` and they return `feature_disabled`.
-default = ["editor", "whisper", "tray", "updater", "email"]
+#
+# `streaming` (R3) joined the set in Fase 6: the Direkte page has SHIPPED with an
+# enabled START button in every release, and pressing it returned the raw string
+# "feature_disabled: streaming.start requires a build with `--features streaming`"
+# — a dead button dressed as a live one. Either the page goes or the feature
+# does; the feature costs ZERO extra dependencies (ffmpeg is a sidecar), so it
+# ships. The RTMP push itself is still NETWORK/HARDWARE-UNVERIFIED and the page
+# says so out loud.
+default = ["editor", "whisper", "tray", "updater", "email", "streaming"]
 # PU-1: SMTP/Gmail error+test alerts. Pulls `lettre` for the SMTP transport (the
 # Gmail-API path reuses the already-present `reqwest`) — ~6 small pure-Rust
 # crates, no native dep. NOW IN `default` AND in both release feature lists
@@ -57,9 +65,13 @@ editor = []
 whisper = ["dep:whisper-rs", "dep:tempfile", "dep:sha2"]
 # R3: live RTMP streaming (multi-destination tee + lower-third overlays). NO new
 # native dep — ffmpeg is a sidecar — so the gate only compiles the spawn seam
-# in/out. DEFAULT-OFF: the camera open + RTMP push are NETWORK/HARDWARE-
-# UNVERIFIED, and the shipping/CI gate stays lean. When OFF the commands return
-# a clear `feature_disabled` error (same idiom as `editor`/`whisper`).
+# in/out. NOW IN `default` AND in both release feature lists
+# (.github/workflows/release.yml): the Direkte page ships in every build with a
+# live START button, so shipping it without the feature meant the button existed
+# only to raise `feature_disabled`. The camera open + RTMP push remain
+# NETWORK/HARDWARE-UNVERIFIED — the page carries an honest "ikke riggverifisert"
+# note instead of a lie by omission. When OFF the commands still return a clear
+# `feature_disabled` error (same idiom as `editor`/`whisper`).
 streaming = []
 # R3 NDI: receive a network NDI source over a loopback-TCP bridge and composite
 # it as an overlay. DEFAULT-OFF. The NDI SDK is NOT bundled here — the seam is a
