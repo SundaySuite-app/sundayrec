@@ -59,6 +59,7 @@ use sundayrec_core::telemetry::{TelemetryPayload, TELEMETRY_SCHEMA};
 use crate::db::store;
 use crate::error::AppResult;
 
+pub mod counters;
 pub mod payload;
 /// The outbox's sqlx persistence. Named `queue_store` at every use site (see the
 /// re-export below) so it never reads as `crate::db::store`, which this module
@@ -136,6 +137,7 @@ pub async fn consent_set(pool: &SqlitePool, granted: bool) -> AppResult<Telemetr
         // is consent to share what happens from today. Back-filling the archive
         // would answer the same question about a period nobody agreed to.
         payload::set_watermarks(pool, payload::Watermarks::starting_now(now_ms())).await?;
+        counters::set_active(true);
         tracing::info!(
             consent_version = CONSENT_VERSION,
             install_id_present = !id.is_empty(),
@@ -154,6 +156,9 @@ pub async fn consent_set(pool: &SqlitePool, granted: bool) -> AppResult<Telemetr
 /// own function because each part of E3 adds a line to it, and a revoke that
 /// forgets one of them leaves collected data on a machine whose owner said no.
 pub async fn on_consent_revoked(pool: &SqlitePool) -> AppResult<()> {
+    // The synchronous counter path checks this mirror, so flipping it FIRST
+    // means nothing new is accumulated while the purge below runs.
+    counters::set_active(false);
     // Reset the watermarks so a later re-grant starts from ITS own "now" rather
     // than sweeping up everything that happened while telemetry was off.
     purge_collected(pool, payload::Watermarks::default()).await
@@ -172,6 +177,7 @@ async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> Ap
     let dropped = queue_store::purge(pool).await?;
     payload::clear_pending_findings(pool).await?;
     payload::set_watermarks(pool, reset_to).await?;
+    counters::purge(pool).await?;
     if dropped > 0 {
         tracing::info!("telemetry: purged {dropped} queued report(s)");
     }
@@ -229,8 +235,9 @@ pub async fn drain_in(
         home: home.as_deref(),
         now_ms: now_ms(),
         consent_version: CONSENT_VERSION,
-        // E3.4 supplies the counter snapshot here.
-        counters: Vec::new(),
+        // Peeked, not taken: a payload that turns out empty, or an enqueue that
+        // fails, must leave the counts where they are.
+        counters: counters::snapshot(),
     };
     let (built, next) = payload::build(pool, &ctx, since, install_id.as_deref()).await?;
 
@@ -240,6 +247,10 @@ pub async fn drain_in(
     let queued = enqueue(pool, &built, ctx.now_ms).await?;
     payload::set_watermarks(pool, next).await?;
     payload::clear_pending_findings(pool).await?;
+    // Only now are the counts spent — and SUBTRACTED, so a click that landed
+    // while the payload was being written is not lost.
+    counters::consume(&ctx.counters);
+    counters::persist(pool).await?;
     if queued {
         tracing::info!(
             crashes = built.crashes.len(),
@@ -291,8 +302,14 @@ async fn enqueue(pool: &SqlitePool, p: &TelemetryPayload, now_ms: i64) -> AppRes
 /// task is spawned.
 pub async fn startup(app: &AppHandle, pool: &SqlitePool) {
     if !consent_active(pool).await {
+        // Leave the counter mirror at its `false` default: with consent off no
+        // seam accumulates anything, not even in memory.
         tracing::debug!("telemetry: consent is not active — nothing is collected");
         return;
+    }
+    counters::set_active(true);
+    if let Err(e) = counters::load(pool).await {
+        tracing::warn!("telemetry: could not restore counters: {e}");
     }
     // A force-quit mid-send strands a row in `sending` forever otherwise.
     match queue_store::reset_stale_sending(pool).await {
@@ -329,6 +346,13 @@ pub fn spawn_periodic_drain(app: AppHandle) {
                     };
                     if let Err(e) = drain(&app, &db.pool).await {
                         tracing::warn!("telemetry: periodic drain failed: {e}");
+                    }
+                    // Flush the counters even when nothing was queued, so a quit
+                    // between drains loses at most one interval's clicks.
+                    if counters::is_active() {
+                        if let Err(e) = counters::persist(&db.pool).await {
+                            tracing::warn!("telemetry: could not persist counters: {e}");
+                        }
                     }
                 }
             }
@@ -438,21 +462,38 @@ pub async fn clear_pending_deletion(pool: &SqlitePool, id: &str) -> AppResult<()
 
 #[cfg(test)]
 mod tests {
+    // `counters::test_lock()` is a std `Mutex` held across `.await`s, which is
+    // what clippy is warning about. It is correct HERE and only here: it exists
+    // to serialise tests against process-global counter state, every test that
+    // takes it runs on its own single-threaded `#[tokio::test]` runtime, and
+    // nothing inside the guarded region can block on the same lock. A
+    // `tokio::sync::Mutex` would not work — the synchronous `#[test]`s need the
+    // same lock.
+    #![allow(clippy::await_holding_lock)]
+
     use super::*;
     use sundayrec_core::telemetry::consent::ConsentStatus;
     use sundayrec_core::telemetry::sanitize_install_id;
 
-    async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
+    /// A throwaway database AND the counter-state lock: `consent_set` writes the
+    /// process-global counter mirror, so every test here has to serialise on it
+    /// or two tests decide each other's assertions.
+    async fn temp_pool() -> (
+        SqlitePool,
+        tempfile::TempDir,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let guard = counters::test_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         let pool = store::open_pool(&dir.path().join("test.sqlite"))
             .await
             .expect("open_pool");
-        (pool, dir)
+        (pool, dir, guard)
     }
 
     #[tokio::test]
     async fn a_fresh_install_has_never_been_asked_and_has_no_id() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         let c = consent_get(&pool).await.unwrap();
         assert_eq!(c.status, ConsentStatus::NeverAsked);
         assert!(c.needs_prompt);
@@ -467,7 +508,7 @@ mod tests {
 
     #[tokio::test]
     async fn granting_mints_exactly_one_id_and_keeps_it() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         let c = consent_set(&pool, true).await.unwrap();
         assert_eq!(c.status, ConsentStatus::Granted);
         assert!(c.active);
@@ -486,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn denying_records_the_answer_without_minting_an_id() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         let c = consent_set(&pool, false).await.unwrap();
         assert_eq!(c.status, ConsentStatus::Denied);
         assert!(!c.active);
@@ -519,7 +560,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_hand_edited_consent_row_reads_as_never_asked() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         for junk in ["", "null", "{", "true", "{\"granted\":true}"] {
             store::set_setting(&pool, KEY_CONSENT, junk).await.unwrap();
             let c = consent_get(&pool).await.unwrap();
@@ -530,7 +571,7 @@ mod tests {
 
     #[tokio::test]
     async fn regenerating_makes_a_new_install_and_parks_the_old_id() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         let first = install_id_if_any(&pool).await.unwrap().expect("minted");
 
@@ -557,7 +598,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_pending_deletion_list_is_bounded_and_deduplicated() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         for _ in 0..(MAX_PENDING_DELETIONS + 5) {
             regenerate_install_id(&pool).await.unwrap();
@@ -570,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_malformed_pending_list_does_not_block_a_regenerate() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         store::set_setting(&pool, KEY_PENDING_DELETIONS, "not json")
             .await
@@ -582,7 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoking_after_granting_stops_the_gate_immediately() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         assert!(consent_active(&pool).await);
         consent_set(&pool, false).await.unwrap();
@@ -648,7 +689,7 @@ mod tests {
         // THE enqueue-side half of the consent guarantee: a machine with a crash
         // to report and telemetry off produces an empty outbox. Asserted for both
         // "never asked" and "explicitly denied", because they are different rows.
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         write_crash(dir.path(), &minutes_ago(60), "en krasj");
 
         assert!(!drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
@@ -666,7 +707,7 @@ mod tests {
     async fn with_consent_the_same_crash_is_enqueued_exactly_once() {
         // The positive control for the test above — and the idempotence the
         // drain's schedule-independence rests on.
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         grant_reporting_from(&pool, 120).await;
         write_crash(dir.path(), &minutes_ago(60), "en krasj");
 
@@ -683,7 +724,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_granted_install_does_not_report_what_happened_before_it_said_yes() {
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         write_crash(dir.path(), "2024-03-01T12:00:00+01:00", "gammel krasj");
         consent_set(&pool, true).await.unwrap();
         assert!(!drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
@@ -694,7 +735,7 @@ mod tests {
     async fn a_missing_watermark_restarts_reporting_rather_than_back_filling() {
         // The defensive branch: a hand-cleared or lost watermark row must not be
         // read as "report the entire archive".
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         write_crash(dir.path(), "2024-03-01T12:00:00+01:00", "arkivert krasj");
         store::delete_setting(&pool, payload::KEY_WATERMARKS)
@@ -712,7 +753,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoking_empties_the_outbox_and_the_finding_cache() {
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         grant_reporting_from(&pool, 120).await;
         write_crash(dir.path(), &minutes_ago(60), "en krasj");
         assert!(drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
@@ -728,10 +769,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn counters_reach_the_payload_and_are_spent_exactly_once() {
+        use sundayrec_core::telemetry::CounterName;
+        let (pool, dir, _g) = temp_pool().await;
+        grant_reporting_from(&pool, 120).await;
+
+        counters::count(CounterName::EditorOpened);
+        counters::count(CounterName::EditorOpened);
+        counters::count(CounterName::RecordingStartedManual);
+
+        // Counters ALONE are worth a report — nothing else has happened here.
+        assert!(drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
+        let queued = queue_store::load_queue(&pool).await.unwrap();
+        assert_eq!(queued.len(), 1);
+        assert!(queued[0].payload_json.contains("editor.opened"));
+        assert!(queued[0].dedup_key.starts_with("counters:"));
+
+        // Spent: the next drain has nothing to say.
+        assert!(counters::snapshot().is_empty());
+        assert!(!drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
+        assert_eq!(queue_store::load_queue(&pool).await.unwrap().len(), 1);
+
+        // …and they survived to storage, so a quit does not lose them.
+        counters::clear();
+        counters::load(&pool).await.unwrap();
+        assert!(counters::snapshot().is_empty());
+    }
+
+    #[tokio::test]
+    async fn revoking_clears_the_counters_too() {
+        use sundayrec_core::telemetry::CounterName;
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        counters::count(CounterName::StreamingStarted);
+        assert_eq!(counters::snapshot().len(), 1);
+
+        consent_set(&pool, false).await.unwrap();
+        assert!(
+            !counters::is_active(),
+            "the synchronous mirror follows consent"
+        );
+        assert!(counters::snapshot().is_empty());
+        counters::load(&pool).await.unwrap();
+        assert!(
+            counters::snapshot().is_empty(),
+            "and the persisted row is gone as well"
+        );
+
+        // Counting after a revoke accumulates nothing at all.
+        counters::count(CounterName::StreamingStarted);
+        assert!(counters::snapshot().is_empty());
+    }
+
+    #[tokio::test]
     async fn regenerating_drops_the_queue_but_keeps_collecting() {
         // Deleting your data is not withdrawing consent — collection continues,
         // but nothing already gathered may be re-reported under the new id.
-        let (pool, dir) = temp_pool().await;
+        let (pool, dir, _g) = temp_pool().await;
         grant_reporting_from(&pool, 120).await;
         write_crash(dir.path(), &minutes_ago(60), "en krasj");
         assert!(drain_in(&pool, dir.path(), "0.10.0").await.unwrap());

@@ -135,6 +135,8 @@ pub async fn whisper_transcribe(
     let Some(cancel) = guard.register(&job_id) else {
         return Err(AppError::Validation("already_transcribing".into()));
     };
+    // After the guard, so a rejected concurrent request is not counted as a run.
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::TranscribeRun);
     let emit_app = app.clone();
     let emit_job = job_id.clone();
     // Rate-limit here rather than in the seam: the seam's job is to report what

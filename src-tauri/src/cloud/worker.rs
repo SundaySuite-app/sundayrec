@@ -330,6 +330,9 @@ pub async fn process_once(
         Ok(()) => {
             queue::on_success(&mut entries, &id);
             store::delete_entry(pool, &id).await?;
+            crate::telemetry::counters::count(
+                sundayrec_core::telemetry::CounterName::CloudUploadOk,
+            );
         }
         Err(e) => {
             queue::on_failure(

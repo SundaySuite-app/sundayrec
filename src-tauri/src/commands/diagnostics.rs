@@ -40,6 +40,7 @@ pub async fn run_preflight(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<P
 pub async fn run_diagnostics(app: AppHandle, db: State<'_, Db>) -> AppResult<DiagnosticsReport> {
     let report = run(&app, &db.pool).await?;
     if crate::telemetry::consent_active(&db.pool).await {
+        crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::DiagnoseRun);
         if let Err(e) = crate::telemetry::payload::record_findings(&db.pool, &report.findings).await
         {
             tracing::warn!("telemetry: could not cache diagnose findings: {e}");

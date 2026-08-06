@@ -161,7 +161,15 @@ pub async fn start_recording(
     // supported" (rig-verified on the Qu-5, 2026-07-31). A short pause lets
     // the device's native format come back before ffmpeg opens it.
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-    engine.start(app, Some(db.pool.clone()), opts, clip).await
+    let started = engine.start(app, Some(db.pool.clone()), opts, clip).await;
+    if started.is_ok() {
+        // MANUAL: the scheduler starts recordings through `engine.start` directly,
+        // so this command is exactly the "someone pressed the button" path.
+        crate::telemetry::counters::count(
+            sundayrec_core::telemetry::CounterName::RecordingStartedManual,
+        );
+    }
+    started
 }
 
 /// Start the rolling pre-roll capture loop from the persisted settings. A no-op
@@ -191,6 +199,9 @@ pub async fn preroll_start(
                 vu.adopt(settings.device_name.clone());
             }
             preroll.start(app, ps);
+            crate::telemetry::counters::count(
+                sundayrec_core::telemetry::CounterName::RecordingPrerollStarted,
+            );
             Ok(true)
         }
         None => {
@@ -243,6 +254,7 @@ pub fn preroll_status(preroll: State<'_, PrerollEngine>) -> PrerollStatus {
 #[tauri::command]
 pub fn stop_recording(engine: State<'_, RecorderEngine>) -> AppResult<()> {
     engine.stop();
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingStopped);
     Ok(())
 }
 
@@ -330,6 +342,7 @@ pub async fn run_test_recording(
     vu.stop();
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let device = s.device_name.clone().unwrap_or_default();
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::RecordingSelftest);
     run_test(&device).await
 }
 

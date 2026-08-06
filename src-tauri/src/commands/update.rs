@@ -43,6 +43,7 @@ pub async fn update_download_install(
     app: AppHandle,
     engine: State<'_, UpdateEngine>,
 ) -> AppResult<UpdateStatus> {
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::UpdateInstalled);
     crate::update::download_and_install(&app, &engine).await
 }
 

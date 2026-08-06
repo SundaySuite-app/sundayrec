@@ -54,6 +54,7 @@ pub async fn trash_move(
         // be tidyable. The seam skips what is not there.
         super::path_guard::checked_path(p)?;
     }
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::TrashMoved);
     let dir = save_dir(&app, &db).await?;
     tokio::task::spawn_blocking(move || trash::move_into_trash(&dir, &paths))
         .await
@@ -72,6 +73,7 @@ pub async fn trash_list(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<Tras
 /// Put one entry back where it came from.
 #[tauri::command]
 pub async fn trash_restore(app: AppHandle, db: State<'_, Db>, id: String) -> AppResult<TrashEntry> {
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::TrashRestored);
     let dir = save_dir(&app, &db).await?;
     tokio::task::spawn_blocking(move || trash::restore(&dir, &id))
         .await
