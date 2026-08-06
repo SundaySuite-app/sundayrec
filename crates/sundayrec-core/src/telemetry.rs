@@ -910,6 +910,36 @@ impl TelemetryPayload {
     }
 }
 
+/// What `telemetry_preview_payload` hands the settings UI: the real payload as
+/// pretty JSON, plus the two facts the UI needs to label it honestly.
+///
+/// The label matters. "Vis hva som sendes" has two different truthful answers
+/// depending on consent, and a screen that shows the same words for both is
+/// lying in one of them:
+///
+///   - consent ACTIVE — [`Self::is_next_payload`] is `true` and the JSON is
+///     literally the next payload, built from the live watermarks;
+///   - consent OFF — there IS no next payload, so the JSON is built from the
+///     machine's whole local history instead. That shows the user their own
+///     crashes and their own quality numbers in the real shape, which is what
+///     the question is actually asking. An empty shell would be technically
+///     accurate and tell them nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/TelemetryPreview.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryPreview {
+    /// The payload, pretty-printed. The REAL one — not a mock, not a sample.
+    pub json: String,
+    /// `true` when this is literally what would be sent next; `false` when
+    /// telemetry is off and the preview was filled from local history to show
+    /// the shape. See the struct docs.
+    pub is_next_payload: bool,
+    /// Whether the payload carries no records at all
+    /// ([`TelemetryPayload::is_empty`]) — so the UI can say "ingenting å sende
+    /// akkurat nå" rather than render a header and let the user wonder.
+    pub is_empty: bool,
+}
+
 /// Keep at most `cap` items, dropping from the FRONT (oldest).
 fn keep_last<T>(items: &mut Vec<T>, cap: usize) {
     if items.len() > cap {
