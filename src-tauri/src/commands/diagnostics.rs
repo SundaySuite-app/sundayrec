@@ -28,7 +28,22 @@ pub async fn run_preflight(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<P
 
 /// Run diagnostics: build the markdown report, save it under the app-data dir,
 /// and return it for the panel to render + copy.
+///
+/// When telemetry consent is active, the findings' CODES (never their `detail`,
+/// which quotes device names and folders) are cached for the next drain — how
+/// often each `SR-*` situation occurs across installs is the single most useful
+/// thing an aggregate can say, and this is the only place findings are produced.
+/// Caching them here rather than probing from the telemetry drain is deliberate:
+/// a diagnose runs ffmpeg and opens the microphone, and telemetry must never be
+/// the reason a device is touched.
 #[tauri::command]
 pub async fn run_diagnostics(app: AppHandle, db: State<'_, Db>) -> AppResult<DiagnosticsReport> {
-    run(&app, &db.pool).await
+    let report = run(&app, &db.pool).await?;
+    if crate::telemetry::consent_active(&db.pool).await {
+        if let Err(e) = crate::telemetry::payload::record_findings(&db.pool, &report.findings).await
+        {
+            tracing::warn!("telemetry: could not cache diagnose findings: {e}");
+        }
+    }
+    Ok(report)
 }

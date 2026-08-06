@@ -403,6 +403,26 @@ pub fn run() {
             // forever is not a delete, it is a leak with a nice name.
             trash::sweep::spawn(app.handle().clone());
 
+            // E3 opt-in telemetry. `startup` reads ONE settings row and returns
+            // when consent is not active — no crash ring is scanned, no install
+            // id is minted, and no sender task exists to spawn. The periodic
+            // drain is armed regardless because it makes the same check on every
+            // tick; arming it conditionally would mean a grant made mid-session
+            // did nothing until the next launch.
+            {
+                let handle = app.handle().clone();
+                crash::watch_handle(
+                    "telemetry::startup",
+                    tauri::async_runtime::spawn(async move {
+                        let Some(db) = handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        telemetry::startup(&handle, &db.pool).await;
+                    }),
+                );
+                telemetry::spawn_periodic_drain(app.handle().clone());
+            }
+
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. The returned

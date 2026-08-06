@@ -97,6 +97,7 @@ use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSig
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
 pub mod consent;
+pub mod queue;
 
 /// The payload schema version. Bumped when a field changes MEANING (a new
 /// optional field does not need it); the receiving endpoint keys its parsing off
