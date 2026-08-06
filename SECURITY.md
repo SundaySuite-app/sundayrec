@@ -8,12 +8,14 @@ threat model the app's controls are designed against.
 
 Please report security issues **privately**, not in a public issue:
 
-- Preferred: use this repository's Security tab → "Report a vulnerability"
-  (GitHub private security advisories:
-  https://github.com/SundaySuite-app/sundayrec/security/advisories/new).
-  This opens a private discussion with the maintainer before anything is
-  public.
-- Fallback: `<owner email — TODO: fill in>`.
+Use this repository's Security tab → "Report a vulnerability" (GitHub
+private security advisories:
+https://github.com/SundaySuite-app/sundayrec/security/advisories/new). That
+opens a private discussion with the maintainer before anything is public,
+and it is the only reporting channel — there is no security mailing address.
+If you cannot use advisories, open a regular issue asking for contact
+**without** describing the vulnerability, and the maintainer will follow up
+privately.
 
 Please include what you found, the affected version, and reproduction steps.
 This is a small, single-maintainer project — expect an initial response
