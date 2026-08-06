@@ -493,6 +493,9 @@ pub fn run() {
             commands::review::review_queue_list,
             commands::review::review_mark_published,
             commands::review::review_mark_discarded,
+            commands::review::review_update_trim,
+            commands::review::review_update_master_preset,
+            commands::review::review_update_jingles,
             commands::review::review_process_reminders,
             commands::review::stage_import_manifest,
             // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
