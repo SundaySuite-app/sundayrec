@@ -15,7 +15,13 @@ use crate::trash::{self, TrashEntry};
 /// Where recordings live, and therefore where the trash lives: the configured
 /// save folder, or the OS documents dir when none is set (same resolution as
 /// `recordings_prune`).
-async fn save_dir(app: &AppHandle, db: &State<'_, Db>) -> std::path::PathBuf {
+///
+/// Refuses an EMPTY resolution rather than falling through to a relative
+/// `.sundayrec-trash`, which would land inside whatever the process happens to
+/// have as its working directory — the app bundle, or `/`. `recordings_prune`
+/// can treat an empty save dir as "pruning is off"; a trash cannot, because the
+/// caller is about to move a recording somewhere.
+async fn save_dir(app: &AppHandle, db: &State<'_, Db>) -> AppResult<std::path::PathBuf> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let dir = s.save_folder.unwrap_or_else(|| {
         app.path()
@@ -23,7 +29,12 @@ async fn save_dir(app: &AppHandle, db: &State<'_, Db>) -> std::path::PathBuf {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
-    std::path::PathBuf::from(dir)
+    if dir.trim().is_empty() {
+        return Err(crate::error::AppError::Validation(
+            "no save folder is configured, so there is nowhere to put a trash".into(),
+        ));
+    }
+    Ok(std::path::PathBuf::from(dir))
 }
 
 /// Move recordings into the trash, with their sidecars and video siblings.
@@ -43,7 +54,7 @@ pub async fn trash_move(
         // be tidyable. The seam skips what is not there.
         super::path_guard::checked_path(p)?;
     }
-    let dir = save_dir(&app, &db).await;
+    let dir = save_dir(&app, &db).await?;
     tokio::task::spawn_blocking(move || trash::move_into_trash(&dir, &paths))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("trash move join: {e}")))?
@@ -52,7 +63,7 @@ pub async fn trash_move(
 /// Everything currently recoverable, newest first.
 #[tauri::command]
 pub async fn trash_list(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<TrashEntry>> {
-    let dir = save_dir(&app, &db).await;
+    let dir = save_dir(&app, &db).await?;
     tokio::task::spawn_blocking(move || trash::list(&dir))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("trash list join: {e}")))
@@ -61,7 +72,7 @@ pub async fn trash_list(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<Tras
 /// Put one entry back where it came from.
 #[tauri::command]
 pub async fn trash_restore(app: AppHandle, db: State<'_, Db>, id: String) -> AppResult<TrashEntry> {
-    let dir = save_dir(&app, &db).await;
+    let dir = save_dir(&app, &db).await?;
     tokio::task::spawn_blocking(move || trash::restore(&dir, &id))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("trash restore join: {e}")))?
@@ -74,7 +85,7 @@ pub async fn trash_restore(app: AppHandle, db: State<'_, Db>, id: String) -> App
 /// nothing to hand back. Returns how many entries were destroyed.
 #[tauri::command]
 pub async fn trash_purge(app: AppHandle, db: State<'_, Db>, ids: Vec<String>) -> AppResult<usize> {
-    let dir = save_dir(&app, &db).await;
+    let dir = save_dir(&app, &db).await?;
     let purged = tokio::task::spawn_blocking(move || trash::purge(&dir, &ids))
         .await
         .map_err(|e| crate::error::AppError::Internal(format!("trash purge join: {e}")))??;
