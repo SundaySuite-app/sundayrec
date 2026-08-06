@@ -51,6 +51,7 @@ use sundayrec_core::webhook::{build_webhook_body, WebhookPayload, WebhookSeverit
 use crate::db::Db;
 
 pub mod disk;
+pub mod reminders;
 
 pub use sundayrec_core::notify::code;
 
@@ -362,10 +363,7 @@ async fn send_failure_email(
 /// The event goes out immediately; the settings read + POST run in a detached
 /// task, because a warning must never make the thing it is warning about slower.
 pub fn warn(app: &AppHandle, w: BackendWarning) {
-    tracing::warn!(code = %w.code, msg = ?w.msg, "notify: backend warning");
-    if let Err(e) = app.emit(WARNING_EVENT, &w) {
-        tracing::warn!("notify: could not emit {WARNING_EVENT}: {e}");
-    }
+    emit_warning_event(app, &w);
 
     let Some(db) = app.try_state::<Db>() else {
         return; // pre-setup: the event above is all we can do
@@ -393,6 +391,20 @@ pub fn warn(app: &AppHandle, w: BackendWarning) {
         };
         post_webhook(&settings.webhook_url, &payload).await;
     });
+}
+
+/// The renderer half of [`warn`], on its own: log it and put it on the wire.
+///
+/// Extracted (not changed — `warn` calls this and behaves exactly as before) for
+/// the one caller that must NOT take the webhook half with it: a day-7 review
+/// reminder POSTs the webhook from its own rung, and routing the toast through
+/// `warn` as well would deliver the same message to the same chat channel twice
+/// whenever `webhook_on_warning` happens to be on.
+pub(crate) fn emit_warning_event(app: &AppHandle, w: &BackendWarning) {
+    tracing::warn!(code = %w.code, msg = ?w.msg, "notify: backend warning");
+    if let Err(e) = app.emit(WARNING_EVENT, w) {
+        tracing::warn!("notify: could not emit {WARNING_EVENT}: {e}");
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

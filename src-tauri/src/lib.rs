@@ -307,6 +307,15 @@ pub fn run() {
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
+            // Arm the review-queue reminder tick. The 24 h / 48 h / 7 d / auto-
+            // discard ladder in `sundayrec_core::review_queue` was complete and
+            // tested, and reachable only through a command with no callers —
+            // so an episode nobody reviewed sat in silence until it deleted
+            // itself a fortnight later. Its own small task, deliberately not the
+            // scheduler supervisor: nothing about a reminder belongs inside the
+            // loop that has to fire a recording start on time.
+            notify::reminders::spawn(app.handle().clone());
+
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. The returned

@@ -121,6 +121,28 @@ pub async fn send_error_alert(
     Ok(true)
 }
 
+/// Send a message the caller has already rendered — the review-reminder path
+/// ([`sundayrec_core::email::render_reminder`]).
+///
+/// Ungated on purpose, and the reason matters: the [`AlertGate`] exists to stop
+/// a *flapping* recorder from mailing the same error forty times, which is a
+/// hazard a reminder does not have. The review queue's own `reminded` counter is
+/// the throttle — it is bumped and PERSISTED before this is ever called, so each
+/// rung mails exactly once even if the app restarts mid-send. Putting the gate
+/// in front of this as well would silently swallow two different episodes'
+/// reminders that happen to fall in the same ten minutes.
+pub async fn send_rendered(
+    transport: &Transport,
+    recipient: &str,
+    rendered: &RenderedEmail,
+) -> AppResult<()> {
+    let recipient = recipient.trim();
+    if recipient.is_empty() {
+        return Err(AppError::Validation("no_config".into()));
+    }
+    dispatch(transport, recipient, rendered).await
+}
+
 /// Send a localized "email works" test message to `recipient`. Ungated (the user
 /// explicitly asked to test). Errors if `recipient` is blank.
 pub async fn send_test(

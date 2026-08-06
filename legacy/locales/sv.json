@@ -874,6 +874,7 @@
     "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
+    "reviewOverdue": "Ett avsnitt har väntat i {days} dagar på genomgång: {episode}",
     "systemTitle": "Systemaviseringar",
     "emailTitle": "E-postaviseringar",
     "smtpServer": "E-POSTTJÄNST (SMTP)",

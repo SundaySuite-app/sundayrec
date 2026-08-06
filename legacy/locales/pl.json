@@ -874,6 +874,7 @@
     "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
+    "reviewOverdue": "Odcinek czeka na przegląd od {days} dni: {episode}",
     "systemTitle": "Powiadomienia systemowe",
     "emailTitle": "Powiadomienia e-mail",
     "smtpServer": "USŁUGA E-MAIL (SMTP)",

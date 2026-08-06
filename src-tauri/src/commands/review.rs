@@ -12,10 +12,12 @@
 //!   running audio-analysis itself — the ffmpeg/FFT analysis (`audio-analysis.ts`)
 //!   is NOT ported yet, so the caller (or a later analysis seam) supplies the
 //!   segments. The assembly + status decision ARE the unit-tested core.
-//! - [`review_process_reminders`] returns the actions the scheduler should fire;
-//!   the actual notify/email/webhook dispatch is left to the existing seams
-//!   (PU-1 email, scheduler notifications) and is not wired through here yet.
-//!   See docs/NEEDS-RICHARD.md (PU-6).
+//! - [`review_process_reminders`] returns the actions the queue's timeline wants
+//!   fired, for a renderer that asks. It is no longer the only path: the hourly
+//!   [`crate::notify::reminders`] tick runs the same core ladder and dispatches
+//!   each action through the Phase-2 notify seam, so the reminders happen
+//!   whether or not anybody has the app in front of them. NETWORK-UNVERIFIED
+//!   below the decision, as ever.
 
 use tauri::{AppHandle, State};
 
@@ -298,8 +300,14 @@ pub async fn review_update_jingles(
 }
 
 /// Run the reminder timeline over the queue and persist the result, returning
-/// the reminder actions the scheduler should fire. INFRA-UNVERIFIED: dispatching
-/// each action (notify/email/webhook) is left to the existing seams.
+/// the reminder actions it produced.
+///
+/// The app does NOT rely on this being called: [`crate::notify::reminders`]
+/// runs the same core ladder on its own hourly timer and dispatches what comes
+/// back. This command remains for a renderer that wants to force a sweep — and
+/// is safe to call alongside the tick, because `process_reminders` is idempotent
+/// within a threshold window (an action fires only when `reminded` crosses a NEW
+/// rung, and the bump is persisted here too).
 #[tauri::command]
 pub async fn review_process_reminders(db: State<'_, Db>) -> AppResult<Vec<ReminderActionDto>> {
     let queue = load_queue(&db).await?;

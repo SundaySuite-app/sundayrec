@@ -35,8 +35,8 @@ function warning(over: Partial<BackendWarning> = {}): BackendWarning {
 describe('code → locale key', () => {
   it('has a key for every code the Rust side can emit', () => {
     // Mirrors `sundayrec_core::notify::code::ALL`, which is asserted to have
-    // exactly these six entries. A backend code with no entry here degrades to
-    // the Norwegian `msg` — survivable, but not what we ship.
+    // exactly these seven entries. A backend code with no entry here degrades
+    // to the Norwegian `msg` — survivable, but not what we ship.
     expect(Object.keys(WARNING_KEYS).sort()).toEqual([
       'cloud_reauth_required',
       'cloud_upload_failed',
@@ -44,6 +44,7 @@ describe('code → locale key', () => {
       'disk_low',
       'preroll_dead',
       'recovery_skipped',
+      'review_overdue',
     ])
   })
 

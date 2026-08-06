@@ -40,6 +40,7 @@ export const WARNING_KEYS: Record<string, string> = {
   recovery_skipped: 'notify.recoverySkipped',
   device_missing: 'notify.deviceMissing',
   disk_low: 'notify.diskLow',
+  review_overdue: 'notify.reviewOverdue',
 }
 
 /** What home.ts needs to raise the toast. */

@@ -874,6 +874,7 @@
     "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
+    "reviewOverdue": "En episode har ventet i {days} dager på gjennomgang: {episode}",
     "systemTitle": "Systemvarsler",
     "emailTitle": "E-postvarsler",
     "smtpServer": "E-POSTTJENESTE (SMTP)",

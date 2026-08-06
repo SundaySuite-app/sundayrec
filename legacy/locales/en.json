@@ -874,6 +874,7 @@
     "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
     "deviceMissing": "The audio device “{device}” is not connected.",
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
+    "reviewOverdue": "An episode has been waiting {days} days for review: {episode}",
     "systemTitle": "System notifications",
     "emailTitle": "Email notifications",
     "smtpServer": "EMAIL SERVICE (SMTP)",
