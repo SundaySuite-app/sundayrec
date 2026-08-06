@@ -1,0 +1,111 @@
+# Security Policy
+
+SundayRec is a Tauri 2 desktop app for recording church services. This
+document explains how to report a vulnerability, what's supported, and the
+threat model the app's controls are designed against.
+
+## Reporting a vulnerability
+
+Please report security issues **privately**, not in a public issue:
+
+- Preferred: use this repository's Security tab → "Report a vulnerability"
+  (GitHub private security advisories:
+  https://github.com/SundaySuite-app/sundayrec/security/advisories/new).
+  This opens a private discussion with the maintainer before anything is
+  public.
+- Fallback: `<owner email — TODO: fill in>`.
+
+Please include what you found, the affected version, and reproduction steps.
+This is a small, single-maintainer project — expect an initial response
+within a few days, not an SLA.
+
+## Supported versions
+
+Only the **latest release** is supported. SundayRec auto-updates on a single
+channel (see `plugins.updater` in `src-tauri/tauri.conf.json`); there is no
+LTS branch and no backporting of fixes to older versions. Please update
+before reporting an issue that may already be fixed.
+
+## Threat model
+
+SundayRec typically runs on a **volunteer-operated machine in a church**,
+often started once and left unattended for the length of a service. The
+operator is not a security professional, and the machine is not IT-managed.
+Trust boundaries the app has to defend at:
+
+- **`sundayrec://` deep links** — inbound custom-scheme URLs from other apps
+  or a web page, which can be triggered without the operator's intent.
+- **Media files and their sidecars** — recordings, intro/outro clips,
+  subtitle files, transcripts — paths and content that ultimately come from
+  outside the process (a picked file, an imported recording, another Sunday
+  app).
+- **User-configured URLs** — webhook, SMTP, and integration API endpoints the
+  operator types in, which can point anywhere, including the local network.
+- **The update feed** — the GitHub Releases endpoint the auto-updater polls
+  and the signed artifact it downloads and installs.
+- **OS-level device access** — audio/video capture devices and the
+  filesystem locations the app is granted.
+
+**Non-goals:**
+
+- Defending against a compromised OS or a compromised user account. If the
+  machine itself is owned, SundayRec's own controls are not a second line of
+  defense.
+- Multi-tenant isolation. This is a single-operator desktop app; there is no
+  concept of separating multiple untrusted users on the same install.
+
+## Controls that exist
+
+So a future auditor doesn't have to re-derive these from scratch:
+
+- **No shell for media processing.** Every ffmpeg/ffprobe invocation uses
+  `Command::new(path).arg(...)` with an argv array — no shell interpolation,
+  so untrusted filenames/paths can't inject shell syntax.
+- **Path guard + coverage ratchet** (`src-tauri/src/commands/path_guard.rs`).
+  Renderer-supplied paths are validated against a named policy (absolute,
+  `..`-free, canonicalized, checked against protected home directories and,
+  where applicable, rooted under the configured save folder) before they
+  reach the filesystem or ffmpeg. A test ratchet (E1.3) keeps commands that
+  take a path from silently launching without going through it.
+- **Stream-key redaction in logs.** RTMP/streaming keys are kept out of log
+  output.
+- **Whisper model integrity.** Downloaded transcription models are
+  SHA-256-verified against a pinned hash and only renamed into place
+  (`.partial` → final) after the hash matches; a mismatch deletes the partial
+  instead of promoting it.
+- **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
+  checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
+  `scripts/ffmpeg-checksums.json`) before use.
+- **OS keychain for credentials.** OAuth refresh tokens, the stream key, the
+  SMTP password, and API keys are stored via the OS-native credential store
+  (macOS Keychain / Windows Credential Manager through the `keyring` crate;
+  `src-tauri/src/secrets/`) — never in plaintext settings files. (E1.6 closed
+  a legacy gap where the SMTP password had leaked into a plaintext
+  localStorage blob before this seam existed.)
+- **Strict CSP, no unsafe-inline scripts.** `script-src 'self'` with no
+  `unsafe-inline`/`unsafe-eval`; `style-src` allows `unsafe-inline` for CSS
+  only. Duplicated between `tauri.conf.json` and the renderer's `index.html`
+  meta tag, with a sync test (E1.7) so the two can't silently drift.
+  Windows Steinberg ASIO SDK download is SHA-256-pinned as a hard-fail
+  (E1.5) — the SDK is a fixed 2019 artifact, so an unexpected hash means the
+  download was tampered with or moved.
+- **PKCE + loopback for OAuth.** Google (Drive/YouTube/Gmail) OAuth uses the
+  PKCE flow with a loopback redirect, avoiding a stored client secret in the
+  desktop binary.
+- **Updater signature verification.** Tauri's built-in updater verifies a
+  minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
+  downloaded update before installing it.
+- **Blocking dependency audits in CI.** `npm audit --audit-level=high` and
+  `cargo audit` both run as a required CI job (`.github/workflows/ci.yml`,
+  `audit`), not advisory-only.
+
+## Known gaps / accepted risks
+
+- **The shared Sunday session file has no Windows ACL.** `sunday-auth`
+  (from the upstream `sunday-platform` repo) writes the cross-app session
+  file atomically but does not yet restrict its permissions on Windows.
+  Tracked upstream, not in this repo.
+- **macOS builds are signed but not notarized.** Apple's notary service
+  currently returns 403 pending re-acceptance of the Program License
+  Agreement (see `docs/DISTRIBUTION.md`); Gatekeeper will warn on first
+  launch until that's resolved.
