@@ -136,46 +136,70 @@ export function vuFeedSubscriberCount(): number {
 
 // ── Engine lifecycle ─────────────────────────────────────────────────────────
 
+/**
+ * Every `start_vu`/`stop_vu` runs on ONE serial queue.
+ *
+ * Without it, the last meter closing while a `start_vu` was still in flight
+ * would issue `stop_vu` first and let the start land AFTERWARDS — leaving a
+ * cpal stream open on the device with nobody left to close it. That is the
+ * "device stays held" failure this whole phase exists to eliminate, so it must
+ * not be reintroduced by a race in the client. Serialising also means a stale
+ * start that does open a session is always followed by the operation that
+ * supersedes it (the next start's stop-first, or the teardown's stop).
+ */
+let queue: Promise<unknown> = Promise.resolve()
+function enqueue(op: () => Promise<void>): void {
+  queue = queue.then(op, op).catch(() => {})
+}
+
 function reconcile(): void {
   const wanted = resolveDevice(subs.map(e => e.sub))
   if (deviceAction(device, wanted, running) === 'keep') return
   device = wanted
-  void startEngine(wanted)
+  requestStart(wanted)
 }
 
-async function startEngine(dev: string | null): Promise<void> {
+function requestStart(dev: string | null): void {
   const my = ++gen
-  // A recording owns the device outright (`start_recording` calls `vu.stop()`
-  // itself). Racing it with a start_vu would only produce a stop-first-then-
-  // start fight for the same hardware — the meters that matter during a take
-  // read `recording://levels` instead.
-  if (window.__isRecording) {
-    running = false
-    setState('idle')
-    return
-  }
   running = true
   setState('connecting')
-  try {
-    let count: number
-    try {
-      count = await window.api.startVu(dev)
-    } catch {
-      // One retry after 400 ms: the device may still be settling out of a
-      // just-released format hold (the same grace the channel grid has always
-      // taken, now shared by every meter).
-      await new Promise<void>(r => setTimeout(r, 400))
-      if (my !== gen) return
-      count = await window.api.startVu(dev)
+  enqueue(async () => {
+    // Superseded while we waited our turn — the newer request owns the state.
+    if (my !== gen) return
+    // A recording owns the device outright (`start_recording` calls `vu.stop()`
+    // itself). Racing it with a start_vu would only be a stop-first-then-start
+    // fight over the same hardware — the meter that matters during a take reads
+    // `recording://levels` instead.
+    if (window.__isRecording) {
+      running = false
+      setState('idle')
+      return
     }
-    if (my !== gen) return
-    channels = count
-    setState('live')
-  } catch {
-    if (my !== gen) return
-    running = false
-    setState('failed')
-  }
+    try {
+      let count: number
+      try {
+        count = await window.api.startVu(dev)
+      } catch {
+        // One retry after 400 ms: the device may still be settling out of a
+        // just-released format hold (the same grace the channel grid has always
+        // taken, now shared by every meter).
+        await new Promise<void>(r => setTimeout(r, 400))
+        // Nothing is open at this point, so bailing here leaks nothing.
+        if (my !== gen) return
+        count = await window.api.startVu(dev)
+      }
+      // A session IS open now. If we were superseded mid-call, leave it: the
+      // operation that superseded us is already queued behind this one and will
+      // either restart (stop-first) or stop it.
+      if (my !== gen) return
+      channels = count
+      setState('live')
+    } catch {
+      if (my !== gen) return
+      running = false
+      setState('failed')
+    }
+  })
 }
 
 function teardown(): void {
@@ -192,7 +216,9 @@ function teardown(): void {
     unlisten = null
   }
   setState('idle')
-  void window.api.stopVu().catch(() => {})
+  enqueue(async () => {
+    await window.api.stopVu().catch(() => {})
+  })
 }
 
 // ── Packet fan-out ───────────────────────────────────────────────────────────
