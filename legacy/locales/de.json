@@ -1293,7 +1293,17 @@
     "captionsOk": "Untertitel für „{name}“ empfangen.",
     "openEditor": "Im Editor öffnen",
     "captionsNoRecording": "Untertitel empfangen, aber ohne Angabe, zu welcher Aufnahme sie gehören. Öffnen Sie die Aufnahme im Editor und importieren Sie den Text dort.",
-    "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}"
+    "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}",
+    "rejectedPath": "Untertitel abgelehnt: Der Dateipfad konnte nicht freigegeben werden. Importieren Sie den Text stattdessen im Editor.",
+    "rejectedType": "Untertitel abgelehnt: Die Datei ist keine Untertiteldatei (.srt oder .vtt).",
+    "rejectedOutside": "Untertitel abgelehnt: Die Aufnahme liegt außerhalb Ihres Aufnahmeordners. SundayRec schreibt nur neben eigene Aufnahmen.",
+    "rejectedExpired": "Die Anfrage ist abgelaufen. Senden Sie die Untertitel erneut aus SundayEdit.",
+    "rejectedDeclined": "Die Untertitel wurden nicht hinzugefügt.",
+    "importRejected": "Die Datei konnte nicht geöffnet werden: SundayRec öffnet nur Audio- und Videodateien aus einem bekannten Ordner.",
+    "confirmCaptionsTitle": "Untertitel für „{name}“ hinzufügen?",
+    "confirmCaptionsBody": "Eine andere App hat die Textdatei „{file}“ gesendet. Wenn Sie zustimmen, wird der Text neben der Aufnahme gespeichert.",
+    "confirmCaptionsAccept": "Ja, Untertitel hinzufügen",
+    "confirmCaptionsReject": "Nein, nichts tun"
   },
   "progress": {
     "etaCalculating": "wird berechnet …",

@@ -1293,7 +1293,17 @@
     "captionsOk": "Tekstning modtaget for »{name}«.",
     "openEditor": "Åbn i redigering",
     "captionsNoRecording": "Tekstning modtaget, men uden at angive hvilken optagelse den hører til. Åbn optagelsen i redigering og importér teksten der.",
-    "captionsFailed": "Tekstningen kunne ikke gemmes: {err}"
+    "captionsFailed": "Tekstningen kunne ikke gemmes: {err}",
+    "rejectedPath": "Tekstningen blev afvist: filstien kunne ikke godkendes. Importér teksten fra redigering i stedet.",
+    "rejectedType": "Tekstningen blev afvist: filen er ikke en undertekstfil (.srt eller .vtt).",
+    "rejectedOutside": "Tekstningen blev afvist: optagelsen ligger uden for din optagelsesmappe. SundayRec skriver kun ved siden af sine egne optagelser.",
+    "rejectedExpired": "Anmodningen er udløbet. Send tekstningen igen fra SundayEdit.",
+    "rejectedDeclined": "Tekstningen blev ikke tilføjet.",
+    "importRejected": "Filen kunne ikke åbnes: SundayRec åbner kun lyd- og videofiler fra en kendt mappe.",
+    "confirmCaptionsTitle": "Tilføje tekstning for »{name}«?",
+    "confirmCaptionsBody": "En anden app har sendt tekstfilen »{file}«. Siger du ja, gemmes teksten ved siden af optagelsen.",
+    "confirmCaptionsAccept": "Ja, tilføj tekstning",
+    "confirmCaptionsReject": "Nej, gør ingenting"
   },
   "progress": {
     "etaCalculating": "beregner …",

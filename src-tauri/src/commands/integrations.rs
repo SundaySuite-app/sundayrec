@@ -62,6 +62,12 @@ impl OpResult {
             ..Default::default()
         }
     }
+
+    /// The same failure shape, for callers outside this module (the deep-link
+    /// confirm command reports its own rejection codes this way).
+    pub fn error_code(code: &str) -> Self {
+        Self::err(code)
+    }
 }
 
 /// Read the stored integration settings (the disabled default when unset/corrupt).

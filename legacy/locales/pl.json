@@ -1293,7 +1293,17 @@
     "captionsOk": "Odebrano napisy dla „{name}”.",
     "openEditor": "Otwórz w edytorze",
     "captionsNoRecording": "Odebrano napisy, ale bez wskazania, do którego nagrania należą. Otwórz nagranie w edytorze i zaimportuj tekst tam.",
-    "captionsFailed": "Nie udało się zapisać napisów: {err}"
+    "captionsFailed": "Nie udało się zapisać napisów: {err}",
+    "rejectedPath": "Napisy odrzucone: nie udało się zatwierdzić ścieżki pliku. Zaimportuj tekst z edytora.",
+    "rejectedType": "Napisy odrzucone: plik nie jest plikiem napisów (.srt ani .vtt).",
+    "rejectedOutside": "Napisy odrzucone: nagranie znajduje się poza folderem nagrań. SundayRec zapisuje tylko obok własnych nagrań.",
+    "rejectedExpired": "Żądanie wygasło. Wyślij napisy ponownie z SundayEdit.",
+    "rejectedDeclined": "Napisy nie zostały dodane.",
+    "importRejected": "Nie udało się otworzyć pliku: SundayRec otwiera tylko pliki audio i wideo ze znanego folderu.",
+    "confirmCaptionsTitle": "Dodać napisy do „{name}”?",
+    "confirmCaptionsBody": "Inna aplikacja wysłała plik tekstowy „{file}”. Jeśli się zgodzisz, tekst zostanie zapisany obok nagrania.",
+    "confirmCaptionsAccept": "Tak, dodaj napisy",
+    "confirmCaptionsReject": "Nie, nic nie rób"
   },
   "progress": {
     "etaCalculating": "obliczanie …",

@@ -1293,7 +1293,17 @@
     "captionsOk": "Captions received for “{name}”.",
     "openEditor": "Open in editor",
     "captionsNoRecording": "Captions received, but without saying which recording they belong to. Open the recording in the editor and import the text there.",
-    "captionsFailed": "Captions could not be saved: {err}"
+    "captionsFailed": "Captions could not be saved: {err}",
+    "rejectedPath": "Captions were refused: the file path could not be approved. Import the text from the editor instead.",
+    "rejectedType": "Captions were refused: the file is not a subtitle file (.srt or .vtt).",
+    "rejectedOutside": "Captions were refused: the recording is outside your recordings folder. SundayRec only writes next to its own recordings.",
+    "rejectedExpired": "The request has expired. Send the captions again from SundayEdit.",
+    "rejectedDeclined": "The captions were not added.",
+    "importRejected": "The file could not be opened: SundayRec only opens audio and video files from a known folder.",
+    "confirmCaptionsTitle": "Add captions for “{name}”?",
+    "confirmCaptionsBody": "Another app sent the text file “{file}”. If you say yes, the text is saved next to the recording.",
+    "confirmCaptionsAccept": "Yes, add captions",
+    "confirmCaptionsReject": "No, do nothing"
   },
   "progress": {
     "etaCalculating": "estimating …",

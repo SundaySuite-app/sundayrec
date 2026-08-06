@@ -13,6 +13,7 @@ pub mod calendar;
 pub mod cloud;
 pub mod companion;
 pub mod db;
+pub mod deeplink;
 pub mod diagnostics;
 pub mod editor;
 pub mod email;
