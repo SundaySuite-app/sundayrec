@@ -963,9 +963,11 @@ fn destination_health_summary(status: &Arc<Mutex<StreamStatus>>) -> (bool, bool)
 /// only have the hard kill.
 #[cfg(feature = "streaming")]
 async fn graceful_stop(child: &mut tokio::process::Child) {
-    use std::time::Duration;
+    // The import lives inside the unix block: on Windows only the hard kill
+    // remains and `Duration` would be an unused import under `-D warnings`.
     #[cfg(unix)]
     {
+        use std::time::Duration;
         if let Some(pid) = child.id() {
             let _ = std::process::Command::new("kill")
                 .arg("-TERM")
