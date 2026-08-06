@@ -35,6 +35,9 @@ pub mod review;
 pub mod scheduler;
 pub mod settings;
 pub mod streaming;
+// E3 — opt-in telemetry: consent, deletion, counters, and the "show me exactly
+// what you would send" preview. None takes a path (see the module docs).
+pub mod telemetry;
 pub mod thumbnail;
 pub mod trash;
 pub mod update;

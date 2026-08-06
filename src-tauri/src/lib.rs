@@ -78,6 +78,12 @@ pub mod settings;
 // per-destination keys from the keychain. `stream_start` returns
 // `feature_disabled` in the default build.
 pub mod streaming;
+// E3 opt-in telemetry — the persistence seam around the pure wire contract and
+// consent state machine in `sundayrec_core::telemetry`. Owns the random install
+// id, the consent row, the counter map and the durable outbox. Featureless, and
+// with consent off it reaches nothing: no id is minted, no row is written, and
+// no sender exists to spawn.
+pub mod telemetry;
 // E2.2 observability — ONE supervisor for every long-lived background task. The
 // scheduler had this pattern inline and was the only task that did; extracting
 // it gave the cloud worker, the review-reminder tick and the trash sweep the
@@ -644,6 +650,11 @@ pub fn run() {
             commands::publish::publish_feed_status,
             commands::publish::publish_feed_preview,
             commands::publish::publish_generate_feed,
+            // E3 opt-in telemetry. Consent defaults to OFF and nothing is
+            // collected, queued or sent without it; these are the only routes in.
+            commands::telemetry::telemetry_consent_get,
+            commands::telemetry::telemetry_consent_set,
+            commands::telemetry::telemetry_regenerate_install_id,
             // R7 auto-update (status pure; check/download/relaunch gated by `updater`).
             commands::update::update_status,
             commands::update::update_check,
