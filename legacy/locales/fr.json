@@ -1302,9 +1302,6 @@
     "etaMinutes": "environ {n} min restantes",
     "etaHours": "environ {h} h restantes",
     "etaHoursMinutes": "environ {h} h {m} min restantes",
-    "working": "Traitement …",
-    "preparing": "Préparation …",
-    "done": "Terminé",
-    "failed": "Échec"
+    "preparing": "Préparation …"
   }
 }

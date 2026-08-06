@@ -1302,9 +1302,6 @@
     "etaMinutes": "noch ca. {n} Min.",
     "etaHours": "noch ca. {h} Std.",
     "etaHoursMinutes": "noch ca. {h} Std. {m} Min.",
-    "working": "Arbeitet …",
-    "preparing": "Wird vorbereitet …",
-    "done": "Fertig",
-    "failed": "Fehlgeschlagen"
+    "preparing": "Wird vorbereitet …"
   }
 }

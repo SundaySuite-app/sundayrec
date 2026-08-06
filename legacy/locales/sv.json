@@ -1302,9 +1302,6 @@
     "etaMinutes": "ca {n} min kvar",
     "etaHours": "ca {h} tim kvar",
     "etaHoursMinutes": "ca {h} tim {m} min kvar",
-    "working": "Arbetar …",
-    "preparing": "Förbereder …",
-    "done": "Klart",
-    "failed": "Misslyckades"
+    "preparing": "Förbereder …"
   }
 }

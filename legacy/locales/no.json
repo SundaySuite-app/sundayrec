@@ -1302,9 +1302,6 @@
     "etaMinutes": "ca. {n} min igjen",
     "etaHours": "ca. {h} t igjen",
     "etaHoursMinutes": "ca. {h} t {m} min igjen",
-    "working": "Arbeider …",
-    "preparing": "Forbereder …",
-    "done": "Ferdig",
-    "failed": "Feilet"
+    "preparing": "Forbereder …"
   }
 }

@@ -1302,9 +1302,6 @@
     "etaMinutes": "ok. {n} min pozostało",
     "etaHours": "ok. {h} godz. pozostało",
     "etaHoursMinutes": "ok. {h} godz. {m} min pozostało",
-    "working": "Pracuję …",
-    "preparing": "Przygotowywanie …",
-    "done": "Gotowe",
-    "failed": "Niepowodzenie"
+    "preparing": "Przygotowywanie …"
   }
 }

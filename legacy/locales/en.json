@@ -1302,9 +1302,6 @@
     "etaMinutes": "about {n} min left",
     "etaHours": "about {h} h left",
     "etaHoursMinutes": "about {h} h {m} min left",
-    "working": "Working …",
-    "preparing": "Preparing …",
-    "done": "Done",
-    "failed": "Failed"
+    "preparing": "Preparing …"
   }
 }
