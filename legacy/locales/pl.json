@@ -1291,5 +1291,17 @@
     "openEditor": "Otwórz w edytorze",
     "captionsNoRecording": "Odebrano napisy, ale bez wskazania, do którego nagrania należą. Otwórz nagranie w edytorze i zaimportuj tekst tam.",
     "captionsFailed": "Nie udało się zapisać napisów: {err}"
+  },
+  "progress": {
+    "etaCalculating": "obliczanie …",
+    "etaUnder10s": "mniej niż 10 s",
+    "etaSeconds": "ok. {n} s pozostało",
+    "etaMinutes": "ok. {n} min pozostało",
+    "etaHours": "ok. {h} godz. pozostało",
+    "etaHoursMinutes": "ok. {h} godz. {m} min pozostało",
+    "working": "Pracuję …",
+    "preparing": "Przygotowywanie …",
+    "done": "Gotowe",
+    "failed": "Niepowodzenie"
   }
 }

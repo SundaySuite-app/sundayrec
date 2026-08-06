@@ -1291,5 +1291,17 @@
     "openEditor": "Åpne i redigering",
     "captionsNoRecording": "Teksting mottatt, men uten å si hvilket opptak den hører til. Åpne opptaket i redigering og importer teksten der.",
     "captionsFailed": "Teksting kunne ikke lagres: {err}"
+  },
+  "progress": {
+    "etaCalculating": "beregner …",
+    "etaUnder10s": "under 10 s igjen",
+    "etaSeconds": "ca. {n} s igjen",
+    "etaMinutes": "ca. {n} min igjen",
+    "etaHours": "ca. {h} t igjen",
+    "etaHoursMinutes": "ca. {h} t {m} min igjen",
+    "working": "Arbeider …",
+    "preparing": "Forbereder …",
+    "done": "Ferdig",
+    "failed": "Feilet"
   }
 }

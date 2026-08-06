@@ -1291,5 +1291,17 @@
     "openEditor": "Im Editor öffnen",
     "captionsNoRecording": "Untertitel empfangen, aber ohne Angabe, zu welcher Aufnahme sie gehören. Öffnen Sie die Aufnahme im Editor und importieren Sie den Text dort.",
     "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}"
+  },
+  "progress": {
+    "etaCalculating": "wird berechnet …",
+    "etaUnder10s": "unter 10 s übrig",
+    "etaSeconds": "noch ca. {n} s",
+    "etaMinutes": "noch ca. {n} Min.",
+    "etaHours": "noch ca. {h} Std.",
+    "etaHoursMinutes": "noch ca. {h} Std. {m} Min.",
+    "working": "Arbeitet …",
+    "preparing": "Wird vorbereitet …",
+    "done": "Fertig",
+    "failed": "Fehlgeschlagen"
   }
 }

@@ -1291,5 +1291,17 @@
     "openEditor": "Öppna i redigeraren",
     "captionsNoRecording": "Textning mottagen, men utan att ange vilken inspelning den hör till. Öppna inspelningen i redigeraren och importera texten där.",
     "captionsFailed": "Textningen kunde inte sparas: {err}"
+  },
+  "progress": {
+    "etaCalculating": "beräknar …",
+    "etaUnder10s": "under 10 s kvar",
+    "etaSeconds": "ca {n} s kvar",
+    "etaMinutes": "ca {n} min kvar",
+    "etaHours": "ca {h} tim kvar",
+    "etaHoursMinutes": "ca {h} tim {m} min kvar",
+    "working": "Arbetar …",
+    "preparing": "Förbereder …",
+    "done": "Klart",
+    "failed": "Misslyckades"
   }
 }

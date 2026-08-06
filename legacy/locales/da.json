@@ -1291,5 +1291,17 @@
     "openEditor": "Åbn i redigering",
     "captionsNoRecording": "Tekstning modtaget, men uden at angive hvilken optagelse den hører til. Åbn optagelsen i redigering og importér teksten der.",
     "captionsFailed": "Tekstningen kunne ikke gemmes: {err}"
+  },
+  "progress": {
+    "etaCalculating": "beregner …",
+    "etaUnder10s": "under 10 s tilbage",
+    "etaSeconds": "ca. {n} s tilbage",
+    "etaMinutes": "ca. {n} min tilbage",
+    "etaHours": "ca. {h} t tilbage",
+    "etaHoursMinutes": "ca. {h} t {m} min tilbage",
+    "working": "Arbejder …",
+    "preparing": "Forbereder …",
+    "done": "Færdig",
+    "failed": "Mislykkedes"
   }
 }

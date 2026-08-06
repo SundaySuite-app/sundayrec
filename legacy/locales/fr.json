@@ -1291,5 +1291,17 @@
     "openEditor": "Ouvrir dans l'éditeur",
     "captionsNoRecording": "Sous-titres reçus, mais sans indiquer à quel enregistrement ils appartiennent. Ouvrez l'enregistrement dans l'éditeur et importez le texte là.",
     "captionsFailed": "Les sous-titres n'ont pas pu être enregistrés : {err}"
+  },
+  "progress": {
+    "etaCalculating": "estimation …",
+    "etaUnder10s": "moins de 10 s restantes",
+    "etaSeconds": "environ {n} s restantes",
+    "etaMinutes": "environ {n} min restantes",
+    "etaHours": "environ {h} h restantes",
+    "etaHoursMinutes": "environ {h} h {m} min restantes",
+    "working": "Traitement …",
+    "preparing": "Préparation …",
+    "done": "Terminé",
+    "failed": "Échec"
   }
 }
