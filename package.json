@@ -1,7 +1,7 @@
 {
   "name": "sundayrec",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "scripts": {
     "ffmpeg": "node scripts/fetch-ffmpeg.mjs",
