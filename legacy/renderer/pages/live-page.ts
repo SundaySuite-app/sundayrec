@@ -15,9 +15,11 @@ import { navigateTo } from '../ui/navigate'
 import { t } from '../i18n'
 import { settings } from '../state'
 import { escHtml } from '../helpers'
-import { makeVuState, tickVU, stopVuState } from '../audio/vu'
+import { makeVuState, paintVuPair, pushVuLevels, stopVuState } from '../audio/vu'
 import type { VuState } from '../audio/vu'
-import { rVuChannel } from '../audio/capture'
+import { acquireVuFeed } from '../audio/vu-feed'
+import type { VuPick } from '../audio/vu-feed'
+import { pickLR } from '../audio/vu-feed-core'
 import type { StreamDestinationStored } from '../../types'
 import { setupLiveOverlays, reactivateLiveOverlays } from './live-overlays'
 import { normalizeFrameData } from '../../shared/normalize-frame-data'
@@ -186,63 +188,70 @@ function stopIdleCameraPreview(): void {
 
 // ── VU meter (pre-stream audio confidence check) ─────────────────────────
 //
-// Re-uses the same RMS dB / peak-hold engine that powers the home-page VU,
-// so the meter on the live tab is visually + numerically identical to the
-// one on Hjem (and the recording overlay). Stops cleanly on page leave to
-// release the microphone.
+// Re-uses the same peak-hold / smoothing engine that powers the home-page VU,
+// so the meter on the live tab is visually + numerically identical to the one
+// on Hjem (and the recording overlay). It reads the shared backend feed
+// (audio/vu-feed.ts) — the page never opens a microphone of its own, which is
+// what removes the "second device owner" hazard the old getUserMedia meter
+// carried onto this tab (2026-07-31 Qu-5 incident).
 
 const liveVu = makeVuState()
+/** Release handle for the feed subscription; non-null ⇔ the meter is running. */
+let liveRelease: (() => void) | null = null
+let liveRaf = 0
+
+/** The channels this meter shows — the recorder's own mode + L/R picks. */
+function liveVuPick(): VuPick {
+  const devChannels = settings.deviceId ? (settings.deviceChannels?.[settings.deviceId] ?? null) : null
+  return {
+    mode: settings.channels ?? 'stereo',
+    chL: devChannels?.channelL ?? 0,
+    chR: devChannels?.channelR ?? 1,
+  }
+}
 
 function startVuMeter(): void {
-  if (liveVu.stream) return  // already running
+  if (liveRelease) return  // already running
   if (!document.getElementById('live-vu-l')) return
-  // LEAK GUARD (2026-07-31 audit): never open a second microphone owner while
-  // the recorder's ffmpeg holds the device — visiting the live page mid-take
-  // used to attach an extra getUserMedia stream for the rest of the recording.
+  // LEAK GUARD (2026-07-31 audit): the recorder owns the device outright during
+  // a take (`start_recording` stops the VU engine itself), so don't ask for a
+  // metering session it would only have to take away again.
   if (window.__isRecording) return
 
-  const devId = settings.deviceId && settings.deviceId !== 'default' ? settings.deviceId : null
-  navigator.mediaDevices.getUserMedia({
-    audio: {
-      ...(devId ? { deviceId: { ideal: devId } } : {}),
-      channelCount:     { ideal: 2 },
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl:  false,
+  liveRelease = acquireVuFeed({
+    deviceName: settings.deviceName ?? null,
+    pick: liveVuPick,
+    onLevels: (l, r, levels) => {
+      const p = liveVuPick()
+      const pk = pickLR(levels.peak_dbfs, p.mode, p.chL, p.chR)
+      pushVuLevels(liveVu, l, r, pk.l, pk.r)
+      if (!liveRaf) liveRaf = requestAnimationFrame(paintLiveVu)
     },
-    video: false,
-  }).then(stream => {
-    liveVu.stream = stream
-    liveVu.ctx    = new AudioContext()
-    const src   = liveVu.ctx.createMediaStreamSource(stream)
-    const split = liveVu.ctx.createChannelSplitter(2)
-    liveVu.analyserL = liveVu.ctx.createAnalyser(); liveVu.analyserL.fftSize = 1024
-    liveVu.analyserR = liveVu.ctx.createAnalyser(); liveVu.analyserR.fftSize = 1024
-    src.connect(split)
-    split.connect(liveVu.analyserL, 0)
-    // Mirror mono → R so the R meter isn't dead on a mono mic (see rVuChannel).
-    split.connect(liveVu.analyserR, rVuChannel(stream))
-
-    const fillL = document.getElementById('live-vu-l')
-    const pkL   = document.getElementById('live-vu-peak-l')
-    const dbL   = document.getElementById('live-vu-db-l')
-    const fillR = document.getElementById('live-vu-r')
-    const pkR   = document.getElementById('live-vu-peak-r')
-    const dbR   = document.getElementById('live-vu-db-r')
-    const clipL = document.getElementById('live-vu-clip-l')
-    const clipR = document.getElementById('live-vu-clip-r')
-
-    tickVU(liveVu, fillL, pkL, dbL, fillR, pkR, dbR, (dL, dR, state) => {
-      updateLiveSignalStatus(dL, dR, state)
-      if (clipL && state.smL > -0.5) clipL.classList.add('clip')
-      if (clipR && state.smR > -0.5) clipR.classList.add('clip')
-    })
-  }).catch(err => {
-    console.warn('[live-page] VU mic access failed', err)
   })
 }
 
+function paintLiveVu(): void {
+  liveRaf = 0
+  const fillL = document.getElementById('live-vu-l')
+  const pkL   = document.getElementById('live-vu-peak-l')
+  const dbL   = document.getElementById('live-vu-db-l')
+  const fillR = document.getElementById('live-vu-r')
+  const pkR   = document.getElementById('live-vu-peak-r')
+  const dbR   = document.getElementById('live-vu-db-r')
+  paintVuPair(liveVu, fillL, pkL, dbL, fillR, pkR, dbR)
+  updateLiveSignalStatus(liveVu.smL, liveVu.smR, liveVu)
+  // Clip is a PEAK verdict — see home-vu.ts.
+  if (liveVu.pkL > -0.5) document.getElementById('live-vu-clip-l')?.classList.add('clip')
+  if (liveVu.pkR > -0.5) document.getElementById('live-vu-clip-r')?.classList.add('clip')
+}
+
 export function stopVuMeter(): void {
+  if (liveRelease) {
+    const r = liveRelease
+    liveRelease = null
+    try { r() } catch { /* gone */ }
+  }
+  if (liveRaf) { cancelAnimationFrame(liveRaf); liveRaf = 0 }
   stopVuState(liveVu)
   const fills = ['live-vu-l', 'live-vu-r'].map(id => document.getElementById(id))
   const peaks = ['live-vu-peak-l', 'live-vu-peak-r'].map(id => document.getElementById(id))

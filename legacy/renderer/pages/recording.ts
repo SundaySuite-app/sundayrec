@@ -538,10 +538,16 @@ export function showGlobalError(msg: string): void {
 
 // ── Monitoring stream (VU only) ──────────────────────────────────────────────
 
-/** Release EVERY renderer-side audio capture (home VU, audio-settings monitor,
- *  live-page VU). Called BEFORE the recorder's ffmpeg opens the device and from
- *  the engine-resync path, so a recording can never run with a second
- *  getUserMedia owner on the microphone (2026-07-31 leak audit). */
+/** Release every meter's hold on the shared backend VU feed (home VU,
+ *  audio-settings channel grid, live-page VU). Called BEFORE the recorder opens
+ *  the device and from the engine-resync path.
+ *
+ *  Since the renderer stopped owning microphones (audio/vu-feed.ts), this is no
+ *  longer the thing that prevents a second device owner — the HARD guarantee is
+ *  `start_recording`'s own `vu.stop()`, and the webview holds no input stream at
+ *  all any more. What this still buys is the fast path: the engine is released
+ *  before the capture engine asks for the device, instead of being torn down
+ *  underneath it. */
 export function releaseRendererAudioCaptures(): void {
   try { stopHomeVU() } catch {}
   try { stopAudioPageMonitoring() } catch {}

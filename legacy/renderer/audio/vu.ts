@@ -1,72 +1,96 @@
 /**
- * VU meter — shared logic for both the home page and the recording overlay.
+ * VU meter — the shared motion + paint layer for the Hjem and Direkte meters.
+ *
+ * This module used to own a Web Audio graph: a `getUserMedia` stream, an
+ * `AudioContext`, two `AnalyserNode`s and a 60 Hz `requestAnimationFrame` loop
+ * that computed RMS off the float time domain (`getDbFS`). All of that is gone.
+ * The levels now arrive from the Rust VU engine as `vu://levels` packets
+ * (audio/vu-feed.ts) — the renderer never opens an input device, which is what
+ * closes the Qu-5 class of bug: a webview-held CoreAudio input that stayed
+ * pinned to gUM's 2-channel format long after the meter was "stopped", so the
+ * recorder opened a 32-channel mixer and got a stereo pair (2026-07-31).
+ *
+ * What survives is everything that was never about owning a microphone: the
+ * frame-rate-independent smoothing, the peak hold, and the dirty-checked DOM
+ * writes that keep a 30 Hz meter from reflowing the page.
  */
 
 import { createLevelSmoother } from './smoothing'
 import type { LevelSmoother } from './smoothing'
 
 export interface VuState {
-  animFrame:   number | null
-  stream:      MediaStream | null
-  ctx:         AudioContext | null
-  analyserL:   AnalyserNode | null
-  analyserR:   AnalyserNode | null
+  /** Peak-hold marker position + the timestamp it was set. */
   pkL: number; pkR: number
   pkTL: number; pkTR: number
+  /** The smoothed bar level — the public readout. */
   smL: number; smR: number
+  /** Session maximum (the «Maks: … dBFS» line), a TRUE peak. */
   peakL: number; peakR: number
-  /** Pre-allocated read buffers — sized to fftSize once when analyser is set,
-   *  reused every frame so the 60 Hz tick produces zero GC pressure. */
-  bufL: Float32Array | null
-  bufR: Float32Array | null
   /** dt-based release smoothers (audio/smoothing.ts). smL/smR stay the public
    *  readout; these own the motion. */
   smootherL: LevelSmoother
   smootherR: LevelSmoother
-  /** performance.now() of the previous tick, for the smoother's dt. */
+  /** performance.now() of the previous packet, for the smoother's dt. */
   lastTickMs: number
 }
 
 const PEAK_HOLD = 1500   // ms
 const PEAK_FALL = 25     // dB/sec
+const FLOOR_DB  = -60
 
 export function makeVuState(): VuState {
-  return { animFrame: null, stream: null, ctx: null, analyserL: null, analyserR: null,
-    pkL: -60, pkR: -60, pkTL: 0, pkTR: 0, smL: -60, smR: -60, peakL: -60, peakR: -60,
-    bufL: null, bufR: null,
-    smootherL: createLevelSmoother(), smootherR: createLevelSmoother(), lastTickMs: 0 }
-}
-
-/**
- * Computes dBFS from an analyser using a caller-provided buffer. The buffer
- * MUST be at least `analyser.fftSize` long. Reusing the same buffer per
- * frame avoids ~4 KB allocation at 60 fps × 2 channels = ~480 KB/sec of GC
- * pressure that previously surfaced as occasional jank.
- */
-export function getDbFS(analyser: AnalyserNode, buf?: Float32Array): number {
-  const sampleBuf = buf && buf.length >= analyser.fftSize ? buf : new Float32Array(analyser.fftSize)
-  // Cast away the ArrayBufferLike↔ArrayBuffer generic variance the DOM lib
-  // introduced (TS 5.7): the buffer is a real Float32Array at runtime regardless.
-  analyser.getFloatTimeDomainData(sampleBuf as Float32Array<ArrayBuffer>)
-  const len = analyser.fftSize
-  let sum = 0
-  for (let i = 0; i < len; i++) sum += sampleBuf[i] * sampleBuf[i]
-  const rms = Math.sqrt(sum / len)
-  return rms > 0 ? Math.max(-60, 20 * Math.log10(rms)) : -60
+  return {
+    pkL: FLOOR_DB, pkR: FLOOR_DB, pkTL: 0, pkTR: 0,
+    smL: FLOOR_DB, smR: FLOOR_DB, peakL: FLOOR_DB, peakR: FLOOR_DB,
+    smootherL: createLevelSmoother(), smootherR: createLevelSmoother(), lastTickMs: 0,
+  }
 }
 
 function dbToHeight(db: number): number {
-  return ((Math.max(-60, Math.min(0, db)) + 60) / 60) * 100
+  return ((Math.max(FLOOR_DB, Math.min(0, db)) + 60) / 60) * 100
 }
 
 function computePeak(db: number, peak: number, pt: number, now: number): { p: number; t: number } {
   if (db >= peak) return { p: db, t: now }
   const age = now - pt
-  if (age > PEAK_HOLD) return { p: Math.max(-60, peak - (age - PEAK_HOLD) / 1000 * PEAK_FALL), t: pt }
+  if (age > PEAK_HOLD) return { p: Math.max(FLOOR_DB, peak - (age - PEAK_HOLD) / 1000 * PEAK_FALL), t: pt }
   return { p: peak, t: pt }
 }
 
-// Per-element write cache so a 60 fps caller only touches the DOM when a value
+/**
+ * Advance the meter by ONE `vu://levels` packet.
+ *
+ * The two level pairs come from the same packet but say different things, and
+ * the meter needs both: `rms*` is the bar (what the old `getDbFS` measured),
+ * `peak*` is the hold marker, the clip light and the session maximum. The old
+ * code had only the RMS and drove the "peak" marker off the smoothed RMS —
+ * which is why the clip indicators were effectively dead: an RMS above
+ * −0.5 dBFS needs a near-square wave.
+ *
+ * Called at packet rate (~30 Hz), NOT at frame rate: the smoothing law is
+ * `1 − exp(−dt/τ)`, so stepping it on packet arrival is exactly as correct as
+ * stepping it per frame, and it keeps the motion independent of how often the
+ * painter happens to run.
+ */
+export function pushVuLevels(
+  state: VuState,
+  rmsL: number, rmsR: number,
+  peakL: number, peakR: number,
+  nowPerf: number = performance.now(),
+  nowMs: number = Date.now(),
+): void {
+  const dt = state.lastTickMs ? nowPerf - state.lastTickMs : 33
+  state.lastTickMs = nowPerf
+  state.smL = state.smootherL.step(rmsL, dt)
+  state.smR = state.smootherR.step(rmsR, dt)
+  const pL = computePeak(peakL, state.pkL, state.pkTL, nowMs)
+  const pR = computePeak(peakR, state.pkR, state.pkTR, nowMs)
+  state.pkL = pL.p; state.pkTL = pL.t; state.pkR = pR.p; state.pkTR = pR.t
+  if (peakL > state.peakL) state.peakL = peakL
+  if (peakR > state.peakR) state.peakR = peakR
+}
+
+// Per-element write cache so a caller only touches the DOM when a value
 // actually changed. The fill is animated with `transform: scaleX(...)` (GPU
 // composite, no layout); the peak marker's `left` and the dB text DO cause
 // layout, so they are quantized/throttled — that combination is what makes the
@@ -152,73 +176,22 @@ export function setVUBar(
   }
 }
 
-/** One tick of the meter. Returns false when the analysers are gone (the loop
- *  then stops instead of rescheduling itself forever). */
-function tickVuOnce(
+/** Paint both bars from the current state. Cheap by construction (setVUBar is
+ *  dirty-checked), so a caller may run it per frame or per packet. */
+export function paintVuPair(
   state: VuState,
   fillL: HTMLElement | null, peakL: HTMLElement | null, dbL: HTMLElement | null,
   fillR: HTMLElement | null, peakR: HTMLElement | null, dbR: HTMLElement | null,
-  onSignal?: (dbL: number, dbR: number, state: VuState) => void
-): boolean {
-  if (!state.analyserL || !state.analyserR) return false
-  // Lazily size the reusable sample buffers to match the analyser fftSize.
-  // analyser.fftSize is constant for the lifetime of the analyser, so this
-  // allocates exactly once per (re)attach.
-  if (!state.bufL || state.bufL.length !== state.analyserL.fftSize) {
-    state.bufL = new Float32Array(state.analyserL.fftSize)
-  }
-  if (!state.bufR || state.bufR.length !== state.analyserR.fftSize) {
-    state.bufR = new Float32Array(state.analyserR.fftSize)
-  }
-  const now  = Date.now()
-  const rawL = getDbFS(state.analyserL, state.bufL), rawR = getDbFS(state.analyserR, state.bufR)
-  // Rise instant, fall eased on real elapsed time (audio/smoothing.ts). The old
-  // `sm*0.55 + raw*0.45` defined the release in FRAMES: at 30 fps it took twice
-  // as long as at 60, so every dropped frame also changed the motion law —
-  // the same jank amplifier the recording overlay shed in v0.5.0.
-  const nowPerf = performance.now()
-  const dt = state.lastTickMs ? nowPerf - state.lastTickMs : 16.7
-  state.lastTickMs = nowPerf
-  state.smL = state.smootherL.step(rawL, dt)
-  state.smR = state.smootherR.step(rawR, dt)
-  const pL = computePeak(state.smL, state.pkL, state.pkTL, now)
-  const pR = computePeak(state.smR, state.pkR, state.pkTR, now)
-  state.pkL = pL.p; state.pkTL = pL.t; state.pkR = pR.p; state.pkTR = pR.t
-  if (state.smL > state.peakL) state.peakL = state.smL
-  if (state.smR > state.peakR) state.peakR = state.smR
+): void {
   setVUBar(fillL, peakL, dbL, state.smL, state.pkL)
   setVUBar(fillR, peakR, dbR, state.smR, state.pkR)
-  onSignal?.(state.smL, state.smR, state)
-  return true
 }
 
-export function tickVU(
-  state: VuState,
-  fillL: HTMLElement | null, peakL: HTMLElement | null, dbL: HTMLElement | null,
-  fillR: HTMLElement | null, peakR: HTMLElement | null, dbR: HTMLElement | null,
-  onSignal?: (dbL: number, dbR: number, state: VuState) => void
-): void {
-  // ONE closure per (re)start. The old shape re-entered tickVU from a fresh
-  // arrow function every single frame purely to re-bind the same seven
-  // arguments — 60 short-lived closures/second per meter, for nothing.
-  const loop = (): void => {
-    if (!tickVuOnce(state, fillL, peakL, dbL, fillR, peakR, dbR, onSignal)) {
-      state.animFrame = null
-      return
-    }
-    state.animFrame = requestAnimationFrame(loop)
-  }
-  loop()
-}
-
+/** Back to silence. No stream or context to close any more — the state IS the
+ *  meter now. */
 export function stopVuState(state: VuState): void {
-  if (state.animFrame)  { cancelAnimationFrame(state.animFrame); state.animFrame = null }
-  if (state.stream)     { state.stream.getTracks().forEach(t => t.stop()); state.stream = null }
-  if (state.ctx)        { state.ctx.close(); state.ctx = null }
-  state.analyserL = null; state.analyserR = null
-  state.bufL = null; state.bufR = null
-  state.pkL = -60; state.pkR = -60; state.pkTL = 0; state.pkTR = 0
-  state.smL = -60; state.smR = -60; state.peakL = -60; state.peakR = -60
+  state.pkL = FLOOR_DB; state.pkR = FLOOR_DB; state.pkTL = 0; state.pkTR = 0
+  state.smL = FLOOR_DB; state.smR = FLOOR_DB; state.peakL = FLOOR_DB; state.peakR = FLOOR_DB
   state.smootherL.reset(); state.smootherR.reset()
   state.lastTickMs = 0
 }
