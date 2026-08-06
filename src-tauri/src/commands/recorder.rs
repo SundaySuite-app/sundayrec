@@ -171,6 +171,7 @@ pub async fn start_recording(
 /// ⚠️ HARDWARE-UNVERIFIED — opens a real mic in the background.
 #[tauri::command]
 pub async fn preroll_start(
+    app: AppHandle,
     preroll: State<'_, PrerollEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
@@ -181,7 +182,7 @@ pub async fn preroll_start(
     let settings = crate::settings::load(&db.pool).await?;
     match preroll_settings_from(&settings) {
         Some(ps) => {
-            preroll.start(ps);
+            preroll.start(app, ps);
             Ok(true)
         }
         None => {

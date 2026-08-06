@@ -50,6 +50,8 @@ use sundayrec_core::webhook::{build_webhook_body, WebhookPayload, WebhookSeverit
 
 use crate::db::Db;
 
+pub mod disk;
+
 pub use sundayrec_core::notify::code;
 
 /// The event the renderer's `backend-warning` channel is mapped to. Follows the
@@ -141,6 +143,9 @@ pub fn wire_failure_sources(app: &AppHandle) {
             .await;
         });
     });
+
+    // The graduated low-disk observer rides on the same observational seam.
+    disk::wire(app);
 
     tracing::info!("notify: failure dispatch wired to {ERROR_EVENT}");
 }

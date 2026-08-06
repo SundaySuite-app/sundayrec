@@ -580,7 +580,8 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
         .document_dir()
         .or_else(|_| app.path().app_data_dir())
         .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let findings = crate::preflight::run_preflight(pool, &documents).await;
+    let outcome = crate::preflight::run_preflight_detailed(pool, &documents).await;
+    let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()
         .filter(|f| f.severity == PreflightSeverity::Error)
@@ -588,6 +589,24 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
     if let Some(first) = errors.first() {
         notify_user(app, "SundayRec — sjekk før opptak", &first.message);
     }
+
+    // The preflight card only appears if someone opens the app. A configured
+    // mixer that is not plugged in, half an hour before a scheduled recording,
+    // is the single most common and most preventable cause of a lost service —
+    // so it also goes out as a live warning, carrying the device NAME so the
+    // operator knows what to go and find.
+    if !outcome.facts.device_present {
+        let name = outcome.device_name.unwrap_or_default();
+        crate::notify::warn(
+            app,
+            sundayrec_core::notify::BackendWarning::error(
+                sundayrec_core::notify::code::DEVICE_MISSING,
+            )
+            .msg(format!("Lydenheten «{name}» er ikke tilkoblet."))
+            .param("device", name),
+        );
+    }
+
     let _ = app.emit("scheduler://preflight", &findings);
 }
 

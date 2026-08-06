@@ -232,7 +232,11 @@ pub fn run() {
 
             // Fase 6: drain the durable cloud-upload queue in the background.
             // Idles cleanly when Google OAuth isn't configured (no spinning).
-            cloud::worker::spawn(pool.clone(), cloud::config::GoogleOAuthConfig::resolve());
+            cloud::worker::spawn(
+                app.handle().clone(),
+                pool.clone(),
+                cloud::config::GoogleOAuthConfig::resolve(),
+            );
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch

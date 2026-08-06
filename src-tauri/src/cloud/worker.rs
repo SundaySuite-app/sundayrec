@@ -206,10 +206,52 @@ async fn persist_entry(pool: &SqlitePool, entries: &[QueueEntry], id: &str) -> A
     Ok(())
 }
 
+/// Announce an entry that has just reached a TERMINAL state.
+///
+/// The queue's own statuses already knew this — `Failed` and `ReauthRequired`
+/// have been reachable since Fase 6 — but nothing ever said so out loud. A
+/// backup that quietly stopped happening, or a revoked Google token that paused
+/// the queue indefinitely, looked exactly like a queue with nothing in it.
+///
+/// Called only on the transition (an entry lands here from `Uploading`, and
+/// `select_next` never re-picks a terminal entry), so this is once per entry per
+/// failure — not once per poll.
+fn warn_if_terminal(app: &tauri::AppHandle, entries: &[QueueEntry], id: &str) {
+    use sundayrec_core::notify::{code, BackendWarning};
+
+    let Some(entry) = entries.iter().find(|e| e.id == id) else {
+        return;
+    };
+    // The bare filename, not the full path: this ends up in a toast and possibly
+    // a public chat channel.
+    let file = Path::new(&entry.file_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&entry.file_path)
+        .to_string();
+
+    let warning = match entry.status {
+        queue::UploadStatus::Failed => BackendWarning::error(code::CLOUD_UPLOAD_FAILED)
+            .msg(format!("Sikkerhetskopien til skyen feilet: {file}"))
+            .param("file", file),
+        queue::UploadStatus::ReauthRequired => BackendWarning::error(code::CLOUD_REAUTH_REQUIRED)
+            .msg("Skylagringen må kobles til på nytt — tilgangen er trukket tilbake.")
+            .param("file", file),
+        _ => return,
+    };
+    crate::notify::warn(app, warning);
+}
+
 /// Process the single next-due queue entry, if any. Returns whether it did work
 /// (so the caller's loop can keep draining without sleeping). Every transition
 /// is applied by the core and persisted.
-pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppResult<bool> {
+///
+/// `app` carries the warning channel ([`warn_if_terminal`]).
+pub async fn process_once(
+    app: &tauri::AppHandle,
+    pool: &SqlitePool,
+    config: &GoogleOAuthConfig,
+) -> AppResult<bool> {
     let mut entries = store::load_queue(pool).await?;
     let id = match queue::select_next(&entries, now_ms()) {
         Some(id) => id,
@@ -225,6 +267,7 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
     if tokio::fs::metadata(&file_path).await.is_err() {
         queue::mark_failed(&mut entries, &id, "file_not_found");
         persist_entry(pool, &entries, &id).await?;
+        warn_if_terminal(app, &entries, &id);
         return Ok(true);
     }
 
@@ -242,11 +285,15 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
                 now_ms(),
             );
             persist_entry(pool, &entries, &id).await?;
+            warn_if_terminal(app, &entries, &id);
             return Ok(true);
         }
         TokenOutcome::Transient(msg) => {
             queue::on_failure(&mut entries, &id, FailureKind::Retryable, msg, now_ms());
             persist_entry(pool, &entries, &id).await?;
+            // Retryable — but the core turns the LAST retry into `Failed`, and
+            // that transition is the one worth announcing.
+            warn_if_terminal(app, &entries, &id);
             return Ok(true);
         }
     };
@@ -293,6 +340,10 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
                 now_ms(),
             );
             persist_entry(pool, &entries, &id).await?;
+            // Includes the UPLOAD_DEADLINE timeout above, which arrives here as
+            // a retryable error: the attempt that exhausts the budget is the one
+            // that turns this into a permanent `Failed`.
+            warn_if_terminal(app, &entries, &id);
         }
     }
     Ok(true)
@@ -301,7 +352,13 @@ pub async fn process_once(pool: &SqlitePool, config: &GoogleOAuthConfig) -> AppR
 /// Spawn the background worker loop. Idles (long sleep) when cloud isn't
 /// configured or the queue is empty; otherwise drains and re-schedules itself
 /// off `queue::next_wakeup_delay_ms`.
-pub fn spawn(pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
+///
+/// `app` is carried only so a terminal upload failure / revoked token can reach
+/// the user ([`warn_if_terminal`]). The whole wiring stays INERT when cloud is
+/// unconfigured: `config` is `None` on a dev box with no OAuth client, the loop
+/// then sleeps forever without ever calling `process_once`, and no warning can
+/// be produced.
+pub fn spawn(app: tauri::AppHandle, pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
     // Use Tauri's async runtime handle, not bare `tokio::spawn`: this is called
     // from the synchronous `setup` hook on the main thread, where no tokio
     // runtime is *entered*, so `tokio::spawn` would panic ("must be called from
@@ -340,7 +397,7 @@ pub fn spawn(pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
                 tokio::time::sleep(IDLE_SLEEP).await;
                 continue;
             };
-            match process_once(&pool, cfg).await {
+            match process_once(&app, &pool, cfg).await {
                 Ok(true) => {
                     // Did work — keep draining promptly.
                     tokio::time::sleep(Duration::from_millis(500)).await;

@@ -29,10 +29,12 @@
 use std::path::PathBuf;
 
 use sqlx::SqlitePool;
+use sundayrec_core::device_match::find_best_device_match;
 use sundayrec_core::preflight::{
     assemble_findings, video_active, PreflightFacts, PreflightFinding,
 };
 
+use crate::audio::device_enum::enumerate_ffmpeg_devices_cached;
 use crate::media::ffmpeg::ffmpeg_health;
 use crate::settings;
 
@@ -76,16 +78,58 @@ fn free_bytes(folder: &std::path::Path) -> Option<u64> {
     fs4::available_space(folder).ok()
 }
 
-/// Run the preflight check: load settings, gather the filesystem/ffmpeg facts,
-/// and let the core decide the findings. `documents_dir` is the OS Documents
-/// directory the Tauri command resolves (used only when no `save_folder` is set).
+/// Whether the audio device named in settings is among the enumerated inputs.
+///
+/// Answers `true` for every case where we CANNOT establish absence — no device
+/// configured, or the enumeration itself failed (no ffmpeg, a permission wall).
+/// Only a configured name that the same fuzzy matcher the recorder uses
+/// ([`find_best_device_match`]) fails to resolve counts as missing. Getting that
+/// asymmetry right is the whole safety of this check: a false alarm on a Sunday
+/// morning sends a volunteer hunting for a cable that is already plugged in.
+///
+/// Uses the SHORT-TTL enumeration cache, so a preflight run right after the
+/// device picker (or the record modal's warm-up) costs nothing.
+async fn device_present(configured: Option<&str>) -> bool {
+    let Some(name) = configured.map(str::trim).filter(|n| !n.is_empty()) else {
+        return true; // nothing configured — the OS default is used, nothing to check
+    };
+    let Ok(inventory) = enumerate_ffmpeg_devices_cached().await else {
+        return true; // could not enumerate — unknown, not absent
+    };
+    if inventory.audio_inputs.is_empty() {
+        // An empty list means the enumeration produced nothing usable, which on
+        // a machine that manifestly has a microphone means the probe failed, not
+        // that every input vanished. The ffmpeg-missing finding covers the real
+        // version of this.
+        return true;
+    }
+    find_best_device_match(&inventory.audio_inputs, name).is_some()
+}
+
+/// A preflight run with the raw facts kept, for callers that need to act on a
+/// specific one rather than on the rendered findings list.
+pub struct PreflightOutcome {
+    /// What the core decided (the same list [`run_preflight`] returns).
+    pub findings: Vec<PreflightFinding>,
+    /// The facts those findings were decided from.
+    pub facts: PreflightFacts,
+    /// The configured audio-device name that was checked, when one is set. The
+    /// scheduler puts this in the `device_missing` warning so the operator is
+    /// told WHICH device to go and plug in.
+    pub device_name: Option<String>,
+}
+
+/// Run the preflight check: load settings, gather the filesystem/ffmpeg/device
+/// facts, and let the core decide the findings. `documents_dir` is the OS
+/// Documents directory the Tauri command resolves (used only when no
+/// `save_folder` is set).
 ///
 /// macOS mic/camera permission is NOT probed here — see the module docs
-/// (deferred to Fase 5). An empty result means "alt klart".
-pub async fn run_preflight(
+/// (deferred to Fase 5). An empty `findings` means "alt klart".
+pub async fn run_preflight_detailed(
     pool: &SqlitePool,
     documents_dir: &std::path::Path,
-) -> Vec<PreflightFinding> {
+) -> PreflightOutcome {
     let settings = settings::load(pool).await.unwrap_or_default();
 
     let ffmpeg_missing = !ffmpeg_health().available;
@@ -96,6 +140,13 @@ pub async fn run_preflight(
     // would fail anyway and we'd skip the check (None) regardless.
     let free = free_bytes(&folder);
 
+    let device_name = settings
+        .device_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string);
+
     let facts = PreflightFacts {
         ffmpeg_missing,
         folder_writable: writable,
@@ -104,9 +155,22 @@ pub async fn run_preflight(
         // macOS permission probe deferred to Fase 5 — see module docs.
         mic_denied: false,
         cam_denied: false,
+        device_present: device_present(device_name.as_deref()).await,
     };
 
-    assemble_findings(facts)
+    PreflightOutcome {
+        findings: assemble_findings(facts),
+        facts,
+        device_name,
+    }
+}
+
+/// The findings alone — what every existing caller wants.
+pub async fn run_preflight(
+    pool: &SqlitePool,
+    documents_dir: &std::path::Path,
+) -> Vec<PreflightFinding> {
+    run_preflight_detailed(pool, documents_dir).await.findings
 }
 
 #[cfg(test)]

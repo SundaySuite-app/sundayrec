@@ -93,8 +93,8 @@ pub async fn cloud_get_folder(
 /// Manually run the next due upload now (the background worker also drains the
 /// queue on its own schedule). Returns whether it processed an entry.
 #[tauri::command]
-pub async fn cloud_process_queue_now(db: State<'_, Db>) -> AppResult<bool> {
-    cloud::worker::process_once(&db.pool, &require_config()?).await
+pub async fn cloud_process_queue_now(app: AppHandle, db: State<'_, Db>) -> AppResult<bool> {
+    cloud::worker::process_once(&app, &db.pool, &require_config()?).await
 }
 
 /// The compact upload-queue view for the cloud-backup panel.

@@ -57,6 +57,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
 use sundayrec_core::ffmpeg::Platform;
+use sundayrec_core::notify::{should_warn_preroll_dead, BackendWarning};
 use sundayrec_core::preroll::{
     build_preroll_capture_args, build_preroll_trim_args, harvest_trim_ms, preroll_restart_delay,
     preroll_start_offset_ms, RESTART_GAP_MS,
@@ -172,8 +173,13 @@ impl PrerollEngine {
     /// Returns immediately — the loop runs in the background and self-heals; a
     /// missing device just backs off and retries (pre-roll is best-effort).
     ///
+    /// `app` is carried purely so a loop that has given up can SAY so
+    /// ([`crate::notify::warn`]). Best-effort means best-effort, not silent: the
+    /// Home chip could previously not tell a dead buffer from a disabled one,
+    /// and it hid itself in both cases.
+    ///
     /// ⚠️ HARDWARE-UNVERIFIED — opens a real mic.
-    pub fn start(&self, settings: PrerollSettings) {
+    pub fn start(&self, app: tauri::AppHandle, settings: PrerollSettings) {
         self.stop();
         let _ = std::fs::create_dir_all(&self.tmp_dir);
 
@@ -184,7 +190,7 @@ impl PrerollEngine {
         let platform = detect_platform();
 
         let task = tauri::async_runtime::spawn(async move {
-            capture_loop(active, handle_slot, tmp_dir, platform, settings).await;
+            capture_loop(app, active, handle_slot, tmp_dir, platform, settings).await;
         });
         *lock_recover(&self.task) = Some(task);
     }
@@ -317,6 +323,7 @@ impl PrerollEngine {
 ///
 /// ⚠️ HARDWARE-UNVERIFIED.
 async fn capture_loop(
+    app: tauri::AppHandle,
     active: Arc<AtomicBool>,
     handle_slot: Arc<Mutex<Option<PrerollHandle>>>,
     tmp_dir: std::path::PathBuf,
@@ -324,6 +331,10 @@ async fn capture_loop(
     settings: PrerollSettings,
 ) {
     let mut attempt: u32 = 0;
+    // Whether THIS failure streak has already told the user. Cleared by a
+    // successful spawn below, so a device that comes back and dies again warns
+    // again — but a loop retrying every few seconds for an hour warns once.
+    let mut warned_dead = false;
     while active.load(Ordering::SeqCst) {
         // Resolve the device fresh each segment (it may have changed/reconnected).
         let audio = match resolve_audio(&settings.audio_device_name).await {
@@ -332,6 +343,15 @@ async fn capture_loop(
                 // No device → exponential back-off, then retry (don't busy-spin).
                 let delay = preroll_restart_delay(attempt);
                 tracing::warn!(attempt, delay, "preroll: no audio device, backing off");
+                if should_warn_preroll_dead(attempt, warned_dead) {
+                    warned_dead = true;
+                    warn_preroll_dead(
+                        &app,
+                        "no_device",
+                        "Forhåndsbufferen finner ikke lydenheten — det som skjer før du trykker \
+                         opptak blir ikke tatt vare på.",
+                    );
+                }
                 attempt = attempt.saturating_add(1);
                 if !sleep_while_active(&active, delay).await {
                     break;
@@ -355,6 +375,15 @@ async fn capture_loop(
             Err(e) => {
                 let delay = preroll_restart_delay(attempt);
                 tracing::warn!(attempt, delay, "preroll: spawn failed: {e}");
+                if should_warn_preroll_dead(attempt, warned_dead) {
+                    warned_dead = true;
+                    warn_preroll_dead(
+                        &app,
+                        "spawn_failed",
+                        "Forhåndsbufferen får ikke startet opptaket i bakgrunnen — det som skjer \
+                         før du trykker opptak blir ikke tatt vare på.",
+                    );
+                }
                 attempt = attempt.saturating_add(1);
                 if !sleep_while_active(&active, delay).await {
                     break;
@@ -363,8 +392,10 @@ async fn capture_loop(
             }
         };
 
-        // A successful spawn resets the error back-off.
+        // A successful spawn resets the error back-off — and re-arms the warning,
+        // so a device that recovers and dies again is heard about again.
         attempt = 0;
+        warned_dead = false;
         let stdin = child.stdin.take();
         *lock_recover(&handle_slot) = Some(PrerollHandle {
             stdin,
@@ -404,6 +435,22 @@ async fn capture_loop(
             break;
         }
     }
+}
+
+/// Tell the user the rolling buffer has given up.
+///
+/// The Home chip renders from [`PrerollStatus::active`], which is true for a
+/// loop that is merely failing forever — so "buffer running" and "buffer dead"
+/// looked identical, and the dead one looked like "pre-roll is switched off".
+/// `reason` distinguishes the two give-up paths for the log/webhook without
+/// needing two locale strings.
+fn warn_preroll_dead(app: &tauri::AppHandle, reason: &str, msg: &str) {
+    crate::notify::warn(
+        app,
+        BackendWarning::warn(sundayrec_core::notify::code::PREROLL_DEAD)
+            .msg(msg)
+            .param("reason", reason),
+    );
 }
 
 /// Resolve the best audio device match for `name` via the real ffmpeg enumerator.

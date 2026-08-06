@@ -185,6 +185,15 @@ pub struct PreflightFacts {
     /// macOS camera permission denied/restricted (only relevant when
     /// [`Self::video_active`]).
     pub cam_denied: bool,
+    /// The audio device named in settings was found among the enumerated inputs.
+    ///
+    /// **`true` also means "nothing to check"** — no device configured, or the
+    /// enumeration itself failed. The shell can only ever positively establish
+    /// ABSENCE (a configured name that no enumerated input matches), and a check
+    /// that cannot run must never cry wolf: a false "your mixer is gone" on a
+    /// Sunday morning is worse than no check at all, because it sends a
+    /// volunteer hunting for a cable that is already plugged in.
+    pub device_present: bool,
 }
 
 /// Assemble the preflight findings from the gathered facts, in the SAME order
@@ -206,6 +215,19 @@ pub fn assemble_findings(facts: PreflightFacts) -> Vec<PreflightFinding> {
         findings.push(PreflightFinding::error(
             PreflightCategory::Device,
             "ffmpeg-binær mangler. SundayRec må installeres på nytt.",
+        ));
+    }
+
+    // The minimal half of the device-name-mismatch finding the Electron build
+    // had and the note above said was deferred: we now at least say when the
+    // CONFIGURED device is not among the enumerated inputs. Which device it is
+    // (and what to plug in instead) is the `device_missing` backend warning's
+    // job — it carries the name as a parameter. Full mismatch synthesis (did the
+    // user mean this other, similarly-named input?) is still deferred.
+    if !facts.device_present {
+        findings.push(PreflightFinding::error(
+            PreflightCategory::Device,
+            "Lydenheten som er valgt i innstillingene er ikke tilkoblet.",
         ));
     }
 
@@ -252,6 +274,7 @@ mod tests {
             video_active: false,
             mic_denied: false,
             cam_denied: false,
+            device_present: true,
         }
     }
 
@@ -424,8 +447,8 @@ mod tests {
 
     #[test]
     fn assemble_orders_findings_like_electron() {
-        // Trip every branch at once; assert the exact order ffmpeg → folder →
-        // disk → mic → cam.
+        // Trip every branch at once; assert the exact order ffmpeg → device →
+        // folder → disk → mic → cam.
         let facts = PreflightFacts {
             ffmpeg_missing: true,
             folder_writable: false,
@@ -433,19 +456,42 @@ mod tests {
             video_active: true,
             mic_denied: true,
             cam_denied: true,
+            device_present: false,
         };
         let findings = assemble_findings(facts);
-        assert_eq!(findings.len(), 5);
+        assert_eq!(findings.len(), 6);
         assert_eq!(findings[0].category, PreflightCategory::Device); // ffmpeg
         assert!(findings[0].message.contains("ffmpeg"));
-        assert_eq!(findings[1].category, PreflightCategory::Disk); // folder
-        assert!(findings[1].message.contains("skrives"));
-        assert_eq!(findings[2].category, PreflightCategory::Disk); // free space
-        assert!(findings[2].message.contains("ledig"));
-        assert_eq!(findings[3].category, PreflightCategory::Device); // mic
-        assert!(findings[3].message.contains("Mikrofon"));
-        assert_eq!(findings[4].category, PreflightCategory::Device); // cam
-        assert!(findings[4].message.contains("Kamera"));
+        assert_eq!(findings[1].category, PreflightCategory::Device); // device gone
+        assert!(findings[1].message.contains("ikke tilkoblet"));
+        assert_eq!(findings[2].category, PreflightCategory::Disk); // folder
+        assert!(findings[2].message.contains("skrives"));
+        assert_eq!(findings[3].category, PreflightCategory::Disk); // free space
+        assert!(findings[3].message.contains("ledig"));
+        assert_eq!(findings[4].category, PreflightCategory::Device); // mic
+        assert!(findings[4].message.contains("Mikrofon"));
+        assert_eq!(findings[5].category, PreflightCategory::Device); // cam
+        assert!(findings[5].message.contains("Kamera"));
+    }
+
+    #[test]
+    fn a_missing_configured_device_is_an_error_finding_on_its_own() {
+        let findings = assemble_findings(PreflightFacts {
+            device_present: false,
+            ..all_clear()
+        });
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, PreflightSeverity::Error);
+        assert_eq!(findings[0].category, PreflightCategory::Device);
+    }
+
+    #[test]
+    fn an_unanswerable_device_check_raises_nothing() {
+        // `device_present: true` is also what "no device configured" and "the
+        // enumeration failed" report. Neither may produce a finding: sending a
+        // volunteer to re-seat a cable that is already seated, on a Sunday
+        // morning, is worse than saying nothing.
+        assert!(assemble_findings(all_clear()).is_empty());
     }
 
     #[test]
