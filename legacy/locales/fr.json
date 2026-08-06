@@ -475,7 +475,8 @@
     "diagFfmpegMissing": "Introuvable",
     "diagFfmpegOk": "Disponible",
     "diagLoopback": "Bouclage WASAPI",
-    "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur"
+    "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur",
+    "benchJudging": "Analyse de la mesure …"
   },
   "files": {
     "saveFolder": "Dossier de sauvegarde",

@@ -11,6 +11,7 @@ import {
   EXPORT_PHASE_MEASURING,
 } from './export-params'
 import { toast } from '../../ui/toast'
+import { attachProgress } from '../../ui/progress'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -524,8 +525,7 @@ export async function runExport(): Promise<void> {
   closeExportModal()
   const btn      = $('btn-editor-save') as HTMLButtonElement
   const progRow  = $('editor-export-progress-row')
-  const progBar  = $('editor-export-progress-bar')
-  const progLbl  = $('editor-export-progress-label')
+  const progHost = $('editor-export-progress-host')
   const cancelBtn = $('btn-editor-export-cancel') as HTMLButtonElement | null
   const resultRow = $('editor-result-row')
 
@@ -534,9 +534,11 @@ export async function runExport(): Promise<void> {
   if (progRow) progRow.style.display = ''
   // Start indeterminate: ffmpeg's first -progress tick is a moment away (and the
   // mastering measure pass has no percentage at all), so a bar pinned at 0%
-  // would read as hung. The listener below swaps in the real bar on tick one.
-  if (progBar) { progBar.style.width = ''; progBar.classList.add('progress-indeterminate') }
-  if (progLbl) progLbl.textContent = t('editor.exportExporting') || 'Eksporterer…'
+  // would read as hung. The listener below swaps in the real bar on tick one,
+  // and the widget adds «ca. 2 min igjen» once its rate estimate settles — an
+  // export of a service is the longest wait in the app.
+  const progressUi = progHost ? attachProgress(progHost, { compact: true }) : null
+  progressUi?.update(null, t('editor.exportExporting') || 'Eksporterer…')
   if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.textContent = t('editor.exportCancel', 'Avbryt') }
   if (resultRow) { resultRow.style.display = 'none' }
 
@@ -596,15 +598,10 @@ export async function runExport(): Promise<void> {
     if (typeof pct !== 'number' || !isFinite(pct)) return
     const shown = Math.max(0, Math.min(100, pct))
     const label = exportPhaseText(phase ?? '')
-    if (shown > 0) {
-      // A concrete % arrived → swap the sliding stripe for a real bar.
-      if (progBar) { progBar.classList.remove('progress-indeterminate'); progBar.style.width = shown + '%' }
-      if (progLbl) progLbl.textContent = `${label} ${Math.round(shown)}%`
-    } else if (progLbl) {
-      // The mastering measure pass reports 0 with no percentage of its own —
-      // name the phase but keep the stripe moving rather than pinning a 0% bar.
-      progLbl.textContent = label
-    }
+    // A concrete % arrived → a real bar. Zero is the mastering measure pass
+    // announcing itself with no percentage of its own: name the phase, keep the
+    // stripe moving, and do NOT feed the estimator a fraction that isn't one.
+    progressUi?.update(shown > 0 ? shown / 100 : null, label)
   })
 
   try {
@@ -616,7 +613,7 @@ export async function runExport(): Promise<void> {
   }
 
   if (progRow) progRow.style.display = 'none'
-  if (progBar) { progBar.classList.remove('progress-indeterminate'); progBar.style.width = '0%' }
+  progressUi?.destroy()
   if (btn) { btn.disabled = false; btn.textContent = t('editor.save') || 'Eksporter' }
 
   const row  = $('editor-result-row')

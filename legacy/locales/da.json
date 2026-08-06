@@ -475,7 +475,8 @@
     "diagFfmpegMissing": "Ikke fundet",
     "diagFfmpegOk": "Tilgængelig",
     "diagLoopback": "WASAPI-loopback",
-    "diagDeviceListTitle": "Alle lydenheder optageren kan se"
+    "diagDeviceListTitle": "Alle lydenheder optageren kan se",
+    "benchJudging": "Analyserer måling …"
   },
   "files": {
     "saveFolder": "Mappe til at gemme i",

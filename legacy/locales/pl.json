@@ -475,7 +475,8 @@
     "diagFfmpegMissing": "Nie znaleziono",
     "diagFfmpegOk": "Dostępny",
     "diagLoopback": "Pętla WASAPI",
-    "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator"
+    "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator",
+    "benchJudging": "Analizowanie pomiaru …"
   },
   "files": {
     "saveFolder": "Folder zapisu",

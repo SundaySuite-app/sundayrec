@@ -475,7 +475,8 @@
     "diagFfmpegMissing": "Hittades inte",
     "diagFfmpegOk": "Tillgänglig",
     "diagLoopback": "WASAPI-loopback",
-    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser"
+    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser",
+    "benchJudging": "Analyserar mätningen …"
   },
   "files": {
     "saveFolder": "Mapp att spara i",

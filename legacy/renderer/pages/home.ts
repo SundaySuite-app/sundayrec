@@ -12,6 +12,7 @@ import { buildHealthFindings } from '../status/health-findings'
 import { toWarningView } from '../status/backend-warning-core'
 import { firstMount, resetMount, showEl, hideEl } from '../ui/motion'
 import { banner, dismissBanner, toast } from '../ui/toast'
+import { attachProgress, type ProgressHandle } from '../ui/progress'
 import {
   dismissMissed,
   dismissPreflight,
@@ -592,33 +593,38 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
 
 // ── Progress bar shared by the two long audio checks ────────────────────────
 //
-// Neither check reports real progress from the backend, so the UI must not
-// pretend otherwise: the 30 s test recording shows a determinate bar the copy
-// explicitly calls an estimate ("ca."), and the 60 s capture bench — which
-// previously showed NOTHING for a full minute — gets an indeterminate bar plus
-// a truthful elapsed-seconds counter.
+// Neither backend streams progress, but the two checks know very different
+// amounts about themselves and the UI says so:
+//
+//   - the 30 s TEST RECORDING has only a local counter, so its bar is an
+//     ESTIMATE. It is attached with the ETA line OFF: deriving «ca. 12 s igjen»
+//     from a guess would dress a guess up as a measurement, and the status line
+//     beside it already says "ca. {n}/{total} s" out loud.
+//   - the 60 s CAPTURE BENCH records for exactly the duration it was asked for,
+//     so elapsed-over-60 is honest and the countdown with it. Past 60 s the
+//     ffprobe-and-judge tail begins, whose length nobody knows — the bar goes
+//     indeterminate there rather than sitting at 100 % pretending to be done.
+//
+// Before v0.9.0 the bench showed NOTHING for a full minute.
 
-function healthProgress(mode: 'determinate' | 'indeterminate' | 'off', pct = 0): void {
-  const bar = document.getElementById('health-progress')
-  const fill = document.getElementById('health-progress-fill')
-  if (!bar || !fill) return
+let healthUi: ProgressHandle | null = null
+
+function healthProgress(
+  mode: 'determinate' | 'indeterminate' | 'off',
+  pct = 0,
+  opts: { eta?: boolean; label?: string } = {},
+): void {
+  const host = document.getElementById('health-progress-host')
+  if (!host) return
   if (mode === 'off') {
-    bar.style.display = 'none'
-    bar.classList.remove('indeterminate')
-    bar.removeAttribute('aria-valuenow')
-    fill.style.width = '0'
+    healthUi?.destroy()
+    healthUi = null
+    host.style.display = 'none'
     return
   }
-  bar.style.display = ''
-  bar.classList.toggle('indeterminate', mode === 'indeterminate')
-  if (mode === 'determinate') {
-    const clamped = Math.max(0, Math.min(100, pct))
-    fill.style.width = `${clamped}%`
-    bar.setAttribute('aria-valuenow', String(Math.round(clamped)))
-  } else {
-    fill.style.width = ''
-    bar.removeAttribute('aria-valuenow')
-  }
+  host.style.display = ''
+  if (!healthUi) healthUi = attachProgress(host, { compact: true, eta: opts.eta ?? false })
+  healthUi.update(mode === 'determinate' ? Math.max(0, Math.min(1, pct / 100)) : null, opts.label)
 }
 
 export function setupHome(): void {
@@ -763,14 +769,24 @@ export function setupHome(): void {
     // life — indistinguishable from a hang. An indeterminate bar says "working",
     // the counter says how long it has been working, and neither claims to know
     // how far along the backend is (it does not report that).
+    const BENCH_SEC = 60
     const benchStarted = Date.now()
+    const benchElapsed = (): number => (Date.now() - benchStarted) / 1000
     const benchLine = (): string => {
-      const secs = Math.floor((Date.now() - benchStarted) / 1000)
+      const secs = Math.floor(benchElapsed())
       return `${t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')} (${secs} s)`
     }
-    status.textContent = benchLine()
-    healthProgress('indeterminate')
-    const benchTick = setInterval(() => { status.textContent = benchLine() }, 1000)
+    // The bench records for exactly BENCH_SEC, so this fraction is real and so
+    // is the countdown beside it. When it runs out, the probe-and-judge tail has
+    // started and its length is genuinely unknown — hand over to the stripe.
+    const benchDraw = (): void => {
+      const e = benchElapsed()
+      status.textContent = benchLine()
+      if (e < BENCH_SEC) healthProgress('determinate', (e / BENCH_SEC) * 100, { eta: true })
+      else healthProgress('indeterminate', 0, { eta: true, label: t('audio.benchJudging', 'Analyserer måling …') })
+    }
+    benchDraw()
+    const benchTick = setInterval(benchDraw, 1000)
     // The bench must measure the RECORDING PATH alone: release every meter's
     // hold on the VU engine first, so the bench opens the device cleanly rather
     // than yanking it out from under a running metering session.

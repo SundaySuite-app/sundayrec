@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { E, $ } from './state'
 import { clampMain } from './geometry'
+import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // ── Mastering panel ─────────────────────────────────────────────────────────
 
@@ -14,6 +15,36 @@ let masterJobId   = ''
 let masterPreviewPath = ''
 let masterOriginalPreviewPath = ''
 let masterProgressUnsubscribe: (() => void) | null = null
+
+/**
+ * The status row's bar + label, from ui/progress.ts. Attached on demand and
+ * torn down when the row is hidden — the row is shared by the preview and the
+ * apply, and one widget per run keeps the ETA estimator from carrying a
+ * previous job's rate into the next one.
+ *
+ * `fraction === null` means "running, no denominator" (the sliding stripe).
+ */
+let masterUi: ProgressHandle | null = null
+
+function masterStatus(fraction: number | null, label: string): void {
+  const row = $('master-status-row')
+  if (row) row.style.display = ''
+  const host = $('master-progress-host')
+  if (!masterUi && host) masterUi = attachProgress(host, { compact: true })
+  masterUi?.update(fraction, label)
+}
+
+/** End the run: a full bar (or a stopped one) with the closing message. */
+function masterFinish(ok: boolean, label: string): void {
+  if (ok) masterUi?.done(label)
+  else masterUi?.fail(label)
+}
+
+/** Drop the widget so the next run starts with a fresh rate estimate. */
+function masterStatusReset(): void {
+  masterUi?.destroy()
+  masterUi = null
+}
 
 export async function setupMasteringPanel(): Promise<void> {
   const select       = $('master-preset-select') as HTMLSelectElement | null
@@ -65,20 +96,18 @@ export async function setupMasteringPanel(): Promise<void> {
   if (masterProgressUnsubscribe) { try { masterProgressUnsubscribe() } catch {} ; masterProgressUnsubscribe = null }
   const unsub = window.api.on('master-progress', (data: unknown) => {
     const { currentSec, totalSec } = data as { currentSec: number; totalSec: number }
-    const bar   = $('master-progress-bar')
-    const label = $('master-status-label')
     // `totalSec === 0` is the backend saying "I could not probe this file's
     // duration" — an unknown denominator, not 0 %. Pinning the bar at 0 for the
     // whole apply is exactly what made a working mastering run look hung; show
-    // the sliding stripe and the elapsed position instead.
+    // the sliding stripe instead, and give the estimator nothing rather than a
+    // fraction it would turn into a confident wrong number.
     if (!(totalSec > 0)) {
-      if (bar) { bar.style.width = ''; bar.classList.add('progress-indeterminate') }
-      if (label) label.textContent = t('master.applying', 'Mastrer…')
+      masterStatus(null, t('master.applying', 'Mastrer…'))
       return
     }
-    const pct = Math.min(99, Math.round((currentSec / totalSec) * 100))
-    if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = pct + '%' }
-    if (label) label.textContent = `${t('master.applying', 'Mastrer…')} ${pct}%`
+    // Capped just under 1: the file is not finished until ffmpeg exits and the
+    // container is closed, so 100 % belongs to the apply's own success path.
+    masterStatus(Math.min(0.99, currentSec / totalSec), t('master.applying', 'Mastrer…'))
   })
   if (typeof unsub === 'function') masterProgressUnsubscribe = unsub
 }
@@ -104,20 +133,19 @@ export async function runMasterPreview(): Promise<void> {
   const btn   = $('btn-master-preview') as HTMLButtonElement | null
   const audio = $('master-preview-audio') as HTMLAudioElement | null
   const btnListenO = $('btn-master-listen-orig') as HTMLButtonElement | null
-  const label = $('master-status-label')
-  const row   = $('master-status-row')
-  const bar   = $('master-progress-bar')
 
   if (btn) { btn.disabled = true; btn.textContent = t('master.applying', 'Lager forhåndsvisning…') }
-  if (row) row.style.display = ''
-  if (bar) { bar.classList.remove('progress-indeterminate'); bar.style.width = '20%' }
-  if (label) label.textContent = t('master.applying', 'Lager forhåndsvisning…')
+  // A 15-second window renders in a second or two and reports no progress of
+  // its own. The old code drew a bar at a made-up 20 % for the duration; the
+  // stripe says the same thing without the invented number.
+  masterStatusReset()
+  masterStatus(null, t('master.applying', 'Lager forhåndsvisning…'))
 
   const start = Math.max(0, Math.min(E.duration > 15 ? E.duration - 15 : 0, clampMain(E.playStartSec)))
   try {
     const res = await window.api.masterPreview(E.filePath, preset.id, start, 15)
     if (!res.ok || !res.previewPath) {
-      if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${res.error ?? 'unknown'}`
+      masterFinish(false, `${t('master.error', '✕ Feil')}: ${res.error ?? 'unknown'}`)
       return
     }
     masterPreviewPath = res.previewPath
@@ -127,10 +155,9 @@ export async function runMasterPreview(): Promise<void> {
       audio.play().catch(() => {})
     }
     if (btnListenO) btnListenO.style.display = ''
-    if (label) label.textContent = t('master.done', '✓ Forhåndsvisning klar')
-    if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = '100%' }
+    masterFinish(true, t('master.done', '✓ Forhåndsvisning klar'))
   } catch (err) {
-    if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${(err as Error).message}`
+    masterFinish(false, `${t('master.error', '✕ Feil')}: ${(err as Error).message}`)
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = t('master.preview', 'Lytt på forhåndsvisning') }
   }
@@ -174,18 +201,18 @@ export async function runMasterApply(): Promise<void> {
   const btnApply = $('btn-master-apply')  as HTMLButtonElement | null
   const btnPrv   = $('btn-master-preview') as HTMLButtonElement | null
   const btnCancel = $('btn-master-cancel') as HTMLButtonElement | null
-  const row    = $('master-status-row')
-  const bar    = $('master-progress-bar')
-  const label  = $('master-status-label')
   const resRow = $('master-result-row')
 
   if (btnApply)  { btnApply.disabled  = true }
   if (btnPrv)    { btnPrv.disabled    = true }
   if (btnCancel) { btnCancel.style.display = '' }
-  if (row)       { row.style.display = '' }
-  if (bar)       { bar.classList.remove('progress-indeterminate'); bar.style.width = '5%' }
-  if (label)     { label.textContent = t('master.applying', 'Mastrer…') + ' (måler lydstyrke…)' }
   if (resRow)    { resRow.style.display = 'none' }
+  // Pass 1 (the loudness measure) reports no percentage — it used to be drawn
+  // as a 5 % bar, then a 15 % one, both invented. The stripe is the truth until
+  // pass 2 starts emitting real positions. A fresh widget per apply so the
+  // remaining-time estimate never inherits the previous file's rate.
+  masterStatusReset()
+  masterStatus(null, t('master.applying', 'Mastrer…') + ' (måler lydstyrke…)')
 
   masterJobId = 'm-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
   const outPath = deriveMasteredPath(E.filePath)
@@ -194,12 +221,14 @@ export async function runMasterApply(): Promise<void> {
     // Pass 1: measure
     const measureRes = await window.api.masterMeasure(E.filePath, preset.id)
     if (!measureRes.ok || !measureRes.measurement) {
-      if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${measureRes.error ?? 'measure_failed'}`
+      masterFinish(false, `${t('master.error', '✕ Feil')}: ${measureRes.error ?? 'measure_failed'}`)
       return
     }
     const beforeLufs = measureRes.measurement.inputI
-    if (label) label.textContent = `${t('master.applying', 'Mastrer…')} (${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ${preset.targetLufs} LUFS)`
-    if (bar) { bar.classList.remove('progress-indeterminate'); bar.style.width = '15%' }
+    masterStatus(
+      null,
+      `${t('master.applying', 'Mastrer…')} (${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ${preset.targetLufs} LUFS)`,
+    )
 
     // Pass 2: apply
     const applyRes = await window.api.masterApply({
@@ -211,10 +240,12 @@ export async function runMasterApply(): Promise<void> {
     })
 
     if (applyRes.ok && applyRes.outputPath) {
-      if (bar)   { bar.classList.remove('progress-indeterminate'); bar.style.width = '100%' }
-      if (label) label.textContent = t('master.done', '✓ Mastret') +
-        ` — ${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ` +
-        `${t('master.lufsAfter', 'Etter')}: ${preset.targetLufs} LUFS`
+      masterFinish(
+        true,
+        t('master.done', '✓ Mastret') +
+          ` — ${t('master.lufsBefore', 'Original')}: ${beforeLufs.toFixed(1)} LUFS → ` +
+          `${t('master.lufsAfter', 'Etter')}: ${preset.targetLufs} LUFS`,
+      )
       const resText = $('master-result-text')
       const fname = applyRes.outputPath.split(/[/\\]/).pop() ?? ''
       if (resText) resText.textContent = (t('master.done', '✓ Mastret')) + (fname ? ' — ' + fname : '')
@@ -224,10 +255,10 @@ export async function runMasterApply(): Promise<void> {
       if (btnOpenFold) { btnOpenFold.style.display = ''; btnOpenFold.dataset.path = applyRes.outputPath }
       if (btnListenDn) { btnListenDn.style.display = ''; btnListenDn.dataset.path = applyRes.outputPath }
     } else {
-      if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${applyRes.error ?? 'apply_failed'}`
+      masterFinish(false, `${t('master.error', '✕ Feil')}: ${applyRes.error ?? 'apply_failed'}`)
     }
   } catch (err) {
-    if (label) label.textContent = `${t('master.error', '✕ Feil')}: ${(err as Error).message}`
+    masterFinish(false, `${t('master.error', '✕ Feil')}: ${(err as Error).message}`)
   } finally {
     if (btnApply)  btnApply.disabled  = false
     if (btnPrv)    btnPrv.disabled    = false
@@ -239,6 +270,5 @@ export async function runMasterApply(): Promise<void> {
 export async function runMasterCancel(): Promise<void> {
   if (!masterJobId) return
   try { await window.api.masterCancel(masterJobId) } catch {}
-  const label = $('master-status-label')
-  if (label) label.textContent = t('master.cancel', 'Avbrutt')
+  masterFinish(false, t('master.cancel', 'Avbrutt'))
 }

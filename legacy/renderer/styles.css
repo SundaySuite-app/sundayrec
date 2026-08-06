@@ -1448,8 +1448,9 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .update-status-dot.ready    { background: var(--green); box-shadow: 0 0 8px rgba(34,197,94,.6); animation: pdot .8s ease-in-out infinite; }
 .update-status-dot.error    { background: var(--orange); }
 .update-status-text { flex: 1; }
-.update-progress-wrap { height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
-.update-progress-bar  { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 2px; width: 0%; transition: width .3s; }
+/* The update download uses the shared ui/progress.ts widget (real bytes in, so
+   it gets a real remaining-time line); only its placement is ours. */
+.update-progress-host { margin-bottom: 8px; }
 
 /* ── Wake status row ─────────────────────────────────────────────── */
 .wake-status-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; color: var(--text2); }
@@ -2291,38 +2292,14 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 }
 
 /* ── Progress bar for the long audio checks ──────────────────────────
-   The 30 s test recording is a determinate ESTIMATE (the backend reports no
-   progress, so the bar is honest about being "ca."); the 60 s capture bench is
-   indeterminate with an elapsed counter beside it. */
-.health-progress {
+   Both checks now use the shared ui/progress.ts widget; only the placement is
+   ours. The 30 s test recording is a determinate ESTIMATE (its counter is a
+   local timer, so the widget is attached with the ETA line OFF rather than
+   deriving a time claim from a guess); the 60 s capture bench counts down for
+   real, then goes indeterminate for the ffprobe tail. */
+.health-progress-host {
   margin-top: 10px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--surface2);
-  overflow: hidden;
-}
-.health-progress-fill {
-  height: 100%;
-  width: 0;
-  border-radius: 3px;
-  background: var(--accent);
-  transition: width .4s linear;
-}
-.health-progress.indeterminate .health-progress-fill {
-  width: 35%;
-  transition: none;
-  animation: healthSweep 1.4s ease-in-out infinite;
-}
-@keyframes healthSweep {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(320%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .health-progress.indeterminate .health-progress-fill {
-    animation: none;
-    width: 100%;
-    opacity: .5;
-  }
+  max-width: 420px;
 }
 
 /* Alert CARDS (missed recording, pre-start check) reuse the banner skin but are
@@ -3008,30 +2985,16 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .editor-export-progress-row {
   display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
 }
-.editor-export-progress-bar-wrap {
-  flex: 1; height: 4px; background: var(--surface3); border-radius: 2px; overflow: hidden;
-}
-.editor-export-progress-bar {
-  height: 100%; width: 0%; background: var(--accent);
-  transition: width .4s ease; border-radius: 2px;
-}
-.editor-export-progress-label { font-size: 12px; color: var(--text3); white-space: nowrap; }
+/* The export and mastering rows host the shared ui/progress.ts widget; it owns
+   the track, the fill, the percentage and the remaining-time line. What is left
+   here is where it sits.
 
-/* Indeterminate progress: an animated sliding stripe for long operations whose
-   real percentage the backend does not report (editor export, whisper
-   transcription). Applied when the op starts; removed automatically once a
-   concrete % arrives (model download, or a future progress emitter). The
-   !important overrides the inline width the JS sets, and translateX slides the
-   stripe across the overflow-hidden track. */
-.progress-indeterminate {
-  width: 40% !important;
-  transition: none !important;
-  animation: progIndet 1.1s ease-in-out infinite;
-}
-@keyframes progIndet {
-  0%   { transform: translateX(-110%); }
-  100% { transform: translateX(275%); }
-}
+   Gone with them: `.editor-export-progress-bar` (`width` + `transition: width`,
+   a relayout per tick) and `.progress-indeterminate`, whose `!important` width
+   existed only to beat the inline width the JS wrote. The widget's stripe is a
+   `transform` animation on the same property the determinate fill uses, so
+   there is nothing left to fight. */
+.editor-export-progress-host { flex: 1; min-width: 0; }
 
 /* ── Editor: mastering section ────────────────────────────────── */
 .editor-master-section {

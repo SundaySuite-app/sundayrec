@@ -959,11 +959,10 @@
           <button type="button" class="btn-secondary btn-sm" id="btn-audio-diagnose" data-i18n="audio.diagnose">Diagnose</button>
           <span class="health-status" id="health-status-settings" style="margin-left:8px;font-size:13px;color:var(--text3);align-self:center"></span>
         </div>
-        <!-- Shared progress bar for test-recording (determinate, an ESTIMATE)
-             and the capture bench (indeterminate + elapsed seconds). -->
-        <div class="health-progress" id="health-progress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100">
-          <div class="health-progress-fill" id="health-progress-fill"></div>
-        </div>
+        <!-- Shared bar for test-recording (a determinate ESTIMATE, so no time
+             claim beside it) and the capture bench (a real 60 s countdown, then
+             indeterminate for the probe tail). Built by ui/progress.ts. -->
+        <div id="health-progress-host" class="health-progress-host" style="display:none"></div>
         <ul id="preflight-findings-settings" style="display:none;list-style:none;margin:8px 0 0 0;padding:0;font-size:13px"></ul>
       </div>
 
@@ -1905,9 +1904,8 @@
           <span class="update-status-dot" id="update-status-dot"></span>
           <span id="update-status-text" class="update-status-text">—</span>
         </div>
-        <div class="update-progress-wrap" id="update-progress-wrap" style="display:none">
-          <div class="update-progress-bar" id="update-progress-bar"></div>
-        </div>
+        <!-- Download bar + «ca. 40 s igjen», from ui/progress.ts. -->
+        <div id="update-progress-host" class="update-progress-host" style="display:none"></div>
         <div class="toggle-row" style="margin-top:8px">
           <div>
             <div class="toggle-title" data-i18n="general.autoUpdate">Oppdater automatisk</div>
@@ -2538,10 +2536,7 @@
         </div>
 
         <div id="master-status-row" class="editor-master-status" style="display:none">
-          <div class="editor-export-progress-bar-wrap">
-            <div class="editor-export-progress-bar" id="master-progress-bar"></div>
-          </div>
-          <span class="editor-export-progress-label" id="master-status-label">…</span>
+          <div id="master-progress-host" class="editor-export-progress-host"></div>
         </div>
 
         <div id="master-result-row" class="editor-master-result" style="display:none">
@@ -2737,10 +2732,7 @@
       <!-- Save bar -->
       <div class="editor-save-bar">
         <div id="editor-export-progress-row" class="editor-export-progress-row" style="display:none">
-          <div class="editor-export-progress-bar-wrap">
-            <div class="editor-export-progress-bar" id="editor-export-progress-bar"></div>
-          </div>
-          <span class="editor-export-progress-label" id="editor-export-progress-label">Eksporterer…</span>
+          <div id="editor-export-progress-host" class="editor-export-progress-host"></div>
           <button class="btn-ghost btn-sm" id="btn-editor-export-cancel" data-i18n="editor.exportCancel">Avbryt</button>
         </div>
         <div id="editor-result-row" class="editor-result-row" style="display:none">

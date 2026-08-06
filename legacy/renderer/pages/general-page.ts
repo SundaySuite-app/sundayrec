@@ -11,6 +11,7 @@ import {
 } from '../ui/bind-setting'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { applyFeatureGate } from '../ui/feature-gate'
+import { attachProgress, type ProgressHandle } from '../ui/progress'
 import {
   canSendTestEmail,
   emailBlockReason,
@@ -471,9 +472,15 @@ function wireUpdateIpcListeners(): void {
       if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
     }
   }
+  // The update download's bar + remaining time. Attached on the first progress
+  // event and torn down when the download ends, so a second round starts with a
+  // fresh rate estimate rather than the previous download's.
+  let updateUi: ProgressHandle | null = null
   const hideProgress = (): void => {
-    const wrap = document.getElementById('update-progress-wrap')
-    if (wrap) wrap.style.display = 'none'
+    updateUi?.destroy()
+    updateUi = null
+    const host = document.getElementById('update-progress-host')
+    if (host) host.style.display = 'none'
   }
 
   updateIpcUnsubs.push(window.api.on('update-checking',          () => setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))))
@@ -499,10 +506,12 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-download-progress', (prog: unknown) => {
     const pct  = Math.round((prog as { percent?: number }).percent ?? 0)
-    const wrap = document.getElementById('update-progress-wrap')
-    const bar  = document.getElementById('update-progress-bar') as HTMLElement | null
-    if (wrap) wrap.style.display = 'block'
-    if (bar)  bar.style.width   = pct + '%'
+    const host = document.getElementById('update-progress-host')
+    if (host) {
+      host.style.display = 'block'
+      if (!updateUi) updateUi = attachProgress(host, { compact: true })
+      updateUi.update(Math.max(0, Math.min(1, pct / 100)), t('update.btnDownloading', 'Laster ned…'))
+    }
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
     setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
     setToastProgress(pct)

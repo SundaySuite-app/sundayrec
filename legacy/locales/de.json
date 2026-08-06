@@ -475,7 +475,8 @@
     "diagFfmpegMissing": "Nicht gefunden",
     "diagFfmpegOk": "Verfügbar",
     "diagLoopback": "WASAPI-Loopback",
-    "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht"
+    "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht",
+    "benchJudging": "Messung wird ausgewertet …"
   },
   "files": {
     "saveFolder": "Speicherordner",
