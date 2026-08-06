@@ -43,7 +43,10 @@ pub fn email_status() -> EmailStatus {
 /// that into the `missing_password` error rather than attempting an
 /// unauthenticated send that the server would reject with something cryptic.
 #[cfg_attr(not(feature = "email"), allow(dead_code))]
-fn resolve_smtp_password(request: Option<String>, stored: Option<String>) -> Option<String> {
+pub(crate) fn resolve_smtp_password(
+    request: Option<String>,
+    stored: Option<String>,
+) -> Option<String> {
     [request, stored]
         .into_iter()
         .flatten()
@@ -57,7 +60,11 @@ fn resolve_smtp_password(request: Option<String>, stored: Option<String>) -> Opt
 /// while a login name that is not a mailbox (SendGrid's literal `apikey`) can
 /// now be overridden. Returns `None` only when all three are blank.
 #[cfg_attr(not(feature = "email"), allow(dead_code))]
-fn resolve_from_address(from: Option<&str>, user: Option<&str>, recipient: &str) -> Option<String> {
+pub(crate) fn resolve_from_address(
+    from: Option<&str>,
+    user: Option<&str>,
+    recipient: &str,
+) -> Option<String> {
     [from, user, Some(recipient)]
         .into_iter()
         .flatten()

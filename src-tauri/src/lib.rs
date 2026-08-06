@@ -45,6 +45,12 @@ pub mod media;
 // source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
 // returns `feature_disabled` (default) or a clear "NDI SDK not bundled" error.
 pub mod ndi;
+// The notification dispatch seam — ONE place a failure reaches the operator
+// (native + e-mail + webhook) and one place a degradation reaches the screen.
+// Featureless: the `email` leg compiles out cleanly under
+// `--no-default-features` and the routing matrix degrades to native + webhook.
+// The matrix itself is the unit-tested `sundayrec_core::notify`.
+pub mod notify;
 pub mod platform;
 pub mod preflight;
 // PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
@@ -154,7 +160,7 @@ pub fn run() {
     #[cfg(feature = "tray")]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
 
-    builder
+    let builder = builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
         .manage(audio::vu::VuEngine::new())
@@ -196,7 +202,18 @@ pub fn run() {
         .manage(whisper::DownloadGuard::new())
         // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
         // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new())
+        .manage(whisper::TranscribeGuard::new());
+
+    // PU-1: ONE alert throttle window for the whole process lifetime. The gate
+    // (10 min per recipient+error pair) is what stops a flapping device from
+    // mailing the operator forty times; it existed, tested, in the core and was
+    // never MANAGED, so nothing could reach it. `notify::dispatch_failure` reads
+    // it through managed state. Feature-gated because the whole `email` module
+    // is — a `--no-default-features` build has no gate and plans no e-mail leg.
+    #[cfg(feature = "email")]
+    let builder = builder.manage(email::AlertGateState::default());
+
+    builder
         .setup(|app| {
             use tauri::Manager;
 

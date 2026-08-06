@@ -69,6 +69,7 @@ pub mod link;
 pub mod mastering;
 pub mod mjpeg;
 pub mod ndi;
+pub mod notify;
 pub mod overlay;
 pub mod preflight;
 pub mod prep;
