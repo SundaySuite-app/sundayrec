@@ -171,9 +171,12 @@ test.describe("editor", () => {
     // candidates and must not be offered.
     const options = page.locator("#editor-sermon-picker option");
     await expect(options).toHaveCount(3);
-    // The auto-detected pick is starred and selected.
+    // The auto-detected pick is starred and selected. Option values are indices
+    // into the SEGMENTS array, so the three offers are 1, 3 and 4 — the silence
+    // and the 30 s music in between are not candidates. The starred one is
+    // SEGMENTS[3].
     await expect(options.nth(1)).toHaveText(/^★ /);
-    await expect(page.locator("#editor-sermon-picker")).toHaveValue("1");
+    await expect(page.locator("#editor-sermon-picker")).toHaveValue("3");
   });
 
   test("correcting the sermon pick sticks", async ({ page }) => {
@@ -181,24 +184,24 @@ test.describe("editor", () => {
     await page.locator("#editor-tab-clip").click();
 
     const picker = page.locator("#editor-sermon-picker");
-    await expect(picker).toHaveValue("1");
+    await expect(picker).toHaveValue("3"); // = SEGMENTS[3], the auto-pick
 
-    // "That third block is the sermon, not the second."
-    await picker.selectOption("2");
+    // "That third block is the sermon, not the second." — SEGMENTS[4].
+    await picker.selectOption("4");
 
     const options = page.locator("#editor-sermon-picker option");
     // The star MOVED — the old pick was demoted, not merely joined.
     await expect(options.nth(2)).toHaveText(/^★ /);
     await expect(options.nth(1)).not.toHaveText(/^★ /);
     await expect(options.nth(0)).not.toHaveText(/^★ /);
-    await expect(picker).toHaveValue("2");
+    await expect(picker).toHaveValue("4");
 
     // …and it survives leaving the tab and coming back, rather than being reset
     // by the next render.
     await page.locator("#editor-tab-audio").click();
     await expect(page.locator("#editor-tabpanel-audio")).toBeVisible();
     await page.locator("#editor-tab-clip").click();
-    await expect(page.locator("#editor-sermon-picker")).toHaveValue("2");
+    await expect(page.locator("#editor-sermon-picker")).toHaveValue("4");
     await expect(
       page.locator("#editor-sermon-picker option").nth(2),
     ).toHaveText(/^★ /);
@@ -248,48 +251,49 @@ test.describe("editor", () => {
     );
   });
 
-  test.fail(
-    "KNOWN BUG: the sermon picker and setSermonSegment index different lists",
-    async ({ page }) => {
-      // `renderSermonPicker` builds its options from
-      //   suggestions.filter(speech|sermon).filter(duration >= 60).sort(by start)
-      // but `setSermonSegment(i)` indexes into
-      //   suggestions.filter(speech|sermon)
-      // — no duration floor, no sort. Add one SHORT speech block ahead of the
-      // candidates and the two lists shift by one, so choosing "block 3"
-      // promotes block 2. Silent, and it mis-trims the export.
-      await openEditor(page, {
-        editor_segments: [
-          { start: 0, end: 20, duration: 20, label: "Tale", type: "speech" }, // < 60 s: not offered
-          {
-            start: 20,
-            end: 200,
-            duration: 180,
-            label: "Preken",
-            type: "sermon",
-          },
-          {
-            start: 200,
-            end: 400,
-            duration: 200,
-            label: "Tale",
-            type: "speech",
-          },
-          {
-            start: 400,
-            end: 600,
-            duration: 200,
-            label: "Tale",
-            type: "speech",
-          },
-        ] satisfies EditorSegment[],
-      });
-      await page.locator("#editor-tab-clip").click();
+  test("a too-short block ahead of the candidates does not shift the correction", async ({
+    page,
+  }) => {
+    // `renderSermonPicker` built its options from
+    //   suggestions.filter(speech|sermon).filter(duration >= 60).sort(by start)
+    // but `setSermonSegment(i)` indexed into
+    //   suggestions.filter(speech|sermon)
+    // — no duration floor, no sort. One SHORT speech block ahead of the
+    // candidates shifted the two lists by one, so choosing "block 3" promoted
+    // block 2: silently, and it mis-trimmed the export. Options now carry the
+    // segment's own index, so there is only one list left to disagree with.
+    await openEditor(page, {
+      editor_segments: [
+        { start: 0, end: 20, duration: 20, label: "Tale", type: "speech" }, // < 60 s: not offered
+        { start: 20, end: 200, duration: 180, label: "Preken", type: "sermon" },
+        { start: 200, end: 400, duration: 200, label: "Tale", type: "speech" },
+        { start: 400, end: 600, duration: 200, label: "Tale", type: "speech" },
+      ] satisfies EditorSegment[],
+    });
+    await page.locator("#editor-tab-clip").click();
 
-      const picker = page.locator("#editor-sermon-picker");
-      await expect(picker.locator("option")).toHaveCount(3);
-      await picker.selectOption("2"); // the LAST offered block
-      await expect(picker.locator("option").nth(2)).toHaveText(/^★ /);
-    },
-  );
+    const picker = page.locator("#editor-sermon-picker");
+    const options = picker.locator("option");
+    await expect(options).toHaveCount(3);
+    await expect(options.nth(0)).toHaveText(/^★ /);
+
+    // The LAST offered block — segment 3, the one starting at 6:40. Under the
+    // old numbering this option was "2" and promoted segment 2 instead.
+    await picker.selectOption({ index: 2 });
+    await expect(picker).toHaveValue("3");
+    await expect(options.nth(2)).toHaveText(/^★ /);
+    await expect(options.nth(0)).not.toHaveText(/^★ /);
+    await expect(options.nth(1)).not.toHaveText(/^★ /);
+    // The starred option is the 6:40 one: the block the user actually chose.
+    await expect(options.nth(2)).toHaveText(/6:40/);
+
+    // And the trim that follows keeps THAT block — the export consequence, and
+    // the reason this mattered beyond a wandering star. One cut, everything
+    // before 6:40. The old numbering promoted segment 2 instead and would have
+    // produced two cuts (0:00–3:20 and 6:40–10:00), keeping the wrong 200 s.
+    await page.locator("#btn-apply-auto-trim").click();
+    const rows = page.locator("#editor-cuts-list .editor-cut-row");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("0:00 – 6:40");
+  });
 });
