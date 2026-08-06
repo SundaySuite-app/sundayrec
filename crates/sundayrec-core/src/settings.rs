@@ -379,6 +379,17 @@ pub struct Settings {
     /// seam, never persisted to the settings bag.
     #[serde(default)]
     pub email_smtp_user: String,
+    /// Explicit envelope/`From:` address for alert mail. Empty = derive it, which
+    /// is what every pre-existing config does: the renderer used to synthesise
+    /// `emailSmtpUser || recipient` client-side. Providers increasingly reject a
+    /// `From:` that isn't the authenticated identity (or a verified alias), and
+    /// the login username is not always a mailbox — SendGrid wants `apikey`,
+    /// Fastmail/Migadu use `user@domain` handles — so the address has to be
+    /// settable on its own. The derivation stays as the fallback (see
+    /// `commands::email::resolve_from_address`) so old configs keep working
+    /// untouched.
+    #[serde(default)]
+    pub email_smtp_from: String,
 
     // ── Editor intro/outro (R7 — Electron `editorIntroPath`/`editorOutroPath`) ─
     /// Path to an intro clip prepended on export, or `None`. Electron used
@@ -576,6 +587,7 @@ impl Default for Settings {
             email_smtp: String::new(),
             email_smtp_port: default_smtp_port(),
             email_smtp_user: String::new(),
+            email_smtp_from: String::new(),
 
             editor_intro_path: None,
             editor_outro_path: None,

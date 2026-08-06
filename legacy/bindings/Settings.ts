@@ -335,6 +335,18 @@ emailSmtpPort: number,
  */
 emailSmtpUser: string, 
 /**
+ * Explicit envelope/`From:` address for alert mail. Empty = derive it, which
+ * is what every pre-existing config does: the renderer used to synthesise
+ * `emailSmtpUser || recipient` client-side. Providers increasingly reject a
+ * `From:` that isn't the authenticated identity (or a verified alias), and
+ * the login username is not always a mailbox — SendGrid wants `apikey`,
+ * Fastmail/Migadu use `user@domain` handles — so the address has to be
+ * settable on its own. The derivation stays as the fallback (see
+ * `commands::email::resolve_from_address`) so old configs keep working
+ * untouched.
+ */
+emailSmtpFrom: string, 
+/**
  * Path to an intro clip prepended on export, or `None`. Electron used
  * `undefined`; we keep it `Option` so an unset value stays absent.
  */

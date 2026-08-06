@@ -31,15 +31,58 @@ pub fn email_status() -> EmailStatus {
     }
 }
 
+// ── Resolution rules shared by the test send (and, from Phase 2, the real
+//    failure alert). Both are PURE over their inputs so the precedence is
+//    unit-tested without a keychain, a network or a settings row. Kept outside
+//    the `email` cfg so a `--no-default-features` build still type-checks and
+//    still runs their tests.
+
+/// SMTP password precedence: a non-blank value **typed into the request** wins
+/// (the operator just entered it and may not have saved it yet), otherwise the
+/// one stored in the OS keychain. `None` means neither exists — the caller turns
+/// that into the `missing_password` error rather than attempting an
+/// unauthenticated send that the server would reject with something cryptic.
+#[cfg_attr(not(feature = "email"), allow(dead_code))]
+fn resolve_smtp_password(request: Option<String>, stored: Option<String>) -> Option<String> {
+    [request, stored]
+        .into_iter()
+        .flatten()
+        .find(|v| !v.trim().is_empty())
+}
+
+/// `From:` precedence: the explicit `emailSmtpFrom` setting, else the SMTP
+/// username, else the recipient (send-to-self). The last two are the derivation
+/// the RENDERER used to do inline (`emailSmtpUser || recipient`); moving it here
+/// means an old config that never had `emailSmtpFrom` behaves exactly as before,
+/// while a login name that is not a mailbox (SendGrid's literal `apikey`) can
+/// now be overridden. Returns `None` only when all three are blank.
+#[cfg_attr(not(feature = "email"), allow(dead_code))]
+fn resolve_from_address(from: Option<&str>, user: Option<&str>, recipient: &str) -> Option<String> {
+    [from, user, Some(recipient)]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|v| !v.is_empty())
+        .map(str::to_string)
+}
+
 /// Send a localized "email works" test message to `recipient` via `transport`.
 ///
-/// For [`EmailTransportKind::Smtp`] the `host`/`port`/`user`/`pass`/`from` fields
-/// are required (the pass is used once and dropped); for
-/// [`EmailTransportKind::Gmail`] they're ignored and the stored Gmail token is
-/// used. `language` picks the localized subject/body (defaults to Norwegian).
+/// For [`EmailTransportKind::Smtp`] only `host` is strictly required: the
+/// password falls back to the keychain ([`resolve_smtp_password`]) and the
+/// `From:` address to the username/recipient ([`resolve_from_address`]), so the
+/// button works from a saved configuration with nothing retyped. A password
+/// typed into the field still wins, and is dropped after the send. For
+/// [`EmailTransportKind::Gmail`] the SMTP fields are ignored and the stored
+/// Gmail token is used. `language` picks the localized subject/body (Norwegian
+/// by default).
 ///
-/// NETWORK-UNVERIFIED behind `--features email`; returns `feature_disabled` in
-/// the default build.
+/// Errors (all `AppError::Validation`, granular code in the message):
+/// `feature_disabled` · `no_config: Google OAuth not configured` ·
+/// `no_config: smtp host` · `no_config: smtp from` · `missing_password`.
+///
+/// NETWORK-UNVERIFIED against a real provider; a `--no-default-features` build
+/// returns `feature_disabled`.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(not(feature = "email"), allow(unused_variables))]
@@ -72,17 +115,25 @@ pub async fn email_send_test(
                     AppError::Validation("no_config: Google OAuth not configured".into())
                 })?,
             },
-            EmailTransportKind::Smtp => Transport::Smtp {
-                host: host
-                    .filter(|h| !h.trim().is_empty())
-                    .ok_or_else(|| AppError::Validation("no_config: smtp host".into()))?,
-                port: port.unwrap_or(587),
-                user: user.filter(|u| !u.trim().is_empty()),
-                pass: pass.ok_or_else(|| AppError::Validation("no_config: smtp pass".into()))?,
-                from: from
-                    .filter(|f| !f.trim().is_empty())
-                    .ok_or_else(|| AppError::Validation("no_config: smtp from".into()))?,
-            },
+            EmailTransportKind::Smtp => {
+                let user = user.filter(|u| !u.trim().is_empty());
+                Transport::Smtp {
+                    host: host
+                        .filter(|h| !h.trim().is_empty())
+                        .ok_or_else(|| AppError::Validation("no_config: smtp host".into()))?,
+                    port: port.unwrap_or(587),
+                    from: resolve_from_address(from.as_deref(), user.as_deref(), &recipient)
+                        .ok_or_else(|| AppError::Validation("no_config: smtp from".into()))?,
+                    // Read the keychain ONLY when the request carries nothing —
+                    // the stored secret never leaves this stack frame.
+                    pass: resolve_smtp_password(
+                        pass,
+                        crate::secrets::get(crate::secrets::SecretProvider::SmtpPassword),
+                    )
+                    .ok_or_else(|| AppError::Validation("missing_password".into()))?,
+                    user,
+                }
+            }
         };
         crate::email::send_test(&transport, &recipient, language.as_deref()).await
     }
@@ -217,6 +268,71 @@ mod tests {
             password_action(Some(" pad ".into())),
             PasswordAction::Store(" pad ".into())
         );
+    }
+
+    // ── Password precedence (request → keychain → none) ──────────────────────
+
+    #[test]
+    fn a_typed_password_beats_the_stored_one() {
+        assert_eq!(
+            resolve_smtp_password(Some("typed".into()), Some("stored".into())),
+            Some("typed".into())
+        );
+    }
+
+    #[test]
+    fn an_untouched_field_falls_back_to_the_keychain() {
+        // This is the whole point: "Send test" (and, from Phase 2, the real
+        // failure alert) must work from a saved config with nothing retyped.
+        assert_eq!(
+            resolve_smtp_password(None, Some("stored".into())),
+            Some("stored".into())
+        );
+        assert_eq!(
+            resolve_smtp_password(Some("   ".into()), Some("stored".into())),
+            Some("stored".into())
+        );
+    }
+
+    #[test]
+    fn neither_source_yields_none_so_the_caller_can_say_missing_password() {
+        assert_eq!(resolve_smtp_password(None, None), None);
+        assert_eq!(
+            resolve_smtp_password(Some(" ".into()), Some("".into())),
+            None
+        );
+    }
+
+    // ── From: precedence (setting → username → recipient) ────────────────────
+
+    #[test]
+    fn explicit_from_setting_wins() {
+        assert_eq!(
+            resolve_from_address(Some("alerts@kirka.no"), Some("apikey"), "meg@kirka.no"),
+            Some("alerts@kirka.no".into())
+        );
+    }
+
+    #[test]
+    fn blank_from_reproduces_the_old_renderer_derivation() {
+        // Previously `settings.emailSmtpUser || recipient`, computed in the UI.
+        assert_eq!(
+            resolve_from_address(None, Some("bruker@kirka.no"), "meg@kirka.no"),
+            Some("bruker@kirka.no".into())
+        );
+        assert_eq!(
+            resolve_from_address(Some("  "), None, "meg@kirka.no"),
+            Some("meg@kirka.no".into())
+        );
+    }
+
+    #[test]
+    fn from_is_trimmed_and_all_blank_yields_none() {
+        assert_eq!(
+            resolve_from_address(Some(" alerts@kirka.no "), None, "meg@kirka.no"),
+            Some("alerts@kirka.no".into())
+        );
+        assert_eq!(resolve_from_address(None, None, "  "), None);
     }
 
     #[test]

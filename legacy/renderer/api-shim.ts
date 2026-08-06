@@ -300,6 +300,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   emailSmtp: "",
   emailSmtpPort: 587,
   emailSmtpUser: "",
+  emailSmtpFrom: "",
   emailSmtpPass: "",
   autoUpdate: true,
   askOpenEditor: true,

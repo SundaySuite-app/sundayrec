@@ -265,6 +265,11 @@ export interface Settings {
   emailSmtp: string
   emailSmtpPort: number
   emailSmtpUser: string
+  /** Explicit `From:` address. Empty = derive it backend-side (username, else
+   *  recipient) — exactly what the renderer used to synthesise inline. Needed
+   *  when the SMTP login name is not a mailbox (SendGrid's literal `apikey`) or
+   *  the provider insists on a verified sender. Rust: `Settings.email_smtp_from`. */
+  emailSmtpFrom?: string
   emailSmtpPass: string       // runtime only — always '' in store; real value in emailSmtpPassEnc
   emailSmtpPassSet?: boolean  // populated by main before sending to renderer
   emailSmtpPassEnc?: string   // internal: base64-encoded safeStorage ciphertext
