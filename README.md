@@ -65,11 +65,38 @@ cargo test -p sundayrec-core         # domain-core unit tests (fast, no GUI)
 cargo test --workspace               # all Rust tests
 npm run bindings                     # regenerate ts-rs bindings → legacy/bindings/
 
+# Browser tier (Playwright) — UI journeys, NOT part of `npm run check`
+npm run e2e:install                  # one-off: download the chromium binary
+npm run e2e                          # starts vite itself, then runs e2e/
+npm run e2e:headed                   # …watching it happen
+npm run e2e:ui                       # …in Playwright's picker/inspector
+
 # The full gate (same steps as CI): prettier + eslint + tsc + vitest +
 # version-sync + rustfmt + clippy -D warnings + cargo test
 npm run check
 bash scripts/ci-local.sh             # CI mirror incl. bindings drift + build
 ```
+
+### The browser tier
+
+`npm run check` is node-env-only by design, which left every DOM shell in the
+renderer untestable. `e2e/` closes that: the renderer already boots in a plain
+browser (`api-shim.ts` falls back on every rejected `invoke`), `?goto=<page>`
+deep-links into any screen, and the E5.1 fixture seam
+(`window.__SUNDAYREC_FIXTURES__`, keyed by Tauri command name) lets a spec drive
+it with populated state instead of empty ones. No Tauri, no ffmpeg, no device —
+Playwright starts the Vite server itself, so `npm run e2e` is the whole command.
+
+Specs cover onboarding incl. the telemetry consent step, the editor (open a
+recording, the three-tab workspace, the sermon-pick correction), the settings
+roundtrip, Historikk (rows, sort, filter chips, trash + undo) and the telemetry
+payload preview. Two `test.fail()` entries in `e2e/editor.spec.ts` pin KNOWN
+bugs — they pass while the bug is present and fail the day it is fixed.
+
+Deliberately not wired into `npm run check`: it needs a browser binary
+(`npm run e2e:install`, ~95 MB) that the local gate should not require, and it
+tests a different thing at a different cadence. See the header of
+`playwright.config.ts` for the reasoning behind each config choice.
 
 CI (`.github/workflows/ci.yml`) runs the same gate plus a dependency audit on
 every push to `main`, every PR, `v*` tags, and manual dispatch (the repo is

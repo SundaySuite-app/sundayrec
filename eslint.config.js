@@ -44,6 +44,26 @@ export default tseslint.config(
     },
   },
 
+  // The Playwright browser tier (E5.2). Node runtime for the spec bodies, but
+  // `page.evaluate`/`addInitScript` callbacks run IN the page, so both globals
+  // are legitimate here. `any` is downgraded for the same reason the legacy
+  // renderer downgrades it: reaching into `window` for a test hook is the point.
+  {
+    files: ["e2e/**/*.ts"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: { ...globals.node, ...globals.browser },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      // The fixture reviver rebuilds function fixtures from source inside the
+      // page — `new Function` is the mechanism, not an oversight.
+      "no-new-func": "off",
+    },
+  },
+
   // Config + tooling files (node runtime).
   {
     files: ["*.{js,ts}", "*.config.{js,ts}", "scripts/**/*.{js,mjs}"],

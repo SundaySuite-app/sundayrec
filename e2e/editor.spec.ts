@@ -1,0 +1,292 @@
+import { test, expect, type Page } from "@playwright/test";
+import {
+  boot,
+  BOOT_FIXTURES,
+  fn,
+  SETTLED_SETTINGS,
+  VOID,
+  type Fixtures,
+} from "./harness";
+
+// The editor: open a fixtured recording, move between the three workspace tabs,
+// and correct the sermon pick.
+//
+// Opening happens through `window.openEditorWithFile(path)` — the same entry the
+// history table's edit icon uses. The button and the drop zone both go through
+// the NATIVE file dialog (`@tauri-apps/plugin-dialog`), which no fixture can
+// stand in for, and drag-drop needs `File.path`, which browsers do not provide.
+
+const FILE = "/Users/test/Opptak/2026-08-02 Gudstjeneste.mp3";
+const DURATION = 600;
+
+/**
+ * A recording whose timeline has THREE plausible sermon candidates, all ≥ 60 s
+ * and already in time order — which is what makes the picker offer a real
+ * choice, and what keeps its option indices aligned with `setSermonSegment`
+ * (see `the sermon picker and setSermonSegment disagree…` at the bottom).
+ *
+ * ⚠️ These carry `type`, which is what the renderer reads — NOT `kind`, which is
+ * what the Rust `EditorSegment` actually serialises. That mismatch is a live
+ * production bug, pinned separately below.
+ */
+const SEGMENTS = [
+  { start: 0, end: 30, duration: 30, label: "Stillhet", type: "silence" },
+  { start: 30, end: 180, duration: 150, label: "Tale", type: "speech" },
+  { start: 180, end: 210, duration: 30, label: "Musikk", type: "music" },
+  { start: 210, end: 420, duration: 210, label: "Preken", type: "sermon" },
+  { start: 420, end: 600, duration: 180, label: "Tale", type: "speech" },
+];
+
+function editorFixtures(over: Fixtures = {}): Fixtures {
+  return {
+    ...BOOT_FIXTURES,
+    editor_probe_streams: { hasVideo: false, hasAudio: true },
+    editor_load_recording: {
+      durationSec: DURATION,
+      hasVideo: false,
+      hasAudio: true,
+      channels: 2,
+      sampleFmt: "s16",
+      sampleRate: 48_000,
+    },
+    editor_allow_asset_path: VOID,
+    // ~100 buckets/sec. Generated in the page rather than shipped as a 60 000
+    // element literal across the init-script boundary.
+    editor_peaks: fn(`() => {
+      (window.__E2E_CALLS__ ||= {}).editor_peaks = ((window.__E2E_CALLS__.editor_peaks || 0) + 1);
+      return { peaks: Array.from({ length: ${DURATION} * 100 }, (_, i) => Math.abs(Math.sin(i / 137))), sampleRate: 8000 };
+    }`),
+    editor_segments: fn(`() => {
+      (window.__E2E_CALLS__ ||= {}).editor_segments = ((window.__E2E_CALLS__.editor_segments || 0) + 1);
+      return ${JSON.stringify(SEGMENTS)};
+    }`),
+    editor_read_sidecar: null,
+    editor_write_sidecar: true,
+    editor_delete_sidecar: true,
+    editor_master_presets: [],
+    editor_probe_peak: -3,
+    editor_detect_chapters: [],
+    editor_cleanup_temp_files: 0,
+    ...over,
+  };
+}
+
+async function openEditor(page: Page, over: Fixtures = {}) {
+  await boot(page, {
+    fixtures: editorFixtures(over),
+    settings: SETTLED_SETTINGS,
+    goto: "editor",
+  });
+  await page.evaluate((f) => (window as any).openEditorWithFile(f), FILE);
+  await expect(page.locator("#editor-workspace")).toBeVisible();
+  await expect(page.locator("#editor-filename")).toContainText("Gudstjeneste");
+}
+
+test.describe("editor", () => {
+  test("a fixtured recording opens into the workspace", async ({ page }) => {
+    await openEditor(page);
+    // The empty state gave way to the real thing, and the file's duration made
+    // it onto the transport.
+    await expect(page.locator("#editor-empty")).toBeHidden();
+    await expect(page.locator("#editor-time-tot")).not.toHaveText("0:00");
+  });
+
+  test("the three tabs switch, and switching does not redo the work", async ({
+    page,
+  }) => {
+    await openEditor(page);
+
+    const panel = {
+      audio: page.locator("#editor-tabpanel-audio"),
+      content: page.locator("#editor-tabpanel-content"),
+      clip: page.locator("#editor-tabpanel-clip"),
+    };
+    await expect(panel.audio).toBeVisible();
+    await expect(panel.content).toBeHidden();
+    await expect(panel.clip).toBeHidden();
+    await expect(page.locator("#editor-tab-audio")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // The decode + analysis are the expensive things in this screen. A tab that
+    // re-ran either would turn a glance into a wait — and on a 90-minute FLAC
+    // that is the difference between usable and not.
+    const before = await page.evaluate(() => (window as any).__E2E_CALLS__);
+    expect(before.editor_peaks).toBeGreaterThan(0);
+
+    await page.locator("#editor-tab-clip").click();
+    await expect(panel.clip).toBeVisible();
+    await expect(panel.audio).toBeHidden();
+    await expect(page.locator("#editor-tab-clip")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.locator("#editor-tab-audio")).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    await page.locator("#editor-tab-content").click();
+    await expect(panel.content).toBeVisible();
+    await expect(panel.clip).toBeHidden();
+
+    await page.locator("#editor-tab-audio").click();
+    await expect(panel.audio).toBeVisible();
+
+    expect(await page.evaluate(() => (window as any).__E2E_CALLS__)).toEqual(
+      before,
+    );
+  });
+
+  test("the chosen tab is remembered across a reopen", async ({ page }) => {
+    await openEditor(page);
+    await page.locator("#editor-tab-clip").click();
+    await expect(page.locator("#editor-tabpanel-clip")).toBeVisible();
+
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof (window as any).showPage === "function",
+    );
+    await page.evaluate((f) => (window as any).openEditorWithFile(f), FILE);
+    await expect(page.locator("#editor-workspace")).toBeVisible();
+    await expect(page.locator("#editor-tabpanel-clip")).toBeVisible();
+  });
+
+  test("the sermon picker offers every plausible block, marking the current one", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await page.locator("#editor-tab-clip").click();
+
+    const wrap = page.locator("#editor-sermon-picker-wrap");
+    await expect(wrap).toBeVisible();
+    await expect(wrap.locator(".editor-sermon-picker-lbl")).toHaveText(
+      "Er ikke dette prekenen?",
+    );
+
+    // Three speech-like blocks are ≥ 1 min; the 30 s music and silence are not
+    // candidates and must not be offered.
+    const options = page.locator("#editor-sermon-picker option");
+    await expect(options).toHaveCount(3);
+    // The auto-detected pick is starred and selected.
+    await expect(options.nth(1)).toHaveText(/^★ /);
+    await expect(page.locator("#editor-sermon-picker")).toHaveValue("1");
+  });
+
+  test("correcting the sermon pick sticks", async ({ page }) => {
+    await openEditor(page);
+    await page.locator("#editor-tab-clip").click();
+
+    const picker = page.locator("#editor-sermon-picker");
+    await expect(picker).toHaveValue("1");
+
+    // "That third block is the sermon, not the second."
+    await picker.selectOption("2");
+
+    const options = page.locator("#editor-sermon-picker option");
+    // The star MOVED — the old pick was demoted, not merely joined.
+    await expect(options.nth(2)).toHaveText(/^★ /);
+    await expect(options.nth(1)).not.toHaveText(/^★ /);
+    await expect(options.nth(0)).not.toHaveText(/^★ /);
+    await expect(picker).toHaveValue("2");
+
+    // …and it survives leaving the tab and coming back, rather than being reset
+    // by the next render.
+    await page.locator("#editor-tab-audio").click();
+    await expect(page.locator("#editor-tabpanel-audio")).toBeVisible();
+    await page.locator("#editor-tab-clip").click();
+    await expect(page.locator("#editor-sermon-picker")).toHaveValue("2");
+    await expect(
+      page.locator("#editor-sermon-picker option").nth(2),
+    ).toHaveText(/^★ /);
+  });
+
+  test("one plausible block means no picker — there is nothing to choose", async ({
+    page,
+  }) => {
+    await openEditor(page, {
+      editor_segments: [
+        { start: 0, end: 60, duration: 60, label: "Stillhet", type: "silence" },
+        { start: 60, end: 600, duration: 540, label: "Preken", type: "sermon" },
+      ],
+    });
+    await page.locator("#editor-tab-clip").click();
+    await expect(page.locator("#editor-tabpanel-clip")).toBeVisible();
+    await expect(page.locator("#editor-sermon-picker-wrap")).toBeHidden();
+  });
+
+  // ── Known bugs, pinned so fixing them is noticed ─────────────────────────────
+  //
+  // `test.fail()` inverts the verdict: these PASS while the bug is present and
+  // fail loudly the day it is fixed, which is the reminder to delete them.
+
+  test.fail(
+    "KNOWN BUG: editor_segments serialises `kind`, the renderer reads `type`",
+    async ({ page }) => {
+      // `EditorSegment` (src-tauri/src/editor/mod.rs) is `#[serde(rename_all =
+      // "camelCase")] pub kind: String` with no `rename = "type"`, and
+      // api-shim's `editorDetectSegments` hands the array straight through. But
+      // `Suggestion` (pages/editor/state.ts) and every consumer in
+      // pages/editor/detection.ts read `.type`. So against the REAL backend
+      // every segment's type is `undefined`, and the sermon picker, «Marker
+      // preken automatisk», the suggestion banner and the timeline's
+      // speech/music/silence layers are all dead code in the shipped app.
+      //
+      // This feeds the real shape and asserts what SHOULD happen.
+      await openEditor(page, {
+        editor_segments: SEGMENTS.map(({ type, ...rest }) => ({
+          ...rest,
+          kind: type,
+        })),
+      });
+      await page.locator("#editor-tab-clip").click();
+      await expect(page.locator("#editor-sermon-picker-wrap")).toBeVisible();
+    },
+  );
+
+  test.fail(
+    "KNOWN BUG: the sermon picker and setSermonSegment index different lists",
+    async ({ page }) => {
+      // `renderSermonPicker` builds its options from
+      //   suggestions.filter(speech|sermon).filter(duration >= 60).sort(by start)
+      // but `setSermonSegment(i)` indexes into
+      //   suggestions.filter(speech|sermon)
+      // — no duration floor, no sort. Add one SHORT speech block ahead of the
+      // candidates and the two lists shift by one, so choosing "block 3"
+      // promotes block 2. Silent, and it mis-trims the export.
+      await openEditor(page, {
+        editor_segments: [
+          { start: 0, end: 20, duration: 20, label: "Tale", type: "speech" }, // < 60 s: not offered
+          {
+            start: 20,
+            end: 200,
+            duration: 180,
+            label: "Preken",
+            type: "sermon",
+          },
+          {
+            start: 200,
+            end: 400,
+            duration: 200,
+            label: "Tale",
+            type: "speech",
+          },
+          {
+            start: 400,
+            end: 600,
+            duration: 200,
+            label: "Tale",
+            type: "speech",
+          },
+        ],
+      });
+      await page.locator("#editor-tab-clip").click();
+
+      const picker = page.locator("#editor-sermon-picker");
+      await expect(picker.locator("option")).toHaveCount(3);
+      await picker.selectOption("2"); // the LAST offered block
+      await expect(picker.locator("option").nth(2)).toHaveText(/^★ /);
+    },
+  );
+});

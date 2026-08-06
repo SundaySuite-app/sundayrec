@@ -149,10 +149,15 @@ function toAssetUrl(path: string): string {
 //
 //   await page.addInitScript(() => {
 //     (window as any).__SUNDAYREC_FIXTURES__ = {
-//       settings_get: { saveFolder: "/tmp", … },     // a value
+//       app_info: { version: "0.10.0" },             // a value
 //       recordings_list: (args) => rowsFor(args),    // or a function of the args
 //     };
 //   });
+//
+// One thing fixtures deliberately do NOT cover: SETTINGS. `getSettings` reads
+// `localStorage[LS_KEY]` directly (see `loadSettings` below) — there is no
+// invoke to intercept — so a test seeds settings by writing that key in the
+// same init script. `e2e/harness.ts` does both in one call.
 //
 const FIXTURE_GATE: FixtureGate = {
   inTauri: isTauri(),
