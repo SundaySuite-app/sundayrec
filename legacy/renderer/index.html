@@ -2721,10 +2721,8 @@
           <div class="modal-header">
             <span class="modal-title" id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</span>
           </div>
-          <div class="transcribe-progress-bar-wrap">
-            <div id="transcribe-progress-bar" class="transcribe-progress-bar"></div>
-          </div>
-          <div id="transcribe-progress-text" class="transcribe-progress-text"></div>
+          <!-- Bar + percentage + «ca. 2 min igjen», built by ui/progress.ts. -->
+          <div id="transcribe-progress-host"></div>
           <div class="modal-actions">
             <button class="btn-ghost" id="btn-transcribe-progress-cancel" data-i18n="transcript.cancel">Avbryt</button>
           </div>

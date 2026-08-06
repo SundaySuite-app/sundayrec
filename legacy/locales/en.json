@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Unknown model",
     "exportTxt": "↧ Text",
     "exportDone": "Transcript saved",
-    "exportFailed": "Could not save the transcript"
+    "exportFailed": "Could not save the transcript",
+    "cancelling": "Cancelling…",
+    "preparingModel": "Preparing model…"
   },
   "companion": {
     "title": "Sermon helper",

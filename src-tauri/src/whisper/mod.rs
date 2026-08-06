@@ -35,6 +35,31 @@ use sundayrec_core::whisper::{
 
 use crate::error::{AppError, AppResult};
 
+/// One progress observation from a running transcription.
+///
+/// Two numbers, because whisper offers two very different clocks and the UI
+/// wants the better one:
+///
+///  - `percent` is whisper's own progress callback. Honest, but coarse: it
+///    fires in 5 % steps, so a 90-minute service moves the bar about twenty
+///    times in half an hour. Fine for a bar, useless for a time estimate.
+///  - `processed_sec` is the end timestamp of the newest decoded segment, i.e.
+///    how far INTO THE AUDIO inference has actually reached. It arrives every
+///    few seconds of audio — dense enough to estimate a rate from, and just as
+///    real: it is the decoder's own position, not a guess.
+///
+/// `total_sec` is the length of the 16 kHz mono buffer we handed to whisper, so
+/// `processed_sec / total_sec` is a true fraction and not an extrapolation.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TranscribeTick {
+    /// whisper's 0–100 from its progress callback.
+    pub percent: i32,
+    /// Seconds of audio decoded so far (monotone).
+    pub processed_sec: f64,
+    /// Seconds of audio in total; 0 when unknown.
+    pub total_sec: f64,
+}
+
 /// The curated model registry — pure passthrough so the renderer can list models
 /// without the feature being on.
 pub fn list_models() -> Vec<WhisperModelMeta> {
@@ -183,7 +208,7 @@ pub async fn transcribe(
     _model_id: &str,
     _opts: TranscribeOptions,
     _now_ms: i64,
-    _progress: impl Fn(i32) + Send + Sync + 'static,
+    _progress: impl Fn(TranscribeTick) + Send + Sync + 'static,
     _cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> AppResult<TranscriptData> {
     Err(AppError::Validation(
@@ -191,11 +216,12 @@ pub async fn transcribe(
     ))
 }
 
-/// Transcribe `input_path` with `model_id` + `opts`. `progress` is called with
-/// 0–100 from whisper's progress callback (the command layer forwards it to the
-/// renderer as `whisper://progress`); `cancel` is polled by whisper's abort
-/// callback between encoder/decoder steps, so a raised flag stops inference
-/// within a step or two.
+/// Transcribe `input_path` with `model_id` + `opts`. `progress` receives a
+/// [`TranscribeTick`] from BOTH of whisper's callbacks — the coarse percentage
+/// and the decoder's real position in the audio (the command layer throttles
+/// and forwards them to the renderer as `whisper://progress`); `cancel` is
+/// polled by whisper's abort callback between encoder/decoder steps, so a
+/// raised flag stops inference within a step or two.
 #[cfg(feature = "whisper")]
 pub async fn transcribe(
     models_dir: &std::path::Path,
@@ -203,7 +229,7 @@ pub async fn transcribe(
     model_id: &str,
     opts: TranscribeOptions,
     now_ms: i64,
-    progress: impl Fn(i32) + Send + Sync + 'static,
+    progress: impl Fn(TranscribeTick) + Send + Sync + 'static,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> AppResult<TranscriptData> {
     use std::path::PathBuf;
@@ -248,8 +274,11 @@ pub async fn transcribe(
         return Err(AppError::Validation("cancelled".into()));
     }
 
-    // 2. Read the 16-bit PCM WAV into f32 samples whisper-rs wants.
+    // 2. Read the 16-bit PCM WAV into f32 samples whisper-rs wants. The convert
+    //    step forced mono 16 kHz (asserted by the reader), so the sample count
+    //    IS the audio length — the denominator every progress tick needs.
     let samples = read_wav_f32(&wav_path)?;
+    let total_sec = samples.len() as f64 / 16_000.0;
 
     // 3. Run inference on a blocking thread — whisper.cpp is synchronous C++
     //    that can run for many minutes on a long service recording, and it must
@@ -282,7 +311,42 @@ pub async fn transcribe(
             params.set_max_len(100);
             params.set_split_on_word(true);
         }
-        params.set_progress_callback_safe(move |pct: i32| progress(pct));
+        // Progress is reported from BOTH callbacks (see TranscribeTick): the
+        // percentage clock and the position-in-audio clock, sharing one cell
+        // each so whichever fires carries the other's latest value too. The
+        // sink is shared rather than cloned because it is the caller's emitter.
+        let sink = std::sync::Arc::new(progress);
+        let position_ms = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let percent_cell = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0));
+
+        let p_sink = sink.clone();
+        let p_pos = position_ms.clone();
+        let p_pct = percent_cell.clone();
+        params.set_progress_callback_safe(move |pct: i32| {
+            p_pct.store(pct, Ordering::Relaxed);
+            p_sink(whisper_tick(pct, &p_pos, total_sec));
+        });
+
+        // The dense clock. `_lossy` and not the plain `safe` variant on purpose:
+        // the latter DROPS any segment whose text is not valid UTF-8, and a
+        // dropped segment here is a dropped position update — the progress bar
+        // would stall on exactly the audio that is hardest to transcribe. We
+        // only read the timestamps; the transcript itself is built after the
+        // run from `full_n_segments`, so nothing here touches the output.
+        let s_sink = sink.clone();
+        let s_pos = position_ms.clone();
+        let s_pct = percent_cell.clone();
+        params.set_segment_callback_safe_lossy(move |seg: whisper_rs::SegmentCallbackData| {
+            // whisper timestamps are centiseconds. Monotone by construction: a
+            // re-emitted or out-of-order segment must never move the bar back.
+            let end_ms = seg.end_timestamp.saturating_mul(10);
+            s_pos.fetch_max(end_ms, Ordering::Relaxed);
+            s_sink(whisper_tick(
+                s_pct.load(Ordering::Relaxed),
+                &s_pos,
+                total_sec,
+            ));
+        });
         // UPSTREAM BUG (whisper-rs ≤0.16): set_abort_callback_safe's C trampoline
         // is instantiated with the caller's closure type F, but user_data points
         // at a `Box<dyn FnMut() -> bool>` — for any other F the cast is UB and
@@ -439,6 +503,22 @@ pub async fn download_model(
         .await
         .map_err(|e| AppError::Internal(format!("promote model file: {e}")))?;
     Ok(())
+}
+
+/// Assemble a [`TranscribeTick`] from the two shared cells. Kept out of the
+/// callbacks so both report the identical shape (a tick that carried only its
+/// own clock would make the renderer's rate estimate jump between two units).
+#[cfg(feature = "whisper")]
+fn whisper_tick(
+    percent: i32,
+    position_ms: &std::sync::atomic::AtomicI64,
+    total_sec: f64,
+) -> TranscribeTick {
+    TranscribeTick {
+        percent,
+        processed_sec: position_ms.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1000.0,
+        total_sec,
+    }
 }
 
 /// Lowercase-hex encode a byte digest (no extra dep — `sha2` gives raw bytes).
@@ -618,7 +698,7 @@ mod tests {
             "ggml-base",
             TranscribeOptions::default(),
             0,
-            |_pct| {},
+            |_tick| {},
             std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         )
         .await
@@ -649,6 +729,11 @@ mod tests {
 
         let seen = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let seen_in_cb = seen.clone();
+        // The position clock is the whole point of the Fase 9 tick: prove on the
+        // rig that the segment callback really does advance it, and that it
+        // never exceeds the audio we handed in.
+        let moved = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let moved_in_cb = moved.clone();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let data = transcribe(
             &models_dir,
@@ -656,8 +741,18 @@ mod tests {
             &model_id,
             TranscribeOptions::default(),
             12345,
-            move |pct| {
-                println!("progress = {pct}%");
+            move |tick| {
+                println!(
+                    "progress = {}% ({:.1}s / {:.1}s)",
+                    tick.percent, tick.processed_sec, tick.total_sec
+                );
+                assert!(
+                    tick.processed_sec <= tick.total_sec + 1.0,
+                    "position ran past the audio: {tick:?}"
+                );
+                if tick.processed_sec > 0.0 {
+                    moved_in_cb.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 seen_in_cb.store(true, std::sync::atomic::Ordering::Relaxed);
             },
             cancel,
@@ -669,6 +764,11 @@ mod tests {
         assert!(
             seen.load(std::sync::atomic::Ordering::Relaxed),
             "progress callback never fired"
+        );
+        assert!(
+            moved.load(std::sync::atomic::Ordering::Relaxed),
+            "the segment callback never advanced processedSec — the ETA would \
+             have nothing to estimate from"
         );
     }
 
@@ -691,7 +791,7 @@ mod tests {
             &model_id,
             TranscribeOptions::default(),
             12345,
-            |_pct| {},
+            |_tick| {},
             cancel,
         )
         .await

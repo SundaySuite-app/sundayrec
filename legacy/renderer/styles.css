@@ -1997,23 +1997,11 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   margin-top: 18px;
 }
 
-/* Transcribe progress modal */
+/* Transcribe progress modal. The bar itself is the shared ui/progress.ts widget
+   (see #transcribe-progress-host) — the three rules that used to live here
+   (`width` + `transition: width`, plus a centred percentage line) are gone with
+   the markup they styled. */
 .transcribe-progress-modal h2 { margin: 0 0 14px; font-size: 16px; }
-.transcribe-progress-bar-wrap {
-  height: 8px; background: var(--surface2);
-  border-radius: 4px; overflow: hidden;
-  margin-bottom: 10px;
-}
-.transcribe-progress-bar {
-  height: 100%; width: 0%;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
-  transition: width .25s ease-out;
-}
-.transcribe-progress-text {
-  font-size: 12px; color: var(--text2);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
 
 /* Cloud-upload-queue panel — pending uploads list under Settings → Filer */
 .cloud-queue-panel {

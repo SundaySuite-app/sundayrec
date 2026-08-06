@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Ukendt model",
     "exportTxt": "↧ Tekst",
     "exportDone": "Transskription gemt",
-    "exportFailed": "Kunne ikke gemme transskriptionen"
+    "exportFailed": "Kunne ikke gemme transskriptionen",
+    "cancelling": "Annullerer…",
+    "preparingModel": "Forbereder model…"
   },
   "companion": {
     "title": "Prædikenhjælp",

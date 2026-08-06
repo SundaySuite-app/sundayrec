@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Unbekanntes Modell",
     "exportTxt": "↧ Text",
     "exportDone": "Transkript gespeichert",
-    "exportFailed": "Das Transkript konnte nicht gespeichert werden"
+    "exportFailed": "Das Transkript konnte nicht gespeichert werden",
+    "cancelling": "Wird abgebrochen…",
+    "preparingModel": "Modell wird vorbereitet…"
   },
   "companion": {
     "title": "Predigthilfe",

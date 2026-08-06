@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Nieznany model",
     "exportTxt": "↧ Tekst",
     "exportDone": "Transkrypcja zapisana",
-    "exportFailed": "Nie udało się zapisać transkrypcji"
+    "exportFailed": "Nie udało się zapisać transkrypcji",
+    "cancelling": "Anulowanie…",
+    "preparingModel": "Przygotowywanie modelu…"
   },
   "companion": {
     "title": "Asystent kazania",

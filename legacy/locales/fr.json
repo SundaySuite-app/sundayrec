@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Modèle inconnu",
     "exportTxt": "↧ Texte",
     "exportDone": "Transcription enregistrée",
-    "exportFailed": "Impossible d'enregistrer la transcription"
+    "exportFailed": "Impossible d'enregistrer la transcription",
+    "cancelling": "Annulation…",
+    "preparingModel": "Préparation du modèle…"
   },
   "companion": {
     "title": "Aide au sermon",

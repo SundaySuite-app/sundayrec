@@ -18,6 +18,7 @@ import type { TranscriptData, RecordingMetadata } from '../../types'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { toast } from '../ui/toast'
+import { attachProgress, type ProgressHandle } from '../ui/progress'
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
@@ -83,9 +84,9 @@ export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   // Listen for progress events from main process
   window.api.on?.('whisper-progress', (payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
-    const p = payload as { jobId: string; percent: number }
+    const p = payload as { jobId: string; percent: number; processedSec?: number; totalSec?: number }
     if (p.jobId !== activeJobId) return
-    updateProgressUI(p.percent)
+    updateProgressUI(transcribeFraction(p), t('transcript.progressTitle', 'Transkriberer…'))
   })
 
   window.api.on?.('whisper-model-progress', (payload: unknown) => {
@@ -507,7 +508,10 @@ async function startTranscription(): Promise<void> {
   const translate = ($('transcribe-translate') as HTMLInputElement | null)?.checked ?? false
 
   // Open the progress modal so the user has feedback while we work
-  showProgressModal(t('transcript.progressTitle', 'Transkriberer…'), 0)
+  showProgressModal(
+    t('transcript.progressTitle', 'Transkriberer…'),
+    t('progress.preparing', 'Forbereder …'),
+  )
 
   // 1. If model not installed, download first
   const modelStatus = modelStatuses.find(m => m.id === selectedModelId)
@@ -522,6 +526,7 @@ async function startTranscription(): Promise<void> {
   }
   if (!modelStatus.installed || !modelStatus.sizeOk) {
     setProgressTitle(t('transcript.downloadTitle', 'Laster ned modell…'))
+    updateProgressUI(null, formatSize(modelStatus.sizeBytes))
     const dl = await window.api.whisperDownloadModel(selectedModelId)
     if (!dl.ok) {
       closeProgressModal()
@@ -538,10 +543,10 @@ async function startTranscription(): Promise<void> {
 
   // 2. Transcribe
   setProgressTitle(t('transcript.progressTitle', 'Transkriberer…'))
-  // Whisper emits no transcription progress to the frontend (only model download
-  // does) → show an indeterminate stripe for the transcription phase instead of a
-  // bar frozen at 0%. updateProgressUI() switches back to a real bar if a % arrives.
-  setProgressIndeterminate()
+  // The stripe covers the run-up that genuinely has no denominator: the ffmpeg
+  // convert to 16 kHz mono and loading a 1.5 GB model into Metal. The first
+  // `whisper://progress` tick swaps it for a real bar and a remaining-time line.
+  updateProgressUI(null, t('transcript.preparingModel', 'Klargjør modell…'))
   activeJobId = 'whisper-' + Date.now()
   try {
     const res = await window.api.whisperTranscribe({
@@ -591,17 +596,56 @@ function cancelActiveJob(): void {
       console.warn('[transcript] whisperCancelDownload failed:', err)
     })
   }
-  // Always close the modal — even if both cancel calls threw, the user
-  // expects the dialog to disappear. A 1.5 s safety timer hard-closes
-  // the modal in case some future change introduces a path where
-  // closeProgressModal itself blocks (today it's synchronous DOM removal).
-  closeProgressModal()
-  setTimeout(closeProgressModal, 1500)
+  // The modal closes on the COMPLETION event, not on a timer: cancelling
+  // whisper raises a flag its abort callback polls between decoder steps, so
+  // the run ends a step or two later and the awaited call resolves with
+  // `cancelled` — which is what runs closeProgressModal. Saying «Avbryter…»
+  // for that moment is honest; snapping the dialog shut while inference is
+  // still winding down is not (and it used to hide a cancel that failed).
+  // The timer that remains is a FALLBACK for a backend that never answers.
+  updateProgressUI(null, t('transcript.cancelling', 'Avbryter…'))
+  if (cancelFallbackTimer) clearTimeout(cancelFallbackTimer)
+  cancelFallbackTimer = window.setTimeout(closeProgressModal, CANCEL_FALLBACK_MS)
 }
 
-function showProgressModal(title: string, percent: number): void {
+/**
+ * How far along a `whisper://progress` tick says we are, as a 0..1 fraction.
+ *
+ * The backend sends two clocks (see `TranscribeTick` in src-tauri): whisper's
+ * own percentage, which only moves in 5 % steps — on a 90-minute service that
+ * is roughly twenty updates for the whole run, far too coarse to estimate a
+ * rate from — and `processedSec`, the decoder's real position in the audio,
+ * which the segment callback advances every few seconds.
+ *
+ * Both are truthful LOWER BOUNDS on where inference has reached, so the max of
+ * the two is the best answer available: the position clock carries the run, and
+ * the percentage covers the moment before the first segment lands (and any
+ * build where the segment callback gives us nothing).
+ */
+function transcribeFraction(p: { percent?: number; processedSec?: number; totalSec?: number }): number {
+  const total = typeof p.totalSec === 'number' && p.totalSec > 0 ? p.totalSec : 0
+  const processed = typeof p.processedSec === 'number' && p.processedSec > 0 ? p.processedSec : 0
+  const byPosition = total > 0 ? processed / total : 0
+  const byPercent = typeof p.percent === 'number' && isFinite(p.percent) ? p.percent / 100 : 0
+  return Math.max(0, Math.min(1, Math.max(byPosition, byPercent)))
+}
+
+/** The shared bar+ETA widget for the whole modal, alive only while it is open. */
+let progressUi: ProgressHandle | null = null
+/**
+ * A cancel the backend never answers must not strand the modal. It normally
+ * closes on the COMPLETION path (the awaited call resolves with `cancelled`),
+ * which is why this is a fallback and not the mechanism.
+ */
+const CANCEL_FALLBACK_MS = 5000
+let cancelFallbackTimer = 0
+
+function showProgressModal(title: string, label: string): void {
   setProgressTitle(title)
-  updateProgressUI(percent)
+  const host = $('transcribe-progress-host')
+  progressUi = host ? attachProgress(host, { label }) : null
+  // Nothing has been measured yet — the stripe says "starting", not "0 %".
+  progressUi?.update(null)
   openModal('transcribe-progress-modal')
 }
 
@@ -610,33 +654,25 @@ function setProgressTitle(title: string): void {
   if (el) el.textContent = title
 }
 
-function updateProgressUI(percent: number): void {
-  const bar = $('transcribe-progress-bar')
-  const text = $('transcribe-progress-text')
-  // A concrete % arrived (model download, or a future transcribe emitter) →
-  // switch from the indeterminate stripe to a real bar.
-  if (bar) { bar.classList.remove('progress-indeterminate'); bar.style.width = `${Math.max(0, Math.min(100, percent))}%` }
-  if (text) text.textContent = `${Math.round(percent)}%`
-}
-
-/** Show an animated indeterminate stripe for a phase whose real % the backend
- *  doesn't report (whisper transcription). Cleared by updateProgressUI when a
- *  concrete % arrives. */
-function setProgressIndeterminate(): void {
-  const bar = $('transcribe-progress-bar')
-  const text = $('transcribe-progress-text')
-  if (bar) { bar.style.width = ''; bar.classList.add('progress-indeterminate') }
-  if (text) text.textContent = ''
+/** `null` = running with no denominator (the ffmpeg convert + model load ahead
+ *  of inference report nothing at all, and a bar pinned at 0 % reads as hung). */
+function updateProgressUI(fraction: number | null, label?: string): void {
+  progressUi?.update(fraction, label)
 }
 
 function updateDownloadUI(p: { id: string; bytesDownloaded: number; bytesTotal: number; fraction: number | null }): void {
-  const pct = p.fraction != null ? p.fraction * 100 : 0
-  updateProgressUI(pct)
-  const text = $('transcribe-progress-text')
-  if (text) text.textContent = `${formatSize(p.bytesDownloaded)} / ${formatSize(p.bytesTotal)} (${Math.round(pct)}%)`
+  // Bytes make an excellent ETA source: a download's rate is far steadier than
+  // inference's, so «ca. 2 min igjen» settles within seconds of the first chunk.
+  updateProgressUI(
+    p.fraction,
+    `${formatSize(p.bytesDownloaded)} / ${formatSize(p.bytesTotal)}`,
+  )
 }
 
 function closeProgressModal(): void {
+  if (cancelFallbackTimer) { clearTimeout(cancelFallbackTimer); cancelFallbackTimer = 0 }
+  progressUi?.destroy()
+  progressUi = null
   closeModal('transcribe-progress-modal')
 }
 

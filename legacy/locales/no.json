@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Ukjent modell",
     "exportTxt": "↧ Tekst",
     "exportDone": "Transkripsjon lagret",
-    "exportFailed": "Kunne ikke lagre transkripsjonen"
+    "exportFailed": "Kunne ikke lagre transkripsjonen",
+    "cancelling": "Avbryter…",
+    "preparingModel": "Klargjør modell…"
   },
   "companion": {
     "title": "Prekenhjelp",

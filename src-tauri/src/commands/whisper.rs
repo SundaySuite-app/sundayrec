@@ -17,13 +17,30 @@ use crate::error::{AppError, AppResult};
 use crate::whisper::{self as seam, DownloadGuard, TranscribeGuard};
 
 /// Payload for `whisper://progress` — shaped for the legacy renderer, which
-/// filters on `jobId` and drives the modal's percent bar.
+/// filters on `jobId` and drives the modal's bar + remaining-time line.
+///
+/// `percent` is what this event carried before Fase 9 and is kept as the
+/// fallback; `processedSec`/`totalSec` are the decoder's real position in the
+/// audio and its length, which is what the renderer's ETA estimator wants — a
+/// rate derived from 5 %-step percentages cannot say anything useful about a
+/// 90-minute service. See [`seam::TranscribeTick`].
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TranscribeProgress {
     job_id: String,
     percent: i32,
+    processed_sec: f64,
+    total_sec: f64,
 }
+
+/// Minimum wall time between two `whisper://progress` emits.
+///
+/// whisper's segment callback fires once per decoded segment; on a Metal build
+/// running ~30× realtime that is several times a second, and v0.5.0 is the
+/// standing lesson about what a telemetry flood does to a pipeline (an
+/// over-chatty stderr reader cost us 15–56 % of every recording). 250 ms is
+/// four updates a second — smoother than any eye needs, and cheap.
+const PROGRESS_MIN_INTERVAL_MS: u64 = 250;
 
 /// The curated whisper model registry, in display order.
 #[tauri::command]
@@ -107,12 +124,37 @@ pub async fn whisper_transcribe(
     };
     let emit_app = app.clone();
     let emit_job = job_id.clone();
-    let progress = move |percent: i32| {
+    // Rate-limit here rather than in the seam: the seam's job is to report what
+    // it knows, this layer's is to decide how much of it crosses the IPC bridge.
+    let last_emit = std::sync::Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
+    let progress = move |tick: seam::TranscribeTick| {
+        {
+            let mut guard = last_emit.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            let due = match *guard {
+                Some(prev) => {
+                    now.duration_since(prev)
+                        >= std::time::Duration::from_millis(PROGRESS_MIN_INTERVAL_MS)
+                }
+                // The first tick always goes out: it is what swaps the modal
+                // from "starting" to a real bar.
+                None => true,
+            };
+            // ...and so does the last one, whatever the clock says. A bar that
+            // stops at 95 % because the final tick was throttled away is the
+            // one frame the user is guaranteed to be looking at.
+            if !due && tick.percent < 100 {
+                return;
+            }
+            *guard = Some(now);
+        }
         let _ = emit_app.emit(
             "whisper://progress",
             TranscribeProgress {
                 job_id: emit_job.clone(),
-                percent,
+                percent: tick.percent,
+                processed_sec: tick.processed_sec,
+                total_sec: tick.total_sec,
             },
         );
     };

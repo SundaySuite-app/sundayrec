@@ -1133,7 +1133,9 @@
     "errUnknownModel": "Okänd modell",
     "exportTxt": "↧ Text",
     "exportDone": "Transkription sparad",
-    "exportFailed": "Kunde inte spara transkriptionen"
+    "exportFailed": "Kunde inte spara transkriptionen",
+    "cancelling": "Avbryter…",
+    "preparingModel": "Förbereder modell…"
   },
   "companion": {
     "title": "Predikohjälp",
