@@ -105,17 +105,18 @@ jobs:
           $url = "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip"
           Invoke-WebRequest -Uri $url -OutFile asiosdk.zip
           # SHA-256 pin: a moved/altered download must not silently feed the
-          # build. Populate the pin from the hash this step prints on a trusted
-          # run (the SDK zip is a frozen 2019 artifact, so it never changes).
-          $expected = ""  # TODO(release): pin from the printed hash of a trusted run
+          # build. The SDK zip is a frozen 2019 artifact, so this hash never
+          # changes — it must never be emptied back out to "unpinned".
+          $expected = "bc425d9b98701af74b43639798566c48bc005af7328a2251cff722c1885076b2"
           $actual = (Get-FileHash asiosdk.zip -Algorithm SHA256).Hash.ToLower()
           Write-Host "asiosdk.zip SHA-256: $actual"
-          if ($expected -ne "" -and $actual -ne $expected) {
-            Write-Error "ASIO SDK checksum mismatch (expected $expected) — refusing to build."
+          if ($expected -eq "") {
+            Write-Error "ASIO SDK SHA-256 pin is empty — refusing to build against an unverified download."
             exit 1
           }
-          if ($expected -eq "") {
-            Write-Warning "ASIO SDK SHA-256 is not pinned yet — copy the printed hash into this step."
+          if ($actual -ne $expected) {
+            Write-Error "ASIO SDK checksum mismatch (expected $expected) — refusing to build."
+            exit 1
           }
           Expand-Archive -Path asiosdk.zip -DestinationPath asiosdk -Force
           $sdk = (Get-ChildItem asiosdk -Directory | Select-Object -First 1).FullName
