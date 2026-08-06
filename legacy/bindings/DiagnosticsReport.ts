@@ -22,10 +22,16 @@ findings: Array<DiagnosticFinding>,
  */
 savedTo: string | null, 
 /**
- * Audio capture test: `None` in F2.2 (deferred to Fase 3 — see module docs).
+ * Audio capture test (E2.5): a real ~2 s capture through the recorder's own
+ * backend. `None` = not run — see [`Self::capture_probe_skipped`].
  */
 captureOk: boolean | null, 
 /**
- * Video capture test: `None` in F2.2 (deferred to Fase 3).
+ * Video capture test (E2.5): one real frame from the camera. `None` when
+ * video is off or the probe was skipped.
  */
-videoOk: boolean | null, };
+videoOk: boolean | null, 
+/**
+ * Why the probe did not run, when it did not.
+ */
+captureProbeSkipped: string | null, };
