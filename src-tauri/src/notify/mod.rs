@@ -40,7 +40,7 @@
 //! against a real server — see docs/SMOKE-TEST.md.
 
 use chrono::{DateTime, Local};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 
 use sundayrec_core::notify::{
     plan_failure, plan_warning, BackendWarning, FailureRouting, FailureSource, WarningRouting,
@@ -106,6 +106,44 @@ pub fn native(app: &AppHandle, title: &str, body: &str) {
 // ─────────────────────────────────────────────────────────────────────────────
 //   Failures
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Subscribe the dispatcher to the failure events the app ALREADY emits.
+///
+/// Exactly the seam the tray uses (`tray::wire_state_sources` listens to this
+/// same [`ERROR_EVENT`](crate::recorder::engine::ERROR_EVENT) six lines of code
+/// away): `app.listen` is observational, so the recorder's hardware-verified
+/// capture and stop code is not touched, not even by one line. That matters more
+/// here than anywhere — every regression this app has shipped in the recorder
+/// came from editing the capture path for a reason that turned out to be a
+/// reporting reason.
+///
+/// The scheduler's failures do NOT arrive here: they are not events, they are
+/// return values, so those three call sites invoke [`dispatch_failure`] directly.
+///
+/// Call once, from `setup`.
+pub fn wire_failure_sources(app: &AppHandle) {
+    use crate::recorder::engine::{RecordingEvent, ERROR_EVENT};
+
+    let handle = app.clone();
+    app.listen(ERROR_EVENT, move |ev| {
+        let Ok(e) = serde_json::from_str::<RecordingEvent>(ev.payload()) else {
+            tracing::warn!("notify: unparseable {ERROR_EVENT} payload — no alert sent");
+            return;
+        };
+        // The listener callback is synchronous and runs on the event loop; the
+        // dispatch does database + network I/O, so it has to leave immediately.
+        let app = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            dispatch_failure(
+                &app,
+                FailureCtx::now(e.code, e.message, FailureSource::Recording),
+            )
+            .await;
+        });
+    });
+
+    tracing::info!("notify: failure dispatch wired to {ERROR_EVENT}");
+}
 
 /// Tell everybody who should hear about a terminal failure.
 ///
@@ -404,6 +442,34 @@ mod tests {
         assert_eq!(ctx.message, "Enheten forsvant");
         assert_eq!(ctx.source, FailureSource::Recording);
         assert!(ctx.occurred_at >= before);
+    }
+
+    /// The listener registered by [`wire_failure_sources`] sees JSON, not the
+    /// struct the engine emitted. A serde rename, an added `#[serde(rename_all)]`
+    /// or a wrapper on either side would turn every recorder failure back into
+    /// no alert at all — silently, because a failed parse is exactly what "no
+    /// recorder failures happened" looks like. Pin the round-trip.
+    #[test]
+    fn the_listener_parses_exactly_what_the_engine_emits() {
+        use crate::recorder::engine::{RecordingEvent, ERROR_EVENT};
+
+        // What `engine::emit_error` puts on the wire, verbatim.
+        let emitted = serde_json::to_string(&RecordingEvent {
+            code: "device_disconnected".into(),
+            message: "Lydenheten forsvant under opptak.".into(),
+        })
+        .expect("the engine's payload must serialise");
+
+        // What the listener does with it.
+        let parsed: RecordingEvent =
+            serde_json::from_str(&emitted).expect("the listener must be able to parse it");
+        let ctx = FailureCtx::now(parsed.code, parsed.message, FailureSource::Recording);
+
+        assert_eq!(ctx.code, "device_disconnected");
+        assert_eq!(ctx.message, "Lydenheten forsvant under opptak.");
+        assert_eq!(ctx.source, FailureSource::Recording);
+        // And the event we subscribe to is the terminal one, not the warning.
+        assert_eq!(ERROR_EVENT, "recording://error");
     }
 
     #[test]

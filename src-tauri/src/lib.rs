@@ -295,6 +295,14 @@ pub fn run() {
             app.state::<scheduler::SchedulerEngine>()
                 .start(app.handle().clone());
 
+            // Subscribe the notification dispatcher to the recorder's terminal
+            // error event. Until now that event reached the tray badge and the
+            // renderer and stopped there: an unattended failure produced no
+            // native notification, no e-mail and no webhook, which is precisely
+            // the case those three channels exist for. Observational (`listen`),
+            // so no recorder code is touched — see `notify::wire_failure_sources`.
+            notify::wire_failure_sources(app.handle());
+
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. The returned
