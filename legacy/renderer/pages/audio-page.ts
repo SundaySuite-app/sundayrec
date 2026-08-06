@@ -1,7 +1,7 @@
 import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { setVal, setRadio } from '../helpers'
-import { getAudioDevices } from '../audio/capture'
+import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
 import { reconcilePreroll } from '../preroll-lifecycle'
@@ -284,10 +284,13 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     container.appendChild(card)
   })
 
-  // ── Standard Web Audio devices ─────────────────────────────────────────────
+  // ── Host devices (CoreAudio / WASAPI, from the backend enumeration) ────────
   devices.forEach(d => {
-    const builtIn  = /built-in|innebygd|default/i.test(d.label)
-    const selected = d.deviceId === (settings.deviceId ?? 'default')
+    const builtIn  = isBuiltInDevice(d.label)
+    // No stored pick ⇒ the host default is what a recording would use, so it is
+    // what the card should show as selected. (There is no `deviceId: 'default'`
+    // pseudo-entry any more — the backend list marks the real device instead.)
+    const selected = settings.deviceId ? d.deviceId === settings.deviceId : d.isDefault
     const card     = document.createElement('div')
     card.className            = 'device-card' + (selected ? ' selected' : '')
     card.dataset.deviceId     = d.deviceId
@@ -316,8 +319,9 @@ export async function renderDeviceList(containerId: string): Promise<void> {
     if (warn) warn.style.display = found ? 'none' : ''
   }).catch(() => {})
 
-  // Start the live channel grid for the persisted (or first) device.
-  const devId = settings.deviceId ?? (devices[0]?.deviceId ?? null)
+  // Start the live channel grid for the persisted (else the host default) device.
+  const fallback = devices.find(d => d.isDefault) ?? devices[0]
+  const devId = settings.deviceId ?? (fallback?.deviceId ?? null)
   if (devId) {
     const label = devId.startsWith('asio::')
       ? devId.slice('asio::'.length)

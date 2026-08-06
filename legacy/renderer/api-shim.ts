@@ -11,19 +11,19 @@
 // Rust command backs them (yet, or ever, for a feature that didn't survive the
 // port) — and return a fixed value; those are called out inline where they sit.
 //
-// NOTE: VU metering has THREE separate paths — audio/video device enumeration
-// is client-side (Web Audio getUserMedia / enumerateDevices) throughout, but
-// don't assume that covers metering too:
-//   1. Home / Live / Onboarding meters open their own client-side getUserMedia
-//      + Web Audio analyser — no backend involved.
-//   2. The channel grid (audio-page) uses the BACKEND cpal VU engine via
-//      startVu/stopVu + the `vu-levels` event, because getUserMedia caps a
-//      device at 2 channels and the grid needs every channel a digital mixer
-//      (e.g. a 32-channel Qu-5) actually exposes.
-//   3. The recording overlay's meter is driven by the ACTIVE RECORDING's own
-//      `recording://levels` telemetry (see pages/recording.ts) — never a
-//      second getUserMedia stream, so the mic keeps exactly one owner for the
-//      whole take.
+// NOTE: NOTHING in the renderer opens an audio input device any more. Audio
+// metering and audio-device enumeration are both backend-only:
+//   1. Every meter (Home, Direkte, onboarding, the channel grid) reads ONE
+//      backend VU session via startVu/stopVu + the `vu-levels` event, shared
+//      through audio/vu-feed.ts. getUserMedia capped a device at 2 channels and
+//      — worse — left WebKit holding a multi-channel input in that 2-channel
+//      format long after the meter was "stopped" (the 2026-07-31 Qu-5 incident).
+//   2. The recording overlay's meter is driven by the ACTIVE RECORDING's own
+//      `recording://levels` telemetry (see pages/recording.ts), so the mic keeps
+//      exactly one owner for the whole take.
+//   3. Audio input devices come from `list_audio_devices` (below); only the
+//      CAMERA preview is still client-side getUserMedia (pages/home.ts), which
+//      is a video device and never contends for the microphone.
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -1078,9 +1078,21 @@ const api: Record<string, unknown> = {
   },
 
   // ── Audio / video devices ───────────────────────────────────────────────
-  // ASIO driver names = the asio-backend entries of the unified tagged device
-  // list (empty on macOS / when the `asio` feature is off / no driver installed,
-  // so the picker simply shows no ASIO cards). See `audio::asio`.
+  // The unified, backend-tagged input list: ASIO devices first (Windows, when a
+  // driver is present), then the host's CoreAudio/WASAPI devices, with the
+  // WASAPI stereo-pair shadow of an ASIO interface de-duplicated. This is the
+  // ONLY device enumeration the renderer has — `enumerateDevices()` needed a
+  // getUserMedia grant to reveal labels, and that blink-open made the webview a
+  // microphone owner every time a picker rendered (audio/capture.ts).
+  listAudioDevices: async () =>
+    call<import("../bindings/TaggedAudioInput").TaggedAudioInput[]>(
+      "list_audio_devices",
+      undefined,
+      [],
+    ),
+  // ASIO driver names = the asio-backend entries of that same list (empty on
+  // macOS / when the `asio` feature is off / no driver installed, so the picker
+  // simply shows no ASIO cards). See `audio::asio`.
   listAsioDrivers: async () => {
     const devs = await call<{ name: string; backend: string }[]>(
       "list_audio_devices",

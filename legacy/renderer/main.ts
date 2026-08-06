@@ -198,6 +198,9 @@ declare global {
       editorSaveCutsDraft:    (filePath: string, cuts: unknown) => Promise<void>
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       pickAudioFile:          ()                 => Promise<string | null>
+      /** The backend-tagged input list — the renderer's ONLY audio-device
+       *  enumeration since the getUserMedia label blink-open was removed. */
+      listAudioDevices:       ()                 => Promise<import('../bindings/TaggedAudioInput').TaggedAudioInput[]>
       listAsioDrivers:        ()                 => Promise<string[]>
       listAsioInputChannels:  (deviceId: string) => Promise<{ index: number; label: string }[]>
       listFfmpegAudioDevices: () => Promise<{ name: string; index: number }[]>

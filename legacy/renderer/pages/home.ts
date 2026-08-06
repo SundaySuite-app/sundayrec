@@ -4,7 +4,7 @@ import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
 import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
-import { getAudioDevices } from '../audio/capture'
+import { getAudioDevices, healStoredDeviceId } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
@@ -1314,17 +1314,13 @@ async function checkStatus(): Promise<void> {
   const devices = await getAudioDevices()
   let connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
 
-  // Auto-heal: Windows often reassigns device IDs after reboot or driver update.
-  // If the stored ID is gone but a device with the same label exists, silently update.
-  if (!connected && settings.deviceId && settings.deviceName) {
-    const byLabel = devices.find(d =>
-      d.label && d.label.toLowerCase() === (settings.deviceName ?? '').toLowerCase()
-    )
-    if (byLabel) {
-      patchSettings({ deviceId: byLabel.deviceId })
-      await window.api.saveSettings({ ...settings })
-      connected = true
-    }
+  // Auto-heal: Windows reassigns device ids after a reboot or a driver update,
+  // and settings written before device enumeration moved to the backend hold a
+  // Web Audio hash that resolves against nothing. Both are the same repair —
+  // match by the saved NAME, carry the channel picks across (audio/capture.ts).
+  if (!connected && healStoredDeviceId(devices)) {
+    await window.api.saveSettings({ ...settings })
+    connected = true
   }
 
   const heroOk   = document.getElementById('hero-ok')
@@ -1386,7 +1382,9 @@ export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
   setCardLoading('home-audio-card', false)
   setCardLoading('home-format-card', false)
-  const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
+  const device   = settings.deviceId
+    ? devices.find(d => d.deviceId === settings.deviceId)
+    : (devices.find(d => d.isDefault) ?? devices[0])
   const nameEl   = document.getElementById('home-device-name')
   const statusEl = document.getElementById('home-device-status-text')
     ?? document.getElementById('home-device-status')

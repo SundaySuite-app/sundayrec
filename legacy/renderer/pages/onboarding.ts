@@ -1,7 +1,7 @@
 import { settings, patchSettings } from '../state'
 import { t, tArr } from '../i18n'
 import { enhanceTimeInput } from '../time-input'
-import { getAudioDevices } from '../audio/capture'
+import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
 import { makeVuState, pushVuLevels, stopVuState } from '../audio/vu'
 import { acquireVuFeed } from '../audio/vu-feed'
 import { pickLR } from '../audio/vu-feed-core'
@@ -175,11 +175,11 @@ async function s2(body: HTMLElement): Promise<void> {
   if (!devices.length) {
     list.innerHTML = `<p class="ob-empty">${esc(t('onboarding.deviceNone', 'Ingen lydenheter funnet. Kontroller at mikseren er koblet til via USB.'))}</p>`
   } else {
-    const preferred = devices.find(d => !/built-in|innebygd|default/i.test(d.label)) ?? devices[0]
+    const preferred = devices.find(d => !isBuiltInDevice(d.label)) ?? devices[0]
     if (!pickedId) { pickedId = preferred?.deviceId ?? null; pickedName = preferred?.label ?? null }
 
     list.innerHTML = devices.map(d => {
-      const builtIn  = /built-in|innebygd|default/i.test(d.label)
+      const builtIn  = isBuiltInDevice(d.label)
       const selected = d.deviceId === pickedId
       return `<div class="ob-dev-card${selected ? ' sel' : ''}" data-id="${esc(d.deviceId)}" data-name="${esc(d.label)}">
         <span class="ob-dev-emoji">${builtIn ? '💻' : '🎛️'}</span>
