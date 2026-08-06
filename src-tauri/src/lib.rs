@@ -74,6 +74,10 @@ pub mod test_recording;
 // menu/tray + the scheme handler.
 #[cfg(feature = "tray")]
 pub mod tray;
+// Papirkurv — the recoverable delete behind Historikk. Files move to
+// `<saveFolder>/.sundayrec-trash` with their sidecars; the history row survives
+// until the entry is purged, which is the only step that loses anything.
+pub mod trash;
 
 /// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
 /// feature is off, so callers (the review commands) stay `cfg`-free.
@@ -316,6 +320,11 @@ pub fn run() {
             // loop that has to fire a recording start on time.
             notify::reminders::spawn(app.handle().clone());
 
+            // Expire the Papirkurv. Without this the trash is a folder that
+            // only ever grows — a delete that silently keeps every byte
+            // forever is not a delete, it is a leak with a nice name.
+            trash::sweep::spawn(app.handle().clone());
+
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. The returned
@@ -405,6 +414,12 @@ pub fn run() {
             commands::db::recordings_clear,
             commands::db::recording_update_note,
             commands::db::recordings_prune,
+            // Papirkurv. `trash_move` is what the delete actions in Historikk
+            // now run; `trash_purge` is the only one that loses anything.
+            commands::trash::trash_move,
+            commands::trash::trash_list,
+            commands::trash::trash_restore,
+            commands::trash::trash_purge,
             commands::calendar::liturgical_month,
             commands::cloud::cloud_connection_status,
             commands::cloud::cloud_is_configured,

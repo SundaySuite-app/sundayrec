@@ -185,6 +185,25 @@ pub async fn delete_recording(pool: &SqlitePool, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Delete the history rows for a set of file paths, returning how many went.
+///
+/// The trash needs this: a recording's row survives being trashed (so a restore
+/// brings the note, duration and cloud markers back with the file), and is only
+/// dropped when the file is PURGED — at which point the row is all that is left
+/// of a recording that no longer exists, and the only handle we have on it is
+/// its path.
+pub async fn delete_recordings_for_paths(pool: &SqlitePool, paths: &[String]) -> AppResult<u64> {
+    let mut removed = 0u64;
+    for path in paths {
+        let r = sqlx::query("DELETE FROM recording WHERE file_path = ?1")
+            .bind(path)
+            .execute(pool)
+            .await?;
+        removed += r.rows_affected();
+    }
+    Ok(removed)
+}
+
 /// Delete every recording-history row. Used by the "clear history" action.
 pub async fn clear_recordings(pool: &SqlitePool) -> AppResult<()> {
     sqlx::query("DELETE FROM recording").execute(pool).await?;
@@ -329,6 +348,47 @@ mod tests {
         // Both tables must exist and be queryable on a fresh database.
         assert!(get_all_settings(&pool).await.unwrap().is_empty());
         assert!(list_recordings(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_for_paths_takes_the_named_rows_and_only_those() {
+        let (pool, _d) = temp_pool().await;
+        insert_recording(&pool, sample("/rec/a.mp3", 1.0))
+            .await
+            .unwrap();
+        insert_recording(&pool, sample("/rec/a.mp4", 1.0))
+            .await
+            .unwrap();
+        insert_recording(&pool, sample("/rec/b.mp3", 2.0))
+            .await
+            .unwrap();
+
+        // The purge of one trashed session: both halves of the pair, nothing else.
+        let removed = delete_recordings_for_paths(
+            &pool,
+            &["/rec/a.mp3".to_string(), "/rec/a.mp4".to_string()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(removed, 2);
+        let left = list_recordings(&pool).await.unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].file_path, "/rec/b.mp3");
+    }
+
+    #[tokio::test]
+    async fn delete_for_paths_is_quiet_about_paths_with_no_row() {
+        let (pool, _d) = temp_pool().await;
+        insert_recording(&pool, sample("/rec/a.mp3", 1.0))
+            .await
+            .unwrap();
+        // A trashed file that was never in the history (opened from elsewhere in
+        // the editor) must not turn a purge into an error.
+        let removed = delete_recordings_for_paths(&pool, &["/elsewhere/x.wav".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(removed, 0);
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1);
     }
 
     fn wake_fail(ts: i64, kind: WakeFailureKind) -> WakeFailureEntry {
