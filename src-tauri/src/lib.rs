@@ -34,8 +34,9 @@ pub mod diagnostics;
 // `editor` feature is in `default` (the Rediger screen ships); building with
 // `--no-default-features` keeps the DTOs + `feature_disabled` stubs compiling.
 pub mod editor;
-// PU-1 email alerts — default-off `email` feature (NETWORK-UNVERIFIED). The pure
-// templates/throttle/MIME live in `sundayrec_core::email`; this seam sends.
+// PU-1 email alerts — the `email` feature, now IN `default` and in both release
+// feature lists. The pure templates/throttle/MIME live in
+// `sundayrec_core::email`; this seam sends.
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
