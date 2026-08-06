@@ -206,7 +206,11 @@ export function attachProgress(host: HTMLElement, opts: ProgressOpts = {}): Prog
         cancelRaf(rafId)
         rafId = 0
       }
-      attached.delete(host)
+      // Only relinquish the host if we still OWN it. A second `attachProgress`
+      // on the same element (two overlapping runs — the editor's automatic
+      // analysis and a user clicking «Analyser opptak») replaces us, and the
+      // loser's teardown must not then delete the winner's registration.
+      if (attached.get(host) === handle) attached.delete(host)
       if (root.parentNode === host) host.removeChild(root)
     },
   }

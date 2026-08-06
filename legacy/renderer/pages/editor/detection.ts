@@ -31,8 +31,17 @@ export function shouldShowSegment(type: string): boolean {
  *  cached answer (that's what makes a reopen instant), while a click on
  *  «Analyser opptak» FORCES a fresh pass — the user pressing that button is
  *  asking for the work to be done, not for last time's answer. */
+/** One analysis at a time. The automatic post-open run does NOT disable the
+ *  button, so a user could start a second pass on top of it — two full ffmpeg
+ *  decodes of the same multi-gigabyte recording at once, and two writers
+ *  fighting over one progress bar. The click is dropped instead: the run already
+ *  in flight is about to produce the same answer. */
+let detectionInFlight = false
+
 export async function runDetection(auto = false): Promise<void> {
   if (!E.filePath) return
+  if (detectionInFlight) return
+  detectionInFlight = true
   const btn       = $('btn-detect-segments') as HTMLButtonElement | null
   const analyzing = $('editor-segments-analyzing')
   if (!auto && btn) { btn.disabled = true; btn.textContent = t('editor.analyzing', 'Analyserer…') }
@@ -75,6 +84,7 @@ export async function runDetection(auto = false): Promise<void> {
   } catch {
     raw = []
   } finally {
+    detectionInFlight = false
     stopProgress()
   }
   // Guard against the user closing/swapping the file mid-analysis: drop the
