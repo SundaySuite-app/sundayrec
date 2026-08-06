@@ -5,6 +5,17 @@
 //! ffmpeg/ffprobe runs are HARDWARE-UNVERIFIED behind `--features editor`; in the
 //! default build the seam returns a clear `feature_disabled` error the renderer
 //! handles gracefully (the panel shows a "not built into this build" hint).
+//!
+//! ## E5.3: what was actually untestable here
+//!
+//! "Thin" was true of most of this file, but three decisions hid inside the
+//! shims and could only be reached by running ffmpeg through a live `AppHandle`:
+//! the decode-progress THROTTLE, the export path guards (including the one
+//! deliberate exemption that was itself a shipped bug), and the export counter
+//! mapping. All three are free functions now, tested below. The remaining
+//! commands really are one-line delegations to `crate::editor`, which carries
+//! its own tests, so they were left alone rather than wrapped for the sake of
+//! symmetry.
 
 use crate::editor::{
     self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorDecodeProgress,
@@ -26,6 +37,26 @@ use tauri::{Emitter, State};
 /// bar that stops at 97 % is the one frame the user is guaranteed to look at.
 const DECODE_PROGRESS_MIN_INTERVAL_MS: u64 = 250;
 
+/// Whether this progress tick is allowed out.
+///
+/// Extracted (E5.3) from the closure below, where it was unreachable from a
+/// test: the two clauses it encodes are a real policy, not plumbing. `None`
+/// (nothing emitted yet) always passes, so the bar appears immediately; a
+/// `fraction` of 1.0 always passes regardless of the clock, because a bar that
+/// stops at 97 % is the one frame the user is guaranteed to look at.
+fn progress_due(last: Option<std::time::Instant>, now: std::time::Instant, fraction: f32) -> bool {
+    if fraction >= 1.0 {
+        return true;
+    }
+    match last {
+        Some(prev) => {
+            now.duration_since(prev)
+                >= std::time::Duration::from_millis(DECODE_PROGRESS_MIN_INTERVAL_MS)
+        }
+        None => true,
+    }
+}
+
 /// A throttled emitter for one decode pass, ready to hand to the seam.
 ///
 /// Deliberately built per CALL rather than kept as state: the throttle clock
@@ -40,14 +71,7 @@ fn decode_progress(
         {
             let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
             let now = std::time::Instant::now();
-            let due = match *guard {
-                Some(prev) => {
-                    now.duration_since(prev)
-                        >= std::time::Duration::from_millis(DECODE_PROGRESS_MIN_INTERVAL_MS)
-                }
-                None => true,
-            };
-            if !due && fraction < 1.0 {
+            if !progress_due(*guard, now, fraction) {
                 return;
             }
             *guard = Some(now);
@@ -189,20 +213,16 @@ pub async fn editor_mastering_analyze(
     editor::mastering_analyze(&input_path, &preset_id).await
 }
 
-/// Apply the cut-plan (+ optional mastering) and render to the chosen format,
-/// emitting `editor://export-progress` ticks the renderer draws as a real bar.
-#[tauri::command]
-pub async fn editor_export(
-    app: tauri::AppHandle,
-    db: State<'_, crate::db::Db>,
-    engine: State<'_, ExportEngine>,
-    request: EditorExportRequest,
-) -> AppResult<EditorExportResult> {
+/// Run every path guard an export request is subject to.
+///
+/// Extracted (E5.3) because the one clause that is NOT a guard is the important
+/// one: an EMPTY `output_folder` is the export modal's default destination
+/// ("Samme mappe") and means "next to the source" — the seam resolves it.
+/// Guarding it as a path was the whole out-of-the-box export failure:
+/// `require_absolute` rejected `''` with "path must be absolute" before ffmpeg
+/// ever ran. That exemption is now a test rather than an `if`.
+fn check_export_paths(request: &EditorExportRequest) -> AppResult<()> {
     super::path_guard::checked_input_file(&request.input_path)?;
-    // An EMPTY folder is the export modal's default destination ("Samme mappe")
-    // and means "next to the source" — the seam resolves it. Guarding it as a
-    // path was the whole out-of-the-box export failure: `require_absolute`
-    // rejected '' with "path must be absolute" before ffmpeg ever ran.
     if !request.output_folder.is_empty() {
         super::path_guard::checked_path(&request.output_folder)?;
     }
@@ -212,6 +232,36 @@ pub async fn editor_export(
     {
         super::path_guard::checked_input_file(clip)?;
     }
+    Ok(())
+}
+
+/// Which counter a delivered export increments.
+///
+/// Counted by delivered FORMAT — which export people actually use is the
+/// question, and the format tag is a short closed vocabulary, never a name.
+/// Extracted so the "never a name" property is checkable: anything unrecognised
+/// must land in `EditorExportOther` rather than leak the string.
+fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::CounterName {
+    use sundayrec_core::telemetry::CounterName;
+    match format {
+        "mp3" => CounterName::EditorExportMp3,
+        "wav" => CounterName::EditorExportWav,
+        "flac" => CounterName::EditorExportFlac,
+        "mp4" | "mov" => CounterName::EditorExportVideo,
+        _ => CounterName::EditorExportOther,
+    }
+}
+
+/// Apply the cut-plan (+ optional mastering) and render to the chosen format,
+/// emitting `editor://export-progress` ticks the renderer draws as a real bar.
+#[tauri::command]
+pub async fn editor_export(
+    app: tauri::AppHandle,
+    db: State<'_, crate::db::Db>,
+    engine: State<'_, ExportEngine>,
+    request: EditorExportRequest,
+) -> AppResult<EditorExportResult> {
+    check_export_paths(&request)?;
     // Hardware video encode is a per-install preference, not part of the export
     // request: the renderer never has to know whether this machine has
     // VideoToolbox. A settings read that fails is simply "off" (the default).
@@ -219,15 +269,7 @@ pub async fn editor_export(
         .await
         .map(|s| s.editor_hw_encode)
         .unwrap_or(false);
-    // Counted by delivered FORMAT — which export people actually use is the
-    // question, and the format tag is a short closed vocabulary, never a name.
-    crate::telemetry::counters::count(match request.format.as_str() {
-        "mp3" => sundayrec_core::telemetry::CounterName::EditorExportMp3,
-        "wav" => sundayrec_core::telemetry::CounterName::EditorExportWav,
-        "flac" => sundayrec_core::telemetry::CounterName::EditorExportFlac,
-        "mp4" | "mov" => sundayrec_core::telemetry::CounterName::EditorExportVideo,
-        _ => sundayrec_core::telemetry::CounterName::EditorExportOther,
-    });
+    crate::telemetry::counters::count(export_counter_for_format(&request.format));
     editor::export(&engine, &request, hw_encode, move |pct, phase| {
         let _ = app.emit(
             "editor://export-progress",
@@ -357,4 +399,154 @@ pub async fn editor_master_cancel(
     job_id: String,
 ) -> AppResult<bool> {
     editor::master_cancel(&engine, &job_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    use sundayrec_core::telemetry::CounterName;
+
+    // ── The decode-progress throttle ─────────────────────────────────────────
+
+    #[test]
+    fn the_first_tick_of_a_run_always_goes_out() {
+        // Otherwise the bar does not appear until 250 ms in, which on a short
+        // file is "after it finished".
+        assert!(progress_due(None, Instant::now(), 0.01));
+    }
+
+    #[test]
+    fn ticks_inside_the_window_are_dropped() {
+        // The standing v0.5.0 lesson: telemetry that floods the pipeline it
+        // reports on costs real audio. A fast local decode can cross several
+        // percent inside one 64 KB read.
+        let now = Instant::now();
+        let just_now = now - Duration::from_millis(10);
+        assert!(!progress_due(Some(just_now), now, 0.5));
+    }
+
+    #[test]
+    fn ticks_past_the_window_go_out() {
+        let now = Instant::now();
+        let earlier = now - Duration::from_millis(DECODE_PROGRESS_MIN_INTERVAL_MS + 1);
+        assert!(progress_due(Some(earlier), now, 0.5));
+    }
+
+    #[test]
+    fn the_final_tick_always_goes_out_however_recent_the_last_one() {
+        // A bar that stops at 97 % is the one frame the user is guaranteed to
+        // look at.
+        let now = Instant::now();
+        assert!(progress_due(Some(now), now, 1.0));
+        assert!(progress_due(Some(now), now, 1.5));
+    }
+
+    // ── The export counter ───────────────────────────────────────────────────
+
+    #[test]
+    fn each_delivered_format_gets_its_own_counter() {
+        assert_eq!(
+            export_counter_for_format("mp3"),
+            CounterName::EditorExportMp3
+        );
+        assert_eq!(
+            export_counter_for_format("wav"),
+            CounterName::EditorExportWav
+        );
+        assert_eq!(
+            export_counter_for_format("flac"),
+            CounterName::EditorExportFlac
+        );
+        assert_eq!(
+            export_counter_for_format("mp4"),
+            CounterName::EditorExportVideo
+        );
+        assert_eq!(
+            export_counter_for_format("mov"),
+            CounterName::EditorExportVideo
+        );
+    }
+
+    #[test]
+    fn an_unknown_format_is_bucketed_never_carried_through() {
+        // The telemetry contract is "a short closed vocabulary, never a name".
+        // A format string is renderer-supplied, so the fallback must be a
+        // BUCKET; the day it becomes a passthrough is the day a filename could
+        // ride out in a counter name.
+        for odd in ["aac", "ogg", "", "  ", "MP3", "../etc/passwd"] {
+            assert_eq!(
+                export_counter_for_format(odd),
+                CounterName::EditorExportOther,
+                "{odd:?} must bucket"
+            );
+        }
+    }
+
+    // ── The export path guards ───────────────────────────────────────────────
+
+    fn request(input: &str, folder: &str) -> EditorExportRequest {
+        serde_json::from_value(serde_json::json!({
+            "inputPath": input,
+            "cutRegions": [],
+            "duration": 60.0,
+            "format": "mp3",
+            "outputFolder": folder,
+            "bitrate": null,
+            "bitDepth": null,
+            "masterPreset": null,
+            "introPath": null,
+            "outroPath": null,
+            "gainDb": null,
+        }))
+        .expect("the export request literal must stay in sync with the struct")
+    }
+
+    #[test]
+    fn an_empty_output_folder_is_allowed_it_means_next_to_the_source() {
+        // THE regression this guards: "Samme mappe" is the export modal's
+        // DEFAULT, and guarding '' as a path made `require_absolute` reject it
+        // with "path must be absolute" before ffmpeg ever ran — i.e. export was
+        // broken out of the box.
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("take.mp3");
+        std::fs::write(&src, b"x").unwrap();
+        check_export_paths(&request(src.to_str().unwrap(), ""))
+            .expect("an empty output folder must pass the guard");
+    }
+
+    #[test]
+    fn a_non_empty_output_folder_is_still_guarded() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("take.mp3");
+        std::fs::write(&src, b"x").unwrap();
+        let err = check_export_paths(&request(src.to_str().unwrap(), "relative/out"))
+            .expect_err("a relative output folder must be refused");
+        assert!(err.to_string().contains("absolute"), "got {err}");
+    }
+
+    #[test]
+    fn a_missing_input_file_is_refused_before_anything_else() {
+        let err = check_export_paths(&request("/definitely/not/here.mp3", ""))
+            .expect_err("a non-existent input must be refused");
+        assert!(err.to_string().contains("cannot resolve path"), "got {err}");
+    }
+
+    #[test]
+    fn intro_and_outro_clips_are_guarded_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("take.mp3");
+        std::fs::write(&src, b"x").unwrap();
+
+        let mut req = request(src.to_str().unwrap(), "");
+        req.intro_path = Some("/definitely/not/here.mp3".into());
+        check_export_paths(&req).expect_err("a bogus intro must be refused");
+
+        let mut req = request(src.to_str().unwrap(), "");
+        req.outro_path = Some("/definitely/not/here.mp3".into());
+        check_export_paths(&req).expect_err("a bogus outro must be refused");
+
+        // …and `None` for both is the normal case, which must still pass.
+        check_export_paths(&request(src.to_str().unwrap(), "")).expect("no clips must pass");
+    }
 }
