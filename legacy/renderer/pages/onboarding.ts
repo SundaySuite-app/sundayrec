@@ -83,14 +83,20 @@ function finish(): void {
 }
 
 // ── Step router ──────────────────────────────────────────────────
+/** Steps that get a dot in the progress bar (the "done" screen after the last
+ *  one does not — see allDots()). Length-driven so adding step 5 (consent)
+ *  meant changing this ONE number instead of the two hardcoded `[1,2,3,4]`
+ *  arrays it replaced. */
+const OB_STEP_COUNT = 5
+
 function goTo(step: number): void {
   stopObVU()
   const prog = document.getElementById('ob-progress')
   const body = document.getElementById('ob-body')
   if (!prog || !body) return
 
-  if (step <= 4) {
-    prog.innerHTML = [1, 2, 3, 4].map(i =>
+  if (step <= OB_STEP_COUNT) {
+    prog.innerHTML = Array.from({ length: OB_STEP_COUNT }, (_, i) => i + 1).map(i =>
       `<div class="ob-dot${i === step ? ' active' : i < step ? ' done' : ''}"></div>`
     ).join('')
   }
@@ -105,6 +111,7 @@ function goTo(step: number): void {
     else if (step === 2) void s2(body)
     else if (step === 3) s3(body)
     else if (step === 4) s4(body)
+    else if (step === 5) s5(body)
     else                 { allDots(); sDone(body) }
     body.style.transition = 'opacity .22s, transform .22s'
     body.style.opacity    = '1'
@@ -114,7 +121,7 @@ function goTo(step: number): void {
 
 function allDots(): void {
   const prog = document.getElementById('ob-progress')
-  if (prog) prog.innerHTML = [1,2,3,4].map(() => `<div class="ob-dot done"></div>`).join('')
+  if (prog) prog.innerHTML = Array.from({ length: OB_STEP_COUNT }, () => `<div class="ob-dot done"></div>`).join('')
 }
 
 /**
@@ -407,6 +414,68 @@ function s4(body: HTMLElement): void {
   document.getElementById('ob-n4')?.addEventListener('click', save)
   document.getElementById('ob-s4')?.addEventListener('click', () => goTo(5))
   wireBack(4)
+}
+
+// ── Step 5: Anonymous diagnostics consent ───────────────────────
+//
+// Default is OFF everywhere in the backend (crates/sundayrec-core/telemetry's
+// consent state machine starts every install at NeverAsked/inactive) — this
+// step is simply where a FRESH install gets to say yes. Installs that already
+// finished onboarding never see this step again; they get the identical
+// question once, from telemetry-consent-prompt.ts's startup card instead —
+// deliberately non-blocking there, because a modal would sit between a
+// volunteer and «Start opptak» the one Sunday morning it matters most.
+let obConsentBusy = false
+
+function s5(body: HTMLElement): void {
+  obConsentBusy = false
+  body.innerHTML = `
+    <div class="ob-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5l7-3z"/></svg>
+    </div>
+    <h2 class="ob-title">${esc(t('onboarding.consentTitle', 'Vil du hjelpe oss gjøre SundayRec bedre?'))}</h2>
+    <p class="ob-desc">${esc(t('onboarding.consentDesc', 'Du kan dele anonym diagnostikk og bruksstatistikk med Sunday Suite, som utvikler SundayRec. Det er alltid frivillig og endrer ingenting i hvordan appen fungerer — du kan når som helst endre svaret under Innstillinger → System.'))}</p>
+    <details class="ob-consent-details">
+      <summary>${esc(t('onboarding.consentDetailsSummary', 'Hva samles i så fall inn?'))}</summary>
+      <ul class="ob-consent-list">
+        <li>${esc(t('onboarding.consentCatCrash', 'Krasjrapporter — feiltype, app- og OS-versjon. Aldri filstier eller tekst fra prekenen.'))}</li>
+        <li>${esc(t('onboarding.consentCatQuality', 'Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt). Aldri lydinnhold.'))}</li>
+        <li>${esc(t('onboarding.consentCatUsage', 'Funksjonsbruk — hvilke funksjoner du bruker, f.eks. «eksport til MP3». Bare antall, ikke innhold.'))}</li>
+      </ul>
+      <p class="ob-consent-never">${esc(t('onboarding.consentNever', 'Aldri: lyd, transkripsjoner, prekentekst, navn, e-post, filstier, enhetsnavn eller kirkenavn.'))}</p>
+      <a href="#" id="ob-consent-privacy-link" class="privacy-link">${esc(t('onboarding.consentReadMore', 'Les hele personvernerklæringen →'))}</a>
+    </details>
+    <div class="ob-actions">
+      <div class="btn-row ob-consent-btn-row">
+        <button class="btn-primary" id="ob-consent-yes" style="flex:1;justify-content:center">${esc(t('onboarding.consentYes', 'Ja, del anonymt'))}</button>
+        <button class="btn-secondary" id="ob-consent-no" style="flex:1;justify-content:center">${esc(t('onboarding.consentNo', 'Nei takk'))}</button>
+      </div>
+      <p class="ob-consent-note">${esc(t('onboarding.consentNote', 'Uansett hva du svarer, fungerer SundayRec akkurat likt.'))}</p>
+      ${backButton(5)}
+    </div>`
+
+  document.getElementById('ob-consent-privacy-link')?.addEventListener('click', e => {
+    e.preventDefault()
+    void window.api.openPrivacyPolicy()
+  })
+  document.getElementById('ob-consent-yes')?.addEventListener('click', () => void submitConsent(true))
+  document.getElementById('ob-consent-no')?.addEventListener('click', () => void submitConsent(false))
+  wireBack(5)
+}
+
+/** Record the answer and move on. Best-effort: a lost answer here is not
+ *  stranded — a failed `telemetry_consent_set` simply leaves the backend at
+ *  its default-off NeverAsked state, and the System tab's own toggle
+ *  (general-page.ts) can always set it explicitly afterwards. */
+async function submitConsent(granted: boolean): Promise<void> {
+  if (obConsentBusy) return
+  obConsentBusy = true
+  const yes = document.getElementById('ob-consent-yes') as HTMLButtonElement | null
+  const no  = document.getElementById('ob-consent-no')  as HTMLButtonElement | null
+  if (yes) yes.disabled = true
+  if (no)  no.disabled  = true
+  await window.api.telemetryConsentSet(granted).catch(() => null)
+  goTo(6)
 }
 
 // ── Done ──────────────────────────────────────────────────────────

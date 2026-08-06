@@ -89,6 +89,25 @@
   <button class="btn-toast-close" id="btn-toast-close" title="Lukk" data-i18n-title="tooltip.close">×</button>
 </div>
 
+<!-- Telemetry consent — one-time prompt for installs that already finished
+     onboarding (E3.6). A fresh install answers this as onboarding's own
+     step 5 (pages/onboarding.ts); this card exists ONLY so an existing
+     install gets asked once too — non-blocking, so it never sits between a
+     volunteer and «Start opptak» on a Sunday morning. Wired + shown from
+     telemetry-consent-prompt.ts, never on its own. -->
+<div id="telemetry-consent-toast" class="telemetry-consent-toast" style="display:none" role="dialog" aria-live="polite" aria-labelledby="telemetry-consent-toast-title">
+  <div class="telemetry-consent-toast-body">
+    <div class="telemetry-consent-toast-title" id="telemetry-consent-toast-title" data-i18n="onboarding.promptTitle">Del anonym diagnostikk?</div>
+    <div class="telemetry-consent-toast-text" data-i18n="onboarding.promptDesc">SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System.</div>
+    <a href="#" id="telemetry-consent-toast-privacy-link" class="privacy-link" data-i18n="onboarding.consentReadMore">Les hele personvernerklæringen →</a>
+    <div class="telemetry-consent-toast-actions">
+      <button class="btn-primary btn-sm" id="telemetry-consent-toast-yes" data-i18n="onboarding.consentYes">Ja, del anonymt</button>
+      <button class="btn-secondary btn-sm" id="telemetry-consent-toast-no" data-i18n="onboarding.consentNo">Nei takk</button>
+    </div>
+  </div>
+  <button class="btn-toast-close" id="telemetry-consent-toast-close" title="Lukk" data-i18n-title="tooltip.close" aria-label="Lukk" data-i18n-aria-label="dialog.closeAria">×</button>
+</div>
+
 <!-- ── Titlebar drag strip (drag to move + double-click to maximize) ──
      Tauri uses the data-tauri-drag-region ATTRIBUTE (not Electron's
      -webkit-app-region CSS, which is inert in WKWebView). With the attribute +

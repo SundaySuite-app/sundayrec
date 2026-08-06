@@ -898,7 +898,20 @@
     "testWaitHint": "Przycisk odblokuje się, gdy miernik wykryje dźwięk.",
     "testHeardHint": "Wykryto dźwięk — możesz przejść dalej.",
     "testBlockedHint": "Test dźwięku nie mógł się uruchomić. Przejdź dalej i sprawdź dźwięk później w Ustawienia → Dźwięk.",
-    "testSkipAfterError": "Kontynuuj bez testu dźwięku →"
+    "testSkipAfterError": "Kontynuuj bez testu dźwięku →",
+    "consentTitle": "Czy chcesz pomóc nam ulepszyć SundayRec?",
+    "consentDesc": "Możesz udostępniać anonimową diagnostykę i statystyki użycia Sunday Suite, twórcy SundayRec. To zawsze dobrowolne i niczego nie zmienia w działaniu aplikacji — możesz zmienić swoją odpowiedź w dowolnym momencie w Ustawienia → System.",
+    "consentDetailsSummary": "Co byłoby wtedy zbierane?",
+    "consentCatCrash": "Raporty awarii — typ błędu, wersja aplikacji i systemu. Nigdy ścieżki plików ani tekst kazania.",
+    "consentCatQuality": "Dane jakości — czy nagranie zostało zapisane w całości (procent utraty, wynik). Nigdy treść dźwięku.",
+    "consentCatUsage": "Użycie funkcji — z jakich funkcji korzystasz, np. «eksport do MP3». Tylko liczby, nigdy treść.",
+    "consentNever": "Nigdy: dźwięk, transkrypcje, tekst kazania, imiona i nazwiska, e-mail, ścieżki plików, nazwy urządzeń ani nazwa kościoła.",
+    "consentReadMore": "Przeczytaj pełną politykę prywatności →",
+    "consentYes": "Tak, udostępniaj anonimowo",
+    "consentNo": "Nie, dziękuję",
+    "consentNote": "Niezależnie od odpowiedzi, SundayRec działa dokładnie tak samo.",
+    "promptTitle": "Udostępniać anonimową diagnostykę?",
+    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → System."
   },
   "time": {
     "yr": "r",

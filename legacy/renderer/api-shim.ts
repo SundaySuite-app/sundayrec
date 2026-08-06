@@ -31,7 +31,7 @@ import {
   open as openDialog,
   save as saveDialog,
 } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { navigateTo } from "./ui/navigate";
 import { toast } from "./ui/toast";
 import { t } from "./i18n";
@@ -59,6 +59,14 @@ const VIDEO_EXT = [
   "3gp", "asf", "f4v",
 ];
 const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif"];
+// The "les mer"-link every telemetry consent surface offers (onboarding step
+// 5, the startup toast, the System-tab card). The repo is public
+// (github.com/SundaySuite-app/sundayrec), and `opener:default` already
+// bundles `allow-default-urls` — https:// with no pre-configured scope — so
+// opening it needs no capability change (src-tauri/capabilities/default.json
+// already carries `opener:default`; see openPrivacyPolicy below).
+const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/main/PRIVACY.md";
+
 // Cover art is the same list MINUS gif. An animated overlay logo is a
 // reasonable thing to want; an animated podcast cover is not something Apple
 // Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
@@ -1216,6 +1224,48 @@ const api: Record<string, unknown> = {
   // goes through `call()` with an empty-string fallback rather than throwing.
   logsTail: async (maxBytes: number) =>
     call<string>("logs_tail", { maxBytes }, ""),
+
+  // ── Telemetry (E3.6) — opt-in, anonymous, off by default ────────────────
+  // Every command here is documented in src-tauri/src/commands/telemetry.rs;
+  // none of them takes or returns a path, a name, or anything else that could
+  // identify a person, a church or a recording. The rest of the surface
+  // (preview payload, queue status, delete-my-data) is wired in E3.7.
+  telemetryConsentGet: async () =>
+    call<import("../bindings/TelemetryConsent").TelemetryConsent>(
+      "telemetry_consent_get",
+      undefined,
+      // The same "absent means no" default the backend's own state machine
+      // uses (crates/sundayrec-core/telemetry/consent.rs) — a failed read
+      // must never look like an active grant. `version`/`currentVersion` are
+      // 0 rather than a guessed real number: this fallback only fires when
+      // the IPC itself is broken, and it has no business pretending to know
+      // the live schema version.
+      { status: "never-asked", version: 0, decidedAt: null, currentVersion: 0, needsPrompt: true, active: false },
+    ),
+  // `null` on a real IPC failure — NEVER a fabricated TelemetryConsent. The
+  // whole point of "ask once" is that a lost answer has to be asked again, so
+  // a caller that swallowed this into a fake "recorded" state could tell the
+  // user their choice was saved when it was not.
+  telemetryConsentSet: async (granted: boolean) => {
+    try {
+      return await invoke<import("../bindings/TelemetryConsent").TelemetryConsent>(
+        "telemetry_consent_set",
+        { granted },
+      );
+    } catch (e) {
+      console.warn("[api-shim] telemetry_consent_set failed", e);
+      return null;
+    }
+  },
+  openPrivacyPolicy: async () => {
+    try {
+      await openUrl(PRIVACY_POLICY_URL);
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] openPrivacyPolicy failed", e);
+      return false;
+    }
+  },
 
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
