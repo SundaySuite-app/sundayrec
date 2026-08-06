@@ -458,6 +458,29 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // re-defaults it to `false` on every settings_save and the toggle never
     // sticks (the same trap `filenamePattern`/`wakeFromSleep` fell into).
     editorHwEncode: s.editorHwEncode ?? false,
+    // E-mail alerts. These live in localStorage like the rest of the UI's
+    // settings, but the thing that SENDS an alert is the backend — it has no
+    // way to read localStorage, so an operator could fill in the whole panel
+    // and the failure mail would still go nowhere (the same trap
+    // `filenamePattern` and `wakeFromSleep` fell into). The password is
+    // deliberately NOT here: it lives in the OS keychain via
+    // `email_set_smtp_password`.
+    emailOnError: s.emailOnError ?? false,
+    emailAddress: s.emailAddress ?? "",
+    emailSmtp: s.emailSmtp ?? "",
+    emailSmtpPort: s.emailSmtpPort ?? 587,
+    emailSmtpUser: s.emailSmtpUser ?? "",
+    emailSmtpFrom: s.emailSmtpFrom ?? "",
+    // Same reasoning for the chat webhook — the backend posts it on failure.
+    webhookUrl: s.webhookUrl ?? "",
+    webhookOnWarning: s.webhookOnWarn ?? false,
+    // The alert mail is rendered backend-side FROM these: the subject is
+    // «Opptaksfeil — {church} — {dato}» and the greeting «Hei {navn},». Without
+    // them the mail would greet nobody on behalf of "SundayRec". `churchName`
+    // also feeds the `church` filename pattern, which had the same blind spot.
+    churchName: typeof s.churchName === "string" ? s.churchName : "",
+    responsiblePerson: typeof s.responsiblePerson === "string" ? s.responsiblePerson : "",
+    language: typeof s.language === "string" ? s.language : "no",
   };
 }
 
@@ -865,6 +888,22 @@ const api: Record<string, unknown> = {
   },
   clearSmtpPassword: async () =>
     call<boolean>("email_clear_smtp_password", undefined, false),
+
+  // The keychain write path. Until now the SMTP password had nowhere to live:
+  // `saveSettingsLocal` strips it (it used to be persisted to localStorage in
+  // cleartext) and no command could store it, so it survived only until the tab
+  // was left. `email_set_smtp_password` puts it in the OS keychain; passing
+  // undefined/"" clears it. Resolves true when a password is now stored.
+  // NOT wrapped in `call`: a keychain write that fails must be visible to the
+  // caller (it shows an error toast), not silently swallowed into `false`.
+  emailSetSmtpPassword: async (password?: string) =>
+    (await invoke<boolean>("email_set_smtp_password", {
+      password: password && password.length > 0 ? password : null,
+    })) as boolean,
+  // Whether a password is stored — drives the "(lagret)" state. The secret
+  // itself never crosses into the webview.
+  emailHasSmtpPassword: async () =>
+    call<boolean>("email_has_smtp_password", undefined, false),
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>

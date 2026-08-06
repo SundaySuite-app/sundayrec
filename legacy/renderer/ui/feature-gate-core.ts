@@ -92,30 +92,61 @@ export function cloudGateStatus(isConfigured: boolean): GateStatus {
   return isConfigured ? 'ok' : 'unconfigured'
 }
 
-/** What `email_status` means for the panel. */
+/** What `email_status` + the keychain mean for the panel. */
 export interface EmailFacts {
-  /** Compiled with `--features email`. */
+  /** Compiled with `--features email` (in `default` since v0.10). */
   featureBuilt: boolean
   /** A Gmail refresh token is in the keychain. */
   gmailConnected: boolean
   /** The user has filled in SMTP host + user. */
   smtpConfigured: boolean
+  /** An SMTP password is available: stored in the OS keychain, or typed into
+   *  the field right now (the backend prefers the typed one). Without it an
+   *  authenticated submission gets `missing_password`, so a host + username
+   *  alone is NOT a working transport. */
+  smtpPasswordAvailable: boolean
 }
 
 /**
- * Without the cargo feature there is no send path at all, whatever the user
- * types — that is 'unavailable', not 'unconfigured', and saying so is the whole
- * point (the old panel let you fill in an SMTP server and then reported a
- * fabricated send failure).
+ * Gate status for the e-mail card.
+ *
+ * Only two outcomes now: without the cargo feature there is no send path at all,
+ * whatever the user types ('unavailable' — saying so is the whole point), and
+ * with it the card is LIVE.
+ *
+ * It deliberately never returns 'unconfigured': `mapGate` makes every non-`ok`
+ * status `inert`, and on THIS card the inert controls would include the
+ * recipient field, the SMTP fields and the enable toggle — i.e. the only way to
+ * configure it. A card that disables itself until it is configured can never be
+ * configured. "Not set up yet" is said by a hint line next to «Test e-post»
+ * instead, which leaves the controls usable.
  */
 export function emailGateStatus(facts: EmailFacts): GateStatus {
-  if (!facts.featureBuilt) return 'unavailable'
-  return facts.gmailConnected || facts.smtpConfigured ? 'ok' : 'unconfigured'
+  return facts.featureBuilt ? 'ok' : 'unavailable'
 }
 
-/** Whether «Send test» may be pressed. Same rule, expressed once. */
+/** Whether a message could actually leave the machine: a build that can send,
+ *  plus either Gmail or a COMPLETE SMTP set (host + user + a password). */
+export function hasEmailTransport(facts: EmailFacts): boolean {
+  if (!facts.featureBuilt) return false
+  if (facts.gmailConnected) return true
+  return facts.smtpConfigured && facts.smtpPasswordAvailable
+}
+
+/** Whether «Send test» may be pressed: a transport AND somewhere to send it. */
 export function canSendTestEmail(facts: EmailFacts, hasRecipient: boolean): boolean {
-  return emailGateStatus(facts) === 'ok' && hasRecipient
+  return hasEmailTransport(facts) && hasRecipient
+}
+
+/** Why «Test e-post» is disabled — so the card can say it out loud instead of
+ *  leaving a dead button. `null` when it is pressable. */
+export type EmailBlockReason = 'noFeature' | 'noTransport' | 'noRecipient' | null
+
+export function emailBlockReason(facts: EmailFacts, hasRecipient: boolean): EmailBlockReason {
+  if (!facts.featureBuilt) return 'noFeature'
+  if (!hasEmailTransport(facts)) return 'noTransport'
+  if (!hasRecipient) return 'noRecipient'
+  return null
 }
 
 /**

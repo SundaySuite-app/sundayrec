@@ -97,6 +97,12 @@ declare global {
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
       clearSmtpPassword:   () => Promise<boolean>
+      /** Store the SMTP password in the OS keychain (undefined/'' clears it).
+       *  Resolves true when a password is now stored. Rejects on a keychain
+       *  failure — the caller must show it, not swallow it. */
+      emailSetSmtpPassword: (password?: string) => Promise<boolean>
+      /** Whether an SMTP password is stored. The secret never crosses back. */
+      emailHasSmtpPassword: () => Promise<boolean>
       /** Whether this build can send e-mail at all, and whether Gmail is
        *  connected — read BEFORE offering a «Send test» (see feature-gate). */
       emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>

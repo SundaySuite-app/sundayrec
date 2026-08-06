@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   canSendTestEmail,
   cloudGateStatus,
+  emailBlockReason,
   emailGateStatus,
+  hasEmailTransport,
   liveBlockReason,
   mapGate,
 } from './feature-gate-core'
@@ -59,6 +61,7 @@ describe('emailGateStatus', () => {
     featureBuilt: true,
     gmailConnected: false,
     smtpConfigured: false,
+    smtpPasswordAvailable: false,
     ...o,
   })
 
@@ -76,19 +79,72 @@ describe('emailGateStatus', () => {
     expect(emailGateStatus(facts({ smtpConfigured: true }))).toBe('ok')
   })
 
-  it('is unconfigured when the build can send but nothing is set up', () => {
-    expect(emailGateStatus(facts())).toBe('unconfigured')
+  // The card must stay usable while it is being set up. `mapGate` inerts every
+  // non-'ok' status, and this card's controls ARE the configuration — an
+  // 'unconfigured' gate here would disable the recipient field, the SMTP fields
+  // and the enable toggle, leaving no way to ever reach 'ok'.
+  it('never gates a build that CAN send, so the card can be configured at all', () => {
+    expect(emailGateStatus(facts())).toBe('ok')
+    expect(mapGate({ status: emailGateStatus(facts()) }).disabled).toBe(false)
+  })
+})
+
+describe('hasEmailTransport', () => {
+  const smtp = {
+    featureBuilt: true,
+    gmailConnected: false,
+    smtpConfigured: true,
+    smtpPasswordAvailable: true,
+  }
+
+  it('accepts Gmail without any SMTP fields', () => {
+    expect(
+      hasEmailTransport({ ...smtp, gmailConnected: true, smtpConfigured: false, smtpPasswordAvailable: false }),
+    ).toBe(true)
+  })
+
+  // Host + username with no password reaches the server and is rejected —
+  // the backend answers `missing_password`. That is not a transport.
+  it('requires a password alongside an SMTP host + username', () => {
+    expect(hasEmailTransport(smtp)).toBe(true)
+    expect(hasEmailTransport({ ...smtp, smtpPasswordAvailable: false })).toBe(false)
+    expect(hasEmailTransport({ ...smtp, smtpConfigured: false })).toBe(false)
+  })
+
+  it('is false without the cargo feature', () => {
+    expect(hasEmailTransport({ ...smtp, featureBuilt: false })).toBe(false)
   })
 })
 
 describe('canSendTestEmail', () => {
   it('needs a working transport AND somewhere to send it', () => {
-    const built = { featureBuilt: true, gmailConnected: true, smtpConfigured: false }
+    const built = {
+      featureBuilt: true,
+      gmailConnected: true,
+      smtpConfigured: false,
+      smtpPasswordAvailable: false,
+    }
     expect(canSendTestEmail(built, true)).toBe(true)
     expect(canSendTestEmail(built, false)).toBe(false)
     expect(
       canSendTestEmail({ ...built, featureBuilt: false }, true),
     ).toBe(false)
+  })
+})
+
+describe('emailBlockReason', () => {
+  const base = {
+    featureBuilt: true,
+    gmailConnected: true,
+    smtpConfigured: false,
+    smtpPasswordAvailable: false,
+  }
+
+  it('names the one thing that is missing, most fundamental first', () => {
+    expect(emailBlockReason({ ...base, featureBuilt: false }, true)).toBe('noFeature')
+    expect(emailBlockReason({ ...base, gmailConnected: false }, true)).toBe('noTransport')
+    expect(emailBlockReason(base, false)).toBe('noRecipient')
+    expect(emailBlockReason(base, true)).toBeNull()
   })
 })
 

@@ -1610,12 +1610,23 @@
               <div class="form-hint" data-i18n="notify.smtpHint">Gmail: smtp.gmail.com · Outlook: smtp.office365.com</div>
               <label class="form-label mt" data-i18n="notify.smtpUser">BRUKERNAVN (E-POSTADRESSE)</label>
               <input type="text" class="form-input" id="email-user" placeholder="din@epost.no" />
+              <!-- Optional explicit sender. Blank = brukernavnet (som før). Trengs
+                   når innloggingsnavnet ikke er en postkasse (SendGrid: «apikey»)
+                   eller leverandøren krever en verifisert avsender. -->
+              <label class="form-label mt" data-i18n="notify.smtpFrom">AVSENDERADRESSE (VALGFRITT)</label>
+              <input type="email" class="form-input" id="email-from" placeholder="opptak@kirke.no" />
+              <div class="form-hint" data-i18n="notify.smtpFromHint">La stå tom for å sende fra brukernavnet over.</div>
               <label class="form-label mt" data-i18n="notify.smtpPass">PASSORD / APP-PASSORD</label>
+              <!-- The password goes to the OS keychain (macOS Keychain / Windows
+                   Credential Manager) via email_set_smtp_password — never to
+                   localStorage, never into the settings blob. -->
               <div class="pass-row">
-                <input type="password" class="form-input" id="email-pass" />
+                <input type="password" class="form-input" id="email-pass" autocomplete="off" />
+                <button type="button" class="btn-secondary btn-sm" id="btn-save-smtp-pass" data-i18n="notify.savePassToKeychain">Lagre i nøkkelring</button>
                 <button type="button" class="btn-link" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
               </div>
               <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
+              <div class="form-hint" id="email-pass-state" style="display:none" data-i18n="notify.smtpPassStored">Passordet er lagret i nøkkelringen på denne maskinen.</div>
               <input type="hidden" id="email-port" value="587" />
               <!-- EXPLICIT SAVE: host + brukernavn + passord virker bare som et
                    sett. Auto-lagring per tastetrykk ville pekt varsel-stien mot
@@ -1627,9 +1638,12 @@
             </div>
           </details>
 
-          <!-- Enabled/disabled by the feature gate from the REAL email_status,
-               not by a hardcoded attribute: it is pressable exactly when a
-               transport exists and there is a recipient. -->
+          <!-- Enabled/disabled from the REAL email_status + keychain state, not
+               by a hardcoded attribute: pressable exactly when a transport
+               exists and there is a recipient. When it is NOT pressable the
+               hint below says which of the two is missing — the card itself
+               stays live, because these fields are how you fix it. -->
+          <div class="form-hint" id="email-status-hint" style="margin-top:12px"></div>
           <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled data-i18n="general.testEmail">Test e-post</button>
         </div>
       </div>
