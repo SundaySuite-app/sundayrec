@@ -4,6 +4,7 @@ import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap } from './waveform'
 import { pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
 import { flagEditorTab } from './tabs'
+import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // Segment detection / analyze panel. (Full detection logic lands here in a
 // later phase; for now just the display predicate the waveform renderer needs.)
@@ -42,12 +43,39 @@ export async function runDetection(auto = false): Promise<void> {
   renderAnalyzePanel()
   hideSuggestionBanner()
 
+  // A spinner is all this card had, for a pass that reads the WHOLE recording —
+  // minutes on a service, and indistinguishable from a hang. The backend now
+  // reports its decode position, so say how far along it is and roughly how much
+  // longer. Indeterminate until the first tick: a cached answer returns before
+  // any arrives, and the backend reports nothing for a container whose duration
+  // it could not probe.
+  const host = $('editor-analyze-progress')
+  let progressUi: ProgressHandle | null = null
+  if (host) {
+    host.style.display = ''
+    progressUi = attachProgress(host, { compact: true })
+    progressUi.update(null)
+  }
+  const unsub = window.api.on?.('editor-analysis-progress', (payload: unknown) => {
+    const f = (payload as { fraction?: number } | null)?.fraction
+    if (typeof f !== 'number' || !isFinite(f)) return
+    progressUi?.update(Math.max(0, Math.min(1, f)))
+  })
+  const stopProgress = (): void => {
+    unsub?.()
+    progressUi?.destroy()
+    progressUi = null
+    if (host) host.style.display = 'none'
+  }
+
   const fpAtStart = E.filePath
   let raw: Suggestion[] = []
   try {
     raw = (await window.api.editorDetectSegments(E.filePath, !auto)) as Suggestion[]
   } catch {
     raw = []
+  } finally {
+    stopProgress()
   }
   // Guard against the user closing/swapping the file mid-analysis: drop the
   // result if we're no longer on the same recording.

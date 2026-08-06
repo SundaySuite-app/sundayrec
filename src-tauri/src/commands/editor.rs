@@ -7,14 +7,54 @@
 //! handles gracefully (the panel shows a "not built into this build" hint).
 
 use crate::editor::{
-    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorExportProgress,
-    EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
+    self, EditorAutoProcess, EditorChannelDiagnosis, EditorChapter, EditorDecodeProgress,
+    EditorExportProgress, EditorExportRequest, EditorExportResult, EditorFileRead, EditorLoudness,
     EditorMasterApplyRequest, EditorMasterApplyResult, EditorMasterPreviewRequest,
     EditorMasterPreviewResult, EditorMasterProgress, EditorMediaInfo, EditorPeaks, EditorSegment,
     EditorSidecar, EditorStreamInfo, EditorTranscriptLine, ExportEngine, MasterEngine,
 };
 use crate::error::AppResult;
 use tauri::{Emitter, State};
+
+/// Minimum wall time between two decode-progress emits, per operation.
+///
+/// The seams already tick only once per percent, but a fast local decode can
+/// cross several percent inside one 64 KB read on a short file — and the
+/// standing lesson from v0.5.0 is that telemetry which floods the pipeline it
+/// reports on costs real audio. Four updates a second is smoother than any eye
+/// needs; a `fraction` of 1.0 always goes out regardless of the clock, because a
+/// bar that stops at 97 % is the one frame the user is guaranteed to look at.
+const DECODE_PROGRESS_MIN_INTERVAL_MS: u64 = 250;
+
+/// A throttled emitter for one decode pass, ready to hand to the seam.
+///
+/// Deliberately built per CALL rather than kept as state: the throttle clock
+/// belongs to one run, and two files opened in quick succession must not
+/// swallow each other's first tick.
+fn decode_progress(
+    app: tauri::AppHandle,
+    event: &'static str,
+) -> impl Fn(f32) + Send + Sync + 'static {
+    let last = std::sync::Arc::new(std::sync::Mutex::new(None::<std::time::Instant>));
+    move |fraction: f32| {
+        {
+            let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
+            let now = std::time::Instant::now();
+            let due = match *guard {
+                Some(prev) => {
+                    now.duration_since(prev)
+                        >= std::time::Duration::from_millis(DECODE_PROGRESS_MIN_INTERVAL_MS)
+                }
+                None => true,
+            };
+            if !due && fraction < 1.0 {
+                return;
+            }
+            *guard = Some(now);
+        }
+        let _ = app.emit(event, EditorDecodeProgress { fraction });
+    }
+}
 
 /// Probe a recording's duration/streams for the editor's first paint.
 #[tauri::command]
@@ -24,11 +64,13 @@ pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaI
 }
 
 /// Decode the audio to a renderer waveform (peaks + sample rate). Streamed and
-/// cached in a `<stem>.peaks.json` sidecar — a reopen never re-decodes.
+/// cached in a `<stem>.peaks.json` sidecar — a reopen never re-decodes, which is
+/// also why the `editor://peaks-progress` ticks stop arriving instantly on a
+/// warm open: there is no decode to report.
 #[tauri::command]
-pub async fn editor_peaks(input_path: String) -> AppResult<EditorPeaks> {
+pub async fn editor_peaks(app: tauri::AppHandle, input_path: String) -> AppResult<EditorPeaks> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::peaks(&input_path).await
+    editor::peaks(&input_path, decode_progress(app, "editor://peaks-progress")).await
 }
 
 /// True-peak probe (volumedetect) over the ORIGINAL file — Normalize's honest
@@ -44,9 +86,13 @@ pub async fn editor_probe_peak(input_path: String) -> AppResult<Option<f64>> {
 /// `asset://` (an `<audio>` element). Export still runs on the original, so
 /// quality is untouched. HARDWARE-UNVERIFIED.
 #[tauri::command]
-pub async fn editor_extract_playback_proxy(input_path: String) -> AppResult<String> {
+pub async fn editor_extract_playback_proxy(
+    app: tauri::AppHandle,
+    input_path: String,
+) -> AppResult<String> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_playback_proxy(&input_path).await
+    editor::extract_playback_proxy(&input_path, decode_progress(app, "editor://proxy-progress"))
+        .await
 }
 
 /// Widen the webview's `asset://` scope to ONE media file so the editor can put
@@ -72,11 +118,17 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 /// post-open run leaves it unset and gets the cached answer for free.
 #[tauri::command]
 pub async fn editor_segments(
+    app: tauri::AppHandle,
     input_path: String,
     force: Option<bool>,
 ) -> AppResult<Vec<EditorSegment>> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::segments(&input_path, force.unwrap_or(false)).await
+    editor::segments(
+        &input_path,
+        force.unwrap_or(false),
+        decode_progress(app, "editor://analysis-progress"),
+    )
+    .await
 }
 
 /// The built-in mastering presets for the editor's preset dropdown. Pure core

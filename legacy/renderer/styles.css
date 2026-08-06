@@ -1553,6 +1553,10 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 /* Secondary line under the spinner — a step that takes real time explains itself
    (the gap to the line above is the parent's 14px flex gap). */
 .editor-loading-detail { font-size: 12px; opacity: .8; margin-top: -6px; }
+/* The bar under that line, once the backend reports a fraction (ui/progress.ts).
+   Bounded so it reads as a status line under the spinner rather than a
+   full-width loading screen of its own. */
+.editor-loading-progress { width: 100%; max-width: 260px; margin-top: 4px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .editor-header {
@@ -2885,6 +2889,8 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   animation: spin .7s linear infinite; flex-shrink: 0;
 }
 /* (@keyframes spin lives once, next to .editor-loading-spin.) */
+/* Real percentage + ETA for the analysis pass, under the spinner line. */
+.editor-analyze-progress { max-width: 320px; padding: 0 12px 10px; }
 
 /* ── Publish (cloud) settings page ───────────────────────────── */
 .cloud-card {

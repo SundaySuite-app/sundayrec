@@ -222,6 +222,13 @@ const EVENT_MAP: Record<string, string> = {
   "whisper-model-progress": "whisper://model-progress",
   "stream-stats": "streaming://stats",
   "editor-export-progress": "editor://export-progress",
+  // Fase 9: the three editor passes that used to run for minutes behind a
+  // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
+  // separate channels only because they drive separate surfaces (the loading
+  // screen, the «Analyser opptak» card, the playback-proxy wait).
+  "editor-peaks-progress": "editor://peaks-progress",
+  "editor-analysis-progress": "editor://analysis-progress",
+  "editor-proxy-progress": "editor://proxy-progress",
 };
 
 // Per-event payload ADAPTERS: the Tauri backend emits typed Rust structs whose

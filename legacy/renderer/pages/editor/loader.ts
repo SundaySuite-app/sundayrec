@@ -19,6 +19,7 @@ import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnai
 
 import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
 import { updateStageButton } from './stage-ui'
+import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // ── File loading (probe, waveform, transport, sidecars) ─────────────────────
 //
@@ -102,7 +103,13 @@ function whenPlayable(el: HTMLMediaElement, timeoutMs: number): Promise<boolean>
 async function attachPlaybackProxy(fp: string, seq: number): Promise<boolean> {
   let proxyPath: string | null = null
   try {
-    proxyPath = await window.api.editorExtractPlaybackProxy(fp)
+    // No reveal delay: a full transcode of a service is never quick, so the
+    // explanation and its bar should be on screen from the first frame.
+    proxyPath = await withLoadingDetail(
+      t('editor.preparingPlayback', 'Klargjør avspilling…'),
+      window.api.editorExtractPlaybackProxy(fp),
+      { channel: 'editor-proxy-progress', delayMs: 0 },
+    )
   } catch { proxyPath = null }
   if (seq !== E.loadSeq) return false
   if (!proxyPath) {
@@ -153,8 +160,9 @@ async function loadAudioFile(fp: string, ext: string, seq: number): Promise<bool
 
   if (routePlayback(ext) === 'proxy') {
     // No decoder for this container in the webview — there is nothing to try
-    // first, so transcode up front and tell the user why the wait exists.
-    setLoadingDetail(t('editor.preparingPlayback', 'Klargjør avspilling…'))
+    // first, so transcode up front. `attachPlaybackProxy` owns the explanation
+    // and its progress bar (it is also reached from the background fallback
+    // path, and only one of the two should be writing that line).
     await attachPlaybackProxy(fp, seq)
     if (seq !== E.loadSeq) return false
   } else {
@@ -179,6 +187,7 @@ async function loadAudioFile(fp: string, ext: string, seq: number): Promise<bool
   const result = await withLoadingDetail(
     t('editor.analyzingWaveform', 'Analyserer bølgeform…'),
     window.api.editorExtractAudioPeaks(fp),
+    { channel: 'editor-peaks-progress' },
   )
   if (seq !== E.loadSeq) return false
   if (result && Array.isArray(result.peaks) && result.peaks.length) {
@@ -320,6 +329,7 @@ export async function loadFile(fp: string): Promise<void> {
     const result = await withLoadingDetail(
       t('editor.analyzingWaveform', 'Analyserer bølgeform…'),
       window.api.editorExtractAudioPeaks(fp),
+      { channel: 'editor-peaks-progress' },
     )
 
     if (seq !== E.loadSeq) return
@@ -530,6 +540,13 @@ function setLoadingDetail(text: string | null): void {
  *  screen flicker. A cached-peaks open lands well under it. */
 const LOADING_DETAIL_DELAY_MS = 400
 
+interface LoadingDetailOpts {
+  /** Shim channel carrying `{ fraction }` for this step, if the backend has one. */
+  channel?: string
+  /** Override the reveal delay. 0 for a step that is never quick (a transcode). */
+  delayMs?: number
+}
+
 /**
  * Await `work`, showing `text` under the spinner ONLY if it is still running
  * after {@link LOADING_DETAIL_DELAY_MS}. With the peaks sidecar cache a reopen
@@ -539,17 +556,48 @@ const LOADING_DETAIL_DELAY_MS = 400
  *
  * The detail line is cleared only if this call is the one that set it, so a
  * slower step that owns the line afterwards isn't wiped by a fast one.
+ *
+ * With `opts.channel` the line gets a REAL bar and a remaining-time estimate
+ * under it. Note the subscription starts immediately while the widget appears on
+ * the same delay as the text: the backend's first tick can easily beat 400 ms,
+ * and the newest fraction is held so the bar arrives already in the right place
+ * instead of starting from zero.
  */
-async function withLoadingDetail<T>(text: string, work: Promise<T>): Promise<T> {
+async function withLoadingDetail<T>(
+  text: string,
+  work: Promise<T>,
+  opts: LoadingDetailOpts = {},
+): Promise<T> {
   let shown = false
+  // A holder rather than two `let`s: both are written from callbacks that run
+  // long after this function's control flow has moved on.
+  const bar: { ui: ProgressHandle | null; latest: number | null } = { ui: null, latest: null }
+  const unsub = opts.channel
+    ? window.api.on?.(opts.channel, (payload: unknown) => {
+        const f = (payload as { fraction?: number } | null)?.fraction
+        if (typeof f !== 'number' || !isFinite(f)) return
+        bar.latest = Math.max(0, Math.min(1, f))
+        bar.ui?.update(bar.latest)
+      })
+    : undefined
   const timer = window.setTimeout(() => {
     shown = true
     setLoadingDetail(text)
-  }, LOADING_DETAIL_DELAY_MS)
+    const host = $('editor-loading-progress')
+    if (opts.channel && host) {
+      host.style.display = ''
+      bar.ui = attachProgress(host, { compact: true })
+      bar.ui.update(bar.latest)
+    }
+  }, opts.delayMs ?? LOADING_DETAIL_DELAY_MS)
   try {
     return await work
   } finally {
     clearTimeout(timer)
+    unsub?.()
+    bar.ui?.destroy()
+    const host = $('editor-loading-progress')
+    if (host) host.style.display = 'none'
     if (shown) setLoadingDetail(null)
   }
 }

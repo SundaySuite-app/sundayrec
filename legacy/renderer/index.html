@@ -2200,6 +2200,8 @@
       <!-- Extra line, filled by the loader only when a step takes real time
            (transcoding a playback proxy). Silent waits read as a hang. -->
       <div id="editor-loading-detail" class="editor-loading-detail" style="display:none"></div>
+      <!-- …and a real bar under it once the backend reports a fraction. -->
+      <div id="editor-loading-progress" class="editor-loading-progress" style="display:none"></div>
     </div>
 
     <!-- Workspace -->
@@ -2660,6 +2662,9 @@
           <div id="editor-segments-analyzing" style="display:none" class="editor-segments-analyzing">
             <span class="editor-segments-spinner"></span> <span data-i18n="editor.analyzing">Analyserer…</span>
           </div>
+          <!-- Analysis is a second full pass over the recording; on a service it
+               runs for minutes. The bar + ETA go here. -->
+          <div id="editor-analyze-progress" class="editor-analyze-progress" style="display:none"></div>
           <button class="btn-ghost btn-sm" id="btn-apply-auto-trim" style="display:none" data-i18n="editor.markSermon">↦ Marker preken automatisk</button>
           <div id="editor-auto-trim-hint" class="editor-analyze-hint" style="display:none" data-i18n="editor.markSermonHint">Trimmer alt før og etter den uthevede preken-blokken.</div>
           <div id="editor-sermon-picker-wrap" class="editor-sermon-picker-wrap" style="display:none">
