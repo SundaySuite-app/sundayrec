@@ -954,7 +954,12 @@
     "testEmailSent": "Test-e-post sendt til {to}",
     "testEmailFailed": "Test-e-posten gikk ikke gjennom: {err}",
     "testWebhookOk": "Webhooken svarte — varsler kommer fram.",
-    "testWebhookFailed": "Webhooken svarte ikke. Sjekk adressen."
+    "testWebhookFailed": "Webhooken svarte ikke. Sjekk adressen.",
+    "errWebhookHttp": "Bruk https:// for adresser på internett. http:// er bare tillatt for utstyr på ditt eget nett.",
+    "webhookLocalTitle": "Denne adressen er på ditt lokale nett",
+    "webhookLocalBody": "SundayRec sender varsler til {host}, som ligger på ditt eget nettverk og ikke på internett. Tillat det bare hvis du vet hvilket utstyr som svarer der.",
+    "webhookLocalAllow": "Ja, tillat lokalt nett",
+    "webhookLocalDeny": "Avbryt"
   },
   "prep": {
     "sectionTitle": "Forhåndsklargjøring og gjennomgang",
@@ -1293,7 +1298,17 @@
     "captionsOk": "Teksting mottatt for «{name}».",
     "openEditor": "Åpne i redigering",
     "captionsNoRecording": "Teksting mottatt, men uten å si hvilket opptak den hører til. Åpne opptaket i redigering og importer teksten der.",
-    "captionsFailed": "Teksting kunne ikke lagres: {err}"
+    "captionsFailed": "Teksting kunne ikke lagres: {err}",
+    "rejectedPath": "Teksting ble avvist: filbanen kunne ikke godkjennes. Importer teksten fra redigering i stedet.",
+    "rejectedType": "Teksting ble avvist: filen er ikke en undertekstfil (.srt eller .vtt).",
+    "rejectedOutside": "Teksting ble avvist: opptaket ligger utenfor opptaksmappen din. SundayRec skriver bare ved siden av egne opptak.",
+    "rejectedExpired": "Forespørselen er utløpt. Send tekstingen på nytt fra SundayEdit.",
+    "rejectedDeclined": "Tekstingen ble ikke lagt til.",
+    "importRejected": "Filen kunne ikke åpnes: SundayRec åpner bare lyd- og videofiler fra en kjent mappe.",
+    "confirmCaptionsTitle": "Legge til teksting for «{name}»?",
+    "confirmCaptionsBody": "En annen app har sendt tekstfilen «{file}». Sier du ja, lagres teksten ved siden av opptaket.",
+    "confirmCaptionsAccept": "Ja, legg til teksting",
+    "confirmCaptionsReject": "Nei, ikke gjør noe"
   },
   "progress": {
     "etaCalculating": "beregner …",

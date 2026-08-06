@@ -81,6 +81,15 @@ async fn prep_defaults(db: &Db) -> AppResult<PrepDefaults> {
 /// Build an [`EpisodePrep`] from already-computed analysis segments + the
 /// resolved defaults, and add it to the review queue. INFRA-UNVERIFIED: the
 /// analysis itself isn't ported; the caller supplies `segments`.
+///
+/// **Path policy: [`PathPolicy::ReadOnlyMedia`]** over [`MEDIA_EXTENSIONS`].
+/// The path is PERSISTED into the review-queue blob and later handed to the
+/// mastering/export/publish chain, so an unguarded value is a stored capability
+/// that outlives the call. Media-only + must exist is the narrowest rule that
+/// still admits every episode (this is always a finished recording). Not
+/// root-scoped: an episode may legitimately be prepped from a recording the
+/// operator has already moved to an archive volume, and unlike cloud backup
+/// nothing here leaves the machine on its own.
 #[tauri::command]
 pub async fn prep_build_episode(
     app: AppHandle,
@@ -88,6 +97,12 @@ pub async fn prep_build_episode(
     recording_path: String,
     segments: Vec<PrepAnalysisSegment>,
 ) -> AppResult<EpisodePrep> {
+    crate::commands::path_guard::check(
+        &recording_path,
+        crate::commands::path_guard::PathPolicy::ReadOnlyMedia(
+            crate::commands::path_guard::MEDIA_EXTENSIONS,
+        ),
+    )?;
     let defaults = prep_defaults(&db).await?;
     let now = now_i64();
     let episode = prep::build_episode_prep(new_id(), recording_path, segments, &defaults, now);

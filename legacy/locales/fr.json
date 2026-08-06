@@ -954,7 +954,12 @@
     "testEmailSent": "E-mail de test envoyé à {to}",
     "testEmailFailed": "L’e-mail de test n’est pas passé : {err}",
     "testWebhookOk": "Le webhook a répondu — les alertes passeront.",
-    "testWebhookFailed": "Le webhook n’a pas répondu. Vérifiez l’adresse."
+    "testWebhookFailed": "Le webhook n’a pas répondu. Vérifiez l’adresse.",
+    "errWebhookHttp": "Utilisez https:// pour les adresses sur internet. http:// n'est autorisé que pour du matériel sur votre propre réseau.",
+    "webhookLocalTitle": "Cette adresse est sur votre réseau local",
+    "webhookLocalBody": "SundayRec enverra les alertes à {host}, qui se trouve sur votre propre réseau et non sur internet. Ne l'autorisez que si vous savez quel matériel répond là.",
+    "webhookLocalAllow": "Oui, autoriser le réseau local",
+    "webhookLocalDeny": "Annuler"
   },
   "prep": {
     "sectionTitle": "Préparation et révision",
@@ -1293,7 +1298,17 @@
     "captionsOk": "Sous-titres reçus pour « {name} ».",
     "openEditor": "Ouvrir dans l'éditeur",
     "captionsNoRecording": "Sous-titres reçus, mais sans indiquer à quel enregistrement ils appartiennent. Ouvrez l'enregistrement dans l'éditeur et importez le texte là.",
-    "captionsFailed": "Les sous-titres n'ont pas pu être enregistrés : {err}"
+    "captionsFailed": "Les sous-titres n'ont pas pu être enregistrés : {err}",
+    "rejectedPath": "Sous-titres refusés : le chemin du fichier n'a pas pu être approuvé. Importez plutôt le texte depuis l'éditeur.",
+    "rejectedType": "Sous-titres refusés : le fichier n'est pas un fichier de sous-titres (.srt ou .vtt).",
+    "rejectedOutside": "Sous-titres refusés : l'enregistrement se trouve hors de votre dossier d'enregistrements. SundayRec n'écrit qu'à côté de ses propres enregistrements.",
+    "rejectedExpired": "La demande a expiré. Renvoyez les sous-titres depuis SundayEdit.",
+    "rejectedDeclined": "Les sous-titres n'ont pas été ajoutés.",
+    "importRejected": "Le fichier n'a pas pu être ouvert : SundayRec n'ouvre que des fichiers audio et vidéo d'un dossier connu.",
+    "confirmCaptionsTitle": "Ajouter les sous-titres pour « {name} » ?",
+    "confirmCaptionsBody": "Une autre application a envoyé le fichier texte « {file} ». Si vous acceptez, le texte sera enregistré à côté de l'enregistrement.",
+    "confirmCaptionsAccept": "Oui, ajouter les sous-titres",
+    "confirmCaptionsReject": "Non, ne rien faire"
   },
   "progress": {
     "etaCalculating": "estimation …",

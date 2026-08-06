@@ -12,6 +12,24 @@
 //! ffmpeg/fs, so behaviour for legitimate paths is byte-for-byte unchanged
 //! (canonicalisation is only used for the checks, which also catches symlink
 //! escapes into a denied directory).
+//!
+//! ## The policy vocabulary (E1.2)
+//!
+//! Every command that takes a path names WHICH of these it is, in its own
+//! doc-comment, via [`PathPolicy`]:
+//!
+//! | policy | means | typical caller |
+//! |---|---|---|
+//! | [`PathPolicy::UserChosenRead`] | absolute, exists, not protected | a file the user picked in a native OPEN dialog |
+//! | [`PathPolicy::UserChosenWrite`] | absolute, no `..`, not protected, target may not exist | a destination the user picked in a native SAVE dialog |
+//! | [`PathPolicy::ReadOnlyMedia`] | `UserChosenRead` + an extension allowlist | media/sidecars handed to another process or to ffmpeg |
+//! | [`PathPolicy::RecordingsRooted`] | must resolve INSIDE the configured save folder | anything a REMOTE party (a deep link) can name, and anything that leaves the machine |
+//!
+//! The tension the table resolves: settings export/import legitimately targets
+//! anywhere the user pointed a native dialog at, so pinning it to the recordings
+//! folder would break a real flow for no gain — the dialog IS the authorisation.
+//! A deep link, by contrast, carries no user intent at all, so it gets the
+//! narrowest policy plus an explicit confirmation (see `commands::deeplink`).
 
 use crate::error::{AppError, AppResult};
 use std::path::{Component, Path, PathBuf};
@@ -77,15 +95,34 @@ pub fn checked_input_file(raw: &str) -> AppResult<()> {
 /// and checked against the deny list.
 pub fn checked_path(raw: &str) -> AppResult<()> {
     let path = require_absolute(raw)?;
+    reject_traversal(path, raw)?;
+    let canonical = deepest_existing_canonical(path, raw)?;
+    deny_sensitive(&canonical)
+}
+
+/// Reject a path carrying `..` components. Split out so the root-scoping guard
+/// can rely on the same rule: with `..` gone, a path's non-existent tail can
+/// only ever go DEEPER than its deepest existing ancestor, which is what makes
+/// [`checked_under_root`] sound for targets that do not exist yet.
+fn reject_traversal(path: &Path, raw: &str) -> AppResult<()> {
     if path.components().any(|c| matches!(c, Component::ParentDir)) {
         return Err(AppError::Validation(format!(
             "path must not contain '..': {raw}"
         )));
     }
+    Ok(())
+}
+
+/// Canonicalise `path`, walking up to its deepest EXISTING ancestor when the
+/// target itself does not exist yet. Resolving through `canonicalize` is what
+/// makes a symlink escape visible: a link inside the save folder pointing at
+/// `/etc/passwd` canonicalises to `/etc/passwd`, which no longer starts with
+/// the save folder.
+fn deepest_existing_canonical(path: &Path, raw: &str) -> AppResult<PathBuf> {
     let mut probe = path;
-    let canonical = loop {
+    loop {
         match probe.canonicalize() {
-            Ok(c) => break c,
+            Ok(c) => return Ok(c),
             Err(_) => match probe.parent() {
                 Some(parent) if parent != probe => probe = parent,
                 _ => {
@@ -95,8 +132,120 @@ pub fn checked_path(raw: &str) -> AppResult<()> {
                 }
             },
         }
-    };
+    }
+}
+
+/// A path's lowercase extension (no dot), or `None` when it has none.
+fn extension_lower(raw: &str) -> Option<String> {
+    Path::new(raw)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+}
+
+/// Validate a path that must name an existing file whose extension is in
+/// `allowed` (lowercase, no dot). The extension check is the cheap half of
+/// "this is media, not `/etc/passwd`" — it cannot prove a file's contents, but
+/// it removes the whole class of "point the reader at an arbitrary secret".
+pub fn checked_media_file(raw: &str, allowed: &[&str]) -> AppResult<()> {
+    match extension_lower(raw) {
+        Some(ext) if allowed.contains(&ext.as_str()) => {}
+        _ => {
+            return Err(AppError::Validation(format!(
+                "unsupported file type (expected one of {}): {raw}",
+                allowed.join(", ")
+            )))
+        }
+    }
+    checked_input_file(raw)
+}
+
+/// Validate a path that must resolve INSIDE `root` (the configured save
+/// folder). The target itself may not exist yet — a sidecar written beside a
+/// recording is the motivating case — but `..` is rejected and the deepest
+/// existing ancestor must canonicalise under the canonical `root`, so neither
+/// traversal nor a symlink can point the write outside.
+///
+/// A `root` that does not exist is a hard reject: nothing can be inside it, and
+/// silently degrading to "allow" would turn a first-run misconfiguration into an
+/// open door.
+pub fn checked_under_root(raw: &str, root: &Path) -> AppResult<()> {
+    let path = require_absolute(raw)?;
+    reject_traversal(path, raw)?;
+    let canonical_root = root.canonicalize().map_err(|e| {
+        AppError::Validation(format!(
+            "cannot resolve the save folder {}: {e}",
+            root.display()
+        ))
+    })?;
+    let canonical = deepest_existing_canonical(path, raw)?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(AppError::Validation(format!(
+            "path is outside the save folder ({}): {raw}",
+            canonical_root.display()
+        )));
+    }
     deny_sensitive(&canonical)
+}
+
+/// Which rule a command's path parameter is held to. Every guarded command
+/// names one in its doc-comment so the policy is reviewable without reading the
+/// body — see the table in the module docs for the reasoning behind each.
+#[derive(Debug, Clone, Copy)]
+pub enum PathPolicy<'a> {
+    /// An existing file the user picked in a native OPEN dialog.
+    UserChosenRead,
+    /// A destination the user picked in a native SAVE dialog (may not exist).
+    UserChosenWrite,
+    /// An existing file whose extension must be in the allowlist.
+    ReadOnlyMedia(&'a [&'a str]),
+    /// Must resolve inside the configured save folder.
+    RecordingsRooted(&'a Path),
+}
+
+/// Apply a [`PathPolicy`] to `raw`.
+pub fn check(raw: &str, policy: PathPolicy<'_>) -> AppResult<()> {
+    match policy {
+        PathPolicy::UserChosenRead => checked_input_file(raw),
+        PathPolicy::UserChosenWrite => checked_path(raw),
+        PathPolicy::ReadOnlyMedia(allowed) => checked_media_file(raw, allowed),
+        PathPolicy::RecordingsRooted(root) => checked_under_root(raw, root),
+    }
+}
+
+/// Containers the recorder writes and the editor opens. Used as the
+/// [`PathPolicy::ReadOnlyMedia`] allowlist wherever a *recording* is handed to
+/// another process (whisper, a sister app's deep link).
+pub const MEDIA_EXTENSIONS: &[&str] = &[
+    "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "aiff", "aif", "caf", "mp4", "mov", "mkv",
+    "m4v", "webm", "avi",
+];
+
+/// Subtitle formats [`sundayrec_core::integrations::sundayedit::subtitles_to_transcript`]
+/// can actually parse (SubRip + WebVTT). Anything else is not a caption file, so
+/// the importer must never be pointed at it.
+pub const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "vtt"];
+
+/// The effective recordings root: the configured `save_folder`, or the default
+/// `<Documents>/SundayRec`. Mirrors `scheduler::resolve_save_folder` — the
+/// folder the recorder actually writes into — so a root-scoped guard and the
+/// recorder can never disagree about where recordings live.
+pub async fn recordings_root<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    db: &crate::db::Db,
+) -> PathBuf {
+    use tauri::Manager;
+    let settings = crate::settings::load(&db.pool).await.unwrap_or_default();
+    if let Some(f) = settings.save_folder.as_deref() {
+        if !f.trim().is_empty() {
+            return PathBuf::from(f);
+        }
+    }
+    let base = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .unwrap_or_else(|_| PathBuf::from("."));
+    base.join("SundayRec")
 }
 
 #[cfg(test)]
@@ -149,6 +298,119 @@ mod tests {
         assert_validation(checked_path(path.to_str().unwrap()));
     }
 
+    // ── E1.2: the extension allowlist ────────────────────────────────────────
+
+    #[test]
+    fn media_allowlist_accepts_a_recording_and_rejects_anything_else() {
+        let dir = std::env::temp_dir().join("sundayrec-path-guard-ext");
+        std::fs::create_dir_all(&dir).unwrap();
+        let media = dir.join("service.mp3");
+        std::fs::write(&media, b"x").unwrap();
+        checked_media_file(media.to_str().unwrap(), MEDIA_EXTENSIONS).unwrap();
+        // Case-insensitive: a camera writes .MOV.
+        let shouty = dir.join("service.MOV");
+        std::fs::write(&shouty, b"x").unwrap();
+        checked_media_file(shouty.to_str().unwrap(), MEDIA_EXTENSIONS).unwrap();
+
+        // The whole point: an existing, readable, non-media file is refused
+        // BEFORE anything opens it.
+        let secret = dir.join("id_rsa");
+        std::fs::write(&secret, b"x").unwrap();
+        assert_validation(checked_media_file(
+            secret.to_str().unwrap(),
+            MEDIA_EXTENSIONS,
+        ));
+        let wrong = dir.join("notes.txt");
+        std::fs::write(&wrong, b"x").unwrap();
+        assert_validation(checked_media_file(
+            wrong.to_str().unwrap(),
+            MEDIA_EXTENSIONS,
+        ));
+    }
+
+    #[test]
+    fn subtitle_allowlist_is_srt_and_vtt_only() {
+        assert_eq!(SUBTITLE_EXTENSIONS, &["srt", "vtt"]);
+        let dir = std::env::temp_dir().join("sundayrec-path-guard-ext");
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = dir.join("transcript.json");
+        std::fs::write(&json, b"{}").unwrap();
+        assert_validation(checked_media_file(
+            json.to_str().unwrap(),
+            SUBTITLE_EXTENSIONS,
+        ));
+    }
+
+    // ── E1.2: root scoping ───────────────────────────────────────────────────
+
+    #[test]
+    fn under_root_accepts_inside_and_rejects_outside() {
+        let root = std::env::temp_dir().join("sundayrec-root-test/recordings");
+        std::fs::create_dir_all(&root).unwrap();
+        let inside = root.join("2026-08-06.mp3");
+        std::fs::write(&inside, b"x").unwrap();
+        checked_under_root(inside.to_str().unwrap(), &root).unwrap();
+        // A sidecar that does not exist yet is still inside.
+        let sidecar = root.join("nested/2026-08-06.transcript.json");
+        checked_under_root(sidecar.to_str().unwrap(), &root).unwrap();
+
+        // A sibling directory is not inside, even though it shares a prefix.
+        let sibling = std::env::temp_dir().join("sundayrec-root-test/recordings-evil/x.mp3");
+        std::fs::create_dir_all(sibling.parent().unwrap()).unwrap();
+        std::fs::write(&sibling, b"x").unwrap();
+        assert_validation(checked_under_root(sibling.to_str().unwrap(), &root));
+        // And neither is an absolute path somewhere else entirely.
+        assert_validation(checked_under_root("/etc/passwd", &root));
+    }
+
+    #[test]
+    fn under_root_rejects_traversal_and_relative_paths() {
+        let root = std::env::temp_dir().join("sundayrec-root-test/recordings");
+        std::fs::create_dir_all(&root).unwrap();
+        let escape = format!("{}/../../etc/passwd", root.to_str().unwrap());
+        assert_validation(checked_under_root(&escape, &root));
+        assert_validation(checked_under_root("relative.mp3", &root));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn under_root_rejects_a_symlink_that_escapes() {
+        // The case canonicalisation exists for: a link INSIDE the save folder
+        // whose target is not. A lexical prefix check would wave this through.
+        let root = std::env::temp_dir().join("sundayrec-root-symlink/recordings");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = std::env::temp_dir().join("sundayrec-root-symlink/outside.mp3");
+        std::fs::write(&outside, b"x").unwrap();
+        let link = root.join("innocent.mp3");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert_validation(checked_under_root(link.to_str().unwrap(), &root));
+    }
+
+    #[test]
+    fn a_missing_save_folder_fails_closed() {
+        // Degrading to "allow" on a first-run/unmounted save folder would turn a
+        // misconfiguration into an open door.
+        let root = std::env::temp_dir().join("sundayrec-root-that-does-not-exist");
+        let _ = std::fs::remove_dir_all(&root);
+        assert_validation(checked_under_root("/tmp/anything.mp3", &root));
+    }
+
+    #[test]
+    fn the_policy_dispatcher_matches_its_named_guard() {
+        let dir = std::env::temp_dir().join("sundayrec-policy-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("service.mp3");
+        std::fs::write(&file, b"x").unwrap();
+        let raw = file.to_str().unwrap();
+        check(raw, PathPolicy::UserChosenRead).unwrap();
+        check(raw, PathPolicy::UserChosenWrite).unwrap();
+        check(raw, PathPolicy::ReadOnlyMedia(MEDIA_EXTENSIONS)).unwrap();
+        check(raw, PathPolicy::RecordingsRooted(&dir)).unwrap();
+        assert_validation(check(raw, PathPolicy::ReadOnlyMedia(SUBTITLE_EXTENSIONS)));
+        assert_validation(check("relative.mp3", PathPolicy::UserChosenRead));
+    }
+
     #[test]
     fn sensitive_home_subpaths_are_denied() {
         let home = Path::new("/home/example");
@@ -159,5 +421,45 @@ mod tests {
         // Siblings that merely share a prefix are fine.
         deny_sensitive_under(&home.join(".sshfs/mount"), home).unwrap();
         deny_sensitive_under(&home.join("Recordings/service.mp3"), home).unwrap();
+    }
+
+    // ── E1.7: SENSITIVE_HOME_SUBPATHS ↔ tauri.conf.json deny list ──────────────
+
+    #[test]
+    fn every_sensitive_home_subpath_has_a_matching_asset_scope_deny_entry() {
+        // SENSITIVE_HOME_SUBPATHS (above) and tauri.conf.json's
+        // app.security.assetProtocol.scope.deny are kept in sync BY HAND — this
+        // is the tripwire. If it fails, add the missing entry to
+        // src-tauri/tauri.conf.json's assetProtocol.scope.deny (as
+        // "$HOME/<subpath>/**", or "$HOME/<subpath>" for a single file like
+        // .netrc) to match SENSITIVE_HOME_SUBPATHS in this file.
+        let conf_json = include_str!("../../tauri.conf.json");
+        let conf: serde_json::Value =
+            serde_json::from_str(conf_json).expect("tauri.conf.json must be valid JSON");
+        let deny = conf["app"]["security"]["assetProtocol"]["scope"]["deny"]
+            .as_array()
+            .expect("app.security.assetProtocol.scope.deny must be a JSON array");
+        // Normalize each entry the same way regardless of shape: drop the
+        // "$HOME/" prefix and an optional trailing "/**" glob, so
+        // "$HOME/.ssh/**" and "$HOME/.netrc" both compare against the bare
+        // ".ssh" / ".netrc" that SENSITIVE_HOME_SUBPATHS uses.
+        let deny_normalized: Vec<&str> = deny
+            .iter()
+            .map(|v| {
+                let s = v.as_str().expect("deny entries must be strings");
+                let s = s.strip_prefix("$HOME/").unwrap_or(s);
+                s.strip_suffix("/**").unwrap_or(s)
+            })
+            .collect();
+
+        for sub in SENSITIVE_HOME_SUBPATHS {
+            assert!(
+                deny_normalized.contains(sub),
+                "SENSITIVE_HOME_SUBPATHS (src-tauri/src/commands/path_guard.rs) \
+                 has {sub:?} but tauri.conf.json's \
+                 app.security.assetProtocol.scope.deny has no matching entry \
+                 — update src-tauri/tauri.conf.json to keep the two lists in sync"
+            );
+        }
     }
 }

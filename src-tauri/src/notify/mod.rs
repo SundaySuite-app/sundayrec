@@ -189,6 +189,7 @@ pub async fn dispatch_failure(app: &AppHandle, ctx: FailureCtx) {
         email_transport_ready: transport_ready,
         email_throttled: throttled,
         webhook_url: &settings.webhook_url,
+        webhook_allow_local: settings.webhook_allow_local,
     });
 
     tracing::info!(
@@ -212,7 +213,12 @@ pub async fn dispatch_failure(app: &AppHandle, ctx: FailureCtx) {
             message: ctx.message.clone(),
             timestamp: ctx.occurred_at.to_rfc3339(),
         };
-        post_webhook(&settings.webhook_url, &payload).await;
+        post_webhook(
+            &settings.webhook_url,
+            settings.webhook_allow_local,
+            &payload,
+        )
+        .await;
     }
 }
 
@@ -374,6 +380,7 @@ pub fn warn(app: &AppHandle, w: BackendWarning) {
         let plan = plan_warning(&WarningRouting {
             webhook_on_warning: settings.webhook_on_warning,
             webhook_url: &settings.webhook_url,
+            webhook_allow_local: settings.webhook_allow_local,
         });
         if !plan.webhook {
             return;
@@ -389,7 +396,12 @@ pub fn warn(app: &AppHandle, w: BackendWarning) {
                 .unwrap_or_else(|| format!("SundayRec: {}", w.code)),
             timestamp: chrono::Utc::now().to_rfc3339(),
         };
-        post_webhook(&settings.webhook_url, &payload).await;
+        post_webhook(
+            &settings.webhook_url,
+            settings.webhook_allow_local,
+            &payload,
+        )
+        .await;
     });
 }
 
@@ -411,14 +423,96 @@ pub(crate) fn emit_warning_event(app: &AppHandle, w: &BackendWarning) {
 //   The webhook side effect
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// How long the pre-flight DNS lookup may take. Short: it is a local resolver
+/// call, and a webhook that cannot be resolved in a second is not going to be
+/// POSTed successfully inside the 10 s budget either.
+const WEBHOOK_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Cap on how much of the webhook's RESPONSE we read. The body is discarded
+/// either way (nothing in SundayRec looks at it), so reading a gigabyte from a
+/// hostile or broken endpoint would be pure loss. 8 KB is plenty to have
+/// something quotable in the log if a 4xx ever needs debugging.
+const WEBHOOK_MAX_RESPONSE_BYTES: usize = 8 * 1024;
+
+/// Resolve `url`'s host and verify EVERY address it answers with is routable.
+///
+/// This is the second half of the E1.4 SSRF policy: the core gate judged the
+/// NAME (see `sundayrec_core::webhook::webhook_gate`), which cannot see where a
+/// name actually points. `hooks.evil.test` can resolve to `192.168.1.1`, and a
+/// DNS-rebinding host can answer "public" once and "private" a minute later —
+/// so this runs on EVERY send, not once at save time. At webhook cadence (a
+/// failure, not a frame) a resolver call costs nothing.
+///
+/// Fails CLOSED: a host that will not resolve is refused rather than handed to
+/// the HTTP client to resolve again on its own.
+async fn resolved_host_is_permitted(url: &str, allow_local: bool) -> Result<(), String> {
+    use sundayrec_core::webhook::{classify_ip, host_of};
+
+    let Some(host) = host_of(url) else {
+        return Err("no host in webhook URL".into());
+    };
+    if allow_local {
+        // The operator has said, for this address, "yes, that is my network".
+        // Re-checking would only re-derive a permission already granted.
+        return Ok(());
+    }
+    // A literal IP has no DNS step; the core gate already classified it exactly.
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return Ok(());
+    }
+    // Port 80 is arbitrary — `lookup_host` needs one and we only read addresses.
+    let lookup = tokio::time::timeout(
+        WEBHOOK_RESOLVE_TIMEOUT,
+        tokio::net::lookup_host((host.as_str(), 80u16)),
+    )
+    .await;
+    let addrs = match lookup {
+        Ok(Ok(iter)) => iter.collect::<Vec<_>>(),
+        Ok(Err(e)) => return Err(format!("cannot resolve {host}: {e}")),
+        Err(_) => return Err(format!("timed out resolving {host}")),
+    };
+    if addrs.is_empty() {
+        return Err(format!("{host} resolved to no addresses"));
+    }
+    // ALL of them must be public: a host that answers with one public and one
+    // private address is exactly the rebinding shape.
+    for addr in &addrs {
+        let class = classify_ip(addr.ip());
+        if class.is_local() {
+            return Err(format!(
+                "{host} resolves to a {} address ({}) — turn on «tillat lokalt nett» for this URL if that is intended",
+                class.as_str(),
+                addr.ip()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// POST `payload` to `url`. The body shaping (URL validation, Slack/Discord
-/// detection, structured-vs-chat choice) is the unit-tested
-/// [`sundayrec_core::webhook`]; this is only the socket. Bounded, and never
-/// propagates: a webhook that is down is not a reason for a failure alert to
-/// become two failures. NETWORK-UNVERIFIED.
-async fn post_webhook(url: &str, payload: &WebhookPayload) {
+/// detection, structured-vs-chat choice) and the SSRF classification are the
+/// unit-tested [`sundayrec_core::webhook`]; this is only the socket. Bounded,
+/// and never propagates: a webhook that is down is not a reason for a failure
+/// alert to become two failures. NETWORK-UNVERIFIED.
+///
+/// `allow_local` is `settings.webhook_allow_local` — the operator's explicit,
+/// per-URL confirmation that this address is a device on their own network.
+async fn post_webhook(url: &str, allow_local: bool, payload: &WebhookPayload) {
+    use sundayrec_core::webhook::webhook_gate;
+
+    // Belt: the routing matrix already consulted this gate, but the socket must
+    // not depend on a caller having done so.
+    if let Err(block) = webhook_gate(url, allow_local) {
+        tracing::warn!(reason = block.code(), "notify: webhook refused before send");
+        return;
+    }
+    // Braces: the name passed, but where does it POINT, right now?
+    if let Err(why) = resolved_host_is_permitted(url, allow_local).await {
+        tracing::warn!("notify: webhook refused after DNS: {why}");
+        return;
+    }
     let Some(body) = build_webhook_body(url, payload) else {
-        return; // invalid URL — the plan already filtered these, belt and braces
+        return; // invalid URL — the gate already filtered these, belt and braces
     };
     let result = reqwest::Client::new()
         .post(url)
@@ -428,9 +522,28 @@ async fn post_webhook(url: &str, payload: &WebhookPayload) {
         .send()
         .await;
     match result {
-        Ok(r) if r.status().is_success() => tracing::info!("notify: webhook delivered"),
-        Ok(r) => tracing::warn!("notify: webhook returned {}", r.status()),
+        Ok(r) if r.status().is_success() => {
+            drain_bounded(r).await;
+            tracing::info!("notify: webhook delivered");
+        }
+        Ok(r) => {
+            let status = r.status();
+            drain_bounded(r).await;
+            tracing::warn!("notify: webhook returned {status}");
+        }
         Err(e) => tracing::warn!("notify: webhook POST failed: {e}"),
+    }
+}
+
+/// Read at most [`WEBHOOK_MAX_RESPONSE_BYTES`] of the response and drop it. The
+/// connection is then closed rather than left for the endpoint to keep feeding.
+async fn drain_bounded(mut response: reqwest::Response) {
+    let mut read = 0usize;
+    while read < WEBHOOK_MAX_RESPONSE_BYTES {
+        match response.chunk().await {
+            Ok(Some(chunk)) => read += chunk.len(),
+            _ => break,
+        }
     }
 }
 
@@ -494,6 +607,61 @@ mod tests {
         // The alert has already gone out natively by the time this runs; a hung
         // chat server must not keep the failure path open behind it.
         assert!(WEBHOOK_TIMEOUT <= std::time::Duration::from_secs(15));
+        // E1.4: the DNS pre-check must be a small slice of that budget, and the
+        // discarded response body must be capped — nothing reads it.
+        assert!(WEBHOOK_RESOLVE_TIMEOUT < WEBHOOK_TIMEOUT);
+        const _: () = assert!(WEBHOOK_MAX_RESPONSE_BYTES <= 64 * 1024);
+    }
+
+    // ── E1.4: the resolved-IP half of the SSRF policy ────────────────────────
+
+    #[tokio::test]
+    async fn an_unresolvable_host_fails_closed() {
+        // `.invalid` is reserved by RFC 2606 and can never resolve. A host we
+        // cannot classify must be REFUSED, not handed to reqwest to resolve
+        // again on its own — that is what "fail closed" means here.
+        let err = resolved_host_is_permitted("https://nope.invalid/hook", false)
+            .await
+            .expect_err("an unresolvable host must be refused");
+        assert!(err.contains("nope.invalid"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_literal_private_ip_needs_no_dns_and_is_left_to_the_name_gate() {
+        // A literal has nothing to resolve; the core gate already classified it
+        // exactly, so this half must not double-refuse (or the error message
+        // would name DNS for a problem that has nothing to do with DNS).
+        resolved_host_is_permitted("http://192.168.1.5/hook", true)
+            .await
+            .expect("an allowed literal passes the DNS half");
+        // And the name gate is what refuses it without the opt-in.
+        assert!(sundayrec_core::webhook::webhook_gate("http://192.168.1.5/hook", false).is_err());
+    }
+
+    #[tokio::test]
+    async fn localhost_resolves_to_loopback_and_is_refused() {
+        // The one hostname every machine can resolve, and it must not pass.
+        let err = resolved_host_is_permitted("http://localhost:9000/hook", false)
+            .await
+            .expect_err("localhost must be refused without the opt-in");
+        assert!(err.contains("loopback"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn the_opt_in_short_circuits_the_dns_half() {
+        // Once the operator has granted this address, re-deriving the same
+        // permission from DNS would only add a failure mode.
+        resolved_host_is_permitted("http://localhost:9000/hook", true)
+            .await
+            .expect("an allowed LAN host is permitted");
+    }
+
+    #[test]
+    fn a_url_with_no_host_is_refused_before_dns() {
+        // `host_of` returning None must not silently mean "nothing to check".
+        let err = tauri::async_runtime::block_on(resolved_host_is_permitted("https://", false))
+            .expect_err("a hostless URL must be refused");
+        assert!(err.contains("no host"), "{err}");
     }
 
     /// A default (never-configured) settings row must never report a ready
@@ -519,6 +687,7 @@ mod tests {
             email_transport_ready: email_transport_ready(&settings, "vakt@kirka.no"),
             email_throttled: false,
             webhook_url: "",
+            webhook_allow_local: false,
         });
         assert!(!plan.email);
         assert!(plan.native, "the native leg survives every degradation");

@@ -206,7 +206,14 @@ pub fn run() {
         .manage(whisper::DownloadGuard::new())
         // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
         // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new());
+        .manage(whisper::TranscribeGuard::new())
+        // E1.1: inbound `sundayrec://captions` links that passed validation and
+        // are waiting for the operator to confirm. Nothing is written until a
+        // parked id comes back through `deeplink_confirm_captions`, so a page
+        // that fires the scheme cannot make us touch the disk on its own.
+        // Featureless on purpose: the same IPC surface exists with and without
+        // the `tray` feature (without it nothing ever parks).
+        .manage(commands::deeplink::PendingDeepLinks::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -534,6 +541,10 @@ pub fn run() {
             commands::integrations::integrations_plan_update_service,
             commands::integrations::integrations_sundayedit_send,
             commands::integrations::integrations_sundayedit_import,
+            // E1.1 — the ONLY route from an inbound `sundayrec://captions` deep
+            // link to a sidecar write. Rust validated + parked the request; this
+            // is the operator's answer.
+            commands::deeplink::deeplink_confirm_captions,
             // Bridge #2 — live cue → chapter mapping (renderer-driven).
             commands::bridge_live::live_bridge_status,
             commands::bridge_live::live_bridge_channel,

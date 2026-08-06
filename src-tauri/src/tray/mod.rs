@@ -165,63 +165,55 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, menu_id: &str) {
 /// caller can log it; performs the side effect (show window + emit) for the ones
 /// the backend owns. The OAuth-callback branch is surfaced for the cloud flow to
 /// validate via its existing core path (no replay state lives here). GUI-UNVERIFIED.
+///
+/// ## Admission control (E1.1)
+///
+/// A deep link is NOT a user action — any web page that can trigger a
+/// custom-scheme navigation reaches this function. Both arms therefore hand
+/// their paths to [`crate::commands::deeplink`] first:
+///   - **import** is validated (absolute, `..`-free, an existing media file,
+///     nothing protected) and then, and only then, offered to the renderer. It
+///     writes nothing, so validation is the whole gate.
+///   - **captions** used to `fs::write` a `<recording>.transcript.json` for
+///     whatever path the URL named. It is now VALIDATED (the recording must
+///     resolve inside the configured save folder), PARKED under a single-use id,
+///     and only written after the renderer confirms via
+///     `deeplink_confirm_captions`. Nothing here touches the filesystem.
 pub fn dispatch_deep_link<R: Runtime>(app: &AppHandle<R>, url: &str) -> Option<DeepLinkAction> {
+    use crate::commands::deeplink;
+
     let action = parse_deep_link(url)?;
     match &action {
         DeepLinkAction::Import { path, return_to } => {
-            // Bring the window forward and hand the import to the renderer.
+            // Bring the window forward and hand the import to the renderer —
+            // but only once the path has passed the media guard.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.set_focus();
             }
-            let _ = app.emit(
-                DEEP_LINK_IMPORT_EVENT,
-                serde_json::json!({ "path": path, "returnTo": return_to }),
-            );
+            let payload = match deeplink::validate_import_request(path) {
+                Ok(path) => serde_json::json!({ "path": path, "returnTo": return_to }),
+                Err(reject) => {
+                    tracing::warn!(code = reject.code(), "deeplink: refused an import hand-off");
+                    serde_json::json!({ "error": reject.code() })
+                }
+            };
+            let _ = app.emit(DEEP_LINK_IMPORT_EVENT, payload);
         }
         DeepLinkAction::Captions { path, recording } => {
-            // SundayEdit finished captioning and handed the SRT back. When it
-            // told us which recording the captions belong to, apply them right
-            // now via the same importer the manual flow uses — this closes the
-            // Rec → Edit → Rec round-trip with no further clicks. Without a
-            // recording path we can't know which sidecar to write, so we surface
-            // it to the renderer to resolve.
+            // SundayEdit finished captioning and handed the SRT back. Resolving
+            // the save folder is an async settings read, so the validate/park/
+            // emit runs on the runtime; this handler stays non-blocking and the
+            // OS scheme callback returns immediately.
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.set_focus();
             }
-            let payload = match recording {
-                Some(rec) => {
-                    let result = crate::commands::integrations::integrations_sundayedit_import(
-                        rec.clone(),
-                        path.clone(),
-                        None,
-                    );
-                    match result {
-                        Ok(op) if op.ok => serde_json::json!({
-                            "ok": true,
-                            "recording": rec,
-                            "transcriptPath": op.transcript_path,
-                        }),
-                        Ok(op) => serde_json::json!({
-                            "ok": false,
-                            "recording": rec,
-                            "error": op.error,
-                        }),
-                        Err(e) => serde_json::json!({
-                            "ok": false,
-                            "recording": rec,
-                            "error": e.to_string(),
-                        }),
-                    }
-                }
-                None => serde_json::json!({
-                    "ok": false,
-                    "path": path,
-                    "error": "missing_recording",
-                }),
-            };
-            let _ = app.emit(DEEP_LINK_CAPTIONS_EVENT, payload);
+            let handle = app.clone();
+            let (path, recording) = (path.clone(), recording.clone());
+            tauri::async_runtime::spawn(async move {
+                deeplink::offer_captions(&handle, DEEP_LINK_CAPTIONS_EVENT, recording, path).await;
+            });
         }
         DeepLinkAction::OAuthCallback { .. } | DeepLinkAction::Unknown { .. } => {
             // OAuth-via-scheme is delivered to the cloud flow elsewhere; Unknown

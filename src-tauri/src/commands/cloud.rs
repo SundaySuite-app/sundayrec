@@ -105,13 +105,32 @@ pub async fn cloud_queue_status(db: State<'_, Db>) -> AppResult<Vec<QueueEntryVi
 
 /// Queue a recording file for backup (dedupes by service + path). Returns the
 /// affected entry's id.
+///
+/// **Path policy: [`PathPolicy::RecordingsRooted`]** over the effective save
+/// folder — the strictest rule in the table, and the one command that most
+/// deserves it: whatever lands in this queue is later READ AND UPLOADED to
+/// Google Drive by the background worker. An unguarded `file_path` was an
+/// exfiltration primitive, not merely an arbitrary read. Cloud backup exists to
+/// copy this church's recordings off the machine, and recordings live in the
+/// save folder, so rooting costs no legitimate flow.
+///
+/// RIG NOTE: a recording made BEFORE the operator repointed `saveFolder` is no
+/// longer under the current root and can no longer be queued. That is the
+/// intended trade (the alternative is "upload anything the renderer names"); if
+/// the rig hits it, the fix is to move the file, not to widen the policy.
 #[tauri::command]
 pub async fn cloud_enqueue_backup(
+    app: AppHandle,
     db: State<'_, Db>,
     service: CloudService,
     file_path: String,
     entry_timestamp: Option<i64>,
 ) -> AppResult<String> {
+    let root = crate::commands::path_guard::recordings_root(&app, &db).await;
+    crate::commands::path_guard::check(
+        &file_path,
+        crate::commands::path_guard::PathPolicy::RecordingsRooted(&root),
+    )?;
     cloud::enqueue_backup(&db.pool, service, file_path, entry_timestamp).await
 }
 

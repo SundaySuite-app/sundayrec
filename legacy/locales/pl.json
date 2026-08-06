@@ -954,7 +954,12 @@
     "testEmailSent": "Testowy e-mail wysłany do {to}",
     "testEmailFailed": "Testowy e-mail nie dotarł: {err}",
     "testWebhookOk": "Webhook odpowiedział — powiadomienia dotrą.",
-    "testWebhookFailed": "Webhook nie odpowiedział. Sprawdź adres."
+    "testWebhookFailed": "Webhook nie odpowiedział. Sprawdź adres.",
+    "errWebhookHttp": "Użyj https:// dla adresów w internecie. http:// jest dozwolone tylko dla sprzętu w Twojej własnej sieci.",
+    "webhookLocalTitle": "Ten adres znajduje się w Twojej sieci lokalnej",
+    "webhookLocalBody": "SundayRec będzie wysyłać powiadomienia na {host}, który znajduje się w Twojej sieci, a nie w internecie. Zezwól na to tylko, jeśli wiesz, jaki sprzęt tam odpowiada.",
+    "webhookLocalAllow": "Tak, zezwól na sieć lokalną",
+    "webhookLocalDeny": "Anuluj"
   },
   "prep": {
     "sectionTitle": "Przygotowanie i przegląd",
@@ -1293,7 +1298,17 @@
     "captionsOk": "Odebrano napisy dla „{name}”.",
     "openEditor": "Otwórz w edytorze",
     "captionsNoRecording": "Odebrano napisy, ale bez wskazania, do którego nagrania należą. Otwórz nagranie w edytorze i zaimportuj tekst tam.",
-    "captionsFailed": "Nie udało się zapisać napisów: {err}"
+    "captionsFailed": "Nie udało się zapisać napisów: {err}",
+    "rejectedPath": "Napisy odrzucone: nie udało się zatwierdzić ścieżki pliku. Zaimportuj tekst z edytora.",
+    "rejectedType": "Napisy odrzucone: plik nie jest plikiem napisów (.srt ani .vtt).",
+    "rejectedOutside": "Napisy odrzucone: nagranie znajduje się poza folderem nagrań. SundayRec zapisuje tylko obok własnych nagrań.",
+    "rejectedExpired": "Żądanie wygasło. Wyślij napisy ponownie z SundayEdit.",
+    "rejectedDeclined": "Napisy nie zostały dodane.",
+    "importRejected": "Nie udało się otworzyć pliku: SundayRec otwiera tylko pliki audio i wideo ze znanego folderu.",
+    "confirmCaptionsTitle": "Dodać napisy do „{name}”?",
+    "confirmCaptionsBody": "Inna aplikacja wysłała plik tekstowy „{file}”. Jeśli się zgodzisz, tekst zostanie zapisany obok nagrania.",
+    "confirmCaptionsAccept": "Tak, dodaj napisy",
+    "confirmCaptionsReject": "Nie, nic nie rób"
   },
   "progress": {
     "etaCalculating": "obliczanie …",

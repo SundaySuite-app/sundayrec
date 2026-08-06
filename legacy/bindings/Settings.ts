@@ -322,6 +322,18 @@ webhookUrl: string,
  */
 webhookOnWarning: boolean, 
 /**
+ * Per-URL opt-in for a webhook on the LOCAL network (E1.4).
+ *
+ * The webhook URL is fully user-controlled and its response is discarded —
+ * a blind SSRF unless something says no. The default policy blocks
+ * loopback/private/link-local addresses, but a church legitimately
+ * webhooks a LAN device (a booth control panel, a Home Assistant box that
+ * lights the "ON AIR" sign), so the settings UI asks out loud and sets this
+ * flag for the URL the operator confirmed. Re-typing a different address
+ * clears it — this is an opt-in for ONE address, not a mode.
+ */
+webhookAllowLocal: boolean, 
+/**
  * Send an email when a recording fails / a scheduled one is missed?
  */
 emailOnError: boolean, 

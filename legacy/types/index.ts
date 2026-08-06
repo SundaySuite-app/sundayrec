@@ -277,6 +277,12 @@ export interface Settings {
   webhookUrl?: string
   /** Also send the webhook on warnings (in addition to errors). Default false. */
   webhookOnWarn?: boolean
+  /** The operator confirmed that `webhookUrl` points at a device on their OWN
+   *  network (E1.4). The backend refuses loopback/private/link-local webhook
+   *  targets without it — the webhook URL is otherwise a blind SSRF. Set only by
+   *  the Varsler panel's confirmation, and cleared whenever the URL changes to a
+   *  public one. Rust: `Settings.webhook_allow_local`. */
+  webhookAllowLocal?: boolean
 
   // Video recording
   videoEnabled?: boolean

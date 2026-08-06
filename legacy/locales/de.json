@@ -954,7 +954,12 @@
     "testEmailSent": "Test-E-Mail an {to} gesendet",
     "testEmailFailed": "Die Test-E-Mail kam nicht durch: {err}",
     "testWebhookOk": "Der Webhook hat geantwortet — Meldungen kommen an.",
-    "testWebhookFailed": "Der Webhook hat nicht geantwortet. Prüfen Sie die Adresse."
+    "testWebhookFailed": "Der Webhook hat nicht geantwortet. Prüfen Sie die Adresse.",
+    "errWebhookHttp": "Verwenden Sie https:// für Adressen im Internet. http:// ist nur für Geräte in Ihrem eigenen Netzwerk zulässig.",
+    "webhookLocalTitle": "Diese Adresse liegt in Ihrem lokalen Netzwerk",
+    "webhookLocalBody": "SundayRec sendet Meldungen an {host} — das liegt in Ihrem eigenen Netzwerk, nicht im Internet. Erlauben Sie das nur, wenn Sie wissen, welches Gerät dort antwortet.",
+    "webhookLocalAllow": "Ja, lokales Netzwerk erlauben",
+    "webhookLocalDeny": "Abbrechen"
   },
   "prep": {
     "sectionTitle": "Vorbereitung und Überprüfung",
@@ -1293,7 +1298,17 @@
     "captionsOk": "Untertitel für „{name}“ empfangen.",
     "openEditor": "Im Editor öffnen",
     "captionsNoRecording": "Untertitel empfangen, aber ohne Angabe, zu welcher Aufnahme sie gehören. Öffnen Sie die Aufnahme im Editor und importieren Sie den Text dort.",
-    "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}"
+    "captionsFailed": "Untertitel konnten nicht gespeichert werden: {err}",
+    "rejectedPath": "Untertitel abgelehnt: Der Dateipfad konnte nicht freigegeben werden. Importieren Sie den Text stattdessen im Editor.",
+    "rejectedType": "Untertitel abgelehnt: Die Datei ist keine Untertiteldatei (.srt oder .vtt).",
+    "rejectedOutside": "Untertitel abgelehnt: Die Aufnahme liegt außerhalb Ihres Aufnahmeordners. SundayRec schreibt nur neben eigene Aufnahmen.",
+    "rejectedExpired": "Die Anfrage ist abgelaufen. Senden Sie die Untertitel erneut aus SundayEdit.",
+    "rejectedDeclined": "Die Untertitel wurden nicht hinzugefügt.",
+    "importRejected": "Die Datei konnte nicht geöffnet werden: SundayRec öffnet nur Audio- und Videodateien aus einem bekannten Ordner.",
+    "confirmCaptionsTitle": "Untertitel für „{name}“ hinzufügen?",
+    "confirmCaptionsBody": "Eine andere App hat die Textdatei „{file}“ gesendet. Wenn Sie zustimmen, wird der Text neben der Aufnahme gespeichert.",
+    "confirmCaptionsAccept": "Ja, Untertitel hinzufügen",
+    "confirmCaptionsReject": "Nein, nichts tun"
   },
   "progress": {
     "etaCalculating": "wird berechnet …",

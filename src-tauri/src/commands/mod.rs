@@ -13,6 +13,7 @@ pub mod calendar;
 pub mod cloud;
 pub mod companion;
 pub mod db;
+pub mod deeplink;
 pub mod diagnostics;
 pub mod editor;
 pub mod email;
@@ -21,6 +22,10 @@ pub mod integrations;
 pub mod media;
 pub mod ndi;
 pub mod path_guard;
+// E1.3 — a TEST-only module: the coverage ratchet that makes it impossible to
+// land a new path-taking command without classifying it as guarded or exempt.
+// Compiled out of every non-test build by its own inner `#![cfg(test)]`.
+mod path_ratchet;
 pub mod publish;
 pub mod recorder;
 pub mod review;
