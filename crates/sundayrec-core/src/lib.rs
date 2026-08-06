@@ -47,6 +47,7 @@
 //!   - [`ndi`]          — NDI source-discovery model + the pure loopback-TCP rawvideo input-arg builder (R3)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
+//!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 
 pub mod audio;
 pub mod audio_analysis;
@@ -89,6 +90,7 @@ pub mod selftest;
 pub mod settings;
 pub mod silence;
 pub mod streaming;
+pub mod telemetry;
 pub mod test_recording;
 pub mod timeouts;
 pub mod tray;
