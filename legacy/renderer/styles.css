@@ -754,6 +754,28 @@ select:focus:not(:focus-visible) {
 .history-more-panel a { color: var(--text3); text-decoration: none; transition: color .15s; }
 .history-more-panel a:hover { color: var(--red); }
 
+/* ── Papirkurv ─────────────────────────────────────────────────── */
+.trash-note {
+  font-size: 12px; color: var(--text3); margin: 0 0 12px; line-height: 1.5;
+}
+.trash-list { display: flex; flex-direction: column; gap: 6px; }
+.trash-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--rsm);
+}
+.trash-row-main { flex: 1; min-width: 180px; }
+.trash-row-name {
+  font-size: 13px; color: var(--text1); font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.trash-row-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.trash-row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.trash-empty {
+  padding: 18px; text-align: center; font-size: 13px; color: var(--text3);
+}
+
 /* ── History table ─────────────────────────────────────────────── */
 .rec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rec-table th {

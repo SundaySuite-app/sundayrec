@@ -2079,6 +2079,14 @@
         spellcheck="false"
       />
       <button class="btn-secondary btn-sm" id="btn-search-reindex" data-i18n="search.reindex">↻ Oppdater indeks</button>
+      <!-- Label + count are written from TS (history.ts), so it can say
+           «Papirkurv (3)» and stay hidden while the trash is empty. It lives up
+           here rather than in the table's own header because after «Slett
+           alle» the table is replaced by an empty state — and the way back to
+           the recordings you just deleted must not be inside the thing that
+           disappeared. -->
+      <a href="#" class="view-all" id="btn-trash-open" style="display:none"
+         title="Papirkurv" data-i18n-title="trash.open">Papirkurv</a>
     </div>
 
     <div id="search-index-status" class="search-index-status"></div>
@@ -2119,6 +2127,21 @@
         </tr></thead>
         <tbody id="history-tbody"></tbody>
       </table>
+    </div>
+
+    <!-- Papirkurv. Takes the place of the history table while it is open —
+         the search box above filters recordings, not trash, and leaving it
+         over a list it does not touch would be a small lie. -->
+    <div id="trash-view" class="trash-view" style="display:none">
+      <div class="section-header">
+        <h2 data-i18n="trash.title">Papirkurv</h2>
+        <div style="display:flex;gap:10px;align-items:center">
+          <a href="#" class="view-all" id="btn-trash-empty" data-i18n="trash.emptyAll">Tøm papirkurven</a>
+          <button class="btn-ghost btn-sm" id="btn-trash-close" data-i18n="trash.back">← Tilbake til historikken</button>
+        </div>
+      </div>
+      <p class="trash-note" data-i18n="trash.keepNote">Slettede opptak ligger her i 30 dager. Etter det forsvinner de for godt.</p>
+      <div id="trash-list" class="trash-list"></div>
     </div>
 
     <div id="search-empty" class="search-empty" style="display:none">

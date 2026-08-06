@@ -14,6 +14,8 @@ import { fmtDate, flashMsg } from '../helpers'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { confirmDialog } from '../ui/dialog'
 import { firstMount, resetMount } from '../ui/motion'
+import { toast } from '../ui/toast'
+import { TRASH_KEEP_DAYS, ageText, toTrashRows, type TrashEntry } from './trash-core'
 import {
   baseNoExt,
   filterRecordings,
@@ -73,9 +75,94 @@ export function applyHistoryView(rows: RecordingEntry[]): RecordingEntry[] {
 }
 
 /** Fetch the full history into the module cache. Rendering is driven by the
- *  caller (search-page's runSearch) so the active query survives a reload. */
+ *  caller (search-page's runSearch) so the active query survives a reload.
+ *
+ *  Trashed recordings are already gone from what `getHistory` returns — the
+ *  api-shim filters them there so Historikk, the unified search and the home
+ *  page's «Siste 5» can never disagree about whether a recording exists. */
 export async function loadHistory(): Promise<void> {
   fullHistory = ((await window.api.getHistory()) ?? []) as RecordingEntry[]
+  await refreshTrashButton()
+}
+
+// ── Papirkurv ───────────────────────────────────────────────────────────────
+//
+// Deleting a recording moves it — and its sidecars, and its video sibling — to
+// `<saveFolder>/.sundayrec-trash`, where it stays for 30 days. Nothing about
+// that is worth a modal: the whole point of a trash is that the decision is
+// cheap, so the row goes and a toast offers «Angre».
+//
+// A history row whose FILE is trashed keeps existing in the database (that is
+// what makes a restore give back the note, the duration and the cloud markers);
+// the shim hides it. A row whose file was already missing has nothing to
+// recover, so those rows are dropped outright — which is also the only way
+// «Slett alle» can actually empty the table.
+
+/** Re-run the active view. Captured from `setupHistoryTools` so the trash
+ *  actions can repaint the list after a restore. */
+let rerenderHistory: () => void = () => {}
+
+/** Whether the Papirkurv is the list currently on screen. */
+let trashViewOpen = false
+
+/** Repaint the history without letting it take the screen back from an open
+ *  papirkurv — `runSearch` unhides the table unconditionally, which is right
+ *  every other time it runs. */
+function repaintHistory(): void {
+  rerenderHistory()
+  if (trashViewOpen) showTrashView(true)
+}
+
+/**
+ * Trash the files of `rows`, and delete the history rows of any recording whose
+ * file was already gone. Returns the entries that can be restored.
+ */
+async function trashRows(rows: RecordingEntry[]): Promise<TrashEntry[]> {
+  const paths = rows.map(r => r.path).filter((p): p is string => !!p)
+  const moved = paths.length ? await window.api.trashMove(paths) : []
+  const movedPaths = new Set(moved.map(e => e.originalPath))
+  for (const r of rows) {
+    if (r.path && movedPaths.has(r.path)) continue
+    if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
+  }
+  return moved
+}
+
+/** Restore everything one delete produced, then repaint. */
+async function undoTrash(entries: TrashEntry[]): Promise<void> {
+  let failed = 0
+  for (const e of entries) {
+    try { await window.api.trashRestore(e.id) } catch { failed++ }
+  }
+  await loadHistory()
+  repaintHistory()
+  if (failed > 0) {
+    toast('warn', t('trash.undoFailed', 'Kunne ikke hente alt tilbake — se i papirkurven.'))
+  }
+}
+
+/** The «… er flyttet til papirkurven» toast, with its one-click undo. */
+function trashedToast(message: string, entries: TrashEntry[]): void {
+  toast('info', message, {
+    // Long enough to reconsider a mis-aimed click, short enough not to sit
+    // over the list you are working in.
+    durationMs: 9000,
+    action: entries.length
+      ? { label: t('trash.undo', 'Angre'), onClick: () => { void undoTrash(entries) } }
+      : undefined,
+  })
+}
+
+/** Show/hide the header's «Papirkurv (N)» link and keep its count honest. */
+async function refreshTrashButton(): Promise<void> {
+  const btn = document.getElementById('btn-trash-open')
+  if (!btn) return
+  let n = 0
+  try { n = (await window.api.trashList()).length } catch { n = 0 }
+  btn.textContent = `${t('trash.title', 'Papirkurv')} (${n})`
+  // An empty trash is not a place worth offering to visit.
+  btn.style.display = n > 0 ? '' : 'none'
+  if (n === 0) showTrashView(false)
 }
 
 export function updateHistoryStats(history: RecordingEntry[]): void {
@@ -200,41 +287,43 @@ export function renderHistoryRows(
 
     const aDel = document.createElement('a')
     aDel.href = '#'; aDel.className = 'hist-action hist-del'
-    aDel.title = t('history.deleteEntry', 'Slett oppføring')
+    aDel.title = t('trash.deleteEntry', 'Flytt til papirkurven')
     aDel.innerHTML = '<svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"/></svg>'
-    // Deleting used to happen on the first click, with no confirmation at all —
-    // one mis-aimed click on a 15-px icon and the entry was gone. It now asks,
-    // says exactly what is lost (the list entry, not the file), and locks the
-    // row's actions while the deletes are in flight so a double-click can't
-    // fire two rounds of IPC against a row that is already going away.
+    // Deleting used to happen on the first click with no confirmation, then
+    // behind a danger dialog that had to promise the file would survive —
+    // because all it removed was the list entry.
+    //
+    // It is a real delete now: the recording, its sidecars and its video
+    // sibling move to the papirkurv. That earns it the OPPOSITE treatment. A
+    // decision you can take back does not deserve a modal in the way, so there
+    // is no dialog — the row goes and a toast offers «Angre», which restores
+    // everything the click moved. The row's actions still lock while the move
+    // is in flight, so a double-click can't fire two rounds of IPC at a row
+    // that is already leaving.
     let deleting = false
     aDel.addEventListener('click', async e => {
       e.preventDefault()
       if (deleting) return
       const name = r.filename ?? t('history.thisRecording', 'dette opptaket')
-      const ok = await confirmDialog({
-        title:        t('dialog.deleteEntryTitle', 'Slett «{name}» fra listen?').replace('{name}', name),
-        message:      videoEntry
-          ? t('dialog.deleteEntryBodyPair', 'Både lyd- og videofilen beholdes på disken — det er bare de to oppføringene i listen som fjernes. Dette kan ikke angres.')
-          : t('dialog.deleteEntryBody', 'Selve opptaksfilen beholdes på disken — det er bare oppføringen i listen som fjernes. Dette kan ikke angres.'),
-        confirmLabel: t('dialog.delete', 'Slett'),
-        danger:       true,
-      })
-      if (!ok) return
       deleting = true
       tr.classList.add('hist-row-busy')
       tr.setAttribute('aria-busy', 'true')
+      let moved: TrashEntry[]
       try {
-        if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
-        if (videoEntry?.timestamp) await window.api.deleteHistoryEntry(videoEntry.timestamp)
+        moved = await trashRows(videoEntry ? [r, videoEntry] : [r])
       } catch (err) {
         deleting = false
         tr.classList.remove('hist-row-busy')
         tr.removeAttribute('aria-busy')
         flashMsg(aDel, t('history.deleteFailed', 'Kunne ikke slette'), true)
-        console.warn('[history] delete failed:', err)
+        console.warn('[history] trash failed:', err)
         return
       }
+      trashedToast(
+        t('trash.movedOne', '«{name}» ligger i papirkurven').replace('{name}', name),
+        moved,
+      )
+      void refreshTrashButton()
       const delIdx = fullHistory.findIndex(h => h.timestamp === r.timestamp)
       if (delIdx >= 0) fullHistory.splice(delIdx, 1)
       if (videoEntry?.timestamp) {
@@ -326,8 +415,10 @@ function fmtClock(sec: number): string {
  * stats refresh after a mutation without losing the current search query.
  */
 export function setupHistoryTools(rerender: () => void): void {
+  rerenderHistory = rerender
   setupSortHeaders(rerender)
   setupFilterChips(rerender)
+  setupTrashView(rerender)
 
   document.getElementById('btn-prune-history')?.addEventListener('click', async e => {
     e.preventDefault()
@@ -341,19 +432,27 @@ export function setupHistoryTools(rerender: () => void): void {
     e.preventDefault()
     // Name the count: "Slett hele historikken?" gives no sense of scale, and
     // the difference between losing 3 entries and losing 300 is the whole
-    // decision.
+    // decision. It still asks — one click that moves 300 recordings is worth a
+    // beat even when every one of them is recoverable — but it no longer has
+    // to promise the files survive, because now they genuinely do, in the
+    // papirkurv, for 30 days.
     const n = fullHistory.length
     if (!n) { flashMsg(document.getElementById('btn-clear-history'), t('history.clearNone', 'Listen er tom'), true); return }
     const ok = await confirmDialog({
       title:        t('history.confirmClearN', 'Slett alle {n} oppføringene?').replace('{n}', String(n)),
-      message:      t('dialog.clearHistoryBody', 'Selve opptaksfilene beholdes — det er bare listen over dem som slettes. Dette kan ikke angres.'),
+      message:      t('trash.clearHistoryBody', 'Opptakene flyttes til papirkurven, der de ligger i {d} dager før de slettes for godt.')
+        .replace('{d}', String(TRASH_KEEP_DAYS)),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
     if (!ok) return
-    await window.api.clearHistory()
-    fullHistory = []
+    const moved = await trashRows(fullHistory.slice())
+    await loadHistory()
     rerender()
+    trashedToast(
+      t('trash.movedN', '{n} opptak ligger i papirkurven').replace('{n}', String(moved.length)),
+      moved,
+    )
   })
 
   document.getElementById('btn-delete-errors')?.addEventListener('click', async e => {
@@ -367,16 +466,20 @@ export function setupHistoryTools(rerender: () => void): void {
       title:        errors.length === 1
         ? t('history.confirmDeleteErrorsOne', 'Slett 1 feiloppføring?')
         : t('history.confirmDeleteErrorsN', 'Slett {n} feiloppføringer?').replace('{n}', String(errors.length)),
-      message:      t('dialog.deleteErrorsBody', '{n} oppføringer med feil fjernes fra listen. Dette kan ikke angres.').replace('{n}', String(errors.length)),
+      message:      t('trash.deleteErrorsBody', '{n} oppføringer med feil fjernes. Filer som finnes flyttes til papirkurven.').replace('{n}', String(errors.length)),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
     if (!ok) return
-    for (const r of errors) {
-      if (r.timestamp) await window.api.deleteHistoryEntry(r.timestamp)
-    }
+    const moved = await trashRows(errors)
     await loadHistory()
     rerender()
+    if (moved.length) {
+      trashedToast(
+        t('trash.movedN', '{n} opptak ligger i papirkurven').replace('{n}', String(moved.length)),
+        moved,
+      )
+    }
   })
 
   document.getElementById('btn-history-more')?.addEventListener('click', () => {
@@ -386,6 +489,177 @@ export function setupHistoryTools(rerender: () => void): void {
     if (panel) panel.style.display = open ? 'none' : 'flex'
     btn?.setAttribute('aria-expanded', String(!open))
   })
+}
+
+// ── The Papirkurv view ──────────────────────────────────────────────────────
+//
+// Takes the place of the history table rather than sitting under it: the search
+// box above filters recordings, not trash, and a search field hovering over a
+// list it cannot touch is a small lie told on every visit.
+
+/** Which of the two lists «Søk & historikk» is currently showing.
+ *
+ *  The search FIELD goes with the history — it filters recordings, not trash,
+ *  and a search box hovering over a list it cannot touch is a small lie told on
+ *  every visit. The «Papirkurv» link beside it stays: it is the way back. */
+function showTrashView(on: boolean): void {
+  trashViewOpen = on
+  const trash   = document.getElementById('trash-view')
+  const history = document.getElementById('search-history-wrap')
+  const empty   = document.getElementById('search-empty')
+  const query   = document.getElementById('search-query')
+  const reindex = document.getElementById('btn-search-reindex')
+  const status  = document.getElementById('search-index-status')
+  if (trash)   trash.style.display   = on ? '' : 'none'
+  if (query)   query.style.display   = on ? 'none' : ''
+  if (reindex) reindex.style.display = on ? 'none' : ''
+  if (status && on) status.style.display = 'none'
+  // Only the OPEN direction hides the history: closing hands the decision back
+  // to `runSearch`, which knows whether the table or its empty state belongs on
+  // screen. Unhiding both here would show an empty table next to «Ingen opptak
+  // ennå».
+  if (on) {
+    if (history) history.style.display = 'none'
+    if (empty)   empty.style.display   = 'none'
+  }
+}
+
+function setupTrashView(rerender: () => void): void {
+  document.getElementById('btn-trash-open')?.addEventListener('click', e => {
+    e.preventDefault()
+    showTrashView(true)
+    void renderTrashList()
+  })
+  document.getElementById('btn-trash-close')?.addEventListener('click', e => {
+    e.preventDefault()
+    showTrashView(false)
+    rerender()
+  })
+  document.getElementById('btn-trash-empty')?.addEventListener('click', async e => {
+    e.preventDefault()
+    const n = (await window.api.trashList()).length
+    if (!n) { flashMsg(document.getElementById('btn-trash-empty'), t('trash.alreadyEmpty', 'Papirkurven er tom'), true); return }
+    // The one irreversible step in the whole design, and the only one that
+    // still gets a danger dialog.
+    const ok = await confirmDialog({
+      title:        t('trash.confirmEmptyN', 'Slett {n} opptak for godt?').replace('{n}', String(n)),
+      message:      t('trash.confirmEmptyBody', 'Filene slettes fra disken. Dette kan ikke angres.'),
+      confirmLabel: t('trash.deleteForever', 'Slett for godt'),
+      danger:       true,
+    })
+    if (!ok) return
+    await window.api.trashPurge([])
+    await loadHistory()
+    repaintHistory()
+    await renderTrashList()
+  })
+}
+
+/** Paint the trash list. Empty trash → back to the history, which is where the
+ *  user wanted to be anyway. */
+async function renderTrashList(): Promise<void> {
+  const list = document.getElementById('trash-list')
+  if (!list) return
+  let entries: TrashEntry[] = []
+  try { entries = await window.api.trashList() } catch { entries = [] }
+  const rows = toTrashRows(entries, Date.now())
+  list.innerHTML = ''
+
+  if (rows.length === 0) {
+    const empty = Object.assign(document.createElement('div'), {
+      className: 'trash-empty',
+      textContent: t('trash.empty', 'Papirkurven er tom.'),
+    })
+    list.appendChild(empty)
+    // Emptying the last entry closes the view (`refreshTrashButton`), so the
+    // history has to be told to come back — nothing else will put it there.
+    await refreshTrashButton()
+    rerenderHistory()
+    return
+  }
+
+  const words = {
+    today:     t('trash.today', 'i dag'),
+    yesterday: t('trash.yesterday', 'i går'),
+    daysAgo:   t('trash.daysAgo', '{n} dager siden'),
+  }
+
+  for (const row of rows) {
+    const el = document.createElement('div')
+    el.className = 'trash-row'
+
+    const main = document.createElement('div')
+    main.className = 'trash-row-main'
+    const name = Object.assign(document.createElement('div'), {
+      className: 'trash-row-name',
+      textContent: row.name,
+    })
+    name.title = row.originalPath
+    const meta = document.createElement('div')
+    meta.className = 'trash-row-meta'
+    const parts = [
+      `${t('trash.deletedAt', 'Slettet')} ${ageText(row.ageDays, words)}`,
+      row.daysLeft > 0
+        ? t('trash.daysLeft', '{n} dager igjen').replace('{n}', String(row.daysLeft))
+        : t('trash.dueNow', 'slettes ved neste opprydding'),
+    ]
+    // Say that the companions travelled: a restore that silently also brings
+    // back nine JSON files is fine, but it should not be a surprise.
+    if (row.relatedCount > 0) {
+      parts.push(t('trash.related', '+ {n} tilhørende filer').replace('{n}', String(row.relatedCount)))
+    }
+    meta.textContent = parts.join(' · ')
+    main.appendChild(name)
+    main.appendChild(meta)
+
+    const actions = document.createElement('div')
+    actions.className = 'trash-row-actions'
+
+    const restore = Object.assign(document.createElement('button'), {
+      className: 'btn-secondary btn-sm',
+      textContent: t('trash.restore', 'Gjenopprett'),
+      type: 'button',
+    })
+    restore.addEventListener('click', async () => {
+      restore.disabled = true
+      try {
+        await window.api.trashRestore(row.id)
+      } catch (err) {
+        restore.disabled = false
+        flashMsg(restore, t('trash.restoreFailed', 'Kunne ikke gjenopprette'), true)
+        console.warn('[trash] restore failed:', err)
+        return
+      }
+      await loadHistory()
+      repaintHistory()
+      await renderTrashList()
+    })
+
+    const forever = Object.assign(document.createElement('button'), {
+      className: 'btn-ghost btn-sm',
+      textContent: t('trash.deleteForever', 'Slett for godt'),
+      type: 'button',
+    })
+    forever.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title:        t('trash.confirmPurgeOne', 'Slett «{name}» for godt?').replace('{name}', row.name),
+        message:      t('trash.confirmEmptyBody', 'Filene slettes fra disken. Dette kan ikke angres.'),
+        confirmLabel: t('trash.deleteForever', 'Slett for godt'),
+        danger:       true,
+      })
+      if (!ok) return
+      await window.api.trashPurge([row.id])
+      await loadHistory()
+      repaintHistory()
+      await renderTrashList()
+    })
+
+    actions.appendChild(restore)
+    actions.appendChild(forever)
+    el.appendChild(main)
+    el.appendChild(actions)
+    list.appendChild(el)
+  }
 }
 
 // ── Sorting ─────────────────────────────────────────────────────────────────

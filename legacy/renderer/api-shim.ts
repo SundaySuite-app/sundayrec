@@ -33,6 +33,7 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { navigateTo } from "./ui/navigate";
+import type { TrashEntry } from "../bindings/TrashEntry";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -733,11 +734,31 @@ const api: Record<string, unknown> = {
   },
 
   // ── History (recordings_list → RecordingEntry[]) ─────────────────────────
+  //
+  // A trashed recording keeps its history row on purpose (see
+  // `src-tauri/src/trash/mod.rs`: the row is what makes a restore give back the
+  // note, duration and cloud markers). Filtering it out HERE — rather than in
+  // one of the three renderer consumers — is what keeps Historikk, the unified
+  // search and the home page's «Siste 5» from disagreeing about whether a
+  // recording exists.
   getHistory: async () => {
     historyIdByTs.clear();
     const rows = await call<RecordingRow[]>("recordings_list", undefined, []);
-    return rows.map(rowToEntry);
+    const trashed = new Set(
+      (await call<TrashEntry[]>("trash_list", undefined, [])).map((e) => e.originalPath),
+    );
+    return rows.filter((r) => !trashed.has(r.file_path)).map(rowToEntry);
   },
+
+  // ── Papirkurv ────────────────────────────────────────────────────────────
+  // These deliberately do NOT swallow their errors into a fallback: a delete
+  // that reports success while the file is still there, or an «Angre» that
+  // quietly does nothing, is worse than an error message.
+  trashMove: async (paths: string[]) =>
+    invoke<TrashEntry[]>("trash_move", { paths }),
+  trashList: async () => call<TrashEntry[]>("trash_list", undefined, []),
+  trashRestore: async (id: string) => invoke<TrashEntry>("trash_restore", { id }),
+  trashPurge: async (ids: string[]) => invoke<number>("trash_purge", { ids }),
   deleteHistoryEntry: async (ts: number) => {
     const id = historyIdByTs.get(ts);
     if (!id) return false;

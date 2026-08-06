@@ -3,6 +3,7 @@ import { settings, updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
 import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
 import type { ThumbnailView } from '../bindings/ThumbnailView'
+import type { TrashEntry } from '../bindings/TrashEntry'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
@@ -71,6 +72,15 @@ declare global {
       deleteHistoryEntry:  (ts: number) => Promise<void>
       clearHistory:        () => Promise<void>
       pruneHistory:        () => Promise<number>
+      /** Move recordings (with sidecars + video sibling) into the papirkurv.
+       *  Rejects rather than reporting a delete that did not happen. */
+      trashMove:           (paths: string[]) => Promise<TrashEntry[]>
+      /** Everything currently recoverable, newest first. */
+      trashList:           () => Promise<TrashEntry[]>
+      /** Put one entry back where it came from. */
+      trashRestore:        (id: string) => Promise<TrashEntry>
+      /** Destroy entries permanently — an empty list empties the papirkurv. */
+      trashPurge:          (ids: string[]) => Promise<number>
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
