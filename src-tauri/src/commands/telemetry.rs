@@ -27,7 +27,8 @@
 use tauri::State;
 
 use sundayrec_core::telemetry::consent::TelemetryConsent;
-use sundayrec_core::telemetry::CounterName;
+use sundayrec_core::telemetry::queue::TelemetryQueueStatus;
+use sundayrec_core::telemetry::{CounterName, TelemetryPreview};
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -82,6 +83,35 @@ pub fn telemetry_count(name: String) -> AppResult<()> {
     })?;
     telemetry::counters::count(counter);
     Ok(())
+}
+
+/// "Vis hva som sendes" — the exact payload, as pretty JSON.
+///
+/// The transparency affordance the privacy text promises, and it must be the
+/// REAL payload through the REAL builder: a mock here would be a promise about
+/// code that never runs, which is worse than showing nothing. Read-only — it
+/// mints no install id, advances no watermark and spends no counter, so the user
+/// can open it as often as they like, before or after deciding.
+///
+/// See [`TelemetryPreview`] for why the answer differs with consent on and off,
+/// and what the UI must say about each.
+#[tauri::command]
+pub async fn telemetry_preview_payload(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+) -> AppResult<TelemetryPreview> {
+    telemetry::preview_payload(&app, &db.pool).await
+}
+
+/// What is waiting in the outbox: how many, how old the oldest is, and what
+/// went wrong last.
+///
+/// Exists so the settings panel can be specific instead of reassuring. "3
+/// rapporter venter, eldste fra i går, siste feil: no route to host" is a
+/// sentence a user can act on; a green tick that means nothing is not.
+#[tauri::command]
+pub async fn telemetry_queue_status(db: State<'_, Db>) -> AppResult<TelemetryQueueStatus> {
+    telemetry::queue_status(&db.pool).await
 }
 
 #[cfg(test)]

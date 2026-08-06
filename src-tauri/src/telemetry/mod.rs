@@ -53,8 +53,8 @@ use uuid::Uuid;
 use sundayrec_core::telemetry::consent::{
     evaluate, parse_record, ConsentRecord, TelemetryConsent, CONSENT_VERSION,
 };
-use sundayrec_core::telemetry::queue::{TelemetryEntry, TelemetryStatus};
-use sundayrec_core::telemetry::{TelemetryPayload, TELEMETRY_SCHEMA};
+use sundayrec_core::telemetry::queue::{TelemetryEntry, TelemetryQueueStatus, TelemetryStatus};
+use sundayrec_core::telemetry::{TelemetryPayload, TelemetryPreview, TELEMETRY_SCHEMA};
 
 use crate::db::store;
 use crate::error::AppResult;
@@ -293,6 +293,68 @@ async fn enqueue(pool: &SqlitePool, p: &TelemetryPayload, now_ms: i64) -> AppRes
         status: TelemetryStatus::Pending,
     };
     queue_store::insert_capped(pool, &entry).await
+}
+
+// ── Transparency ────────────────────────────────────────────────────────────
+
+/// Build the preview the settings UI shows for "vis hva som sendes".
+///
+/// The REAL payload, through the REAL builder — a mock would be worse than no
+/// preview at all, because it would be a promise about code that never runs.
+/// Read-only: no install id is minted, no watermark advances, no counter is
+/// spent. Calling it a hundred times changes nothing.
+pub async fn preview_payload(app: &AppHandle, pool: &SqlitePool) -> AppResult<TelemetryPreview> {
+    let Ok(app_data_dir) = app.path().app_data_dir() else {
+        return Err(crate::error::AppError::Internal(
+            "fant ikke app-datamappen".into(),
+        ));
+    };
+    let version = app.package_info().version.to_string();
+    preview_payload_in(pool, &app_data_dir, &version).await
+}
+
+/// [`preview_payload`] without an `AppHandle`, so the behaviour is testable.
+pub async fn preview_payload_in(
+    pool: &SqlitePool,
+    app_data_dir: &std::path::Path,
+    app_version: &str,
+) -> AppResult<TelemetryPreview> {
+    let active = consent_active(pool).await;
+    // With consent on: exactly the next payload. With consent off there is no
+    // "next", so fall back to the whole local history — see `TelemetryPreview`
+    // for why that is the honest answer rather than an empty shell.
+    let since = if active {
+        payload::watermarks(pool).await?
+    } else {
+        payload::Watermarks::default()
+    };
+    let home = home_dir();
+    let ctx = payload::GatherContext {
+        app_data_dir,
+        app_version,
+        home: home.as_deref(),
+        now_ms: now_ms(),
+        consent_version: CONSENT_VERSION,
+        counters: counters::snapshot(),
+    };
+    // `install_id_if_any`, never `ensure_install_id`: a user who has not opted in
+    // must be able to read this page without it minting an identifier for them.
+    // They see the nil UUID, which is the truth — they do not have one yet.
+    let install_id = install_id_if_any(pool).await?;
+    let (built, _) = payload::build(pool, &ctx, since, install_id.as_deref()).await?;
+    Ok(TelemetryPreview {
+        json: serde_json::to_string_pretty(&built)?,
+        is_next_payload: active,
+        is_empty: built.is_empty(),
+    })
+}
+
+/// What is waiting in the outbox, for a settings panel that has to be honest
+/// about it.
+pub async fn queue_status(pool: &SqlitePool) -> AppResult<TelemetryQueueStatus> {
+    Ok(sundayrec_core::telemetry::queue::queue_status(
+        &queue_store::load_queue(pool).await?,
+    ))
 }
 
 /// Everything telemetry does at startup, in order.
@@ -766,6 +828,153 @@ mod tests {
             payload::watermarks(&pool).await.unwrap(),
             payload::Watermarks::default()
         );
+    }
+
+    // ── The transparency surfaces ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn the_preview_is_readable_before_consent_and_mints_nothing() {
+        // The whole point of the affordance: a user deciding whether to opt in
+        // must be able to SEE the answer first, and looking must not itself be
+        // an act of collection.
+        let (pool, dir, _g) = temp_pool().await;
+        write_crash(dir.path(), &minutes_ago(60), "en krasj");
+
+        let p = preview_payload_in(&pool, dir.path(), "0.10.0")
+            .await
+            .unwrap();
+        assert!(
+            !p.is_next_payload,
+            "with consent off there IS no next payload — the UI must be told so"
+        );
+        assert!(!p.is_empty, "…but the user still sees their own real data");
+        assert!(p.json.contains("en krasj"));
+        assert!(
+            p.json.contains("\"schema\": 1"),
+            "pretty-printed: {}",
+            p.json
+        );
+        assert!(
+            p.json.contains(sundayrec_core::telemetry::NIL_INSTALL_ID),
+            "no id exists yet, and the preview says so rather than making one"
+        );
+
+        // Nothing was created or advanced by looking.
+        assert_eq!(install_id_if_any(&pool).await.unwrap(), None);
+        assert!(queue_store::load_queue(&pool).await.unwrap().is_empty());
+        assert_eq!(
+            payload::watermarks(&pool).await.unwrap(),
+            payload::Watermarks::default()
+        );
+        // …and it is idempotent apart from `builtAt`, which is the clock and
+        // has to move.
+        let again = preview_payload_in(&pool, dir.path(), "0.10.0")
+            .await
+            .unwrap();
+        let (mut first, mut second): (serde_json::Value, serde_json::Value) = (
+            serde_json::from_str(&p.json).unwrap(),
+            serde_json::from_str(&again.json).unwrap(),
+        );
+        first["builtAt"] = serde_json::Value::Null;
+        second["builtAt"] = serde_json::Value::Null;
+        assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn with_consent_the_preview_is_literally_the_next_payload() {
+        let (pool, dir, _g) = temp_pool().await;
+        grant_reporting_from(&pool, 120).await;
+        write_crash(dir.path(), &minutes_ago(60), "en krasj");
+
+        let p = preview_payload_in(&pool, dir.path(), "0.10.0")
+            .await
+            .unwrap();
+        assert!(p.is_next_payload);
+        assert!(!p.is_empty);
+
+        // And it IS: draining now queues a payload with the same records.
+        assert!(drain_in(&pool, dir.path(), "0.10.0").await.unwrap());
+        let queued = &queue_store::load_queue(&pool).await.unwrap()[0];
+        let previewed: serde_json::Value = serde_json::from_str(&p.json).unwrap();
+        let sent: serde_json::Value = serde_json::from_str(&queued.payload_json).unwrap();
+        for field in ["crashes", "quality", "findings", "wakeFailures", "settings"] {
+            assert_eq!(previewed[field], sent[field], "{field} differs");
+        }
+
+        // Once drained there is nothing left to send, and the preview says so
+        // rather than repeating what already went.
+        let after = preview_payload_in(&pool, dir.path(), "0.10.0")
+            .await
+            .unwrap();
+        assert!(after.is_empty);
+        assert!(after.is_next_payload);
+    }
+
+    #[tokio::test]
+    async fn the_preview_never_carries_what_the_scope_excludes() {
+        // An end-to-end version of the core's type-level test: real settings on a
+        // real machine, through the real builder, out to the real JSON string the
+        // user is shown.
+        let (pool, dir, _g) = temp_pool().await;
+        crate::settings::save(
+            &pool,
+            sundayrec_core::settings::Settings {
+                device_name: Some("Kari sin Qu-5".into()),
+                save_folder: Some("/Users/kari/Menigheten/Opptak".into()),
+                church_name: "Nordstrand menighet".into(),
+                responsible_person: "Kari Nordmann".into(),
+                email_address: "kari@menighet.no".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        write_crash(
+            dir.path(),
+            &minutes_ago(30),
+            "kunne ikke åpne /Users/kari/Opptak/gudstjeneste.wav",
+        );
+
+        let p = preview_payload_in(&pool, dir.path(), "0.10.0")
+            .await
+            .unwrap();
+        for needle in [
+            "Kari",
+            "kari",
+            "Qu-5",
+            "Nordstrand",
+            "menighet",
+            "/Users/",
+            "Opptak",
+            "gudstjeneste.wav",
+            "@",
+        ] {
+            assert!(
+                !p.json.contains(needle),
+                "{needle:?} reached the preview:\n{}",
+                p.json
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_queue_status_is_specific_rather_than_reassuring() {
+        let (pool, dir, _g) = temp_pool().await;
+        assert_eq!(
+            queue_status(&pool).await.unwrap(),
+            TelemetryQueueStatus::default(),
+            "an untouched install reports an empty queue, not an error"
+        );
+
+        grant_reporting_from(&pool, 120).await;
+        write_crash(dir.path(), &minutes_ago(60), "en krasj");
+        drain_in(&pool, dir.path(), "0.10.0").await.unwrap();
+
+        let s = queue_status(&pool).await.unwrap();
+        assert_eq!(s.pending, 1);
+        assert_eq!(s.failed, 0);
+        assert!(s.oldest_at.is_some());
+        assert_eq!(s.last_error, None);
     }
 
     #[tokio::test]
