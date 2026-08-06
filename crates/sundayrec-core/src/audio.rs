@@ -168,6 +168,68 @@ pub struct VuLevels {
     pub rms_dbfs: Vec<f32>,
 }
 
+// ── Who owns the microphone ──────────────────────────────────────────────────
+
+/// The ONE-OWNER mat: which component holds the input device right now.
+///
+/// Every sample-loss incident this app has had traces back to two components
+/// opening the same device at once (the webview's `getUserMedia` next to the
+/// recorder, the pre-roll's capture next to the VU stream). There is exactly one
+/// owner at a time, and the precedence below is what decides it — modelled here
+/// so the rule is testable rather than spread across three command bodies.
+///
+/// Precedence, highest first:
+/// 1. [`MicOwner::Recorder`] — a take is running; nothing else may touch the
+///    device, and the live meters read `recording://levels` instead.
+/// 2. [`MicOwner::Preroll`] — the rolling buffer holds the device. The NATIVE
+///    buffer also emits `vu://levels` from the same stream, so it can serve the
+///    meters without a second owner.
+/// 3. [`MicOwner::Vu`] — a plain metering session.
+/// 4. [`MicOwner::Idle`] — nobody.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MicOwner {
+    Recorder,
+    Preroll,
+    Vu,
+    Idle,
+}
+
+/// Resolve the current owner from the three engine states.
+pub fn mic_owner(recording: bool, preroll_active: bool, vu_running: bool) -> MicOwner {
+    if recording {
+        MicOwner::Recorder
+    } else if preroll_active {
+        MicOwner::Preroll
+    } else if vu_running {
+        MicOwner::Vu
+    } else {
+        MicOwner::Idle
+    }
+}
+
+/// What `start_vu` must do, given who owns the microphone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VuStartAction {
+    /// Open a cpal metering stream (nobody else holds the device).
+    Open,
+    /// Do NOT open anything: the pre-roll buffer is already streaming
+    /// `vu://levels` from the device it holds. The caller answers with the
+    /// pre-roll's channel count and the meters read its packets.
+    AdoptPreroll,
+    /// Refuse: a recording owns the device outright.
+    Refuse,
+}
+
+/// The `start_vu` decision. `Open` is only ever returned when the device is free
+/// (or already held by a VU session, which `start` replaces stop-first).
+pub fn vu_start_action(owner: MicOwner) -> VuStartAction {
+    match owner {
+        MicOwner::Recorder => VuStartAction::Refuse,
+        MicOwner::Preroll => VuStartAction::AdoptPreroll,
+        MicOwner::Vu | MicOwner::Idle => VuStartAction::Open,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +339,56 @@ mod tests {
     #[test]
     fn meter_banks_channels_reports_size() {
         assert_eq!(MeterBanks::new(32).channels(), 32);
+    }
+
+    #[test]
+    fn recorder_outranks_everything() {
+        // A running take owns the device even if the other two think they do
+        // (a stale flag must never license a second opener).
+        assert_eq!(mic_owner(true, true, true), MicOwner::Recorder);
+        assert_eq!(mic_owner(true, false, false), MicOwner::Recorder);
+        assert_eq!(vu_start_action(MicOwner::Recorder), VuStartAction::Refuse);
+    }
+
+    #[test]
+    fn preroll_outranks_the_vu_and_is_adopted() {
+        assert_eq!(mic_owner(false, true, false), MicOwner::Preroll);
+        // Even with a VU session lingering, the pre-roll is the owner: its
+        // stream is the one emitting, and start_vu must not open a second.
+        assert_eq!(mic_owner(false, true, true), MicOwner::Preroll);
+        assert_eq!(
+            vu_start_action(MicOwner::Preroll),
+            VuStartAction::AdoptPreroll
+        );
+    }
+
+    #[test]
+    fn a_free_device_opens_a_vu_stream() {
+        assert_eq!(mic_owner(false, false, false), MicOwner::Idle);
+        assert_eq!(mic_owner(false, false, true), MicOwner::Vu);
+        // Re-starting over an existing VU session is the engine's own
+        // stop-first-then-start, so both map to Open.
+        assert_eq!(vu_start_action(MicOwner::Idle), VuStartAction::Open);
+        assert_eq!(vu_start_action(MicOwner::Vu), VuStartAction::Open);
+    }
+
+    #[test]
+    fn no_state_combination_opens_a_second_device() {
+        // Exhaustive: the only way to reach Open is with the recorder AND the
+        // pre-roll both idle. This is the invariant the whole engine rests on.
+        for recording in [false, true] {
+            for preroll in [false, true] {
+                for vu in [false, true] {
+                    let action = vu_start_action(mic_owner(recording, preroll, vu));
+                    if action == VuStartAction::Open {
+                        assert!(
+                            !recording && !preroll,
+                            "Open with recording={recording} preroll={preroll}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

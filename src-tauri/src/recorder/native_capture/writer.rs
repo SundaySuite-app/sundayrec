@@ -119,7 +119,7 @@ pub fn spawn_wav_writer(
 /// `write_all_at` is positional (pwrite) and never touches a cursor; on
 /// Windows `seek_write` moves THIS handle's file pointer, which is why the
 /// patch handle is separate from the `BufWriter`'s.
-fn patch_at(file: &File, offset: u64, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn patch_at(file: &File, offset: u64, bytes: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::FileExt;
@@ -139,8 +139,10 @@ fn patch_at(file: &File, offset: u64, bytes: &[u8]) -> std::io::Result<()> {
     }
 }
 
-/// Patch both RIFF size fields for `data_bytes` of payload.
-fn patch_sizes(patch: &File, data_bytes: u64) -> std::io::Result<()> {
+/// Patch both RIFF size fields for `data_bytes` of payload. Shared with the
+/// native pre-roll's rotating writer — one place where a growing capture WAV's
+/// header is made truthful.
+pub(crate) fn patch_sizes(patch: &File, data_bytes: u64) -> std::io::Result<()> {
     let (riff, data) = wav::size_fields(data_bytes);
     patch_at(patch, wav::RIFF_SIZE_OFFSET, &riff.to_le_bytes())?;
     patch_at(patch, wav::DATA_SIZE_OFFSET, &data.to_le_bytes())

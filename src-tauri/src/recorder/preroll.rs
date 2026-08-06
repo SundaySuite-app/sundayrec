@@ -86,8 +86,18 @@ pub struct PrerollSettings {
     /// mirror the main recorder (`Settings::resolved_sample_rate`) so the prepend
     /// concat is a clean `-c copy` — see `sundayrec_core::preroll`.
     pub sample_rate: Option<u32>,
-    /// Output channel count (1 = mono, 2 = stereo).
+    /// Output channel count (1 = mono, 2 = stereo). Derived from
+    /// [`Self::channel_mode`]; the ffmpeg engine addresses channels by count
+    /// (`-ac`), the native one by [`crate::audio::asio::build_route_plan`].
     pub channels: u8,
+    /// The recording's channel layout, for the native engine's route plan. The
+    /// buffer MUST write the same layout the capture will, or the harvested clip
+    /// is dropped by the concat's WAV-compatibility guard.
+    pub channel_mode: sundayrec_core::settings::ChannelMode,
+    /// Explicit input-channel picks (a digital mixer's L/R), mirroring the
+    /// recording's own `RecordingOpts`.
+    pub input_channel_l: Option<i32>,
+    pub input_channel_r: Option<i32>,
 }
 
 /// A harvested, trimmed pre-roll clip ready to prepend to a recording.
@@ -444,7 +454,7 @@ async fn capture_loop(
 /// looked identical, and the dead one looked like "pre-roll is switched off".
 /// `reason` distinguishes the two give-up paths for the log/webhook without
 /// needing two locale strings.
-fn warn_preroll_dead(app: &tauri::AppHandle, reason: &str, msg: &str) {
+pub(crate) fn warn_preroll_dead(app: &tauri::AppHandle, reason: &str, msg: &str) {
     crate::notify::warn(
         app,
         BackendWarning::warn(sundayrec_core::notify::code::PREROLL_DEAD)
@@ -471,7 +481,7 @@ fn device_token(d: &FfmpegDevice) -> String {
 /// Sleep `delay_ms`, but bail early (returning `false`) if the loop was
 /// deactivated while sleeping. Returns `true` if the full delay elapsed and the
 /// loop should continue.
-async fn sleep_while_active(active: &Arc<AtomicBool>, delay_ms: u64) -> bool {
+pub(crate) async fn sleep_while_active(active: &Arc<AtomicBool>, delay_ms: u64) -> bool {
     // Poll the flag in small slices so a stop during a long back-off is prompt.
     let mut remaining = delay_ms;
     while remaining > 0 {
@@ -567,6 +577,11 @@ pub fn preroll_settings_from(
         // native recording at the `-c copy` join (NEEDS-RICHARD §settings-sync).
         sample_rate: settings.resolved_sample_rate(),
         channels,
+        // The native engine routes channels itself, so it needs the SAME layout
+        // inputs the recording's `RecordingOpts` carry.
+        channel_mode: settings.channels,
+        input_channel_l: settings.input_channel_l,
+        input_channel_r: settings.input_channel_r,
     })
 }
 

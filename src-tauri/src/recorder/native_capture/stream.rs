@@ -252,6 +252,21 @@ pub enum StreamSink {
         prod: HeapProd<f32>,
         overrun: Arc<AtomicU64>,
     },
+    /// Pre-roll: route the chosen channels into the ring exactly like
+    /// [`StreamSink::Capture`], but meter the **native** frame (every input
+    /// channel) instead of the routed one.
+    ///
+    /// The native pre-roll buffer doubles as the `vu://levels` emitter while it
+    /// runs — it holds the device, so nothing else may open it — and the
+    /// channel grid needs one meter per REAL input channel (a Qu-5's 32), not
+    /// the one or two the recording routes. `meters` is therefore sized to the
+    /// stream's native channel count.
+    Preroll {
+        meters: Arc<MeterBanks>,
+        plan: Vec<ChannelRoute>,
+        prod: HeapProd<f32>,
+        overrun: Arc<AtomicU64>,
+    },
 }
 
 /// Build an input stream for sample type `T`: convert each sample to f32 via
@@ -286,34 +301,62 @@ where
                     prod,
                     overrun,
                 } => {
-                    scratch.clear();
-                    for frame in conv.chunks_exact(total) {
-                        route_frame(plan, frame, &mut scratch);
-                    }
+                    route_block(plan, &conv, total, &mut scratch);
+                    // Meter what LANDS IN THE FILE (parity with ffmpeg's
+                    // post-pan astats).
                     observe_levels(&scratch, plan.len(), meters);
-                    // FRAME-ALIGNED push: on overrun, drop whole frames only.
-                    // A partial frame in the ring would permanently swap the
-                    // L/R interleaving for the rest of the file.
-                    use ringbuf::traits::Observer;
-                    let out_ch = plan.len().max(1);
-                    let want = scratch.len();
-                    let fit = prod.vacant_len();
-                    let take = if fit >= want {
-                        want
-                    } else {
-                        (fit / out_ch) * out_ch
-                    };
-                    let pushed = prod.push_slice(&scratch[..take]);
-                    debug_assert_eq!(pushed, take, "aligned push must fit fully");
-                    if take < want {
-                        overrun.fetch_add((want - take) as u64, Ordering::Relaxed);
-                    }
+                    push_routed(&scratch, plan.len(), prod, overrun);
+                }
+                StreamSink::Preroll {
+                    meters,
+                    plan,
+                    prod,
+                    overrun,
+                } => {
+                    // Meter the NATIVE frame: the pre-roll is the `vu://levels`
+                    // emitter while it runs and the grid draws every input
+                    // channel. Routing into the ring is identical to Capture.
+                    observe_levels(&conv, total, meters);
+                    route_block(plan, &conv, total, &mut scratch);
+                    push_routed(&scratch, plan.len(), prod, overrun);
                 }
             }
         },
         err_fn,
         None,
     )
+}
+
+/// Apply the route plan to a whole interleaved block, into `scratch` (cleared
+/// first). RT-safe once `scratch` has grown to the block size.
+#[inline]
+fn route_block(plan: &[ChannelRoute], conv: &[f32], total: usize, scratch: &mut Vec<f32>) {
+    scratch.clear();
+    for frame in conv.chunks_exact(total) {
+        route_frame(plan, frame, scratch);
+    }
+}
+
+/// FRAME-ALIGNED push into the ring: on overrun, drop whole frames only. A
+/// partial frame in the ring would permanently swap the L/R interleaving for the
+/// rest of the file. Never blocks — the dropped sample count is recorded in
+/// `overrun` and surfaces as the capture's xrun telemetry.
+#[inline]
+fn push_routed(scratch: &[f32], out_ch: usize, prod: &mut HeapProd<f32>, overrun: &AtomicU64) {
+    use ringbuf::traits::Observer;
+    let out_ch = out_ch.max(1);
+    let want = scratch.len();
+    let fit = prod.vacant_len();
+    let take = if fit >= want {
+        want
+    } else {
+        (fit / out_ch) * out_ch
+    };
+    let pushed = prod.push_slice(&scratch[..take]);
+    debug_assert_eq!(pushed, take, "aligned push must fit fully");
+    if take < want {
+        overrun.fetch_add((want - take) as u64, Ordering::Relaxed);
+    }
 }
 
 /// Build an input stream for ANY sample format, dispatching to the typed

@@ -44,6 +44,34 @@ pub const MIN_VALID_SEGMENT_BYTES: u64 = 4096;
 /// released and reacquired cleanly.
 pub const RESTART_GAP_MS: u64 = 200;
 
+/// Length (seconds) of ONE segment file in the NATIVE rolling buffer.
+///
+/// The native engine never restarts its capture — the device stays open for the
+/// whole buffer life and the WRITER rotates files instead. The segment length is
+/// therefore only a granularity knob: the retained window overshoots the request
+/// by at most one segment, and a rotation costs one file close + one file open.
+/// 15 s keeps that overshoot small (≤ 6 MB at 48 kHz stereo) while rotating only
+/// four times a minute.
+pub const PREROLL_NATIVE_SEGMENT_S: u32 = 15;
+
+/// How many rotating segment files must be retained to guarantee `window_s`
+/// seconds of audio are always available to harvest.
+///
+/// The NEWEST segment is partially written at any instant (it holds anywhere
+/// from 0 to `segment_s` seconds), so covering the window needs
+/// `ceil(window / segment)` FULL segments plus that partial one — hence the
+/// `+ 1`. With the defaults (90 s window, 15 s segments) that is 7 files.
+pub fn preroll_segments_to_retain(window_s: u32, segment_s: u32) -> usize {
+    let seg = segment_s.max(1);
+    window_s.div_ceil(seg) as usize + 1
+}
+
+/// How many of the OLDEST segments to delete after a rotation, given how many
+/// exist and how many to retain. Zero when the buffer has not filled yet.
+pub fn preroll_segments_to_drop(have: usize, retain: usize) -> usize {
+    have.saturating_sub(retain.max(1))
+}
+
 /// Decide how many milliseconds of the captured segment to keep when harvesting.
 ///
 /// Direct port of the Electron `harvest()` (`preroll.ts:116`):
@@ -466,6 +494,47 @@ mod tests {
         assert_eq!(preroll_restart_delay(1), 10_000);
         assert_eq!(preroll_restart_delay(2), 20_000);
         assert_eq!(preroll_restart_delay(3), 40_000);
+    }
+
+    #[test]
+    fn retain_covers_the_window_plus_the_partial_segment() {
+        // The production pair: a 90 s window in 15 s files → 6 full + 1 partial.
+        assert_eq!(
+            preroll_segments_to_retain(PREROLL_SEGMENT_CAP_S, PREROLL_NATIVE_SEGMENT_S),
+            7
+        );
+        // Exact division still needs the partial-segment slot.
+        assert_eq!(preroll_segments_to_retain(60, 15), 5);
+        // Non-exact rounds UP before the +1 (a 61 s window needs 5 full files).
+        assert_eq!(preroll_segments_to_retain(61, 15), 6);
+        // Degenerate inputs never panic or return 0.
+        assert_eq!(preroll_segments_to_retain(0, 15), 1);
+        assert_eq!(preroll_segments_to_retain(90, 0), 91);
+    }
+
+    #[test]
+    fn retained_window_always_covers_the_request() {
+        // The invariant that matters: (retain − 1) whole segments ≥ the window,
+        // so a harvest can always reach back the full requested distance.
+        for window in [1u32, 5, 15, 16, 30, 45, 60, 89, 90] {
+            let retain = preroll_segments_to_retain(window, PREROLL_NATIVE_SEGMENT_S);
+            let guaranteed = (retain as u32 - 1) * PREROLL_NATIVE_SEGMENT_S;
+            assert!(
+                guaranteed >= window,
+                "retain {retain} guarantees only {guaranteed}s for a {window}s window"
+            );
+        }
+    }
+
+    #[test]
+    fn drop_only_once_the_buffer_has_filled() {
+        assert_eq!(preroll_segments_to_drop(0, 7), 0);
+        assert_eq!(preroll_segments_to_drop(7, 7), 0);
+        assert_eq!(preroll_segments_to_drop(8, 7), 1);
+        // A long-running buffer that somehow fell behind drops the whole excess.
+        assert_eq!(preroll_segments_to_drop(20, 7), 13);
+        // A nonsense retain of 0 still keeps one file (the one being written).
+        assert_eq!(preroll_segments_to_drop(3, 0), 2);
     }
 
     #[test]

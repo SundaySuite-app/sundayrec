@@ -37,8 +37,49 @@ use crate::util::lock_recover;
 /// The Tauri event channel the renderer listens on for live VU snapshots.
 pub const VU_EVENT: &str = "vu://levels";
 
-/// How often the sampler reads the meters and emits a snapshot (~30 fps).
-const SAMPLE_INTERVAL: Duration = Duration::from_millis(33);
+/// How often a sampler reads the meters and emits a snapshot (~30 fps).
+///
+/// Shared with the native pre-roll buffer's sampler so the two emitters cannot
+/// drift into different cadences (the renderer's bars are tuned to this rate).
+pub const VU_SAMPLE_INTERVAL: Duration = Duration::from_millis(33);
+
+/// ## INVARIANT — exactly ONE `vu://levels` emitter at a time
+///
+/// Two sources can emit on this channel:
+///   1. [`VuEngine`] — its own cpal metering stream, and
+///   2. the native pre-roll buffer
+///      ([`crate::recorder::native_capture::preroll`]), which meters the device
+///      it already holds.
+///
+/// They must never run together: both would open the same input device, which
+/// is the second-owner pattern behind every sample-loss incident this app has
+/// had. The choreography that enforces it:
+///   - `preroll_start` stops the VU engine BEFORE opening the buffer;
+///   - `start_vu` asks [`sundayrec_core::audio::vu_start_action`] first and
+///     ADOPTS a running pre-roll (returns its channel count, opens nothing);
+///   - `start_recording` stops both before the capture engine opens the device.
+///
+/// Read one snapshot off `meters` and emit it. Returns `false` when the emit
+/// failed (window gone) so a sampler loop can decide whether to stop.
+pub fn emit_vu_levels(app: &AppHandle, meters: &MeterBanks) -> bool {
+    let channels = meters.channels();
+    let mut peak_dbfs = Vec::with_capacity(channels);
+    let mut rms_dbfs = Vec::with_capacity(channels);
+    for ch in 0..channels {
+        // `take_dbfs` reads AND resets the peak-hold; the two banks are
+        // independent (peak vs RMS since the last sample).
+        peak_dbfs.push(meters.peak.take_dbfs(ch));
+        rms_dbfs.push(meters.rms.take_dbfs(ch));
+    }
+    app.emit(
+        VU_EVENT,
+        VuLevels {
+            peak_dbfs,
+            rms_dbfs,
+        },
+    )
+    .is_ok()
+}
 
 /// A running VU session: the worker thread (owning the cpal stream) plus the
 /// stop flag that tells it to wind down.
@@ -52,11 +93,54 @@ struct VuSession {
 #[derive(Default)]
 pub struct VuEngine {
     session: Mutex<Option<VuSession>>,
+    /// A metering request the NATIVE PRE-ROLL is currently serving.
+    ///
+    /// When `start_vu` adopts a running pre-roll it opens no stream of its own,
+    /// so when that pre-roll later stops there would be nothing left emitting
+    /// and the meters would freeze with no way to notice. The adopted request is
+    /// remembered here; `preroll_stop` hands the device back by calling
+    /// [`VuEngine::resume_adopted`]. Cleared by any real start/stop.
+    adopted: Mutex<Option<Option<String>>>,
 }
 
 impl VuEngine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether a metering session is open RIGHT NOW (an owned cpal stream —
+    /// an adopted pre-roll is the pre-roll's ownership, not the VU's).
+    pub fn is_running(&self) -> bool {
+        lock_recover(&self.session).is_some()
+    }
+
+    /// Remember that a consumer asked for metering on `device_name` while the
+    /// pre-roll owned the device. Opens nothing.
+    pub fn adopt(&self, device_name: Option<String>) {
+        *lock_recover(&self.adopted) = Some(device_name);
+    }
+
+    /// Hand the device back to the meters after the pre-roll released it: start
+    /// a real session for the last adopted request, if there was one. Returns
+    /// the negotiated channel count when a session was started.
+    ///
+    /// Callers MUST have released the device first (the pre-roll's `stop` joins
+    /// its stream thread before returning), or this opens a second owner.
+    pub async fn resume_adopted(&self, app: AppHandle) -> Option<u16> {
+        let want = lock_recover(&self.adopted).take()?;
+        match self.start(app, want).await {
+            Ok(ch) => {
+                tracing::info!(
+                    channels = ch,
+                    "vu: resumed metering after pre-roll released"
+                );
+                Some(ch)
+            }
+            Err(e) => {
+                tracing::warn!("vu: could not resume metering after pre-roll: {e}");
+                None
+            }
+        }
     }
 
     /// Start metering the given input device (or the host default when `None`).
@@ -65,6 +149,8 @@ impl VuEngine {
     /// payload, which the renderer's channel grid sizes itself from.
     pub async fn start(&self, app: AppHandle, device_name: Option<String>) -> AppResult<u16> {
         self.stop();
+        // We are the emitter again — any pre-roll hand-back is now moot.
+        *lock_recover(&self.adopted) = None;
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_for_worker = Arc::clone(&stop);
@@ -105,7 +191,12 @@ impl VuEngine {
     }
 
     /// Stop the current session, if any. Safe to call when nothing is running.
+    ///
+    /// Also forgets an adopted pre-roll request: `stop_vu` means the meters are
+    /// gone, and `start_recording` means the device belongs to the take — in
+    /// neither case may a later `preroll_stop` re-open a stream nobody wants.
     pub fn stop(&self) {
+        *lock_recover(&self.adopted) = None;
         let session = lock_recover(&self.session).take();
         if let Some(session) = session {
             session.stop.store(true, Ordering::Release);
@@ -141,31 +232,13 @@ fn run_vu_worker(
     // We're live — unblock the caller with the negotiated channel count.
     let _ = ready_tx.send(Ok(meters.channels() as u16));
 
-    let channels = meters.channels();
     while !stop.load(Ordering::Acquire) {
-        let mut peak_dbfs = Vec::with_capacity(channels);
-        let mut rms_dbfs = Vec::with_capacity(channels);
-        for ch in 0..channels {
-            // `take_dbfs` reads peak; RMS is tracked in its own meter bank below.
-            peak_dbfs.push(meters.peak.take_dbfs(ch));
-            rms_dbfs.push(meters.rms.take_dbfs(ch));
-        }
-
-        // Emit failures (e.g. window closed) just end the loop quietly.
-        if app
-            .emit(
-                VU_EVENT,
-                VuLevels {
-                    peak_dbfs,
-                    rms_dbfs,
-                },
-            )
-            .is_err()
-        {
+        // Emit failures (e.g. window closed) just end the loop quietly. The
+        // pre-roll's sampler shares this emitter — see `emit_vu_levels`.
+        if !emit_vu_levels(&app, &meters) {
             break;
         }
-
-        std::thread::sleep(SAMPLE_INTERVAL);
+        std::thread::sleep(VU_SAMPLE_INTERVAL);
     }
 
     // Dropping `stream` here stops capture and releases the device.
