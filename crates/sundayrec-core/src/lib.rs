@@ -45,6 +45,7 @@
 //!   - [`streaming`]    — live RTMP multi-destination `tee` muxer arg-building + bitrate/keyframe options + stream-key validation (R3)
 //!   - [`overlay`]      — ffmpeg `filter_complex` generation for lower-thirds: image + drawtext, position/opacity (R3)
 //!   - [`ndi`]          — NDI source-discovery model + the pure loopback-TCP rawvideo input-arg builder (R3)
+//!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
 
 pub mod audio;
 pub mod audio_analysis;
@@ -63,6 +64,7 @@ pub mod feed;
 pub mod ffmpeg;
 pub mod filename;
 pub mod history;
+pub mod image_probe;
 pub mod integrations;
 pub mod levels;
 pub mod link;

@@ -1270,7 +1270,11 @@ mod tests {
         // No previous push → paint at once. A first progress line held back for a
         // second is a second of "0 kbps" on a stream that is already flowing.
         assert!(should_emit_stats(None, 0, STREAM_STATS_MIN_INTERVAL_MS));
-        assert!(should_emit_stats(None, 999_999, STREAM_STATS_MIN_INTERVAL_MS));
+        assert!(should_emit_stats(
+            None,
+            999_999,
+            STREAM_STATS_MIN_INTERVAL_MS
+        ));
     }
 
     #[test]
