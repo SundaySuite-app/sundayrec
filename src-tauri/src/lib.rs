@@ -73,6 +73,13 @@ pub mod settings;
 // per-destination keys from the keychain. `stream_start` returns
 // `feature_disabled` in the default build.
 pub mod streaming;
+// E2.2 observability — ONE supervisor for every long-lived background task. The
+// scheduler had this pattern inline and was the only task that did; extracting
+// it gave the cloud worker, the review-reminder tick and the trash sweep the
+// same self-healing, and gave every restart a record. Session-scoped tasks
+// (recorder/streaming/preview supervisors, the low-disk poller) deliberately
+// stay bare — see the module docs for why restarting them would be WRONG.
+pub mod supervise;
 pub mod test_recording;
 // PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
 // `default` and both release builds (install failure only logs a warning). The

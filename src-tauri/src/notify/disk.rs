@@ -68,7 +68,15 @@ pub fn wire(app: &AppHandle) {
         }
         let app = handle.clone();
         let (a, w, r) = (Arc::clone(&a), Arc::clone(&w), Arc::clone(&r));
-        tauri::async_runtime::spawn(async move { observe(app, a, w, r).await });
+        // E2.2: WATCHED, not supervised. The poller is per-recording by design —
+        // it exits when the take ends, and re-spawning it would poll forever
+        // after the recording stopped. But a panic here leaves `running` stuck
+        // at `true`, which silently disables low-disk warnings for the REST of
+        // the process; `watch_handle` is what makes that leave a trace.
+        crate::crash::watch_handle(
+            "notify::disk::observe",
+            tauri::async_runtime::spawn(async move { observe(app, a, w, r).await }),
+        );
     });
 
     let a = Arc::clone(&active);

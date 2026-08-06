@@ -359,60 +359,79 @@ pub async fn process_once(
 /// then sleeps forever without ever calling `process_once`, and no warning can
 /// be produced.
 pub fn spawn(app: tauri::AppHandle, pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
-    // Use Tauri's async runtime handle, not bare `tokio::spawn`: this is called
-    // from the synchronous `setup` hook on the main thread, where no tokio
-    // runtime is *entered*, so `tokio::spawn` would panic ("must be called from
-    // the context of a Tokio runtime"). Inside `setup` that panic crosses the
-    // non-unwinding `did_finish_launching` ObjC callback and aborts the process
-    // before the window ever opens. `tauri::async_runtime::spawn` holds a live
-    // handle and works regardless of the current thread's context — matching
-    // every other spawn in this crate (scheduler/preroll/engine/preview).
-    tauri::async_runtime::spawn(async move {
-        if config.is_none() {
-            tracing::info!("cloud upload worker idle: Google OAuth client not configured");
-        }
-        // Crash recovery: an entry left in `Uploading` was interrupted by a crash /
-        // force-quit mid-upload. `select_next` only picks `Pending`, so without this
-        // it would sit stuck forever and that backup would silently never happen.
-        // At boot any `Uploading` is stale → requeue it (the upload restarts fresh).
-        if let Ok(mut entries) = store::load_queue(&pool).await {
-            let stale: Vec<String> = entries
-                .iter()
-                .filter(|e| e.status == queue::UploadStatus::Uploading)
-                .map(|e| e.id.clone())
-                .collect();
-            if !stale.is_empty() {
-                queue::reset_stale_uploading(&mut entries);
-                tracing::info!(
-                    "cloud upload: requeued {} interrupted upload(s) from a previous session",
-                    stale.len()
-                );
-                for id in &stale {
-                    let _ = persist_entry(&pool, &entries, id).await;
-                }
+    // E2.2: supervised rather than a bare spawn. The outer spawn is still
+    // Tauri's async-runtime handle, not `tokio::spawn`: this is called from the
+    // synchronous `setup` hook on the main thread, where no tokio runtime is
+    // *entered*, so `tokio::spawn` would panic ("must be called from the context
+    // of a Tokio runtime"). Inside `setup` that panic crosses the non-unwinding
+    // `did_finish_launching` ObjC callback and aborts the process before the
+    // window ever opens. `supervise::supervised_spawn` uses
+    // `tauri::async_runtime::spawn` for exactly that reason.
+    //
+    // A dead worker means the backups stop and NOTHING says so — the queue just
+    // stays Pending forever.
+    let worker_app = app.clone();
+    crate::supervise::supervised_spawn(
+        app,
+        "cloud::worker",
+        crate::supervise::TaskAlert {
+            title: "SundayRec — sikkerhetskopiering stoppet",
+            body: "Opplastingen til skyen har en vedvarende feil, så nye opptak blir ikke \
+                   sikkerhetskopiert. Start appen på nytt; vedvarer det, kjør Diagnose \
+                   under Innstillinger → Lyd.",
+        },
+        move || run_worker(worker_app.clone(), pool.clone(), config.clone()),
+    );
+}
+
+/// The worker body. Split out of [`spawn`] so the supervisor can call it again:
+/// its preamble (requeue anything left `Uploading`) is idempotent, so a restart
+/// simply re-does the boot recovery, which is the right thing after a crash.
+async fn run_worker(app: tauri::AppHandle, pool: SqlitePool, config: Option<GoogleOAuthConfig>) {
+    if config.is_none() {
+        tracing::info!("cloud upload worker idle: Google OAuth client not configured");
+    }
+    // Crash recovery: an entry left in `Uploading` was interrupted by a crash /
+    // force-quit mid-upload. `select_next` only picks `Pending`, so without this
+    // it would sit stuck forever and that backup would silently never happen.
+    // At boot any `Uploading` is stale → requeue it (the upload restarts fresh).
+    if let Ok(mut entries) = store::load_queue(&pool).await {
+        let stale: Vec<String> = entries
+            .iter()
+            .filter(|e| e.status == queue::UploadStatus::Uploading)
+            .map(|e| e.id.clone())
+            .collect();
+        if !stale.is_empty() {
+            queue::reset_stale_uploading(&mut entries);
+            tracing::info!(
+                "cloud upload: requeued {} interrupted upload(s) from a previous session",
+                stale.len()
+            );
+            for id in &stale {
+                let _ = persist_entry(&pool, &entries, id).await;
             }
         }
-        loop {
-            let Some(cfg) = config.as_ref() else {
-                tokio::time::sleep(IDLE_SLEEP).await;
+    }
+    loop {
+        let Some(cfg) = config.as_ref() else {
+            tokio::time::sleep(IDLE_SLEEP).await;
+            continue;
+        };
+        match process_once(&app, &pool, cfg).await {
+            Ok(true) => {
+                // Did work — keep draining promptly.
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
-            };
-            match process_once(&app, &pool, cfg).await {
-                Ok(true) => {
-                    // Did work — keep draining promptly.
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    continue;
-                }
-                Ok(false) => {}
-                Err(e) => tracing::warn!("cloud upload worker: {e}"),
             }
-            let entries = store::load_queue(&pool).await.unwrap_or_default();
-            let sleep = queue::next_wakeup_delay_ms(&entries, now_ms())
-                .map(|ms| Duration::from_millis(ms.max(0) as u64))
-                .unwrap_or(IDLE_SLEEP);
-            tokio::time::sleep(sleep).await;
+            Ok(false) => {}
+            Err(e) => tracing::warn!("cloud upload worker: {e}"),
         }
-    });
+        let entries = store::load_queue(&pool).await.unwrap_or_default();
+        let sleep = queue::next_wakeup_delay_ms(&entries, now_ms())
+            .map(|ms| Duration::from_millis(ms.max(0) as u64))
+            .unwrap_or(IDLE_SLEEP);
+        tokio::time::sleep(sleep).await;
+    }
 }
 
 #[cfg(test)]
