@@ -317,8 +317,8 @@
     "errTimeFormat": "Wpisz godzinę w formacie GG:MM, np. 11:00.",
     "errSameTime": "Godzina zakończenia nie może być taka sama jak rozpoczęcia.",
     "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut.",
-    "prerollEnabledTitle": "Włącz bufor wstępny (eksperymentalny)",
-    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Może to zakłócać wskaźniki poziomu na ekranie Start i Transmisja, które korzystają z tego samego mikrofonu. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia przycisku — ekran Start pokazuje, kiedy bufor działa."
+    "prerollEnabledTitle": "Włącz bufor wstępny",
+    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Gdy działa, to on zasila wskaźniki poziomu na ekranie Start i Transmisja, więc działają one jak wcześniej. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia nagrywania — ekran Start pokazuje, kiedy bufor działa."
   },
   "wake": {
     "capability": {

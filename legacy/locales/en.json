@@ -317,8 +317,8 @@
     "errTimeFormat": "Write the time as HH:MM, e.g. 11:00.",
     "errSameTime": "The stop time cannot be the same as the start.",
     "errMaxRange": "Maximum duration must be between 1 and 480 minutes.",
-    "prerollEnabledTitle": "Enable pre-roll buffer (experimental)",
-    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. That can disturb the live level meters on Home and Live, which use the same microphone. Turn it on if you need the seconds before the button press — Home shows when the buffer is running."
+    "prerollEnabledTitle": "Enable pre-roll buffer",
+    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. While it runs it is also what feeds the level meters on Home and Live, so they keep working as before. Turn it on if you need the seconds before you press record — Home shows when the buffer is running."
   },
   "wake": {
     "capability": {

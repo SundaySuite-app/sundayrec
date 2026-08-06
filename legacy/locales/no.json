@@ -317,8 +317,8 @@
     "errTimeFormat": "Skriv klokkeslettet som TT:MM, f.eks. 11:00.",
     "errSameTime": "Stopptidspunktet kan ikke være det samme som starten.",
     "errMaxRange": "Maks varighet må være mellom 1 og 480 minutter.",
-    "prerollEnabledTitle": "Aktiver forhåndsbuffer (eksperimentell)",
-    "prerollEnabledDesc": "Bufferen holder mikrofonen åpen hele tiden i bakgrunnen. Det kan forstyrre de levende nivåmålerne på Hjem og Direktesending, som bruker samme mikrofon. Slå den på hvis du trenger sekundene før knappetrykket — Hjem viser når bufferen kjører."
+    "prerollEnabledTitle": "Aktiver forhåndsbuffer",
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem og Direktesending, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører."
   },
   "wake": {
     "capability": {

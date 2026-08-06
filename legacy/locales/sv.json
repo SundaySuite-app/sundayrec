@@ -317,8 +317,8 @@
     "errTimeFormat": "Skriv tiden som TT:MM, t.ex. 11:00.",
     "errSameTime": "Stopptiden kan inte vara densamma som starten.",
     "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter.",
-    "prerollEnabledTitle": "Aktivera förhandsbuffert (experimentell)",
-    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen hela tiden i bakgrunden. Det kan störa de levande nivåmätarna på Hem och Livesändning, som använder samma mikrofon. Slå på den om du behöver sekunderna före knapptrycket — Hem visar när bufferten körs."
+    "prerollEnabledTitle": "Aktivera förhandsbuffert",
+    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen i bakgrunden hela tiden. Medan den körs är det den som matar nivåmätarna på Hem och Livesändning, så de fungerar som förut. Slå på den om du behöver sekunderna innan du trycker på inspelning — Hem visar när bufferten körs."
   },
   "wake": {
     "capability": {
