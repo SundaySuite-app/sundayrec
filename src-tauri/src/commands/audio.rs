@@ -7,6 +7,7 @@
 
 use tauri::{AppHandle, State};
 
+use sundayrec_core::audio::{mic_owner, vu_start_action, VuStartAction};
 use sundayrec_core::device_enum::{build_audio_diagnostics, AudioDiagnostics};
 use sundayrec_core::device_match::FfmpegDevice;
 
@@ -146,13 +147,53 @@ pub async fn diagnose_audio() -> AppResult<AudioDiagnostics> {
 /// Streams `vu://levels` events until `stop_vu`. Stops any previous session.
 /// Returns the NEGOTIATED channel count — the width of every `vu://levels`
 /// payload, which the channel grid sizes itself from.
+///
+/// ## Who owns the microphone
+///
+/// This is the enforcement point of the ONE-OWNER invariant, decided by the pure
+/// [`mic_owner`]/[`vu_start_action`] mat:
+///
+/// - **A recording is running** → refuse. The capture engine owns the device
+///   outright and the meters that matter during a take read `recording://levels`.
+///   (The renderer already avoids asking; this makes it impossible.)
+/// - **The native pre-roll buffer is running** → ADOPT it. The buffer holds the
+///   device and is already emitting `vu://levels` from a stream that meters every
+///   native channel, so opening a second one would be the exact double-owner
+///   pattern this app has been paying for. Answer with the buffer's channel
+///   count and open nothing; the renderer's feed treats arriving packets as the
+///   liveness signal, so it never notices the difference. The request is
+///   remembered so `preroll_stop` can hand the device back.
+/// - **Otherwise** → open a metering stream as before.
 #[tauri::command]
 pub async fn start_vu(
     app: AppHandle,
     engine: State<'_, VuEngine>,
+    preroll: State<'_, crate::recorder::preroll::PrerollEngine>,
+    recorder: State<'_, crate::recorder::engine::RecorderEngine>,
     device_name: Option<String>,
 ) -> AppResult<u16> {
-    engine.start(app, device_name).await
+    // `Stopping` counts: the capture is finalising and still holds the device.
+    let state = recorder.current_state();
+    let recording = state.is_active() || state == sundayrec_core::recorder::RecorderState::Stopping;
+    let owner = mic_owner(recording, preroll.is_active(), engine.is_running());
+    match vu_start_action(owner) {
+        VuStartAction::Refuse => Err(crate::error::AppError::Audio(
+            "opptaket eier lydenheten — nivåene kommer fra opptaket".into(),
+        )),
+        VuStartAction::AdoptPreroll => {
+            // `vu_channels` is None for the classic (ffmpeg) buffer, which emits
+            // nothing: fall back to the device's own count so the grid still has
+            // a width, and remember the request either way.
+            engine.adopt(device_name.clone());
+            match preroll.vu_channels() {
+                Some(ch) => Ok(ch),
+                None => Err(crate::error::AppError::Audio(
+                    "forhåndsbufferen eier lydenheten".into(),
+                )),
+            }
+        }
+        VuStartAction::Open => engine.start(app, device_name).await,
+    }
 }
 
 /// Stop the VU engine. Safe to call when nothing is running.

@@ -187,6 +187,14 @@ pub struct Settings {
     /// scheduled for removal once the rig has verified 0 % loss.
     #[serde(default)]
     pub classic_ffmpeg_audio: bool,
+    /// Escape hatch: force the legacy **ffmpeg** pre-roll buffer (a 90-second
+    /// rolling avfoundation/dshow capture) instead of the native cpal one.
+    /// Default `false` — the native buffer holds the device with the same stack
+    /// the recorder uses, harvests its clip by byte copy, and doubles as the
+    /// `vu://levels` emitter so the meters and the buffer can coexist. Flip on
+    /// only if the native buffer misbehaves on a specific rig.
+    #[serde(default)]
+    pub classic_ffmpeg_preroll: bool,
     /// Container/codec for the standalone audio file extracted alongside a video
     /// recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
     /// safe choice for a "keep the clean audio" sidecar).
@@ -528,6 +536,7 @@ impl Default for Settings {
             keep_separate_audio: false,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
+            classic_ffmpeg_preroll: false,
             separate_audio_format: default_separate_audio_format(),
             av_sync: true,
 

@@ -3,7 +3,7 @@
 /**
  * A harvested, trimmed pre-roll clip ready to prepend to a recording.
  *
- * `raw_path` is the *trimmed* clip produced by [`PrerollEngine::harvest`] in the
+ * `raw_path` is the *trimmed* clip produced by the harvest in the
  * format the caller requested — the recording's own capture format, so the
  * prepend is a lossless `-c copy` (today PCM `.wav`; the raw rolling capture it
  * came from is consumed + deleted during harvest). `trim_ms` and

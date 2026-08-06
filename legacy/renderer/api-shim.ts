@@ -412,6 +412,10 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     classicDirectshow: s.classicDirectshow ?? false,
     // Escape hatch: force legacy ffmpeg audio capture over the native engine.
     classicFfmpegAudio: s.classicFfmpegAudio ?? false,
+    // Escape hatch: force the legacy rolling-ffmpeg pre-roll buffer over the
+    // native one. Carried through so a settings save can't silently reset a
+    // hatch the owner set on a rig (`settings_save` takes the WHOLE object).
+    classicFfmpegPreroll: s.classicFfmpegPreroll ?? false,
     separateAudioFormat: s.format ?? "wav",
     channels: s.channels ?? "stereo",
     inputChannelL: clampCh(chMap.channelL),
@@ -782,6 +786,8 @@ const api: Record<string, unknown> = {
   prerollStatus: async () =>
     call<import("../bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
       active: false,
+      engine: "native",
+      channels: 0,
     }),
   // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
   // must match that shape ({ ok: false }) — the old { level, message } fallback
