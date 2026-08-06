@@ -95,6 +95,15 @@ pub fn whisper_delete_model(app: tauri::AppHandle, id: String) -> AppResult<bool
 /// percent}) while inference runs; `whisper_cancel_transcribe` with the same
 /// `job_id` aborts it. Returns `feature_disabled` in a `--no-default-features`
 /// build.
+///
+/// **Path policy: [`PathPolicy::ReadOnlyMedia`]** over [`MEDIA_EXTENSIONS`].
+/// This decodes whatever it is pointed at, so an unguarded `input_path` was an
+/// arbitrary-read primitive. Not `RecordingsRooted`: the editor legitimately
+/// opens recordings from outside the save folder (an external volume is called
+/// out in `editor_allow_asset_path`), and the renderer transcribes exactly the
+/// file the editor has open. The extension allowlist is what actually closes
+/// the hole — ffmpeg is never aimed at `~/.ssh/id_rsa` — while leaving every
+/// real recording readable.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // mirrors the renderer's flat IPC params
 pub async fn whisper_transcribe(
@@ -110,6 +119,10 @@ pub async fn whisper_transcribe(
 ) -> AppResult<TranscriptData> {
     use tauri::Emitter;
 
+    super::path_guard::check(
+        &input_path,
+        super::path_guard::PathPolicy::ReadOnlyMedia(super::path_guard::MEDIA_EXTENSIONS),
+    )?;
     let dir = whisper_models_dir(&app)?;
     let opts = TranscribeOptions {
         language: language.unwrap_or_else(|| "auto".into()),
@@ -184,12 +197,23 @@ pub fn whisper_cancel_transcribe(guard: State<'_, TranscribeGuard>, job_id: Stri
 /// destination through the native save dialog). The rendering is the pure
 /// `sundayrec_core::whisper::export_transcript`; works in every build (no
 /// `whisper` feature needed — there's nothing to infer, just format + write).
+///
+/// **Path policy: [`PathPolicy::UserChosenWrite`]**. This was an arbitrary-WRITE
+/// primitive — the renderer could name `~/.ssh/authorized_keys` and get a file
+/// of its choosing there. Not root-scoped, because the destination genuinely is
+/// wherever the operator pointed the native save dialog (a USB stick, a shared
+/// folder), and the dialog IS the authorisation. The guard keeps what the dialog
+/// cannot express: absolute, no `..`, and never inside a protected directory.
+/// The extension is deliberately NOT constrained — the save dialog offers the
+/// format's extension, and overriding the operator's filename would be a
+/// behaviour change with no security value on a write they chose.
 #[tauri::command]
 pub fn whisper_export_transcript(
     data: TranscriptData,
     format: TranscriptExportFormat,
     path: String,
 ) -> AppResult<()> {
+    super::path_guard::check(&path, super::path_guard::PathPolicy::UserChosenWrite)?;
     let body = whisper::export_transcript(&data, format);
     std::fs::write(&path, body)
         .map_err(|e| AppError::Internal(format!("write transcript {path}: {e}")))?;

@@ -31,6 +31,7 @@ use sundayrec_core::integrations::sundayedit::{
 };
 use sundayrec_core::integrations::{service_link_path, transcript_sidecar_path, ServiceLink};
 
+use super::path_guard::{self, PathPolicy, MEDIA_EXTENSIONS, SUBTITLE_EXTENSIONS};
 use crate::db::store::{get_setting, now_ms, set_setting};
 use crate::db::Db;
 use crate::error::AppResult;
@@ -96,11 +97,19 @@ pub async fn integrations_set_settings(
 
 /// Read a recording's `.service.json` service link, or `null`. Never errors — a
 /// missing / corrupt sidecar is just "no link". Mirrors `integrations-get-service-link`.
+///
+/// **Path policy: [`PathPolicy::UserChosenWrite`]** (the lenient shape check —
+/// the sidecar it derives need not exist). The recording itself comes from the
+/// app's own history list, so requiring it to EXIST would break a row whose
+/// media has been moved while its sidecar remains; what matters here is that a
+/// caller cannot walk `..` out of the tree or aim the reader at a protected
+/// directory. A failed check is `None`, preserving the never-errors contract.
 #[tauri::command]
 pub fn integrations_get_service_link(recording_path: String) -> Option<ServiceLink> {
     if recording_path.is_empty() {
         return None;
     }
+    path_guard::check(&recording_path, PathPolicy::UserChosenWrite).ok()?;
     let path = service_link_path(&recording_path);
     let raw = std::fs::read_to_string(path).ok()?;
     serde_json::from_str::<ServiceLink>(&raw).ok()
@@ -123,12 +132,19 @@ pub fn integrations_song_has_apikey() -> bool {
 /// Submit usage for a recording that has a `.service.json` sidecar. Builds one
 /// payload per song (the pure `build_usage_payloads`) and POSTs each to
 /// `<songApiUrl>/v1/usage/log`. NETWORK-UNVERIFIED. Returns a structured result.
+///
+/// **Path policy: [`PathPolicy::UserChosenWrite`]**, matching
+/// [`integrations_get_service_link`] — this command's only use of the path is to
+/// hand it to that reader, so a divergent policy here would be theatre.
 #[tauri::command]
 pub async fn integrations_song_submit_usage(
     db: State<'_, Db>,
     recording_path: String,
 ) -> AppResult<OpResult> {
     if recording_path.is_empty() {
+        return Ok(OpResult::err("invalid_path"));
+    }
+    if path_guard::check(&recording_path, PathPolicy::UserChosenWrite).is_err() {
         return Ok(OpResult::err("invalid_path"));
     }
     let settings = parse_settings(get_setting(&db.pool, INTEGRATIONS_KEY).await?.as_deref());
@@ -398,6 +414,12 @@ pub async fn integrations_plan_update_service(
 /// link, primed with sermon context + glossary. Returns `ok=false` with
 /// `sundayedit_not_installed` when the OS has no handler for the scheme.
 /// NETWORK/HARDWARE-UNVERIFIED (the launch needs the peer app installed).
+///
+/// **Path policy: [`PathPolicy::ReadOnlyMedia`]** over [`MEDIA_EXTENSIONS`]. The
+/// path is handed to ANOTHER PROCESS via a URL the OS routes, so this leaves our
+/// address space: an unguarded value let the renderer name any file for a sister
+/// app to open. Media-only + must exist is the narrowest rule that still passes
+/// every real hand-off (the caller sends the file the editor has open).
 #[tauri::command]
 pub async fn integrations_sundayedit_send(
     app: tauri::AppHandle,
@@ -407,6 +429,9 @@ pub async fn integrations_sundayedit_send(
     glossary: Option<Vec<String>>,
 ) -> AppResult<OpResult> {
     if video_path.is_empty() {
+        return Ok(OpResult::err("invalid_path"));
+    }
+    if path_guard::check(&video_path, PathPolicy::ReadOnlyMedia(MEDIA_EXTENSIONS)).is_err() {
         return Ok(OpResult::err("invalid_path"));
     }
     let link = build_sundayedit_deep_link(&SundayEditImportOptions {
@@ -429,6 +454,15 @@ pub async fn integrations_sundayedit_send(
 /// `.transcript.json` sidecar so it shows up in transcript search + the editor.
 /// The parse/convert is the pure `subtitles_to_transcript`; the fs read/write is
 /// the I/O here. Returns `no_captions_parsed` when the file yields no segments.
+///
+/// **Path policy: [`PathPolicy::ReadOnlyMedia`]** over [`SUBTITLE_EXTENSIONS`]
+/// for `subtitle_path` (it is read as SubRip/WebVTT text and nothing else), and
+/// **[`PathPolicy::UserChosenWrite`]** for `recording_path`, whose sidecar this
+/// creates. Not root-scoped HERE: the manual flow passes the recording the
+/// editor has open, which may legitimately live on an external volume. The one
+/// caller that carries no user intent — an inbound `sundayrec://captions` deep
+/// link — is root-scoped AND confirmed before it ever reaches this function; see
+/// [`crate::commands::deeplink`].
 #[tauri::command]
 pub fn integrations_sundayedit_import(
     recording_path: String,
@@ -436,6 +470,15 @@ pub fn integrations_sundayedit_import(
     language: Option<String>,
 ) -> AppResult<OpResult> {
     if recording_path.is_empty() || subtitle_path.is_empty() {
+        return Ok(OpResult::err("invalid_path"));
+    }
+    if path_guard::check(
+        &subtitle_path,
+        PathPolicy::ReadOnlyMedia(SUBTITLE_EXTENSIONS),
+    )
+    .is_err()
+        || path_guard::check(&recording_path, PathPolicy::UserChosenWrite).is_err()
+    {
         return Ok(OpResult::err("invalid_path"));
     }
     let text = match std::fs::read_to_string(&subtitle_path) {
@@ -477,6 +520,85 @@ fn parse_plan_services_body(body: &str) -> Result<Vec<PlanService>, PlanFetchRes
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── E1.2: the guards must close the hole WITHOUT closing the flow ────────
+    //
+    // Both commands below are plain functions (no Tauri state), so the happy
+    // path is directly executable here — which is the point: a guard nobody
+    // exercises on a legitimate input is how a security fix becomes a bug.
+
+    /// A temp folder with a recording and a matching SRT beside it.
+    fn media_fixture(name: &str) -> (std::path::PathBuf, String, String) {
+        let dir = std::env::temp_dir().join(format!("sundayrec-integrations-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rec = dir.join("2026-08-06.mp4");
+        std::fs::write(&rec, b"x").unwrap();
+        let srt = dir.join("2026-08-06.srt");
+        std::fs::write(&srt, b"1\n00:00:00,000 --> 00:00:02,000\nHei alle sammen\n").unwrap();
+        (
+            dir,
+            rec.to_str().unwrap().to_string(),
+            srt.to_str().unwrap().to_string(),
+        )
+    }
+
+    #[test]
+    fn sundayedit_import_still_imports_a_real_subtitle_file() {
+        let (dir, rec, srt) = media_fixture("import-ok");
+        let result = integrations_sundayedit_import(rec, srt, Some("no".into())).unwrap();
+        assert!(result.ok, "guarded happy path must still work: {result:?}");
+        let written = result.transcript_path.expect("sidecar path");
+        assert!(written.ends_with(".transcript.json"));
+        assert!(std::fs::read_to_string(&written).unwrap().contains("Hei"));
+        // The sidecar lands beside the recording — the guard validated the path
+        // but, per the module contract, the ORIGINAL string is what was used.
+        assert_eq!(std::path::Path::new(&written).parent().unwrap(), dir);
+    }
+
+    #[test]
+    fn sundayedit_import_refuses_a_subtitle_that_is_not_one() {
+        let (dir, rec, _) = media_fixture("import-wrong-type");
+        // Exists and is perfectly readable — and is not a caption file.
+        let secret = dir.join("id_rsa");
+        std::fs::write(&secret, b"-----BEGIN OPENSSH PRIVATE KEY-----").unwrap();
+        let result =
+            integrations_sundayedit_import(rec, secret.to_str().unwrap().into(), None).unwrap();
+        assert!(!result.ok);
+        assert_eq!(result.error.as_deref(), Some("invalid_path"));
+    }
+
+    #[test]
+    fn sundayedit_import_refuses_a_relative_or_traversing_recording() {
+        let (dir, _, srt) = media_fixture("import-traversal");
+        for bad in [
+            "recordings/x.mp4".to_string(),
+            format!("{}/../../etc/passwd", dir.to_str().unwrap()),
+        ] {
+            let result = integrations_sundayedit_import(bad, srt.clone(), None).unwrap();
+            assert!(!result.ok);
+            assert_eq!(result.error.as_deref(), Some("invalid_path"));
+        }
+    }
+
+    #[test]
+    fn service_link_reads_a_real_sidecar_and_refuses_a_traversing_path() {
+        let (dir, rec, _) = media_fixture("service-link");
+        // The sidecar the command derives: `<stem>.service.json`.
+        let sidecar = dir.join("2026-08-06.service.json");
+        std::fs::write(
+            &sidecar,
+            r#"{"source":"manual","serviceId":"svc-1","setlist":[],"linkedAt":0}"#,
+        )
+        .unwrap();
+        let link = integrations_get_service_link(rec).expect("a real sidecar still reads");
+        assert_eq!(link.service_id.as_deref(), Some("svc-1"));
+
+        // …and a path that walks out of the tree reads as "no link", not as a read.
+        let escape = format!("{}/../../etc/passwd.mp4", dir.to_str().unwrap());
+        assert!(integrations_get_service_link(escape).is_none());
+        assert!(integrations_get_service_link("relative.mp4".into()).is_none());
+    }
 
     // ── Item 3: Bearer-over-HTTPS guard for the Plan API paths ───────────────
     // Both `integrations_plan_fetch_services` and `integrations_plan_update_service`

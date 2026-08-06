@@ -47,14 +47,29 @@ pub async fn settings_import(db: State<'_, Db>, json: String) -> AppResult<Setti
 
 /// Write the current settings as pretty JSON to `path` (the renderer picks the
 /// destination through the native save dialog).
+///
+/// **Path policy: [`PathPolicy::UserChosenWrite`]**. This was an arbitrary-WRITE
+/// primitive. It stays deliberately un-rooted: a settings profile is exported to
+/// wherever the operator pointed the save dialog — a USB stick to carry to the
+/// second machine is the whole point of the feature — and the native dialog is
+/// the authorisation. The guard adds only what the dialog cannot: absolute, no
+/// `..`, and never into `~/.ssh` & co.
 #[tauri::command]
 pub async fn settings_export_to_file(db: State<'_, Db>, path: String) -> AppResult<()> {
+    super::path_guard::check(&path, super::path_guard::PathPolicy::UserChosenWrite)?;
     settings::export_to_path(&db.pool, &PathBuf::from(path)).await
 }
 
 /// Read a settings JSON file from `path` (picked through the native open
 /// dialog), import it, and return the stored value.
+///
+/// **Path policy: [`PathPolicy::UserChosenRead`]** — the read counterpart of the
+/// export above: the file must EXIST (an open dialog only ever yields existing
+/// files) and must not sit in a protected directory. Un-rooted for the same
+/// reason, and no extension allowlist: the operator may have named the exported
+/// profile anything, and the content is validated by the JSON merge either way.
 #[tauri::command]
 pub async fn settings_import_from_file(db: State<'_, Db>, path: String) -> AppResult<Settings> {
+    super::path_guard::check(&path, super::path_guard::PathPolicy::UserChosenRead)?;
     settings::import_from_path(&db.pool, &PathBuf::from(path)).await
 }
