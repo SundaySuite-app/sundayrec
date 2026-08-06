@@ -42,9 +42,10 @@ use sundayrec_core::overlay::{build_overlay_pipeline, BuildOverlayOpts};
 #[cfg(feature = "streaming")]
 use sundayrec_core::streaming::{
     all_destinations_failed, build_output_args, degraded_bitrate_kbps, is_stream_connection_error,
-    is_tee_slave_failure, parse_progress_line, reconnect_backoff_secs, should_restart_to_readd,
-    should_step_down, tee_slave_failure_index, StreamArgError, StreamProgress,
-    STREAM_MAX_BITRATE_STEPS, STREAM_RECONNECT_MAX_FAILURES,
+    is_tee_slave_failure, parse_progress_line, reconnect_backoff_secs, should_emit_stats,
+    should_restart_to_readd, should_step_down, tee_slave_failure_index, StreamArgError,
+    StreamProgress, STREAM_MAX_BITRATE_STEPS, STREAM_RECONNECT_MAX_FAILURES,
+    STREAM_STATS_MIN_INTERVAL_MS,
 };
 use sundayrec_core::streaming::{
     validate_rtmp_url, validate_stream_key, AudioInputLayout, StreamDestination, StreamKeyError,
@@ -114,6 +115,30 @@ pub struct StreamStatus {
     /// quality, 1/2 = stepped down under stress. Lets the UI show "Redusert
     /// kvalitet" instead of a silently-degraded stream.
     pub bitrate_step: u32,
+}
+
+/// The Tauri event a live [`StreamStatus`] snapshot is pushed on.
+///
+/// It existed on the RENDERER side from the beginning — `api-shim.ts`'s
+/// `EVENT_MAP` has mapped the legacy `'stream-stats'` channel onto this name
+/// since the port, and `live-page.ts` has subscribed to it since the port. What
+/// never existed was an emitter: no `AppHandle` reached the supervisor, so the
+/// four numbers on the Direkte page could only ever be whatever the one-shot
+/// `stream_status` poll happened to catch at page-activation time — in practice
+/// four zeros for the length of a service. Renaming this constant without
+/// renaming the `EVENT_MAP` value would silently restore that.
+pub const STREAM_STATS_EVENT: &str = "streaming://stats";
+
+/// Pushes a live [`StreamStatus`] snapshot at the renderer. The seam takes this
+/// rather than an `AppHandle` so the supervisor stays testable and the GUI
+/// dependency stops at the command layer — the same shape the editor's
+/// export/mastering progress callbacks use.
+pub type StreamStatsEmitter = std::sync::Arc<dyn Fn(&StreamStatus) + Send + Sync>;
+
+/// An emitter that drops every snapshot — for tests and any caller that has no
+/// window to push to.
+pub fn no_stats_emitter() -> StreamStatsEmitter {
+    std::sync::Arc::new(|_: &StreamStatus| {})
 }
 
 impl StreamStatus {
@@ -305,6 +330,7 @@ pub async fn start(
     _win_audio_name: Option<String>,
     _snapshot_path: String,
     _now_ms: i64,
+    _emit: StreamStatsEmitter,
 ) -> AppResult<StreamStatus> {
     disabled("start")
 }
@@ -322,6 +348,7 @@ pub async fn start(
     win_audio_name: Option<String>,
     snapshot_path: String,
     now_ms: i64,
+    emit: StreamStatsEmitter,
 ) -> AppResult<StreamStatus> {
     // Refuse a second concurrent stream (mirrors Electron "Stream allerede aktiv").
     if engine.status().active {
@@ -433,14 +460,76 @@ pub async fn start(
     let status_arc = engine.status.clone();
     let stop_t = stop.clone();
     let notify_t = notify.clone();
+    // The start TRANSITION goes out before the supervisor even has a line to
+    // parse, so the pill flips to "Live" the moment ffmpeg is up rather than at
+    // the next poll (or, until now, never).
+    let mut pusher = StatsPusher::new(emit, status_arc.clone());
+    pusher.transition();
     let task = tauri::async_runtime::spawn(async move {
         supervise(
-            rebuild, dest_names, status_arc, stop_t, notify_t, now_ms, first,
+            rebuild, dest_names, status_arc, stop_t, notify_t, now_ms, first, pusher,
         )
         .await;
     });
     *lock_recover(&engine.handle) = Some(StreamHandle { stop, notify, task });
     Ok(status)
+}
+
+/// Pushes [`StreamStatus`] snapshots at the renderer on
+/// [`STREAM_STATS_EVENT`], pacing the steady-state feed and letting state
+/// transitions through immediately.
+///
+/// The pacing decision itself is the pure, unit-tested
+/// [`should_emit_stats`]; this only owns the clock and the last-push mark. Every
+/// snapshot is cloned out from under the mutex BEFORE the emit, so a slow
+/// serializer can never hold the lock the ffmpeg reader needs.
+#[cfg(feature = "streaming")]
+struct StatsPusher {
+    emit: StreamStatsEmitter,
+    status: Arc<Mutex<StreamStatus>>,
+    /// Monotonic ms since [`Self::clock`] at the last push; `None` = never.
+    last_ms: Option<u64>,
+    clock: std::time::Instant,
+}
+
+#[cfg(feature = "streaming")]
+impl StatsPusher {
+    fn new(emit: StreamStatsEmitter, status: Arc<Mutex<StreamStatus>>) -> Self {
+        StatsPusher {
+            emit,
+            status,
+            last_ms: None,
+            clock: std::time::Instant::now(),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.clock.elapsed().as_millis() as u64
+    }
+
+    fn push(&mut self, now_ms: u64) {
+        self.last_ms = Some(now_ms);
+        let snapshot = lock_recover(&self.status).clone();
+        (self.emit)(&snapshot);
+    }
+
+    /// The paced steady-state push — call it on every parsed progress line; at
+    /// most one in [`STREAM_STATS_MIN_INTERVAL_MS`] actually reaches the webview.
+    fn tick(&mut self) {
+        let now = self.now_ms();
+        if should_emit_stats(self.last_ms, now, STREAM_STATS_MIN_INTERVAL_MS) {
+            self.push(now);
+        }
+    }
+
+    /// An UNPACED push for a state change (started, reconnecting, reconnected, a
+    /// destination dropped, quality stepped down, gave up, stopped). These are
+    /// exactly the moments the operator is staring at the screen waiting for an
+    /// answer, so they never wait out the pacing window.
+    fn transition(&mut self) {
+        let now = self.now_ms();
+        self.push(now);
+    }
 }
 
 /// Spawn one streaming ffmpeg with stderr piped (for the live-stats parse) and
@@ -574,6 +663,10 @@ const ADAPTIVE_RECONNECT_THRESHOLD: u32 = 3;
 ///     period restarts to re-add the dropped destination
 ///     ([`should_restart_to_readd`], evaluated inside `run_one`).
 #[cfg(feature = "streaming")]
+// Same reason as `start`: these are seven pieces of already-resolved launch
+// state plus the stats pusher, and bundling them into a struct just to satisfy
+// the lint would hide which of them the loop actually mutates.
+#[allow(clippy::too_many_arguments)]
 async fn supervise(
     rebuild: RebuildInputs,
     dest_names: Vec<String>,
@@ -582,6 +675,7 @@ async fn supervise(
     notify: Arc<tokio::sync::Notify>,
     started_at: i64,
     first: tokio::process::Child,
+    mut pusher: StatsPusher,
 ) {
     use std::sync::atomic::Ordering;
     use std::time::Instant;
@@ -612,6 +706,7 @@ async fn supervise(
                         // Should never happen post-launch (destinations validated),
                         // but treat a rebuild failure as a fatal give-up.
                         mark_dead(&status, &format!("Strøm stoppet (intern feil): {e:?}"));
+                        pusher.transition();
                         break;
                     }
                 };
@@ -620,15 +715,17 @@ async fn supervise(
                         // A fresh ffmpeg re-attempts EVERY destination → all live again.
                         mark_reconnected(&status, started_at, &dest_names);
                         update_bitrate_tier(&status, target, bitrate_step);
+                        pusher.transition();
                         c
                     }
                     Err(e) => {
                         failures += 1;
                         if failures >= STREAM_RECONNECT_MAX_FAILURES {
                             mark_dead(&status, &format!("Strøm stoppet (kunne ikke starte): {e}"));
+                            pusher.transition();
                             break;
                         }
-                        if !wait_backoff(failures, &status, &notify, &stop).await {
+                        if !wait_backoff(failures, &status, &notify, &stop, &mut pusher).await {
                             break;
                         }
                         continue;
@@ -637,7 +734,7 @@ async fn supervise(
             }
         };
 
-        let outcome = run_one(&mut child, &status, &notify, failures).await;
+        let outcome = run_one(&mut child, &status, &notify, failures, &mut pusher).await;
         let RunOutcome {
             produced,
             end,
@@ -679,6 +776,7 @@ async fn supervise(
                 &status,
                 "Mistet forbindelsen — klarte ikke å koble til igjen.",
             );
+            pusher.transition();
             break;
         }
 
@@ -706,9 +804,10 @@ async fn supervise(
                 &status,
                 "Redusert kvalitet for å holde strømmen stabil på et tregt nettverk.",
             );
+            pusher.transition();
         }
 
-        if !wait_backoff(failures.max(1), &status, &notify, &stop).await {
+        if !wait_backoff(failures.max(1), &status, &notify, &stop, &mut pusher).await {
             break;
         }
     }
@@ -722,6 +821,11 @@ async fn supervise(
         s.bitrate_kbps = 0;
         s.started_at = None;
     }
+    // The FINAL transition. Without it a stream that died on its own (gave up
+    // reconnecting, or ffmpeg exited while the user was on another tab) would
+    // leave a red "Live" pill up until the next page activation — the app
+    // insisting it is broadcasting when it stopped ten minutes ago.
+    pusher.transition();
 }
 
 /// How often the reheal timer ticks to re-evaluate the grace period for a partial
@@ -746,6 +850,7 @@ async fn run_one(
     status: &Arc<Mutex<StreamStatus>>,
     notify: &tokio::sync::Notify,
     failures: u32,
+    pusher: &mut StatsPusher,
 ) -> RunOutcome {
     use std::time::{Duration, Instant};
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -781,27 +886,36 @@ async fn run_one(
                     if let Some(p) = parse_progress_line(&l) {
                         produced = true;
                         update_progress(status, p);
+                        // The steady-state feed: ffmpeg says this several times a
+                        // second, the operator reads it about once a second.
+                        pusher.tick();
                     } else if let Some(idx) = tee_slave_failure_index(&l) {
                         // ONE destination's tee slave died. Mark it (so the UI shows
                         // it red) and keep streaming to the survivors — unless every
                         // destination is now dead, in which case the tee is encoding
                         // into the void: kill + reconnect to re-attempt them all.
                         if mark_destination_failed(status, idx) {
+                            pusher.transition();
                             let _ = child.start_kill();
                             return outcome(produced, RunEnd::AllDestinationsFailed);
                         }
                         // Partial loss: start (or keep) the grace-period clock so the
                         // reheal timer can re-add this destination after the grace.
                         partial_since.get_or_insert_with(Instant::now);
+                        // …and say so NOW. A destination going red is the single
+                        // thing on this page worth interrupting someone for.
+                        pusher.transition();
                     } else if is_tee_slave_failure(&l) {
                         // A slave failed without a parseable index (e.g. an open-time
                         // error, whose raw line carries the URL+key — never logged).
                         set_line(status, "En strøm-destinasjon koblet fra — sjekk status per destinasjon.");
                         partial_since.get_or_insert_with(Instant::now);
+                        pusher.transition();
                     } else if is_stream_connection_error(&l) {
                         // NEVER store the raw line — an RTMP error can echo the URL
                         // (and thus the stream key). A fixed message is safe + clear.
                         set_line(status, "Nettverksfeil oppdaget — overvåker forbindelsen…");
+                        pusher.transition();
                     }
                 }
                 _ => return outcome(produced, RunEnd::Exited), // EOF → ffmpeg exiting
@@ -819,6 +933,7 @@ async fn run_one(
                         STREAM_RECONNECT_MAX_FAILURES,
                     ) {
                         set_line(status, "Kobler til igjen for å gjenopprette en frakoblet destinasjon…");
+                        pusher.transition();
                         let _ = child.start_kill();
                         return outcome(produced, RunEnd::RehealRestart);
                     }
@@ -876,6 +991,7 @@ async fn wait_backoff(
     status: &Arc<Mutex<StreamStatus>>,
     notify: &tokio::sync::Notify,
     stop: &Arc<std::sync::atomic::AtomicBool>,
+    pusher: &mut StatsPusher,
 ) -> bool {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
@@ -888,6 +1004,9 @@ async fn wait_backoff(
         s.last_line =
             format!("Mistet forbindelsen — kobler til igjen (forsøk {attempt}) om {secs}s…");
     }
+    // BEFORE the sleep, not after: "kobler til igjen om 30s…" is only useful
+    // during those 30 seconds.
+    pusher.transition();
     tokio::select! {
         _ = tokio::time::sleep(Duration::from_secs(secs)) => {}
         _ = notify.notified() => {}
@@ -975,7 +1094,7 @@ fn mark_dead(status: &Arc<Mutex<StreamStatus>>, line: &str) {
 
 /// Stop the running stream. Idempotent: no active stream → `false`.
 #[cfg(not(feature = "streaming"))]
-pub async fn stop(_engine: &StreamEngine) -> AppResult<bool> {
+pub async fn stop(_engine: &StreamEngine, _emit: StreamStatsEmitter) -> AppResult<bool> {
     disabled("stop")
 }
 
@@ -983,7 +1102,7 @@ pub async fn stop(_engine: &StreamEngine) -> AppResult<bool> {
 /// reconnecting and SIGTERMs ffmpeg so a local recording finalises), await it,
 /// then go idle. Idempotent: no active stream → `false`. NETWORK/HARDWARE-UNVERIFIED.
 #[cfg(feature = "streaming")]
-pub async fn stop(engine: &StreamEngine) -> AppResult<bool> {
+pub async fn stop(engine: &StreamEngine, emit: StreamStatsEmitter) -> AppResult<bool> {
     use std::sync::atomic::Ordering;
 
     let handle = lock_recover(&engine.handle).take();
@@ -996,6 +1115,10 @@ pub async fn stop(engine: &StreamEngine) -> AppResult<bool> {
         let _ = h.task.await;
     }
     engine.set_status(StreamStatus::idle());
+    // The supervisor's own final push carried whatever line it died with; this
+    // one carries the CLEAN idle state the stop button just produced, so the
+    // page settles on "Klar" with no stale destination rows.
+    StatsPusher::new(emit, engine.status.clone()).transition();
     Ok(was_active)
 }
 
@@ -1127,6 +1250,84 @@ mod tests {
         assert_eq!(s.started_at, None);
     }
 
+    // ── the stats event name ──
+
+    #[test]
+    fn the_stats_event_name_matches_the_renderer_subscription() {
+        // legacy/renderer/api-shim.ts EVENT_MAP:
+        //     "stream-stats": "streaming://stats"
+        // and pages/live-page.ts subscribes via `window.api.on('stream-stats', …)`.
+        // Both halves existed for the whole port; only the emitter was missing.
+        // If this literal ever drifts from the EVENT_MAP value, the Direkte page
+        // goes right back to showing four zeros through a live broadcast — with
+        // nothing failing anywhere to say so.
+        assert_eq!(STREAM_STATS_EVENT, "streaming://stats");
+    }
+
+    #[test]
+    fn the_no_op_emitter_swallows_snapshots() {
+        // Used by tests and by any caller with no window to push at; must not
+        // panic on an arbitrary status.
+        let e = no_stats_emitter();
+        e(&StreamStatus::idle());
+    }
+
+    // ── the paced pusher over the pure decision ──
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn the_pusher_paces_ticks_but_never_a_transition() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let seen = Arc::new(AtomicUsize::new(0));
+        let seen_t = seen.clone();
+        let emit: StreamStatsEmitter = Arc::new(move |_: &StreamStatus| {
+            seen_t.fetch_add(1, Ordering::SeqCst);
+        });
+        let status = Arc::new(Mutex::new(StreamStatus::idle()));
+        let mut p = StatsPusher::new(emit, status);
+
+        // The first tick always lands (nothing pushed yet)…
+        p.tick();
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+        // …and a burst of further ticks inside the pacing window does not: this
+        // is ffmpeg's several-lines-a-second progress feed being coalesced.
+        for _ in 0..50 {
+            p.tick();
+        }
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+        // A state transition ignores the window entirely.
+        p.transition();
+        assert_eq!(seen.load(Ordering::SeqCst), 2);
+        p.transition();
+        assert_eq!(seen.load(Ordering::SeqCst), 3);
+    }
+
+    #[cfg(feature = "streaming")]
+    #[test]
+    fn the_pusher_sends_the_live_status_not_a_stale_copy() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let last_fps = Arc::new(AtomicU32::new(0));
+        let last_t = last_fps.clone();
+        let emit: StreamStatsEmitter = Arc::new(move |s: &StreamStatus| {
+            last_t.store(s.fps, Ordering::SeqCst);
+        });
+        let status = Arc::new(Mutex::new(StreamStatus::idle()));
+        let mut p = StatsPusher::new(emit, status.clone());
+
+        update_progress(
+            &status,
+            StreamProgress {
+                fps: 30,
+                bitrate_kbps: 2500,
+                dropped: 0,
+            },
+        );
+        p.tick();
+        assert_eq!(last_fps.load(Ordering::SeqCst), 30);
+    }
+
     #[cfg(not(feature = "streaming"))]
     #[tokio::test]
     async fn start_is_disabled_without_the_feature() {
@@ -1148,6 +1349,7 @@ mod tests {
             None,
             "/tmp/p.jpg".into(),
             0,
+            no_stats_emitter(),
         )
         .await
         .unwrap_err();
@@ -1159,7 +1361,7 @@ mod tests {
     #[tokio::test]
     async fn stop_is_disabled_without_the_feature() {
         let e = StreamEngine::new();
-        let err = stop(&e).await.unwrap_err();
+        let err = stop(&e, no_stats_emitter()).await.unwrap_err();
         assert!(err.to_string().contains("feature_disabled"));
     }
 }
