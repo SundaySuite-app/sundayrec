@@ -96,6 +96,8 @@ use crate::settings::{ChannelMode, FileFormat, FilenamePattern, SampleRate, Sett
 use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
+pub mod consent;
+
 /// The payload schema version. Bumped when a field changes MEANING (a new
 /// optional field does not need it); the receiving endpoint keys its parsing off
 /// this, and the consent record carries its own separate version so a change in
