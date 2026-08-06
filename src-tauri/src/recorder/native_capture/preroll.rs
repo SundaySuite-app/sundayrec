@@ -54,8 +54,10 @@ use cpal::traits::StreamTrait;
 use ringbuf::traits::{Consumer, Split};
 use sundayrec_core::audio::MeterBanks;
 use sundayrec_core::preroll::{
+    harvest_trim_ms, preroll_captured_ms, preroll_keep_bytes, preroll_kept_ms,
     preroll_restart_delay, preroll_segments_to_drop, preroll_segments_to_retain,
-    PREROLL_NATIVE_SEGMENT_S, PREROLL_SEGMENT_CAP_S, RESTART_GAP_MS,
+    preroll_start_offset_ms, preroll_tail_slices, PREROLL_NATIVE_SEGMENT_S, PREROLL_SEGMENT_CAP_S,
+    RESTART_GAP_MS,
 };
 use sundayrec_core::wav::{self, WavSpec};
 use tauri::AppHandle;
@@ -66,7 +68,9 @@ use crate::recorder::native_capture::stream::{
     build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
 };
 use crate::recorder::native_capture::writer::{patch_sizes, FLUSH_EVERY};
-use crate::recorder::preroll::{sleep_while_active, warn_preroll_dead, PrerollSettings};
+use crate::recorder::preroll::{
+    sleep_while_active, warn_preroll_dead, PrerollClip, PrerollSettings,
+};
 use crate::util::lock_recover;
 
 /// Bound on joining the stream thread (it polls its stop flag every sampler
@@ -194,6 +198,29 @@ impl NativePrerollEngine {
         if let Some(run) = self.take_run() {
             discard_run(run).await;
         }
+    }
+
+    /// Stop the buffer and return the last `requested_seconds` of it as ONE
+    /// WAV, ready to be `-c copy`-prepended to the recording. `None` when
+    /// nothing usable was buffered.
+    ///
+    /// No ffmpeg, no decode, no re-encode: the retained segments already hold
+    /// s16-LE PCM in the recording's own layout, so the clip is a byte copy of
+    /// their tail behind a fresh header. The window is chosen by the same tested
+    /// core mat the ffmpeg engine used — only `captured_ms` is better, coming
+    /// from the writer's exact frame count instead of a wall clock.
+    pub async fn harvest(&self, requested_seconds: u32) -> Option<PrerollClip> {
+        let mut run = self.take_run()?;
+        let spec = run.spec;
+        // Stop FIRST: the device is released and the last segment finalized
+        // before a single byte is read.
+        stop_run_bounded(&mut run).await;
+        let segments = lock_recover(&run.segments).clone();
+        let clip = build_clip(&segments, spec, requested_seconds, &self.tmp_dir).await;
+        // The rolling segments are consumed either way — the clip is the only
+        // thing that outlives a harvest.
+        delete_segments(&segments).await;
+        clip
     }
 
     /// Wind the engine down and take the live run out of the slot, if any.
@@ -540,6 +567,121 @@ pub(crate) async fn delete_segments(segments: &[PrerollSegmentFile]) {
     }
 }
 
+// ── The harvest ──────────────────────────────────────────────────────────────
+
+/// Turn the retained segments into one clip holding the last
+/// `requested_seconds` (or as much as exists). Free-standing so the whole
+/// harvest decision + stitch is testable against segment files on disk without
+/// a device.
+async fn build_clip(
+    segments: &[PrerollSegmentFile],
+    spec: WavSpec,
+    requested_seconds: u32,
+    tmp_dir: &Path,
+) -> Option<PrerollClip> {
+    let bpf = spec.bytes_per_frame();
+    let frames: u64 = segments.iter().map(|s| s.frames).sum();
+    // The "did we capture anything real?" gate is the classic engine's, applied
+    // to the same quantity it always meant: bytes on disk.
+    let bytes_on_disk: u64 = segments
+        .iter()
+        .map(|s| s.data_bytes + wav::HEADER_LEN as u64)
+        .sum();
+    let captured_ms = preroll_captured_ms(frames, spec.sample_rate);
+    let trim_ms = harvest_trim_ms(captured_ms, requested_seconds, bytes_on_disk)?;
+
+    let lens: Vec<u64> = segments.iter().map(|s| s.data_bytes).collect();
+    let slices = preroll_tail_slices(
+        &lens,
+        bpf,
+        preroll_keep_bytes(trim_ms, spec.sample_rate, bpf),
+    );
+    if slices.is_empty() {
+        return None;
+    }
+    // Report what the clip REALLY holds, not what was asked for: the slicing
+    // rounds to whole frames, so these can differ by up to one frame.
+    let kept_bytes: u64 = slices.iter().map(|s| s.len).sum();
+    let trim_ms = preroll_kept_ms(kept_bytes, spec.sample_rate, bpf);
+    let start_offset_ms = preroll_start_offset_ms(captured_ms, trim_ms);
+
+    let out = tmp_dir.join(format!("sundayrec-preroll-clip-{}.wav", segment_id()));
+    let paths: Vec<PathBuf> = segments.iter().map(|s| s.path.clone()).collect();
+    let out_for_blocking = out.clone();
+    let stitched =
+        tokio::task::spawn_blocking(move || stitch_clip(&paths, &slices, spec, &out_for_blocking))
+            .await;
+    match stitched {
+        Ok(Ok(())) => {
+            tracing::info!(
+                trim_ms,
+                start_offset_ms,
+                captured_ms,
+                rate = spec.sample_rate,
+                channels = spec.channels,
+                clip = %out.display(),
+                "preroll(native): harvested clip (byte copy, no ffmpeg)"
+            );
+            Some(PrerollClip {
+                raw_path: out.to_string_lossy().into_owned(),
+                trim_ms,
+                start_offset_ms,
+            })
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("preroll(native): could not stitch the clip: {e}");
+            let _ = std::fs::remove_file(&out);
+            None
+        }
+        Err(e) => {
+            tracing::warn!("preroll(native): stitch task failed: {e}");
+            let _ = std::fs::remove_file(&out);
+            None
+        }
+    }
+}
+
+/// Write `slices` (in order) out of `paths` into one WAV at `out`.
+///
+/// Blocking, byte-for-byte: a fresh 44-byte header for the total payload, then
+/// each range copied straight out of its segment's data. The result is exactly
+/// the same PCM the recorder is about to write, which is what makes the concat
+/// prepend a lossless `-c copy`.
+fn stitch_clip(
+    paths: &[PathBuf],
+    slices: &[sundayrec_core::preroll::PrerollSlice],
+    spec: WavSpec,
+    out: &Path,
+) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let total: u64 = slices.iter().map(|s| s.len).sum();
+    let file = File::create(out)?;
+    let mut w = BufWriter::with_capacity(256 * 1024, file);
+    // The retained window can never approach the u32 RIFF ceiling (90 s at
+    // 96 kHz stereo is ~35 MB), but saturate rather than wrap regardless.
+    w.write_all(&wav::header(spec, total.min(u64::from(u32::MAX)) as u32))?;
+
+    let mut buf = vec![0u8; 256 * 1024];
+    for s in slices {
+        let path = paths.get(s.segment).ok_or_else(|| {
+            std::io::Error::other(format!("slice references missing segment {}", s.segment))
+        })?;
+        let mut f = File::open(path)?;
+        f.seek(SeekFrom::Start(wav::HEADER_LEN as u64 + s.start))?;
+        let mut left = s.len;
+        while left > 0 {
+            let want = left.min(buf.len() as u64) as usize;
+            f.read_exact(&mut buf[..want])?;
+            w.write_all(&buf[..want])?;
+            left -= want as u64;
+        }
+    }
+    w.flush()?;
+    w.get_ref().sync_all()?;
+    Ok(())
+}
+
 // ── The rotating writer ──────────────────────────────────────────────────────
 
 /// Everything the rotating writer needs, fixed at spawn.
@@ -843,8 +985,13 @@ mod tests {
             seqs.windows(2).all(|w| w[1] == w[0] + 1),
             "oldest first, contiguous: {seqs:?}"
         );
-        // Ten rotations happened, so the survivors are the LAST three.
-        assert_eq!(seqs, vec![8, 9, 10], "the newest three survive");
+        // The survivors are the NEWEST files: nothing before them is left on
+        // disk, and the newest retained is the highest sequence ever opened.
+        // (How MANY rotations happen depends on drain granularity — a single
+        // drain can carry more than one segment's worth — so the sequence
+        // numbers themselves are not asserted, only that they are the last.)
+        let max_seq = *seqs.last().unwrap();
+        assert!(max_seq >= 3, "the buffer really rotated: {seqs:?}");
         // The retired files are really gone; nothing else litters the dir.
         let on_disk = wav_files(&rig.dir);
         assert_eq!(
@@ -907,5 +1054,222 @@ mod tests {
         engine.stop();
         engine.stop();
         assert!(!engine.is_active());
+    }
+
+    // ── The harvest ──────────────────────────────────────────────────────────
+
+    /// Write a segment file whose every frame CARRIES ITS GLOBAL INDEX, so a
+    /// stitched clip can be checked frame-by-frame against the exact bytes it
+    /// should hold — the "byte-exact" claim, verified rather than assumed.
+    fn write_segment(
+        dir: &Path,
+        seq: u64,
+        spec: WavSpec,
+        first_frame: u64,
+        frames: u64,
+    ) -> PrerollSegmentFile {
+        let mut data = Vec::with_capacity((frames * spec.bytes_per_frame()) as usize);
+        for k in 0..frames {
+            let idx = (first_frame + k) as i16;
+            for ch in 0..spec.channels {
+                // Channel 0 carries +index, channel 1 −index: a swapped or
+                // misaligned frame is immediately visible.
+                let v = if ch == 0 { idx } else { idx.wrapping_neg() };
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        let path = dir.join(format!("seg-{seq}.wav"));
+        let mut bytes = wav::header(spec, data.len() as u32).to_vec();
+        bytes.extend_from_slice(&data);
+        std::fs::write(&path, &bytes).expect("write segment");
+        PrerollSegmentFile {
+            path,
+            data_bytes: data.len() as u64,
+            frames,
+        }
+    }
+
+    /// Decode a stitched clip into its (channel-0) frame indices.
+    fn clip_frames(path: &Path, spec: WavSpec) -> Vec<i16> {
+        let bytes = std::fs::read(path).expect("clip readable");
+        bytes[wav::HEADER_LEN..]
+            .chunks_exact(spec.bytes_per_frame() as usize)
+            .map(|f| i16::from_le_bytes([f[0], f[1]]))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn harvest_stitches_the_exact_tail_frames() {
+        // 1 kHz stereo so a "second" is 1000 frames: three segments of 1000,
+        // harvest 2 s → the last 2000 frames, spanning two of the three.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 1_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments: Vec<PrerollSegmentFile> = (0..3)
+            .map(|i| write_segment(dir.path(), i, spec, i * 1_000, 1_000))
+            .collect();
+
+        let clip = build_clip(&segments, spec, 2, dir.path())
+            .await
+            .expect("a clip");
+        // 3 s captured − 300 ms margin > 2 s requested, so the request wins.
+        assert_eq!(clip.trim_ms, 2_000);
+        assert_eq!(clip.start_offset_ms, 1_000, "the last 2 s of a 3 s buffer");
+
+        let path = PathBuf::from(&clip.raw_path);
+        let info = wav::parse_header(&std::fs::read(&path).unwrap()).expect("valid wav");
+        assert_eq!(info.sample_rate, 1_000);
+        assert_eq!(info.channels, 2);
+        assert_eq!(info.format_tag, 1);
+        assert_eq!(info.bits_per_sample, 16);
+
+        let frames = clip_frames(&path, spec);
+        assert_eq!(frames.len(), 2_000, "exactly the requested window");
+        // BYTE-EXACT: the clip starts at global frame 1000 and runs contiguously
+        // across the segment seam without a repeated or dropped frame.
+        assert_eq!(frames[0], 1_000);
+        assert_eq!(frames[999], 1_999);
+        assert_eq!(frames[1_000], 2_000, "no discontinuity at the seam");
+        assert_eq!(*frames.last().unwrap(), 2_999);
+        assert!(
+            frames.windows(2).all(|w| w[1] == w[0] + 1),
+            "frames must be strictly contiguous"
+        );
+    }
+
+    #[tokio::test]
+    async fn harvest_takes_only_what_the_buffer_holds() {
+        // The buffer only ran 2 s but 30 s were asked for: keep 2 s − the 300 ms
+        // safety margin, and start the offset at the margin.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 1_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments = vec![write_segment(dir.path(), 0, spec, 0, 2_000)];
+        let clip = build_clip(&segments, spec, 30, dir.path())
+            .await
+            .expect("a clip");
+        assert_eq!(clip.trim_ms, 1_700);
+        assert_eq!(clip.start_offset_ms, 300);
+        let frames = clip_frames(Path::new(&clip.raw_path), spec);
+        assert_eq!(frames.len(), 1_700);
+        assert_eq!(frames[0], 300, "the oldest 300 ms are the ones dropped");
+    }
+
+    #[tokio::test]
+    async fn harvest_spans_every_retained_segment_when_asked_for_everything() {
+        let spec = WavSpec {
+            channels: 1,
+            sample_rate: 1_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments: Vec<PrerollSegmentFile> = (0..7)
+            .map(|i| write_segment(dir.path(), i, spec, i * 500, 500))
+            .collect();
+        // 3.5 s buffered, 60 s requested → everything but the 300 ms margin.
+        let clip = build_clip(&segments, spec, 60, dir.path())
+            .await
+            .expect("a clip");
+        assert_eq!(clip.trim_ms, 3_200);
+        let frames = clip_frames(Path::new(&clip.raw_path), spec);
+        assert_eq!(frames.len(), 3_200);
+        assert_eq!(frames[0], 300);
+        assert!(frames.windows(2).all(|w| w[1] == w[0] + 1));
+    }
+
+    #[tokio::test]
+    async fn nothing_captured_yields_no_clip() {
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // No segments at all.
+        assert!(build_clip(&[], spec, 15, dir.path()).await.is_none());
+        // A buffer that only just opened: below MIN_VALID_SEGMENT_BYTES.
+        let tiny = vec![write_segment(dir.path(), 0, spec, 0, 100)]; // 400 B + header
+        assert!(build_clip(&tiny, spec, 15, dir.path()).await.is_none());
+        // Big enough on disk, but shorter than the 300 ms safety margin.
+        let short = vec![write_segment(dir.path(), 1, spec, 0, 4_800)]; // 100 ms
+        assert!(build_clip(&short, spec, 15, dir.path()).await.is_none());
+        // No clip file was left behind by any of those.
+        let clips: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("preroll-clip"))
+            .collect();
+        assert!(clips.is_empty(), "no half-made clips: {clips:?}");
+    }
+
+    #[tokio::test]
+    async fn a_missing_segment_file_fails_the_stitch_cleanly() {
+        // The list says a segment exists but the file is gone (a temp sweep, a
+        // full disk): no clip, no panic, no stray output.
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 1_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let mut segments = vec![write_segment(dir.path(), 0, spec, 0, 4_000)];
+        std::fs::remove_file(&segments[0].path).unwrap();
+        segments[0].path = dir.path().join("gone.wav");
+        assert!(build_clip(&segments, spec, 2, dir.path()).await.is_none());
+    }
+
+    /// The clip must survive `concat::wav_prepend_compatible`, which parses both
+    /// headers and demands identical s16 PCM. This asserts against the same core
+    /// functions that guard uses.
+    #[tokio::test]
+    async fn the_clip_is_copy_compatible_with_the_capture_it_prepends() {
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let segments = vec![write_segment(dir.path(), 0, spec, 0, 96_000)]; // 2 s
+        let clip = build_clip(&segments, spec, 1, dir.path())
+            .await
+            .expect("a clip");
+        let clip_info = wav::parse_header(&std::fs::read(&clip.raw_path).unwrap()).unwrap();
+
+        // What the capture engine writes for the same negotiated format.
+        let capture_info = wav::parse_header(&wav::header(spec, 0)).unwrap();
+        assert!(
+            clip_info.copy_compatible_with(&capture_info),
+            "clip {clip_info:?} vs capture {capture_info:?}"
+        );
+
+        // And the safety net: a buffer that negotiated a DIFFERENT rate (the
+        // device changed between `preroll_start` and the record press) is
+        // rejected by that same guard rather than corrupting the deliverable.
+        let other = wav::parse_header(&wav::header(
+            WavSpec {
+                channels: 2,
+                sample_rate: 44_100,
+            },
+            0,
+        ))
+        .unwrap();
+        assert!(!clip_info.copy_compatible_with(&other));
+        // Same for a channel-count change (mono capture, stereo buffer).
+        let mono = wav::parse_header(&wav::header(
+            WavSpec {
+                channels: 1,
+                sample_rate: 48_000,
+            },
+            0,
+        ))
+        .unwrap();
+        assert!(!clip_info.copy_compatible_with(&mono));
+    }
+
+    #[tokio::test]
+    async fn harvest_on_an_idle_engine_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = NativePrerollEngine::new(dir.path().to_path_buf());
+        assert!(engine.harvest(15).await.is_none());
     }
 }
