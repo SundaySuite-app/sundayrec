@@ -3,6 +3,8 @@ import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
+import { navigateTo } from '../ui/navigate'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
@@ -29,12 +31,12 @@ export function setupEditorPage(): void {
   E.videoEl   = $('editor-video') as HTMLVideoElement | null
 
   $('btn-editor-open')?.addEventListener('click',    () => pickAndLoad())
-  $('btn-editor-change')?.addEventListener('click',  () => {
-    if (!confirmDiscardIfDirty('open')) return
+  $('btn-editor-change')?.addEventListener('click',  async () => {
+    if (!(await confirmDiscardIfDirty('open'))) return
     pickAndLoad()
   })
-  $('btn-editor-close')?.addEventListener('click', () => {
-    if (!confirmDiscardIfDirty('close')) return
+  $('btn-editor-close')?.addEventListener('click', async () => {
+    if (!(await confirmDiscardIfDirty('close'))) return
     closeCurrentFile()
   })
 
@@ -59,6 +61,9 @@ export function setupEditorPage(): void {
   // collapsible panel header (externalized from an inline onclick attribute,
   // which the strict CSP — script-src 'self' — would block).
   document.querySelector('.editor-io-include-label')?.addEventListener('click', (e) => e.stopPropagation())
+
+  setupKbdHints()
+  setupMasteringCollapse()
   $('btn-editor-play')?.addEventListener('click',    () => togglePlay(false))
   $('btn-editor-preview')?.addEventListener('click', () => togglePlay(true))
   $('btn-zoom-in')?.addEventListener('click',   () => zoomBy(0.5))
@@ -81,10 +86,10 @@ export function setupEditorPage(): void {
   $('export-publish-configure')?.addEventListener('click', (e) => {
     e.preventDefault()
     closeExportModal()
-    // Publish is a tab inside Settings ("settings-publish") — navigate to
-    // Settings and let the tab handler land on the right inner page.
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('.inner-tab[data-tab="settings-publish"]')?.click()
+    // Publisering is a SECTION of the Deling tab since Fase 3 — navigateTo
+    // hands the tab switch to the page's own handler, so its side effects
+    // still run, and the anchor lands on the section rather than the tab top.
+    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-publish' })
   })
 
   // Audio format picker pills. Scoped to #export-fmt-section so it doesn't fight
@@ -385,6 +390,59 @@ export function openEditorWithFile(fp: string, seekToSec?: number): void {
   loadFile(fp)
 }
 
+// ── Editor chrome: keyboard hints + the secondary mastering panel ──────────
+
+/** localStorage key for the keyboard-hint strip. Default closed. */
+const KBD_HINTS_KEY = 'sundayrec.editor.kbdHints'
+
+/**
+ * Put the nine keyboard-shortcut chips behind the toolbar's "?".
+ *
+ * They used to sit above the waveform permanently, for the whole session: nine
+ * chips of chrome between the operator and the thing they came to edit, useful
+ * once and furniture forever after. Closed by default; the choice is
+ * remembered, so someone who wants them keeps them.
+ */
+function setupKbdHints(): void {
+  const btn   = $('btn-editor-kbd-toggle')
+  const hints = $('editor-kbd-hints')
+  if (!btn || !hints) return
+  const apply = (open: boolean): void => {
+    hints.hidden = !open
+    btn.setAttribute('aria-expanded', String(open))
+  }
+  let open = false
+  try { open = localStorage.getItem(KBD_HINTS_KEY) === 'open' } catch { /* private mode */ }
+  apply(open)
+  btn.addEventListener('click', () => {
+    open = !open
+    apply(open)
+    try { localStorage.setItem(KBD_HINTS_KEY, open ? 'open' : 'closed') } catch { /* private mode */ }
+  })
+}
+
+/**
+ * The workspace mastering panel is the SECONDARY path — it writes a separate
+ * `_mastert` file. Mastering that ends up in the exported file is chosen in the
+ * export dialog's Lydforbedring section, which is where the operator already
+ * is when they think about it. Two panels offering "mastering" with different
+ * outcomes is one too many, so this one collapses and points at the other; it
+ * stays fully functional for the separate-file flow.
+ */
+function setupMasteringCollapse(): void {
+  const header  = $('editor-master-header')
+  const section = $('editor-master-section')
+  if (!header || !section) return
+  const toggle = (): void => {
+    const collapsed = section.classList.toggle('editor-master-section--collapsed')
+    header.setAttribute('aria-expanded', String(!collapsed))
+  }
+  header.addEventListener('click', toggle)
+  header.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() }
+  })
+}
+
 // ── Review mode state (prep-and-review v5.0) ──────────────────────────────
 // When non-null, the editor is in "review mode" — it pre-applies suggested
 // cuts/preset/jingles from the queue entry and shows the green publish banner.
@@ -498,6 +556,17 @@ function loadAndUpdateReviewBanner(): void {
   }
 }
 
+/** Turn a review-queue error code into a sentence. The one code the backend
+ *  produces on its own is "the id is no longer in the queue" — which reads as
+ *  a mystery unless we say what it means. */
+function describeReviewError(code: string | undefined): string | undefined {
+  if (!code) return undefined
+  if (code === 'review_entry_not_found') {
+    return t('review.errNotFound', 'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.')
+  }
+  return code
+}
+
 function setupReviewBanner(): void {
   $('btn-review-publish')?.addEventListener('click', async () => {
     if (!reviewPrepId) return
@@ -521,12 +590,20 @@ function setupReviewBanner(): void {
       } else {
         btn.disabled = false
         btn.textContent = orig
-        alert(`Kunne ikke publisere: ${r.error ?? 'ukjent feil'}`)
+        await alertDialog({
+          title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
+          message: describeReviewError(r.error),
+          tone:    'error',
+        })
       }
     } catch (err) {
       btn.disabled = false
       btn.textContent = orig
-      alert(`Kunne ikke publisere: ${(err as Error).message}`)
+      await alertDialog({
+        title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
+        message: (err as Error).message,
+        tone:    'error',
+      })
     }
   })
 
@@ -539,8 +616,25 @@ function setupReviewBanner(): void {
 
   $('btn-review-discard')?.addEventListener('click', async () => {
     if (!reviewPrepId) return
-    if (!confirm('Forkast denne episoden? Selve opptaket beholdes, men det vil ikke publiseres.')) return
-    await window.api.reviewQueueDiscard(reviewPrepId)
+    const ok = await confirmDialog({
+      title:        t('dialog.discardEpisodeTitle', 'Forkast denne episoden?'),
+      message:      t('dialog.discardEpisodeBody', 'Selve opptaket beholdes, men det blir ikke publisert.'),
+      confirmLabel: t('dialog.discardEpisode', 'Forkast'),
+      danger:       true,
+    })
+    if (!ok) return
+    // The backend answers with a bool: false means the entry was already gone
+    // from the queue. Silently pretending it worked would send the user home
+    // believing they had made a decision that never landed.
+    const done = await window.api.reviewQueueDiscard(reviewPrepId)
+    if (!done) {
+      await alertDialog({
+        title:   t('dialog.discardFailedTitle', 'Kunne ikke forkaste episoden'),
+        message: describeReviewError('review_entry_not_found'),
+        tone:    'error',
+      })
+      return
+    }
     reviewPrepId = null
     reviewPrep = null
     loadAndUpdateReviewBanner()
@@ -635,15 +729,13 @@ function setupKeyboardShortcuts(): void {
     // skip the `peaks` guard so Cmd+O still works.
     if (mod && e.code === 'KeyO') {
       e.preventDefault()
-      if (!confirmDiscardIfDirty('open')) return
-      pickAndLoad()
+      void confirmDiscardIfDirty('open').then(ok => { if (ok) pickAndLoad() })
       return
     }
     if (mod && e.code === 'KeyW') {
       e.preventDefault()
       if (!E.filePath) return
-      if (!confirmDiscardIfDirty('close')) return
-      closeCurrentFile()
+      void confirmDiscardIfDirty('close').then(ok => { if (ok) closeCurrentFile() })
       return
     }
     if (mod && (e.code === 'KeyS' || e.code === 'KeyE')) {
@@ -784,7 +876,7 @@ function setupDragDrop(): void {
     if (!AUDIO_EXTS.has(ext) && !VIDEO_DROP_EXTS.has(ext)) return
     const fp = (file as File & { path?: string }).path
     if (!fp) return
-    if (!confirmDiscardIfDirty('open')) return
+    if (!(await confirmDiscardIfDirty('open'))) return
     // Drag-and-drop is an explicit user action — trust the folder for this
     // session so path-defense doesn't silently refuse legitimate picks from
     // external drives or non-standard locations.
@@ -889,6 +981,11 @@ export function showState(state: 'empty' | 'loading' | 'workspace'): void {
  * entries. The link navigates to home (where the prep queue lives).
  */
 function renderRecentFiles(): void {
+  // The review-queue link is decided on its own — it used to be skipped
+  // entirely by the early return below, so a fresh install with a queued
+  // episode but no recent-file history never saw it.
+  void refreshEmptyStateReviewLink()
+
   const wrap = $('editor-empty-recents')
   const list = $('editor-empty-recents-list')
   if (!wrap || !list) return
@@ -913,11 +1010,36 @@ function renderRecentFiles(): void {
     })
     list.appendChild(item)
   }
+}
 
-  // Review-queue link: best-effort — we just always offer it if there's
-  // a non-empty history. The review queue itself lives on home page.
-  const reviewWrap = $('editor-empty-review')
-  if (reviewWrap) reviewWrap.style.display = ''
+/**
+ * Show the "Gjennomgangs-kø →" link only when there is something in the queue.
+ *
+ * It used to be shown unconditionally — a link promising a queue that, until
+ * this branch wired `review_queue_list` up, was always empty. Now the queue is
+ * real, so ask it: an empty queue gets no link, and a non-empty one says how
+ * many are waiting.
+ */
+async function refreshEmptyStateReviewLink(): Promise<void> {
+  const wrap = $('editor-empty-review')
+  const link = $('editor-empty-review-link')
+  if (!wrap) return
+  wrap.style.display = 'none'
+  try {
+    const entries = await window.api.reviewQueueList()
+    const pending = entries.filter(e =>
+      e.prep.status !== 'published' && e.prep.status !== 'discarded')
+    if (pending.length === 0) return
+    if (link) {
+      link.textContent = pending.length === 1
+        ? t('editor.gotoReviewOne', 'Gjennomgangs-kø (1 episode) →')
+        : t('editor.gotoReviewN', 'Gjennomgangs-kø ({n} episoder) →').replace('{n}', String(pending.length))
+    }
+    wrap.style.display = ''
+  } catch (err) {
+    // A queue we cannot read is not a queue we should advertise.
+    console.warn('[editor] review queue lookup failed:', err)
+  }
 }
 
 /**
@@ -944,19 +1066,22 @@ export function updateHeaderSummary(): void {
 }
 
 /**
- * Prompt the user before discarding unsaved edits. Returns true if the
- * user wants to proceed (no dirty state, or they confirmed); false if
- * they cancelled.
+ * Ask before discarding unsaved edits. Resolves true when it is safe to
+ * proceed (nothing dirty, or the user confirmed), false when they backed out.
  *
- * Uses native confirm() — same idiom as the existing review-discard
- * button on line ~487. A custom modal would be nicer but lower priority.
+ * Async since the native confirm() went away — every caller is an event
+ * handler, so awaiting costs nothing.
  */
-function confirmDiscardIfDirty(intent: 'open' | 'close'): boolean {
+async function confirmDiscardIfDirty(intent: 'open' | 'close'): Promise<boolean> {
   if (!E.editorDirty) return true
-  const msg = intent === 'close'
-    ? t('editor.confirmClose', 'Du har ulagrede endringer. Lukk likevel?')
-    : t('editor.confirmOpenOther', 'Du har ulagrede endringer. Åpne ny fil likevel?')
-  return confirm(msg)
+  return confirmDialog({
+    title: intent === 'close'
+      ? t('editor.confirmClose', 'Du har ulagrede endringer. Lukk likevel?')
+      : t('editor.confirmOpenOther', 'Du har ulagrede endringer. Åpne ny fil likevel?'),
+    message:      t('dialog.discardEditsBody', 'Kuttene du har gjort går tapt. Selve opptaksfilen røres ikke.'),
+    confirmLabel: t('dialog.discardEdits', 'Forkast endringene'),
+    danger:       true,
+  })
 }
 
 /**

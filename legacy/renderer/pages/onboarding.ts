@@ -9,6 +9,22 @@ let obVu     = makeVuState()
 let obStream: MediaStream | null = null
 let obCtx:   AudioContext | null = null
 
+/**
+ * Has the meter actually seen sound during THIS visit to step 3?
+ *
+ * The step's whole job is to prove the audio path works, and «Lyden fungerer →»
+ * used to be clickable whether or not it did — so the wizard would cheerfully
+ * confirm a muted mixer, and the first anyone knew was a silent recording of a
+ * service. The button now waits for real signal.
+ */
+let obSignalSeen = false
+/** dBFS above which we call it signal rather than room noise / a dead input.
+ *  The step's own scale calls anything under -55 «venter på lyd» and -55..-40
+ *  «svakt signal»; -45 sits inside that band, so speaking normally into a
+ *  correctly-wired input clears it in a second, and a disconnected one never
+ *  does. */
+const OB_SIGNAL_DB = -45
+
 function stopObVU(): void {
   stopVuState(obVu); obVu = makeVuState()
   obStream?.getTracks().forEach(t => t.stop()); obStream = null
@@ -90,6 +106,22 @@ function allDots(): void {
   if (prog) prog.innerHTML = [1,2,3,4].map(() => `<div class="ob-dot done"></div>`).join('')
 }
 
+/**
+ * «‹ Tilbake» for steps 2–4.
+ *
+ * The wizard was one-way: a volunteer who picked the wrong mixer on step 2 and
+ * noticed on step 3 had no way back except finishing the whole thing and
+ * reopening it from Innstillinger. Every step after the first now has a way
+ * back to the one before.
+ */
+function backButton(step: number): string {
+  return `<button class="ob-text-btn ob-back-btn" id="ob-back-${step}">${esc(t('onboarding.back', '‹ Tilbake'))}</button>`
+}
+
+function wireBack(step: number): void {
+  document.getElementById(`ob-back-${step}`)?.addEventListener('click', () => goTo(step - 1))
+}
+
 // ── Step 1: Welcome ──────────────────────────────────────────────
 function s1(body: HTMLElement): void {
   body.innerHTML = `
@@ -123,6 +155,7 @@ async function s2(body: HTMLElement): Promise<void> {
     <div class="ob-actions">
       <button class="btn-primary" id="ob-n2" style="justify-content:center">${esc(t('onboarding.deviceUse', 'Bruk valgt enhet →'))}</button>
       <button class="ob-text-btn" id="ob-s2">${esc(t('onboarding.skipStep', 'Hopp over dette steget'))}</button>
+      ${backButton(2)}
     </div>`
 
   const list    = document.getElementById('ob-dev-list')!
@@ -171,10 +204,12 @@ async function s2(body: HTMLElement): Promise<void> {
     goTo(3)
   })
   document.getElementById('ob-s2')?.addEventListener('click', () => goTo(3))
+  wireBack(2)
 }
 
 // ── Step 3: Audio test ────────────────────────────────────────────
 async function s3(body: HTMLElement): Promise<void> {
+  obSignalSeen = false
   body.innerHTML = `
     <h2 class="ob-title">${esc(t('onboarding.testTitle', 'Test at lyden fungerer'))}</h2>
     <p class="ob-desc">${esc(t('onboarding.testDesc', 'Si noe i mikrofonen, eller spill lyd gjennom mikseren. Sjekk at indikatoren beveger seg.'))}</p>
@@ -183,9 +218,21 @@ async function s3(body: HTMLElement): Promise<void> {
       <div class="ob-vu-lbl" id="ob-vu-lbl">${esc(t('onboarding.vuWaiting', 'Venter på lyd…'))}</div>
     </div>
     <div class="ob-actions">
-      <button class="btn-primary" id="ob-n3" style="justify-content:center">${esc(t('onboarding.testOk', 'Lyden fungerer →'))}</button>
+      <button class="btn-primary" id="ob-n3" style="justify-content:center" disabled>${esc(t('onboarding.testOk', 'Lyden fungerer →'))}</button>
+      <div class="ob-hint" id="ob-n3-hint">${esc(t('onboarding.testWaitHint', 'Knappen åpner seg så snart måleren fanger opp lyd.'))}</div>
       <button class="ob-text-btn" id="ob-s3">${esc(t('onboarding.skipStep', 'Hopp over dette steget'))}</button>
+      ${backButton(3)}
     </div>`
+
+  /** Open the «Lyden fungerer →» button — the step has proved its point. */
+  const markSignalSeen = (): void => {
+    if (obSignalSeen) return
+    obSignalSeen = true
+    const btn = document.getElementById('ob-n3') as HTMLButtonElement | null
+    const hint = document.getElementById('ob-n3-hint')
+    if (btn) btn.disabled = false
+    if (hint) hint.textContent = t('onboarding.testHeardHint', 'Lyd registrert — du kan gå videre.')
+  }
 
   const devId = pickedId ?? (settings.deviceId ?? null)
   try {
@@ -209,6 +256,10 @@ async function s3(body: HTMLElement): Promise<void> {
 
     tickVU(obVu, null, null, null, null, null, null, (dbL, dbR) => {
       const db   = Math.max(dbL, dbR)
+      // The gate: one moment of real signal is enough, and it stays unlocked
+      // (a meter that dips back to silence between words must not re-lock the
+      // button under the user's cursor).
+      if (db >= OB_SIGNAL_DB) markSignalSeen()
       const fill = document.getElementById('ob-vu-fill')
       const lbl  = document.getElementById('ob-vu-lbl')
       if (!fill || !lbl) return
@@ -225,10 +276,17 @@ async function s3(body: HTMLElement): Promise<void> {
       lbl.textContent = t('onboarding.vuError', 'Kunne ikke starte lydtest — sjekk at tillatelse er gitt i systeminnstillingene.')
       lbl.style.color = 'var(--orange)'
     }
+    // The meter never got to run, so it can never open the button. Don't trap
+    // the user behind a test that cannot be taken: point at the way past.
+    const hint = document.getElementById('ob-n3-hint')
+    if (hint) hint.textContent = t('onboarding.testBlockedHint', 'Lydtesten kunne ikke starte. Gå videre og test lyden fra Innstillinger → Lyd senere.')
+    const skip = document.getElementById('ob-s3')
+    if (skip) skip.textContent = t('onboarding.testSkipAfterError', 'Fortsett uten lydtest →')
   }
 
   document.getElementById('ob-n3')?.addEventListener('click', () => goTo(4))
   document.getElementById('ob-s3')?.addEventListener('click', () => goTo(4))
+  wireBack(3)
 }
 
 // ── Step 4: Schedule ─────────────────────────────────────────────
@@ -279,6 +337,7 @@ function s4(body: HTMLElement): void {
     <div class="ob-actions">
       <button class="btn-primary" id="ob-n4" style="justify-content:center">${esc(t('onboarding.schedFinish', 'Fullfør oppsett →'))}</button>
       <button class="ob-text-btn" id="ob-s4">${esc(t('onboarding.schedSkip', 'Hopp over — legg til manuelt under Planlegging'))}</button>
+      ${backButton(4)}
     </div>`
 
   enhanceTimeInput(document.getElementById('ob-start') as HTMLInputElement | null)
@@ -319,16 +378,28 @@ function s4(body: HTMLElement): void {
       const [sh, sm] = startVal.split(':').map(Number)
       const endMin   = sh * 60 + sm + durMin
       const stopVal  = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`
-      const slots    = (settings.slots ?? []).filter(s => !s.days.includes(selectedDay))
-      slots.push({ days: [selectedDay], start: startVal, stop: stopVal })
-      patchSettings({ slots })
-      void window.api.saveSettings(settings)
+
+      // MERGE, never replace. This used to filter out every existing slot on
+      // the chosen weekday before pushing the new one — so a church with a
+      // morning AND an evening service on Sunday lost the evening the moment
+      // anyone reopened the wizard from Innstillinger («Åpne oppstartsveileder»
+      // is offered as a harmless refresher). Onboarding must never delete a
+      // schedule the user built by hand.
+      const existing  = settings.slots ?? []
+      const duplicate = existing.some(
+        s => s.days.length === 1 && s.days[0] === selectedDay && s.start === startVal && s.stop === stopVal,
+      )
+      if (!duplicate) {
+        patchSettings({ slots: [...existing, { days: [selectedDay], start: startVal, stop: stopVal }] })
+        void window.api.saveSettings(settings)
+      }
     }
     goTo(5)
   }
 
   document.getElementById('ob-n4')?.addEventListener('click', save)
   document.getElementById('ob-s4')?.addEventListener('click', () => goTo(5))
+  wireBack(4)
 }
 
 // ── Done ──────────────────────────────────────────────────────────
@@ -343,7 +414,7 @@ function sDone(body: HTMLElement): void {
       <div class="ob-tip"><strong>${esc(t('onboarding.tipHomeTitle', 'Hjem'))}</strong> — ${esc(t('onboarding.tipHomeText', 'Sjekk status, kjør test-opptak, og se neste planlagte opptak'))}</div>
       <div class="ob-tip"><strong>${esc(t('onboarding.tipScheduleTitle', 'Tidsplan'))}</strong> — ${esc(t('onboarding.tipScheduleText', 'Legg til ukentlige opptak og spesialdager (jul, påske)'))}</div>
       <div class="ob-tip"><strong>${esc(t('onboarding.tipAudioTitle', 'Innstillinger → Lyd'))}</strong> — ${esc(t('onboarding.tipAudioText', 'Bytt mikser, juster volum og kjør test-opptak'))}</div>
-      <div class="ob-tip"><strong>${esc(t('onboarding.tipPublishTitle', 'Innstillinger → Publisering'))}</strong> <em>${esc(t('onboarding.tipPublishOptional', '(valgfritt)'))}</em> — ${esc(t('onboarding.tipPublishText', 'Koble til Google Drive / Dropbox / OneDrive for automatisk sky-backup'))}</div>
+      <div class="ob-tip"><strong>${esc(t('onboarding.tipPublishTitle', 'Innstillinger → Deling'))}</strong> <em>${esc(t('onboarding.tipPublishOptional', '(valgfritt)'))}</em> — ${esc(t('onboarding.tipPublishText', 'Koble til Google Drive / Dropbox / OneDrive for automatisk sky-backup'))}</div>
     </div>
     <div class="ob-actions">
       <button class="btn-primary" id="ob-done" style="justify-content:center">${esc(t('onboarding.doneOpen', 'Åpne SundayRec →'))}</button>

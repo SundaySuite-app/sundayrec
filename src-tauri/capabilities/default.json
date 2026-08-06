@@ -16,6 +16,7 @@
     "opener:allow-reveal-item-in-dir",
     "dialog:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     "process:default",
     "notification:default"
   ]

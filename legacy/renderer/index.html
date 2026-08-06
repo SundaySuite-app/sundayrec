@@ -7,6 +7,9 @@
   <title>SundayRec</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
   <link rel="stylesheet" href="styles.css" />
+  <!-- Shared UI services (dialogs, toasts, banners, managed modals). Loaded
+       after styles.css so it inherits the design tokens defined there. -->
+  <link rel="stylesheet" href="./ui/ui.css" />
 </head>
 <body>
 
@@ -54,7 +57,7 @@
     </a></li>
     <li><a href="#" class="nav-link" data-page="search">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
-      <span data-i18n="nav.search">Søk</span>
+      <span data-i18n="nav.search">Historikk</span>
     </a></li>
   </ul>
   <div class="sidebar-bottom">
@@ -108,6 +111,31 @@
 
   <!-- ══ HJEM ══════════════════════════════════════════════════ -->
   <section id="page-home" class="page active">
+
+    <!-- Missed recordings (scheduler://missed). The backend has always emitted
+         this; until now the only trace was a native notification you had to be
+         at the machine to see. Filled + shown by home.ts from the shared
+         next-recording store. -->
+    <div id="missed-card" class="home-banner home-banner-error home-alert-card ui-reveal" style="display:none" role="alert">
+      <div class="home-banner-title" id="missed-card-title"></div>
+      <ul class="home-banner-list" id="missed-card-list"></ul>
+      <div class="home-banner-hint" data-i18n="missed.hint">Sjekk at maskinen var på, at SundayRec kjørte og at «Vekk maskin automatisk» er slått på.</div>
+      <div class="home-banner-actions">
+        <button type="button" class="btn-ghost btn-sm" id="btn-missed-schedule" data-i18n="missed.openSchedule">Åpne tidsplan</button>
+        <button type="button" class="btn-ghost btn-sm" id="btn-missed-dismiss" data-i18n="missed.dismiss">Greit</button>
+      </div>
+    </div>
+
+    <!-- Pre-start check (scheduler://preflight, fired 30 min before a scheduled
+         start) — and the same findings when Home runs the check itself. -->
+    <div id="preflight-card" class="home-banner home-banner-warn home-alert-card ui-reveal" style="display:none" role="alert">
+      <div class="home-banner-title" id="preflight-card-title"></div>
+      <ul class="home-banner-list" id="preflight-card-list"></ul>
+      <div class="home-banner-actions">
+        <button type="button" class="btn-ghost btn-sm" id="btn-preflight-settings" data-i18n="status.preflightAction">Se innstillinger</button>
+        <button type="button" class="btn-ghost btn-sm" id="btn-preflight-dismiss" data-i18n="status.dismiss">Skjul</button>
+      </div>
+    </div>
 
     <!-- Review queue card — only visible when items are pending review -->
     <div class="card review-queue-card" id="review-queue-card" style="display:none">
@@ -167,7 +195,7 @@
     <!-- Full-width VU section with signal status -->
     <div class="vu-section">
       <div class="vu-section-head">
-        <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå</span>
+        <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå — live</span>
         <div class="signal-row">
           <span class="signal-dot" id="signal-dot"></span>
           <span class="signal-text" id="signal-text">—</span>
@@ -268,6 +296,9 @@
           <div class="info-card-label" data-i18n="home.audioDevice">LYDKILDE</div>
           <div class="info-card-value" id="home-device-name">—</div>
           <div class="info-card-sub" id="home-device-status"><span class="signal-dot" id="home-device-signal"></span><span id="home-device-status-text"></span></div>
+          <!-- The rolling pre-roll buffer holds the microphone in the background;
+               it must never do so invisibly. Shown only while it is really running. -->
+          <div class="info-card-sub preroll-chip" id="home-preroll-chip" style="display:none">⏺ <span id="home-preroll-text"></span></div>
         </div>
         <a href="#" class="info-card-action" id="btn-go-audio-page" data-i18n="home.changeSettings">Endre</a>
       </div>
@@ -286,7 +317,7 @@
         </div>
         <a href="#" class="info-card-action" id="btn-go-audio-fmt" data-i18n="home.changeSettings">Endre</a>
       </div>
-      <div class="info-card">
+      <div class="info-card" id="home-storage-card">
         <div class="info-card-icon">
           <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
         </div>
@@ -394,6 +425,14 @@
       <a href="#" class="view-all" id="home-see-all" data-i18n="home.seeAll">Se alle →</a>
     </div>
     <table class="rec-table">
+      <thead>
+        <tr>
+          <th data-i18n="history.date">Dato</th>
+          <th data-i18n="history.duration">Varighet</th>
+          <th data-i18n="history.filename">Filnavn</th>
+          <th aria-label="Handlinger" data-i18n-aria-label="history.actions"></th>
+        </tr>
+      </thead>
       <tbody id="home-recent"></tbody>
     </table>
     </div><!-- #home-lower -->
@@ -405,7 +444,22 @@
 
     <div class="page-header">
       <h1 data-i18n="nav.schedule">Tidsplan</h1>
-      <p class="subtitle" data-i18n="schedule.subtitle">Faste ukentlige opptak + spesialdager (jul, påske, konfirmasjon o.l.).</p>
+      <p class="subtitle" data-i18n="schedule.subtitle">Faste opptak som gjentas automatisk hver uke.</p>
+    </div>
+
+    <!-- ── Vekking: the one thing that decides whether a scheduled recording
+         happens at all, and it used to live three clicks down inside
+         «Avanserte innstillinger». A planned recording on a sleeping machine
+         is not a recording, so the state belongs at the top of the page that
+         plans them. «Detaljer» opens the full section below. -->
+    <div class="card wake-summary-card" id="wake-summary-card">
+      <span class="wake-status-dot" id="wake-summary-dot"></span>
+      <div class="wake-summary-text">
+        <div class="wake-summary-title" id="wake-summary-title" data-i18n="wake.summary.checking">Sjekker oppvåkning…</div>
+        <div class="wake-summary-sub" id="wake-summary-sub"></div>
+        <div class="wake-summary-test" id="wake-summary-test"></div>
+      </div>
+      <button type="button" class="btn-ghost btn-sm" id="btn-wake-summary-details" data-i18n="wake.summary.details">Detaljer</button>
     </div>
 
     <!-- Calendar — shown first for immediate overview -->
@@ -424,7 +478,7 @@
         <div id="cal-weekdays" class="cal-weekdays"></div>
         <div id="cal-grid" class="cal-grid"></div>
         <div class="cal-legend">
-          <span class="leg-dot leg-weekly"></span><span data-i18n="calendar.legendWeekly">Ukentlig</span>&nbsp;&nbsp;
+          <span class="leg-dot leg-weekly"></span><span data-i18n="calendar.legendWeekly">Ukentlig opptak</span>&nbsp;&nbsp;
           <span class="leg-dot leg-special"></span><span data-i18n="calendar.legendSpecial">Spesialopptak</span>&nbsp;&nbsp;
           <span class="leg-dot leg-holiday"></span><span data-i18n="calendar.legendHoliday">Kirkehøytid</span>
         </div>
@@ -434,7 +488,7 @@
           <div class="cal-day-detail-title" id="cal-day-detail-title">Mandag 2. juni</div>
           <div class="cal-day-events" id="cal-day-events"></div>
           <div class="form-row">
-            <label class="form-label" data-i18n="calendar.name">NAVN PÅ OPPTAK</label>
+            <label class="form-label" data-i18n="calendar.name">NAVN (forslag fra kirkekalenderen)</label>
             <input type="text" class="form-input" id="special-name" placeholder="Gudstjeneste" />
           </div>
           <div class="form-row two-col">
@@ -454,7 +508,7 @@
           <span data-i18n="calendar.hintShort">Klikk på en dag for å legge til opptak</span>
         </div>
         <div class="card">
-          <div class="card-title" data-i18n="calendar.planned">Kommende spesialopptak</div>
+          <div class="card-title" data-i18n="calendar.planned">Planlagte spesialopptak</div>
           <div id="planned-list"></div>
         </div>
       </div>
@@ -471,7 +525,7 @@
 
     <!-- Slot editor (inline) -->
     <div class="card" id="slot-editor" style="display:none">
-      <div class="card-title" data-i18n="schedule.edit">Rediger tidspunkt</div>
+      <div class="card-title" data-i18n="schedule.edit">Rediger</div>
       <div class="form-row">
         <label class="form-label" data-i18n="schedule.dayLabel">DAG</label>
         <div class="day-picker" id="day-picker"></div>
@@ -489,12 +543,12 @@
       <div id="slot-duration-display" style="display:none;font-size:12px;padding:2px 0 6px;color:var(--text3)"></div>
       <div class="form-row" style="margin-top:4px">
         <div>
-          <label class="form-label" data-i18n="schedule.max">MAKS VARIGHET (min, valgfritt)</label>
+          <label class="form-label" data-i18n="schedule.max">MAKS</label>
           <input type="number" class="form-input" id="slot-max" placeholder="—" min="0" max="480" style="max-width:120px" />
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.save">Lagre</button>
+        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.save">Lagre tidsplan</button>
         <button class="btn-ghost" id="btn-slot-cancel" data-i18n="schedule.cancel">Avbryt</button>
       </div>
     </div>
@@ -511,8 +565,11 @@
         <!-- Master toggle ─────────────────────────────────────────────── -->
         <div class="toggle-row" style="margin-top:12px">
           <div>
-            <div class="toggle-title" data-i18n="schedule.wakeTitle">Vekk maskin automatisk før planlagte opptak</div>
-            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes ~2 min før opptaket starter.</div>
+            <div class="toggle-title" data-i18n="schedule.wakeTitle">Vekk datamaskinen fra dvale</div>
+            <!-- 10 minutes is the backend's WAKE_LEAD_MINUTES (crates/sundayrec-core/src/wake.rs),
+                 not a UI guess. This line used to promise "~2 min" while the machine
+                 actually woke at 10, and the home badge said something else again. -->
+            <div class="toggle-desc" data-i18n="schedule.wakeDesc">Maskinen vekkes automatisk 10 minutter før opptaket starter</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-wake" /><span class="toggle-track"></span></label>
         </div>
@@ -596,17 +653,17 @@
 
           <!-- Always-off note kept at the bottom of wake-details -->
           <div id="sleep-always-off-note" class="sleep-config-detail wake-tip" style="margin-top:12px" data-i18n="schedule.sleepAlwaysOffNote">
-            Vil du at maskinen alltid skal starte opptak? La den stå i dvale (ikke slå den av) og aktiver «Oppstart med Windows/Mac» i Generelt-siden.
+            Vil du at maskinen alltid skal starte opptak? La den stå i dvale (ikke slå den av) og aktiver «Start automatisk med Windows/Mac» under System.
           </div>
 
           <!-- Kept invisible — old reliability card host is no longer rendered separately,
                but schedule-page.ts toggles a #wake-reliability-card element on/off to gate
                the dynamic refresh. We retain the id with display:contents so refresh runs. -->
-          <div id="wake-reliability-card" style="display:none"></div>
+          <div id="wake-reliability-card" class="ui-reveal" style="display:none"></div>
         </div>
 
         <div class="btn-row" style="margin-top:16px">
-          <button class="btn-primary" id="btn-schedule-save" data-i18n="schedule.save">Lagre innstillinger</button>
+          <button class="btn-primary" id="btn-schedule-save" data-i18n="schedule.save">Lagre tidsplan</button>
         </div>
       </div>
     </div>
@@ -619,7 +676,7 @@
     <div class="page-header live-page-header">
       <div>
         <h1 data-i18n="live.title">Direkte sending</h1>
-        <p class="subtitle" data-i18n="live.subtitle">Stream gudstjenester direkte til YouTube, Facebook eller egen RTMP-server.</p>
+        <p class="subtitle" data-i18n="live.subtitle">Stream til YouTube, Facebook eller egen RTMP-server</p>
       </div>
       <span id="live-status-pill" class="live-status-pill is-idle">
         <span class="live-status-pill-dot"></span>
@@ -649,7 +706,7 @@
         </div>
         <div class="vu-section live-vu-section">
           <div class="vu-section-head">
-            <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå</span>
+            <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå — live</span>
             <div class="signal-row">
               <span class="signal-dot" id="live-signal-dot"></span>
               <span class="signal-text" id="live-signal-text">—</span>
@@ -690,7 +747,7 @@
 
       <!-- Right column: stats + destinations + quality -->
       <div class="live-side-col">
-        <div class="card live-stats-card">
+        <div class="card live-stats-card" id="live-stats-card">
           <div class="card-title" data-i18n="live.statsTitle">Statistikk</div>
           <div class="live-stats-grid">
             <div class="live-stat">
@@ -716,7 +773,7 @@
           <div class="card-title" data-i18n="live.destinations">Destinasjoner</div>
           <div id="live-destinations-list"></div>
           <div id="live-destinations-empty" class="live-destinations-empty" style="display:none">
-            <p data-i18n="live.noDestinations">Ingen destinasjoner konfigurert. Gå til Innstillinger → Publisering.</p>
+            <p data-i18n="live.noDestinations">Ingen destinasjoner konfigurert. Gå til Innstillinger → Deling.</p>
           </div>
           <a href="#" class="live-config-link" id="live-config-link" data-i18n="live.configDestinations">→ Konfigurer destinasjoner</a>
         </div>
@@ -777,6 +834,9 @@
       <button class="live-start-btn-secondary" id="btn-live-start-stream-only" type="button">
         <span data-i18n="live.startStreamOnly">Bare direktesending (uten lokal opptak)</span>
       </button>
+      <!-- Why the start button is greyed out. It used to be disabled with the
+           reason known only to updateStartButtonState(). -->
+      <div class="blocked-reason" id="live-start-reason" style="display:none"></div>
       <div class="live-error" id="live-error" style="display:none"></div>
       <div class="live-action-hint" data-i18n="live.alsoRecordHint">
         Lokal opptaksfil havner i Siste opptak når strømmen stopper —
@@ -788,14 +848,17 @@
 
   <!-- ══ INNSTILLINGER ════════════════════════════════════════════ -->
   <section id="page-settings" class="page">
+    <!-- Five tabs, not seven. «Publisering» and «Varsler» were two halves of
+         one question — who gets the recording afterwards — so they are now
+         sections of Deling; Sunday-suite lives behind an Avansert disclosure at
+         the bottom of System. The fallbacks below match the locale values
+         exactly (they used to say «Lyd» while no.json said «Lydkilde»). -->
     <div class="inner-tabs" id="settings-tabs">
       <button class="inner-tab active" data-tab="settings-audio" data-i18n="nav.audio">Lyd</button>
       <button class="inner-tab" data-tab="settings-video" data-i18n="nav.video">Video</button>
       <button class="inner-tab" data-tab="settings-files" data-i18n="nav.files">Opptak</button>
-      <button class="inner-tab" data-tab="settings-publish" data-i18n="nav.publish">Publisering</button>
-      <button class="inner-tab" data-tab="settings-notifications" data-i18n="nav.notifications">Varsler</button>
+      <button class="inner-tab" data-tab="settings-sharing" data-i18n="nav.sharing">Deling</button>
       <button class="inner-tab" data-tab="settings-general" data-i18n="nav.system">System</button>
-      <button class="inner-tab" data-tab="settings-integrations">Sunday-suite</button>
     </div>
 
     <!-- ── Lydkilde ────────────────────────────────────────────── -->
@@ -885,6 +948,11 @@
           <button type="button" class="btn-secondary btn-sm" id="btn-audio-diagnose" data-i18n="audio.diagnose">Diagnose</button>
           <span class="health-status" id="health-status-settings" style="margin-left:8px;font-size:13px;color:var(--text3);align-self:center"></span>
         </div>
+        <!-- Shared progress bar for test-recording (determinate, an ESTIMATE)
+             and the capture bench (indeterminate + elapsed seconds). -->
+        <div class="health-progress" id="health-progress" style="display:none" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div class="health-progress-fill" id="health-progress-fill"></div>
+        </div>
         <ul id="preflight-findings-settings" style="display:none;list-style:none;margin:8px 0 0 0;padding:0;font-size:13px"></ul>
       </div>
 
@@ -902,7 +970,7 @@
             <input type="radio" name="sampleRate" value="auto" id="sr-auto" checked />
             <div class="option-card-name" data-i18n="audio.sampleRateAuto">Automatisk</div>
             <div class="option-card-badge" data-i18n="audio.recommended">Anbefalt</div>
-            <div class="option-card-desc"><span data-i18n="audio.sampleRateAutoDesc">Følger lydkortet</span><span id="sr-auto-actual"></span></div>
+            <div class="option-card-desc"><span data-i18n="audio.sampleRateAutoDesc">Følger lydkortet — ingen resampling</span><span id="sr-auto-actual"></span></div>
           </label>
           <label class="option-card">
             <input type="radio" name="sampleRate" value="r44100" id="sr-44" />
@@ -959,17 +1027,17 @@
     <!-- ── Filer ───────────────────────────────────────────────── -->
     <div id="settings-files" class="inner-page">
       <div class="card">
-        <div class="card-title" data-i18n="files.saveFolder">Hvor opptakene lagres</div>
+        <div class="card-title" data-i18n="files.saveFolder">Lagringsmappe</div>
         <p class="card-desc" data-i18n="files.saveFolderDesc">Alle opptak havner her som lokale filer. Tips: velg en mappe på en ekstern disk hvis du tar opp ofte og har stor harddisk.</p>
         <label class="form-label" data-i18n="files.saveTo">LAGRES I</label>
         <div class="folder-row">
           <input type="text" class="form-input" id="save-folder" readonly />
-          <button class="btn-secondary" id="btn-pick-folder" data-i18n="files.browse">Velg mappe…</button>
+          <button class="btn-secondary" id="btn-pick-folder" data-i18n="files.browse">Velg mappe</button>
         </div>
       </div>
       <div class="card">
-        <div class="card-title" data-i18n="files.pattern">Filnavn</div>
-        <p class="card-desc" data-i18n="files.smartNameDesc">Programmet gjenkjenner kirkelige høytider og kan bruke det riktige norske navnet automatisk (f.eks. «Påskedag»).</p>
+        <div class="card-title" data-i18n="files.pattern">NAVNMØNSTER</div>
+        <p class="card-desc" data-i18n="files.smartNameDesc">Programmet gjenkjenner kirkelige høytider og bruker det riktige norske navnet automatisk.</p>
         <label class="form-label" data-i18n="files.nameFormat">NAVNEFORMAT</label>
         <select class="form-input" id="pattern-select" style="max-width:360px">
           <option value="date" data-i18n="files.patternDate">Dato (standard)</option>
@@ -1028,7 +1096,7 @@
         </div>
         <div class="toggle-row mt">
           <div>
-            <div class="toggle-title" data-i18n="files.autoDelete">Slett automatisk</div>
+            <div class="toggle-title" data-i18n="files.autoDelete">Slett automatisk etter 90 dager</div>
             <div class="toggle-desc" data-i18n="files.autoDeleteDesc">Frigjør diskplass automatisk ved å slette gamle opptak</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-auto-delete" /><span class="toggle-track"></span></label>
@@ -1108,7 +1176,7 @@
         <div class="toggle-row">
           <div>
             <div class="toggle-title" data-i18n="schedule.splitTitle">Del opp filer per time</div>
-            <div class="toggle-desc" data-i18n="schedule.splitDesc">Lager ny lydfil for hvert intervall — enklere å redigere etterpå</div>
+            <div class="toggle-desc" data-i18n="schedule.splitDesc">Lager ny lydfil for hver time — enklere å redigere etterpå</div>
           </div>
           <select class="form-input split-select" id="opt-split-minutes">
             <option value="0"  data-i18n="schedule.splitOff">Av</option>
@@ -1121,8 +1189,8 @@
         </div>
         <div class="toggle-row">
           <div>
-            <div class="toggle-title" data-i18n="schedule.preRollTitle">Pre-roll buffer</div>
-            <div class="toggle-desc" data-i18n="schedule.preRollDesc">Starter opptak N sekunder bakover i tid — fanger begynnelsen av talen selv om du trykker litt for sent</div>
+            <div class="toggle-title" data-i18n="schedule.preRollTitle">Forhåndsbuffer</div>
+            <div class="toggle-desc" data-i18n="schedule.preRollDesc">Starter opptaket N sekunder bakover i tid, så begynnelsen av talen er med selv om du trykker litt for sent. Krever at bufferen faktisk kjører — den starter automatisk når du slår den på nedenfor.</div>
           </div>
           <select class="form-input split-select" id="opt-preroll-seconds">
             <option value="0" data-i18n="schedule.splitOff">Av</option>
@@ -1130,23 +1198,34 @@
             <option value="30">30 sek</option>
           </select>
         </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="schedule.prerollEnabledTitle">Aktiver forhåndsbuffer (eksperimentell)</div>
+            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen hele tiden i bakgrunnen. Det kan forstyrre de levende nivåmålerne på Hjem og Direktesending, som bruker samme mikrofon. Slå den på hvis du trenger sekundene før knappetrykket — Hjem viser når bufferen kjører.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-preroll-enabled" /><span class="toggle-track"></span></label>
+        </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-files-save" data-i18n="files.save">Lagre</button>
-        <button class="btn-ghost" id="btn-files-cancel" data-i18n="files.cancel">Avbryt</button>
-      </div>
     </div>
 
-    <!-- ── Publisering (sky-backup + podcast) ─────────────────────── -->
-    <div id="settings-publish" class="inner-page">
+    <!-- ── Deling (Publisering + Varsler) ─────────────────────────
+         Both sections keep their ids and their markup verbatim — the page TS
+         (files-page, publish-page, general-page) addresses them by id. -->
+    <div id="settings-sharing" class="inner-page">
+
+    <div class="settings-section-head">
+      <h2 data-i18n="nav.publish">Publisering</h2>
+      <p data-i18n="sharing.publishDesc">Sky-backup, podkast og direktesending — hvor opptaket havner etter gudstjenesten.</p>
+    </div>
+    <div id="settings-publish" class="settings-section">
       <div class="card">
         <div class="card-title" data-i18n="publish.intro">Del opptakene utenfor kirken</div>
         <p class="card-desc" data-i18n="publish.introDesc">Her setter du opp automatisk sky-backup og — hvis dere ønsker — en podcast som gjør gudstjenestene tilgjengelige i Spotify og Apple Podcasts. Alt er valgfritt.</p>
       </div>
 
       <!-- ── Standard episodebilde (cover art) ──────────────────── -->
-      <div class="card">
+      <div class="card" id="publish-thumb-card">
         <div class="card-title" data-i18n="thumbnail.default.title">Standard episodebilde</div>
         <p class="card-desc" data-i18n="thumbnail.default.subtitle">Brukes som cover art for alle prekener med mindre du overstyrer per episode.</p>
         <div class="thumb-panel">
@@ -1166,7 +1245,7 @@
         <input type="file" id="publish-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
       </div>
       <!-- ── Sky-backup (Google Drive / Dropbox / OneDrive) ──────── -->
-      <div class="card">
+      <div class="card" id="cloud-backup-card">
         <div class="card-title" data-i18n="publish.title">Sky-backup</div>
         <p class="card-desc" data-i18n="publish.desc">Last opp opptakene automatisk til Google Drive — som ekstra sikkerhet og for enkel deling.</p>
 
@@ -1278,6 +1357,14 @@
         <p class="card-desc" data-i18n="publish.streamIntro">Stream gudstjenester live til YouTube, Facebook eller egen RTMP-server.</p>
         <div id="stream-destinations-list" class="stream-destinations-list"></div>
         <button class="btn-secondary btn-sm" id="btn-add-stream-destination" type="button" data-i18n="publish.streamAddDestination">+ Legg til destinasjon</button>
+
+        <!-- EXPLICIT SAVE: en destinasjon er URL + stream-key som bare virker
+             sammen, og nøkkelen skrives til OS-nøkkelringen ved lagring. -->
+        <div class="btn-row explicit-save-row">
+          <button type="button" class="btn-primary btn-sm" id="btn-stream-dest-save" data-i18n="publish.streamSaveDestinations">Lagre destinasjoner</button>
+          <button type="button" class="btn-ghost btn-sm" id="btn-stream-dest-cancel" data-i18n="general.cancel">Avbryt</button>
+          <span class="explicit-save-hint" id="stream-dest-dirty-hint" style="display:none" data-i18n="publish.streamUnsaved">Ikke lagret ennå</span>
+        </div>
 
         <label class="form-label mt" data-i18n="publish.streamQuality">STREAM-KVALITET</label>
         <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
@@ -1441,11 +1528,135 @@
         </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-publish-save" data-i18n="publish.save">Lagre</button>
-        <button class="btn-ghost" id="btn-publish-cancel" data-i18n="publish.cancel">Avbryt</button>
+    </div>
+
+    <div class="settings-section-head">
+      <h2 data-i18n="nav.notifications">Varsler</h2>
+      <p data-i18n="sharing.notifyDesc">Hvem får beskjed når et opptak starter, stopper eller feiler.</p>
+    </div>
+    <div id="settings-notifications" class="settings-section">
+      <div class="card">
+        <div class="card-title" data-i18n="notify.systemTitle">Systemvarsler</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.notifyStart">Varsel på PC når opptak starter</div>
+            <div class="toggle-desc" data-i18n="general.notifyStartDesc">Vises som systemvarsel når en planlagt session begynner.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-notify-start" checked /><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.notifyStop">Varsel på PC når opptak avsluttes</div>
+            <div class="toggle-desc" data-i18n="general.notifyStopDesc">Klikk varselet for å gå rett til filen.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-notify-stop" checked /><span class="toggle-track"></span></label>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="schedule.reminderTitle">Påminnelse før opptak</div>
+            <div class="toggle-desc" data-i18n="schedule.reminderDesc">Systemvarsel N minutter før planlagt opptak starter</div>
+          </div>
+          <select class="form-input split-select" id="opt-reminder-minutes">
+            <option value="0" data-i18n="schedule.splitOff">Av</option>
+            <option value="5">5 min</option>
+            <option value="10">10 min</option>
+            <option value="15">15 min</option>
+            <option value="30">30 min</option>
+          </select>
+        </div>
+      </div>
+      <div class="card" id="email-notify-card">
+        <div class="card-title" data-i18n="notify.emailTitle">E-postvarsler</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.emailError">Send e-post ved feil</div>
+            <div class="toggle-desc" data-i18n="general.emailErrorDesc">Sender e-post til ansvarlig hvis opptaket mislykkes</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-email-error" /><span class="toggle-track"></span></label>
+        </div>
+        <div id="email-section" style="display:none">
+          <label class="form-label mt" data-i18n="general.sendTo">SEND TIL</label>
+          <input type="email" class="form-input" id="email-address" placeholder="navn@kirke.no" />
+
+          <!-- Gmail OAuth — primary path so users don't have to deal with
+               app-passwords + SMTP server names. The button toggles between
+               "connect" and "disconnect/email" via JS in publish-page.ts. -->
+          <div class="email-oauth-block" style="margin-top:16px">
+            <label class="form-label" data-i18n="notify.emailMethodLabel">SENDEMETODE</label>
+            <div class="email-oauth-card" id="email-gmail-card">
+              <div class="email-oauth-row">
+                <svg viewBox="0 0 48 48" width="22" height="22" style="flex-shrink:0"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
+                <div class="email-oauth-text">
+                  <div class="email-oauth-title" data-i18n="notify.emailGmailTitle">Logg inn med Google</div>
+                  <div class="email-oauth-sub" id="email-gmail-status" data-i18n="notify.emailGmailDesc">Send via din Gmail-konto — ingen SMTP-konfig.</div>
+                </div>
+                <!-- Still no backend: the Gmail OAuth path goes through
+                     cloud_connect, which this build has no client id for.
+                     Disabled with a reason about THIS button, not about
+                     notifications in general. -->
+                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" disabled title="Google-innlogging er ikke tilgjengelig i denne versjonen." data-i18n-title="notify.gmailUnavailable" data-i18n="notify.emailGmailConnect">Koble til</button>
+                <button type="button" class="btn-ghost btn-sm" id="btn-email-gmail-disconnect" style="display:none" data-i18n="notify.emailGmailDisconnect">Koble fra</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advanced: SMTP — collapsed by default. Power users (kirker med
+               egen mail-server) kan utvide; vanlige brukere ser kun Gmail-knappen. -->
+          <details class="email-advanced" id="email-smtp-advanced" style="margin-top:16px">
+            <summary class="email-advanced-summary" data-i18n="notify.emailAdvanced">Avansert: bruk SMTP i stedet</summary>
+            <div class="email-advanced-body">
+              <label class="form-label mt" data-i18n="notify.smtpServer">E-POSTTJENESTE (SMTP)</label>
+              <input type="text" class="form-input" id="email-smtp" placeholder="smtp.gmail.com" />
+              <div class="form-hint" data-i18n="notify.smtpHint">Gmail: smtp.gmail.com · Outlook: smtp.office365.com</div>
+              <label class="form-label mt" data-i18n="notify.smtpUser">BRUKERNAVN (E-POSTADRESSE)</label>
+              <input type="text" class="form-input" id="email-user" placeholder="din@epost.no" />
+              <label class="form-label mt" data-i18n="notify.smtpPass">PASSORD / APP-PASSORD</label>
+              <div class="pass-row">
+                <input type="password" class="form-input" id="email-pass" />
+                <button type="button" class="btn-link" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
+              </div>
+              <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
+              <input type="hidden" id="email-port" value="587" />
+              <!-- EXPLICIT SAVE: host + brukernavn + passord virker bare som et
+                   sett. Auto-lagring per tastetrykk ville pekt varsel-stien mot
+                   en halvskrevet server uten at noe så galt ut. -->
+              <div class="btn-row explicit-save-row">
+                <button type="button" class="btn-primary btn-sm" id="btn-smtp-save" data-i18n="general.save">Lagre</button>
+                <button type="button" class="btn-ghost btn-sm" id="btn-smtp-cancel" data-i18n="general.cancel">Avbryt</button>
+              </div>
+            </div>
+          </details>
+
+          <!-- Enabled/disabled by the feature gate from the REAL email_status,
+               not by a hardcoded attribute: it is pressable exactly when a
+               transport exists and there is a recipient. -->
+          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled data-i18n="general.testEmail">Test e-post</button>
+        </div>
+      </div>
+
+      <div class="card" id="webhook-notify-card">
+        <div class="card-title" data-i18n="notify.webhookTitle">Webhook (Slack / Discord / Teams)</div>
+        <div class="card-desc notify-webhook-intro" data-i18n="notify.webhookIntro">
+          Send varsler til en chat-kanal i tillegg til e-post. Lim inn webhook-URL fra Slack, Discord eller Teams.
+        </div>
+        <label class="form-label" data-i18n="general.webhookUrl">WEBHOOK-URL</label>
+        <input type="url" class="form-input" id="webhook-url" placeholder="https://hooks.slack.com/services/..." />
+        <div class="form-hint" data-i18n="notify.webhookHint">Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...</div>
+        <div class="toggle-row mt">
+          <div>
+            <div class="toggle-title" data-i18n="notify.webhookOnWarn">Send også på advarsler</div>
+            <div class="toggle-desc" data-i18n="notify.webhookOnWarnDesc">Som standard sendes kun feilmeldinger. Slå på dette for å få beskjed også ved mindre problemer.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-webhook-on-warn" /><span class="toggle-track"></span></label>
+        </div>
+        <!-- WIRED (Fase 3c): email_test_webhook is real on every build — a
+             plain 10 s POST behind no cargo feature. The stub that always
+             reported failure is gone; the button just needs a URL. -->
+        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled data-i18n="notify.testWebhook">Test webhook</button>
       </div>
     </div>
+
+    </div><!-- /settings-sharing -->
 
     <!-- ── Video ─────────────────────────────────────────────────── -->
     <div id="settings-video" class="inner-page">
@@ -1607,128 +1818,6 @@
         </div>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-video-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-video-cancel" data-i18n="general.cancel">Avbryt</button>
-      </div>
-    </div>
-
-    <!-- ── Varsler ───────────────────────────────────────────────── -->
-    <div id="settings-notifications" class="inner-page">
-      <div class="card">
-        <div class="card-title" data-i18n="notify.systemTitle">Systemvarsler</div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="general.notifyStart">Varsel på PC når opptak starter</div>
-            <div class="toggle-desc" data-i18n="general.notifyStartDesc">Vises som systemvarsel når en planlagt session begynner.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-notify-start" checked /><span class="toggle-track"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="general.notifyStop">Varsel på PC når opptak avsluttes</div>
-            <div class="toggle-desc" data-i18n="general.notifyStopDesc">Klikk varselet for å gå rett til filen.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-notify-stop" checked /><span class="toggle-track"></span></label>
-        </div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="schedule.reminderTitle">Påminnelse før opptak</div>
-            <div class="toggle-desc" data-i18n="schedule.reminderDesc">Systemvarsel N minutter før planlagt opptak starter</div>
-          </div>
-          <select class="form-input split-select" id="opt-reminder-minutes">
-            <option value="0" data-i18n="schedule.splitOff">Av</option>
-            <option value="5">5 min</option>
-            <option value="10">10 min</option>
-            <option value="15">15 min</option>
-            <option value="30">30 min</option>
-          </select>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title" data-i18n="notify.emailTitle">E-postvarsler</div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="general.emailError">Send e-post ved feil</div>
-            <div class="toggle-desc" data-i18n="general.emailErrorDesc">Sender e-post til ansvarlig hvis opptaket mislykkes</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-email-error" /><span class="toggle-track"></span></label>
-        </div>
-        <div id="email-section" style="display:none">
-          <label class="form-label mt" data-i18n="general.sendTo">SEND TIL</label>
-          <input type="email" class="form-input" id="email-address" placeholder="navn@kirke.no" />
-
-          <!-- Gmail OAuth — primary path so users don't have to deal with
-               app-passwords + SMTP server names. The button toggles between
-               "connect" and "disconnect/email" via JS in publish-page.ts. -->
-          <div class="email-oauth-block" style="margin-top:16px">
-            <label class="form-label" data-i18n="notify.emailMethodLabel">SENDEMETODE</label>
-            <div class="email-oauth-card" id="email-gmail-card">
-              <div class="email-oauth-row">
-                <svg viewBox="0 0 48 48" width="22" height="22" style="flex-shrink:0"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
-                <div class="email-oauth-text">
-                  <div class="email-oauth-title" data-i18n="notify.emailGmailTitle">Logg inn med Google</div>
-                  <div class="email-oauth-sub" id="email-gmail-status" data-i18n="notify.emailGmailDesc">Send via din Gmail-konto — ingen SMTP-konfig.</div>
-                </div>
-                <!-- Not wired to a working backend yet (2026-08 audit) — disabled
-                     with an honest reason rather than a fake "connection failed". -->
-                <button type="button" class="btn-secondary btn-sm" id="btn-email-gmail-connect" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.emailGmailConnect">Koble til</button>
-                <button type="button" class="btn-ghost btn-sm" id="btn-email-gmail-disconnect" style="display:none" data-i18n="notify.emailGmailDisconnect">Koble fra</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Advanced: SMTP — collapsed by default. Power users (kirker med
-               egen mail-server) kan utvide; vanlige brukere ser kun Gmail-knappen. -->
-          <details class="email-advanced" id="email-smtp-advanced" style="margin-top:16px">
-            <summary class="email-advanced-summary" data-i18n="notify.emailAdvanced">Avansert: bruk SMTP i stedet</summary>
-            <div class="email-advanced-body">
-              <label class="form-label mt" data-i18n="notify.smtpServer">E-POSTTJENESTE (SMTP)</label>
-              <input type="text" class="form-input" id="email-smtp" placeholder="smtp.gmail.com" />
-              <div class="form-hint" data-i18n="notify.smtpHint">Gmail: smtp.gmail.com · Outlook: smtp.office365.com</div>
-              <label class="form-label mt" data-i18n="notify.smtpUser">BRUKERNAVN (E-POSTADRESSE)</label>
-              <input type="text" class="form-input" id="email-user" placeholder="din@epost.no" />
-              <label class="form-label mt" data-i18n="notify.smtpPass">PASSORD / APP-PASSORD</label>
-              <div class="pass-row">
-                <input type="password" class="form-input" id="email-pass" />
-                <button type="button" class="btn-link" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
-              </div>
-              <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
-              <input type="hidden" id="email-port" value="587" />
-            </div>
-          </details>
-
-          <!-- Not wired to a working backend yet (2026-08 audit): the old stub
-               always reported failure. Disabled with an honest reason instead. -->
-          <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="general.testEmail">Test e-post</button>
-          <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title" data-i18n="notify.webhookTitle">Webhook (Slack / Discord / Teams)</div>
-        <div class="card-desc notify-webhook-intro" data-i18n="notify.webhookIntro">
-          Send varsler til en chat-kanal i tillegg til e-post. Lim inn webhook-URL fra Slack, Discord eller Teams.
-        </div>
-        <label class="form-label" data-i18n="general.webhookUrl">WEBHOOK-URL</label>
-        <input type="url" class="form-input" id="webhook-url" placeholder="https://hooks.slack.com/services/..." />
-        <div class="form-hint" data-i18n="notify.webhookHint">Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...</div>
-        <div class="toggle-row mt">
-          <div>
-            <div class="toggle-title" data-i18n="notify.webhookOnWarn">Send også på advarsler</div>
-            <div class="toggle-desc" data-i18n="notify.webhookOnWarnDesc">Som standard sendes kun feilmeldinger. Slå på dette for å få beskjed også ved mindre problemer.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-webhook-on-warn" /><span class="toggle-track"></span></label>
-        </div>
-        <!-- Not wired to a working backend yet (2026-08 audit): the old stub
-             always reported failure. Disabled with an honest reason instead. -->
-        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled title="Varsler er ikke tilgjengelig i denne versjonen ennå." data-i18n-title="general.notifyUnavailable" data-i18n="notify.testWebhook">Test webhook</button>
-        <div class="form-hint" data-i18n="general.notifyUnavailable">Varsler er ikke tilgjengelig i denne versjonen ennå.</div>
-      </div>
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-varsler-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-varsler-cancel" data-i18n="general.cancel">Avbryt</button>
-      </div>
     </div>
 
     <!-- ── System ────────────────────────────────────────────── -->
@@ -1746,16 +1835,16 @@
           <option value="pl">🇵🇱 Polski</option>
           <option value="fr">🇫🇷 Français</option>
         </select>
-        <div class="form-hint" data-i18n="general.langHint">Endringen trer i kraft etter at du trykker Lagre.</div>
+        <div class="form-hint" data-i18n="general.langHint">Endringen trer i kraft med én gang.</div>
       </div>
       <div class="card">
         <div class="card-title" data-i18n="general.profile">Kirkeprofil</div>
         <p class="card-desc" style="margin-bottom:12px" data-i18n="general.profileDesc">Brukes i filnavn, varslings-e-poster og podcast-RSS. Disse feltene er valgfrie men anbefalt.</p>
         <label class="form-label" data-i18n="general.church">MENIGHET / KIRKE</label>
-        <input type="text" class="form-input" id="church-name" data-i18n-placeholder="general.churchPlaceholder" placeholder="Alta Frikirke" />
+        <input type="text" class="form-input" id="church-name" data-i18n-placeholder="general.churchPlaceholder" placeholder="Eksempel: Alta Frikirke" />
         <label class="form-label mt" data-i18n="general.responsible">ANSVARLIG PERSON</label>
         <input type="text" class="form-input" id="responsible-person" data-i18n-placeholder="general.responsiblePlaceholder" placeholder="Navn" />
-        <div class="form-hint" data-i18n="general.responsibleHint">Personen som får e-post hvis opptaket feiler (krever e-postvarsler i Varsler-fanen).</div>
+        <div class="form-hint" data-i18n="general.responsibleHint">Personen som får e-post hvis opptaket feiler (krever e-postvarsler under Deling → Varsler).</div>
       </div>
       <div class="card">
         <div class="card-title" data-i18n="general.system">System</div>
@@ -1802,7 +1891,7 @@
           <label class="toggle"><input type="checkbox" id="opt-auto-update" checked /><span class="toggle-track"></span></label>
         </div>
         <div class="btn-row mt">
-          <button class="btn-secondary" id="btn-check-updates" data-i18n="general.checkNow">Se etter oppdateringer</button>
+          <button class="btn-secondary" id="btn-check-updates" data-i18n="general.checkNow">Se etter oppdateringer nå</button>
           <button class="btn-primary" id="btn-restart-install" style="display:none" data-i18n="update.restartInstall">↺ Start på nytt og installer</button>
         </div>
       </div>
@@ -1831,13 +1920,14 @@
         </p>
       </div>
 
-      <div class="page-footer">
-        <button class="btn-primary" id="btn-general-save" data-i18n="general.save">Lagre</button>
-        <button class="btn-ghost" id="btn-general-cancel" data-i18n="general.cancel">Avbryt</button>
-      </div>
-    </div>
 
-    <div id="settings-integrations" class="inner-page">
+      <!-- ── Avansert: Sunday-suite ───────────────────────────────────
+           Was its own tab, which put an opt-in developer integration at the
+           same level as «hvor lagres opptakene». Same markup, same ids, one
+           click further in. -->
+      <details class="adv-disclosure" id="settings-advanced">
+        <summary class="adv-disclosure-summary" data-i18n="general.suiteAdvanced">Avansert: Sunday-suite-integrasjoner</summary>
+        <div id="settings-integrations" class="settings-section">
       <div class="card">
         <div class="card-title">Sunday-suite</div>
         <p class="card-desc">Koble SundayRec til søsterappene i Sunday-suiten. Alt er valgfritt og av som standard — SundayRec fungerer akkurat som før uten dette.</p>
@@ -1870,11 +1960,13 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-integrations-song" /><span class="toggle-track"></span></label>
         </div>
-        <div id="integrations-song-key-row" style="margin-top:12px">
+        <!-- EXPLICIT SAVE: en API-nøkkel er bare riktig når den er komplett. -->
+        <div id="integrations-song-key-row" class="explicit-save-card" style="margin-top:12px">
           <label class="form-label">SUNDAYSONG API-NØKKEL</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="password" class="form-input" id="integration-song-apikey" placeholder="Lim inn API-nøkkel…" style="max-width:360px" autocomplete="off" />
-            <button class="btn-ghost btn-sm" id="btn-song-apikey-save">Lagre</button>
+          <input type="password" class="form-input" id="integration-song-apikey" placeholder="Lim inn API-nøkkel…" style="max-width:360px" autocomplete="off" />
+          <div class="btn-row explicit-save-row">
+            <button type="button" class="btn-primary btn-sm" id="btn-song-apikey-save" data-i18n="general.save">Lagre</button>
+            <button type="button" class="btn-ghost btn-sm" id="btn-song-apikey-cancel" data-i18n="general.cancel">Avbryt</button>
           </div>
           <div class="form-hint" id="integration-song-apikey-status"></div>
         </div>
@@ -1882,7 +1974,9 @@
           Menighets-ID (church_id) settes i Tilkobling-feltet under.
         </div>
       </div>
-      <div class="card" id="integrations-connection-card">
+      <!-- EXPLICIT SAVE: menighets-ID og API-adresser er bare meningsfulle
+           ferdig skrevet — de auto-lagres derfor ikke. -->
+      <div class="card explicit-save-card" id="integrations-connection-card">
         <div class="card-title">Tilkobling</div>
         <p class="card-desc">Delte felt brukt av Song- og Plan-integrasjonene.</p>
         <label class="form-label">MENIGHETS-ID (church_id)</label>
@@ -1891,8 +1985,9 @@
         <input type="text" class="form-input" id="integration-song-api-url" placeholder="https://api.sundaysong.com" style="max-width:420px" />
         <label class="form-label mt">SUNDAYPLAN API-URL (valgfri)</label>
         <input type="text" class="form-input" id="integration-plan-api-url" placeholder="https://din-menighet.supabase.co" style="max-width:420px" />
-        <div style="margin-top:12px">
-          <button class="btn-ghost btn-sm" id="btn-integrations-connection-save">Lagre tilkobling</button>
+        <div class="btn-row explicit-save-row">
+          <button type="button" class="btn-primary btn-sm" id="btn-integrations-connection-save">Lagre tilkobling</button>
+          <button type="button" class="btn-ghost btn-sm" id="btn-integrations-connection-cancel" data-i18n="general.cancel">Avbryt</button>
         </div>
       </div>
       <div class="card" id="integrations-plan-card">
@@ -1932,7 +2027,9 @@
         </div>
         <div class="form-hint" id="integration-companion-apikey-status"></div>
       </div>
-    </div>
+        </div>
+      </details>
+    </div><!-- /settings-general -->
 
   </section>
 
@@ -1942,7 +2039,7 @@
        ────────────────────────────────────────────────────────────────── -->
   <section id="page-search" class="page">
     <div class="page-header">
-      <h1 data-i18n="search.title">Søk &amp; historikk</h1>
+      <h1 data-i18n="search.title">Historikk</h1>
       <p class="page-subtitle" data-i18n="search.subtitle">Søk i preken-tekst eller filnavn, og se hele opptakshistorikken. Klikk et tekst-treff for å åpne opptaket på det punktet.</p>
     </div>
 
@@ -1973,18 +2070,24 @@
         </div>
       </div>
       <div id="history-more-panel" class="history-more-panel" style="display:none">
-        <a href="#" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feiloppføringer</a>
-        <a href="#" id="btn-prune-history" data-i18n="history.pruneBtn">Fjern oppføringer uten fil</a>
+        <a href="#" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feil</a>
+        <a href="#" id="btn-prune-history" data-i18n="history.pruneBtn">Rydd opp</a>
       </div>
       <div id="history-stats" style="display:none;gap:16px;font-size:12px;color:var(--text3);margin-bottom:8px;flex-wrap:wrap">
         <span id="stat-count"></span>
         <span id="stat-duration"></span>
         <span id="stat-last"></span>
       </div>
+      <div id="history-filter-chips" class="hist-chips" role="group" aria-label="Filtrer opptak" data-i18n-aria-label="history.filterGroup">
+        <button type="button" class="hist-chip hist-chip-active" data-filter="all" aria-pressed="true" data-i18n="history.filterAll">Alle</button>
+        <button type="button" class="hist-chip" data-filter="audio" aria-pressed="false" data-i18n="history.filterAudio">Lyd</button>
+        <button type="button" class="hist-chip" data-filter="video" aria-pressed="false" data-i18n="history.filterVideo">Video</button>
+        <button type="button" class="hist-chip" data-filter="transcript" aria-pressed="false" data-i18n="history.filterTranscript">Med transkript</button>
+      </div>
       <table class="rec-table">
         <thead><tr>
-          <th data-i18n="history.date">Tidspunkt</th>
-          <th data-i18n="history.duration">Varighet</th>
+          <th data-sort="time" aria-sort="descending"><span data-i18n="history.date">Dato</span><span class="th-sort-arrow" aria-hidden="true">↓</span></th>
+          <th data-sort="duration" aria-sort="none"><span data-i18n="history.duration">Varighet</span><span class="th-sort-arrow" aria-hidden="true"></span></th>
           <th data-i18n="history.filename">Filnavn</th>
           <th data-i18n="history.status">Status</th>
           <th style="width:32px"></th>
@@ -2157,10 +2260,15 @@
         </div>
         <div class="editor-drag-hint" data-i18n="editor.dragHint">Klikk og dra for å markere et kutt</div>
         <button class="btn-ghost btn-sm" id="btn-editor-undo-all" data-i18n="editor.cutsNone" style="display:none">Fjern alle kutt</button>
+        <button class="btn-editor-tool btn-editor-kbd-toggle" id="btn-editor-kbd-toggle" type="button"
+                aria-expanded="false" aria-controls="editor-kbd-hints"
+                title="Vis hurtigtaster" data-i18n-title="tooltip.kbdHints">?</button>
       </div>
 
-      <!-- Keyboard shortcut hints -->
-      <div class="editor-kbd-hints">
+      <!-- Keyboard shortcut hints — collapsed behind the "?" in the toolbar.
+           Nine chips were on screen permanently, above the waveform, for the
+           entire session; after the first read they are furniture. -->
+      <div class="editor-kbd-hints" id="editor-kbd-hints" hidden>
         <span class="editor-kbd-hint"><span class="kbd">Space</span> Spill/pause</span>
         <span class="editor-kbd-hint"><span class="kbd">←</span><span class="kbd">→</span> 5s · <span class="kbd">Shift</span>+<span class="kbd">←→</span> 1s</span>
         <span class="editor-kbd-hint"><span class="kbd">Tab</span> Neste kutt</span>
@@ -2337,7 +2445,7 @@
       <!-- Remaining duration after cuts -->
       <div id="editor-remaining" class="editor-remaining" style="display:none">
         <svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z"/></svg>
-        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat:</span>
+        <span class="editor-remaining-label" data-i18n="editor.remainingLabel">Resultat</span>
         <span class="editor-remaining-dur" id="editor-remaining-dur">—</span>
       </div>
 
@@ -2350,11 +2458,12 @@
           <button class="btn-primary btn-sm" id="btn-transcribe" data-i18n="transcript.start">▶ Transkriber</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-export" style="display:none" data-i18n="transcript.export">↧ SRT</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
+          <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-sundayedit" style="display:none" title="Send til SundayEdit for pro-teksting">→ SundayEdit</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
         </div>
         <div id="editor-transcript-body" class="editor-transcript-body">
-          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen — tar 5-15 minutter avhengig av lengde og valgt modell.</div>
+          <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
         </div>
       </div>
 
@@ -2372,9 +2481,12 @@
       </div>
 
       <!-- Transcribe modal: choose model + language -->
-      <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+      <div id="transcribe-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-modal-title">
         <div class="modal modal-sm transcribe-modal">
-          <h2 data-i18n="transcript.modalTitle">Transkriber tale til tekst</h2>
+          <div class="modal-header">
+            <span class="modal-title" id="transcribe-modal-title" data-i18n="transcript.modalTitle">Transkriber tale til tekst</span>
+            <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+          </div>
           <p class="modal-desc" data-i18n="transcript.modalDesc">Bruker lokal AI (whisper.cpp) — ingen data sendes til skyen. Velg modell og språk.</p>
 
           <label class="form-label" data-i18n="transcript.modelLabel">MODELL</label>
@@ -2406,9 +2518,12 @@
       </div>
 
       <!-- Transcribe progress modal -->
-      <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
+      <div id="transcribe-progress-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="transcribe-progress-title" data-no-escape>
         <div class="modal modal-sm transcribe-progress-modal">
-          <h2 id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</h2>
+          <!-- No ✕: a job is running, and "Avbryt" is the only honest way out. -->
+          <div class="modal-header">
+            <span class="modal-title" id="transcribe-progress-title" data-i18n="transcript.progressTitle">Transkriberer…</span>
+          </div>
           <div class="transcribe-progress-bar-wrap">
             <div id="transcribe-progress-bar" class="transcribe-progress-bar"></div>
           </div>
@@ -2419,13 +2534,19 @@
         </div>
       </div>
 
-      <!-- Mastering (publishable-ready audio) -->
-      <div id="editor-master-section" class="editor-master-section" style="display:none">
-        <div class="editor-master-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M5 4a1 1 0 00-1 1v10a1 1 0 102 0V5a1 1 0 00-1-1zm5 0a1 1 0 00-1 1v10a1 1 0 102 0V5a1 1 0 00-1-1zm5 0a1 1 0 00-1 1v10a1 1 0 102 0V5a1 1 0 00-1-1z"/></svg>
+      <!-- Mastering, SECONDARY surface. The primary way to master is the
+           Lydforbedring section inside the Eksporter dialog, which masters on
+           the way out. This panel writes a separate `_mastert` file and stays
+           for that flow only — so it is collapsed by default and says where
+           the main path is. -->
+      <div id="editor-master-section" class="editor-master-section editor-master-section--collapsed" style="display:none">
+        <div class="editor-master-header" id="editor-master-header" role="button" tabindex="0"
+             aria-expanded="false">
+          <svg class="editor-master-chevron" id="editor-master-chevron" viewBox="0 0 20 20" fill="currentColor" width="12" height="12" style="opacity:.6"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
           <span class="editor-master-title" data-i18n="master.title">Mastering (klargjør for publisering)</span>
+          <span class="editor-master-note" data-i18n="master.useExportHint">— for eksport med mastring: bruk Eksporter-knappen</span>
         </div>
-        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast / streaming.</div>
+        <div class="editor-master-intro" data-i18n="master.intro">Standardiserer lydstyrke og lydkvalitet for podkast og streaming. Bruker EBU R128-normalisering i to passeringer.</div>
 
         <div class="editor-master-preset-row">
           <label class="export-section-label" for="master-preset-select" data-i18n="master.presetLabel">Forhåndsinnstilling</label>
@@ -2494,7 +2615,7 @@
           <svg viewBox="0 0 20 20" fill="currentColor" style="color:var(--green)"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
           <span id="editor-result-text"></span>
         </div>
-        <button class="btn-primary" id="btn-editor-save" data-i18n="editor.save">Lagre redigert fil</button>
+        <button class="btn-primary" id="btn-editor-save" data-i18n="editor.save">Eksporter</button>
       </div>
 
     </div><!-- /workspace -->
@@ -2516,9 +2637,12 @@
 </div>
 
 <!-- Editor export modal -->
-<div id="editor-export-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" data-no-escape>
+<div id="editor-export-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="editor-export-modal-title" data-no-escape>
   <div class="modal export-modal">
-    <h2 data-i18n="editor.exportTitle">Eksporter</h2>
+    <div class="modal-header">
+      <span class="modal-title" id="editor-export-modal-title" data-i18n="editor.exportTitle">Eksporter…</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
 
     <!-- Export type — only for video files: keep video, or extract audio only. -->
     <div id="export-type-section" style="display:none">
@@ -2662,9 +2786,12 @@
 <!-- ══ MODALS ════════════════════════════════════════════════════ -->
 
 <!-- Manual recording modal -->
-<div id="modal-manual" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="modal-manual" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-manual-title">
   <div class="modal">
-    <h2 data-i18n="manual.title">Start opptak</h2>
+    <div class="modal-header">
+      <span class="modal-title" id="modal-manual-title" data-i18n="manual.title">Start manuelt opptak</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
     <p data-i18n="manual.subtitle">Opptaket starter med en gang og du stopper det selv når du er ferdig.</p>
 
     <!-- Audio source -->
@@ -2768,6 +2895,13 @@
         </div>
         <div class="rec-savepath" id="rec-savepath"></div>
       </div>
+      <!-- Silence warning. Its own line, inside the overlay: it used to share the
+           #rec-reconnect banner with the reconnect warning, so whichever event
+           fired last erased the other — two different problems, one element. -->
+      <div class="rec-silence" id="rec-silence" style="display:none">
+        <span class="rec-silence-icon" aria-hidden="true">!</span>
+        <span class="rec-silence-text" id="rec-silence-text" data-i18n="recording.silenceWarn">Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.</span>
+      </div>
       <div class="rec-autostop" id="rec-autostop" style="display:none">
         <div class="rec-autostop-label">Auto-stopp om</div>
         <div class="rec-autostop-countdown" id="rec-autostop-countdown">—</div>
@@ -2777,6 +2911,8 @@
         </div>
       </div>
       <button class="btn-stop-big" id="btn-stop-overlay" data-i18n="recording.stop">Trykk for å stoppe opptaket</button>
+      <!-- Shown while the engine finalizes the file after a stop press. -->
+      <div class="rec-finalizing-hint" id="rec-finalizing-hint" style="display:none" data-i18n="recording.finalizingHint">Vent litt — lyden skrives ferdig til fil.</div>
     </div>
 
     <!-- Video preview inside recording overlay (only shown when video is active) -->
@@ -2807,7 +2943,11 @@
 <!-- Stop confirm — primary action is "continue" so an accidental Enter doesn't stop -->
 <div id="modal-confirm-stop" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-stop-title">
   <div class="modal modal-sm">
-    <h2 id="modal-confirm-stop-title" data-i18n="recording.confirmTitle">Stopp opptak?</h2>
+    <!-- No ✕: this is a two-way decision mid-recording, and a third, ambiguous
+         exit is exactly what you don't want on that screen. -->
+    <div class="modal-header">
+      <span class="modal-title" id="modal-confirm-stop-title" data-i18n="recording.confirmTitle">Stopp opptak?</span>
+    </div>
     <p data-i18n="recording.confirmBody">Opptaket vil bli lagret frem til nå.</p>
     <div class="btn-row mt">
       <button class="btn-primary" id="btn-confirm-cancel" data-i18n="recording.confirmCancel" autofocus>Fortsett opptak</button>
@@ -2828,11 +2968,11 @@
 </div>
 
 <!-- Audio diagnostic modal -->
-<div id="audio-diagnose-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="audio-diagnose-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="audio-diagnose-modal-title">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Lydenhetsdiagnose</span>
-      <button class="modal-close" id="btn-audio-diagnose-close">×</button>
+      <span class="modal-title" id="audio-diagnose-modal-title" data-i18n="general.diagnoseTitle">Lydenhetsdiagnose</span>
+      <button class="modal-close" id="btn-audio-diagnose-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <pre id="audio-diagnose-body" class="diagnose-body"></pre>
     <p class="diagnose-hint" data-i18n="general.diagnoseHint">Kopier dette og send til support hvis opptak ikke fungerer.</p>
@@ -2840,9 +2980,12 @@
 </div>
 
 <!-- Note modal -->
-<div id="modal-note" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="modal-note" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modal-note-title">
   <div class="modal modal-sm">
-    <h2 data-i18n="history.noteTitle">Notat</h2>
+    <div class="modal-header">
+      <span class="modal-title" id="modal-note-title" data-i18n="history.noteTitle">Notat</span>
+      <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+    </div>
     <p data-i18n="history.noteDesc">Skriv et notat til dette opptaket (valgfritt)</p>
     <textarea id="note-textarea" class="form-input" rows="3"
       data-i18n-placeholder="history.notePlaceholder"
@@ -2856,11 +2999,11 @@
 </div>
 
 <!-- Cloud folder picker modal -->
-<div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true">
+<div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cloud-folder-modal-title">
   <div class="modal modal-sm cloud-folder-modal">
-    <div class="cloud-folder-modal-header">
-      <h2 id="cloud-folder-modal-title">Velg mappe…</h2>
-      <button id="cloud-folder-modal-close" class="btn-ghost cloud-folder-modal-close" aria-label="Lukk">×</button>
+    <div class="modal-header">
+      <span class="modal-title" id="cloud-folder-modal-title">Velg mappe…</span>
+      <button id="cloud-folder-modal-close" class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <div id="cloud-folder-list" class="cloud-folder-list"></div>
   </div>

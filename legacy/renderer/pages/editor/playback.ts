@@ -4,6 +4,7 @@ import { sharedAudioCtx } from './audio-ctx'
 import { nextRegion, regionPosToTimeline, resolvePosition, type RegionTimeline } from './play-regions'
 import { formatTime } from './format'
 import { drawWaveform, updateMinimapViewport } from './waveform'
+import { DRAW_INTERVAL_MS, nextDrawGate } from '../../ui/frame-gate'
 import { setCurrentTranscriptTime } from '../editor-transcript'
 import { snapOutOfCut } from './canvas-input'
 
@@ -283,6 +284,7 @@ export function startPlay(preview: boolean): void {
 
   if (!E.isPlaying) return
   updatePlayIcon()
+  resetWaveformDrawGate()
   animate()
 }
 
@@ -312,16 +314,27 @@ export function stopPlay(): void {
 // Cap the per-frame full-canvas redraw to ~30 fps during playback. The redraw
 // is the expensive part of the loop; the playhead is imperceptible at 30 vs
 // 60 fps, but halving it frees the main thread (smoother editor, esp. on long
-// files). Only the playback loop is throttled — direct drawWaveform() calls
+// files). Only the playback loop is gated — direct drawWaveform() calls
 // (seek, edits, stop) still draw immediately.
-let lastWaveformDrawMs = 0
-const WAVEFORM_MIN_FRAME_MS = 33
+//
+// The gate is the ACCUMULATOR from ui/frame-gate.ts, not the boundary check
+// this used to be. `if (now - last >= 33) last = now` re-phases on the jitter of
+// whichever frame happens to cross the line, so with a 16.7 ms rAF it admits
+// draws 33 ms / 50 ms / 33 ms / 50 ms apart — and a playhead moving at constant
+// speed drawn on an alternating cadence is exactly what "not smooth" looks
+// like. The accumulator advances by one whole interval instead.
+let waveformDrawGate = 0
 function drawWaveformThrottled(): void {
-  const now = performance.now()
-  if (now - lastWaveformDrawMs >= WAVEFORM_MIN_FRAME_MS) {
-    lastWaveformDrawMs = now
-    drawWaveform()
-  }
+  const next = nextDrawGate(waveformDrawGate, performance.now())
+  if (next === waveformDrawGate) return
+  waveformDrawGate = next
+  drawWaveform()
+}
+
+/** Re-phase the draw gate to now — called when playback starts so the first
+ *  frame of a take always paints instead of waiting out a stale gate. */
+function resetWaveformDrawGate(): void {
+  waveformDrawGate = performance.now() - DRAW_INTERVAL_MS
 }
 
 // ── Cut-preview de-click ────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
   "name": "sundayrec",
   "private": true,
-  "version": "0.8.1",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "ffmpeg": "node scripts/fetch-ffmpeg.mjs",
@@ -25,8 +25,10 @@
     "bindings": "cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs && node scripts/sync-bindings.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "version-sync": "node scripts/check-version-sync.mjs",
+    "i18n-fallbacks": "node scripts/check-i18n-fallbacks.mjs",
+    "i18n-fallbacks:fix": "node scripts/check-i18n-fallbacks.mjs --fix",
     "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale — run npm run bindings and commit legacy/bindings' && exit 1)",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-fallbacks && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky"
   },

@@ -1,9 +1,17 @@
-import { settings, patchSettings } from '../state'
-import { flashMsg } from '../helpers'
+import { settings, patchSettings, saveSettingsDebounced } from '../state'
 import type { Settings } from '../../types'
 
 import { t } from '../i18n'
 import { updateAudioSeparateButton, loadVideoInfoStrip, updateVideoToggleButton } from './home'
+import {
+  bindRadioGroup,
+  bindSetting,
+  recordingImminentGuard,
+  resyncBoundSettings,
+  showSavedChip,
+  type BindSettingOpts,
+} from '../ui/bind-setting'
+import { setFieldError } from '../ui/field-error'
 
 function updateKeepAudioVisibility(): void {
   const modeEl    = document.querySelector<HTMLInputElement>('input[name="video-mode"]:checked')
@@ -12,101 +20,119 @@ function updateKeepAudioVisibility(): void {
   if (row) row.style.display = separate ? 'none' : ''
 }
 
-function showVideoWarning(msg: string): void {
-  const bitrateInput = document.getElementById('video-bitrate-value') as HTMLInputElement | null
-  if (!bitrateInput) return
-  let warn = document.getElementById('video-bitrate-warn')
-  if (!warn) {
-    warn = document.createElement('div')
-    warn.id = 'video-bitrate-warn'
-    warn.style.cssText = 'font-size:12px;color:var(--orange);margin-top:4px'
-    bitrateInput.parentElement?.after(warn)
-  }
-  warn.textContent = msg
-  setTimeout(() => { if (warn) warn.textContent = '' }, 4000)
-}
-
 type VideoDevice = { name: string; index: number }
 let loadedDevices: VideoDevice[] = []
 
-export function setupVideoPage(): void {
-  // AUTO-SAVE: every video control persists immediately on change (the old flow
-  // required clicking «Lagre», so a resolution change the user made and then
-  // navigated away from was silently lost — the recorder kept using defaults, and
-  // the Home card never updated). saveVideoSettings also refreshes the Home strip
-  // + pushes the recording-critical settings to the backend.
-  const autoSave = () => { void saveVideoSettings() }
+/** Every video control writes the same way: collect the panel into settings,
+ *  persist through the shared debounce, refresh Home. Only the guard and the
+ *  side effects differ per control. */
+function videoBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
+  return {
+    apply: () => collectVideoSettings(),
+    after: () => afterVideoSave(),
+    ...extra,
+  }
+}
 
-  const toggle = document.getElementById('opt-video-enable') as HTMLInputElement | null
-  toggle?.addEventListener('change', () => {
-    const enabled = toggle.checked
-    const panel = document.getElementById('video-settings-panel')
-    if (panel) panel.style.display = enabled ? '' : 'none'
-    autoSave()
-  })
+export function setupVideoPage(): void {
+  // AUTO-APPLY: every video control persists on change and says so with an
+  // inline «Lagret ✓». The old flow had BOTH — silent auto-save AND a Lagre /
+  // Avbryt footer that no code path could ever reach (#btn-video-save sat below
+  // a panel that is hidden whenever video is off, and the tab had no dirty bar
+  // wired), so the page looked unsaved while already being saved.
+  bindSetting('opt-video-enable', videoBinding({
+    key: 'videoEnabled',
+    after: (value) => {
+      const panel = document.getElementById('video-settings-panel')
+      if (panel) panel.style.display = value ? '' : 'none'
+      afterVideoSave()
+    },
+  }))
 
   document.getElementById('btn-video-refresh-devices')?.addEventListener('click', async () => {
     await refreshVideoDevices()
   })
 
-  // When the camera changes, gate resolution/fps to what it can actually do + save.
-  document.getElementById('video-device-select')?.addEventListener('change', () => {
-    void applyCameraCapabilities()
-    autoSave()
-  })
+  // Swapping the camera is the video-side twin of swapping the audio device —
+  // the one change that can quietly cost you the recording about to start.
+  bindSetting('video-device-select', videoBinding({
+    key: 'videoDeviceName',
+    confirmIf: recordingImminentGuard(t('video.guardDevice', 'Bytte kamera')),
+    after: () => {
+      void applyCameraCapabilities()
+      afterVideoSave()
+    },
+  }))
 
-  // Persist resolution / fps / container / codec / encoder on change.
-  document.querySelectorAll<HTMLInputElement>('input[name="video-resolution"]').forEach(el => {
-    el.addEventListener('change', autoSave)
-  })
-  ;['video-fps-select', 'video-container-select', 'video-codec-select', 'video-encoder-select'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', autoSave)
-  })
-  // Recompute the per-resolution GB/t estimates when codec or fps changes (H.265
-  // ≈ 45 % smaller, 50/60 fps a bit larger).
-  ;['video-codec-select', 'video-fps-select'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', updateSizeEstimates)
-  })
+  bindRadioGroup('video-resolution', videoBinding({ key: 'videoResolution' }))
+  bindSetting('video-container-select', videoBinding({ key: 'videoContainer' }))
+  bindSetting('video-encoder-select',   videoBinding({ key: 'videoEncoder' }))
+  // Codec and fps also move the per-resolution GB/t estimates (H.265 ≈ 45 %
+  // smaller, 50/60 fps a bit larger).
+  bindSetting('video-codec-select', videoBinding({
+    key: 'videoCodec',
+    after: () => { updateSizeEstimates(); afterVideoSave() },
+  }))
+  bindSetting('video-fps-select', videoBinding({
+    key: 'videoFramerate',
+    after: () => { updateSizeEstimates(); afterVideoSave() },
+  }))
 
-  // video-mode radio buttons — update keep-audio visibility + save
-  document.querySelectorAll<HTMLInputElement>('input[name="video-mode"]').forEach(el => {
-    el.addEventListener('change', () => { updateKeepAudioVisibility(); autoSave() })
-  })
-  document.getElementById('opt-video-keep-audio')?.addEventListener('change', autoSave)
-  document.getElementById('opt-editor-hw-encode')?.addEventListener('change', autoSave)
+  bindRadioGroup('video-mode', videoBinding({
+    key: 'videoSeparate',
+    after: () => { updateKeepAudioVisibility(); afterVideoSave() },
+  }))
+  bindSetting('opt-video-keep-audio',  videoBinding({ key: 'videoKeepAudio' }))
+  bindSetting('opt-editor-hw-encode',  videoBinding({ key: 'editorHwEncode' }))
 
-  // Toggle custom bitrate row
+  // Auto vs custom bitrate. These two radios share a name but carry no distinct
+  // `value`, so they are bound individually rather than as a group.
   const toggleBitrateRow = () => {
     const autoCheck = document.getElementById('opt-video-bitrate-auto') as HTMLInputElement | null
     const row = document.getElementById('video-bitrate-custom-row')
     if (row) row.style.display = autoCheck?.checked ? 'none' : ''
     updateSizeEstimates()
   }
-  document.getElementById('opt-video-bitrate-auto')?.addEventListener('change', toggleBitrateRow)
-  document.getElementById('opt-video-bitrate-custom')?.addEventListener('change', toggleBitrateRow)
-
-  // OPPGAVE 4: validate bitrate on blur/input
-  const bitrateInput = document.getElementById('video-bitrate-value') as HTMLInputElement | null
-  bitrateInput?.addEventListener('change', () => {
-    const val = parseInt(bitrateInput.value)
-    if (isNaN(val) || val < 500) {
-      bitrateInput.value = '500'
-      showVideoWarning(t('video.minBitrateWarn', 'Minimum bitrate er 500 kbps'))
-    } else if (val > 50000) {
-      bitrateInput.value = '50000'
-      showVideoWarning(t('video.maxBitrateWarn', 'Maksimum bitrate er 50 000 kbps'))
-    }
-    updateSizeEstimates()
+  ;['opt-video-bitrate-auto', 'opt-video-bitrate-custom'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => {
+      toggleBitrateRow()
+      void commitVideo(document.getElementById(id))
+    })
   })
 
-  document.getElementById('btn-video-save')?.addEventListener('click', async () => {
-    await saveVideoSettings()
-    flashMsg(document.getElementById('btn-video-save'), '✓ Lagret', true)
-  })
+  // The custom bitrate is clamped, not rejected: any number encodes, the
+  // out-of-range ones just encode badly. The clamp is now explained under the
+  // field instead of in a warning that appeared four lines away.
+  bindSetting('video-bitrate-value', videoBinding({
+    key: 'videoBitrate',
+    coerce: (raw) => {
+      const el = document.getElementById('video-bitrate-value') as HTMLInputElement | null
+      const n = typeof raw === 'number' ? raw : NaN
+      if (!el) return raw
+      if (!Number.isFinite(n) || n < 500) {
+        el.value = '500'
+        setFieldError(el, t('video.minBitrateWarn', 'Minimum bitrate er 500 kbps'))
+        return 500
+      }
+      if (n > 50000) {
+        el.value = '50000'
+        setFieldError(el, t('video.maxBitrateWarn', 'Maksimum bitrate er 50 000 kbps'))
+        return 50000
+      }
+      setFieldError(el, null)
+      return n
+    },
+    after: () => { updateSizeEstimates(); afterVideoSave() },
+  }))
+}
 
-  document.getElementById('btn-video-cancel')?.addEventListener('click', () => {
-    applyVideoSettingsToUI()
-  })
+/** Collect + persist + receipt, for the controls that are not bound (the two
+ *  bitrate-mode radios). */
+async function commitVideo(host: HTMLElement | null): Promise<void> {
+  collectVideoSettings()
+  const ok = await saveSettingsDebounced(120)
+  if (ok) showSavedChip(host?.closest<HTMLElement>('.video-bitrate-radio') ?? host)
+  afterVideoSave()
 }
 
 export async function refreshVideoDevices(): Promise<void> {
@@ -229,6 +255,8 @@ export function applyVideoSettingsToUI(): void {
   // Gate resolution/fps to the selected camera's advertised modes.
   void applyCameraCapabilities()
   updateSizeEstimates()
+  // The DOM now mirrors settings — rebase the bindings' baselines.
+  resyncBoundSettings()
 }
 
 // Per-resolution "auto" video bitrate (Mb/s) at H.264 / 30 fps — the same ladder
@@ -371,7 +399,18 @@ export async function applyCameraCapabilities(): Promise<void> {
   }
 }
 
-async function saveVideoSettings(): Promise<void> {
+/** Mirror the change onto Home without a navigation: the «Separat lydfil»
+ *  badge, the «Video på»-toggle and the video-quality/camera info cards. All
+ *  are no-ops when the Home DOM is not mounted (internal guard). */
+function afterVideoSave(): void {
+  updateAudioSeparateButton()
+  updateVideoToggleButton()
+  loadVideoInfoStrip()
+}
+
+/** Read the whole video panel into `settings`. Persistence belongs to
+ *  `bindSetting` (one debounced write, one visible receipt). */
+function collectVideoSettings(): void {
   const toggle  = document.getElementById('opt-video-enable') as HTMLInputElement | null
   const selectEl = document.getElementById('video-device-select') as HTMLSelectElement | null
   const fpsEl   = document.getElementById('video-fps-select') as HTMLSelectElement | null
@@ -424,12 +463,5 @@ async function saveVideoSettings(): Promise<void> {
     useUnifiedRecorder,
   }
 
-  patchSettings(updated)
-  await window.api.saveSettings(updated as Settings)
-  // Mirror endringene til Hjem-skjermen live (uten navigasjon): «Separat lydfil»-
-  // badge, «Video på»-toggelen OG videokvalitet-/kamera-info-kortene. Alle er
-  // no-op hvis home-DOM ikke er montert (intern guard).
-  updateAudioSeparateButton()
-  updateVideoToggleButton()
-  loadVideoInfoStrip()
+  patchSettings(updated as Settings)
 }

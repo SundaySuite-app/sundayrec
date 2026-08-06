@@ -1,4 +1,5 @@
 import { t, currentLang } from './i18n'
+import { toast } from './ui/toast'
 
 export function escHtml(str: unknown): string {
   return String(str ?? '').replace(/[&<>"']/g, m =>
@@ -22,22 +23,29 @@ export function updateSliderLabel(sliderId: string, labelId: string, suffix = ''
   if (el && lbl) lbl.textContent = el.value + suffix
 }
 
-export function flashSaved(btn: HTMLElement | null): void {
-  if (!btn) return
-  const orig   = btn.textContent ?? ''
-  const origBg = (btn as HTMLElement).style.background
-  btn.textContent = t('general.saved', '✓ Lagret')
-  btn.style.background = 'var(--green)'
-  setTimeout(() => { btn.textContent = orig; btn.style.background = origBg }, 1800)
+/** Strip a leading ✓ / ✕ / ⚠ from legacy messages — the toast draws its own
+ *  status icon, and two in a row reads as a typo. */
+function stripStatusGlyph(msg: string): string {
+  return msg.replace(/^[✓✔✕✖×⚠!]\s*/u, '')
 }
 
-export function flashMsg(btn: HTMLElement | null, msg: string, ok = true): void {
-  if (!btn) return
-  const orig   = btn.textContent ?? ''
-  const origBg = (btn as HTMLElement).style.background
-  btn.textContent = msg
-  btn.style.background = ok ? 'var(--green)' : 'var(--red)'
-  setTimeout(() => { btn.textContent = orig; btn.style.background = origBg }, 2500)
+/**
+ * "Saved" feedback.
+ *
+ * The button argument is kept so the ~5 call sites need no edit, but it is no
+ * longer used: feedback now goes to a toast instead of overwriting the label of
+ * the button you just pressed. That button was both the control and the
+ * receipt — its width changed as the label swapped, and nothing longer than a
+ * button caption could ever be said.
+ */
+export function flashSaved(_btn?: HTMLElement | null): void {
+  toast('success', t('general.saved', 'Lagret'))
+}
+
+/** As flashSaved, but with a caller-supplied message. `ok === false` raises an
+ *  error toast, which is sticky — a failure you can actually finish reading. */
+export function flashMsg(_btn: HTMLElement | null, msg: string, ok = true): void {
+  toast(ok ? 'success' : 'error', stripStatusGlyph(msg))
 }
 
 export function fmtDate(iso: string): string {
@@ -99,13 +107,10 @@ export function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function setupDirtyBar(pageId: string): { clean: () => void; dirty: () => void } {
-  const pageEl = document.getElementById(pageId)
-  const footer = pageEl?.querySelector<HTMLElement>('.page-footer')
-  if (!pageEl || !footer) return { clean: () => {}, dirty: () => {} }
-  const dirty = () => footer.classList.add('dirty')
-  const clean = () => footer.classList.remove('dirty')
-  pageEl.addEventListener('input',  dirty)
-  pageEl.addEventListener('change', dirty)
-  return { clean, dirty }
-}
+// setupDirtyBar was removed with the dirty-footer save model (Fase 3, 2026-08).
+// It marked a `.page-footer` dirty on any input inside a settings tab — but half
+// those controls had already auto-saved, so the footer claimed unsaved work that
+// did not exist, and its «Avbryt» could not undo the write that had. Settings now
+// auto-apply through `ui/bind-setting.ts` with an inline «Lagret ✓», and the three
+// places that genuinely need staging (schedule slot editor, SMTP server fields,
+// integration URL/key pairs) carry their own explicit Lagre/Avbryt card.

@@ -48,6 +48,49 @@
   --sw: 184px;
 
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  /* ── Spacing scale ────────────────────────────────────────────
+     Use for NEW code and targeted fixes. Existing literals are left
+     alone on purpose — a mass migration is churn without benefit. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+
+  /* ── Type scale ──────────────────────────────────────────────
+     --fs-xs is the FLOOR: nothing in the app renders below 11px. */
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 13px;
+  --fs-md:   14px;
+  --fs-lg:   16px;
+  --fs-xl:   20px;
+
+  /* ── Layer scale ─────────────────────────────────────────────
+     One ordering for every floating surface. The live recording
+     overlay deliberately sits ABOVE ordinary modals: while a take is
+     running, nothing may cover it except the stop-confirm (critical)
+     and transient toasts. */
+  --z-page:      1;
+  --z-header:   50;
+  --z-modal:   300;
+  --z-overlay: 350;
+  --z-toast:   400;
+  --z-critical:500;
+
+  /* ── Aliases ─────────────────────────────────────────────────
+     Names used by later-written CSS that never got defined, so those
+     rules silently fell back to their grey hardcoded defaults. Bound
+     here to the navy system they were meant to reference. */
+  --text1:    var(--text);
+  --muted:    var(--text2);
+  --surface1: var(--surface);
+  --bg1:      var(--bg);
+  --bg2:      var(--surface);
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -220,11 +263,11 @@ body.platform-win32 ::-webkit-scrollbar-thumb { border-radius: 4px; }
 .hero-ok   .hero-icon { background: rgba(34,197,94,.15); color: var(--green); }
 .hero-warn .hero-icon { background: rgba(245,158,11,.15); color: var(--orange); }
 .hero-text { flex: 1; min-width: 0; }
-.hero-label { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--text3); margin-bottom: 3px; }
+.hero-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .6px; color: var(--text3); margin-bottom: 3px; }
 .hero-title { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
 .hero-detail { font-size: 12px; color: var(--text2); margin-top: 3px; }
 .hero-next { text-align: right; flex-shrink: 0; }
-.next-label { font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--text3); margin-bottom: 3px; }
+.next-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .6px; color: var(--text3); margin-bottom: 3px; }
 .next-date { font-size: 22px; font-weight: 700; }
 .next-countdown { font-size: 16px; color: var(--accent); margin-top: 2px; }
 .next-wake-badge { font-size: 10px; color: var(--text3); margin-top: 5px; opacity: 0.85; }
@@ -242,6 +285,15 @@ body.platform-win32 ::-webkit-scrollbar-thumb { border-radius: 4px; }
   opacity: .8; display: inline-block; margin-top: 6px;
 }
 .setup-hint-link:hover { opacity: 1; text-decoration: underline; }
+
+/* ── Shared keyframes ─────────────────────────────────────────── */
+/* Referenced by .global-error-banner, .cloud-connected and .schedule-howto —
+   all three animated with a name that was never defined, so they simply
+   appeared with no transition at all. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 
 /* ── Focus ring for accessibility ─────────────────────────────── */
 :focus-visible {
@@ -283,7 +335,7 @@ select:focus:not(:focus-visible) {
 }
 .info-card-body { flex: 1 1 0; min-width: 0; }
 .info-card-label {
-  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: 1px;
   color: var(--text3); text-transform: uppercase; margin-bottom: 3px;
 }
 .info-card-value {
@@ -295,6 +347,13 @@ select:focus:not(:focus-visible) {
   font-size: 11px; color: var(--text3); margin-top: 2px;
   overflow-wrap: anywhere; word-break: break-word;
   line-height: 1.35;
+}
+/* The pre-roll buffer is a background microphone owner. When it runs, it says so
+   — amber rather than the muted --text3, because "something is holding your mic"
+   is a fact the eye should catch, not a footnote. */
+.info-card-sub.preroll-chip {
+  color: var(--gold, #ebb84b);
+  font-weight: 600;
 }
 .info-card-action {
   font-size: 11px; font-weight: 600; color: var(--accent2);
@@ -312,8 +371,10 @@ select:focus:not(:focus-visible) {
   transition: all .15s; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 6px;
 }
+/* Navy-on-gold ≈ 10:1. White-on-gold was ≈ 1.9:1 — the primary action was the
+   least readable text in the app. */
 .btn-primary {
-  background: var(--accent); color: #fff;
+  background: var(--accent); color: var(--bg);
   box-shadow: 0 2px 8px rgba(235,184,75,.3);
 }
 .btn-primary:hover {
@@ -366,8 +427,11 @@ select:focus:not(:focus-visible) {
   color: var(--gold, #ebb84b);
   background: color-mix(in srgb, var(--gold, #ebb84b) 14%, transparent);
 }
+/* Was `var(--text-3, #8899bb)` — a token that never existed. Its hardcoded
+   fallback #8899bb IS --text2, so binding to --text2 keeps the rendering
+   identical; --text3 would have darkened it below the contrast floor. */
 .option-card-cap-badge.cap-unsupported {
-  color: var(--text-3, #8899bb);
+  color: var(--text2);
   background: rgba(255, 255, 255, .05);
 }
 
@@ -498,21 +562,9 @@ select:focus:not(:focus-visible) {
   min-width: 36px; text-align: right;
 }
 
-/* ── Page footer (sticky Save/Cancel bar on settings pages) ─────── */
-.page-footer {
-  display: flex; gap: 8px; align-items: center;
-  padding: 0 20px;
-  background: var(--surface); border-top: 1px solid var(--border);
-  border-radius: var(--r);
-  position: sticky; bottom: 0;
-  max-height: 0; overflow: hidden;
-  opacity: 0; pointer-events: none;
-  transition: max-height .18s ease, padding .18s ease, opacity .15s ease;
-}
-.page-footer.dirty {
-  max-height: 60px; padding: 10px 20px;
-  opacity: 1; pointer-events: auto;
-}
+/* The sticky Save/Cancel «page-footer» is gone (Fase 3, 2026-08): settings
+   auto-apply with an inline «Lagret ✓», and the three staged surfaces use
+   .explicit-save-card in ui.css instead. Rules removed with the markup. */
 
 /* ── Record button ─────────────────────────────────────────────── */
 .btn-record {
@@ -706,8 +758,8 @@ select:focus:not(:focus-visible) {
 .rec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rec-table th {
   text-align: left; padding: 8px 12px;
-  font-size: 10px; font-weight: 700; letter-spacing: .8px;
-  color: var(--text4); border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .8px;
+  color: var(--text2); border-bottom: 1px solid var(--border);
   text-transform: uppercase;
 }
 .rec-table td {
@@ -717,6 +769,35 @@ select:focus:not(:focus-visible) {
 .rec-table td:first-child { color: var(--text); font-weight: 500; }
 .rec-table tr:last-child td { border-bottom: none; }
 .rec-table tr:hover td { background: rgba(255,255,255,.03); cursor: default; }
+
+/* Sortable column headers (Tidspunkt / Varighet) */
+.rec-table th[data-sort] { white-space: nowrap; }
+.th-sortable {
+  cursor: pointer; user-select: none;
+  transition: color .12s;
+}
+.th-sortable:hover,
+.th-sortable:focus-visible { color: var(--text); }
+.th-sortable.th-sort-active { color: var(--accent); }
+.th-sort-arrow { display: inline-block; width: 10px; margin-left: 4px; font-size: 10px; }
+
+/* Filter chips above the table */
+.hist-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.hist-chip {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 999px;
+  padding: 4px 12px; font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+}
+.hist-chip:hover { background: var(--surface3); color: var(--text); }
+.hist-chip-active {
+  background: rgba(235,184,75,.16); border-color: rgba(235,184,75,.5);
+  color: var(--accent);
+}
+
+/* A row whose delete is in flight: visibly leaving, and not clickable again. */
+.hist-row-busy { opacity: .45; }
+.hist-row-busy .hist-action { pointer-events: none; }
 
 /* Status column color coding */
 .hist-row[data-status="ok"]    .badge { color: var(--green); }
@@ -994,45 +1075,10 @@ select.form-input {
   .cal-right { width: 100%; flex: 1 1 100%; }
 }
 
-/* ══ RESPONSIVE — compact (≤ 880px window) ════════════════════════════
-   Content area ≈ 620px. Tighten paddings; auto-fit grid handles columns.
-   ════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 880px) {
-  #main { padding: 18px 18px; }
-  body.platform-darwin #main { padding-top: 34px; }
-
-  /* Hero: hide next-recording block — too cramped */
-  .hero-next { display: none; }
-  .hero { padding: 14px 16px; gap: 12px; margin-bottom: 14px; }
-
-  /* Info strip: tighter gap; auto-fit handles column count */
-  .info-strip { gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .info-card { min-width: 0; padding: 11px 12px; gap: 10px; }
-  .info-card-icon { width: 26px; height: 26px; }
-
-  /* VU section: reduce padding */
-  .vu-section { padding: 12px; margin-bottom: 16px; }
-
-  /* Section header + history search */
-  .section-header { margin-bottom: 10px; }
-}
-
-/* ══ RESPONSIVE — single column (≤ 560px window) ═══════════════════════
-   Very narrow. Force 1 col, hide "Endre" (sidebar still navigates).
-   ════════════════════════════════════════════════════════════════════════ */
-@media (max-width: 560px) {
-  .info-strip { grid-template-columns: 1fr; }
-  .info-card-action { display: none; }
-}
-
-/* ── Calendar responsive (narrow window) ──────────────────────── */
-@media (max-width: 900px) {
-  .cal-card { min-width: 0; }
-  .cal-day { min-height: 68px; padding: 4px 2px; }
-  .cal-day-num { width: 22px; height: 22px; font-size: 11px; }
-  .cal-chip { font-size: 9px; padding: 1px 3px; }
-  .cal-weekdays span { font-size: 9px; }
-}
+/* NOTE: the window's minWidth is 960 (src-tauri/tauri.conf.json), so any
+   `@media (max-width: <960)` query is unreachable. Several such blocks used to
+   live here (880 / 560 / 900 / 780 / 720 / 480) and were deleted — they had
+   never once applied. 980px is the narrowest query that can still fire. */
 
 /* ── Device cards ──────────────────────────────────────────────── */
 .device-card {
@@ -1085,8 +1131,11 @@ select.form-input {
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,.75);
   display: flex; align-items: center; justify-content: center;
-  z-index: 300; backdrop-filter: blur(6px);
+  z-index: var(--z-modal); backdrop-filter: blur(6px);
 }
+/* The stop-confirm is the ONE modal allowed over a live recording overlay —
+   it is the only way out of it. Everything else stays behind the take. */
+#modal-confirm-stop { z-index: var(--z-critical); }
 .modal {
   background: var(--surface); border: 1px solid var(--border2);
   border-radius: 16px; padding: 28px 30px;
@@ -1095,12 +1144,11 @@ select.form-input {
 }
 .modal.modal-sm { width: 360px; }
 
-/* Cloud-folder picker modal — list-style folder picker */
-.cloud-folder-backdrop { z-index: 1000; }
+/* Cloud-folder picker modal — list-style folder picker. Opens FROM a settings
+   page, sometimes with another modal already up, so it sits just above its
+   siblings — but still below the live-recording overlay. */
+.cloud-folder-backdrop { z-index: calc(var(--z-modal) + 5); }
 .cloud-folder-modal { display: flex; flex-direction: column; gap: 12px; max-height: 70vh; }
-.cloud-folder-modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.cloud-folder-modal-header h2 { margin: 0; font-size: 16px; }
-.cloud-folder-modal-close { font-size: 18px; padding: 2px 8px; }
 .cloud-folder-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; max-height: 50vh; }
 .cloud-folder-item {
   display: block; width: 100%; text-align: left;
@@ -1113,7 +1161,7 @@ select.form-input {
 .modal p  { font-size: 13px; color: var(--text2); margin-bottom: 16px; line-height: 1.6; }
 .manual-section-divider {
   display: flex; align-items: center; gap: 7px;
-  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: 1px;
   color: var(--accent2); text-transform: uppercase;
   margin: 14px 0 8px;
 }
@@ -1128,10 +1176,28 @@ select.form-input {
   /* Fully opaque so home-page content doesn't bleed through behind the overlay. */
   background: var(--bg);
   display: flex; align-items: center; justify-content: center;
-  z-index: 200;
-  padding-top: 36px;  /* clear macOS traffic-light buttons (hiddenInset titlebar) */
+  /* Above ordinary modals: while a take is running, a stray modal left open on
+     another page must not cover the live meters. */
+  z-index: var(--z-overlay);
   overflow-y: auto;   /* allow scroll if window is shorter than content */
+  /* The whole app disappearing behind a full-screen surface in one frame reads
+     as a glitch, not as a transition. 150 ms of fade + a 2 % scale is enough to
+     say "this replaced that". It is presentation ONLY — ui/motion.ts adds
+     .is-open in the same frame the overlay is shown, and the meters, waveform
+     and timer start immediately regardless of what the pixels are doing.
+     No fixed-position descendants live in here, so the transform is safe. */
+  opacity: 0;
+  transform: scale(.98);
+  transition: opacity .15s ease-out, transform .15s ease-out;
 }
+.recording-overlay.is-open   { opacity: 1; transform: scale(1); }
+.recording-overlay.is-leaving { opacity: 0; transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) {
+  .recording-overlay { transition: none; }
+}
+/* Traffic-light clearance is a macOS-only concern (hiddenInset titlebar).
+   On Windows it was 36px of dead space at the top of every recording. */
+body.platform-darwin .recording-overlay { padding-top: 36px; }
 
 /* Full-width vertical layout */
 .rec-layout {
@@ -1139,12 +1205,6 @@ select.form-input {
   width: 100%; max-width: 860px; padding: 36px 52px;
   position: relative; z-index: 1;
   min-width: 0;
-}
-@media (max-width: 720px) {
-  .rec-layout { padding: 24px 24px; gap: 20px; }
-}
-@media (max-width: 480px) {
-  .rec-layout { padding: 16px 14px; gap: 16px; }
 }
 .rec-indicator { display: flex; align-items: center; gap: 10px; }
 
@@ -1235,20 +1295,44 @@ select.form-input {
   font-size: 14px; font-weight: 700; cursor: pointer;
   transition: all .15s; letter-spacing: -.1px;
 }
-@media (max-width: 720px) {
-  .rec-meta { gap: 10px 28px; }
-  .btn-stop-big { padding: 14px 28px; flex: 1 1 100%; }
-  .rec-timer-block { flex: 1 1 100%; }
-}
-@media (max-width: 480px) {
-  .rec-timer { font-size: 40px !important; letter-spacing: -2px !important; }
-  .rec-peak-db { font-size: 21px !important; min-width: 52px !important; }
-  .rec-sig-label { font-size: 14px !important; letter-spacing: 1.5px !important; }
-}
 .btn-stop-big:hover {
   background: rgba(239,68,68,.2); border-color: var(--red);
   box-shadow: 0 0 20px rgba(239,68,68,.2);
 }
+/* Finalizing: the take is over but the file is still being written. The button
+   is out of play (a second press means nothing) and says so, and the whole
+   overlay dims a shade so it reads as "winding down", not "still recording". */
+.btn-stop-big:disabled {
+  cursor: default; opacity: .75;
+  background: rgba(255,255,255,.04); border-color: var(--border2); color: var(--text2);
+  box-shadow: none;
+}
+.btn-stop-big:disabled:hover {
+  background: rgba(255,255,255,.04); border-color: var(--border2); box-shadow: none;
+}
+.rec-finalizing-hint {
+  font-size: 12px; color: var(--text3); text-align: center;
+  animation: recFinalizePulse 1.6s ease-in-out infinite;
+}
+@keyframes recFinalizePulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+/* The pulsing REC dot must not keep claiming a take is live once it isn't. */
+.recording-overlay.is-finalizing .rec-dot-big { animation: none; opacity: .3; }
+.recording-overlay.is-finalizing .rec-live    { opacity: .45; }
+
+/* Silence warning — its own line inside the overlay (see index.html). */
+.rec-silence {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 10px 18px; border-radius: var(--rsm);
+  background: var(--orange-bg, rgba(249,115,22,.12));
+  border: 1px solid rgba(249,115,22,.3);
+}
+.rec-silence-icon {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(249,115,22,.25); color: var(--orange, #f97316);
+  font-size: 12px; font-weight: 800;
+}
+.rec-silence-text { font-size: 13px; font-weight: 600; color: var(--orange, #f97316); }
 .rec-savepath {
   font-size: 11px; color: var(--text4); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1288,7 +1372,7 @@ select.form-input {
 
 /* ── Update toast (bottom-right floating card) ─────────────────── */
 .update-toast {
-  position: fixed; bottom: 22px; right: 22px; z-index: 400;
+  position: fixed; bottom: 22px; right: 22px; z-index: var(--z-toast);
   display: flex; align-items: flex-start; gap: 12px;
   width: 290px;
   background: var(--surface2); border: 1px solid var(--border2);
@@ -1321,7 +1405,7 @@ select.form-input {
 .update-toast-actions { margin-top: 10px; }
 .btn-toast-install {
   width: 100%; padding: 8px 12px; border-radius: var(--rsm);
-  background: var(--accent); color: #fff; border: none;
+  background: var(--accent); color: var(--bg); border: none;
   font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: -.1px;
   transition: background .15s, transform .1s;
 }
@@ -1541,15 +1625,38 @@ select.form-input {
   font-size: 13px; font-weight: 500;
 }
 .editor-result-row svg { width: 16px; height: 16px; flex-shrink: 0; }
+/* The export bar is PINNED to the bottom of the editor's scroll (#main).
+ *
+ * It used to sit at the natural end of a workspace that runs several screens
+ * long — transcript, chapters, mastering, cover art — so "Lagre redigert fil",
+ * the whole point of opening the editor, was reliably off-screen, and so was
+ * the progress bar and the result line that share the bar with it.
+ *
+ * ⚠️ VIDEO HAZARD — read before touching this. `.editor-header-sticky` below
+ * was sticky once and had to be reverted: HTML5 <video> uses a hardware
+ * overlay that could win over CSS z-index and render ABOVE the sticky element
+ * while scrolling. What makes sticky safe here now is the defence added since,
+ * on `.editor-video-panel` — `position: relative; isolation: isolate;
+ * z-index: 0` plus `transform: translateZ(0)` on the <video> itself — which
+ * pins the player inside its own stacking context at z-index 0 so it cannot
+ * leak past a sibling. This bar is that sibling at z-index 20, which also
+ * clears the waveform's drop-zone overlays (z-index 6), and stays far below
+ * the page header (--z-header 50) and every overlay on the shared z-scale, so
+ * modals, toasts and dialogs still cover it. Worth an eyes-on check with a
+ * real video file on the rig. */
 .editor-save-bar {
+  position: sticky; bottom: 0; z-index: 20; isolation: isolate;
   display: flex; align-items: center; justify-content: flex-end;
-  gap: 16px; padding-top: 12px; margin-top: 4px;
-  border-top: 1px solid var(--border);
+  gap: 16px; padding: 12px 0 10px; margin-top: 4px;
+  border-top: 1px solid var(--border2);
+  background: var(--bg);
+  /* A soft lift so the bar reads as floating above the content it covers. */
+  box-shadow: 0 -8px 20px -12px rgba(0,0,0,.85);
 }
 
 /* ── Editor prompt toast ─────────────────────────────────────────── */
 .editor-prompt-toast {
-  position: fixed; bottom: 80px; right: 24px; z-index: 1200;
+  position: fixed; bottom: 80px; right: 24px; z-index: var(--z-toast);
   background: var(--surface2); border: 1px solid var(--border2);
   border-radius: 12px; padding: 14px 18px; width: 260px;
   box-shadow: 0 8px 32px rgba(0,0,0,.5);
@@ -1592,21 +1699,27 @@ select.form-input {
 .btn-sm:active        { transform: scale(.97); }
 .btn-editor-tool:active { transform: scale(.93); }
 
-/* ── History row fade-in stagger ─────────────────────────────────── */
+/* ── List entrances ──────────────────────────────────────────────────
+   Opt-IN via .row-in, added by the renderer only when the list is being
+   populated for the first time (ui/motion.ts firstMount). These used to be
+   unconditional on the row classes, so every refresh re-staggered the whole
+   list: rename a file, delete a note, finish a recording — and five rows that
+   were already on screen flew in again from the left. An entrance animation is
+   a statement that something ARRIVED; replaying it on a refresh makes the app
+   feel like it forgets what it just showed you. */
 @keyframes fadeInRow {
   from { opacity: 0; transform: translateX(-6px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-.hist-row {
+.hist-row.row-in {
   animation: fadeInRow .2s cubic-bezier(.22,1,.36,1) both;
 }
 
-/* ── Cut list slide-in ───────────────────────────────────────────── */
 @keyframes cutSlideIn {
   from { opacity: 0; transform: translateX(10px); }
   to   { opacity: 1; transform: translateX(0); }
 }
-.editor-cut-row {
+.editor-cut-row.row-in {
   animation: cutSlideIn .2s cubic-bezier(.22,1,.36,1) both;
 }
 
@@ -2115,6 +2228,83 @@ select.form-input {
   padding-top: 2px;
 }
 
+/* ── Info-card loading skeletons ─────────────────────────────────────
+   refreshHome fires six requests in parallel; the cards used to sit on a
+   literal "—" until each landed, which reads as "no device / no disk space"
+   rather than "still asking". A pulsing block reads as "loading" without
+   claiming a value. */
+@keyframes cardSkeleton { 0%, 100% { opacity: .35; } 50% { opacity: .7; } }
+.info-card.is-loading .info-card-value,
+.info-card.is-loading .info-card-sub {
+  color: transparent;
+  background: var(--surface2);
+  border-radius: 5px;
+  animation: cardSkeleton 1.2s ease-in-out infinite;
+}
+.info-card.is-loading .info-card-value { width: 62%; height: 15px; }
+.info-card.is-loading .info-card-sub   { width: 82%; height: 11px; margin-top: 5px; }
+/* Children (the signal dot, the separate-audio switch) must not show through. */
+.info-card.is-loading .info-card-sub > *,
+.info-card.is-loading .info-card-action,
+.info-card.is-loading .info-card-audio-sep { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  .info-card.is-loading .info-card-value,
+  .info-card.is-loading .info-card-sub { animation: none; }
+}
+
+/* ── Progress bar for the long audio checks ──────────────────────────
+   The 30 s test recording is a determinate ESTIMATE (the backend reports no
+   progress, so the bar is honest about being "ca."); the 60 s capture bench is
+   indeterminate with an elapsed counter beside it. */
+.health-progress {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface2);
+  overflow: hidden;
+}
+.health-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width .4s linear;
+}
+.health-progress.indeterminate .health-progress-fill {
+  width: 35%;
+  transition: none;
+  animation: healthSweep 1.4s ease-in-out infinite;
+}
+@keyframes healthSweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .health-progress.indeterminate .health-progress-fill {
+    animation: none;
+    width: 100%;
+    opacity: .5;
+  }
+}
+
+/* Alert CARDS (missed recording, pre-start check) reuse the banner skin but are
+   not themselves clickable — they carry explicit buttons, so the whole-surface
+   click affordance would be a lie about where the action is. */
+.home-alert-card { cursor: default; }
+.home-alert-card:hover { transform: none; box-shadow: none; }
+.home-banner-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text2);
+  margin-top: 8px;
+}
+.home-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 /* ── Auto-trim suggestion banner ─────────────────────────────────── */
 .editor-suggestion-banner {
   display: flex; align-items: center; gap: 14px;
@@ -2154,16 +2344,25 @@ select.form-input {
 .editor-minimap-wrap { cursor: ew-resize; }
 
 /* ── Keyboard shortcut hint strip ───────────────────────────────── */
+/* Opened from the toolbar's "?" — `[hidden]` is what the toggle flips, and it
+ * needs the !important because `display:flex` below would otherwise win. */
+.editor-kbd-hints[hidden] { display: none !important; }
 .editor-kbd-hints {
   display: flex; flex-wrap: wrap; gap: 6px 14px;
   padding: 5px 0 2px; margin-top: 2px;
 }
+.btn-editor-kbd-toggle {
+  font-size: 13px; font-weight: 700; line-height: 1;
+}
+.btn-editor-kbd-toggle[aria-expanded="true"] {
+  color: var(--accent); background: rgba(235,184,75,.12);
+}
 .editor-kbd-hint { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text3); }
 .kbd {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; padding: 0 5px;
+  min-width: 22px; height: 19px; padding: 0 5px;
   background: var(--surface3); border: 1px solid var(--border2);
-  border-radius: 4px; font-size: 10px; font-weight: 700;
+  border-radius: 4px; font-size: var(--fs-xs); font-weight: 700;
   color: var(--text2); letter-spacing: .02em; line-height: 1;
   box-shadow: 0 1px 0 var(--border2);
 }
@@ -2233,7 +2432,7 @@ select.form-input {
 /* ── Export modal ─────────────────────────────────────────────────── */
 .export-modal { width: 440px; }
 .export-section-label {
-  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
   color: var(--text3); margin-bottom: 8px; margin-top: 14px;
 }
 .export-section-label:first-child { margin-top: 0; }
@@ -2598,7 +2797,7 @@ select.form-input {
   border: 2px solid rgba(34,197,94,.3); border-top-color: #22c55e;
   animation: spin .7s linear infinite; flex-shrink: 0;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* (@keyframes spin lives once, next to .editor-loading-spin.) */
 
 /* ── Publish (cloud) settings page ───────────────────────────── */
 .cloud-card {
@@ -2752,6 +2951,13 @@ select.form-input {
 }
 .editor-master-title { font-weight: 600; font-size: 14px; color: var(--text1); }
 .editor-master-intro { font-size: 12px; color: var(--text3); margin-bottom: 12px; }
+/* Secondary surface: the export dialog is where mastering normally happens, so
+ * the panel says so in its header and starts collapsed. */
+.editor-master-note { font-size: 11px; color: var(--text3); font-style: italic; }
+#editor-master-header { cursor: pointer; user-select: none; }
+.editor-master-chevron { transition: transform .15s; flex-shrink: 0; }
+.editor-master-section--collapsed .editor-master-chevron { transform: rotate(-90deg); }
+.editor-master-section--collapsed > *:not(.editor-master-header) { display: none !important; }
 .editor-master-preset-row {
   display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
 }
@@ -2800,8 +3006,10 @@ select.form-input {
 .editor-cut-prev:hover { color: var(--accent); background: rgba(235,184,75,.1); }
 
 /* ── Onboarding wizard ─────────────────────────────────────────── */
+/* First-run wizard: above every modal (it owns the screen), below the live
+   recording overlay — onboarding and a running take never coexist. */
 .ob-overlay {
-  position: fixed; inset: 0; z-index: 500;
+  position: fixed; inset: 0; z-index: calc(var(--z-modal) + 20);
   background: rgba(12,16,32,.96); backdrop-filter: blur(24px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -3000,7 +3208,7 @@ select.form-input {
   flex-wrap: wrap;
 }
 .video-source-label {
-  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  font-size: var(--fs-xs); font-weight: 700; letter-spacing: 1px;
   color: var(--text3); text-transform: uppercase; flex-shrink: 0;
 }
 /* Segmented video-feed size control (small / medium / large). Pushed to the far
@@ -3134,8 +3342,10 @@ select.form-input {
   background: var(--surface1);
 }
 /* Whole card is the separate-audio toggle when in video mode */
-#home-format-card.format-toggleable { cursor: pointer; }
-#home-format-card.format-toggleable:hover { border-color: var(--border2); }
+/* `format-toggleable` (whole-card pointer affordance) is gone with the
+   whole-card click handler: the switch inside the card is the control now, so a
+   pointer cursor over the card would promise an interaction that no longer
+   exists. */
 
 /* ── Recording overlay video preview ───────────────────────────── */
 .rec-video-section {
@@ -3327,11 +3537,6 @@ select.form-input {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-@media (max-width: 900px) {
-  /* Column stacks below the preview as a wrapping row — give history its own
-     full-width line so it sits below the cards, not squeezed beside them. */
-  .video-mode-layout .info-card-column > #home-lower { flex-basis: 100%; }
-}
 
 /* VU is now appended INSIDE the .video-preview-card by home.ts, so the
    bottom of the preview card holds the Lydnivå strip — visually identical
@@ -3352,14 +3557,6 @@ select.form-input {
 }
 .video-preview-card > .vu-section .vu-section-head { margin-bottom: 10px; }
 
-/* Responsive: under 900px the side-column collapses below the preview */
-@media (max-width: 900px) {
-  .video-mode-top-row { grid-template-columns: 1fr; }
-  .video-mode-layout .info-card-column {
-    flex-direction: row; flex-wrap: wrap;
-  }
-  .video-mode-layout .info-card-column .info-card { flex: 1 1 240px; }
-}
 
 /* ── Recording overlay — video-as-hero mode ─────────────────────────────── */
 
@@ -3978,9 +4175,6 @@ button > svg:first-child { flex-shrink: 0; }
   grid-template-columns: minmax(140px, 1fr) minmax(220px, 1.6fr) minmax(180px, 1.4fr);
   gap: 10px;
 }
-@media (max-width: 780px) {
-  .stream-destination-grid { grid-template-columns: 1fr; }
-}
 .stream-destination-actions {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px;
@@ -4232,6 +4426,29 @@ button > svg:first-child { flex-shrink: 0; }
 .diag-finding-hint { font-size: 12px; margin-top: 2px; }
 .diag-report { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; background: rgba(0,0,0,0.18); padding: 8px; border-radius: 6px; }
 
+/* Lyd → Diagnose: the audio answer as READABLE ROWS. The modal used to lead with
+   a <pre> dump of the whole-system markdown — "is my microphone OK?" answered
+   with a wall of text about disks and updates. Each row is one question with one
+   answer and a mark you can read at a glance. */
+.diag-rows { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+.diag-row {
+  display: grid; grid-template-columns: 18px minmax(120px, auto) 1fr;
+  align-items: baseline; gap: 8px;
+  padding: 7px 10px; border-radius: 8px; font-size: 13px;
+  background: rgba(127,127,127,0.07);
+}
+.diag-row-mark { font-weight: 700; text-align: center; }
+.diag-row-label { color: var(--text2, #aaa); }
+.diag-row-value { overflow-wrap: anywhere; }
+.diag-row-ok      .diag-row-mark { color: #2db66c; }
+.diag-row-bad     { background: rgba(229,72,77,0.10); }
+.diag-row-bad     .diag-row-mark { color: #e5484d; }
+.diag-row-neutral .diag-row-mark { color: var(--text3, #888); }
+.diag-details { margin-top: 8px; font-size: 12px; }
+.diag-details > summary { cursor: pointer; color: var(--text2, #aaa); padding: 4px 0; }
+.diag-device-list { margin: 4px 0 0 0; padding-left: 20px; font-size: 12px; color: var(--text2, #aaa); }
+.diag-device-list li { padding: 1px 0; overflow-wrap: anywhere; }
+
 /* ── Recording-active: silence invisible animations behind the overlay ──────
    showPage() is never called while the recording overlay is up, so the home
    page stays laid out AND animating underneath it: the hero card's box-shadow
@@ -4298,7 +4515,11 @@ body.recording-active .status-dot.recording {
      a red hairline of the gradient's top edge peeking out on silent channels. */
   position: absolute; inset: -1px; background: var(--surface2);
   transform: scaleY(1); transform-origin: top;
-  transition: transform .05s ease-out;
+  /* NO transition. The rAF writer (pages/channel-grid.ts) sets this transform
+     up to 30×/s, and a .05s transition was restarted by every one of those
+     writes — it never finished, so all it did was add a lag the writer then
+     fought. The release is time-based in JS now (audio/smoothing.ts), the same
+     fix the VU bars got in v0.5.0 (see .vu-bar-fill above). */
   will-change: transform;
 }
 .ch-col-num { font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -4306,14 +4527,13 @@ body.recording-active .status-dot.recording {
 .ch-col.assigned { border-color: var(--accent); background: var(--accent-bg); }
 .ch-col-badge {
   position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
-  font-size: 9px; font-weight: 800; letter-spacing: .5px;
+  font-size: var(--fs-xs); font-weight: 800; letter-spacing: .5px;
   background: var(--accent); color: #1a1206; border-radius: 999px;
   padding: 1px 6px; opacity: 0; pointer-events: none; z-index: 1;
 }
 .ch-col.assigned .ch-col-badge { opacity: 1; }
 .ch-col.skeleton .ch-col-track { animation: chSkeleton 1.2s ease-in-out infinite; }
 @keyframes chSkeleton { 0%,100% { opacity: .35; } 50% { opacity: .7; } }
-.ch-grid.static .ch-col .ch-col-mask { transition: none; }
 
 .ch-grid-status {
   display: flex; gap: 10px; align-items: center; margin-top: 8px;
@@ -4327,3 +4547,85 @@ body.recording-active .status-dot.recording {
 .info-card-tappable { cursor: pointer; }
 .info-card-tappable:hover { border-color: var(--accent-border); }
 .info-card-sub .signal-dot { margin-right: 5px; }
+
+/* ══ Button system consolidation ═══════════════════════════════════════════
+   Twenty-odd one-off button classes had each grown their own greys, hovers and
+   press behaviours. Rather than rewrite the markup, the one-offs are re-stated
+   here — last rule wins — against the two canonical looks. State classes
+   (.video-toggle-on, .is-applied, .selected, .active) are two-class selectors
+   defined earlier and therefore still win over these.
+
+   Deliberately NOT consolidated, because their distinct look carries meaning:
+   .btn-record, .live-start-btn, .btn-stop-big, .export-fmt-btn, .day-btn,
+   .inner-tab, .btn-fix, .btn-extend, .btn-editor-play.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Neutral / secondary: a filled control you can see without hovering it. */
+.btn-today,
+.btn-autofill-icon,
+.btn-video-toggle,
+.btn-normalize,
+.btn-icon-refresh,
+.btn-editor-tool,
+.cloud-reauth-btn {
+  background: var(--surface2);
+  color: var(--text2);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+}
+.btn-today:hover,
+.btn-autofill-icon:hover,
+.btn-video-toggle:hover,
+.btn-normalize:hover,
+.btn-icon-refresh:hover,
+.btn-editor-tool:hover,
+.cloud-reauth-btn:hover:not(:disabled) {
+  background: var(--surface3);
+  color: var(--text);
+  border-color: var(--accent-border);
+}
+
+/* Quiet: text and ✕ buttons that stay invisible until you reach for them.
+   Borders are left to each rule — some of these are chrome-less by design. */
+.btn-history-more,
+.btn-toast-close,
+.modal-close,
+.ob-text-btn,
+.ob-skip-btn,
+.btn-cancel-sched {
+  color: var(--text2);
+  cursor: pointer;
+}
+.btn-history-more:hover,
+.btn-toast-close:hover,
+.modal-close:hover,
+.ob-text-btn:hover,
+.ob-skip-btn:hover,
+.btn-cancel-sched:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+/* ── Press feedback ─────────────────────────────────────────────────────
+   Low specificity (0,1,1) on purpose: any `.class:active` rule still wins,
+   so buttons that lift on hover keep their own press behaviour. */
+button:active { transform: scale(.97); }
+button:disabled,
+button:disabled:active { transform: none; }
+/* The two lifting buttons: settle AND press, instead of only settling. */
+.btn-primary:active,
+.btn-danger:active { transform: translateY(0) scale(.97); }
+
+/* ── Focus-visible coverage ─────────────────────────────────────────────
+   The global :focus-visible ring only reaches the focused element itself.
+   These controls hide a real <input> inside a <label>, or take focus on a
+   wrapper, so the ring had nowhere to land and keyboard users were lost. */
+.option-card:has(input:focus-visible),
+.quality-step:has(input:focus-visible),
+.toggle:has(input:focus-visible),
+.device-card:focus-visible,
+.ch-col:focus-visible,
+.cal-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

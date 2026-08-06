@@ -2,16 +2,17 @@
   "nav": {
     "home": "Hjem",
     "schedule": "Tidsplan",
-    "audio": "Lydkilde",
-    "files": "Filer",
+    "audio": "Lyd",
+    "files": "Optagelse",
     "editor": "Rediger",
     "live": "Live",
-    "search": "Søg & historik",
+    "search": "Historik",
     "notifications": "Notifikationer",
     "publish": "Udgivelse",
     "settings": "Indstillinger",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Deling"
   },
   "status": {
     "ready": "Alt er klar",
@@ -19,7 +20,12 @@
     "recording": "Optager nu",
     "ok": "KLAR TIL OPTAGELSE",
     "warn": "HANDLING PÅKRÆVET",
-    "noSchedule": "Ingen optagelse planlagt"
+    "noSchedule": "Ingen optagelse planlagt",
+    "preflightErrors": "{n} fejl skal rettes før optagelsen",
+    "preflightWarns": "{n} ting at se på før optagelsen",
+    "preflightAction": "Åbn indstillinger",
+    "dismiss": "Skjul",
+    "preflightMore": "flere — se Indstillinger → Lyd"
   },
   "home": {
     "readyTitle": "Alt klart",
@@ -29,6 +35,7 @@
     "untilStart": "til start",
     "recentRecordings": "Seneste optagelser",
     "audioLevel": "Lydniveau — live",
+    "peakLabel": "Maks",
     "storage": "Lagerplads",
     "storageFree": "ledig",
     "startRecording": "Start optagelse",
@@ -47,12 +54,14 @@
     "wakesBefore": "Computeren vækkes automatisk kl. {time}",
     "testRecording": "🎙️ Testoptagelse (30 s)",
     "checkSystem": "✅ Tjek systemet nu",
-    "testProgress": "Optager test… {n}/{total} s",
+    "testProgress": "Optager test… ca. {n}/{total} s",
     "testSignalOk": "✅ Lyd OK",
     "testSignalLow": "⚠️ Svagt signal — tjek gain på mixeren",
     "testSignalSilent": "⚠️ Stilhed — er mixeren slukket?",
     "testUnknownError": "Ukendt fejl",
     "videoPreviewPrompt": "Vælg kamera og klik Opdater",
+    "cameraSearching": "Leder efter kameraer…",
+    "cameraSelect": "Vælg kamera…",
     "videoOn": "Video til",
     "videoOff": "Video fra",
     "cameraNoResponse": "Kameraet svarede ikke — prøv at opdatere",
@@ -60,13 +69,6 @@
     "signalLoud": "Højt",
     "signalGood": "Godt",
     "signalWeak": "Svagt",
-    "banner": {
-      "errors": "fejl fundet",
-      "warns": "advarsler",
-      "more": "flere — se Indstillinger → Lyd → Kør systemtjek",
-      "clickToFix": "klik for at rette",
-      "clickForDetails": "klik for detaljer"
-    },
     "cloudLabel": "CLOUD-BACKUP",
     "thumbLabel": "EPISODEBILLEDE",
     "whisperLabel": "TRANSSKRIPTION",
@@ -91,7 +93,13 @@
     "videoNoCamera": "Intet kamera valgt",
     "cloudFailed": "fejlede",
     "cloudQueued": "i kø",
-    "cloudAllSynced": "Alle synkroniseret"
+    "cloudAllSynced": "Alle synkroniseret",
+    "cloudActive": "Aktiv",
+    "nextShort": "næste",
+    "wakesLead": "({min} min før)",
+    "openInEditor": "Åbn i redigering",
+    "thumbComing": "Episodebillede kommer — bruges ikke endnu",
+    "prerollActive": "Forhåndsbuffer aktiv ({n} s)"
   },
   "update": {
     "checking": "Søger efter opdateringer…",
@@ -121,7 +129,6 @@
     "error": "Fejl",
     "scheduled": "Planlagt",
     "empty": "Ingen optagelser endnu",
-    "confirmClear": "Slet hele historikken?",
     "pruneBtn": "Ryd op",
     "clearBtn": "Slet alle",
     "pruneNone": "Intet at rydde",
@@ -132,7 +139,6 @@
     "addNote": "Tilføj note",
     "editNote": "Rediger note",
     "notePlaceholder": "Skriv en note…",
-    "confirmDeleteErrors": "Slet alle fejlposter?",
     "deleteEntry": "Slet post",
     "ok": "Fuldført",
     "noteCancel": "Annuller",
@@ -140,7 +146,21 @@
     "noteSave": "Gem note",
     "noteTitle": "Note",
     "revealFile": "Vis i Finder / Stifinder",
-    "revealVideo": "Vis videofilen i Finder"
+    "revealVideo": "Vis videofilen i Finder",
+    "actions": "Handlinger",
+    "filterGroup": "Filtrér optagelser",
+    "filterAll": "Alle",
+    "filterAudio": "Lyd",
+    "filterVideo": "Video",
+    "filterTranscript": "Med transskription",
+    "thisRecording": "denne optagelse",
+    "deleteFailed": "Kunne ikke slette",
+    "clearNone": "Listen er tom",
+    "errorsNone": "Ingen fejlposter",
+    "confirmClearN": "Slet alle {n} poster?",
+    "confirmDeleteErrorsOne": "Slet 1 fejlpost?",
+    "confirmDeleteErrorsN": "Slet {n} fejlposter?",
+    "emptyFiltered": "Ingen optagelser i dette filter"
   },
   "review": {
     "queueTitle": "Klar til gennemgang og udgivelse",
@@ -181,7 +201,8 @@
     "ageDayOne": "1 dag siden",
     "ageDays": "{n} dage siden",
     "ageOldest": "Over 14 dage siden",
-    "confident": "sikker"
+    "confident": "sikker",
+    "errNotFound": "Episoden ligger ikke længere i gennemgangskøen — den kan allerede være udgivet eller kasseret."
   },
   "schedule": {
     "title": "Ugentlig tidsplan",
@@ -201,7 +222,7 @@
       "Søn"
     ],
     "wakeTitle": "Væk computeren fra dvale",
-    "wakeDesc": "Starter automatisk få minutter før optagelsen begynder",
+    "wakeDesc": "Computeren vækkes automatisk 10 minutter før optagelsen starter",
     "wakeBtn": "Planlæg opvågning",
     "wakeStatusOk": "{n} opvågning planlagt",
     "wakeStatusNone": "Ingen kommende optagelser at planlægge",
@@ -226,7 +247,6 @@
     "cancel": "Annuller",
     "noSlots": "Ingen tidspunkter tilføjet endnu.",
     "errNoDays": "Vælg mindst én dag.",
-    "errTimes": "Start- og stoptid må ikke være ens.",
     "durationPrefix": "Varighed",
     "crossesMidnight": "Krydser midnat",
     "checkTimes": "tjek tidspunkterne",
@@ -236,7 +256,7 @@
     "dayLabel": "DAG",
     "atTime": "kl.",
     "nextPreviewPrefix": "Næste optagelse",
-    "autostartReminder": "Optagelsen er tilføjet.\n\nMen «Start automatisk med Windows/Mac» er FRA — så starter planlagte optagelser ikke, hvis maskinen har været slukket eller programmet er lukket.\n\nVil du slå automatisk start til nu, så programmet altid er klar?",
+    "autostartReminder": "Optagelsen er tilføjet. Men SundayRec starter ikke automatisk med maskinen, så en planlagt optagelse udebliver, hvis maskinen har været slukket, eller programmet er lukket. Vi kan slå autostart til nu — det fylder intet på skærmen, programmet kører stille i baggrunden.",
     "noSlotsTitle": "Ingen ugentlige optagelser oprettet endnu",
     "noSlotsHint": "Klik på „Tilføj tidspunkt“ nedenfor for at oprette en fast ugentlig optagelse — f.eks. søndag kl. 11.",
     "sleepFixNoAdmin": "Kræver administratorrettigheder — kør SundayRec som administrator",
@@ -245,8 +265,8 @@
     "manualMaxTitle": "Maks. varighed — manuelle optagelser",
     "manualMaxDesc": "Stopper automatisk efter den angivne tid — undgår enorme filer, hvis du glemmer at stoppe",
     "splitOff": "Fra",
-    "preRollTitle": "Pre-roll-buffer",
-    "preRollDesc": "Optager N sekunder tilbage i tid — fanger begyndelsen af prædikenen, selv hvis du trykker lidt for sent",
+    "preRollTitle": "Forhåndsbuffer",
+    "preRollDesc": "Starter optagelsen N sekunder tilbage i tiden, så begyndelsen af talen er med, selv om du trykker lidt for sent. Kræver at bufferen faktisk kører — den starter automatisk, når du slår den til nedenfor.",
     "sleepChecking": "Tjekker dvaleindstillinger…",
     "sleepStatusOk": "Dvaleindstillinger er OK — opvågning virker",
     "sleepStatusMacWarn": "Autopoweroff er aktiveret — din Mac kan slukke under dvale",
@@ -258,7 +278,7 @@
     "sleepFixOk": "Rettet — dvaleindstillinger er nu optimale",
     "sleepFixFail": "Automatisk rettelse mislykkedes",
     "sleepFixCancelled": "Annulleret — godkend tilladelsen for at rette",
-    "sleepAlwaysOffNote": "Vil du have, at maskinen altid skal starte optagelser? Lad den være i dvale (sluk den ikke) og aktivér „Start med Windows/Mac“ under Generelt.",
+    "sleepAlwaysOffNote": "Vil du have, at maskinen altid skal starte optagelser? Lad den være i dvale (sluk den ikke) og aktivér „Start automatisk med Windows/Mac“ under System.",
     "silenceThresholdLabel": "GRÆNSE (dBFS)",
     "silenceTimeoutLabel": "VARIGHED FØR STOP",
     "platformMacArm": "Apple Silicon-Mac (M-serien) — kan vækkes fra dvale, ikke fra slukket",
@@ -266,7 +286,12 @@
     "platformWin": "Windows — kan vækkes fra dvale; opstart fra helt slukket kræver BIOS-konfig",
     "platformLinux": "Linux — automatisk wake understøttes ikke",
     "platformOther": "Platformen understøttes ikke til automatisk wake",
-    "weeklyDesc": "Faste optagelser, der gentages hver uge — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper optagelsen automatisk, selv om ingen er til stede."
+    "weeklyDesc": "Faste optagelser, der gentages hver uge — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper optagelsen automatisk, selv om ingen er til stede.",
+    "errTimeFormat": "Skriv klokkeslættet som TT:MM, f.eks. 11:00.",
+    "errSameTime": "Stoptidspunktet kan ikke være det samme som starten.",
+    "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter.",
+    "prerollEnabledTitle": "Aktivér forhåndsbuffer (eksperimentel)",
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åben hele tiden i baggrunden. Det kan forstyrre de levende niveaumålere på Hjem og Livestream, som bruger samme mikrofon. Slå den til, hvis du har brug for sekunderne før knaptrykket — Hjem viser, når bufferen kører."
   },
   "wake": {
     "capability": {
@@ -298,11 +323,24 @@
     "test": {
       "btn": "Test vækning nu (60 sek.)",
       "cancel": "Annuller",
-      "confirm": "Computeren vil sove i op til 60 sekunder og derefter forsøge at vågne af sig selv.\n\nLuk uafsluttet arbejde først. Fortsætte?",
+      "confirm": "Maskinen vil sove i op til 60 sekunder og derefter forsøge at vågne af sig selv. Luk ugemt arbejde først.",
       "success": "✓ Vækket",
       "failure": "✕ Test mislykkedes",
       "cancelled": "Annulleret.",
       "delay": "forsinkelse"
+    },
+    "summary": {
+      "checking": "Tjekker opvågning…",
+      "details": "Detaljer",
+      "offTitle": "Automatisk opvågning er slået fra",
+      "offSub": "Planlagte optagelser starter kun, hvis maskinen er tændt og programmet kører. Slå opvågning til under Detaljer, hvis maskinen må sove.",
+      "batteryTitle": "Maskinen kører på batteri",
+      "standbyTitle": "Dyb dvale er slået til",
+      "mismatchTitle": "Operativsystemet mangler nogle opvågninger",
+      "okTitle": "Maskinen vågner automatisk",
+      "okNext": "Næste opvågning {when} — {n} minutter før optagelsen starter.",
+      "okNoNext": "Ingen kommende optagelse at vågne til lige nu.",
+      "neverTested": "Aldrig testet. Kør «Test wake nu» under Detaljer før første gudstjeneste."
     }
   },
   "calendar": {
@@ -341,7 +379,7 @@
     "today": "I dag",
     "hintShort": "Klik på en dag for at tilføje en optagelse",
     "updateRecording": "Opdater optagelse",
-    "confirmDelete": "Slet optagelsen: {name} ({date})?",
+    "confirmDelete": "Slet den planlagte optagelse?",
     "errPastDate": "Datoen er allerede passeret — optagelsen vil ikke starte"
   },
   "audio": {
@@ -396,9 +434,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopieret",
     "diagnoseCopy": "📋 Kopiér fuld rapport",
-    "diagnoseFull": "Fuld rapport",
+    "diagnoseFull": "Fuld systemrapport",
     "diagnoseRunning": "Analyserer…",
-    "diagnoseSaved": "Gemt til"
+    "diagnoseSaved": "Gemt til",
+    "guardDevice": "Skifte lydenhed",
+    "guardEngine": "Skifte optagemotor",
+    "diagDevicesFound": "Lydenheder fundet",
+    "diagStoredDevice": "Valgt enhed",
+    "diagStoredMissing": "ikke fundet",
+    "diagNoStored": "Standardenhed",
+    "diagMicPermission": "Mikrofonadgang",
+    "diagFfmpeg": "Lydmotor (ffmpeg)",
+    "diagFfmpegMissing": "Ikke fundet",
+    "diagFfmpegOk": "Tilgængelig",
+    "diagLoopback": "WASAPI-loopback",
+    "diagDeviceListTitle": "Alle lydenheder optageren kan se"
   },
   "files": {
     "saveFolder": "Mappe til at gemme i",
@@ -418,9 +468,7 @@
     "autoDeleteDesc": "Frigør diskplads automatisk ved at slette gamle optagelser",
     "trimSilence": "Klip stilhed væk",
     "trimSilenceDesc": "Beskærer automatisk stille sekunder i starten og slutningen af optagelsen",
-    "save": "Gem",
-    "cancel": "Annuller",
-    "confirmAutoDeleteShort": "Optagelser, der er ældre end {n} dage, slettes automatisk og kan ikke gendannes. Er du sikker?",
+    "confirmAutoDeleteShort": "Optagelser ældre end {n} dage slettes automatisk og kan ikke gendannes.",
     "behaviourTitle": "Optagelsesadfærd",
     "behaviourDesc": "Finjuster, hvordan optagelsen starter, beskyttes og opdeles.",
     "whileRecording": "Mens en optagelse kører",
@@ -436,7 +484,7 @@
   "general": {
     "language": "Sprog",
     "appLanguage": "APPENS SPROG",
-    "langHint": "Ændringen træder i kraft, når du trykker på Gem.",
+    "langHint": "Ændringen træder i kraft med det samme.",
     "profile": "Kirkeprofil",
     "church": "MENIGHED / KIRKE",
     "responsible": "ANSVARLIG PERSON",
@@ -462,7 +510,7 @@
     "save": "Gem",
     "cancel": "Annullér",
     "currentVersion": "Nuværende version:",
-    "saved": "✓ Gemt",
+    "saved": "Gemt",
     "testEmail": "Test e-mail",
     "askOpenEditor": "Spørg om redigering efter optagelse",
     "askOpenEditorDesc": "Viser en besked om at åbne filen i Rediger, når optagelsen er færdig",
@@ -474,13 +522,17 @@
     "helpDesc": "Åbn opsætningsguiden igen — nyttigt hvis en ny ansvarlig person tager over, eller hvis du bare vil tjekke, at alt er sat rigtigt op.",
     "helpTitle": "Hjælp og oplæring",
     "langCardDesc": "Vælg det sprog, du foretrækker. SundayRec understøtter syv sprog — alle menuer og notifikationer tilpasses med det samme.",
-    "notifyUnavailable": "Notifikationer er ikke tilgængelige i denne version endnu.",
     "openOnboarding": "Åbn opsætningsguiden",
     "profileDesc": "Bruges i filnavne, notifikationsmails og podcast-RSS. Felterne er valgfrie, men anbefales.",
-    "responsibleHint": "Personen, der får en mail, hvis optagelsen fejler (kræver mailnotifikationer i fanen Notifikationer).",
+    "responsibleHint": "Personen, der får en e-mail, hvis en optagelse fejler (kræver e-mailadvarsler under Deling → Beskeder).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfejl: kamera-forhåndsvisningen vil ikke fungere (CSP blokerer blob:-URL’er). Genstart appen — hvis problemet fortsætter, kontakt support.",
-    "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support."
+    "initError": "Opstartsfejl: dele af appen kan mangle eller være ude af funktion. Genstart appen — hvis problemet fortsætter, kontakt support.",
+    "diagnoseTitle": "Diagnose af lydenhed",
+    "savedChip": "Gemt ✓",
+    "saveFailed": "Kunne ikke gemme indstillingen",
+    "suiteAdvanced": "Avanceret: Sunday suite-integrationer",
+    "showInFolder": "Vis i mappe"
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
@@ -488,7 +540,7 @@
   "editor": {
     "title": "Rediger lydfil",
     "emptyTitle": "Ingen fil åben",
-    "emptyDesc": "Vælg en lydfil for at begynde at redigere. Du kan klippe i begyndelsen og slutningen eller fjerne stykker fra midten.",
+    "emptyDesc": "Vælg en lyd- eller videofil for at begynde at redigere. Du kan klippe i begyndelsen og slutningen eller fjerne stykker fra midten.",
     "openFile": "Åbn fil…",
     "loading": "Indlæser lydfil…",
     "dragHint": "Klik og træk for at markere et klip",
@@ -529,7 +581,7 @@
     "exportPhaseMeasuring": "Måler lydstyrke…",
     "exportPhaseEncoding": "Eksporterer…",
     "remainingLabel": "Resultat",
-    "dropFile": "Slip lydfilen her",
+    "dropFile": "Slip lyd- eller videofilen her",
     "openOther": "Åbn en anden fil",
     "closeFile": "Luk fil",
     "emptyTitleDrop": "Slip filen her — eller klik for at åbne",
@@ -626,7 +678,10 @@
     "useMixer": "🎛 Avanceret lydmixer (tilsidesætter stemmebehandlingen)",
     "videoCodec": "Videocodec",
     "videoFormat": "Videoformat",
-    "vocalChain": "Stemmebehandling"
+    "vocalChain": "Stemmebehandling",
+    "exportDoneToast": "Eksporteret{name}",
+    "gotoReviewOne": "Gennemgangskø (1 episode) →",
+    "gotoReviewN": "Gennemgangskø ({n} episoder) →"
   },
   "master": {
     "title": "Mastering (klargør til udgivelse)",
@@ -643,7 +698,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Efter",
     "openFolder": "Åbn mappe",
-    "listen": "Lyt"
+    "listen": "Lyt",
+    "useExportHint": "— for eksport med mastering: brug Eksportér-knappen"
   },
   "manual": {
     "title": "Start manuel optagelse",
@@ -658,6 +714,9 @@
     "filesize": "filstørrelse",
     "diskLeft": "ledig diskplads",
     "stop": "Tryk for at stoppe optagelsen",
+    "finalizing": "Afslutter optagelse …",
+    "finalizingHint": "Et øjeblik — lyden skrives til fil.",
+    "finalizeTimeout": "Optagelsen er usædvanlig længe om at blive færdig. Tjek, at filen blev gemt.",
     "confirmTitle": "Stop optagelsen?",
     "confirmBody": "Optagelsen gemmes frem til nu.",
     "confirmStop": "Ja, stop",
@@ -680,6 +739,8 @@
     "errorFfmpegMissing": "Intern fejl: optagelseskomponent mangler — geninstallér appen",
     "errorStuck": "Optagelsen stoppede — ingen lyd fra enheden i 60 sekunder",
     "qualityAlarm": "ADVARSEL: Optagelsen mangler lyd — filen indeholder {m} af {e} sekunder. Tjek optagelsen, før du stoler på den.",
+    "qualityReasons": "Årsag: {r}",
+    "qualityAction": "Vis optagelse",
     "errorInvalidOpts": "Ugyldige optagelsesindstillinger — genstart og prøv igen",
     "errorNoSaveFolder": "Der er ikke valgt en lagringsmappe — gå til Indstillinger → Lagring",
     "errorUnknown": "Noget gik galt under optagelsen — tjek at lydenheden og lagringsmappen er klar",
@@ -688,7 +749,8 @@
     "silenceWarn": "Stilhed registreret — optagelsen stopper automatisk, hvis stilheden fortsætter.",
     "videoNone": "Ingen video (kun lyd)",
     "videoListError": "Fejl ved indlæsning af kameraer",
-    "cameraFailedAudioOnly": "Kameraet fejlede — optager kun lyd"
+    "cameraFailedAudioOnly": "Kameraet fejlede — optager kun lyd",
+    "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal."
   },
   "video": {
     "minBitrateWarn": "Mindste bitrate er 500 kbps",
@@ -733,7 +795,8 @@
     "probeFailed": "Kunne ikke læse kameraets opløsninger — begrænset til 1080p for at undgå opskalering. 4K kræver et kamera, der leverer ægte 4K.",
     "resNative": "kameraets maks.",
     "resNotSupported": "understøttes ikke",
-    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks."
+    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks.",
+    "guardDevice": "Skifte kamera"
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",
@@ -781,10 +844,15 @@
     "tipScheduleText": "Tilføj ugentlige optagelser og særlige dage (jul, påske)",
     "tipAudioTitle": "Indstillinger → Lyd",
     "tipAudioText": "Skift mixer, justér volumen og kør testoptagelser",
-    "tipPublishTitle": "Indstillinger → Udgivelse",
+    "tipPublishTitle": "Indstillinger → Deling",
     "tipPublishOptional": "(valgfrit)",
     "tipPublishText": "Forbind Google Drive / Dropbox / OneDrive til automatisk cloud-backup",
-    "doneOpen": "Åbn SundayRec →"
+    "doneOpen": "Åbn SundayRec →",
+    "back": "‹ Tilbage",
+    "testWaitHint": "Knappen låses op, så snart måleren fanger lyd.",
+    "testHeardHint": "Lyd registreret — du kan gå videre.",
+    "testBlockedHint": "Lydtesten kunne ikke starte. Gå videre, og test lyden fra Indstillinger → Lyd senere.",
+    "testSkipAfterError": "Fortsæt uden lydtest →"
   },
   "time": {
     "yr": "år",
@@ -818,10 +886,24 @@
     "emailGmailDesc": "Send via din Gmail-konto — ingen SMTP-konfiguration.",
     "emailGmailConnect": "Tilslut",
     "emailGmailDisconnect": "Frakobl",
-    "emailGmailConfirmDisconnect": "Frakobl Google-kontoen? E-mail-meddelelser falder tilbage til SMTP.",
+    "emailGmailConfirmDisconnect": "E-mailnotifikationer falder tilbage til SMTP.",
     "emailGmailSendsAs": "Sender via",
     "emailGmailReauth": "⚠ Kræver ny tilslutning",
-    "emailAdvanced": "Avanceret: brug SMTP i stedet"
+    "emailAdvanced": "Avanceret: brug SMTP i stedet",
+    "errEmail": "Skriv en gyldig e-mailadresse, f.eks. navn@kirke.dk",
+    "errWebhookUrl": "Webhook-URL’en skal begynde med https://",
+    "errSmtpHost": "Skriv et servernavn, f.eks. smtp.gmail.com",
+    "errSmtpUser": "Brugernavnet er den e-mailadresse, du sender fra",
+    "gateNoFeature": "E-mailafsendelse er ikke bygget ind i denne version. Advarsler om mislykkede optagelser må indtil videre komme fra Hjem-siden eller en webhook.",
+    "gateNoTransport": "Der er endnu ingen afsendelsesmetode. Log ind med Google, eller udfyld SMTP-felterne under Avanceret.",
+    "gateTestNoTransport": "Opsæt en afsendelsesmetode først.",
+    "gateTestNoRecipient": "Indtast en modtageradresse først.",
+    "gateWebhookNoUrl": "Indsæt en webhook-URL først.",
+    "gmailUnavailable": "Google-login er ikke tilgængeligt i denne version.",
+    "testEmailSent": "Test-e-mail sendt til {to}",
+    "testEmailFailed": "Test-e-mailen gik ikke igennem: {err}",
+    "testWebhookOk": "Webhooken svarede — advarsler kommer frem.",
+    "testWebhookFailed": "Webhooken svarede ikke. Tjek adressen."
   },
   "prep": {
     "sectionTitle": "Forberedelse og gennemgang",
@@ -854,7 +936,8 @@
     "jumpToClip": "Klik for at hoppe til første klip",
     "zoomIn": "Zoom ind",
     "zoomOut": "Zoom ud",
-    "fitAll": "Vis hele filen"
+    "fitAll": "Vis hele filen",
+    "kbdHints": "Vis tastaturgenveje"
   },
   "publish": {
     "descPlaceholder": "F.eks. Gudstjenester fra Eksempel kirke, hver søndag kl. 11",
@@ -902,7 +985,6 @@
     "enabled": "Aktiveret",
     "account": "Konto",
     "autoUpload": "Upload automatisk efter optagelse",
-    "cancel": "Annuller",
     "connect": "Forbind",
     "desc": "Upload optagelserne automatisk til Google Drive — som ekstra sikkerhed og til nem deling.",
     "disconnect": "Afbryd",
@@ -911,12 +993,20 @@
     "introDesc": "Her sætter du automatisk cloud-backup op og — hvis I ønsker det — en podcast, der gør gudstjenesterne tilgængelige på Spotify og Apple Podcasts. Alt er valgfrit.",
     "lastUpload": "Seneste",
     "pickFolder": "Vælg mappe…",
-    "save": "Gem",
-    "title": "Cloud-backup"
+    "title": "Cloud-backup",
+    "streamSaveDestinations": "Gem destinationer",
+    "streamUnsaved": "Ikke gemt endnu",
+    "gateCloudExplain": "Sky-backup er ikke konfigureret i denne udgave — Google-nøglen, der skal bruges til at forbinde en konto, mangler.",
+    "gateCloudHint": "Bed om en udgave med sky-backup slået til, hvis menigheden har brug for det."
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åbne",
-    "sundayEditMissing": "SundayEdit blev ikke fundet"
+    "sundayEditMissing": "SundayEdit blev ikke fundet",
+    "errUrl": "Dette er ikke en gyldig adresse (f.eks. https://api.sundaysong.com)",
+    "errUrlScheme": "Adressen skal begynde med https://",
+    "errChurchId": "Menigheds-ID er et UUID fra SundaySong eller SundayPlan",
+    "errKeyEmpty": "Indsæt nøglen først",
+    "keySaved": "✓ API-nøgle gemt (krypteret)"
   },
   "live": {
     "title": "Direkte udsendelse",
@@ -933,7 +1023,7 @@
     "dropped": "Tabte billeder",
     "uptime": "Tid",
     "configDestinations": "→ Konfigurer destinationer",
-    "noDestinations": "Ingen destinationer konfigureret. Gå til Indstillinger → Udgivelse.",
+    "noDestinations": "Ingen destinationer konfigureret. Gå til Indstillinger → Deling.",
     "connectionFailed": "Forbindelse mislykkedes",
     "previewWaiting": "Forhåndsvisning vises når udsendelsen starter",
     "errNoActive": "Aktivér mindst én destination før du starter.",
@@ -941,7 +1031,12 @@
     "alsoRecordHint": "Lokal optagelse havner i Seneste optagelser når streamen stopper — højere bitrate end livestreamet, klar til redigering eller podcast.",
     "overlays": "Overlays — grafik og præsentation",
     "overlaysDesc": "Læg kirkens logo, sangtekster fra EasyWorship (via skærmoptagelse på samme maskine), eller anden grafik oven på det der sendes. Overlays påvirker kun livestreamet — optagelser bliver rene.",
-    "addOverlay": "+ Tilføj overlay"
+    "addOverlay": "+ Tilføj overlay",
+    "gateStats": "Statistik er ikke tilgængelig endnu — livestreamen rapporterer ikke bitrate, billedfrekvens eller tabte billeder tilbage til appen i denne version.",
+    "blockedNoDestinations": "Der er endnu ingen destination — tilføj YouTube, Facebook eller jeres egen RTMP-server.",
+    "blockedNoEnabled": "Ingen destination er slået til. Aktivér mindst én i listen ovenfor.",
+    "blockedNoKey": "Destinationen mangler stream-key. Uden nøglen lukker YouTube/Facebook ikke sendingen ind.",
+    "blockedGoSettings": "Åbn Deling → Publicering"
   },
   "transcript": {
     "title": "Transskribering",
@@ -976,7 +1071,11 @@
     "chaptersAllPresent": "Alle fundne kapitler findes allerede",
     "chaptersNoneFound": "Fandt ingen temakapitler i talen",
     "detectChapters": "✦ Generér kapitler ud fra temaer",
-    "detecting": "Analyserer temaer…"
+    "detecting": "Analyserer temaer…",
+    "errUnknownModel": "Ukendt model",
+    "exportTxt": "↧ Tekst",
+    "exportDone": "Transskription gemt",
+    "exportFailed": "Kunne ikke gemme transskriptionen"
   },
   "companion": {
     "title": "Prædikenhjælp",
@@ -1004,10 +1103,12 @@
     "settingsTitle": "Prædikenhjælp — AI-opsummering (valgfrit)",
     "settingsDesc": "Kapitler og citater laves altid lokalt på enheden. Vil du have en finere opsummering og titel, kan du indsætte en Anthropic API-nøgle — den gemmes kun i nøgleringen (OS keychain), aldrig i indstillinger. Uden nøgle bruges en lokal opsummering.",
     "keySave": "Gem",
-    "keyClear": "Fjern"
+    "keyClear": "Fjern",
+    "keyStored": "✓ API-nøgle gemt (nøglering)",
+    "keyNone": "Ingen nøgle — lokal opsummering bruges"
   },
   "search": {
-    "title": "Søg & historik",
+    "title": "Historik",
     "subtitle": "Søg i prædikentekst eller filnavn, og se hele optagelseshistorikken. Klik på et tekst-træf for at åbne optagelsen på det punkt.",
     "placeholder": "Søg i prædiken eller filnavn…",
     "reindex": "↻ Opdater indeks",
@@ -1050,5 +1151,94 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Annullér",
+    "confirm": "Fortsæt",
+    "delete": "Slet",
+    "noOptions": "Ingen muligheder fundet.",
+    "closeAria": "Luk",
+    "notNow": "Ikke nu",
+    "disconnect": "Afbryd",
+    "autostartTitle": "Skal optagelsen starte af sig selv?",
+    "autostartConfirm": "Slå autostart til",
+    "gmailDisconnectTitle": "Afbryd Google-kontoen?",
+    "clearHistoryBody": "Selve optagelsesfilerne bliver bevaret — kun listen over dem slettes. Dette kan ikke fortrydes.",
+    "deleteErrorsBody": "{n} fejlposter fjernes fra listen. Dette kan ikke fortrydes.",
+    "autoDeleteTitle": "Slet optagelser automatisk?",
+    "autoDeleteConfirm": "Ja, slet automatisk",
+    "wakeTestTitle": "Test opvågning fra dvale?",
+    "wakeTestConfirm": "Start testen",
+    "streamKeyUnsafeTitle": "Stream-nøglen blev ikke gemt",
+    "streamKeyUnsafeBody": "Systemets nøglering (Mac Keychain / Windows Credential Manager) er ikke tilgængelig. Nøglen gemmes derfor ikke, så den aldrig ender som klartekst på disken. Log ind som en bruger med nøglering, og prøv igen.",
+    "overlayDeleteTitle": "Slet dette overlay?",
+    "noScreensTitle": "Fandt ingen skærme",
+    "noScreensBody": "Tjek at appen har tilladelse til skærmoptagelse i systemindstillingerne.",
+    "pickScreenTitle": "Vælg skærm",
+    "pickNdiTitle": "Vælg NDI-kilde",
+    "ndiUnavailableTitle": "NDI er ikke tilgængelig",
+    "ndiNoSourcesTitle": "Fandt ingen NDI-kilder",
+    "ndiNoSourcesBody": "Tjek at kilden sender NDI:\n  • EasyWorship 7.3+: Edit → Options → Live → Alternate Output → NDI Stream\n  • ProPresenter 7: Screens → Ny NDI-skærm → Alpha Key (valgfrit)\n  • OBS: NDI Output plugin → Source → Enable\n  • Keynote/PowerPoint: kør NDI Screen Capture HX og peg mod vinduet\n  • Begge maskiner skal være på samme private netværk",
+    "deleteTranscriptBody": "Selve optagelsen beholdes. Du kan transskribere igen senere.",
+    "discardEditsBody": "De klip, du har lavet, går tabt. Selve optagelsesfilen røres ikke.",
+    "discardEdits": "Kassér ændringerne",
+    "discardEpisodeTitle": "Kassér denne episode?",
+    "discardEpisodeBody": "Optagelsen beholdes, men den bliver ikke udgivet.",
+    "discardEpisode": "Kassér",
+    "publishFailedTitle": "Kunne ikke udgive",
+    "deleteEntryTitle": "Fjern «{name}» fra listen?",
+    "deleteEntryBody": "Selve optagelsesfilen bliver på disken — kun listeposten fjernes. Dette kan ikke fortrydes.",
+    "deleteEntryBodyPair": "Både lyd- og videofilen bliver på disken — kun de to listeposter fjernes. Dette kan ikke fortrydes.",
+    "discardFailedTitle": "Kunne ikke kassere episoden"
+  },
+  "toast": {
+    "dismiss": "Luk"
+  },
+  "missed": {
+    "bannerOne": "En planlagt optagelse blev ikke gennemført",
+    "bannerMany": "{n} planlagte optagelser blev ikke gennemført",
+    "hint": "Kontrollér at maskinen var tændt, at SundayRec kørte, og at “Væk computeren automatisk” er slået til.",
+    "dismiss": "Forstået",
+    "openSchedule": "Åbn tidsplan",
+    "bannerAction": "Vis detaljer",
+    "more": "flere"
+  },
+  "guard": {
+    "title": "{what} nu?",
+    "duringRecording": "En optagelse kører lige nu. Ændringen kan afbryde eller ødelægge det, der optages.",
+    "beforeRecording": "Næste planlagte optagelse starter om {n} minutter. Ændringen når at påvirke den optagelse.",
+    "confirm": "Ja, ændr alligevel",
+    "cancel": "Ikke nu"
+  },
+  "sharing": {
+    "publishDesc": "Sky-backup, podcast og livestream — hvor optagelsen havner efter gudstjenesten.",
+    "notifyDesc": "Hvem der får besked, når en optagelse starter, stopper eller fejler."
+  },
+  "gate": {
+    "chipComing": "Kommer",
+    "chipUnconfigured": "Ikke konfigureret",
+    "chipUnavailable": "Ikke tilgængelig",
+    "comingExplanation": "{what} er ikke bygget endnu. Panelet står her, fordi funktionen er planlagt — indtil videre gør knapperne ingenting, så de er slået fra."
+  },
+  "health": {
+    "micDenied": "Mikrofonadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Mikrofon og slå SundayRec til.",
+    "micRestricted": "Mikrofonadgang er spærret af systemadministrator eller forældrekontrol. Optagelse virker ikke, før spærringen ophæves.",
+    "cameraDenied": "Kameraadgang er afvist. Åbn Systemindstillinger → Anonymitet og sikkerhed → Kamera og slå SundayRec til.",
+    "cameraRestricted": "Kameraadgang er spærret af systemadministrator eller forældrekontrol. Videooptagelse virker ikke, før spærringen ophæves.",
+    "ffmpegMissing": "Den indbyggede lydmotor (ffmpeg) blev ikke fundet. Video, eksport og redigering virker ikke — installer appen igen.",
+    "granted": "Givet",
+    "denied": "Afvist — åbn Systemindstillinger → Anonymitet og sikkerhed → Mikrofon",
+    "restricted": "Spærret af systemadministrator",
+    "notAsked": "Ikke spurgt endnu — den første optagelse udløser spørgsmålet",
+    "cannotTell": "Kan ikke afgøres på denne platform"
+  },
+  "deeplink": {
+    "imported": "Åbnede »{name}« i redigering.",
+    "theRecording": "optagelsen",
+    "captionsOk": "Tekstning modtaget for »{name}«.",
+    "openEditor": "Åbn i redigering",
+    "captionsNoRecording": "Tekstning modtaget, men uden at angive hvilken optagelse den hører til. Åbn optagelsen i redigering og importér teksten der.",
+    "captionsFailed": "Tekstningen kunne ikke gemmes: {err}"
   }
 }

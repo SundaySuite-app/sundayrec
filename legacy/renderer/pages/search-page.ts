@@ -18,9 +18,11 @@
 import { t } from '../i18n'
 import { escHtml } from '../helpers'
 import {
+  applyHistoryView,
   loadHistory,
   getFullHistory,
   renderHistoryRows,
+  setTranscriptBasePaths,
   updateHistoryStats,
   setupHistoryTools,
   baseNoExt,
@@ -57,6 +59,14 @@ export function setupSearchPage(): void {
   setupHistoryTools(runSearch)
 }
 
+/** Drop the cached transcript index so the next visit rebuilds it. Called when
+ *  a `sundayrec://captions` hand-off writes a new sidecar behind our back —
+ *  otherwise the fresh transcript would stay invisible to search until a
+ *  restart or a manual re-index. */
+export function invalidateTranscriptIndex(): void {
+  cachedIndex = null
+}
+
 /** Called from showPage('search'): refresh the history (cheap — picks up new
  *  recordings), build the transcript index on first visit, then render. */
 export function activateSearchPage(): void {
@@ -73,8 +83,11 @@ async function loadTranscriptIndex(): Promise<void> {
   try {
     const raw = await window.api.transcriptListAll()
     cachedIndex = raw
-      .map(r => ({ basePath: r.filePath, meta: r.transcript }))
+      .map(r => ({ basePath: r.basePath, meta: r.transcript }))
       .sort((a, b) => b.meta.createdAt - a.meta.createdAt)
+    // The «Med transkript» filter chip answers from this same index — no second
+    // round-trip, and it can never disagree with what the search finds.
+    setTranscriptBasePaths(new Set(cachedIndex.map(e => e.basePath)))
   } catch (err) {
     setStatus(`✕ ${t('search.indexFailed', 'Klarte ikke laste indeks')}: ${(err as Error).message}`)
   } finally {
@@ -99,8 +112,11 @@ function runSearch(): void {
 
   const q = pendingQuery
   if (q.length < 2) {
-    renderHistoryRows(tbody, all, true)
-    updateHistoryStats(all)
+    // The chip filter + column sort are the last step before rendering, so the
+    // table and the stats line always describe the same set of rows.
+    const view = applyHistoryView(all)
+    renderHistoryRows(tbody, view, true)
+    updateHistoryStats(view)
     setStatus(indexStatusText())
     return
   }
@@ -125,11 +141,11 @@ function runSearch(): void {
   }
 
   // A recording matches if its metadata matches OR its transcript has a hit.
-  const matches = all.filter(r =>
+  const matches = applyHistoryView(all.filter(r =>
     (r.filename ?? '').toLowerCase().includes(needle) ||
     (r.date ?? '').includes(q) ||
     (r.note ?? '').toLowerCase().includes(needle) ||
-    hitsByBase.has(baseNoExt(r.path)))
+    hitsByBase.has(baseNoExt(r.path))))
 
   renderHistoryRows(tbody, matches, true, hitsByBase)
   updateHistoryStats(matches)

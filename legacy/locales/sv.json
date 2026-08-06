@@ -2,16 +2,17 @@
   "nav": {
     "home": "Hem",
     "schedule": "Schema",
-    "audio": "Ljudkälla",
-    "files": "Filer",
+    "audio": "Ljud",
+    "files": "Inspelning",
     "editor": "Redigera",
     "live": "Live",
-    "search": "Sök & historik",
+    "search": "Historik",
     "notifications": "Aviseringar",
     "publish": "Publicering",
     "settings": "Inställningar",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Delning"
   },
   "status": {
     "ready": "Allt är klart",
@@ -19,7 +20,12 @@
     "recording": "Spelar in nu",
     "ok": "REDO ATT SPELA IN",
     "warn": "ÅTGÄRD KRÄVS",
-    "noSchedule": "Ingen inspelning schemalagd"
+    "noSchedule": "Ingen inspelning schemalagd",
+    "preflightErrors": "{n} fel måste åtgärdas före inspelningen",
+    "preflightWarns": "{n} saker att se över före inspelningen",
+    "preflightAction": "Öppna inställningar",
+    "dismiss": "Dölj",
+    "preflightMore": "till — se Inställningar → Ljud"
   },
   "home": {
     "readyTitle": "Allt klart",
@@ -29,6 +35,7 @@
     "untilStart": "till start",
     "recentRecordings": "Senaste inspelningar",
     "audioLevel": "Ljudnivå — direkt",
+    "peakLabel": "Max",
     "storage": "Lagring",
     "storageFree": "ledigt",
     "startRecording": "Starta inspelning",
@@ -47,12 +54,14 @@
     "wakesBefore": "Datorn väcks automatiskt kl. {time}",
     "testRecording": "🎙️ Testinspelning (30 s)",
     "checkSystem": "✅ Kontrollera systemet nu",
-    "testProgress": "Spelar in test… {n}/{total} s",
+    "testProgress": "Spelar in test… ca {n}/{total} s",
     "testSignalOk": "✅ Ljud OK",
     "testSignalLow": "⚠️ Svag signal — kontrollera gain på mixern",
     "testSignalSilent": "⚠️ Tystnad — är mixern avstängd?",
     "testUnknownError": "Okänt fel",
     "videoPreviewPrompt": "Välj kamera och klicka Uppdatera",
+    "cameraSearching": "Söker efter kameror…",
+    "cameraSelect": "Välj kamera…",
     "videoOn": "Video på",
     "videoOff": "Video av",
     "cameraNoResponse": "Kameran svarade inte — försök uppdatera",
@@ -60,13 +69,6 @@
     "signalLoud": "Högt",
     "signalGood": "Bra",
     "signalWeak": "Svagt",
-    "banner": {
-      "errors": "fel upptäckta",
-      "warns": "varningar",
-      "more": "fler — se Inställningar → Ljud → Kör systemkontroll",
-      "clickToFix": "klicka för att åtgärda",
-      "clickForDetails": "klicka för detaljer"
-    },
     "cloudLabel": "MOLN-BACKUP",
     "thumbLabel": "AVSNITTSBILD",
     "whisperLabel": "TRANSKRIBERING",
@@ -91,7 +93,13 @@
     "videoNoCamera": "Ingen kamera vald",
     "cloudFailed": "misslyckades",
     "cloudQueued": "i kö",
-    "cloudAllSynced": "Alla synkroniserade"
+    "cloudAllSynced": "Alla synkroniserade",
+    "cloudActive": "Aktiv",
+    "nextShort": "nästa",
+    "wakesLead": "({min} min innan)",
+    "openInEditor": "Öppna i redigering",
+    "thumbComing": "Avsnittsbild kommer — används inte än",
+    "prerollActive": "Förhandsbuffert aktiv ({n} s)"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -121,7 +129,6 @@
     "error": "Fel",
     "scheduled": "Schemalagd",
     "empty": "Inga inspelningar ännu",
-    "confirmClear": "Radera all historik?",
     "pruneBtn": "Städa upp",
     "clearBtn": "Radera alla",
     "pruneNone": "Inget att städa",
@@ -132,7 +139,6 @@
     "addNote": "Lägg till anteckning",
     "editNote": "Redigera anteckning",
     "notePlaceholder": "Skriv en anteckning…",
-    "confirmDeleteErrors": "Radera alla felposter?",
     "deleteEntry": "Radera post",
     "ok": "Slutförd",
     "noteCancel": "Avbryt",
@@ -140,7 +146,21 @@
     "noteSave": "Spara anteckning",
     "noteTitle": "Anteckning",
     "revealFile": "Visa i Finder / Utforskaren",
-    "revealVideo": "Visa videofilen i Finder"
+    "revealVideo": "Visa videofilen i Finder",
+    "actions": "Åtgärder",
+    "filterGroup": "Filtrera inspelningar",
+    "filterAll": "Alla",
+    "filterAudio": "Ljud",
+    "filterVideo": "Video",
+    "filterTranscript": "Med transkription",
+    "thisRecording": "den här inspelningen",
+    "deleteFailed": "Kunde inte radera",
+    "clearNone": "Listan är tom",
+    "errorsNone": "Inga felposter",
+    "confirmClearN": "Radera alla {n} posterna?",
+    "confirmDeleteErrorsOne": "Radera 1 felpost?",
+    "confirmDeleteErrorsN": "Radera {n} felposter?",
+    "emptyFiltered": "Inga inspelningar i det här filtret"
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",
@@ -181,7 +201,8 @@
     "ageDayOne": "1 dag sedan",
     "ageDays": "{n} dagar sedan",
     "ageOldest": "Över 14 dagar sedan",
-    "confident": "säker"
+    "confident": "säker",
+    "errNotFound": "Avsnittet finns inte längre i granskningskön — det kan redan ha publicerats eller kastats."
   },
   "schedule": {
     "title": "Veckoschema",
@@ -201,7 +222,7 @@
       "Sön"
     ],
     "wakeTitle": "Väck datorn ur viloläge",
-    "wakeDesc": "Startar automatiskt några minuter innan inspelningen börjar",
+    "wakeDesc": "Datorn väcks automatiskt 10 minuter innan inspelningen börjar",
     "wakeBtn": "Schemalägg väckning",
     "wakeStatusOk": "{n} väckning schemalagd",
     "wakeStatusNone": "Inga kommande inspelningar att schemalägga",
@@ -226,7 +247,6 @@
     "cancel": "Avbryt",
     "noSlots": "Inga tider tillagda ännu.",
     "errNoDays": "Välj minst en dag.",
-    "errTimes": "Start- och stopptid kan inte vara samma.",
     "durationPrefix": "Längd",
     "crossesMidnight": "Passerar midnatt",
     "checkTimes": "kontrollera tiderna",
@@ -236,7 +256,7 @@
     "dayLabel": "DAG",
     "atTime": "kl.",
     "nextPreviewPrefix": "Nästa inspelning",
-    "autostartReminder": "Inspelningen har lagts till.\n\nMen «Starta automatiskt med Windows/Mac» är AV — då startar inte schemalagda inspelningar om datorn har varit avstängd eller programmet är stängt.\n\nVill du slå på automatisk start nu, så programmet alltid är redo?",
+    "autostartReminder": "Inspelningen är tillagd. Men SundayRec startar inte automatiskt med datorn, så en schemalagd inspelning uteblir om datorn varit avstängd eller programmet är stängt. Vi kan slå på autostart nu — det tar ingen plats på skärmen, programmet kör tyst i bakgrunden.",
     "noSlotsTitle": "Inga veckoinspelningar inlagda ännu",
     "noSlotsHint": "Klicka på ”Lägg till tid” nedan för att starta en återkommande veckoinspelning — t.ex. söndag kl. 11.",
     "sleepFixNoAdmin": "Kräver administratörsbehörighet — kör SundayRec som administratör",
@@ -245,8 +265,8 @@
     "manualMaxTitle": "Maxlängd — manuella inspelningar",
     "manualMaxDesc": "Stoppar automatiskt efter angiven tid — så att filerna inte växer sig orimligt stora om du glömmer stoppa",
     "splitOff": "Av",
-    "preRollTitle": "Pre-roll-buffert",
-    "preRollDesc": "Spelar in N sekunder bakåt i tiden — fångar början på predikan även om du trycker lite för sent",
+    "preRollTitle": "Förhandsbuffert",
+    "preRollDesc": "Startar inspelningen N sekunder bakåt i tiden, så att början av talet är med även om du trycker lite för sent. Kräver att bufferten faktiskt körs — den startar automatiskt när du slår på den nedan.",
     "sleepChecking": "Kontrollerar viloinställningar…",
     "sleepStatusOk": "Viloinställningarna är OK — väckning fungerar",
     "sleepStatusMacWarn": "Autopoweroff är aktiverat — Macen kan stängas av under viloläget",
@@ -258,7 +278,7 @@
     "sleepFixOk": "Åtgärdat — viloinställningarna är nu optimala",
     "sleepFixFail": "Automatisk åtgärd misslyckades",
     "sleepFixCancelled": "Avbruten — godkänn behörigheten för att åtgärda",
-    "sleepAlwaysOffNote": "Vill du att datorn alltid ska starta inspelningar? Låt den vara i viloläge (stäng inte av den) och slå på ”Starta med Windows/Mac” under Allmänt.",
+    "sleepAlwaysOffNote": "Vill du att datorn alltid ska starta inspelningar? Låt den vara i viloläge (stäng inte av den) och slå på ”Starta automatiskt med Windows/Mac” under System.",
     "silenceThresholdLabel": "TRÖSKEL (dBFS)",
     "silenceTimeoutLabel": "TID FÖRE STOPP",
     "platformMacArm": "Apple Silicon-Mac (M-serien) — kan väckas från viloläge, inte från avstängt",
@@ -266,7 +286,12 @@
     "platformWin": "Windows — kan väckas från viloläge; uppstart från helt avstängt kräver BIOS-konfig",
     "platformLinux": "Linux — automatisk uppvakning stöds inte",
     "platformOther": "Plattformen stöds inte för automatisk uppvakning",
-    "weeklyDesc": "Fasta inspelningar som upprepas varje vecka — till exempel gudstjänst varje söndag. Datorn startar och stoppar inspelningen automatiskt, även om ingen är på plats."
+    "weeklyDesc": "Fasta inspelningar som upprepas varje vecka — till exempel gudstjänst varje söndag. Datorn startar och stoppar inspelningen automatiskt, även om ingen är på plats.",
+    "errTimeFormat": "Skriv tiden som TT:MM, t.ex. 11:00.",
+    "errSameTime": "Stopptiden kan inte vara densamma som starten.",
+    "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter.",
+    "prerollEnabledTitle": "Aktivera förhandsbuffert (experimentell)",
+    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen hela tiden i bakgrunden. Det kan störa de levande nivåmätarna på Hem och Livesändning, som använder samma mikrofon. Slå på den om du behöver sekunderna före knapptrycket — Hem visar när bufferten körs."
   },
   "wake": {
     "capability": {
@@ -298,11 +323,24 @@
     "test": {
       "btn": "Testa väckning nu (60 s)",
       "cancel": "Avbryt",
-      "confirm": "Datorn försätts i viloläge i upp till 60 sekunder och försöker sedan väcka sig själv.\n\nStäng oavslutat arbete först. Fortsätta?",
+      "confirm": "Datorn kommer att sova i upp till 60 sekunder och sedan försöka vakna av sig själv. Stäng allt osparat arbete först.",
       "success": "✓ Väckt",
       "failure": "✕ Test misslyckades",
       "cancelled": "Avbruten.",
       "delay": "fördröjning"
+    },
+    "summary": {
+      "checking": "Kontrollerar uppvakning…",
+      "details": "Detaljer",
+      "offTitle": "Automatisk uppvakning är av",
+      "offSub": "Schemalagda inspelningar startar bara om datorn är på och programmet kör. Slå på uppvakning under Detaljer om datorn får sova.",
+      "batteryTitle": "Datorn går på batteri",
+      "standbyTitle": "Djup viloläge är påslaget",
+      "mismatchTitle": "Operativsystemet saknar några uppvakningar",
+      "okTitle": "Datorn vaknar automatiskt",
+      "okNext": "Nästa uppvakning {when} — {n} minuter innan inspelningen startar.",
+      "okNoNext": "Ingen kommande inspelning att vakna till just nu.",
+      "neverTested": "Aldrig testat. Kör «Testa wake nu» under Detaljer före första gudstjänsten."
     }
   },
   "calendar": {
@@ -341,7 +379,7 @@
     "today": "I dag",
     "hintShort": "Klicka på en dag för att lägga till en inspelning",
     "updateRecording": "Uppdatera inspelning",
-    "confirmDelete": "Radera inspelningen: {name} ({date})?",
+    "confirmDelete": "Ta bort den planerade inspelningen?",
     "errPastDate": "Datumet är redan passerat — inspelningen startar inte"
   },
   "audio": {
@@ -396,9 +434,21 @@
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopierat",
     "diagnoseCopy": "📋 Kopiera fullständig rapport",
-    "diagnoseFull": "Fullständig rapport",
+    "diagnoseFull": "Fullständig systemrapport",
     "diagnoseRunning": "Analyserar…",
-    "diagnoseSaved": "Sparat till"
+    "diagnoseSaved": "Sparat till",
+    "guardDevice": "Byta ljudenhet",
+    "guardEngine": "Byta inspelningsmotor",
+    "diagDevicesFound": "Ljudenheter hittade",
+    "diagStoredDevice": "Vald enhet",
+    "diagStoredMissing": "hittades inte",
+    "diagNoStored": "Standardenhet",
+    "diagMicPermission": "Mikrofonåtkomst",
+    "diagFfmpeg": "Ljudmotor (ffmpeg)",
+    "diagFfmpegMissing": "Hittades inte",
+    "diagFfmpegOk": "Tillgänglig",
+    "diagLoopback": "WASAPI-loopback",
+    "diagDeviceListTitle": "Alla ljudenheter inspelaren ser"
   },
   "files": {
     "saveFolder": "Mapp att spara i",
@@ -418,9 +468,7 @@
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
     "trimSilence": "Klipp bort tystnad",
     "trimSilenceDesc": "Klipper automatiskt bort tysta sekunder i början och slutet av inspelningen",
-    "save": "Spara",
-    "cancel": "Avbryt",
-    "confirmAutoDeleteShort": "Inspelningar äldre än {n} dagar raderas automatiskt och går inte att återställa. Är du säker?",
+    "confirmAutoDeleteShort": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas.",
     "behaviourTitle": "Inspelningsbeteende",
     "behaviourDesc": "Finjustera hur inspelningen startar, skyddas och delas upp.",
     "whileRecording": "Medan en inspelning pågår",
@@ -436,7 +484,7 @@
   "general": {
     "language": "Språk",
     "appLanguage": "APPENS SPRÅK",
-    "langHint": "Ändringen träder i kraft när du klickat på Spara.",
+    "langHint": "Ändringen träder i kraft direkt.",
     "profile": "Församlingsprofil",
     "church": "FÖRSAMLING / KYRKA",
     "responsible": "ANSVARIG",
@@ -462,7 +510,7 @@
     "save": "Spara",
     "cancel": "Avbryt",
     "currentVersion": "Aktuell version:",
-    "saved": "✓ Sparat",
+    "saved": "Sparat",
     "testEmail": "Testa e-post",
     "askOpenEditor": "Fråga om redigering efter inspelning",
     "askOpenEditorDesc": "Visar en uppmaning att öppna filen i Redigera när inspelningen är klar",
@@ -474,13 +522,17 @@
     "helpDesc": "Öppna startguiden igen — praktiskt om en ny ansvarig person tar över, eller om du bara vill kontrollera att allt är rätt inställt.",
     "helpTitle": "Hjälp och utbildning",
     "langCardDesc": "Välj det språk du föredrar. SundayRec stöder sju språk — alla menyer och aviseringar anpassas direkt.",
-    "notifyUnavailable": "Aviseringar är inte tillgängliga i den här versionen ännu.",
     "openOnboarding": "Öppna startguiden",
     "profileDesc": "Används i filnamn, aviseringsmejl och podcast-RSS. Fälten är valfria men rekommenderas.",
-    "responsibleHint": "Personen som får e-post om inspelningen misslyckas (kräver e-postaviseringar i fliken Aviseringar).",
+    "responsibleHint": "Personen som får e-post om en inspelning misslyckas (kräver e-postlarm under Delning → Aviseringar).",
     "webhookUrl": "WEBHOOK-URL",
     "cspError": "Konfigurationsfel: kameraförhandsvisningen kommer inte att fungera (CSP blockerar blob:-URL:er). Starta om appen — om problemet kvarstår, kontakta support.",
-    "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support."
+    "initError": "Startfel: delar av appen kan saknas eller vara ur funktion. Starta om appen — om problemet kvarstår, kontakta support.",
+    "diagnoseTitle": "Diagnostik för ljudenhet",
+    "savedChip": "Sparat ✓",
+    "saveFailed": "Kunde inte spara inställningen",
+    "suiteAdvanced": "Avancerat: Sunday suite-integrationer",
+    "showInFolder": "Visa i mapp"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet."
@@ -488,7 +540,7 @@
   "editor": {
     "title": "Redigera ljudfil",
     "emptyTitle": "Ingen fil öppen",
-    "emptyDesc": "Välj en ljudfil för att börja redigera. Du kan korta ner början och slutet eller klippa bort partier ur mitten.",
+    "emptyDesc": "Välj en ljud- eller videofil för att börja redigera. Du kan korta ner början och slutet eller klippa bort partier ur mitten.",
     "openFile": "Öppna fil…",
     "loading": "Laddar ljudfil…",
     "dragHint": "Klicka och dra för att markera ett klipp",
@@ -529,7 +581,7 @@
     "exportPhaseMeasuring": "Mäter ljudstyrka…",
     "exportPhaseEncoding": "Exporterar…",
     "remainingLabel": "Resultat",
-    "dropFile": "Släpp ljudfilen här",
+    "dropFile": "Släpp ljud- eller videofilen här",
     "openOther": "Öppna annan fil",
     "closeFile": "Stäng fil",
     "emptyTitleDrop": "Släpp filen här — eller klicka för att öppna",
@@ -626,7 +678,10 @@
     "useMixer": "🎛 Avancerad ljudmixer (åsidosätter röstbehandlingen)",
     "videoCodec": "Videokodek",
     "videoFormat": "Videoformat",
-    "vocalChain": "Röstbehandling"
+    "vocalChain": "Röstbehandling",
+    "exportDoneToast": "Exporterad{name}",
+    "gotoReviewOne": "Granskningskö (1 avsnitt) →",
+    "gotoReviewN": "Granskningskö ({n} avsnitt) →"
   },
   "master": {
     "title": "Mastring (förbered för publicering)",
@@ -643,7 +698,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "Efter",
     "openFolder": "Öppna mapp",
-    "listen": "Lyssna"
+    "listen": "Lyssna",
+    "useExportHint": "— för export med mastring: använd Exportera-knappen"
   },
   "manual": {
     "title": "Starta manuell inspelning",
@@ -658,6 +714,9 @@
     "filesize": "filstorlek",
     "diskLeft": "kvarvarande diskutrymme",
     "stop": "Tryck för att stoppa inspelningen",
+    "finalizing": "Avslutar inspelning …",
+    "finalizingHint": "Ett ögonblick — ljudet skrivs till fil.",
+    "finalizeTimeout": "Inspelningen tar ovanligt lång tid att avsluta. Kontrollera att filen sparades.",
     "confirmTitle": "Stoppa inspelningen?",
     "confirmBody": "Inspelningen sparas fram till nu.",
     "confirmStop": "Ja, stoppa",
@@ -680,6 +739,8 @@
     "errorFfmpegMissing": "Internt fel: inspelningskomponent saknas — installera om appen",
     "errorStuck": "Inspelningen stannade — inget ljud från enheten på 60 sekunder",
     "qualityAlarm": "VARNING: Inspelningen saknar ljud — filen innehåller {m} av {e} sekunder. Kontrollera inspelningen innan du litar på den.",
+    "qualityReasons": "Orsak: {r}",
+    "qualityAction": "Visa inspelning",
     "errorInvalidOpts": "Ogiltiga inspelningsinställningar — starta om och försök igen",
     "errorNoSaveFolder": "Ingen lagringsmapp vald — gå till Inställningar → Lagring",
     "errorUnknown": "Något gick fel under inspelningen — kontrollera att ljudenheten och lagringsmappen är redo",
@@ -688,7 +749,8 @@
     "silenceWarn": "Tystnad upptäckt — inspelningen stoppas automatiskt om tystnaden fortsätter.",
     "videoNone": "Ingen video (endast ljud)",
     "videoListError": "Fel vid inläsning av kameror",
-    "cameraFailedAudioOnly": "Kameran misslyckades — spelar endast in ljud"
+    "cameraFailedAudioOnly": "Kameran misslyckades — spelar endast in ljud",
+    "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver."
   },
   "video": {
     "minBitrateWarn": "Minsta bithastighet är 500 kbps",
@@ -733,7 +795,8 @@
     "probeFailed": "Kunde inte läsa kamerans upplösningar — begränsat till 1080p för att undvika uppskalning. 4K kräver en kamera som levererar äkta 4K.",
     "resNative": "kamerans max",
     "resNotSupported": "stöds inte",
-    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max."
+    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max.",
+    "guardDevice": "Byta kamera"
   },
   "onboarding": {
     "welcomeTitle": "Välkommen till SundayRec",
@@ -781,10 +844,15 @@
     "tipScheduleText": "Lägg till veckoinspelningar och speciella dagar (jul, påsk)",
     "tipAudioTitle": "Inställningar → Ljud",
     "tipAudioText": "Byt mixer, justera volymen och kör testinspelningar",
-    "tipPublishTitle": "Inställningar → Publicering",
+    "tipPublishTitle": "Inställningar → Delning",
     "tipPublishOptional": "(valfritt)",
     "tipPublishText": "Anslut Google Drive / Dropbox / OneDrive för automatisk molnbackup",
-    "doneOpen": "Öppna SundayRec →"
+    "doneOpen": "Öppna SundayRec →",
+    "back": "‹ Tillbaka",
+    "testWaitHint": "Knappen låses upp så snart mätaren fångar upp ljud.",
+    "testHeardHint": "Ljud registrerat — du kan gå vidare.",
+    "testBlockedHint": "Ljudtestet kunde inte starta. Gå vidare och testa ljudet från Inställningar → Ljud senare.",
+    "testSkipAfterError": "Fortsätt utan ljudtest →"
   },
   "time": {
     "yr": "år",
@@ -818,10 +886,24 @@
     "emailGmailDesc": "Skicka via ditt Gmail-konto — ingen SMTP-konfiguration.",
     "emailGmailConnect": "Anslut",
     "emailGmailDisconnect": "Koppla från",
-    "emailGmailConfirmDisconnect": "Koppla från Google-kontot? E-postaviseringar faller tillbaka till SMTP.",
+    "emailGmailConfirmDisconnect": "E-postaviseringar faller tillbaka till SMTP.",
     "emailGmailSendsAs": "Skickar via",
     "emailGmailReauth": "⚠ Kräver ny inloggning",
-    "emailAdvanced": "Avancerat: använd SMTP istället"
+    "emailAdvanced": "Avancerat: använd SMTP istället",
+    "errEmail": "Skriv en giltig e-postadress, t.ex. namn@kyrkan.se",
+    "errWebhookUrl": "Webhook-URL:en måste börja med https://",
+    "errSmtpHost": "Skriv ett servernamn, t.ex. smtp.gmail.com",
+    "errSmtpUser": "Användarnamnet är e-postadressen du skickar från",
+    "gateNoFeature": "E-postutskick är inte inbyggt i den här versionen. Larm om misslyckade inspelningar får tills vidare hämtas från Hem-sidan eller en webhook.",
+    "gateNoTransport": "Ingen sändningsmetod är uppsatt än. Logga in med Google, eller fyll i SMTP-fälten under Avancerat.",
+    "gateTestNoTransport": "Sätt upp en sändningsmetod först.",
+    "gateTestNoRecipient": "Skriv in en mottagaradress först.",
+    "gateWebhookNoUrl": "Klistra in en webhook-URL först.",
+    "gmailUnavailable": "Google-inloggning är inte tillgänglig i den här versionen.",
+    "testEmailSent": "Test-e-post skickad till {to}",
+    "testEmailFailed": "Test-e-posten gick inte fram: {err}",
+    "testWebhookOk": "Webhooken svarade — larm kommer fram.",
+    "testWebhookFailed": "Webhooken svarade inte. Kontrollera adressen."
   },
   "prep": {
     "sectionTitle": "Förberedelse och granskning",
@@ -854,7 +936,8 @@
     "jumpToClip": "Klicka för att hoppa till första klippning",
     "zoomIn": "Zooma in",
     "zoomOut": "Zooma ut",
-    "fitAll": "Visa hela filen"
+    "fitAll": "Visa hela filen",
+    "kbdHints": "Visa kortkommandon"
   },
   "publish": {
     "descPlaceholder": "T.ex. Gudstjänster från Exempelkyrkan, varje söndag kl. 11",
@@ -902,7 +985,6 @@
     "enabled": "Aktiverad",
     "account": "Konto",
     "autoUpload": "Ladda upp automatiskt efter inspelning",
-    "cancel": "Avbryt",
     "connect": "Anslut",
     "desc": "Ladda upp inspelningarna automatiskt till Google Drive — som extra säkerhet och för enkel delning.",
     "disconnect": "Koppla från",
@@ -911,12 +993,20 @@
     "introDesc": "Här ställer du in automatisk molnbackup och — om ni vill — en podcast som gör gudstjänsterna tillgängliga på Spotify och Apple Podcasts. Allt är valfritt.",
     "lastUpload": "Senaste",
     "pickFolder": "Välj mapp…",
-    "save": "Spara",
-    "title": "Molnbackup"
+    "title": "Molnbackup",
+    "streamSaveDestinations": "Spara destinationer",
+    "streamUnsaved": "Inte sparat än",
+    "gateCloudExplain": "Molnbackup är inte konfigurerat i det här bygget — Google-nyckeln som krävs för att ansluta ett konto saknas.",
+    "gateCloudHint": "Be om ett bygge med molnbackup påslaget om församlingen behöver det."
   },
   "integrations": {
     "sundayEditFailed": "Kunde inte öppna",
-    "sundayEditMissing": "SundayEdit hittades inte"
+    "sundayEditMissing": "SundayEdit hittades inte",
+    "errUrl": "Detta är inte en giltig adress (t.ex. https://api.sundaysong.com)",
+    "errUrlScheme": "Adressen måste börja med https://",
+    "errChurchId": "Församlings-ID är ett UUID från SundaySong eller SundayPlan",
+    "errKeyEmpty": "Klistra in nyckeln först",
+    "keySaved": "✓ API-nyckel sparad (krypterad)"
   },
   "live": {
     "title": "Direktsändning",
@@ -933,7 +1023,7 @@
     "dropped": "Tappade bilder",
     "uptime": "Tid",
     "configDestinations": "→ Konfigurera destinationer",
-    "noDestinations": "Inga destinationer konfigurerade. Gå till Inställningar → Publicering.",
+    "noDestinations": "Inga destinationer konfigurerade. Gå till Inställningar → Delning.",
     "connectionFailed": "Anslutning misslyckades",
     "previewWaiting": "Förhandsvisning visas när sändningen startar",
     "errNoActive": "Aktivera minst en destination innan du startar.",
@@ -941,7 +1031,12 @@
     "alsoRecordHint": "Lokal inspelningsfil hamnar i Senaste inspelningar när strömmen stannar — högre bitrate än livestreamen, redo för redigering eller podd.",
     "overlays": "Overlays — grafik och presentation",
     "overlaysDesc": "Lägg kyrkans logo, sångtexter från EasyWorship (via skärminspelning på samma maskin), eller annan grafik ovanpå det som sänds. Overlays påverkar bara direktsändningen — inspelningar görs rena.",
-    "addOverlay": "+ Lägg till overlay"
+    "addOverlay": "+ Lägg till overlay",
+    "gateStats": "Statistik är inte tillgänglig än — direktsändningen rapporterar inte bitrate, bildfrekvens eller tappade bildrutor tillbaka till appen i den här versionen.",
+    "blockedNoDestinations": "Ingen destination är uppsatt än — lägg till YouTube, Facebook eller en egen RTMP-server.",
+    "blockedNoEnabled": "Ingen destination är påslagen. Aktivera minst en i listan ovan.",
+    "blockedNoKey": "Destinationen saknar stream-key. Utan nyckeln släpper YouTube/Facebook inte in sändningen.",
+    "blockedGoSettings": "Öppna Delning → Publicering"
   },
   "transcript": {
     "title": "Transkribering",
@@ -976,7 +1071,11 @@
     "chaptersAllPresent": "Alla hittade kapitel finns redan",
     "chaptersNoneFound": "Hittade inga temakapitel i talet",
     "detectChapters": "✦ Generera kapitel från teman",
-    "detecting": "Analyserar teman…"
+    "detecting": "Analyserar teman…",
+    "errUnknownModel": "Okänd modell",
+    "exportTxt": "↧ Text",
+    "exportDone": "Transkription sparad",
+    "exportFailed": "Kunde inte spara transkriptionen"
   },
   "companion": {
     "title": "Predikohjälp",
@@ -1004,10 +1103,12 @@
     "settingsTitle": "Predikohjälp — AI-sammanfattning (valfritt)",
     "settingsDesc": "Kapitel och citat skapas alltid lokalt på enheten. Vill du ha en finare sammanfattning och titel kan du klistra in en Anthropic API-nyckel — den lagras endast i nyckelringen (OS keychain), aldrig i inställningar. Utan nyckel används en lokal sammanfattning.",
     "keySave": "Spara",
-    "keyClear": "Ta bort"
+    "keyClear": "Ta bort",
+    "keyStored": "✓ API-nyckel sparad (nyckelring)",
+    "keyNone": "Ingen nyckel — lokal sammanfattning används"
   },
   "search": {
-    "title": "Sök & historik",
+    "title": "Historik",
     "subtitle": "Sök i predikotext eller filnamn och se hela inspelningshistoriken. Klicka på en textträff för att öppna inspelningen på den punkten.",
     "placeholder": "Sök i predikan eller filnamn…",
     "reindex": "↻ Uppdatera index",
@@ -1050,5 +1151,94 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Avbryt",
+    "confirm": "Fortsätt",
+    "delete": "Ta bort",
+    "noOptions": "Inga alternativ hittades.",
+    "closeAria": "Stäng",
+    "notNow": "Inte nu",
+    "disconnect": "Koppla från",
+    "autostartTitle": "Ska inspelningen starta av sig själv?",
+    "autostartConfirm": "Slå på autostart",
+    "gmailDisconnectTitle": "Koppla från Google-kontot?",
+    "clearHistoryBody": "Själva inspelningsfilerna ligger kvar — bara listan över dem raderas. Detta kan inte ångras.",
+    "deleteErrorsBody": "{n} felposter tas bort från listan. Detta kan inte ångras.",
+    "autoDeleteTitle": "Ta bort inspelningar automatiskt?",
+    "autoDeleteConfirm": "Ja, ta bort automatiskt",
+    "wakeTestTitle": "Testa väckning ur viloläge?",
+    "wakeTestConfirm": "Starta testet",
+    "streamKeyUnsafeTitle": "Stream-nyckeln sparades inte",
+    "streamKeyUnsafeBody": "Systemets nyckelring (Mac Keychain / Windows Credential Manager) är inte tillgänglig. Nyckeln sparas därför inte, så att den aldrig hamnar som klartext på disken. Logga in som en användare med nyckelring och försök igen.",
+    "overlayDeleteTitle": "Ta bort detta överlägg?",
+    "noScreensTitle": "Hittade inga skärmar",
+    "noScreensBody": "Kontrollera att appen har behörighet till skärminspelning i systeminställningarna.",
+    "pickScreenTitle": "Välj skärm",
+    "pickNdiTitle": "Välj NDI-källa",
+    "ndiUnavailableTitle": "NDI är inte tillgängligt",
+    "ndiNoSourcesTitle": "Hittade inga NDI-källor",
+    "ndiNoSourcesBody": "Kontrollera att källan sänder NDI:\n  • EasyWorship 7.3+: Edit → Options → Live → Alternate Output → NDI Stream\n  • ProPresenter 7: Screens → Ny NDI-skärm → Alpha Key (valfritt)\n  • OBS: NDI Output plugin → Source → Enable\n  • Keynote/PowerPoint: kör NDI Screen Capture HX och peka mot fönstret\n  • Båda maskinerna måste vara på samma privata nätverk",
+    "deleteTranscriptBody": "Själva inspelningen behålls. Du kan transkribera på nytt senare.",
+    "discardEditsBody": "Klippen du har gjort går förlorade. Själva inspelningsfilen rörs inte.",
+    "discardEdits": "Förkasta ändringarna",
+    "discardEpisodeTitle": "Förkasta det här avsnittet?",
+    "discardEpisodeBody": "Inspelningen behålls, men den publiceras inte.",
+    "discardEpisode": "Förkasta",
+    "publishFailedTitle": "Kunde inte publicera",
+    "deleteEntryTitle": "Ta bort ”{name}” från listan?",
+    "deleteEntryBody": "Själva inspelningsfilen ligger kvar på disken — bara listposten tas bort. Detta kan inte ångras.",
+    "deleteEntryBodyPair": "Både ljud- och videofilen ligger kvar på disken — bara de två listposterna tas bort. Detta kan inte ångras.",
+    "discardFailedTitle": "Kunde inte kasta avsnittet"
+  },
+  "toast": {
+    "dismiss": "Stäng"
+  },
+  "missed": {
+    "bannerOne": "En planerad inspelning blev aldrig av",
+    "bannerMany": "{n} planerade inspelningar blev aldrig av",
+    "hint": "Kontrollera att datorn var på, att SundayRec kördes och att ”Väck datorn automatiskt” är påslaget.",
+    "dismiss": "Okej",
+    "openSchedule": "Öppna tidsplan",
+    "bannerAction": "Visa detaljer",
+    "more": "till"
+  },
+  "guard": {
+    "title": "{what} nu?",
+    "duringRecording": "En inspelning pågår just nu. Ändringen kan avbryta eller förstöra det som spelas in.",
+    "beforeRecording": "Nästa schemalagda inspelning startar om {n} minuter. Ändringen hinner påverka den inspelningen.",
+    "confirm": "Ja, ändra ändå",
+    "cancel": "Inte nu"
+  },
+  "sharing": {
+    "publishDesc": "Molnbackup, podd och direktsändning — vart inspelningen tar vägen efter gudstjänsten.",
+    "notifyDesc": "Vem som får besked när en inspelning startar, stoppar eller misslyckas."
+  },
+  "gate": {
+    "chipComing": "Kommer",
+    "chipUnconfigured": "Inte konfigurerat",
+    "chipUnavailable": "Inte tillgängligt",
+    "comingExplanation": "{what} är inte byggt ännu. Panelen finns här för att funktionen är planerad — tills vidare gör knapparna ingenting, så de är avstängda."
+  },
+  "health": {
+    "micDenied": "Mikrofonåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Mikrofon och slå på SundayRec.",
+    "micRestricted": "Mikrofonåtkomst är spärrad av systemadministratör eller föräldrakontroll. Inspelning fungerar inte förrän spärren hävs.",
+    "cameraDenied": "Kameraåtkomst nekad. Öppna Systeminställningar → Integritet och säkerhet → Kamera och slå på SundayRec.",
+    "cameraRestricted": "Kameraåtkomst är spärrad av systemadministratör eller föräldrakontroll. Videoinspelning fungerar inte förrän spärren hävs.",
+    "ffmpegMissing": "Den inbyggda ljudmotorn (ffmpeg) hittades inte. Video, export och redigering fungerar inte — installera om appen.",
+    "granted": "Beviljad",
+    "denied": "Nekad — öppna Systeminställningar → Integritet och säkerhet → Mikrofon",
+    "restricted": "Spärrad av systemadministratör",
+    "notAsked": "Inte tillfrågad ännu — första inspelningen utlöser frågan",
+    "cannotTell": "Kan inte avgöras på denna plattform"
+  },
+  "deeplink": {
+    "imported": "Öppnade ”{name}” i redigeraren.",
+    "theRecording": "inspelningen",
+    "captionsOk": "Textning mottagen för ”{name}”.",
+    "openEditor": "Öppna i redigeraren",
+    "captionsNoRecording": "Textning mottagen, men utan att ange vilken inspelning den hör till. Öppna inspelningen i redigeraren och importera texten där.",
+    "captionsFailed": "Textningen kunde inte sparas: {err}"
   }
 }

@@ -17,7 +17,7 @@
 //!   (PU-1 email, scheduler notifications) and is not wired through here yet.
 //!   See docs/NEEDS-RICHARD.md (PU-6).
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use sundayrec_core::integrations::stage::{self, StageManifest};
 use sundayrec_core::integrations::{ChapterMarker, ServiceLink};
@@ -81,6 +81,7 @@ async fn prep_defaults(db: &Db) -> AppResult<PrepDefaults> {
 /// analysis itself isn't ported; the caller supplies `segments`.
 #[tauri::command]
 pub async fn prep_build_episode(
+    app: AppHandle,
     db: State<'_, Db>,
     recording_path: String,
     segments: Vec<PrepAnalysisSegment>,
@@ -92,6 +93,7 @@ pub async fn prep_build_episode(
     let queue = load_queue(&db).await?;
     let queue = review_queue::enqueue(queue, episode.clone(), now);
     save_queue(&db, &queue).await?;
+    crate::tray_note_review_queue(&app);
     Ok(episode)
 }
 
@@ -104,24 +106,52 @@ pub async fn review_queue_list(db: State<'_, Db>) -> AppResult<Vec<ReviewQueueEn
     Ok(review_queue::read_with_age(&queue, now_i64()))
 }
 
+/// How many episodes are genuinely WAITING for a human — the number the tray's
+/// "📬 N episoder klare" callout shows. Published/discarded entries linger in the
+/// blob for the UI's benefit and must not be counted, or the tray would nag
+/// about work that is already done. Never errors: an unreadable queue is 0.
+pub async fn pending_review_count(db: &Db) -> u32 {
+    let queue = load_queue(db).await.unwrap_or_default();
+    queue
+        .iter()
+        .filter(|e| {
+            !matches!(
+                e.prep.status,
+                sundayrec_core::prep::EpisodePrepStatus::Published
+                    | sundayrec_core::prep::EpisodePrepStatus::Discarded
+            )
+        })
+        .count() as u32
+}
+
 /// Mark a queued prep published (kept briefly for the UI toast).
 #[tauri::command]
-pub async fn review_mark_published(db: State<'_, Db>, id: String) -> AppResult<bool> {
+pub async fn review_mark_published(
+    app: AppHandle,
+    db: State<'_, Db>,
+    id: String,
+) -> AppResult<bool> {
     let mut queue = load_queue(&db).await?;
     let ok = review_queue::mark_published(&mut queue, &id, now_i64());
     if ok {
         save_queue(&db, &queue).await?;
+        crate::tray_note_review_queue(&app);
     }
     Ok(ok)
 }
 
 /// Mark a queued prep discarded ("ikke publiser denne uka").
 #[tauri::command]
-pub async fn review_mark_discarded(db: State<'_, Db>, id: String) -> AppResult<bool> {
+pub async fn review_mark_discarded(
+    app: AppHandle,
+    db: State<'_, Db>,
+    id: String,
+) -> AppResult<bool> {
     let mut queue = load_queue(&db).await?;
     let ok = review_queue::mark_discarded(&mut queue, &id, now_i64());
     if ok {
         save_queue(&db, &queue).await?;
+        crate::tray_note_review_queue(&app);
     }
     Ok(ok)
 }

@@ -2,7 +2,12 @@ import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
 import { t } from '../i18n'
 import { notifyLivePageDestinationsChanged } from './live-page'
+import { closeModal, openModal } from '../ui/modal-manager'
+import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
+import { bindRadioGroup, bindSetting, showSavedChip } from '../ui/bind-setting'
+import { applyComingSoonGate, applyFeatureGate } from '../ui/feature-gate'
+import { cloudGateStatus } from '../ui/feature-gate-core'
 import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
 
 type ServiceStatus = Record<CloudServiceId, CloudStatus>
@@ -31,13 +36,16 @@ export function setupPublishPage(): void {
   refreshQueue()
   setupStreamDestinations()
 
-  // Default-thumbnail panel ("Standard episodebilde") — sits at the top of
-  // the publish settings tab.
+  // Default-thumbnail panel ("Standard episodebilde") — sits at the top of the
+  // Deling tab's Publisering section. There is NO Rust side for thumbnails at
+  // all (every thumbnail* shim method is a stub), so the panel is gated as
+  // «kommer» rather than left looking like a drop zone that swallows images.
   const thumbEls = panelElementsByPrefix('publish')
   if (thumbEls) {
     setupThumbPanel(thumbEls, { kind: 'default' })
     void refreshThumbPanel(thumbEls, { kind: 'default' })
   }
+  applyComingSoonGate('publish-thumb-card', t('thumbnail.default.title', 'Standard episodebilde'))
 
   // Connect/disconnect buttons
   document.querySelectorAll<HTMLElement>('[data-cloud-connect]').forEach(btn => {
@@ -89,7 +97,7 @@ export function setupPublishPage(): void {
   document.querySelectorAll<HTMLInputElement>('[data-cloud-auto]').forEach(chk => {
     chk.addEventListener('change', () => {
       const service = chk.dataset.cloudAuto as CloudServiceId
-      saveServiceSettings(service, { autoUpload: chk.checked })
+      saveServiceSettings(service, { autoUpload: chk.checked }, chk)
     })
   })
 
@@ -97,7 +105,7 @@ export function setupPublishPage(): void {
   document.querySelectorAll<HTMLInputElement>('[data-cloud-enabled]').forEach(chk => {
     chk.addEventListener('change', () => {
       const service = chk.dataset.cloudEnabled as CloudServiceId
-      saveServiceSettings(service, { enabled: chk.checked })
+      saveServiceSettings(service, { enabled: chk.checked }, chk)
     })
   })
 
@@ -105,8 +113,7 @@ export function setupPublishPage(): void {
   document.addEventListener('cloud-manual-upload', async (e: Event) => {
     const detail = (e as CustomEvent).detail as { service: CloudServiceId; filePath: string }
     await window.api.cloudUploadFile(detail.service, detail.filePath)
-    // Sky-backup is now on the Publisering tab; fall back to files-save if not present.
-    flashSaved(document.getElementById('btn-publish-save') ?? document.getElementById('btn-files-save'))
+    flashSaved(null)
   })
 
   wireCloudIpcListeners()
@@ -150,6 +157,22 @@ async function refreshConfigured(): Promise<void> {
   }))
   // Re-render so unconfigured cards show a notice
   renderAllCards(currentStatus)
+
+  // HONEST GATE. `cloud_is_configured` is a real backend predicate: it answers
+  // whether this build carries a Google OAuth client id at all. When it does
+  // not, «Koble til» cannot work for anyone — so say that once, at the top of
+  // the section, and turn the buttons off, instead of letting the user press a
+  // button that opens nothing and reports an error they cannot act on.
+  const anyConfigured = Object.values(configured).some(Boolean)
+  applyFeatureGate('cloud-backup-card', {
+    status: cloudGateStatus(anyConfigured),
+    chipText: t('gate.chipUnconfigured', 'Ikke konfigurert'),
+    explanation: t(
+      'publish.gateCloudExplain',
+      'Sky-backup er ikke konfigurert i denne bygningen — den mangler Google-nøkkelen som trengs for å koble til en konto.',
+    ),
+    docsHint: t('publish.gateCloudHint', 'Be om en build med sky-backup slått på hvis menigheten trenger dette.'),
+  })
 }
 
 async function refreshQueue(): Promise<void> {
@@ -350,14 +373,13 @@ function labelForStatus(s: CloudQueueStatus['entries'][number]['status']): strin
 }
 
 async function openFolderPicker(service: CloudServiceId): Promise<void> {
-  const modal = document.getElementById('cloud-folder-modal')
   const list  = document.getElementById('cloud-folder-list')
   const title = document.getElementById('cloud-folder-modal-title')
-  if (!modal || !list || !title) return
+  if (!list || !title) return
 
   title.textContent = `${t('publish.pickFolderTitle', 'Velg mappe')} — ${SERVICE_NAMES[service]}`
   list.innerHTML = `<div class="cloud-folder-loading">${t('publish.loading', 'Laster…')}</div>`
-  modal.style.display = 'flex'
+  openModal('cloud-folder-modal')
 
   try {
     const folders = await window.api.cloudListFolders(service)
@@ -368,7 +390,7 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
     rootItem.textContent = '📁 Rotmappe'
     rootItem.onclick = async () => {
       await window.api.cloudSetFolder(service, '', 'Rotmappe', '')
-      modal.style.display = 'none'
+      closeModal('cloud-folder-modal')
       refreshStatus()
     }
     list.appendChild(rootItem)
@@ -379,7 +401,7 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
       item.textContent = `📁 ${f.name}`
       item.onclick = async () => {
         await window.api.cloudSetFolder(service, f.id, f.name, f.path)
-        modal.style.display = 'none'
+        closeModal('cloud-folder-modal')
         refreshStatus()
       }
       list.appendChild(item)
@@ -390,17 +412,23 @@ async function openFolderPicker(service: CloudServiceId): Promise<void> {
 }
 
 document.getElementById('cloud-folder-modal-close')?.addEventListener('click', () => {
-  const modal = document.getElementById('cloud-folder-modal')
-  if (modal) modal.style.display = 'none'
+  closeModal('cloud-folder-modal')
 })
 
-function saveServiceSettings(service: CloudServiceId, patch: Partial<CloudServiceSettings>): void {
+function saveServiceSettings(
+  service: CloudServiceId,
+  patch: Partial<CloudServiceSettings>,
+  chipFor?: HTMLElement | null,
+): void {
   const key = service === 'google-drive' ? 'cloudGoogleDrive'
             : service === 'dropbox'       ? 'cloudDropbox'
             :                               'cloudOneDrive'
   const existing = settings[key] ?? { enabled: false, autoUpload: false }
   patchSettings({ [key]: { ...existing, ...patch } })
-  window.api.saveSettings(settings).catch(console.error)
+  window.api.saveSettings(settings).then(
+    () => showSavedChip(chipFor?.closest<HTMLElement>('.cloud-toggle-row') ?? null),
+    console.error,
+  )
 }
 
 function showServiceError(service: CloudServiceId, message: string): void {
@@ -469,21 +497,32 @@ function setupStreamDestinations(): void {
       draftOnly: true,
     })
     renderStreamDestinations()
-    markPublishDirtyHint()
+    markStreamDirty(true)
   })
 
-  // Save is wired in files-page (saveFilesSettings) — we hook in via the
-  // existing button click. We must also persist the destinations + push
-  // keys to the encrypted store. files-page's saveFilesSettings runs
-  // patchSettings without touching streamDestinations, so a second save here
-  // is safe (both saves merge into the same Settings object via patchSettings).
-  document.getElementById('btn-publish-save')?.addEventListener('click', () => {
+  // EXPLICIT save — one of the three exceptions to auto-apply. A destination is
+  // a URL + a stream key that only work as a set, and the key leaves the app for
+  // the OS keychain on save; committing it a keystroke at a time would push a
+  // dozen truncated keys into the keychain and leave the last one wrong.
+  document.getElementById('btn-stream-dest-save')?.addEventListener('click', () => {
     void saveStreamDestinations()
   })
-  document.getElementById('btn-publish-cancel')?.addEventListener('click', () => {
+  document.getElementById('btn-stream-dest-cancel')?.addEventListener('click', () => {
     removedDestIds.clear()
     draftDestinations = cloneFromSettings()
     renderStreamDestinations()
+    markStreamDirty(false)
+  })
+
+  // Quality + framerate are plain settings, not part of the destination set —
+  // they auto-apply like everything else.
+  bindRadioGroup('stream-resolution', {
+    key: 'streamResolution',
+    apply: (value) => patchSettings({ streamResolution: value as '480p' | '720p' | '1080p' }),
+  })
+  bindSetting('stream-framerate', {
+    key: 'streamFramerate',
+    apply: (value) => patchSettings({ streamFramerate: (Number(value) || 30) as 25 | 30 }),
   })
 }
 
@@ -491,6 +530,7 @@ function applyStreamSettingsToUI(): void {
   draftDestinations = cloneFromSettings()
   removedDestIds.clear()
   renderStreamDestinations()
+  markStreamDirty(false)
   // Quality + framerate radios
   const res = settings.streamResolution ?? '720p'
   const radio = document.querySelector<HTMLInputElement>(`input[name="stream-resolution"][value="${res}"]`)
@@ -549,17 +589,22 @@ function renderStreamDestinations(): void {
     `
 
     row.querySelectorAll<HTMLInputElement>('input[data-stream-field]').forEach(inp => {
-      inp.addEventListener('input', () => updateDraftFromRow(idx, row))
-      inp.addEventListener('change', () => updateDraftFromRow(idx, row))
+      inp.addEventListener('input', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
+      inp.addEventListener('change', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
     })
-    row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', () => {
-      const confirmMsg = t('publish.streamConfirmDelete', 'Slette denne destinasjonen?')
-      if (!confirm(confirmMsg)) return
+    row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title:        t('publish.streamConfirmDelete', 'Slette denne destinasjonen?'),
+        message:      draftDestinations[idx]?.name || undefined,
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       const removed = draftDestinations[idx]
       if (removed && !removed.draftOnly) removedDestIds.add(removed.id)
       draftDestinations.splice(idx, 1)
       renderStreamDestinations()
-      markPublishDirtyHint()
+      markStreamDirty(true)
     })
     list.appendChild(row)
   })
@@ -596,12 +641,11 @@ async function saveStreamDestinations(): Promise<void> {
         } else if (r.error === 'safeStorage_unavailable') {
           // Refuse to silently lose the key — surface to user so they can
           // decide (use a different machine, or accept the risk on a personal box).
-          alert(
-            'Stream-key kunne ikke lagres sikkert på denne maskinen.\n\n' +
-            'Mac Keychain / Windows Credential Manager er ikke tilgjengelig. ' +
-            'Stream-keys lagres derfor IKKE for å unngå at de havner som ' +
-            'klartekst på disk. Logg inn på en bruker med systemnøkkelring og prøv igjen.'
-          )
+          await alertDialog({
+            title:   t('dialog.streamKeyUnsafeTitle', 'Stream-nøkkelen ble ikke lagret'),
+            message: t('dialog.streamKeyUnsafeBody', 'Systemets nøkkelring (Mac Keychain / Windows Credential Manager) er ikke tilgjengelig. Nøkkelen lagres derfor ikke, slik at den ikke havner som klartekst på disk. Logg inn som en bruker med nøkkelring og prøv igjen.'),
+            tone:    'error',
+          })
         } else {
           console.error('[publish] streamSetKey failed', d.id, r.error)
         }
@@ -634,14 +678,20 @@ async function saveStreamDestinations(): Promise<void> {
   // flipped, pendingKey is cleared).
   draftDestinations = cloneFromSettings()
   renderStreamDestinations()
+  markStreamDirty(false)
+  showSavedChip(document.getElementById('btn-stream-dest-save')?.parentElement ?? null)
 
   notifyLivePageDestinationsChanged()
 }
 
-function markPublishDirtyHint(): void {
-  // Reuse the existing dirty-bar pattern by dispatching an input event on the
-  // publish footer's parent. The page-footer .dirty class is toggled by
-  // setupDirtyBar listeners on the page element.
-  const page = document.getElementById('settings-publish')
-  page?.dispatchEvent(new Event('input', { bubbles: true }))
+/**
+ * Show/clear the "unsaved destinations" state on the explicit-save card. This
+ * is the ONLY place in settings that still has a dirty state, and it is honest:
+ * nothing has been written until «Lagre destinasjoner» is pressed.
+ */
+function markStreamDirty(dirty: boolean): void {
+  const card = document.getElementById('stream-destinations-card')
+  card?.classList.toggle('has-unsaved', dirty)
+  const hint = document.getElementById('stream-dest-dirty-hint')
+  if (hint) hint.style.display = dirty ? '' : 'none'
 }

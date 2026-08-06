@@ -1,8 +1,8 @@
 import { loadLocale, setApplyHook, t } from './i18n'
-import { updateSettings } from './state'
+import { settings, updateSettings } from './state'
 import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
 
-import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
+import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
 import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList } from './pages/audio-page'
 import { stopChannelGrid } from './pages/channel-grid'
@@ -10,15 +10,21 @@ import { setupSchedulePage, applyScheduleSettingsToUI, renderDayPickers, renderS
 import { setupCalendarPage, renderCalendar, renderPlannedList } from './pages/calendar-page'
 import { setupFilesPage, applyFilesSettingsToUI, updateFilenamePreview, toggleMp3Quality } from './pages/files-page'
 import { setupGeneralPage, applyGeneralSettingsToUI } from './pages/general-page'
-import { setupRecording } from './pages/recording'
+import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
 import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
 import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
 import { setupIntegrationsPage } from './pages/integrations-page'
 import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/live-page'
-import { setupSearchPage, activateSearchPage } from './pages/search-page'
+import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
+import { setupModalManager } from './ui/modal-manager'
+import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
+import { navigateTo } from './ui/navigate'
+import { initTrayActions } from './tray-actions'
+import { initPrerollLifecycle } from './preroll-lifecycle'
+import { initDeeplinks } from './deeplinks'
 
 // Shared thumbnail IPC result shapes
 export interface ThumbnailInfo {
@@ -68,22 +74,62 @@ declare global {
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
+      /** Push the running recording's auto-stop deadline out by N minutes. */
+      extendAutostop:      (minutes: number) => Promise<void>
+      /** Clear the auto-stop so the recording runs until a manual stop. */
+      cancelAutostop:      () => Promise<void>
+      /** The live auto-stop deadline (epoch ms), or null when none is armed. */
+      scheduledStopMs:     () => Promise<number | null>
+      /** Start the rolling pre-roll buffer. Resolves false when the backend
+       *  declined (pre-roll off in its settings copy, or no device matched). */
+      prerollStart?:       () => Promise<boolean>
+      /** Stop the rolling pre-roll buffer (safe when nothing is running). */
+      prerollStop?:        () => Promise<void>
+      /** Whether the rolling pre-roll buffer is actually running. */
+      prerollStatus?:      () => Promise<{ active: boolean }>
       runTestRecording:    () => Promise<{ ok: boolean; signal?: 'silent' | 'low' | 'normal'; rmsDb?: number; error?: string }>
       runCaptureBench:     (secs: number) => Promise<import('../bindings/SelfTestReport').SelfTestReport>
       probeDeviceChannels: (deviceName: string) => Promise<number>
       scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
-      testWebhook:         () => Promise<{ ok: boolean; error?: string }>
+      testWebhook:         (url: string) => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
       clearSmtpPassword:   () => Promise<boolean>
-      testEmail:           () => Promise<{ ok: boolean; error?: string }>
+      /** Whether this build can send e-mail at all, and whether Gmail is
+       *  connected — read BEFORE offering a «Send test» (see feature-gate). */
+      emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
+      testEmail:           (params: {
+        transport: 'gmail' | 'smtp'
+        recipient: string
+        language?: string
+        host?: string
+        port?: number
+        user?: string
+        pass?: string
+        from?: string
+      }) => Promise<{ ok: boolean; error?: string }>
       updateHistoryNote:   (ts: number, note: string) => Promise<void>
       getAppVersion:       () => Promise<string>
       checkForUpdates:     () => Promise<void>
       installUpdate:       () => void
       getPlatform:         () => Promise<string>
+      /** Push the UI language to the Rust menubar tray (it renders its own labels). */
+      traySetLanguage?:    (code: string) => Promise<void>
+      /** macOS camera + microphone authorization (AVFoundation), for preflight. */
+      mediaPermissions?:   () => Promise<{
+        camera: import('../bindings/AuthStatus').AuthStatus
+        microphone: import('../bindings/AuthStatus').AuthStatus
+      }>
+      /** Whether the bundled ffmpeg sidecar resolved, and where. */
+      ffmpegHealth?:       () => Promise<{ available: boolean; version: string | null; path: string }>
+      /** Whether the OS login item is really registered (not the stored boolean). */
+      getLaunchAtLogin?:   () => Promise<boolean>
+      /** Trackpad haptic tap (macOS Force Touch); a silent no-op elsewhere. */
+      hapticPerform?:      (pattern: string) => Promise<void>
+      /** The purpose-built audio-device probe behind Lyd → Diagnose. */
+      diagnoseAudio?:      () => Promise<{ dshow: string[]; wasapi: string[]; wasapiAvailable: boolean }>
       scheduleOsWakes:      () => Promise<unknown>
       scheduleOsWakesAdmin: () => Promise<unknown>
       getSleepConfig:       () => Promise<unknown>
@@ -181,7 +227,13 @@ declare global {
       overlayListNdiSources: () => Promise<{ available: boolean; reason?: string; sources: Array<{ name: string; url: string }> }>
       overlayPickImage:      () => Promise<{ path: string; name: string } | null>
 
-      transcriptListAll:       () => Promise<Array<{ filePath: string; transcript: import('../types').TranscriptData }>>
+      /** Every transcribed recording's sidecar. `basePath` is the recording path
+       *  with its media extension stripped — the join key against `baseNoExt(row.path)`. */
+      transcriptListAll:       () => Promise<Array<{ basePath: string; transcript: import('../types').TranscriptData }>>
+      /** Render a transcript to SRT/VTT/TXT at `path` (native save dialog picks it). */
+      whisperExportTranscript: (data: import('../types').TranscriptData, format: 'srt' | 'vtt' | 'txt', path: string) => Promise<{ ok: boolean; error?: string }>
+      /** Native "save as" picker — returns the chosen path, or null on cancel. */
+      pickSavePath:            (opts: { defaultPath?: string; name?: string; extensions?: string[] }) => Promise<string | null>
 
       editorReadTranscript:    (filePath: string) => Promise<import('../types').TranscriptData | null>
       editorWriteTranscript:   (filePath: string, t: unknown) => Promise<boolean>
@@ -285,35 +337,73 @@ function showPage(id: string): void {
   if (id !== 'editor') deactivateEditor()
   if (id !== 'live') deactivateLivePage()
   if (id !== 'settings') stopChannelGrid()
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
-  document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'))
-  document.getElementById(`page-${id}`)?.classList.add('active')
-  document.querySelector(`.nav-link[data-page="${id}"]`)?.classList.add('active')
-  if (id === 'home')     refreshHome()
-  if (id === 'schedule') renderCalendar()
-  if (id === 'editor')   reactivateEditor()
-  if (id === 'live')     reactivateLivePage()
-  if (id === 'search')   activateSearchPage()
-  if (id === 'settings') {
-    const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
-    if (!activeTab || activeTab === 'settings-audio') renderDeviceList('device-list')
-    if (activeTab === 'settings-video') refreshVideoDevices()
-  }
+
+  const outgoing = document.querySelector<HTMLElement>('.page.active')
+  const target   = document.getElementById(`page-${id}`)
+  if (outgoing === target) return
+
+  // Fade the outgoing page out first, then swap. applyPageTransition also
+  // resets #main's scroll — arriving on a short page after scrolling a long
+  // one used to leave you staring at blank space.
+  applyPageTransition(outgoing, () => {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+    document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'))
+    target?.classList.add('active')
+    document.querySelector(`.nav-link[data-page="${id}"]`)?.classList.add('active')
+    markPageEntered(target)
+
+    if (id === 'home')     refreshHome()
+    if (id === 'schedule') renderCalendar()
+    if (id === 'editor')   reactivateEditor()
+    if (id === 'live')     reactivateLivePage()
+    if (id === 'search')   activateSearchPage()
+    if (id === 'settings') {
+      const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
+      if (!activeTab || activeTab === 'settings-audio') renderDeviceList('device-list')
+      if (activeTab === 'settings-video') refreshVideoDevices()
+    }
+  })
 }
 
+/**
+ * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
+ *
+ * «Publisering» and «Varsler» answered halves of the same question — who gets
+ * the recording afterwards — and are now sections of Deling; «Sunday-suite» is
+ * an Avansert disclosure at the bottom of System. Old tab ids still resolve:
+ * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
+ */
 function setupSettingsTabs(): void {
   document.querySelectorAll<HTMLElement>('#settings-tabs .inner-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#settings-tabs .inner-tab').forEach(t => t.classList.remove('active'))
-      btn.classList.add('active')
-      const tabId = btn.dataset.tab ?? ''
-      document.querySelectorAll<HTMLElement>('#page-settings .inner-page').forEach(p => p.classList.remove('active'))
-      document.getElementById(tabId)?.classList.add('active')
-      if (tabId === 'settings-audio') renderDeviceList('device-list')
-      else stopChannelGrid()
-      if (tabId === 'settings-video') refreshVideoDevices()
-    })
+    btn.addEventListener('click', () => showSettingsTab(btn.dataset.tab ?? ''))
   })
+}
+
+/**
+ * Switch to a settings tab with a 120 ms crossfade.
+ *
+ * Deliberately NOT exported: `navigate.ts` reaches a tab by clicking its
+ * button, which is the only way to be sure the button's own side effects (the
+ * device-list refresh, the channel-grid teardown) run exactly once. Exporting a
+ * second entry point would fork that.
+ */
+function showSettingsTab(tabId: string): void {
+  const target = document.getElementById(tabId)
+  if (!target) return
+  const outgoing = document.querySelector<HTMLElement>('#page-settings .inner-page.active')
+
+  const swap = (): void => {
+    document.querySelectorAll('#settings-tabs .inner-tab').forEach(t => t.classList.remove('active'))
+    document.querySelector(`#settings-tabs .inner-tab[data-tab="${tabId}"]`)?.classList.add('active')
+    document.querySelectorAll<HTMLElement>('#page-settings .inner-page').forEach(p => p.classList.remove('active'))
+    target.classList.add('active')
+    if (tabId === 'settings-audio') renderDeviceList('device-list')
+    else stopChannelGrid()
+    if (tabId === 'settings-video') refreshVideoDevices()
+  }
+
+  if (outgoing === target) { swap(); return }
+  applyInnerTabTransition(outgoing, swap)
 }
 
 /**
@@ -349,28 +439,6 @@ function verifyBlobUrlsAllowed(): void {
   // Belt-and-braces: if neither fires within 3 s assume CSP block.
   setTimeout(() => done(false), 3000)
   img.src = url
-}
-
-// Esc closes the topmost visible modal. Modals that shouldn't be Esc-closable
-// (transcribe progress, export progress) opt out with data-no-escape on the
-// backdrop. Cancel-buttons are found via [data-modal-cancel] or, as a fallback,
-// the well-known IDs we already use (btn-*-cancel).
-function setupGlobalEscape(): void {
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return
-    const backdrops = Array.from(document.querySelectorAll<HTMLElement>('.modal-backdrop'))
-      .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-no-escape'))
-    if (!backdrops.length) return
-    // Topmost = last in DOM order (modals are appended sequentially)
-    const top = backdrops[backdrops.length - 1]
-    const cancel = top.querySelector<HTMLButtonElement>(
-      '[data-modal-cancel], [id$="-cancel"], [id^="btn-cancel-"], .modal-close',
-    )
-    if (cancel) cancel.click()
-    else top.style.display = 'none'
-    e.preventDefault()
-    e.stopPropagation()
-  })
 }
 
 async function init(): Promise<void> {
@@ -421,7 +489,41 @@ async function init(): Promise<void> {
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()
-  setupGlobalEscape()
+  // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
+  setupModalManager()
+
+  // `sundayrec://` hand-offs from SundayEdit. Rust has parsed (and, for
+  // captions, already applied) these since the port; nothing ever listened, so
+  // the window came forward and then appeared to do nothing.
+  initDeeplinks({
+    openInEditor: (path: string) => openEditorWithFile(path),
+    refreshTranscripts: invalidateTranscriptIndex,
+  })
+
+  // The menubar tray's one event, routed to the SAME entry points the in-app
+  // buttons use — a tray "Start opptak nå" opens the very modal the Home button
+  // opens, so there is one start path, not two. (Rust handles show/stop/quit
+  // itself; these are the ids it hands to the renderer.)
+  initTrayActions({
+    startRecording: () => void openManualModal(),
+    stopRecording: () => void doStopRecording(),
+    openReviewQueue: openReviewQueueFromTray,
+    // Rust does NOT handle this one (it falls through `emit_action`'s catch-all),
+    // and the save folder is a renderer setting anyway.
+    openRecordingsFolder: () => {
+      const folder = settings.saveFolder
+      if (folder) void window.api.openFolder(folder)
+      else navigateTo('settings', { tab: 'settings-files', anchor: '#save-folder' })
+    },
+    runPreflight: () => {
+      navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-run-preflight-settings', highlight: false })
+      requestAnimationFrame(() => document.getElementById('btn-run-preflight-settings')?.click())
+    },
+    runDiagnostics: () => {
+      navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-audio-diagnose', highlight: false })
+      requestAnimationFrame(() => document.getElementById('btn-audio-diagnose')?.click())
+    },
+  })
   enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile
@@ -433,10 +535,18 @@ async function init(): Promise<void> {
   // Load settings, which triggers locale + UI apply
   await loadSettings()
 
+  // The pre-roll rolling buffer. AFTER loadSettings, because the decision reads
+  // `prerollEnabled` / `preRollSeconds` / the device — and defaults-off means an
+  // unhydrated settings cache would (correctly, but pointlessly) decide "stop"
+  // and then have to change its mind.
+  initPrerollLifecycle()
+
   // Show first-run onboarding wizard for new users
   checkAndShowOnboarding()
 
-  // Initial page load
+  // Initial page load. The home page is marked `active` in the markup, so it
+  // never goes through showPage — latch its entrance animation here instead.
+  markPageEntered(document.querySelector<HTMLElement>('.page.active'))
   await refreshHome()
   renderDeviceList('device-list')
   renderDayPickers()

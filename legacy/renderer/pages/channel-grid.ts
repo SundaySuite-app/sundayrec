@@ -18,6 +18,8 @@
 
 import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
+import { createLevelSmoother } from '../audio/smoothing'
+import type { LevelSmoother } from '../audio/smoothing'
 import type { ChannelMode } from '../../types'
 
 // Pure decisions live in channel-grid-logic.ts (unit-tested without DOM).
@@ -41,6 +43,12 @@ interface Col {
   num: HTMLElement
   badge: HTMLElement
   signal: boolean
+  /** Per-channel dt-based release (audio/smoothing.ts). The bar used to be
+   *  smoothed by a CSS `transition: transform .05s` — restarted by the rAF
+   *  writer on every single frame, which is the "CSS transition fights the JS
+   *  writer" antipattern the VU bars shed in v0.5.0. The motion belongs to
+   *  exactly one owner, and it is this one. */
+  level: LevelSmoother
 }
 
 const state = {
@@ -58,6 +66,8 @@ const state = {
    *  from a previous device can't clobber the current grid. */
   gen: 0,
   onCount: null as ((count: number) => void) | null,
+  /** performance.now() of the last paint — the smoothers' dt. */
+  lastPaintMs: 0,
 }
 
 // ── Public lifecycle ─────────────────────────────────────────────────────────
@@ -235,8 +245,13 @@ function renderGrid(skeleton: boolean): void {
 
     root.append(badge, track, num)
     frag.appendChild(root)
-    state.cols.push({ root, mask, num, badge, signal: false })
+    state.cols.push({
+      root, mask, num, badge, signal: false,
+      // 0..1 meter fraction, not dB: rise instant, fall eased.
+      level: createLevelSmoother({ initial: 0 }),
+    })
   }
+  state.lastPaintMs = 0
   grid.replaceChildren(frag)
   const multi = count > 2
   const chipRow = document.getElementById('ch-assign-row')
@@ -248,31 +263,70 @@ function renderGrid(skeleton: boolean): void {
   renderBadges()
 }
 
+/** The chip row's current shape — the slots it holds, in order. Rebuilding is
+ *  only necessary when THIS changes; a tap or an arm switch is a class toggle
+ *  and a label, not two new buttons. */
+let chipShape = ''
+/** Slot → the chip element currently rendering it. */
+const chipEls = new Map<'l' | 'r', HTMLElement>()
+
+function chipSpec(mode: ChannelMode): Array<{ slot: 'l' | 'r'; label: string }> {
+  if (mode === 'monoL') return [{ slot: 'l', label: t('audio.gridMonoChip', 'KANAL (mono)') }]
+  if (mode === 'monoR') return [{ slot: 'r', label: t('audio.gridMonoChip', 'KANAL (mono)') }]
+  return [
+    { slot: 'l', label: t('audio.channelL', 'VENSTRE (L)') },
+    { slot: 'r', label: t('audio.channelR', 'HØYRE (R)') },
+  ]
+}
+
 function renderChips(): void {
   const row = document.getElementById('ch-assign-row')
   if (!row) return
   const mode = currentMode()
+  const spec = chipSpec(mode)
   const chName = (ch: number): string =>
     t('audio.channelNum', 'Kanal {n}').replace('{n}', String(ch + 1))
-  const chip = (slot: 'l' | 'r', label: string, ch: number): string => `
-    <button type="button" class="ch-assign-chip${state.assign.armed === slot ? ' armed' : ''}" data-slot="${slot}">
-      <span class="ch-assign-slot">${label}</span>
-      <span class="ch-assign-ch">${chName(ch)}</span>
-    </button>`
-  if (mode === 'monoL') {
-    row.innerHTML = chip('l', t('audio.gridMonoChip', 'KANAL (mono)'), state.assign.l)
-  } else if (mode === 'monoR') {
-    row.innerHTML = chip('r', t('audio.gridMonoChip', 'KANAL (mono)'), state.assign.r)
-  } else {
-    row.innerHTML =
-      chip('l', t('audio.channelL', 'VENSTRE (L)'), state.assign.l) +
-      chip('r', t('audio.channelR', 'HØYRE (R)'), state.assign.r)
+
+  // Rebuild ONLY when the set of chips actually changes (a mono/stereo switch,
+  // or a language change). Every tap used to throw both buttons away and parse
+  // fresh HTML — which also killed any focus or :active state mid-interaction.
+  const shape = spec.map(s => s.slot + ' ' + s.label).join('|')
+  if (shape !== chipShape || !row.firstElementChild) {
+    chipShape = shape
+    chipEls.clear()
+    const frag = document.createDocumentFragment()
+    for (const { slot, label } of spec) {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'ch-assign-chip'
+      btn.dataset.slot = slot
+      const slotEl = document.createElement('span')
+      slotEl.className = 'ch-assign-slot'
+      slotEl.textContent = label
+      const chEl = document.createElement('span')
+      chEl.className = 'ch-assign-ch'
+      btn.append(slotEl, chEl)
+      frag.appendChild(btn)
+      chipEls.set(slot, btn)
+    }
+    row.replaceChildren(frag)
   }
+
+  for (const { slot } of spec) {
+    const btn = chipEls.get(slot)
+    if (!btn) continue
+    btn.classList.toggle('armed', state.assign.armed === slot)
+    const chEl = btn.querySelector<HTMLElement>('.ch-assign-ch')
+    const text = chName(slot === 'l' ? state.assign.l : state.assign.r)
+    if (chEl && chEl.textContent !== text) chEl.textContent = text
+  }
+
   const hint = document.getElementById('ch-grid-hint')
   if (hint) {
-    hint.textContent = mode === 'monoL' || mode === 'monoR'
+    const text = mode === 'monoL' || mode === 'monoR'
       ? t('audio.gridTapHintMono', 'Trykk på kanalen med signal for å velge den.')
       : t('audio.gridTapHint', 'Trykk på kanalen for venstre, så kanalen for høyre.')
+    if (hint.textContent !== text) hint.textContent = text
   }
 }
 
@@ -298,14 +352,18 @@ function subscribe(): void {
 }
 
 /** rAF-coalesced painter: quantized, cached transform writes so 32 columns at
- *  30 Hz stay cheap (the setVUBar discipline). */
+ *  30 Hz stay cheap (the setVUBar discipline), with the fall eased on real
+ *  elapsed time rather than by a CSS transition the writer kept restarting. */
 function paint(): void {
   state.raf = 0
   const levels = state.latest?.peak_dbfs
   if (!levels || state.phase !== 'live') return
+  const now = performance.now()
+  const dt = state.lastPaintMs ? now - state.lastPaintMs : 33
+  state.lastPaintMs = now
   for (const [i, col] of state.cols.entries()) {
     const db = levels[i] ?? null
-    const frac = dbToFraction(db)
+    const frac = col.level.step(dbToFraction(db), dt)
     const q = Math.round(frac * 100) / 100
     const prev = Number(col.mask.dataset.v ?? -1)
     if (q !== prev) {
@@ -313,12 +371,17 @@ function paint(): void {
       // The mask HIDES the unlit top part of the fixed gradient.
       col.mask.style.transform = `scaleY(${Math.round((1 - q) * 100) / 100})`
     }
+    // Presence uses the RAW level: hysteresis on a smoothed value would hold a
+    // channel "lit" for the length of the release after the signal stopped.
     const sig = nextSignalState(col.signal, db ?? -120)
     if (sig !== col.signal) {
       col.signal = sig
       col.root.classList.toggle('has-signal', sig)
     }
   }
+  // No self-scheduling: the engine emits `vu-levels` every ~33 ms for as long
+  // as the grid is live, so the release is stepped by the packet stream. When
+  // the stream stops the grid is being torn down anyway.
 }
 
 function setStatus(text: string): void {

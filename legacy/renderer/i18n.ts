@@ -44,6 +44,12 @@ export async function loadLocale(lang: string): Promise<void> {
   T = LOCALE_MAP[lang] ?? LOCALE_MAP['no']
   currentLang = LOCALE_MAP[lang] ? lang : 'no'
   applyTranslations()
+  // The menubar tray renders its own labels in Rust and cannot read the UI
+  // language: it lives in this renderer's settings blob, which the backend's
+  // curated recording settings never carried. Push it from the ONE place the
+  // language actually changes, so startup and a live switch are the same path.
+  // Fire-and-forget — a tray-less build answers with a harmless no-op.
+  void window.api?.traySetLanguage?.(currentLang)
 }
 
 export function t(key: string, fallback = ''): string {

@@ -1,6 +1,7 @@
 import { t } from '../../i18n'
 import { settings } from '../../state'
 import { E, $, clearDirty } from './state'
+import { closeModal, openModal } from '../../ui/modal-manager'
 import { clearEditorDraft } from './cuts'
 import { saveMetadata } from './metadata'
 import { renderMixer, loadPresetIntoMixer, mixerProcessing } from './mixer'
@@ -9,6 +10,7 @@ import {
   exportLevelSummary,
   EXPORT_PHASE_MEASURING,
 } from './export-params'
+import { toast } from '../../ui/toast'
 
 // ── Export + publish flow ───────────────────────────────────────────────────
 
@@ -50,8 +52,7 @@ export function openExportModal(): void {
   // Render publishing section
   void renderPublishOptions()
 
-  const exportModal = $('editor-export-modal')
-  if (exportModal) exportModal.style.display = 'flex'
+  openModal('editor-export-modal')
 }
 
 /**
@@ -483,8 +484,7 @@ export async function runPublishingForExport(outputPath: string): Promise<void> 
 }
 
 export function closeExportModal(): void {
-  const exportModal = $('editor-export-modal')
-  if (exportModal) exportModal.style.display = 'none'
+  closeModal('editor-export-modal')
 }
 
 /** Localised label for a backend progress phase code. The codes themselves live
@@ -627,6 +627,20 @@ export async function runExport(): Promise<void> {
     const fname = (result.outputPath ?? '').split(/[/\\]/).pop() ?? ''
     if (text) text.textContent = (t('editor.saveOk') || '✓ Eksportert') + (fname ? ' — ' + fname : '')
     if (row) row.setAttribute('data-ok', 'true')
+    // The export modal closes on the way in, and the result line lives at the
+    // very bottom of a workspace several screens tall — a successful export
+    // used to announce itself somewhere the user could not see. Say it where
+    // they ARE looking, with the one thing they want next (the file), and
+    // bring the result line into view behind it.
+    const out = result.outputPath
+    toast(
+      'success',
+      t('editor.exportDoneToast', 'Eksportert{name}').replace('{name}', fname ? ` — ${fname}` : ''),
+      out
+        ? { action: { label: t('general.showInFolder', 'Vis i mappe'), onClick: () => { void window.api.revealFile(out) } } }
+        : undefined,
+    )
+    row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     clearEditorDraft()  // export succeeded — drop the autosave sidecar
     clearDirty()
     // Run publishing if user picked "Eksporter og publiser"

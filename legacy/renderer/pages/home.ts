@@ -6,6 +6,36 @@ import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
 import { getAudioDevices } from '../audio/capture'
 import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
+import { navigateTo } from '../ui/navigate'
+import { subscribePrerollStatus } from '../preroll-lifecycle'
+import { buildHealthFindings } from '../status/health-findings'
+import { firstMount, resetMount, showEl, hideEl } from '../ui/motion'
+import { banner, dismissBanner, toast } from '../ui/toast'
+import {
+  dismissMissed,
+  dismissPreflight,
+  getNextRecordingState,
+  initNextRecordingStore,
+  refreshNextRecording,
+  setPreflightFindings,
+  subscribe as subscribeNextRecording,
+  syncScheduleSettings,
+} from '../status/next-recording'
+import {
+  formatCountdown,
+  formatMissed,
+  formatMissedBanner,
+  formatNextDate,
+  formatNextTitle,
+  formatPreflightHeadline,
+  formatSidebarStatus,
+  formatWakeHint,
+  intlParts,
+  type DeviceStatus,
+  type FormatCtx,
+  type NextRecordingState,
+} from '../status/next-recording-core'
+import type { PreflightFinding } from '../../bindings/PreflightFinding'
 import type { RecordingEntry } from './history'
 
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -34,6 +64,14 @@ let previewStream:        MediaStream | null = null
 // Doing this by DOM-relocation (rather than duplicating elements) means every
 // existing event handler / live-update / ID reference keeps working without
 // modification. The function is idempotent — safe to call repeatedly.
+// FLAGGED for future refactor: this relocation physically moves live nodes
+// between two layouts and remembers where each came from. It works, and every
+// handler survives because the elements are the same objects — but it makes the
+// DOM's shape depend on a boolean and on the order the moves happened in, which
+// is why "restore" has to walk the record backwards. A CSS-grid layout with both
+// arrangements expressible in place would remove the bookkeeping entirely.
+// Deliberately NOT touched in the 2026-08 UX overhaul: it is load-bearing for
+// video mode and deserves its own change with its own testing.
 interface MoveRecord { el: HTMLElement; parent: Element; next: Node | null }
 let _videoLayoutMoves: MoveRecord[] = []
 let _videoLayoutActive = false
@@ -161,8 +199,6 @@ export function updateAudioSeparateButton(): void {
   label.textContent = keepAudio ? t('home.audioSeparate', 'Separat lydfil') : t('home.audioNoFile', 'Ingen lydfil')
   // Grey out the whole FORMAT card when video is on but separate audio is off
   card?.classList.toggle('format-inactive', videoOn && !keepAudio)
-  // Whole card acts as the toggle in video mode (pointer affordance)
-  card?.classList.toggle('format-toggleable', videoOn)
 }
 
 // ── Silent preflight (proactive issue surfacing) ─────────────────────────
@@ -170,74 +206,48 @@ export function updateAudioSeparateButton(): void {
 // We run the same preflight check the user can trigger manually from the
 // Lyd settings page, but silently in the background after home loads. Any
 // findings — typically "disk almost full", "mic permission denied", "saved
-// device not found" — are shown as a non-dismissable banner above the hero.
+// device not found" — go into the shared store, so they land on the SAME card
+// the backend's pre-start check (scheduler://preflight, 30 min before a
+// scheduled start) renders. Two sources, one surface: the user should not have
+// to learn two different renderings of the same finding.
+//
 // Runs ONCE per app launch (not per home-tab visit) to avoid pestering the
 // user with stale issues they've already seen.
 
 let silentPreflightHasRun = false
 
+/**
+ * The OS-permission + sidecar findings, in front of whatever `run_preflight`
+ * found. A blocked microphone must be visible BEFORE the user meets a generic
+ * getUserMedia failure, and `run_preflight` does not ask AVFoundation — the two
+ * commands that do (`media_permissions`, `ffmpeg_health`) had no caller at all.
+ * Best-effort: an unavailable probe adds nothing rather than blocking the card.
+ */
+export async function collectHealthFindings(): Promise<PreflightFinding[]> {
+  const [permissions, ffmpeg] = await Promise.all([
+    window.api.mediaPermissions?.().catch(() => null) ?? null,
+    window.api.ffmpegHealth?.().catch(() => null) ?? null,
+  ])
+  return buildHealthFindings({
+    permissions,
+    ffmpeg,
+    videoEnabled: !!settings.videoEnabled,
+    t,
+  })
+}
+
 async function runSilentPreflightOnce(): Promise<void> {
   if (silentPreflightHasRun) return
   silentPreflightHasRun = true
   try {
-    const r = await window.api.runPreflight() as {
-      findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }>
-    }
-    renderSilentPreflightBanner(r.findings ?? [])
+    const [health, r] = await Promise.all([
+      collectHealthFindings(),
+      window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
+    ])
+    const findings = [...health, ...(r.findings ?? [])]
+    if (findings.length) setPreflightFindings(findings)
   } catch {
     // Preflight unavailable — silently ignore (not user-facing failure)
-  }
-}
-
-function renderSilentPreflightBanner(findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }>): void {
-  // Remove any prior banner first so we don't stack.
-  document.getElementById('silent-preflight-banner')?.remove()
-  if (findings.length === 0) return
-
-  const errors = findings.filter(f => f.severity === 'error')
-  const warns  = findings.filter(f => f.severity === 'warn')
-
-  const banner = document.createElement('div')
-  banner.id = 'silent-preflight-banner'
-  banner.className = errors.length > 0 ? 'home-banner home-banner-error' : 'home-banner home-banner-warn'
-
-  const titleEl = document.createElement('div')
-  titleEl.className = 'home-banner-title'
-  titleEl.textContent = errors.length > 0
-    ? `❌ ${errors.length} ${t('home.banner.errors', 'feil oppdaget')} — ${t('home.banner.clickToFix', 'klikk for å fikse')}`
-    : `⚠️ ${warns.length} ${t('home.banner.warns', 'advarsel')} — ${t('home.banner.clickForDetails', 'klikk for detaljer')}`
-  banner.appendChild(titleEl)
-
-  // Show first 2 messages inline; rest are visible in Lyd → Sjekk system
-  const list = document.createElement('ul')
-  list.className = 'home-banner-list'
-  for (const f of [...errors, ...warns].slice(0, 2)) {
-    const li = document.createElement('li')
-    li.textContent = f.message
-    list.appendChild(li)
-  }
-  if (findings.length > 2) {
-    const li = document.createElement('li')
-    li.textContent = `+ ${findings.length - 2} ${t('home.banner.more', 'flere — se Innstillinger → Lyd → Sjekk system')}`
-    li.className = 'home-banner-list-more'
-    list.appendChild(li)
-  }
-  banner.appendChild(list)
-
-  banner.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('.inner-tab[data-tab="settings-audio"]')?.click()
-  })
-
-  // Insert at the very top of page-home, above the hero
-  const pageHome = document.getElementById('page-home')
-  const reviewCard = document.getElementById('review-queue-card')
-  if (pageHome) {
-    if (reviewCard && reviewCard.parentNode === pageHome) {
-      pageHome.insertBefore(banner, reviewCard)
-    } else {
-      pageHome.insertBefore(banner, pageHome.firstChild)
-    }
   }
 }
 
@@ -245,7 +255,9 @@ export async function refreshHomeVideoDevices(): Promise<void> {
   const sel   = document.getElementById('home-video-device-select') as HTMLSelectElement | null
   if (!sel) return
   sel.disabled = true
-  sel.innerHTML = '<option value="">Leter etter kameraer…</option>'
+  sel.replaceChildren(Object.assign(document.createElement('option'), {
+    value: '', textContent: t('home.cameraSearching', 'Leter etter kameraer…'),
+  }))
   const phTxt = document.getElementById('video-preview-placeholder-text')
 
   try {
@@ -253,7 +265,7 @@ export async function refreshHomeVideoDevices(): Promise<void> {
     sel.innerHTML = ''
 
     const blank = document.createElement('option')
-    blank.value = ''; blank.textContent = 'Velg kamera…'
+    blank.value = ''; blank.textContent = t('home.cameraSelect', 'Velg kamera…')
     sel.appendChild(blank)
 
     devices.forEach(d => {
@@ -433,80 +445,85 @@ export async function startVideoPreview(): Promise<void> {
   }
 }
 
-function highlightCard(card: HTMLElement | null): void {
-  if (!card) return
-  card.classList.remove('setting-highlight')
-  void card.offsetWidth // restart animation if already active
-  card.classList.add('setting-highlight')
-  requestAnimationFrame(() => card.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  setTimeout(() => card.classList.remove('setting-highlight'), 4400)
-}
-
 /** Exported so other pages can trigger a disk-space refresh after changing format/channels/samplerate */
 export { loadDiskSpace as refreshHomeDiskSpace }
 
-// ── Backend warning toast ────────────────────────────────────────────────────
+// ── Status alert cards: missed recordings + pre-start check ─────────────────
 
-let _backendWarningTimers: ReturnType<typeof setTimeout>[] = []
+function alertItem(text: string, className?: string): HTMLLIElement {
+  const li = document.createElement('li')
+  li.textContent = text
+  if (className) li.className = className
+  return li
+}
 
-function showBackendWarning(msg: string, severity: 'warn' | 'error'): void {
-  // Remove existing toasts of same severity so they don't pile up
-  document.querySelectorAll<HTMLElement>(`.backend-warning-toast.severity-${severity}`).forEach(el => el.remove())
+/** How many findings/missed rows a card lists before collapsing the rest. */
+const ALERT_LIST_MAX = 4
 
-  const toast = document.createElement('div')
-  toast.className = `backend-warning-toast severity-${severity}`
-  toast.style.cssText = [
-    'display:flex', 'align-items:flex-start', 'gap:10px',
-    'padding:10px 14px', 'border-radius:8px', 'font-size:13px',
-    'line-height:1.4', 'position:relative', 'box-shadow:0 2px 8px rgba(0,0,0,.25)',
-    'margin:8px 0',
-    'animation:toast-in .2s ease',
-    severity === 'error'
-      ? 'background:var(--red,#ef4444);color:#fff;border:1px solid rgba(255,255,255,.2)'
-      : 'background:var(--yellow,#fbbf24);color:#1a1a1a;border:1px solid rgba(0,0,0,.15)',
-  ].join(';')
+/**
+ * Render both alert cards from the shared state.
+ *
+ * A missed recording ALSO raises a persistent banner: the card is on Home, and
+ * "the church service did not get recorded" is not news that should wait until
+ * someone navigates there.
+ */
+function renderStatusAlerts(state: NextRecordingState): void {
+  const ctx = fmtCtx()
 
-  const icon = document.createElement('span')
-  icon.textContent = severity === 'error' ? '✕' : '⚠'
-  icon.style.cssText = 'flex-shrink:0;font-size:14px;margin-top:1px'
+  // ── Missed recordings ─────────────────────────────────────────────────────
+  const missedCard = document.getElementById('missed-card')
+  const missedTitle = document.getElementById('missed-card-title')
+  const missedList = document.getElementById('missed-card-list')
+  const missedHeadline = formatMissedBanner(state, ctx)
 
-  const msgEl = document.createElement('span')
-  msgEl.style.cssText = 'flex:1'
-  msgEl.textContent = msg
-
-  const closeBtn = document.createElement('button')
-  closeBtn.textContent = '×'
-  closeBtn.style.cssText = [
-    'background:none;border:none;cursor:pointer;padding:0;font-size:16px',
-    'line-height:1;opacity:.7;flex-shrink:0;margin-left:4px',
-    severity === 'error' ? 'color:#fff' : 'color:#1a1a1a',
-  ].join(';')
-  closeBtn.addEventListener('click', () => toast.remove())
-
-  toast.appendChild(icon)
-  toast.appendChild(msgEl)
-  toast.appendChild(closeBtn)
-
-  // Insert below the global error banner (or at top of main if banner not present)
-  const main     = document.getElementById('main')
-  const errorBanner = document.getElementById('global-error-banner')
-  if (main && errorBanner?.nextSibling) {
-    main.insertBefore(toast, errorBanner.nextSibling)
-  } else if (main) {
-    main.insertBefore(toast, main.firstChild)
+  if (missedHeadline) showEl(missedCard); else hideEl(missedCard)
+  if (missedHeadline) {
+    if (missedTitle) missedTitle.textContent = missedHeadline
+    if (missedList) {
+      const rows = state.missed.slice(0, ALERT_LIST_MAX).map(m => alertItem(formatMissed(m, ctx)))
+      const rest = state.missed.length - rows.length
+      if (rest > 0) {
+        rows.push(alertItem(`+ ${rest} ${t('missed.more', 'flere')}`, 'home-banner-list-more'))
+      }
+      missedList.replaceChildren(...rows)
+    }
+    banner('scheduler-missed', 'error', missedHeadline, [
+      {
+        label: t('missed.bannerAction', 'Vis detaljer'),
+        onClick: () => navigateTo('home', { anchor: 'missed-card' }),
+      },
+    ])
+  } else {
+    dismissBanner('scheduler-missed')
   }
 
-  if (severity === 'warn') {
-    const tid = setTimeout(() => {
-      toast.remove()
-      // Remove fired timer from the bookkeeping array so it doesn't grow
-      // unbounded as warnings accumulate over a long session.
-      const idx = _backendWarningTimers.indexOf(tid)
-      if (idx >= 0) _backendWarningTimers.splice(idx, 1)
-    }, 8000)
-    _backendWarningTimers.push(tid)
+  // ── Pre-start check ───────────────────────────────────────────────────────
+  const pfCard = document.getElementById('preflight-card')
+  const pfTitle = document.getElementById('preflight-card-title')
+  const pfList = document.getElementById('preflight-card-list')
+  const pf = formatPreflightHeadline(state.preflight, ctx)
+
+  if (pfCard) {
+    if (pf) showEl(pfCard); else hideEl(pfCard)
+    // Errors and warnings are different news; the card says which.
+    pfCard.classList.toggle('home-banner-error', pf?.severity === 'error')
+    pfCard.classList.toggle('home-banner-warn', pf?.severity !== 'error')
   }
-  // 'error' stays until dismissed
+  if (pf) {
+    if (pfTitle) pfTitle.textContent = pf.text
+    if (pfList) {
+      // Errors first — they are what stops a recording.
+      const sorted = [...state.preflight].sort(
+        (a, b) => (a.severity === 'error' ? 0 : 1) - (b.severity === 'error' ? 0 : 1),
+      )
+      const rows = sorted.slice(0, ALERT_LIST_MAX).map(f => alertItem(f.message))
+      const rest = sorted.length - rows.length
+      if (rest > 0) {
+        rows.push(alertItem(`+ ${rest} ${t('status.preflightMore', 'flere — se Innstillinger → Lyd')}`, 'home-banner-list-more'))
+      }
+      pfList.replaceChildren(...rows)
+    }
+  }
 }
 
 // ── Post-recording summary helpers ──────────────────────────────────────────
@@ -528,14 +545,15 @@ function fmtFileSizeBytes(bytes: number): string {
   return `${Math.round(bytes / 1e3)} KB`
 }
 
+/**
+ * "Fullført — 1t 12m · 84 MB · ☁ GD" after a take.
+ *
+ * This used to reach into the EDITOR PROMPT's toast and overwrite its title
+ * element — two unrelated messages sharing one surface, so the summary only
+ * appeared if the prompt happened to be showing, and it destroyed that prompt's
+ * own headline when it did. It now has its own toast, and touches nothing else.
+ */
 function showRecordingFinishedSummary(entry: RecordingEntry): void {
-  const toast = document.getElementById('editor-prompt-toast')
-  if (!toast) return
-
-  const titleEl = toast.querySelector('.update-toast-title')
-  if (!titleEl) return
-
-  // Build summary line
   const parts: string[] = []
   if (entry.durationSec != null && entry.durationSec > 0)
     parts.push(fmtDurationSec(entry.durationSec))
@@ -546,10 +564,52 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
   const uploadedServices = (entry.cloudUploaded ?? []).map(s => cloudNames[s] ?? s)
   if (uploadedServices.length) parts.push('☁ ' + uploadedServices.join(' ☁ '))
 
-  if (parts.length) {
-    titleEl.textContent = t('history.complete', 'Fullført') + ' — ' + parts.join(' · ')
+  const done = t('history.complete', 'Fullført')
+  const msg = parts.length ? `${done} — ${parts.join(' · ')}` : done
+
+  // Only offer the editor here when the editor PROMPT isn't going to (it is
+  // shown by pages/recording.ts unless the user turned it off). Two buttons
+  // opening the same file is one button too many.
+  const promptWillShow = settings.askOpenEditor !== false
+  const path = entry.path
+  toast('success', msg, path && !promptWillShow
+    ? {
+        action: {
+          label: t('home.openInEditor', 'Åpne i redigering'),
+          onClick: () => window.openEditorWithFile(path),
+        },
+      }
+    : {})
+}
+
+// ── Progress bar shared by the two long audio checks ────────────────────────
+//
+// Neither check reports real progress from the backend, so the UI must not
+// pretend otherwise: the 30 s test recording shows a determinate bar the copy
+// explicitly calls an estimate ("ca."), and the 60 s capture bench — which
+// previously showed NOTHING for a full minute — gets an indeterminate bar plus
+// a truthful elapsed-seconds counter.
+
+function healthProgress(mode: 'determinate' | 'indeterminate' | 'off', pct = 0): void {
+  const bar = document.getElementById('health-progress')
+  const fill = document.getElementById('health-progress-fill')
+  if (!bar || !fill) return
+  if (mode === 'off') {
+    bar.style.display = 'none'
+    bar.classList.remove('indeterminate')
+    bar.removeAttribute('aria-valuenow')
+    fill.style.width = '0'
+    return
+  }
+  bar.style.display = ''
+  bar.classList.toggle('indeterminate', mode === 'indeterminate')
+  if (mode === 'determinate') {
+    const clamped = Math.max(0, Math.min(100, pct))
+    fill.style.width = `${clamped}%`
+    bar.setAttribute('aria-valuenow', String(Math.round(clamped)))
   } else {
-    titleEl.textContent = t('history.complete', 'Fullført')
+    fill.style.width = ''
+    bar.removeAttribute('aria-valuenow')
   }
 }
 
@@ -572,13 +632,18 @@ export function setupHome(): void {
     let elapsed = 0
     const TOTAL = 30
     status.style.color = 'var(--text2)'
+    // "ca." because this counter is a local timer, not backend progress: the
+    // command returns when it returns, and the number can reach 30/30 while the
+    // recording is still finishing.
     const fmtProgress = (n: number): string =>
-      t('home.testProgress', 'Tar opp test… {n}/{total} s')
+      t('home.testProgress', 'Tar opp test… ca. {n}/{total} s')
         .replace('{n}', String(n)).replace('{total}', String(TOTAL))
     status.textContent = fmtProgress(0)
+    healthProgress('determinate', 0)
     const tick = setInterval(() => {
       elapsed++
-      status.textContent = fmtProgress(elapsed)
+      status.textContent = fmtProgress(Math.min(elapsed, TOTAL))
+      healthProgress('determinate', (elapsed / TOTAL) * 100)
       if (elapsed >= TOTAL) clearInterval(tick)
     }, 1000)
     try {
@@ -616,6 +681,8 @@ export function setupHome(): void {
       status.textContent = `❌ ${(err as Error).message}`
       status.style.color = 'var(--red)'
     } finally {
+      clearInterval(tick)
+      healthProgress('off')
       btn.disabled = false
       btn.textContent = originalText
     }
@@ -632,7 +699,13 @@ export function setupHome(): void {
     list.style.display = 'none'
     list.innerHTML = ''
     try {
-      const r = await window.api.runPreflight() as { findings: Array<{ severity: 'warn' | 'error'; category: string; message: string }> }
+      // Same two sources as the silent run — the manual button must not be able
+      // to report "alt ser bra ut" while the OS is blocking the microphone.
+      const [health, raw] = await Promise.all([
+        collectHealthFindings(),
+        window.api.runPreflight() as Promise<{ findings?: PreflightFinding[] }>,
+      ])
+      const r = { findings: [...health, ...(raw.findings ?? [])] }
       if (!r.findings || r.findings.length === 0) {
         status.textContent = t('home.preflightAllOk', '✅ Alt ser bra ut — systemet er klart for opptak.')
         status.style.color = 'var(--green)'
@@ -678,13 +751,25 @@ export function setupHome(): void {
     const status = document.getElementById('health-status-settings')
     if (!btn || !status) return
     btn.disabled = true
-    status.textContent = t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')
+    // 60 seconds used to pass with a single static line and no other sign of
+    // life — indistinguishable from a hang. An indeterminate bar says "working",
+    // the counter says how long it has been working, and neither claims to know
+    // how far along the backend is (it does not report that).
+    const benchStarted = Date.now()
+    const benchLine = (): string => {
+      const secs = Math.floor((Date.now() - benchStarted) / 1000)
+      return `${t('audio.benchRunning', 'Måler i 60 sek — spill av lyd/snakk i mikrofonen …')} (${secs} s)`
+    }
+    status.textContent = benchLine()
+    healthProgress('indeterminate')
+    const benchTick = setInterval(() => { status.textContent = benchLine() }, 1000)
     // The bench must measure the RECORDING PATH alone: release every
     // renderer-side mic consumer first (terminal-verified 2026-07-31: a live
     // getUserMedia on the same device skews the source itself).
     releaseRendererAudioCaptures()
     try {
       const r = await window.api.runCaptureBench(60)
+      clearInterval(benchTick)
       const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
       const pct = r.expectedSec ? (loss / r.expectedSec * 100) : 0
       status.textContent = `${r.verdict === 'pass' ? '✅' : r.verdict === 'warn' ? '⚠️' : '❌'} ` +
@@ -695,6 +780,9 @@ export function setupHome(): void {
         (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
     } catch (err) {
       status.textContent = '❌ ' + errText(err)
+    } finally {
+      clearInterval(benchTick)
+      healthProgress('off')
     }
     if (!window.__isRecording) startVU() // give the home meter back
     btn.disabled = false
@@ -704,11 +792,7 @@ export function setupHome(): void {
   // Home → Settings → Lyd quick-jump (replaces the old inline test buttons)
   document.getElementById('btn-go-health')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() => {
-      document.getElementById('btn-test-recording-settings')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-test-recording-settings', highlight: false })
   })
 
   // Video toggle button — always toggles, loads devices inline if turning on
@@ -745,11 +829,14 @@ export function setupHome(): void {
     }
   })
 
-  // Separate audio toggle — keep high-quality audio file alongside combined MP4.
-  // The whole FORMAT card is the toggle in video mode: click the switch OR
-  // anywhere on the card. Mirrors Innstillinger → Video → "Behold separat lydfil".
-  // When toggled here, propagate to the Video-tab toggle if it's already mounted
-  // so both stay in sync without requiring a page navigation.
+  // Separate audio toggle — keep a high-quality audio file alongside the
+  // combined MP4. Mirrors Innstillinger → Video → "Behold separat lydfil", and
+  // propagates to that toggle live so the two never disagree.
+  //
+  // The SWITCH is the control. Clicking anywhere on the FORMAT card used to
+  // flip this setting too, which meant a volunteer who tapped the card to read
+  // its bitrate silently changed what the next recording would produce — an
+  // invisible state change from a gesture that looked like inspection.
   const toggleSeparateAudio = async (): Promise<void> => {
     const nowKeep = !(settings.videoKeepAudio ?? true)
     patchSettings({ videoKeepAudio: nowKeep })
@@ -759,15 +846,13 @@ export function setupHome(): void {
     const videoToggle = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
     if (videoToggle && videoToggle.checked !== nowKeep) videoToggle.checked = nowKeep
   }
-  document.getElementById('home-format-card')?.addEventListener('click', e => {
-    // Let the "Endre" link navigate to the format settings instead of toggling
-    if ((e.target as HTMLElement)?.closest('#btn-go-audio-fmt')) return
-    // Separate-audio only exists in video mode (audio-only has no combined file)
-    if (!(settings.videoEnabled ?? false)) return
-    void toggleSeparateAudio()
+  const separateSwitch = document.getElementById('btn-audio-separate')
+  separateSwitch?.addEventListener('click', e => {
+    e.stopPropagation()
+    if (settings.videoEnabled ?? false) void toggleSeparateAudio()
   })
   // Keyboard activation for the switch (role="switch", tabindex=0)
-  document.getElementById('btn-audio-separate')?.addEventListener('keydown', e => {
+  separateSwitch?.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       if (settings.videoEnabled ?? false) void toggleSeparateAudio()
@@ -813,8 +898,7 @@ export function setupHome(): void {
 
   const goVideoSettings = (e: Event) => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-video"]')?.click()
+    navigateTo('settings', { tab: 'settings-video' })
   }
   document.getElementById('btn-go-video-source')?.addEventListener('click', goVideoSettings)
   document.getElementById('btn-go-video-quality')?.addEventListener('click', goVideoSettings)
@@ -822,57 +906,39 @@ export function setupHome(): void {
   document.getElementById('btn-go-audio-page')?.addEventListener('click', e => {
     e.preventDefault()
     e.stopPropagation()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.querySelector('#settings-audio .card')))
+    navigateTo('settings', { tab: 'settings-audio', anchor: '#settings-audio .card' })
   })
   // Tapping the LYDKILDE card itself lands on the CHANNEL GRID — the «is the
   // right channel feeding the recording?» check, one tap from Home.
   document.getElementById('home-audio-card')?.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.getElementById('channel-grid-card')))
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'channel-grid-card' })
   })
   document.getElementById('btn-go-audio-fmt')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-files"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.getElementById('format-group')?.closest('.card') as HTMLElement ?? null))
+    navigateTo('settings', { tab: 'settings-files', anchor: 'format-group' })
   })
   document.getElementById('btn-go-general-page')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-files"]')?.click()
-    requestAnimationFrame(() =>
-      highlightCard(document.querySelector('#settings-files .card')))
+    navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // Publish-strip cards — all three currently route to the Publisering tab
-  // (cloud + thumbnail UI lives there; Whisper has no dedicated settings
-  // tab yet, so we land users on Publisering and they can browse from
+  // Publish-strip cards — all three route to the Publisering SECTION of the
+  // Deling tab (cloud + thumbnail UI lives there; Whisper has no dedicated
+  // settings surface yet, so we land users there and they can browse from
   // there until we promote Whisper config out of the editor).
-  const goPublish = (highlightSel?: string) => (e: Event) => {
+  const goPublish = (anchor?: string) => (e: Event) => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-publish"]')?.click()
-    if (highlightSel) {
-      requestAnimationFrame(() => highlightCard(document.querySelector(highlightSel)))
-    }
+    navigateTo('settings', { tab: 'settings-sharing', anchor: anchor ?? '#settings-publish' })
   }
   document.getElementById('btn-go-cloud')?.addEventListener('click',   goPublish('#settings-publish .cloud-grid'))
   document.getElementById('btn-go-thumb')?.addEventListener('click',   goPublish('#publish-thumb-preview'))
   document.getElementById('btn-go-whisper')?.addEventListener('click', goPublish())
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
+    navigateTo('settings', { tab: 'settings-audio' })
   })
   document.getElementById('btn-how-to-fix-audio')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
+    navigateTo('settings', { tab: 'settings-audio' })
   })
 
   // "Se alle →" jumps to the merged «Søk & historikk» tab — the full history +
@@ -880,7 +946,7 @@ export function setupHome(): void {
   // Home only shows the 5 most recent recordings.
   document.getElementById('home-see-all')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('search')
+    navigateTo('search')
   })
 
   const onDeviceChange = (): void => {
@@ -890,6 +956,25 @@ export function setupHome(): void {
   navigator.mediaDevices.addEventListener('devicechange', onDeviceChange)
   window.addEventListener('beforeunload', () =>
     navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange))
+
+  // Alert-card actions. The cards themselves are rendered by the store
+  // subscriber below; these buttons only ever change state.
+  document.getElementById('btn-missed-dismiss')?.addEventListener('click', () => dismissMissed())
+  document.getElementById('btn-missed-schedule')?.addEventListener('click', () => {
+    navigateTo('schedule')
+  })
+  document.getElementById('btn-preflight-dismiss')?.addEventListener('click', () => dismissPreflight())
+  document.getElementById('btn-preflight-settings')?.addEventListener('click', () => {
+    navigateTo('settings', { tab: 'settings-audio', anchor: 'btn-run-preflight-settings', highlight: false })
+  })
+
+  // One subscription for the whole app lifetime: the sidebar status is chrome,
+  // visible from every page, so it must keep up whether or not Home is open.
+  initNextRecordingStore()
+  subscribeNextRecording(state => {
+    renderNextRecording(state)
+    renderStatusAlerts(state)
+  })
 
   wireHomeIpcListeners()
 }
@@ -903,10 +988,16 @@ function wireHomeIpcListeners(): void {
   if (homeIpcWired) return
   homeIpcWired = true
 
-  // Backend warning toast — shown for cloud/preroll/wake/disk/device issues
+  // Backend warning — cloud/preroll/wake/disk/device issues.
+  //
+  // NOTE (2026-08-05 channel audit): no Rust emitter for this channel exists
+  // yet, so nothing can arrive on it today. The subscription is kept (rather
+  // than deleted) because it is the intended receiver the day the backend
+  // starts emitting; what WAS deleted is the 60-line hand-rolled toast it used
+  // to build with inline styles, now that there is a real toast service.
   homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
-    const d = data as { msg: string; severity: 'warn' | 'error'; category: string }
-    if (d?.msg) showBackendWarning(d.msg, d.severity ?? 'warn')
+    const d = data as { msg?: string; severity?: 'warn' | 'error' } | undefined
+    if (d?.msg) toast(d.severity === 'error' ? 'error' : 'warn', d.msg)
   }))
 
   // Post-recording summary in existing editor prompt toast. (recording.ts also
@@ -921,34 +1012,80 @@ function wireHomeIpcListeners(): void {
   // updates instantly when a new prep lands or the user publishes/discards.
   setupReviewQueueListeners()
 
-  // Tray menu hooks: clicking "📬 N episoder klare" or "Sjekk system nå" in the
-  // tray must surface the relevant UI. The Rust tray (src-tauri/src/tray/mod.rs)
-  // emits a single "tray://action" event carrying an action-id payload, not
-  // these per-action channel names — these listeners predate that port and are
-  // presently unreachable pending an api-shim adapter from tray://action to
-  // the named channels below.
-  homeIpcUnsubs.push(window.api.on('tray-open-review-queue', () => {
-    window.showPage('home')
-    refreshReviewQueue().then(() => {
-      document.getElementById('review-queue-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }).catch(() => {})
-  }))
-  homeIpcUnsubs.push(window.api.on('tray-run-preflight', () => {
-    window.showPage('settings')
-    document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-audio"]')?.click()
-    requestAnimationFrame(() => {
-      document.getElementById('btn-run-preflight-settings')?.click()
-    })
-  }))
+  // The pre-roll buffer's own surface on the LYDKILDE card.
+  homeIpcUnsubs.push(subscribePrerollStatus(renderPrerollChip))
+
+  // Tray menu hooks used to live here as `tray-open-review-queue` /
+  // `tray-run-preflight` listeners — Electron channel names no Rust code has
+  // ever emitted, so both were unreachable. The Rust tray emits ONE
+  // `tray://action` event; it is adapted in tray-actions.ts, wired once in
+  // main.ts, and calls openReviewQueueFromTray / the preflight button from there.
+}
+
+/** Render the pre-roll chip on the LYDKILDE card. The rolling buffer holds the
+ *  microphone in the background, so while it runs it says so — driven by the
+ *  BACKEND's status, never by the setting alone (the backend declines to start
+ *  when it can't match the device, and a chip that claimed otherwise would be
+ *  exactly the kind of lie this phase is removing). */
+function renderPrerollChip(active: boolean, seconds: number): void {
+  const chip = document.getElementById('home-preroll-chip')
+  const text = document.getElementById('home-preroll-text')
+  if (!chip) return
+  if (!active) { chip.style.display = 'none'; return }
+  if (text) {
+    text.textContent = t('home.prerollActive', 'Forhåndsbuffer aktiv ({n} s)')
+      .replace('{n}', String(seconds))
+  }
+  chip.style.display = ''
+}
+
+/** Bring the review-queue card to the front, freshly loaded — the destination of
+ *  the tray's "📬 N episoder klare" row. Exported for tray-actions.ts. */
+export function openReviewQueueFromTray(): void {
+  navigateTo('home', { anchor: '#review-queue-card' })
+  refreshReviewQueue().catch(err =>
+    console.warn('[home] review-queue refresh from tray failed:', err),
+  )
+}
+
+/** The info cards that wait on an async load, so they can show a skeleton
+ *  instead of a "—" that reads as a real (and alarming) answer. */
+const SKELETON_CARDS = ['home-audio-card', 'home-format-card', 'home-storage-card']
+
+function setCardLoading(id: string, loading: boolean): void {
+  document.getElementById(id)?.classList.toggle('is-loading', loading)
+}
+
+/**
+ * Skeleton only what is genuinely unknown. A card that already shows a real
+ * value keeps showing it while the refresh runs — flashing a shimmer over
+ * correct data on every return to Home would be motion for its own sake.
+ */
+function markUnknownCardsLoading(): void {
+  for (const id of SKELETON_CARDS) {
+    const value = document.getElementById(id)?.querySelector('.info-card-value')?.textContent?.trim()
+    if (!value || value === '—') setCardLoading(id, true)
+  }
 }
 
 export async function refreshHome(): Promise<void> {
-  const next = await window.api.getNextRecording()
+  // The next recording comes from the store (event-fed, polled as a fallback).
+  // `syncScheduleSettings` re-derives against the settings this app now has —
+  // `setupHome` subscribes before `loadSettings` has run, so without this the
+  // hero could show "set up a schedule" for one frame to a user who has one.
+  // It renders synchronously through the subscription; the poll then confirms.
+  syncScheduleSettings()
+  startCountdownTicker()
+  void refreshNextRecording()
+
+  // Each loader clears its own card when its data lands, so a slow disk query
+  // doesn't hold the device card hostage.
+  markUnknownCardsLoading()
+
   await Promise.all([
-    loadNextRecording(next),
     loadDiskSpace(),
     renderRecentRecordings(),
-    checkStatus(next),
+    checkStatus(),
     loadHomeInfoStrip(),
     refreshReviewQueue(),
   ])
@@ -991,73 +1128,77 @@ export async function refreshHome(): Promise<void> {
   }
 }
 
-async function loadNextRecording(prefetchedNext?: { date: string } | null): Promise<void> {
-  if (countdownTimer) clearInterval(countdownTimer)
-  const next    = prefetchedNext !== undefined ? prefetchedNext : await window.api.getNextRecording()
-  const dateEl  = document.getElementById('next-date')
-  const cntEl   = document.getElementById('next-countdown')
+// ── "Next recording" rendering (store-driven) ───────────────────────────────
+//
+// The hero title, the countdown, the wake badge and the sidebar status label
+// all render `status/next-recording`'s state. None of them computes anything:
+// before this they each fetched and formatted the next start themselves and
+// could disagree — the sidebar showing one time while the hero showed another,
+// the countdown frozen mid-take, the wake badge promising a time the backend
+// never planned.
+
+/** The one place the app's language becomes a date format. */
+function fmtCtx(nowMs = Date.now()): FormatCtx {
+  return {
+    t,
+    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    nowMs,
+  }
+}
+
+/** Device connectivity is the sidebar's other input; `checkStatus` owns it. */
+let deviceStatus: DeviceStatus = { connected: true }
+
+function renderSidebarStatus(state: NextRecordingState, ctx: FormatCtx): void {
+  const dot = document.getElementById('status-dot')
+  const lbl = document.getElementById('status-label')
+  const s = formatSidebarStatus(state, ctx, deviceStatus)
+  if (dot) dot.className = 'status-dot' + (s.dot ? ` ${s.dot}` : '')
+  if (lbl) lbl.textContent = s.text
+}
+
+function renderNextRecording(state: NextRecordingState = getNextRecordingState()): void {
+  const ctx = fmtCtx()
+
   const titleEl = document.getElementById('hero-ready-title')
-
+  const dateEl = document.getElementById('next-date')
+  const cntEl = document.getElementById('next-countdown')
   const heroNextEl = document.getElementById('hero-next-section')
-  if (!next) {
-    if (dateEl)    dateEl.textContent  = '—'
-    if (cntEl)     cntEl.textContent   = ''
-    // When no schedule is configured, nudge the user toward Tidsplan
-    const slots = (settings.slots ?? []).length
-    const specials = (settings.specialRecordings ?? []).length
-    if (titleEl) {
-      titleEl.textContent = (slots === 0 && specials === 0)
-        ? t('home.readyNoSchedule', 'Klar — sett opp en tidsplan for å starte automatisk')
-        : t('home.readyTitle', 'Alt er klart')
-    }
-    if (heroNextEl) heroNextEl.style.display = 'none'
-    return
-  }
-  if (heroNextEl) heroNextEl.style.display = ''
-
-  const d      = new Date(next.date)
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
-
-  if (titleEl) {
-    const dayName = d.toLocaleDateString(locale, { weekday: 'long' })
-    const timeStr = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-    const tpl     = t('home.readyTitleDay', 'Alt er klart til {day} {time}')
-    titleEl.textContent = tpl.replace('{day}', dayName).replace('{time}', timeStr)
-  }
-
-  if (dateEl) {
-    dateEl.textContent = d.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
-  }
-
-  const tick = () => {
-    if (!cntEl) return
-    // Skip while recording: the overlay covers home, but this 1 Hz text write
-    // used to invalidate layout for the whole hidden page every second of a
-    // take (there is no CSS containment). Resumes the moment recording ends.
-    if (window.__isRecording) return
-    const diff   = d.getTime() - Date.now()
-    const suffix = t('home.untilStart', 'til oppstart')
-    cntEl.textContent = diff > 0 ? `${fmtCountdown(diff)} ${suffix}` : ''
-  }
-  tick()
-  countdownTimer = setInterval(tick, 1000)
-
   const wakeBadge = document.getElementById('next-wake-badge')
+
+  if (titleEl) titleEl.textContent = formatNextTitle(state, ctx)
+  if (heroNextEl) heroNextEl.style.display = state.next ? '' : 'none'
+  if (dateEl) dateEl.textContent = formatNextDate(state, ctx)
+  if (cntEl) cntEl.textContent = formatCountdown(state, ctx, fmtCountdown)
+
   if (wakeBadge) {
-    if (settings.wakeFromSleep) {
-      const wakeTime = new Date(d.getTime() - 10 * 60 * 1000)
-      const locale   = currentLang === 'no' ? 'nb-NO' : currentLang
-      const wakeStr  = wakeTime.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })
-      wakeBadge.textContent = t('home.wakesBefore', 'Maskinen vekkes automatisk kl. {time}').replace('{time}', wakeStr)
-      wakeBadge.style.display = ''
-    } else {
-      wakeBadge.style.display = 'none'
-    }
+    const hint = formatWakeHint(state, ctx)
+    wakeBadge.textContent = hint ?? ''
+    wakeBadge.style.display = hint ? '' : 'none'
   }
+
+  renderSidebarStatus(state, ctx)
+}
+
+/**
+ * 1 Hz countdown tick, running only while Home is the visible page
+ * (`deactivateHome` clears it). It no longer stops during a recording: the one
+ * moment you most want to know when the next service starts is mid-take, and
+ * that was exactly when the number used to freeze. One text write a second is
+ * a price worth paying for a number that is true.
+ */
+function startCountdownTicker(): void {
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = setInterval(() => {
+    const cntEl = document.getElementById('next-countdown')
+    if (!cntEl) return
+    cntEl.textContent = formatCountdown(getNextRecordingState(), fmtCtx(), fmtCountdown)
+  }, 1000)
 }
 
 async function loadDiskSpace(): Promise<void> {
   const disk       = await window.api.getDiskSpace()
+  setCardLoading('home-storage-card', false)
   const storageVal = document.getElementById('home-storage-value')
   const storageSub = document.getElementById('home-storage-sub')
 
@@ -1110,7 +1251,12 @@ export async function renderRecentRecordings(): Promise<void> {
   const history = ((await window.api.getHistory()) ?? []) as RecordingEntry[]
   const recent = history.slice(0, 5)
   tbody.innerHTML = ''
+  // Entrance on ARRIVAL only. This list is re-rendered after every finished
+  // recording, every delete and every editor save — restaggering all five rows
+  // each time made the page look like it was reloading itself.
+  const animate = firstMount(tbody)
   if (!recent.length) {
+    resetMount(tbody)
     const td = Object.assign(document.createElement('td'), {
       colSpan: 4,
       textContent: t('history.empty', 'Ingen opptak ennå')
@@ -1121,8 +1267,8 @@ export async function renderRecentRecordings(): Promise<void> {
   }
   recent.forEach((r, idx) => {
     const tr = document.createElement('tr')
-    tr.className = 'hist-row'
-    tr.style.animationDelay = `${idx * 0.04}s`
+    tr.className = animate ? 'hist-row row-in' : 'hist-row'
+    if (animate) tr.style.animationDelay = `${idx * 0.04}s`
     const badgeCls = r.status === 'ok' || r.status === 'complete' ? 'ok' : r.status === 'error' ? 'error' : 'sched'
     tr.dataset.status = badgeCls
 
@@ -1162,7 +1308,7 @@ export async function renderRecentRecordings(): Promise<void> {
   })
 }
 
-async function checkStatus(prefetchedNext?: { date: string } | null): Promise<void> {
+async function checkStatus(): Promise<void> {
   const devices = await getAudioDevices()
   let connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
 
@@ -1179,8 +1325,6 @@ async function checkStatus(prefetchedNext?: { date: string } | null): Promise<vo
     }
   }
 
-  const isRec = window.__isRecording ?? false
-
   const heroOk   = document.getElementById('hero-ok')
   const heroWarn = document.getElementById('hero-warn')
   if (heroOk)   heroOk.style.display   = connected ? 'flex' : 'none'
@@ -1195,27 +1339,10 @@ async function checkStatus(prefetchedNext?: { date: string } | null): Promise<vo
     }
   }
 
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot' + (isRec ? ' recording' : connected ? '' : ' warn')
-  if (lbl) {
-    if (isRec) {
-      lbl.textContent = t('status.recording', 'Tar opp nå')
-    } else if (!connected) {
-      const name = settings.deviceName ? `: ${settings.deviceName}` : ''
-      lbl.textContent = t('status.warning', 'Lydkilde mangler') + name
-    } else {
-      const next = prefetchedNext !== undefined ? prefetchedNext : await window.api.getNextRecording()
-      if (next) {
-        const d = new Date(next.date)
-        const locale = currentLang === 'no' ? 'nb-NO' : currentLang
-        const dateStr = d.toLocaleString(locale, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
-        lbl.textContent = dateStr
-      } else {
-        lbl.textContent = t('status.noSchedule', 'Ingen opptak planlagt')
-      }
-    }
-  }
+  // The sidebar dot/label is rendered from the shared state, not computed here:
+  // this function's only contribution is whether the device is present.
+  deviceStatus = { connected, name: settings.deviceName ?? null }
+  renderSidebarStatus(getNextRecordingState(), fmtCtx())
 }
 
 export function loadVideoInfoStrip(): void {
@@ -1255,6 +1382,8 @@ export function loadVideoInfoStrip(): void {
 
 export async function loadHomeInfoStrip(): Promise<void> {
   const devices  = await getAudioDevices()
+  setCardLoading('home-audio-card', false)
+  setCardLoading('home-format-card', false)
   const device   = settings.deviceId ? devices.find(d => d.deviceId === settings.deviceId) : devices[0]
   const nameEl   = document.getElementById('home-device-name')
   const statusEl = document.getElementById('home-device-status-text')
@@ -1347,7 +1476,7 @@ function renderCloudCard(): boolean {
   // Show queue length if any cloud uploads are pending — this is the most
   // useful runtime info: "1 venter på opplasting" vs "Alle synkronisert".
   if (subEl) {
-    subEl.textContent = 'Aktiv'
+    subEl.textContent = t('home.cloudActive', 'Aktiv')
     subEl.style.color = ''
     void (async () => {
       try {
@@ -1383,8 +1512,18 @@ function renderThumbCard(): boolean {
     nameEl.textContent = base
   }
   if (subEl) {
-    subEl.textContent = 'Brennes inn i podcast-MP3'
-    subEl.style.color = 'var(--green)'
+    // HONEST: nothing burns this image into anything — the whole thumbnail
+    // backend is unwritten (every thumbnail* IPC method is a stub), so the old
+    // green «Brennes inn i podcast-MP3» was a promise the app cannot keep. The
+    // card only appears at all for users carrying a path from an older build.
+    subEl.textContent = t('home.thumbComing', 'Episodebilde kommer — brukes ikke ennå')
+    subEl.style.color = 'var(--text3)'
+  }
+  // The «Endre» action would land on a panel that is itself gated as «kommer».
+  const action = document.getElementById('btn-go-thumb')
+  if (action) {
+    action.setAttribute('inert', '')
+    action.classList.add('gate-off')
   }
   // Swap the placeholder SVG for an actual <img> preview via the asset://
   // protocol (WKWebView blocks file://). Falling back to the icon keeps the slot

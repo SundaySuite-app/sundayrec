@@ -11,6 +11,7 @@
  * (start/stop the preview-refresh interval, subscribe/unsubscribe to stats).
  */
 
+import { navigateTo } from '../ui/navigate'
 import { t } from '../i18n'
 import { settings } from '../state'
 import { escHtml } from '../helpers'
@@ -20,6 +21,8 @@ import { rVuChannel } from '../audio/capture'
 import type { StreamDestinationStored } from '../../types'
 import { setupLiveOverlays, reactivateLiveOverlays } from './live-overlays'
 import { normalizeFrameData } from '../../shared/normalize-frame-data'
+import { applyFeatureGate } from '../ui/feature-gate'
+import { liveBlockReason } from '../ui/feature-gate-core'
 
 // ── State ────────────────────────────────────────────────────────────────
 interface StreamStats {
@@ -60,12 +63,23 @@ export function setupLivePage(): void {
   document.getElementById('btn-live-start')?.addEventListener('click', () => onStartStopClick(true))
   document.getElementById('btn-live-start-stream-only')?.addEventListener('click', () => onStartStopClick(false))
 
+  // HONEST GATE: nothing in the backend emits `streaming://stats` — grep the
+  // Rust and there is no such event, only `stream_status` on demand. The four
+  // numbers below therefore sat at 0 for the whole broadcast, which reads as
+  // "your stream is sending 0 kbps" rather than "nobody wrote this yet".
+  applyFeatureGate('live-stats-card', {
+    status: 'unavailable',
+    chipText: t('gate.chipComing', 'Kommer'),
+    explanation: t(
+      'live.gateStats',
+      'Statistikk er ikke tilgjengelig ennå — direktesendingen rapporterer ikke bitrate, bilderate eller tapte rammer tilbake til appen i denne versjonen.',
+    ),
+  })
+
   document.getElementById('live-config-link')?.addEventListener('click', e => {
     e.preventDefault()
-    window.showPage('settings')
-    // Open the Publisering tab
-    const btn = document.querySelector<HTMLElement>('#settings-tabs .inner-tab[data-tab="settings-publish"]')
-    btn?.click()
+    // Destinations live in the Deling tab's Publisering section since Fase 3.
+    navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })
   })
 
   // Quality + framerate changes affect the params we pass to streamStart; no
@@ -233,11 +247,22 @@ export function stopVuMeter(): void {
   const fills = ['live-vu-l', 'live-vu-r'].map(id => document.getElementById(id))
   const peaks = ['live-vu-peak-l', 'live-vu-peak-r'].map(id => document.getElementById(id))
   const dbs   = ['live-vu-db-l', 'live-vu-db-r'].map(id => document.getElementById(id))
-  fills.forEach(el => { if (el) el.style.width = '100%' })
+  // The fill is a transform-driven mask (audio/vu.ts) — resetting `width` left
+  // the stale scaleX in place and froze these bars after a stop, the exact bug
+  // already fixed on home (home-vu.ts stopVU) but never here.
+  fills.forEach(el => { if (el) el.style.transform = 'scaleX(1)' })
   peaks.forEach(el => { if (el) el.style.opacity = '0' })
   dbs.forEach(el   => { if (el) el.textContent = '—' })
   resetLiveSignalStatus()
 }
+
+// Same 60 Hz write-cache discipline as home-vu.ts: the signal line changes a few
+// times a minute, so the steady state must cost comparisons, not DOM writes.
+const LIVE_CLS_INIT = '§init§'
+let lastLiveSigCls  = LIVE_CLS_INIT
+let lastLivePeakTxt = LIVE_CLS_INIT
+let lastLivePeakAt  = 0
+const LIVE_PEAK_TEXT_MIN_INTERVAL_MS = 150
 
 function resetLiveSignalStatus(): void {
   const dot  = document.getElementById('live-signal-dot')
@@ -246,24 +271,39 @@ function resetLiveSignalStatus(): void {
   if (dot)  dot.className = 'signal-dot'
   if (text) { text.className = 'signal-text'; text.textContent = '—' }
   if (peak) peak.textContent = ''
+  lastLiveSigCls = LIVE_CLS_INIT
+  lastLivePeakTxt = LIVE_CLS_INIT
+  lastLivePeakAt = 0
 }
 
 function updateLiveSignalStatus(dbL: number, dbR: number, state: VuState): void {
-  const db   = Math.max(dbL, dbR)
-  const dot  = document.getElementById('live-signal-dot')
-  const text = document.getElementById('live-signal-text')
-  const peak = document.getElementById('live-signal-peak')
-  if (!dot || !text) return
+  const db = Math.max(dbL, dbR)
   let cls = '', label = '—'
   if      (db >= -3)  { cls = 'klipping'; label = t('home.signalClipping', 'Klipper!') }
   else if (db >= -12) { cls = 'hoyt';     label = t('home.signalLoud',     'Høyt')     }
   else if (db >= -40) { cls = 'god';      label = t('home.signalGood',     'Bra')      }
   else if (db > -55)  { cls = 'svak';     label = t('home.signalWeak',     'Svakt')    }
-  dot.className  = 'signal-dot'  + (cls ? ' ' + cls : '')
-  text.className = 'signal-text' + (cls ? ' ' + cls : '')
-  text.textContent = label
+
+  if (cls !== lastLiveSigCls) {
+    const dot  = document.getElementById('live-signal-dot')
+    const text = document.getElementById('live-signal-text')
+    if (!dot || !text) return
+    lastLiveSigCls = cls
+    const suffix = cls ? ' ' + cls : ''
+    dot.className  = 'signal-dot' + suffix
+    text.className = 'signal-text' + suffix
+    text.textContent = label
+  }
+
+  const now = performance.now()
+  if (now - lastLivePeakAt < LIVE_PEAK_TEXT_MIN_INTERVAL_MS) return
   const pkMax = Math.max(state.peakL, state.peakR)
-  if (peak) peak.textContent = pkMax > -59 ? `Maks: ${pkMax.toFixed(1)} dBFS` : ''
+  const peakTxt = pkMax > -59 ? `${t('home.peakLabel', 'Maks')}: ${pkMax.toFixed(1)} dBFS` : ''
+  if (peakTxt === lastLivePeakTxt) return
+  lastLivePeakTxt = peakTxt
+  lastLivePeakAt = now
+  const peak = document.getElementById('live-signal-peak')
+  if (peak) peak.textContent = peakTxt
 }
 
 // ── Stats subscription ───────────────────────────────────────────────────
@@ -515,12 +555,56 @@ function updateStartButton(active: boolean): void {
   updateStartButtonState()
 }
 
+/**
+ * Enable/disable START — and SAY WHY when it is disabled.
+ *
+ * The button knew perfectly well that no destination had a stream key. It just
+ * greyed out and left the operator to guess, five minutes before a service,
+ * with no hint that the answer was two pages away. Now the specific missing
+ * piece is named under the button, with a link straight to it.
+ */
 function updateStartButtonState(): void {
   const btn = document.getElementById('btn-live-start') as HTMLButtonElement | null
+  const reasonEl = document.getElementById('live-start-reason')
   if (!btn) return
-  if (lastStats.active) { btn.disabled = false; return }
-  const hasActive = (settings.streamDestinations ?? []).some(d => sessionEnabled.get(d.id) && d.hasKey)
-  btn.disabled = !hasActive
+  if (lastStats.active) {
+    btn.disabled = false
+    if (reasonEl) reasonEl.style.display = 'none'
+    return
+  }
+
+  const dests = settings.streamDestinations ?? []
+  const enabled = dests.filter(d => sessionEnabled.get(d.id))
+  const reason = liveBlockReason({
+    total: dests.length,
+    enabled: enabled.length,
+    ready: enabled.filter(d => d.hasKey).length,
+  })
+  btn.disabled = reason !== null
+
+  if (!reasonEl) return
+  if (!reason) { reasonEl.style.display = 'none'; return }
+
+  const text =
+    reason === 'noDestinations'
+      ? t('live.blockedNoDestinations', 'Ingen destinasjon er satt opp ennå — legg til YouTube, Facebook eller en egen RTMP-server.')
+      : reason === 'noEnabled'
+        ? t('live.blockedNoEnabled', 'Ingen destinasjon er slått på. Aktiver minst én i listen over.')
+        : t('live.blockedNoKey', 'Destinasjonen mangler stream-key. Uten nøkkelen slipper ikke YouTube/Facebook sendingen inn.')
+
+  reasonEl.textContent = ''
+  reasonEl.append(text + ' ')
+  if (reason !== 'noEnabled') {
+    const link = document.createElement('a')
+    link.href = '#'
+    link.textContent = t('live.blockedGoSettings', 'Åpne Deling → Publisering')
+    link.addEventListener('click', e => {
+      e.preventDefault()
+      navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })
+    })
+    reasonEl.appendChild(link)
+  }
+  reasonEl.style.display = ''
 }
 
 // ── Status pill helpers ──────────────────────────────────────────────────

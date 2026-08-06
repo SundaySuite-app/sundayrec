@@ -1,6 +1,8 @@
 import { t, tArr, currentLang } from '../i18n'
 import { settings } from '../state'
-import { escHtml, isoDate, flashMsg } from '../helpers'
+import { escHtml, isoDate } from '../helpers'
+import { confirmDialog } from '../ui/dialog'
+import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
 
@@ -98,6 +100,7 @@ export function renderCalendar(): void {
 }
 
 function openDayDetail(iso: string, holiday: string): void {
+  clearFieldErrors(document.getElementById('cal-day-detail'))
   const detailCard = document.getElementById('cal-day-detail')
   const hintCard   = document.getElementById('cal-hint-card')
   const titleEl    = document.getElementById('cal-day-detail-title')
@@ -152,7 +155,13 @@ function openDayDetail(iso: string, holiday: string): void {
           const idx = +(btn as HTMLElement).dataset.index!
           const target = settings.specialRecordings?.[idx]
           if (!target) return
-          if (!confirm(t('calendar.confirmDelete', `Slette opptak: ${target.name} (${target.date})?`))) return
+          const ok = await confirmDialog({
+            title:        t('calendar.confirmDelete', 'Slette planlagt opptak?'),
+            message:      `${target.name} — ${target.date}`,
+            confirmLabel: t('dialog.delete', 'Slett'),
+            danger:       true,
+          })
+          if (!ok) return
           if (editingIndex === idx) {
             editingIndex = -1
             if (addBtn) addBtn.textContent = '+ ' + t('calendar.addRecording', 'Legg til opptak')
@@ -183,9 +192,30 @@ async function saveSpecial(): Promise<void> {
   const name  = nameEl?.value.trim() || 'Gudstjeneste'
   const start = startEl?.value || '11:00'
   const stop  = stopEl?.value  || '12:00'
-  if (!date) { flashMsg(document.getElementById('btn-add-special'), '✕ ' + t('calendar.errNoDate', 'Velg en dato først'), false); return }
-  if (!start || !stop || start === stop) { flashMsg(document.getElementById('btn-add-special'), '✕ ' + t('schedule.errTimes', 'Ugyldig tidspunkt'), false); return }
-  if (date < isoDate(new Date())) { flashMsg(document.getElementById('btn-add-special'), '✕ ' + t('calendar.errPastDate', 'Datoen er allerede passert — opptak vil ikke starte'), false); return }
+
+  // FIELD-LEVEL validation. These were toasts fired at the «Legg til opptak»
+  // button — they appeared in the corner of the screen, said which rule was
+  // broken but not which field broke it, and were gone in two seconds.
+  const panel = document.getElementById('cal-day-detail')
+  clearFieldErrors(panel)
+  if (!date) {
+    setFieldError(nameEl, t('calendar.errNoDate', 'Velg en dato først'))
+    return
+  }
+  const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/
+  const badTime = t('schedule.errTimeFormat', 'Skriv klokkeslettet som TT:MM, f.eks. 11:00.')
+  let invalid = false
+  if (!HHMM.test(start)) { setFieldError(startEl, badTime); invalid = true }
+  if (!HHMM.test(stop))  { setFieldError(stopEl,  badTime); invalid = true }
+  if (invalid) return
+  if (start === stop) {
+    setFieldError(stopEl, t('schedule.errSameTime', 'Stopptidspunktet kan ikke være det samme som starten.'))
+    return
+  }
+  if (date < isoDate(new Date())) {
+    setFieldError(startEl, t('calendar.errPastDate', 'Datoen er allerede passert — opptak vil ikke starte'))
+    return
+  }
   if (!settings.specialRecordings) settings.specialRecordings = []
   lastStart = start; lastStop = stop
 
@@ -239,7 +269,13 @@ export function renderPlannedList(): void {
       const idx = +(btn as HTMLElement).dataset.index!
       const target = settings.specialRecordings?.[idx]
       if (!target) return
-      if (!confirm(t('calendar.confirmDelete', `Slette opptak: ${target.name} (${target.date})?`))) return
+      const ok = await confirmDialog({
+        title:        t('calendar.confirmDelete', 'Slette planlagt opptak?'),
+        message:      `${target.name} — ${target.date}`,
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       settings.specialRecordings!.splice(idx, 1)
       await window.api.saveSettings(settings)
       renderCalendar()

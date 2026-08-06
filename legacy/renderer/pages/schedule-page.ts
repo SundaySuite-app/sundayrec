@@ -1,56 +1,66 @@
-import { t, tArr } from '../i18n'
+import { t, tArr, currentLang } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
+import { confirmDialog } from '../ui/dialog'
+import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
+import { showEl, hideEl } from '../ui/motion'
+import {
+  getNextRecordingState,
+  initNextRecordingStore,
+  subscribe as subscribeNextRecording,
+  syncScheduleSettings,
+} from '../status/next-recording'
+import {
+  formatSchedulePreview,
+  intlParts,
+  type NextRecordingState,
+} from '../status/next-recording-core'
 import type { ScheduleSlot } from '../../types'
 
 let editingSlotIndex = -1
 
-function updateNextRecordingPreview(): void {
+/**
+ * "Neste opptak: …" under the slot list.
+ *
+ * This used to be ~40 lines of hand-rolled weekday arithmetic that walked
+ * `settings.slots` only — so a one-off special (Christmas Eve, a concert) was
+ * invisible here even though it was the very next thing the app would record,
+ * and the answer could differ from the hero on Home. It now renders the same
+ * scheduler-fed state as every other "next recording" surface, and specials
+ * come along for free because the backend already counts them.
+ */
+function renderNextRecordingPreview(
+  state: NextRecordingState = getNextRecordingState(),
+): void {
   const previewEl = document.getElementById('schedule-next-preview')
   if (!previewEl) return
-
-  const slots = settings.slots ?? []
-  if (!slots.length) { previewEl.textContent = ''; return }
-
-  const now      = new Date()
-  // JS Date: Sunday=0 … Saturday=6; schedule.days is Mon=0..Sun=6
-  // Build a Sun-Sat array: Sun is index 6 in schedule.days, Mon..Sat are 0..5
-  const _sched = tArr('schedule.days', ['Man','Tir','Ons','Tor','Fre','Lør','Søn'])
-  const dayNames = [_sched[6], _sched[0], _sched[1], _sched[2], _sched[3], _sched[4], _sched[5]]
-
-  let nextMs   = Infinity
-  let nextLabel = ''
-
-  for (const slot of slots) {
-    for (const day of (slot.days ?? [])) {
-      const target  = new Date(now)
-      // 0=Sun in JS Date, but schedule days are Mon=0..Sun=6
-      // Convert slot day (Mon=0..Sun=6) to JS day (Sun=0..Sat=6)
-      const jsDayOfSlot = (day + 1) % 7
-
-      const [h, m] = (slot.start || '09:00').split(':').map(Number)
-      const diffDays = (jsDayOfSlot - now.getDay() + 7) % 7
-      const slotTodayMinutes = h * 60 + m
-      const nowMinutes       = now.getHours() * 60 + now.getMinutes()
-
-      // If the slot is today but already past (or now), push to next week
-      const daysToAdd = diffDays === 0 && nowMinutes >= slotTodayMinutes ? 7 : diffDays
-
-      target.setDate(target.getDate() + daysToAdd)
-      target.setHours(h, m, 0, 0)
-
-      if (target.getTime() < nextMs) {
-        nextMs    = target.getTime()
-        nextLabel = `${dayNames[target.getDay()]} ${target.getDate()}. ${t('schedule.atTime', 'kl.')} ${slot.start}`
-      }
-    }
-  }
-
-  previewEl.textContent = nextLabel ? `${t('schedule.nextPreviewPrefix', 'Neste opptak')}: ${nextLabel}` : ''
+  previewEl.textContent = formatSchedulePreview(state, {
+    t,
+    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    nowMs: Date.now(),
+  })
 }
 
 export function setupSchedulePage(): void {
+  // Render the "neste opptak" line from the shared store, now and on every
+  // scheduler event.
+  initNextRecordingStore()
+  subscribeNextRecording(state => {
+    renderNextRecordingPreview(state)
+    renderWakeSummary(state)
+  })
+
+  // «Detaljer» opens the full wake section rather than duplicating it.
+  document.getElementById('btn-wake-summary-details')?.addEventListener('click', () => {
+    const section = document.getElementById('adv-section')
+    if (section && section.style.display === 'none') {
+      document.getElementById('btn-adv-toggle')?.click()
+    }
+    document.querySelector('.adv-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+  void refreshWakeSummaryFacts()
+
   document.getElementById('btn-add-slot')?.addEventListener('click', () => openSlotEditor(-1))
   document.getElementById('btn-slot-save')?.addEventListener('click', saveSlot)
   document.getElementById('slot-start')?.addEventListener('change', () => {
@@ -83,12 +93,11 @@ export function setupSchedulePage(): void {
       void loadSleepConfig()
       void refreshWakeReliability()
     } else {
-      const card = document.getElementById('wake-reliability-card')
-      if (card) card.style.display = 'none'
+      hideEl(document.getElementById('wake-reliability-card'))
     }
     // Auto-lagre toggelen umiddelbart (samme mønster som lyd/fil/video-sidene):
     // brukeren skulle ikke måtte klikke «Lagre» for at valget tar effekt.
-    void saveScheduleSettings()
+    void saveScheduleSettings().then(() => refreshWakeSummaryFacts())
   })
   // wake-hibernate-* collapsible was removed when the Avanserte-section was
   // restructured into "Vekk maskin fra dvale" in v4.31. Handler dropped.
@@ -164,6 +173,138 @@ export function setupSchedulePage(): void {
   window.addEventListener('beforeunload', () => cleanupProgress?.())
 }
 
+// ── Wake summary (top-of-page card) ─────────────────────────────────────────
+
+/**
+ * The facts the summary card needs, cached between renders.
+ *
+ * Fetched from the same `wake_verify_scheduled` / `wake_failure_history`
+ * commands the detailed section uses — not a second source of truth. The card
+ * re-renders from the next-recording store on every scheduler event without
+ * re-fetching, so a countdown ticking does not hammer the backend.
+ */
+let wakeFacts: {
+  loaded: boolean
+  hasMismatch: boolean
+  onBattery: boolean | null
+  standbyEnabled: boolean | null
+  expected: number
+  observed: number
+  lastTest: { kind: 'test_ok' | 'test_fail'; timestamp: number; reason?: string; deltaSec?: number } | null
+} = { loaded: false, hasMismatch: false, onBattery: null, standbyEnabled: null, expected: 0, observed: 0, lastTest: null }
+
+async function refreshWakeSummaryFacts(): Promise<void> {
+  if (!settings.wakeFromSleep) {
+    wakeFacts = { ...wakeFacts, loaded: true }
+    renderWakeSummary()
+    return
+  }
+  try {
+    const [status, history] = await Promise.all([
+      window.api.wakeVerifyScheduled(),
+      window.api.wakeFailureHistory(),
+    ])
+    const last = history.find(e => e.kind === 'test_ok' || e.kind === 'test_fail')
+    wakeFacts = {
+      loaded: true,
+      hasMismatch: status.hasMismatch,
+      onBattery: status.onBattery,
+      standbyEnabled: status.standbyEnabled,
+      expected: status.expectedWakes.length,
+      observed: status.observedWakes.length,
+      lastTest: last
+        ? { kind: last.kind as 'test_ok' | 'test_fail', timestamp: last.timestamp, reason: last.reason, deltaSec: last.deltaSec }
+        : null,
+    }
+  } catch (err) {
+    console.warn('[wake-summary] fetch failed:', err)
+    wakeFacts = { ...wakeFacts, loaded: true }
+  }
+  renderWakeSummary()
+}
+
+/**
+ * Paint the summary. Three states, in order of what the operator needs to know:
+ * OFF (planned recordings only fire if someone leaves the machine awake), a
+ * concrete problem (battery, deep sleep, wakes the OS did not accept), or OK
+ * with the actual wake time from the shared store.
+ */
+function renderWakeSummary(state: NextRecordingState = getNextRecordingState()): void {
+  const dot = document.getElementById('wake-summary-dot')
+  const titleEl = document.getElementById('wake-summary-title')
+  const subEl = document.getElementById('wake-summary-sub')
+  const testEl = document.getElementById('wake-summary-test')
+  if (!dot || !titleEl || !subEl || !testEl) return
+
+  const setState = (cls: string, title: string, sub: string): void => {
+    dot.className = `wake-status-dot ${cls}`
+    titleEl.textContent = title
+    subEl.textContent = sub
+  }
+
+  if (!settings.wakeFromSleep) {
+    setState(
+      'off',
+      t('wake.summary.offTitle', 'Automatisk oppvåkning er av'),
+      t('wake.summary.offSub', 'Planlagte opptak starter bare hvis maskinen står på og programmet kjører. Slå på oppvåkning under Detaljer hvis maskinen får sove.'),
+    )
+  } else if (!wakeFacts.loaded) {
+    setState('', t('wake.summary.checking', 'Sjekker oppvåkning…'), '')
+  } else if (wakeFacts.onBattery === true) {
+    setState(
+      'error',
+      t('wake.summary.batteryTitle', 'Maskinen går på batteri'),
+      t('wake.power.onBattery', 'På batteri — wake vil sannsynligvis ikke fungere.'),
+    )
+  } else if (wakeFacts.standbyEnabled === true) {
+    setState(
+      'error',
+      t('wake.summary.standbyTitle', 'Dyp dvale er slått på'),
+      t('wake.standby.warning', 'Standby (dyp dvale) er aktivert — kan sabotere wake på Apple Silicon.'),
+    )
+  } else if (wakeFacts.hasMismatch) {
+    setState(
+      'error',
+      t('wake.summary.mismatchTitle', 'Operativsystemet mangler noen oppvåkninger'),
+      `${wakeFacts.observed}/${wakeFacts.expected} ${t('wake.verify.mismatch', 'bekreftet i OS — noen mangler. Klikk «Planlegg oppvåkning» for å sette dem på nytt.')}`,
+    )
+  } else {
+    // The wake time itself comes from the shared store, so this card and the
+    // hero can never disagree about when the machine gets up.
+    const wakeAt = state.wake?.atMs ?? null
+    const when = wakeAt
+      ? new Date(wakeAt).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+          weekday: 'short', hour: '2-digit', minute: '2-digit',
+        })
+      : null
+    setState(
+      'ok',
+      t('wake.summary.okTitle', 'Maskinen vekkes automatisk'),
+      when
+        ? t('wake.summary.okNext', 'Neste oppvåkning {when} — {n} minutter før opptaket starter.')
+            .replace('{when}', when)
+            .replace('{n}', String(state.wake?.leadMinutes ?? 10))
+        : t('wake.summary.okNoNext', 'Ingen kommende opptak å våkne til akkurat nå.'),
+    )
+  }
+
+  if (!settings.wakeFromSleep || !wakeFacts.loaded) {
+    testEl.textContent = ''
+    return
+  }
+  const last = wakeFacts.lastTest
+  if (!last) {
+    testEl.textContent = t('wake.summary.neverTested', 'Aldri testet. Kjør «Test wake nå» under Detaljer før første gudstjeneste.')
+    return
+  }
+  const when = new Date(last.timestamp).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+  testEl.textContent = last.kind === 'test_ok'
+    ? `${t('wake.lastTest.ok', 'Siste test OK')} (${when})`
+    : `${t('wake.lastTest.fail', 'Siste test feilet')} (${when}${last.reason ? ', ' + last.reason : ''})`
+}
+
 // ── Wake-reliability helpers ────────────────────────────────────────────────
 
 function platformLabel(key: string): string {
@@ -179,11 +320,11 @@ function platformLabel(key: string): string {
 }
 
 async function onTestWakeClick(): Promise<void> {
-  const sure = confirm(
-    t('wake.test.confirm',
-      'Maskinen vil sove i opptil 60 sekunder og deretter prøve å våkne av seg selv.\n\n' +
-      'Lukk uferdig arbeid først. Fortsette?')
-  )
+  const sure = await confirmDialog({
+    title:        t('dialog.wakeTestTitle', 'Teste vekking fra dvale?'),
+    message:      t('wake.test.confirm', 'Maskinen vil sove i opptil 60 sekunder og deretter prøve å våkne av seg selv. Lukk uferdig arbeid først.'),
+    confirmLabel: t('dialog.wakeTestConfirm', 'Start testen'),
+  })
   if (!sure) return
   const testBtn   = document.getElementById('btn-test-wake')         as HTMLButtonElement | null
   const cancelBtn = document.getElementById('btn-cancel-test-wake')  as HTMLButtonElement | null
@@ -319,7 +460,9 @@ async function refreshWakeReliability(): Promise<void> {
       }
     }
 
-    card.style.display = ''
+    showEl(card)
+    // Keep the top-of-page summary in step with the detail it summarises.
+    void refreshWakeSummaryFacts()
   } catch (err) {
     console.error('[wake-reliability] refresh failed:', err)
   }
@@ -373,7 +516,7 @@ export function renderSlotsList(): void {
       <div style="font-weight:600;color:var(--text2);margin-bottom:3px">📅 ${escHtml(emptyTitle)}</div>
       <div>${escHtml(emptyHint)}</div>
     </div>`
-    updateNextRecordingPreview()
+    syncScheduleSettings()
     return
   }
   list.innerHTML = slots.map((s, i) => {
@@ -391,17 +534,23 @@ export function renderSlotsList(): void {
   )
   list.querySelectorAll('.slot-del').forEach(s =>
     s.addEventListener('click', async () => {
-      if (!confirm(t('schedule.confirmDeleteSlot', 'Slett dette tidspunktet?'))) return
+      const ok = await confirmDialog({
+        title:        t('schedule.confirmDeleteSlot', 'Slett dette tidspunktet?'),
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       settings.slots!.splice(+(s as HTMLElement).dataset.index!, 1)
       await window.api.saveSettings(settings).catch(err => console.error('[schedule] saveSettings failed:', err))
       renderSlotsList()
     })
   )
-  updateNextRecordingPreview()
+  syncScheduleSettings()
 }
 
 function openSlotEditor(index: number): void {
   editingSlotIndex = index
+  clearFieldErrors(document.getElementById('slot-editor'))
   const slot: ScheduleSlot = index >= 0 && settings.slots?.[index]
     ? settings.slots[index]
     : { days: [6], start: '11:00', stop: '12:00' }
@@ -420,30 +569,58 @@ function openSlotEditor(index: number): void {
   updateSlotDurationDisplay()
 }
 
+/**
+ * Save the slot being edited.
+ *
+ * Validation is FIELD-LEVEL: a red line under the field that is wrong, tied to
+ * it with aria-describedby. It used to be a modal saying «Ugyldig tidspunkt»,
+ * which named neither which of the two time fields was wrong nor what was wrong
+ * with it — and covered the form while you read it. Dialogs are for decisions
+ * ("delete this slot?"); a correction belongs next to the thing to correct.
+ */
 async function saveSlot(): Promise<void> {
+  const editor = document.getElementById('slot-editor')
+  clearFieldErrors(editor)
+
+  const dayPicker = document.getElementById('day-picker')
+  const startEl = document.getElementById('slot-start') as HTMLInputElement | null
+  const stopEl  = document.getElementById('slot-stop')  as HTMLInputElement | null
   const days  = [...document.querySelectorAll<HTMLElement>('#day-picker .day-btn.selected')].map(b => +b.dataset.day!)
-  const start = (document.getElementById('slot-start') as HTMLInputElement | null)?.value ?? ''
-  const stop  = (document.getElementById('slot-stop')  as HTMLInputElement | null)?.value ?? ''
+  const start = startEl?.value ?? ''
+  const stop  = stopEl?.value ?? ''
   const maxEl = document.getElementById('slot-max') as HTMLInputElement | null
   const maxV  = maxEl ? (+maxEl.value || null) : null
-  if (!days.length) { alert(t('schedule.errNoDays')); return }
-  // Strict HH:MM validation — a keyboard-injection or unusual locale could
-  // produce something like "9.30" that scheduler.ts later defaults to 11:00.
-  const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/
-  if (!start || !stop || !HHMM.test(start) || !HHMM.test(stop)) {
-    alert(t('schedule.errTimes')); return
+
+  if (!days.length) {
+    setFieldError(dayPicker, t('schedule.errNoDays', 'Velg minst én dag.'))
+    return
   }
-  if (start === stop) { alert(t('schedule.errTimes')); return }
+  // Strict HH:MM — a keyboard-injection or an unusual locale can produce
+  // something like "9.30" that scheduler.ts would silently default to 11:00.
+  const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/
+  const badTime = t('schedule.errTimeFormat', 'Skriv klokkeslettet som TT:MM, f.eks. 11:00.')
+  let invalid = false
+  if (!start || !HHMM.test(start)) { setFieldError(startEl, badTime); invalid = true }
+  if (!stop  || !HHMM.test(stop))  { setFieldError(stopEl,  badTime); invalid = true }
+  if (invalid) return
+  if (start === stop) {
+    setFieldError(stopEl, t('schedule.errSameTime', 'Stopptidspunktet kan ikke være det samme som starten.'))
+    return
+  }
+  if (maxV !== null && (maxV < 1 || maxV > 480)) {
+    setFieldError(maxEl, t('schedule.errMaxRange', 'Maks varighet må være mellom 1 og 480 minutter.'))
+    return
+  }
+
   const slot: ScheduleSlot = { days, start, stop, ...(maxV ? { max: maxV } : {}) }
   if (!settings.slots) settings.slots = []
   const wasAdd = editingSlotIndex < 0
   if (editingSlotIndex >= 0) settings.slots[editingSlotIndex] = slot
   else settings.slots.push(slot)
-  const editor = document.getElementById('slot-editor')
   if (editor) editor.style.display = 'none'
   await window.api.saveSettings(settings)
   renderSlotsList()
-  updateNextRecordingPreview()
+  syncScheduleSettings()
   // Remind to enable auto-start so this weekly recording can actually fire.
   if (wasAdd) void remindAutostartIfNeeded()
 }

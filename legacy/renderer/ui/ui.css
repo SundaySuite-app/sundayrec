@@ -1,0 +1,813 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   ui.css — styling for the shared UI services in legacy/renderer/ui/.
+
+   Kept out of styles.css on purpose: styles.css is a 4300-line stylesheet for a
+   verbatim-ported app, and the new primitives should be readable as one piece
+   rather than scattered through it. Loaded after styles.css, so it inherits the
+   design tokens (--z-*, --sp-*, --fs-*) defined there.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Dialogs ─────────────────────────────────────────────────────────────── */
+
+.ui-dialog-root {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-critical);
+  display: none;
+  pointer-events: none;
+}
+.ui-dialog-root.is-open {
+  display: block;
+  pointer-events: auto;
+}
+
+.ui-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  animation: ui-fade-in 0.14s ease-out;
+}
+.ui-dialog-backdrop.is-leaving {
+  animation: ui-fade-out 0.13s ease-in forwards;
+}
+
+.ui-dialog {
+  width: 440px;
+  max-width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-6) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  animation: ui-dialog-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ui-dialog-backdrop.is-leaving .ui-dialog {
+  animation: ui-dialog-out 0.13s ease-in forwards;
+}
+
+/* A destructive dialog gets a red top edge. The colour is the warning; the
+   button labels stay plain language. */
+.ui-dialog.is-danger {
+  border-top: 2px solid var(--red);
+}
+
+.ui-dialog-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text);
+  margin-bottom: var(--sp-2);
+}
+.ui-dialog-message {
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  color: var(--text2);
+  /* Backend error text and file paths arrive here — never let one blow out
+     the dialog's width. */
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ui-dialog-input {
+  width: 100%;
+  margin-top: var(--sp-4);
+}
+textarea.ui-dialog-input {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+.ui-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+}
+
+/* ── Dialog: option list (screen / NDI pickers) ──────────────────────────── */
+
+.ui-dialog-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-4);
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.ui-dialog-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px var(--sp-3);
+  text-align: left;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--rsm);
+  color: var(--text);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.ui-dialog-option:hover {
+  background: var(--surface3);
+  border-color: var(--accent-border);
+}
+.ui-dialog-option-label {
+  font-weight: 600;
+}
+.ui-dialog-option-detail {
+  font-size: var(--fs-sm);
+  color: var(--text2);
+  overflow-wrap: anywhere;
+}
+.ui-dialog-list-empty {
+  padding: var(--sp-4);
+  text-align: center;
+  font-size: var(--fs-base);
+  color: var(--text3);
+}
+
+/* ── Toasts ──────────────────────────────────────────────────────────────── */
+
+.ui-toast-stack {
+  position: fixed;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  width: 320px;
+  max-width: calc(100vw - var(--sp-7));
+  pointer-events: none;
+}
+/* macOS: clear the traffic-light strip so a toast never lands under it. */
+body.platform-darwin .ui-toast-stack {
+  top: 38px;
+}
+
+.ui-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px var(--sp-3);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-left: 3px solid var(--text3);
+  border-radius: var(--rsm);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: ui-toast-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ui-toast.is-leaving {
+  animation: ui-toast-out 0.2s ease-in forwards;
+}
+
+.ui-toast-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  line-height: 1;
+}
+.ui-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+.ui-toast-text {
+  font-size: var(--fs-base);
+  line-height: 1.45;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.ui-toast-action {
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ui-toast-action:hover {
+  color: var(--accent);
+}
+.ui-toast-close {
+  flex-shrink: 0;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.ui-toast-close:hover {
+  color: var(--text);
+}
+
+.ui-toast-success {
+  border-left-color: var(--green);
+}
+.ui-toast-success .ui-toast-icon {
+  background: var(--green-bg);
+  color: var(--green);
+}
+.ui-toast-info {
+  border-left-color: var(--accent);
+}
+.ui-toast-info .ui-toast-icon {
+  background: var(--accent-bg);
+  color: var(--accent2);
+}
+.ui-toast-warn {
+  border-left-color: var(--orange);
+}
+.ui-toast-warn .ui-toast-icon {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+.ui-toast-error {
+  border-left-color: var(--red);
+}
+.ui-toast-error .ui-toast-icon {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* ── Banners ─────────────────────────────────────────────────────────────── */
+
+.ui-banner-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ui-banner-region:empty {
+  display: none;
+}
+
+.ui-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--sp-3);
+  padding: 11px var(--sp-3);
+  border-radius: var(--rsm);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  font-size: var(--fs-base);
+  color: var(--text);
+  animation: fadeIn 0.2s ease;
+}
+.ui-banner-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  line-height: 1;
+}
+.ui-banner-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.ui-banner-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--sp-2);
+}
+.ui-banner-action {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: var(--rxs);
+  color: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.ui-banner-action:hover {
+  opacity: 1;
+}
+.ui-banner-close {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  background: none;
+  border: none;
+  color: var(--text3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.ui-banner-close:hover {
+  color: var(--text);
+}
+
+.ui-banner-error {
+  background: var(--red-bg);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+.ui-banner-error .ui-banner-icon {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+.ui-banner-warn {
+  background: var(--orange-bg);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+.ui-banner-warn .ui-banner-icon {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--orange);
+}
+.ui-banner-success {
+  background: var(--green-bg);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+.ui-banner-success .ui-banner-icon {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--green);
+}
+.ui-banner-info {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent2);
+}
+.ui-banner-info .ui-banner-icon {
+  background: rgba(235, 184, 75, 0.2);
+  color: var(--accent2);
+}
+
+/* ── Managed modals ──────────────────────────────────────────────────────── */
+
+/* The eight `.modal-backdrop` roots are still shown with display:flex by the
+   manager; these rules add the entrance/exit the old style.display toggling
+   could never have. `.open` is added a frame after display, `.is-leaving` for
+   the duration of the exit. */
+/* The backdrop carries `backdrop-filter: blur(6px)` (styles.css). Fading the
+   element's opacity does NOT ramp that blur — the filtered backdrop is composited
+   at full strength from the first frame, so the page behind the modal snapped
+   out of focus while the dark wash was still arriving. These keyframes animate
+   the blur radius alongside the opacity so the two agree. */
+.modal-backdrop.open {
+  animation: ui-backdrop-in 0.15s ease-out;
+}
+.modal-backdrop.is-leaving {
+  animation: ui-backdrop-out 0.15s ease-in forwards;
+}
+.modal-backdrop.is-leaving .modal {
+  animation: ui-dialog-out 0.15s ease-in forwards;
+}
+@keyframes ui-backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+}
+@keyframes ui-backdrop-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+}
+
+/* ── Page transitions ────────────────────────────────────────────────────── */
+
+/* The outgoing page fades before it is removed, so navigation reads as a
+   dissolve instead of a jump cut. */
+.page.page-leaving {
+  animation: ui-fade-out 0.12s ease-in forwards;
+}
+
+/* `.card { animation: cardIn }` is charming once per page and noise every time
+   after. `.entered` is latched on after a page's first activation. */
+.page.entered .card {
+  animation: none;
+}
+
+/* ── Show / hide helpers used by motion.ts ───────────────────────────────── */
+
+.ui-collapsible {
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+.ui-collapsible.is-leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* `.ui-reveal` is `.ui-collapsible` with an entrance as well as an exit: the
+   element starts transparent and only `.is-open` brings it in. Put it on cards
+   that appear because STATE changed rather than because the user clicked —
+   a missed recording, a failed pre-start check — where popping into the layout
+   mid-glance reads as a glitch. Requires showEl/hideEl (ui/motion.ts): the
+   markup keeps its `style="display:none"`, and showEl clears it before adding
+   the class, so the transition has something to run from. */
+.ui-reveal {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+.ui-reveal.is-open {
+  opacity: 1;
+  transform: none;
+}
+.ui-reveal.is-leaving {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-reveal,
+  .ui-reveal.is-leaving {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ui-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes ui-dialog-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+}
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes ui-toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* ── Auto-apply settings: the «Lagret ✓» receipt ─────────────────────────── */
+
+/* Every settings control now writes on change. The receipt has to be small,
+   local and short-lived: a toast per toggle would be a notification storm, and
+   silence (the old audio/video model) left the user pressing Lagre buttons that
+   did not exist. The visual language is the channel grid's own «Lagret ✓»
+   (.ch-grid-saved), promoted to a shared class. */
+.setting-saved-chip {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--green, #22c55e);
+  opacity: 0;
+  transform: translateY(-1px);
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s ease-out;
+  pointer-events: none;
+}
+.setting-saved-chip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Settings: five tabs, with sections inside ───────────────────────────── */
+
+/* «Deling» holds what used to be two tabs (Publisering, Varsler). A section
+   head is the seam: it says which of the two you are looking at without
+   pretending to be a page of its own. */
+.settings-section-head {
+  margin: 4px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border, #2a3448);
+}
+.settings-section-head:not(:first-child) {
+  margin-top: 32px;
+}
+.settings-section-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text, #e8eefc);
+}
+.settings-section-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.settings-section {
+  display: block;
+}
+
+/* Inner-tab crossfade — the same 120 ms the page transition uses, so moving
+   between tabs reads as one surface changing rather than a jump cut. */
+.inner-page.tab-leaving {
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+/* Avansert disclosure (Sunday-suite at the bottom of System). */
+.adv-disclosure {
+  margin-top: 8px;
+  border-top: 1px solid var(--border, #2a3448);
+  padding-top: 8px;
+}
+.adv-disclosure-summary {
+  cursor: pointer;
+  padding: 12px 2px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text2, #c8d2e6);
+  list-style: none;
+}
+.adv-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+.adv-disclosure-summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.2em;
+  color: var(--text3, #8899bb);
+  transition: transform 0.18s ease-out;
+}
+.adv-disclosure[open] > .adv-disclosure-summary::before {
+  transform: rotate(90deg);
+}
+.adv-disclosure-summary:hover {
+  color: var(--accent, #ebb84b);
+}
+
+/* ── Onboarding: back navigation + the audio-test gate ───────────────────── */
+
+/* «‹ Tilbake» is quieter than «Hopp over» — going back is a correction, not a
+   decision, and it should not compete with the step's own primary action. */
+.ob-back-btn {
+  opacity: 0.75;
+  font-size: 12px;
+}
+.ob-back-btn:hover {
+  opacity: 1;
+}
+/* Why the «Lyden fungerer →» button is not clickable yet. */
+.ob-hint {
+  margin-top: -4px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text3, #8899bb);
+}
+.ob-actions .btn-primary[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Wake summary (top of Tidsplan) ──────────────────────────────────────── */
+
+.wake-summary-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.wake-summary-text {
+  flex: 1;
+  min-width: 0;
+}
+.wake-summary-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text, #e8eefc);
+}
+.wake-summary-sub,
+.wake-summary-test {
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.wake-summary-card .wake-status-dot {
+  margin-top: 5px;
+  flex: none;
+}
+
+/* ── Explicit-save cards ─────────────────────────────────────────────────── */
+
+/* The three surfaces that are NOT auto-apply: the schedule slot editor, the
+   SMTP server fields and the integration URL/key pairs. They look different on
+   purpose — a bordered card with its own Lagre/Avbryt is the signal that
+   nothing here has been written yet. */
+.explicit-save-card {
+  border: 1px solid var(--border, #2a3448);
+  border-radius: 10px;
+  padding: 14px;
+}
+.explicit-save-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.explicit-save-hint {
+  font-size: 12px;
+  color: var(--warning, #d08700);
+}
+.card.has-unsaved {
+  border-color: var(--warning, #d08700);
+}
+
+/* ── Field-level validation ──────────────────────────────────────────────── */
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red, #f87171);
+}
+.form-input.has-field-error,
+input.has-field-error,
+select.has-field-error,
+textarea.has-field-error {
+  border-color: var(--red, #f87171);
+}
+.form-input.has-field-error:focus-visible {
+  outline-color: var(--red, #f87171);
+}
+
+/* ── Honest feature gates ────────────────────────────────────────────────── */
+
+/* A section whose backend does not exist in this build says so once, at the
+   top, and turns its controls off — instead of offering buttons that fail. */
+.feature-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #2a3448);
+  border-radius: 8px;
+  background: var(--surface2, rgba(255, 255, 255, 0.04));
+}
+.feature-gate-chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text2, #c8d2e6);
+  background: rgba(255, 255, 255, 0.08);
+}
+.feature-gate.is-unconfigured .feature-gate-chip {
+  color: #0f1420;
+  background: var(--warning, #d08700);
+}
+.feature-gate.is-unavailable .feature-gate-chip {
+  color: var(--text2, #c8d2e6);
+  background: rgba(255, 255, 255, 0.1);
+}
+.feature-gate-text {
+  flex: 1 1 240px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.feature-gate-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text3, #8899bb);
+  opacity: 0.85;
+}
+/* `inert` is what actually stops the clicks; this is the visual half. */
+.gate-off {
+  opacity: 0.45;
+  filter: saturate(0.6);
+}
+
+/* The one place a disabled control still has to explain itself: the live
+   START button, which used to grey out with no reason given anywhere. */
+.blocked-reason {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text3, #8899bb);
+}
+.blocked-reason a {
+  color: var(--accent, #ebb84b);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+/* styles.css clamps durations globally, but these surfaces are created and
+   destroyed by JS on a timer — being explicit here keeps the two in step. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-dialog-backdrop,
+  .ui-dialog,
+  .ui-toast,
+  .ui-banner,
+  .modal-backdrop.open,
+  .page.page-leaving {
+    animation: none;
+  }
+  .recording-overlay {
+    transition: none;
+  }
+  .setting-saved-chip,
+  .inner-page.tab-leaving,
+  .adv-disclosure-summary::before {
+    transition: none;
+  }
+}

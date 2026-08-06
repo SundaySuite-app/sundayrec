@@ -2,16 +2,17 @@
   "nav": {
     "home": "Home",
     "schedule": "Schedule",
-    "audio": "Audio Source",
-    "files": "Files",
+    "audio": "Audio",
+    "files": "Recording",
     "editor": "Edit",
     "live": "Live",
-    "search": "Search & history",
+    "search": "History",
     "notifications": "Notifications",
     "publish": "Publishing",
     "settings": "Settings",
     "system": "System",
-    "video": "Video"
+    "video": "Video",
+    "sharing": "Sharing"
   },
   "status": {
     "ready": "Everything is ready",
@@ -19,7 +20,12 @@
     "recording": "Recording now",
     "ok": "READY TO RECORD",
     "warn": "ACTION NEEDED",
-    "noSchedule": "No recording scheduled"
+    "noSchedule": "No recording scheduled",
+    "preflightErrors": "{n} errors to fix before the recording",
+    "preflightWarns": "{n} things to check before the recording",
+    "preflightAction": "Open settings",
+    "dismiss": "Hide",
+    "preflightMore": "more — see Settings → Audio"
   },
   "home": {
     "readyTitle": "All set",
@@ -29,6 +35,7 @@
     "untilStart": "until start",
     "recentRecordings": "Recent recordings",
     "audioLevel": "Audio level — live",
+    "peakLabel": "Peak",
     "storage": "Storage",
     "storageFree": "free",
     "startRecording": "Start recording",
@@ -47,12 +54,14 @@
     "wakesBefore": "The computer wakes automatically at {time}",
     "testRecording": "🎙️ Test recording (30 s)",
     "checkSystem": "✅ Check system now",
-    "testProgress": "Recording test… {n}/{total} s",
+    "testProgress": "Recording test… approx. {n}/{total} s",
     "testSignalOk": "✅ Audio OK",
     "testSignalLow": "⚠️ Weak signal — check gain on the mixer",
     "testSignalSilent": "⚠️ Silence — is the mixer off?",
     "testUnknownError": "Unknown error",
     "videoPreviewPrompt": "Choose a camera and click Refresh",
+    "cameraSearching": "Looking for cameras…",
+    "cameraSelect": "Choose camera…",
     "videoOn": "Video on",
     "videoOff": "Video off",
     "cameraNoResponse": "Camera not responding — try refreshing",
@@ -60,13 +69,6 @@
     "signalLoud": "Loud",
     "signalGood": "Good",
     "signalWeak": "Weak",
-    "banner": {
-      "errors": "errors detected",
-      "warns": "warnings",
-      "more": "more — see Settings → Audio → Run system check",
-      "clickToFix": "click to fix",
-      "clickForDetails": "click for details"
-    },
     "cloudLabel": "CLOUD BACKUP",
     "thumbLabel": "EPISODE ARTWORK",
     "whisperLabel": "TRANSCRIPTION",
@@ -91,7 +93,13 @@
     "videoNoCamera": "No camera selected",
     "cloudFailed": "failed",
     "cloudQueued": "queued",
-    "cloudAllSynced": "All synced"
+    "cloudAllSynced": "All synced",
+    "cloudActive": "Active",
+    "nextShort": "next",
+    "wakesLead": "({min} min before)",
+    "openInEditor": "Open in editor",
+    "thumbComing": "Episode artwork is coming — not used yet",
+    "prerollActive": "Pre-roll buffer active ({n} s)"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -121,7 +129,6 @@
     "error": "Error",
     "scheduled": "Scheduled",
     "empty": "No recordings yet",
-    "confirmClear": "Delete the entire history?",
     "pruneBtn": "Clean up",
     "clearBtn": "Delete all",
     "pruneNone": "Nothing to clean",
@@ -132,7 +139,6 @@
     "addNote": "Add note",
     "editNote": "Edit note",
     "notePlaceholder": "Write a note…",
-    "confirmDeleteErrors": "Delete all error entries?",
     "deleteEntry": "Delete entry",
     "ok": "Complete",
     "noteCancel": "Cancel",
@@ -140,7 +146,21 @@
     "noteSave": "Save note",
     "noteTitle": "Note",
     "revealFile": "Show in Finder / Explorer",
-    "revealVideo": "Show video file in Finder"
+    "revealVideo": "Show video file in Finder",
+    "actions": "Actions",
+    "filterGroup": "Filter recordings",
+    "filterAll": "All",
+    "filterAudio": "Audio",
+    "filterVideo": "Video",
+    "filterTranscript": "With transcript",
+    "thisRecording": "this recording",
+    "deleteFailed": "Could not delete",
+    "clearNone": "The list is empty",
+    "errorsNone": "No failed entries",
+    "confirmClearN": "Delete all {n} entries?",
+    "confirmDeleteErrorsOne": "Delete 1 failed entry?",
+    "confirmDeleteErrorsN": "Delete {n} failed entries?",
+    "emptyFiltered": "No recordings match this filter"
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
@@ -181,7 +201,8 @@
     "ageDayOne": "1 day ago",
     "ageDays": "{n} days ago",
     "ageOldest": "Over 14 days ago",
-    "confident": "confident"
+    "confident": "confident",
+    "errNotFound": "This episode is no longer in the review queue — it may already have been published or discarded."
   },
   "schedule": {
     "title": "Weekly schedule",
@@ -201,7 +222,7 @@
       "Sun"
     ],
     "wakeTitle": "Wake the computer from sleep",
-    "wakeDesc": "Starts automatically a few minutes before the recording begins",
+    "wakeDesc": "The computer wakes automatically 10 minutes before the recording starts",
     "wakeBtn": "Schedule wake-up",
     "wakeStatusOk": "{n} wake-up scheduled",
     "wakeStatusNone": "No upcoming recordings to schedule",
@@ -226,7 +247,6 @@
     "cancel": "Cancel",
     "noSlots": "No times added yet.",
     "errNoDays": "Pick at least one day.",
-    "errTimes": "Start and stop time can't be the same.",
     "durationPrefix": "Duration",
     "crossesMidnight": "Crosses midnight",
     "checkTimes": "check the times",
@@ -236,7 +256,7 @@
     "dayLabel": "DAY",
     "atTime": "at",
     "nextPreviewPrefix": "Next recording",
-    "autostartReminder": "The recording has been added.\n\nBut \"Start automatically with Windows/Mac\" is OFF — scheduled recordings won't start if the machine was turned off or the app is closed.\n\nTurn on auto-start now so the program is always ready?",
+    "autostartReminder": "The recording has been added. But SundayRec does not start automatically with the machine, so a scheduled recording will not happen if the machine has been off or the app is closed. We can turn auto-start on now — it takes no space on screen, the app runs quietly in the background.",
     "noSlotsTitle": "No weekly recordings set up yet",
     "noSlotsHint": "Click “Add a time” below to start a recurring weekly recording — e.g. Sunday at 11.",
     "sleepFixNoAdmin": "Needs administrator rights — run SundayRec as administrator",
@@ -246,7 +266,7 @@
     "manualMaxDesc": "Stops automatically after the set time — keeps files from getting huge if you forget to stop",
     "splitOff": "Off",
     "preRollTitle": "Pre-roll buffer",
-    "preRollDesc": "Captures the last N seconds before you pressed record — catches the start even if you're a touch late",
+    "preRollDesc": "Starts the recording N seconds in the past, so the opening of the talk is there even if you press a little late. Requires the buffer to actually be running — it starts automatically once you enable it below.",
     "sleepChecking": "Checking sleep settings…",
     "sleepStatusOk": "Sleep settings look good — wake-up will work",
     "sleepStatusMacWarn": "Autopoweroff is on — your Mac may shut down during sleep",
@@ -258,7 +278,7 @@
     "sleepFixOk": "Fixed — sleep settings are now optimal",
     "sleepFixFail": "Automatic fix failed",
     "sleepFixCancelled": "Cancelled — approve the permission prompt to fix",
-    "sleepAlwaysOffNote": "Want the machine to always start recordings? Leave it in sleep (don't shut it down) and turn on “Start with Windows/Mac” under General.",
+    "sleepAlwaysOffNote": "Want the machine to always start recordings? Leave it in sleep (don’t shut it down) and turn on “Start automatically with Windows/Mac” under System.",
     "silenceThresholdLabel": "THRESHOLD (dBFS)",
     "silenceTimeoutLabel": "DURATION BEFORE STOP",
     "platformMacArm": "Apple Silicon Mac (M-series) — can wake from sleep, not from shutdown",
@@ -266,7 +286,12 @@
     "platformWin": "Windows — can wake from sleep; cold-start from full shutdown requires BIOS configuration",
     "platformLinux": "Linux — automatic wake is not supported",
     "platformOther": "Platform not supported for automatic wake",
-    "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present."
+    "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present.",
+    "errTimeFormat": "Write the time as HH:MM, e.g. 11:00.",
+    "errSameTime": "The stop time cannot be the same as the start.",
+    "errMaxRange": "Maximum duration must be between 1 and 480 minutes.",
+    "prerollEnabledTitle": "Enable pre-roll buffer (experimental)",
+    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. That can disturb the live level meters on Home and Live, which use the same microphone. Turn it on if you need the seconds before the button press — Home shows when the buffer is running."
   },
   "wake": {
     "capability": {
@@ -298,11 +323,24 @@
     "test": {
       "btn": "Test wake now (60 s)",
       "cancel": "Cancel",
-      "confirm": "The computer will sleep for up to 60 seconds and then try to wake itself.\n\nClose any unsaved work first. Continue?",
+      "confirm": "The computer will sleep for up to 60 seconds and then try to wake itself. Close any unsaved work first.",
       "success": "✓ Woke up",
       "failure": "✕ Test failed",
       "cancelled": "Cancelled.",
       "delay": "delay"
+    },
+    "summary": {
+      "checking": "Checking wake-up…",
+      "details": "Details",
+      "offTitle": "Automatic wake-up is off",
+      "offSub": "Scheduled recordings only start if the machine is on and the app is running. Turn wake-up on under Details if the machine is allowed to sleep.",
+      "batteryTitle": "The machine is on battery",
+      "standbyTitle": "Deep sleep is enabled",
+      "mismatchTitle": "The operating system is missing some wake-ups",
+      "okTitle": "The machine wakes up automatically",
+      "okNext": "Next wake-up {when} — {n} minutes before the recording starts.",
+      "okNoNext": "No upcoming recording to wake up for right now.",
+      "neverTested": "Never tested. Run «Test wake now» under Details before the first service."
     }
   },
   "calendar": {
@@ -341,7 +379,7 @@
     "today": "Today",
     "hintShort": "Click a day to add a recording",
     "updateRecording": "Update recording",
-    "confirmDelete": "Delete recording: {name} ({date})?",
+    "confirmDelete": "Delete this planned recording?",
     "errPastDate": "The date is already in the past — the recording won't start"
   },
   "audio": {
@@ -396,9 +434,21 @@
     "channelNum": "Channel {n}",
     "diagnoseCopied": "✓ Copied",
     "diagnoseCopy": "📋 Copy full report",
-    "diagnoseFull": "Full report",
+    "diagnoseFull": "Full system report",
     "diagnoseRunning": "Analyzing…",
-    "diagnoseSaved": "Saved to"
+    "diagnoseSaved": "Saved to",
+    "guardDevice": "Change audio device",
+    "guardEngine": "Switch recording engine",
+    "diagDevicesFound": "Audio devices found",
+    "diagStoredDevice": "Selected device",
+    "diagStoredMissing": "not found",
+    "diagNoStored": "System default",
+    "diagMicPermission": "Microphone access",
+    "diagFfmpeg": "Audio engine (ffmpeg)",
+    "diagFfmpegMissing": "Not found",
+    "diagFfmpegOk": "Available",
+    "diagLoopback": "WASAPI loopback",
+    "diagDeviceListTitle": "Every audio device the recorder can see"
   },
   "files": {
     "saveFolder": "Save folder",
@@ -418,9 +468,7 @@
     "autoDeleteDesc": "Frees up disk space automatically by removing old recordings",
     "trimSilence": "Trim silence",
     "trimSilenceDesc": "Automatically trims silent seconds at the start and end of the recording",
-    "save": "Save",
-    "cancel": "Cancel",
-    "confirmAutoDeleteShort": "Recordings older than {n} days will be deleted automatically and can't be recovered. Are you sure?",
+    "confirmAutoDeleteShort": "Recordings older than {n} days are deleted automatically and cannot be recovered.",
     "behaviourTitle": "Recording behaviour",
     "behaviourDesc": "Fine-tune how the recording starts, is protected, and split.",
     "whileRecording": "While a recording is running",
@@ -436,7 +484,7 @@
   "general": {
     "language": "Language",
     "appLanguage": "APP LANGUAGE",
-    "langHint": "The change takes effect after you click Save.",
+    "langHint": "The change takes effect immediately.",
     "profile": "Church profile",
     "church": "CONGREGATION / CHURCH",
     "responsible": "PERSON IN CHARGE",
@@ -460,7 +508,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "currentVersion": "Current version:",
-    "saved": "✓ Saved",
+    "saved": "Saved",
     "testEmail": "Test email",
     "askOpenEditor": "Ask about editing after recording",
     "askOpenEditorDesc": "Show a prompt to open the file in the Editor once a recording finishes",
@@ -474,13 +522,17 @@
     "helpDesc": "Reopen the setup guide — useful when a new person takes over, or if you just want to check that everything is set up correctly.",
     "helpTitle": "Help and training",
     "langCardDesc": "Choose your preferred language. SundayRec supports seven languages — all menus and notifications adapt immediately.",
-    "notifyUnavailable": "Notifications are not available in this version yet.",
     "openOnboarding": "Open setup guide",
     "profileDesc": "Used in file names, notification emails and the podcast RSS. These fields are optional but recommended.",
-    "responsibleHint": "The person who gets an email if a recording fails (requires email notifications in the Notifications tab).",
+    "responsibleHint": "The person who gets an e-mail if a recording fails (requires e-mail alerts under Sharing → Notifications).",
     "webhookUrl": "WEBHOOK URL",
     "cspError": "Configuration error: camera preview will not work (CSP blocks blob: URLs). Restart the app — if the problem persists, contact support.",
-    "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support."
+    "initError": "Startup error: parts of the app may be missing or not working. Restart the app — if the problem persists, contact support.",
+    "diagnoseTitle": "Audio device diagnostics",
+    "savedChip": "Saved ✓",
+    "saveFailed": "Could not save the setting",
+    "suiteAdvanced": "Advanced: Sunday suite integrations",
+    "showInFolder": "Show in folder"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
@@ -488,7 +540,7 @@
   "editor": {
     "title": "Edit audio file",
     "emptyTitle": "No file open",
-    "emptyDesc": "Pick an audio file to start editing. You can trim the start and end, or cut sections out of the middle.",
+    "emptyDesc": "Pick an audio or video file to start editing. You can trim the start and end, or cut sections out of the middle.",
     "openFile": "Open file…",
     "loading": "Loading audio file…",
     "dragHint": "Click and drag to mark a cut",
@@ -529,7 +581,7 @@
     "exportPhaseMeasuring": "Measuring loudness…",
     "exportPhaseEncoding": "Exporting…",
     "remainingLabel": "Result",
-    "dropFile": "Drop audio file here",
+    "dropFile": "Drop an audio or video file here",
     "openOther": "Open another file",
     "closeFile": "Close file",
     "emptyTitleDrop": "Drop a file here — or click to open",
@@ -626,7 +678,10 @@
     "useMixer": "🎛 Advanced audio mixer (overrides voice processing)",
     "videoCodec": "Video codec",
     "videoFormat": "Video format",
-    "vocalChain": "Voice processing"
+    "vocalChain": "Voice processing",
+    "exportDoneToast": "Exported{name}",
+    "gotoReviewOne": "Review queue (1 episode) →",
+    "gotoReviewN": "Review queue ({n} episodes) →"
   },
   "master": {
     "title": "Mastering (prepare for publishing)",
@@ -643,7 +698,8 @@
     "lufsBefore": "Original",
     "lufsAfter": "After",
     "openFolder": "Open folder",
-    "listen": "Listen"
+    "listen": "Listen",
+    "useExportHint": "— to export with mastering, use the Export button"
   },
   "manual": {
     "title": "Start manual recording",
@@ -658,6 +714,9 @@
     "filesize": "file size",
     "diskLeft": "disk space left",
     "stop": "Press to stop the recording",
+    "finalizing": "Finishing recording …",
+    "finalizingHint": "One moment — the audio is being written to file.",
+    "finalizeTimeout": "The recording is taking unusually long to finish. Check that the file was saved.",
     "confirmTitle": "Stop recording?",
     "confirmBody": "The recording will be saved up to this point.",
     "confirmStop": "Yes, stop",
@@ -680,6 +739,8 @@
     "errorFfmpegMissing": "Internal error: the recording binary is missing — reinstall the app",
     "errorStuck": "Recording stopped — no audio from the device for 60 seconds",
     "qualityAlarm": "WARNING: The recording is missing audio — the file holds {m} of {e} seconds. Check the recording before trusting it.",
+    "qualityReasons": "Cause: {r}",
+    "qualityAction": "Show recording",
     "errorInvalidOpts": "Invalid recording settings — restart and try again",
     "errorNoSaveFolder": "No save folder selected — go to Settings → Storage",
     "errorUnknown": "Something went wrong during recording — check that the audio device and save folder are ready",
@@ -688,7 +749,8 @@
     "silenceWarn": "Silence detected — the recording will stop automatically if the silence continues.",
     "videoNone": "No video (audio only)",
     "videoListError": "Error loading cameras",
-    "cameraFailedAudioOnly": "Camera failed — recording audio only"
+    "cameraFailedAudioOnly": "Camera failed — recording audio only",
+    "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to."
   },
   "video": {
     "minBitrateWarn": "Minimum bitrate is 500 kbps",
@@ -733,7 +795,8 @@
     "probeFailed": "Could not read the camera’s resolutions — limited to 1080p to avoid upscaling. 4K requires a camera that delivers true 4K.",
     "resNative": "the camera’s max",
     "resNotSupported": "not supported",
-    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max."
+    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max.",
+    "guardDevice": "Change camera"
   },
   "onboarding": {
     "welcomeTitle": "Welcome to SundayRec",
@@ -781,10 +844,15 @@
     "tipScheduleText": "Add weekly recordings and special days (Christmas, Easter)",
     "tipAudioTitle": "Settings → Audio",
     "tipAudioText": "Switch mixer, adjust volume and run test recordings",
-    "tipPublishTitle": "Settings → Publishing",
+    "tipPublishTitle": "Settings → Sharing",
     "tipPublishOptional": "(optional)",
     "tipPublishText": "Connect Google Drive / Dropbox / OneDrive for automatic cloud backup",
-    "doneOpen": "Open SundayRec →"
+    "doneOpen": "Open SundayRec →",
+    "back": "‹ Back",
+    "testWaitHint": "The button unlocks as soon as the meter picks up sound.",
+    "testHeardHint": "Sound detected — you can continue.",
+    "testBlockedHint": "The audio test could not start. Continue and test the sound from Settings → Audio later.",
+    "testSkipAfterError": "Continue without the audio test →"
   },
   "time": {
     "yr": "yr",
@@ -818,10 +886,24 @@
     "emailGmailDesc": "Send via your Gmail account — no SMTP setup required.",
     "emailGmailConnect": "Connect",
     "emailGmailDisconnect": "Disconnect",
-    "emailGmailConfirmDisconnect": "Disconnect Google account? Email notifications will fall back to SMTP.",
+    "emailGmailConfirmDisconnect": "Email notifications will fall back to SMTP.",
     "emailGmailSendsAs": "Sending via",
     "emailGmailReauth": "⚠ Re-login required",
-    "emailAdvanced": "Advanced: use SMTP instead"
+    "emailAdvanced": "Advanced: use SMTP instead",
+    "errEmail": "Enter a valid e-mail address, e.g. name@church.org",
+    "errWebhookUrl": "The webhook URL must start with https://",
+    "errSmtpHost": "Enter a server name, e.g. smtp.gmail.com",
+    "errSmtpUser": "The username is the e-mail address you send from",
+    "gateNoFeature": "E-mail sending is not built into this version. Alerts about failed recordings have to come from the Home page or a webhook for now.",
+    "gateNoTransport": "No sending method is set up yet. Sign in with Google, or fill in the SMTP fields under Advanced.",
+    "gateTestNoTransport": "Set up a sending method first.",
+    "gateTestNoRecipient": "Enter a recipient address first.",
+    "gateWebhookNoUrl": "Paste a webhook URL first.",
+    "gmailUnavailable": "Google sign-in is not available in this version.",
+    "testEmailSent": "Test e-mail sent to {to}",
+    "testEmailFailed": "The test e-mail did not go through: {err}",
+    "testWebhookOk": "The webhook answered — alerts will get through.",
+    "testWebhookFailed": "The webhook did not answer. Check the address."
   },
   "prep": {
     "sectionTitle": "Auto-prep and review",
@@ -854,7 +936,8 @@
     "jumpToClip": "Click to jump to first clip",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "fitAll": "Show entire file"
+    "fitAll": "Show entire file",
+    "kbdHints": "Show keyboard shortcuts"
   },
   "publish": {
     "descPlaceholder": "E.g. Services from Example Church, every Sunday at 11",
@@ -902,7 +985,6 @@
     "streamNoneYet": "No destinations yet. Add one to start streaming.",
     "account": "Account",
     "autoUpload": "Upload automatically after recording",
-    "cancel": "Cancel",
     "connect": "Connect",
     "desc": "Upload recordings automatically to Google Drive — as extra backup and for easy sharing.",
     "disconnect": "Disconnect",
@@ -911,12 +993,20 @@
     "introDesc": "Here you set up automatic cloud backup and — if you wish — a podcast that makes the services available on Spotify and Apple Podcasts. Everything is optional.",
     "lastUpload": "Last",
     "pickFolder": "Choose folder…",
-    "save": "Save",
-    "title": "Cloud backup"
+    "title": "Cloud backup",
+    "streamSaveDestinations": "Save destinations",
+    "streamUnsaved": "Not saved yet",
+    "gateCloudExplain": "Cloud backup is not configured in this build — it lacks the Google key needed to connect an account.",
+    "gateCloudHint": "Ask for a build with cloud backup enabled if the church needs it."
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
-    "sundayEditMissing": "SundayEdit not found"
+    "sundayEditMissing": "SundayEdit not found",
+    "errUrl": "This is not a valid address (e.g. https://api.sundaysong.com)",
+    "errUrlScheme": "The address must start with https://",
+    "errChurchId": "The church ID is a UUID from SundaySong or SundayPlan",
+    "errKeyEmpty": "Paste the key first",
+    "keySaved": "✓ API key saved (encrypted)"
   },
   "live": {
     "title": "Live broadcast",
@@ -933,7 +1023,7 @@
     "uptime": "Uptime",
     "statsTitle": "Statistics",
     "configDestinations": "→ Configure destinations",
-    "noDestinations": "No destinations configured. Go to Settings → Publishing.",
+    "noDestinations": "No destinations configured. Go to Settings → Sharing.",
     "connectionFailed": "Connection failed",
     "previewWaiting": "Preview appears when the stream starts",
     "errNoActive": "Enable at least one destination before starting.",
@@ -941,7 +1031,12 @@
     "alsoRecordHint": "Local recording lands in Recent recordings when the stream stops — higher bitrate than the livestream, ready for editing or podcast.",
     "overlays": "Overlays — graphics and presentation",
     "overlaysDesc": "Add the church logo, lyrics from EasyWorship (via screen capture on the same machine), or other graphics on top of what is being streamed. Overlays only affect the livestream — recordings stay clean.",
-    "addOverlay": "+ Add overlay"
+    "addOverlay": "+ Add overlay",
+    "gateStats": "Statistics are not available yet — the live stream does not report bitrate, frame rate or dropped frames back to the app in this version.",
+    "blockedNoDestinations": "No destination is set up yet — add YouTube, Facebook or your own RTMP server.",
+    "blockedNoEnabled": "No destination is switched on. Enable at least one in the list above.",
+    "blockedNoKey": "The destination has no stream key. Without it YouTube/Facebook will not let the broadcast in.",
+    "blockedGoSettings": "Open Sharing → Publishing"
   },
   "transcript": {
     "title": "Transcription",
@@ -976,7 +1071,11 @@
     "chaptersAllPresent": "All detected chapters already exist",
     "chaptersNoneFound": "No topic chapters found in the talk",
     "detectChapters": "✦ Generate chapters from topics",
-    "detecting": "Analyzing topics…"
+    "detecting": "Analyzing topics…",
+    "errUnknownModel": "Unknown model",
+    "exportTxt": "↧ Text",
+    "exportDone": "Transcript saved",
+    "exportFailed": "Could not save the transcript"
   },
   "companion": {
     "title": "Sermon helper",
@@ -1004,10 +1103,12 @@
     "settingsTitle": "Sermon helper — AI summary (optional)",
     "settingsDesc": "Chapters and quotes are always produced locally on this device. For a nicer summary and title you can paste an Anthropic API key — it's stored only in the OS keychain, never in settings. Without a key, a local summary is used.",
     "keySave": "Save",
-    "keyClear": "Remove"
+    "keyClear": "Remove",
+    "keyStored": "✓ API key saved (keychain)",
+    "keyNone": "No key — the local summary is used"
   },
   "search": {
-    "title": "Search & history",
+    "title": "History",
     "subtitle": "Search sermon text or filename, and browse your full recording history. Click a text hit to open the recording at that point.",
     "placeholder": "Search sermon text or filename…",
     "reindex": "↻ Refresh index",
@@ -1050,5 +1151,94 @@
     "info": {
       "size": "{w}×{h} px · {size}"
     }
+  },
+  "dialog": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "confirm": "Continue",
+    "delete": "Delete",
+    "noOptions": "No options found.",
+    "closeAria": "Close",
+    "notNow": "Not now",
+    "disconnect": "Disconnect",
+    "autostartTitle": "Should the recording start by itself?",
+    "autostartConfirm": "Turn on auto-start",
+    "gmailDisconnectTitle": "Disconnect the Google account?",
+    "clearHistoryBody": "The recording files themselves stay — only the list of them is deleted. This cannot be undone.",
+    "deleteErrorsBody": "{n} failed entries are removed from the list. This cannot be undone.",
+    "autoDeleteTitle": "Delete recordings automatically?",
+    "autoDeleteConfirm": "Yes, delete automatically",
+    "wakeTestTitle": "Test waking from sleep?",
+    "wakeTestConfirm": "Start the test",
+    "streamKeyUnsafeTitle": "The stream key was not saved",
+    "streamKeyUnsafeBody": "The system keyring (Mac Keychain / Windows Credential Manager) is unavailable. The key is therefore not stored, so it never ends up as plain text on disk. Sign in as a user with a keyring and try again.",
+    "overlayDeleteTitle": "Delete this overlay?",
+    "noScreensTitle": "No screens found",
+    "noScreensBody": "Check that the app has screen-recording permission in your system settings.",
+    "pickScreenTitle": "Choose a screen",
+    "pickNdiTitle": "Choose an NDI source",
+    "ndiUnavailableTitle": "NDI is not available",
+    "ndiNoSourcesTitle": "No NDI sources found",
+    "ndiNoSourcesBody": "Check that the source is sending NDI:\n  • EasyWorship 7.3+: Edit → Options → Live → Alternate Output → NDI Stream\n  • ProPresenter 7: Screens → New NDI screen → Alpha Key (optional)\n  • OBS: NDI Output plugin → Source → Enable\n  • Keynote/PowerPoint: run NDI Screen Capture HX and point it at the window\n  • Both machines must be on the same private network",
+    "deleteTranscriptBody": "The recording itself is kept. You can transcribe it again later.",
+    "discardEditsBody": "The cuts you have made will be lost. The recording file itself is untouched.",
+    "discardEdits": "Discard the changes",
+    "discardEpisodeTitle": "Discard this episode?",
+    "discardEpisodeBody": "The recording is kept, but it will not be published.",
+    "discardEpisode": "Discard",
+    "publishFailedTitle": "Could not publish",
+    "deleteEntryTitle": "Remove “{name}” from the list?",
+    "deleteEntryBody": "The recording file itself stays on disk — only the list entry is removed. This cannot be undone.",
+    "deleteEntryBodyPair": "Both the audio and the video file stay on disk — only the two list entries are removed. This cannot be undone.",
+    "discardFailedTitle": "Could not discard the episode"
+  },
+  "toast": {
+    "dismiss": "Close"
+  },
+  "missed": {
+    "bannerOne": "A scheduled recording never ran",
+    "bannerMany": "{n} scheduled recordings never ran",
+    "hint": "Check that the machine was on, that SundayRec was running and that “Wake the computer automatically” is enabled.",
+    "dismiss": "Got it",
+    "openSchedule": "Open schedule",
+    "bannerAction": "Show details",
+    "more": "more"
+  },
+  "guard": {
+    "title": "{what} now?",
+    "duringRecording": "A recording is running right now. The change can interrupt or ruin what is being recorded.",
+    "beforeRecording": "The next scheduled recording starts in {n} minutes. The change will affect that recording.",
+    "confirm": "Yes, change anyway",
+    "cancel": "Not now"
+  },
+  "sharing": {
+    "publishDesc": "Cloud backup, podcast and live streaming — where the recording goes after the service.",
+    "notifyDesc": "Who is told when a recording starts, stops or fails."
+  },
+  "gate": {
+    "chipComing": "Coming",
+    "chipUnconfigured": "Not configured",
+    "chipUnavailable": "Not available",
+    "comingExplanation": "{what} is not built yet. The panel is here because the feature is planned — until then the buttons do nothing, so they are switched off."
+  },
+  "health": {
+    "micDenied": "Microphone access is denied. Open System Settings → Privacy & Security → Microphone and enable SundayRec.",
+    "micRestricted": "Microphone access is blocked by a system administrator or parental controls. Recording will not work until the block is lifted.",
+    "cameraDenied": "Camera access is denied. Open System Settings → Privacy & Security → Camera and enable SundayRec.",
+    "cameraRestricted": "Camera access is blocked by a system administrator or parental controls. Video recording will not work until the block is lifted.",
+    "ffmpegMissing": "The bundled audio engine (ffmpeg) was not found. Video, export and editing will not work — reinstall the app.",
+    "granted": "Granted",
+    "denied": "Denied — open System Settings → Privacy & Security → Microphone",
+    "restricted": "Blocked by a system administrator",
+    "notAsked": "Not asked yet — the first recording triggers the prompt",
+    "cannotTell": "Cannot be determined on this platform"
+  },
+  "deeplink": {
+    "imported": "Opened “{name}” in the editor.",
+    "theRecording": "the recording",
+    "captionsOk": "Captions received for “{name}”.",
+    "openEditor": "Open in editor",
+    "captionsNoRecording": "Captions received, but without saying which recording they belong to. Open the recording in the editor and import the text there.",
+    "captionsFailed": "Captions could not be saved: {err}"
   }
 }

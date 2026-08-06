@@ -14,6 +14,8 @@
 
 import { settings, patchSettings, saveSettingsDebounced } from '../state'
 import { escHtml } from '../helpers'
+import { t } from '../i18n'
+import { alertDialog, confirmDialog, selectDialog } from '../ui/dialog'
 import type { OverlayConfig, OverlayPosition, OverlaySourceType } from '../../types'
 
 let listEl: HTMLElement | null = null
@@ -161,8 +163,13 @@ function wireRowEvents(): void {
     row.querySelector<HTMLButtonElement>('.ov-pick-source')?.addEventListener('click', () => {
       void onPickSource(id)
     })
-    row.querySelector<HTMLButtonElement>('.ov-delete')?.addEventListener('click', () => {
-      if (!confirm('Slette dette overlayet?')) return
+    row.querySelector<HTMLButtonElement>('.ov-delete')?.addEventListener('click', async () => {
+      const ok = await confirmDialog({
+        title:        t('dialog.overlayDeleteTitle', 'Slette dette overlegget?'),
+        confirmLabel: t('dialog.delete', 'Slett'),
+        danger:       true,
+      })
+      if (!ok) return
       deleteOverlay(id)
     })
     row.querySelector<HTMLSelectElement>('.ov-position')?.addEventListener('change', e => {
@@ -224,17 +231,19 @@ async function onPickSource(id: string): Promise<void> {
   if (ov.type === 'screen' || ov.type === 'window') {
     const screens = await window.api.overlayListScreens() as Array<{ id: string; label: string }>
     if (!screens || screens.length === 0) {
-      alert('Fant ingen skjermer. Sjekk at appen har skjerm-opptakstillatelse.')
+      await alertDialog({
+        title:   t('dialog.noScreensTitle', 'Fant ingen skjermer'),
+        message: t('dialog.noScreensBody', 'Sjekk at appen har tillatelse til skjermopptak i systeminnstillingene.'),
+        tone:    'error',
+      })
       return
     }
-    // Use a simple prompt-based picker for now — keeps the implementation
-    // lean. A proper modal lands when we add per-window region selection
-    // (planned for v4.45 alongside NDI).
-    const choices = screens.map((s, i) => `${i + 1}. ${s.label}`).join('\n')
-    const answer = prompt(`Velg skjerm:\n${choices}\n\nSkriv tallet:`, '1')
-    const idx = parseInt(answer ?? '', 10) - 1
-    if (Number.isNaN(idx) || idx < 0 || idx >= screens.length) return
-    updateOverlay(id, { source: screens[idx].id })
+    const picked = await selectDialog({
+      title:   t('dialog.pickScreenTitle', 'Velg skjerm'),
+      options: screens.map(s => ({ id: s.id, label: s.label })),
+    })
+    if (!picked) return
+    updateOverlay(id, { source: picked })
     renderOverlayList()
     return
   }
@@ -246,39 +255,45 @@ async function onPickSource(id: string): Promise<void> {
 }
 
 /**
- * Modal-style NDI picker. We use prompt() while the implementation is fresh
- * — it's a single dialog, no fancy markup needed, and the source list is
- * short enough that numeric selection is faster than scrolling. A proper
- * inline picker on the overlay row can land in v4.45 once we have user
- * feedback on what's missing.
+ * NDI source picker.
+ *
+ * Was a prompt() that printed a numbered list and asked the user to type the
+ * number — with NDI names like "STUEPC (ProPresenter Alpha)" that is a reading
+ * comprehension test, not a picker. selectDialog renders the list as clickable
+ * rows: the name is the label, the URL the second line.
  */
 async function pickNdiSource(id: string): Promise<void> {
   const r = await window.api.overlayListNdiSources()
   if (!r.available) {
-    alert(r.reason ?? 'NDI er ikke tilgjengelig.')
+    await alertDialog({
+      title:   t('dialog.ndiUnavailableTitle', 'NDI er ikke tilgjengelig'),
+      message: r.reason ?? undefined,
+      tone:    'error',
+    })
     return
   }
   if (r.sources.length === 0) {
-    alert(
-      (r.reason ?? 'Ingen NDI-kilder.') +
-      '\n\nSjekk:\n' +
-      '  • EasyWorship 7.3+: Edit → Options → Live → Alternate Output → NDI Stream\n' +
-      '  • ProPresenter 7: Screens → Ny NDI-skjerm → Alpha Key (valgfritt)\n' +
-      '  • OBS: NDI Output plugin → Source → Enable\n' +
-      '  • Keynote/PowerPoint: kjør NDI Screen Capture HX og pek mot vinduet\n' +
-      '  • Begge maskiner må være på samme private nettverk',
-    )
+    await alertDialog({
+      title:   r.reason ?? t('dialog.ndiNoSourcesTitle', 'Fant ingen NDI-kilder'),
+      message: t('dialog.ndiNoSourcesBody',
+        'Sjekk at kilden sender NDI:\n' +
+        '  • EasyWorship 7.3+: Edit → Options → Live → Alternate Output → NDI Stream\n' +
+        '  • ProPresenter 7: Screens → Ny NDI-skjerm → Alpha Key (valgfritt)\n' +
+        '  • OBS: NDI Output plugin → Source → Enable\n' +
+        '  • Keynote/PowerPoint: kjør NDI Screen Capture HX og pek mot vinduet\n' +
+        '  • Begge maskiner må være på samme private nettverk'),
+    })
     return
   }
-  const choices = r.sources.map((s, i) => `${i + 1}. ${s.name}`).join('\n')
-  const answer = prompt(`Velg NDI-kilde:\n${choices}\n\nSkriv tallet:`, '1')
-  const idx = parseInt(answer ?? '', 10) - 1
-  if (Number.isNaN(idx) || idx < 0 || idx >= r.sources.length) return
-  const picked = r.sources[idx]
+  const pickedName = await selectDialog({
+    title:   t('dialog.pickNdiTitle', 'Velg NDI-kilde'),
+    options: r.sources.map(s => ({ id: s.name, label: s.name, detail: s.url })),
+  })
+  if (!pickedName) return
   const overlay = getOverlay(id)
   updateOverlay(id, {
-    source: picked.name,
-    name: overlay?.name === 'Overlay' ? picked.name.split(' (')[0] : (overlay?.name ?? 'NDI'),
+    source: pickedName,
+    name: overlay?.name === 'Overlay' ? pickedName.split(' (')[0] : (overlay?.name ?? 'NDI'),
   })
   renderOverlayList()
 }

@@ -25,17 +25,12 @@ interface EnvPoint {
   t: number // performance.now() ms
 }
 
-/** Draw-gate interval — every other 60 Hz frame. */
-export const DRAW_INTERVAL_MS = 33.4
-/** Pure accumulator gate for the ~30 fps draw pacing: returns the NEW gate
- *  timestamp when a draw is due (advanced by exactly one interval so the
- *  cadence stays even), or the old one when not. A stall > 2 intervals resyncs
- *  to `now` instead of replaying missed draws. Unit-tested. */
-export function nextDrawGate(gate: number, now: number): number {
-  if (now - gate < DRAW_INTERVAL_MS) return gate
-  if (now - gate > DRAW_INTERVAL_MS * 2) return now
-  return gate + DRAW_INTERVAL_MS
-}
+// The ~30 fps accumulator gate moved to ui/frame-gate.ts when the editor's
+// playback loop needed the same pacing (it had the naive boundary check, which
+// judders 33/50). Re-exported here so this module stays the obvious place to
+// find it from the waveform's own code and tests.
+export { DRAW_INTERVAL_MS, nextDrawGate } from '../ui/frame-gate'
+import { nextDrawGate } from '../ui/frame-gate'
 
 /** Max additive bloom stamps per frame (see `bloomStride`). */
 export const BLOOM_BUDGET = 32

@@ -27,8 +27,12 @@
 
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  open as openDialog,
+  save as saveDialog,
+} from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { navigateTo } from "./ui/navigate";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -143,6 +147,12 @@ async function editorCall<T extends object>(
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
 // (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
+//
+// Deliberately NOT mapped (2026-08-05 channel audit): `backend-warning`. Its
+// consumer in pages/home.ts is live, but a search of src-tauri turns up no
+// emitter for it under any name — mapping it to the nearest-looking channel
+// would only manufacture wrong warnings. It stays unmapped until the backend
+// actually emits something.
 const EVENT_MAP: Record<string, string> = {
   "recording-overlay-start": "recording://started",
   "recording-overlay-stop": "recording://state",
@@ -162,6 +172,14 @@ const EVENT_MAP: Record<string, string> = {
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
   "video-preview-frame": "preview://frame",
+  // A camera that failed to start / lost its device. The backend's only live
+  // camera-failure emitter is the preview module's `preview://error`
+  // (media/preview.rs), whose `PreviewError.message` is already user-facing.
+  // The consumer (pages/recording.ts) swaps the dead placeholder for "Kamera
+  // feilet — opptar kun lyd". Caveat worth knowing: the in-recording preview is
+  // a file sink, not this module, so this only fires when a backend preview is
+  // actually running (the Direktesending page starts one).
+  "video-capture-error": "preview://error",
   "master-progress": "editor-master-progress",
   "whisper-progress": "whisper://progress",
   "whisper-model-progress": "whisper://model-progress",
@@ -269,6 +287,7 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   reminderMinutes: 0,
   manualMaxMinutes: 0,
   preRollSeconds: 0,
+  prerollEnabled: false,
   launchAtLogin: false,
   showOnStartup: false,
   minimizeToTray: true,
@@ -304,6 +323,12 @@ const LS_KEY = "sundayrec.settings";
 // Dev/verification hook (inert in normal use): `?goto=<page>` skips first-run
 // onboarding and navigates to the named page after boot, so each screen can be
 // screenshotted headlessly. Without the query param this is completely inactive.
+//
+// Since Fase 7 it also accepts `?goto=<page>:<tab>` for pages with inner tabs —
+// `?goto=settings:audio`, `?goto=settings:sharing`. The tab may be written bare
+// (`audio`) or fully qualified (`settings-audio`); retired ids from before the
+// 7→5 tab fold (`publish`, `notifications`, `integrations`) still work, because
+// navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
 
 function loadSettings(): Record<string, unknown> {
@@ -575,6 +600,11 @@ type RecordingRow = {
   note: string | null;
 };
 
+/** The bit of `ReviewQueueEntry` the shim itself needs (picking by id). The
+ *  full shape is the renderer's `ReviewQueueEntry` / the ts-rs binding — the
+ *  backend already serialises it camelCase, so it passes through untouched. */
+type ReviewQueueEntryLike = { id: string };
+
 // Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
 // so deleteHistoryEntry(timestamp) can call recordings_delete(id).
 const historyIdByTs = new Map<number, string>();
@@ -694,6 +724,37 @@ const api: Record<string, unknown> = {
     }
   },
   stopRecordingNow: async () => call("stop_recording", undefined, true).then(() => true),
+  // ── Auto-stop, owned by the recorder ───────────────────────────────────
+  // The overlay's "+30 min" / "Avbryt auto-stopp" used to be renderer-local
+  // setTimeouts that RE-implemented (and disagreed with) the engine's real
+  // deadline. These three commands are the truth: extend/cancel move the
+  // engine's watch value, the running loop re-pins its timer and re-emits
+  // `recording://state` with the new `scheduled_stop_ms`, and the getter lets a
+  // remounting overlay rehydrate the countdown without waiting for a transition.
+  extendAutostop: async (minutes: number) =>
+    invoke<void>("recording_extend_autostop", { minutes }),
+  cancelAutostop: async () => invoke<void>("recording_cancel_autostop"),
+  scheduledStopMs: async () =>
+    call<number | null>("recording_scheduled_stop_ms", undefined, null),
+  // ── Pre-roll rolling buffer ────────────────────────────────────────────
+  // `start_recording` has always harvested a pre-roll clip, but nothing ever
+  // started the loop that produces one — so `preRollSeconds` captured nothing.
+  // `preroll_start` answers `false` when the BACKEND's settings say pre-roll is
+  // off or no device matched, which is what the Home chip reports (never a
+  // claim that the buffer is running when it isn't). See preroll-lifecycle.ts
+  // for why this is behind an opt-in.
+  prerollStart: async () => call<boolean>("preroll_start", undefined, false),
+  prerollStop: async () => {
+    try {
+      await invoke("preroll_stop");
+    } catch (e) {
+      console.warn("[api-shim] preroll_stop failed", e);
+    }
+  },
+  prerollStatus: async () =>
+    call<import("../bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
+      active: false,
+    }),
   // run_test_recording returns { ok, signal, sizeBytes, error }. The fallback
   // must match that shape ({ ok: false }) — the old { level, message } fallback
   // didn't match what the consumer reads.
@@ -751,14 +812,74 @@ const api: Record<string, unknown> = {
     pickPath({ name: "Lyd", extensions: AUDIO_EXT }),
 
   // ── Email / webhook ─────────────────────────────────────────────────────
-  testWebhook: async () => ({ ok: false }),
-  testEmail: async () => ({ ok: false }),
-  clearSmtpPassword: async () => true,
+  //
+  // These were `async () => ({ ok: false })` stubs: every click produced a
+  // fabricated "sending failed" no matter what the user had configured. Both
+  // commands exist and are registered (commands/email.rs), so they are wired —
+  // and the panel now asks `emailStatus` FIRST and disables the button when
+  // there is no send path, instead of inventing a failure.
+  //
+  // `email_test_webhook` is real on every build (plain reqwest POST, no cargo
+  // feature); `email_send_test` needs `--features email` and returns a clear
+  // `feature_disabled` error otherwise, which `emailStatus.featureBuilt`
+  // predicts so we never provoke it.
+  emailStatus: async () =>
+    call<{ featureBuilt: boolean; gmailConnected: boolean }>("email_status", undefined, {
+      featureBuilt: false,
+      gmailConnected: false,
+    }),
+  testWebhook: async (url: string) => {
+    try {
+      const ok = await invoke<boolean>("email_test_webhook", { url });
+      return ok ? { ok: true } : { ok: false, error: "unreachable" };
+    } catch (e) {
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
+  testEmail: async (params: {
+    transport: "gmail" | "smtp";
+    recipient: string;
+    language?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    pass?: string;
+    from?: string;
+  }) => {
+    try {
+      await invoke("email_send_test", {
+        transport: params.transport === "gmail" ? "Gmail" : "Smtp",
+        recipient: params.recipient,
+        language: params.language,
+        host: params.host,
+        port: params.port,
+        user: params.user,
+        pass: params.pass,
+        from: params.from,
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: ipcErrText(e) };
+    }
+  },
+  clearSmtpPassword: async () =>
+    call<boolean>("email_clear_smtp_password", undefined, false),
 
   // ── App / updates ───────────────────────────────────────────────────────
   getAppVersion: async () =>
     (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
   getPlatform: async () => platform,
+  // The menubar tray renders its labels in Rust, from a language it cannot read:
+  // the UI language lives in THIS renderer's settings blob and was never part of
+  // the curated `settings_save` payload. i18n.ts pushes it here on every locale
+  // load. Best-effort — a build without the `tray` feature answers with a no-op.
+  traySetLanguage: async (code: string) => {
+    try {
+      await invoke("tray_set_language", { code });
+    } catch (e) {
+      console.debug("[api-shim] tray_set_language unavailable", e);
+    }
+  },
   checkForUpdates: async () => {
     emitLocal("update-checking");
     try {
@@ -844,6 +965,16 @@ const api: Record<string, unknown> = {
       return false;
     }
   },
+  // The purpose-built audio probe behind the Lyd tab's "Diagnose" button: one
+  // enumeration, shaped into the flat name lists the panel renders. (The generic
+  // `run_diagnostics` below is the whole-system report, still used for the
+  // copy-to-support markdown.)
+  diagnoseAudio: async () =>
+    call<import("../bindings/AudioDiagnostics").AudioDiagnostics>(
+      "diagnose_audio",
+      undefined,
+      { dshow: [], wasapi: [], wasapiAvailable: false },
+    ),
   // Comprehensive diagnose: backend gathers system/devices/ffmpeg/disk/
   // permissions/audio-engine/last-error and returns structured `findings` (the
   // SR-* error codes) + a full markdown report. On failure → an empty report so
@@ -868,6 +999,39 @@ const api: Record<string, unknown> = {
       captureOk: null,
       videoOk: null,
     }),
+
+  // ── Health probes ───────────────────────────────────────────────────────
+  // Two commands that existed since the port and were never called from
+  // anywhere. `media_permissions` is the one that matters: a denied microphone
+  // makes getUserMedia fail generically and avfoundation emit "Input/output
+  // error", so the user was told the device was MISSING when macOS was simply
+  // refusing it. AVFoundation knew all along.
+  mediaPermissions: async () =>
+    call<import("../bindings/MediaPermissions").MediaPermissions>(
+      "media_permissions",
+      undefined,
+      { camera: "unknown", microphone: "unknown" },
+    ),
+  ffmpegHealth: async () =>
+    call<import("../bindings/FfmpegHealth").FfmpegHealth>("ffmpeg_health", undefined, {
+      available: true, // unknown ⇒ don't manufacture an alarm
+      version: null,
+      path: "",
+    }),
+  // Whether the OS login item is REALLY registered. The System tab used to show
+  // the stored boolean, which drifts the moment a user removes the login item
+  // by hand (or a migration/reinstall drops it) — a checkbox claiming scheduled
+  // recordings survive a reboot when they don't.
+  getLaunchAtLogin: async () => call<boolean>("get_launch_at_login", undefined, false),
+  // Trackpad haptics (macOS Force Touch). Infallible by contract on the Rust
+  // side; swallow anything here so a haptic can never surface as a UI error.
+  hapticPerform: async (pattern: string) => {
+    try {
+      await invoke("haptic_perform", { pattern });
+    } catch {
+      /* a missing haptic engine is not a problem worth reporting */
+    }
+  },
 
   // ── Audio / video devices ───────────────────────────────────────────────
   // ASIO driver names = the asio-backend entries of the unified tagged device
@@ -1296,7 +1460,10 @@ const api: Record<string, unknown> = {
   cloudUploadFile: async () => ({ ok: false }),
   cloudListFolders: async () => [],
   cloudSetFolder: async () => true,
-  cloudIsConfigured: async () => false,
+  // Wired to the REAL predicate (commands/cloud.rs) instead of a hard-coded
+  // `false`. It answers whether this build has a Google OAuth client id at all,
+  // which is what the cloud panel's gate needs to say something true.
+  cloudIsConfigured: async () => call<boolean>("cloud_is_configured", undefined, false),
   cloudQueueStatus: async () => ({ entries: [] }),
   cloudQueueRetry: async () => true,
   cloudQueueRemove: async () => true,
@@ -1363,7 +1530,55 @@ const api: Record<string, unknown> = {
     pickPath({ name: "Bilde", extensions: IMAGE_EXT }),
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
-  transcriptListAll: async () => [],
+  // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this
+  // ONE call — while it returned `[]` the sermon search silently found nothing
+  // and the "N transkripsjoner indeksert" status stayed blank. `transcripts_list`
+  // (commands/db.rs) walks the history, reads each `<name>.transcript.json`
+  // sidecar and returns `{ basePath, transcript }` — `basePath` is the recording
+  // path with its media extension stripped, which is exactly the join key
+  // `baseNoExt(row.path)` the history rows use. Fallback `[]` keeps a missing
+  // sidecar dir from breaking the page.
+  transcriptListAll: async () =>
+    call<Array<{ basePath: string; transcript: unknown }>>(
+      "transcripts_list",
+      undefined,
+      [],
+    ),
+  // Render a transcript to SRT/VTT/TXT at a user-chosen path. Pure formatting +
+  // one fs write in the backend (works in every build — no `whisper` feature).
+  whisperExportTranscript: async (
+    data: unknown,
+    format: "srt" | "vtt" | "txt",
+    path: string,
+  ) => {
+    try {
+      await invoke("whisper_export_transcript", { data, format, path });
+      return { ok: true as const };
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  // Native "save as" picker (the dialog plugin's counterpart to `pickPath`).
+  // A cancel yields null — never throws, same contract as the open pickers.
+  pickSavePath: async (opts: {
+    defaultPath?: string;
+    name?: string;
+    extensions?: string[];
+  }) => {
+    try {
+      const res = await saveDialog({
+        defaultPath: opts.defaultPath,
+        filters:
+          opts.extensions && opts.name
+            ? [{ name: opts.name, extensions: opts.extensions }]
+            : undefined,
+      });
+      return typeof res === "string" ? res : null;
+    } catch (e) {
+      console.warn("[api-shim] save dialog failed", e);
+      return null;
+    }
+  },
   // whisper_list_models gives the catalogue; whisper_model_status the per-model
   // on-disk {installed, sizeOk}. The renderer's model picker needs both merged
   // (the old Electron whisper-status did this server-side) — without the
@@ -1443,10 +1658,38 @@ const api: Record<string, unknown> = {
     call("whisper_cancel_transcribe", { jobId }, false),
 
   // ── Review queue ────────────────────────────────────────────────────────
-  reviewQueueList: async () => [],
-  reviewQueueGet: async () => null,
-  reviewQueuePublish: async () => ({ ok: false }),
-  reviewQueueDiscard: async () => ({ ok: false }),
+  // `review_queue_list` (commands/review.rs) returns the persisted queue
+  // newest-first with `ageInDays` filled in — already the renderer's
+  // `ReviewQueueEntry` shape (camelCase), so no adaptation is needed. An empty
+  // queue is the normal case: the home card hides itself on `[]`.
+  reviewQueueList: async () =>
+    call<ReviewQueueEntryLike[]>("review_queue_list", undefined, []),
+  // No `review_queue_get` command exists — the queue is a single JSON blob, so
+  // reading one entry means reading the list and picking. Cheap (a handful of
+  // entries) and keeps the backend surface as it is.
+  reviewQueueGet: async (id: string) => {
+    const all = await call<ReviewQueueEntryLike[]>(
+      "review_queue_list",
+      undefined,
+      [],
+    );
+    return all.find((e) => e?.id === id) ?? null;
+  },
+  // `review_mark_published` returns a bool: false = no such id in the queue
+  // (already published, or the queue was cleared). Surface that as a real
+  // reason instead of a silent no-op — the editor shows `error` in a dialog.
+  reviewQueuePublish: async (id: string) => {
+    try {
+      const ok = await invoke<boolean>("review_mark_published", { id });
+      return ok
+        ? { ok: true as const }
+        : { ok: false as const, error: "review_entry_not_found" };
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  reviewQueueDiscard: async (id: string) =>
+    call<boolean>("review_mark_discarded", { id }, false),
   reviewQueueUpdateTrim: async () => true,
   reviewQueueUpdateMasterPreset: async () => true,
   reviewQueueUpdateJingles: async () => true,
@@ -1590,16 +1833,26 @@ void (async () => {
 // with the renderer's global declarations. Phase 3 adds real imports here.
 export {};
 
-// Verification navigation (only with `?goto=<page>`): poll until main.ts has
-// installed window.showPage, then navigate. Inert without the query param.
+// Verification navigation (only with `?goto=<page>[:<tab>]`): poll until main.ts
+// has installed window.showPage, then navigate. Inert without the query param.
 if (VERIFY_GOTO) {
+  const [gotoPage, rawTab] = VERIFY_GOTO.split(":");
+  // `settings:audio` and `settings:settings-audio` mean the same thing.
+  const gotoTab = rawTab
+    ? rawTab.startsWith(`${gotoPage}-`)
+      ? rawTab
+      : `${gotoPage}-${rawTab}`
+    : undefined;
   const tryGoto = (): void => {
     const w = window as any;
-    if (typeof w.showPage === "function") {
-      w.showPage(VERIFY_GOTO);
-    } else {
+    if (typeof w.showPage !== "function") {
       setTimeout(tryGoto, 50);
+      return;
     }
+    // No highlight pulse: this path exists to produce clean screenshots, and a
+    // 4.4 s glow on the card would be in half of them.
+    if (gotoTab) navigateTo(gotoPage, { tab: gotoTab, highlight: false });
+    else w.showPage(gotoPage);
   };
   setTimeout(tryGoto, 150);
 }

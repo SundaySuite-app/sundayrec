@@ -67,6 +67,24 @@ pub mod test_recording;
 // menu/tray + the scheme handler.
 #[cfg(feature = "tray")]
 pub mod tray;
+
+/// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
+/// feature is off, so callers (the review commands) stay `cfg`-free.
+#[cfg(feature = "tray")]
+pub(crate) fn tray_note_review_queue(app: &tauri::AppHandle) {
+    tray::refresh_review_queue(app);
+}
+#[cfg(not(feature = "tray"))]
+pub(crate) fn tray_note_review_queue(_app: &tauri::AppHandle) {}
+
+/// Set the menubar tray's language from a UI language code. No-op without the
+/// `tray` feature — see [`tray_note_review_queue`].
+#[cfg(feature = "tray")]
+pub(crate) fn tray_note_language(app: &tauri::AppHandle, code: &str) {
+    tray::set_lang(app, sundayrec_core::tray::TrayLang::from_code(Some(code)));
+}
+#[cfg(not(feature = "tray"))]
+pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // R7 auto-update — `updater` feature, in `default` and LIVE-VERIFIED (signed
 // releases + latest.json; macOS relaunch via the `open -n` helper). The status
 // model + dev-check guard + semver decision are `sundayrec_core::update`; this
@@ -261,20 +279,28 @@ pub fn run() {
 
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
-            // wired to commands via `handle_menu_event`. We keep the returned
-            // `TrayIcon` alive by leaking it for the process lifetime (it lives
-            // as long as the app; dropping it would remove the tray). The deep-
-            // link plugin (`sundayrec://`) is registered for the OAuth/import
+            // wired to commands via `handle_menu_event`. The returned
+            // `TrayController` is Tauri-MANAGED (was: leaked) — that keeps the
+            // tray alive for the process lifetime exactly as before, and gives
+            // every later rebuild a handle to `set_menu`/`set_icon` through.
+            // `wire_state_sources` then subscribes the tray to the recorder's
+            // and scheduler's existing events, so the menu tracks reality
+            // instead of freezing at `TrayState::default()`. The deep-link
+            // plugin (`sundayrec://`) is registered for the OAuth/import
             // hand-off. GUI-UNVERIFIED.
             #[cfg(feature = "tray")]
             {
                 use sundayrec_core::tray::{TrayLang, TrayState};
                 use tauri_plugin_deep_link::DeepLinkExt;
-                let lang = TrayLang::from_code(None); // hydrated by the renderer later
+                // The UI language lives in the renderer's own settings blob, so
+                // it arrives via `tray_set_language` on boot; Norwegian until then.
+                let lang = TrayLang::from_code(None);
                 match tray::install(app.handle(), &TrayState::default(), lang) {
-                    Ok(icon) => {
-                        // Hold the handle for the whole process lifetime.
-                        std::mem::forget(icon);
+                    Ok(()) => {
+                        tray::wire_state_sources(app.handle());
+                        // First paint of the review-queue callout — the scheduler
+                        // event that normally refreshes it may be minutes away.
+                        tray::refresh_review_queue(app.handle());
                     }
                     Err(e) => tracing::warn!("tray install failed: {e}"),
                 }
@@ -296,6 +322,7 @@ pub fn run() {
             commands::app::app_info,
             commands::app::set_launch_at_login,
             commands::app::get_launch_at_login,
+            commands::app::tray_set_language,
             commands::account::sunday_account_configured,
             commands::account::sunday_account_status,
             commands::account::sunday_sign_in,

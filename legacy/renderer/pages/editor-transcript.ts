@@ -14,7 +14,10 @@
  */
 
 import { t } from '../i18n'
-import type { TranscriptData, TranscriptSegment, RecordingMetadata } from '../../types'
+import type { TranscriptData, RecordingMetadata } from '../../types'
+import { closeModal, openModal } from '../ui/modal-manager'
+import { alertDialog, confirmDialog } from '../ui/dialog'
+import { toast } from '../ui/toast'
 import { E } from './editor/state'
 import { renderChapterList } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
@@ -62,12 +65,13 @@ export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   // getter (no module-coupling) and seeks via the same callback as the segments.
   setupCompanionPanel(() => currentTranscript)
   setCompanionSeek(onSeek)
-  $('btn-transcribe')?.addEventListener('click', openModal)
-  $('btn-transcribe-cancel')?.addEventListener('click', closeModal)
+  $('btn-transcribe')?.addEventListener('click', openTranscribeModal)
+  $('btn-transcribe-cancel')?.addEventListener('click', closeTranscribeModal)
   $('btn-transcribe-start')?.addEventListener('click', startTranscription)
   $('btn-transcribe-progress-cancel')?.addEventListener('click', cancelActiveJob)
-  $('btn-transcript-export')?.addEventListener('click', exportSrt)
-  $('btn-transcript-export-vtt')?.addEventListener('click', exportVtt)
+  $('btn-transcript-export')?.addEventListener('click', () => { void exportSubtitleFile('srt') })
+  $('btn-transcript-export-vtt')?.addEventListener('click', () => { void exportSubtitleFile('vtt') })
+  $('btn-transcript-export-txt')?.addEventListener('click', () => { void exportSubtitleFile('txt') })
   $('btn-transcript-delete')?.addEventListener('click', deleteTranscript)
   $('btn-transcript-sundayedit')?.addEventListener('click', sendToSundayEdit)
 
@@ -187,26 +191,64 @@ export function setCurrentTranscriptTime(sec: number): void {
   highlightSegment(idx)
 }
 
+// Reading the transcript while it plays is a legitimate thing to do, and an
+// auto-scroll that yanks the panel back every few seconds makes it impossible.
+// After a manual scroll the follow behaviour steps aside for this long.
+const FOLLOW_PAUSE_AFTER_USER_SCROLL_MS = 3000
+// scrollIntoView({behavior:'smooth'}) emits scroll events of its own for the
+// length of the animation. Without this window every auto-scroll would look
+// like a user scroll and permanently disable the next one.
+const PROGRAMMATIC_SCROLL_WINDOW_MS = 800
+
+let lastUserScrollMs = 0
+let programmaticScrollUntil = 0
+let scrollTrackedContainer: HTMLElement | null = null
+
+/** Passive scroll listener on the segment list, bound once per container (the
+ *  panel is rebuilt from innerHTML on every render, so the element changes). */
+function trackUserScroll(container: HTMLElement): void {
+  if (scrollTrackedContainer === container) return
+  scrollTrackedContainer = container
+  container.addEventListener(
+    'scroll',
+    () => {
+      if (performance.now() < programmaticScrollUntil) return
+      lastUserScrollMs = performance.now()
+    },
+    { passive: true },
+  )
+}
+
 let lastHighlightedIdx = -1
+let highlightScrollRaf = 0
+
 function highlightSegment(idx: number): void {
   if (idx === lastHighlightedIdx) return
   lastHighlightedIdx = idx
   const container = $('editor-transcript-segments')
   if (!container) return
+  trackUserScroll(container)
   container.querySelectorAll('.editor-transcript-segment').forEach((el, i) => {
     el.classList.toggle('is-current', i === idx)
   })
-  // Scroll into view if not visible
-  if (idx >= 0) {
+
+  if (idx < 0) return
+  // The two getBoundingClientRect reads below are layout FLUSHES, and this runs
+  // from the playback rAF — right after the class writes above dirtied style.
+  // Deferring them to their own frame keeps the read/write phases apart instead
+  // of forcing a synchronous relayout in the middle of the playback loop.
+  if (highlightScrollRaf) cancelAnimationFrame(highlightScrollRaf)
+  highlightScrollRaf = requestAnimationFrame(() => {
+    highlightScrollRaf = 0
+    if (performance.now() - lastUserScrollMs < FOLLOW_PAUSE_AFTER_USER_SCROLL_MS) return
     const el = container.children[idx] as HTMLElement | undefined
-    if (el) {
-      const rect = el.getBoundingClientRect()
-      const cRect = container.getBoundingClientRect()
-      if (rect.top < cRect.top || rect.bottom > cRect.bottom) {
-        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-      }
-    }
-  }
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const cRect = container.getBoundingClientRect()
+    if (rect.top >= cRect.top && rect.bottom <= cRect.bottom) return
+    programmaticScrollUntil = performance.now() + PROGRAMMATIC_SCROLL_WINDOW_MS
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  })
 }
 
 // ─── Rendering ──────────────────────────────────────────────────────────────
@@ -216,12 +258,14 @@ function renderPanel(): void {
   if (!body) return
   const exportBtn    = $('btn-transcript-export')     as HTMLElement | null
   const exportVttBtn = $('btn-transcript-export-vtt') as HTMLElement | null
+  const exportTxtBtn = $('btn-transcript-export-txt') as HTMLElement | null
   const deleteBtn    = $('btn-transcript-delete')     as HTMLElement | null
 
   if (!currentTranscript || currentTranscript.segments.length === 0) {
     body.innerHTML = `<div class="editor-transcript-empty">${t('transcript.empty', 'Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.')}</div>`
     if (exportBtn)    exportBtn.style.display    = 'none'
     if (exportVttBtn) exportVttBtn.style.display = 'none'
+    if (exportTxtBtn) exportTxtBtn.style.display = 'none'
     if (deleteBtn)    deleteBtn.style.display    = 'none'
     const companionSection = $('editor-companion-section')
     if (companionSection) companionSection.style.display = 'none'
@@ -266,6 +310,7 @@ function renderPanel(): void {
 
   if (exportBtn)    exportBtn.style.display    = ''
   if (exportVttBtn) exportVttBtn.style.display = ''
+  if (exportTxtBtn) exportTxtBtn.style.display = ''
   if (deleteBtn)    deleteBtn.style.display    = ''
 
   // R8: reveal the companion section and (re)render its header controls. We
@@ -339,32 +384,36 @@ async function generateChaptersFromTranscript(): Promise<void> {
 
 // ─── Modal: choose model + language ─────────────────────────────────────────
 
-async function openModal(): Promise<void> {
+async function openTranscribeModal(): Promise<void> {
   if (!currentFilePath) return
-  const modal = $('transcribe-modal')
-  if (!modal) return
 
   // Load fresh model statuses every time the modal opens — user may have
   // downloaded one in a different session and we want to show "Installed".
   try {
     const status = await window.api.whisperStatus()
     if (!status.binaryAvailable) {
-      alert(t('transcript.errNoBinary', 'Whisper er ikke tilgjengelig på denne plattformen. Kontakt support.'))
+      await alertDialog({
+        title: t('transcript.errNoBinary', 'Whisper er ikke tilgjengelig på denne plattformen. Kontakt support.'),
+        tone:  'error',
+      })
       return
     }
     modelStatuses = status.models
     renderModelList()
   } catch (err) {
-    alert(t('transcript.errStatusFailed', 'Kunne ikke sjekke Whisper-status') + ': ' + (err as Error).message)
+    await alertDialog({
+      title:   t('transcript.errStatusFailed', 'Kunne ikke sjekke Whisper-status'),
+      message: (err as Error).message,
+      tone:    'error',
+    })
     return
   }
 
-  modal.style.display = 'flex'
+  openModal('transcribe-modal')
 }
 
-function closeModal(): void {
-  const modal = $('transcribe-modal')
-  if (modal) modal.style.display = 'none'
+function closeTranscribeModal(): void {
+  closeModal('transcribe-modal')
 }
 
 function renderModelList(): void {
@@ -452,7 +501,7 @@ function formatSize(bytes: number): string {
 
 async function startTranscription(): Promise<void> {
   if (!currentFilePath) return
-  closeModal()
+  closeTranscribeModal()
 
   const language = ($('transcribe-language') as HTMLSelectElement | null)?.value ?? 'auto'
   const translate = ($('transcribe-translate') as HTMLInputElement | null)?.checked ?? false
@@ -464,7 +513,11 @@ async function startTranscription(): Promise<void> {
   const modelStatus = modelStatuses.find(m => m.id === selectedModelId)
   if (!modelStatus) {
     closeProgressModal()
-    alert('Ukjent modell: ' + selectedModelId)
+    await alertDialog({
+      title:   t('transcript.errUnknownModel', 'Ukjent modell'),
+      message: selectedModelId,
+      tone:    'error',
+    })
     return
   }
   if (!modelStatus.installed || !modelStatus.sizeOk) {
@@ -473,7 +526,11 @@ async function startTranscription(): Promise<void> {
     if (!dl.ok) {
       closeProgressModal()
       if (dl.error !== 'cancelled') {
-        alert(t('transcript.errDownload', 'Modell-nedlasting feilet') + ': ' + dl.error)
+        await alertDialog({
+          title:   t('transcript.errDownload', 'Modell-nedlasting feilet'),
+          message: dl.error,
+          tone:    'error',
+        })
       }
       return
     }
@@ -497,7 +554,11 @@ async function startTranscription(): Promise<void> {
     closeProgressModal()
     if (!res.ok || !res.transcript) {
       if (res.error !== 'cancelled') {
-        alert(t('transcript.errFailed', 'Transkribering feilet') + ': ' + (res.error ?? 'ukjent'))
+        await alertDialog({
+          title:   t('transcript.errFailed', 'Transkribering feilet'),
+          message: res.error ?? undefined,
+          tone:    'error',
+        })
       }
       return
     }
@@ -539,10 +600,9 @@ function cancelActiveJob(): void {
 }
 
 function showProgressModal(title: string, percent: number): void {
-  const modal = $('transcribe-progress-modal')
   setProgressTitle(title)
   updateProgressUI(percent)
-  if (modal) modal.style.display = 'flex'
+  openModal('transcribe-progress-modal')
 }
 
 function setProgressTitle(title: string): void {
@@ -577,15 +637,20 @@ function updateDownloadUI(p: { id: string; bytesDownloaded: number; bytesTotal: 
 }
 
 function closeProgressModal(): void {
-  const modal = $('transcribe-progress-modal')
-  if (modal) modal.style.display = 'none'
+  closeModal('transcribe-progress-modal')
 }
 
 // ─── Sidecar helpers ────────────────────────────────────────────────────────
 
 async function deleteTranscript(): Promise<void> {
   if (!currentFilePath || !currentTranscript) return
-  if (!confirm(t('transcript.confirmDelete', 'Slett transkripsjonen?'))) return
+  const ok = await confirmDialog({
+    title:        t('transcript.confirmDelete', 'Slett transkripsjonen?'),
+    message:      t('dialog.deleteTranscriptBody', 'Selve opptaket beholdes. Du kan transkribere på nytt senere.'),
+    confirmLabel: t('dialog.delete', 'Slett'),
+    danger:       true,
+  })
+  if (!ok) return
   try {
     await window.api.editorDeleteTranscript?.(currentFilePath)
   } catch {}
@@ -593,51 +658,39 @@ async function deleteTranscript(): Promise<void> {
   renderPanel()
 }
 
-function exportSrt(): void {
-  exportSubtitleFile('srt')
-}
-
-function exportVtt(): void {
-  exportSubtitleFile('vtt')
-}
-
-/** Single entry-point for both SRT and VTT export. They share the timing
- *  format up to a single character (`,` vs `.` for milliseconds) and VTT
- *  needs a header line. */
-function exportSubtitleFile(fmt: 'srt' | 'vtt'): void {
+/**
+ * Export the transcript as SRT / VTT / plain text.
+ *
+ * This used to build the file in the renderer and hand it to a synthetic
+ * `<a download>` — a *browser* download inside a desktop app: the file landed
+ * in whatever the webview considered its download dir (on macOS often nowhere
+ * the user could find it), with no say in the name or folder. Now the user
+ * picks the destination in the native save dialog and the backend
+ * (`whisper_export_transcript`, pure formatting + one fs write) renders it, so
+ * SRT/VTT/TXT come out byte-identical to every other place we emit them.
+ */
+async function exportSubtitleFile(fmt: 'srt' | 'vtt' | 'txt'): Promise<void> {
   if (!currentTranscript || !currentFilePath) return
-  const body = fmt === 'srt'
-    ? transcriptToSrt(currentTranscript.segments)
-    : transcriptToVtt(currentTranscript.segments)
   const baseName = currentFilePath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') ?? 'transcript'
-  const mime = fmt === 'vtt' ? 'text/vtt' : 'text/plain'
-  const blob = new Blob([body], { type: `${mime};charset=utf-8` })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${baseName}.${fmt}`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function srtTimestamp(sec: number): string {
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.floor(sec % 60)
-  const ms = Math.round((sec - Math.floor(sec)) * 1000)
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`
-}
-
-function vttTimestamp(sec: number): string {
-  return srtTimestamp(sec).replace(',', '.')
-}
-
-function transcriptToSrt(segs: TranscriptSegment[]): string {
-  return segs.map((s, i) => `${i + 1}\n${srtTimestamp(s.start)} --> ${srtTimestamp(s.end)}\n${s.text}\n`).join('\n')
-}
-
-function transcriptToVtt(segs: TranscriptSegment[]): string {
-  // WebVTT format — supported by HTML5 <track>, YouTube, Vimeo, native iOS/macOS players.
-  const cues = segs.map((s, i) => `${i + 1}\n${vttTimestamp(s.start)} --> ${vttTimestamp(s.end)}\n${s.text}\n`).join('\n')
-  return `WEBVTT\n\n${cues}`
+  const path = await window.api.pickSavePath({
+    defaultPath: `${currentFilePath.replace(/\.[^./\\]+$/, '')}.${fmt}`,
+    name:        fmt.toUpperCase(),
+    extensions:  [fmt],
+  })
+  if (!path) return
+  const res = await window.api.whisperExportTranscript(currentTranscript, fmt, path)
+  if (res.ok) {
+    toast('success', t('transcript.exportDone', 'Transkripsjon lagret').replace('{name}', baseName), {
+      action: {
+        label:   t('general.showInFolder', 'Vis i mappe'),
+        onClick: () => { void window.api.revealFile(path) },
+      },
+    })
+  } else {
+    await alertDialog({
+      title:   t('transcript.exportFailed', 'Kunne ikke lagre transkripsjonen'),
+      message: res.error,
+      tone:    'error',
+    })
+  }
 }

@@ -27,12 +27,17 @@ import { t } from '../i18n'
 import { settings } from '../state'
 import { getAudioDevices } from '../audio/capture'
 import { setVUBar } from '../audio/vu'
+import { RELEASE_TAU_MS, alphaFor } from '../audio/smoothing'
 import { RecordingWaveform } from '../audio/waveform'
 import { fmtCountdown, flashMsg, isoDate } from '../helpers'
 import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
 import { stopVuMeter as stopLiveVuMeter } from './live-page'
 import { stopChannelGrid as stopAudioPageMonitoring } from './channel-grid'
 import { renderRecentRecordings, stopVideoPreview, startVideoPreview } from './home'
+import { closeModal, openModal } from '../ui/modal-manager'
+import { hideEl, showEl } from '../ui/motion'
+import { banner, toast } from '../ui/toast'
+import { navigateTo } from '../ui/navigate'
 import { showEditorPrompt } from './editor-page'
 import type { RecordingOpts } from '../../types'
 
@@ -67,10 +72,23 @@ function readJpegDims(arr: Uint8Array): { w: number; h: number } | null {
   return null
 }
 
-let scheduledStop:  Date | null = null
-let stopOverridden  = false
-let schedStopTimer: ReturnType<typeof setTimeout>  | null = null
-let schedCntTimer:  ReturnType<typeof setInterval> | null = null
+// ── Auto-stop ────────────────────────────────────────────────────────────────
+//
+// The deadline belongs to the RECORDER, not to this file. `+30 min` and
+// `Avbryt auto-stopp` used to be renderer-local setTimeouts that re-implemented
+// the engine's timer: two clocks, one recording, and whichever fired first won.
+// Extending by 30 minutes armed a fresh renderer timeout while the engine's own
+// deadline sat untouched — so a take could stop at the original time anyway, and
+// the flag that was supposed to paper over that (`stopOverridden`) did it by
+// SWALLOWING the terminal state, leaving the overlay up over a dead recording.
+//
+// Now both buttons call the real commands (`recording_extend_autostop` /
+// `recording_cancel_autostop`); the engine moves its deadline, re-pins its timer
+// and re-emits `recording://state` with the new `scheduled_stop_ms`. This module
+// only RENDERS that number — the countdown ticks locally, nothing here stops a
+// recording, and there is nothing left to swallow.
+let scheduledStop: Date | null = null
+let schedCntTimer: ReturnType<typeof setInterval> | null = null
 
 // Premium scrolling waveform for the recording overlay, driven by the
 // recording's own level telemetry (see startLevelsMeter).
@@ -104,9 +122,9 @@ export function setupRecording(): void {
   // Opening the stop-confirm modal also focuses the SAFE cancel button so
   // an accidental Enter keeps the recording going.
   function openStopConfirm(): void {
-    const m = document.getElementById('modal-confirm-stop')
-    if (!m) return
-    m.style.display = 'flex'
+    // Already finalizing — there is nothing left to confirm stopping.
+    if (finalizing) return
+    openModal('modal-confirm-stop')
     // Defer focus to next tick so the browser has rendered the modal
     setTimeout(() => {
       (document.getElementById('btn-confirm-cancel') as HTMLButtonElement | null)?.focus()
@@ -128,33 +146,30 @@ export function setupRecording(): void {
   })
 
   document.getElementById('btn-confirm-stop')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-confirm-stop'); if (m) m.style.display = 'none'
+    closeModal('modal-confirm-stop')
     doStopRecording()
   })
 
   document.getElementById('btn-confirm-cancel')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-confirm-stop'); if (m) m.style.display = 'none'
+    closeModal('modal-confirm-stop')
   })
 
   document.getElementById('btn-manual-cancel')?.addEventListener('click', () => {
-    const m = document.getElementById('modal-manual'); if (m) m.style.display = 'none'
+    closeModal('modal-manual')
   })
 
   document.getElementById('btn-manual-start')?.addEventListener('click', handleManualStart)
 
+  // Both buttons ask the ENGINE to move its deadline and then wait for the
+  // `recording://state` it re-emits — no optimistic local guess, so what the
+  // countdown shows is what the recorder will actually do. A failed invoke says
+  // so instead of silently pretending the extension took.
   document.getElementById('btn-extend-30')?.addEventListener('click', () => {
-    stopOverridden = true
-    scheduledStop  = new Date(Date.now() + 30 * 60000)
-    if (schedStopTimer) clearTimeout(schedStopTimer)
-    schedStopTimer = setTimeout(() => { if (isRecording) doStopRecording() }, 30 * 60000)
-    updateScheduledStopCountdown()
+    void withAutostopButton('btn-extend-30', () => window.api.extendAutostop(EXTEND_MINUTES))
   })
 
   document.getElementById('btn-cancel-autostop')?.addEventListener('click', () => {
-    stopOverridden = true; scheduledStop = null
-    if (schedStopTimer) { clearTimeout(schedStopTimer); schedStopTimer = null }
-    if (schedCntTimer)  { clearInterval(schedCntTimer);  schedCntTimer = null }
-    const s = document.getElementById('rec-autostop'); if (s) s.style.display = 'none'
+    void withAutostopButton('btn-cancel-autostop', () => window.api.cancelAutostop())
   })
 
   const ipcCleanups = [
@@ -175,7 +190,15 @@ export function setupRecording(): void {
       // (preparing/recording/reconnecting/…), not just on stop. Only tear the
       // overlay down on a TERMINAL state, or a preparing→recording mid-session
       // event would hide the live overlay.
-      const st = (data as { state?: string } | undefined)?.state
+      const payload = data as { state?: string; scheduled_stop_ms?: number | null } | undefined
+      const st = payload?.state
+      // The auto-stop deadline rides along on EVERY state emit — including the
+      // one the engine fires purely because the deadline moved (live extend /
+      // cancel). Applying it before the branch below is what makes the countdown
+      // backend-authoritative rather than a local guess.
+      if (payload && 'scheduled_stop_ms' in payload) {
+        applyScheduledStop(payload.scheduled_stop_ms ?? null)
+      }
       if (st === 'recording' || st === 'reconnecting') {
         // Resync: the engine says a session is LIVE. If the UI thinks it's idle
         // (a torn-down overlay after a transient error), bring the overlay back —
@@ -185,7 +208,11 @@ export function setupRecording(): void {
         return
       }
       if (st !== 'stopped' && st !== 'failed' && st !== 'idle') return
-      if (stopOverridden) return
+      // Nothing is filtered here any more. The old `stopOverridden` guard existed
+      // to hide the stop that the renderer's private auto-stop timer could no
+      // longer prevent; with the deadline owned by the engine there is no
+      // spurious terminal state to swallow — and swallowing one was how the
+      // overlay used to strand over a finished recording.
       stopMonitoring().catch(err => console.error('[recording] monitoring stop error:', err)).finally(() => hideOverlay())
     }),
     window.api.on('recording-finished', (entry) => {
@@ -217,21 +244,23 @@ export function setupRecording(): void {
     }),
     // NON-terminal, same as recording-warning: the stop-on-silence detector
     // fired a warning ahead of the auto-stop timeout, so the user gets a chance
-    // to notice before the take ends. Reuses the SAME banner as the reconnect
-    // path — it disappears with the overlay when the recording ends (either the
-    // user acts, or the silence timeout auto-stops and recording-finished tears
-    // the whole overlay down anyway).
+    // to notice before the take ends.
+    //
+    // This used to write into the SAME #rec-reconnect banner as the reconnect
+    // path. Two unrelated problems sharing one element means whichever fired
+    // last erased the other — a device that dropped out and came back silent
+    // would show only one of the two things wrong with the take. Silence has
+    // its own line in the overlay now.
     window.api.on('recording-silence', (data) => {
       const d = data as { code?: string; message?: string } | undefined
       console.warn('[recording] silence detected:', d?.code, d?.message)
       // The backend message is a hardcoded Norwegian string (not run through
       // this app's i18n) — fall back to our own localized copy whenever the
       // payload carries that generic text (or nothing at all).
-      const isGeneric = !d?.message || d.message === 'Stillhet oppdaget i lydsignalet'
-      const msg = isGeneric
-        ? t('recording.silenceWarn', 'Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.')
-        : d.message
-      showReconnectBanner(msg)
+      const msg = d?.message && d.message !== 'Stillhet oppdaget i lydsignalet'
+        ? d.message
+        : t('recording.silenceWarn', 'Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.')
+      showSilenceLine(msg)
     }),
     window.api.on('recording-quality', (data) => {
       // Session-end truth verdict FAILED: the delivered file provably holds
@@ -241,12 +270,27 @@ export function setupRecording(): void {
       const r = data as { expectedSec?: number; measuredSec?: number; reasons?: string[] } | undefined
       const expected = Math.round(r?.expectedSec ?? 0)
       const measured = Math.round(r?.measuredSec ?? 0)
+      const reasons = (r?.reasons ?? []).filter(x => typeof x === 'string' && x.length)
       console.error('[recording] QUALITY ALARM:', r?.reasons, `${measured}/${expected}s`)
-      showGlobalError(
-        t('recording.qualityAlarm', 'ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det.')
-          .replace('{m}', String(measured))
-          .replace('{e}', String(expected))
-      )
+      // Data loss gets its OWN banner, not the shared error strip. It used to
+      // call showGlobalError, which (a) is overwritten by the next error of any
+      // kind and (b) FORCE-NAVIGATES to home — yanking the user off whatever
+      // they were doing, and away from the recording the message is about. A
+      // keyed banner persists until dismissed and carries the way forward.
+      let msg = t('recording.qualityAlarm', 'ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det.')
+        .replace('{m}', String(measured))
+        .replace('{e}', String(expected))
+      // The engine's reasons are the diagnostic detail that decides whether
+      // this is a device problem or a disk problem — carry them.
+      if (reasons.length) {
+        msg += ' ' + t('recording.qualityReasons', 'Årsak: {r}').replace('{r}', reasons.join(', '))
+      }
+      banner('rec-quality', 'error', msg, [
+        {
+          label: t('recording.qualityAction', 'Vis opptak'),
+          onClick: () => navigateTo('search'),
+        },
+      ])
     }),
     window.api.on('recording-progress', (data) => {
       const d = data as { bytes?: number } | undefined
@@ -258,8 +302,9 @@ export function setupRecording(): void {
     // so it no longer stays stuck at "0 MB".
     window.api.on('recording-reconnecting', () => showReconnectBanner()),
     window.api.on('recording-reconnected',  () => hideReconnectBanner()),
-    window.api.on('tray-start-recording',   () => openManualModal()),
-    window.api.on('tray-stop-recording',    () => doStopRecording()),
+    // The tray's start/stop no longer arrive on these Electron-era channels —
+    // the Rust tray emits ONE `tray://action` event, adapted in tray-actions.ts,
+    // which calls openManualModal / doStopRecording directly (both exported).
     window.api.on('cloud-upload-done', (data) => {
       const d = data as { service?: string; ok?: boolean; error?: string } | undefined
       if (!d?.ok) {
@@ -274,10 +319,8 @@ export function setupRecording(): void {
 
 // ── Manual recording modal ───────────────────────────────────────────────────
 
-async function openManualModal(): Promise<void> {
-  const modal = document.getElementById('modal-manual')
-  if (!modal) return
-  modal.style.display = 'flex'
+export async function openManualModal(): Promise<void> {
+  openModal('modal-manual')
 
   // R4: warm the backend ffmpeg device enumeration now, while the user is picking
   // options in the modal, so the recorder's start path reuses it (within its short
@@ -367,7 +410,6 @@ async function openManualModal(): Promise<void> {
 
 async function handleManualStart(): Promise<void> {
   const btn = document.getElementById('btn-manual-start') as HTMLButtonElement | null
-  const mm  = document.getElementById('modal-manual')
   if (btn) btn.disabled = true
 
   const devSel      = document.getElementById('manual-device')    as HTMLSelectElement | null
@@ -410,7 +452,7 @@ async function handleManualStart(): Promise<void> {
   try {
     res = await window.api.startRecordingNow(opts)
   } catch (err) {
-    if (mm) mm.style.display = 'none'
+    closeModal('modal-manual')
     showGlobalError(err instanceof Error ? err.message : String(err))
     if (btn) btn.disabled = false
     // The start failed — give the home meter back.
@@ -419,7 +461,7 @@ async function handleManualStart(): Promise<void> {
   }
 
   if (res?.ok) {
-    if (mm) mm.style.display = 'none'
+    closeModal('modal-manual')
     showOverlay(opts)
     try { await startMonitoring(opts) }
     catch (err) {
@@ -504,13 +546,22 @@ export function releaseRendererAudioCaptures(): void {
   try { stopHomeVU() } catch {}
   try { stopAudioPageMonitoring() } catch {}
   try { stopLiveVuMeter() } catch {}
+  // NOT the pre-roll buffer. It is a mic owner too, but stopping it HERE would
+  // destroy the very thing it exists for: `start_recording` harvests the clip
+  // from the running loop (`preroll.is_active()`), and a loop we killed a tick
+  // earlier harvests nothing. The hand-over is already correct in Rust — harvest
+  // (graceful `q`) → `preroll.stop()` unconditionally → `vu.stop()` → a 400 ms
+  // settle → the capture engine opens the device. The renderer's job is only to
+  // keep the buffer DOWN while a recording runs; see preroll-lifecycle.ts.
 }
 
 /** Time-based release easing for the meter fall: the fraction of the remaining
  *  distance to cover after `dt` ms, for a τ≈80 ms exponential release. Pure —
- *  unit-tested. */
+ *  unit-tested. Kept as a named export (this is where the idea started, and the
+ *  overlay's loop reads better with it) but the maths now lives in
+ *  audio/smoothing.ts, so every meter in the app shares ONE release law. */
 export function easeFallAlpha(dtMs: number): number {
-  return 1 - Math.exp(-dtMs / 80)
+  return alphaFor(dtMs, RELEASE_TAU_MS)
 }
 
 /** Meter + waveform + timer WITHOUT RecordingOpts — for sessions the renderer
@@ -661,6 +712,10 @@ function startLevelsMeter(): void {
     }
 
     updateRecSignalStatus(meter.smL, meter.mono ? meter.smL : meter.smR)
+    // A silence warning that outlives the silence is a warning people learn to
+    // ignore. The engine emits no "silence over" event, so the meter is the
+    // authority: sound is back, the line goes.
+    if (silenceShown && Math.max(meter.smL, meter.mono ? -60 : meter.smR) > -50) hideSilenceLine()
     if (recWaveform) {
       const rmsH  = dbToEnvHeight(Math.max(meter.smL, meter.mono ? -60 : meter.smR))
       const peakH = dbToEnvHeight(Math.max(meter.pkL, meter.mono ? -60 : meter.pkR))
@@ -688,10 +743,87 @@ async function stopMonitoring(): Promise<void> {
   if (lLbl) lLbl.textContent = 'L'
 }
 
-async function doStopRecording(): Promise<void> {
-  window.api.stopRecordingNow()
-  try { await stopMonitoring() } catch (err) { console.error('[recording] stopMonitoring error:', err) }
-  hideOverlay()
+// ── Finalizing ───────────────────────────────────────────────────────────────
+//
+// Pressing stop does not end a recording; it ASKS the engine to finalize, and
+// the engine then has real work to do — flush the ring buffer, close the
+// container, run the truth measurement. The old flow fired stopRecordingNow()
+// without awaiting anything and tore the overlay down in the same tick, so the
+// user was returned to a home screen that showed no recording, while a file
+// was still being written. If that write failed, the error arrived out of
+// nowhere; if it succeeded, the recording simply appeared some seconds later.
+//
+// The overlay now stays up in an explicit finalizing state until a TERMINAL
+// engine event arrives (recording://state stopped|failed|idle, or finished, or
+// error) — every one of those paths funnels through hideOverlay(), which is
+// where the state is cleared.
+
+let finalizing = false
+let finalizeTimer: ReturnType<typeof setTimeout> | null = null
+let stopBtnLabel: string | null = null
+/** Long enough that a slow disk finishing a 90-minute FLAC is never cut short;
+ *  short enough that a user is not stranded staring at a frozen overlay. The
+ *  REAL backstop is Rust-side — this only guarantees the UI can't strand. */
+const FINALIZE_TIMEOUT_MS = 30_000
+
+function enterFinalizing(): void {
+  if (finalizing) return
+  finalizing = true
+  document.getElementById('recording-overlay')?.classList.add('is-finalizing')
+  const btn = document.getElementById('btn-stop-overlay') as HTMLButtonElement | null
+  if (btn) {
+    if (stopBtnLabel === null) stopBtnLabel = btn.textContent
+    btn.disabled = true
+    btn.textContent = t('recording.finalizing', 'Fullfører opptak …')
+  }
+  const hint = document.getElementById('rec-finalizing-hint')
+  if (hint) hint.style.display = ''
+  // The elapsed clock stops: the take is over, and a timer still counting up
+  // would be claiming otherwise. The meters keep running so they can ease down
+  // to silence instead of freezing mid-level.
+  if (recTimerIval)     { clearInterval(recTimerIval);    recTimerIval = null }
+  if (signalCheckTimer) { clearTimeout(signalCheckTimer); signalCheckTimer = null }
+  meter.tL = -60
+  meter.tR = -60
+
+  finalizeTimer = setTimeout(() => {
+    finalizeTimer = null
+    if (!finalizing) return
+    console.warn('[recording] no terminal event within', FINALIZE_TIMEOUT_MS, 'ms — force-closing the overlay')
+    toast('warn', t('recording.finalizeTimeout',
+      'Opptaket bruker uvanlig lang tid på å fullføre. Sjekk at fila ble lagret.'))
+    stopMonitoring()
+      .catch(err => console.error('[recording] stopMonitoring on finalize timeout:', err))
+      .finally(() => hideOverlay())
+  }, FINALIZE_TIMEOUT_MS)
+}
+
+function exitFinalizing(): void {
+  if (finalizeTimer) { clearTimeout(finalizeTimer); finalizeTimer = null }
+  finalizing = false
+  document.getElementById('recording-overlay')?.classList.remove('is-finalizing')
+  const btn = document.getElementById('btn-stop-overlay') as HTMLButtonElement | null
+  if (btn) {
+    btn.disabled = false
+    if (stopBtnLabel !== null) btn.textContent = stopBtnLabel
+  }
+  const hint = document.getElementById('rec-finalizing-hint')
+  if (hint) hint.style.display = 'none'
+}
+
+export async function doStopRecording(): Promise<void> {
+  // A second press while the engine is finalizing is not another stop request.
+  if (finalizing) return
+  enterFinalizing()
+  try {
+    await window.api.stopRecordingNow()
+  } catch (err) {
+    console.error('[recording] stopRecordingNow error:', err)
+    // The request itself failed, so no terminal event is coming — do the
+    // teardown here rather than waiting out the 30 s fallback.
+    try { await stopMonitoring() } catch (e) { console.error('[recording] stopMonitoring error:', e) }
+    hideOverlay()
+  }
 }
 
 // ── Overlay / UI state ───────────────────────────────────────────────────────
@@ -724,9 +856,18 @@ function showOverlay(opts: RecordingOpts): void {
     // 150 ms (~6.7 fps), which threw away half the preview frames and made the
     // image feel laggy even when the backend produced more.
     const recPollMs = Math.max(80, Math.floor(1000 / (opts.videoFramerate ?? settings.videoFramerate ?? 15)))
+    // In-flight guard: the tick awaits an IPC round trip, and setInterval does
+    // not care whether the previous tick finished. On a slow disk or a busy
+    // backend the calls pile up — 12 overlapping reads a second, each decoding
+    // base64 on the main thread, all of them racing to set the same img.src.
+    // A skipped frame is invisible at 12 fps; a queue of them is not.
+    let recPollBusy = false
     const recPollTimer = setInterval(async () => {
+      if (recPollBusy) return
+      recPollBusy = true
       let b64: string | null = null
       try { b64 = await window.api.recordingPreviewFrame?.() ?? null } catch { b64 = null }
+      finally { recPollBusy = false }
       if (!b64 || !recImg) return
       if (!recVideoDimsSet) {
         const bytes = Uint8Array.from(atob(b64.slice(0, 1400)), c => c.charCodeAt(0))
@@ -749,20 +890,28 @@ function showOverlay(opts: RecordingOpts): void {
   }
   const overlay = document.getElementById('recording-overlay')
   if (overlay) {
-    overlay.style.display = 'flex'
     if (opts.videoEnabled && opts.videoDeviceName) {
+      // Set BEFORE the reveal: video-active changes the layout, and switching
+      // it mid-transition would animate a reflow.
       overlay.classList.add('video-active')
     }
+    // Presentation only. showEl reveals in this same frame and the CSS fade
+    // runs on top of a fully live overlay — the meters, waveform and timer are
+    // started by the caller immediately after, exactly as before.
+    showEl(overlay)
   }
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot recording'
-  if (lbl) lbl.textContent = t('status.recording', 'Tar opp')
+  // The sidebar dot/label is NOT written here: it renders `status/next-recording`,
+  // which learns about this take from the recorder's own state events. Writing it
+  // from both places is what let the sidebar say "Alt er klart" mid-recording
+  // (whichever handler ran last won).
   document.getElementById('btn-start-recording')?.classList.add('recording')
 
-  scheduledStop  = opts.scheduledStopTime ? new Date(opts.scheduledStopTime) : null
-  stopOverridden = false
-  updateScheduledStopUI()
+  // The deadline comes from the ENGINE, not from the opts this screen was
+  // handed: the engine clamps `manual_max_minutes` and is the only thing that
+  // will actually stop the take. Ask it directly rather than guessing from
+  // `scheduledStopTime`, and every later change arrives on `recording://state`.
+  applyScheduledStop(null)
+  rehydrateScheduledStop()
 
   // Device name display
   const deviceEl = document.getElementById('rec-device-name')
@@ -798,6 +947,18 @@ function hideOverlay(): void {
   isRecording = false
   window.__isRecording = false
   document.body.classList.remove('recording-active')
+  // Every terminal path lands here — state, finished and error alike — so this
+  // is the one place the finalizing state can be cleared without leaving a
+  // disabled stop button behind on some branch.
+  exitFinalizing()
+  hideSilenceLine()
+  // Idempotent teardown. The stop press no longer tears the meters down itself
+  // (they keep running so they can ease to silence while the engine finalizes),
+  // and `recording-finished` can reach this point without having gone through
+  // the state handler's stopMonitoring — which would leave the waveform's rAF
+  // and the levels subscription running behind a hidden overlay. Calling it
+  // twice is a no-op; not calling it is a leak.
+  void stopMonitoring().catch(err => console.error('[recording] stopMonitoring on hide:', err))
 
   // Clean up overlay video preview
   recPreviewUnsub?.(); recPreviewUnsub = undefined
@@ -825,20 +986,18 @@ function hideOverlay(): void {
   }, 3000)
   const overlay = document.getElementById('recording-overlay')
   if (overlay) {
-    overlay.style.display = 'none'
-    overlay.classList.remove('video-active')
+    hideEl(overlay)
+    // `video-active` is a LAYOUT class; dropping it now would reflow the
+    // overlay while it is still fading out. It goes once the element is
+    // actually gone (hideEl's own fallback is 220 ms).
+    setTimeout(() => { if (!isRecording) overlay.classList.remove('video-active') }, 240)
   }
-  scheduledStop  = null
-  stopOverridden = false
-  if (schedStopTimer) { clearTimeout(schedStopTimer);  schedStopTimer = null }
-  if (schedCntTimer)  { clearInterval(schedCntTimer);  schedCntTimer  = null }
+  scheduledStop = null
+  if (schedCntTimer) { clearInterval(schedCntTimer); schedCntTimer = null }
   const autostopEl = document.getElementById('rec-autostop')
   if (autostopEl) autostopEl.style.display = 'none'
   document.getElementById('btn-start-recording')?.classList.remove('recording')
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot'
-  if (lbl) lbl.textContent = t('status.ready', 'Alt er klart')
+  // Sidebar status: see showOverlay — the store owns that element now.
 }
 
 // Bring the overlay back for a session the ENGINE says is live but the UI lost
@@ -856,11 +1015,11 @@ function resyncOverlayToLiveSession(): void {
   if (previewRestartTimer) { clearTimeout(previewRestartTimer); previewRestartTimer = null }
   stopVideoPreview()
   const overlay = document.getElementById('recording-overlay')
-  if (overlay) overlay.style.display = 'flex'
-  const dot = document.getElementById('status-dot')
-  const lbl = document.getElementById('status-label')
-  if (dot) dot.className = 'status-dot recording'
-  if (lbl) lbl.textContent = t('status.recording', 'Tar opp')
+  if (overlay) showEl(overlay)
+  // The sidebar dot/label is NOT written here: it renders `status/next-recording`,
+  // which learns about this take from the recorder's own state events. Writing it
+  // from both places is what let the sidebar say "Alt er klart" mid-recording
+  // (whichever handler ran last won).
   document.getElementById('btn-start-recording')?.classList.add('recording')
   const deviceEl = document.getElementById('rec-device-name')
   if (deviceEl && !deviceEl.textContent) deviceEl.textContent = settings.deviceName ?? ''
@@ -869,29 +1028,25 @@ function resyncOverlayToLiveSession(): void {
   // emitting levels; without this a resynced (or scheduler-started) session
   // showed a dead overlay.
   startMonitoringLite()
+  // …and the auto-stop row, read from the engine rather than guessed. The old
+  // resync left the countdown blank until the next lifecycle transition, so a
+  // scheduler-started take looked like it would run forever.
+  rehydrateScheduledStop()
 }
 
-/** Show the recording overlay's non-terminal warning banner (#rec-reconnect).
- *  Reused for every transient, non-terminal recorder event — reconnect AND
- *  silence — rather than a separate banner per event type. With no `message`
- *  this is the true-reconnect case: restore its default "kobler til på nytt" +
- *  countdown. With a `message` (e.g. the silence warning), swap in that text
- *  and hide the countdown, which has no meaning outside a reconnect. */
-function showReconnectBanner(message?: string): void {
+/** Show the recording overlay's reconnect banner (#rec-reconnect) — the
+ *  device dropped out and the engine's retry policy is running. This element
+ *  is now the reconnect's alone: the silence warning has its own line, because
+ *  two problems sharing one banner meant the second one erased the first. */
+function showReconnectBanner(): void {
   const el = document.getElementById('rec-reconnect')
   if (!el) return
   const textEl      = el.querySelector<HTMLElement>('.rec-reconnect-text')
   const countdownEl = document.getElementById('rec-reconnect-countdown')
   const unitEl      = el.querySelector<HTMLElement>('.rec-reconnect-unit')
-  if (message) {
-    if (textEl) textEl.textContent = message
-    if (countdownEl) countdownEl.style.display = 'none'
-    if (unitEl) unitEl.style.display = 'none'
-  } else {
-    if (textEl) textEl.textContent = t('recording.reconnecting', 'Lydkilde frakoblet — kobler til på nytt')
-    if (countdownEl) countdownEl.style.display = ''
-    if (unitEl) unitEl.style.display = ''
-  }
+  if (textEl) textEl.textContent = t('recording.reconnecting', 'Lydkilde frakoblet — kobler til på nytt')
+  if (countdownEl) countdownEl.style.display = ''
+  if (unitEl) unitEl.style.display = ''
   el.style.display = 'flex'
 }
 
@@ -900,17 +1055,77 @@ function hideReconnectBanner(): void {
   if (el) el.style.display = 'none'
 }
 
+/** The overlay's own silence line (#rec-silence). Cleared automatically once
+ *  the meter sees signal again — the engine emits no "silence over" event, and
+ *  a warning that outlives its cause is a warning people learn to ignore. */
+let silenceShown = false
+function showSilenceLine(message: string): void {
+  const el = document.getElementById('rec-silence')
+  if (!el) return
+  const textEl = document.getElementById('rec-silence-text')
+  if (textEl) textEl.textContent = message
+  el.style.display = 'flex'
+  silenceShown = true
+}
+
+function hideSilenceLine(): void {
+  if (!silenceShown) return
+  silenceShown = false
+  const el = document.getElementById('rec-silence')
+  if (el) el.style.display = 'none'
+}
+
+/** How much "+30 min" adds. One constant so the button label, the invoke and
+ *  the toast can never drift apart. */
+const EXTEND_MINUTES = 30
+
+/** Run an auto-stop command with the button disabled for the round trip, and
+ *  surface a failure instead of leaving the user believing it took. The engine
+ *  re-emits `recording://state`, so the countdown updates from the event — this
+ *  never writes `scheduledStop` itself. */
+async function withAutostopButton(id: string, run: () => Promise<void>): Promise<void> {
+  const btn = document.getElementById(id) as HTMLButtonElement | null
+  if (btn) btn.disabled = true
+  try {
+    await run()
+  } catch (err) {
+    console.error('[recording] auto-stop command failed:', err)
+    toast('error', t('recording.autostopFailed',
+      'Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.'))
+  } finally {
+    if (btn) btn.disabled = false
+  }
+}
+
+/** Adopt the engine's auto-stop deadline (absolute epoch ms, or null for none)
+ *  and re-render the countdown row. The ONE place `scheduledStop` is written. */
+function applyScheduledStop(deadlineMs: number | null): void {
+  const next = typeof deadlineMs === 'number' && deadlineMs > 0 ? new Date(deadlineMs) : null
+  if (next?.getTime() === scheduledStop?.getTime()) return
+  scheduledStop = next
+  updateScheduledStopUI()
+}
+
+/** Ask the engine for its current deadline. Used where no state event is due —
+ *  the overlay opening on a manual start, and the resync after a lost session —
+ *  so the countdown is right immediately instead of only after the next
+ *  lifecycle transition (which may be an hour away). */
+function rehydrateScheduledStop(): void {
+  window.api.scheduledStopMs()
+    .then(ms => applyScheduledStop(ms))
+    .catch(err => console.warn('[recording] auto-stop rehydrate failed:', err))
+}
+
 function updateScheduledStopUI(): void {
   const section = document.getElementById('rec-autostop')
   if (!section) return
+  if (schedCntTimer) { clearInterval(schedCntTimer); schedCntTimer = null }
   if (!scheduledStop) { section.style.display = 'none'; return }
   section.style.display = 'flex'
   updateScheduledStopCountdown()
-  if (schedCntTimer) clearInterval(schedCntTimer)
+  // A display timer only — the engine owns the stop. Nothing in this file can
+  // end a recording on a clock any more.
   schedCntTimer = setInterval(updateScheduledStopCountdown, 1000)
-  if (schedStopTimer) clearTimeout(schedStopTimer)
-  const ms = scheduledStop.getTime() - Date.now()
-  if (ms > 0) schedStopTimer = setTimeout(() => { if (isRecording) doStopRecording() }, ms)
 }
 
 function updateScheduledStopCountdown(): void {
