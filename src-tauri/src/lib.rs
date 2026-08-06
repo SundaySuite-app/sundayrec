@@ -530,6 +530,15 @@ pub fn run() {
             commands::streaming::stream_preview_path,
             commands::streaming::stream_set_key,
             commands::streaming::stream_delete_key,
+            // Episode images (cover art) — default + per-episode override. Pure
+            // header probing in `sundayrec-core::image_probe`; no feature gate,
+            // no ffmpeg. The renderer had these six as stubs since the port.
+            commands::thumbnail::thumbnail_set_default,
+            commands::thumbnail::thumbnail_clear_default,
+            commands::thumbnail::thumbnail_get_default_info,
+            commands::thumbnail::thumbnail_set_episode,
+            commands::thumbnail::thumbnail_clear_episode,
+            commands::thumbnail::thumbnail_resolve,
             // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
             commands::ndi::ndi_list_sources,
             commands::ndi::ndi_start_receiver,
