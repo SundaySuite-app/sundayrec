@@ -332,6 +332,18 @@ declare global {
       /** Opens PRIVACY.md on the (public) GitHub repo via the opener plugin. */
       openPrivacyPolicy: () => Promise<boolean>
 
+      // ── Telemetry (E3.7) — the settings-panel surface ────────────────────
+      /** The real next payload as pretty JSON, honestly labelled — see
+       *  TelemetryPreview's own doc comment for why the two consent states
+       *  answer differently. `null` only on a genuine IPC failure; never
+       *  fabricated. */
+      telemetryPreviewPayload: () => Promise<import('../bindings/TelemetryPreview').TelemetryPreview | null>
+      /** What is waiting in the local outbox. */
+      telemetryQueueStatus: () => Promise<import('../bindings/TelemetryQueueStatus').TelemetryQueueStatus>
+      /** "Slett mine data", the local half: retires the install id. Resolves
+       *  `false` only on a real failure. */
+      telemetryRegenerateInstallId: () => Promise<boolean>
+
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
       thumbnailClearDefault:   () => Promise<boolean>

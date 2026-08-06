@@ -1267,6 +1267,42 @@ const api: Record<string, unknown> = {
     }
   },
 
+  // ── Telemetry (E3.7) — the settings-panel surface: preview, queue, delete ─
+  // "Vis hva som sendes" — the REAL next payload as pretty JSON. `null` ONLY
+  // on a genuine IPC failure, never a fabricated payload: telemetry_preview_
+  // payload's own doc comment (src-tauri/src/commands/telemetry.rs) is
+  // explicit that a mock here would be a promise about code that never runs,
+  // which is worse than showing nothing.
+  telemetryPreviewPayload: async () => {
+    try {
+      return await invoke<import("../bindings/TelemetryPreview").TelemetryPreview>(
+        "telemetry_preview_payload",
+      );
+    } catch (e) {
+      console.warn("[api-shim] telemetry_preview_payload failed", e);
+      return null;
+    }
+  },
+  // Informational only — an empty-queue fallback just means the settings
+  // panel shows nothing extra, never a false alarm.
+  telemetryQueueStatus: async () =>
+    call<import("../bindings/TelemetryQueueStatus").TelemetryQueueStatus>(
+      "telemetry_queue_status",
+      undefined,
+      { pending: 0, failed: 0, oldestAt: null, lastError: null },
+    ),
+  // "Slett mine data", the local half: retires the install id. `false` only
+  // on a real failure — the caller must not claim success it cannot back up.
+  telemetryRegenerateInstallId: async () => {
+    try {
+      await invoke("telemetry_regenerate_install_id");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] telemetry_regenerate_install_id failed", e);
+      return false;
+    }
+  },
+
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone

@@ -1955,6 +1955,44 @@
         <div class="form-hint" data-i18n="general.logHint">Hvis noe går galt, kan denne loggen sendes til den som hjelper deg. Den inneholder ingen lyd og ingen passord.</div>
       </div>
 
+      <!-- Anonym diagnostikk (E3.7). State lives behind telemetry_consent_get/
+           set (the app_setting bag in src-tauri), NOT the Settings blob — see
+           general-page.ts's setupTelemetryCard() for why the toggle below
+           uses bindSetting's apply:()=>{}/persist: override shape instead of
+           the usual collectGeneralSettings() round-trip. -->
+      <div class="card" id="telemetry-card">
+        <div class="card-title" data-i18n="general.telemetryCardTitle">Personvern og diagnostikk</div>
+        <p class="card-desc" data-i18n="general.telemetryCardDesc">Hjelp Sunday Suite gjøre SundayRec bedre med anonym diagnostikk. Frivillig, og av som standard — det endrer ingenting i hvordan SundayRec fungerer.</p>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.telemetryToggleTitle">Del anonym diagnostikk</div>
+            <div class="toggle-desc" data-i18n="general.telemetryToggleDesc">Krasjrapporter, kvalitetsdata og navngitte bruksmål — aldri lyd, tekst fra prekenen eller navn.</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-telemetry-consent" /><span class="toggle-track"></span></label>
+        </div>
+        <div id="telemetry-queue-status" class="form-hint" style="display:none"></div>
+        <div class="btn-row mt">
+          <button type="button" class="btn-secondary" id="btn-telemetry-preview" data-i18n="general.telemetryPreviewBtn">Vis hva som sendes</button>
+          <button type="button" class="btn-secondary" id="btn-telemetry-delete" data-i18n="general.telemetryDeleteBtn">Slett mine data</button>
+        </div>
+        <div class="form-hint">
+          <a href="#" id="telemetry-privacy-link" class="privacy-link" data-i18n="general.telemetryReadMore">Les personvernerklæringen ↗</a>
+        </div>
+      </div>
+
+      <!-- "Vis hva som sendes" — the REAL payload, pretty-printed. Same shape
+           as audio-diagnose-modal's <pre class="diagnose-body">. -->
+      <div id="telemetry-preview-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="telemetry-preview-modal-title">
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title" id="telemetry-preview-modal-title" data-i18n="general.telemetryPreviewTitle">Hva sendes</span>
+            <button class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
+          </div>
+          <p id="telemetry-preview-hint" class="diagnose-hint"></p>
+          <pre id="telemetry-preview-body" class="diagnose-body"></pre>
+        </div>
+      </div>
+
       <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
            ONLY in the Windows build (the only build with ASIO support) — revealed
            by general-page.ts when the platform is Windows. The trademark notice is
