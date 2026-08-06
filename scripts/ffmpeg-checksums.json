@@ -1,7 +1,5 @@
 {
-  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars bundled by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. A mismatch hard-fails the fetch; a missing key logs the computed hash with pin instructions. mac pins computed+shasum-verified on the owner's machine (2026-08-04); windows pins taken from the v0.8.0 release run's fetch log (run 30937244151) — the exact bytes that shipped in the published installer. Linux CI intentionally unpinned (binaries never ship from CI).",
-  "ffmpeg-aarch64-apple-darwin": "a90e3db6a3fd35f6074b013f948b1aa45b31c6375489d39e572bea3f18336584",
-  "ffprobe-aarch64-apple-darwin": "c846d5db9d3b5bc33f987725e21f3ea14953931221c191575918e907ad6c18ff",
-  "ffmpeg-x86_64-pc-windows-msvc": "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
-  "ffprobe-x86_64-pc-windows-msvc": "f28c4751e7367205267025aaf0fcfc921e34d9b7edaa46bd9c8abaf367fc9051"
+  "_comment": "SHA-256 pins for the ffmpeg/ffprobe sidecars fetched by scripts/fetch-ffmpeg.mjs, keyed by <name>-<rust host triple>. This is the SECOND pin layer: the script already hard-pins the SHA-256 of every downloaded ARCHIVE, so these cover the exact unpacked bytes that get bundled and shipped. A mismatch hard-fails the fetch; a missing key logs the computed hash with pin instructions. Reset for ffmpeg 8.1.2 (2026-08-06, was 6.0 from the frozen ffmpeg-static npm package). mac arm64 pins computed on the owner's machine; windows + linux keys are intentionally absent until the first CI/release run prints them — copy them from that run's log, exactly as the 6.0-era Windows pins were captured. Linux never ships (CI-only sidecar), so pinning it is optional.",
+  "ffmpeg-aarch64-apple-darwin": "eaf91238e104dd0e262bc6510e25061855cc99a6955a721b0ac99660d58c473d",
+  "ffprobe-aarch64-apple-darwin": "ed9dc5871914b466b96b402c9ec0ba68ce4f836e72faa464b1b4e279835bd4a6"
 }
