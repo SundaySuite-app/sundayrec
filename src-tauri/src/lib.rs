@@ -675,6 +675,7 @@ pub fn run() {
             commands::telemetry::telemetry_consent_get,
             commands::telemetry::telemetry_consent_set,
             commands::telemetry::telemetry_regenerate_install_id,
+            commands::telemetry::telemetry_count,
             // R7 auto-update (status pure; check/download/relaunch gated by `updater`).
             commands::update::update_status,
             commands::update::update_check,

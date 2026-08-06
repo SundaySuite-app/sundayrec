@@ -133,6 +133,7 @@ pub async fn stream_start(
     also_record: bool,
     overlays: Vec<OverlayConfig>,
 ) -> AppResult<StreamStatus> {
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::StreamingStarted);
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let platform = host_platform();
 

@@ -138,19 +138,34 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    // `counters::test_lock()` is a std `Mutex` held across `.await`s — see the
+    // same allow in `telemetry::counters`. Correct here: it serialises tests
+    // against process-global counter state, each runs on its own
+    // single-threaded `#[tokio::test]` runtime, and nothing in the guarded
+    // region can block on the same lock.
+    #![allow(clippy::await_holding_lock)]
+
     use super::*;
     use crate::db::store::open_pool;
-    use crate::telemetry::{consent_set, queue_store as store};
+    use crate::telemetry::{consent_set, counters, queue_store as store};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use sundayrec_core::telemetry::queue::{TelemetryEntry, TelemetryStatus};
 
-    async fn temp_pool() -> (SqlitePool, tempfile::TempDir) {
+    /// A throwaway database AND the counter-state lock: `consent_set` writes the
+    /// process-global counter mirror, so every test here has to serialise on it
+    /// or two tests decide each other's assertions.
+    async fn temp_pool() -> (
+        SqlitePool,
+        tempfile::TempDir,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let guard = counters::test_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         let pool = open_pool(&dir.path().join("test.sqlite"))
             .await
             .expect("open_pool");
-        (pool, dir)
+        (pool, dir, guard)
     }
 
     fn entry(id: &str, created_at: i64) -> TelemetryEntry {
@@ -202,7 +217,7 @@ mod tests {
 
     #[tokio::test]
     async fn with_consent_off_the_send_path_is_unreachable() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         // A queue with a due entry — everything is ready to send EXCEPT consent.
         // (Enqueue directly: the normal path would refuse to queue at all.)
         store::insert_capped(&pool, &entry("a", 0)).await.unwrap();
@@ -245,7 +260,7 @@ mod tests {
     async fn the_positive_control_proves_the_sender_is_really_wired() {
         // If this test did not exist, the one above could pass because nothing
         // was connected rather than because consent blocked it.
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         store::insert_capped(&pool, &entry("a", 0)).await.unwrap();
 
@@ -263,7 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn revoking_consent_mid_backlog_stops_the_pump_and_empties_it() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         for i in 0..3 {
             store::insert_capped(&pool, &entry(&format!("id-{i}"), i))
@@ -286,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_send_backs_off_rather_than_spinning() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         store::insert_capped(&pool, &entry("a", 0)).await.unwrap();
 
@@ -314,7 +329,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_empty_queue_with_consent_on_is_idle_not_an_error() {
-        let (pool, _d) = temp_pool().await;
+        let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
         let sender = CountingSender::default();
         assert_eq!(

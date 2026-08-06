@@ -149,6 +149,7 @@ pub async fn review_mark_published(
     id: String,
 ) -> AppResult<bool> {
     let mut queue = load_queue(&db).await?;
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::ReviewPublished);
     let ok = review_queue::mark_published(&mut queue, &id, now_i64());
     if ok {
         save_queue(&db, &queue).await?;
@@ -165,6 +166,7 @@ pub async fn review_mark_discarded(
     id: String,
 ) -> AppResult<bool> {
     let mut queue = load_queue(&db).await?;
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::ReviewDiscarded);
     let ok = review_queue::mark_discarded(&mut queue, &id, now_i64());
     if ok {
         save_queue(&db, &queue).await?;
