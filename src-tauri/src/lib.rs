@@ -46,6 +46,11 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
+// E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
+// `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
+// has no console and a macOS .app from Finder discards stdout, so an installed
+// app's log went to a file descriptor pointed at nothing.
+pub mod logfile;
 pub mod media;
 // R3 NDI receiver — default-off `ndi` feature (STUB; SDK not bundled). The
 // source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
@@ -134,12 +139,33 @@ pub fn run() {
     // at all (release Windows has no console; a macOS .app discards stdout).
     crash::install_hook();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with_target(false)
-        .init();
+    // E2.3: stdout AND a rotating file. The stdout layer is byte-for-byte the
+    // one that was here before (same filter default, same `with_target(false)`),
+    // so a dev terminal reads exactly as it always did; the file layer is
+    // additive and degrades to nothing if the directory cannot be created.
+    // `EnvFilter` still governs both, so `RUST_LOG=debug` widens the file too.
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let filter =
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
+        let file_layer = logfile::init().map(|writer| {
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                // No escape codes in a file somebody will paste into a chat.
+                .with_ansi(false)
+                .with_writer(writer)
+        });
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_target(false))
+            .with(file_layer)
+            .init();
+    }
+    // The first lines of every log answer "what build is this?" — the question
+    // every support conversation opens with.
+    logfile::log_startup_banner();
 
     // Windows orphan-guard: before anything spawns, put THIS process in a Job
     // Object that kills its children when it dies (even on a Task-Manager kill), so
@@ -492,6 +518,10 @@ pub fn run() {
             commands::settings::settings_import_from_file,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
+            // E2.3 — the log the operator can actually hand to support. Neither
+            // takes a path (see commands/logs.rs for why that IS the guard).
+            commands::logs::logs_reveal,
+            commands::logs::logs_tail,
             // Trackpad haptics (macOS Force Touch; no-op elsewhere). The editor
             // fires subtle, throttled taps on snap / limit / marker-crossing.
             commands::haptics::haptic_perform,
