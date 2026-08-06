@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Available",
     "diagLoopback": "WASAPI loopback",
     "diagDeviceListTitle": "Every audio device the recorder can see",
+    "diagIpcTitle": "Recent IPC failures (technical)",
+    "diagIpcJustNow": "just now",
+    "diagIpcSecAgo": "{n} sec ago",
+    "diagIpcMinAgo": "{n} min ago",
+    "diagIpcHourAgo": "{n} hr ago",
     "benchJudging": "Analysing the measurement …"
   },
   "files": {

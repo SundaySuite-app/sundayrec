@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Tillgänglig",
     "diagLoopback": "WASAPI-loopback",
     "diagDeviceListTitle": "Alla ljudenheter inspelaren ser",
+    "diagIpcTitle": "Senaste IPC-fel (tekniskt)",
+    "diagIpcJustNow": "just nu",
+    "diagIpcSecAgo": "{n} sek sedan",
+    "diagIpcMinAgo": "{n} min sedan",
+    "diagIpcHourAgo": "{n} tim sedan",
     "benchJudging": "Analyserar mätningen …"
   },
   "files": {

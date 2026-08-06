@@ -354,6 +354,73 @@ function diagRow(label: string, value: string, ok: boolean | null): string {
     `<span class="diag-row-value">${escHtml(value)}</span></div>`
 }
 
+/** One command's worth of remembered IPC failures, folded down to what the
+ *  collapsed «Siste IPC-feil» section shows. */
+interface IpcFailureGroup {
+  cmd: string
+  count: number
+  lastError: string
+  lastAt: number
+}
+
+/**
+ * Fold the renderer's flat, newest-first failure ring (E2.4's `ipc-failures-
+ * core`) down to one row per distinct command. `failures` is already newest
+ * first, so the FIRST occurrence of a command is its most recent failure —
+ * exactly what `lastError`/`lastAt` should hold.
+ */
+function groupIpcFailures(
+  failures: { cmd: string; error: string; at: number }[],
+): IpcFailureGroup[] {
+  const byCmd = new Map<string, IpcFailureGroup>()
+  for (const f of failures) {
+    const g = byCmd.get(f.cmd)
+    if (g) g.count += 1
+    else byCmd.set(f.cmd, { cmd: f.cmd, count: 1, lastError: f.error, lastAt: f.at })
+  }
+  return [...byCmd.values()].sort((a, b) => b.lastAt - a.lastAt)
+}
+
+/** «3 min siden» — coarse, unit-abbreviated relative time. The abbreviation
+ *  (not a full word) sidesteps per-language plural grammar entirely, which
+ *  matters here because this ring can span a nine-hour Sunday. */
+function relativeAgo(atMs: number, nowMs: number): string {
+  const diffSec = Math.max(0, Math.round((nowMs - atMs) / 1000))
+  if (diffSec < 5) return t('audio.diagIpcJustNow', 'akkurat nå')
+  if (diffSec < 60) return t('audio.diagIpcSecAgo', '{n} sek siden').replace('{n}', String(diffSec))
+  const diffMin = Math.round(diffSec / 60)
+  if (diffMin < 60) return t('audio.diagIpcMinAgo', '{n} min siden').replace('{n}', String(diffMin))
+  const diffHour = Math.round(diffMin / 60)
+  return t('audio.diagIpcHourAgo', '{n} t siden').replace('{n}', String(diffHour))
+}
+
+function ipcFailureRow(g: IpcFailureGroup, nowMs: number): string {
+  const label = g.count > 1 ? `${g.cmd} ×${g.count}` : g.cmd
+  return `<div class="diag-row diag-row-bad"><span class="diag-row-mark">✕</span>` +
+    `<span class="diag-row-label">${escHtml(label)}</span>` +
+    `<span class="diag-row-value">${escHtml(g.lastError)} · ${escHtml(relativeAgo(g.lastAt, nowMs))}</span></div>`
+}
+
+/**
+ * The diagnose modal's «Siste IPC-feil» disclosure (E2.7).
+ *
+ * `call()` in api-shim.ts already remembers every failed backend call in a
+ * bounded, renderer-local ring (E2.4) — this is the first surface that reads
+ * it back. Kept collapsed and after the audio answer on purpose: it is a
+ * support detail for a broken BACKEND, not the headline "is my mic OK?"
+ * question the modal leads with. Empty ring → empty string, so the panel
+ * never shows a reassuring "no failures" box nobody asked to see.
+ */
+function renderIpcFailuresSection(): string {
+  const summary = window.api.getIpcFailureSummary()
+  if (!summary.count) return ''
+  const groups = groupIpcFailures(window.api.getRecentIpcFailures())
+  const now = Date.now()
+  const rows = groups.map(g => ipcFailureRow(g, now)).join('')
+  return `<details class="diag-details"><summary>${escHtml(t('audio.diagIpcTitle', 'Siste IPC-feil (teknisk)'))} (${summary.count})</summary>` +
+    `<div class="diag-rows">${rows}</div></details>`
+}
+
 /**
  * The Lyd tab's "Diagnose" button.
  *
@@ -439,6 +506,7 @@ async function runAudioDiagnosis(): Promise<void> {
       <details class="diag-details"><summary>${escHtml(t('audio.diagDeviceListTitle', 'Alle lydenheter opptakeren ser'))}</summary>${deviceList}</details>
       <button type="button" class="btn-secondary" id="btn-diagnose-copy" style="margin:8px 0">${t('audio.diagnoseCopy', '📋 Kopier full rapport')}</button>
       ${savedLine}
+      ${renderIpcFailuresSection()}
       <details class="diag-details"><summary>${escHtml(t('audio.diagnoseFull', 'Full systemrapport'))}</summary><pre class="diag-report">${escHtml(report.markdown)}</pre></details>`
 
     document.getElementById('btn-diagnose-copy')?.addEventListener('click', async () => {

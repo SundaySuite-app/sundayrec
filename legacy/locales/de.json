@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Verfügbar",
     "diagLoopback": "WASAPI-Loopback",
     "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht",
+    "diagIpcTitle": "Letzte IPC-Fehler (technisch)",
+    "diagIpcJustNow": "gerade eben",
+    "diagIpcSecAgo": "vor {n} Sek.",
+    "diagIpcMinAgo": "vor {n} Min.",
+    "diagIpcHourAgo": "vor {n} Std.",
     "benchJudging": "Messung wird ausgewertet …"
   },
   "files": {

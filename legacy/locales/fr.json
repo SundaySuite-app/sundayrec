@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Disponible",
     "diagLoopback": "Bouclage WASAPI",
     "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur",
+    "diagIpcTitle": "Dernières erreurs IPC (technique)",
+    "diagIpcJustNow": "à l'instant",
+    "diagIpcSecAgo": "il y a {n} s",
+    "diagIpcMinAgo": "il y a {n} min",
+    "diagIpcHourAgo": "il y a {n} h",
     "benchJudging": "Analyse de la mesure …"
   },
   "files": {
