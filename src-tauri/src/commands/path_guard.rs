@@ -422,4 +422,44 @@ mod tests {
         deny_sensitive_under(&home.join(".sshfs/mount"), home).unwrap();
         deny_sensitive_under(&home.join("Recordings/service.mp3"), home).unwrap();
     }
+
+    // ── E1.7: SENSITIVE_HOME_SUBPATHS ↔ tauri.conf.json deny list ──────────────
+
+    #[test]
+    fn every_sensitive_home_subpath_has_a_matching_asset_scope_deny_entry() {
+        // SENSITIVE_HOME_SUBPATHS (above) and tauri.conf.json's
+        // app.security.assetProtocol.scope.deny are kept in sync BY HAND — this
+        // is the tripwire. If it fails, add the missing entry to
+        // src-tauri/tauri.conf.json's assetProtocol.scope.deny (as
+        // "$HOME/<subpath>/**", or "$HOME/<subpath>" for a single file like
+        // .netrc) to match SENSITIVE_HOME_SUBPATHS in this file.
+        let conf_json = include_str!("../../tauri.conf.json");
+        let conf: serde_json::Value =
+            serde_json::from_str(conf_json).expect("tauri.conf.json must be valid JSON");
+        let deny = conf["app"]["security"]["assetProtocol"]["scope"]["deny"]
+            .as_array()
+            .expect("app.security.assetProtocol.scope.deny must be a JSON array");
+        // Normalize each entry the same way regardless of shape: drop the
+        // "$HOME/" prefix and an optional trailing "/**" glob, so
+        // "$HOME/.ssh/**" and "$HOME/.netrc" both compare against the bare
+        // ".ssh" / ".netrc" that SENSITIVE_HOME_SUBPATHS uses.
+        let deny_normalized: Vec<&str> = deny
+            .iter()
+            .map(|v| {
+                let s = v.as_str().expect("deny entries must be strings");
+                let s = s.strip_prefix("$HOME/").unwrap_or(s);
+                s.strip_suffix("/**").unwrap_or(s)
+            })
+            .collect();
+
+        for sub in SENSITIVE_HOME_SUBPATHS {
+            assert!(
+                deny_normalized.contains(sub),
+                "SENSITIVE_HOME_SUBPATHS (src-tauri/src/commands/path_guard.rs) \
+                 has {sub:?} but tauri.conf.json's \
+                 app.security.assetProtocol.scope.deny has no matching entry \
+                 — update src-tauri/tauri.conf.json to keep the two lists in sync"
+            );
+        }
+    }
 }
