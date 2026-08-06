@@ -7,6 +7,7 @@ import {
   VOID,
   type Fixtures,
 } from "./harness";
+import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 
 // The editor: open a fixtured recording, move between the three workspace tabs,
 // and correct the sermon pick.
@@ -22,14 +23,15 @@ const DURATION = 600;
 /**
  * A recording whose timeline has THREE plausible sermon candidates, all ≥ 60 s
  * and already in time order — which is what makes the picker offer a real
- * choice, and what keeps its option indices aligned with `setSermonSegment`
- * (see `the sermon picker and setSermonSegment disagree…` at the bottom).
+ * choice.
  *
- * ⚠️ These carry `type`, which is what the renderer reads — NOT `kind`, which is
- * what the Rust `EditorSegment` actually serialises. That mismatch is a live
- * production bug, pinned separately below.
+ * Typed as the GENERATED `EditorSegment` binding on purpose: these fixtures
+ * stand in for what `editor_segments` puts on the wire, so a Rust-side field
+ * rename must fail `npm run typecheck` here rather than quietly making the whole
+ * sermon-detection UI inert (which is exactly what a `kind` / `type` split did
+ * to every shipped build until this was fixed).
  */
-const SEGMENTS = [
+const SEGMENTS: EditorSegment[] = [
   { start: 0, end: 30, duration: 30, label: "Stillhet", type: "silence" },
   { start: 30, end: 180, duration: 150, label: "Tale", type: "speech" },
   { start: 180, end: 210, duration: 30, label: "Musikk", type: "music" },
@@ -216,34 +218,35 @@ test.describe("editor", () => {
     await expect(page.locator("#editor-sermon-picker-wrap")).toBeHidden();
   });
 
-  // ── Known bugs, pinned so fixing them is noticed ─────────────────────────────
+  // ── Regressions ──────────────────────────────────────────────────────────────
   //
-  // `test.fail()` inverts the verdict: these PASS while the bug is present and
-  // fail loudly the day it is fixed, which is the reminder to delete them.
+  // Both of these were `test.fail()` pins over real production bugs. They now
+  // assert the fixed behaviour; if either regresses the suite goes red here
+  // first, which is the only place these ever showed up — neither bug produced
+  // an error, a log line, or any other symptom.
 
-  test.fail(
-    "KNOWN BUG: editor_segments serialises `kind`, the renderer reads `type`",
-    async ({ page }) => {
-      // `EditorSegment` (src-tauri/src/editor/mod.rs) is `#[serde(rename_all =
-      // "camelCase")] pub kind: String` with no `rename = "type"`, and
-      // api-shim's `editorDetectSegments` hands the array straight through. But
-      // `Suggestion` (pages/editor/state.ts) and every consumer in
-      // pages/editor/detection.ts read `.type`. So against the REAL backend
-      // every segment's type is `undefined`, and the sermon picker, «Marker
-      // preken automatisk», the suggestion banner and the timeline's
-      // speech/music/silence layers are all dead code in the shipped app.
-      //
-      // This feeds the real shape and asserts what SHOULD happen.
-      await openEditor(page, {
-        editor_segments: SEGMENTS.map(({ type, ...rest }) => ({
-          ...rest,
-          kind: type,
-        })),
-      });
-      await page.locator("#editor-tab-clip").click();
-      await expect(page.locator("#editor-sermon-picker-wrap")).toBeVisible();
-    },
-  );
+  test("the segment shape the backend really sends drives the whole sermon UI", async ({
+    page,
+  }) => {
+    // `EditorSegment` used to serialise its type field as `kind` (camelCased
+    // from the Rust spelling) while `Suggestion` and every consumer in
+    // pages/editor/detection.ts read `.type`. Against the REAL backend every
+    // segment's type was `undefined`, so the sermon picker, «Marker preken
+    // automatisk», the suggestion banner and the timeline's speech/music/
+    // silence layers were all dead code in the shipped app. `SEGMENTS` is typed
+    // as the generated binding, so this test is fed the true wire shape.
+    await openEditor(page);
+    await page.locator("#editor-tab-clip").click();
+
+    // Every surface that the mismatch had switched off:
+    await expect(page.locator("#editor-sermon-picker-wrap")).toBeVisible();
+    await expect(page.locator("#btn-apply-auto-trim")).toBeVisible();
+    await expect(page.locator("#editor-suggestion-banner")).toBeVisible();
+    // …and the count that read 0 for every recording. Three speech-like blocks.
+    await expect(page.locator("#editor-analyze-summary")).toContainText(
+      "3 tale-segmenter funnet",
+    );
+  });
 
   test.fail(
     "KNOWN BUG: the sermon picker and setSermonSegment index different lists",
@@ -279,7 +282,7 @@ test.describe("editor", () => {
             label: "Tale",
             type: "speech",
           },
-        ],
+        ] satisfies EditorSegment[],
       });
       await page.locator("#editor-tab-clip").click();
 

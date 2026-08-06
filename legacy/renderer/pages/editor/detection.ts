@@ -80,7 +80,7 @@ export async function runDetection(auto = false): Promise<void> {
   const fpAtStart = E.filePath
   let raw: Suggestion[] = []
   try {
-    raw = (await window.api.editorDetectSegments(E.filePath, !auto)) as Suggestion[]
+    raw = await window.api.editorDetectSegments(E.filePath, !auto)
   } catch {
     raw = []
   } finally {

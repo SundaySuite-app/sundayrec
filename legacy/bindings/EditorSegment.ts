@@ -8,5 +8,19 @@
 export type EditorSegment = { start: number, end: number, duration: number, label: string, 
 /**
  * `silence|speech|music|mixed|unknown|sermon`.
+ *
+ * Serialised as `type` — `kind` is only the Rust-side spelling, because
+ * `type` is a keyword. The wire name is what the doc-comment above promises
+ * ("the same shape `detectSegments` returned to the Electron renderer") and
+ * what the sibling detector already ships: `prep::PrepAnalysisSegment`
+ * carries the identical `#[serde(rename = "type")]`. Without it this field
+ * went out as `kind`, every renderer read of `.type` was `undefined`, and
+ * the whole sermon-detection UI was dead in shipped builds.
+ *
+ * A `<stem>.segments.json` cache written by such a build no longer
+ * deserialises — `read_sidecar_typed` swallows that into a cache miss and
+ * the recording is analysed once more, so no version bump is needed (and
+ * `EDITOR_CACHE_VERSION` is shared with the far more expensive peaks
+ * cache, which must NOT be invalidated over this).
  */
-kind: string, };
+type: string, };

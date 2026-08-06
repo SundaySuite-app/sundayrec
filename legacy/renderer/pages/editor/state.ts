@@ -1,9 +1,19 @@
-import type { RecordingMetadata } from '../../../types'
+import type { EditorSegment, RecordingMetadata } from '../../../types'
 import { peekSharedAudioCtx } from './audio-ctx'
 
 // ── Shared types ────────────────────────────────────────────────────────────
 export interface Cut { start: number; end: number }
-export interface Suggestion { start: number; end: number; duration: number; label: string; type: string }
+/** One analysed segment, exactly as `editor_segments` serialises it.
+ *
+ *  This is an ALIAS of the generated `EditorSegment` binding, not a re-typing of
+ *  it, and that is load-bearing: it used to be a hand-written twin declaring
+ *  `type: string`, while the Rust struct was serialising the field as `kind`.
+ *  Nothing complained, `s.type` was `undefined` for every segment, and the whole
+ *  sermon-detection UI (picker, «Marker preken automatisk», suggestion banner,
+ *  timeline layers) was silently dead in every shipped build. Aliasing the
+ *  binding turns the next such rename into a typecheck failure at each `.type`
+ *  read instead of a feature that quietly stops existing. */
+export type Suggestion = EditorSegment
 export interface HandleDrag { cutIdx: number; side: 'start' | 'end' }
 
 // ── Immutable format sets ─────────────────────────────────────────────────────
