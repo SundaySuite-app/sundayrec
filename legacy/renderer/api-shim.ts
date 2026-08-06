@@ -34,6 +34,7 @@ import {
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { navigateTo } from "./ui/navigate";
 import type { TrashEntry } from "../bindings/TrashEntry";
+import { stripLegacySecrets } from "./purge-legacy-secrets-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -407,6 +408,29 @@ function saveSettingsLocal(s: unknown): boolean {
     return false;
   }
 }
+
+// SECURITY (2026-08 audit, E1.6): the strip above only fires on the NEXT save.
+// An install that saved a password before that fix landed still has it sitting
+// in its existing localStorage blob — potentially forever, if the user never
+// happens to touch a setting that triggers a re-save. Purge it once, here, at
+// module load: this file is loaded as a script BEFORE main.ts (see the file
+// header), and runs before the first `loadSettings()` call a few lines down
+// (`syncBackendRecordingSettings`/`syncLaunchAtLogin` on boot), so nothing
+// ever reads the lingering secret back out of storage. Guarded by a versioned
+// flag so it runs at most once per install; wrapped so a corrupt blob or a
+// storage error degrades to "did nothing" rather than blocking boot.
+const SMTP_PASS_PURGE_FLAG = "sundayrec.purge.smtpPass.v1";
+function purgeLegacySmtpPasswordOnce(): void {
+  try {
+    if (localStorage.getItem(SMTP_PASS_PURGE_FLAG)) return;
+    const { changed, out } = stripLegacySecrets(localStorage.getItem(LS_KEY));
+    if (changed) localStorage.setItem(LS_KEY, out);
+    localStorage.setItem(SMTP_PASS_PURGE_FLAG, "1");
+  } catch {
+    // Never let a cleanup step block boot.
+  }
+}
+purgeLegacySmtpPasswordOnce();
 
 // The UI's full settings live in localStorage (83 fields, superset of the Rust
 // Settings). But the RECORDER reads the backend (sqlite) settings via
