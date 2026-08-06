@@ -2426,7 +2426,11 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
    settings `.inner-tabs`, but its own class so the editor can be tighter
    (this strip sits mid-page under a waveform, not at the top of a page) and
    so tuning one never moves the other. */
-.editor-tabs {
+/* `width: fit-content` needs the id to beat `#editor-workspace > *`, which
+   stretches every direct child to 100% — a segmented control the width of the
+   window reads as a header bar, not as a picker. */
+.editor-tabs,
+#editor-workspace > .editor-tabs {
   display: flex; gap: 2px;
   background: var(--surface2);
   border: 1px solid var(--border);
