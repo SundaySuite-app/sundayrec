@@ -259,8 +259,12 @@ declare global {
       reviewQueueGet:                 (id: string) => Promise<import('../types').ReviewQueueEntry | null>
       reviewQueuePublish:             (id: string) => Promise<{ ok: boolean; error?: string }>
       reviewQueueDiscard:             (id: string) => Promise<boolean>
+      // The three review-queue field pushes. All three answer `false` when the
+      // id has left the queue — treat that as "not saved", never as a no-op.
       reviewQueueUpdateTrim:          (id: string, trim: { startSec: number; endSec: number }) => Promise<boolean>
       reviewQueueUpdateMasterPreset:  (id: string, presetId: string) => Promise<boolean>
+      /** PARTIAL patch: an omitted key leaves that jingle alone, `null` clears
+       *  it, a string sets it. Send one key per call. */
       reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>

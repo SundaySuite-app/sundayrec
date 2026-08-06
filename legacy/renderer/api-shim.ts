@@ -1734,9 +1734,30 @@ const api: Record<string, unknown> = {
   },
   reviewQueueDiscard: async (id: string) =>
     call<boolean>("review_mark_discarded", { id }, false),
-  reviewQueueUpdateTrim: async () => true,
-  reviewQueueUpdateMasterPreset: async () => true,
-  reviewQueueUpdateJingles: async () => true,
+  // The three field pushes back INTO the queue entry. Each returns the
+  // backend's own bool verbatim: `false` = that id is no longer in the queue
+  // (published, discarded, or auto-discarded while the editor sat open), which
+  // the editor turns into a toast instead of a local mutation nobody saved.
+  // These three were `async () => true` — the intro/outro dropdowns reported
+  // success and changed nothing on disk.
+  //
+  // `false` is also the `call` fallback, on purpose: a rejected invoke is not a
+  // silent success either.
+  reviewQueueUpdateTrim: async (
+    id: string,
+    trim: { startSec: number; endSec: number },
+  ) => call<boolean>("review_update_trim", { id, trim }, false),
+  reviewQueueUpdateMasterPreset: async (id: string, presetId: string) =>
+    call<boolean>("review_update_master_preset", { id, presetId }, false),
+  // `jingles` is a PARTIAL patch and the backend reads three states per field:
+  // an omitted key leaves that jingle alone, an explicit `null` clears it, a
+  // string sets it. Send ONE key per call (which is what the two dropdowns do)
+  // and the other jingle is guaranteed untouched. See `JinglesPatch` in
+  // src-tauri/src/commands/review.rs for the contract.
+  reviewQueueUpdateJingles: async (
+    id: string,
+    jingles: { introPath?: string | null; outroPath?: string | null },
+  ) => call<boolean>("review_update_jingles", { id, jingles }, false),
 
   // ── Integrations (Sunday-suite) ─────────────────────────────────────────
   getIntegrationSettings: async () => ({ enabled: false }),
