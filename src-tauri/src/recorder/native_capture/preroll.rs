@@ -34,7 +34,8 @@
 //! and deletes anything past
 //! [`preroll_segments_to_retain`](sundayrec_core::preroll::preroll_segments_to_retain).
 //! The retained files always cover more than the 90 s window the harvest can ask
-//! for, and the harvest slices its clip straight out of their bytes (P5.2).
+//! for, and the harvest slices its clip straight out of their bytes — a byte
+//! copy behind a fresh header, no ffmpeg and no re-encode.
 //!
 //! A device that disappears is the only restart: the stream's error callback
 //! reports it, the supervisor tears the stack down, waits the tested
@@ -330,6 +331,25 @@ async fn wait_for_trouble(
     }
 }
 
+/// Where a sampler tick goes. Production emits `vu://levels`; the real-device
+/// test counts snapshots. The seam exists so the whole device stack — open,
+/// negotiate, route, ring, rotate, meter — can be driven under `cargo test`,
+/// leaving only the one-line Tauri emit unexercised (and `audio/vu.rs` ships
+/// that same line).
+type VuSink = Arc<dyn Fn(&MeterBanks) + Send + Sync>;
+
+/// The device-facing half of a buffer start: everything spawned, nothing
+/// awaited. The caller publishes [`PrerollStack::run`] where a stop can reach
+/// it BEFORE awaiting `ready_rx`, so an aborted supervisor can never orphan a
+/// live stream.
+struct PrerollStack {
+    run: PrerollRun,
+    err_rx: tokio::sync::mpsc::Receiver<String>,
+    ready_rx: tokio::sync::oneshot::Receiver<Result<(), String>>,
+    /// The stream's native channel count (the `vu://levels` payload width).
+    native_channels: u16,
+}
+
 /// Open the device, start the stream + rotating writer, publish the run into
 /// `slot`, and return the error channel both threads report on.
 ///
@@ -342,6 +362,66 @@ async fn spawn_preroll_run(
     gen: &Arc<AtomicU64>,
     channels: &Arc<AtomicU16>,
 ) -> Result<tokio::sync::mpsc::Receiver<String>, String> {
+    let sink: VuSink = {
+        let app = app.clone();
+        // A failed emit (window closed) must NOT take the buffer down —
+        // recording the seconds before the press is the job; metering rides
+        // along.
+        Arc::new(move |m: &MeterBanks| {
+            let _ = emit_vu_levels(&app, m);
+        })
+    };
+    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
+    let stack = spawn_preroll_stack(tmp_dir, settings, my_gen, sink).await?;
+    let PrerollStack {
+        run,
+        err_rx,
+        ready_rx,
+        native_channels,
+    } = stack;
+
+    // PUBLISH BEFORE AWAITING: from here on the threads are reachable from the
+    // slot, so a `stop()` (which aborts this task) always finds and stops them.
+    *lock_recover(slot) = Some(run);
+
+    let ready = match ready_rx.await {
+        Ok(r) => r,
+        Err(_) => Err("pre-roll capture thread exited before signalling".to_string()),
+    };
+    match ready {
+        Ok(()) => {
+            channels.store(native_channels, Ordering::SeqCst);
+            Ok(err_rx)
+        }
+        Err(e) => {
+            // Take OUR run back (a stop may already have taken it) and tear down.
+            let mine = {
+                let mut guard = lock_recover(slot);
+                match guard.as_ref() {
+                    Some(r) if r.gen == my_gen => guard.take(),
+                    _ => None,
+                }
+            };
+            if let Some(run) = mine {
+                discard_run(run).await;
+            }
+            Err(e)
+        }
+    }
+}
+
+/// Build the whole device stack for one buffer life: negotiate the format,
+/// start the rotating writer, then the cpal stream whose thread doubles as the
+/// meter sampler. Returns as soon as both threads exist — readiness comes back
+/// on `ready_rx`.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — opens a real input device.
+async fn spawn_preroll_stack(
+    tmp_dir: &Path,
+    settings: &PrerollSettings,
+    gen: u64,
+    vu_sink: VuSink,
+) -> Result<PrerollStack, String> {
     let device_name = settings.audio_device_name.clone();
     let requested_rate = settings.sample_rate;
 
@@ -418,7 +498,6 @@ async fn spawn_preroll_run(
     let st_meters = Arc::clone(&meters);
     let st_overrun = Arc::clone(&overrun);
     let st_name = device_name.clone();
-    let st_app = app.clone();
     let st_err = err_tx;
     let stream_join = std::thread::Builder::new()
         .name("preroll-capture".into())
@@ -454,11 +533,10 @@ async fn spawn_preroll_run(
             match build {
                 Ok(stream) => {
                     let _ = ready_tx.send(Ok(()));
+                    // This thread owns the (!Send) stream and would otherwise
+                    // only park, so it doubles as the meter sampler.
                     while !st_stop.load(Ordering::Relaxed) {
-                        // A failed emit (window closed) must NOT take the buffer
-                        // down — recording the seconds before the press is the
-                        // job; metering is the passenger.
-                        let _ = emit_vu_levels(&st_app, &st_meters);
+                        vu_sink(&st_meters);
                         std::thread::sleep(VU_SAMPLE_INTERVAL);
                     }
                     drop(stream); // stops capture, releases the device
@@ -470,44 +548,21 @@ async fn spawn_preroll_run(
         })
         .map_err(|e| format!("could not spawn pre-roll capture thread: {e}"))?;
 
-    // PUBLISH BEFORE AWAITING: from here on the threads are reachable from the
-    // slot, so a `stop()` (which aborts this task) always finds and stops them.
-    let my_gen = gen.fetch_add(1, Ordering::SeqCst) + 1;
-    *lock_recover(slot) = Some(PrerollRun {
-        gen: my_gen,
-        stream_stop,
-        writer_stop,
-        stream_join: Some(stream_join),
-        writer_join: Some(writer_join),
-        segments,
-        spec,
-        overrun,
-    });
-
-    let ready = match ready_rx.await {
-        Ok(r) => r,
-        Err(_) => Err("pre-roll capture thread exited before signalling".to_string()),
-    };
-    match ready {
-        Ok(()) => {
-            channels.store(negotiated.channels, Ordering::SeqCst);
-            Ok(err_rx)
-        }
-        Err(e) => {
-            // Take OUR run back (a stop may already have taken it) and tear down.
-            let mine = {
-                let mut guard = lock_recover(slot);
-                match guard.as_ref() {
-                    Some(r) if r.gen == my_gen => guard.take(),
-                    _ => None,
-                }
-            };
-            if let Some(run) = mine {
-                discard_run(run).await;
-            }
-            Err(e)
-        }
-    }
+    Ok(PrerollStack {
+        run: PrerollRun {
+            gen,
+            stream_stop,
+            writer_stop,
+            stream_join: Some(stream_join),
+            writer_join: Some(writer_join),
+            segments,
+            spec,
+            overrun,
+        },
+        err_rx,
+        ready_rx,
+        native_channels: negotiated.channels,
+    })
 }
 
 /// Stop a run's threads (stream first — producer gone — then the writer, which
@@ -1271,5 +1326,165 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let engine = NativePrerollEngine::new(dir.path().to_path_buf());
         assert!(engine.harvest(15).await.is_none());
+    }
+
+    // ── Real device ──────────────────────────────────────────────────────────
+
+    fn real_device_settings() -> PrerollSettings {
+        PrerollSettings {
+            audio_device_name: String::new(), // host default input
+            sample_rate: None,                // Auto → device native
+            channels: 2,
+            channel_mode: sundayrec_core::settings::ChannelMode::Stereo,
+            input_channel_l: None,
+            input_channel_r: None,
+            classic: false,
+        }
+    }
+
+    /// The whole buffer, end to end, on this machine's default input: open →
+    /// stream → ring → rotating writer → meters → stop → harvest → a playable
+    /// clip. SELF-SKIPPING (the pattern the capture engine's real-device test
+    /// uses): no input device, or a build failure on a CI runner / denied mic,
+    /// reports why and passes vacuously.
+    ///
+    /// Everything under test is the production path; only the Tauri emit is
+    /// swapped for a counter through the same `VuSink` seam production uses.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn native_preroll_buffers_meters_and_harvests_or_skips() {
+        use cpal::traits::HostTrait;
+        let Ok(host) = open_host(CpalHostKind::Default) else {
+            eprintln!("SKIP: no default cpal host");
+            return;
+        };
+        if host.default_input_device().is_none() {
+            eprintln!("SKIP: no default input device on this machine");
+            return;
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The VU seam: count sampler ticks and remember the payload width, so
+        // "the buffer meters while it runs" is asserted, not assumed.
+        let ticks = Arc::new(AtomicU64::new(0));
+        let metered_channels = Arc::new(AtomicU16::new(0));
+        let sink: VuSink = {
+            let ticks = Arc::clone(&ticks);
+            let width = Arc::clone(&metered_channels);
+            Arc::new(move |m: &MeterBanks| {
+                ticks.fetch_add(1, Ordering::Relaxed);
+                width.store(m.channels() as u16, Ordering::Relaxed);
+                // Drain the banks exactly like the real emitter does, so the
+                // take-and-reset path is exercised too.
+                for ch in 0..m.channels() {
+                    let _ = m.peak.take_dbfs(ch);
+                    let _ = m.rms.take_dbfs(ch);
+                }
+            })
+        };
+
+        let stack = match spawn_preroll_stack(dir.path(), &real_device_settings(), 1, sink).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("SKIP: pre-roll buffer could not start here: {e}");
+                return;
+            }
+        };
+        let PrerollStack {
+            mut run,
+            err_rx: _err_rx,
+            ready_rx,
+            native_channels,
+        } = stack;
+        match ready_rx.await {
+            Ok(Ok(())) => {}
+            other => {
+                // Tear the (already spawned) threads down before bailing.
+                stop_run_bounded(&mut run).await;
+                eprintln!("SKIP: pre-roll stream did not start here: {other:?}");
+                return;
+            }
+        }
+        assert!(native_channels >= 1, "a stream has at least one channel");
+
+        // Let the buffer fill. A 15 s segment budget means nothing has rotated
+        // yet — the partial segment is finalized by the stop below, which is
+        // exactly the state a real harvest meets seconds after a start.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let ticked = ticks.load(Ordering::Relaxed);
+        assert!(
+            ticked >= 30,
+            "the sampler should have run ~60× in 2 s at 33 ms, got {ticked}"
+        );
+        assert_eq!(
+            metered_channels.load(Ordering::Relaxed),
+            native_channels,
+            "the VU payload is as wide as the device, not as wide as the recording"
+        );
+
+        let spec = run.spec;
+        // The harvest sits on the record-start path, so time it: releasing the
+        // device and finalizing the last segment must be milliseconds, not the
+        // seconds an ffmpeg graceful stop could take.
+        let stop_started = std::time::Instant::now();
+        stop_run_bounded(&mut run).await;
+        let stop_took = stop_started.elapsed();
+        eprintln!("pre-roll stop took {stop_took:?}");
+        assert_eq!(
+            run.overrun.load(Ordering::Relaxed),
+            0,
+            "no ring overruns in a 2 s idle buffer"
+        );
+
+        let segments = lock_recover(&run.segments).clone();
+        assert_eq!(segments.len(), 1, "one finalized (partial) segment");
+        let seconds = segments[0].frames as f64 / f64::from(spec.sample_rate);
+        assert!(
+            (1.0..=3.0).contains(&seconds),
+            "buffered {seconds:.2}s of audio in a 2 s run"
+        );
+        let on_disk = std::fs::read(&segments[0].path).expect("segment readable");
+        assert_eq!(
+            on_disk.len() as u64,
+            wav::HEADER_LEN as u64 + segments[0].data_bytes
+        );
+
+        // Harvest 1 s out of it — the byte-copy path, on real captured audio.
+        let stitch_started = std::time::Instant::now();
+        let clip = build_clip(&segments, spec, 1, dir.path())
+            .await
+            .expect("a harvestable clip");
+        let stitch_took = stitch_started.elapsed();
+        eprintln!("pre-roll stitch took {stitch_took:?}");
+        assert!(
+            stop_took + stitch_took < Duration::from_secs(2),
+            "a harvest blocks the record start; {stop_took:?} + {stitch_took:?} is too slow"
+        );
+        assert_eq!(clip.trim_ms, 1_000, "exactly the requested window");
+        let clip_bytes = std::fs::read(&clip.raw_path).expect("clip readable");
+        let info = wav::parse_header(&clip_bytes).expect("valid wav header");
+        assert_eq!(
+            info.sample_rate, spec.sample_rate,
+            "clip rate == negotiated"
+        );
+        assert_eq!(info.channels, spec.channels, "clip channels == routed");
+        assert_eq!(info.format_tag, 1, "pcm");
+        assert_eq!(info.bits_per_sample, 16, "s16 (the -c copy contract)");
+        // Byte accounting is exact: header + 1 s of frames, and the header's
+        // data field agrees with the file length.
+        let expect_data = u64::from(spec.sample_rate) * spec.bytes_per_frame();
+        assert_eq!(
+            clip_bytes.len() as u64,
+            wav::HEADER_LEN as u64 + expect_data
+        );
+        let data_field = u32::from_le_bytes(clip_bytes[40..44].try_into().unwrap());
+        assert_eq!(u64::from(data_field), expect_data);
+
+        // And it is the format the capture will write, so concat's prepend
+        // guard lets it through.
+        let capture_info = wav::parse_header(&wav::header(spec, 0)).unwrap();
+        assert!(info.copy_compatible_with(&capture_info));
+
+        delete_segments(&segments).await;
     }
 }
