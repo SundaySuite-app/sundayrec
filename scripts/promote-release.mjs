@@ -32,10 +32,17 @@
 // request header. It is never printed, never logged, and never appears in an
 // error message.
 //
-//   security add-generic-password -s sundayrec-telemetry-admin -a sundayrec -w '<the admin key>'
+//   security add-generic-password -s 'SundayRec telemetry admin key' \
+//     -a sundayrec -w '<the admin key>'
 //
 // (one-time setup on a machine — ask wherever ADMIN_KEY was generated/stored
 // for the value; see the sunday-telemetry repo's README "Secrets" section.)
+//
+// The service name has spaces because that is what the item is ACTUALLY called
+// in the owner's Keychain — it was created by hand, before this script existed.
+// Renaming the Keychain item to suit the script would be the wrong direction:
+// the item is the thing that exists, and a script that guesses a tidier name is
+// a script that fails on the one machine it has to work on.
 //
 // ── USAGE ────────────────────────────────────────────────────────────────────
 //   node scripts/promote-release.mjs                   show both channels' state
@@ -54,7 +61,7 @@
 import { spawnSync } from "node:child_process";
 
 const ADMIN_BASE_URL = "https://telemetry.sundaysuite.app";
-const KEYCHAIN_SERVICE = "sundayrec-telemetry-admin";
+const KEYCHAIN_SERVICE = "SundayRec telemetry admin key";
 const CHANNELS = new Set(["stable", "beta"]);
 
 const STABLE_TAG = /^v\d+\.\d+\.\d+$/;
@@ -85,7 +92,7 @@ function readAdminKey() {
   if (r.status !== 0) {
     fail(
       `no Keychain item named "${KEYCHAIN_SERVICE}" — add it once with:\n` +
-        `    security add-generic-password -s ${KEYCHAIN_SERVICE} -a sundayrec -w '<the admin key>'`,
+        `    security add-generic-password -s '${KEYCHAIN_SERVICE}' -a sundayrec -w '<the admin key>'`,
     );
   }
   const key = r.stdout.trim();
@@ -152,13 +159,23 @@ function assertTagMatchesChannel(channel, tag) {
 // below always prints the raw JSON too, so a shape this doesn't recognise is
 // still fully visible, just less pretty ───────────────────────────────────
 function summarizeChannels(payload) {
-  const channels = payload && typeof payload === "object" ? payload.channels : null;
-  if (!channels || typeof channels !== "object") return;
-  for (const name of ["stable", "beta"]) {
-    const c = channels[name];
-    if (!c) continue;
+  // The Worker returns `channels` as an ARRAY of rows, each carrying its own
+  // `channel` name. Indexing it by name yields undefined and prints nothing —
+  // which is how this line silently went blank the first time it ran.
+  const rows = payload && typeof payload === "object" ? payload.channels : null;
+  if (!Array.isArray(rows)) return;
+  for (const c of rows) {
+    if (!c || typeof c !== "object") continue;
     const paused = c.paused ? "  — PAUSED (kill-switch on)" : "";
-    console.log(`  ${name}: ${c.tag ?? "(nothing promoted yet)"}${paused}`);
+    // `behind` is the whole point of reading this before and after a release:
+    // it is how "published the release but forgot to promote it" stops being
+    // silent. A ring serving nothing at all is always behind, so say which.
+    const behind = c.behind
+      ? `  ⚠ NEWER RELEASE NOT PROMOTED: ${c.latestTag ?? "(unknown)"}`
+      : "";
+    console.log(
+      `  ${c.channel}: ${c.tag ?? "(nothing promoted yet)"}${paused}${behind}`,
+    );
   }
 }
 
