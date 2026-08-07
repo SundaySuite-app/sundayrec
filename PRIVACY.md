@@ -19,9 +19,12 @@ stedet.
 
 Dette skjer uansett hva du har svart på diagnostikk-spørsmålet over — en
 oppdateringssjekk er ikke diagnostikk. Forespørselen inneholder **ingen
-installasjons-ID, ingen innstillinger og ingenting om opptakene dine** — bare
-hvilken appversjon og hvilken plattform (macOS/Windows) som spør, som er
-akkurat det som trengs for å svare på «finnes det noe nyere?».
+installasjons-ID, ingen innstillinger og ingenting om opptakene dine**. Den
+inneholder faktisk ikke engang hvilken versjon eller hvilket operativsystem
+du kjører: appen spør bare «hva er nyeste versjon?», får det samme svaret som
+alle andre, og finner selv ut om det er noe nyere enn den den allerede har.
+Serveren får med andre ord ikke vite hvem som spurte — eller hva de hadde fra
+før.
 
 Ingen IP-adresse lagres for denne forespørselen heller. Det håndheves på
 samme måte som for diagnostikk-tjenesten (samme underliggende tjener):
