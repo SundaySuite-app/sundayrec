@@ -72,6 +72,13 @@ pub mod recorder;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;
+// E6.1 soak / long-run harness — the answer to "the product's workload is a
+// 60–180 minute unattended take and nothing automated exceeds 60 seconds".
+// Drives repeated captures (real device, or a device-free lavfi source through
+// the PRODUCTION capture argv), judges each with the shared verdict engine, and
+// samples RSS + open descriptors throughout. Everything long is `#[ignore]`d;
+// the nightly `.github/workflows/soak.yml` runs the lavfi variant.
+pub mod soak;
 // R3 live RTMP streaming — default-off `streaming` feature (NETWORK/HARDWARE-
 // UNVERIFIED). The tee/encode/overlay argv + key validation are
 // `sundayrec_core::{streaming,overlay}`; this seam spawns ffmpeg + reads the

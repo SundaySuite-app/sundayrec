@@ -269,7 +269,7 @@ pub(crate) mod tests {
     /// binary is treated the same as a missing one (the test SKIPs), so a broken
     /// dev sidecar never fails the suite. Re-sign with `codesign --force --sign -`
     /// to restore it.
-    fn fetched_sidecar(name: &str) -> Option<std::path::PathBuf> {
+    pub(crate) fn fetched_sidecar(name: &str) -> Option<std::path::PathBuf> {
         // Host triple matches what scripts/fetch-ffmpeg.mjs suffixes with.
         // `SUNDAYREC_TARGET_TRIPLE` is injected by build.rs from cargo's TARGET.
         let triple = env!("SUNDAYREC_TARGET_TRIPLE");
