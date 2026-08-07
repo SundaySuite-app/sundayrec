@@ -82,15 +82,23 @@ midlertidig eller permanent.
 
 ## Slette dine data
 
-Under **Innstillinger → System → «Slett mine data»** kan du be om at din
-lokale installasjons-ID byttes ut med en ny, og at rapporter som venter på å
-bli sendt fra din maskin, tømmes — begge deler skjer umiddelbart, lokalt på
-din maskin.
+Under **Innstillinger → System → «Slett mine data»** skjer to ting.
 
-Denne knappen sender foreløpig **ikke** en forespørsel om å slette data som
-allerede har nådd serveren — den funksjonen kommer i en senere versjon av
-SundayRec. Fram til da gjelder samme regel som for alle andre rapporter: de
-slettes automatisk etter 90 dager, som beskrevet over.
+**Umiddelbart, lokalt på din maskin:** installasjons-ID-en din byttes ut med
+en ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
+øyeblikket er ingenting maskinen din sender knyttet til den gamle ID-en.
+
+**Så snart maskinen har nett:** SundayRec ber serveren slette alt som ligger
+der under den gamle ID-en. Alle enkeltrapporter fjernes — krasjrapporter,
+kvalitetsdata, bruksmål, alt. Er maskinen offline når du trykker, sendes
+forespørselen neste gang den er på nett; den blir ikke glemt. Denne
+forespørselen sendes selv om du har slått av diagnostikk, nettopp fordi det å
+be om sletting og det å slutte å bidra er to forskjellige ønsker.
+
+Det som ikke fjernes, er de aggregerte statistikkene beskrevet over — men de
+inneholder ingen installasjons-ID og består bare av tall som «3 krasj i
+versjon 0.8.1 på macOS». Det finnes ingen rad der som er _din_, og derfor
+ingenting å slette. Det er også nettopp derfor de kan beholdes.
 
 ## «Vis hva som sendes»
 
