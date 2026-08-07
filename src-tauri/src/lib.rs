@@ -140,6 +140,12 @@ pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
 pub mod util;
+// E9 neural voice-activity backend (Silero VAD over `tract`). DEFAULT-OFF and
+// deliberately CALLER-LESS: no Tauri command, no shipped code path. It is here
+// to be measured before the unified sermon detector is allowed to use it. The
+// framing/state contract it implements is `sundayrec_core::vad`.
+#[cfg(feature = "vad")]
+pub mod vad;
 pub mod wake;
 // PU-5 whisper transcription — `whisper` feature, in `default` and the macOS
 // release (Metal path verified on a real M1 Pro; Windows-runtime still an owner

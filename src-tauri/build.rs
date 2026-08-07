@@ -41,5 +41,34 @@ fn main() {
         let _ = std::fs::remove_file(cap);
     }
 
+    // The vendored VAD model must be byte-identical to the one the code was
+    // written against. A swapped or truncated ONNX graph does NOT crash a VAD —
+    // it returns confident, wrong probabilities — so the check happens at the
+    // earliest moment there is: before the bytes are ever linked in. Only under
+    // `--features vad` (build scripts see enabled features as CARGO_FEATURE_*),
+    // so a default build pays nothing.
+    if std::env::var_os("CARGO_FEATURE_VAD").is_some() {
+        use sha2::{Digest, Sha256};
+        // Duplicated from `sundayrec_core::vad::{VAD_MODEL_FILE_NAME,
+        // VAD_MODEL_SHA256}` because a build script cannot depend on a workspace
+        // member. `build_script_pins_the_same_digest_as_the_core` in
+        // src/vad/mod.rs reads these two literals back out of this file and
+        // fails if they ever drift from the core constants.
+        const MODEL: &str = "resources/vad/silero_vad_op18_ifless.onnx";
+        const SHA256: &str = "7671cd04b004e9076da0d4a7b1a5aec36adf161c39230c1cb94a4fd5db6bbd28";
+        println!("cargo:rerun-if-changed={MODEL}");
+        let bytes = std::fs::read(MODEL)
+            .unwrap_or_else(|e| panic!("--features vad needs the vendored model at {MODEL}: {e}"));
+        let hex: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            hex, SHA256,
+            "{MODEL} does not match the pinned SHA-256 — the checkout is corrupt or the model \
+             was swapped. Re-fetch it from the URL in sundayrec_core::vad::VAD_MODEL_SOURCE_URL."
+        );
+    }
+
     tauri_build::build()
 }
