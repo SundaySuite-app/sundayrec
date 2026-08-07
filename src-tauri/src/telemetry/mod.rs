@@ -59,7 +59,9 @@ use sundayrec_core::telemetry::{TelemetryPayload, TelemetryPreview, TELEMETRY_SC
 use crate::db::store;
 use crate::error::AppResult;
 
+pub mod config;
 pub mod counters;
+pub mod http_sender;
 pub mod payload;
 /// The outbox's sqlx persistence. Named `queue_store` at every use site (see the
 /// re-export below) so it never reads as `crate::db::store`, which this module
