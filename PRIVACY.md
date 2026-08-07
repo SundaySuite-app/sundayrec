@@ -4,11 +4,17 @@ Denne erklæringen gjelder **kun** den valgfrie, anonyme diagnostikk- og
 bruksstatistikk-funksjonen i SundayRec. Funksjonen er **av som standard**, og
 du velger selv om du vil slå den på — under **Innstillinger → System**.
 
-Resten av SundayRec (opptak, redigering, publisering) sender aldri noe
-uansett hva du svarer her — **med ett unntak: oppdateringssjekken**, beskrevet
-for seg rett under, fordi den ikke er en del av diagnostikk-funksjonen og
-ikke styres av samtykket her. Resten av denne erklæringen handler om det
-valgfrie, avslått-som-standard diagnostikk-unntaket.
+Resten av SundayRec sender aldri noe **til Sunday Suite** uansett hva du
+svarer her — **med ett unntak: oppdateringssjekken**, beskrevet for seg rett
+under, fordi den ikke er en del av diagnostikk-funksjonen og ikke styres av
+samtykket her.
+
+At appen ellers sender ting over nett, gjør den selvsagt: du kan laste opp et
+opptak til skylagring, sende et varsel til en webhook, sende e-post, laste ned
+en transkripsjonsmodell eller strømme direkte. Alt dette går dit **du** har
+bestemt, når du har bedt om det, og aldri innom oss. Denne erklæringen handler
+ikke om dem — den handler om det ene, valgfrie, avslått-som-standard
+diagnostikk-unntaket.
 
 ## Oppdateringssjekk — ikke en del av diagnostikk
 
@@ -44,11 +50,18 @@ gjør bak ryggen din.
 **Sunday Suite** er behandlingsansvarlig for dataene som samles inn hvis du
 slår på anonym diagnostikk.
 
-## Fullstendig anonymt
+## Uten at vi vet hvem du er
 
 SundayRec lager en tilfeldig installasjons-ID (en UUID) på din maskin. Den er
 **ikke** utledet fra e-post, navn, kirke eller en Sunday-konto, og den knyttes
-aldri til noen av delene. Du kan bytte den ut med en ny når som helst — se
+aldri til noen av delene. Vi kan altså ikke se hvem du er, hvilken menighet du
+tilhører, eller koble to installasjoner til samme person.
+
+Vi kaller det med vilje ikke «helt anonymt». En tilfeldig ID er et pseudonym:
+den peker ikke på deg, men den holder rapportene fra én installasjon sammen.
+Det er nettopp derfor du _kan_ få slettet dataene dine — helt anonyme data
+ville det ikke finnes noen måte å finne igjen på, og da ville «slett mine
+data» vært et tomt løfte. Du kan bytte ID-en ut med en ny når som helst — se
 «Slette dine data» under.
 
 ## Hva samles inn hvis du sier ja?
