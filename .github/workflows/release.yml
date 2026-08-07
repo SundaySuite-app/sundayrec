@@ -163,6 +163,23 @@ jobs:
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Opt-in telemetry (Etappe 4). `src-tauri/src/telemetry/config.rs`
+          # reads BOTH through `option_env!`, i.e. at COMPILE time — so they
+          # have to be in the build step's env, not the runtime's. A build
+          # missing either one gets no sender at all: a URL without a key would
+          # POST and collect a 401 six times per payload.
+          #
+          # The write key is NOT a secret in the threat-model sense — it ships
+          # inside every binary and is a spam filter, nothing more. Everything
+          # that matters is enforced server-side by the Worker's validator,
+          # which trusts no caller. It lives in Actions secrets so it stays out
+          # of a public repo's history, not because leaking it breaks anything.
+          # The ADMIN key is a real secret and must never appear here.
+          #
+          # Nothing is sent regardless until the operator grants consent
+          # (default off) — see PRIVACY.md.
+          SUNDAYREC_TELEMETRY_URL: https://telemetry.sundaysuite.app
+          SUNDAYREC_TELEMETRY_KEY: ${{ secrets.SUNDAYREC_TELEMETRY_KEY }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "SundayRec ${{ github.ref_name }}"
