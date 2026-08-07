@@ -123,4 +123,4 @@ Spørsmål om personvern kan rettes til Sunday Suite via
 
 ---
 
-_Sist oppdatert: 2026-08-06._
+_Sist oppdatert: 2026-08-07._
