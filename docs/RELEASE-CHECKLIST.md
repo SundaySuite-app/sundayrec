@@ -14,7 +14,7 @@ Single, current-state launchpad. The code is gate-green (the full Rust test suit
 | Beta ring: `-beta.N` tag → GitHub pre-release, automatic                               | ✅ wired (`release.yml`'s `prerelease:` follows the tag)                                                        |
 | Auto-updater plugin + pubkey + endpoints (`tauri.conf.json`)                           | ✅ wired                                                                                                        |
 | `includeUpdaterJson: true` in `release.yml`                                            | ✅ set                                                                                                          |
-| Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `sundayrec-telemetry-admin`                                                      |
+| Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `SundayRec telemetry admin key`                                                  |
 | Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`)               | ⏳ Etappe 7 Worker-side rollout — see `sunday-telemetry` repo                                                   |
 | Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ⏳ pending — see the `qa/e7-update-channel` work; `tauri.conf.json` still points at GitHub as of this checklist |
 | `sundayrec://` deep-link scheme registered (config + Info.plist)                       | ✅ config done — GUI-UNVERIFIED                                                                                 |
