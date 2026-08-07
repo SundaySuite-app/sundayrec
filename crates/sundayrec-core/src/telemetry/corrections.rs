@@ -50,20 +50,19 @@
 //! Nor is there anywhere for a sermon's subject, a recording's name, a path, a
 //! device, or a congregation. Every field below is a closed enum or a `u64`.
 //!
-//! ## What is deliberately NOT reported
+//! ## What is deliberately NOT reported HERE
 //!
 //!   - **Companion suggestion outcomes.** The `.feedback.json` file also records
-//!     whether the AI title/summary/chapters were kept or ignored, and that is
-//!     genuinely useful. It is not here, because the consented scope is not
-//!     "editor feedback" in general: `PRIVACY.md` says *«hvor ofte du flytter et
-//!     automatisk forslag, og omtrent hvor mye du flyttet det»* — how often you
-//!     MOVE an automatic suggestion, and roughly how far. Keeping or discarding
-//!     a generated title is not a movement and has no size, so sending it would
-//!     be widening the scope past the sentence the user agreed to, which is
-//!     exactly what [`super::consent::CONSENT_VERSION`] exists to prevent.
-//!     If it is wanted later, the path is a counter (a count of a named feature
-//!     event is already within v1 scope) or a consent bump — not this
-//!     collection quietly growing a third meaning.
+//!     whether the AI title/summary/chapters were kept or ignored. Those ARE
+//!     reported under consent v2 — the widened text names them — but by
+//!     [`super::companion`], as their own collection. They do not belong in this
+//!     one: a correction is a MOVEMENT with a direction and a magnitude band,
+//!     and keeping a generated title is neither, so it could only be carried
+//!     here by giving the band ladder a member that is not an interval. That
+//!     ladder IS the promise the Norwegian text makes about coarseness, and a
+//!     non-interval inside it would make the promise unreadable and every
+//!     per-band share meaningless. The two projections therefore read disjoint
+//!     collections of the same file, and no record is counted by both.
 //!   - **A pick with no auto-pick.** When the detector found no sermon at all
 //!     and the human chose one, there is no proposal to have moved FROM, so
 //!     there is no direction and no magnitude — only a count, which this
@@ -430,7 +429,9 @@ pub fn banded_corrections(file: &RecordingFeedback) -> BTreeMap<CorrectionKey, u
         add(CorrectionSignal::SermonEnd, adjustment.deltas.end_delta_sec);
     }
 
-    // `companion_suggestions` is not read, on purpose. See the module docs.
+    // `companion_suggestions` is not read here, on purpose: it is
+    // `super::companion`'s collection, and a record counted by both projections
+    // would be reported twice, in two payload fields that mean different things.
     out
 }
 
@@ -788,10 +789,10 @@ mod tests {
     }
 
     #[test]
-    fn companion_outcomes_are_not_projected_at_all() {
-        // Not an oversight — the consented scope is about MOVING a suggestion,
-        // and keeping or discarding a generated title is neither a movement nor
-        // a size. See the module docs.
+    fn companion_outcomes_are_not_projected_into_this_collection() {
+        // They ARE reported — by `super::companion`, as their own collection.
+        // What must not happen is one record landing in both projections, which
+        // would report it twice under two meanings. See the module docs.
         let mut file = RecordingFeedback::default();
         for kind in [
             CompanionSuggestionKind::Title,

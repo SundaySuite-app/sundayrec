@@ -648,6 +648,13 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
    - The companion events belong to the recording the panel was showing, not the
      one you switched to — check that the second recording's sidecar did not
      appear when you switched away from the first.
+   - With diagnostics ON, **Innstillinger → System → vis hva som sendes** should
+     now list both `corrections` (a signal, a direction and a coarse band) and
+     `companionOutcomes` (`title` / `accepted_edited`, `chapters` /
+     `left_alone`) with counts — and the caption must NOT say «ingenting å sende
+     akkurat nå» while they are on screen. With diagnostics OFF, do the same
+     edits and confirm both collections stay empty: nothing is accumulated for
+     someone who has not opted in, not even in memory.
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they

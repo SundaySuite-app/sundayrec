@@ -758,23 +758,26 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 /// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
 static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Tell the telemetry accumulator what a successful fold changed, as the file's
-/// BANDED PROJECTION before and after.
+/// Tell the telemetry accumulators what a successful fold changed, as the file's
+/// PROJECTIONS before and after.
 ///
-/// Called by all three seams, including the companion one whose projection never
-/// changes — so a signal added to
-/// [`sundayrec_core::telemetry::corrections::banded_corrections`] later is
-/// reported from every seam at once rather than from the two somebody remembered.
+/// Called by all three seams and folding BOTH projections at every one — so a
+/// signal added to either projection later is reported from every seam at once
+/// rather than from the ones somebody remembered. The two read disjoint
+/// collections of the same file (`banded_corrections` the picks and trims,
+/// `companion_outcomes` the suggestions), so a record cannot be counted twice.
 ///
 /// Projections, not the event: a correction REPLACES the previous answer to the
 /// same baseline, so someone cycling through four blocks has made one decision,
-/// and only the difference between two file states says that. A no-op without
-/// consent, and a no-op when the projection did not move.
+/// and only the difference between two file states says that. It also means the
+/// only thing that can ever be reported is what actually reached the disk. A
+/// no-op without consent, and a no-op for whichever projection did not move.
 fn observe_feedback_change(
     before: &sundayrec_core::feedback::RecordingFeedback,
     after: &sundayrec_core::feedback::RecordingFeedback,
 ) {
     crate::telemetry::corrections::observe_files(before, after);
+    crate::telemetry::companion::observe_files(before, after);
 }
 
 /// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
@@ -986,12 +989,11 @@ pub fn record_companion_suggestion(
         edited_after_accept,
         env!("CARGO_PKG_VERSION"),
     );
+    // Only after the write, exactly as the two correction seams do: an outcome
+    // that did not reach the disk must not be counted as something the person
+    // told us, or the telemetry would report what the app itself has lost.
     let written = write_feedback(media_path, &file);
     if written {
-        // A no-op today — companion outcomes are deliberately not part of the
-        // banded projection (see `telemetry::corrections`' module docs on why
-        // the consented scope does not cover them). Called anyway so this seam
-        // is not the one that gets forgotten if that ever changes.
         observe_feedback_change(&before, &file);
     }
     written
@@ -3539,12 +3541,35 @@ mod tests {
         }
     }
 
+    /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
+    /// modules' process-wide test lock.
+    ///
+    /// Every write here goes through `observe_feedback_change`, which feeds two
+    /// process-global accumulators. Those are shared mutable state, and the tests
+    /// that assert on them (`telemetry::corrections`, `telemetry::companion`)
+    /// take this same lock — so a feedback test running beside one of them would
+    /// otherwise add counts to a map another test is measuring. The lock also
+    /// leaves consent OFF for the duration, which makes both seams inert and
+    /// keeps THESE tests about the file rather than about telemetry.
+    ///
+    /// Bind the guard, do not discard it: `let (_dir, media, _telemetry) = …`.
+    /// A `_` binding would drop the lock immediately and reintroduce the race.
+    fn feedback_media() -> (
+        tempfile::TempDir,
+        String,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let lock = crate::telemetry::counters::test_lock();
+        let (dir, media) = tmp_media();
+        (dir, media, lock)
+    }
+
     /// The acceptance gate for E8 phase A, as far as a test without a webview
     /// can take it: correct the pick, throw the editor's memory away, ask again
     /// with a freshly analysed segment list — and get the human's block back.
     #[test]
     fn a_correction_survives_the_editor_closing() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
 
         assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
@@ -3562,7 +3587,7 @@ mod tests {
 
     #[test]
     fn re_picking_the_detectors_own_block_writes_nothing() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert!(!record_sermon_pick(&media, &pick_request(Some(1), 1)));
         let path = std::path::Path::new(&media)
             .parent()
@@ -3573,7 +3598,7 @@ mod tests {
 
     #[test]
     fn going_back_to_the_detectors_block_removes_the_record() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
         assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
         assert_eq!(sermon_pick_index(&media, &feedback_segments()), None);
@@ -3587,7 +3612,7 @@ mod tests {
 
     #[test]
     fn cycling_through_the_dropdown_leaves_one_record() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         record_sermon_pick(&media, &pick_request(Some(1), 0));
         record_sermon_pick(&media, &pick_request(Some(1), 2));
         record_sermon_pick(&media, &pick_request(Some(1), 3));
@@ -3599,7 +3624,7 @@ mod tests {
 
     #[test]
     fn the_record_carries_no_path_and_no_recording_name() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         record_sermon_pick(&media, &pick_request(Some(1), 3));
         let path = std::path::Path::new(&media)
             .parent()
@@ -3614,7 +3639,7 @@ mod tests {
 
     #[test]
     fn a_feedback_file_we_cannot_read_is_left_alone() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         let path = std::path::Path::new(&media)
             .parent()
             .unwrap()
@@ -3629,7 +3654,7 @@ mod tests {
 
     #[test]
     fn an_atomic_write_leaves_no_temp_file_behind() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         record_sermon_pick(&media, &pick_request(Some(1), 3));
         let dir = std::path::Path::new(&media).parent().unwrap();
         let leftovers: Vec<String> = std::fs::read_dir(dir)
@@ -3676,7 +3701,7 @@ mod tests {
     #[test]
     fn a_trim_adjustment_lands_beside_the_recording() {
         use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert_eq!(
             record_trim_adjustment(&media, deltas(30.0, -50.0)),
             Some(TrimOutcome::Recorded)
@@ -3690,7 +3715,7 @@ mod tests {
     #[test]
     fn publishing_the_proposal_untouched_creates_no_file() {
         use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert_eq!(
             record_trim_adjustment(&media, deltas(0.0, 0.0)),
             Some(TrimOutcome::NotAnAdjustment)
@@ -3703,7 +3728,7 @@ mod tests {
     /// read but only half understood.
     #[test]
     fn a_file_written_before_the_later_signals_keeps_its_sermon_pick() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
         strip_to_phase_a_shape(&media);
 
@@ -3730,7 +3755,7 @@ mod tests {
 
     #[test]
     fn a_withdrawn_sermon_pick_leaves_a_file_that_still_holds_a_trim() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         record_sermon_pick(&media, &pick_request(Some(1), 3));
         record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
         // Back to the detector's block: the sermon-pick record goes, but the
@@ -3746,7 +3771,7 @@ mod tests {
     #[test]
     fn a_withdrawn_trim_adjustment_takes_an_otherwise_empty_file_with_it() {
         use sundayrec_core::feedback::TrimOutcome;
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
         assert_eq!(
             record_trim_adjustment(&media, deltas(0.0, 0.0)),
@@ -3760,7 +3785,7 @@ mod tests {
 
     #[test]
     fn the_later_signals_also_refuse_a_file_they_cannot_read() {
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         let path = feedback_path(&media);
         std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
 
@@ -3777,7 +3802,7 @@ mod tests {
     #[test]
     fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
         use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
-        let (_dir, media) = tmp_media();
+        let (_dir, media, _telemetry) = feedback_media();
         for kind in [K::Title, K::Description, K::Chapters] {
             assert!(record_companion_suggestion(
                 &media,

@@ -30,6 +30,13 @@ describe('consent prompt copy', () => {
     expect(d, 'must acknowledge the earlier answer').toMatch(/svart på dette før/)
     expect(d, 'must say the scope was widened').toMatch(/utvidet/)
     expect(d, 'must name the addition concretely').toMatch(/30–60 sekunder/)
+    // v2 widened twice before shipping — the banded corrections and then the
+    // companion outcomes — and the card has to name BOTH. Someone re-reading a
+    // prompt that mentions one of two additions has been under-told.
+    expect(d, 'must name the companion addition too').toMatch(/kapittelmerker/)
+    expect(d, 'must say the suggestion text itself is not sent').toMatch(
+      /[Ss]elve teksten sendes aldri/,
+    )
     expect(d, 'must disclaim carrying the old answer over').toMatch(
       /ikke lagt til grunn, verken som ja eller som nei/,
     )

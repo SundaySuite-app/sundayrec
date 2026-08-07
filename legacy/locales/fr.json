@@ -952,7 +952,7 @@
     "consentDesc": "Vous pouvez partager des diagnostics et des statistiques d’utilisation anonymes avec Sunday Suite, qui développe SundayRec. C’est toujours facultatif et cela ne change rien au fonctionnement de l’application — vous pouvez modifier votre réponse à tout moment dans Paramètres → Système.",
     "consentDetailsSummary": "Qu’est-ce qui serait collecté dans ce cas ?",
     "consentCatCrash": "Rapports de plantage — type d’erreur, version de l’application et du système. Jamais de chemins de fichiers ni de texte du sermon.",
-    "consentCatQuality": "Données de qualité — si un enregistrement a été complet (pourcentage de perte, verdict), et des plages approximatives pour vos corrections dans l’éditeur, p. ex. « 30–60 secondes plus tôt ». Jamais le contenu audio, ni texte, ni heures précises.",
+    "consentCatQuality": "Données de qualité — si un enregistrement a été complet (pourcentage de perte, verdict), des plages approximatives pour vos corrections dans l’éditeur, p. ex. « 30–60 secondes plus tôt », et quels types de suggestions automatiques vous utilisez — titre, résumé ou marques de chapitre — et si vous avez conservé ou réécrit le résultat. Jamais le contenu audio, ni texte, ni heures précises.",
     "consentCatUsage": "Utilisation des fonctions — quelles fonctions vous utilisez, par ex. « export en MP3 ». Seulement des comptages, jamais le contenu.",
     "consentNever": "Jamais : audio, transcriptions, texte du sermon, noms, e-mail, chemins de fichiers, noms d’appareils ou noms d’église.",
     "consentReadMore": "Lire la politique de confidentialité complète →",
@@ -962,7 +962,7 @@
     "promptTitle": "Partager des diagnostics anonymes ?",
     "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système.",
     "rePromptTitle": "Nous vous reposons la question",
-    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
+    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. L’application peut en outre indiquer quel type de suggestion vous avez utilisé — titre, résumé ou marques de chapitre — et si vous l’avez conservé tel quel ou réécrit. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
   },
   "time": {
     "yr": "an",

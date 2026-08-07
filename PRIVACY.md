@@ -76,12 +76,22 @@ Tre kategorier, og ingenting annet:
   rekonstruere ett enkelt opptak. Det som fortsatt aldri sendes, er hva
   prekenen handlet om, hva som ble sagt, når den fant sted, hva du har kalt
   opptaket, eller tekst av noe slag. **Klokkeslett sendes aldri**, heller ikke
-  som en del av en korrigering: et klokkeslett sammen med en varighet peker ut
-  én bestemt gudstjeneste i én bestemt menighet, og da er ikke tallene anonyme
-  lenger. Grunnen til at vi ber om dette, er at den automatiske
-  prekengjenkjenningen skal bli bedre for alle som bruker den — og et menneske
-  som retter opp en dårlig gjetning er det eneste signalet som forteller den
-  hva som var galt.
+  som en del av en korrigering eller et forslag: et klokkeslett sammen med en
+  varighet peker ut én bestemt gudstjeneste i én bestemt menighet, og da er
+  ikke tallene anonyme lenger. Grunnen til at vi ber om dette, er at den
+  automatiske prekengjenkjenningen skal bli bedre for alle som bruker den — og
+  et menneske som retter opp en dårlig gjetning er det eneste signalet som
+  forteller den hva som var galt.
+  Samme kategori dekker også hvilke typer automatiske forslag som blir brukt.
+  Når appen foreslår en tittel, et sammendrag eller kapittelmerker, sendes
+  hvilken av de tre det gjaldt, og om du beholdt resultatet slik det ble
+  foreslått eller skrev det om etterpå. Selve forslaget sendes aldri, og det du
+  eventuelt skrev i stedet, sendes aldri — heller ikke transkripsjonen eller
+  prekenen forslaget ble laget fra. Dette er ikke noe vi filtrerer bort i
+  etterkant: dataformatet har ingen plass til tekst overhodet, bare til hvilken
+  av de tre typene det var og hva som skjedde med den. Grunnen til at vi spør om
+  dette også, er at appen skal kunne lære hvilke typer forslag som faktisk er
+  verdt å tilby, i stedet for at vi gjetter.
 - **Funksjonsbruk** — navngitte tellere for hvilke funksjoner som brukes, fra
   en fast, forhåndsdefinert liste (f.eks. «eksport til MP3» eller
   «transkripsjon startet»). Kun **antall** ganger — aldri hva som ble

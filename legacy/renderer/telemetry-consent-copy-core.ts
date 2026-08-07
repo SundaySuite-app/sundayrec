@@ -41,7 +41,7 @@ export const RE_ASK: PromptCopy = {
   titleFallback: 'Vi spør deg om igjen',
   descKey: 'onboarding.rePromptDesc',
   descFallback:
-    'Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.',
+    'Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Appen kan i tillegg si hvilken type forslag du brukte — tittel, sammendrag eller kapittelmerker — og om du beholdt det slik det var eller skrev det om. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her.',
 }
 
 /** Pick the copy for a card that has already been decided to show.

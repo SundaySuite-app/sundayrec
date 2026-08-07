@@ -96,10 +96,12 @@ use crate::settings::{ChannelMode, FileFormat, FilenamePattern, SampleRate, Sett
 use crate::test_recording::{classify_signal, size_is_plausible, TestRecordingSignal};
 use crate::wake::{WakeFailureEntry, WakeFailureKind};
 
+pub mod companion;
 pub mod consent;
 pub mod corrections;
 pub mod queue;
 
+pub use companion::{CompanionOutcomeReport, MAX_COMPANION_OUTCOMES};
 pub use corrections::{CorrectionReport, MAX_CORRECTIONS};
 
 /// The payload schema version. Bumped when a field changes MEANING (a new
@@ -876,6 +878,16 @@ pub struct TelemetryPayload {
     /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`, which states
     /// the same rule from the receiving side and the deploy order it implies.
     pub corrections: Vec<CorrectionReport>,
+    /// What became of the AI companion's suggestions, as kinds and outcomes with
+    /// counts — see [`companion`] for what the consented sentence covers and
+    /// what it excludes.
+    ///
+    /// Collected under consent v2, like [`Self::corrections`], and OPTIONAL on
+    /// the wire for the same reason — but INDEPENDENTLY optional: the two ship
+    /// one release apart, so an install may well send one and not the other, and
+    /// the endpoint accepts every combination. See
+    /// `sunday-telemetry/src/schema.ts` `OPTIONAL_PAYLOAD_KEYS`.
+    pub companion_outcomes: Vec<CompanionOutcomeReport>,
 }
 
 impl TelemetryPayload {
@@ -898,13 +910,15 @@ impl TelemetryPayload {
             findings: Vec::new(),
             wake_failures: Vec::new(),
             corrections: Vec::new(),
+            companion_outcomes: Vec::new(),
         }
     }
 
     /// Whether this payload carries anything worth sending. A payload with no
     /// crashes, no quality records, no findings, no wake failures, no banded
-    /// correction and no non-zero counter is just a header — sending it would be
-    /// a ping, and a ping is not what the user consented to.
+    /// correction, no companion outcome and no non-zero counter is just a
+    /// header — sending it would be a ping, and a ping is not what the user
+    /// consented to.
     ///
     /// Every collection must be consulted here, and
     /// `every_record_collection_counts_towards_is_empty` fails if one is not:
@@ -921,6 +935,7 @@ impl TelemetryPayload {
             // counters are: the accumulator never emits one, so a payload
             // holding only zeroes is a header wearing a collection.
             && self.corrections.iter().all(|c| c.count == 0)
+            && self.companion_outcomes.iter().all(|c| c.count == 0)
     }
 
     /// Trim every collection to its cap, keeping the NEWEST records (the ends of
@@ -936,6 +951,7 @@ impl TelemetryPayload {
         // product. Trimmed anyway, because "cannot happen" is the wrong thing to
         // rest a size cap on when the endpoint rejects an oversized array.
         keep_last(&mut self.corrections, MAX_CORRECTIONS);
+        keep_last(&mut self.companion_outcomes, MAX_COMPANION_OUTCOMES);
     }
 }
 
@@ -1150,8 +1166,12 @@ mod tests {
             "corrections",
             "nested CorrectionReport[] — bands and counts, never seconds",
         ),
+        (
+            "companionOutcomes",
+            "nested CompanionOutcomeReport[] — kinds and outcomes, never the text",
+        ),
         // ── CrashReport ──────────────────────────────────────────────────────
-        ("kind", "enum CrashKind / WakeFailureKind"),
+        ("kind", "enum CrashKind / WakeFailureKind / CompanionKind"),
         ("at", "num — unix ms UTC"),
         (
             "message",
@@ -1223,7 +1243,19 @@ mod tests {
             "band",
             "enum CorrectionBand — a coarse bucket, never a number of seconds",
         ),
-        ("count", "num — how many corrections had that shape"),
+        ("count", "num — how many records had that shape"),
+        // ── CompanionOutcomeReport ───────────────────────────────────────────
+        //
+        // Three fields, two of them closed enums and one a count. `kind` shares
+        // its key with CrashKind and WakeFailureKind above. What is NOT here is
+        // the point of the collection: no suggested title, no summary, no
+        // chapter names, no rewrite, no transcript, and no `at`. The three
+        // things this record can say are which of three kinds it was, what
+        // happened to it, and how often.
+        (
+            "outcome",
+            "enum CompanionOutcome — kept / kept-and-rewritten / dismissed / left alone",
+        ),
         // ── WireSettings ─────────────────────────────────────────────────────
         ("channels", "enum ChannelMode"),
         ("sampleRateMode", "enum SampleRate"),
@@ -1372,6 +1404,22 @@ mod tests {
                         band: corrections::CorrectionBand::Over120s,
                     },
                     1,
+                ),
+            ],
+            companion_outcomes: vec![
+                CompanionOutcomeReport::new(
+                    companion::CompanionKey {
+                        kind: companion::CompanionKind::Title,
+                        outcome: companion::CompanionOutcome::AcceptedEdited,
+                    },
+                    3,
+                ),
+                CompanionOutcomeReport::new(
+                    companion::CompanionKey {
+                        kind: companion::CompanionKind::Chapters,
+                        outcome: companion::CompanionOutcome::LeftAlone,
+                    },
+                    2,
                 ),
             ],
         }
@@ -1927,6 +1975,43 @@ mod tests {
     }
 
     #[test]
+    fn a_payload_carrying_only_companion_outcomes_is_worth_sending() {
+        // Same argument as the corrections case above, for the collection that
+        // arrived one release later: a payload whose only content is what became
+        // of a suggestion has to be both sent AND labelled non-empty, or the
+        // preview prints it on screen under «ingenting å sende akkurat nå».
+        let mut p = TelemetryPayload::new(NIL_INSTALL_ID, 2, "0.10.0", 0);
+        assert!(p.is_empty());
+        p.companion_outcomes = vec![CompanionOutcomeReport::new(
+            companion::CompanionKey {
+                kind: companion::CompanionKind::Title,
+                outcome: companion::CompanionOutcome::AcceptedEdited,
+            },
+            0,
+        )];
+        assert!(
+            p.is_empty(),
+            "a zero count is a header, like a zero counter"
+        );
+        p.companion_outcomes[0].count = 1;
+        assert!(!p.is_empty());
+    }
+
+    #[test]
+    fn a_companion_outcome_carries_no_text_from_the_suggestion_it_describes() {
+        // The one leak that would matter most: a sermon title is the thing this
+        // collection sits closest to. Asserted over the whole serialised payload
+        // rather than over the record alone, so a field added anywhere on the way
+        // to the wire is caught here too.
+        let p = maximal_payload();
+        let text = serde_json::to_string(&p).unwrap();
+        assert!(text.contains("accepted_edited"), "{text}");
+        for needle in ["suggested", "rewrite", "transcript", "summary"] {
+            assert!(!text.contains(needle), "{needle} reached the wire:\n{text}");
+        }
+    }
+
+    #[test]
     fn every_record_collection_counts_towards_is_empty() {
         // A ratchet beside `every_wire_field_is_classified`, guarding a
         // different promise. `is_empty` is what «vis hva som sendes» labels the
@@ -1936,10 +2021,10 @@ mod tests {
         // there is nothing there — the preview under-reporting itself, which is
         // precisely what the transparency affordance exists to rule out.
         //
-        // E8 added `corrections`, and this test is how it got wired in rather
-        // than forgotten: it failed the moment the collection landed on the
-        // payload, and the only honest way to make it pass was to teach
-        // `is_empty` to consult it.
+        // E8 added `corrections` and then `companionOutcomes`, and this test is
+        // how each got wired in rather than forgotten: it failed the moment the
+        // collection landed on the payload, and the only honest way to make it
+        // pass was to teach `is_empty` to consult it.
         const CONSULTED: &[&str] = &[
             "counters",
             "crashes",
@@ -1947,6 +2032,7 @@ mod tests {
             "findings",
             "wakeFailures",
             "corrections",
+            "companionOutcomes",
         ];
 
         let value = serde_json::to_value(maximal_payload()).expect("serialise");
