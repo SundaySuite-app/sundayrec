@@ -857,6 +857,18 @@ fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::Recording
     }
 }
 
+/// Read one recording's feedback file for the transparency summary (E8.T),
+/// treating "corrupt" the same as "missing" rather than as an error.
+///
+/// [`read_feedback`]'s `Err(())` exists to stop a WRITE from clobbering a file
+/// it cannot parse — there is nothing to clobber here. A summary is read-only
+/// and best-effort by nature: one unreadable sidecar among a whole history
+/// must shrink the count by one recording's worth of corrections, not fail
+/// the whole screen the operator opened to see what the app has noticed.
+pub fn read_feedback_for_summary(media_path: &str) -> sundayrec_core::feedback::RecordingFeedback {
+    read_feedback(media_path).unwrap_or_default()
+}
+
 /// Which block of `segments` the human's stored correction means, or `None`.
 ///
 /// This is what makes a correction outlive the editor window: on reopen the

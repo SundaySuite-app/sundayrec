@@ -2008,6 +2008,44 @@
         </div>
       </div>
 
+      <!-- «Hva appen har lagt merke til» (E8.T) — read-only transparency for
+           the three correction signals crates/sundayrec-core/src/feedback.rs
+           records: sermon-pick corrections, trim adjustments, and companion-
+           suggestion outcomes. The panel can show only counts, durations and
+           closed-vocabulary directions — never audio, transcript text,
+           suggestion text, a recording name, a path or a time of day, because
+           that is all LearningSummary (the Rust type this reads) is able to
+           hold.
+
+           Loads on demand, from a button, and never automatically: this reads
+           every recording's <stem>.feedback.json sidecar off disk, and while
+           that is cheap for a normal history, "cheap" and "safe to run
+           unprompted mid-service" are different bars — see
+           general-page.ts's setupLearningSummaryCard(), which also refuses to
+           run this while a recording is active. -->
+      <div class="card" id="learning-summary-card">
+        <div class="card-title" data-i18n="general.learningCardTitle">Hva appen har lagt merke til</div>
+        <p class="card-desc" data-i18n="general.learningCardDesc">Disse observasjonene finnes for at den automatiske gjenkjenningen skal kunne bli bedre — det er rettelsene dine som lærer den opp. Ingenting herfra deles med noen med mindre anonym diagnostikk er slått på.</p>
+        <p class="card-desc" data-i18n="general.learningCardWhere">Alt lagres lokalt, sammen med opptaket det gjelder. Sletter du et opptak, forsvinner observasjonene fra det opptaket også.</p>
+        <button type="button" class="btn-secondary" id="btn-learning-summary-load" data-i18n="general.learningLoadBtn">Vis hva appen har lagt merke til</button>
+        <!-- Loading / failed / "not while recording" — one host, mutually
+             exclusive with the two below, painted purely from JS (the text
+             depends on which of three states applies, so no single
+             data-i18n fallback could cover it — same reasoning as
+             #telemetry-queue-status above). -->
+        <div id="learning-summary-status" class="form-hint" style="display:none"></div>
+        <!-- The common case: nothing corrected yet. Static text, so a plain
+             data-i18n fallback is enough — general-page.ts only ever toggles
+             this row's visibility, never its wording. -->
+        <div id="learning-summary-empty" class="form-hint" style="display:none" data-i18n="general.learningEmptyBody">Ingenting å vise ennå — helt normalt. Dette fylles bare ut når du retter noe appen har gjettet feil på.</div>
+        <div id="learning-summary-body" style="display:none">
+          <p id="learning-summary-sermon-pick" class="card-desc"></p>
+          <p id="learning-summary-start-tendency" class="card-desc" style="display:none"></p>
+          <p id="learning-summary-end-tendency" class="card-desc" style="display:none"></p>
+          <p id="learning-summary-companion" class="card-desc" style="display:none"></p>
+        </div>
+      </div>
+
       <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
            ONLY in the Windows build (the only build with ASIO support) — revealed
            by general-page.ts when the platform is Windows. The trademark notice is

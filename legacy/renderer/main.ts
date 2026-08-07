@@ -364,6 +364,15 @@ declare global {
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>
 
+      // ── Learning-feedback transparency (E8.T) ────────────────────────────
+      /** Fold every recording's `<stem>.feedback.json` into the counts + the
+       *  trim-direction verdict the System-tab card shows. `null` ONLY on a
+       *  real IPC failure — a summary of all zeros IS the legitimate empty
+       *  state, so callers must never let a failed round-trip collapse into
+       *  that same shape (see `learning-summary-core.ts`'s empty-state
+       *  handling for why the distinction matters). */
+      learningFeedbackSummary: () => Promise<import('../bindings/LearningSummary').LearningSummary | null>
+
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
       thumbnailClearDefault:   () => Promise<boolean>

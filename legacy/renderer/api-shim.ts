@@ -1378,6 +1378,25 @@ const api: Record<string, unknown> = {
     }
   },
 
+  // ── Learning-feedback transparency (E8.T) ─────────────────────────────────
+  // `learning_feedback_summary` (commands/db.rs) walks the recording history
+  // and folds every `<stem>.feedback.json` sidecar it finds into counts + a
+  // trim-direction verdict — never audio, transcript text, suggestion text,
+  // a recording name, a path, or a clock time (see LearningSummary's own doc
+  // comment). `null` ONLY on a genuine IPC failure: unlike `call()`'s usual
+  // zero-value fallback, a summary of all zeros is itself a real answer ("no
+  // corrections yet"), so this must never be confused with "the read failed".
+  learningFeedbackSummary: async () => {
+    try {
+      return await invoke<import("../bindings/LearningSummary").LearningSummary>(
+        "learning_feedback_summary",
+      );
+    } catch (e) {
+      console.warn("[api-shim] learning_feedback_summary failed", e);
+      return null;
+    }
+  },
+
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone

@@ -554,6 +554,7 @@ pub fn run() {
             commands::db::setting_set,
             commands::db::recordings_list,
             commands::db::transcripts_list,
+            commands::db::learning_feedback_summary,
             commands::db::recordings_delete,
             commands::db::recordings_clear,
             commands::db::recording_update_note,

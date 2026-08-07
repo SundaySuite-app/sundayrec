@@ -25,6 +25,7 @@ import {
   nextAllowLocal,
   webhookUrlError,
 } from '../ui/webhook-url-core'
+import { applyParams, buildLearningSummaryView, type CopyLine } from './learning-summary-core'
 
 /** Every auto-applying System/Varsler control writes the same way. */
 function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
@@ -128,6 +129,7 @@ export function setupGeneralPage(): void {
   void refreshEmailGate()
   setupWebhookTest()
   setupTelemetryCard()
+  setupLearningSummaryCard()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
@@ -665,6 +667,113 @@ async function deleteTelemetryData(): Promise<void> {
       ? t('general.telemetryDeletedToast', 'Dataene er tømt lokalt, og du har fått en ny anonym ID.')
       : t('general.telemetryDeleteFailedToast', 'Kunne ikke slette dataene. Prøv igjen.'))
   if (success) void refreshTelemetryCard()
+}
+
+/**
+ * «Hva appen har lagt merke til» (E8.T) — wires the load button. Nothing
+ * fires on tab-open: unlike `setupTelemetryCard`'s `refreshTelemetryCard()`,
+ * this card starts life as a title, two lines of static explanation and a
+ * button, and stays that way until the operator asks for more.
+ *
+ * That is a deliberate departure from `search-page.ts`'s transcript index
+ * (which DOES build itself on first tab visit): a transcript index feeds a
+ * search box the operator is about to type into, so the cost is paid once,
+ * right before it is needed. Nobody is about to search this card — it is a
+ * "what has this thing been doing" check the operator runs on their own
+ * schedule, so there is no moment where fetching it unprompted pays for
+ * itself, and every moment where doing so during a live recording would not.
+ */
+function setupLearningSummaryCard(): void {
+  document
+    .getElementById('btn-learning-summary-load')
+    ?.addEventListener('click', () => void loadLearningSummary())
+}
+
+/** Re-entrancy guard — a second click while the first round-trip is still in
+ *  flight must not fire a second one (or paint over its own "Henter…"). */
+let learningSummaryLoading = false
+
+async function loadLearningSummary(): Promise<void> {
+  if (learningSummaryLoading) return
+  const statusEl = document.getElementById('learning-summary-status')
+  const emptyEl = document.getElementById('learning-summary-empty')
+  const bodyEl = document.getElementById('learning-summary-body')
+  if (!statusEl || !emptyEl || !bodyEl) return
+
+  // The read this triggers walks every recording's `<stem>.feedback.json`
+  // sidecar off disk. Fine at rest; not something to run while a service is
+  // being captured, so the button stays clickable (a volunteer mid-recording
+  // should not have to wonder why a whole card vanished) but the read itself
+  // never happens — checked HERE, at the moment of the click, rather than by
+  // disabling the button on a recording-start event, so a recording that
+  // starts between page-load and click is still caught.
+  if (window.__isRecording) {
+    bodyEl.style.display = 'none'
+    emptyEl.style.display = 'none'
+    statusEl.textContent = t('general.learningUnavailableRecording', 'Ikke tilgjengelig mens opptak pågår.')
+    statusEl.style.display = ''
+    return
+  }
+
+  learningSummaryLoading = true
+  bodyEl.style.display = 'none'
+  emptyEl.style.display = 'none'
+  statusEl.textContent = t('general.learningLoading', 'Henter…')
+  statusEl.style.display = ''
+
+  try {
+    const summary = await window.api.learningFeedbackSummary()
+    if (!summary) {
+      // A real IPC failure — NEVER rendered as the empty state. All-zeros is
+      // a legitimate answer ("nothing corrected yet"); a failed round-trip
+      // must not look like it, or a broken read reads as "you're all caught
+      // up" instead of "try again".
+      statusEl.textContent = t('general.learningLoadFailed', 'Kunne ikke hente oversikten. Prøv igjen.')
+      return
+    }
+    renderLearningSummary(summary)
+  } finally {
+    learningSummaryLoading = false
+  }
+}
+
+function renderLearningSummary(summary: import('../../bindings/LearningSummary').LearningSummary): void {
+  const statusEl = document.getElementById('learning-summary-status')
+  const emptyEl = document.getElementById('learning-summary-empty')
+  const bodyEl = document.getElementById('learning-summary-body')
+  if (!statusEl || !emptyEl || !bodyEl) return
+  statusEl.style.display = 'none'
+
+  const view = buildLearningSummaryView(summary)
+  if (view.isEmpty) {
+    // The common case, and the one that must not look broken or accusatory —
+    // a fresh install has corrected nothing, and that is normal, not an
+    // error state. `emptyEl`'s text is the static, translated
+    // "nothing yet — this is normal" line baked into index.html.
+    emptyEl.style.display = ''
+    bodyEl.style.display = 'none'
+    return
+  }
+  emptyEl.style.display = 'none'
+  bodyEl.style.display = ''
+
+  paintLearningLine('learning-summary-sermon-pick', view.sermonPick)
+  paintLearningLine('learning-summary-start-tendency', view.startTendency)
+  paintLearningLine('learning-summary-end-tendency', view.endTendency)
+  paintLearningLine('learning-summary-companion', view.companion)
+}
+
+/** One optional sentence: hidden when `line` is `null` (e.g. the trim
+ *  tendency is still `Unclear`), translated + interpolated otherwise. */
+function paintLearningLine(id: string, line: CopyLine | null): void {
+  const el = document.getElementById(id)
+  if (!el) return
+  if (!line) {
+    el.style.display = 'none'
+    return
+  }
+  el.textContent = applyParams(t(line.key, line.fallback), line.params)
+  el.style.display = ''
 }
 
 // Lifetime `window.api.on` subscriptions + the hourly auto-check interval —

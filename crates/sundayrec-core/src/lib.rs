@@ -49,6 +49,7 @@
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick, the proposed trim, and the AI companion's suggestions — what to store, what counts as a correction, and what a later one replaces (E8)
 //!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
+//!   - [`learning_summary`] — folding every recording's feedback file into the counts + trim-direction verdict the transparency screen shows (E8)
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 
 pub mod audio;
@@ -71,6 +72,7 @@ pub mod filename;
 pub mod history;
 pub mod image_probe;
 pub mod integrations;
+pub mod learning_summary;
 pub mod levels;
 pub mod link;
 pub mod mastering;
