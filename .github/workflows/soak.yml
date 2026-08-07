@@ -100,6 +100,10 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # If Actions ever warns that this major is deprecated, bump it — the
+      # archive is the point of the job, but a stale major here only breaks the
+      # upload, not the soak itself (which has already printed its SOAK: lines
+      # into the step summary above).
       - name: Archive results
         if: always()
         uses: actions/upload-artifact@v4

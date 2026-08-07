@@ -1144,21 +1144,34 @@ mod tests {
         let fragment = s.current_fragment();
 
         // A detached capture process — the stand-in for "the app, recording".
+        // Deliberately NOT `kill_on_drop`: that is the whole point (nothing in
+        // process finalises it). Which means an assertion failure below would
+        // leak a live ffmpeg, so it gets an explicit reaper — a test in a suite
+        // about not leaking things must not leak things.
+        struct Reaper(std::process::Child);
+        impl Drop for Reaper {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
         let args = crate::soak::lavfi_capture_args(
             crate::recorder::engine::current_platform(),
-            600,
+            60,
             48_000,
             Some(48_000),
             false,
             &fragment,
         );
-        let mut child = std::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
-            .args(&args)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("detached capture spawns");
+        let mut child = Reaper(
+            std::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+                .args(&args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .expect("detached capture spawns"),
+        );
 
         // Let it get some audio down, then check the live-writer guard.
         tokio::time::sleep(Duration::from_millis(1_200)).await;
@@ -1171,8 +1184,8 @@ mod tests {
         );
 
         // Now the app dies. SIGKILL, no trailer, no finalize, no manifest delete.
-        let _ = child.kill();
-        let _ = child.wait();
+        let _ = child.0.kill();
+        let _ = child.0.wait();
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         let survivor = wav_data_bytes(Path::new(&fragment)).expect("the capture survives the kill");
