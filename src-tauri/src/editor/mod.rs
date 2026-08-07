@@ -1434,7 +1434,7 @@ pub async fn segments<F>(
     _input_path: &str,
     _force: bool,
     _on_progress: F,
-) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
+) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
 where
     F: Fn(f32),
 {
