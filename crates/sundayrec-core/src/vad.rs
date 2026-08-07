@@ -8,9 +8,11 @@
 //! so swapping the runtime later is a one-file change in `src-tauri`, not a
 //! change to the detector.
 //!
-//! **Nothing here is wired into sermon detection yet.** [`prep`](crate::prep)
-//! and [`audio_analysis`](crate::audio_analysis) are untouched; this is the
-//! backend a later integration step will plug into their unified seam.
+//! **Nothing here decides anything.** [`crate::shadow`] is what plugs this into
+//! the detector's seam, and it does so in SHADOW MODE: the model's detection is
+//! computed, compared against the heuristic's, and dropped. The sermon the app
+//! acts on is still the heuristic's, always. See that module for the
+//! containment argument.
 //!
 //! # How this is meant to meet the detector's seam
 //!
@@ -34,19 +36,21 @@
 //!   state and there is no single forward pass over a file to batch. What a
 //!   different model could batch, it can batch inside its own `score_pcm`.
 //!
-//! Two things the adapter will still have to solve, recorded here so they are
-//! not rediscovered:
+//! Two things the adapter had to solve. Both are solved; recorded here because
+//! the reasoning is what stops them being un-solved:
 //!
-//! 1. **`classify_frames` receives derived `AnalysisFrame`s, not PCM.** A VAD
-//!    needs the samples, so the adapter has to capture the PCM at construction
-//!    (or `analyse_pcm` has to route it through) — the "wider change than
-//!    substituting a scorer" that `FrameScorer`'s own doc comment anticipates.
-//!    This is the one real mismatch between the two shapes.
+//! 1. **`classify_frames` used to receive derived `AnalysisFrame`s, not PCM.** A
+//!    VAD needs the samples, and the spike's adapter smuggled them in through a
+//!    field. That was a workaround, so E9 routed the PCM properly instead: the
+//!    seam now takes a [`ScoringInput`](crate::audio_analysis::ScoringInput)
+//!    carrying both, built in the one function that already had both
+//!    (`analyse_pcm`). The mismatch is gone rather than worked around.
 //! 2. **The grids differ.** This module's hop is 32 ms
-//!    ([`VAD_HOP_SEC`]); `audio_analysis`'s frame is 100 ms. Probabilities have
-//!    to be pooled onto the coarser grid, and *how* (max, mean, fraction over a
-//!    threshold) is a detection-quality decision, which is why it is not
-//!    pre-empted here.
+//!    ([`VAD_HOP_SEC`]); `audio_analysis`'s frame is 100 ms. Probabilities are
+//!    pooled onto the coarser grid by [`crate::shadow::PoolingRule`], which
+//!    implements all three honest candidates (max, mean, fraction over a
+//!    threshold) and names a default with its argument, because *which* one is a
+//!    detection-quality decision and not this module's to pre-empt.
 //!
 //! # The model this contract is written against
 //!
@@ -331,6 +335,21 @@ pub trait VadBackend {
     fn reset(&mut self);
 }
 
+/// A boxed backend is a backend.
+///
+/// Needed by [`crate::shadow::VadScorer`], which holds a FACTORY rather than a
+/// backend (the detector's seam is `&self`, the recurrent state is `&mut`) and
+/// therefore has to name a return type that hides which engine built it — the
+/// same reason [`VadBackend`] exists at all, one indirection further out.
+impl VadBackend for Box<dyn VadBackend> {
+    fn speech_probability(&mut self, window: &[f32]) -> Result<f32, VadError> {
+        (**self).speech_probability(window)
+    }
+    fn reset(&mut self) {
+        (**self).reset()
+    }
+}
+
 // ── Framing ────────────────────────────────────────────────────────────────
 
 /// Turns a 16 kHz mono stream into the 576-sample windows the model wants.
@@ -469,10 +488,26 @@ impl<B: VadBackend> VadStream<B> {
     /// [`audio_analysis::extract_features`](crate::audio_analysis::extract_features),
     /// and zero-padding it would invent silence at the end of every file.
     pub fn run(&mut self, pcm: &[f32]) -> Result<Vec<VadFrame>, VadError> {
+        self.run_with(pcm, |_| {})
+    }
+
+    /// [`Self::run`] with a hop counter, for callers that have to show progress.
+    ///
+    /// `on_hop` receives the number of hops scored so far, 1-based. It is the
+    /// ONLY hook: a 90-minute service is ~169 000 sequential inferences taking
+    /// minutes, and a caller with no way to say so has to either lie about the
+    /// wait or hide it. Throttling belongs to the caller — this fires on every
+    /// hop and the pure side has no clock to throttle against.
+    pub fn run_with<P: FnMut(usize)>(
+        &mut self,
+        pcm: &[f32],
+        mut on_hop: P,
+    ) -> Result<Vec<VadFrame>, VadError> {
         self.reset();
         let mut out = Vec::with_capacity(pcm.len() / VAD_HOP_SAMPLES);
         for hop in pcm.chunks_exact(VAD_HOP_SAMPLES) {
             out.push(self.push_hop(hop)?);
+            on_hop(out.len());
         }
         Ok(out)
     }
@@ -498,7 +533,17 @@ pub fn score_pcm<B: VadBackend>(
     sample_rate: u32,
     pcm: &[f32],
 ) -> Result<Vec<VadFrame>, VadError> {
-    VadStream::new(backend, sample_rate)?.run(pcm)
+    score_pcm_with(backend, sample_rate, pcm, |_| {})
+}
+
+/// [`score_pcm`] with the hop counter [`VadStream::run_with`] takes.
+pub fn score_pcm_with<B: VadBackend, P: FnMut(usize)>(
+    backend: B,
+    sample_rate: u32,
+    pcm: &[f32],
+    on_hop: P,
+) -> Result<Vec<VadFrame>, VadError> {
+    VadStream::new(backend, sample_rate)?.run_with(pcm, on_hop)
 }
 
 #[cfg(test)]
@@ -785,50 +830,45 @@ mod tests {
     /// The composition claim in this module's header, checked by the compiler
     /// instead of asserted in prose.
     ///
-    /// This is NOT wiring: the adapter is test-only and `analyse_pcm` is never
-    /// called with it outside this function. What it proves is that the shapes
-    /// line up, so the integration step is an adapter and not a redesign —
-    /// specifically that a [`VadBackend`] survives all three constraints of
-    /// `FrameScorer::classify_frames`: `&self`, whole-slice, and a returned
-    /// vector the same length as `frames`.
+    /// This is NOT wiring: the adapter is test-only and the production scorer is
+    /// [`crate::shadow::VadScorer`]. What it proves is that a bare
+    /// [`VadBackend`] — nothing from `shadow`, nothing from `src-tauri` —
+    /// survives all three constraints of `FrameScorer::classify_frames`:
+    /// `&self`, whole-slice, and a returned vector the same length as
+    /// `input.frames`.
     ///
-    /// It also pins the ONE mismatch, by construction rather than by memory:
-    /// `classify_frames` is handed derived `AnalysisFrame`s and never the
-    /// samples, so the adapter has to CAPTURE the PCM at construction. That is
-    /// visible below as the `pcm` field, and it is the "wider change than
-    /// substituting a scorer" that `FrameScorer`'s own doc comment anticipates.
-    /// If a future signature change makes that field unnecessary, this test
-    /// stops compiling and someone re-reads the seam.
+    /// It also pins the mismatch that E9 CLOSED. The spike's adapter had to
+    /// capture the PCM in a field because the trait did not pass it; the seam
+    /// now carries a `ScoringInput`, so the field is gone and the samples come
+    /// from the argument. If a future change takes the PCM back out of the
+    /// seam, this stops compiling and someone re-reads the header.
     #[test]
     fn a_vad_backend_satisfies_the_detector_seam() {
-        use crate::audio_analysis::{AnalysisFrame, FrameScorer, SegmentType, FRAME_MS};
+        use crate::audio_analysis::{FrameScorer, ScoringInput, SegmentType, FRAME_MS};
 
-        struct VadScorer<'a> {
-            /// Captured because the trait does not pass it. See above.
-            pcm: &'a [f32],
-            sample_rate: u32,
-        }
+        struct BareBackendScorer;
 
-        impl FrameScorer for VadScorer<'_> {
+        impl FrameScorer for BareBackendScorer {
             // `&self`, not `&mut self` — which is exactly why `score_pcm` takes
             // its backend by value and builds a fresh stream per call.
-            fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)> {
+            fn classify_frames(&self, input: ScoringInput<'_>) -> Vec<(SegmentType, f64)> {
+                // The samples arrive in the argument. No captured field.
                 let hops = score_pcm(
                     SpyBackend {
                         answer: 0.9,
                         ..Default::default()
                     },
-                    self.sample_rate,
-                    self.pcm,
+                    input.sample_rate,
+                    input.pcm,
                 )
                 .expect("16 kHz PCM");
 
                 // The grids differ: 32 ms hops vs `FRAME_MS`. Max-pooling here is
-                // a placeholder for the test's sake — choosing the real pooling
-                // rule is a detection-quality decision and belongs to the
-                // integration, not to this backend.
-                let frame_sec = FRAME_MS as f64 / 1000.0;
-                frames
+                // a stand-in so this test needs nothing from `shadow`; the real
+                // rule is `shadow::PoolingRule`, which implements all three.
+                let frame_sec = f64::from(input.frame_ms) / 1000.0;
+                input
+                    .frames
                     .iter()
                     .map(|f| {
                         let lo = f.start_sec;
@@ -836,7 +876,7 @@ mod tests {
                         let p = hops
                             .iter()
                             .filter(|h| h.start_sec >= lo && h.start_sec < hi)
-                            .map(|h| h.speech_probability as f64)
+                            .map(|h| f64::from(h.speech_probability))
                             .fold(0.0f64, f64::max);
                         if p > 0.5 {
                             (SegmentType::Speech, p)
@@ -849,15 +889,16 @@ mod tests {
         }
 
         let pcm = vec![0.05f32; VAD_SAMPLE_RATE as usize * 2];
-        let scorer = VadScorer {
-            pcm: &pcm,
-            sample_rate: VAD_SAMPLE_RATE,
-        };
 
         // Usable as the `&dyn FrameScorer` that `detect::analyse_pcm` takes.
-        let dynamic: &dyn FrameScorer = &scorer;
+        let dynamic: &dyn FrameScorer = &BareBackendScorer;
         let frames = crate::audio_analysis::extract_features(&pcm, VAD_SAMPLE_RATE, FRAME_MS);
-        let scored = dynamic.classify_frames(&frames);
+        let scored = dynamic.classify_frames(ScoringInput {
+            pcm: &pcm,
+            sample_rate: VAD_SAMPLE_RATE,
+            frame_ms: FRAME_MS,
+            frames: &frames,
+        });
         assert_eq!(
             scored.len(),
             frames.len(),

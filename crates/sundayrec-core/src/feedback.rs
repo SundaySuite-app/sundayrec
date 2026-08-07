@@ -16,7 +16,13 @@
 //! accident. The `src-tauri` seam does the file I/O (`<stem>.feedback.json`,
 //! [`crate::editor::Sidecar`]).
 //!
-//! ## One file, three collections
+//! ## One file, four collections
+//!
+//! Three of them are the human's, above. The fourth
+//! ([`ShadowObservation`], E9) is not — it records two of the app's own
+//! detectors disagreeing with each other, and it lives here because it is per
+//! recording, bounded, bound by the same privacy rule and carried by the same
+//! sidecar. Read its type's doc comment before treating it like the others.
 //!
 //! [`RecordingFeedback`] is the whole `<stem>.feedback.json`. Each collection is
 //! `#[serde(default)]` so a file written before it existed still loads with the
@@ -42,6 +48,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::detect::{derive_attention_codes, PrepAnalysisSegment, SegmentType, SermonSegment};
+use crate::shadow::{ShadowComparison, ShadowSettings};
 use crate::trim_feedback::TrimDeltas;
 
 /// Schema version of the `<stem>.feedback.json` file. Bump when the MEANING of a
@@ -97,6 +104,20 @@ pub const BOUNDS_MATCH_TOLERANCE_SEC: f64 = 1.0;
 /// NEWEST are the ones that describe detectors people still run, so the oldest
 /// is dropped.
 pub const MAX_TRIM_ADJUSTMENTS: usize = 20;
+
+/// How many shadow-mode observations one recording may accumulate.
+///
+/// An observation REPLACES the one made by the same app version with the same
+/// [`ShadowSettings`] (see [`record_shadow_observation`]), so the honest count is
+/// one per configuration this recording was ever scored under — for a recording
+/// analysed by one build with the default settings, one. Unlike the three human
+/// records, though, this collection has a caller that varies the baseline on
+/// purpose: the A/B harness sweeps the pooling rule and the thresholds over the
+/// same corpus, and each setting has to keep its own answer or the sweep
+/// measures nothing. Twenty leaves room for the three rules across a handful of
+/// thresholds; past that the oldest describe settings nobody runs any more, so
+/// the oldest go.
+pub const MAX_SHADOW_OBSERVATIONS: usize = 20;
 
 /// How many companion-suggestion outcomes one recording may accumulate.
 ///
@@ -263,6 +284,57 @@ pub struct TrimAdjustment {
     pub app_version: String,
 }
 
+/// One shadow-mode run: what the neural detector would have produced, measured
+/// against what the app actually did, and the configuration that produced it.
+///
+/// ## Why a machine-vs-machine record lives in a file about human corrections
+///
+/// It does not belong here by SUBJECT — nobody told us anything, two detectors
+/// merely differed. It belongs here by every other property: it is per
+/// recording, it is bounded, it inherits the privacy rule below whole, and it
+/// shares the sidecar's lifecycle, so a recording deleted or moved takes its
+/// shadow observations with it exactly as it takes the corrections. The A/B
+/// harness also wants ONE file per recording, not two. The module header's
+/// "three collections" is now four, and this is the odd one; that is the note.
+///
+/// ## Why this stays on the machine
+///
+/// **Nothing here goes to telemetry, deliberately, against the programme's own
+/// plan.** The consent text the owner approved covers crash reports, quality
+/// data and feature-usage counters. A disagreement between two detectors is
+/// none of those three — it is a fourth category, and sending it would be
+/// collecting something nobody agreed to, however anonymous the numbers look.
+/// The A/B harness needs these locally anyway, which is where they are. If
+/// central aggregation is ever wanted it is a new consent decision in a later
+/// stage, not a quiet addition to an existing payload: see
+/// `crate::telemetry::corrections::banded_corrections` and
+/// `crate::telemetry::companion::companion_outcomes` for the two projections
+/// that read this file, neither of which reads this collection.
+///
+/// ## Privacy — the same rule as [`SermonPickCorrection`], inherited whole
+///
+/// No audio, no transcript, no sermon text, no recording name, no filesystem
+/// path, and **no wall-clock time** — a time of day plus a duration fingerprints
+/// one service at one church. Durations, offsets within the recording, counts,
+/// closed enums and codes. There is no field on this type or on
+/// [`ShadowComparison`] any of the forbidden things could occupy, and anyone
+/// extending either inherits the rule.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/ShadowObservation.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct ShadowObservation {
+    /// How far apart the two pipelines ended up. Carried as the whole
+    /// [`ShadowComparison`] rather than flattened, so the sign conventions
+    /// inside it are stated in exactly one place.
+    pub comparison: ShadowComparison,
+    /// The pooling rule and thresholds this run used. Without it a record cannot
+    /// be attributed to a configuration, and a corpus that cannot separate
+    /// configurations cannot tell whether changing one helped.
+    pub settings: ShadowSettings,
+    /// The app version whose heuristic and whose model produced the comparison.
+    pub app_version: String,
+}
+
 /// Which of the companion's suggestions an outcome is about. A closed
 /// vocabulary, mirroring the renderer's `CompanionSuggestionKind`
 /// (`legacy/renderer/pages/editor/companion-feedback.ts`) — `highlights` is
@@ -350,6 +422,12 @@ pub struct RecordingFeedback {
     /// append-only; see [`record_companion_suggestion`].
     #[serde(default)]
     pub companion_suggestions: Vec<CompanionSuggestionRecord>,
+    /// Oldest first, bounded by [`MAX_SHADOW_OBSERVATIONS`]. One record per
+    /// (app version, settings) baseline; see [`record_shadow_observation`]. The
+    /// one collection here that is not a human's work — read its type's doc
+    /// comment before treating it like the other three.
+    #[serde(default)]
+    pub shadow_observations: Vec<ShadowObservation>,
 }
 
 impl Default for RecordingFeedback {
@@ -359,6 +437,7 @@ impl Default for RecordingFeedback {
             sermon_picks: Vec::new(),
             trim_adjustments: Vec::new(),
             companion_suggestions: Vec::new(),
+            shadow_observations: Vec::new(),
         }
     }
 }
@@ -375,6 +454,7 @@ impl RecordingFeedback {
         self.sermon_picks.is_empty()
             && self.trim_adjustments.is_empty()
             && self.companion_suggestions.is_empty()
+            && self.shadow_observations.is_empty()
     }
 }
 
@@ -681,6 +761,60 @@ pub fn record_companion_suggestion(
     });
     while file.companion_suggestions.len() > MAX_COMPANION_SUGGESTION_EVENTS {
         file.companion_suggestions.remove(0);
+    }
+}
+
+/// Fold one shadow-mode observation into a recording's feedback file.
+///
+/// ## Why an AGREEMENT is stored too
+///
+/// The three human records deliberately store nothing when the person agreed
+/// with us: a confirmation is cheap and plentiful, and keeping them would bury
+/// the corrections under a pile of records all pointing at what the detector
+/// already does. This one is the opposite case, and the difference is the
+/// consumer. The A/B harness's question is "on what FRACTION of services do the
+/// two agree" — and a fraction needs a denominator. An absent record cannot
+/// distinguish "they agreed" from "the model failed" from "shadow mode never
+/// ran on this file", so agreement has to be written down to be counted.
+/// [`ShadowComparison::is_agreement`] is how the harness tells them apart.
+///
+/// ## Why a later run REPLACES rather than appends
+///
+/// Both detectors are deterministic, so re-analysing an unchanged recording with
+/// the same build and the same settings asks a question that has already been
+/// answered. Appending would let one file's one comparison be counted as many,
+/// weighted by how often somebody happened to press «Analyser opptak». The
+/// baseline is therefore (app version, settings): change either and it is a
+/// different question, which keeps its own record.
+pub fn record_shadow_observation(file: &mut RecordingFeedback, observation: ShadowObservation) {
+    let same_baseline = |o: &ShadowObservation| {
+        o.app_version == observation.app_version && o.settings == observation.settings
+    };
+    match file.shadow_observations.iter().position(same_baseline) {
+        Some(i) => file.shadow_observations[i] = observation,
+        None => {
+            file.shadow_observations.push(observation);
+            while file.shadow_observations.len() > MAX_SHADOW_OBSERVATIONS {
+                file.shadow_observations.remove(0);
+            }
+        }
+    }
+}
+
+/// Build the record for one shadow run.
+///
+/// A thin constructor rather than a struct literal at the call site, so the
+/// `src-tauri` seam names the app version once and cannot assemble a record with
+/// settings that describe a different run than the comparison does.
+pub fn build_shadow_observation(
+    comparison: ShadowComparison,
+    settings: ShadowSettings,
+    app_version: &str,
+) -> ShadowObservation {
+    ShadowObservation {
+        comparison,
+        settings,
+        app_version: app_version.to_string(),
     }
 }
 
@@ -1030,6 +1164,7 @@ mod tests {
         assert_eq!(after.sermon_picks, before.sermon_picks);
         assert!(after.trim_adjustments.is_empty());
         assert!(after.companion_suggestions.is_empty());
+        assert!(after.shadow_observations.is_empty());
 
         // And the read → modify → write cycle the seam performs must carry the
         // human's correction through, not drop it on the way past.
@@ -1042,7 +1177,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_with_all_three_collections_round_trips() {
+    fn a_file_with_every_collection_round_trips() {
         let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         record_trim_adjustment(&mut file, deltas(30.0, -50.0), "0.10.0");
@@ -1052,6 +1187,10 @@ mod tests {
             CompanionSuggestionOutcome::Accepted,
             true,
             "0.10.0",
+        );
+        record_shadow_observation(
+            &mut file,
+            observation(360.0, ShadowSettings::default(), "0.10.0"),
         );
         let back: RecordingFeedback =
             serde_json::from_str(&serde_json::to_string(&file).unwrap()).unwrap();
@@ -1247,6 +1386,203 @@ mod tests {
         // The wire vocabulary the renderer's tracker emits, verbatim.
         assert_eq!(obj["kind"], "chapters");
         assert_eq!(obj["outcome"], "left_alone");
+    }
+
+    // ── Shadow observations ────────────────────────────────────────────────────
+
+    fn comparison(shadow_start: f64) -> ShadowComparison {
+        use crate::detect::SegmentType as Wire;
+        let segs = |start: f64| {
+            vec![
+                PrepAnalysisSegment {
+                    start_sec: 0.0,
+                    end_sec: start,
+                    duration_sec: start,
+                    kind: Wire::Music,
+                    confidence: 0.8,
+                    avg_rms_db: -20.0,
+                    label: String::new(),
+                },
+                PrepAnalysisSegment {
+                    start_sec: start,
+                    end_sec: 1800.0,
+                    duration_sec: 1800.0 - start,
+                    kind: Wire::Speech,
+                    confidence: 0.9,
+                    avg_rms_db: -20.0,
+                    label: String::new(),
+                },
+            ]
+        };
+        crate::shadow::compare(
+            &crate::detect::detect(segs(300.0)),
+            &crate::detect::detect(segs(shadow_start)),
+        )
+    }
+
+    fn observation(
+        shadow_start: f64,
+        settings: ShadowSettings,
+        version: &str,
+    ) -> ShadowObservation {
+        build_shadow_observation(comparison(shadow_start), settings, version)
+    }
+
+    #[test]
+    fn a_shadow_observation_records_the_comparison_the_settings_and_the_build() {
+        let mut file = RecordingFeedback::default();
+        record_shadow_observation(
+            &mut file,
+            observation(360.0, ShadowSettings::default(), "0.10.0"),
+        );
+        assert_eq!(file.shadow_observations.len(), 1);
+        let o = &file.shadow_observations[0];
+        assert_eq!(o.app_version, "0.10.0");
+        assert_eq!(o.settings, ShadowSettings::default());
+        assert_eq!(
+            o.comparison.sermon_deltas.unwrap().start_delta_sec,
+            60.0,
+            "the shadow opened the sermon a minute later"
+        );
+    }
+
+    #[test]
+    fn an_agreement_is_stored_too_because_the_harness_needs_the_denominator() {
+        // The one place this collection deliberately diverges from the three
+        // human ones: "they agreed" is a result, not a non-event.
+        let mut file = RecordingFeedback::default();
+        record_shadow_observation(
+            &mut file,
+            observation(300.0, ShadowSettings::default(), "0.10.0"),
+        );
+        assert_eq!(file.shadow_observations.len(), 1);
+        assert!(file.shadow_observations[0].comparison.is_agreement());
+        assert!(!file.is_empty(), "an agreement still has to reach the disk");
+    }
+
+    #[test]
+    fn re_analysing_the_same_file_with_the_same_settings_leaves_one_record() {
+        let mut file = RecordingFeedback::default();
+        record_shadow_observation(
+            &mut file,
+            observation(360.0, ShadowSettings::default(), "0.10.0"),
+        );
+        record_shadow_observation(
+            &mut file,
+            observation(420.0, ShadowSettings::default(), "0.10.0"),
+        );
+        assert_eq!(file.shadow_observations.len(), 1);
+        assert_eq!(
+            file.shadow_observations[0]
+                .comparison
+                .sermon_deltas
+                .unwrap()
+                .start_delta_sec,
+            120.0
+        );
+    }
+
+    #[test]
+    fn a_sweep_over_the_pooling_rules_keeps_one_record_each() {
+        // The A/B case the bound is sized for: same build, same recording, three
+        // rules — three answers, not one overwritten three times.
+        let mut file = RecordingFeedback::default();
+        for pooling in [
+            crate::shadow::PoolingRule::Max,
+            crate::shadow::PoolingRule::Mean,
+            crate::shadow::PoolingRule::FractionOver,
+        ] {
+            let settings = ShadowSettings {
+                pooling,
+                ..ShadowSettings::default()
+            };
+            record_shadow_observation(&mut file, observation(360.0, settings, "0.10.0"));
+        }
+        assert_eq!(file.shadow_observations.len(), 3);
+        // And a newer build's answer to the same settings is its own record.
+        record_shadow_observation(
+            &mut file,
+            observation(360.0, ShadowSettings::default(), "0.11.0"),
+        );
+        assert_eq!(file.shadow_observations.len(), 4);
+    }
+
+    #[test]
+    fn the_shadow_list_is_bounded_and_drops_the_oldest() {
+        let mut file = RecordingFeedback::default();
+        for i in 0..(MAX_SHADOW_OBSERVATIONS + 5) {
+            let settings = ShadowSettings {
+                frame_speech_threshold: 0.1 + i as f64 / 1000.0,
+                ..ShadowSettings::default()
+            };
+            record_shadow_observation(&mut file, observation(300.0 + i as f64, settings, "0.10.0"));
+        }
+        assert_eq!(file.shadow_observations.len(), MAX_SHADOW_OBSERVATIONS);
+        assert_eq!(
+            file.shadow_observations
+                .last()
+                .unwrap()
+                .comparison
+                .sermon_deltas
+                .unwrap()
+                .start_delta_sec,
+            (MAX_SHADOW_OBSERVATIONS + 4) as f64
+        );
+    }
+
+    #[test]
+    fn the_observation_holds_no_absolute_time_and_no_text_but_a_version() {
+        let mut file = RecordingFeedback::default();
+        record_shadow_observation(
+            &mut file,
+            observation(360.0, ShadowSettings::default(), "0.10.0"),
+        );
+        let json = serde_json::to_value(&file.shadow_observations[0]).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["appVersion", "comparison", "settings"],
+            "a field appeared on the shadow record — is it a duration, an offset, \
+             a count or a code? see SermonPickCorrection's doc comment"
+        );
+        // The settings are stored as codes and numbers, never as Rust names.
+        assert_eq!(json["settings"]["pooling"], "max");
+    }
+
+    /// The override the brief is explicit about: these records stay on the
+    /// machine. Both telemetry projections of this file must be blind to them,
+    /// so a shadow-only change reports nothing anywhere.
+    #[test]
+    fn a_shadow_observation_reaches_neither_telemetry_projection() {
+        use crate::telemetry::companion::companion_outcomes;
+        use crate::telemetry::corrections::banded_corrections;
+
+        let mut before = RecordingFeedback::default();
+        record_sermon_pick(&mut before, correction(Some(1), 3));
+        record_trim_adjustment(&mut before, deltas(30.0, 0.0), "0.10.0");
+        let mut after = before.clone();
+        record_shadow_observation(
+            &mut after,
+            observation(360.0, ShadowSettings::default(), "0.10.0"),
+        );
+
+        assert_ne!(before, after, "the file did change");
+        assert_eq!(
+            banded_corrections(&before),
+            banded_corrections(&after),
+            "a detector disagreement is not one of the three consented categories"
+        );
+        assert_eq!(
+            companion_outcomes(&before),
+            companion_outcomes(&after),
+            "nor is it a companion outcome"
+        );
     }
 
     // ── The file as a whole ────────────────────────────────────────────────────

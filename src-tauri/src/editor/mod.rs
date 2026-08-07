@@ -999,6 +999,34 @@ pub fn record_companion_suggestion(
     written
 }
 
+/// Fold one shadow-mode observation into the recording's feedback file.
+///
+/// Returns whether it persisted; `false` is an unreadable or newer-schema file
+/// we refuse to overwrite, or a failed write. The caller turns that into a log
+/// line and nothing else — a measurement that could not be stored must never
+/// become something the operator sees.
+///
+/// **`observe_feedback_change` is deliberately NOT called here**, and that is
+/// the one line of this function that matters. The other three seams report
+/// their change to the telemetry accumulators; this one must not, because a
+/// disagreement between two detectors is outside the three categories the
+/// consent text covers (crash reports, quality data, feature-usage counters).
+/// See [`sundayrec_core::feedback::ShadowObservation`] for the full argument.
+/// The two projections that read this file are blind to the collection anyway,
+/// so calling it would report nothing today — which is exactly why the absence
+/// is stated here rather than left to be noticed.
+pub fn record_shadow_observation(
+    media_path: &str,
+    observation: sundayrec_core::feedback::ShadowObservation,
+) -> bool {
+    let _guard = feedback_lock();
+    let Ok(mut file) = read_feedback(media_path) else {
+        return false;
+    };
+    sundayrec_core::feedback::record_shadow_observation(&mut file, observation);
+    write_feedback(media_path, &file)
+}
+
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
 /// Reads the bytes only when within the 100 MB limit. A missing file surfaces
 /// as an error (the renderer should not have asked for an absent recording).
@@ -1917,60 +1945,33 @@ fn read_segments_cache(
     .then_some(cache.segments)
 }
 
-/// Decode to 16 kHz mono PCM, classify + group with the core, promote the
-/// sermon block, and map to UI segments — cached next to the recording so a
-/// reopen is free.
+/// Decode a recording to the 16 kHz mono f32 PCM the detector works on.
 ///
-/// `force` skips the cache READ (the explicit «Analyser opptak» button: the user
-/// asked for the work to be done again) but still writes the result, so the next
-/// automatic open is fast again.
+/// Split out of [`segments`] (E9) because shadow mode needs the same buffer and
+/// re-running the decode is the cheap half of that pass — a second ffmpeg read
+/// costs seconds where the model costs minutes, and holding ~345 MB of f32 alive
+/// across a detached background task to avoid it would be the expensive trade,
+/// not the frugal one.
 ///
-/// Two P3 fixes here. The cache: detection is a second full pass over the whole
-/// recording and it auto-fired on every single open. And the memory: this used
-/// to `wait_with_output()`, i.e. buffer the ENTIRE 16 kHz PCM stream as bytes
-/// (~230 MB for 2 h) and then `collect()` a second, equally large `Vec<f32>` from
-/// it. Now the bytes are folded into the f32 vec as they arrive, so only the
-/// classifier's own buffer is ever held.
+/// `on_progress` receives the 0..1 fraction, measured as bytes off the pipe over
+/// the byte count the probed duration implies. Capped at 0.99: the pass this
+/// feeds always has a tail the decode cannot see, and only the caller knows when
+/// its own work is finished.
 ///
-/// `on_progress` receives the pass's 0..1 fraction, measured the same way the
-/// waveform decode measures its own: bytes off the pipe over the byte count the
-/// probed duration implies at 16 kHz mono s16le. «Analyser opptak» was the last
-/// button in the editor that could run for minutes with nothing but a spinner.
-///
-/// The second return value is the analysis BEHIND those segments, and it is
-/// `Some` only on a pass that actually ran. [`EditorSegment`] is a lossy
-/// projection — it keeps the bounds and the class but drops `confidence` and
-/// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
-/// cache hit can hand back segments but not the analysis, and `None` says so
-/// rather than reconstructing values that were never on disk.
-///
-/// That distinction is load-bearing for the review queue (E8): the episode-prep
-/// heuristic weighs `confidence` — it breaks sermon-candidate ties on it and
-/// raises the low-confidence attention flag from it — so a queue entry built
-/// from invented confidences would be a guess wearing the detector's clothes.
+/// Memory (P3): this used to `wait_with_output()`, i.e. buffer the ENTIRE stream
+/// as bytes (~230 MB for 2 h) and then `collect()` a second, equally large
+/// `Vec<f32>` from it. The bytes are folded into the f32 vec as they arrive, so
+/// only one buffer is ever held.
 ///
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
-pub async fn segments<F>(
-    input_path: &str,
-    force: bool,
-    on_progress: F,
-) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
+pub(crate) async fn decode_analysis_pcm<F>(input_path: &str, on_progress: F) -> AppResult<Vec<f32>>
 where
     F: Fn(f32),
 {
-    use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+    use sundayrec_core::audio_analysis::SAMPLE_RATE;
     use sundayrec_core::editor::analysis_decode_args;
     use tokio::io::AsyncReadExt;
-
-    let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
-        return Err(AppError::Validation("file_not_found".into()));
-    };
-    if !force {
-        if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
-            return Ok((cached, None));
-        }
-    }
 
     // Same denominator as the waveform decode — see `peaks`. `None` when the
     // container has no probeable duration: then no fraction would be honest.
@@ -2009,10 +2010,7 @@ where
         if n == 0 {
             break;
         }
-        // One tick per percent — see the identical guard in `peaks`. The pass
-        // also has a tail (feature extraction + classification) that this
-        // fraction does NOT cover, which is why the decode is capped at 0.99
-        // and the caller only sees 1.0 once the segments actually exist.
+        // One tick per percent — see the identical guard in `peaks`.
         read_bytes += n as u64;
         if let Some(expected) = expected_bytes {
             let frac = ((read_bytes as f64 / expected) as f32).clamp(0.0, 0.99);
@@ -2047,6 +2045,61 @@ where
             "analysis decode failed (ffmpeg non-zero)".into(),
         ));
     }
+    Ok(pcm)
+}
+
+/// Decode to 16 kHz mono PCM, classify + group with the core, promote the
+/// sermon block, and map to UI segments — cached next to the recording so a
+/// reopen is free.
+///
+/// `force` skips the cache READ (the explicit «Analyser opptak» button: the user
+/// asked for the work to be done again) but still writes the result, so the next
+/// automatic open is fast again.
+///
+/// A P3 fix lives in the cache: detection is a second full pass over the whole
+/// recording and it auto-fired on every single open. The decode itself (and its
+/// memory behaviour) is [`decode_analysis_pcm`].
+///
+/// `on_progress` receives the pass's 0..1 fraction from the decode, which is
+/// capped at 0.99 because the tail — feature extraction and classification —
+/// is not covered by it; the caller only sees 1.0 once the segments exist.
+/// «Analyser opptak» was the last button in the editor that could run for
+/// minutes with nothing but a spinner.
+///
+/// The second return value is the analysis BEHIND those segments, and it is
+/// `Some` only on a pass that actually ran. [`EditorSegment`] is a lossy
+/// projection — it keeps the bounds and the class but drops `confidence` and
+/// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
+/// cache hit can hand back segments but not the analysis, and `None` says so
+/// rather than reconstructing values that were never on disk.
+///
+/// That distinction is load-bearing for the review queue (E8): the episode-prep
+/// heuristic weighs `confidence` — it breaks sermon-candidate ties on it and
+/// raises the low-confidence attention flag from it — so a queue entry built
+/// from invented confidences would be a guess wearing the detector's clothes.
+///
+/// HARDWARE-UNVERIFIED.
+#[cfg(feature = "editor")]
+pub async fn segments<F>(
+    input_path: &str,
+    force: bool,
+    on_progress: F,
+) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
+where
+    F: Fn(f32),
+{
+    use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
+
+    let Some((size_bytes, mtime_ms)) = media_stat(input_path) else {
+        return Err(AppError::Validation("file_not_found".into()));
+    };
+    if !force {
+        if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
+            return Ok((cached, None));
+        }
+    }
+
+    let pcm = decode_analysis_pcm(input_path, &on_progress).await?;
 
     // ONE detector for both consumers (E9). `HeuristicScorer` is the seam: the
     // frame scorer is the only thing a VAD model replaces, and it is chosen
