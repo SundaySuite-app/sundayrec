@@ -468,6 +468,104 @@ enum ResolvedDevice {
     EnumFailed,
 }
 
+/// How long the diagnose video probe waits for a frame before giving up. Long
+/// enough for the macOS mode negotiation the live preview does, short enough
+/// that a missing camera does not hold the Diagnose button hostage.
+pub const VIDEO_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Grab ONE frame from the camera and report whether it arrived (E2.5).
+///
+/// This is what makes the diagnose report's `video_ok` stop saying "ikke
+/// testet". It is the live preview's own path — the same permission pre-check,
+/// the same [`resolve_preview_device`] trust rules, the same probed capture
+/// mode, the same unit-tested [`build_preview_args`] — stopped at the first
+/// JPEG SOI instead of streaming on.
+///
+/// ## Safety
+///
+/// One bounded read. The child carries `kill_on_drop`, so returning (including
+/// on the timeout path) closes the camera; nothing is left holding the device
+/// for the live preview or a recording that starts a moment later.
+pub async fn probe_video_frame(device: Option<String>) -> AppResult<bool> {
+    // A denied camera is not a frame that failed to arrive, it is a permission
+    // — answer immediately rather than burning the whole timeout on a device
+    // that cannot open. (The same fast-fail `PreviewEngine::start` does.)
+    let cam = permissions::status(permissions::MediaKind::Camera);
+    if permissions::blocked_message(permissions::MediaKind::Camera, cam).is_some() {
+        return Ok(false);
+    }
+    let token = match resolve_preview_device(device).await {
+        ResolvedDevice::Index(idx) => idx,
+        ResolvedDevice::NoMatch(name) => {
+            return Err(AppError::Recording(format!(
+                "probe: fant ikke kameraet «{name}»"
+            )))
+        }
+        ResolvedDevice::EnumFailed => {
+            return Err(AppError::Recording(
+                "probe: kunne ikke lese kameralisten".into(),
+            ))
+        }
+    };
+    let platform = detect_platform();
+
+    // Ask the camera which modes it really advertises, exactly as `run_preview`
+    // does — a hardcoded guess produces zero frames on avfoundation and would
+    // make a working camera report `video_ok: false`.
+    let probed = crate::media::camera::preview_modes_from(
+        &crate::media::camera::probe_camera_modes(&token, platform).await,
+    );
+    let (input_fps, size) = match probed.first() {
+        Some(m) => (m.input_fps, Some(format!("{}x{}", m.width, m.height))),
+        None => (DEFAULT_FPS, None),
+    };
+    let args = build_preview_args(
+        platform,
+        Some(&token),
+        DEFAULT_FPS,
+        input_fps,
+        size.as_deref(),
+    );
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut child = spawn_ffmpeg(&arg_refs).await?;
+    let Some(mut stdout) = child.stdout.take() else {
+        return Ok(false);
+    };
+
+    let saw_frame = tokio::time::timeout(VIDEO_PROBE_TIMEOUT, async move {
+        let mut buf = vec![0u8; 16 * 1024];
+        let mut seen = Vec::new();
+        loop {
+            match stdout.read(&mut buf).await {
+                Ok(0) => return false, // ffmpeg exited without producing a frame
+                Ok(n) => {
+                    // The MJPEG start-of-image marker. One is proof the camera
+                    // opened, negotiated and delivered pixels — which is the
+                    // whole question `video_ok` asks.
+                    seen.extend_from_slice(&buf[..n]);
+                    if seen.windows(2).any(|w| w == [0xFF, 0xD8]) {
+                        return true;
+                    }
+                    // Keep only the tail, so a camera streaming garbage cannot
+                    // grow this without bound before the timeout fires.
+                    if seen.len() > 64 * 1024 {
+                        seen.drain(..seen.len() - 1);
+                    }
+                }
+                Err(_) => return false,
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    // Close the camera before returning, rather than leaving it to `kill_on_drop`
+    // at some later point in the caller's frame.
+    let _ = child.kill().await;
+    tracing::info!(saw_frame, "video probe complete");
+    Ok(saw_frame)
+}
+
 /// Pure decision: given the requested `device` token and an *already-enumerated*
 /// device list (or `None` for "enumeration failed"), decide the resolution.
 /// Factored out of [`resolve_preview_device`] so the trust logic is unit-tested

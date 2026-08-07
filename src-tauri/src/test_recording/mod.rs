@@ -252,6 +252,212 @@ pub async fn run_native_capture_bench(
     Ok(report)
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   The diagnose capture probe (E2.5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// How long the diagnose probe holds the microphone. Two seconds is enough for
+/// the device to open, negotiate and deliver frames; anything longer is time the
+/// operator spends staring at a spinner during a pre-service check.
+pub const PROBE_SECS: u64 = 2;
+
+/// Absolute ceiling on the whole probe, so a device that hangs on open cannot
+/// wedge the diagnose command. Generous against `PROBE_SECS` because a cold
+/// USB interface can take several seconds just to enumerate.
+pub const PROBE_DEADLINE: Duration = Duration::from_secs(20);
+
+/// The `RecordingOpts` the native bench + probe drive the shipping stack with.
+/// Shared so the probe provably runs the SAME configuration as the bench (and
+/// therefore the same one a real audio-only recording does).
+fn native_probe_opts(
+    audio_device_name: &str,
+    output_path: &str,
+    sample_rate: Option<u32>,
+) -> crate::recorder::engine::RecordingOpts {
+    use sundayrec_core::settings::ChannelMode;
+    crate::recorder::engine::RecordingOpts {
+        audio_device_name: audio_device_name.to_string(),
+        video_device_name: None,
+        output_path: output_path.to_string(),
+        stop_on_silence: false,
+        silence_threshold_db: None,
+        silence_timeout_minutes: 5,
+        framerate: 30,
+        channel_mode: ChannelMode::Stereo,
+        input_channel_l: None,
+        input_channel_r: None,
+        sample_rate,
+        bitrate_kbps: 192,
+        split_minutes: 0,
+        manual_max_minutes: 0,
+        live_levels: false,
+        keep_separate_audio: false,
+        separate_audio_format: "wav".into(),
+        video_resolution: String::new(),
+        video_codec: String::new(),
+        video_encoder: String::new(),
+        classic_directshow: false,
+        classic_ffmpeg_audio: false,
+        video_input: None,
+    }
+}
+
+/// Run a short REAL capture and report whether the microphone produced audio.
+///
+/// This is what makes the diagnose report's `capture_ok` stop saying "ikke
+/// testet". It goes through [`crate::recorder::engine::select_capture_backend`],
+/// so it exercises the same stack a real audio-only recording would — the
+/// native cpal engine by default, the ffmpeg path under the
+/// `classic_ffmpeg_audio` escape hatch (and on Linux).
+///
+/// ## What it does NOT do
+///
+/// It deliberately does not apply the bench's
+/// [`sundayrec_core::selftest::selftest_verdict`]. That verdict wants signal —
+/// a silent room legitimately fails it — and a pre-service check run in an
+/// empty sanctuary must not report "capture failed" because nobody was
+/// talking. The question here is strictly "did the device open and deliver
+/// samples", which is the question `capture_ok` has always asked.
+///
+/// ## Safety
+///
+/// Bounded by [`PROBE_DEADLINE`], and the device is always released: the native
+/// path stops the stream + writer through the recorder's own
+/// `stop_native_bounded`, and the ffmpeg path's child carries `kill_on_drop`.
+/// The caller ([`crate::diagnostics`]) is responsible for not calling this while
+/// something else owns the microphone.
+pub async fn probe_audio_capture(
+    audio_device_name: &str,
+    sample_rate: Option<u32>,
+    classic_ffmpeg_audio: bool,
+) -> AppResult<bool> {
+    use crate::recorder::engine::select_capture_backend;
+
+    let backend = select_capture_backend(
+        cfg!(target_os = "macos"),
+        cfg!(target_os = "windows"),
+        true, // audio-only: the probe never opens the camera
+        classic_ffmpeg_audio,
+        false,
+        crate::audio::asio::is_asio_device(audio_device_name),
+    );
+
+    let tmp_dir = std::env::temp_dir().join("sundayrec-probe");
+    std::fs::create_dir_all(&tmp_dir)?;
+    let out = tmp_dir.join(format!("probe_{}.wav", crate::db::store::now_ms() as u64));
+    let out_str = out.to_string_lossy().into_owned();
+
+    let result = tokio::time::timeout(
+        PROBE_DEADLINE,
+        run_audio_probe(backend, audio_device_name, sample_rate, &out_str),
+    )
+    .await;
+    // The temp capture has served its purpose whatever happened to it.
+    let _ = std::fs::remove_file(&out);
+
+    match result {
+        Ok(inner) => inner,
+        Err(_) => {
+            tracing::warn!("capture probe: exceeded {PROBE_DEADLINE:?} — reporting failure");
+            Ok(false)
+        }
+    }
+}
+
+/// The probe body, split out so [`probe_audio_capture`] owns the deadline and
+/// the cleanup in one place.
+async fn run_audio_probe(
+    backend: crate::recorder::engine::CaptureBackend,
+    audio_device_name: &str,
+    sample_rate: Option<u32>,
+    out_str: &str,
+) -> AppResult<bool> {
+    use crate::recorder::engine::CaptureBackend;
+
+    match backend {
+        CaptureBackend::NativeAudio { host } => {
+            use crate::recorder::native_capture::segment::{
+                spawn_native_segment, stop_native_bounded,
+            };
+            let opts = native_probe_opts(audio_device_name, out_str, sample_rate);
+            let mut seg = spawn_native_segment(host, &opts, out_str, None).await?;
+            tokio::time::sleep(Duration::from_secs(PROBE_SECS)).await;
+            stop_native_bounded(&mut seg).await;
+            let frames = seg.frames.load(std::sync::atomic::Ordering::Relaxed);
+            tracing::info!(
+                frames,
+                rate = seg.spec.sample_rate,
+                "capture probe (native) complete"
+            );
+            // Frames, not bytes: a WAV header exists even when nothing was
+            // captured, so "the file is non-empty" would be a false green.
+            Ok(frames > 0)
+        }
+        CaptureBackend::Ffmpeg => probe_via_ffmpeg(audio_device_name, sample_rate, out_str).await,
+    }
+}
+
+/// The ffmpeg half of the probe: the bench's exact spawn (the unit-tested
+/// [`sundayrec_core::capture::build_unified_capture_args`] chain + the shared
+/// sidecar helper), with a `-t PROBE_SECS` limit and only an exit-status + size
+/// judgement on the far end.
+async fn probe_via_ffmpeg(
+    audio_device_name: &str,
+    sample_rate: Option<u32>,
+    out_str: &str,
+) -> AppResult<bool> {
+    use sundayrec_core::capture::{build_unified_capture_args, CaptureOpts};
+
+    let inv = enumerate_ffmpeg_devices().await?;
+    let Some(dev) = find_best_device_match(&inv.audio_inputs, audio_device_name) else {
+        // No device to probe is not a probe FAILURE — the "no audio device"
+        // finding already covers it, and reporting `capture_ok: false` on top
+        // would say the hardware is broken when it is simply absent.
+        return Err(AppError::Validation(format!(
+            "probe: fant ikke lydenheten «{audio_device_name}»"
+        )));
+    };
+    let token = match current_platform() {
+        Platform::MacOS | Platform::Linux => dev.index.map(|i| i.to_string()).unwrap_or_default(),
+        Platform::Windows => dev.name.clone(),
+    };
+
+    let opts = CaptureOpts {
+        sample_rate,
+        live_levels: false,
+        ..CaptureOpts::default()
+    };
+    let mut args = build_unified_capture_args(current_platform(), None, &token, out_str, &opts);
+    let cut = args.len().saturating_sub(2);
+    args.splice(cut..cut, ["-t".to_string(), PROBE_SECS.to_string()]);
+
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut child = spawn_ffmpeg(&arg_refs).await?;
+    let stderr_drain = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            let _ = stderr.read_to_end(&mut bytes).await;
+            String::from_utf8_lossy(&bytes).into_owned()
+        })
+    });
+    let status = wait_bounded(&mut child, Duration::from_secs(PROBE_SECS + 10)).await;
+    let stderr_buf = match stderr_drain {
+        Some(h) => h.await.unwrap_or_default(),
+        None => String::new(),
+    };
+    if !status.map(|s| s.success()).unwrap_or(false) {
+        tracing::warn!(
+            "capture probe (ffmpeg) failed: {:?}",
+            classify_ffmpeg_error(&stderr_buf)
+        );
+        return Ok(false);
+    }
+    let size = std::fs::metadata(out_str).map(|m| m.len()).unwrap_or(0);
+    tracing::info!(size, "capture probe (ffmpeg) complete");
+    // A bare WAV header is 44 bytes; anything meaningfully above it is audio.
+    Ok(size > 1024)
+}
+
 /// The bench's RMS pass: astats over the finished file (same helper the test
 /// recording uses). `None` on any failure — treated as unmeasured, not silent.
 async fn run_astats_rms(path: &str) -> Option<f64> {

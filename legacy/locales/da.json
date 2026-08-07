@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Tilgængelig",
     "diagLoopback": "WASAPI-loopback",
     "diagDeviceListTitle": "Alle lydenheder optageren kan se",
+    "diagIpcTitle": "Seneste IPC-fejl (teknisk)",
+    "diagIpcJustNow": "lige nu",
+    "diagIpcSecAgo": "{n} sek siden",
+    "diagIpcMinAgo": "{n} min siden",
+    "diagIpcHourAgo": "{n} t siden",
     "benchJudging": "Analyserer måling …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Hjælp og oplæring",
     "langCardDesc": "Vælg det sprog, du foretrækker. SundayRec understøtter syv sprog — alle menuer og notifikationer tilpasses med det samme.",
     "openOnboarding": "Åbn opsætningsguiden",
+    "showLog": "Vis log",
+    "copyLog": "Kopiér seneste log",
+    "logHint": "Hvis noget går galt, kan denne log sendes til den, der hjælper dig. Den indeholder ingen lyd og ingen adgangskoder.",
+    "showLogFailed": "Kunne ikke åbne logmappen.",
+    "logEmpty": "Loggen er tom endnu.",
+    "logCopied": "Log kopieret",
+    "logCopyFailed": "Kunne ikke kopiere loggen.",
     "profileDesc": "Bruges i filnavne, notifikationsmails og podcast-RSS. Felterne er valgfrie, men anbefales.",
     "responsibleHint": "Personen, der får en e-mail, hvis en optagelse fejler (kræver e-mailadvarsler under Deling → Beskeder).",
     "webhookUrl": "WEBHOOK-URL",
@@ -563,7 +575,8 @@
     "showInFolder": "Vis i mappe"
   },
   "error": {
-    "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet."
+    "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",
+    "ipcFailed": "Noget i baggrunden svarede ikke, så denne visning kan være ufuldstændig."
   },
   "editor": {
     "title": "Rediger lydfil",

@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Disponible",
     "diagLoopback": "Bouclage WASAPI",
     "diagDeviceListTitle": "Tous les périphériques audio vus par l'enregistreur",
+    "diagIpcTitle": "Dernières erreurs IPC (technique)",
+    "diagIpcJustNow": "à l'instant",
+    "diagIpcSecAgo": "il y a {n} s",
+    "diagIpcMinAgo": "il y a {n} min",
+    "diagIpcHourAgo": "il y a {n} h",
     "benchJudging": "Analyse de la mesure …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Aide et formation",
     "langCardDesc": "Choisissez votre langue préférée. SundayRec prend en charge sept langues — tous les menus et notifications s’adaptent immédiatement.",
     "openOnboarding": "Ouvrir l’assistant de configuration",
+    "showLog": "Afficher le journal",
+    "copyLog": "Copier le dernier journal",
+    "logHint": "En cas de problème, vous pouvez envoyer ce journal à la personne qui vous aide. Il ne contient ni audio ni mot de passe.",
+    "showLogFailed": "Impossible d’ouvrir le dossier des journaux.",
+    "logEmpty": "Le journal est vide pour l’instant.",
+    "logCopied": "Journal copié",
+    "logCopyFailed": "Impossible de copier le journal.",
     "profileDesc": "Utilisé dans les noms de fichiers, les e-mails de notification et le flux RSS du podcast. Ces champs sont facultatifs mais recommandés.",
     "responsibleHint": "La personne prévenue par e-mail si un enregistrement échoue (nécessite les alertes e-mail sous Partage → Notifications).",
     "webhookUrl": "URL DU WEBHOOK",
@@ -563,7 +575,8 @@
     "showInFolder": "Afficher dans le dossier"
   },
   "error": {
-    "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application."
+    "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
+    "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet."
   },
   "editor": {
     "title": "Éditer le fichier audio",

@@ -114,7 +114,8 @@ pub struct DiagnosticsInput {
     /// The non-secret settings summary.
     pub settings: SettingsSummary,
     /// Audio capture test result: `Some(true)`=ok, `Some(false)`=failed,
-    /// `None`=not tested (the F2.2 default — the live test is Fase-3 hardware).
+    /// `None`=not tested. E2.5 restored the real probe, so `None` now means the
+    /// probe was REFUSED — and [`Self::capture_probe_skipped`] says why.
     pub capture_ok: Option<bool>,
     /// Video capture test result, same tri-state. `None` when not tested /
     /// video disabled.
@@ -160,6 +161,67 @@ pub struct DiagnosticsInput {
     /// pastes a pattern, not a one-off snapshot. Capped upstream (~20).
     #[serde(default)]
     pub recording_history: Vec<RecordingTelemetry>,
+
+    // ── E2 observability signals ─────────────────────────────────────────────
+    /// Why the capture probe did not run, when it did not. `None` = it ran (and
+    /// [`Self::capture_ok`] carries the answer). Some situations make a probe
+    /// unsafe — a live recording owns the microphone — and saying WHY beats a
+    /// bare "ikke testet" that reads like an unfinished feature.
+    #[serde(default)]
+    pub capture_probe_skipped: Option<String>,
+    /// Persisted panics found in `<app-data>/crashes/`. `None` when the ring
+    /// could not be read at all (which is different from "no crashes").
+    #[serde(default)]
+    pub crashes: Option<CrashSummary>,
+    /// Supervised background tasks that had to be restarted this install.
+    #[serde(default)]
+    pub task_restarts: Option<TaskRestartSummary>,
+    /// The rotating file log, if it is running.
+    #[serde(default)]
+    pub log_file: Option<LogFileInfo>,
+}
+
+/// What the crash ring holds — count + newest, not the records themselves. The
+/// report is a page a person reads, not a stack-trace archive.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../../src/lib/bindings/CrashSummary.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct CrashSummary {
+    pub count: usize,
+    /// RFC 3339 local timestamp of the newest record, if any.
+    pub newest: Option<String>,
+    /// The newest record's message, truncated upstream. Lets the report show
+    /// WHAT crashed without the user opening a folder.
+    pub newest_message: Option<String>,
+}
+
+/// Supervised long-lived tasks that died and were restarted (E2.2).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../../src/lib/bindings/TaskRestartSummary.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRestartSummary {
+    pub count: usize,
+    pub newest: Option<String>,
+    /// Distinct task names, so the report names the SUBSYSTEM that is unstable
+    /// (the scheduler missing recordings reads very differently from the trash
+    /// sweep failing).
+    pub tasks: Vec<String>,
+}
+
+/// The rotating file log's state (E2.3).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
+#[ts(export, export_to = "../../../src/lib/bindings/LogFileInfo.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct LogFileInfo {
+    /// Absolute path to the live log file.
+    pub path: String,
+    /// Its current size, or `None` when it does not exist yet.
+    #[ts(type = "number | null")]
+    pub size_bytes: Option<u64>,
+    /// Log lines dropped because the writer could not keep up. Non-zero means
+    /// the log is INCOMPLETE, which anyone reading it needs to know.
+    #[ts(type = "number")]
+    pub dropped_lines: u64,
 }
 
 /// The most recent recording error, read back from `last-error.json` (written by
@@ -407,6 +469,100 @@ pub fn detect_issues(input: &DiagnosticsInput) -> Vec<DiagnosticFinding> {
         }
     }
 
+    // ── E2 observability signals ─────────────────────────────────────────────
+
+    // A capture probe that RAN and failed is the most direct evidence there is:
+    // the device was asked to record and produced nothing. Louder than any
+    // enumeration-based guess, and distinct from SR-CAPTURE-01 (which describes
+    // a recording that HAPPENED but stuttered).
+    if input.capture_ok == Some(false) {
+        out.push(DiagnosticFinding::new(
+            "SR-CAPTURE-02",
+            Critical,
+            "Testopptaket fikk ingen lyd",
+            "En kort prøve mot den valgte lydenheten ga ingen lyd i det hele tatt.",
+            "Sjekk at riktig enhet er valgt under Innstillinger → Lyd, at kabelen sitter i, og at ingen andre programmer holder mikrofonen. Kjør Diagnose på nytt etterpå.",
+        ));
+    }
+    if input.settings.video_enabled && input.video_ok == Some(false) {
+        out.push(DiagnosticFinding::new(
+            "SR-VIDEO-02",
+            Critical,
+            "Kameraet ga ingen bilde",
+            "Video er på, men en kort prøve mot kameraet ga ingen bilderamme.",
+            "Sjekk at kameraet er tilkoblet og ikke i bruk av et annet program (Teams, Zoom), og at appen har kameratilgang.",
+        ));
+    }
+
+    // Persisted panics. The app crashed; that is worth saying out loud even
+    // when everything is fine right now.
+    if let Some(c) = &input.crashes {
+        if c.count > 0 {
+            let when = c.newest.as_deref().unwrap_or("ukjent tidspunkt");
+            let what = c
+                .newest_message
+                .as_deref()
+                .map(|m| format!(" Siste: {m}"))
+                .unwrap_or_default();
+            out.push(DiagnosticFinding::new(
+                "SR-CRASH-01",
+                Warning,
+                "Appen har krasjet",
+                format!(
+                    "{} krasjrapport(er) ligger lagret; den nyeste er fra {when}.{what}",
+                    c.count
+                ),
+                "Send denne rapporten videre — krasjfilene ligger i app-mappen og er det som gjør feilen mulig å finne.",
+            ));
+        }
+    }
+
+    // Supervised tasks that had to be restarted. One is a hiccup; the count and
+    // the NAMES are what turn "it feels flaky" into something actionable.
+    if let Some(r) = &input.task_restarts {
+        if r.count > 0 {
+            let when = r.newest.as_deref().unwrap_or("ukjent tidspunkt");
+            out.push(DiagnosticFinding::new(
+                "SR-TASK-01",
+                Warning,
+                "Bakgrunnsoppgaver har måttet startes på nytt",
+                format!(
+                    "{} omstart(er), sist {when}. Berørt: {}.",
+                    r.count,
+                    if r.tasks.is_empty() {
+                        "ukjent".to_string()
+                    } else {
+                        r.tasks.join(", ")
+                    }
+                ),
+                "Appen startet dem automatisk igjen, så ingenting stoppet. Men gjentar det seg, ta med denne rapporten — navnene over sier hvilken del som er ustabil.",
+            ));
+        }
+    }
+
+    // No log file means the NEXT problem will be as hard to diagnose as the
+    // last one was — worth saying while things are still calm.
+    match &input.log_file {
+        Some(l) if l.dropped_lines > 0 => out.push(DiagnosticFinding::new(
+            "SR-LOG-02",
+            Info,
+            "Deler av loggen mangler",
+            format!(
+                "{} loggmeldinger ble forkastet fordi disken ikke holdt følge.",
+                l.dropped_lines
+            ),
+            "Loggen er ufullstendig, men opptaket ble prioritert — det er riktig vei rundt. En treg disk er verdt å se på før neste lange opptak.",
+        )),
+        Some(_) => {}
+        None => out.push(DiagnosticFinding::new(
+            "SR-LOG-01",
+            Info,
+            "Loggfil er ikke aktiv",
+            "Denne økten skriver ingen loggfil, så det finnes ingen historikk å sende inn hvis noe skjærer seg.",
+            "Vanligvis betyr det at app-mappen ikke kunne opprettes. Start appen på nytt; vedvarer det, sjekk diskplass og rettigheter.",
+        )),
+    }
+
     // All clear.
     if out.is_empty() {
         out.push(DiagnosticFinding::new(
@@ -612,6 +768,54 @@ pub fn build_report_markdown(input: DiagnosticsInput) -> String {
     lines.push("## Capture-test".to_string());
     lines.push(format!("- **Lyd:** {}", render_test(input.capture_ok)));
     lines.push(format!("- **Video:** {}", render_test(input.video_ok)));
+    if let Some(reason) = &input.capture_probe_skipped {
+        // "ikke testet" with no reason reads like an unfinished feature — which
+        // for four phases it was. Say WHY instead.
+        lines.push(format!("- **Ikke kjørt fordi:** {reason}"));
+    }
+    lines.push(String::new());
+
+    // ── Stabilitet (E2 observability) ────────────────────────────────────────
+    lines.push("## Stabilitet".to_string());
+    match &input.crashes {
+        Some(c) if c.count > 0 => {
+            lines.push(format!("- **Krasjrapporter:** {}", c.count));
+            if let Some(when) = &c.newest {
+                lines.push(format!("  - nyeste: {when}"));
+            }
+            if let Some(msg) = &c.newest_message {
+                lines.push(format!("  - `{msg}`"));
+            }
+        }
+        Some(_) => lines.push("- **Krasjrapporter:** ingen".to_string()),
+        None => lines.push("- **Krasjrapporter:** ukjent (kunne ikke leses)".to_string()),
+    }
+    match &input.task_restarts {
+        Some(r) if r.count > 0 => {
+            lines.push(format!(
+                "- **Omstarter av bakgrunnsoppgaver:** {} ({})",
+                r.count,
+                r.tasks.join(", ")
+            ));
+            if let Some(when) = &r.newest {
+                lines.push(format!("  - nyeste: {when}"));
+            }
+        }
+        Some(_) => lines.push("- **Omstarter av bakgrunnsoppgaver:** ingen".to_string()),
+        None => lines.push("- **Omstarter av bakgrunnsoppgaver:** ukjent".to_string()),
+    }
+    match &input.log_file {
+        Some(l) => {
+            lines.push(format!("- **Loggfil:** `{}`", l.path));
+            if let Some(size) = l.size_bytes {
+                lines.push(format!("  - størrelse: {}", fmt_bytes(size)));
+            }
+            if l.dropped_lines > 0 {
+                lines.push(format!("  - forkastede linjer: {}", l.dropped_lines));
+            }
+        }
+        None => lines.push("- **Loggfil:** ikke aktiv".to_string()),
+    }
     lines.push(String::new());
 
     // ── Innstillinger (non-secret) ──────────────────────────────────────────
@@ -645,6 +849,16 @@ mod tests {
             settings: SettingsSummary::from_settings(&Settings::default()),
             capture_ok: None,
             video_ok: None,
+            // A HEALTHY machine has a file log, no crashes and no restarts
+            // (E2). Leaving these at `Default` would make every fixture below
+            // carry an SR-LOG-01 it is not about.
+            crashes: Some(CrashSummary::default()),
+            task_restarts: Some(TaskRestartSummary::default()),
+            log_file: Some(LogFileInfo {
+                path: "/tmp/logs/sundayrec.log".into(),
+                size_bytes: Some(12_345),
+                dropped_lines: 0,
+            }),
             ..Default::default()
         }
     }
@@ -883,5 +1097,219 @@ mod tests {
     fn auto_sample_rate_has_no_rate_finding() {
         let input = sample_input(); // default mode = auto
         assert!(!detect_issues(&input).iter().any(|x| x.code == "SR-RATE-01"));
+    }
+
+    // ── E2.5: the restored capture probe + the observability signals ─────────
+
+    #[test]
+    fn a_failed_capture_probe_is_critical_and_distinct_from_a_stuttery_recording() {
+        // SR-CAPTURE-01 says "a recording HAPPENED but stuttered".
+        // SR-CAPTURE-02 says "we asked the device to record and got nothing" —
+        // a different, louder fact, and the one `capture_ok` exists to carry.
+        let mut input = sample_input();
+        input.capture_ok = Some(false);
+        let f = detect_issues(&input);
+        assert!(f
+            .iter()
+            .any(|x| x.code == "SR-CAPTURE-02" && x.severity == DiagnosticSeverity::Critical));
+        assert!(!f.iter().any(|x| x.code == "SR-CAPTURE-01"));
+
+        // A probe that PASSED, or one that never ran, says nothing.
+        let mut ok = sample_input();
+        ok.capture_ok = Some(true);
+        assert!(!detect_issues(&ok).iter().any(|x| x.code == "SR-CAPTURE-02"));
+        assert!(!detect_issues(&sample_input())
+            .iter()
+            .any(|x| x.code == "SR-CAPTURE-02"));
+    }
+
+    #[test]
+    fn a_failed_video_probe_only_matters_when_video_is_on() {
+        let mut input = sample_input();
+        input.video_ok = Some(false);
+        // Video disabled (the default) → a camera that cannot open is not a
+        // problem the operator has.
+        assert!(!detect_issues(&input)
+            .iter()
+            .any(|x| x.code == "SR-VIDEO-02"));
+        input.settings.video_enabled = true;
+        assert!(detect_issues(&input)
+            .iter()
+            .any(|x| x.code == "SR-VIDEO-02" && x.severity == DiagnosticSeverity::Critical));
+    }
+
+    #[test]
+    fn a_skipped_probe_says_why_instead_of_a_bare_not_tested() {
+        let mut input = sample_input();
+        input.capture_probe_skipped = Some("et opptak pågår".to_string());
+        let md = build_report_markdown(input);
+        assert!(md.contains("**Lyd:** ikke testet"));
+        assert!(md.contains("Ikke kjørt fordi:** et opptak pågår"), "{md}");
+    }
+
+    #[test]
+    fn stored_crashes_surface_with_their_count_and_newest() {
+        let mut input = sample_input();
+        input.crashes = Some(CrashSummary {
+            count: 3,
+            newest: Some("2026-08-06T11:00:00+02:00".into()),
+            newest_message: Some("called `Option::unwrap()` on a `None` value".into()),
+        });
+        let e = detect_issues(&input)
+            .into_iter()
+            .find(|x| x.code == "SR-CRASH-01")
+            .expect("crash finding");
+        assert_eq!(e.severity, DiagnosticSeverity::Warning);
+        assert!(e.detail.contains('3'), "{}", e.detail);
+        assert!(
+            e.detail.contains("2026-08-06T11:00:00+02:00"),
+            "{}",
+            e.detail
+        );
+        assert!(e.detail.contains("Option::unwrap"), "{}", e.detail);
+
+        let md = build_report_markdown(input);
+        assert!(md.contains("## Stabilitet"));
+        assert!(md.contains("**Krasjrapporter:** 3"));
+    }
+
+    #[test]
+    fn an_empty_crash_ring_is_silent_and_an_unreadable_one_is_honest() {
+        // No crashes → no finding (the healthy fixture already proves this),
+        // and the report says so out loud rather than omitting the line.
+        assert!(!detect_issues(&sample_input())
+            .iter()
+            .any(|x| x.code == "SR-CRASH-01"));
+        assert!(build_report_markdown(sample_input()).contains("**Krasjrapporter:** ingen"));
+
+        // Unreadable is NOT the same as none, and the report must not pretend.
+        let mut unknown = sample_input();
+        unknown.crashes = None;
+        let md = build_report_markdown(unknown);
+        assert!(md.contains("**Krasjrapporter:** ukjent"), "{md}");
+    }
+
+    #[test]
+    fn supervised_task_restarts_name_the_subsystem() {
+        // The count alone would read as "something is flaky"; the NAMES are
+        // what make it actionable — a restarting scheduler and a restarting
+        // trash sweep are very different news.
+        let mut input = sample_input();
+        input.task_restarts = Some(TaskRestartSummary {
+            count: 11,
+            newest: Some("2026-08-06T10:30:00+02:00".into()),
+            tasks: vec!["cloud::worker".into(), "scheduler::supervisor".into()],
+        });
+        let e = detect_issues(&input)
+            .into_iter()
+            .find(|x| x.code == "SR-TASK-01")
+            .expect("restart finding");
+        assert_eq!(e.severity, DiagnosticSeverity::Warning);
+        assert!(e.detail.contains("11"), "{}", e.detail);
+        assert!(e.detail.contains("scheduler::supervisor"), "{}", e.detail);
+        assert!(build_report_markdown(input).contains("Omstarter av bakgrunnsoppgaver:** 11"));
+    }
+
+    #[test]
+    fn a_missing_log_file_is_flagged_and_a_lossy_one_is_flagged_differently() {
+        // No log = the NEXT problem is as hard to diagnose as the last one was.
+        let mut none = sample_input();
+        none.log_file = None;
+        let f = detect_issues(&none);
+        assert!(f
+            .iter()
+            .any(|x| x.code == "SR-LOG-01" && x.severity == DiagnosticSeverity::Info));
+        assert!(build_report_markdown(none).contains("**Loggfil:** ikke aktiv"));
+
+        // A log with dropped lines is present but INCOMPLETE — anyone reading
+        // it needs to know that, and it is a different code.
+        let mut lossy = sample_input();
+        lossy.log_file = Some(LogFileInfo {
+            path: "/tmp/logs/sundayrec.log".into(),
+            size_bytes: Some(1024),
+            dropped_lines: 42,
+        });
+        let f = detect_issues(&lossy);
+        assert!(f.iter().any(|x| x.code == "SR-LOG-02"));
+        assert!(!f.iter().any(|x| x.code == "SR-LOG-01"));
+        assert!(build_report_markdown(lossy).contains("forkastede linjer: 42"));
+    }
+
+    #[test]
+    fn the_stable_code_vocabulary_is_complete_and_unique() {
+        // The whole value of `SR-*` is that a user reads a code out and support
+        // knows which situation it is. A code that appears in the engine but not
+        // here has never been reviewed as part of the vocabulary; a DUPLICATE
+        // code would mean two different situations answer to the same name,
+        // which silently destroys that value.
+        const VOCABULARY: &[&str] = &[
+            "SR-OK",
+            "SR-FFMPEG-01",
+            "SR-AUDIO-01",
+            "SR-AUDIO-02",
+            "SR-AUDIO-10",
+            "SR-RATE-01",
+            "SR-VIDEO-01",
+            "SR-VIDEO-02",
+            "SR-DISK-01",
+            "SR-DISK-02",
+            "SR-PERM-01",
+            "SR-PERM-02",
+            "SR-ENGINE-01",
+            "SR-CAPTURE-01",
+            "SR-CAPTURE-02",
+            "SR-CRASH-01",
+            "SR-TASK-01",
+            "SR-LOG-01",
+            "SR-LOG-02",
+            "REC-LOSS",
+        ];
+        let unique: std::collections::BTreeSet<&str> = VOCABULARY.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            VOCABULARY.len(),
+            "duplicate code in VOCABULARY"
+        );
+
+        // Every code the ENGINE can emit must be in the list above. Parsing the
+        // module's own source is the only way to assert that without a
+        // hand-maintained registry drifting from the code it describes — the
+        // same trick `commands::path_ratchet` uses.
+        // Everything BEFORE this module's own `#[cfg(test)]` attribute — the
+        // first occurrence in the file is the real one, so this cleanly excludes
+        // the test source (which contains the needle as a literal).
+        let source = include_str!("diagnostics.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default();
+        let mut emitted: std::collections::BTreeSet<String> = Default::default();
+        for (i, _) in source.match_indices("DiagnosticFinding::new(") {
+            let rest = &source[i..];
+            let Some(open) = rest.find('"') else { continue };
+            let Some(close) = rest[open + 1..].find('"') else {
+                continue;
+            };
+            emitted.insert(rest[open + 1..open + 1 + close].to_string());
+        }
+        assert!(
+            emitted.len() >= 15,
+            "the source scan found only {} codes — the parser is broken and this \
+             assertion would pass vacuously",
+            emitted.len()
+        );
+        for code in &emitted {
+            assert!(
+                unique.contains(code.as_str()),
+                "`{code}` is emitted by detect_issues but is not in VOCABULARY — \
+                 add it (and make sure it means something a support reader can act on)"
+            );
+        }
+        for code in &unique {
+            assert!(
+                emitted.contains(*code),
+                "VOCABULARY lists `{code}`, which nothing emits any more — remove \
+                 the stale entry rather than leaving a code that can never appear"
+            );
+        }
     }
 }

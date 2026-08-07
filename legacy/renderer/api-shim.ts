@@ -25,7 +25,7 @@
 //      CAMERA preview is still client-side getUserMedia (pages/home.ts), which
 //      is a video device and never contends for the microphone.
 
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   open as openDialog,
@@ -33,8 +33,17 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { navigateTo } from "./ui/navigate";
+import { toast } from "./ui/toast";
+import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
 import { stripLegacySecrets } from "./purge-legacy-secrets-core";
+import {
+  createIpcFailureState,
+  failureSummary,
+  recentFailures,
+  recordFailure,
+  type IpcFailure,
+} from "./ipc-failures-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -100,8 +109,35 @@ function toAssetUrl(path: string): string {
   return path ? convertFileSrc(path) : "";
 }
 
+/** Every IPC failure this session, bounded, plus the toast rate-limit state.
+ *  The policy is the pure, unit-tested `ipc-failures-core`. */
+const ipcFailures = createIpcFailureState();
+
 /** Invoke a Tauri command, falling back to `fallback` on any error so the UI
- *  never throws while the backend is partially wired. */
+ *  never throws while the backend is partially wired.
+ *
+ *  E2.4: the fallback stays — the renderer must not die because one command is
+ *  missing — but a failure is no longer INVISIBLE. Until now a rejected invoke
+ *  produced a `console.warn` and the fallback value, which is exactly what "no
+ *  data" looks like: a crashed backend rendered as an empty history list, an
+ *  empty device dropdown, a diagnose panel saying everything was fine. (And
+ *  until E2.1, a Rust panic WAS a rejected invoke.) So now every failure is
+ *  remembered in a bounded ring, and the first of a burst is toasted.
+ *
+ *  Two guards on the toast:
+ *
+ *  1. `isTauri()` — in a plain browser (the dev/fixture boot) there is no
+ *     backend at all, so every wired command legitimately rejects. Toasting
+ *     there would turn opening the page in Chrome into an error storm and
+ *     teach everyone to ignore the toast that matters.
+ *  2. The dedup/rate-limit in `ipc-failures-core`: one toast per command per
+ *     minute, at most three per minute overall. `recording_status` polls ~1×/s
+ *     and the preview frame ~4×/s; without this a down backend would stack a
+ *     hundred toasts a minute over the UI, which is not surfacing a problem,
+ *     it is a second outage.
+ *
+ *  The ring is filled unconditionally either way — the diagnose panel wants the
+ *  pattern, not whichever failure happened to win the rate limit. */
 async function call<T>(
   cmd: string,
   args: Record<string, unknown> | undefined,
@@ -111,6 +147,13 @@ async function call<T>(
     return (await invoke<T>(cmd, args)) as T;
   } catch (e) {
     console.warn(`[api-shim] ${cmd} failed → fallback`, e);
+    const surface = recordFailure(ipcFailures, cmd, ipcErrText(e), Date.now());
+    if (surface && isTauri()) {
+      toast(
+        "error",
+        `${t("error.ipcFailed", "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.")} (${cmd})`,
+      );
+    }
     return fallback;
   }
 }
@@ -752,6 +795,13 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
 }
 
 const api: Record<string, unknown> = {
+  // ── Observability (E2.4) ─────────────────────────────────────────────────
+  // "Siste IPC-feil" for the diagnose surface. Synchronous and local: this is
+  // renderer-side memory, not a backend call, so it still answers when the
+  // backend is the thing that is broken — which is the only time it matters.
+  getRecentIpcFailures: (): IpcFailure[] => recentFailures(ipcFailures),
+  getIpcFailureSummary: () => failureSummary(ipcFailures),
+
   // ── Settings ────────────────────────────────────────────────────────────
   getSettings: async () => loadSettings(),
   saveSettings: async (s: unknown) => {
@@ -1146,6 +1196,26 @@ const api: Record<string, unknown> = {
       captureOk: null,
       videoOk: null,
     }),
+
+  // ── Log file (E2.6) ─────────────────────────────────────────────────────
+  // Backs the System tab's «Vis logg» / «Kopier siste logg». Both Rust
+  // commands are deliberately path-less (see commands/logs.rs's doc comment:
+  // the log directory is computed in-process), so there is nothing for either
+  // wrapper to supply beyond the byte cap.
+  logsReveal: async () => {
+    try {
+      await invoke("logs_reveal");
+      return true;
+    } catch (e) {
+      console.warn("[api-shim] logs_reveal failed", e);
+      return false;
+    }
+  },
+  // Clamped server-side to logfile::TAIL_MAX_BYTES (512 KB) no matter what is
+  // asked for. Empty string is a valid answer ("nothing logged yet"), so this
+  // goes through `call()` with an empty-string fallback rather than throwing.
+  logsTail: async (maxBytes: number) =>
+    call<string>("logs_tail", { maxBytes }, ""),
 
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from

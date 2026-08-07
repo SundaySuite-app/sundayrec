@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Dostępny",
     "diagLoopback": "Pętla WASAPI",
     "diagDeviceListTitle": "Wszystkie urządzenia audio widziane przez rejestrator",
+    "diagIpcTitle": "Ostatnie błędy IPC (techniczne)",
+    "diagIpcJustNow": "przed chwilą",
+    "diagIpcSecAgo": "{n} s temu",
+    "diagIpcMinAgo": "{n} min temu",
+    "diagIpcHourAgo": "{n} godz. temu",
     "benchJudging": "Analizowanie pomiaru …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Pomoc i szkolenie",
     "langCardDesc": "Wybierz preferowany język. SundayRec obsługuje siedem języków — wszystkie menu i powiadomienia dostosowują się natychmiast.",
     "openOnboarding": "Otwórz przewodnik konfiguracji",
+    "showLog": "Pokaż dziennik",
+    "copyLog": "Kopiuj ostatni dziennik",
+    "logHint": "Jeśli coś pójdzie nie tak, ten dziennik można wysłać osobie, która Ci pomaga. Nie zawiera dźwięku ani haseł.",
+    "showLogFailed": "Nie udało się otworzyć folderu dziennika.",
+    "logEmpty": "Dziennik jest jeszcze pusty.",
+    "logCopied": "Dziennik skopiowany",
+    "logCopyFailed": "Nie udało się skopiować dziennika.",
     "profileDesc": "Używane w nazwach plików, e-mailach z powiadomieniami i kanale RSS podcastu. Pola są opcjonalne, ale zalecane.",
     "responsibleHint": "Osoba, która dostanie e-mail, jeśli nagranie się nie powiedzie (wymaga powiadomień e-mail w Udostępnianie → Powiadomienia).",
     "webhookUrl": "ADRES WEBHOOKA",
@@ -563,7 +575,8 @@
     "showInFolder": "Pokaż w folderze"
   },
   "error": {
-    "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie."
+    "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
+    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny."
   },
   "editor": {
     "title": "Edytuj plik audio",

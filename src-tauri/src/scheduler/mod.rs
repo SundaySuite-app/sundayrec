@@ -123,6 +123,12 @@ impl SchedulerEngine {
     /// resolves, so we restart it after a short delay. A silently-dead scheduler
     /// would miss EVERY future recording, which for a church recorder is the worst
     /// possible failure; this makes that self-healing.
+    ///
+    /// E2.2: that wrapper used to live here, inline, and was the only one in the
+    /// app. It now lives in [`crate::supervise`] — same 300 s healthy threshold,
+    /// same 5 s → 30 s backoff, same escalate-once-at-three, same wording — so
+    /// every other long-lived task gets it too and there is one implementation
+    /// to fix rather than seven to remember.
     pub fn start(&self, app: AppHandle) {
         {
             let mut started = lock_recover(&self.started);
@@ -133,52 +139,18 @@ impl SchedulerEngine {
         }
         let notify = self.notify.clone();
         let next = self.next.clone();
-        tauri::async_runtime::spawn(async move {
-            // Count CONSECUTIVE rapid restarts so a persistently-crashing supervisor
-            // escalates from a silent log line to a user-visible alert + backoff,
-            // instead of spinning forever while every scheduled recording is missed.
-            let mut rapid_restarts: u32 = 0;
-            loop {
-                // The supervisor loops forever; if its task handle EVER resolves
-                // (a panic, or an unexpected return) the scheduler is effectively
-                // dead — restart it.
-                let started = tokio::time::Instant::now();
-                let handle = tauri::async_runtime::spawn(supervisor(
-                    app.clone(),
-                    notify.clone(),
-                    next.clone(),
-                ));
-                let _ = handle.await;
-                // A supervisor that ran healthily for a while then died is a one-off
-                // — reset. A quick re-death is a real, persistent fault.
-                if started.elapsed() >= StdDuration::from_secs(300) {
-                    rapid_restarts = 0;
-                } else {
-                    rapid_restarts += 1;
-                }
-                tracing::error!(
-                    rapid_restarts,
-                    "scheduler supervisor ENDED unexpectedly (panic?) — restarting; \
-                     a dead scheduler would miss every scheduled recording"
-                );
-                let delay = if rapid_restarts >= 3 {
-                    // Escalate ONCE (at the threshold), then back off so we don't spin.
-                    if rapid_restarts == 3 {
-                        notify_user(
-                            &app,
-                            "SundayRec — planlegger-feil",
-                            "Planleggeren har en vedvarende feil og kan gå glipp av planlagte \
-                             opptak. Start appen på nytt; vedvarer det, kjør Diagnose under \
-                             Innstillinger → Lyd.",
-                        );
-                    }
-                    StdDuration::from_secs(30)
-                } else {
-                    StdDuration::from_secs(5)
-                };
-                tokio::time::sleep(delay).await;
-            }
-        });
+        let sup_app = app.clone();
+        crate::supervise::supervised_spawn(
+            app,
+            "scheduler::supervisor",
+            crate::supervise::TaskAlert {
+                title: "SundayRec — planlegger-feil",
+                body: "Planleggeren har en vedvarende feil og kan gå glipp av planlagte \
+                       opptak. Start appen på nytt; vedvarer det, kjør Diagnose under \
+                       Innstillinger → Lyd.",
+            },
+            move || supervisor(sup_app.clone(), notify.clone(), next.clone()),
+        );
     }
 
     /// Wake the supervisor to recompute its timers (e.g. after settings save).

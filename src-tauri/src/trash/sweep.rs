@@ -22,13 +22,30 @@ const TICK_INTERVAL: Duration = Duration::from_secs(12 * 60 * 60);
 
 /// Arm the sweep. Call once from `setup`, after the database is managed.
 pub fn spawn(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(FIRST_TICK_DELAY).await;
-        loop {
-            tick(&app).await;
-            tokio::time::sleep(TICK_INTERVAL).await;
-        }
-    });
+    // E2.2: supervised. A dead sweep turns the Papirkurv back into a folder
+    // that only ever grows — the exact failure this tick exists to prevent, and
+    // one nobody notices until the disk is full mid-service.
+    let tick_app = app.clone();
+    crate::supervise::supervised_spawn(
+        app,
+        "trash::sweep",
+        crate::supervise::TaskAlert {
+            title: "SundayRec — opprydding stoppet",
+            body: "Den automatiske tømmingen av papirkurven har en vedvarende feil, så \
+                   slettede opptak blir liggende og bruke plass. Start appen på nytt; \
+                   vedvarer det, kjør Diagnose under Innstillinger → Lyd.",
+        },
+        move || {
+            let app = tick_app.clone();
+            async move {
+                tokio::time::sleep(FIRST_TICK_DELAY).await;
+                loop {
+                    tick(&app).await;
+                    tokio::time::sleep(TICK_INTERVAL).await;
+                }
+            }
+        },
+    );
     tracing::info!(
         "trash: auto-purge armed ({} days, every {} h)",
         super::AUTO_PURGE_DAYS,

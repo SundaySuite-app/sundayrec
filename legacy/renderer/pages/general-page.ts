@@ -108,6 +108,27 @@ export function setupGeneralPage(): void {
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
+  // «Vis logg» / «Kopier siste logg» (E2.6). Both talk to the rotating file
+  // log at <app-data>/logs/sundayrec.log (src-tauri/src/logfile.rs) — a
+  // support artifact with no audio and no passwords in it, so there is
+  // nothing here to confirm or gate before sending it to a screen.
+  document.getElementById('btn-show-log')?.addEventListener('click', async () => {
+    const ok = await window.api.logsReveal()
+    if (!ok) toast('error', t('general.showLogFailed', 'Kunne ikke åpne loggmappen.'))
+  })
+  document.getElementById('btn-copy-log')?.addEventListener('click', async () => {
+    try {
+      // 200 KB is plenty for a support conversation; the backend clamps to
+      // 512 KB (logfile::TAIL_MAX_BYTES) regardless of what is asked for.
+      const text = await window.api.logsTail(200 * 1024)
+      if (!text) { toast('info', t('general.logEmpty', 'Loggen er tom ennå.')); return }
+      await navigator.clipboard.writeText(text)
+      toast('success', t('general.logCopied', 'Logg kopiert'))
+    } catch {
+      toast('error', t('general.logCopyFailed', 'Kunne ikke kopiere loggen.'))
+    }
+  })
+
   // Steinberg ASIO attribution is required by the ASIO SDK licence and is only
   // relevant in the Windows build (the only build compiled with ASIO support).
   // Reveal the card on Windows; it stays hidden on macOS.

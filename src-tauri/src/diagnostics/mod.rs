@@ -6,19 +6,25 @@
 //! the probing the core can't: the ffmpeg version banner, device enumeration,
 //! and writing the finished report to a file under the app-data dir.
 //!
-//! ## Capture test — honestly deferred
+//! ## Capture test — restored in E2.5
 //!
-//! The Electron build ran a real 2-second audio (and video) capture and reported
-//! `captureOk`/`videoOk`. That needs real hardware and is flaky on a headless
-//! CI box, so F2.2 sets both to `None` ("ikke testet") and defers the live
-//! capture test to **Fase 3** (the recorder hardware phase). The report renders
-//! the tri-state correctly today; only the live probe is absent. This is an
-//! honest gap, not a fake green.
+//! The Electron build ran a real 2-second audio (and video) capture and
+//! reported `captureOk`/`videoOk`. The Tauri port deferred it to "Fase 3" and
+//! then never came back: for four phases both were hard-coded `None`, so the
+//! report's most direct question — "does this machine actually capture?" —
+//! answered "ikke testet" on every run, which reads like an unfinished feature
+//! because it was one.
+//!
+//! [`run_capture_probe`] restores it, through the SAME backend selection a real
+//! recording uses ([`crate::test_recording::probe_audio_capture`] and the live
+//! preview's own path for video). It is bounded, it always releases the device,
+//! and it REFUSES to run when something else legitimately owns the microphone or
+//! the camera — returning `None` plus a reason, so "ikke testet" now says why.
 
 use sqlx::SqlitePool;
 use sundayrec_core::diagnostics::{
-    build_report_markdown, detect_issues, DiagnosticFinding, DiagnosticsInput, LastErrorInfo,
-    SettingsSummary,
+    build_report_markdown, detect_issues, CrashSummary, DiagnosticFinding, DiagnosticsInput,
+    LastErrorInfo, LogFileInfo, SettingsSummary, TaskRestartSummary,
 };
 use tauri::{AppHandle, Manager};
 
@@ -47,10 +53,14 @@ pub struct DiagnosticsReport {
     pub findings: Vec<DiagnosticFinding>,
     /// Absolute path the report was written to, or `None` if the save failed.
     pub saved_to: Option<String>,
-    /// Audio capture test: `None` in F2.2 (deferred to Fase 3 — see module docs).
+    /// Audio capture test (E2.5): a real ~2 s capture through the recorder's own
+    /// backend. `None` = not run — see [`Self::capture_probe_skipped`].
     pub capture_ok: Option<bool>,
-    /// Video capture test: `None` in F2.2 (deferred to Fase 3).
+    /// Video capture test (E2.5): one real frame from the camera. `None` when
+    /// video is off or the probe was skipped.
     pub video_ok: Option<bool>,
+    /// Why the probe did not run, when it did not.
+    pub capture_probe_skipped: Option<String>,
 }
 
 /// Run diagnostics: gather facts, build the report via the core, and save it
@@ -112,6 +122,10 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
     let recording_history = read_recording_history(app);
     let last_recording = recording_history.last().cloned();
 
+    // E2.5: the live capture probe. Runs LAST among the probes so everything
+    // cheap is already gathered if it has to be skipped or times out.
+    let probe = run_capture_probe(app, &s).await;
+
     let input = DiagnosticsInput {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         platform: std::env::consts::OS.to_string(),
@@ -120,9 +134,10 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         audio_devices,
         video_devices,
         settings: SettingsSummary::from_settings(&s),
-        // Capture test deferred to Fase 3 — see module docs.
-        capture_ok: None,
-        video_ok: None,
+        // E2.5: a REAL capture probe, no longer hard-coded `None`.
+        capture_ok: probe.capture_ok,
+        video_ok: probe.video_ok,
+        capture_probe_skipped: probe.skipped_reason.clone(),
         free_disk_bytes,
         save_folder_writable,
         mic_permission,
@@ -139,6 +154,11 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         orphan_guard_active: Some(crate::platform::orphan_guard_active()),
         last_recording,
         recording_history,
+        // E2 observability: what the crash ring, the supervisor and the file log
+        // have to say about this install's stability.
+        crashes: read_crash_summary(),
+        task_restarts: read_restart_summary(),
+        log_file: read_log_file_info(),
     };
 
     // Structured findings (the error-code system) + the human report.
@@ -150,8 +170,140 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         markdown,
         saved_to,
         findings,
-        capture_ok: None,
-        video_ok: None,
+        capture_ok: probe.capture_ok,
+        video_ok: probe.video_ok,
+        capture_probe_skipped: probe.skipped_reason,
+    })
+}
+
+/// The outcome of [`run_capture_probe`].
+#[derive(Debug, Default, Clone)]
+struct CaptureProbeOutcome {
+    capture_ok: Option<bool>,
+    video_ok: Option<bool>,
+    /// Set when the probe deliberately did not run.
+    skipped_reason: Option<String>,
+}
+
+/// Run a short REAL capture (and, when video is on, grab one real camera frame).
+///
+/// ## Why it may refuse
+///
+/// The probe opens the same devices a recording does, so running it at the
+/// wrong moment would be worse than not running it at all: it would contend
+/// with — or on Windows' exclusive-mode paths, break — a live take. So it is
+/// refused, with a reason, whenever something else legitimately owns the
+/// hardware. That is the "return `None` with a reason rather than probing" rule:
+/// the report says why it did not test, which is information; silently reporting
+/// a failure caused by our own probe would be a lie.
+async fn run_capture_probe(
+    app: &AppHandle,
+    s: &sundayrec_core::settings::Settings,
+) -> CaptureProbeOutcome {
+    // 1. A live recording owns the microphone. Nothing about a diagnose is worth
+    //    risking Sunday's take for.
+    if app
+        .try_state::<crate::recorder::engine::RecorderEngine>()
+        .map(|e| e.current_state().is_active())
+        .unwrap_or(false)
+    {
+        return CaptureProbeOutcome {
+            skipped_reason: Some("et opptak pågår — lydprøven ville tatt enheten".into()),
+            ..Default::default()
+        };
+    }
+    // 2. The VU meter holds an input stream open (the Innstillinger → Lyd screen
+    //    the operator is most likely standing on when they press Diagnose). On
+    //    Windows a second opener can simply fail; on macOS it works but the
+    //    meter goes dead. Either way the honest answer is "not now".
+    if app
+        .try_state::<crate::audio::vu::VuEngine>()
+        .map(|e| e.is_running())
+        .unwrap_or(false)
+    {
+        return CaptureProbeOutcome {
+            skipped_reason: Some(
+                "nivåmåleren bruker mikrofonen — stopp den og kjør Diagnose igjen".into(),
+            ),
+            ..Default::default()
+        };
+    }
+
+    let device = s.device_name.clone().unwrap_or_default();
+    let capture_ok = match crate::test_recording::probe_audio_capture(
+        &device,
+        s.resolved_sample_rate(),
+        s.classic_ffmpeg_audio,
+    )
+    .await
+    {
+        Ok(ok) => Some(ok),
+        Err(e) => {
+            // A device that could not be resolved is already covered by
+            // SR-AUDIO-01/02; reporting `capture_ok: false` on top would claim
+            // the hardware is broken when it is simply absent.
+            tracing::warn!("capture probe skipped: {e}");
+            return CaptureProbeOutcome {
+                skipped_reason: Some(format!("lydprøven kunne ikke starte: {e}")),
+                ..Default::default()
+            };
+        }
+    };
+
+    // 3. Video only when it is actually on — opening the camera on a machine
+    //    that records audio only would be a permission prompt for nothing.
+    let mut video_ok = None;
+    if s.video_enabled {
+        match crate::media::preview::probe_video_frame(s.video_device_name.clone()).await {
+            Ok(ok) => video_ok = Some(ok),
+            Err(e) => tracing::warn!("video probe skipped: {e}"),
+        }
+    }
+
+    CaptureProbeOutcome {
+        capture_ok,
+        video_ok,
+        skipped_reason: None,
+    }
+}
+
+/// Summarise E2.1's crash ring. `None` when no crash directory could be
+/// resolved at all — which is NOT the same as "no crashes", and the report says
+/// so.
+fn read_crash_summary() -> Option<CrashSummary> {
+    let dir = crate::crash::dir()?;
+    let records = crate::crash::read_crashes(&dir);
+    let newest = records.last();
+    Some(CrashSummary {
+        count: records.len(),
+        newest: newest.map(|r| r.timestamp.clone()),
+        // One line, not the stack: the report is a page a person reads.
+        newest_message: newest.map(|r| r.message.chars().take(200).collect()),
+    })
+}
+
+/// Summarise E2.2's supervised-task restarts.
+fn read_restart_summary() -> Option<TaskRestartSummary> {
+    let dir = crate::crash::dir()?;
+    let records = crate::crash::read_restarts(&dir);
+    let mut tasks: Vec<String> = records.iter().filter_map(|r| r.task.clone()).collect();
+    tasks.sort();
+    tasks.dedup();
+    Some(TaskRestartSummary {
+        count: records.len(),
+        newest: records.last().map(|r| r.timestamp.clone()),
+        tasks,
+    })
+}
+
+/// Where E2.3's file log is and how healthy it is. `None` when the file log did
+/// not start this session.
+fn read_log_file_info() -> Option<LogFileInfo> {
+    let path = crate::logfile::current_path()?;
+    Some(LogFileInfo {
+        size_bytes: std::fs::metadata(&path).map(|m| m.len()).ok(),
+        path: path.to_string_lossy().into_owned(),
+        dropped_lines: crate::logfile::dropped_lines(),
     })
 }
 

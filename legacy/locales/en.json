@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Available",
     "diagLoopback": "WASAPI loopback",
     "diagDeviceListTitle": "Every audio device the recorder can see",
+    "diagIpcTitle": "Recent IPC failures (technical)",
+    "diagIpcJustNow": "just now",
+    "diagIpcSecAgo": "{n} sec ago",
+    "diagIpcMinAgo": "{n} min ago",
+    "diagIpcHourAgo": "{n} hr ago",
     "benchJudging": "Analysing the measurement …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Help and training",
     "langCardDesc": "Choose your preferred language. SundayRec supports seven languages — all menus and notifications adapt immediately.",
     "openOnboarding": "Open setup guide",
+    "showLog": "View log",
+    "copyLog": "Copy latest log",
+    "logHint": "If something goes wrong, this log can be sent to whoever is helping you. It contains no audio and no passwords.",
+    "showLogFailed": "Could not open the log folder.",
+    "logEmpty": "The log is empty so far.",
+    "logCopied": "Log copied",
+    "logCopyFailed": "Could not copy the log.",
     "profileDesc": "Used in file names, notification emails and the podcast RSS. These fields are optional but recommended.",
     "responsibleHint": "The person who gets an e-mail if a recording fails (requires e-mail alerts under Sharing → Notifications).",
     "webhookUrl": "WEBHOOK URL",
@@ -563,7 +575,8 @@
     "showInFolder": "Show in folder"
   },
   "error": {
-    "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app."
+    "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
+    "ipcFailed": "Something in the background did not respond, so this view may be incomplete."
   },
   "editor": {
     "title": "Edit audio file",

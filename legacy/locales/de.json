@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Verfügbar",
     "diagLoopback": "WASAPI-Loopback",
     "diagDeviceListTitle": "Alle Audiogeräte, die der Rekorder sieht",
+    "diagIpcTitle": "Letzte IPC-Fehler (technisch)",
+    "diagIpcJustNow": "gerade eben",
+    "diagIpcSecAgo": "vor {n} Sek.",
+    "diagIpcMinAgo": "vor {n} Min.",
+    "diagIpcHourAgo": "vor {n} Std.",
     "benchJudging": "Messung wird ausgewertet …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Hilfe und Schulung",
     "langCardDesc": "Wählen Sie Ihre bevorzugte Sprache. SundayRec unterstützt sieben Sprachen — alle Menüs und Benachrichtigungen passen sich sofort an.",
     "openOnboarding": "Einrichtungsassistent öffnen",
+    "showLog": "Protokoll anzeigen",
+    "copyLog": "Letztes Protokoll kopieren",
+    "logHint": "Falls etwas schiefgeht, können Sie dieses Protokoll an die Person senden, die Ihnen hilft. Es enthält weder Audio noch Passwörter.",
+    "showLogFailed": "Der Protokollordner konnte nicht geöffnet werden.",
+    "logEmpty": "Das Protokoll ist noch leer.",
+    "logCopied": "Protokoll kopiert",
+    "logCopyFailed": "Das Protokoll konnte nicht kopiert werden.",
     "profileDesc": "Wird in Dateinamen, Benachrichtigungs-E-Mails und im Podcast-RSS verwendet. Diese Felder sind optional, aber empfohlen.",
     "responsibleHint": "Die Person, die eine E-Mail erhält, wenn eine Aufnahme fehlschlägt (erfordert E-Mail-Meldungen unter «Teilen → Benachrichtigungen»).",
     "webhookUrl": "WEBHOOK-URL",
@@ -563,7 +575,8 @@
     "showInFolder": "Im Ordner anzeigen"
   },
   "error": {
-    "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu."
+    "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu.",
+    "ipcFailed": "Etwas im Hintergrund hat nicht geantwortet, daher ist diese Ansicht möglicherweise unvollständig."
   },
   "editor": {
     "title": "Audiodatei bearbeiten",

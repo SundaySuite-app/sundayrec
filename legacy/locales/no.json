@@ -476,6 +476,11 @@
     "diagFfmpegOk": "Tilgjengelig",
     "diagLoopback": "WASAPI-loopback",
     "diagDeviceListTitle": "Alle lydenheter opptakeren ser",
+    "diagIpcTitle": "Siste IPC-feil (teknisk)",
+    "diagIpcJustNow": "akkurat nå",
+    "diagIpcSecAgo": "{n} sek siden",
+    "diagIpcMinAgo": "{n} min siden",
+    "diagIpcHourAgo": "{n} t siden",
     "benchJudging": "Analyserer måling …"
   },
   "files": {
@@ -551,6 +556,13 @@
     "helpTitle": "Hjelp og opplæring",
     "langCardDesc": "Velg språket du foretrekker. SundayRec støtter syv språk — alle menyer og varsler tilpasses umiddelbart.",
     "openOnboarding": "Åpne oppstartsveileder",
+    "showLog": "Vis logg",
+    "copyLog": "Kopier siste logg",
+    "logHint": "Hvis noe går galt, kan denne loggen sendes til den som hjelper deg. Den inneholder ingen lyd og ingen passord.",
+    "showLogFailed": "Kunne ikke åpne loggmappen.",
+    "logEmpty": "Loggen er tom ennå.",
+    "logCopied": "Logg kopiert",
+    "logCopyFailed": "Kunne ikke kopiere loggen.",
     "profileDesc": "Brukes i filnavn, varslings-e-poster og podcast-RSS. Disse feltene er valgfrie men anbefalt.",
     "responsibleHint": "Personen som får e-post hvis opptaket feiler (krever e-postvarsler under Deling → Varsler).",
     "webhookUrl": "WEBHOOK-URL",
@@ -563,7 +575,8 @@
     "showInFolder": "Vis i mappe"
   },
   "error": {
-    "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet."
+    "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.",
+    "ipcFailed": "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig."
   },
   "editor": {
     "title": "Rediger lydfil",

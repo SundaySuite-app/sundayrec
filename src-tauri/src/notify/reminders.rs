@@ -70,13 +70,30 @@ const WEBHOOK_CATEGORY: &str = "review_reminder";
 /// managed. The task lives for the process lifetime and holds nothing but the
 /// app handle.
 pub fn spawn(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(FIRST_TICK_DELAY).await;
-        loop {
-            tick(&app).await;
-            tokio::time::sleep(TICK_INTERVAL).await;
-        }
-    });
+    // E2.2: supervised. A dead reminder tick is silent by construction — the
+    // ladder it drives is the thing that would have spoken — so an episode
+    // nobody reviewed would sit unmentioned until it auto-discarded itself.
+    let tick_app = app.clone();
+    crate::supervise::supervised_spawn(
+        app,
+        "notify::reminders",
+        crate::supervise::TaskAlert {
+            title: "SundayRec — påminnelser stoppet",
+            body: "Påminnelsene om episoder som venter på gjennomgang har en vedvarende \
+                   feil. Start appen på nytt; vedvarer det, kjør Diagnose under \
+                   Innstillinger → Lyd.",
+        },
+        move || {
+            let app = tick_app.clone();
+            async move {
+                tokio::time::sleep(FIRST_TICK_DELAY).await;
+                loop {
+                    tick(&app).await;
+                    tokio::time::sleep(TICK_INTERVAL).await;
+                }
+            }
+        },
+    );
     tracing::info!(
         "notify: review-queue reminders armed (every {} min)",
         TICK_INTERVAL.as_secs() / 60

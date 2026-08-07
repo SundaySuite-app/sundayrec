@@ -27,6 +27,12 @@ pub mod audio;
 pub mod bridge_live;
 pub mod cloud;
 pub mod commands;
+// E2.1 observability — the panic hook + the bounded crash ring under
+// `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render
+// to the operator as a normal empty state (the renderer's `call()` swallowed the
+// rejected invoke), and a panic in a spawned task vanished with its dropped
+// `JoinHandle`. Now both leave a record.
+pub mod crash;
 pub mod db;
 pub mod diagnostics;
 // R1 non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/export
@@ -40,6 +46,11 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
+// E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
+// `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
+// has no console and a macOS .app from Finder discards stdout, so an installed
+// app's log went to a file descriptor pointed at nothing.
+pub mod logfile;
 pub mod media;
 // R3 NDI receiver — default-off `ndi` feature (STUB; SDK not bundled). The
 // source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
@@ -67,6 +78,13 @@ pub mod settings;
 // per-destination keys from the keychain. `stream_start` returns
 // `feature_disabled` in the default build.
 pub mod streaming;
+// E2.2 observability — ONE supervisor for every long-lived background task. The
+// scheduler had this pattern inline and was the only task that did; extracting
+// it gave the cloud worker, the review-reminder tick and the trash sweep the
+// same self-healing, and gave every restart a record. Session-scoped tasks
+// (recorder/streaming/preview supervisors, the low-disk poller) deliberately
+// stay bare — see the module docs for why restarting them would be WRONG.
+pub mod supervise;
 pub mod test_recording;
 // PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
 // `default` and both release builds (install failure only logs a warning). The
@@ -114,12 +132,40 @@ pub mod whisper;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with_target(false)
-        .init();
+    // E2.1: the panic hook goes in FIRST — before logging, before the plugins,
+    // before anything that can itself panic. It chains to the default hook, so a
+    // dev terminal prints exactly what it always did; what is new is that the
+    // panic also lands in `<app-data>/crashes/` on a machine with no terminal
+    // at all (release Windows has no console; a macOS .app discards stdout).
+    crash::install_hook();
+
+    // E2.3: stdout AND a rotating file. The stdout layer is byte-for-byte the
+    // one that was here before (same filter default, same `with_target(false)`),
+    // so a dev terminal reads exactly as it always did; the file layer is
+    // additive and degrades to nothing if the directory cannot be created.
+    // `EnvFilter` still governs both, so `RUST_LOG=debug` widens the file too.
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let filter =
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
+        let file_layer = logfile::init().map(|writer| {
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                // No escape codes in a file somebody will paste into a chat.
+                .with_ansi(false)
+                .with_writer(writer)
+        });
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().with_target(false))
+            .with(file_layer)
+            .init();
+    }
+    // The first lines of every log answer "what build is this?" — the question
+    // every support conversation opens with.
+    logfile::log_startup_banner();
 
     // Windows orphan-guard: before anything spawns, put THIS process in a Job
     // Object that kills its children when it dies (even on a Task-Manager kill), so
@@ -237,6 +283,11 @@ pub fn run() {
                 .map_err(|e| format!("resolving app data dir: {e}"))?;
             std::fs::create_dir_all(&db_dir)
                 .map_err(|e| format!("creating app data dir {}: {e}", db_dir.display()))?;
+            // E2.1: the panic hook resolved its own directory before any app
+            // existed. Confirm the two computations agree — they are the same
+            // rule, so a mismatch means an assumption broke and the records are
+            // not where the rest of the diagnostics look.
+            crash::verify_dir_matches(&db_dir);
             let db_path = db_dir.join("sundayrec.sqlite");
             let pool = tauri::async_runtime::block_on(db::store::open_pool(&db_path))
                 .map_err(|e| format!("opening database at {}: {e}", db_path.display()))?;
@@ -270,13 +321,27 @@ pub fn run() {
                 let recovery_task = tauri::async_runtime::spawn(async move {
                     recorder::recovery::scan_and_recover(recover_app, recover_pool).await;
                 });
-                // Watch the handle so a panicked scan lands in the log instead
-                // of vanishing with the dropped JoinHandle.
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = recovery_task.await {
-                        tracing::error!("crash-recovery scan task failed: {e}");
-                    }
+                // Watch the handle so a panicked scan lands in the log AND the
+                // crash ring instead of vanishing with the dropped JoinHandle.
+                // A one-shot: there is nothing to restart, so it is watched, not
+                // supervised.
+                crash::watch_handle("recorder::recovery::scan", recovery_task);
+            }
+
+            // DIAGNOSTIC SEAM: `SUNDAYREC_TEST_PANIC=1` panics a watched task 2 s
+            // after startup — the only way to end-to-end prove a path that is by
+            // definition never taken on purpose. Follows the
+            // `SUNDAYREC_TEST_RELAUNCH` precedent below: inert unless explicitly
+            // set, and DEBUG-ONLY so a shipped build cannot be talked into
+            // crashing itself by an environment variable.
+            #[cfg(debug_assertions)]
+            if std::env::var("SUNDAYREC_TEST_PANIC").as_deref() == Ok("1") {
+                let panic_task = tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    tracing::warn!("SUNDAYREC_TEST_PANIC=1: panicking on purpose");
+                    panic!("SUNDAYREC_TEST_PANIC=1: deliberate panic to prove the crash ring");
                 });
+                crash::watch_handle("test::deliberate_panic", panic_task);
             }
 
             app.manage(db::Db::new(pool));
@@ -453,6 +518,10 @@ pub fn run() {
             commands::settings::settings_import_from_file,
             commands::diagnostics::run_preflight,
             commands::diagnostics::run_diagnostics,
+            // E2.3 — the log the operator can actually hand to support. Neither
+            // takes a path (see commands/logs.rs for why that IS the guard).
+            commands::logs::logs_reveal,
+            commands::logs::logs_tail,
             // Trackpad haptics (macOS Force Touch; no-op elsewhere). The editor
             // fires subtle, throttled taps on snap / limit / marker-crossing.
             commands::haptics::haptic_perform,

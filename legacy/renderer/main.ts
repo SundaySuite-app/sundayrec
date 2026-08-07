@@ -302,6 +302,19 @@ declare global {
       masterApply:             (params: { inputPath: string; outputPath: string; presetId: string; measurement?: LoudnessMeasurementView; jobId: string }) => Promise<{ ok: boolean; outputPath?: string; error?: string }>
       masterCancel:            (jobId: string) => Promise<boolean>
       runDiagnostics:          () => Promise<{ markdown: string; findings: { code: string; severity: 'ok' | 'info' | 'warning' | 'critical'; title: string; detail: string; hint: string }[]; savedTo: string | null; captureOk: boolean | null; videoOk: boolean | null }>
+      /** Reveal the rotating log folder in Finder/Explorer (falls back to the
+       *  folder itself before the first line is written). No path in, none out —
+       *  resolves to whether the OS actually opened something. */
+      logsReveal:              () => Promise<boolean>
+      /** The tail of the live log file, clamped server-side to 512 KB
+       *  regardless of `maxBytes`. Empty string means nothing logged yet. */
+      logsTail:                (maxBytes: number) => Promise<string>
+      /** Every IPC failure remembered this session (renderer-local ring,
+       *  newest first) — answers even when the backend that IS failing can't
+       *  be asked. */
+      getRecentIpcFailures:    () => import('./ipc-failures-core').IpcFailure[]
+      /** How many failures, which commands, and when the newest one landed. */
+      getIpcFailureSummary:    () => { count: number; commands: string[]; newestAt: number | null }
 
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
