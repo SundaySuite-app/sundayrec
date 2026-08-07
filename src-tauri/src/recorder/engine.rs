@@ -1291,6 +1291,7 @@ async fn run_session(
                         &opts,
                         &session,
                         Arc::clone(&segment_bytes),
+                        deliverable_bytes,
                         &mut stop_rx,
                         &last_state,
                         &mut stop_watch,
@@ -2027,6 +2028,10 @@ async fn run_segment(
     opts: &RecordingOpts,
     session: &RecordingSession,
     segment_bytes: Arc<AtomicU64>,
+    // Bytes already captured into the current deliverable's PREVIOUS fragments
+    // (`_rN` reconnect pieces) — feeds the RIFF-cap forced split, exactly as on
+    // the native path.
+    deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     last_state: &Arc<Mutex<RecorderState>>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
@@ -2278,8 +2283,35 @@ async fn run_segment(
                     break SegmentOutcome::UnexpectedExit { last_error: None };
                 }
             }
-            // Low-disk guard poll.
+            // RIFF-cap guard + low-disk guard (one 30 s tick, same order as the
+            // native twin in `native_capture::segment::run_native_segment`).
             _ = disk_tick.tick() => {
+                // E6.2 BUG FIX: this guard existed ONLY on the native capture
+                // path. An ffmpeg WAV capture — reachable on Linux, under the
+                // `classic_ffmpeg_audio` hatch, and via the automatic
+                // native-start-failure fallback — had no ceiling at all, and
+                // ffmpeg's wav muxer defaults to `-rf64 never`: past 4 GiB it
+                // writes a plain RIFF header whose u32 size fields cannot
+                // describe the file. At 96 kHz stereo s16 that is ~2.7 h, i.e.
+                // INSIDE a long service. Video captures are Matroska, which has
+                // no such ceiling, so the guard is audio-only exactly like the
+                // native one.
+                if !video_active {
+                    let seg_bytes = segment_bytes.load(Ordering::Relaxed);
+                    if sundayrec_core::wav::should_force_split(
+                        deliverable_bytes.saturating_add(seg_bytes),
+                    ) {
+                        tracing::warn!(
+                            deliverable_bytes,
+                            seg_bytes,
+                            "recorder: deliverable approaching the 4 GiB WAV ceiling — forcing a split"
+                        );
+                        // Graceful `q` so the muxer patches its size fields and
+                        // the fragment is a complete, joinable WAV.
+                        stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
+                        break SegmentOutcome::Split;
+                    }
+                }
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
                         let reserve = finalize_reserve_bytes(
