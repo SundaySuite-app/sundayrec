@@ -23,9 +23,16 @@
  * widened (crates/sundayrec-core/telemetry/consent.rs) — both are genuinely
  * "the UI should ask", and a plain, CURRENT-version "no" is deliberately NOT
  * one of them, so declining here (or in onboarding) is never re-litigated.
+ *
+ * Those two cases get DIFFERENT WORDS — see telemetry-consent-copy-core.ts,
+ * which owns the choice and is where the reasoning lives. The card carries the
+ * first-ask wording statically in index.html; `applyCopy()` swaps in the
+ * scope-widened wording for anyone who has already answered.
  */
 
 import { settings } from './state'
+import { t } from './i18n'
+import { promptCopyFor, type PromptCopy } from './telemetry-consent-copy-core'
 
 let wired = false
 let shown = false
@@ -68,9 +75,28 @@ async function maybeShow(): Promise<void> {
   const consent = await window.api.telemetryConsentGet().catch(() => null)
   if (!consent || !consent.needsPrompt) return
 
+  applyCopy(promptCopyFor(consent.status))
+
   shown = true
   const card = document.getElementById('telemetry-consent-toast')
   if (card) card.style.display = 'flex'
+}
+
+/** Point the card's title and body at the chosen wording.
+ *
+ *  The `data-i18n` ATTRIBUTE is rewritten, not just the text: `applyTranslations()`
+ *  re-reads it on every language change and would otherwise put index.html's
+ *  first-ask wording back under a user who is mid-re-ask. */
+function applyCopy(copy: PromptCopy): void {
+  retarget('telemetry-consent-toast-title', copy.titleKey, copy.titleFallback)
+  retarget('telemetry-consent-toast-text', copy.descKey, copy.descFallback)
+}
+
+function retarget(id: string, key: string, fallback: string): void {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.dataset.i18n = key
+  el.textContent = t(key, fallback)
 }
 
 async function answer(granted: boolean): Promise<void> {

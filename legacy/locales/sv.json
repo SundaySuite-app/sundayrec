@@ -936,7 +936,7 @@
     "consentDesc": "Du kan dela anonym diagnostik och användningsstatistik med Sunday Suite, som utvecklar SundayRec. Det är alltid frivilligt och ändrar ingenting i hur appen fungerar — du kan ändra ditt svar när som helst under Inställningar → System.",
     "consentDetailsSummary": "Vad skulle i så fall samlas in?",
     "consentCatCrash": "Kraschrapporter — feltyp, app- och OS-version. Aldrig filsökvägar eller text från predikan.",
-    "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall). Aldrig ljudinnehållet.",
+    "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall), och grova intervall för dina korrigeringar i redigeraren, t.ex. ”30–60 sekunder tidigare”. Aldrig ljudinnehållet, text eller klockslag.",
     "consentCatUsage": "Funktionsanvändning — vilka funktioner du använder, t.ex. «export till MP3». Bara antal, aldrig innehåll.",
     "consentNever": "Aldrig: ljud, transkriptioner, predikotext, namn, e-post, filsökvägar, enhetsnamn eller församlingsnamn.",
     "consentReadMore": "Läs hela integritetspolicyn →",
@@ -944,7 +944,9 @@
     "consentNo": "Nej tack",
     "consentNote": "Oavsett vad du svarar fungerar SundayRec precis likadant.",
     "promptTitle": "Dela anonym diagnostik?",
-    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System."
+    "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System.",
+    "rePromptTitle": "Vi frågar dig igen",
+    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
   },
   "time": {
     "yr": "år",

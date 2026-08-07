@@ -936,7 +936,7 @@
     "consentDesc": "Du kan dele anonym diagnostik og brugsstatistik med Sunday Suite, som udvikler SundayRec. Det er altid frivilligt og ændrer intet ved, hvordan appen fungerer — du kan ændre dit svar når som helst under Indstillinger → System.",
     "consentDetailsSummary": "Hvad ville i så fald blive indsamlet?",
     "consentCatCrash": "Nedbrudsrapporter — fejltype, app- og OS-version. Aldrig filstier eller tekst fra prædikenen.",
-    "consentCatQuality": "Kvalitetsdata — om en optagelse blev komplet (tabsprocent, resultat). Aldrig lydindholdet.",
+    "consentCatQuality": "Kvalitetsdata — om en optagelse blev komplet (tabsprocent, resultat), og grove intervaller for dine rettelser i redigeringsværktøjet, f.eks. »30–60 sekunder tidligere«. Aldrig lydindholdet, tekst eller klokkeslæt.",
     "consentCatUsage": "Funktionsbrug — hvilke funktioner du bruger, f.eks. «eksport til MP3». Kun antal, aldrig indhold.",
     "consentNever": "Aldrig: lyd, transskriptioner, prædikentekst, navne, e-mail, filstier, enhedsnavne eller kirkenavne.",
     "consentReadMore": "Læs hele privatlivspolitikken →",
@@ -944,7 +944,9 @@
     "consentNo": "Nej tak",
     "consentNote": "Uanset hvad du svarer, fungerer SundayRec præcis det samme.",
     "promptTitle": "Dele anonym diagnostik?",
-    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System."
+    "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System.",
+    "rePromptTitle": "Vi spørger dig igen",
+    "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
   },
   "time": {
     "yr": "år",

@@ -212,9 +212,9 @@ export const BOOT_FIXTURES: Fixtures = {
   // over every other screen and every other spec's assertions.
   telemetry_consent_get: {
     status: "denied",
-    version: 1,
+    version: 2,
     decidedAt: 1_754_000_000_000,
-    currentVersion: 1,
+    currentVersion: 2,
     needsPrompt: false,
     active: false,
   },

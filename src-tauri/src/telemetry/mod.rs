@@ -623,6 +623,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_v1_row_from_an_installed_copy_closes_the_gate_and_re_asks() {
+        // The E8.D1 upgrade as it actually happens: not a constructed
+        // `ConsentRecord`, but the literal bytes `consent_set` wrote under
+        // v0.10.0, read back by a build whose CONSENT_VERSION is 2. The unit
+        // tests in consent.rs prove `evaluate`; this proves the whole chain
+        // that runs at startup — sqlite row → parse → evaluate → THE gate.
+        let (pool, _d, _g) = temp_pool().await;
+        for (raw, what) in [
+            (
+                r#"{"granted":true,"version":1,"decidedAt":1754000000000}"#,
+                "a v1 YES",
+            ),
+            (
+                r#"{"granted":false,"version":1,"decidedAt":1754000000000}"#,
+                "a v1 NO",
+            ),
+        ] {
+            store::set_setting(&pool, KEY_CONSENT, raw).await.unwrap();
+            let c = consent_get(&pool).await.unwrap();
+            assert!(
+                !consent_active(&pool).await,
+                "{what} must not permit sending under the widened scope"
+            );
+            assert!(c.needs_prompt, "{what} must be put the new question");
+            assert_eq!(c.version, 1, "{what} is remembered as answered at v1");
+        }
+
+        // And a NO stays a NO across the bump — read back from storage, not
+        // from a value we just constructed in memory.
+        let c = consent_get(&pool).await.unwrap();
+        assert_eq!(c.status, ConsentStatus::Denied);
+    }
+
+    #[tokio::test]
     async fn a_hand_edited_consent_row_reads_as_never_asked() {
         let (pool, _d, _g) = temp_pool().await;
         for junk in ["", "null", "{", "true", "{\"granted\":true}"] {

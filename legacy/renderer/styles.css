@@ -1463,6 +1463,30 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .telemetry-consent-toast-actions .btn-primary,
 .telemetry-consent-toast-actions .btn-secondary { flex: 1; justify-content: center; }
 
+/* ── Consent answers carry equal visual weight ───────────────────
+ * Everywhere else .btn-primary is gold-filled because there IS an outcome the
+ * app wants: save, export, start. Consent has no such outcome — SundayRec works
+ * identically either way, and onboarding.consentNote says so out loud — so
+ * rendering "yes" as the most attention-pulling control in the app would be
+ * pressure applied to a free choice. Both answers therefore get one identical
+ * treatment: same size, same surface, same text colour, differing only in the
+ * label. surface3 rather than the secondary's surface2 so neither button
+ * disappears into the toast card, which is itself surface2. Scoped to the two
+ * consent surfaces; the rest of the app keeps its primary/secondary ranking. */
+.telemetry-consent-toast-actions .btn-primary,
+.telemetry-consent-toast-actions .btn-secondary,
+.ob-consent-btn-row .btn-primary,
+.ob-consent-btn-row .btn-secondary {
+  background: var(--surface3); color: var(--text);
+  border: 1px solid var(--border2); box-shadow: none;
+}
+.telemetry-consent-toast-actions .btn-primary:hover,
+.telemetry-consent-toast-actions .btn-secondary:hover,
+.ob-consent-btn-row .btn-primary:hover,
+.ob-consent-btn-row .btn-secondary:hover {
+  border-color: var(--accent); box-shadow: none; transform: none;
+}
+
 /* ── Update status in Generelt card ───────────────────────────── */
 .update-status-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; font-size: 13px; color: var(--text2); }
 .update-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text4); flex-shrink: 0; }

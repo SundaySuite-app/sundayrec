@@ -1830,6 +1830,50 @@ mod tests {
     }
 
     #[test]
+    fn every_record_collection_counts_towards_is_empty() {
+        // A ratchet beside `every_wire_field_is_classified`, guarding a
+        // different promise. `is_empty` is what «vis hva som sendes» labels the
+        // preview with (`TelemetryPreview::is_empty` → «ingenting å sende
+        // akkurat nå»), so a collection this function does not consult would be
+        // printed in the JSON on screen underneath a caption telling the user
+        // there is nothing there — the preview under-reporting itself, which is
+        // precisely what the transparency affordance exists to rule out.
+        //
+        // E8 is about to add banded editor corrections to the payload. This
+        // fails the moment that collection lands until it is wired in above.
+        const CONSULTED: &[&str] = &["counters", "crashes", "quality", "findings", "wakeFailures"];
+
+        let value = serde_json::to_value(maximal_payload()).expect("serialise");
+        let Value::Object(map) = value else {
+            panic!("a payload serialises to an object");
+        };
+        let collections: std::collections::BTreeSet<&str> = map
+            .iter()
+            .filter(|(_, v)| v.is_array())
+            .map(|(k, _)| k.as_str())
+            .collect();
+        let consulted: std::collections::BTreeSet<&str> = CONSULTED.iter().copied().collect();
+
+        let ignored: Vec<&&str> = collections.difference(&consulted).collect();
+        assert!(
+            ignored.is_empty(),
+            "these payload collections are not consulted by TelemetryPayload::is_empty, \
+             so a payload carrying only them would be sent while the preview calls it \
+             empty: {ignored:?}"
+        );
+        let stale: Vec<&&str> = consulted.difference(&collections).collect();
+        assert!(
+            stale.is_empty(),
+            "is_empty consults collections the payload no longer has: {stale:?}"
+        );
+
+        assert!(
+            !maximal_payload().is_empty(),
+            "the fixture must exercise the non-empty branch"
+        );
+    }
+
+    #[test]
     fn the_caps_keep_the_newest_records() {
         let mut p = maximal_payload();
         p.crashes = (0..MAX_CRASHES + 5)

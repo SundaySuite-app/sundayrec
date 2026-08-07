@@ -936,7 +936,7 @@
     "consentDesc": "Sie können anonyme Diagnose- und Nutzungsdaten mit Sunday Suite teilen, die SundayRec entwickeln. Das ist immer freiwillig und ändert nichts daran, wie die App funktioniert — Sie können Ihre Antwort jederzeit unter Einstellungen → System ändern.",
     "consentDetailsSummary": "Was würde in dem Fall gesammelt?",
     "consentCatCrash": "Absturzberichte — Fehlertyp, App- und Betriebssystemversion. Nie Dateipfade oder Text aus der Predigt.",
-    "consentCatQuality": "Qualitätsdaten — ob eine Aufnahme vollständig war (Verlustanteil, Ergebnis). Nie der Toninhalt.",
+    "consentCatQuality": "Qualitätsdaten — ob eine Aufnahme vollständig war (Verlustanteil, Ergebnis) und grobe Intervalle für Ihre Korrekturen im Editor, z. B. „30–60 Sekunden früher“. Nie der Toninhalt, Text oder Uhrzeiten.",
     "consentCatUsage": "Funktionsnutzung — welche Funktionen Sie nutzen, z. B. «Export als MP3». Nur Anzahl, nie Inhalt.",
     "consentNever": "Nie: Audio, Transkripte, Predigttext, Namen, E-Mail, Dateipfade, Gerätenamen oder Kirchennamen.",
     "consentReadMore": "Vollständige Datenschutzerklärung lesen →",
@@ -944,7 +944,9 @@
     "consentNo": "Nein danke",
     "consentNote": "Egal wie Sie antworten — SundayRec funktioniert genau gleich.",
     "promptTitle": "Anonyme Diagnosedaten teilen?",
-    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten."
+    "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten.",
+    "rePromptTitle": "Wir fragen noch einmal nach",
+    "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten."
   },
   "time": {
     "yr": "J",

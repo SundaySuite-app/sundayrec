@@ -67,10 +67,21 @@ Tre kategorier, og ingenting annet:
   _tekniske_ innstillinger som var i bruk (f.eks. filformat, samplerate-modus,
   om video er på, hvor mange planlagte opptak du har satt opp) — aldri
   klokkeslett, dager, kanalnavn eller navnet du har gitt et opptak. Denne
-  kategorien utvides etter hvert med anonyme, aggregerte tall for hvor ofte du
-  gjør bestemte typer korrigeringer i redigeringsverktøyet (f.eks. hvor mange
-  ganger et automatisk kapittelforslag ble flyttet) — også dette er kun
-  tellinger, aldri hva korrigeringen faktisk var.
+  kategorien utvides etter hvert med anonyme tall for korrigeringene du gjør i
+  redigeringsverktøyet: hvor ofte du flytter et automatisk forslag, og omtrent
+  hvor mye du flyttet det — oppgitt som et grovt intervall, for eksempel
+  «prekenstarten ble flyttet 30–60 sekunder tidligere». Intervallene er med
+  vilje grove. Hensikten er å se mønstre på tvers av mange opptak — at
+  forslaget for eksempel systematisk kommer litt for sent — ikke å kunne
+  rekonstruere ett enkelt opptak. Det som fortsatt aldri sendes, er hva
+  prekenen handlet om, hva som ble sagt, når den fant sted, hva du har kalt
+  opptaket, eller tekst av noe slag. **Klokkeslett sendes aldri**, heller ikke
+  som en del av en korrigering: et klokkeslett sammen med en varighet peker ut
+  én bestemt gudstjeneste i én bestemt menighet, og da er ikke tallene anonyme
+  lenger. Grunnen til at vi ber om dette, er at den automatiske
+  prekengjenkjenningen skal bli bedre for alle som bruker den — og et menneske
+  som retter opp en dårlig gjetning er det eneste signalet som forteller den
+  hva som var galt.
 - **Funksjonsbruk** — navngitte tellere for hvilke funksjoner som brukes, fra
   en fast, forhåndsdefinert liste (f.eks. «eksport til MP3» eller
   «transkripsjon startet»). Kun **antall** ganger — aldri hva som ble

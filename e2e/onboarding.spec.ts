@@ -19,9 +19,9 @@ function consentSpy(): { fixtures: Fixtures } {
         (window.__E2E_CONSENT__ ||= []).push(args.granted);
         return {
           status: args.granted ? "granted" : "denied",
-          version: 1,
+          version: 2,
           decidedAt: Date.now(),
-          currentVersion: 1,
+          currentVersion: 2,
           needsPrompt: false,
           active: !!args.granted,
         };
