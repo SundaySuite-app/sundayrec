@@ -164,8 +164,8 @@ pub async fn editor_segments(
         decode_progress(app.clone(), "editor://analysis-progress"),
     )
     .await?;
-    if let Some(analysis) = analysis {
-        offer_to_review_queue(&app, input_path, analysis);
+    if let Some(detection) = analysis {
+        offer_to_review_queue(&app, input_path, detection);
     }
     Ok(segments)
 }
@@ -208,7 +208,7 @@ pub async fn editor_segments(
 fn offer_to_review_queue(
     app: &tauri::AppHandle,
     input_path: String,
-    analysis: Vec<sundayrec_core::prep::PrepAnalysisSegment>,
+    detection: sundayrec_core::detect::Detection,
 ) {
     let app = app.clone();
     crate::crash::watch_handle(
@@ -221,7 +221,10 @@ fn offer_to_review_queue(
             // Idempotent on the path, so the re-analysis that «Analyser opptak»
             // forces lands here and changes nothing.
             if let Err(e) = crate::commands::review::build_and_enqueue_if_recorded(
-                &app, &db, input_path, analysis,
+                &app,
+                &db,
+                input_path,
+                detection.segments,
             )
             .await
             {

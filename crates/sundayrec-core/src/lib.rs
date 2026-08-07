@@ -36,7 +36,8 @@
 //!   - [`diagnostics`]  — the diagnostics markdown report builder (Fase 2)
 //!   - [`editor`]       — non-destructive cut/trim/region planning + export-arg math (PU-7 editor)
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
-//!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), segment classification (PU-7)
+//!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
+//!   - [`detect`] — the ONE sermon detector over those segments (E9)
 //!   - [`cloud`]        — Google cloud-backup backbone: OAuth/PKCE, retry mat, upload-queue, Drive resumable bits (Fase 6)
 //!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
 //!   - [`prep`]         — episode-prep assembly: sermon detection + attention reasons + EpisodePrep build (PU-6)
@@ -59,6 +60,7 @@ pub mod chapters;
 pub mod church_calendar;
 pub mod cloud;
 pub mod companion;
+pub mod detect;
 pub mod device_enum;
 pub mod device_match;
 pub mod diagnostics;

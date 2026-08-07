@@ -25,9 +25,10 @@
 
 use tauri::{AppHandle, State};
 
+use sundayrec_core::detect::{self, PrepAnalysisSegment};
 use sundayrec_core::integrations::stage::{self, StageManifest};
 use sundayrec_core::integrations::{ChapterMarker, ServiceLink};
-use sundayrec_core::prep::{self, EpisodePrep, PrepAnalysisSegment, PrepDefaults, SuggestedTrim};
+use sundayrec_core::prep::{self, EpisodePrep, PrepDefaults, SuggestedTrim};
 use sundayrec_core::review_queue::{self, ReminderAction, ReviewQueueEntry};
 use sundayrec_core::trim_feedback::{self, TrimDeltas};
 
@@ -408,8 +409,16 @@ pub async fn review_update_trim(
 /// from the segments it was built from. `None` when the detector found no
 /// sermon block — there is then no boundary for an operator to have corrected.
 fn proposed_trim(p: &EpisodePrep) -> Option<SuggestedTrim> {
-    let duration_sec = prep::derive_duration_sec(&p.analysis_segments);
-    prep::find_sermon_segment(&p.analysis_segments, duration_sec).map(|s| SuggestedTrim {
+    let duration_sec = detect::derive_duration_sec(&p.analysis_segments);
+    // STRICT, because that is the policy `build_episode_prep` picked with — a
+    // best guess here would invent a proposal the operator was never shown and
+    // then measure their "correction" against it.
+    detect::find_sermon(
+        &p.analysis_segments,
+        duration_sec,
+        detect::SermonPolicy::Strict,
+    )
+    .map(|s| SuggestedTrim {
         start_sec: s.start_sec,
         end_sec: s.end_sec,
     })
@@ -598,7 +607,7 @@ mod tests {
             start_sec: 360.0,
             end_sec: 2160.0,
             duration_sec: 1800.0,
-            kind: sundayrec_core::prep::SegmentType::Speech,
+            kind: sundayrec_core::detect::SegmentType::Speech,
             confidence: 0.9,
             avg_rms_db: -20.0,
             label: String::new(),

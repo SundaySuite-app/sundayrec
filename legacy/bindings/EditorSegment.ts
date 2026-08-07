@@ -12,7 +12,7 @@ export type EditorSegment = { start: number, end: number, duration: number, labe
  * Serialised as `type` — `kind` is only the Rust-side spelling, because
  * `type` is a keyword. The wire name is what the doc-comment above promises
  * ("the same shape `detectSegments` returned to the Electron renderer") and
- * what the sibling detector already ships: `prep::PrepAnalysisSegment`
+ * what the detector's own segment shape ships: `detect::PrepAnalysisSegment`
  * carries the identical `#[serde(rename = "type")]`. Without it this field
  * went out as `kind`, every renderer read of `.type` was `undefined`, and
  * the whole sermon-detection UI was dead in shipped builds.

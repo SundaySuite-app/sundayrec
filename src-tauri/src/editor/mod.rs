@@ -54,7 +54,7 @@ use ts_rs::TS;
 
 use crate::error::AppError;
 use crate::error::AppResult;
-use sundayrec_core::prep::PrepAnalysisSegment;
+use sundayrec_core::detect::Detection;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -106,7 +106,7 @@ pub struct EditorSegment {
     /// Serialised as `type` — `kind` is only the Rust-side spelling, because
     /// `type` is a keyword. The wire name is what the doc-comment above promises
     /// ("the same shape `detectSegments` returned to the Electron renderer") and
-    /// what the sibling detector already ships: `prep::PrepAnalysisSegment`
+    /// what the detector's own segment shape ships: `detect::PrepAnalysisSegment`
     /// carries the identical `#[serde(rename = "type")]`. Without it this field
     /// went out as `kind`, every renderer read of `.type` was `undefined`, and
     /// the whole sermon-detection UI was dead in shipped builds.
@@ -1955,13 +1955,11 @@ pub async fn segments<F>(
     input_path: &str,
     force: bool,
     on_progress: F,
-) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
+) -> AppResult<(Vec<EditorSegment>, Option<Detection>)>
 where
     F: Fn(f32),
 {
-    use sundayrec_core::audio_analysis::{
-        classify_and_group, detect_segments, extract_features, FRAME_MS, SAMPLE_RATE,
-    };
+    use sundayrec_core::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
     use sundayrec_core::editor::analysis_decode_args;
     use tokio::io::AsyncReadExt;
 
@@ -2050,11 +2048,18 @@ where
         ));
     }
 
-    let frames = extract_features(&pcm, SAMPLE_RATE, FRAME_MS);
+    // ONE detector for both consumers (E9). `HeuristicScorer` is the seam: the
+    // frame scorer is the only thing a VAD model replaces, and it is chosen
+    // here and nowhere else.
+    let detection =
+        sundayrec_core::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &HeuristicScorer);
     drop(pcm);
-    let grouped = classify_and_group(&frames);
-    let detected = detect_segments(&grouped);
-    let segments: Vec<EditorSegment> = detected
+    // The editor displays a projection of that one detection: bounds, class and
+    // confidence, with the offered sermon block promoted. `detection` itself
+    // keeps what the projection drops — `avg_rms_db` and the attention reasons —
+    // and is handed on whole, because this is the only moment in the app's life
+    // when those exist.
+    let segments: Vec<EditorSegment> = sundayrec_core::detect::promote_sermon(&detection)
         .into_iter()
         .map(|d| EditorSegment {
             start: d.start,
@@ -2065,12 +2070,6 @@ where
             confidence: Some(d.confidence),
         })
         .collect();
-    // The same classification in the shape the episode-prep heuristic reads,
-    // taken from `grouped` BEFORE the projection above throws the two numeric
-    // features away. Built here rather than recovered later because this is the
-    // only moment in the app's life when they exist.
-    let analysis: Vec<PrepAnalysisSegment> =
-        grouped.iter().map(PrepAnalysisSegment::from).collect();
 
     // Best-effort cache write — a forced re-analysis refreshes it too.
     let cache = SegmentsCache {
@@ -2083,7 +2082,7 @@ where
         let _ = write_sidecar_raw(input_path, EditorSidecar::Segments, &json);
     }
     on_progress(1.0);
-    Ok((segments, Some(analysis)))
+    Ok((segments, Some(detection)))
 }
 
 /// Map a core [`ChannelRepair`](sundayrec_core::processing::ChannelRepair) to the
@@ -4523,14 +4522,29 @@ mod tests {
                 Some(1.0),
                 "«Analyser opptak» must end on a full bar"
             );
-            // A pass that RAN carries the analysis the review queue is built
-            // from — with the two features `EditorSegment` drops.
-            let analysis = analysis.expect("a fresh pass must expose its analysis");
-            assert_eq!(analysis.len(), computed.len());
+            // A pass that RAN carries the whole detection the review queue is
+            // built from — with what `EditorSegment` drops: `avg_rms_db`, the
+            // strict pick, and the attention reasons.
+            let detection = analysis.expect("a fresh pass must expose its detection");
+            assert_eq!(detection.segments.len(), computed.len());
             assert!(
-                analysis.iter().all(|s| s.confidence.is_finite()),
+                detection.segments.iter().all(|s| s.confidence.is_finite()),
                 "an unusable confidence would silently mis-flag every episode"
             );
+            // The editor and the review queue now read ONE detection, so the
+            // block the editor marked must be the block the detector offered —
+            // the disagreement E9 removed cannot come back through this path.
+            match (
+                detection.offered,
+                computed.iter().find(|s| s.kind == "sermon"),
+            ) {
+                (Some(o), Some(marked)) => {
+                    assert!((o.start_sec - marked.start).abs() < 1e-9);
+                    assert!((o.end_sec - marked.end).abs() < 1e-9);
+                }
+                (None, None) => {}
+                (o, m) => panic!("editor and detector disagree: offered={o:?} marked={m:?}"),
+            }
 
             let cache_path = sidecar_of(&src, ".segments.json");
             assert!(

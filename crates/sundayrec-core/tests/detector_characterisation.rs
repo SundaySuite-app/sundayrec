@@ -103,10 +103,7 @@ fn fixtures() -> Vec<(&'static str, Vec<AnalysisSegment>)> {
         // service whose prelude was not recorded.
         (
             "long_speech_before_five_min_only",
-            vec![
-                seg(0.0, 400.0, Speech, 0.9),
-                seg(400.0, 800.0, Music, 0.8),
-            ],
+            vec![seg(0.0, 400.0, Speech, 0.9), seg(400.0, 800.0, Music, 0.8)],
         ),
         // Several long talks, none past the mark.
         (
@@ -210,11 +207,11 @@ struct SermonOut {
 /// Everything both paths said about one fixture.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Answer {
-    /// `audio_analysis::detect_segments` — the editor's segment list.
+    /// The editor's segment list, with the sermon block promoted.
     editor_segments: Vec<EditorOut>,
-    /// `prep::find_sermon_segment` — the review path's pick, `None` allowed.
+    /// The review path's pick — `Detection::sermon`, `None` allowed.
     prep_sermon: Option<SermonOut>,
-    /// `prep::derive_attention_codes`, as stable codes.
+    /// The attention reasons, as stable codes.
     prep_attention: Vec<String>,
     /// `build_episode_prep`'s resulting status.
     prep_status: String,
@@ -226,14 +223,19 @@ struct Answer {
 
 /// Run one fixture through BOTH paths as they exist right now.
 ///
-/// This is the only function the unification is allowed to rewrite: the golden
-/// file it is compared against is frozen.
+/// Post-E9 both paths run off ONE [`sundayrec_core::detect::Detection`]; before
+/// it they ran off two separate implementations. That is the whole change, and
+/// this function is the only part of this file the unification was allowed to
+/// rewrite — the golden file it is compared against is frozen.
 fn run(input: &[AnalysisSegment]) -> Answer {
-    use sundayrec_core::prep::{self, PrepAnalysisSegment, PrepDefaults};
+    use sundayrec_core::detect::{self, PrepAnalysisSegment};
+    use sundayrec_core::prep::{build_episode_prep, PrepDefaults};
 
-    // ── Editor path ──
-    let detected = sundayrec_core::audio_analysis::detect_segments(input);
-    let editor_segments = detected
+    let segments: Vec<PrepAnalysisSegment> = input.iter().map(PrepAnalysisSegment::from).collect();
+    let detection = detect::detect(segments.clone());
+
+    // ── What the editor shows ──
+    let editor_segments = detect::promote_sermon(&detection)
         .into_iter()
         .map(|d| EditorOut {
             start: d.start,
@@ -245,19 +247,17 @@ fn run(input: &[AnalysisSegment]) -> Answer {
         })
         .collect();
 
-    // ── Review/prep path ──
-    let prep_segments: Vec<PrepAnalysisSegment> =
-        input.iter().map(PrepAnalysisSegment::from).collect();
-    let duration_sec = prep::derive_duration_sec(&prep_segments);
-    let sermon = prep::find_sermon_segment(&prep_segments, duration_sec);
-    let prep_attention = prep::derive_attention_codes(&prep_segments, sermon.as_ref(), duration_sec)
+    // ── What the review queue shows ──
+    let sermon = detection.sermon;
+    let prep_attention = detection
+        .attention_codes()
         .into_iter()
         .map(|c| c.code().to_string())
         .collect();
-    let episode = prep::build_episode_prep(
+    let episode = build_episode_prep(
         "fixture".into(),
         "/rec/fixture.mp4".into(),
-        prep_segments,
+        segments,
         &PrepDefaults::default(),
         0,
     );
@@ -285,7 +285,32 @@ fn run(input: &[AnalysisSegment]) -> Answer {
 /// Listing a field here asserts the value is different — a delta that later
 /// disappears fails just as loudly as one that appears, so neither side of a
 /// resolved disagreement can drift back unnoticed.
-const EXPECTED_DELTAS: &[(&str, &str, &str)] = &[];
+const EXPECTED_DELTAS: &[(&str, &str, &str)] = &[
+    // The editor reported the confidence of the speech block that BEGINS the
+    // span; the review queue reported the mean over every block the span covers.
+    // The span is stretched across ALL of them, so the first block's number
+    // describes the opening minutes and calls it the whole talk. The mean is
+    // what the review queue has always stored for the same recording, and the
+    // editor showing 0.95 while the queue showed 0.85 for one sermon is the
+    // drift this unification exists to end.
+    (
+        "sermon_only_split_by_song",
+        "editor_segments",
+        "promoted confidence 0.95 (first block) → 0.85 (mean over the span)",
+    ),
+    // Two equal-length talks, both past the 5-minute mark. The editor kept
+    // whichever came FIRST in the file; the review queue kept whichever the
+    // classifier was surer about. Durations are frame-quantised to 100 ms, so
+    // this tie is reachable, and the two paths marked different blocks as the
+    // sermon for the same recording. Position in the file is an artefact of the
+    // scan order, not a judgement — confidence is the only information left, so
+    // the review queue's rule wins.
+    (
+        "equal_duration_different_confidence",
+        "editor_segments",
+        "tie broken by file order (360..660) → by confidence (700..1000)",
+    ),
+];
 
 // ── The test ────────────────────────────────────────────────────────────────
 
