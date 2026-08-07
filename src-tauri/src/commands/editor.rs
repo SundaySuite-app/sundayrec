@@ -349,7 +349,14 @@ pub async fn editor_read_file(media_path: String) -> AppResult<EditorFileRead> {
 }
 
 /// Sweep the given folders for crashed-edit temp/backup leftovers. Returns the
-/// count removed. Called at startup over the save-folder + history folders.
+/// count removed.
+///
+/// The AUTOMATIC path is `editor::startup_sweep`, wired into `lib.rs` setup
+/// (E6.5) — this doc comment used to claim "called at startup" while nothing
+/// called it at all, renderer or otherwise, so crashed exports left full-size
+/// copies of a service on disk forever. This command remains as the explicit
+/// "sweep THESE folders" entry point for a renderer that wants to clean a
+/// folder the startup sweep does not know about.
 #[tauri::command]
 pub fn editor_cleanup_temp_files(folders: Vec<String>) -> AppResult<usize> {
     for folder in &folders {

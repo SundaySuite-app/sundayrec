@@ -400,18 +400,54 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
 /// `timestamp`/`exit_ok` at session end and persists it. Surfaced in the
 /// diagnose report so the user pastes a *trend*, not a guess.
 ///
-/// `drops`/`dups` track the max ffmpeg `drop=`/`dup=` seen (cumulative within one
-/// ffmpeg process); across a split (a new process) this is the max single
-/// segment, not the sum — an acceptable under-report for the common single-take
-/// sermon. `xruns`/`levels_dropped` are event counts that accumulate correctly.
+/// ## Accumulation semantics, field by field (E6.3)
+///
+/// A session is not one ffmpeg process. A split opens a new deliverable with a
+/// new capture process; a reconnect opens a new `_rN` fragment with another.
+/// Two different kinds of counter live in here, and they aggregate differently:
+///
+/// - **`drops`/`dups` are ffmpeg's own CUMULATIVE counters**, re-printed in full
+///   on every progress line. Within one process the right fold is `max` (take
+///   the latest/highest); ACROSS processes the right fold is `sum` — the second
+///   process's `drop=` restarts at zero and knows nothing about the first's.
+///   Folding with `max` for the whole session, as this used to, reported the
+///   worst SINGLE segment: a 3-hour service that dropped 40 frames in each of
+///   four segments reported 40, not 160. The fix is a per-process window
+///   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
+///   maximum is added to the session total.
+/// - **`xruns`, `capture_drop_lines`, `levels_dropped`, `msgs_dropped` are EVENT
+///   counts** — one increment per matching stderr line / dropped message. They
+///   already accumulate correctly across any number of processes, because
+///   nothing about them restarts; they were checked for the same flaw and do not
+///   have it.
+/// - **`ring_overrun_samples`, `native_frames_sec`, `expected_sec`,
+///   `measured_sec`** are summed by the engine per segment / per deliverable and
+///   are likewise correct.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export, export_to = "../../../src/lib/bindings/RecordingTelemetry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingTelemetry {
-    /// Max ffmpeg `drop=` (discarded frames; an avfoundation/USB-overflow signal).
+    /// Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB
+    /// overflow signal): the sum over capture processes of each one's final
+    /// `drop=`. Excludes the process currently running — see
+    /// [`Self::drops_total`].
     pub drops: u64,
-    /// Max ffmpeg `dup=` (duplicated frames; a clock-mismatch signal).
+    /// Frames ffmpeg DUPLICATED across the whole session (a clock-mismatch
+    /// signal), summed over capture processes like [`Self::drops`].
     pub dups: u64,
+    /// Highest `drop=` seen so far in the CURRENT capture process. Folded into
+    /// [`Self::drops`] by [`Self::seal_process`] when that process ends.
+    ///
+    /// In-flight scratch, deliberately not part of the persisted/wire record:
+    /// every consumer reads a FINISHED session, by which time this is zero and
+    /// `drops` holds the whole truth.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub cur_drops: u64,
+    /// [`Self::cur_drops`] for `dup=`.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub cur_dups: u64,
     /// xrun/overrun-class stderr lines seen — the direct stutter signal.
     pub xruns: u64,
     /// Times the live-levels IPC `try_send` hit a FULL channel — the direct
@@ -475,8 +511,10 @@ impl RecordingTelemetry {
     /// and must pay for AT MOST one allocation per line (it drains the pipe
     /// ffmpeg blocks on; per-line cost is capture-health-critical).
     pub fn observe_line_prelowered(&mut self, lower: &str) {
-        self.drops = self.drops.max(parse_drop_count(lower));
-        self.dups = self.dups.max(parse_dup_count(lower));
+        // `max` WITHIN the process (ffmpeg re-prints its cumulative total on
+        // every progress line); the cross-process sum happens in `seal_process`.
+        self.cur_drops = self.cur_drops.max(parse_drop_count(lower));
+        self.cur_dups = self.cur_dups.max(parse_dup_count(lower));
         if is_xrun_line(lower) {
             self.xruns = self.xruns.saturating_add(1);
         }
@@ -497,11 +535,41 @@ impl RecordingTelemetry {
         self.msgs_dropped = self.msgs_dropped.saturating_add(1);
     }
 
+    /// Close the CURRENT capture process's drop/dup window: add its maximum to
+    /// the session totals and reset it. Call once per capture process, when that
+    /// process has exited — the engine does it at the end of each segment.
+    ///
+    /// Idempotent: a second call with nothing observed since adds zero, so the
+    /// defensive seal at session end can never double-count a segment that
+    /// already sealed itself.
+    ///
+    /// For a SINGLE-process session (the common single-take sermon) this is
+    /// exactly the old behaviour: one seal of one window whose max is that
+    /// process's final `drop=`.
+    pub fn seal_process(&mut self) {
+        self.drops = self.drops.saturating_add(self.cur_drops);
+        self.dups = self.dups.saturating_add(self.cur_dups);
+        self.cur_drops = 0;
+        self.cur_dups = 0;
+    }
+
+    /// Session `drop=` total INCLUDING the process still running. Use this for
+    /// any live judgement; the persisted `drops` field is the same number once
+    /// the last process has been sealed.
+    pub fn drops_total(&self) -> u64 {
+        self.drops.saturating_add(self.cur_drops)
+    }
+
+    /// [`Self::drops_total`] for `dup=`.
+    pub fn dups_total(&self) -> u64 {
+        self.dups.saturating_add(self.cur_dups)
+    }
+
     /// Whether these counters indicate a degraded recording (dropped audio,
     /// capture back-pressure, measured duration loss, or IPC starvation). Used
     /// to raise a diagnose finding.
     pub fn is_degraded(&self) -> bool {
-        self.drops > 0
+        self.drops_total() > 0
             || self.xruns > 0
             || self.levels_dropped > 0
             || self.capture_drop_lines > 0
@@ -538,8 +606,10 @@ pub fn facts_from_recording(t: &RecordingTelemetry, size_bytes: u64) -> SelfTest
     SelfTestFacts {
         expected_sec: (t.expected_sec - CAPTURE_STARTUP_ALLOWANCE_SEC).max(0.0),
         measured_sec: t.measured_sec,
-        drops: t.drops,
-        dups: t.dups,
+        // Totals, not the sealed fields: a verdict computed while a capture
+        // process is still open must still see that process's drops.
+        drops: t.drops_total(),
+        dups: t.dups_total(),
         // Capture-drop lines ARE xrun-class events for verdict purposes; a
         // native ring overrun counts as one xrun event (its MAGNITUDE already
         // shows up as duration loss — the overrun samples never reach disk).
@@ -729,10 +799,90 @@ clean line";
         t.observe_line("frame=20 dup=0 drop=2 speed=1x"); // drop/dup are max, not last
         t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
         t.observe_line("size=256kB time=00:00:05.00"); // clean progress line
-        assert_eq!(t.drops, 3, "max drop across lines");
-        assert_eq!(t.dups, 1);
+        assert_eq!(t.drops_total(), 3, "max drop across lines");
+        assert_eq!(t.dups_total(), 1);
         assert_eq!(t.xruns, 1, "one xrun-class line");
         assert!(t.is_degraded());
+        // Sealing one process leaves the persisted fields holding exactly what
+        // the old max-fold produced — single-take behaviour is unchanged.
+        t.seal_process();
+        assert_eq!(t.drops, 3);
+        assert_eq!(t.dups, 1);
+    }
+
+    /// E6.3 BUG FIX — a session is not one ffmpeg process.
+    ///
+    /// `drop=`/`dup=` are CUMULATIVE per process and restart at zero in the next
+    /// one. Folding the whole session with `max`, as this used to, reported the
+    /// worst SINGLE segment: a service that split three times and dropped 40,
+    /// 25 and 10 frames reported 40 frames lost instead of 75. The verdict
+    /// engine then judged a badly degraded recording against one segment's
+    /// damage — and `FAIL_DROPS` is 10, so the difference is not academic.
+    #[test]
+    fn telemetry_sums_drops_across_capture_processes() {
+        let mut t = RecordingTelemetry::default();
+
+        // Process 1: ffmpeg re-prints its running total each line.
+        t.observe_line("frame=10 dup=2 drop=12 speed=1x");
+        t.observe_line("frame=99 dup=4 drop=40 speed=1x");
+        assert_eq!(t.drops_total(), 40, "within one process the fold is max");
+        t.seal_process();
+
+        // Process 2 (a split): its counters START OVER at zero.
+        t.observe_line("frame=10 dup=1 drop=9 speed=1x");
+        t.observe_line("frame=88 dup=3 drop=25 speed=1x");
+        assert_eq!(
+            t.drops_total(),
+            65,
+            "the second process ADDS to the first, it does not compete with it"
+        );
+        t.seal_process();
+
+        // Process 3 (a reconnect fragment).
+        t.observe_line("frame=5 dup=2 drop=10 speed=1x");
+        t.seal_process();
+
+        assert_eq!(t.drops, 75, "40 + 25 + 10 — the sum, not the max (40)");
+        assert_eq!(t.dups, 9, "4 + 3 + 2");
+        // The verdict now sees the real damage. With the old max-fold this
+        // session reported 40 drops; the truth is 75.
+        let facts = facts_from_recording(&t, 1_000_000);
+        assert_eq!(facts.drops, 75);
+        assert_eq!(facts.dups, 9);
+
+        // Sealing again adds nothing — the defensive seal at session end can
+        // never double-count a segment that already sealed itself.
+        t.seal_process();
+        t.seal_process();
+        assert_eq!(t.drops, 75);
+    }
+
+    /// The fields that were CHECKED for the same flaw and do not have it: they
+    /// are event counts, incremented once per occurrence, so they already span
+    /// processes correctly. Sealing must leave them completely alone.
+    #[test]
+    fn event_counters_already_span_processes_and_sealing_does_not_touch_them() {
+        let mut t = RecordingTelemetry::default();
+        // Process 1.
+        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
+        t.observe_line("[aist#0:0] 100 packets dropped");
+        t.note_levels_dropped();
+        t.note_msg_dropped();
+        t.ring_overrun_samples += 480; // the engine sums this per segment
+        t.seal_process();
+        // Process 2 sees the same events again.
+        t.observe_line("[avfoundation] real-time buffer too full, frame dropped!");
+        t.observe_line("[aist#0:0] 100 packets dropped");
+        t.note_levels_dropped();
+        t.note_msg_dropped();
+        t.ring_overrun_samples += 960;
+        t.seal_process();
+
+        assert_eq!(t.xruns, 2, "xruns are events — they already summed");
+        assert_eq!(t.capture_drop_lines, 2);
+        assert_eq!(t.levels_dropped, 2);
+        assert_eq!(t.msgs_dropped, 2);
+        assert_eq!(t.ring_overrun_samples, 1440);
     }
 
     #[test]
@@ -888,6 +1038,11 @@ mod proptests {
         /// elsewhere on the SAME line — the unit rename that once broke
         /// [`crate::progress::parse_size_kb`] must not have a sibling bug here,
         /// since `observe_line` folds the whole line, not just the `size=` field.
+        ///
+        /// Read through `drops_total`/`dups_total`, not the `drops`/`dups` fields:
+        /// those hold only the SEALED total across finished capture processes, and
+        /// the line just observed belongs to the process still running. The totals
+        /// include that open window, which is what a mid-session verdict needs.
         #[test]
         fn drop_dup_counts_are_unaffected_by_the_size_unit_spelling(
             drop in 0u64..=10_000_000,
@@ -899,6 +1054,10 @@ mod proptests {
             );
             let mut t = RecordingTelemetry::default();
             t.observe_line(&line);
+            prop_assert_eq!(t.drops_total(), drop);
+            prop_assert_eq!(t.dups_total(), dup);
+            // And sealing the process must move the same numbers into the totals.
+            t.seal_process();
             prop_assert_eq!(t.drops, drop);
             prop_assert_eq!(t.dups, dup);
         }

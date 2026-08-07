@@ -234,6 +234,8 @@ pub async fn transcribe(
 ) -> AppResult<TranscriptData> {
     use std::path::PathBuf;
     use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    use sundayrec_core::timeouts::WhisperTimeouts;
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
     // 0. The core decides the model must be present + the right size first.
@@ -261,10 +263,24 @@ pub async fn transcribe(
     let convert_args = whisper::build_convert_args(input_path, &wav_str);
     let arg_refs: Vec<&str> = convert_args.iter().map(String::as_str).collect();
     let mut child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| AppError::Internal(format!("whisper convert wait: {e}")))?;
+    // E6.5: bounded. This used to `await child.wait()` with no ceiling at all —
+    // an ffmpeg wedged on a damaged container hung the transcription forever and
+    // held its guard slot for the rest of the session.
+    let convert_bound = Duration::from_millis(WhisperTimeouts::CONVERT_MS);
+    let status = match tokio::time::timeout(convert_bound, child.wait()).await {
+        Ok(s) => s.map_err(|e| AppError::Internal(format!("whisper convert wait: {e}")))?,
+        Err(_) => {
+            tracing::error!(
+                timeout_ms = WhisperTimeouts::CONVERT_MS,
+                "whisper: convert exceeded its bound — killing ffmpeg"
+            );
+            let _ = child.kill().await;
+            return Err(AppError::Internal(format!(
+                "whisper convert timed out after {} s",
+                WhisperTimeouts::CONVERT_MS / 1000
+            )));
+        }
+    };
     if !status.success() || !wav_path.exists() {
         return Err(AppError::Internal(
             "whisper convert failed (ffmpeg non-zero / no output)".into(),
@@ -392,9 +408,44 @@ pub async fn transcribe(
             result: None,
             transcription,
         })
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("whisper task join: {e}")))??;
+    });
+
+    // E6.5: the inference bound. Derived from the audio we just measured and
+    // the model's advertised speed (see `WhisperTimeouts::transcribe_timeout_ms`)
+    // — a 90-minute service on the recommended model gets 10 hours, which no
+    // honest run will ever approach and a wedged one will.
+    //
+    // The bound does not abandon the thread: whisper polls the abort flag
+    // between encoder/decoder steps, so we RAISE THE CANCEL FLAG (the same one
+    // the user's cancel button raises) and then wait a short grace for the
+    // blocking task to unwind. Detaching instead would leave a runaway inference
+    // burning every core for the rest of the session.
+    let bound = Duration::from_millis(WhisperTimeouts::transcribe_timeout_ms(
+        total_sec,
+        meta.realtime_factor,
+    ));
+    tokio::pin!(raw);
+    let raw = match tokio::time::timeout(bound, &mut raw).await {
+        Ok(joined) => joined,
+        Err(_) => {
+            tracing::error!(
+                timeout_ms = bound.as_millis() as u64,
+                total_sec,
+                model = %meta.id,
+                "whisper: inference exceeded its derived bound — aborting"
+            );
+            cancel.store(true, Ordering::Relaxed);
+            let grace = Duration::from_millis(WhisperTimeouts::TRANSCRIBE_ABORT_GRACE_MS);
+            if tokio::time::timeout(grace, &mut raw).await.is_err() {
+                tracing::error!("whisper: inference did not honour the abort flag in time");
+            }
+            return Err(AppError::Internal(format!(
+                "whisper inference timed out after {} s",
+                bound.as_secs()
+            )));
+        }
+    };
+    let raw = raw.map_err(|e| AppError::Internal(format!("whisper task join: {e}")))??;
     Ok(whisper::normalize_output(&raw, model_id, &opts, now_ms))
 }
 
@@ -425,6 +476,7 @@ pub async fn download_model(
     cancel: std::sync::Arc<tokio::sync::Notify>,
 ) -> AppResult<()> {
     use sha2::{Digest, Sha256};
+    use sundayrec_core::timeouts::WhisperTimeouts;
     use tauri::Emitter;
     use tokio::io::AsyncWriteExt;
 
@@ -466,6 +518,13 @@ pub async fn download_model(
     let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
     let mut stream = resp;
+    // E6.5: a STALL bound, not a total one. A model is 148 MB–1.5 GB and a slow
+    // church connection can legitimately take an hour, so a total timeout would
+    // either kill honest downloads or bound nothing. What is never legitimate is
+    // a socket that accepted the connection and then went silent — the failure
+    // the connect timeout above cannot see, and the one that used to hang the
+    // download (and its guard slot) forever.
+    let stall = std::time::Duration::from_millis(WhisperTimeouts::DOWNLOAD_STALL_MS);
     loop {
         let chunk = tokio::select! {
             biased;
@@ -474,7 +533,22 @@ pub async fn download_model(
                 let _ = tokio::fs::remove_file(&partial).await;
                 return Err(AppError::Validation("cancelled".into()));
             }
-            c = stream.chunk() => c.map_err(|e| AppError::Internal(format!("download chunk: {e}")))?,
+            c = tokio::time::timeout(stall, stream.chunk()) => match c {
+                Ok(c) => c.map_err(|e| AppError::Internal(format!("download chunk: {e}")))?,
+                Err(_) => {
+                    tracing::error!(
+                        stall_ms = WhisperTimeouts::DOWNLOAD_STALL_MS,
+                        downloaded,
+                        "whisper: model download stalled — no bytes; giving up"
+                    );
+                    drop(file);
+                    let _ = tokio::fs::remove_file(&partial).await;
+                    return Err(AppError::Internal(format!(
+                        "Nedlastingen stoppet opp (ingen data på {} s). Sjekk nettforbindelsen og prøv igjen.",
+                        WhisperTimeouts::DOWNLOAD_STALL_MS / 1000
+                    )));
+                }
+            },
         };
         let Some(bytes) = chunk else { break };
         hasher.update(&bytes);

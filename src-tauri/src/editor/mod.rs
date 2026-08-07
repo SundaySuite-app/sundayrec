@@ -725,6 +725,50 @@ pub fn read_file_guarded(media_path: &str) -> AppResult<EditorFileRead> {
     }
 }
 
+/// Sweep every folder the app could plausibly have left an editor temp in, on
+/// startup (E6.5).
+///
+/// [`cleanup_temp_files`] was reachable only through the
+/// `editor_cleanup_temp_files` Tauri command, and that command had ZERO callers
+/// — renderer or otherwise. So an export or a mastering apply that crashed left
+/// its `.__editor_tmp` / `.__editor_bak` beside the recording forever, and each
+/// one is the size of the recording it was editing. A 90-minute service's
+/// backup is hundreds of megabytes of invisible litter on the operator's disk.
+///
+/// The folders are the ones the editor can actually write into: the configured
+/// save folder, plus the parent directory of every recording in history (a
+/// recording moved or imported from elsewhere is edited in place). De-duped and
+/// canonicalised by the core before any readdir.
+///
+/// Best-effort: a settings or history read that fails simply narrows the sweep.
+/// Returns how many files were removed.
+pub async fn startup_sweep(pool: &sqlx::SqlitePool) -> usize {
+    let mut folders: Vec<String> = Vec::new();
+    if let Ok(settings) = crate::settings::load(pool).await {
+        if let Some(save) = settings.save_folder {
+            folders.push(save);
+        }
+    }
+    if let Ok(rows) = crate::db::store::list_recordings(pool).await {
+        for row in rows {
+            if let Some(parent) = std::path::Path::new(&row.file_path).parent() {
+                folders.push(parent.to_string_lossy().into_owned());
+            }
+        }
+    }
+    if folders.is_empty() {
+        return 0;
+    }
+    // Blocking readdir/unlink off the async runtime.
+    let removed = tokio::task::spawn_blocking(move || cleanup_temp_files(&folders))
+        .await
+        .unwrap_or(0);
+    if removed > 0 {
+        tracing::info!(removed, "startup: swept crashed-edit temp/backup leftovers");
+    }
+    removed
+}
+
 /// Sweep `folders` for crashed-edit `.__editor_tmp`/`.__editor_bak` leftovers,
 /// returning how many were deleted. Mirrors `cleanupEditorTempFiles`: the core
 /// de-dups + the predicate decides what to unlink; this layer does the readdir/
@@ -3201,6 +3245,69 @@ mod tests {
         assert!(d.join("service.mp3").exists());
         assert!(!d.join("service.mp3.__editor_tmp").exists());
         assert!(!d.join("clip.__editor_tmp.mp4").exists());
+    }
+
+    /// E6.5: the startup sweep really does reach the folders the editor writes
+    /// into — the configured save folder AND the folder of a recording that
+    /// lives somewhere else entirely (imported, or moved after the fact).
+    ///
+    /// Before this, `cleanup_temp_files` was reachable only through a Tauri
+    /// command with zero callers, so a crashed export left a full-size copy of
+    /// the service on disk forever.
+    #[tokio::test]
+    async fn startup_sweep_reaches_the_save_folder_and_every_history_folder() {
+        let db_dir = tempfile::tempdir().expect("tempdir");
+        let pool = crate::db::store::open_pool(&db_dir.path().join("t.sqlite"))
+            .await
+            .expect("open_pool");
+
+        let save = tempfile::tempdir().expect("save dir");
+        let elsewhere = tempfile::tempdir().expect("imported dir");
+        let untouched = tempfile::tempdir().expect("unrelated dir");
+
+        // Litter in all three, plus a real recording that must survive.
+        for d in [save.path(), elsewhere.path(), untouched.path()] {
+            std::fs::write(d.join("service.mp3"), b"keep").unwrap();
+            std::fs::write(d.join("service.mp3.__editor_tmp"), b"x").unwrap();
+            std::fs::write(d.join("service.mp3.__editor_bak"), b"x").unwrap();
+        }
+
+        let mut settings = crate::settings::load(&pool).await.unwrap();
+        settings.save_folder = Some(save.path().to_string_lossy().into_owned());
+        crate::settings::save(&pool, settings).await.unwrap();
+        // A recording that lives OUTSIDE the save folder.
+        crate::db::store::insert_recording(
+            &pool,
+            crate::db::store::RecordingRow {
+                id: String::new(),
+                file_path: elsewhere
+                    .path()
+                    .join("service.mp3")
+                    .to_string_lossy()
+                    .into_owned(),
+                device_name: None,
+                started_at: 0.0,
+                duration_ms: None,
+                byte_size: Some(4),
+                created_at: 0.0,
+                note: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let removed = startup_sweep(&pool).await;
+        assert_eq!(removed, 4, "two leftovers in each of the two known folders");
+        for d in [save.path(), elsewhere.path()] {
+            assert!(d.join("service.mp3").exists(), "the recording survives");
+            assert!(!d.join("service.mp3.__editor_tmp").exists());
+            assert!(!d.join("service.mp3.__editor_bak").exists());
+        }
+        // A folder the app knows nothing about is never touched.
+        assert!(
+            untouched.path().join("service.mp3.__editor_tmp").exists(),
+            "the sweep must not wander into folders it was never told about"
+        );
     }
 
     // ── derived caches (P3): the peaks + segments sidecars ───────────────────────

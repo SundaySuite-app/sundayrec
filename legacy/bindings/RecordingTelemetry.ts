@@ -9,18 +9,41 @@ import type { SelfTestReport } from "./SelfTestReport";
  * `timestamp`/`exit_ok` at session end and persists it. Surfaced in the
  * diagnose report so the user pastes a *trend*, not a guess.
  *
- * `drops`/`dups` track the max ffmpeg `drop=`/`dup=` seen (cumulative within one
- * ffmpeg process); across a split (a new process) this is the max single
- * segment, not the sum — an acceptable under-report for the common single-take
- * sermon. `xruns`/`levels_dropped` are event counts that accumulate correctly.
+ * ## Accumulation semantics, field by field (E6.3)
+ *
+ * A session is not one ffmpeg process. A split opens a new deliverable with a
+ * new capture process; a reconnect opens a new `_rN` fragment with another.
+ * Two different kinds of counter live in here, and they aggregate differently:
+ *
+ * - **`drops`/`dups` are ffmpeg's own CUMULATIVE counters**, re-printed in full
+ *   on every progress line. Within one process the right fold is `max` (take
+ *   the latest/highest); ACROSS processes the right fold is `sum` — the second
+ *   process's `drop=` restarts at zero and knows nothing about the first's.
+ *   Folding with `max` for the whole session, as this used to, reported the
+ *   worst SINGLE segment: a 3-hour service that dropped 40 frames in each of
+ *   four segments reported 40, not 160. The fix is a per-process window
+ *   ([`RecordingTelemetry::seal_process`], called at each segment end) whose
+ *   maximum is added to the session total.
+ * - **`xruns`, `capture_drop_lines`, `levels_dropped`, `msgs_dropped` are EVENT
+ *   counts** — one increment per matching stderr line / dropped message. They
+ *   already accumulate correctly across any number of processes, because
+ *   nothing about them restarts; they were checked for the same flaw and do not
+ *   have it.
+ * - **`ring_overrun_samples`, `native_frames_sec`, `expected_sec`,
+ *   `measured_sec`** are summed by the engine per segment / per deliverable and
+ *   are likewise correct.
  */
 export type RecordingTelemetry = { 
 /**
- * Max ffmpeg `drop=` (discarded frames; an avfoundation/USB-overflow signal).
+ * Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB
+ * overflow signal): the sum over capture processes of each one's final
+ * `drop=`. Excludes the process currently running — see
+ * [`Self::drops_total`].
  */
 drops: bigint, 
 /**
- * Max ffmpeg `dup=` (duplicated frames; a clock-mismatch signal).
+ * Frames ffmpeg DUPLICATED across the whole session (a clock-mismatch
+ * signal), summed over capture processes like [`Self::drops`].
  */
 dups: bigint, 
 /**

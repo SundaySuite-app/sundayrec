@@ -587,6 +587,12 @@ pub(crate) async fn run_native_segment(
         t.ring_overrun_samples = t.ring_overrun_samples.saturating_add(overrun);
         t.native_frames_sec +=
             seg.frames.load(Ordering::Relaxed) as f64 / f64::from(seg.spec.sample_rate.max(1));
+        // E6.3 symmetry with the ffmpeg twin: close this capture process's
+        // drop/dup window. The native engine parses no ffmpeg stderr, so the
+        // window is always empty and this is a no-op — but a session that mixes
+        // the two backends (a native start that fell back to ffmpeg) must not
+        // depend on which arm happened to run.
+        t.seal_process();
     }
     segment_bytes.store(seg.bytes.load(Ordering::Relaxed), Ordering::Relaxed);
     outcome

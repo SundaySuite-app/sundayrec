@@ -28,9 +28,55 @@ pub const DATA_SIZE_OFFSET: u64 = 40;
 /// final flush burst. At 96 kHz stereo s16 (384 kB/s) this is ≈2.7 h.
 pub const FORCED_SPLIT_DELIVERABLE_BYTES: u64 = 3_758_096_384; // 3.5 GiB
 
+/// Debug-build-only override of [`FORCED_SPLIT_DELIVERABLE_BYTES`], so the
+/// forced-split path can be driven END TO END with real bytes instead of only
+/// unit-tested with synthetic sizes (E6.2).
+///
+/// Writing 3.5 GiB in a test is not an option, and the split → new deliverable →
+/// finalize → concat → history-row chain is exactly the kind of long chain that
+/// works in pieces and not as a whole. Lowering the threshold to a few MiB makes
+/// the WHOLE chain reachable in seconds with real capture bytes crossing a real
+/// boundary.
+///
+/// Both halves of the guard are load-bearing, following the
+/// `SUNDAYREC_SMTP_PLAINTEXT_TEST` precedent:
+/// - the env var makes it explicit and off by default, and
+/// - `cfg!(debug_assertions)` folds it to a constant `false` in a SHIPPED build,
+///   so no environment variable can make a released app chop a service into
+///   fragments.
+pub const TEST_SPLIT_BYTES_ENV: &str = "SUNDAYREC_TEST_SPLIT_BYTES";
+
+/// Floor on the [`TEST_SPLIT_BYTES_ENV`] override. A threshold small enough to
+/// be crossed by the WAV header alone would split on every single poll tick and
+/// produce an unbounded stream of empty deliverables; 64 KiB is comfortably
+/// above any header and still crossed in a fraction of a second of capture.
+pub const MIN_TEST_SPLIT_BYTES: u64 = 64 * 1024;
+
+/// The threshold [`should_force_split`] compares against: the real
+/// [`FORCED_SPLIT_DELIVERABLE_BYTES`], unless a debug build has a valid
+/// [`TEST_SPLIT_BYTES_ENV`] override.
+///
+/// The override is clamped into `MIN_TEST_SPLIT_BYTES ..= FORCED_SPLIT_DELIVERABLE_BYTES`,
+/// so it can only ever make the guard fire EARLIER — never later, and never past
+/// the RIFF ceiling this constant exists to stay under.
+pub fn forced_split_threshold_bytes() -> u64 {
+    #[cfg(debug_assertions)]
+    if let Some(n) = std::env::var(TEST_SPLIT_BYTES_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        return n.clamp(MIN_TEST_SPLIT_BYTES, FORCED_SPLIT_DELIVERABLE_BYTES);
+    }
+    FORCED_SPLIT_DELIVERABLE_BYTES
+}
+
 /// Should the engine force a split (new deliverable) before the RIFF cap?
+///
+/// Applies to every WAV capture path — the native writer AND the ffmpeg capture
+/// (whose muxer defaults to `-rf64 never`, i.e. it writes a plain RIFF header
+/// whose u32 size fields simply cannot describe a file past 4 GiB).
 pub fn should_force_split(cumulative_deliverable_data_bytes: u64) -> bool {
-    cumulative_deliverable_data_bytes >= FORCED_SPLIT_DELIVERABLE_BYTES
+    cumulative_deliverable_data_bytes >= forced_split_threshold_bytes()
 }
 
 /// The stream format of a capture WAV. Bits are fixed at 16 (see module docs).
@@ -106,19 +152,77 @@ pub fn encode_s16le(samples: &[f32], out: &mut Vec<u8>) {
     }
 }
 
+/// `WAVE_FORMAT_PCM` — the plain uncompressed-PCM `wFormatTag`.
+pub const WAVE_FORMAT_PCM: u16 = 1;
+
+/// `WAVE_FORMAT_EXTENSIBLE` — the `wFormatTag` that says "the REAL format is in
+/// the `SubFormat` GUID at the end of a 40-byte `fmt ` chunk".
+///
+/// This is not an exotic case: **ffmpeg's wav muxer writes it for every WAV
+/// above 48 kHz** (measured across 44.1/48/88.2/96/192 kHz with the bundled
+/// 8.1.2 sidecar), mono and stereo alike. Anything that treats `wFormatTag != 1`
+/// as "not PCM" therefore misjudges every high-rate recording — see
+/// [`WavHeaderInfo::copy_compatible_with`].
+pub const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
+
 /// The fields of a parsed `fmt ` chunk that matter for join compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WavHeaderInfo {
+    /// `wFormatTag` exactly as written in the file — [`WAVE_FORMAT_PCM`],
+    /// [`WAVE_FORMAT_EXTENSIBLE`], or something else. Use
+    /// [`Self::effective_format_tag`] to ask what the audio actually IS.
     pub format_tag: u16,
     pub channels: u16,
     pub sample_rate: u32,
     pub bits_per_sample: u16,
+    /// First `u16` of the `SubFormat` GUID, when `format_tag` is
+    /// [`WAVE_FORMAT_EXTENSIBLE`] and the `fmt ` chunk carries one. That word is
+    /// the classic format tag the extensible header stands in for (`0x0001` for
+    /// PCM in `KSDATAFORMAT_SUBTYPE_PCM`). `None` for a plain header.
+    pub extensible_subformat: Option<u16>,
 }
 
 impl WavHeaderInfo {
-    /// Can two WAVs be `-c copy`-joined? (Same everything; both s16 PCM.)
+    /// What the audio actually is: the `SubFormat` tag for an extensible
+    /// header, otherwise `format_tag` verbatim.
+    pub fn effective_format_tag(&self) -> u16 {
+        match (self.format_tag, self.extensible_subformat) {
+            (WAVE_FORMAT_EXTENSIBLE, Some(sub)) => sub,
+            _ => self.format_tag,
+        }
+    }
+
+    /// Can two WAVs be `-c copy`-joined? Both must be 16-bit PCM at the same
+    /// rate and channel count.
+    ///
+    /// ## E6.2 BUG FIX — the pre-roll that vanished above 48 kHz
+    ///
+    /// This used to be `self == other && self.format_tag == 1 && …`, i.e. it
+    /// demanded a LITERAL `wFormatTag` of 1 on both sides and demanded the two
+    /// headers be byte-identical in every field. ffmpeg writes
+    /// [`WAVE_FORMAT_EXTENSIBLE`] for every WAV above 48 kHz, so at 88.2/96/192
+    /// kHz the ONLY caller — `concat::wav_prepend_compatible`, the guard in
+    /// front of the pre-roll `-c copy` prepend — refused a clip that was in fact
+    /// bit-for-bit joinable, and the pre-service audio was dropped from the
+    /// delivered recording with nothing but a `tracing::warn!` to say so. That
+    /// is silent loss of a feature the operator deliberately switched on, at
+    /// exactly the rate a 96 kHz digital-mixer rig records at.
+    ///
+    /// Comparing the EFFECTIVE tags also fixes the mixed case, which the native
+    /// engine makes real: our own writer always emits a plain `WAVE_FORMAT_PCM`
+    /// header, so a natively-captured 96 kHz recording (tag 1) and an
+    /// ffmpeg-produced clip at the same rate (tag 0xFFFE) are the same PCM and
+    /// used to be judged incompatible. Verified against the real sidecar: a
+    /// tag-1 and a tag-0xFFFE 96 kHz stereo s16 file `-c copy`-join into one
+    /// stream with no loss.
     pub fn copy_compatible_with(&self, other: &WavHeaderInfo) -> bool {
-        self == other && self.format_tag == 1 && self.bits_per_sample == 16
+        let mine = self.effective_format_tag();
+        mine == WAVE_FORMAT_PCM
+            && self.bits_per_sample == 16
+            && mine == other.effective_format_tag()
+            && self.channels == other.channels
+            && self.sample_rate == other.sample_rate
+            && self.bits_per_sample == other.bits_per_sample
     }
 }
 
@@ -135,15 +239,28 @@ pub fn parse_header(bytes: &[u8]) -> Option<WavHeaderInfo> {
         let id = &bytes[pos..pos + 4];
         let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().ok()?) as usize;
         if id == b"fmt " {
-            let body = bytes.get(pos + 8..pos + 8 + size.min(16))?;
+            // Read as much of the chunk as is really present — 16 bytes is the
+            // classic `WAVEFORMAT`, 40 the `WAVEFORMATEXTENSIBLE` whose trailing
+            // `SubFormat` GUID names the actual format.
+            let body = bytes.get(pos + 8..pos + 8 + size.min(40))?;
             if body.len() < 16 {
                 return None;
             }
+            let format_tag = u16::from_le_bytes(body[0..2].try_into().ok()?);
+            // Layout: [.. 16 classic ..][cbSize u16][validBits u16]
+            //         [channelMask u32][SubFormat GUID (16 B)]
+            // The GUID's first u16 is the classic tag it stands in for.
+            let extensible_subformat = (format_tag == WAVE_FORMAT_EXTENSIBLE)
+                .then(|| body.get(24..26))
+                .flatten()
+                .and_then(|b| b.try_into().ok())
+                .map(u16::from_le_bytes);
             return Some(WavHeaderInfo {
-                format_tag: u16::from_le_bytes(body[0..2].try_into().ok()?),
+                format_tag,
                 channels: u16::from_le_bytes(body[2..4].try_into().ok()?),
                 sample_rate: u32::from_le_bytes(body[4..8].try_into().ok()?),
                 bits_per_sample: u16::from_le_bytes(body[14..16].try_into().ok()?),
+                extensible_subformat,
             });
         }
         // Chunks are word-aligned: odd sizes carry one pad byte.
@@ -168,10 +285,11 @@ mod tests {
         assert_eq!(
             info,
             WavHeaderInfo {
-                format_tag: 1,
+                format_tag: WAVE_FORMAT_PCM,
                 channels: 2,
                 sample_rate: 48_000,
                 bits_per_sample: 16,
+                extensible_subformat: None,
             }
         );
         // Matches the byte layout ffmpeg/readers expect at the two patch sites.
@@ -237,6 +355,48 @@ mod tests {
         assert!(should_force_split(FORCED_SPLIT_DELIVERABLE_BYTES));
         // The threshold itself sits safely under the u32 RIFF ceiling.
         assert!(FORCED_SPLIT_DELIVERABLE_BYTES < u32::MAX as u64);
+        // With no override set, the derivation IS the constant.
+        assert_eq!(
+            forced_split_threshold_bytes(),
+            FORCED_SPLIT_DELIVERABLE_BYTES
+        );
+    }
+
+    /// The test override can only pull the threshold DOWN, into a sane band —
+    /// never above the RIFF ceiling it exists to stay under, and never so low
+    /// that the header alone would trip it (which would split forever).
+    ///
+    /// Pure: exercises the clamp directly rather than mutating process-global
+    /// env, which would race the parallel suite. The env read itself is proven
+    /// end to end by the split harness in `recorder::longrun`.
+    #[test]
+    fn test_split_override_is_clamped_into_a_sane_band() {
+        let clamp = |n: u64| n.clamp(MIN_TEST_SPLIT_BYTES, FORCED_SPLIT_DELIVERABLE_BYTES);
+        assert_eq!(clamp(0), MIN_TEST_SPLIT_BYTES, "0 would split every tick");
+        assert_eq!(clamp(1), MIN_TEST_SPLIT_BYTES);
+        assert_eq!(clamp(1_048_576), 1_048_576, "a few MiB passes through");
+        assert_eq!(
+            clamp(u64::MAX),
+            FORCED_SPLIT_DELIVERABLE_BYTES,
+            "the override must never raise the guard past the RIFF ceiling"
+        );
+        // The floor is above any plausible WAV header (44 canonical, 78 as
+        // ffmpeg writes it with its LIST/INFO chunk).
+        assert!(MIN_TEST_SPLIT_BYTES > HEADER_LEN as u64 * 100);
+    }
+
+    /// A RELEASE build has no override at all: `forced_split_threshold_bytes`
+    /// must be a constant there, so no environment variable can make a shipped
+    /// app chop a service into fragments.
+    #[test]
+    fn the_override_is_debug_only() {
+        if !cfg!(debug_assertions) {
+            assert_eq!(
+                forced_split_threshold_bytes(),
+                FORCED_SPLIT_DELIVERABLE_BYTES,
+                "release builds must ignore {TEST_SPLIT_BYTES_ENV}"
+            );
+        }
     }
 
     #[test]
@@ -270,13 +430,62 @@ mod tests {
         assert_eq!(parse_header(&b), None);
     }
 
+    /// Build a `WAVEFORMATEXTENSIBLE` header exactly as ffmpeg writes one for a
+    /// PCM WAV above 48 kHz: `wFormatTag = 0xFFFE`, `cbSize = 22`, and a `SubFormat`
+    /// GUID of `KSDATAFORMAT_SUBTYPE_PCM` (`00000001-0000-0010-8000-00AA00389B71`).
+    /// Byte-for-byte the shape observed from the bundled 8.1.2 sidecar.
+    fn extensible_header(channels: u16, rate: u32, subformat: u16) -> Vec<u8> {
+        let block_align = channels * 2;
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b.extend_from_slice(b"WAVE");
+        b.extend_from_slice(b"fmt ");
+        b.extend_from_slice(&40u32.to_le_bytes());
+        b.extend_from_slice(&WAVE_FORMAT_EXTENSIBLE.to_le_bytes());
+        b.extend_from_slice(&channels.to_le_bytes());
+        b.extend_from_slice(&rate.to_le_bytes());
+        b.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
+        b.extend_from_slice(&block_align.to_le_bytes());
+        b.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+        b.extend_from_slice(&22u16.to_le_bytes()); // cbSize
+        b.extend_from_slice(&16u16.to_le_bytes()); // valid bits
+        b.extend_from_slice(&3u32.to_le_bytes()); // channel mask (FL|FR)
+        b.extend_from_slice(&subformat.to_le_bytes()); // SubFormat GUID, word 0
+        b.extend_from_slice(&[
+            0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+        ]);
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&0u32.to_le_bytes());
+        b
+    }
+
+    /// An extensible header parses, and reports BOTH the literal tag and the
+    /// format it really stands for.
+    #[test]
+    fn parse_header_resolves_the_extensible_subformat() {
+        let b = extensible_header(2, 96_000, WAVE_FORMAT_PCM);
+        let info = parse_header(&b).expect("extensible header must parse");
+        assert_eq!(info.format_tag, WAVE_FORMAT_EXTENSIBLE, "the literal tag");
+        assert_eq!(info.extensible_subformat, Some(WAVE_FORMAT_PCM));
+        assert_eq!(info.effective_format_tag(), WAVE_FORMAT_PCM);
+        assert_eq!(info.sample_rate, 96_000);
+        assert_eq!(info.channels, 2);
+        assert_eq!(info.bits_per_sample, 16);
+        // A plain header reports no subformat and stands for itself.
+        let plain = parse_header(&header(SPEC, 0)).unwrap();
+        assert_eq!(plain.extensible_subformat, None);
+        assert_eq!(plain.effective_format_tag(), WAVE_FORMAT_PCM);
+    }
+
     #[test]
     fn copy_compatibility_requires_identical_s16_pcm() {
         let a = WavHeaderInfo {
-            format_tag: 1,
+            format_tag: WAVE_FORMAT_PCM,
             channels: 2,
             sample_rate: 48_000,
             bits_per_sample: 16,
+            extensible_subformat: None,
         };
         assert!(a.copy_compatible_with(&a.clone()));
         let rate = WavHeaderInfo {
@@ -284,12 +493,65 @@ mod tests {
             ..a
         };
         assert!(!a.copy_compatible_with(&rate));
+        let mono = WavHeaderInfo { channels: 1, ..a };
+        assert!(!a.copy_compatible_with(&mono));
         let float = WavHeaderInfo {
             format_tag: 3,
             bits_per_sample: 32,
             ..a
         };
         assert!(!float.copy_compatible_with(&float.clone()));
+    }
+
+    /// E6.2 REGRESSION — the pre-roll that vanished above 48 kHz.
+    ///
+    /// ffmpeg writes `WAVE_FORMAT_EXTENSIBLE` for every WAV above 48 kHz, so the
+    /// old `format_tag == 1` gate refused a byte-for-byte joinable pre-roll clip
+    /// at 88.2/96/192 kHz and the pre-service audio was silently dropped from
+    /// the delivered recording. Both the all-extensible pair (ffmpeg capture +
+    /// ffmpeg clip) and the MIXED pair (our native writer's plain header + an
+    /// ffmpeg clip) must now be judged compatible — verified against the real
+    /// sidecar, where such a pair `-c copy`-joins into one clean stream.
+    #[test]
+    fn extensible_pcm_is_copy_compatible_with_plain_pcm() {
+        let ext = parse_header(&extensible_header(2, 96_000, WAVE_FORMAT_PCM)).unwrap();
+        let plain = parse_header(&header(
+            WavSpec {
+                channels: 2,
+                sample_rate: 96_000,
+            },
+            0,
+        ))
+        .unwrap();
+
+        assert!(
+            ext.copy_compatible_with(&ext),
+            "two ffmpeg-written 96 kHz captures ARE joinable — this is the case \
+             that dropped the pre-roll on every high-rate recording"
+        );
+        assert!(
+            ext.copy_compatible_with(&plain) && plain.copy_compatible_with(&ext),
+            "an ffmpeg clip and a natively-written capture at the same rate are \
+             the same PCM, whichever way round they are compared"
+        );
+
+        // The loosening is narrow: an extensible header whose SubFormat is NOT
+        // PCM (e.g. IEEE float) is still refused, and rate/channel mismatches
+        // are still refused whatever the tags say.
+        let ext_float = parse_header(&extensible_header(2, 96_000, 3)).unwrap();
+        assert_eq!(ext_float.effective_format_tag(), 3);
+        assert!(!ext_float.copy_compatible_with(&ext));
+        assert!(!ext.copy_compatible_with(&ext_float));
+        let ext_48k = parse_header(&extensible_header(2, 48_000, WAVE_FORMAT_PCM)).unwrap();
+        assert!(!ext.copy_compatible_with(&ext_48k));
+        // An extensible header truncated before its SubFormat GUID cannot claim
+        // to be PCM — unknown is not the same as compatible.
+        let truncated = WavHeaderInfo {
+            format_tag: WAVE_FORMAT_EXTENSIBLE,
+            extensible_subformat: None,
+            ..plain
+        };
+        assert!(!truncated.copy_compatible_with(&plain));
     }
 }
 

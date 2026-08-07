@@ -72,6 +72,13 @@ pub mod recorder;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;
+// E6.1 soak / long-run harness — the answer to "the product's workload is a
+// 60–180 minute unattended take and nothing automated exceeds 60 seconds".
+// Drives repeated captures (real device, or a device-free lavfi source through
+// the PRODUCTION capture argv), judges each with the shared verdict engine, and
+// samples RSS + open descriptors throughout. Everything long is `#[ignore]`d;
+// the nightly `.github/workflows/soak.yml` runs the lavfi variant.
+pub mod soak;
 // R3 live RTMP streaming — default-off `streaming` feature (NETWORK/HARDWARE-
 // UNVERIFIED). The tee/encode/overlay argv + key validation are
 // `sundayrec_core::{streaming,overlay}`; this seam spawns ffmpeg + reads the
@@ -402,6 +409,40 @@ pub fn run() {
             // only ever grows — a delete that silently keeps every byte
             // forever is not a delete, it is a leak with a nice name.
             trash::sweep::spawn(app.handle().clone());
+
+            // E6.5 temp-litter sweep. Two leaks that nothing ever cleaned up:
+            //   - `$TMPDIR/sundayrec-bench|soak|probe/*` — the precision-capture
+            //     bench writes a WAV per run and removes it only on the happy
+            //     path; a panic, a kill or a `SUNDAYREC_BENCH_KEEP` run leaves
+            //     it, and a 60 s 96 kHz stereo capture is ~23 MB.
+            //   - `.__editor_tmp` / `.__editor_bak` beside recordings — swept
+            //     only by `editor_cleanup_temp_files`, a Tauri command with ZERO
+            //     callers, so a crashed export left a full-size copy of the
+            //     service on disk forever.
+            // Background + best-effort: this is hygiene, not a startup
+            // dependency, and it must never delay the window appearing.
+            {
+                let sweep_handle = app.handle().clone();
+                crash::watch_handle(
+                    "startup::temp_sweep",
+                    tauri::async_runtime::spawn(async move {
+                        let bench = tokio::task::spawn_blocking(soak::sweep_bench_temp)
+                            .await
+                            .unwrap_or(0);
+                        let Some(db) = sweep_handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        let edits = editor::startup_sweep(&db.pool).await;
+                        if bench + edits > 0 {
+                            tracing::info!(
+                                bench,
+                                edits,
+                                "startup: temp-litter sweep removed leftovers"
+                            );
+                        }
+                    }),
+                );
+            }
 
             // E3 opt-in telemetry. `startup` reads ONE settings row and returns
             // when consent is not active — no crash ring is scanned, no install

@@ -1,0 +1,116 @@
+name: Soak
+
+# E6.1 — the long-run harness.
+#
+# SundayRec's defining workload is a 60–180 minute UNATTENDED single take, and
+# nothing in the PR gate runs longer than a few seconds. This workflow is the
+# other end of that scale: it repeats the PRODUCTION capture argv against a
+# device-free `-f lavfi` source for tens of minutes and asserts that every
+# iteration still passes the verdict engine AND that the process did not grow
+# (RSS + open file descriptors are sampled throughout).
+#
+# It is deliberately NOT part of the PR gate — it is a schedule + manual
+# dispatch only. A soak that gates merges either gets shortened until it proves
+# nothing or gets ignored until it is red forever.
+#
+# What the lavfi variant proves: the filter chain, the encoder, the stderr
+# telemetry volume, the ffprobe truth measurement, the verdict engine and the
+# absence of leaks — everything downstream of the microphone.
+# What it CANNOT prove: anything about real hardware. That is the `#[ignore]`d
+# `soak_native_device` test, which needs the rig.
+
+on:
+  schedule:
+    # 02:30 UTC nightly — after any evening merge, before the morning.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "How many capture iterations"
+        required: false
+        default: "6"
+      secs:
+        description: "Seconds of audio per iteration"
+        required: false
+        default: "600"
+
+concurrency:
+  group: soak-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lavfi:
+    name: Headless lavfi soak
+    runs-on: ubuntu-latest
+    # Six 10-minute iterations is an hour of capture; give the job room for the
+    # build on top without letting a wedged run burn the default 6 h.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Same system deps as the CI gate: tauri needs the webview/GTK libs and
+      # cpal needs ALSA headers to COMPILE, even though the soak opens no device.
+      - name: Install Tauri + audio system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libasound2-dev
+
+      - run: npm ci
+
+      # The soak pins SUNDAYREC_FFMPEG/FFPROBE to THESE sidecars; without them
+      # the test takes its skip path and proves nothing.
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: npm run ffmpeg
+
+      - name: Run the soak
+        env:
+          SUNDAYREC_SOAK_ITERATIONS: ${{ github.event.inputs.iterations || '6' }}
+          SUNDAYREC_SOAK_SECS: ${{ github.event.inputs.secs || '600' }}
+          SUNDAYREC_SOAK_SAMPLE_SEC: "30"
+          SUNDAYREC_SOAK_JSON: ${{ github.workspace }}/soak-results/soak.json
+        run: |
+          cargo test -p sundayrec soak_lavfi_headless -- --ignored --nocapture \
+            2>&1 | tee soak-console.log
+
+      # The machine-parseable lines, extracted for an at-a-glance job summary.
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '## Soak result'
+            echo '```'
+            grep -E '^SOAK(-SUMMARY)?:' soak-console.log || echo 'no SOAK lines — the run skipped or died early'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # If Actions ever warns that this major is deprecated, bump it — the
+      # archive is the point of the job, but a stale major here only breaks the
+      # upload, not the soak itself (which has already printed its SOAK: lines
+      # into the step summary above).
+      - name: Archive results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-results
+          path: |
+            soak-results/soak.json
+            soak-console.log
+          if-no-files-found: warn
+          retention-days: 30

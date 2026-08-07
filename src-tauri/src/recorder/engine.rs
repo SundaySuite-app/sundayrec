@@ -1291,6 +1291,7 @@ async fn run_session(
                         &opts,
                         &session,
                         Arc::clone(&segment_bytes),
+                        deliverable_bytes,
                         &mut stop_rx,
                         &last_state,
                         &mut stop_watch,
@@ -2027,6 +2028,10 @@ async fn run_segment(
     opts: &RecordingOpts,
     session: &RecordingSession,
     segment_bytes: Arc<AtomicU64>,
+    // Bytes already captured into the current deliverable's PREVIOUS fragments
+    // (`_rN` reconnect pieces) — feeds the RIFF-cap forced split, exactly as on
+    // the native path.
+    deliverable_bytes: u64,
     stop_rx: &mut tokio::sync::mpsc::Receiver<()>,
     last_state: &Arc<Mutex<RecorderState>>,
     stop_watch: &mut tokio::sync::watch::Receiver<Option<u64>>,
@@ -2056,6 +2061,9 @@ async fn run_segment(
         peak_db_right: None,
     });
     let reader_bytes = Arc::clone(&segment_bytes);
+    // The reader task takes ownership of the telemetry handle; keep our own so
+    // the end of this segment can seal the capture process's drop/dup window.
+    let seg_telemetry = Arc::clone(&telemetry);
     let reader = tauri::async_runtime::spawn(async move {
         let mut ctx = ReaderCtx::new();
 
@@ -2278,8 +2286,35 @@ async fn run_segment(
                     break SegmentOutcome::UnexpectedExit { last_error: None };
                 }
             }
-            // Low-disk guard poll.
+            // RIFF-cap guard + low-disk guard (one 30 s tick, same order as the
+            // native twin in `native_capture::segment::run_native_segment`).
             _ = disk_tick.tick() => {
+                // E6.2 BUG FIX: this guard existed ONLY on the native capture
+                // path. An ffmpeg WAV capture — reachable on Linux, under the
+                // `classic_ffmpeg_audio` hatch, and via the automatic
+                // native-start-failure fallback — had no ceiling at all, and
+                // ffmpeg's wav muxer defaults to `-rf64 never`: past 4 GiB it
+                // writes a plain RIFF header whose u32 size fields cannot
+                // describe the file. At 96 kHz stereo s16 that is ~2.7 h, i.e.
+                // INSIDE a long service. Video captures are Matroska, which has
+                // no such ceiling, so the guard is audio-only exactly like the
+                // native one.
+                if !video_active {
+                    let seg_bytes = segment_bytes.load(Ordering::Relaxed);
+                    if sundayrec_core::wav::should_force_split(
+                        deliverable_bytes.saturating_add(seg_bytes),
+                    ) {
+                        tracing::warn!(
+                            deliverable_bytes,
+                            seg_bytes,
+                            "recorder: deliverable approaching the 4 GiB WAV ceiling — forcing a split"
+                        );
+                        // Graceful `q` so the muxer patches its size fields and
+                        // the fragment is a complete, joinable WAV.
+                        stop_and_wait_bounded_draining(&mut child, &mut stdin, &mut msg_rx).await;
+                        break SegmentOutcome::Split;
+                    }
+                }
                 if let Some(folder) = &disk_folder {
                     if let Ok(free) = fs4::available_space(folder) {
                         let reserve = finalize_reserve_bytes(
@@ -2359,6 +2394,12 @@ async fn run_segment(
     // then returns; dropping its `levels_tx` also ends the forwarder loop).
     reader.abort();
     levels_forwarder.abort();
+    // E6.3: this capture PROCESS is over. Fold its cumulative `drop=`/`dup=`
+    // maxima into the session totals so the next segment's counters (which
+    // restart at zero) ADD to them instead of being max'd against them. Without
+    // this a multi-split service reported its worst single segment as the whole
+    // session's loss.
+    lock_recover(&seg_telemetry).seal_process();
     outcome
 }
 
@@ -2573,8 +2614,12 @@ fn finalize_session_telemetry(
 
     let final_state = *lock_recover(final_state);
 
-    // Snapshot + stamp the host-known fields.
+    // Snapshot + stamp the host-known fields. The defensive seal covers any path
+    // that reached session end without a segment sealing itself (a start that
+    // failed before `run_segment`, a two-process hand-off); `seal_process` is
+    // idempotent, so a segment that already sealed adds nothing.
     let mut t = lock_recover(telemetry).clone();
+    t.seal_process();
     t.duration_sec = now_ms().saturating_sub(start_ms) as f64 / 1000.0;
     t.timestamp = chrono::Local::now().to_rfc3339();
     t.exit_ok = matches!(final_state, RecorderState::Stopped);

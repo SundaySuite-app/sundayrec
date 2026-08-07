@@ -34,6 +34,13 @@
 pub mod concat;
 pub mod cpal_capture;
 pub mod engine;
+// E6.2/E6.4 — the headless long-run harness (forced-split + fault injection).
+// Test-only: it re-implements the supervisor's control flow around the REAL
+// capture/concat/finalize/history pieces, because those take a `Wry` AppHandle
+// that cannot exist in a unit test. See the module docs for exactly which
+// production code it does and does not execute.
+#[cfg(test)]
+mod longrun;
 pub mod native_capture;
 pub mod preroll;
 pub mod recovery;
