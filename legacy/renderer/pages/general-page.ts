@@ -981,7 +981,7 @@ export function setUpdateStatus(dotCls: string, text: string): void {
  * version on a Sunday morning — a channel is a decision that has to keep being
  * visible after it is made, not just at the moment it is taken.
  */
-function paintActiveUpdateChannel(): void {
+export function paintActiveUpdateChannel(): void {
   const el = document.getElementById('update-channel-active')
   if (!el) return
   const beta = settings.updateChannel === 'beta'

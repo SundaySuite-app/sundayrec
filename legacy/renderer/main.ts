@@ -12,7 +12,11 @@ import { stopChannelGrid } from './pages/channel-grid'
 import { setupSchedulePage, applyScheduleSettingsToUI, renderDayPickers, renderSlotsList } from './pages/schedule-page'
 import { setupCalendarPage, renderCalendar, renderPlannedList } from './pages/calendar-page'
 import { setupFilesPage, applyFilesSettingsToUI, updateFilenamePreview, toggleMp3Quality } from './pages/files-page'
-import { setupGeneralPage, applyGeneralSettingsToUI } from './pages/general-page'
+import {
+  setupGeneralPage,
+  applyGeneralSettingsToUI,
+  paintActiveUpdateChannel,
+} from './pages/general-page'
 import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
 import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
@@ -534,6 +538,10 @@ async function init(): Promise<void> {
     renderDayPickers()
     renderCalendar()
     updateFilenamePreview()
+    // Painted from settings, not from a data-i18n attribute, so
+    // applyTranslations() cannot reach it — and "this machine is on BETA" is
+    // the last line that should be left standing in the previous language.
+    paintActiveUpdateChannel()
   })
 
   // Navigation
