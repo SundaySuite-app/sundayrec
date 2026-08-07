@@ -1038,6 +1038,11 @@ mod proptests {
         /// elsewhere on the SAME line — the unit rename that once broke
         /// [`crate::progress::parse_size_kb`] must not have a sibling bug here,
         /// since `observe_line` folds the whole line, not just the `size=` field.
+        ///
+        /// Read through `drops_total`/`dups_total`, not the `drops`/`dups` fields:
+        /// those hold only the SEALED total across finished capture processes, and
+        /// the line just observed belongs to the process still running. The totals
+        /// include that open window, which is what a mid-session verdict needs.
         #[test]
         fn drop_dup_counts_are_unaffected_by_the_size_unit_spelling(
             drop in 0u64..=10_000_000,
@@ -1049,6 +1054,10 @@ mod proptests {
             );
             let mut t = RecordingTelemetry::default();
             t.observe_line(&line);
+            prop_assert_eq!(t.drops_total(), drop);
+            prop_assert_eq!(t.dups_total(), dup);
+            // And sealing the process must move the same numbers into the totals.
+            t.seal_process();
             prop_assert_eq!(t.drops, drop);
             prop_assert_eq!(t.dups, dup);
         }

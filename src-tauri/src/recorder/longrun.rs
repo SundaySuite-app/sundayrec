@@ -148,6 +148,11 @@ pub(crate) fn wav_data_bytes(path: &Path) -> Option<u64> {
 /// (no `-re`). For fault-injection setups that need a large capture to exist
 /// before the interesting part starts — where realtime pacing would only make
 /// the test slow, not more faithful.
+///
+/// unix-only: its callers are the fault-injection tests, which send real signals
+/// (SIGKILL) and are themselves `#[cfg(unix)]`. Without the gate this is dead
+/// code on Windows, where `-D warnings` makes that a build failure.
+#[cfg(unix)]
 pub(crate) async fn render_wav(path: &str, secs: u32, rate: u32) {
     let src = format!("sine=frequency=440:sample_rate={rate}:duration={secs}");
     let args = [
