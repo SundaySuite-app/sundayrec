@@ -111,6 +111,13 @@ jobs:
             exit 1
           fi
 
+      # Regression gate for docs/COMMAND_AUDIT_2026-08.md: fails if a command
+      # that was reachable from the renderer goes dark, or a newly-registered
+      # command sits unreachable without anyone classifying it as intentional.
+      # See scripts/check-command-reachability.mjs for the method.
+      - name: Command reachability regression check
+        run: npm run reachability
+
       # The feature-off degradation path (every editor/whisper/tray/updater
       # command returns feature_disabled) must keep COMPILING — it once broke
       # silently ("Permission updater:default not found") because nothing

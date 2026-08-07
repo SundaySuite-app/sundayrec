@@ -43,6 +43,8 @@ if [ -n "$(git status --porcelain -- legacy/bindings)" ]; then
   exit 1
 fi
 
+step "command reachability regression"; npm run reachability
+
 # The feature-off degradation path must keep COMPILING (ci.yml's "cargo check
 # (feature-off build)" step) — cheap with the shared incremental cache.
 step "rust — cargo check (feature-off)"; cargo check --workspace --no-default-features
