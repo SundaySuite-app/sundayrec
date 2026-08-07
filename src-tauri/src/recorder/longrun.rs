@@ -144,6 +144,35 @@ pub(crate) fn wav_data_bytes(path: &Path) -> Option<u64> {
     None
 }
 
+/// Render `secs` of test audio into `path` as a WAV, AS FAST AS THE CPU ALLOWS
+/// (no `-re`). For fault-injection setups that need a large capture to exist
+/// before the interesting part starts — where realtime pacing would only make
+/// the test slow, not more faithful.
+pub(crate) async fn render_wav(path: &str, secs: u32, rate: u32) {
+    let src = format!("sine=frequency=440:sample_rate={rate}:duration={secs}");
+    let args = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        &src,
+        "-t",
+        &secs.to_string(),
+        "-c:a",
+        "pcm_s16le",
+        "-ac",
+        "2",
+        "-y",
+        path,
+    ];
+    let mut child = crate::media::ffmpeg::spawn_ffmpeg(&args)
+        .await
+        .expect("render spawns");
+    let _ = child.wait().await;
+}
+
 /// The harness's mirror of the supervisor loop's state.
 pub(crate) struct HeadlessSession {
     /// The user's save folder (where delivery files land).
@@ -828,6 +857,402 @@ mod tests {
                  service will silently produce an unreadable capture"
             );
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //   E6.4 — fault injection
+    //
+    //   Every one of these kills a real process at a real moment and asserts the
+    //   two things that matter to an operator whose Sunday just went wrong:
+    //   the audio that WAS captured is still there, and somebody is told.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// SIGKILL a plain capture, then let the NEXT LAUNCH's recovery scan find
+    /// it. The whole decoupled-capture design rests on this: a killed WAV is
+    /// still a playable recording, and the manifest is how the next launch finds
+    /// it. Drives the REAL `recovery::recover_session`.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_killed_capture_is_recovered_on_the_next_launch() {
+        let Some(_pin) = EnvPin::acquire(None) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let pool = temp_pool(save.path()).await;
+        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
+
+        let f1 = s.current_fragment();
+        s.capture_segment(&f1, StopMode::Kill(Duration::from_millis(700)))
+            .await;
+        let captured = s.fragments[0].data_bytes;
+        assert!(captured > 0, "the killed capture holds audio");
+        // The app never got to finalise: the manifest is all the next launch has.
+        let manifest = s.manifest("wav");
+
+        // Nothing is writing any more, so recovery may proceed.
+        assert!(
+            crate::recorder::recovery::still_being_written(&manifest)
+                .await
+                .is_none(),
+            "a dead capture must not look like a live writer"
+        );
+        let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+        assert_eq!(recovered, 1, "the survivor is recovered");
+
+        let rows = list_recordings(&pool).await.expect("rows");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].note.as_deref(),
+            Some("Gjenopprettet etter uventet avslutning"),
+            "the operator is TOLD the recording was salvaged, not handed it silently"
+        );
+        // Not one frame of what was captured before the kill is missing.
+        let delivered = wav_data_bytes(Path::new(&rows[0].file_path)).expect("delivered wav");
+        assert!(
+            delivered <= captured && captured - delivered < 4,
+            "recovery delivered {delivered} of {captured} captured payload bytes"
+        );
+    }
+
+    /// SIGKILL a capture that has already crossed a split. The finalised
+    /// deliverable keeps the history row it earned LIVE, and recovery picks up
+    /// only the one that never finalised — no duplicate, no loss.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_kill_after_a_split_recovers_only_the_unfinalised_deliverable() {
+        let Some(_pin) = EnvPin::acquire(Some(TEST_SPLIT_BYTES)) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let pool = temp_pool(save.path()).await;
+        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
+
+        // Deliverable 1 runs to the forced split and is finalised LIVE.
+        let f1 = s.current_fragment();
+        let o1 = s
+            .capture_segment(&f1, StopMode::UntilForcedSplit(Duration::from_secs(20)))
+            .await;
+        assert_eq!(o1, HeadlessOutcome::ForcedSplit);
+        let close_ms = crate::db::store::now_ms() as u64;
+        s.finalize_pending(&pool, close_ms, "wav").await;
+        let d1_path = s.delivered[0].final_path.clone();
+        assert_eq!(list_recordings(&pool).await.unwrap().len(), 1);
+
+        // Deliverable 2 is killed mid-capture — it never finalises.
+        let f3 = s.begin_split(close_ms);
+        s.capture_segment(&f3, StopMode::Kill(Duration::from_millis(600)))
+            .await;
+        let d2_captured = s.fragments.last().unwrap().data_bytes;
+
+        // The next launch sees a manifest listing BOTH deliverables. The first
+        // one's capture file is gone (its delivery succeeded and deleted it), so
+        // the existence filter drops it — and even if it did not, the
+        // already-recorded guard would.
+        let manifest = s.manifest("wav");
+        let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+        assert_eq!(recovered, 1, "only the deliverable that never finalised");
+
+        let rows = list_recordings(&pool).await.expect("rows");
+        assert_eq!(rows.len(), 2, "no duplicate row for the live-finalised one");
+        assert_eq!(
+            rows.iter().filter(|r| r.file_path == d1_path).count(),
+            1,
+            "the live-finalised deliverable keeps exactly its own row"
+        );
+        let d2_row = rows
+            .iter()
+            .find(|r| r.file_path != d1_path)
+            .expect("the recovered row");
+        let delivered = wav_data_bytes(Path::new(&d2_row.file_path)).expect("recovered wav");
+        assert!(
+            delivered <= d2_captured && d2_captured - delivered < 4,
+            "recovery delivered {delivered} of {d2_captured} captured payload bytes"
+        );
+    }
+
+    /// SIGKILL the DELIVERY encode half of `finalize_deliverable`.
+    ///
+    /// This is the failure the decoupled-capture design exists for: the encode
+    /// is the only step that can lose a service, and it is deliberately the last
+    /// one. The contract is "keep the capture on disk so nothing is lost to a
+    /// failed delivery" — so an interrupted encode must return an error, leave
+    /// the merged capture whole, and be RETRYABLE. All three are asserted, the
+    /// last by actually running the retry through the real recovery path.
+    #[cfg(unix)]
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn killing_the_delivery_encode_keeps_the_whole_capture_and_retries() {
+        let Some(_pin) = EnvPin::acquire(None) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        // Two separate temp trees so the kill pattern (the SAVE dir) can only
+        // ever match the delivery encode, never the concat that precedes it.
+        let capture = tempfile::tempdir().expect("capture dir");
+        let save = tempfile::tempdir().expect("save dir");
+        let pool = temp_pool(save.path()).await;
+
+        // Enough audio that the mp3 encode is comfortably interruptible, built
+        // at render speed rather than realtime. 48 kHz because libmp3lame has
+        // no 96 kHz mode.
+        let a = capture
+            .path()
+            .join("sermon.wav")
+            .to_string_lossy()
+            .into_owned();
+        let b = capture
+            .path()
+            .join("sermon_r1.wav")
+            .to_string_lossy()
+            .into_owned();
+        render_wav(&a, 120, 48_000).await;
+        render_wav(&b, 120, 48_000).await;
+        let fragment_bytes =
+            wav_data_bytes(Path::new(&a)).unwrap() + wav_data_bytes(Path::new(&b)).unwrap();
+
+        let deliverable = Deliverable {
+            primary_path: a.clone(),
+            fragments: vec![a.clone(), b.clone()],
+            started_at_ms: crate::db::store::now_ms() as u64,
+        };
+        let delivery_path = save
+            .path()
+            .join("sermon.mp3")
+            .to_string_lossy()
+            .into_owned();
+        let spec = DeliverySpec {
+            delivery_path: delivery_path.clone(),
+            ext: "mp3".into(),
+            channels: 2,
+            sample_rate: None,
+            bitrate_kbps: 192,
+            mode: DeliveryMode::AudioEncode,
+            hvc1_tag: false,
+        };
+
+        // Kill the moment the delivery file appears — that is the encode, and
+        // only the encode, having started.
+        let pattern = save.path().to_string_lossy().into_owned();
+        let watch_path = delivery_path.clone();
+        let killer = tokio::spawn(async move {
+            for _ in 0..2_000 {
+                if std::fs::metadata(&watch_path).is_ok() {
+                    let _ = std::process::Command::new("pkill")
+                        .args(["-9", "-f", &pattern])
+                        .status();
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            false
+        });
+
+        let result = finalize_deliverable(&deliverable, None, Some(&spec)).await;
+        let killed = killer.await.unwrap_or(false);
+        if !killed {
+            eprintln!("SKIP: the delivery encode finished before the kill could land");
+            return;
+        }
+
+        // 1. The failure is REPORTED, not swallowed.
+        assert!(
+            result.is_err(),
+            "a killed delivery encode must surface as an error"
+        );
+        // 2. The merged capture survives whole — every payload byte of both
+        //    fragments, so the service is still on disk.
+        let merged = wav_data_bytes(Path::new(&a)).expect("the merged capture survives");
+        assert!(
+            merged <= fragment_bytes && fragment_bytes - merged < 8,
+            "the capture lost {} payload bytes to a failed delivery",
+            fragment_bytes as i64 - merged as i64
+        );
+        // 3. The truncated mp3 is NOT passed off as the recording. (The engine's
+        //    caller falls back to the capture and keeps the recovery manifest;
+        //    what must never happen is a short file sitting where a whole
+        //    service should be.)
+        let partial = std::fs::metadata(&delivery_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let whole = (240.0 * 192_000.0 / 8.0) as u64; // ~240 s at 192 kbps
+        assert!(
+            partial < whole / 2,
+            "the killed encode left {partial} B — that is not a truncated file, \
+             so the kill did not actually interrupt it"
+        );
+
+        // 4. And it is RETRYABLE: the next launch's recovery scan finishes the
+        //    job from the surviving capture.
+        let manifest = sundayrec_core::recovery::SessionManifest {
+            session_id: "kill-delivery".into(),
+            device_name: "lavfi".into(),
+            session_start_ms: deliverable.started_at_ms,
+            preroll_clip_path: None,
+            delivery_encode: Some(sundayrec_core::recovery::AudioEncodeManifest {
+                delivery_dir: save.path().to_string_lossy().into_owned(),
+                ext: "mp3".into(),
+                channels: 2,
+                sample_rate: None,
+                bitrate_kbps: 192,
+                mode: DeliveryMode::AudioEncode,
+                hvc1_tag: false,
+            }),
+            deliverables: vec![sundayrec_core::recovery::DeliverableManifest {
+                primary_path: a.clone(),
+                // `_r1` was merged into the primary and deleted by the concat.
+                fragments: vec![a.clone()],
+                started_at_ms: deliverable.started_at_ms,
+            }],
+        };
+        let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+        assert_eq!(recovered, 1, "the retry delivers");
+        let rows = list_recordings(&pool).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        let secs = crate::media::ffmpeg::probe_duration_secs(&rows[0].file_path)
+            .await
+            .expect("the retried delivery is probeable");
+        assert!(
+            secs > 230.0,
+            "the retry must deliver the WHOLE 240 s service, got {secs:.1}s"
+        );
+    }
+
+    /// Kill the process that OWNS the capture, mid-capture, and prove the next
+    /// launch's recovery scan does the right thing in both directions:
+    ///
+    ///  - WHILE the process is alive the fragment is still growing, so recovery
+    ///    must DEFER (2026-07-31: recovery "salvaged" a file an orphan kept
+    ///    appending to for 12 minutes, destroying it);
+    ///  - once it is dead, recovery finalises the survivor into a history row.
+    ///
+    /// The capture runs in a separate OS process spawned WITHOUT `kill_on_drop`,
+    /// so killing it is exactly as abrupt as the app being force-quit: no
+    /// trailer, no manifest delete, no finalize.
+    #[cfg(unix)]
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_app_killed_mid_capture_is_finalised_by_the_next_launch() {
+        let Some(_pin) = EnvPin::acquire(None) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let pool = temp_pool(save.path()).await;
+        let s = HeadlessSession::new(save.path(), 48_000).expect("session");
+        let fragment = s.current_fragment();
+
+        // A detached capture process — the stand-in for "the app, recording".
+        let args = crate::soak::lavfi_capture_args(
+            crate::recorder::engine::current_platform(),
+            600,
+            48_000,
+            Some(48_000),
+            false,
+            &fragment,
+        );
+        let mut child = std::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("detached capture spawns");
+
+        // Let it get some audio down, then check the live-writer guard.
+        tokio::time::sleep(Duration::from_millis(1_200)).await;
+        let manifest = s.manifest("wav");
+        assert_eq!(
+            crate::recorder::recovery::still_being_written(&manifest).await,
+            Some(fragment.clone()),
+            "a LIVE writer must make recovery defer — recovering underneath one \
+             concatenates and then deletes a file something is still appending to"
+        );
+
+        // Now the app dies. SIGKILL, no trailer, no finalize, no manifest delete.
+        let _ = child.kill();
+        let _ = child.wait();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let survivor = wav_data_bytes(Path::new(&fragment)).expect("the capture survives the kill");
+        assert!(survivor > 0, "the killed capture holds audio");
+        assert!(
+            crate::recorder::recovery::still_being_written(&manifest)
+                .await
+                .is_none(),
+            "once the writer is gone recovery may proceed"
+        );
+
+        let recovered = crate::recorder::recovery::recover_session(None, &pool, &manifest).await;
+        assert_eq!(recovered, 1, "the next launch finalises the survivor");
+        let rows = list_recordings(&pool).await.expect("rows");
+        assert_eq!(rows.len(), 1);
+        let delivered = wav_data_bytes(Path::new(&rows[0].file_path)).expect("delivered wav");
+        assert!(
+            delivered <= survivor && survivor - delivered < 4,
+            "recovery delivered {delivered} of {survivor} surviving payload bytes"
+        );
+        // The LAST deliverable's duration is unknown (we cannot know when the
+        // crash hit) — that honesty is part of the contract.
+        assert_eq!(rows[0].duration_ms, None);
+    }
+
+    /// A session whose capture died and never came back must raise the REC-LOSS
+    /// alarm — the operator has to find out that Sunday is short.
+    ///
+    /// Asserts the PURE decision `finalize_session_telemetry` makes (`verdict ==
+    /// Fail || loss_pct >= DURATION_LOSS_FAIL_PCT`) against telemetry the real
+    /// finalize path accumulated: `expected_sec` from the deliverable's wall
+    /// span, `measured_sec` from ffprobe of what was actually delivered. Only
+    /// the `app.emit` of that decision needs a Tauri runtime.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_capture_that_died_raises_the_rec_loss_alarm() {
+        use sundayrec_core::selftest::{
+            duration_loss_pct, facts_from_recording, selftest_verdict, SelfTestVerdict,
+            DURATION_LOSS_FAIL_PCT,
+        };
+        let Some(_pin) = EnvPin::acquire(None) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let pool = temp_pool(save.path()).await;
+        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
+
+        // Capture 700 ms, die, and then burn wall clock the way an exhausted
+        // reconnect budget does — the session kept running, the tape did not.
+        let f1 = s.current_fragment();
+        s.capture_segment(&f1, StopMode::Kill(Duration::from_millis(700)))
+            .await;
+        tokio::time::sleep(Duration::from_millis(2_500)).await;
+        let end_ms = crate::db::store::now_ms() as u64;
+        s.finalize_pending(&pool, end_ms, "wav").await;
+
+        let t = lock_recover(&s.telemetry).clone();
+        assert!(
+            t.expected_sec > t.measured_sec + 1.5,
+            "the session should have held {:.2}s and delivered {:.2}s",
+            t.expected_sec,
+            t.measured_sec
+        );
+        let facts = facts_from_recording(&t, 1_000_000);
+        let loss = duration_loss_pct(facts.expected_sec, facts.measured_sec);
+        let report = selftest_verdict(&facts);
+        let alarm = report.verdict == SelfTestVerdict::Fail || loss >= DURATION_LOSS_FAIL_PCT;
+        assert!(
+            alarm,
+            "a capture that died mid-session must raise the REC-LOSS alarm \
+             (loss {loss:.1}%, verdict {:?}, reasons {:?})",
+            report.verdict, report.reasons
+        );
+        // And the audio that DID make it is still delivered — the alarm is about
+        // what is missing, not a reason to throw away what is not.
+        assert!(
+            s.delivered[0].delivered && s.delivered[0].data_bytes > 0,
+            "the surviving audio is still delivered to the user"
+        );
     }
 
     /// The `data`-chunk reader agrees with a real, cleanly-finalised capture AND

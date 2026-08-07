@@ -175,11 +175,70 @@ fn warn_recovery_skipped(app: Option<&AppHandle>, reason: &str, file: &str, msg:
     );
 }
 
-/// Two-sample stability probe: stat every fragment, wait a beat, stat again.
-/// Returns the first fragment that GREW (→ some process is still writing), or
-/// `None` when all sizes are stable. The growth decision itself is the pure,
-/// unit-tested `sundayrec_core::recovery::growing_fragments`.
-async fn still_being_written(manifest: &SessionManifest) -> Option<String> {
+/// ffmpeg's default AVIO output buffer. A capture does NOT trickle onto disk —
+/// it lands in blocks of exactly this size. Measured against the bundled 8.1.2
+/// sidecar writing a 48 kHz stereo s16 WAV: the file sat at 0, then 262144,
+/// then 524288, stepping roughly every 1.4 s.
+const AVIO_WRITE_BLOCK_BYTES: u64 = 256 * 1024;
+
+/// The slowest capture the recorder can produce, in bytes per second: MONO
+/// 16-bit PCM at the lowest offered sample rate (`SampleRate::R44100`), i.e.
+/// `44_100 × 1 channel × 2 bytes`. This is the worst case for
+/// [`WRITER_PROBE_WINDOW`] — the slower the capture, the longer the silence
+/// between AVIO block writes.
+const SLOWEST_CAPTURE_BYTES_PER_SEC: u64 = 44_100 * 2;
+
+/// Safety factor applied to the worst-case block-write gap. Two, so the probe
+/// spans at least two full block writes even if it starts immediately after one.
+const WRITER_PROBE_SAFETY_FACTOR: u64 = 2;
+
+/// How long [`still_being_written`] keeps looking before it concludes that
+/// nothing is writing.
+///
+/// ## E6.4 BUG FIX — the probe that could not see a live writer
+///
+/// This used to be a single two-sample comparison 900 ms apart, with a comment
+/// asserting that "a live ffmpeg's buffered writes land between the samples (it
+/// flushes far more often than this)". That assumption is measurably false:
+/// ffmpeg writes in [`AVIO_WRITE_BLOCK_BYTES`] blocks, so a 48 kHz stereo
+/// capture — the DEFAULT — steps the file size once every ~1.37 s and a 900 ms
+/// window lands entirely inside a block about a third of the time. At 44.1 kHz
+/// mono the gap is ~2.97 s and the probe was wrong more often than right.
+///
+/// When it was wrong, recovery proceeded to concatenate and then DELETE
+/// fragments underneath a live writer — which is precisely the 2026-07-31
+/// incident this guard was written to prevent (recovery "salvaged" a file an
+/// orphaned capture kept appending to for 12 minutes). Reproduced by E6.4's
+/// fault injection: probing a running capture reported "stable".
+///
+/// The window is DERIVED, not picked: the worst-case gap between block writes
+/// (`AVIO_WRITE_BLOCK_BYTES / SLOWEST_CAPTURE_BYTES_PER_SEC ≈ 2.97 s`) times
+/// [`WRITER_PROBE_SAFETY_FACTOR`] — ≈5.9 s. (The native engine's own writer
+/// flushes every `native_capture::writer::FLUSH_EVERY` = 250 ms and was never at
+/// risk; the orphan this guard exists for is an ffmpeg capture.)
+///
+/// Cost: a session with NO live writer pays the full window once, in the
+/// background startup-recovery task — it delays nothing the operator can see.
+/// A session WITH one exits as soon as the first block lands, usually inside a
+/// second.
+pub(crate) const WRITER_PROBE_WINDOW: std::time::Duration = std::time::Duration::from_millis(
+    WRITER_PROBE_SAFETY_FACTOR * AVIO_WRITE_BLOCK_BYTES * 1000 / SLOWEST_CAPTURE_BYTES_PER_SEC,
+);
+
+/// Gap between size samples inside [`WRITER_PROBE_WINDOW`]. Small enough that a
+/// live writer is usually caught on the first or second block.
+const WRITER_PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Stability probe: stat every fragment, then keep re-statting for up to
+/// [`WRITER_PROBE_WINDOW`]. Returns the first fragment that GREW against the
+/// ORIGINAL baseline (→ some process is still writing) as soon as it does, or
+/// `None` when nothing grew for the whole window. The growth decision itself is
+/// the pure, unit-tested `sundayrec_core::recovery::growing_fragments`.
+///
+/// Comparing every sample against the FIRST one, rather than against its
+/// predecessor, is deliberate: capture files only ever grow, so a fixed baseline
+/// cannot miss a block write that straddles two samples.
+pub(crate) async fn still_being_written(manifest: &SessionManifest) -> Option<String> {
     async fn sample(paths: &[String]) -> Vec<(String, u64)> {
         let mut out = Vec::with_capacity(paths.len());
         for p in paths {
@@ -190,22 +249,26 @@ async fn still_being_written(manifest: &SessionManifest) -> Option<String> {
         out
     }
     let paths = sundayrec_core::recovery::all_fragment_paths(manifest);
-    let before = sample(&paths).await;
-    if before.is_empty() {
+    let baseline = sample(&paths).await;
+    if baseline.is_empty() {
         return None; // nothing on disk — nothing can be growing
     }
-    // Long enough that a live ffmpeg's buffered WAV/MKV writes land between the
-    // samples (it flushes far more often than this), short enough that startup
-    // recovery still feels immediate.
-    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
-    let after = sample(&paths).await;
-    sundayrec_core::recovery::growing_fragments(&before, &after)
-        .into_iter()
-        .next()
+    let deadline = tokio::time::Instant::now() + WRITER_PROBE_WINDOW;
+    while tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(WRITER_PROBE_INTERVAL).await;
+        let now = sample(&paths).await;
+        if let Some(growing) = sundayrec_core::recovery::growing_fragments(&baseline, &now)
+            .into_iter()
+            .next()
+        {
+            return Some(growing);
+        }
+    }
+    None
 }
 
 /// Finalise one orphaned session's surviving deliverables into history rows.
-async fn recover_session(
+pub(crate) async fn recover_session(
     app: Option<&AppHandle>,
     pool: &SqlitePool,
     manifest: &SessionManifest,
@@ -360,6 +423,100 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// The live-writer probe window, derived rather than guessed (E6.4).
+    ///
+    /// ffmpeg does not trickle a capture onto disk; it lands in 256 KiB AVIO
+    /// blocks. The probe must therefore outlast the WORST-CASE gap between two
+    /// block writes — the slowest capture the recorder can produce — or it will
+    /// report a live capture as stable and recovery will destroy it. The old
+    /// 900 ms window did not even outlast the DEFAULT 48 kHz stereo capture.
+    #[test]
+    fn writer_probe_window_outlasts_the_slowest_capture_block_write() {
+        let worst_gap_ms = AVIO_WRITE_BLOCK_BYTES * 1000 / SLOWEST_CAPTURE_BYTES_PER_SEC;
+        assert_eq!(worst_gap_ms, 2_972, "44.1 kHz mono s16 ⇒ ~2.97 s per block");
+        assert_eq!(
+            WRITER_PROBE_WINDOW.as_millis() as u64,
+            5_944,
+            "the window is 2 × the worst-case block gap"
+        );
+        assert!(
+            WRITER_PROBE_WINDOW.as_millis() as u64 >= worst_gap_ms * 2,
+            "the probe window ({} ms) must be at least twice the worst-case gap \
+             between block writes ({worst_gap_ms} ms)",
+            WRITER_PROBE_WINDOW.as_millis()
+        );
+        // The regression itself: the old window was shorter than the DEFAULT
+        // 48 kHz stereo capture's gap, which is why a live writer looked dead.
+        let default_gap_ms = AVIO_WRITE_BLOCK_BYTES * 1000 / (48_000 * 2 * 2);
+        assert_eq!(default_gap_ms, 1_365);
+        assert!(
+            default_gap_ms > 900,
+            "the old 900 ms probe could not see it"
+        );
+        // Samples must be dense enough to catch several blocks inside the window.
+        assert!(
+            WRITER_PROBE_WINDOW.as_millis() >= WRITER_PROBE_INTERVAL.as_millis() * 10,
+            "the window must hold at least ten samples"
+        );
+    }
+
+    /// A file that never changes is reported stable — and the probe does not
+    /// return early on a dead capture just because it is impatient.
+    #[tokio::test]
+    async fn still_being_written_reports_none_for_a_stable_capture() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = manifest_in(dir.path());
+        write_fragment(Path::new(&m.deliverables[0].primary_path)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+        let started = std::time::Instant::now();
+        assert_eq!(still_being_written(&m).await, None);
+        assert!(
+            started.elapsed() >= WRITER_PROBE_WINDOW,
+            "a 'stable' verdict must only be reached after the FULL window — \
+             concluding early is what destroyed a live capture"
+        );
+    }
+
+    /// A file that grows is reported growing, and the probe returns as soon as
+    /// it sees the growth rather than waiting out the whole window.
+    #[tokio::test]
+    async fn still_being_written_catches_a_writer_that_flushes_in_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let m = manifest_in(dir.path());
+        let target = m.deliverables[0].primary_path.clone();
+        write_fragment(Path::new(&target)).await;
+        write_fragment(Path::new(&m.deliverables[1].primary_path)).await;
+
+        // A writer that appends ONE block after 1.5 s — longer than the old
+        // 900 ms probe, so this is exactly the case that used to slip through.
+        let appender = tokio::spawn({
+            let target = target.clone();
+            async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
+                use tokio::io::AsyncWriteExt;
+                let mut f = tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&target)
+                    .await
+                    .unwrap();
+                f.write_all(&vec![0u8; 256 * 1024]).await.unwrap();
+                f.flush().await.unwrap();
+            }
+        });
+
+        let started = std::time::Instant::now();
+        assert_eq!(
+            still_being_written(&m).await,
+            Some(target),
+            "a capture that flushes in blocks is STILL a live writer"
+        );
+        assert!(
+            started.elapsed() < WRITER_PROBE_WINDOW,
+            "the probe must return as soon as it sees growth"
+        );
+        let _ = appender.await;
     }
 
     #[tokio::test]

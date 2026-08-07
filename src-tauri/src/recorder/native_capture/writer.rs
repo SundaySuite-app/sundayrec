@@ -33,8 +33,15 @@ use ringbuf::HeapCons;
 use sundayrec_core::silence::{SilenceDetector, SilenceEvent};
 use sundayrec_core::wav::{self, WavSpec};
 
-/// How often the writer drains, flushes and patches in production. Must stay
-/// well under the recovery scan's 900 ms growth probe.
+/// How often the writer drains, flushes and patches in production.
+///
+/// Must stay well under the recovery scan's live-writer probe interval
+/// (`recovery::WRITER_PROBE_WINDOW` / its 300 ms sampling), so an orphaned
+/// NATIVE capture is always seen as growing and recovery defers instead of
+/// concatenating the file out from under it. Unlike ffmpeg — which lands its
+/// output in 256 KiB AVIO blocks, seconds apart on a slow capture, and whose
+/// invisibility to the old 900 ms probe was the E6.4 defect — this writer
+/// flushes on a fixed clock, so it was never at risk.
 pub const FLUSH_EVERY: Duration = Duration::from_millis(250);
 
 /// Sleep when the ring is empty (matches the legacy pipe writer's cadence).
