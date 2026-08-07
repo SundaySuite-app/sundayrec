@@ -110,9 +110,30 @@ updater = ["dep:tauri-plugin-updater"]
 # MSVC — see `docs/BUILD_ASIO.md`. cpal's asio build script is a no-op on
 # non-Windows targets, so `--features asio` is harmless on macOS/Linux CI.
 asio = ["cpal/asio"]
+# E9 learning loop: the neural voice-activity backend (Silero VAD via `tract`).
+# DEFAULT-OFF and NOT in any release feature list — nothing in a shipped code
+# path calls it yet. It exists so the sermon detector can be given a real speech
+# probability once the two existing detectors are unified behind one seam; the
+# integration is a separate change.
+#
+# `tract-onnx` is PURE RUST (no `-sys` crate, no C/C++ toolchain, no system
+# library) — that is why it was chosen over onnxruntime for an app that has to
+# build unattended on three platforms. The 2.8 MB model is VENDORED at
+# `resources/vad/` and embedded with `include_bytes!`, so enabling the feature
+# adds ~2.8 MB to the binary and NOTHING to the installer's runtime behaviour:
+# no download UI, no cache directory, no "model missing" branch, and analysis
+# still works on a church PC with no internet. `sha2` (already here for the
+# whisper download check) re-verifies the embedded bytes at load time; build.rs
+# verifies the file on disk when this feature is on.
+vad = ["dep:tract-onnx", "dep:sha2"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Verifies the SHA-256 of the vendored VAD model at BUILD time when
+# `--features vad` is on (build scripts see enabled features as CARGO_FEATURE_*).
+# A corrupted or swapped model does not crash at run time — it returns numbers —
+# so this has to fail at the earliest possible moment.
+sha2 = "0.11"
 
 [dependencies]
 # Pure, GUI-free domain core — the recorder behaviour distilled from Electron.
@@ -260,6 +281,9 @@ tempfile = { version = "3", optional = true }
 # PU-5 whisper model-download integrity check (SHA-256). Already in the tree via
 # `keyring`; pulled directly only under `--features whisper` for the download seam.
 sha2 = { version = "0.11", optional = true }
+# E9 neural VAD inference. Pure-Rust ONNX runtime — no `-sys` crate, no cmake,
+# no system onnxruntime to ship or find. Only pulled under `--features vad`.
+tract-onnx = { version = "0.23.4", optional = true }
 # R7 auto-update plugin (pull API). Pulled only under `--features updater`; a
 # real update needs a signed release + keypair, so it stays out of the default
 # build + CI gate. NETWORK/GUI-UNVERIFIED.

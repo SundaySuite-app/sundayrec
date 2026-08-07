@@ -126,6 +126,19 @@ jobs:
         working-directory: src-tauri
         run: cargo check --workspace --no-default-features
 
+      # E9's neural VAD is DEFAULT-OFF, so every step above compiles the seam
+      # OUT. Its value is a set of tests that catch failure modes the model has
+      # no error for — a 512-sample window instead of 576, `sr` at 8000, inputs
+      # bound by index, a lost symbolic batch dim — and a test that never runs
+      # protects nothing. This is the step where they run. It also keeps the
+      # feature-ON side under `-D warnings`: the default gate can never see it,
+      # which is exactly how a stub and its real implementation drift apart.
+      - name: Rust clippy + tests (vad feature)
+        working-directory: src-tauri
+        run: |
+          cargo clippy --workspace --all-targets --features vad -- -D warnings
+          cargo test --workspace --features vad vad::
+
       # Compile the frontend + the Rust app on Linux (fast smoke; the real
       # macOS/Windows bundles are built in release.yml). --no-bundle skips
       # installer packaging.
