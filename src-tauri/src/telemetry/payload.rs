@@ -37,7 +37,7 @@ use sqlx::SqlitePool;
 use sundayrec_core::selftest::RecordingTelemetry;
 use sundayrec_core::telemetry::{
     crash_report, finding_report, quality_report, sanitize_language, wake_failure_report,
-    CounterReport, FindingReport, TelemetryPayload, NIL_INSTALL_ID,
+    CorrectionReport, CounterReport, FindingReport, TelemetryPayload, NIL_INSTALL_ID,
 };
 
 use crate::db::store;
@@ -138,6 +138,15 @@ pub struct GatherContext<'a> {
     pub consent_version: u32,
     /// The counter snapshot to include (E3.4 fills this; empty means none).
     pub counters: Vec<CounterReport>,
+    /// The banded-correction snapshot to include (E8; empty means none).
+    ///
+    /// Passed in rather than read here for the same reason the counters are:
+    /// these are accumulated in memory as corrections are made, not gathered
+    /// from disk at build time. `telemetry::corrections`'s module docs give the
+    /// argument — the short form is that a correction record has no timestamp,
+    /// by design, so there is no watermark that could make a sidecar sweep
+    /// idempotent, and it would re-report the same corrections every drain.
+    pub corrections: Vec<CorrectionReport>,
 }
 
 /// Build the payload for everything newer than `since`, returning it alongside
@@ -164,6 +173,7 @@ pub async fn build(
     payload.language = sanitize_language(settings.language.as_deref());
     payload.settings = sundayrec_core::telemetry::WireSettings::from_settings(&settings);
     payload.counters = ctx.counters.clone();
+    payload.corrections = ctx.corrections.clone();
 
     // ── Crashes + supervised restarts (E2.1/E2.2's rings) ────────────────────
     let crash_dir = ctx.app_data_dir.join("crashes");
@@ -265,6 +275,7 @@ mod tests {
             now_ms: 1_800_000_000_000,
             consent_version: 1,
             counters,
+            corrections: Vec::new(),
         }
     }
 
@@ -523,6 +534,39 @@ mod tests {
         assert_eq!(p.counters.len(), 1);
         assert_eq!(p.counters[0].value, 4);
         assert!(!p.is_empty(), "a non-zero counter is worth sending");
+    }
+
+    #[tokio::test]
+    async fn the_banded_corrections_are_carried_through_and_carry_no_seconds() {
+        use sundayrec_core::telemetry::corrections::{
+            CorrectionBand, CorrectionDirection, CorrectionKey, CorrectionSignal,
+        };
+        let (pool, dir) = temp_pool().await;
+        let mut c = ctx(dir.path(), vec![]);
+        c.corrections = vec![CorrectionReport::new(
+            CorrectionKey {
+                signal: CorrectionSignal::SermonStart,
+                direction: CorrectionDirection::Earlier,
+                band: CorrectionBand::From30To60s,
+            },
+            2,
+        )];
+
+        let (p, _) = build(&pool, &c, Watermarks::default(), Some("x"))
+            .await
+            .unwrap();
+        assert_eq!(p.corrections.len(), 1);
+        assert_eq!(p.corrections[0].count, 2);
+        assert!(
+            !p.is_empty(),
+            "a person having corrected us is worth sending on its own"
+        );
+
+        // What the band is FOR: the movement's size does not travel.
+        let text = serde_json::to_string(&p).unwrap();
+        assert!(text.contains("30_60s"), "{text}");
+        assert!(!text.contains("deltaSec"), "{text}");
+        assert!(!text.contains("startDeltaSec"), "{text}");
     }
 
     #[tokio::test]

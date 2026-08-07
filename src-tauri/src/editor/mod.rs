@@ -758,6 +758,25 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 /// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
 static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Tell the telemetry accumulator what a successful fold changed, as the file's
+/// BANDED PROJECTION before and after.
+///
+/// Called by all three seams, including the companion one whose projection never
+/// changes — so a signal added to
+/// [`sundayrec_core::telemetry::corrections::banded_corrections`] later is
+/// reported from every seam at once rather than from the two somebody remembered.
+///
+/// Projections, not the event: a correction REPLACES the previous answer to the
+/// same baseline, so someone cycling through four blocks has made one decision,
+/// and only the difference between two file states says that. A no-op without
+/// consent, and a no-op when the projection did not move.
+fn observe_feedback_change(
+    before: &sundayrec_core::feedback::RecordingFeedback,
+    after: &sundayrec_core::feedback::RecordingFeedback,
+) {
+    crate::telemetry::corrections::observe_files(before, after);
+}
+
 /// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
 /// A panic in another writer says nothing about the FILE — the guard protects a
 /// read-modify-write, not an invariant that could be left half-applied (the
@@ -891,10 +910,18 @@ pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -
     ) else {
         return false;
     };
+    let before = file.clone();
     if !core::record_sermon_pick(&mut file, correction).changed() {
         return false;
     }
-    write_feedback(media_path, &file)
+    // Only after the write: a fold that did not reach the disk must not be
+    // counted as something the person told us, or the telemetry would be
+    // reporting a correction the app itself has lost.
+    let written = write_feedback(media_path, &file);
+    if written {
+        observe_feedback_change(&before, &file);
+    }
+    written
 }
 
 /// Fold one trim adjustment into the recording's feedback file.
@@ -912,9 +939,16 @@ pub fn record_trim_adjustment(
     use sundayrec_core::feedback as core;
     let _guard = feedback_lock();
     let mut file = read_feedback(media_path).ok()?;
+    let before = file.clone();
     let outcome = core::record_trim_adjustment(&mut file, deltas, env!("CARGO_PKG_VERSION"));
-    if outcome.changed() && !write_feedback(media_path, &file) {
-        return None;
+    if outcome.changed() {
+        if !write_feedback(media_path, &file) {
+            return None;
+        }
+        // Includes the WITHDRAWN case, which is a decrement rather than an
+        // increment: a correction the operator has taken back must stop being
+        // reported, exactly as it stops being on file.
+        observe_feedback_change(&before, &file);
     }
     Some(outcome)
 }
@@ -932,6 +966,7 @@ pub fn record_companion_suggestion(
     let Ok(mut file) = read_feedback(media_path) else {
         return false;
     };
+    let before = file.clone();
     sundayrec_core::feedback::record_companion_suggestion(
         &mut file,
         kind,
@@ -939,7 +974,15 @@ pub fn record_companion_suggestion(
         edited_after_accept,
         env!("CARGO_PKG_VERSION"),
     );
-    write_feedback(media_path, &file)
+    let written = write_feedback(media_path, &file);
+    if written {
+        // A no-op today — companion outcomes are deliberately not part of the
+        // banded projection (see `telemetry::corrections`' module docs on why
+        // the consented scope does not cover them). Called anyway so this seam
+        // is not the one that gets forgotten if that ever changes.
+        observe_feedback_change(&before, &file);
+    }
+    written
 }
 
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
