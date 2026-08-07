@@ -70,230 +70,122 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::audio_analysis::{AnalysisFrame, FrameScorer, SegmentType};
+use crate::audio_analysis::{FrameScorer, ScoringInput, SegmentType};
 use crate::feedback::RecordingFeedback;
-use crate::vad::{VadFrame, VAD_HOP_SAMPLES, VAD_SAMPLE_RATE};
+use crate::shadow::{
+    pool_onto_frames, PoolingRule, ShadowSettings, DEFAULT_FRAME_SPEECH_THRESHOLD,
+    DEFAULT_HOP_SPEECH_THRESHOLD,
+};
+use crate::vad::VadFrame;
 
-// ── Pooling: the swept parameter ───────────────────────────────────────────
+// ── The swept parameter ────────────────────────────────────────────────────
 
-/// How the VAD's 32 ms hop probabilities are collapsed onto one 100 ms analysis
-/// frame.
+/// The candidate settings the harness compares when asked for `sweep`.
 ///
-/// **PROVISIONAL — this is a seam to be reconciled, not a second opinion.** The
-/// shadow-mode work lands the same three rules behind a named parameter on the
-/// VAD→[`FrameScorer`] adapter it builds. That parameter was not on `origin/main`
-/// when this harness was written (`fafb709`), so the equivalent is defined here
-/// in order to have something to sweep. When the two meet, THIS type is the one
-/// that should go: the harness should sweep the adapter's parameter. The shapes
-/// were chosen to make that a re-export and a `From` impl rather than a redesign
-/// — three variants, the fraction rule carrying its own threshold, and a
-/// [`PoolingRule::SWEEP`] constant naming the set to compare.
+/// A sweep over **(rule, hop threshold) pairs**, not over rules alone, and the
+/// shape is forced by where the two thresholds live.
+/// [`PoolingRule::FractionOver`] votes against
+/// [`ShadowSettings::hop_speech_threshold`], which shadow mode keeps in its
+/// settings because a running app has exactly one of it. So a harness that wants
+/// to try a second hop threshold adds a ROW here; it does not add a variant to
+/// the enum, and the enum stays the one shadow mode stores.
 ///
-/// [`crate::vad`]'s module header records why the choice is open at all: the
-/// grids differ (32 ms hops vs 100 ms frames) and *how* they are joined is a
-/// detection-quality decision, which is exactly the kind of decision this
-/// harness exists to settle against the corrections corpus rather than by
-/// argument.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "rule")]
-pub enum PoolingRule {
-    /// The loudest opinion in the frame wins. Biased toward calling a frame
-    /// speech: one confident 32 ms hop carries the whole 100 ms.
-    Max,
-    /// The frame's average probability. Biased against short utterances, which
-    /// are diluted by the silence around them inside the same frame.
-    Mean,
-    /// The FRACTION of hops in the frame at or above `threshold` — a majority
-    /// vote rather than a probability.
-    ///
-    /// Note the unit change: this rule's output is a share, not a probability,
-    /// and it is then compared against [`PooledVadScorer::speech_threshold`] like
-    /// one. That composition is coherent (`fraction ≥ 0.5` reads as "most of
-    /// this frame was speech") but it is a different question from the other two
-    /// rules, and a reader who assumes all three return probabilities will
-    /// misread the confidences in the output.
-    FractionOver { threshold: f32 },
+/// All three rows are seeded at 0.5 on both grids. That is Silero's own
+/// conventional speech bar, and using it is what makes this a sweep rather than
+/// a comparison of two things at once: the fraction rule is judged against the
+/// same bar as the other two, so a difference in the result is attributable to
+/// the rule. Whether some other hop threshold beats 0.5 is a second, separate
+/// question, and this array is where it gets asked.
+pub const SWEEP: [ShadowSettings; 3] = [
+    ShadowSettings {
+        pooling: PoolingRule::Max,
+        frame_speech_threshold: DEFAULT_FRAME_SPEECH_THRESHOLD,
+        hop_speech_threshold: DEFAULT_HOP_SPEECH_THRESHOLD,
+    },
+    ShadowSettings {
+        pooling: PoolingRule::Mean,
+        frame_speech_threshold: DEFAULT_FRAME_SPEECH_THRESHOLD,
+        hop_speech_threshold: DEFAULT_HOP_SPEECH_THRESHOLD,
+    },
+    ShadowSettings {
+        pooling: PoolingRule::FractionOver,
+        frame_speech_threshold: DEFAULT_FRAME_SPEECH_THRESHOLD,
+        hop_speech_threshold: DEFAULT_HOP_SPEECH_THRESHOLD,
+    },
+];
+
+/// The CLI spelling of one sweep row's POOLING half — the rule, and for
+/// [`PoolingRule::FractionOver`] the hop threshold it votes against.
+///
+/// The frame threshold is deliberately not in the spelling: it applies to every
+/// rule and is its own flag, so naming it here as well would let one invocation
+/// state it twice and disagree with itself.
+pub fn pooling_spec(settings: ShadowSettings) -> String {
+    match settings.pooling {
+        PoolingRule::FractionOver => format!("fraction:{}", settings.hop_speech_threshold),
+        other => other.code().to_string(),
+    }
 }
 
-impl PoolingRule {
-    /// The candidate set the harness sweeps when asked for `sweep`.
-    ///
-    /// 0.5 is Silero's own conventional speech threshold, so the fraction rule
-    /// is seeded with the same bar the other two rules are judged against; a
-    /// sweep that varied two things at once could not attribute the difference.
-    pub const SWEEP: [PoolingRule; 3] = [
-        PoolingRule::Max,
-        PoolingRule::Mean,
-        PoolingRule::FractionOver { threshold: 0.5 },
-    ];
-
-    /// A stable, short name for output and for CLI selection.
-    pub fn name(self) -> String {
-        match self {
-            PoolingRule::Max => "max".to_string(),
-            PoolingRule::Mean => "mean".to_string(),
-            PoolingRule::FractionOver { threshold } => format!("fraction:{threshold}"),
-        }
-    }
-
-    /// Parse the CLI spelling. `fraction` alone means the [`Self::SWEEP`] member.
-    pub fn parse(spec: &str) -> Option<Self> {
-        match spec {
-            "max" => Some(PoolingRule::Max),
-            "mean" => Some(PoolingRule::Mean),
-            "fraction" => Some(PoolingRule::FractionOver { threshold: 0.5 }),
-            _ => spec
-                .strip_prefix("fraction:")
-                .and_then(|t| t.parse::<f32>().ok())
-                .filter(|t| (0.0..=1.0).contains(t))
-                .map(|threshold| PoolingRule::FractionOver { threshold }),
-        }
-    }
-
-    /// Collapse one frame's hop probabilities. `None` for an empty slice — a
-    /// frame no hop covered is a frame the VAD has no opinion about, which is a
-    /// different thing from a frame it scored zero. See
-    /// [`PooledVadScorer::classify_frames`] for what the caller does with that.
-    pub fn pool(self, probabilities: &[f32]) -> Option<f64> {
-        if probabilities.is_empty() {
-            return None;
-        }
-        let n = probabilities.len() as f64;
-        Some(match self {
-            PoolingRule::Max => probabilities.iter().fold(0.0f64, |a, p| a.max(*p as f64)),
-            PoolingRule::Mean => probabilities.iter().map(|p| *p as f64).sum::<f64>() / n,
-            PoolingRule::FractionOver { threshold } => {
-                probabilities.iter().filter(|p| **p >= threshold).count() as f64 / n
+/// Parse [`pooling_spec`]'s output back, against a frame threshold the caller
+/// already has. `fraction` bare means the [`SWEEP`] row's 0.5.
+pub fn parse_pooling_spec(spec: &str, frame_speech_threshold: f64) -> Option<ShadowSettings> {
+    let (pooling, hop_speech_threshold) = match spec {
+        "max" => (PoolingRule::Max, DEFAULT_HOP_SPEECH_THRESHOLD),
+        "mean" => (PoolingRule::Mean, DEFAULT_HOP_SPEECH_THRESHOLD),
+        "fraction" | "fraction_over" => (PoolingRule::FractionOver, DEFAULT_HOP_SPEECH_THRESHOLD),
+        _ => {
+            let threshold: f64 = spec.strip_prefix("fraction:")?.parse().ok()?;
+            if !(0.0..=1.0).contains(&threshold) {
+                return None;
             }
-        })
-    }
+            (PoolingRule::FractionOver, threshold)
+        }
+    };
+    Some(ShadowSettings {
+        pooling,
+        frame_speech_threshold,
+        hop_speech_threshold,
+    })
 }
 
 // ── The VAD-scored pipeline ────────────────────────────────────────────────
 
-/// Silero's conventional speech threshold, and this harness's default.
-pub const DEFAULT_SPEECH_THRESHOLD: f64 = 0.5;
-
 /// A [`FrameScorer`] that answers from already-computed VAD hop probabilities.
 ///
-/// It takes the hops rather than the PCM on purpose, and that is not just
-/// plumbing:
+/// **The composition is not here.** [`crate::shadow`] owns the rule that decides
+/// what the model is allowed to overrule, and this type calls it. Two copies of
+/// that rule would let the harness grade a pipeline the app never runs, and the
+/// difference would surface as a finding about the model — see
+/// [`pool_onto_frames`] and [`crate::shadow::VadScorer`]'s composition table.
 ///
-/// - **`classify_frames` has no error channel.** [`crate::vad::score_pcm`]
-///   returns a `Result`, and a scorer that swallowed it would turn a failed
-///   inference into a file of silence — the exact silent-failure shape
-///   [`crate::vad`]'s four traps are about. Scoring the audio BEFORE the scorer
-///   exists means the error is handled where there is something to handle it
-///   with.
-/// - **A pooling sweep costs one inference pass, not one per rule.** The hops do
-///   not depend on the pooling rule, so the sweep is pure arithmetic over a
-///   single pass. On a 90-minute service that is the difference between a usable
-///   tool and an overnight job.
+/// What IS here is where the probabilities come from. Taking hops rather than
+/// PCM — the opposite of [`crate::shadow::VadScorer`], which owns a backend
+/// factory — buys two things a corpus run needs and a shadow run does not:
 ///
-/// `fallback` is the scorer consulted for frames the VAD says are NOT speech —
-/// see [`Self::classify_frames`] for why that is not simply "silence".
+/// - **A sweep costs one inference pass, not one per row.** The hops do not
+///   depend on the settings, so [`SWEEP`] is pure arithmetic over a single pass.
+///   On a 90-minute service that is the difference between a usable tool and an
+///   overnight job.
+/// - **The failure has somewhere to go.** `classify_frames` cannot return a
+///   `Result`, so `VadScorer` has to latch its error and be asked. Scoring the
+///   file BEFORE the scorer exists means [`crate::vad::score_pcm`]'s own
+///   `Result` is the only path, and a recording whose inference failed never
+///   enters the corpus rather than entering it as silence.
 pub struct PooledVadScorer<'a> {
     hops: &'a [VadFrame],
-    fallback: &'a dyn FrameScorer,
-    pooling: PoolingRule,
-    speech_threshold: f64,
-    frame_ms: u32,
+    settings: ShadowSettings,
 }
 
 impl<'a> PooledVadScorer<'a> {
-    /// `frame_ms` MUST be the value handed to
-    /// [`crate::detect::analyse_pcm`] alongside this scorer: it is how the hop
-    /// grid is aligned to the frame grid, and a mismatch would silently pool the
-    /// wrong hops into every frame.
-    pub fn new(
-        hops: &'a [VadFrame],
-        fallback: &'a dyn FrameScorer,
-        pooling: PoolingRule,
-        speech_threshold: f64,
-        frame_ms: u32,
-    ) -> Self {
-        Self {
-            hops,
-            fallback,
-            pooling,
-            speech_threshold,
-            frame_ms,
-        }
-    }
-
-    /// Half-open hop index range `[first, end)` whose 32 ms of NEW samples begin
-    /// inside the frame starting at `frame_start_sec`.
-    ///
-    /// Computed in integer samples rather than by comparing seconds. 100 ms is
-    /// 3.125 hops, so frames take alternately 3 and 4 hops and the boundaries
-    /// land mid-hop; doing the arithmetic in f64 seconds puts an exact-integer
-    /// quotient one ULP either side of the truth often enough to gain or lose a
-    /// hop, which is a wrong answer that looks like a right one. Assigning each
-    /// hop to the single frame its START falls in also guarantees every hop is
-    /// counted exactly once across the file — no gaps, no double weighting.
-    fn hop_range(&self, frame_start_sec: f64) -> (usize, usize) {
-        let frame_samples = (VAD_SAMPLE_RATE as u64 * self.frame_ms as u64) / 1000;
-        let lo = (frame_start_sec * VAD_SAMPLE_RATE as f64).round().max(0.0) as u64;
-        let hi = lo + frame_samples;
-        let hop = VAD_HOP_SAMPLES as u64;
-        let first = lo.div_ceil(hop) as usize;
-        let end = hi.div_ceil(hop) as usize;
-        (first.min(self.hops.len()), end.min(self.hops.len()))
+    pub fn new(hops: &'a [VadFrame], settings: ShadowSettings) -> Self {
+        Self { hops, settings }
     }
 }
 
 impl FrameScorer for PooledVadScorer<'_> {
-    /// One verdict per frame, in lockstep — the trait's contract.
-    ///
-    /// ## Why a non-speech frame is not simply `Silence`
-    ///
-    /// A voice-activity detector answers one question: is someone talking. It
-    /// has no opinion about whether the rest is an organ, a rustle or nothing at
-    /// all — and the pipeline below this seam very much does. [`crate::detect`]
-    /// reads the music share twice: the sermon-only Case 0 requires music under
-    /// 5 % of the recording, and [`crate::detect::reasons::MOSTLY_MUSIC`] fires
-    /// over 50 %. Mapping every non-speech frame to `Silence` would drive the
-    /// music share to zero on every recording, which turns most services into
-    /// "sermon-only" and retires an attention reason — changes to the ANSWER
-    /// that have nothing to do with the VAD's ability to hear speech. This
-    /// harness would then be measuring that mapping instead of the model.
-    ///
-    /// So the VAD overrules exactly what it is competent to overrule. A frame it
-    /// calls speech becomes `Speech`. A frame it does not keeps the heuristic's
-    /// class — except that a heuristic `Speech` cannot survive the VAD saying
-    /// otherwise, and becomes `Mixed`: audible, not speech, and (unlike
-    /// `Silence`) not a claim about the energy the heuristic actually measured.
-    ///
-    /// This is a real decision with a real effect on the numbers, and it is the
-    /// harness's, not the model's. `non_speech_fill_changes_the_music_share`
-    /// pins it.
-    fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)> {
-        let base = self.fallback.classify_frames(frames);
-        frames
-            .iter()
-            .zip(base)
-            .map(|(frame, (base_type, base_confidence))| {
-                let (first, end) = self.hop_range(frame.start_sec);
-                let probabilities: Vec<f32> = self.hops[first..end]
-                    .iter()
-                    .map(|h| h.speech_probability)
-                    .collect();
-                match self.pooling.pool(&probabilities) {
-                    // No hop begins inside this frame: the trailing partial hop
-                    // was dropped, or the audio ended. Inventing an answer here
-                    // would put fabricated silence at the end of every file.
-                    None => (base_type, base_confidence),
-                    Some(p) if p >= self.speech_threshold => (SegmentType::Speech, p),
-                    Some(p) => (
-                        match base_type {
-                            SegmentType::Speech => SegmentType::Mixed,
-                            other => other,
-                        },
-                        1.0 - p,
-                    ),
-                }
-            })
-            .collect()
+    fn classify_frames(&self, input: ScoringInput<'_>) -> Vec<(SegmentType, f64)> {
+        pool_onto_frames(self.hops, input, self.settings)
     }
 }
 
@@ -1106,13 +998,20 @@ pub fn decide(sufficiency: Sufficiency, heuristic: &Aggregate, vad: &Aggregate) 
 
 /// Schema of the JSON artefact. Bump when the MEANING of a field changes, so
 /// successive runs can be compared or refused rather than silently mixed.
+///
+/// Still 1 after [`PoolingResult`]'s two pooling fields became one
+/// [`ShadowSettings`]: no run of this harness has ever produced a file, so there
+/// is no earlier shape for a reader to be protected from. A 2 here would imply a
+/// 1 exists somewhere.
 pub const AB_REPORT_SCHEMA: u32 = 1;
 
-/// The whole answer for ONE pooling rule.
+/// The whole answer for ONE row of the sweep.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolingResult {
-    pub pooling: PoolingRule,
-    pub speech_threshold: f64,
+    /// Carried whole rather than field by field — the reason
+    /// [`ShadowSettings`] exists as a type at all: a sweep that varies one knob
+    /// must not be able to produce records that disagree about which knob moved.
+    pub settings: ShadowSettings,
     pub corrected: usize,
     pub sufficiency: Sufficiency,
     pub verdict: Verdict,
@@ -1163,12 +1062,8 @@ pub struct AbReport {
 /// does not have to match on prose.
 pub const SYNTHETIC_WARNING_CODE: &str = "synthetic_corpus_plumbing_check_only";
 
-/// Fold per-recording evaluations into the answer for one pooling rule.
-pub fn aggregate(
-    pooling: PoolingRule,
-    speech_threshold: f64,
-    recordings: Vec<RecordingEvaluation>,
-) -> PoolingResult {
+/// Fold per-recording evaluations into the answer for one row of the sweep.
+pub fn aggregate(settings: ShadowSettings, recordings: Vec<RecordingEvaluation>) -> PoolingResult {
     let corrected: Vec<&RecordingEvaluation> =
         recordings.iter().filter(|r| r.truth.is_some()).collect();
     let uncorrected: Vec<&RecordingEvaluation> =
@@ -1231,8 +1126,7 @@ pub fn aggregate(
     });
 
     PoolingResult {
-        pooling,
-        speech_threshold,
+        settings,
         corrected: corrected.len(),
         sufficiency,
         verdict,
@@ -1288,10 +1182,11 @@ pub fn render_summary(report: &AbReport) -> String {
 
     for result in &report.results {
         out.push_str(&format!(
-            "\n── pooling: {} (speech threshold {}) {}\n",
-            result.pooling.name(),
-            result.speech_threshold,
-            "─".repeat(30)
+            "\n── pooling: {} (frame threshold {}, hop threshold {}) {}\n",
+            result.settings.pooling.code(),
+            result.settings.frame_speech_threshold,
+            result.settings.hop_speech_threshold,
+            "─".repeat(18)
         ));
         out.push_str(&format!("VERDICT: {}\n", verdict_line(result)));
         out.push_str(&format!(
@@ -1438,66 +1333,76 @@ fn render_distribution(label: &str, d: &ErrorDistribution) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio_analysis::extract_features;
     use crate::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
     use crate::feedback::{
         FeedbackSegment, FeedbackSegmentKind, SermonPickCorrection, TrimAdjustment,
     };
     use crate::trim_feedback::TrimDeltas;
-    use crate::vad::{VadBackend, VadError, VAD_HOP_SEC, VAD_WINDOW_SAMPLES};
+    use crate::vad::{VadBackend, VadError, VAD_HOP_SEC, VAD_SAMPLE_RATE, VAD_WINDOW_SAMPLES};
 
-    // ── Pooling ────────────────────────────────────────────────────────────
+    // ── The sweep ──────────────────────────────────────────────────────────
+    //
+    // The rules themselves — that the three disagree, and that an empty frame
+    // pools to `None` rather than to zero — belong to `shadow`, which defines
+    // them and tests them. What is the harness's, and is tested here, is which
+    // combinations it compares and how they are spelled.
 
     #[test]
-    fn the_three_pooling_rules_disagree_on_the_same_frame() {
-        // The reason the rule is worth sweeping at all: on a frame that is half
-        // confident speech and half confident silence, the three answers are
-        // 0.95, ~0.48 and 0.5 — one above any sane threshold, one below, one
-        // exactly on it. If they agreed here there would be nothing to measure.
-        let probabilities = [0.95f32, 0.94, 0.01, 0.02];
-        let max = PoolingRule::Max.pool(&probabilities).unwrap();
-        let mean = PoolingRule::Mean.pool(&probabilities).unwrap();
-        let fraction = PoolingRule::FractionOver { threshold: 0.5 }
-            .pool(&probabilities)
-            .unwrap();
-        assert!((max - 0.95).abs() < 1e-6);
-        assert!((mean - 0.48).abs() < 1e-6);
-        assert!((fraction - 0.5).abs() < 1e-12);
-        assert!(max > mean);
+    fn the_sweep_varies_the_rule_and_nothing_else() {
+        // The claim SWEEP's doc comment makes, asserted rather than asserted in
+        // prose: three distinct rules, one shared bar on each grid. A row that
+        // moved a threshold as well would make its result unattributable.
+        let rules: Vec<PoolingRule> = SWEEP.iter().map(|s| s.pooling).collect();
+        assert_eq!(
+            rules,
+            vec![
+                PoolingRule::Max,
+                PoolingRule::Mean,
+                PoolingRule::FractionOver
+            ]
+        );
+        assert!(SWEEP
+            .iter()
+            .all(|s| s.frame_speech_threshold == SWEEP[0].frame_speech_threshold));
+        assert!(SWEEP
+            .iter()
+            .all(|s| s.hop_speech_threshold == SWEEP[0].hop_speech_threshold));
+        // Silero's own conventional operating point, on both grids.
+        assert_eq!(SWEEP[0].frame_speech_threshold, 0.5);
+        assert_eq!(SWEEP[0].hop_speech_threshold, 0.5);
     }
 
     #[test]
-    fn an_uncovered_frame_has_no_pooled_answer() {
-        // NOT zero: a frame no hop begins in is a frame the VAD was never asked
-        // about, and scoring it 0.0 would append fabricated silence to the end
-        // of every file.
-        assert_eq!(PoolingRule::Max.pool(&[]), None);
-        assert_eq!(PoolingRule::Mean.pool(&[]), None);
-        assert_eq!(PoolingRule::FractionOver { threshold: 0.5 }.pool(&[]), None);
-    }
-
-    #[test]
-    fn pooling_rules_round_trip_through_their_cli_spelling() {
-        for rule in PoolingRule::SWEEP {
-            assert_eq!(PoolingRule::parse(&rule.name()), Some(rule), "{rule:?}");
+    fn sweep_rows_round_trip_through_their_cli_spelling() {
+        for row in SWEEP {
+            assert_eq!(
+                parse_pooling_spec(&pooling_spec(row), row.frame_speech_threshold),
+                Some(row),
+                "{row:?}"
+            );
         }
+        // The hop threshold is the half of the spelling that carries a value,
+        // because it is the half the sweep can widen.
+        assert_eq!(pooling_spec(SWEEP[2]), "fraction:0.5");
+        let quarter = parse_pooling_spec("fraction:0.25", 0.5).unwrap();
+        assert_eq!(quarter.pooling, PoolingRule::FractionOver);
+        assert_eq!(quarter.hop_speech_threshold, 0.25);
         assert_eq!(
-            PoolingRule::parse("fraction"),
-            Some(PoolingRule::FractionOver { threshold: 0.5 })
+            quarter.frame_speech_threshold, 0.5,
+            "the caller's, not 0.25"
         );
+
         assert_eq!(
-            PoolingRule::parse("fraction:0.25"),
-            Some(PoolingRule::FractionOver { threshold: 0.25 })
-        );
-        assert_eq!(
-            PoolingRule::parse("fraction:1.5"),
+            parse_pooling_spec("fraction:1.5", 0.5),
             None,
             "a probability above 1 is not one"
         );
-        assert_eq!(PoolingRule::parse("median"), None);
-        assert_eq!(PoolingRule::parse(""), None);
+        assert_eq!(parse_pooling_spec("median", 0.5), None);
+        assert_eq!(parse_pooling_spec("", 0.5), None);
     }
 
-    // ── Hop→frame alignment ────────────────────────────────────────────────
+    // ── The scorer over precomputed hops ───────────────────────────────────
 
     /// Answers a fixed probability so the framing can be asserted without an
     /// inference engine — the same device `vad.rs`'s own tests use.
@@ -1520,61 +1425,27 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn every_hop_lands_in_exactly_one_frame() {
-        // 100 ms is 3.125 hops, so frames take alternately 3 and 4 of them. The
-        // property that must hold whatever the ratio: across the file each hop
-        // is counted once — no gaps (which would silently drop audio) and no
-        // double weighting (which would count a hop twice in the pooling).
-        let all = hops(400, 0.5);
-        let heuristic = HeuristicScorer;
-        let scorer = PooledVadScorer::new(&all, &heuristic, PoolingRule::Max, 0.5, FRAME_MS);
-        let mut seen = vec![0usize; all.len()];
-        let mut previous_end = 0usize;
-        for frame_index in 0..128 {
-            let start_sec = frame_index as f64 * FRAME_MS as f64 / 1000.0;
-            let (first, end) = scorer.hop_range(start_sec);
-            assert_eq!(
-                first, previous_end,
-                "frame {frame_index} must start where the last ended"
-            );
-            previous_end = end;
-            for slot in seen.iter_mut().take(end).skip(first) {
-                *slot += 1;
-            }
+    fn scoring_input<'a>(
+        pcm: &'a [f32],
+        frames: &'a [crate::audio_analysis::AnalysisFrame],
+    ) -> ScoringInput<'a> {
+        ScoringInput {
+            pcm,
+            sample_rate: SAMPLE_RATE,
+            frame_ms: FRAME_MS,
+            frames,
         }
-        assert!(seen.iter().take(previous_end).all(|c| *c == 1));
-        assert!(
-            (3..=4).contains(&(previous_end / 128)),
-            "100 ms should draw 3 or 4 hops of 32 ms, got ~{}",
-            previous_end / 128
-        );
-    }
-
-    #[test]
-    fn hop_alignment_is_exact_where_the_grids_meet() {
-        // 0.8 s is a whole number of both 100 ms frames and 32 ms hops (8 and
-        // 25). Doing this arithmetic in f64 seconds puts the quotient one ULP
-        // either side of 25 and gains or loses a hop — a wrong answer that looks
-        // right. Integer samples cannot.
-        let all = hops(64, 0.5);
-        let heuristic = HeuristicScorer;
-        let scorer = PooledVadScorer::new(&all, &heuristic, PoolingRule::Max, 0.5, FRAME_MS);
-        assert_eq!(scorer.hop_range(0.8), (25, 29));
-        assert_eq!(scorer.hop_range(0.0), (0, 4));
-        assert_eq!(scorer.hop_range(0.1), (4, 7));
     }
 
     #[test]
     fn frames_past_the_last_hop_keep_the_heuristics_answer() {
         let all = hops(4, 0.99);
-        let heuristic = HeuristicScorer;
-        let scorer = PooledVadScorer::new(&all, &heuristic, PoolingRule::Max, 0.5, FRAME_MS);
+        let scorer = PooledVadScorer::new(&all, SWEEP[0]);
         // Silence, so the heuristic says Silence and the VAD (which has no hops
         // out here) must not overrule it into Speech.
         let pcm = vec![0.0f32; SAMPLE_RATE as usize * 3];
-        let frames = crate::audio_analysis::extract_features(&pcm, SAMPLE_RATE, FRAME_MS);
-        let scored = scorer.classify_frames(&frames);
+        let frames = extract_features(&pcm, SAMPLE_RATE, FRAME_MS);
+        let scored = scorer.classify_frames(scoring_input(&pcm, &frames));
         assert_eq!(scored.len(), frames.len(), "the trait's contract");
         assert_eq!(scored.last().unwrap().0, SegmentType::Silence);
     }
@@ -1590,16 +1461,15 @@ mod tests {
                     * 0.5
             })
             .collect();
-        let heuristic = HeuristicScorer;
         assert!(
-            crate::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &heuristic)
+            crate::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &HeuristicScorer)
                 .sermon
                 .is_none(),
             "a sustained tone is not a sermon"
         );
 
         let all = crate::vad::score_pcm(FlatBackend(0.99), VAD_SAMPLE_RATE, &pcm).unwrap();
-        let scorer = PooledVadScorer::new(&all, &heuristic, PoolingRule::Max, 0.5, FRAME_MS);
+        let scorer = PooledVadScorer::new(&all, SWEEP[0]);
         let detection = crate::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &scorer);
         assert!(
             detection.sermon.is_some(),
@@ -1609,11 +1479,14 @@ mod tests {
 
     #[test]
     fn non_speech_fill_changes_the_music_share() {
-        // The harness's own decision, pinned so it cannot drift silently: a VAD
-        // that says "not speech" leaves the heuristic's class alone, so the music
-        // the detector reasons about is still there. Had non-speech mapped to
+        // Shadow mode's composition rule, inherited by the harness and pinned
+        // through the WHOLE detector so the inheritance cannot lapse: a VAD that
+        // says "not speech" leaves the heuristic's class alone, so the music the
+        // detector reasons about is still there. Had non-speech mapped to
         // Silence, this recording's music share would be 0 and its Case-0
-        // "sermon-only" test would pass on a concert.
+        // "sermon-only" test would pass on a concert — a difference caused by
+        // the mapping, which this harness would then be measuring instead of the
+        // model.
         let n = SAMPLE_RATE as usize * 200;
         let pcm: Vec<f32> = (0..n)
             .map(|i| {
@@ -1621,9 +1494,8 @@ mod tests {
                     * 0.5
             })
             .collect();
-        let heuristic = HeuristicScorer;
         let all = crate::vad::score_pcm(FlatBackend(0.01), VAD_SAMPLE_RATE, &pcm).unwrap();
-        let scorer = PooledVadScorer::new(&all, &heuristic, PoolingRule::Max, 0.5, FRAME_MS);
+        let scorer = PooledVadScorer::new(&all, SWEEP[0]);
         let detection = crate::detect::analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &scorer);
         let music: f64 = detection
             .segments
@@ -2110,7 +1982,7 @@ mod tests {
                 )
             })
             .collect();
-        let result = aggregate(PoolingRule::Max, 0.5, recordings);
+        let result = aggregate(SWEEP[0], recordings);
         assert_eq!(result.corrected, 0);
         assert_eq!(result.uncorrected.n, 10);
         assert_eq!(result.uncorrected.scorers_agreed, 10);
@@ -2149,7 +2021,7 @@ mod tests {
             min_corpus_for_any_conclusion: MIN_CORPUS_FOR_ANY_CONCLUSION,
             min_corpus_for_a_direction: MIN_CORPUS_FOR_A_DIRECTION,
             selection_iou_threshold: SELECTION_IOU_THRESHOLD,
-            results: vec![aggregate(PoolingRule::Max, 0.5, recordings)],
+            results: vec![aggregate(SWEEP[0], recordings)],
         };
         let text = render_summary(&report);
         assert!(text.contains("essentially NO speech anywhere"), "{text}");
@@ -2172,7 +2044,7 @@ mod tests {
             min_corpus_for_any_conclusion: MIN_CORPUS_FOR_ANY_CONCLUSION,
             min_corpus_for_a_direction: MIN_CORPUS_FOR_A_DIRECTION,
             selection_iou_threshold: SELECTION_IOU_THRESHOLD,
-            results: vec![aggregate(PoolingRule::Max, 0.5, vec![])],
+            results: vec![aggregate(SWEEP[0], vec![])],
         };
         let text = render_summary(&report);
         assert!(text.contains("NOT ENOUGH DATA TO TELL"));
@@ -2201,7 +2073,7 @@ mod tests {
             min_corpus_for_any_conclusion: MIN_CORPUS_FOR_ANY_CONCLUSION,
             min_corpus_for_a_direction: MIN_CORPUS_FOR_A_DIRECTION,
             selection_iou_threshold: SELECTION_IOU_THRESHOLD,
-            results: vec![aggregate(PoolingRule::Max, 0.5, vec![])],
+            results: vec![aggregate(SWEEP[0], vec![])],
         };
         let text = render_summary(&report);
         assert!(text.contains(SYNTHETIC_WARNING_CODE));
@@ -2230,7 +2102,7 @@ mod tests {
             min_corpus_for_any_conclusion: MIN_CORPUS_FOR_ANY_CONCLUSION,
             min_corpus_for_a_direction: MIN_CORPUS_FOR_A_DIRECTION,
             selection_iou_threshold: SELECTION_IOU_THRESHOLD,
-            results: vec![aggregate(PoolingRule::Max, 0.5, recordings)],
+            results: vec![aggregate(SWEEP[0], recordings)],
         };
         let text = render_summary(&report);
         assert!(text.contains("every error, worst first"));

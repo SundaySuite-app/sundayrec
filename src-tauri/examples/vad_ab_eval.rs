@@ -49,14 +49,13 @@ mod harness {
     use std::sync::Arc;
 
     use sundayrec_core::ab_eval::{
-        aggregate, evaluate_recording, ground_truths, render_summary, AbReport, PooledVadScorer,
-        PoolingRule, RecordingEvaluation, ScorerSelection, Span, VadHopStats, AB_REPORT_SCHEMA,
-        DEFAULT_SPEECH_THRESHOLD, MIN_CORPUS_FOR_ANY_CONCLUSION, MIN_CORPUS_FOR_A_DIRECTION,
-        SELECTION_IOU_THRESHOLD,
+        aggregate, evaluate_recording, ground_truths, parse_pooling_spec, render_summary, AbReport,
+        PooledVadScorer, RecordingEvaluation, ScorerSelection, Span, VadHopStats, AB_REPORT_SCHEMA,
+        MIN_CORPUS_FOR_ANY_CONCLUSION, MIN_CORPUS_FOR_A_DIRECTION, SELECTION_IOU_THRESHOLD, SWEEP,
     };
     use sundayrec_core::audio_analysis::{
         classify_and_group_with, extract_features, AnalysisFrame, FrameScorer, HeuristicScorer,
-        FRAME_MS, SAMPLE_RATE,
+        ScoringInput, FRAME_MS, SAMPLE_RATE,
     };
     use sundayrec_core::detect::{detect, Detection, PrepAnalysisSegment};
     use sundayrec_core::editor::{analysis_decode_args, sidecar_path, Sidecar};
@@ -64,6 +63,7 @@ mod harness {
         FeedbackSegment, FeedbackSegmentKind, RecordingFeedback, SermonPickCorrection,
         FEEDBACK_SCHEMA,
     };
+    use sundayrec_core::shadow::{ShadowSettings, DEFAULT_FRAME_SPEECH_THRESHOLD};
     use sundayrec_core::vad::{score_pcm, VAD_SAMPLE_RATE};
     use sundayrec_lib::vad::{SileroVad, SileroVadModel};
 
@@ -78,8 +78,10 @@ mod harness {
     struct Options {
         dirs: Vec<PathBuf>,
         json_out: Option<PathBuf>,
-        rules: Vec<PoolingRule>,
-        speech_threshold: f64,
+        /// One row per pooling rule to compare — see
+        /// [`sundayrec_core::ab_eval::SWEEP`]. Each carries its own thresholds,
+        /// so `--threshold` is applied when the row is built and never again.
+        rows: Vec<ShadowSettings>,
         limit: Option<usize>,
         synthetic: Option<usize>,
     }
@@ -90,7 +92,10 @@ vad_ab_eval — does the neural VAD agree with the human better than the heurist
   --dir <path>          Directory of recordings to scan. Repeatable.
   --json <path>         Write the machine-readable report here.
   --pooling <spec>      max | mean | fraction | fraction:<0..1> | sweep   (default: sweep)
-  --threshold <0..1>    Speech probability a pooled frame must reach (default: 0.5)
+                        `fraction:<t>` sets the per-HOP threshold the vote is
+                        taken against; the other rules ignore it.
+  --threshold <0..1>    Speech probability a pooled FRAME must reach. Applies to
+                        every rule, which is why it is its own flag (default: 0.5)
   --limit <n>           Stop after n recordings (they are decoded in full, so a
                         90-minute service is a minute of work either way).
   --synthetic <n>       PLUMBING CHECK ONLY. Generate n fake recordings with
@@ -107,11 +112,15 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
         let mut options = Options {
             dirs: Vec::new(),
             json_out: None,
-            rules: PoolingRule::SWEEP.to_vec(),
-            speech_threshold: DEFAULT_SPEECH_THRESHOLD,
+            rows: Vec::new(),
             limit: None,
             synthetic: None,
         };
+        // The rows are built AFTER the whole line is read: the frame threshold
+        // is a property of every row, so `--threshold` must reach a `--pooling`
+        // that came before it as well as one that came after.
+        let mut pooling = "sweep".to_string();
+        let mut frame_threshold = DEFAULT_FRAME_SPEECH_THRESHOLD;
         let mut args = std::env::args().skip(1);
         while let Some(arg) = args.next() {
             let mut value = || args.next().ok_or(format!("{arg} needs a value"));
@@ -119,22 +128,14 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
                 "--help" | "-h" => return Ok(None),
                 "--dir" => options.dirs.push(PathBuf::from(value()?)),
                 "--json" => options.json_out = Some(PathBuf::from(value()?)),
-                "--pooling" => {
-                    let spec = value()?;
-                    options.rules = if spec == "sweep" {
-                        PoolingRule::SWEEP.to_vec()
-                    } else {
-                        vec![PoolingRule::parse(&spec)
-                            .ok_or(format!("unknown pooling rule `{spec}`"))?]
-                    };
-                }
+                "--pooling" => pooling = value()?,
                 "--threshold" => {
                     let raw = value()?;
                     let parsed: f64 = raw.parse().map_err(|_| format!("bad threshold `{raw}`"))?;
                     if !(0.0..=1.0).contains(&parsed) {
                         return Err(format!("threshold `{raw}` is not a probability"));
                     }
-                    options.speech_threshold = parsed;
+                    frame_threshold = parsed;
                 }
                 "--limit" => {
                     let raw = value()?;
@@ -148,6 +149,18 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
                 other => return Err(format!("unknown argument `{other}`")),
             }
         }
+        options.rows = if pooling == "sweep" {
+            SWEEP
+                .iter()
+                .map(|row| ShadowSettings {
+                    frame_speech_threshold: frame_threshold,
+                    ..*row
+                })
+                .collect()
+        } else {
+            vec![parse_pooling_spec(&pooling, frame_threshold)
+                .ok_or(format!("unknown pooling rule `{pooling}`"))?]
+        };
         if options.dirs.is_empty() && options.synthetic.is_none() {
             return Err("nothing to do: pass --dir <path> or --synthetic <n>".into());
         }
@@ -302,8 +315,14 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
     /// recording for a three-rule sweep, to produce bit-identical frames every
     /// time — the frames do not depend on the scorer, which is the entire point
     /// of the seam.
-    fn detect_with(frames: &[AnalysisFrame], scorer: &dyn FrameScorer) -> Detection {
-        let grouped = classify_and_group_with(frames, scorer);
+    fn detect_with(pcm: &[f32], frames: &[AnalysisFrame], scorer: &dyn FrameScorer) -> Detection {
+        let input = ScoringInput {
+            pcm,
+            sample_rate: SAMPLE_RATE,
+            frame_ms: FRAME_MS,
+            frames,
+        };
+        let grouped = classify_and_group_with(input, scorer);
         detect(grouped.iter().map(PrepAnalysisSegment::from).collect())
     }
 
@@ -543,11 +562,11 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
         let app_version = env!("CARGO_PKG_VERSION");
         let heuristic_scorer = HeuristicScorer;
 
-        // One accumulator per pooling rule; the heuristic's side is identical
-        // across rules and is recomputed into each so every rule's report is
+        // One accumulator per sweep row; the heuristic's side is identical
+        // across rows and is recomputed into each so every row's report is
         // self-contained.
-        let mut per_rule: Vec<Vec<RecordingEvaluation>> =
-            options.rules.iter().map(|_| Vec::new()).collect();
+        let mut per_row: Vec<Vec<RecordingEvaluation>> =
+            options.rows.iter().map(|_| Vec::new()).collect();
 
         for (n, path) in recordings.iter().enumerate() {
             let id = path
@@ -562,9 +581,9 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
                 continue;
             }
             let frames = extract_features(&pcm, SAMPLE_RATE, FRAME_MS);
-            let heuristic = selection_of(&detect_with(&frames, &heuristic_scorer));
+            let heuristic = selection_of(&detect_with(&pcm, &frames, &heuristic_scorer));
 
-            // One inference pass over the file; the pooling rules are arithmetic
+            // One inference pass over the file; every sweep row is arithmetic
             // over its output.
             let hops = score_pcm(SileroVad::new(Arc::clone(&model)), VAD_SAMPLE_RATE, &pcm)
                 .map_err(|e| format!("{id}: {e}"))?;
@@ -572,20 +591,14 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
             let feedback = read_feedback(path);
             let truths = ground_truths(&feedback, heuristic.strict, app_version);
 
-            for (rule_index, rule) in options.rules.iter().enumerate() {
-                let scorer = PooledVadScorer::new(
-                    &hops,
-                    &heuristic_scorer,
-                    *rule,
-                    options.speech_threshold,
-                    FRAME_MS,
-                );
-                let vad = selection_of(&detect_with(&frames, &scorer));
-                per_rule[rule_index].push(evaluate_recording(
+            for (row_index, row) in options.rows.iter().enumerate() {
+                let scorer = PooledVadScorer::new(&hops, *row);
+                let vad = selection_of(&detect_with(&pcm, &frames, &scorer));
+                per_row[row_index].push(evaluate_recording(
                     id.clone(),
                     heuristic.clone(),
                     vad,
-                    Some(VadHopStats::of(&hops, options.speech_threshold)),
+                    Some(VadHopStats::of(&hops, row.frame_speech_threshold)),
                     truths.clone(),
                 ));
             }
@@ -600,10 +613,10 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
             min_corpus_for_a_direction: MIN_CORPUS_FOR_A_DIRECTION,
             selection_iou_threshold: SELECTION_IOU_THRESHOLD,
             results: options
-                .rules
+                .rows
                 .iter()
-                .zip(per_rule)
-                .map(|(rule, evaluations)| aggregate(*rule, options.speech_threshold, evaluations))
+                .zip(per_row)
+                .map(|(row, evaluations)| aggregate(*row, evaluations))
                 .collect(),
         };
 

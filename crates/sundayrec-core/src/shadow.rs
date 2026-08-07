@@ -75,6 +75,14 @@ pub enum PoolingRule {
     Mean,
     /// The fraction of the frame's hops whose probability clears
     /// [`ShadowSettings::hop_speech_threshold`] — a per-frame vote.
+    ///
+    /// Note the change of unit. This rule returns a SHARE, and that share is
+    /// then read against [`ShadowSettings::frame_speech_threshold`] as though it
+    /// were a probability. The composition is coherent — `share ≥ 0.5` reads as
+    /// "most of this frame was speech" — but it answers a different question
+    /// from the other two rules, and the share is also what becomes the frame's
+    /// CONFIDENCE and from there every confidence downstream. A reader who
+    /// assumes all three rules return probabilities will misread those numbers.
     FractionOver,
 }
 
@@ -330,7 +338,15 @@ where
 ///
 /// Trailing hops past the last complete analysis frame are dropped, which is the
 /// mirror of both grids dropping their own trailing partial unit.
-fn bucket_hops(hops: &[VadFrame], frame_count: usize, samples_per_frame: usize) -> Vec<Vec<f32>> {
+///
+/// Crate-visible because [`crate::ab_eval`] scores its corpus from hops computed
+/// once and pooled many times, and a second implementation of this assignment
+/// would let the harness measure a grid alignment shadow mode does not use.
+pub(crate) fn bucket_hops(
+    hops: &[VadFrame],
+    frame_count: usize,
+    samples_per_frame: usize,
+) -> Vec<Vec<f32>> {
     let mut buckets: Vec<Vec<f32>> = vec![Vec::new(); frame_count];
     if samples_per_frame == 0 {
         return buckets;
@@ -346,7 +362,13 @@ fn bucket_hops(hops: &[VadFrame], frame_count: usize, samples_per_frame: usize) 
 
 /// Bucket, pool, and compose the model's verdict with the heuristic's — see
 /// [`VadScorer`] for the composition table.
-fn pool_onto_frames(
+///
+/// This is the composition rule itself, and it is the ONE copy. The A/B harness
+/// ([`crate::ab_eval::PooledVadScorer`]) calls it rather than restating it: a
+/// harness that composed the two verdicts even slightly differently would be
+/// grading a pipeline the app never runs, and the difference would show up as a
+/// finding about the model.
+pub(crate) fn pool_onto_frames(
     hops: &[VadFrame],
     input: ScoringInput<'_>,
     settings: ShadowSettings,
@@ -773,6 +795,47 @@ mod tests {
             4,
             "the other six have no frame to land in"
         );
+    }
+
+    #[test]
+    fn every_hop_lands_in_exactly_one_frame_and_none_is_lost() {
+        // The property the two counts above are instances of, over a span where
+        // the grids close: 400 hops of 512 samples and 128 frames of 1600 both
+        // cover exactly 204 800 samples, so every hop has a frame and every
+        // frame has hops. Each hop must then be counted ONCE — a gap silently
+        // drops audio out of the pooling, a repeat silently weights it twice,
+        // and neither shows up as anything but a slightly different boundary.
+        let samples_per_frame = (SAMPLE_RATE as usize * FRAME_MS as usize) / 1000;
+        assert_eq!(400 * VAD_HOP_SAMPLES, 128 * samples_per_frame);
+        let hops: Vec<VadFrame> = (0..400)
+            .map(|n| VadFrame {
+                start_sec: n as f64 * 0.032,
+                end_sec: (n + 1) as f64 * 0.032,
+                // The hop's own index, so a misplaced hop is identifiable and
+                // not just miscounted.
+                speech_probability: n as f32,
+            })
+            .collect();
+        let buckets = bucket_hops(&hops, 128, samples_per_frame);
+
+        let mut placements = vec![0usize; hops.len()];
+        for bucket in &buckets {
+            for probability in bucket {
+                placements[*probability as usize] += 1;
+            }
+        }
+        assert!(
+            placements.iter().all(|count| *count == 1),
+            "every hop exactly once: {placements:?}"
+        );
+        assert!(
+            buckets.iter().all(|b| (3..=4).contains(&b.len())),
+            "100 ms draws 3 or 4 hops of 32 ms, never fewer or more"
+        );
+        // 0.8 s is a whole number of both grids (8 frames, 25 hops), so hop 25
+        // must OPEN frame 8. This is the boundary float seconds get wrong by one
+        // ULP — a wrong answer that looks like a right one.
+        assert!((buckets[8][0] - 25.0).abs() < 1e-6);
     }
 
     #[test]
