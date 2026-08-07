@@ -191,12 +191,42 @@ jobs:
             - macOS: right-click the app ▸ Open ▸ Open.
             - Windows: "More info" ▸ "Run anyway".
           releaseDraft: true
-          # NOT a pre-release: the updater endpoint reads GitHub's
-          # /releases/latest, which EXCLUDES pre-releases. Marking the release
-          # pre-release means a published draft never becomes "latest" and every
-          # installed client silently stops receiving updates (latest.json 404).
-          # The draft still lands unpublished (releaseDraft) for review first.
-          prerelease: false
+          # A `-beta.N` tag ships as a GitHub pre-release; a plain `vX.Y.Z` tag
+          # ships as a normal release. Either way it lands as a DRAFT first —
+          # nobody is served anything until the draft is reviewed and published.
+          #
+          # ── HISTORY: this used to be hardcoded `false`, and changing it used
+          #    to be dangerous. It no longer is — here's why, so the next person
+          #    to touch this line doesn't have to rediscover it. ─────────────
+          # Until Etappe 7, SundayRec's auto-updater read GitHub's
+          # `/releases/latest/download/latest.json` directly. That endpoint
+          # EXCLUDES pre-releases by definition, so marking a release
+          # `prerelease: true` meant it could never become "latest" — every
+          # installed client would silently stop seeing updates (`latest.json`
+          # 404, forever, with nothing in the UI to say why). That was real, and
+          # it is why this value used to be hardcoded `false` with a comment
+          # warning never to change it.
+          #
+          # Since Etappe 7 the updater no longer reads `/releases/latest` at
+          # all: installed clients ask the Sunday Suite update feed
+          # (`https://updates.sundaysuite.app/v1/update/{stable|beta}` — a
+          # different host from the telemetry admin API on purpose, see
+          # PRIVACY.md), which serves only a tag that an owner has EXPLICITLY
+          # promoted with `node scripts/promote-release.mjs <channel> <tag>`
+          # (docs/RELEASE-CHECKLIST.md). GitHub's own notion of "latest" is now
+          # irrelevant to the update feed — it only matters to a human browsing
+          # github.com/…/releases. So `prerelease` can safely track what it
+          # actually means (does this tag carry a `-beta.` suffix) instead of
+          # being pinned to `false` to dodge a trap that no longer exists. This
+          # IS the reason the Worker-served feed was adopted in the first
+          # place: decoupling "what GitHub calls latest" from "what the
+          # updater offers" removes this footgun instead of just working
+          # around it.
+          #
+          # (Transition note: builds up to and including v0.10.0 still have the
+          # OLD GitHub endpoint compiled in and never consult this feed at all
+          # — see docs/ROLLBACK.md for what that means for the kill-switch.)
+          prerelease: ${{ contains(github.ref_name, '-beta.') }}
           # Generates latest.json (the updater feed) alongside the installers.
           includeUpdaterJson: true
           args: ${{ matrix.args }}

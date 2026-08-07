@@ -5,8 +5,39 @@ bruksstatistikk-funksjonen i SundayRec. Funksjonen er **av som standard**, og
 du velger selv om du vil slå den på — under **Innstillinger → System**.
 
 Resten av SundayRec (opptak, redigering, publisering) sender aldri noe
-uansett hva du svarer her. Denne erklæringen handler bare om det ene,
-valgfrie unntaket.
+uansett hva du svarer her — **med ett unntak: oppdateringssjekken**, beskrevet
+for seg rett under, fordi den ikke er en del av diagnostikk-funksjonen og
+ikke styres av samtykket her. Resten av denne erklæringen handler om det
+valgfrie, avslått-som-standard diagnostikk-unntaket.
+
+## Oppdateringssjekk — ikke en del av diagnostikk
+
+SundayRec sjekker med jevne mellomrom om det finnes en nyere versjon, mot
+**Sunday Suites egen server** (`updates.sundaysuite.app`). Tidligere versjoner
+spurte GitHub direkte om dette; fra og med denne versjonen spør appen oss i
+stedet.
+
+Dette skjer uansett hva du har svart på diagnostikk-spørsmålet over — en
+oppdateringssjekk er ikke diagnostikk. Forespørselen inneholder **ingen
+installasjons-ID, ingen innstillinger og ingenting om opptakene dine**. Den
+inneholder faktisk ikke engang hvilken versjon eller hvilket operativsystem
+du kjører: appen spør bare «hva er nyeste versjon?», får det samme svaret som
+alle andre, og finner selv ut om det er noe nyere enn den den allerede har.
+Serveren får med andre ord ikke vite hvem som spurte — eller hva de hadde fra
+før.
+
+Ingen IP-adresse lagres for denne forespørselen heller. Det håndheves på
+samme måte som for diagnostikk-tjenesten (samme underliggende tjener):
+nettverksloggingen er slått av for hele tjeneren, og den eneste loggingen
+tjeneren selv gjør, godtar kun et fast sett med felt som ikke identifiserer
+noen — en IP-adresse har ingen plass å havne i.
+
+Du kan slå av **«Oppdater automatisk»** under **Innstillinger → System**. Da
+stopper de automatiske sjekkene helt — appen tar ikke kontakt med serveren
+verken ved oppstart eller den vanlige time-for-time-sjekken. Det ene unntaket
+er hvis du selv trykker **«Se etter oppdateringer nå»**: den knappen fungerer
+uansett, fordi det da er en handling du selv har bedt om, ikke noe appen
+gjør bak ryggen din.
 
 ## Behandlingsansvarlig
 

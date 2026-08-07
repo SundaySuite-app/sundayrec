@@ -102,6 +102,27 @@ export function setupGeneralPage(): void {
   bindSetting('opt-show-on-startup', generalBinding({ key: 'showOnStartup' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
   bindSetting('opt-auto-update',     generalBinding({ key: 'autoUpdate' }))
+  // Moving TO beta asks first; moving back to stable never does. Beta is the
+  // ring that finds what QA did not, which is another way of saying it is the
+  // ring where a version breaks — and the machine reading this may be the one
+  // that records Sunday. Declining leaves the select where it was
+  // (bindSetting's default revert restores the previous value).
+  bindSetting('opt-update-channel', generalBinding({
+    key: 'updateChannel',
+    confirmIf: (value) => {
+      if (String(value) !== 'beta') return null
+      return {
+        title: t('general.updateChannelBetaTitle', 'Bytte til beta-oppdateringer?'),
+        message: t(
+          'general.updateChannelBetaBody',
+          'Beta-versjoner kommer til deg før de er prøvd på en ekte gudstjeneste. De kan inneholde feil som ikke er funnet ennå — også feil som ødelegger et opptak. Ikke bruk beta på maskinen som tar opp gudstjenesten, med mindre du er forberedt på å håndtere det. Du kan bytte tilbake til Stabil når som helst.',
+        ),
+        confirmLabel: t('general.updateChannelBetaConfirm', 'Ja, bruk beta'),
+        cancelLabel: t('general.updateChannelBetaCancel', 'Bli på stabil'),
+      }
+    },
+    after: () => paintActiveUpdateChannel(),
+  }))
 
   setupSmtpCard()
   void refreshEmailGate()
@@ -772,6 +793,8 @@ export function applyGeneralSettingsToUI(): void {
   void syncAutostartFromOs()
   setCheckbox('opt-show-on-startup',  !!settings.showOnStartup)
   setCheckbox('opt-auto-update',      settings.autoUpdate !== false)
+  setVal('opt-update-channel',        settings.updateChannel ?? 'stable')
+  paintActiveUpdateChannel()
   setCheckbox('opt-ask-open-editor',  settings.askOpenEditor !== false)
   setVal('email-address', settings.emailAddress   ?? '')
   setVal('email-smtp',    settings.emailSmtp      ?? '')
@@ -846,6 +869,9 @@ function collectGeneralSettings(): void {
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
     showOnStartup:     !!(document.getElementById('opt-show-on-startup')   as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
+    // Anything the select cannot produce is not a channel; the backend applies
+    // the same fallback (UpdateChannel::parse), so the two ends agree.
+    updateChannel:     (document.getElementById('opt-update-channel') as HTMLSelectElement | null)?.value === 'beta' ? 'beta' : 'stable',
     askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked
   })
 }
@@ -946,6 +972,23 @@ export function setUpdateStatus(dotCls: string, text: string): void {
   const txt = document.getElementById('update-status-text')
   if (dot) dot.className  = 'update-status-dot' + (dotCls ? ' ' + dotCls : '')
   if (txt) txt.textContent = text
+}
+
+/**
+ * Say which feed «Se etter oppdateringer» asks, right next to the button.
+ *
+ * Nobody should be able to find out they are on beta by being handed a broken
+ * version on a Sunday morning — a channel is a decision that has to keep being
+ * visible after it is made, not just at the moment it is taken.
+ */
+export function paintActiveUpdateChannel(): void {
+  const el = document.getElementById('update-channel-active')
+  if (!el) return
+  const beta = settings.updateChannel === 'beta'
+  el.classList.toggle('is-beta', beta)
+  el.textContent = beta
+    ? t('general.updateChannelActiveBeta', 'Denne maskinen henter BETA-versjoner — nyere, og ikke prøvd på en gudstjeneste.')
+    : t('general.updateChannelActiveStable', 'Denne maskinen henter stabile versjoner.')
 }
 
 function showUpdateToast(title: string, text: string, showInstall = false): void {

@@ -880,6 +880,72 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
 
 ---
 
+## §R7b — Beta-søndag: the channel-promotion gate
+
+Etappe 7's release flow is two rings (`RELEASE-CHECKLIST.md` §5): a tag first
+goes to the `beta` channel, and nothing moves to `stable` — no matter how
+green the headless gate is — until a beta tester has run a **real Sunday** on
+the exact tag that was promoted, and it came back clean. This section is what
+"clean" means: the checklist a beta tester (or whoever reads their report)
+runs through before §5g (promote to `stable`) is authorized. It is a human
+decision gate, not a code test.
+
+**Before the service**
+
+1. Confirm the machine is actually running the **promoted** tag, not whatever
+   it happened to have installed. **Innstillinger → Generelt → Nåværende
+   versjon** must read exactly the tag `node scripts/promote-release.mjs beta
+vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
+   - **Expected:** version matches. If it's a build behind, either the update
+     hasn't reached this machine yet (propagation — up to an hour for an
+     already-running app, immediate on relaunch or a manual **Se etter
+     oppdateringer nå**; see `ROLLBACK.md`) or **«Oppdater automatisk»** is
+     off (§R7 above) — resolve which before treating today as a beta-ring
+     result.
+2. If the release touched `recorder/`, `capture.rs`, the editor, the meter
+   loop, or boot ordering, this Sunday IS the §6a health gate
+   (`RELEASE-CHECKLIST.md`) — a beta-ring release is not exempt from it.
+   Catching a bad audio change here, before `stable`, is the entire reason
+   the beta ring exists.
+
+**During the service — a normal Sunday, not a synthetic test**
+
+3. Record the actual service end-to-end — preroll (if enabled) through the
+   real stop, at the length a real service runs, on the hardware this church
+   actually uses (not a laptop mic standing in for the mixer).
+4. Exercise whatever else this release changed for real, not just launch it —
+   an editor change gets an edit, a streaming change gets a stream, an
+   email-alert change gets left running long enough to prove it fires (or
+   correctly doesn't).
+
+**After the service**
+
+5. Open **Innstillinger → Lyd → Diagnose** (§5b) and read "Siste opptak
+   (teknisk)".
+   - **Expected:** `Dropp` / `xruns` / `IPC-overbelastning` at their healthy
+     targets (≈0), clean exit, no `SR-CAPTURE-01`. Paste these numbers into
+     the beta-ring report — the same numbers §6a asks for in the release
+     notes, gathered a ring earlier.
+6. Check the crash ring (§13, `<app-data>/crashes/`) for anything new since
+   the beta build was installed.
+   - **Expected:** nothing new. A crash the operator didn't notice at the
+     time is exactly what the crash ring exists to surface after the fact.
+7. Listen back to a few minutes of the actual recording.
+   - **Expected:** it is complete, the right length, and sounds like the
+     service. No telemetry number substitutes for someone actually checking
+     the file that was the entire point of running SundayRec that morning.
+
+**Go / no-go**
+
+- [ ] Everything above came back clean → `RELEASE-CHECKLIST.md` §5g (promote
+      to `stable`) is authorized.
+- [ ] Anything did not come back clean → do **not** promote to `stable`. Fix
+      it, cut a new `-beta.N`, promote that, and repeat this section on the
+      new build. If a bad beta is already promoted and reaching testers, pause
+      it first — see `ROLLBACK.md`.
+
+---
+
 ## §P2b — Remaining Electron→Tauri IPC parity
 
 These close the last handlers the Electron `src/main/ipc/*` exposed that the

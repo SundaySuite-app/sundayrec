@@ -6,7 +6,9 @@
 //!   - the localized [`UpdateStatus`] phases the renderer renders,
 //!   - the dev-mode "should we even check" guard ([`should_check`]),
 //!   - the download-percentage math ([`download_percent`]),
-//!   - the semver "is this genuinely newer" decision ([`is_newer`]).
+//!   - the semver "is this genuinely newer" decision ([`is_newer`]),
+//!   - the channel tag's parse-with-fallback and the per-channel feed URL
+//!     ([`UpdateChannel`], [`channel_feed_url`](sundayrec_core::update::channel_feed_url)).
 //!
 //! This module performs the side effects the Electron `src/main/updater.ts`
 //! did, but via Tauri 2's pull-style `tauri-plugin-updater` instead of
@@ -90,8 +92,76 @@ fn is_dev_build() -> bool {
     cfg!(debug_assertions)
 }
 
+/// The base URL the update feeds live under for THIS binary.
+///
+/// `option_env!` reads the environment at COMPILE time, not at run time — the
+/// value baked in when the binary was built is the only one it will ever have.
+/// A release built without `SUNDAYREC_UPDATE_BASE` therefore ships the
+/// production Worker, and a build that wants to point somewhere else (the E2E
+/// ring at `wrangler dev`) has to say so at build time. Setting the variable in
+/// the running app's environment does nothing; this has caught people here
+/// before, which is why it says so out loud.
+#[cfg(any(feature = "updater", test))]
+fn update_base() -> &'static str {
+    option_env!("SUNDAYREC_UPDATE_BASE").unwrap_or(sundayrec_core::update::DEFAULT_UPDATE_BASE)
+}
+
+#[cfg(feature = "updater")]
+use sundayrec_core::settings::UpdateChannel;
 #[cfg(feature = "updater")]
 use sundayrec_core::update::should_check;
+
+/// The release channel this install follows, from the persisted settings.
+///
+/// Falls back to `stable` when the database is not up yet or the read fails: an
+/// install that cannot prove somebody opted it into beta is not on beta.
+#[cfg(feature = "updater")]
+async fn current_channel(app: &AppHandle) -> UpdateChannel {
+    use tauri::Manager;
+
+    let Some(db) = app.try_state::<crate::db::Db>() else {
+        return UpdateChannel::Stable;
+    };
+    crate::settings::load(&db.pool)
+        .await
+        .map(|s| s.update_channel)
+        .unwrap_or(UpdateChannel::Stable)
+}
+
+/// An updater pointed at exactly one channel's feed on the Worker.
+///
+/// The endpoint is set here, at run time, rather than taken from
+/// `tauri.conf.json`: the channel is a per-machine setting and the config is
+/// baked into the bundle, so a config-only feed could never follow it.
+/// `tauri.conf.json` still names the stable feed, so a build that somehow
+/// bypasses this path lands on the right server rather than the retired one.
+///
+/// There is deliberately **no fallback to the old GitHub feed** when the Worker
+/// is unreachable. The one scenario the Worker exists for is "stop serving this
+/// version to everyone" — and a client that quietly asked GitHub instead would
+/// download precisely the build the kill-switch was pulled for. A check that
+/// could not reach the Worker has to surface as a failed check.
+///
+/// URL construction is fallible (`endpoints` takes parsed `Url`s and validates
+/// the transport), so a malformed `SUNDAYREC_UPDATE_BASE` becomes a real error
+/// rather than a silently skipped endpoint.
+#[cfg(feature = "updater")]
+fn channel_updater(
+    app: &AppHandle,
+    channel: UpdateChannel,
+) -> AppResult<tauri_plugin_updater::Updater> {
+    use sundayrec_core::update::channel_feed_url;
+    use tauri_plugin_updater::UpdaterExt;
+
+    let feed = channel_feed_url(update_base(), channel);
+    let url = tauri::Url::parse(&feed)
+        .map_err(|e| AppError::Internal(format!("update feed url {feed}: {e}")))?;
+    app.updater_builder()
+        .endpoints(vec![url])
+        .map_err(|e| AppError::Internal(format!("updater endpoint {feed}: {e}")))?
+        .build()
+        .map_err(|e| AppError::Internal(format!("updater init: {e}")))
+}
 
 // ── Feature-OFF stubs (default build) ───────────────────────────────────────
 
@@ -142,7 +212,6 @@ fn feature_disabled() -> AppError {
 #[cfg(feature = "updater")]
 pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateStatus> {
     use sundayrec_core::update::is_newer;
-    use tauri_plugin_updater::UpdaterExt;
 
     if !should_check(is_dev_build()) {
         let s = UpdateStatus::UpToDate;
@@ -152,9 +221,7 @@ pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateSt
 
     engine.set(UpdateStatus::Checking);
 
-    let updater = app
-        .updater()
-        .map_err(|e| AppError::Internal(format!("updater init: {e}")))?;
+    let updater = channel_updater(app, current_channel(app).await)?;
 
     let next = match updater.check().await {
         Ok(Some(update)) => {
@@ -167,6 +234,11 @@ pub async fn check(app: &AppHandle, engine: &UpdateEngine) -> AppResult<UpdateSt
                 UpdateStatus::UpToDate
             }
         }
+        // The Worker answers 204 when a channel has no promoted manifest — which
+        // is also how a PAUSED channel reads. The plugin turns that into
+        // `Ok(None)` (tauri-plugin-updater 2.10.1, updater.rs), so a kill-switch
+        // pull lands here: "nothing to update to", not an error the operator has
+        // to interpret.
         Ok(None) => UpdateStatus::UpToDate,
         Err(e) => UpdateStatus::Error {
             message: format!("{e}"),
@@ -189,14 +261,15 @@ pub async fn download_and_install(
     use std::sync::Arc;
 
     use sundayrec_core::update::download_percent;
-    use tauri_plugin_updater::UpdaterExt;
 
-    let updater = app
-        .updater()
-        .map_err(|e| AppError::Internal(format!("updater init: {e}")))?;
+    // Re-resolved rather than carried over from `check`: the operator may have
+    // switched channel between the check and the click, and the download must
+    // come from the channel they are on NOW.
+    let updater = channel_updater(app, current_channel(app).await)?;
 
     let update = match updater.check().await {
         Ok(Some(u)) => u,
+        // 204 / nothing promoted — see the note in `check`.
         Ok(None) => {
             let s = UpdateStatus::UpToDate;
             engine.set(s.clone());
@@ -365,6 +438,14 @@ mod tests {
             version: "1.2.3".into(),
         });
         assert!(engine.status().is_ready_to_install());
+    }
+
+    #[test]
+    fn the_feed_base_defaults_to_the_worker() {
+        // No `SUNDAYREC_UPDATE_BASE` is baked into a test build, so this pins
+        // what a plain `cargo build` ships: the Worker, never the GitHub feed.
+        assert_eq!(update_base(), sundayrec_core::update::DEFAULT_UPDATE_BASE);
+        assert!(!update_base().contains("github.com"));
     }
 
     #[test]

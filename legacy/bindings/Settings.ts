@@ -5,6 +5,7 @@ import type { FilenamePattern } from "./FilenamePattern";
 import type { SampleRate } from "./SampleRate";
 import type { ScheduleSlot } from "./ScheduleSlot";
 import type { SpecialRecording } from "./SpecialRecording";
+import type { UpdateChannel } from "./UpdateChannel";
 
 /**
  * The complete (Fase-1 subset) settings model.
@@ -390,6 +391,12 @@ editorHwEncode: boolean,
  * Download and install updates automatically? Default true.
  */
 autoUpdate: boolean, 
+/**
+ * Which release feed to follow (E7). Default [`UpdateChannel::Stable`];
+ * `Beta` is opted into per machine and is never inherited from an imported
+ * profile's neighbour fields — an unreadable value lands on stable.
+ */
+updateChannel: UpdateChannel, 
 /**
  * Prompt to open the editor after a recording finishes? Default true.
  */

@@ -1932,6 +1932,21 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-auto-update" checked /><span class="toggle-track"></span></label>
         </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.updateChannel">Oppdateringskanal</div>
+            <div class="toggle-desc" data-i18n="general.updateChannelDesc">Stabil er versjoner som har vært gjennom en ekte gudstjeneste. Beta er nyere og mindre utprøvd.</div>
+          </div>
+          <select class="form-input split-select" id="opt-update-channel">
+            <option value="stable" data-i18n="general.updateChannelStable">Stabil</option>
+            <option value="beta" data-i18n="general.updateChannelBeta">Beta</option>
+          </select>
+        </div>
+        <!-- Which feed «Se etter oppdateringer» actually asks. Painted from
+             settings by general-page.ts; deliberately NO data-i18n, or
+             applyTranslations() would overwrite the live value with whichever
+             channel happened to be in the markup. -->
+        <div id="update-channel-active" class="update-channel-active">—</div>
         <div class="btn-row mt">
           <button class="btn-secondary" id="btn-check-updates" data-i18n="general.checkNow">Se etter oppdateringer nå</button>
           <button class="btn-primary" id="btn-restart-install" style="display:none" data-i18n="update.restartInstall">↺ Start på nytt og installer</button>

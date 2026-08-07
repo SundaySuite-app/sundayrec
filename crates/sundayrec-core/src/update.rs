@@ -23,6 +23,40 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::settings::UpdateChannel;
+
+/// The host the update feeds live under when the build does not override it.
+///
+/// Deliberately NOT `telemetry.sundaysuite.app`, even though the same Worker
+/// answers both names. An update check runs whether or not the operator
+/// consented to telemetry; serving it from a host called "telemetry" would make
+/// a consent-declining install look like it phones the telemetry endpoint
+/// anyway — true in hostname, false in meaning, and precisely the wrong
+/// conclusion for anyone reading PRIVACY.md or their own firewall log. Two
+/// names keep the two promises separately legible.
+///
+/// It also replaces the old GitHub feed
+/// (`releases/latest/download/latest.json`), which always served whatever the
+/// newest release happened to be: there was no way to STOP serving a bad
+/// version once published. The Worker serves only explicitly promoted
+/// manifests, which is what makes the kill-switch and the two rings possible.
+pub const DEFAULT_UPDATE_BASE: &str = "https://updates.sundaysuite.app";
+
+/// The feed URL for one channel: `{base}/v1/update/{stable|beta}`.
+///
+/// The path carries none of the plugin's `{{current_version}}`/`{{target}}`/
+/// `{{arch}}` placeholders on purpose — the manifest the Worker returns holds
+/// the full platforms map and the plugin picks its own entry out of it. A
+/// trailing slash (or stray whitespace) on `base` is absorbed so a
+/// `SUNDAYREC_UPDATE_BASE` override cannot produce a `//v1` that 404s.
+pub fn channel_feed_url(base: &str, channel: UpdateChannel) -> String {
+    format!(
+        "{}/v1/update/{}",
+        base.trim().trim_end_matches('/'),
+        channel.as_tag()
+    )
+}
+
 /// The current state of an update check/download, as the renderer renders it.
 ///
 /// Mirrors the Electron `update-*` IPC events one-to-one. `Idle` is the
@@ -224,5 +258,47 @@ mod tests {
     fn is_newer_falls_back_to_string_diff_for_non_semver() {
         assert!(is_newer("2026.05.31", "2026.05.30"));
         assert!(!is_newer("nightly", "nightly"));
+    }
+
+    #[test]
+    fn each_channel_gets_its_own_feed() {
+        // These two strings are the live contract with the Worker — a change
+        // here is a change to what every shipped client asks for.
+        assert_eq!(
+            channel_feed_url(DEFAULT_UPDATE_BASE, UpdateChannel::Stable),
+            "https://updates.sundaysuite.app/v1/update/stable"
+        );
+        assert_eq!(
+            channel_feed_url(DEFAULT_UPDATE_BASE, UpdateChannel::Beta),
+            "https://updates.sundaysuite.app/v1/update/beta"
+        );
+        // The two rings must never resolve to the same URL.
+        assert_ne!(
+            channel_feed_url(DEFAULT_UPDATE_BASE, UpdateChannel::Stable),
+            channel_feed_url(DEFAULT_UPDATE_BASE, UpdateChannel::Beta)
+        );
+    }
+
+    #[test]
+    fn the_base_is_normalised_before_the_path_is_appended() {
+        assert_eq!(
+            channel_feed_url("https://updates.sundaysuite.app/", UpdateChannel::Stable),
+            "https://updates.sundaysuite.app/v1/update/stable",
+            "a trailing slash must not produce //v1"
+        );
+        assert_eq!(
+            channel_feed_url("  http://127.0.0.1:8787  ", UpdateChannel::Beta),
+            "http://127.0.0.1:8787/v1/update/beta",
+            "the wrangler-dev override arrives with the build env's whitespace"
+        );
+    }
+
+    #[test]
+    fn the_default_base_is_not_the_telemetry_host() {
+        // An update check happens with telemetry consent OFF. If this ever reads
+        // "telemetry", a declining install appears to call the telemetry
+        // endpoint on every launch.
+        assert!(!DEFAULT_UPDATE_BASE.contains("telemetry"));
+        assert!(DEFAULT_UPDATE_BASE.starts_with("https://"));
     }
 }
