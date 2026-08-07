@@ -3,15 +3,20 @@
 Single, current-state launchpad. The code is gate-green (the full Rust test suite;
 `npm run check` passes). Everything below that is **not** a code change is an owner action
 (secrets / accounts / signing) or a rig verification. Distilled from
-`NEEDS-RICHARD.md`, `DISTRIBUTION.md`, `RELEASE-AUDIT.md`, `SMOKE-TEST.md`.
+`NEEDS-RICHARD.md`, `DISTRIBUTION.md`, `RELEASE-AUDIT.md`, `SMOKE-TEST.md`,
+`ROLLBACK.md`.
 
 ## State of the release pipeline (verified in repo)
 
 | Item                                                             | State                                                     |
 | ---------------------------------------------------------------- | --------------------------------------------------------- |
 | Build macOS + Windows on tag (`release.yml`)                     | ✅ wired                                                  |
+| Beta ring: `-beta.N` tag → GitHub pre-release, automatic         | ✅ wired (`release.yml`'s `prerelease:` follows the tag)  |
 | Auto-updater plugin + pubkey + endpoints (`tauri.conf.json`)     | ✅ wired                                                  |
 | `includeUpdaterJson: true` in `release.yml`                      | ✅ set                                                    |
+| Channel promotion / kill-switch (`scripts/promote-release.mjs`)  | ✅ wired — needs Keychain item `sundayrec-telemetry-admin` |
+| Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`) | ⏳ Etappe 7 Worker-side rollout — see `sunday-telemetry` repo |
+| Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ⏳ pending — see the `qa/e7-update-channel` work; `tauri.conf.json` still points at GitHub as of this checklist |
 | `sundayrec://` deep-link scheme registered (config + Info.plist) | ✅ config done — GUI-UNVERIFIED                           |
 | ts-rs bindings drift                                             | ✅ 0 diff (`npm run bindings`)                            |
 | macOS signing + notarization                                     | 🔑 needs Apple secrets                                    |
@@ -57,27 +62,87 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 - [ ] **Anthropic API key** (OS keychain) for the live AI sermon-companion
       summary — the keyless extractive path works without it.
 
-## 5. Cut the release
+## 5. Cut the release — two rings, beta first
 
-- [ ] Bump version in lockstep: `package.json`, `src-tauri/tauri.conf.json`,
-      `src-tauri/Cargo.toml`.
-- [ ] `git tag vX.Y.Z && git push origin vX.Y.Z`.
-- [ ] Watch the run; it produces a **draft** Release. **Publishing is a separate
-      manual step** — review the draft, then mark it published/latest (same
-      gotcha as the Electron SundayRec; a draft is served to no one).
-- [ ] **Pin the Windows ffmpeg hash** (one-off, until it's in the file): the
-      Windows job's "Fetch bundled ffmpeg/ffprobe sidecars" step prints
-      `⚠ … no pinned SHA-256 for ffmpeg-x86_64-pc-windows-msvc — computed <hash>`
-      for both binaries. Copy those two lines into
-      `scripts/ffmpeg-checksums.json` and commit, so the NEXT release verifies
-      the bytes instead of trusting the download. See `DISTRIBUTION.md` ▸ "The
-      bundled ffmpeg".
-- [ ] When you publish the draft, confirm **"Set as the latest release" is
-      ticked and "Set as a pre-release" is NOT** — the auto-updater reads
-      `/releases/latest`, which excludes pre-releases. A pre-release (or a still-
-      draft) release means every installed client silently stops updating
-      (`latest.json` 404). The workflow now sets `prerelease: false`, so this is
-      the default; just don't override it.
+Since Etappe 7, "published on GitHub" and "reaches installed clients" are two
+separate facts. **A release that is built and published but never promoted
+serves nobody** — that is the standing failure mode to watch for now, and it
+is dangerous precisely because it looks completely fine: draft reviewed,
+published, "Latest" ticked, nothing red anywhere on GitHub. The channel just
+silently keeps offering the previous tag. Steps 5d/5e (and 5g's repeat of
+them) exist specifically to catch that — do not compress them into one
+mental step called "promote", they check different things.
+
+### 5a. Bump + tag (beta ring)
+
+- [ ] Bump version in lockstep to `vX.Y.Z-beta.N`: `package.json`,
+      `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`.
+- [ ] `git tag vX.Y.Z-beta.N && git push origin vX.Y.Z-beta.N`.
+- [ ] Watch the run. A `-beta.N` tag builds as a GitHub **pre-release**
+      automatically (`release.yml`'s `prerelease:` expression follows the tag
+      name — see the comment above it for why that's safe now). It still
+      lands as a **draft** either way.
+
+### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)
+
+- [ ] If the Windows job's "Fetch bundled ffmpeg/ffprobe sidecars" step prints
+      `⚠ … no pinned SHA-256 … — computed <hash>`, copy those lines into
+      `scripts/ffmpeg-checksums.json` and commit before publishing. See
+      `DISTRIBUTION.md` ▸ "The bundled ffmpeg". (All four current
+      macOS/Windows × ffmpeg/ffprobe hashes are pinned already — this is a
+      no-op unless a future ffmpeg version bump drops an entry.)
+
+### 5c. Review + publish the draft
+
+- [ ] Review the draft Release, then publish it. **Publishing is a separate
+      manual step from building** — a draft is served to no one (same gotcha
+      as the Electron-era SundayRec).
+- [ ] The pre-release flag is now set automatically from the tag, so there is
+      nothing to toggle by hand for the update feed's sake any more.
+- [ ] ⚠️ **Transition-period exception — still real, do not skip:** any
+      install still on v0.10.0 or earlier reads GitHub's `/releases/latest`
+      directly and never consults the promoted channel at all (see
+      `ROLLBACK.md`). For those installs, whether GitHub calls this release
+      "the latest" still genuinely matters. For everyone already on
+      v0.11.0+, it does not — only step 5d/5g's promotion reaches them. This
+      exception goes away once the whole fleet is confirmed past v0.11.0.
+
+### 5d. PROMOTE the tag to `beta` — its own step, cannot be skipped
+
+- [ ] `node scripts/promote-release.mjs beta vX.Y.Z-beta.N`
+
+There is no code path that infers a promotion from a GitHub publish. This is
+the only action that makes a v0.11.0+ install able to see the release at all.
+
+### 5e. VERIFY the promotion took — do not skip this either
+
+- [ ] `node scripts/promote-release.mjs` (no arguments) — confirm the `beta`
+      channel now reports the tag you just cut, and is **not** paused. A
+      checklist box that only says "promote" does not catch step 5d silently
+      failing (wrong tag typo, network hiccup, stale key); this one does,
+      because it reads the state back instead of trusting the previous step
+      succeeded.
+
+### 5f. Run a real Sunday on the beta ring before going further
+
+- [ ] Have the beta tester run a real service on the promoted beta build and
+      go through `SMOKE-TEST.md`'s **beta-søndag** section. Do not promote to
+      `stable` until that section is clean.
+
+### 5g. Repeat 5a–5e for the stable tag
+
+- [ ] Bump to the plain `vX.Y.Z` (same lockstep bump as 5a), tag, push,
+      review, publish (5c) — the plain tag builds as a normal (non-pre-)
+      release automatically.
+- [ ] **Promote**: `node scripts/promote-release.mjs stable vX.Y.Z`.
+- [ ] **Verify**: `node scripts/promote-release.mjs` — confirm `stable`
+      reports the new tag and is not paused.
+
+> If a promoted release turns out to be bad after all, see `ROLLBACK.md`.
+> Short version: pausing a channel stops NEW updates — it does not undo one
+> that already happened. The only way back for an install that already
+> updated is a NEWER version containing the fix; "rollback" in the literal
+> sense is not an operation this system has.
 
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
