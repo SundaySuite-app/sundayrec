@@ -60,12 +60,14 @@ function registeredCommands() {
   // `commands::<area>::<name>` — one per registered command. Comments in this
   // block (there are several, e.g. "// Papirkurv. …") never match this shape,
   // so they fall out for free without a separate strip pass.
-  const names = [...block[1].matchAll(/commands::[A-Za-z0-9_]+::([A-Za-z0-9_]+)/g)].map(
-    (m) => m[1],
-  );
+  const names = [
+    ...block[1].matchAll(/commands::[A-Za-z0-9_]+::([A-Za-z0-9_]+)/g),
+  ].map((m) => m[1]);
   const unique = new Set(names);
   if (unique.size !== names.length) {
-    throw new Error("duplicate command name in generate_handler![…] — investigate before trusting counts");
+    throw new Error(
+      "duplicate command name in generate_handler![…] — investigate before trusting counts",
+    );
   }
   return [...unique].sort();
 }
@@ -181,7 +183,9 @@ function isReachable(name, source) {
 
 const commands = registeredCommands();
 const files = collectSourceFiles();
-const combined = files.map((f) => stripComments(readFileSync(f, "utf8"))).join("\n");
+const combined = files
+  .map((f) => stripComments(readFileSync(f, "utf8")))
+  .join("\n");
 
 const reachable = [];
 const unreachable = [];
@@ -192,7 +196,9 @@ for (const name of commands) {
 console.log(
   `command reachability — registered ${commands.length}, reachable ${reachable.length}, unreachable ${unreachable.length}`,
 );
-console.log(`  (scanned ${files.length} files under ${SEARCH_ROOTS.join(", ")}, comments stripped)`);
+console.log(
+  `  (scanned ${files.length} files under ${SEARCH_ROOTS.join(", ")}, comments stripped)`,
+);
 
 const AUDIT = { registered: 178, reachable: 118, unreachable: 60 };
 if (
@@ -233,8 +239,12 @@ let baseline;
 try {
   baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 } catch (e) {
-  console.error(`✗ could not read baseline at ${relative(root, BASELINE_PATH)}: ${e.message}`);
-  console.error("  run `node scripts/check-command-reachability.mjs --write-baseline` to create it.");
+  console.error(
+    `✗ could not read baseline at ${relative(root, BASELINE_PATH)}: ${e.message}`,
+  );
+  console.error(
+    "  run `node scripts/check-command-reachability.mjs --write-baseline` to create it.",
+  );
   process.exit(1);
 }
 
@@ -268,27 +278,47 @@ let failed = false;
 
 if (regressions.length > 0) {
   failed = true;
-  console.error(`\n✗ ${regressions.length} command(s) that were reachable are now unreachable:`);
+  console.error(
+    `\n✗ ${regressions.length} command(s) that were reachable are now unreachable:`,
+  );
   for (const n of regressions.sort()) console.error(`    ${n}`);
-  console.error("  Something stopped calling this command. If the removal was intentional,");
-  console.error("  regenerate the baseline: node scripts/check-command-reachability.mjs --write-baseline");
+  console.error(
+    "  Something stopped calling this command. If the removal was intentional,",
+  );
+  console.error(
+    "  regenerate the baseline: node scripts/check-command-reachability.mjs --write-baseline",
+  );
 }
 
 if (unclassifiedNew.length > 0) {
   failed = true;
-  console.error(`\n✗ ${unclassifiedNew.length} newly-registered command(s) are unreachable and unclassified:`);
+  console.error(
+    `\n✗ ${unclassifiedNew.length} newly-registered command(s) are unreachable and unclassified:`,
+  );
   for (const n of unclassifiedNew.sort()) console.error(`    ${n}`);
-  console.error("  A brand-new command with no UI path needs an explicit decision (see the audit's");
-  console.error("  §4 keep/wire/cut framing), not silence. Wire it up, or accept it as intentionally");
+  console.error(
+    "  A brand-new command with no UI path needs an explicit decision (see the audit's",
+  );
+  console.error(
+    "  §4 keep/wire/cut framing), not silence. Wire it up, or accept it as intentionally",
+  );
   console.error("  unreachable for now by regenerating the baseline:");
-  console.error("    node scripts/check-command-reachability.mjs --write-baseline");
+  console.error(
+    "    node scripts/check-command-reachability.mjs --write-baseline",
+  );
 }
 
 if (newlyWired.length > 0) {
-  console.log(`\nℹ ${newlyWired.length} command(s) moved from unreachable → reachable since the baseline:`);
+  console.log(
+    `\nℹ ${newlyWired.length} command(s) moved from unreachable → reachable since the baseline:`,
+  );
   for (const n of newlyWired.sort()) console.log(`    ${n}`);
-  console.log("  Nice — no action required. The baseline can be refreshed to reflect it:");
-  console.log("    node scripts/check-command-reachability.mjs --write-baseline");
+  console.log(
+    "  Nice — no action required. The baseline can be refreshed to reflect it:",
+  );
+  console.log(
+    "    node scripts/check-command-reachability.mjs --write-baseline",
+  );
 }
 
 if (newlyRegisteredReachable.length > 0) {
@@ -299,7 +329,9 @@ if (newlyRegisteredReachable.length > 0) {
 }
 
 if (removed.length > 0) {
-  console.log(`\nℹ ${removed.length} command(s) in the baseline no longer exist in lib.rs (removed) — harmless.`);
+  console.log(
+    `\nℹ ${removed.length} command(s) in the baseline no longer exist in lib.rs (removed) — harmless.`,
+  );
 }
 
 if (!failed) {
