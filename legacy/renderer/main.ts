@@ -16,6 +16,7 @@ import { setupGeneralPage, applyGeneralSettingsToUI } from './pages/general-page
 import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
 import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
+import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
 import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
 import { setupIntegrationsPage } from './pages/integrations-page'
@@ -316,6 +317,33 @@ declare global {
       /** How many failures, which commands, and when the newest one landed. */
       getIpcFailureSummary:    () => { count: number; commands: string[]; newestAt: number | null }
 
+      // ── Telemetry (E3.6) — opt-in, anonymous, off by default. The rest of
+      // the surface (preview payload, queue status, delete-my-data) is
+      // declared in E3.7's block below. ──────────────────────────────────
+      /** The current consent state — status/never-asked-granted-denied, the
+       *  derived needsPrompt/active — see crates/sundayrec-core/telemetry/
+       *  consent.rs for the state machine this mirrors. */
+      telemetryConsentGet: () => Promise<import('../bindings/TelemetryConsent').TelemetryConsent>
+      /** Record the user's answer. Resolves `null` ONLY on a real IPC
+       *  failure — callers must never treat `null` as "recorded", since the
+       *  whole point of asking once is that a lost answer must be asked
+       *  again. */
+      telemetryConsentSet: (granted: boolean) => Promise<import('../bindings/TelemetryConsent').TelemetryConsent | null>
+      /** Opens PRIVACY.md on the (public) GitHub repo via the opener plugin. */
+      openPrivacyPolicy: () => Promise<boolean>
+
+      // ── Telemetry (E3.7) — the settings-panel surface ────────────────────
+      /** The real next payload as pretty JSON, honestly labelled — see
+       *  TelemetryPreview's own doc comment for why the two consent states
+       *  answer differently. `null` only on a genuine IPC failure; never
+       *  fabricated. */
+      telemetryPreviewPayload: () => Promise<import('../bindings/TelemetryPreview').TelemetryPreview | null>
+      /** What is waiting in the local outbox. */
+      telemetryQueueStatus: () => Promise<import('../bindings/TelemetryQueueStatus').TelemetryQueueStatus>
+      /** "Slett mine data", the local half: retires the install id. Resolves
+       *  `false` only on a real failure. */
+      telemetryRegenerateInstallId: () => Promise<boolean>
+
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
       thumbnailClearDefault:   () => Promise<boolean>
@@ -584,6 +612,12 @@ async function init(): Promise<void> {
 
   // Show first-run onboarding wizard for new users
   checkAndShowOnboarding()
+
+  // Existing installs that already finished onboarding never see its consent
+  // step — ask them once, via a non-blocking corner card instead (E3.6).
+  // Gated inside on `settings.onboardingDone`, so this is a no-op for the
+  // fresh installs the wizard above just handled (or is about to).
+  initTelemetryConsentPrompt()
 
   // Initial page load. The home page is marked `active` in the markup, so it
   // never goes through showPage — latch its entrance animation here instead.

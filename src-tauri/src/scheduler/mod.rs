@@ -356,7 +356,16 @@ async fn fire(
                     )
                     .await
                     {
-                        Ok(Ok(())) => tracing::info!("scheduler: started scheduled recording"),
+                        Ok(Ok(())) => {
+                            // SCHEDULED, as opposed to the manual `start_recording`
+                            // command: whether churches actually rely on the
+                            // scheduler is the single most useful thing this
+                            // counter set can answer.
+                            crate::telemetry::counters::count(
+                                sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
+                            );
+                            tracing::info!("scheduler: started scheduled recording");
+                        }
                         // A scheduled recording that does not start is the single
                         // worst thing this app can do quietly: nobody is watching
                         // the screen at 11:00, and the service is not repeatable.
@@ -632,10 +641,15 @@ pub async fn check_missed(
         match build_opts(app, &settings, custom_name.as_deref(), max_minutes, None) {
             Ok(opts) => {
                 let engine = app.state::<RecorderEngine>();
-                if let Err(e) = engine
+                let late = engine
                     .start(app.clone(), Some(pool.clone()), opts, None)
-                    .await
-                {
+                    .await;
+                if late.is_ok() {
+                    crate::telemetry::counters::count(
+                        sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
+                    );
+                }
+                if let Err(e) = late {
                     tracing::error!("scheduler: late-start of missed recording failed: {e}");
                     // The recovery attempt for an already-missed recording just
                     // failed too. Same wording, now on every configured channel.

@@ -60,6 +60,8 @@ fn decode_progress(
 #[tauri::command]
 pub async fn editor_load_recording(input_path: String) -> AppResult<EditorMediaInfo> {
     super::path_guard::checked_input_file(&input_path)?;
+    // The editor's entry point: loading a recording IS opening the editor.
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::EditorOpened);
     editor::load_recording(&input_path).await
 }
 
@@ -152,6 +154,9 @@ pub fn editor_detect_chapters(
     lines: Vec<EditorTranscriptLine>,
     lang: Option<String>,
 ) -> AppResult<Vec<EditorChapter>> {
+    crate::telemetry::counters::count(
+        sundayrec_core::telemetry::CounterName::EditorChaptersDetected,
+    );
     Ok(editor::detect_chapters(
         &lines,
         lang.as_deref().unwrap_or("no"),
@@ -214,6 +219,15 @@ pub async fn editor_export(
         .await
         .map(|s| s.editor_hw_encode)
         .unwrap_or(false);
+    // Counted by delivered FORMAT — which export people actually use is the
+    // question, and the format tag is a short closed vocabulary, never a name.
+    crate::telemetry::counters::count(match request.format.as_str() {
+        "mp3" => sundayrec_core::telemetry::CounterName::EditorExportMp3,
+        "wav" => sundayrec_core::telemetry::CounterName::EditorExportWav,
+        "flac" => sundayrec_core::telemetry::CounterName::EditorExportFlac,
+        "mp4" | "mov" => sundayrec_core::telemetry::CounterName::EditorExportVideo,
+        _ => sundayrec_core::telemetry::CounterName::EditorExportOther,
+    });
     editor::export(&engine, &request, hw_encode, move |pct, phase| {
         let _ = app.emit(
             "editor://export-progress",
@@ -321,6 +335,7 @@ pub async fn editor_master_apply(
 ) -> AppResult<EditorMasterApplyResult> {
     super::path_guard::checked_input_file(&request.input_path)?;
     super::path_guard::checked_path(&request.output_path)?;
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::EditorMasterApplied);
     let job_id = request.job_id.clone();
     editor::master_apply(&engine, &request, move |current_sec, total_sec| {
         let _ = app.emit(

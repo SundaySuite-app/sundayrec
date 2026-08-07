@@ -196,6 +196,9 @@ pub async fn publish_generate_feed(db: State<'_, Db>) -> AppResult<FeedPreview> 
             .filter(|s| !s.trim().is_empty())
             .ok_or_else(|| AppError::Validation("no_config: save folder not set".into()))?;
 
+        crate::telemetry::counters::count(
+            sundayrec_core::telemetry::CounterName::PublishFeedGenerated,
+        );
         let channel = resolve_channel(&db).await?;
         let rows = store::list_recordings(&db.pool).await?;
         let episodes = preview_episodes(&rows);

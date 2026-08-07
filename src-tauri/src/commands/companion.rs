@@ -76,6 +76,7 @@ pub async fn companion_build(
     transcript: TranscriptData,
     use_llm: Option<bool>,
 ) -> AppResult<SermonCompanion> {
+    crate::telemetry::counters::count(sundayrec_core::telemetry::CounterName::CompanionBuild);
     let lines: Vec<TranscriptLine> = transcript
         .segments
         .iter()

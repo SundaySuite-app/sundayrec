@@ -78,6 +78,12 @@ pub mod settings;
 // per-destination keys from the keychain. `stream_start` returns
 // `feature_disabled` in the default build.
 pub mod streaming;
+// E3 opt-in telemetry — the persistence seam around the pure wire contract and
+// consent state machine in `sundayrec_core::telemetry`. Owns the random install
+// id, the consent row, the counter map and the durable outbox. Featureless, and
+// with consent off it reaches nothing: no id is minted, no row is written, and
+// no sender exists to spawn.
+pub mod telemetry;
 // E2.2 observability — ONE supervisor for every long-lived background task. The
 // scheduler had this pattern inline and was the only task that did; extracting
 // it gave the cloud worker, the review-reminder tick and the trash sweep the
@@ -397,6 +403,26 @@ pub fn run() {
             // forever is not a delete, it is a leak with a nice name.
             trash::sweep::spawn(app.handle().clone());
 
+            // E3 opt-in telemetry. `startup` reads ONE settings row and returns
+            // when consent is not active — no crash ring is scanned, no install
+            // id is minted, and no sender task exists to spawn. The periodic
+            // drain is armed regardless because it makes the same check on every
+            // tick; arming it conditionally would mean a grant made mid-session
+            // did nothing until the next launch.
+            {
+                let handle = app.handle().clone();
+                crash::watch_handle(
+                    "telemetry::startup",
+                    tauri::async_runtime::spawn(async move {
+                        let Some(db) = handle.try_state::<db::Db>() else {
+                            return;
+                        };
+                        telemetry::startup(&handle, &db.pool).await;
+                    }),
+                );
+                telemetry::spawn_periodic_drain(app.handle().clone());
+            }
+
             // PU-2: install the menubar tray (`tray` feature, in `default`). The
             // menu shape is the unit-tested core model; start/stop/show are
             // wired to commands via `handle_menu_event`. The returned
@@ -644,6 +670,14 @@ pub fn run() {
             commands::publish::publish_feed_status,
             commands::publish::publish_feed_preview,
             commands::publish::publish_generate_feed,
+            // E3 opt-in telemetry. Consent defaults to OFF and nothing is
+            // collected, queued or sent without it; these are the only routes in.
+            commands::telemetry::telemetry_consent_get,
+            commands::telemetry::telemetry_consent_set,
+            commands::telemetry::telemetry_regenerate_install_id,
+            commands::telemetry::telemetry_count,
+            commands::telemetry::telemetry_preview_payload,
+            commands::telemetry::telemetry_queue_status,
             // R7 auto-update (status pure; check/download/relaunch gated by `updater`).
             commands::update::update_status,
             commands::update::update_check,

@@ -1440,6 +1440,29 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 }
 .btn-toast-close:hover { color: var(--text2); }
 
+/* ── Telemetry consent toast (E3.6) ──────────────────────────────
+ * The one-time prompt for installs that already finished onboarding
+ * (telemetry-consent-prompt.ts). Deliberately its OWN corner — top-right,
+ * below the titlebar — rather than .update-toast's bottom-right: the two are
+ * both "maybe shown at startup" and neither should have to know whether the
+ * other is currently on screen. */
+.telemetry-consent-toast {
+  position: fixed; top: 40px; right: 22px; z-index: var(--z-toast);
+  width: 320px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 14px; padding: 16px 16px 14px;
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(255,255,255,.05) inset;
+  display: flex; align-items: flex-start; gap: 10px;
+  animation: toast-in .28s cubic-bezier(.22,1,.36,1);
+}
+.telemetry-consent-toast-body { flex: 1; min-width: 0; }
+.telemetry-consent-toast-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.telemetry-consent-toast-text { font-size: 12px; color: var(--text2); line-height: 1.45; }
+.telemetry-consent-toast-body .privacy-link { display: inline-block; margin-top: 8px; font-size: 11px; }
+.telemetry-consent-toast-actions { display: flex; gap: 8px; margin-top: 12px; }
+.telemetry-consent-toast-actions .btn-primary,
+.telemetry-consent-toast-actions .btn-secondary { flex: 1; justify-content: center; }
+
 /* ── Update status in Generelt card ───────────────────────────── */
 .update-status-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; font-size: 13px; color: var(--text2); }
 .update-status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text4); flex-shrink: 0; }
@@ -3124,6 +3147,20 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   text-align: center; transition: color .15s;
 }
 .ob-text-btn:hover { color: var(--text2); }
+
+/* Shared "les mer"-style link — the consent surfaces' route to PRIVACY.md
+ * (onboarding step 5, the startup toast, the System-tab card). */
+.privacy-link { color: var(--accent); text-decoration: none; }
+.privacy-link:hover { text-decoration: underline; }
+
+/* Step 5: telemetry consent disclosure */
+.ob-consent-details { margin: 2px 0 18px; font-size: 12px; }
+.ob-consent-details summary { cursor: pointer; color: var(--text2); padding: 4px 0; }
+.ob-consent-list { margin: 8px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--text2); }
+.ob-consent-list li { line-height: 1.5; }
+.ob-consent-never { margin: 8px 0 4px; color: var(--text3); font-size: 11px; }
+.ob-consent-btn-row { margin-top: 0; }
+.ob-consent-note { font-size: 11px; color: var(--text3); text-align: center; margin: 2px 0 0; }
 
 /* Device list */
 .ob-dev-list {
