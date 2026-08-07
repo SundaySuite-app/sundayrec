@@ -840,3 +840,67 @@ clean line";
         assert!(ring.is_empty());
     }
 }
+
+/// Property tests (E5.8) — [`RecordingTelemetry::observe_line`] is on the
+/// recorder's hot path: EVERY line ffmpeg writes to stderr for the life of a
+/// real recording is folded through it (see its own doc comment on the
+/// per-line allocation budget). A panic here would take capture down mid-take;
+/// this is the same "stderr is unstructured free text we don't control" case
+/// [`crate::progress::parse_size_kb`] guards, just for the drop/dup/xrun/time/
+/// silence side of the same stream.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Arbitrary stderr-shaped lines must never panic the always-on telemetry
+        /// path — this runs unconditionally on every recording, not just self-tests.
+        #[test]
+        fn observe_line_never_panics(line in ".{0,500}") {
+            let mut t = RecordingTelemetry::default();
+            t.observe_line(&line);
+        }
+
+        /// [`parse_last_time_secs`] and [`parse_silence_segments`] see the exact
+        /// same unstructured stderr; neither may panic on it.
+        #[test]
+        fn time_and_silence_parsers_never_panic(blob in ".{0,500}") {
+            let _ = parse_last_time_secs(&blob);
+            let _ = parse_silence_segments(&blob, Some(1.0));
+            let _ = parse_silence_segments(&blob, None);
+        }
+
+        /// Every segment [`parse_silence_segments`] emits must be a genuine,
+        /// positive-duration span (`end > start`) — the same non-negative-gap
+        /// invariant the hand-written `silence_start`/`silence_end` pairing
+        /// already enforces (`if v > s`), now checked over arbitrary blobs
+        /// instead of only the hand-picked fixtures.
+        #[test]
+        fn silence_segments_are_always_positive_duration(blob in ".{0,500}", eof in prop::option::of(0.0f64..1e6)) {
+            for (start, end) in parse_silence_segments(&blob, eof) {
+                prop_assert!(end > start);
+            }
+        }
+
+        /// The always-on drop/dup counters must read identically whichever size
+        /// unit spelling (`kB` vs the ffmpeg-7.1-renamed `KiB`) happens to sit
+        /// elsewhere on the SAME line — the unit rename that once broke
+        /// [`crate::progress::parse_size_kb`] must not have a sibling bug here,
+        /// since `observe_line` folds the whole line, not just the `size=` field.
+        #[test]
+        fn drop_dup_counts_are_unaffected_by_the_size_unit_spelling(
+            drop in 0u64..=10_000_000,
+            dup in 0u64..=10_000_000,
+            unit in prop_oneof![Just("kB"), Just("KiB")],
+        ) {
+            let line = format!(
+                "frame=1 drop={drop} dup={dup} size=  100{unit} time=00:00:01.00 bitrate=1.0kbits/s"
+            );
+            let mut t = RecordingTelemetry::default();
+            t.observe_line(&line);
+            prop_assert_eq!(t.drops, drop);
+            prop_assert_eq!(t.dups, dup);
+        }
+    }
+}

@@ -292,3 +292,71 @@ mod tests {
         assert!(!float.copy_compatible_with(&float.clone()));
     }
 }
+
+/// Property tests (E5.8) — the WAV header math is the pure half of the native
+/// capture engine's file writer, and `parse_header` in particular runs over
+/// whatever bytes are sitting at the front of a file on disk (the pre-roll
+/// compatibility guard reads real, sometimes truncated or foreign, files
+/// before it ever gets to know their contents). Hostile/malformed input must
+/// come back as `None`, never a panic.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// No byte slice, however short, misaligned or garbage-filled, may panic
+        /// `parse_header`. It must always resolve to `Some`/`None` — a crash here
+        /// would take the pre-roll guard (and the file open path behind it) down
+        /// with it.
+        #[test]
+        fn parse_header_never_panics(bytes in prop::collection::vec(any::<u8>(), 0..2048)) {
+            let _ = parse_header(&bytes);
+        }
+
+        /// A header this module BUILDS must always parse back to the same
+        /// join-relevant fields — the round trip the pre-roll prepend and the
+        /// `_rN` fragment concat both depend on (`-c copy` requires the two
+        /// headers to agree exactly).
+        #[test]
+        fn header_roundtrips_for_any_spec(
+            channels in any::<u16>(),
+            sample_rate in any::<u32>(),
+            data_len in any::<u32>(),
+        ) {
+            let spec = WavSpec { channels, sample_rate };
+            let h = header(spec, data_len);
+            let info = parse_header(&h).expect("a header this module wrote must parse");
+            prop_assert_eq!(info.format_tag, 1);
+            prop_assert_eq!(info.channels, channels);
+            prop_assert_eq!(info.sample_rate, sample_rate);
+            prop_assert_eq!(info.bits_per_sample, 16);
+        }
+
+        /// `size_fields` must saturate at `u32::MAX`, never wrap — a wrapped RIFF
+        /// size would corrupt the header into claiming a file far smaller (or
+        /// differently sized) than what is actually on disk. Checked across the
+        /// FULL `u64` domain, including values many times past the u32 ceiling.
+        #[test]
+        fn size_fields_saturate_across_the_full_u64_domain(data_len in any::<u64>()) {
+            let (riff, data) = size_fields(data_len);
+            prop_assert_eq!(data as u64, data_len.min(u32::MAX as u64));
+            prop_assert_eq!(
+                riff as u64,
+                data_len.saturating_add(HEADER_LEN as u64 - 8).min(u32::MAX as u64)
+            );
+            // Never wraps to something smaller than the (saturated) data size.
+            prop_assert!(riff as u64 >= data as u64 || data == u32::MAX);
+        }
+
+        /// `f32_to_i16` must never panic — including on the two float values that
+        /// famously break naive `as i16` casts, `NAN` and the infinities — and the
+        /// output must always stay within `[-32767, 32767]` (symmetric scaling,
+        /// never the asymmetric `i16::MIN`).
+        #[test]
+        fn f32_to_i16_never_panics_and_stays_in_range(s in any::<f32>()) {
+            let v = f32_to_i16(s);
+            prop_assert!((-32767..=32767).contains(&v));
+        }
+    }
+}

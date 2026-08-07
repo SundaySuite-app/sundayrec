@@ -659,3 +659,75 @@ mod tests {
         assert_eq!(clamp01(f64::NAN), 0.0);
     }
 }
+
+/// Property tests (E5.8) — `escape_drawtext` is the only thing standing between
+/// a user-typed overlay title/subtitle and ffmpeg's `filter_complex` string
+/// parser. The inventory that scoped E5.8 flagged this function BY NAME as
+/// property-test-worthy: a title containing `'` or `:` that escaped incorrectly
+/// would let the text value break out of `text='…'` and inject additional
+/// filtergraph syntax.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Count occurrences of `meta` in `s` that sit OUTSIDE a `\`-prefixed 2-char
+    /// escape unit — i.e. metacharacters ffmpeg's filtergraph parser would
+    /// actually treat as live syntax, not literal text. `escape_drawtext` only
+    /// ever emits a `\` as the first half of one of its four fixed escape pairs
+    /// (`\\`, `\'`, `\:`, `\%`) — a plain input character is never itself `\`, so
+    /// treating every `\` as consuming exactly one following character is sound,
+    /// not an assumption this test is trusting blindly. Applying this to a whole
+    /// `text='…'` fragment (delimiters included) also works: the delimiter
+    /// quotes are plain characters the module appends OUTSIDE the escaped
+    /// payload, so they are correctly counted as unescaped.
+    fn count_unescaped(s: &str, meta: char) -> usize {
+        let chars: Vec<char> = s.chars().collect();
+        let mut i = 0;
+        let mut count = 0;
+        while i < chars.len() {
+            if chars[i] == '\\' {
+                i += 2; // the backslash and whatever it escaped, together.
+            } else {
+                if chars[i] == meta {
+                    count += 1;
+                }
+                i += 1;
+            }
+        }
+        count
+    }
+
+    proptest! {
+        /// Arbitrary overlay text — anything a user can type into the title/
+        /// subtitle field — must never panic the escaper.
+        #[test]
+        fn escape_drawtext_never_panics(s in ".{0,300}") {
+            let _ = escape_drawtext(&s);
+        }
+
+        /// No unescaped `'` or `:` may survive into the escaped value — either
+        /// would let the payload break out of the single-quoted `text='…'` token
+        /// or the `key:value` filter-option grammar around it.
+        #[test]
+        fn escaped_output_has_no_unescaped_quote_or_colon(s in ".{0,300}") {
+            let escaped = escape_drawtext(&s);
+            prop_assert_eq!(count_unescaped(&escaped, '\''), 0);
+            prop_assert_eq!(count_unescaped(&escaped, ':'), 0);
+        }
+
+        /// The concrete, end-to-end check: embedded in the REAL `text='…'`
+        /// fragment `drawtext_chain` builds, the escaped value must never expose
+        /// an unescaped `'` beyond the two delimiters the module itself wrote —
+        /// an escaped `\'` inside the payload is legitimate (that IS the
+        /// literal-quote encoding), but a THIRD *unescaped* `'` is exactly what
+        /// would terminate the string early and hand the rest of the title to
+        /// the filtergraph parser as syntax.
+        #[test]
+        fn embedded_in_a_real_text_fragment_only_the_two_delimiters_are_unescaped(s in ".{0,300}") {
+            let escaped = escape_drawtext(&s);
+            let fragment = format!("text='{escaped}'");
+            prop_assert_eq!(count_unescaped(&fragment, '\''), 2);
+        }
+    }
+}

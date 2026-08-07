@@ -54,3 +54,10 @@ base64 = "0.22"
 # is safe in this GUI-free core. For local platform co-dev, override with a
 # `[patch]` in .cargo/config.toml.
 sunday-contracts = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
+
+[dev-dependencies]
+# Property tests for the parsers most exposed to hostile/malformed input
+# (WAV headers, image headers, deep links, ffmpeg progress/telemetry lines,
+# drawtext escaping) — see the `proptest!` blocks alongside each module's
+# existing example-based `#[cfg(test)] mod tests`. Dev-only: never ships.
+proptest = "1"

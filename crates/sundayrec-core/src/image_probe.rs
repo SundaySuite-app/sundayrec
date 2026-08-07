@@ -426,4 +426,99 @@ mod tests {
             assert_eq!(f.as_str(), f.extension());
         }
     }
+
+    // ── property tests (E5.8) ─────────────────────────────────────────────
+    //
+    // These headers are read from whatever a user just dropped into the
+    // cover-art panel — the ONE input this module must never trust. Nested in
+    // `tests` (not a sibling module) so the fixture builders above (`png`,
+    // `jpeg`, `riff`, `webp_lossy`/`_lossless`/`_extended`) are in scope.
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Wholly arbitrary bytes — no format signature, no structure at all —
+            /// must never panic. A cover-art drop is exactly this: unvalidated file
+            /// bytes handed straight to the probe before anything else looks at them.
+            #[test]
+            fn probe_image_never_panics_on_arbitrary_bytes(
+                bytes in prop::collection::vec(any::<u8>(), 0..4096)
+            ) {
+                let _ = probe_image(&bytes);
+            }
+
+            /// A PREFIX of a real, validly-constructed header must never yield a
+            /// "bogus dimension" — a value that isn't the true one. It is either
+            /// refused outright (`None`, the truncated-signature/chunk case) or, once
+            /// enough bytes are present to read the real width/height, the exact
+            /// same answer as the full header. There is no middle state where a
+            /// short prefix parses to a DIFFERENT size than the real image.
+            #[test]
+            fn png_prefix_is_none_or_exactly_the_full_answer(
+                width in 1u32..=100_000,
+                height in 1u32..=100_000,
+                cut in any::<proptest::sample::Index>(),
+            ) {
+                let full = png(width, height);
+                let cut = cut.index(full.len() + 1);
+                let truth = probe_image(&full);
+                let got = probe_image(&full[..cut]);
+                prop_assert!(got.is_none() || got == truth);
+            }
+
+            #[test]
+            fn jpeg_prefix_is_none_or_exactly_the_full_answer(
+                width in 1u16..=16_000,
+                height in 1u16..=16_000,
+                sof_marker in prop_oneof![Just(0xc0u8), Just(0xc2u8)],
+                cut in any::<proptest::sample::Index>(),
+            ) {
+                let full = jpeg(width, height, sof_marker);
+                let cut = cut.index(full.len() + 1);
+                let truth = probe_image(&full);
+                let got = probe_image(&full[..cut]);
+                prop_assert!(got.is_none() || got == truth);
+            }
+
+            #[test]
+            fn webp_lossy_prefix_is_none_or_exactly_the_full_answer(
+                width in 1u16..=16_383,
+                height in 1u16..=16_383,
+                cut in any::<proptest::sample::Index>(),
+            ) {
+                let full = webp_lossy(width, height);
+                let cut = cut.index(full.len() + 1);
+                let truth = probe_image(&full);
+                let got = probe_image(&full[..cut]);
+                prop_assert!(got.is_none() || got == truth);
+            }
+
+            #[test]
+            fn webp_lossless_prefix_is_none_or_exactly_the_full_answer(
+                width in 1u32..=16_384,
+                height in 1u32..=16_384,
+                cut in any::<proptest::sample::Index>(),
+            ) {
+                let full = webp_lossless(width, height);
+                let cut = cut.index(full.len() + 1);
+                let truth = probe_image(&full);
+                let got = probe_image(&full[..cut]);
+                prop_assert!(got.is_none() || got == truth);
+            }
+
+            #[test]
+            fn webp_extended_prefix_is_none_or_exactly_the_full_answer(
+                width in 1u32..=16_000_000,
+                height in 1u32..=16_000_000,
+                cut in any::<proptest::sample::Index>(),
+            ) {
+                let full = webp_extended(width, height);
+                let cut = cut.index(full.len() + 1);
+                let truth = probe_image(&full);
+                let got = probe_image(&full[..cut]);
+                prop_assert!(got.is_none() || got == truth);
+            }
+        }
+    }
 }

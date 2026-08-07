@@ -404,3 +404,98 @@ mod tests {
         assert_eq!(parse_deep_link(&rebuilt).unwrap(), action);
     }
 }
+
+/// Property tests (E5.8) — `parse_deep_link` is the FIRST thing that touches an
+/// inbound `sundayrec://…` URL, which arrives from the OS on behalf of
+/// whatever process fired the custom-scheme navigation (any web page can do
+/// this — see `src-tauri/src/commands/deeplink.rs`'s admission-control header
+/// comment for the incident this guards against). Everything downstream —
+/// `commands::deeplink::validate_captions_request`'s absolute/no-`..`/
+/// inside-the-save-folder checks — trusts the `path`/`recording` strings this
+/// parser hands it. So two things must hold for ANY input, not just
+/// well-formed links: parsing never panics, and the guard sees exactly the
+/// path a caller meant to send — nothing added, nothing silently dropped or
+/// re-encoded into a different string along the way.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Arbitrary strings — not necessarily well-formed URLs, not even
+        /// necessarily starting with our scheme — must never panic. This is the
+        /// literal boundary between "OS handed us a string" and Rust code; a
+        /// panic here is a crash triggered by ANY page that can open a link.
+        #[test]
+        fn parse_deep_link_never_panics(s in ".{0,300}") {
+            let _ = parse_deep_link(&s);
+        }
+
+        /// Total-function shape: every string carrying our scheme prefix resolves
+        /// to SOME action (even an unrecognised host lands in `Unknown`, deliberately
+        /// — see the doc comment on that variant) — the guard's caller can rely on
+        /// "recognised scheme ⇒ Some" and never has a silently-swallowed link.
+        /// Everything else is unambiguously `None`.
+        #[test]
+        fn recognises_exactly_the_scheme_prefix(s in ".{0,300}") {
+            let action = parse_deep_link(&s);
+            if s.starts_with("sundayrec://") {
+                prop_assert!(action.is_some());
+            } else {
+                prop_assert!(action.is_none());
+            }
+        }
+
+        /// The security-relevant round trip: for an arbitrary path/return_to pair,
+        /// the guard must see EXACTLY the path that was handed to the builder — the
+        /// percent-codec must not corrupt, truncate, or (worse) silently normalise
+        /// away part of the string on its way through encode → OS string → decode.
+        /// A `..` component, if present, survives intact for the guard's own
+        /// Traversal check to catch; this test does not re-implement that check,
+        /// only guarantees the guard is looking at the real, unaltered value.
+        #[test]
+        fn import_link_round_trips_arbitrary_paths(
+            path in ".{0,200}",
+            return_to in prop::option::of("[a-zA-Z0-9_-]{0,40}"),
+        ) {
+            let url = build_import_url(SUNDAYREC_SCHEME, &path, return_to.as_deref());
+            let action = parse_deep_link(&url);
+            prop_assert!(action.is_some(), "a link we just built must parse");
+            match action.unwrap() {
+                DeepLinkAction::Import { path: got_path, return_to: got_return_to } => {
+                    prop_assert_eq!(got_path, path);
+                    // `build_import_url` normalises an empty `return_to` to `None`
+                    // (see its doc comment) — the guard sees that same normalisation,
+                    // not a stray empty string masquerading as "no return address".
+                    let expected = return_to.filter(|s| !s.is_empty());
+                    prop_assert_eq!(got_return_to, expected);
+                }
+                other => prop_assert!(false, "expected Import, got {other:?}"),
+            }
+        }
+
+        /// Same round trip for the captions hand-back path (`recording=` is the
+        /// second string the guard validates — it must arrive intact too).
+        #[test]
+        fn captions_link_round_trips_arbitrary_paths(
+            path in "[^&]{0,200}",
+            recording in prop::option::of("[^&]{1,200}"),
+        ) {
+            use sunday_contracts::encode_component;
+            let mut url = format!("sundayrec://captions?path={}", encode_component(&path));
+            if let Some(r) = &recording {
+                url.push_str("&recording=");
+                url.push_str(&encode_component(r));
+            }
+            let action = parse_deep_link(&url);
+            prop_assert!(action.is_some());
+            match action.unwrap() {
+                DeepLinkAction::Captions { path: got_path, recording: got_recording } => {
+                    prop_assert_eq!(got_path, path);
+                    prop_assert_eq!(got_recording, recording);
+                }
+                other => prop_assert!(false, "expected Captions, got {other:?}"),
+            }
+        }
+    }
+}
