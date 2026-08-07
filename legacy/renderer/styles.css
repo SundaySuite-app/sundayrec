@@ -1474,6 +1474,15 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 /* The update download uses the shared ui/progress.ts widget (real bytes in, so
    it gets a real remaining-time line); only its placement is ours. */
 .update-progress-host { margin-bottom: 8px; }
+/* Which feed the check asks. Quiet on stable — it is the expected state and
+   should not shout. Gold on beta, because "this machine takes unverified
+   builds" is the one thing nobody should discover during a service. */
+.update-channel-active { margin-top: 10px; font-size: 11px; color: var(--text3); line-height: 1.5; }
+.update-channel-active.is-beta {
+  color: var(--gold, #ebb84b);
+  background: color-mix(in srgb, var(--gold, #ebb84b) 12%, transparent);
+  border-radius: 6px; padding: 5px 9px; font-weight: 600;
+}
 
 /* ── Wake status row ─────────────────────────────────────────────── */
 .wake-status-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; color: var(--text2); }

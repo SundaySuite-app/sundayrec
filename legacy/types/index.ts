@@ -17,6 +17,7 @@ import type { SermonHighlight } from '../bindings/SermonHighlight'
 import type { CompanionChapter } from '../bindings/CompanionChapter'
 import type { SummarySource } from '../bindings/SummarySource'
 import type { SermonCompanion } from '../bindings/SermonCompanion'
+import type { UpdateChannel } from '../bindings/UpdateChannel'
 export type {
   ChannelMode,
   FileFormat,
@@ -30,6 +31,7 @@ export type {
   CompanionChapter,
   SummarySource,
   SermonCompanion,
+  UpdateChannel,
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -342,6 +344,10 @@ export interface Settings {
 
   // Updates
   autoUpdate: boolean
+  /** Which release feed this install follows. `stable` (default) is versions
+   *  that have been through a real Sunday; `beta` is the promoted-but-unverified
+   *  ring. Selects the Worker feed at check time — Rust: `Settings.update_channel`. */
+  updateChannel: UpdateChannel
 
   // Church profile
   churchName: string

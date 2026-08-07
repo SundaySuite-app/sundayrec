@@ -97,6 +97,64 @@ pub enum FilenamePattern {
     Datetime,
 }
 
+/// Which release feed this install follows (E7). Serialised lowercase
+/// (`"stable" | "beta"`) — the tag IS the path segment the update Worker serves
+/// (`/v1/update/{channel}`, see [`crate::update::channel_feed_url`]), so a
+/// renamed variant is a renamed live URL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/UpdateChannel.ts")]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    /// Versions that have already been through a real Sunday somewhere. Where
+    /// every install stays unless someone deliberately moves it.
+    Stable,
+    /// Promoted-but-unverified builds — the ring that finds what QA did not,
+    /// on machines whose owners accepted that job.
+    Beta,
+}
+
+impl UpdateChannel {
+    /// The stored tag / feed path segment for this channel.
+    pub fn as_tag(self) -> &'static str {
+        match self {
+            UpdateChannel::Stable => "stable",
+            UpdateChannel::Beta => "beta",
+        }
+    }
+
+    /// Parse a stored tag, resolving anything unrecognised to
+    /// [`UpdateChannel::Stable`].
+    ///
+    /// A value we cannot read is a value we cannot trust to mean "this operator
+    /// asked for unverified builds", so it can only mean the safe channel —
+    /// never beta, and never a load failure (see
+    /// [`deserialize_update_channel`]).
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "beta" => UpdateChannel::Beta,
+            _ => UpdateChannel::Stable,
+        }
+    }
+}
+
+/// Lenient deserializer for [`Settings::update_channel`].
+///
+/// This one field needs its own because [`Settings::from_json_merged`] falls
+/// back to the FULL defaults the moment ANY field rejects its value: a
+/// hand-edited `"canary"` would otherwise reset the save folder, the schedule
+/// and every audio setting along with it. Here an unreadable channel costs the
+/// channel and nothing else.
+fn deserialize_update_channel<'de, D>(de: D) -> Result<UpdateChannel, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = serde_json::Value::deserialize(de)?;
+    Ok(raw
+        .as_str()
+        .map(UpdateChannel::parse)
+        .unwrap_or_else(default_update_channel))
+}
+
 /// The complete (Fase-1 subset) settings model.
 ///
 /// Every field carries `#[serde(default)]` so a partial or older JSON blob
@@ -432,6 +490,14 @@ pub struct Settings {
     /// Download and install updates automatically? Default true.
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    /// Which release feed to follow (E7). Default [`UpdateChannel::Stable`];
+    /// `Beta` is opted into per machine and is never inherited from an imported
+    /// profile's neighbour fields — an unreadable value lands on stable.
+    #[serde(
+        default = "default_update_channel",
+        deserialize_with = "deserialize_update_channel"
+    )]
+    pub update_channel: UpdateChannel,
     /// Prompt to open the editor after a recording finishes? Default true.
     #[serde(default = "default_true")]
     pub ask_open_editor: bool,
@@ -521,6 +587,9 @@ fn default_output_mode() -> String {
 }
 fn default_separate_audio_format() -> FileFormat {
     FileFormat::Wav
+}
+fn default_update_channel() -> UpdateChannel {
+    UpdateChannel::Stable
 }
 
 impl Default for Settings {
@@ -617,6 +686,7 @@ impl Default for Settings {
             editor_hw_encode: false,
 
             auto_update: true,
+            update_channel: default_update_channel(),
             ask_open_editor: true,
         }
     }
@@ -1214,6 +1284,7 @@ mod tests {
         assert!(obj.contains_key("stopOnSilence"));
         assert!(obj.contains_key("silenceTimeoutMinutes"));
         assert!(obj.contains_key("autoUpdate"));
+        assert!(obj.contains_key("updateChannel"));
         assert!(obj.contains_key("askOpenEditor"));
         // Schedule keys must match the Electron `Settings` interface.
         assert!(obj.contains_key("slots"));
@@ -1248,6 +1319,68 @@ mod tests {
         let legacy = Settings::from_json_merged(r#"{ "sampleRate": 44100 }"#);
         assert!(legacy.slots.is_empty());
         assert!(legacy.special_recordings.is_empty());
+    }
+
+    #[test]
+    fn update_channel_serde_tags_are_the_feed_path_segments() {
+        assert_eq!(
+            serde_json::to_string(&UpdateChannel::Stable).unwrap(),
+            "\"stable\""
+        );
+        assert_eq!(
+            serde_json::to_string(&UpdateChannel::Beta).unwrap(),
+            "\"beta\""
+        );
+        assert_eq!(UpdateChannel::Stable.as_tag(), "stable");
+        assert_eq!(UpdateChannel::Beta.as_tag(), "beta");
+    }
+
+    #[test]
+    fn update_channel_parse_falls_back_to_stable() {
+        assert_eq!(UpdateChannel::parse("beta"), UpdateChannel::Beta);
+        assert_eq!(UpdateChannel::parse("  BETA "), UpdateChannel::Beta);
+        assert_eq!(UpdateChannel::parse("stable"), UpdateChannel::Stable);
+        // Anything we cannot read is not a request for unverified builds.
+        assert_eq!(UpdateChannel::parse("canary"), UpdateChannel::Stable);
+        assert_eq!(UpdateChannel::parse(""), UpdateChannel::Stable);
+        assert_eq!(UpdateChannel::parse("bet"), UpdateChannel::Stable);
+    }
+
+    #[test]
+    fn a_garbage_update_channel_costs_only_the_channel() {
+        // The regression this guards: without the lenient deserializer the whole
+        // blob would fail and `from_json_merged` would reset EVERY setting.
+        let s = Settings::from_json_merged(
+            r#"{ "updateChannel": "canary", "sampleRate": 44100, "format": "flac" }"#,
+        );
+        assert_eq!(s.update_channel, UpdateChannel::Stable);
+        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.format, FileFormat::Flac);
+
+        // Same for a value that is not even a string.
+        let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "sampleRate": 44100 }"#);
+        assert_eq!(s.update_channel, UpdateChannel::Stable);
+        assert_eq!(s.sample_rate, 44_100);
+    }
+
+    #[test]
+    fn update_channel_round_trips_and_defaults_to_stable() {
+        assert_eq!(Settings::default().update_channel, UpdateChannel::Stable);
+        // Absent key → stable.
+        assert_eq!(
+            Settings::from_json_merged("{}").update_channel,
+            UpdateChannel::Stable
+        );
+        // A deliberate opt-in survives the round trip.
+        let beta = Settings {
+            update_channel: UpdateChannel::Beta,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&beta).unwrap();
+        assert_eq!(
+            Settings::from_json_merged(&json).update_channel,
+            UpdateChannel::Beta
+        );
     }
 
     #[test]
