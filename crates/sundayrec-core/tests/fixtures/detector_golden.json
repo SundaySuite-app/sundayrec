@@ -1,0 +1,679 @@
+[
+  [
+    "typical_service",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 200.0,
+          "duration": 200.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 200.0,
+          "end": 250.0,
+          "duration": 50.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.7
+        },
+        {
+          "start": 250.0,
+          "end": 400.0,
+          "duration": 150.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 400.0,
+          "end": 1600.0,
+          "duration": 1200.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        },
+        {
+          "start": 1600.0,
+          "end": 1700.0,
+          "duration": 100.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 400.0,
+        "end_sec": 1600.0,
+        "confidence": 0.9,
+        "seg_index": 3
+      },
+      "prep_attention": [],
+      "prep_status": "Ready",
+      "prep_trim": [400.0, 1600.0],
+      "prep_sermon_confidence": 0.9
+    }
+  ],
+  [
+    "sermon_only_single_block",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 5.0,
+          "duration": 5.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.8
+        },
+        {
+          "start": 5.0,
+          "end": 1500.0,
+          "duration": 1495.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.88
+        },
+        {
+          "start": 1500.0,
+          "end": 1505.0,
+          "duration": 5.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 5.0,
+        "end_sec": 1500.0,
+        "confidence": 0.88,
+        "seg_index": 1
+      },
+      "prep_attention": [],
+      "prep_status": "Ready",
+      "prep_trim": [5.0, 1500.0],
+      "prep_sermon_confidence": 0.88
+    }
+  ],
+  [
+    "sermon_only_split_by_song",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 5.0,
+          "duration": 5.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.8
+        },
+        {
+          "start": 5.0,
+          "end": 1500.0,
+          "duration": 1495.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.95
+        },
+        {
+          "start": 700.0,
+          "end": 720.0,
+          "duration": 20.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 720.0,
+          "end": 1500.0,
+          "duration": 780.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.75
+        },
+        {
+          "start": 1500.0,
+          "end": 1505.0,
+          "duration": 5.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 5.0,
+        "end_sec": 1500.0,
+        "confidence": 0.85,
+        "seg_index": 1
+      },
+      "prep_attention": [],
+      "prep_status": "Ready",
+      "prep_trim": [5.0, 1500.0],
+      "prep_sermon_confidence": 0.85
+    }
+  ],
+  [
+    "two_long_blocks_after_five_min",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 250.0,
+          "duration": 250.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.8
+        },
+        {
+          "start": 250.0,
+          "end": 300.0,
+          "duration": 50.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 300.0,
+          "end": 900.0,
+          "duration": 600.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        },
+        {
+          "start": 900.0,
+          "end": 950.0,
+          "duration": 50.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 950.0,
+          "end": 1300.0,
+          "duration": 350.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.85
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 300.0,
+        "end_sec": 900.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "prep_attention": [],
+      "prep_status": "Ready",
+      "prep_trim": [300.0, 900.0],
+      "prep_sermon_confidence": 0.9
+    }
+  ],
+  [
+    "equal_duration_different_confidence",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 360.0,
+          "duration": 360.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 360.0,
+          "end": 660.0,
+          "duration": 300.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.7
+        },
+        {
+          "start": 660.0,
+          "end": 700.0,
+          "duration": 40.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 700.0,
+          "end": 1000.0,
+          "duration": 300.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.95
+        },
+        {
+          "start": 1000.0,
+          "end": 1400.0,
+          "duration": 400.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 700.0,
+        "end_sec": 1000.0,
+        "confidence": 0.95,
+        "seg_index": 3
+      },
+      "prep_attention": ["mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": [700.0, 1000.0],
+      "prep_sermon_confidence": 0.95
+    }
+  ],
+  [
+    "long_speech_before_five_min_only",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 400.0,
+          "duration": 400.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        },
+        {
+          "start": 400.0,
+          "end": 1200.0,
+          "duration": 800.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["speech_at_start", "mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "all_long_blocks_before_five_min",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 190.0,
+          "duration": 190.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.7
+        },
+        {
+          "start": 190.0,
+          "end": 200.0,
+          "duration": 10.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 200.0,
+          "end": 500.0,
+          "duration": 300.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        },
+        {
+          "start": 500.0,
+          "end": 1400.0,
+          "duration": 900.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["speech_at_start", "mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "short_speech_only",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 100.0,
+          "duration": 100.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.6
+        },
+        {
+          "start": 100.0,
+          "end": 200.0,
+          "duration": 100.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 200.0,
+          "end": 320.0,
+          "duration": 120.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.65
+        },
+        {
+          "start": 320.0,
+          "end": 600.0,
+          "duration": 280.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["no_sermon_block", "mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "concert_with_one_talk",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 1200.0,
+          "duration": 1200.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.9
+        },
+        {
+          "start": 1200.0,
+          "end": 1500.0,
+          "duration": 300.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.8
+        },
+        {
+          "start": 1500.0,
+          "end": 2400.0,
+          "duration": 900.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.9
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 1200.0,
+        "end_sec": 1500.0,
+        "confidence": 0.8,
+        "seg_index": 1
+      },
+      "prep_attention": ["mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": [1200.0, 1500.0],
+      "prep_sermon_confidence": 0.8
+    }
+  ],
+  [
+    "mid_recording_silence_run",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 200.0,
+          "duration": 200.0,
+          "label": "Tale",
+          "kind": "speech",
+          "confidence": 0.7
+        },
+        {
+          "start": 200.0,
+          "end": 380.0,
+          "duration": 180.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 380.0,
+          "end": 900.0,
+          "duration": 520.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.85
+        },
+        {
+          "start": 900.0,
+          "end": 1000.0,
+          "duration": 100.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 380.0,
+        "end_sec": 900.0,
+        "confidence": 0.85,
+        "seg_index": 2
+      },
+      "prep_attention": ["mid_silence"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": [380.0, 900.0],
+      "prep_sermon_confidence": 0.85
+    }
+  ],
+  [
+    "low_confidence_sermon",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 400.0,
+          "duration": 400.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 400.0,
+          "end": 1000.0,
+          "duration": 600.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.45
+        },
+        {
+          "start": 1000.0,
+          "end": 1100.0,
+          "duration": 100.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 400.0,
+        "end_sec": 1000.0,
+        "confidence": 0.45,
+        "seg_index": 1
+      },
+      "prep_attention": ["low_confidence"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": [400.0, 1000.0],
+      "prep_sermon_confidence": 0.45
+    }
+  ],
+  [
+    "very_short_recording",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 60.0,
+          "duration": 60.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.8
+        },
+        {
+          "start": 60.0,
+          "end": 400.0,
+          "duration": 340.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["speech_at_start", "very_short"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "under_sixty_seconds",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 50.0,
+          "duration": 50.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.9
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["no_sermon_block", "very_short"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "tiny_all_speech",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 100.0,
+          "duration": 100.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.5
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 0.0,
+        "end_sec": 100.0,
+        "confidence": 0.5,
+        "seg_index": 0
+      },
+      "prep_attention": ["low_confidence", "very_short"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": [0.0, 100.0],
+      "prep_sermon_confidence": 0.5
+    }
+  ],
+  [
+    "no_speech_at_all",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 600.0,
+          "duration": 600.0,
+          "label": "Musikk",
+          "kind": "music",
+          "confidence": 0.9
+        },
+        {
+          "start": 600.0,
+          "end": 700.0,
+          "duration": 100.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.7
+        }
+      ],
+      "prep_sermon": null,
+      "prep_attention": ["no_sermon_block", "mostly_music"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ],
+  [
+    "mixed_and_unknown_present",
+    {
+      "editor_segments": [
+        {
+          "start": 0.0,
+          "end": 300.0,
+          "duration": 300.0,
+          "label": "—",
+          "kind": "unknown",
+          "confidence": 0.3
+        },
+        {
+          "start": 300.0,
+          "end": 320.0,
+          "duration": 20.0,
+          "label": "Blandet",
+          "kind": "mixed",
+          "confidence": 0.5
+        },
+        {
+          "start": 320.0,
+          "end": 900.0,
+          "duration": 580.0,
+          "label": "Preken",
+          "kind": "sermon",
+          "confidence": 0.8
+        },
+        {
+          "start": 900.0,
+          "end": 1000.0,
+          "duration": 100.0,
+          "label": "Stillhet",
+          "kind": "silence",
+          "confidence": 0.7
+        }
+      ],
+      "prep_sermon": {
+        "start_sec": 320.0,
+        "end_sec": 900.0,
+        "confidence": 0.8,
+        "seg_index": 2
+      },
+      "prep_attention": [],
+      "prep_status": "Ready",
+      "prep_trim": [320.0, 900.0],
+      "prep_sermon_confidence": 0.8
+    }
+  ],
+  [
+    "empty",
+    {
+      "editor_segments": [],
+      "prep_sermon": null,
+      "prep_attention": ["no_sermon_block"],
+      "prep_status": "NeedsAttention",
+      "prep_trim": null,
+      "prep_sermon_confidence": null
+    }
+  ]
+]
