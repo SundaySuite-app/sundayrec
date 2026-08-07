@@ -96,6 +96,7 @@ pub mod review_queue;
 pub mod schedule;
 pub mod selftest;
 pub mod settings;
+pub mod shadow;
 pub mod silence;
 pub mod streaming;
 pub mod telemetry;

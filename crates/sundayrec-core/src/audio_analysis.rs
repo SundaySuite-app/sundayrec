@@ -18,8 +18,10 @@
 //! ## The seam
 //!
 //! [`FrameScorer`] is the boundary a voice-activity-detection model replaces.
-//! [`HeuristicScorer`] is the hand-rolled score this app has always shipped, and
-//! is the only implementation.
+//! [`HeuristicScorer`] is the hand-rolled score this app has always shipped;
+//! [`crate::shadow::VadScorer`] is the model. A scorer is handed a
+//! [`ScoringInput`] — the PCM *and* the derived frames — because a model needs
+//! samples and the four features here cannot be inverted back into them.
 
 /// Sample rate the analyzer expects (matches the ffmpeg `-ar` the shell uses).
 pub const SAMPLE_RATE: u32 = 16000;
@@ -330,6 +332,30 @@ pub fn classify_frame(frame: &AnalysisFrame) -> (SegmentType, f64) {
 
 // ── The model seam ────────────────────────────────────────────────────────────
 
+/// Everything [`crate::detect::analyse_pcm`] has, handed to the scorer whole.
+///
+/// The seam used to pass `frames` alone, and that was the one shape a
+/// voice-activity model could not wear: a VAD needs SAMPLES, and the four
+/// derived features in [`AnalysisFrame`] are not invertible. The E9 spike proved
+/// the mismatch by having to smuggle the PCM into an adapter's field — a
+/// workaround, not a design. So the seam carries what the caller already holds.
+///
+/// `frames` MUST be `extract_features(pcm, sample_rate, frame_ms)` for the same
+/// three values carried here. Nothing enforces that, because enforcing it would
+/// mean extracting the features twice; `analyse_pcm` is the only place in the
+/// app that builds one of these, and it builds both halves in the same two
+/// lines.
+#[derive(Debug, Clone, Copy)]
+pub struct ScoringInput<'a> {
+    /// The decoded mono PCM the frames were derived from. A feature-based scorer
+    /// ignores it; a model cannot work without it.
+    pub pcm: &'a [f32],
+    pub sample_rate: u32,
+    pub frame_ms: u32,
+    /// One entry per complete frame of `pcm`, in order.
+    pub frames: &'a [AnalysisFrame],
+}
+
 /// How a frame is judged — the ONE thing a voice-activity-detection model
 /// replaces.
 ///
@@ -337,22 +363,16 @@ pub fn classify_frame(frame: &AnalysisFrame) -> (SegmentType, f64) {
 /// selection, the attention reasons) consumes only this trait's output, so
 /// swapping the implementation is a one-argument change at
 /// [`crate::detect::analyse_pcm`] and nothing else moves. That is the entire
-/// point of the trait; it has one implementation today
-/// ([`HeuristicScorer`]) and exists so it can have two.
+/// point of the trait; it has two implementations —
+/// [`HeuristicScorer`] here and [`crate::shadow::VadScorer`].
 ///
 /// Whole-slice rather than per-frame on purpose: a model sees a window, not an
 /// isolated frame, and a per-frame signature would forbid batching a single
 /// forward pass over the file.
-///
-/// The one thing this seam does NOT absorb: a scorer that needs raw PCM rather
-/// than the four derived features in [`AnalysisFrame`] would also have to
-/// replace [`extract_features`]. Both are called in exactly one place —
-/// [`crate::detect::analyse_pcm`] — so that swap is still confined to a single
-/// function, but it is a wider change than substituting a scorer.
 pub trait FrameScorer {
-    /// Classify every frame, in order. The returned vector MUST be the same
-    /// length as `frames`; grouping indexes the two in lockstep.
-    fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)>;
+    /// Classify every frame of `input`, in order. The returned vector MUST be
+    /// the same length as `input.frames`; grouping indexes the two in lockstep.
+    fn classify_frames(&self, input: ScoringInput<'_>) -> Vec<(SegmentType, f64)>;
 }
 
 /// The feature-based heuristic this app has shipped since the Electron port —
@@ -361,8 +381,12 @@ pub trait FrameScorer {
 pub struct HeuristicScorer;
 
 impl FrameScorer for HeuristicScorer {
-    fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)> {
-        frames.iter().map(classify_frame).collect()
+    /// Reads only `input.frames`. The PCM beside them is what a model needs and
+    /// this scorer does not — carrying it costs a pointer and a length, and
+    /// keeping the two scorers on one signature is what makes them substitutable
+    /// at all.
+    fn classify_frames(&self, input: ScoringInput<'_>) -> Vec<(SegmentType, f64)> {
+        input.frames.iter().map(classify_frame).collect()
     }
 }
 
@@ -562,31 +586,31 @@ pub fn merge_short_segments(segments: &[AnalysisSegment]) -> Vec<AnalysisSegment
 
 /// Classify → smooth → group → merge, with the shipped heuristic. Ports
 /// `classifyAndGroup`.
-pub fn classify_and_group(frames: &[AnalysisFrame]) -> Vec<AnalysisSegment> {
-    classify_and_group_with(frames, &HeuristicScorer)
+pub fn classify_and_group(input: ScoringInput<'_>) -> Vec<AnalysisSegment> {
+    classify_and_group_with(input, &HeuristicScorer)
 }
 
 /// [`classify_and_group`] with the frame scorer chosen by the caller — the seam
 /// in use. Everything after the scorer is fixed.
 pub fn classify_and_group_with(
-    frames: &[AnalysisFrame],
+    input: ScoringInput<'_>,
     scorer: &dyn FrameScorer,
 ) -> Vec<AnalysisSegment> {
-    if frames.is_empty() {
+    if input.frames.is_empty() {
         return Vec::new();
     }
-    let scored = scorer.classify_frames(frames);
+    let scored = scorer.classify_frames(input);
     assert_eq!(
         scored.len(),
-        frames.len(),
+        input.frames.len(),
         "FrameScorer returned {} scores for {} frames",
         scored.len(),
-        frames.len()
+        input.frames.len()
     );
     let raw_types: Vec<SegmentType> = scored.iter().map(|(t, _)| *t).collect();
     let confidences: Vec<f64> = scored.iter().map(|(_, c)| *c).collect();
     let smoothed = median_smooth(&raw_types, SMOOTH_HALF_WIN);
-    let grouped = group_segments(frames, &smoothed, &confidences);
+    let grouped = group_segments(input.frames, &smoothed, &confidences);
     merge_short_segments(&grouped)
 }
 

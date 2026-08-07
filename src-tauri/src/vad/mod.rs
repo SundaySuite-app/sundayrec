@@ -37,6 +37,13 @@
 
 use std::sync::Arc;
 
+// Shadow mode's orchestration: decode → score → compare → record. Needs the
+// analysis decode, which is the `editor` seam's, so it compiles only when both
+// features are on. Everything ABOVE it is pure and lives in
+// `sundayrec_core::shadow`, which is always compiled.
+#[cfg(feature = "editor")]
+pub mod shadow;
+
 use sundayrec_core::vad::{
     resolve_input_slots, resolve_output_slots, VadBackend, VadError, VadInputSlots, VadOutputSlots,
     VAD_MODEL_FILE_NAME, VAD_MODEL_LEN, VAD_MODEL_SHA256, VAD_SAMPLE_RATE, VAD_STATE_ROWS,
@@ -342,7 +349,7 @@ mod tests {
     ///
     /// Everything is derived from a fixed seed, so the numbers in the assertions
     /// below are reproducible on every machine.
-    fn speech_like(seconds: f64) -> Vec<f32> {
+    pub(super) fn speech_like(seconds: f64) -> Vec<f32> {
         speech_like_at(seconds, VAD_SAMPLE_RATE)
     }
 

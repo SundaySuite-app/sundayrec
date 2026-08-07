@@ -165,9 +165,75 @@ pub async fn editor_segments(
     )
     .await?;
     if let Some(detection) = analysis {
+        shadow_the_analysis(&app, &input_path, &detection);
         offer_to_review_queue(&app, input_path, detection);
     }
     Ok(segments)
+}
+
+/// Score the same recording with the neural VAD, in the background, and record
+/// how its answer differed. SHADOW MODE — see [`crate::vad::shadow`].
+///
+/// ## Where the trigger is, and why here
+///
+/// Three properties had to hold at once, and this is the only site with all
+/// three:
+///
+///   - **Not on the operator's clock.** The pass costs about two minutes for a
+///     90-minute service, so it runs detached, AFTER `editor_segments` has
+///     already returned the segments. The «Analyser opptak» wait is exactly what
+///     it is in a build without the feature; nothing the operator is watching
+///     waits on the model.
+///   - **Only on a pass that actually ran.** `analysis` is `Some` only when the
+///     detection was computed rather than read from the segments cache — the
+///     same condition [`offer_to_review_queue`] uses. A cache hit has no
+///     `Detection` to compare against, and re-deriving one to shadow it would be
+///     two full passes for a screen the operator already has.
+///   - **Only where a shadow is safe to run.** This is reachable from the
+///     editor, on a machine that has just finished an analysis pass. It is not
+///     reachable during a recording.
+///
+/// Default-OFF: the whole thing compiles out without `--features vad`, so a
+/// shipped build spends nothing and records nothing. That is the containment the
+/// etappe is for — the model is measured before it is allowed to matter.
+#[cfg(all(feature = "vad", feature = "editor"))]
+fn shadow_the_analysis(
+    app: &tauri::AppHandle,
+    input_path: &str,
+    detection: &sundayrec_core::detect::Detection,
+) {
+    let input_path = input_path.to_string();
+    // Cloned, not moved: the review queue is handed the SAME detection a moment
+    // later, and the shadow pass must never be able to reach the one the app
+    // acts on.
+    let heuristic = detection.clone();
+    let progress = decode_progress(app.clone(), "editor://shadow-progress");
+    crate::crash::watch_handle(
+        "vad::shadow::observe",
+        tauri::async_runtime::spawn(async move {
+            crate::vad::shadow::observe(
+                input_path,
+                heuristic,
+                sundayrec_core::shadow::ShadowSettings::default(),
+                progress,
+            )
+            .await;
+        }),
+    );
+}
+
+/// No-op without BOTH `vad` and `editor`: there is no model to shadow with, or
+/// no analysis decode to feed it.
+///
+/// A real function rather than a `#[cfg]` at the call site, so the two arms
+/// cannot drift — the signature is checked in both builds, which is exactly the
+/// failure a stub of this shape is otherwise good at hiding.
+#[cfg(not(all(feature = "vad", feature = "editor")))]
+fn shadow_the_analysis(
+    _app: &tauri::AppHandle,
+    _input_path: &str,
+    _detection: &sundayrec_core::detect::Detection,
+) {
 }
 
 /// Put a freshly analysed recording into the review queue, in the background.

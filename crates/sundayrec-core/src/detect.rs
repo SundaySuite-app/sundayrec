@@ -19,8 +19,10 @@
 //! The frame-level scorer is behind [`crate::audio_analysis::FrameScorer`]. The
 //! ONLY place it is chosen is the `scorer` argument of [`analyse_pcm`]; pass a
 //! different implementation and grouping, smoothing, sermon selection and the
-//! attention reasons are untouched. See that trait's docs for the one thing the
-//! seam does not absorb.
+//! attention reasons are untouched. The scorer receives the PCM alongside the
+//! derived frames ([`ScoringInput`]), which is what lets a model — not just a
+//! feature heuristic — sit in that argument; see [`crate::shadow`] for the one
+//! that does, and for why it is not allowed to decide anything yet.
 //!
 //! ## Layering
 //!
@@ -32,7 +34,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::audio_analysis::{AnalysisSegment, FrameScorer};
+use crate::audio_analysis::{AnalysisSegment, FrameScorer, ScoringInput};
 
 // ── Tuning constants (port prep-episode.ts) ────────────────────────────────
 
@@ -518,6 +520,12 @@ pub fn detect(segments: Vec<PrepAnalysisSegment>) -> Detection {
 /// `scorer` is THE seam: it is the only argument that decides how a frame is
 /// judged, and substituting one (an ONNX VAD, say) changes nothing else in this
 /// module. See [`FrameScorer`].
+///
+/// This function is also the only place a [`ScoringInput`] is built, which is
+/// what keeps the PCM routing to one function: `extract_features` and
+/// `classify_and_group_with` are each called here and nowhere else, so giving
+/// the scorer the samples as well as the frames is three lines, not a
+/// refactor.
 pub fn analyse_pcm(
     pcm: &[f32],
     sample_rate: u32,
@@ -525,7 +533,13 @@ pub fn analyse_pcm(
     scorer: &dyn FrameScorer,
 ) -> Detection {
     let frames = crate::audio_analysis::extract_features(pcm, sample_rate, frame_ms);
-    let grouped = crate::audio_analysis::classify_and_group_with(&frames, scorer);
+    let input = ScoringInput {
+        pcm,
+        sample_rate,
+        frame_ms,
+        frames: &frames,
+    };
+    let grouped = crate::audio_analysis::classify_and_group_with(input, scorer);
     detect(grouped.iter().map(PrepAnalysisSegment::from).collect())
 }
 
@@ -994,9 +1008,9 @@ mod tests {
         impl FrameScorer for AllSpeech {
             fn classify_frames(
                 &self,
-                frames: &[crate::audio_analysis::AnalysisFrame],
+                input: ScoringInput<'_>,
             ) -> Vec<(crate::audio_analysis::SegmentType, f64)> {
-                vec![(crate::audio_analysis::SegmentType::Speech, 0.99); frames.len()]
+                vec![(crate::audio_analysis::SegmentType::Speech, 0.99); input.frames.len()]
             }
         }
         use crate::audio_analysis::{HeuristicScorer, FRAME_MS, SAMPLE_RATE};
