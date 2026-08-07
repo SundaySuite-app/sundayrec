@@ -17,6 +17,12 @@
  * description, chapters), which flows into the export and the SundayEdit/Stage
  * hand-offs already wired in the transcript + metadata panels. We do not invent a
  * new IPC channel for the hand-off; we feed the channel that already exists.
+ *
+ * We also feed `companionFeedback` (editor/companion-feedback.ts) at every point
+ * below that already decides whether a suggestion landed — useInMetadata and
+ * useChapters compute exactly that to pick their toast text, and used to throw
+ * it away once the toast faded. This is pure observation: it changes nothing
+ * about what the panel shows or does.
  */
 
 import { t } from '../i18n'
@@ -24,10 +30,20 @@ import type { TranscriptData, SermonCompanion } from '../../types'
 import { E } from './editor/state'
 import { renderChapterList, renderMetaPanel } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
+import {
+  createCompanionFeedbackTracker,
+  companionFeedbackWriteStub,
+  type CompanionSuggestionKind,
+} from './editor/companion-feedback'
 
 const $ = (id: string) => document.getElementById(id)
 
 let getTranscript: (() => TranscriptData | null) = () => null
+
+// WRITE SEAM: `companionFeedbackWriteStub` is a documented no-op — see its doc
+// comment in editor/companion-feedback.ts for exactly what replaces it and why
+// it isn't wired up in this phase.
+const companionFeedback = createCompanionFeedbackTracker({ write: companionFeedbackWriteStub })
 
 /** Wire the companion section. `transcriptGetter` lets us read the panel's
  *  current transcript without coupling to its module internals. */
@@ -35,10 +51,13 @@ export function setupCompanionPanel(transcriptGetter: () => TranscriptData | nul
   getTranscript = transcriptGetter
 }
 
-/** Reset on file change / transcript delete. */
+/** Reset on file change / transcript delete. Also closes out any suggestion
+ *  batch left undecided by the panel being torn down rather than rebuilt —
+ *  see companionFeedback.reset(). */
 export function clearCompanion(): void {
   const host = $('editor-companion-body')
   if (host) host.innerHTML = ''
+  companionFeedback.reset()
 }
 
 function fmtTime(sec: number): string {
@@ -78,6 +97,9 @@ async function build(useLlm: boolean): Promise<void> {
 function render(c: SermonCompanion): void {
   const host = $('editor-companion-body')
   if (!host) return
+  // A fresh result is now on screen — start a new suggestion batch, closing
+  // out whatever the previous one (if any) left undecided as `left_alone`.
+  companionFeedback.shown()
 
   const sourceBadge = c.summarySource === 'llm'
     ? `<span class="editor-companion-badge editor-companion-badge--ai" title="${escapeAttr(t('companion.sourceAiHint', 'Oppsummeringen er laget av en språkmodell på serveren'))}">${t('companion.sourceAi', 'AI-oppsummering')}</span>`
@@ -136,28 +158,60 @@ export function setCompanionSeek(cb: (sec: number) => void): void { onSeek = cb 
 /** Push the suggested title + summary into editor metadata. Title only fills an
  *  empty field (never clobbers a title the user typed); the summary is appended
  *  to the description, also non-destructively. This metadata is exactly what the
- *  export embeds and what the SundayEdit/Stage hand-offs read. */
+ *  export embeds and what the SundayEdit/Stage hand-offs read.
+ *
+ *  `titleChanged`/`descChanged` are split out (the old code just OR'd them into
+ *  one `changed` flag for the toast) because companionFeedback needs to know
+ *  which of the two suggestions actually landed, not just whether either did. */
 function useInMetadata(c: SermonCompanion): void {
-  let changed = false
+  let titleChanged = false
+  let descChanged = false
   if (!E.meta.title.trim() && c.title.trim()) {
     E.meta.title = c.title.trim()
-    changed = true
+    titleChanged = true
   }
   if (c.summary.trim()) {
     const existing = E.meta.description.trim()
     if (!existing) {
       E.meta.description = c.summary.trim()
-      changed = true
+      descChanged = true
     } else if (!existing.includes(c.summary.trim())) {
       E.meta.description = `${existing}\n\n${c.summary.trim()}`
-      changed = true
+      descChanged = true
     }
   }
+  const changed = titleChanged || descChanged
   if (changed) {
     E.metaDirty = true
     renderMetaPanel()
   }
+  if (titleChanged) {
+    companionFeedback.accepted('title')
+    watchForPostAcceptEdit('title', 'meta-title')
+  }
+  if (descChanged) {
+    companionFeedback.accepted('description')
+    watchForPostAcceptEdit('description', 'meta-description')
+  }
   flashHint(changed ? t('companion.metaApplied', 'Lagt i metadata') : t('companion.metaAlready', 'Allerede i metadata'))
+}
+
+/** Watch `fieldId` for the NEXT time the user types in it and tell
+ *  companionFeedback that the just-accepted `kind` was edited afterward.
+ *  One-shot — a suggestion is either kept as-is or rewritten once; nothing
+ *  needs saying again after the first edit. Reads no value from the field,
+ *  only that an `input` event fired, so it never touches the suggestion or
+ *  replacement text (see companion-feedback.ts's privacy note). Safe across a
+ *  file switch: `renderMetaPanel()`/a fresh `loadFile` set `.value` directly,
+ *  which does not dispatch `input`, so only a genuine keystroke counts. */
+function watchForPostAcceptEdit(kind: CompanionSuggestionKind, fieldId: string): void {
+  const el = $(fieldId)
+  if (!el) return
+  const onInput = (): void => {
+    el.removeEventListener('input', onInput)
+    companionFeedback.edited(kind)
+  }
+  el.addEventListener('input', onInput)
 }
 
 /** Merge companion chapters into E.meta.chapters, de-duping against existing
@@ -177,6 +231,11 @@ function useChapters(c: SermonCompanion): void {
     E.metaDirty = true
     renderChapterList()
     drawWaveform()
+    // Chapter rows carry no origin marker once merged (a companion-added row
+    // is indistinguishable from a hand-added one — see companion-feedback.ts),
+    // so this is the only signal `chapters` ever gets; it can never reach
+    // editedAfterAccept: true.
+    companionFeedback.accepted('chapters')
   }
   flashHint(added > 0
     ? `${added} ${t('transcript.chaptersAdded', 'kapitler lagt til')}`
