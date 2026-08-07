@@ -148,12 +148,12 @@ the normal verification for that channel before considering this done — see
 
 ## Summary
 
-| You want to…                                        | Can you? | How                                                                             |
-| ----------------------------------------------------- | -------- | -------------------------------------------------------------------------------- |
-| Stop NEW updates to a bad version (v0.11.0+ fleet)     | Yes      | `node scripts/promote-release.mjs --pause <channel>`                            |
-| Stop a pre-0.11.0 install from updating to it          | Yes, separately | Un-latest / pre-release the GitHub release itself (step 2)               |
-| Undo an update on a machine that already took it       | **No**   | Not possible — ship a newer version instead (steps 3–5)                         |
-| Remove the bad installer from GitHub                   | Doesn't help | The manifest is Worker-served; already-downloaded installers are unaffected |
+| You want to…                                       | Can you?        | How                                                                         |
+| -------------------------------------------------- | --------------- | --------------------------------------------------------------------------- |
+| Stop NEW updates to a bad version (v0.11.0+ fleet) | Yes             | `node scripts/promote-release.mjs --pause <channel>`                        |
+| Stop a pre-0.11.0 install from updating to it      | Yes, separately | Un-latest / pre-release the GitHub release itself (step 2)                  |
+| Undo an update on a machine that already took it   | **No**          | Not possible — ship a newer version instead (steps 3–5)                     |
+| Remove the bad installer from GitHub               | Doesn't help    | The manifest is Worker-served; already-downloaded installers are unaffected |
 
 ## Why the update feed lives on a different host than the admin API
 

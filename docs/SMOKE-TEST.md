@@ -895,7 +895,7 @@ decision gate, not a code test.
 1. Confirm the machine is actually running the **promoted** tag, not whatever
    it happened to have installed. **Innstillinger → Generelt → Nåværende
    versjon** must read exactly the tag `node scripts/promote-release.mjs beta
-   vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
+vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
    - **Expected:** version matches. If it's a build behind, either the update
      hasn't reached this machine yet (propagation — up to an hour for an
      already-running app, immediate on relaunch or a manual **Se etter

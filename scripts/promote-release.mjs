@@ -201,7 +201,9 @@ async function main() {
     }
     const key = readAdminKey();
     console.log(`${paused ? "Pausing" : "Resuming"} channel "${channel}" …`);
-    printResult(await call("POST", "/v1/admin/channel", key, { channel, paused }));
+    printResult(
+      await call("POST", "/v1/admin/channel", key, { channel, paused }),
+    );
     return;
   }
 
