@@ -103,7 +103,7 @@ pub fn build_keeps(cut_regions: &[CutRegion], duration: f64) -> Vec<KeepSegment>
 /// the cuts today; this is the canonical, unit-tested algorithm + the seam-ready
 /// version for when detection moves server-side).
 pub fn sermon_cut_regions(
-    segments: &[crate::audio_analysis::DetectedSegment],
+    segments: &[crate::detect::DetectedSegment],
     duration: f64,
 ) -> Vec<CutRegion> {
     let Some(sermon) = segments.iter().find(|s| s.kind == "sermon") else {
@@ -1685,8 +1685,8 @@ mod tests {
     }
 
     // ── sermon_cut_regions ─────────────────────────────────────────────────────
-    fn ds(start: f64, end: f64, kind: &str) -> crate::audio_analysis::DetectedSegment {
-        crate::audio_analysis::DetectedSegment {
+    fn ds(start: f64, end: f64, kind: &str) -> crate::detect::DetectedSegment {
+        crate::detect::DetectedSegment {
             start,
             end,
             duration: end - start,

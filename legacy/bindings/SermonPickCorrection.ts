@@ -30,7 +30,7 @@ chosen: FeedbackSegment,
  */
 candidates: Array<FeedbackSegment>, 
 /**
- * [`crate::prep::AttentionReason`] codes that fired for this recording.
+ * [`crate::detect::AttentionReason`] codes that fired for this recording.
  * Codes, never their Norwegian sentences.
  */
 attention: Array<string>, 

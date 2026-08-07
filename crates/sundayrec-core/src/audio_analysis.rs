@@ -1,17 +1,25 @@
-//! Audio analysis — VAD + content classification, pure (P2a).
+//! Audio analysis — the frame level, pure (P2a).
 //!
-//! Ported from the Electron `src/main/audio-analysis.ts` and the sermon-pick
-//! heuristic in `editor.ts` (`findSermonSegmentLocal`/`detectSegments`). It
-//! classifies every 100 ms frame of decoded mono-16 kHz PCM as
-//! speech/music/silence/mixed/unknown using a feature-based heuristic (no ONNX,
-//! ffmpeg-only environment), smooths the type stream, groups runs into
-//! segments, merges sub-5 s segments, and promotes one speech block to the
-//! "sermon" best-guess.
+//! Ported from the Electron `src/main/audio-analysis.ts`. It classifies every
+//! 100 ms frame of decoded mono-16 kHz PCM as speech/music/silence/mixed/unknown
+//! using a feature-based heuristic, smooths the type stream, groups runs into
+//! segments and merges sub-5 s segments.
 //!
 //! Everything here is a deterministic function of an in-memory PCM buffer (or
 //! pre-extracted frames), so the whole classifier is unit-testable without
 //! ffmpeg. The `src-tauri` shell decodes the file to f32 PCM and feeds frames
 //! in; this module owns the maths.
+//!
+//! This module stops at classified [`AnalysisSegment`]s. Picking a sermon out of
+//! them — and everything above it — is [`crate::detect`]. It used to be BOTH,
+//! with a second, drifted copy of the pick in the review path; see that module's
+//! header.
+//!
+//! ## The seam
+//!
+//! [`FrameScorer`] is the boundary a voice-activity-detection model replaces.
+//! [`HeuristicScorer`] is the hand-rolled score this app has always shipped, and
+//! is the only implementation.
 
 /// Sample rate the analyzer expects (matches the ffmpeg `-ar` the shell uses).
 pub const SAMPLE_RATE: u32 = 16000;
@@ -320,6 +328,44 @@ pub fn classify_frame(frame: &AnalysisFrame) -> (SegmentType, f64) {
     (SegmentType::Unknown, 0.3)
 }
 
+// ── The model seam ────────────────────────────────────────────────────────────
+
+/// How a frame is judged — the ONE thing a voice-activity-detection model
+/// replaces.
+///
+/// Everything downstream (smoothing, grouping, short-segment merging, sermon
+/// selection, the attention reasons) consumes only this trait's output, so
+/// swapping the implementation is a one-argument change at
+/// [`crate::detect::analyse_pcm`] and nothing else moves. That is the entire
+/// point of the trait; it has one implementation today
+/// ([`HeuristicScorer`]) and exists so it can have two.
+///
+/// Whole-slice rather than per-frame on purpose: a model sees a window, not an
+/// isolated frame, and a per-frame signature would forbid batching a single
+/// forward pass over the file.
+///
+/// The one thing this seam does NOT absorb: a scorer that needs raw PCM rather
+/// than the four derived features in [`AnalysisFrame`] would also have to
+/// replace [`extract_features`]. Both are called in exactly one place —
+/// [`crate::detect::analyse_pcm`] — so that swap is still confined to a single
+/// function, but it is a wider change than substituting a scorer.
+pub trait FrameScorer {
+    /// Classify every frame, in order. The returned vector MUST be the same
+    /// length as `frames`; grouping indexes the two in lockstep.
+    fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)>;
+}
+
+/// The feature-based heuristic this app has shipped since the Electron port —
+/// [`classify_frame`] over each frame independently.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HeuristicScorer;
+
+impl FrameScorer for HeuristicScorer {
+    fn classify_frames(&self, frames: &[AnalysisFrame]) -> Vec<(SegmentType, f64)> {
+        frames.iter().map(classify_frame).collect()
+    }
+}
+
 /// Median (mode) filter over a type sequence — for each index, the most frequent
 /// type in `±half_win`. Ports `medianSmooth`.
 pub fn median_smooth(types: &[SegmentType], half_win: usize) -> Vec<SegmentType> {
@@ -514,215 +560,34 @@ pub fn merge_short_segments(segments: &[AnalysisSegment]) -> Vec<AnalysisSegment
     collapse_adjacent(work)
 }
 
-/// Classify → smooth → group → merge. Ports `classifyAndGroup`.
+/// Classify → smooth → group → merge, with the shipped heuristic. Ports
+/// `classifyAndGroup`.
 pub fn classify_and_group(frames: &[AnalysisFrame]) -> Vec<AnalysisSegment> {
+    classify_and_group_with(frames, &HeuristicScorer)
+}
+
+/// [`classify_and_group`] with the frame scorer chosen by the caller — the seam
+/// in use. Everything after the scorer is fixed.
+pub fn classify_and_group_with(
+    frames: &[AnalysisFrame],
+    scorer: &dyn FrameScorer,
+) -> Vec<AnalysisSegment> {
     if frames.is_empty() {
         return Vec::new();
     }
-    let mut raw_types = Vec::with_capacity(frames.len());
-    let mut confidences = Vec::with_capacity(frames.len());
-    for f in frames {
-        let (t, c) = classify_frame(f);
-        raw_types.push(t);
-        confidences.push(c);
-    }
+    let scored = scorer.classify_frames(frames);
+    assert_eq!(
+        scored.len(),
+        frames.len(),
+        "FrameScorer returned {} scores for {} frames",
+        scored.len(),
+        frames.len()
+    );
+    let raw_types: Vec<SegmentType> = scored.iter().map(|(t, _)| *t).collect();
+    let confidences: Vec<f64> = scored.iter().map(|(_, c)| *c).collect();
     let smoothed = median_smooth(&raw_types, SMOOTH_HALF_WIN);
     let grouped = group_segments(frames, &smoothed, &confidences);
     merge_short_segments(&grouped)
-}
-
-// ── Sermon detection ───────────────────────────────────────────────────────────
-
-/// The picked sermon bounds (seconds).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SermonBounds {
-    pub start_sec: f64,
-    pub end_sec: f64,
-}
-
-/// Pick the most plausible "sermon" speech segment. Ports `findSermonSegmentLocal`
-/// exactly, in priority order: (0) sermon-only recording (≥80% speech, <5%
-/// music → whole speech span), (1) single ≥3-min speech block, (2) multiple
-/// long blocks → prefer those after the 5-min mark, longest wins, (3) longest
-/// speech of any length. Returns `None` when there is no speech at all.
-pub fn find_sermon_segment(segments: &[AnalysisSegment]) -> Option<SermonBounds> {
-    let speeches: Vec<&AnalysisSegment> = segments
-        .iter()
-        .filter(|s| s.seg_type == SegmentType::Speech)
-        .collect();
-    if speeches.is_empty() {
-        return None;
-    }
-
-    // Case 0: sermon-only recording.
-    let first = &segments[0];
-    let last = &segments[segments.len() - 1];
-    let total_dur = last.end_sec - first.start_sec;
-    if total_dur > 60.0 {
-        let speech_dur: f64 = speeches.iter().map(|s| s.duration_sec).sum();
-        let music_dur: f64 = segments
-            .iter()
-            .filter(|s| s.seg_type == SegmentType::Music)
-            .map(|s| s.duration_sec)
-            .sum();
-        let speech_ratio = speech_dur / total_dur;
-        let music_ratio = music_dur / total_dur;
-        if speech_ratio >= 0.80 && music_ratio < 0.05 {
-            let start = speeches
-                .iter()
-                .map(|s| s.start_sec)
-                .fold(f64::INFINITY, f64::min);
-            let end = speeches
-                .iter()
-                .map(|s| s.end_sec)
-                .fold(f64::NEG_INFINITY, f64::max);
-            return Some(SermonBounds {
-                start_sec: start,
-                end_sec: end,
-            });
-        }
-    }
-
-    const MIN_SERMON_SEC: f64 = 180.0;
-    let long_candidates: Vec<&&AnalysisSegment> = speeches
-        .iter()
-        .filter(|s| s.duration_sec >= MIN_SERMON_SEC)
-        .collect();
-
-    // Case 1: exactly one long block.
-    if long_candidates.len() == 1 {
-        let s = long_candidates[0];
-        return Some(SermonBounds {
-            start_sec: s.start_sec,
-            end_sec: s.end_sec,
-        });
-    }
-
-    // Case 2: multiple long candidates — prefer those after 5 min, longest wins.
-    if long_candidates.len() > 1 {
-        let after_five: Vec<&&&AnalysisSegment> = long_candidates
-            .iter()
-            .filter(|s| s.start_sec >= 300.0)
-            .collect();
-        let winner = if !after_five.is_empty() {
-            after_five
-                .iter()
-                .copied()
-                .reduce(|a, b| {
-                    if a.duration_sec >= b.duration_sec {
-                        a
-                    } else {
-                        b
-                    }
-                })
-                .unwrap()
-        } else {
-            long_candidates
-                .iter()
-                .reduce(|a, b| {
-                    if a.duration_sec >= b.duration_sec {
-                        a
-                    } else {
-                        b
-                    }
-                })
-                .unwrap()
-        };
-        return Some(SermonBounds {
-            start_sec: winner.start_sec,
-            end_sec: winner.end_sec,
-        });
-    }
-
-    // Case 3: longest speech of any length.
-    let longest = speeches
-        .iter()
-        .reduce(|a, b| {
-            if a.duration_sec >= b.duration_sec {
-                a
-            } else {
-                b
-            }
-        })
-        .unwrap();
-    Some(SermonBounds {
-        start_sec: longest.start_sec,
-        end_sec: longest.end_sec,
-    })
-}
-
-/// A UI-facing segment, with the sermon block promoted (type `sermon`, label
-/// "Preken"). Mirrors `AudioSegment` + `detectSegments`'s remap.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DetectedSegment {
-    pub start: f64,
-    pub end: f64,
-    pub duration: f64,
-    pub label: String,
-    /// One of the `SegmentType` labels, or `"sermon"` for the promoted block.
-    pub kind: String,
-    /// The classifier's confidence in `kind`, 0..1 — carried through from
-    /// [`AnalysisSegment::confidence`], which this mapping used to drop.
-    ///
-    /// It changes nothing about detection; it is the number that says how sure
-    /// the machine was, and without it a record of the machine being WRONG
-    /// (`crate::feedback`) cannot distinguish a confident mistake from a coin
-    /// flip. For a promoted sermon spanning several blocks it is the confidence
-    /// of the speech block that BEGINS the span — the same block whose geometry
-    /// the promotion stretches.
-    pub confidence: f64,
-}
-
-fn kind_str(t: SegmentType) -> &'static str {
-    match t {
-        SegmentType::Silence => "silence",
-        SegmentType::Speech => "speech",
-        SegmentType::Music => "music",
-        SegmentType::Mixed => "mixed",
-        SegmentType::Unknown => "unknown",
-    }
-}
-
-/// Map analysis segments to UI segments, promoting the sermon block. Ports
-/// `detectSegments`'s `.map(...)`.
-pub fn detect_segments(segments: &[AnalysisSegment]) -> Vec<DetectedSegment> {
-    let sermon = find_sermon_segment(segments);
-    segments
-        .iter()
-        .map(|s| {
-            // The sermon may SPAN several segments — the Case-0 "whole speech span"
-            // pick (`find_sermon_segment`) runs from the first to the last speech
-            // block and can straddle pauses or a short song. Promote the speech
-            // segment that BEGINS the span and stretch it to the full bounds, so the
-            // UI and `editor::sermon_cut_regions` get ONE contiguous sermon block.
-            // For the single-block picks (Cases 1–3) the bounds equal one segment,
-            // so the geometry is unchanged. Earlier this required an exact
-            // start+end match, so a multi-segment span was never marked → the
-            // "trim to sermon" action silently did nothing for those recordings.
-            let is_sermon_start = sermon.is_some_and(|b| {
-                s.seg_type == SegmentType::Speech && (s.start_sec - b.start_sec).abs() < 1e-6
-            });
-            if let (true, Some(b)) = (is_sermon_start, sermon) {
-                DetectedSegment {
-                    start: b.start_sec,
-                    end: b.end_sec,
-                    duration: b.end_sec - b.start_sec,
-                    label: "Preken".to_string(),
-                    kind: "sermon".to_string(),
-                    confidence: s.confidence,
-                }
-            } else {
-                DetectedSegment {
-                    start: s.start_sec,
-                    end: s.end_sec,
-                    duration: s.duration_sec,
-                    label: s.label.clone(),
-                    kind: kind_str(s.seg_type).to_string(),
-                    confidence: s.confidence,
-                }
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -941,93 +806,5 @@ mod tests {
         );
         assert_eq!(merged[1].seg_type, Music);
         assert_eq!(merged[1].start_sec, 50.0, "Music absorbs the island");
-    }
-
-    // ── sermon detection ────────────────────────────────────────────────────────────
-
-    #[test]
-    fn sermon_none_without_speech() {
-        let segs = vec![seg(0.0, 100.0, SegmentType::Music)];
-        assert!(find_sermon_segment(&segs).is_none());
-    }
-
-    #[test]
-    fn sermon_only_recording_spans_all_speech() {
-        use SegmentType::*;
-        // 95% speech, no music → whole speech span.
-        let segs = vec![
-            seg(0.0, 5.0, Silence),
-            seg(5.0, 600.0, Speech),
-            seg(600.0, 605.0, Silence),
-        ];
-        let b = find_sermon_segment(&segs).unwrap();
-        assert_eq!(b.start_sec, 5.0);
-        assert_eq!(b.end_sec, 600.0);
-    }
-
-    #[test]
-    fn sermon_single_long_block_after_worship() {
-        use SegmentType::*;
-        let segs = vec![
-            seg(0.0, 200.0, Music),     // worship
-            seg(200.0, 250.0, Speech),  // announcements (<3 min)
-            seg(250.0, 400.0, Music),   // hymn
-            seg(400.0, 1600.0, Speech), // sermon (20 min)
-        ];
-        let b = find_sermon_segment(&segs).unwrap();
-        assert_eq!(b.start_sec, 400.0);
-        assert_eq!(b.end_sec, 1600.0);
-    }
-
-    #[test]
-    fn sermon_multiple_long_prefers_after_five_min_longest() {
-        use SegmentType::*;
-        let segs = vec![
-            seg(0.0, 250.0, Speech), // long but before 5 min
-            seg(250.0, 300.0, Music),
-            seg(300.0, 900.0, Speech), // long, after 5 min, longest
-            seg(900.0, 950.0, Music),
-            seg(950.0, 1300.0, Speech), // long, after 5 min, shorter
-        ];
-        let b = find_sermon_segment(&segs).unwrap();
-        assert_eq!(b.start_sec, 300.0);
-        assert_eq!(b.end_sec, 900.0);
-    }
-
-    #[test]
-    fn detect_segments_promotes_sermon_block() {
-        use SegmentType::*;
-        let segs = vec![seg(0.0, 200.0, Music), seg(200.0, 1400.0, Speech)];
-        let detected = detect_segments(&segs);
-        assert_eq!(detected[0].kind, "music");
-        assert_eq!(detected[1].kind, "sermon");
-        assert_eq!(detected[1].label, "Preken");
-        // Single-block pick: geometry unchanged.
-        assert_eq!(detected[1].start, 200.0);
-        assert_eq!(detected[1].end, 1400.0);
-    }
-
-    #[test]
-    fn detect_segments_marks_sermon_spanning_multiple_segments() {
-        use SegmentType::*;
-        // Sermon-only-ish recording where a short song splits the talk. The span
-        // pick runs first→last speech; the FIRST speech block is promoted and
-        // stretched to the full span so "trim to sermon" has a sermon to act on
-        // (previously NOTHING was marked → the action did nothing).
-        let segs = vec![
-            seg(0.0, 5.0, Silence),
-            seg(5.0, 700.0, Speech),
-            seg(700.0, 720.0, Music), // brief interlude (still <5% of total)
-            seg(720.0, 1500.0, Speech),
-            seg(1500.0, 1505.0, Silence),
-        ];
-        let detected = detect_segments(&segs);
-        let sermon: Vec<&DetectedSegment> =
-            detected.iter().filter(|d| d.kind == "sermon").collect();
-        assert_eq!(sermon.len(), 1, "exactly one sermon block marked");
-        assert_eq!(sermon[0].start, 5.0);
-        assert_eq!(sermon[0].end, 1500.0, "stretched across the interlude");
-        // The interior music is still listed so the cut step can remove it.
-        assert!(detected.iter().any(|d| d.kind == "music"));
     }
 }

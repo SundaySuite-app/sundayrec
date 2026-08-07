@@ -2,8 +2,15 @@
 import type { SegmentType } from "./SegmentType";
 
 /**
- * One analysis segment. Mirrors the renderer `PrepAnalysisSegment` (camelCase),
- * which is itself the renderer-facing mirror of `audio-analysis.ts`
- * `AnalysisSegment`. Fed in by the shell; this module never computes it.
+ * One analysis segment — the detector's canonical output, for BOTH callers.
+ *
+ * The `Prep` in the name is historical: this was the review path's shape before
+ * E9 unified the two detectors, and it is the wire contract the renderer already
+ * imports (`PrepAnalysisSegment.ts`). Renaming it would move a generated binding
+ * and every `.ts` import of it for no behavioural gain, so the name stays and
+ * this note explains it.
+ *
+ * camelCase on the wire, mirroring the renderer type, which is itself the mirror
+ * of `audio-analysis.ts` `AnalysisSegment`.
  */
 export type PrepAnalysisSegment = { startSec: number, endSec: number, durationSec: number, type: SegmentType, confidence: number, avgRmsDb: number, label: string, };

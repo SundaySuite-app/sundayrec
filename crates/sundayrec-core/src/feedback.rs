@@ -41,7 +41,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::prep::{derive_attention_codes, PrepAnalysisSegment, SegmentType, SermonSegment};
+use crate::detect::{derive_attention_codes, PrepAnalysisSegment, SegmentType, SermonSegment};
 use crate::trim_feedback::TrimDeltas;
 
 /// Schema version of the `<stem>.feedback.json` file. Bump when the MEANING of a
@@ -233,7 +233,7 @@ pub struct SermonPickCorrection {
     /// The blocks the picker offered — what the decision was made AMONG. A
     /// correction is only interpretable against the alternatives that existed.
     pub candidates: Vec<FeedbackSegment>,
-    /// [`crate::prep::AttentionReason`] codes that fired for this recording.
+    /// [`crate::detect::AttentionReason`] codes that fired for this recording.
     /// Codes, never their Norwegian sentences.
     pub attention: Vec<String>,
     /// Length of the recording, seconds. A duration, not a time.
@@ -442,7 +442,7 @@ pub fn build_sermon_pick_correction(
         // threshold itself — the boundary value that is not BELOW the threshold.
         confidence: a
             .confidence
-            .unwrap_or(crate::prep::ATTENTION_CONFIDENCE_THRESHOLD),
+            .unwrap_or(crate::detect::ATTENTION_CONFIDENCE_THRESHOLD),
         seg_index: a.index as usize,
     });
     let attention = derive_attention_codes(&prep, sermon.as_ref(), recording_duration_sec)

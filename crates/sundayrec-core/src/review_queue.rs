@@ -336,7 +336,8 @@ pub fn process_reminders(entries: &[ReviewQueueEntry], now: i64) -> ReminderOutc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prep::{build_episode_prep, PrepAnalysisSegment, PrepDefaults, SegmentType};
+    use crate::detect::{PrepAnalysisSegment, SegmentType};
+    use crate::prep::{build_episode_prep, PrepDefaults};
 
     fn prep(id: &str) -> EpisodePrep {
         let segs = vec![PrepAnalysisSegment {

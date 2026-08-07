@@ -4,7 +4,7 @@
 //! publishes. The learnable signal is not the span they settled on — that is a
 //! property of one service — but **how far it moved from the proposal**, which
 //! is a property of the detector's boundary constants
-//! ([`crate::prep::MIN_SERMON_START_SEC`], [`crate::prep::MIN_SERMON_DURATION_SEC`]).
+//! ([`crate::detect::MIN_SERMON_START_SEC`], [`crate::detect::MIN_SERMON_DURATION_SEC`]).
 //! A later stage tunes those against a corpus of these deltas.
 //!
 //! ## Privacy — binding, not advisory
