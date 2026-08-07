@@ -2061,6 +2061,9 @@ async fn run_segment(
         peak_db_right: None,
     });
     let reader_bytes = Arc::clone(&segment_bytes);
+    // The reader task takes ownership of the telemetry handle; keep our own so
+    // the end of this segment can seal the capture process's drop/dup window.
+    let seg_telemetry = Arc::clone(&telemetry);
     let reader = tauri::async_runtime::spawn(async move {
         let mut ctx = ReaderCtx::new();
 
@@ -2391,6 +2394,12 @@ async fn run_segment(
     // then returns; dropping its `levels_tx` also ends the forwarder loop).
     reader.abort();
     levels_forwarder.abort();
+    // E6.3: this capture PROCESS is over. Fold its cumulative `drop=`/`dup=`
+    // maxima into the session totals so the next segment's counters (which
+    // restart at zero) ADD to them instead of being max'd against them. Without
+    // this a multi-split service reported its worst single segment as the whole
+    // session's loss.
+    lock_recover(&seg_telemetry).seal_process();
     outcome
 }
 
@@ -2605,8 +2614,12 @@ fn finalize_session_telemetry(
 
     let final_state = *lock_recover(final_state);
 
-    // Snapshot + stamp the host-known fields.
+    // Snapshot + stamp the host-known fields. The defensive seal covers any path
+    // that reached session end without a segment sealing itself (a start that
+    // failed before `run_segment`, a two-process hand-off); `seal_process` is
+    // idempotent, so a segment that already sealed adds nothing.
     let mut t = lock_recover(telemetry).clone();
+    t.seal_process();
     t.duration_sec = now_ms().saturating_sub(start_ms) as f64 / 1000.0;
     t.timestamp = chrono::Local::now().to_rfc3339();
     t.exit_ok = matches!(final_state, RecorderState::Stopped);

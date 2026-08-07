@@ -286,6 +286,10 @@ impl HeadlessSession {
             let _ = tokio::time::timeout(Duration::from_secs(5), h).await;
         }
 
+        // E6.3: this capture PROCESS is over — close its drop/dup window, the
+        // same thing `engine::run_segment` does before it returns its outcome.
+        lock_recover(&self.telemetry).seal_process();
+
         let data_bytes = wav_data_bytes(Path::new(path)).unwrap_or(0);
         self.fragments.push(FragmentRecord {
             path: path.to_string(),
@@ -293,6 +297,17 @@ impl HeadlessSession {
             outcome,
         });
         outcome
+    }
+
+    /// Feed one line into the session telemetry exactly as the production
+    /// stderr reader (`engine::classify_stderr_line`) does.
+    ///
+    /// A synthetic lavfi capture legitimately drops nothing, so the only honest
+    /// way to prove the CROSS-PROCESS accumulation over a real split is to hand
+    /// the real telemetry real ffmpeg-shaped progress lines at the point the
+    /// real reader would have.
+    pub fn observe_stderr(&self, line: &str) {
+        lock_recover(&self.telemetry).observe_line(line);
     }
 
     /// Reconnect: append an `_rN` fragment to the CURRENT deliverable, exactly
@@ -712,6 +727,70 @@ mod tests {
         assert!(
             leftovers.is_empty(),
             "a successful delivery must leave no capture litter: {leftovers:?}"
+        );
+    }
+
+    /// E6.3 BUG FIX, pinned against a REAL split rather than arithmetic alone.
+    ///
+    /// The core test proves `seal_process` sums; this proves the PLUMBING
+    /// survives a session that really does span three capture processes — two
+    /// fragments of deliverable 1 (split by a kill) and one of deliverable 2
+    /// (split by the RIFF guard). Each process reports its own cumulative
+    /// `drop=`/`dup=`, restarting at zero, exactly as ffmpeg does.
+    ///
+    /// With the old whole-session `max` fold this reported 40 drops. The truth
+    /// is 75 — and `FAIL_DROPS` is 10, so both numbers fail the verdict, but
+    /// only one of them tells the operator how bad Sunday actually was.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn drops_sum_across_a_real_split_instead_of_reporting_the_worst_segment() {
+        let Some(_pin) = EnvPin::acquire(Some(TEST_SPLIT_BYTES)) else {
+            eprintln!("SKIP: no fetched ffmpeg/ffprobe sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let save = tempfile::tempdir().expect("tempdir");
+        let mut s = HeadlessSession::new(save.path(), RATE).expect("session");
+
+        // Process 1 — dies mid-capture having dropped 40 frames.
+        let f1 = s.current_fragment();
+        s.observe_stderr("frame=100 dup=2 drop=12 speed=1x");
+        s.observe_stderr("frame=900 dup=4 drop=40 speed=1x");
+        s.capture_segment(&f1, StopMode::Kill(Duration::from_millis(400)))
+            .await;
+
+        // Process 2 — the `_r1` reconnect fragment; its counters START OVER.
+        let f2 = s.begin_reconnect();
+        s.observe_stderr("frame=50 dup=1 drop=9 speed=1x");
+        s.observe_stderr("frame=800 dup=3 drop=25 speed=1x");
+        let o2 = s
+            .capture_segment(&f2, StopMode::UntilForcedSplit(Duration::from_secs(20)))
+            .await;
+        assert_eq!(o2, HeadlessOutcome::ForcedSplit);
+
+        // Process 3 — the new deliverable after the split. Counters start over
+        // again, and this is the process the old `max` fold would have thrown
+        // away entirely (10 < 40).
+        let f3 = s.begin_split(crate::db::store::now_ms() as u64);
+        s.observe_stderr("frame=40 dup=2 drop=10 speed=1x");
+        s.capture_segment(&f3, StopMode::Graceful(Duration::from_millis(300)))
+            .await;
+
+        let t = lock_recover(&s.telemetry).clone();
+        assert_eq!(
+            t.drops, 75,
+            "40 + 25 + 10 across three capture processes — the old fold reported 40"
+        );
+        assert_eq!(t.dups, 9, "4 + 3 + 2");
+        assert_eq!(t.cur_drops, 0, "every process window was sealed");
+        assert_eq!(t.cur_dups, 0);
+
+        // And the verdict engine — the thing that actually tells the operator —
+        // now judges the session on the real figure.
+        let facts = sundayrec_core::selftest::facts_from_recording(&t, 1_000_000);
+        assert_eq!(facts.drops, 75);
+        assert!(
+            t.is_degraded(),
+            "75 dropped frames must register as a degraded recording"
         );
     }
 
