@@ -82,6 +82,14 @@ mental step called "promote", they check different things.
       automatically (`release.yml`'s `prerelease:` expression follows the tag
       name — see the comment above it for why that's safe now). It still
       lands as a **draft** either way.
+- [ ] **Betas ship NSIS only on Windows, and that is deliberate.** MSI cannot
+      express a beta version at all: Windows Installer's ProductVersion is three
+      numeric fields, so tauri refuses with _"optional pre-release identifier in
+      app version must be numeric-only"_. v0.11.0-beta.1's first run failed on
+      exactly this — macOS built fine and the draft came out with mac assets
+      only, which looks like a flake rather than a rule. `release.yml` now passes
+      `--bundles nsis` for Windows beta tags. **Stable releases still ship both**,
+      so a missing `.msi` on a stable draft IS a problem.
 
 ### 5b. Pin the Windows ffmpeg hash (one-off, only if an entry is missing)
 

@@ -16,7 +16,7 @@
 #
 # The auto-updater IS wired: tauri.conf.json carries the `plugins.updater`
 # block (pubkey + endpoints, `createUpdaterArtifacts: true`) and this workflow
-# sets `includeUpdaterJson: true` so `latest.json` ships with every release.
+# sets `uploadUpdaterJson: true` so `latest.json` ships with every release.
 # The only missing pieces are the CI secrets TAURI_SIGNING_PRIVATE_KEY (+
 # password) — until they exist the updater artifacts are unsigned and installed
 # clients won't accept them. See docs/NEEDS-RICHARD.md item 4.
@@ -227,6 +227,29 @@ jobs:
           # OLD GitHub endpoint compiled in and never consult this feed at all
           # — see docs/ROLLBACK.md for what that means for the kill-switch.)
           prerelease: ${{ contains(github.ref_name, '-beta.') }}
-          # Generates latest.json (the updater feed) alongside the installers.
-          includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          # Uploads latest.json (the updater feed) alongside the installers.
+          #
+          # The input is `uploadUpdaterJson`. It was `includeUpdaterJson` here
+          # until v0.11.0-beta.1, which is not a real tauri-action input — the
+          # run logged `Unexpected input(s) 'includeUpdaterJson'` and ignored it.
+          # The feed shipped anyway, on a default we did not know we depended on,
+          # which is exactly the arrangement that stops updates silently the day
+          # a default changes.
+          uploadUpdaterJson: true
+          # `--bundles nsis` on Windows BETA builds only.
+          #
+          # MSI cannot express a beta version. Windows Installer's ProductVersion
+          # is three numeric fields, so tauri refuses the bundle outright:
+          #   "optional pre-release identifier in app version must be
+          #    numeric-only and cannot be greater than 65535 for msi target"
+          # `-beta.1` has letters in it, so every Windows beta build failed at
+          # the bundling step while macOS sailed through — which is how
+          # v0.11.0-beta.1's first run produced a draft with only mac assets.
+          #
+          # Renaming betas to something numeric (`0.11.0-1`) would satisfy MSI
+          # and break everything else: the tag would no longer match `-beta.`,
+          # so `prerelease:` above would go false and `promote-release.mjs` would
+          # refuse the tag. Dropping MSI from betas costs nothing by comparison —
+          # NSIS is what the updater installs from anyway. Stable releases are
+          # untouched and still ship both.
+          args: ${{ (matrix.platform == 'windows-latest' && contains(github.ref_name, '-beta.')) && '--bundles nsis ' || '' }}${{ matrix.args }}
