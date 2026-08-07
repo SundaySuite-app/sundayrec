@@ -56,6 +56,9 @@ const GUARDED: &[&str] = &[
     "editor_read_sidecar",
     "editor_write_sidecar",
     "editor_delete_sidecar",
+    "editor_record_sermon_pick",
+    "editor_sermon_pick",
+    "editor_record_companion_suggestion",
     "editor_probe_streams",
     "editor_read_file",
     // ── Episode images ───────────────────────────────────────────────────────

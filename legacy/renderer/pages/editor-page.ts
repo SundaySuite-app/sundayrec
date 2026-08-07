@@ -19,6 +19,7 @@ import { fitAll, zoomBy } from './editor/viewport'
 import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
 import { PICK, jinglePathFor, jingleValueFor } from './editor/review-jingles'
+import { keptSpanFromCuts } from './editor/review-trim'
 import { toast } from '../ui/toast'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
@@ -596,6 +597,10 @@ function setupReviewBanner(): void {
     const orig = btn.textContent
     btn.textContent = 'Publiserer…'
     try {
+      // Before the publish, not after: publishing is what the operator is
+      // waiting on, and `review_update_trim` patches an entry that must still
+      // be in the queue when it lands.
+      await pushSettledTrim(reviewPrepId)
       const r = await window.api.reviewQueuePublish(reviewPrepId)
       if (r.ok) {
         btn.textContent = '✓ Publisert!'
@@ -718,12 +723,46 @@ function setupReviewBanner(): void {
     if (reviewPrep) reviewPrep.masterPreset = presetId
   })
 
-  // NOTE: the suggested TRIM is deliberately NOT pushed back. The editor's cuts
-  // and `prep.suggestedTrim` are different models — cuts are a list of removed
-  // ranges anywhere in the file, the trim is one kept span — and collapsing the
-  // former into the latter would silently discard every cut but the outer two.
-  // `reviewQueueUpdateTrim` exists and is tested for the caller that will do the
-  // conversion honestly; wiring it to `E.cuts` here would not be that caller.
+}
+
+/**
+ * Push the trim the operator settled on back into the queue entry, so the
+ * backend can record how far it moved from what the analysis proposed.
+ *
+ * This is the caller the standing note in `setupReviewBanner` was waiting for.
+ * That note refused to collapse `E.cuts` into `suggestedTrim`, and rightly:
+ * cuts are removed ranges anywhere in the file, and flattening them into one
+ * kept span would discard every cut but the outer two. `keptSpanFromCuts` asks
+ * the narrower, answerable question instead — where does the kept material
+ * begin and end — and leaves interior cuts untouched. See `review-trim.ts`.
+ *
+ * ## Why at publish, and not on every cut edit
+ *
+ * A trim mid-edit is not a decision, it is a hand on a mouse. Publishing is the
+ * moment the operator commits to the boundaries, and it is the only moment
+ * their span means "this is where the sermon is". Pushing on every drag would
+ * fill the record with intermediate positions that no human ever endorsed.
+ *
+ * ## Quiet on failure, always
+ *
+ * Awaited — it has to land while the entry is still in the queue — but it never
+ * rejects and never raises a dialog. This runs seconds before a publish and
+ * possibly minutes before a service; a queue entry that vanished
+ * (auto-discarded while the editor sat open) is not something a volunteer can
+ * do anything about, and the publish itself reports its own failures perfectly
+ * well. Losing one recording's worth of training data is the cheapest possible
+ * outcome here.
+ */
+async function pushSettledTrim(prepId: string): Promise<void> {
+  try {
+    const span = keptSpanFromCuts(E.cuts, E.duration)
+    // No usable span: the cuts remove everything, or no file is loaded. Pushing
+    // nothing is right — the stored proposal is better than a broken trim.
+    if (!span) return
+    await window.api.reviewQueueUpdateTrim(prepId, span)
+  } catch (err) {
+    console.warn('[review] could not record the settled trim:', err)
+  }
 }
 
 /** Called when the user navigates BACK to the editor tab. Repaints the
@@ -1154,6 +1193,7 @@ function closeCurrentFile(): void {
   E.cutHistory = []
   E.cutHistoryIdx = -1
   E.suggestions = []
+  E.autoSermonIndex = null
   E.clipTimes = []
   E.lastAnalyzedAt = 0
   flagEditorTab('clip', false)

@@ -58,7 +58,19 @@ use ts_rs::TS;
 /// a category the user already agreed to (one more counter, one more number on a
 /// quality record) is a schema change, not a scope change, and must not re-prompt
 /// anyone. Sending a NEW CATEGORY is a scope change and must.
-pub const CONSENT_VERSION: u32 = 1;
+///
+/// Bumping this is never a lone edit. Three things move together or the version
+/// is a lie: this constant, the scope described in `PRIVACY.md`, and the
+/// re-prompt copy (`onboarding.rePrompt*`) that has to name what was added —
+/// otherwise a user who already said yes is asked a question they cannot tell
+/// apart from the one they already answered.
+///
+/// - **v1** — crashes, quality verdicts, feature counters, technical settings.
+/// - **v2** — quality data may additionally carry COARSE SIZE BANDS for editor
+///   corrections ("the sermon start was moved 30–60 seconds earlier"), not only
+///   a count of them. A band is a magnitude, and v1 promised counts only, so it
+///   is a new category no matter how anonymous it is.
+pub const CONSENT_VERSION: u32 = 2;
 
 /// The persisted consent record. Absent from storage = never asked.
 ///
@@ -230,6 +242,90 @@ mod tests {
         let c = evaluate(Some(stale));
         assert!(c.needs_prompt, "'no' answered a different question");
         assert!(!c.active);
+    }
+
+    // ── The v1 → v2 widening (E8.D1) ─────────────────────────────────────────
+    //
+    // The tests above are written relative to CONSENT_VERSION, so they keep
+    // testing the RULE after any future bump. These are written against the
+    // literal version 1, because version 1 is what is on real disks right now:
+    // they are about the migration that actually happens, not about the rule.
+
+    #[test]
+    fn version_two_is_the_current_scope() {
+        // A tripwire, not a tautology. Changing this number changes what every
+        // installed copy is allowed to send, so it must not be possible to do
+        // it as an incidental edit — see CONSENT_VERSION's docs for the two
+        // other things that have to move with it.
+        assert_eq!(CONSENT_VERSION, 2);
+    }
+
+    #[test]
+    fn a_version_one_grant_stops_sending_and_is_asked_again() {
+        let v1_yes = ConsentRecord {
+            granted: true,
+            version: 1,
+            decided_at: 1_800_000_000_000,
+        };
+        let c = evaluate(Some(v1_yes));
+        assert!(
+            !c.active,
+            "yes-to-counts is not yes-to-bands: sending must stop the moment \
+             this build starts up, before anything wider is collected"
+        );
+        assert!(c.needs_prompt, "and the wider question must be put to them");
+        assert_eq!(c.version, 1, "what they answered is still on the record");
+        assert_eq!(c.current_version, 2, "what they would answer now");
+    }
+
+    #[test]
+    fn a_version_one_denial_never_becomes_a_version_two_grant() {
+        // The failure that would matter most, and the quietest one: a bump that
+        // re-derived "answered" as "agreed" would turn every recorded NO into a
+        // YES for a wider scope than the first question even had.
+        let v1_no = ConsentRecord {
+            granted: false,
+            version: 1,
+            decided_at: 1_800_000_000_000,
+        };
+        let c = evaluate(Some(v1_no));
+        assert_eq!(c.status, ConsentStatus::Denied, "'no' is still 'no'");
+        assert!(!c.active, "a denial can never be upgraded into permission");
+        assert!(
+            c.needs_prompt,
+            "they are asked once more only because the question changed"
+        );
+    }
+
+    #[test]
+    fn no_recorded_denial_is_active_at_any_version() {
+        // The sweep the two tests above are instances of: `granted: false` has
+        // no version at which it permits sending, so no future bump can find a
+        // seam where a denial leaks through.
+        for version in 0..=CONSENT_VERSION + 2 {
+            let c = evaluate(Some(ConsentRecord {
+                granted: false,
+                version,
+                decided_at: 1,
+            }));
+            assert!(!c.active, "denial at version {version} permitted sending");
+            assert_eq!(c.status, ConsentStatus::Denied, "version {version}");
+        }
+    }
+
+    #[test]
+    fn answering_the_v2_question_records_v2_and_resumes() {
+        // The far side of the re-prompt: the new answer has to actually clear
+        // the prompt, or the card returns every launch and reads as a bug.
+        let yes = evaluate(Some(ConsentRecord::decide(true, 1_800_000_000_001)));
+        assert_eq!(yes.version, 2);
+        assert!(yes.active);
+        assert!(!yes.needs_prompt);
+
+        let no = evaluate(Some(ConsentRecord::decide(false, 1_800_000_000_001)));
+        assert_eq!(no.version, 2);
+        assert!(!no.active);
+        assert!(!no.needs_prompt, "a fresh 'no' is not re-litigated either");
     }
 
     #[test]

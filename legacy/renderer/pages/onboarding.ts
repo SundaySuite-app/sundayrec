@@ -439,7 +439,7 @@ function s5(body: HTMLElement): void {
       <summary>${esc(t('onboarding.consentDetailsSummary', 'Hva samles i så fall inn?'))}</summary>
       <ul class="ob-consent-list">
         <li>${esc(t('onboarding.consentCatCrash', 'Krasjrapporter — feiltype, app- og OS-versjon. Aldri filstier eller tekst fra prekenen.'))}</li>
-        <li>${esc(t('onboarding.consentCatQuality', 'Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt). Aldri lydinnhold.'))}</li>
+        <li>${esc(t('onboarding.consentCatQuality', 'Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt), grove intervaller for korrigeringene dine i redigeringsverktøyet, f.eks. «30–60 sekunder tidligere», og hvilke typer automatiske forslag du bruker — tittel, sammendrag eller kapittelmerker — og om du beholdt eller skrev om resultatet. Aldri lydinnhold, tekst eller klokkeslett.'))}</li>
         <li>${esc(t('onboarding.consentCatUsage', 'Funksjonsbruk — hvilke funksjoner du bruker, f.eks. «eksport til MP3». Bare antall, ikke innhold.'))}</li>
       </ul>
       <p class="ob-consent-never">${esc(t('onboarding.consentNever', 'Aldri: lyd, transkripsjoner, prekentekst, navn, e-post, filstier, enhetsnavn eller kirkenavn.'))}</p>

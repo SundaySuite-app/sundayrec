@@ -148,6 +148,9 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 /// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
 /// opptak» button) skips the cache read and re-runs the analysis; the automatic
 /// post-open run leaves it unset and gets the cached answer for free.
+///
+/// A pass that actually ran also offers the recording to the review queue — see
+/// [`offer_to_review_queue`].
 #[tauri::command]
 pub async fn editor_segments(
     app: tauri::AppHandle,
@@ -155,12 +158,77 @@ pub async fn editor_segments(
     force: Option<bool>,
 ) -> AppResult<Vec<EditorSegment>> {
     super::path_guard::checked_input_file(&input_path)?;
-    editor::segments(
+    let (segments, analysis) = editor::segments(
         &input_path,
         force.unwrap_or(false),
-        decode_progress(app, "editor://analysis-progress"),
+        decode_progress(app.clone(), "editor://analysis-progress"),
     )
-    .await
+    .await?;
+    if let Some(analysis) = analysis {
+        offer_to_review_queue(&app, input_path, analysis);
+    }
+    Ok(segments)
+}
+
+/// Put a freshly analysed recording into the review queue, in the background.
+///
+/// ## Why here, and not at the end of a recording or on a startup sweep
+///
+/// [`crate::commands::review::prep_build_episode`] consumes analysis segments
+/// rather than computing them, and the segments it needs carry `confidence`.
+/// That narrows the honest call sites to one:
+///
+///   - **End of a recording** is too early — no analysis exists yet, and
+///     producing it means a full decode + FFT pass over a service that has just
+///     finished, on the machine still finalising it. The rule that nothing may
+///     slow a recording rules this out even if the file were ready.
+///   - **A startup sweep** has two options and neither survives contact. Read
+///     the `<stem>.segments.json` cache and it must invent `confidence`, which
+///     the cache does not store. Run the analysis itself and it is a full
+///     decode and FFT pass per un-queued recording, at launch, unattended — on
+///     an app whose scheduler may be about to start a service.
+///   - **The end of an analysis pass** is where the segments exist, in full, for
+///     free. So that is where the queue is fed.
+///
+/// The consequence, stated plainly: a recording enters the queue the first time
+/// it is analysed, which in practice is the first time it is opened in the
+/// editor (the post-open detection runs on its own). A recording nobody ever
+/// opens never enters the queue — the alternative was a queue built on invented
+/// confidences, and a queue that is honest about fewer episodes beats one that
+/// is wrong about more.
+///
+/// «Offer», not «add»: the editor opens whatever the operator points it at, and
+/// only files the app actually recorded are episodes of this church's service.
+/// [`review::build_and_enqueue_if_recorded`] is where that is decided.
+///
+/// Detached (`spawn`) so the operator's segment view never waits on a settings
+/// read and a queue write, and best-effort: a failure is a log line. This runs
+/// while a service may be minutes from starting, and an episode that failed to
+/// reach a review queue is not something a volunteer can act on mid-service.
+fn offer_to_review_queue(
+    app: &tauri::AppHandle,
+    input_path: String,
+    analysis: Vec<sundayrec_core::prep::PrepAnalysisSegment>,
+) {
+    let app = app.clone();
+    crate::crash::watch_handle(
+        "review::offer_from_analysis",
+        tauri::async_runtime::spawn(async move {
+            use tauri::Manager;
+            let Some(db) = app.try_state::<crate::db::Db>() else {
+                return;
+            };
+            // Idempotent on the path, so the re-analysis that «Analyser opptak»
+            // forces lands here and changes nothing.
+            if let Err(e) = crate::commands::review::build_and_enqueue_if_recorded(
+                &app, &db, input_path, analysis,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "review queue: could not enqueue analysed recording");
+            }
+        }),
+    );
 }
 
 /// The built-in mastering presets for the editor's preset dropdown. Pure core
@@ -327,6 +395,65 @@ pub fn editor_write_sidecar(
 pub fn editor_delete_sidecar(media_path: String, sidecar: EditorSidecar) -> AppResult<bool> {
     super::path_guard::checked_path(&media_path)?;
     Ok(editor::delete_sidecar(&media_path, sidecar))
+}
+
+/// Record that the human overrode the sermon auto-pick (E8), into the
+/// recording's `<stem>.feedback.json`. Returns whether anything was persisted:
+/// re-picking the block the detector already chose is not a correction, and an
+/// unreadable feedback file is left alone rather than overwritten.
+///
+/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
+/// commands; the target is a file next to a recording the user opened.
+#[tauri::command]
+pub fn editor_record_sermon_pick(
+    media_path: String,
+    request: crate::editor::EditorSermonPickRequest,
+) -> AppResult<bool> {
+    super::path_guard::checked_path(&media_path)?;
+    Ok(editor::record_sermon_pick(&media_path, &request))
+}
+
+/// Which of `segments` the human's stored sermon correction means, or `null`
+/// when there is none (or the recording no longer matches the one it describes).
+/// The reopen half of E8: detection returns its own answer, this says what the
+/// person decided last time.
+///
+/// **Path policy: `UserChosenWrite`** — read-only in effect, but it resolves the
+/// same sidecar path the write side does and gets the same guard.
+#[tauri::command]
+pub fn editor_sermon_pick(
+    media_path: String,
+    segments: Vec<EditorSegment>,
+) -> AppResult<Option<u32>> {
+    super::path_guard::checked_path(&media_path)?;
+    Ok(editor::sermon_pick_index(&media_path, &segments))
+}
+
+/// Record what became of one of the AI companion's suggestions (E8), into the
+/// recording's `<stem>.feedback.json`. Returns whether it persisted.
+///
+/// The parameters ARE the privacy boundary: a kind, an outcome and a bool, all
+/// from closed vocabularies. There is no parameter the suggested title, the
+/// summary, the user's rewrite or the transcript could travel in, which is why
+/// this takes three scalars instead of the renderer's event object — and the app
+/// version is stamped here rather than sent, so the renderer cannot claim one.
+///
+/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
+/// commands; the target is a file next to a recording the user opened.
+#[tauri::command]
+pub fn editor_record_companion_suggestion(
+    media_path: String,
+    kind: sundayrec_core::feedback::CompanionSuggestionKind,
+    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
+    edited_after_accept: bool,
+) -> AppResult<bool> {
+    super::path_guard::checked_path(&media_path)?;
+    Ok(editor::record_companion_suggestion(
+        &media_path,
+        kind,
+        outcome,
+        edited_after_accept,
+    ))
 }
 
 /// Probe just has_video/has_audio for the editor's audio-vs-video layout.

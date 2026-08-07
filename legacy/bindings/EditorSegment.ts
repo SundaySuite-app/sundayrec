@@ -23,4 +23,15 @@ export type EditorSegment = { start: number, end: number, duration: number, labe
  * `EDITOR_CACHE_VERSION` is shared with the far more expensive peaks
  * cache, which must NOT be invalidated over this).
  */
-type: string, };
+type: string, 
+/**
+ * How sure the classifier was about `kind`, 0..1.
+ *
+ * `#[serde(default)]` on purpose: a `<stem>.segments.json` written before
+ * this field existed must keep deserialising, because invalidating that
+ * cache means re-decoding a whole service to gain a number no shipped
+ * feature depends on. Absent therefore means "that cache predates the
+ * field", never "the classifier was unsure" — and
+ * `sundayrec_core::feedback` keeps the two apart.
+ */
+confidence?: number, };

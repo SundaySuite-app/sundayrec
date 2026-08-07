@@ -207,6 +207,20 @@ declare global {
       // The generated binding, not a hand-written twin — see `Suggestion` in
       // pages/editor/state.ts for what the twin cost us.
       editorDetectSegments:   (filePath: string, force?: boolean) => Promise<EditorSegment[]>
+      /** Persist a sermon-pick correction (E8). Resolves to whether it was
+       *  recorded — re-picking the detector's own block is not a correction. */
+      editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
+      /** Index into `segments` of the block the human corrected us to, or null. */
+      editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
+      /** Record what became of one companion suggestion (E8). Categories only —
+       *  the generated bindings are the vocabulary, so a kind or an outcome the
+       *  backend does not know fails to compile here rather than at runtime. */
+      editorRecordCompanionSuggestion: (
+        filePath: string,
+        kind: import('../bindings/CompanionSuggestionKind').CompanionSuggestionKind,
+        outcome: import('../bindings/CompanionSuggestionOutcome').CompanionSuggestionOutcome,
+        editedAfterAccept: boolean,
+      ) => Promise<boolean>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
@@ -349,6 +363,15 @@ declare global {
       /** "Slett mine data", the local half: retires the install id. Resolves
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>
+
+      // ── Learning-feedback transparency (E8.T) ────────────────────────────
+      /** Fold every recording's `<stem>.feedback.json` into the counts + the
+       *  trim-direction verdict the System-tab card shows. `null` ONLY on a
+       *  real IPC failure — a summary of all zeros IS the legitimate empty
+       *  state, so callers must never let a failed round-trip collapse into
+       *  that same shape (see `learning-summary-core.ts`'s empty-state
+       *  handling for why the distinction matters). */
+      learningFeedbackSummary: () => Promise<import('../bindings/LearningSummary').LearningSummary | null>
 
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>

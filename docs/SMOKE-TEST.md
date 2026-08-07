@@ -617,6 +617,44 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
      of reading the whole file a second time. Time it: the gap between the
      "Original: −23.4 LUFS → −16 LUFS" line and the first progress tick should
      be short even on a 90-minute recording.
+8. **E8 sermon-pick correction survives a reopen:** on a recording where the
+   auto-pick is wrong, choose the right block in the sermon dropdown, close the
+   editor, and reopen the same recording.
+   - **Expected:** once the analysis card finishes, **your** block is the starred
+     one in the dropdown and the highlighted one on the timeline — not the
+     detector's. A `<base>.feedback.json` sits next to the recording; open it
+     and check what is in it: offsets, durations, confidences and reason CODES,
+     and no path, filename or clock time anywhere.
+   - Picking the detector's own block again DELETES the file (agreement is not a
+     correction), and cycling through three options before settling leaves ONE
+     record — the block you settled on.
+   - The restore rides on detection, so it happens when detection does: video
+     files, review-mode and a restored cuts-draft do not auto-analyse, and there
+     the correction comes back when you press **Analyser opptak**.
+9. **E8 the other two signals reach the same file:** on a queued episode, open
+   review, drag the sermon start a good ten seconds off where it was proposed,
+   and publish. Then build the AI companion on a transcribed recording, press
+   **→ Bruk i metadata**, type one character into the title field, and switch to
+   another recording.
+   - **Expected:** the same `<base>.feedback.json` now also holds a
+     `trimAdjustments` entry (two signed durations plus an app version — a
+     positive `startDeltaSec` means you pushed the start LATER) and
+     `companionSuggestions` entries (`title` accepted with
+     `editedAfterAccept: true`, the ones you never touched `left_alone`). Still
+     no path, filename, suggestion text or clock time anywhere in the file.
+   - Publish the same episode again with the boundaries back where the analysis
+     proposed them: the `trimAdjustments` entry DISAPPEARS (you took the
+     correction back), while a sermon-pick correction in the same file stays.
+   - The companion events belong to the recording the panel was showing, not the
+     one you switched to — check that the second recording's sidecar did not
+     appear when you switched away from the first.
+   - With diagnostics ON, **Innstillinger → System → vis hva som sendes** should
+     now list both `corrections` (a signal, a direction and a coarse band) and
+     `companionOutcomes` (`title` / `accepted_edited`, `chapters` /
+     `left_alone`) with counts — and the caption must NOT say «ingenting å sende
+     akkurat nå» while they are on screen. With diagnostics OFF, do the same
+     edits and confirm both collections stay empty: nothing is accumulated for
+     someone who has not opted in, not even in memory.
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they

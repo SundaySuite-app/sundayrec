@@ -59,7 +59,9 @@ use sundayrec_core::telemetry::{TelemetryPayload, TelemetryPreview, TELEMETRY_SC
 use crate::db::store;
 use crate::error::AppResult;
 
+pub mod companion;
 pub mod config;
+pub mod corrections;
 pub mod counters;
 pub mod http_sender;
 pub mod payload;
@@ -159,8 +161,16 @@ pub async fn consent_set(pool: &SqlitePool, granted: bool) -> AppResult<Telemetr
 /// forgets one of them leaves collected data on a machine whose owner said no.
 pub async fn on_consent_revoked(pool: &SqlitePool) -> AppResult<()> {
     // The synchronous counter path checks this mirror, so flipping it FIRST
-    // means nothing new is accumulated while the purge below runs.
+    // means nothing new is accumulated while the purge below runs. The banded
+    // corrections consult the SAME mirror — one flag for both accumulators,
+    // because two mirrors of one fact are two things that can disagree, and the
+    // way they would disagree is "still counting after a revoke".
     counters::set_active(false);
+    // `set_active(false)` drops the counter map itself; the correction and
+    // companion maps are separate `OnceLock`s and have to be told too. A revoke
+    // must not leave counts in RAM waiting for a change of mind.
+    corrections::clear();
+    companion::clear();
     // Reset the watermarks so a later re-grant starts from ITS own "now" rather
     // than sweeping up everything that happened while telemetry was off.
     purge_collected(pool, payload::Watermarks::default()).await
@@ -180,6 +190,8 @@ async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> Ap
     payload::clear_pending_findings(pool).await?;
     payload::set_watermarks(pool, reset_to).await?;
     counters::purge(pool).await?;
+    corrections::purge(pool).await?;
+    companion::purge(pool).await?;
     if dropped > 0 {
         tracing::info!("telemetry: purged {dropped} queued report(s)");
     }
@@ -240,6 +252,8 @@ pub async fn drain_in(
         // Peeked, not taken: a payload that turns out empty, or an enqueue that
         // fails, must leave the counts where they are.
         counters: counters::snapshot(),
+        corrections: corrections::snapshot(),
+        companion_outcomes: companion::snapshot(),
     };
     let (built, next) = payload::build(pool, &ctx, since, install_id.as_deref()).await?;
 
@@ -253,11 +267,17 @@ pub async fn drain_in(
     // while the payload was being written is not lost.
     counters::consume(&ctx.counters);
     counters::persist(pool).await?;
+    corrections::consume(&ctx.corrections);
+    corrections::persist(pool).await?;
+    companion::consume(&ctx.companion_outcomes);
+    companion::persist(pool).await?;
     if queued {
         tracing::info!(
             crashes = built.crashes.len(),
             quality = built.quality.len(),
             findings = built.findings.len(),
+            corrections = built.corrections.len(),
+            companion_outcomes = built.companion_outcomes.len(),
             "telemetry: queued one report (nothing is sent — no endpoint in this build)"
         );
     }
@@ -338,6 +358,8 @@ pub async fn preview_payload_in(
         now_ms: now_ms(),
         consent_version: CONSENT_VERSION,
         counters: counters::snapshot(),
+        corrections: corrections::snapshot(),
+        companion_outcomes: companion::snapshot(),
     };
     // `install_id_if_any`, never `ensure_install_id`: a user who has not opted in
     // must be able to read this page without it minting an identifier for them.
@@ -374,6 +396,12 @@ pub async fn startup(app: &AppHandle, pool: &SqlitePool) {
     counters::set_active(true);
     if let Err(e) = counters::load(pool).await {
         tracing::warn!("telemetry: could not restore counters: {e}");
+    }
+    if let Err(e) = corrections::load(pool).await {
+        tracing::warn!("telemetry: could not restore banded corrections: {e}");
+    }
+    if let Err(e) = companion::load(pool).await {
+        tracing::warn!("telemetry: could not restore companion outcomes: {e}");
     }
     // A force-quit mid-send strands a row in `sending` forever otherwise.
     match queue_store::reset_stale_sending(pool).await {
@@ -412,10 +440,19 @@ pub fn spawn_periodic_drain(app: AppHandle) {
                         tracing::warn!("telemetry: periodic drain failed: {e}");
                     }
                     // Flush the counters even when nothing was queued, so a quit
-                    // between drains loses at most one interval's clicks.
+                    // between drains loses at most one interval's clicks — and
+                    // the banded corrections with them, which matter more per
+                    // item: a click is one of thousands, a correction is a
+                    // person having told us something.
                     if counters::is_active() {
                         if let Err(e) = counters::persist(&db.pool).await {
                             tracing::warn!("telemetry: could not persist counters: {e}");
+                        }
+                        if let Err(e) = corrections::persist(&db.pool).await {
+                            tracing::warn!("telemetry: could not persist banded corrections: {e}");
+                        }
+                        if let Err(e) = companion::persist(&db.pool).await {
+                            tracing::warn!("telemetry: could not persist companion outcomes: {e}");
                         }
                     }
                 }
@@ -620,6 +657,40 @@ mod tests {
         let pool = store::open_pool(&path).await.expect("reopen");
         assert!(consent_active(&pool).await);
         assert_eq!(install_id_if_any(&pool).await.unwrap(), Some(id));
+    }
+
+    #[tokio::test]
+    async fn a_v1_row_from_an_installed_copy_closes_the_gate_and_re_asks() {
+        // The E8.D1 upgrade as it actually happens: not a constructed
+        // `ConsentRecord`, but the literal bytes `consent_set` wrote under
+        // v0.10.0, read back by a build whose CONSENT_VERSION is 2. The unit
+        // tests in consent.rs prove `evaluate`; this proves the whole chain
+        // that runs at startup — sqlite row → parse → evaluate → THE gate.
+        let (pool, _d, _g) = temp_pool().await;
+        for (raw, what) in [
+            (
+                r#"{"granted":true,"version":1,"decidedAt":1754000000000}"#,
+                "a v1 YES",
+            ),
+            (
+                r#"{"granted":false,"version":1,"decidedAt":1754000000000}"#,
+                "a v1 NO",
+            ),
+        ] {
+            store::set_setting(&pool, KEY_CONSENT, raw).await.unwrap();
+            let c = consent_get(&pool).await.unwrap();
+            assert!(
+                !consent_active(&pool).await,
+                "{what} must not permit sending under the widened scope"
+            );
+            assert!(c.needs_prompt, "{what} must be put the new question");
+            assert_eq!(c.version, 1, "{what} is remembered as answered at v1");
+        }
+
+        // And a NO stays a NO across the bump — read back from storage, not
+        // from a value we just constructed in memory.
+        let c = consent_get(&pool).await.unwrap();
+        assert_eq!(c.status, ConsentStatus::Denied);
     }
 
     #[tokio::test]

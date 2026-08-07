@@ -605,7 +605,23 @@
     "telemetryPreviewNextHint": "Dette er nøyaktig det som sendes neste gang.",
     "telemetryPreviewHistoryHint": "Diagnostikk er av. Dette viser formen på dataene fra din egen historikk lokalt — ingenting sendes.",
     "telemetryPreviewEmptyHint": "Ingenting å sende akkurat nå.",
-    "telemetryPreviewFailed": "Kunne ikke hente forhåndsvisningen."
+    "telemetryPreviewFailed": "Kunne ikke hente forhåndsvisningen.",
+    "learningCardTitle": "Hva appen har lagt merke til",
+    "learningCardDesc": "Disse observasjonene finnes for at den automatiske gjenkjenningen skal kunne bli bedre — det er rettelsene dine som lærer den opp. Ingenting herfra deles med noen med mindre anonym diagnostikk er slått på.",
+    "learningCardWhere": "Alt lagres lokalt, sammen med opptaket det gjelder. Sletter du et opptak, forsvinner observasjonene fra det opptaket også.",
+    "learningLoadBtn": "Vis hva appen har lagt merke til",
+    "learningLoading": "Henter…",
+    "learningLoadFailed": "Kunne ikke hente oversikten. Prøv igjen.",
+    "learningUnavailableRecording": "Ikke tilgjengelig mens opptak pågår.",
+    "learningEmptyBody": "Ingenting å vise ennå — helt normalt. Dette fylles bare ut når du retter noe appen har gjettet feil på.",
+    "learningSermonPickZero": "Det automatiske prekenvalget er ikke rettet ennå.",
+    "learningSermonPickOne": "Det automatiske prekenvalget er rettet 1 gang.",
+    "learningSermonPickMany": "Det automatiske prekenvalget er rettet {n} ganger.",
+    "learningStartTooEarly": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.",
+    "learningStartTooLate": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.",
+    "learningEndTooEarly": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.",
+    "learningEndTooLate": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.",
+    "learningCompanionSummary": "Av AI-forslagene er {accepted} tatt i bruk ({edited} skrevet om etterpå), og {leftAlone} latt være urørt."
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.",
@@ -936,7 +952,7 @@
     "consentDesc": "Du kan dele anonym diagnostikk og bruksstatistikk med Sunday Suite, som utvikler SundayRec. Det er alltid frivillig og endrer ingenting i hvordan appen fungerer — du kan når som helst endre svaret under Innstillinger → System.",
     "consentDetailsSummary": "Hva samles i så fall inn?",
     "consentCatCrash": "Krasjrapporter — feiltype, app- og OS-versjon. Aldri filstier eller tekst fra prekenen.",
-    "consentCatQuality": "Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt). Aldri lydinnhold.",
+    "consentCatQuality": "Kvalitetsdata — om et opptak ble komplett (tapsprosent, verdikt), grove intervaller for korrigeringene dine i redigeringsverktøyet, f.eks. «30–60 sekunder tidligere», og hvilke typer automatiske forslag du bruker — tittel, sammendrag eller kapittelmerker — og om du beholdt eller skrev om resultatet. Aldri lydinnhold, tekst eller klokkeslett.",
     "consentCatUsage": "Funksjonsbruk — hvilke funksjoner du bruker, f.eks. «eksport til MP3». Bare antall, ikke innhold.",
     "consentNever": "Aldri: lyd, transkripsjoner, prekentekst, navn, e-post, filstier, enhetsnavn eller kirkenavn.",
     "consentReadMore": "Les hele personvernerklæringen →",
@@ -944,7 +960,9 @@
     "consentNo": "Nei takk",
     "consentNote": "Uansett hva du svarer, fungerer SundayRec akkurat likt.",
     "promptTitle": "Del anonym diagnostikk?",
-    "promptDesc": "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System."
+    "promptDesc": "SundayRec kan sende anonym feil- og bruksstatistikk til Sunday Suite for å forbedre appen. Frivillig, og du kan svare når som helst under Innstillinger → System.",
+    "rePromptTitle": "Vi spør deg om igjen",
+    "rePromptDesc": "Du har svart på dette før, men vi spør på nytt fordi det som eventuelt deles er utvidet: korrigeringene dine i redigeringsverktøyet kan nå også si omtrent hvor mye et automatisk forslag ble flyttet — for eksempel «30–60 sekunder tidligere» — og ikke bare at det ble flyttet. Appen kan i tillegg si hvilken type forslag du brukte — tittel, sammendrag eller kapittelmerker — og om du beholdt det slik det var eller skrev det om. Selve teksten sendes aldri. Det forrige svaret ditt er ikke lagt til grunn, verken som ja eller som nei, og ingenting sendes før du svarer her."
   },
   "time": {
     "yr": "år",

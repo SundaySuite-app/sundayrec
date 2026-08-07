@@ -1378,6 +1378,25 @@ const api: Record<string, unknown> = {
     }
   },
 
+  // ── Learning-feedback transparency (E8.T) ─────────────────────────────────
+  // `learning_feedback_summary` (commands/db.rs) walks the recording history
+  // and folds every `<stem>.feedback.json` sidecar it finds into counts + a
+  // trim-direction verdict — never audio, transcript text, suggestion text,
+  // a recording name, a path, or a clock time (see LearningSummary's own doc
+  // comment). `null` ONLY on a genuine IPC failure: unlike `call()`'s usual
+  // zero-value fallback, a summary of all zeros is itself a real answer ("no
+  // corrections yet"), so this must never be confused with "the read failed".
+  learningFeedbackSummary: async () => {
+    try {
+      return await invoke<import("../bindings/LearningSummary").LearningSummary>(
+        "learning_feedback_summary",
+      );
+    } catch (e) {
+      console.warn("[api-shim] learning_feedback_summary failed", e);
+      return null;
+    }
+  },
+
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone
@@ -1667,6 +1686,33 @@ const api: Record<string, unknown> = {
   // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
   editorDetectSegments: async (fp: string, force?: boolean) =>
     call("editor_segments", { inputPath: fp, force: force ?? false }, []),
+  // E8 — the sermon dropdown's correction, persisted next to the recording in
+  // `<stem>.feedback.json`. Resolves to whether anything was written: picking
+  // the block the detector already chose is not a correction. Never throws; a
+  // failure to record must not interrupt an edit the user is in the middle of.
+  editorRecordSermonPick: async (fp: string, request: unknown) =>
+    call("editor_record_sermon_pick", { mediaPath: fp, request }, false),
+  // The other half: which of these segments the human's stored correction means
+  // (`null` when there is none). Matched on OFFSETS in the backend, because the
+  // indices in a stored record mean nothing once detection has run again.
+  editorSermonPick: async (fp: string, segments: unknown) =>
+    call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
+  // E8 — what became of one AI-companion suggestion, into the same sidecar.
+  // Three scalars from closed vocabularies rather than the tracker's event
+  // object, so there is no argument the suggested text, the user's rewrite or
+  // the transcript could ride along in; the app version is stamped in the
+  // backend, never sent from here.
+  editorRecordCompanionSuggestion: async (
+    fp: string,
+    kind: string,
+    outcome: string,
+    editedAfterAccept: boolean,
+  ) =>
+    call(
+      "editor_record_companion_suggestion",
+      { mediaPath: fp, kind, outcome, editedAfterAccept },
+      false,
+    ),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).

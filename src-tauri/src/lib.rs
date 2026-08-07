@@ -46,6 +46,11 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
+// E8 learning loops — the persistence edge for the corrections a human makes to
+// the detector's proposals. Writes into the `Feedback` sidecar via
+// `editor::record_trim_adjustment`; the decisions behind it are
+// `sundayrec_core::trim_feedback` and `sundayrec_core::feedback`.
+pub mod learning;
 // E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
 // `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
 // has no console and a macOS .app from Finder discards stdout, so an installed
@@ -549,6 +554,7 @@ pub fn run() {
             commands::db::setting_set,
             commands::db::recordings_list,
             commands::db::transcripts_list,
+            commands::db::learning_feedback_summary,
             commands::db::recordings_delete,
             commands::db::recordings_clear,
             commands::db::recording_update_note,
@@ -612,6 +618,9 @@ pub fn run() {
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
+            commands::editor::editor_record_sermon_pick,
+            commands::editor::editor_sermon_pick,
+            commands::editor::editor_record_companion_suggestion,
             commands::editor::editor_probe_streams,
             commands::editor::editor_read_file,
             commands::editor::editor_cleanup_temp_files,

@@ -64,12 +64,19 @@ pub const AUTO_PURGE_DAYS: i64 = 30;
 /// (`sundayrec_core::integrations`) and the per-episode cover
 /// (`commands::thumbnail`, whose `EPISODE_SUFFIX` + `COVER_EXTENSIONS` produce
 /// the last three).
-pub const SIDECAR_SUFFIXES: [&str; 9] = [
+///
+/// "Kept in sync" was a promise, not a mechanism — a new `Sidecar` arm that
+/// nobody thought to add here does not fail to compile, it just quietly stops
+/// travelling with its recording (deleted and left behind, or restored without
+/// it). `sidecar_suffixes_cover_every_editor_sidecar` below now derives the
+/// editor's half of this list from the enum and fails when one is missing.
+pub const SIDECAR_SUFFIXES: [&str; 10] = [
     ".meta.json",
     ".cuts-draft.json",
     ".transcript.json",
     ".peaks.json",
     ".segments.json",
+    ".feedback.json",
     ".service.json",
     ".cover.jpg",
     ".cover.png",
@@ -424,6 +431,21 @@ mod tests {
             .unwrap();
         }
         (dir, media)
+    }
+
+    /// The list above is hand-written; the enum is the source of truth. A new
+    /// `Sidecar` arm that never reaches `SIDECAR_SUFFIXES` is invisible until a
+    /// user restores a recording and finds their work missing — so bind the two.
+    #[test]
+    fn sidecar_suffixes_cover_every_editor_sidecar() {
+        for kind in sundayrec_core::editor::Sidecar::all() {
+            assert!(
+                SIDECAR_SUFFIXES.contains(&kind.suffix()),
+                "{kind:?} ({}) does not travel with its recording — add it to \
+                 SIDECAR_SUFFIXES",
+                kind.suffix()
+            );
+        }
     }
 
     #[test]

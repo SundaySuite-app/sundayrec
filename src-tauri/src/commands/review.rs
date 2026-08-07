@@ -9,9 +9,13 @@
 //! ## ⚠️ INFRA-UNVERIFIED
 //!
 //! - [`prep_build_episode`] takes the analysis segments as input rather than
-//!   running audio-analysis itself — the ffmpeg/FFT analysis (`audio-analysis.ts`)
-//!   is NOT ported yet, so the caller (or a later analysis seam) supplies the
-//!   segments. The assembly + status decision ARE the unit-tested core.
+//!   running audio-analysis itself. The analysis IS ported now
+//!   (`sundayrec_core::audio_analysis`, driven by `crate::editor::segments`), and
+//!   E8 connected the two: every content-analysis pass that actually runs offers
+//!   its recording to the queue through [`build_and_enqueue`]. Until then this
+//!   command had no callers at all and the queue could only ever be empty — it
+//!   worked perfectly and was never asked anything. The assembly + status
+//!   decision ARE the unit-tested core.
 //! - [`review_process_reminders`] returns the actions the queue's timeline wants
 //!   fired, for a renderer that asks. It is no longer the only path: the hourly
 //!   [`crate::notify::reminders`] tick runs the same core ladder and dispatches
@@ -25,6 +29,7 @@ use sundayrec_core::integrations::stage::{self, StageManifest};
 use sundayrec_core::integrations::{ChapterMarker, ServiceLink};
 use sundayrec_core::prep::{self, EpisodePrep, PrepAnalysisSegment, PrepDefaults, SuggestedTrim};
 use sundayrec_core::review_queue::{self, ReminderAction, ReviewQueueEntry};
+use sundayrec_core::trim_feedback::{self, TrimDeltas};
 
 use crate::db::store::{self, new_id, now_ms};
 use crate::db::Db;
@@ -97,21 +102,113 @@ pub async fn prep_build_episode(
     recording_path: String,
     segments: Vec<PrepAnalysisSegment>,
 ) -> AppResult<EpisodePrep> {
+    build_and_enqueue(&app, &db, recording_path, segments).await
+}
+
+/// The body of [`prep_build_episode`], reachable from inside the shell as well
+/// as over IPC — [`crate::commands::editor::editor_segments`] offers every fresh
+/// analysis pass to the queue through here, which is what makes the queue
+/// populate at all (nothing had ever called the command).
+///
+/// **Idempotent on `recording_path`**, and that is the load-bearing part. The
+/// same service arrives here repeatedly by design — a re-open that misses the
+/// segments cache, an explicit «Analyser opptak», the next launch — and
+/// [`review_queue::enqueue`] dedups by the prep's uuid, which is freshly minted
+/// each time and therefore never matches. So the queue is asked whether it
+/// already knows this FILE first, and an entry that exists is returned
+/// unchanged: no second row, no reset of `added_at` (which would restart the
+/// reminder ladder), and no resurrection of something the operator already
+/// published or discarded.
+///
+/// Takes `&Db` rather than `State<Db>` so the non-command caller can pass a
+/// plain reference; the command above is the thin `State` wrapper.
+pub(crate) async fn build_and_enqueue(
+    app: &AppHandle,
+    db: &Db,
+    recording_path: String,
+    segments: Vec<PrepAnalysisSegment>,
+) -> AppResult<EpisodePrep> {
+    let (episode, added) = build_and_enqueue_inner(db, recording_path, segments).await?;
+    // Nothing changed on a duplicate, so the tray has nothing new to say.
+    if added {
+        crate::tray_note_review_queue(app);
+    }
+    Ok(episode)
+}
+
+/// Like [`build_and_enqueue`], but silently declines a file the app did not
+/// record. Returns the entry when there is one, `None` when the file was passed
+/// over.
+///
+/// The distinction exists because the automatic caller is the editor's content
+/// analysis, and the editor opens whatever the operator points it at — a
+/// borrowed sermon, a jingle, last year's concert. Those are not episodes of
+/// this church's service, and a review queue that fills with them is a queue
+/// nobody trusts. A recording the app itself made has a `recording` history row;
+/// nothing else does.
+///
+/// The explicit command has no such gate on purpose: an operator (or an
+/// importer) asking for a specific file to be prepped has said what they want,
+/// and this is a check on a guess, not on a request.
+pub(crate) async fn build_and_enqueue_if_recorded(
+    app: &AppHandle,
+    db: &Db,
+    recording_path: String,
+    segments: Vec<PrepAnalysisSegment>,
+) -> AppResult<Option<EpisodePrep>> {
+    let Some((episode, added)) = enqueue_if_recorded_inner(db, recording_path, segments).await?
+    else {
+        return Ok(None);
+    };
+    if added {
+        crate::tray_note_review_queue(app);
+    }
+    Ok(Some(episode))
+}
+
+/// The `AppHandle`-free half of [`build_and_enqueue_if_recorded`], so the gate
+/// itself is testable. `None` = not a file this app recorded.
+async fn enqueue_if_recorded_inner(
+    db: &Db,
+    recording_path: String,
+    segments: Vec<PrepAnalysisSegment>,
+) -> AppResult<Option<(EpisodePrep, bool)>> {
+    if !store::recording_exists_for_path(&db.pool, &recording_path).await? {
+        return Ok(None);
+    }
+    build_and_enqueue_inner(db, recording_path, segments)
+        .await
+        .map(Some)
+}
+
+/// The queue half of [`build_and_enqueue`], without the `AppHandle` the tray
+/// note needs — an `AppHandle` cannot be constructed in a unit test, and the
+/// idempotency rule above is exactly the part that has to be tested. Returns
+/// whether a NEW entry was written (`false` = the recording was already known).
+async fn build_and_enqueue_inner(
+    db: &Db,
+    recording_path: String,
+    segments: Vec<PrepAnalysisSegment>,
+) -> AppResult<(EpisodePrep, bool)> {
     crate::commands::path_guard::check(
         &recording_path,
         crate::commands::path_guard::PathPolicy::ReadOnlyMedia(
             crate::commands::path_guard::MEDIA_EXTENSIONS,
         ),
     )?;
-    let defaults = prep_defaults(&db).await?;
+
+    let queue = load_queue(db).await?;
+    if let Some(existing) = review_queue::find_by_recording_path(&queue, &recording_path) {
+        return Ok((existing.prep.clone(), false));
+    }
+
+    let defaults = prep_defaults(db).await?;
     let now = now_i64();
     let episode = prep::build_episode_prep(new_id(), recording_path, segments, &defaults, now);
 
-    let queue = load_queue(&db).await?;
     let queue = review_queue::enqueue(queue, episode.clone(), now);
-    save_queue(&db, &queue).await?;
-    crate::tray_note_review_queue(&app);
-    Ok(episode)
+    save_queue(db, &queue).await?;
+    Ok((episode, true))
 }
 
 // ── Review queue ──────────────────────────────────────────────────────────
@@ -250,12 +347,23 @@ fn trim_is_valid(trim: &SuggestedTrim) -> bool {
     trim.start_sec >= 0.0 && trim.end_sec > trim.start_sec
 }
 
-/// Store a revised sermon trim on a queued prep.
+/// Store a revised sermon trim on a queued prep, and record how far it moved
+/// from what the analysis proposed.
 ///
 /// `trim` is the renderer's `{ startSec, endSec }`. Rejected outright when it is
 /// not a forward, non-negative span (see [`trim_is_valid`]): a stored
 /// `endSec <= startSec` would make the next review-mode open produce an empty
 /// edit with no visible cause.
+///
+/// ## Why the deltas are measured against the SEGMENTS, not `suggested_trim`
+///
+/// The obvious anchor is the entry's current `suggested_trim` — and it is the
+/// wrong one, because this very command overwrites it. The first adjustment
+/// would measure correctly; a second would measure against the operator's own
+/// first adjustment and report a near-zero correction of a detector that was
+/// never consulted. `analysis_segments` is immutable for the life of the entry,
+/// so re-deriving the proposal from it gives the same answer every time,
+/// however often the operator changes their mind.
 #[tauri::command]
 pub async fn review_update_trim(
     app: AppHandle,
@@ -266,11 +374,45 @@ pub async fn review_update_trim(
     if !trim_is_valid(&trim) {
         return Err(AppError::Validation("invalid_trim".into()));
     }
-    let changed = patch_prep(&db, &id, |p| p.suggested_trim = Some(trim)).await?;
+
+    // Read the proposal inside the patch closure: `patch_prep` already holds the
+    // entry there, and a separate load would race its own write.
+    let mut feedback: Option<(String, TrimDeltas)> = None;
+    let changed = patch_prep(&db, &id, |p| {
+        let proposed = proposed_trim(p);
+        if let Some(deltas) = trim_feedback::trim_deltas(proposed, trim) {
+            feedback = Some((p.recording_path.clone(), deltas));
+        }
+        p.suggested_trim = Some(trim);
+    })
+    .await?;
+
     if changed {
+        // An operator who opened review and published without touching the
+        // boundaries taught us nothing about them — and a corpus where the
+        // untouched majority outvotes the corrections would tune the detector
+        // toward whatever it already does. Those deltas are nonetheless handed
+        // over rather than filtered out here: an operator who dragged a boundary
+        // BACK onto the proposal looks identical from this side, and the
+        // difference — withdrawing the adjustment recorded earlier — can only be
+        // seen by the layer that holds the file. Neither case is stored.
+        if let Some((path, deltas)) = feedback {
+            crate::learning::record_trim_deltas(&path, deltas);
+        }
         crate::tray_note_review_queue(&app);
     }
     Ok(changed)
+}
+
+/// Re-derive the sermon span the analysis originally proposed for this prep,
+/// from the segments it was built from. `None` when the detector found no
+/// sermon block — there is then no boundary for an operator to have corrected.
+fn proposed_trim(p: &EpisodePrep) -> Option<SuggestedTrim> {
+    let duration_sec = prep::derive_duration_sec(&p.analysis_segments);
+    prep::find_sermon_segment(&p.analysis_segments, duration_sec).map(|s| SuggestedTrim {
+        start_sec: s.start_sec,
+        end_sec: s.end_sec,
+    })
 }
 
 /// Store the mastering preset the operator settled on.
@@ -436,6 +578,243 @@ mod tests {
             &PrepDefaults::default(),
             now,
         )
+    }
+
+    // ── Automatic population: idempotent on the recording (E8) ──────────────
+
+    /// A real media file the path guard will accept, plus the tempdir keeping
+    /// it alive. `ReadOnlyMedia` requires a media extension AND existence, so a
+    /// bare string path would fail the guard before the queue logic runs.
+    fn media_file(dir: &tempfile::TempDir, name: &str) -> String {
+        let p = dir.path().join(name);
+        std::fs::write(&p, b"not really audio").unwrap();
+        p.to_string_lossy().into_owned()
+    }
+
+    /// One 30-minute speech block starting 6 minutes in — a segment list the
+    /// sermon heuristic actually accepts, so the prep carries a real proposal.
+    fn sermon_segments() -> Vec<PrepAnalysisSegment> {
+        vec![PrepAnalysisSegment {
+            start_sec: 360.0,
+            end_sec: 2160.0,
+            duration_sec: 1800.0,
+            kind: sundayrec_core::prep::SegmentType::Speech,
+            confidence: 0.9,
+            avg_rms_db: -20.0,
+            label: String::new(),
+        }]
+    }
+
+    #[tokio::test]
+    async fn a_fresh_analysis_puts_the_recording_in_the_queue() {
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+
+        let (episode, added) = build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        assert!(added);
+        assert_eq!(episode.recording_path, path);
+        assert_eq!(load_queue(&db).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn re_analysing_the_same_recording_does_not_queue_it_twice() {
+        // «Analyser opptak» forces a second pass over a file already queued.
+        // `enqueue`'s id-dedup cannot catch this — the second prep has a new
+        // uuid — so the path guard above it is what keeps the queue honest.
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+
+        let (first, _) = build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let (second, added) = build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+
+        assert!(!added, "the second pass must not add a row");
+        assert_eq!(load_queue(&db).await.unwrap().len(), 1);
+        assert_eq!(
+            second.id, first.id,
+            "the caller must get the entry that already exists, not a new one"
+        );
+    }
+
+    #[tokio::test]
+    async fn re_analysis_does_not_restart_the_reminder_ladder() {
+        // `added_at` drives the 24 h → 48 h → 7 d → auto-discard timeline. A
+        // re-analysis that reset it would let an episode dodge its reminders
+        // indefinitely, one editor visit at a time.
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+
+        build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let added_at = load_queue(&db).await.unwrap()[0].added_at;
+
+        build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        assert_eq!(load_queue(&db).await.unwrap()[0].added_at, added_at);
+    }
+
+    #[tokio::test]
+    async fn a_published_recording_does_not_come_back() {
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+
+        let (episode, _) = build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let mut q = load_queue(&db).await.unwrap();
+        assert!(review_queue::mark_published(&mut q, &episode.id, 2_000));
+        save_queue(&db, &q).await.unwrap();
+
+        let (_, added) = build_and_enqueue_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+        assert!(!added, "a published episode must not be re-queued");
+        let back = load_queue(&db).await.unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].prep.status, EpisodePrepStatus::Published);
+    }
+
+    #[tokio::test]
+    async fn a_discarded_recording_does_not_come_back() {
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+
+        let (episode, _) = build_and_enqueue_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let mut q = load_queue(&db).await.unwrap();
+        assert!(review_queue::mark_discarded(&mut q, &episode.id, 2_000));
+        save_queue(&db, &q).await.unwrap();
+
+        let (_, added) = build_and_enqueue_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+        assert!(!added, "a discarded episode must not be re-queued");
+        let back = load_queue(&db).await.unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].prep.status, EpisodePrepStatus::Discarded);
+    }
+
+    #[tokio::test]
+    async fn two_different_recordings_both_get_in() {
+        let (db, d) = temp_db().await;
+        let a = media_file(&d, "morning.m4a");
+        let b = media_file(&d, "evening.m4a");
+
+        build_and_enqueue_inner(&db, a, sermon_segments())
+            .await
+            .unwrap();
+        build_and_enqueue_inner(&db, b, sermon_segments())
+            .await
+            .unwrap();
+        assert_eq!(load_queue(&db).await.unwrap().len(), 2);
+    }
+
+    /// Register `path` as something this app recorded, so the gate lets it in.
+    async fn as_recorded(db: &Db, path: &str) {
+        store::insert_recording(
+            &db.pool,
+            store::RecordingRow {
+                id: String::new(),
+                file_path: path.to_string(),
+                device_name: None,
+                started_at: 0.0,
+                duration_ms: None,
+                byte_size: None,
+                created_at: 0.0,
+                note: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_file_the_app_never_recorded_is_passed_over() {
+        // The editor opens borrowed sermons, jingles and last year's concert.
+        // None of those is an episode of this church's service.
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "someone-elses-sermon.m4a");
+
+        let got = enqueue_if_recorded_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+        assert!(got.is_none());
+        assert!(load_queue(&db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_file_the_app_recorded_gets_in() {
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+        as_recorded(&db, &path).await;
+
+        let got = enqueue_if_recorded_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+        assert!(matches!(got, Some((_, true))));
+        assert_eq!(load_queue(&db).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn the_gate_is_still_idempotent_on_re_analysis() {
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+        as_recorded(&db, &path).await;
+
+        enqueue_if_recorded_inner(&db, path.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let second = enqueue_if_recorded_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+        assert!(
+            matches!(second, Some((_, false))),
+            "a re-analysis must report the existing entry, not a new one"
+        );
+        assert_eq!(load_queue(&db).await.unwrap().len(), 1);
+    }
+
+    // ── Trim feedback: deltas against the analysis, not the last edit ────────
+
+    #[tokio::test]
+    async fn the_proposal_is_re_derived_from_the_segments_every_time() {
+        // The regression this guards: measuring against `suggested_trim` would
+        // make a SECOND adjustment read as a correction of the operator's own
+        // first one, and the detector — the thing being tuned — would never
+        // appear in the numbers again.
+        let (db, d) = temp_db().await;
+        let path = media_file(&d, "service.m4a");
+        let (episode, _) = build_and_enqueue_inner(&db, path, sermon_segments())
+            .await
+            .unwrap();
+
+        let proposed = proposed_trim(&episode).expect("these segments yield a sermon");
+        assert_eq!(proposed.start_sec, 360.0);
+
+        // Simulate the first adjustment having already been stored.
+        let moved = SuggestedTrim {
+            start_sec: 400.0,
+            end_sec: 2160.0,
+        };
+        patch_prep(&db, &episode.id, |p| p.suggested_trim = Some(moved))
+            .await
+            .unwrap();
+
+        let after = load_queue(&db).await.unwrap()[0].prep.clone();
+        assert_eq!(after.suggested_trim, Some(moved));
+        assert_eq!(
+            proposed_trim(&after),
+            Some(proposed),
+            "the proposal must survive the operator overwriting the trim"
+        );
     }
 
     #[tokio::test]

@@ -28,9 +28,9 @@ const TELEMETRY_FIXTURES: Fixtures = {
   ...BOOT_FIXTURES,
   telemetry_consent_get: {
     status: "granted",
-    version: 1,
+    version: 2,
     decidedAt: 1_754_000_000_000,
-    currentVersion: 1,
+    currentVersion: 2,
     needsPrompt: false,
     active: true,
   },
@@ -86,9 +86,9 @@ test.describe("telemetry preview", () => {
       ...TELEMETRY_FIXTURES,
       telemetry_consent_get: {
         status: "denied",
-        version: 1,
+        version: 2,
         decidedAt: 1_754_000_000_000,
-        currentVersion: 1,
+        currentVersion: 2,
         needsPrompt: false,
         active: false,
       },
@@ -149,8 +149,8 @@ test.describe("telemetry preview", () => {
       telemetry_consent_set: fn(`(args) => {
         (window.__E2E_CONSENT__ ||= []).push(args.granted);
         return {
-          status: args.granted ? "granted" : "denied", version: 1,
-          decidedAt: Date.now(), currentVersion: 1, needsPrompt: false,
+          status: args.granted ? "granted" : "denied", version: 2,
+          decidedAt: Date.now(), currentVersion: 2, needsPrompt: false,
           active: !!args.granted,
         };
       }`),

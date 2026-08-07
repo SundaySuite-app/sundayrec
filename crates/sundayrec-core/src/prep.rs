@@ -65,6 +65,46 @@ pub struct PrepAnalysisSegment {
     pub label: String,
 }
 
+/// The classifier's own segment type and this module's are two distinct enums
+/// with identical variants — [`crate::audio_analysis`] predates the prep port
+/// and is not `serde`/`ts-rs`-facing, while this one is the wire shape. Matched
+/// exhaustively rather than transmuted or index-mapped, so that adding a variant
+/// to one is a compile error here instead of a silent misclassification.
+impl From<crate::audio_analysis::SegmentType> for SegmentType {
+    fn from(t: crate::audio_analysis::SegmentType) -> Self {
+        use crate::audio_analysis::SegmentType as A;
+        match t {
+            A::Silence => SegmentType::Silence,
+            A::Speech => SegmentType::Speech,
+            A::Music => SegmentType::Music,
+            A::Mixed => SegmentType::Mixed,
+            A::Unknown => SegmentType::Unknown,
+        }
+    }
+}
+
+/// Lift a classified segment into the prep-facing shape, keeping `confidence`
+/// and `avg_rms_db`.
+///
+/// Those two fields are why this conversion exists at all: the editor's
+/// `EditorSegment` drops both, so a prep assembled from the editor's cache would
+/// have to invent a confidence — and confidence is what breaks sermon-candidate
+/// ties and raises [`reasons::LOW_CONFIDENCE`]. The conversion runs straight off
+/// the classifier's output instead.
+impl From<&crate::audio_analysis::AnalysisSegment> for PrepAnalysisSegment {
+    fn from(s: &crate::audio_analysis::AnalysisSegment) -> Self {
+        PrepAnalysisSegment {
+            start_sec: s.start_sec,
+            end_sec: s.end_sec,
+            duration_sec: s.duration_sec,
+            kind: s.seg_type.into(),
+            confidence: s.confidence,
+            avg_rms_db: s.avg_rms_db,
+            label: s.label.clone(),
+        }
+    }
+}
+
 // ── Sermon detection (port findSermonSegment) ──────────────────────────────
 
 /// The chosen sermon bounds + how confident we are. `seg_index` is the index of
@@ -179,6 +219,67 @@ pub mod reasons {
         "Sermon-deteksjon hadde lav konfidens — sjekk at prekenen er innenfor det markerte området";
     pub const VERY_SHORT: &str =
         "Hele opptaket er kort — kanskje en del av en serie eller et avbrutt opptak";
+}
+
+/// The same six reasons as CODES rather than as their Norwegian sentences.
+///
+/// Anything that STORES or SENDS a reason stores one of these — see the
+/// telemetry module's identical rule for self-test reasons
+/// ([`crate::telemetry`] module docs, "sent as CODES, never as their
+/// sentences"). Two independent arguments for it: a sentence is free text whose
+/// wording nobody adding a reason would think of as a wire contract, and a
+/// stored sentence stops matching the moment someone improves the Norwegian.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttentionReason {
+    NoSermonBlock,
+    SpeechAtStart,
+    MidSilence,
+    MostlyMusic,
+    LowConfidence,
+    VeryShort,
+}
+
+impl AttentionReason {
+    /// The stable code. Changing one of these breaks every record already on
+    /// disk, so they are deliberately independent of the Norwegian wording.
+    pub fn code(self) -> &'static str {
+        match self {
+            AttentionReason::NoSermonBlock => "no_sermon_block",
+            AttentionReason::SpeechAtStart => "speech_at_start",
+            AttentionReason::MidSilence => "mid_silence",
+            AttentionReason::MostlyMusic => "mostly_music",
+            AttentionReason::LowConfidence => "low_confidence",
+            AttentionReason::VeryShort => "very_short",
+        }
+    }
+
+    /// Which reason a sentence from [`reasons`] is. `None` for anything else —
+    /// an unrecognised sentence is DROPPED rather than stored, so a future
+    /// `format!`-built reason can never carry an interpolated name onto disk.
+    pub fn from_sentence(sentence: &str) -> Option<Self> {
+        match sentence {
+            reasons::NO_SERMON_BLOCK => Some(AttentionReason::NoSermonBlock),
+            reasons::SPEECH_AT_START => Some(AttentionReason::SpeechAtStart),
+            reasons::MID_SILENCE => Some(AttentionReason::MidSilence),
+            reasons::MOSTLY_MUSIC => Some(AttentionReason::MostlyMusic),
+            reasons::LOW_CONFIDENCE => Some(AttentionReason::LowConfidence),
+            reasons::VERY_SHORT => Some(AttentionReason::VeryShort),
+            _ => None,
+        }
+    }
+}
+
+/// [`derive_attention_reasons`] as codes. Same inputs, same order, same
+/// conditions — only the representation differs.
+pub fn derive_attention_codes(
+    segments: &[PrepAnalysisSegment],
+    sermon: Option<&SermonSegment>,
+    duration_sec: f64,
+) -> Vec<AttentionReason> {
+    derive_attention_reasons(segments, sermon, duration_sec)
+        .iter()
+        .filter_map(|r| AttentionReason::from_sentence(r))
+        .collect()
 }
 
 /// Walk the segments + chosen sermon and derive the human-readable reasons this
@@ -391,6 +492,87 @@ mod tests {
         }
     }
 
+    // ── The classifier → prep conversion (E8) ───────────────────────────────
+
+    #[test]
+    fn every_classifier_segment_type_maps_to_its_twin() {
+        use crate::audio_analysis::SegmentType as A;
+        // Exhaustive on purpose: a silently mismapped class would put the
+        // sermon somewhere plausible but wrong.
+        assert_eq!(SegmentType::from(A::Silence), SegmentType::Silence);
+        assert_eq!(SegmentType::from(A::Speech), SegmentType::Speech);
+        assert_eq!(SegmentType::from(A::Music), SegmentType::Music);
+        assert_eq!(SegmentType::from(A::Mixed), SegmentType::Mixed);
+        assert_eq!(SegmentType::from(A::Unknown), SegmentType::Unknown);
+    }
+
+    #[test]
+    fn the_conversion_carries_confidence_and_level_through() {
+        let analysed = crate::audio_analysis::AnalysisSegment {
+            start_sec: 300.0,
+            end_sec: 1800.0,
+            duration_sec: 1500.0,
+            seg_type: crate::audio_analysis::SegmentType::Speech,
+            confidence: 0.42,
+            avg_rms_db: -18.5,
+            label: "Tale".into(),
+        };
+        let converted = PrepAnalysisSegment::from(&analysed);
+        assert_eq!(
+            converted,
+            seg_full(300.0, 1500.0, SegmentType::Speech, 0.42, -18.5, "Tale")
+        );
+    }
+
+    #[test]
+    fn a_converted_segment_can_still_trip_the_low_confidence_flag() {
+        // The end-to-end point of carrying `confidence`: a prep built from the
+        // conversion must be able to reach `LOW_CONFIDENCE`, which a fabricated
+        // confidence would either suppress forever or fire forever.
+        let analysed = crate::audio_analysis::AnalysisSegment {
+            start_sec: 360.0,
+            end_sec: 1800.0,
+            duration_sec: 1440.0,
+            seg_type: crate::audio_analysis::SegmentType::Speech,
+            confidence: 0.3,
+            avg_rms_db: -20.0,
+            label: String::new(),
+        };
+        let segs: Vec<PrepAnalysisSegment> =
+            [analysed].iter().map(PrepAnalysisSegment::from).collect();
+        let prep = build_episode_prep(
+            "x".into(),
+            "/r.mp4".into(),
+            segs,
+            &PrepDefaults::default(),
+            0,
+        );
+        assert_eq!(prep.status, EpisodePrepStatus::NeedsAttention);
+        assert!(prep
+            .attention_reasons
+            .unwrap()
+            .contains(&reasons::LOW_CONFIDENCE.to_string()));
+    }
+
+    fn seg_full(
+        start: f64,
+        dur: f64,
+        kind: SegmentType,
+        conf: f64,
+        avg_rms_db: f64,
+        label: &str,
+    ) -> PrepAnalysisSegment {
+        PrepAnalysisSegment {
+            start_sec: start,
+            end_sec: start + dur,
+            duration_sec: dur,
+            kind,
+            confidence: conf,
+            avg_rms_db,
+            label: label.into(),
+        }
+    }
+
     #[test]
     fn picks_longest_speech_after_five_minutes() {
         let segs = vec![
@@ -504,6 +686,90 @@ mod tests {
         let segs = vec![seg(0.0, 300.0, SegmentType::Speech, 0.9)];
         let reasons = derive_attention_reasons(&segs, None, 300.0);
         assert!(reasons.iter().any(|r| r == reasons::VERY_SHORT));
+    }
+
+    // ── Reason codes ───────────────────────────────────────────────────────────
+
+    /// The property that keeps [`derive_attention_codes`] honest: across every
+    /// input that makes a reason fire, the code list is exactly as long as the
+    /// sentence list. A reason added without a code silently shortens the code
+    /// list — and this fails.
+    #[test]
+    fn every_derived_reason_has_a_code() {
+        let low_conf = SermonSegment {
+            start_sec: 360.0,
+            end_sec: 600.0,
+            confidence: 0.4,
+            seg_index: 0,
+        };
+        let good = SermonSegment {
+            confidence: 0.95,
+            ..low_conf
+        };
+        let matrix: Vec<(Vec<PrepAnalysisSegment>, Option<SermonSegment>, f64)> = vec![
+            (vec![seg(0.0, 600.0, SegmentType::Speech, 0.9)], None, 600.0),
+            (vec![seg(0.0, 60.0, SegmentType::Music, 0.9)], None, 600.0),
+            (vec![seg(0.0, 300.0, SegmentType::Speech, 0.9)], None, 300.0),
+            (
+                vec![
+                    seg(0.0, 200.0, SegmentType::Music, 0.8),
+                    seg(200.0, 120.0, SegmentType::Silence, 0.7),
+                    seg(360.0, 240.0, SegmentType::Music, 0.8),
+                ],
+                Some(low_conf),
+                800.0,
+            ),
+            (
+                vec![seg(0.0, 1800.0, SegmentType::Speech, 0.95)],
+                Some(good),
+                1800.0,
+            ),
+        ];
+        let mut seen_any = false;
+        for (segs, sermon, dur) in matrix {
+            let sentences = derive_attention_reasons(&segs, sermon.as_ref(), dur);
+            let codes = derive_attention_codes(&segs, sermon.as_ref(), dur);
+            assert_eq!(
+                sentences.len(),
+                codes.len(),
+                "a reason with no code: {sentences:?}"
+            );
+            seen_any |= !codes.is_empty();
+        }
+        assert!(
+            seen_any,
+            "the matrix never fired a reason — it proves nothing"
+        );
+    }
+
+    #[test]
+    fn reason_codes_are_distinct_and_machine_shaped() {
+        let all = [
+            AttentionReason::NoSermonBlock,
+            AttentionReason::SpeechAtStart,
+            AttentionReason::MidSilence,
+            AttentionReason::MostlyMusic,
+            AttentionReason::LowConfidence,
+            AttentionReason::VeryShort,
+        ];
+        let mut codes: Vec<&str> = all.iter().map(|r| r.code()).collect();
+        codes.sort_unstable();
+        let n = codes.len();
+        codes.dedup();
+        assert_eq!(codes.len(), n, "two reasons share a code");
+        assert!(codes
+            .iter()
+            .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')));
+    }
+
+    #[test]
+    fn free_text_is_never_taken_for_a_reason() {
+        // The one thing `from_sentence` must refuse: anything that is not one of
+        // the six constants — including a sentence that merely starts like one.
+        assert!(AttentionReason::from_sentence("Enheten Qu-5 forsvant").is_none());
+        assert!(AttentionReason::from_sentence("").is_none());
+        let almost = format!("{} (Qu-5)", reasons::LOW_CONFIDENCE);
+        assert!(AttentionReason::from_sentence(&almost).is_none());
     }
 
     #[test]

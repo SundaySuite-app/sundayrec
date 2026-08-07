@@ -605,7 +605,23 @@
     "telemetryPreviewNextHint": "To dokładnie to, co zostałoby wysłane następnym razem.",
     "telemetryPreviewHistoryHint": "Diagnostyka jest wyłączona. To pokazuje kształt danych z Twojej lokalnej historii — nic nie jest wysyłane.",
     "telemetryPreviewEmptyHint": "Nic do wysłania w tej chwili.",
-    "telemetryPreviewFailed": "Nie udało się wczytać podglądu."
+    "telemetryPreviewFailed": "Nie udało się wczytać podglądu.",
+    "learningCardTitle": "Co zauważyła aplikacja",
+    "learningCardDesc": "Te obserwacje istnieją po to, by automatyczne wykrywanie mogło się poprawiać — to twoje poprawki je uczą. Nic z tego nie jest udostępniane nikomu, chyba że włączona jest anonimowa diagnostyka.",
+    "learningCardWhere": "Wszystko jest zapisywane lokalnie, obok nagrania, którego dotyczy. Usunięcie nagrania usuwa też jego obserwacje.",
+    "learningLoadBtn": "Pokaż, co zauważyła aplikacja",
+    "learningLoading": "Wczytywanie…",
+    "learningLoadFailed": "Nie udało się wczytać podsumowania. Spróbuj ponownie.",
+    "learningUnavailableRecording": "Niedostępne, gdy trwa nagrywanie.",
+    "learningEmptyBody": "Nic tu jeszcze nie ma — to normalne. To pole wypełnia się dopiero, gdy poprawisz coś, co aplikacja źle zgadła.",
+    "learningSermonPickZero": "Automatyczny wybór kazania nie był jeszcze poprawiany.",
+    "learningSermonPickOne": "Automatyczny wybór kazania został poprawiony 1 raz.",
+    "learningSermonPickMany": "Automatyczny wybór kazania został poprawiony {n} razy.",
+    "learningStartTooEarly": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekund później.",
+    "learningStartTooLate": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
+    "learningEndTooEarly": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekund później.",
+    "learningEndTooLate": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
+    "learningCompanionSummary": "Spośród sugestii AI {accepted} zostało użytych ({edited} przepisanych później), a {leftAlone} pozostawiono bez zmian."
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
@@ -936,7 +952,7 @@
     "consentDesc": "Możesz udostępniać anonimową diagnostykę i statystyki użycia Sunday Suite, twórcy SundayRec. To zawsze dobrowolne i niczego nie zmienia w działaniu aplikacji — możesz zmienić swoją odpowiedź w dowolnym momencie w Ustawienia → System.",
     "consentDetailsSummary": "Co byłoby wtedy zbierane?",
     "consentCatCrash": "Raporty awarii — typ błędu, wersja aplikacji i systemu. Nigdy ścieżki plików ani tekst kazania.",
-    "consentCatQuality": "Dane jakości — czy nagranie zostało zapisane w całości (procent utraty, wynik). Nigdy treść dźwięku.",
+    "consentCatQuality": "Dane jakości — czy nagranie zostało zapisane w całości (procent utraty, wynik), przybliżone przedziały Twoich korekt w edytorze, np. „30–60 sekund wcześniej”, oraz jakich rodzajów automatycznych propozycji używasz — tytuł, streszczenie lub znaczniki rozdziałów — i czy zachowałeś, czy przepisałeś wynik. Nigdy treść dźwięku, tekst ani godziny.",
     "consentCatUsage": "Użycie funkcji — z jakich funkcji korzystasz, np. «eksport do MP3». Tylko liczby, nigdy treść.",
     "consentNever": "Nigdy: dźwięk, transkrypcje, tekst kazania, imiona i nazwiska, e-mail, ścieżki plików, nazwy urządzeń ani nazwa kościoła.",
     "consentReadMore": "Przeczytaj pełną politykę prywatności →",
@@ -944,7 +960,9 @@
     "consentNo": "Nie, dziękuję",
     "consentNote": "Niezależnie od odpowiedzi, SundayRec działa dokładnie tak samo.",
     "promptTitle": "Udostępniać anonimową diagnostykę?",
-    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → System."
+    "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → System.",
+    "rePromptTitle": "Pytamy jeszcze raz",
+    "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Aplikacja może dodatkowo podać, jakiego rodzaju propozycji użyto — tytuł, streszczenie lub znaczniki rozdziałów — i czy zachowano ją bez zmian, czy przepisano. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
   },
   "time": {
     "yr": "r",

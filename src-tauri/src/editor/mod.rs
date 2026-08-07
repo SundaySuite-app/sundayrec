@@ -54,6 +54,7 @@ use ts_rs::TS;
 
 use crate::error::AppError;
 use crate::error::AppResult;
+use sundayrec_core::prep::PrepAnalysisSegment;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -117,6 +118,17 @@ pub struct EditorSegment {
     /// cache, which must NOT be invalidated over this).
     #[serde(rename = "type")]
     pub kind: String,
+    /// How sure the classifier was about `kind`, 0..1.
+    ///
+    /// `#[serde(default)]` on purpose: a `<stem>.segments.json` written before
+    /// this field existed must keep deserialising, because invalidating that
+    /// cache means re-decoding a whole service to gain a number no shipped
+    /// feature depends on. Absent therefore means "that cache predates the
+    /// field", never "the classifier was unsure" — and
+    /// `sundayrec_core::feedback` keeps the two apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub confidence: Option<f64>,
 }
 
 /// The measured loudness the mastering UI shows before/after a preset, mirroring
@@ -528,6 +540,10 @@ pub enum EditorSidecar {
     Peaks,
     /// `<stem>.segments.json` — the content-detection cache (P3).
     Segments,
+    /// `<stem>.feedback.json` — the human's corrections of what we detected
+    /// (E8). Written/read by the seam only; unlike its two neighbours it is NOT
+    /// derived data, so nothing here may treat losing it as cheap.
+    Feedback,
 }
 
 impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
@@ -538,6 +554,7 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
             EditorSidecar::Transcript => sundayrec_core::editor::Sidecar::Transcript,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
             EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
+            EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
         }
     }
 }
@@ -633,11 +650,34 @@ fn write_sidecar_raw(media_path: &str, sidecar: EditorSidecar, json: &str) -> bo
     std::fs::write(&path, json).is_ok()
 }
 
+/// Write a sidecar through a temp file in the same directory, then rename.
+///
+/// [`write_sidecar_raw`] truncates the target and streams into it, so a crash,
+/// a full disk or a killed process mid-write leaves a TRUNCATED file where a
+/// complete one used to be. For the derived caches that is a recompute; for the
+/// feedback sidecar it is the loss of something a human did by hand and will
+/// never do again. The temp name carries the editor's `.__editor_tmp` marker so
+/// the startup sweep collects one that a crash left behind.
+fn write_sidecar_atomic(media_path: &str, sidecar: EditorSidecar, json: &str) -> bool {
+    let Some(path) = resolve_sidecar(media_path, sidecar) else {
+        return false;
+    };
+    let tmp = format!("{path}{}", sundayrec_core::editor::EDITOR_TMP_SUFFIX);
+    if std::fs::write(&tmp, json).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    if std::fs::rename(&tmp, &path).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    true
+}
+
 /// Read a sidecar straight into `T`, skipping the intermediate
 /// `serde_json::Value` (a 2 h peaks cache would otherwise materialise ~720 000
 /// boxed `Number`s just to be thrown away). `None` for missing, unreadable, or
 /// shape-mismatched JSON — a cache is never allowed to fail an open.
-#[cfg(feature = "editor")]
 fn read_sidecar_typed<T: serde::de::DeserializeOwned>(
     media_path: &str,
     sidecar: EditorSidecar,
@@ -697,6 +737,266 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
         Some(path) => std::fs::remove_file(&path).is_ok(),
         None => false,
     }
+}
+
+// ── Learning feedback (E8) — pure decisions in core, fs here ────────────────
+//
+// Not feature-gated: a correction is a human's work, and it must persist in the
+// default build exactly as the meta/cuts sidecars do. The whole of "is this a
+// correction", "what does it replace", "which block does it mean now" lives in
+// `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
+//
+// Three callers now share that read-modify-write: the sermon dropdown, review's
+// publish, and the AI companion panel. They are independent — a companion batch
+// finalises three events at once while a publish is in flight — and a
+// read-modify-write of one file from two places at once loses whichever write
+// lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
+// all recordings rather than one per path: these writes are a few hundred bytes
+// each and happen at human speed, so a map of locks would be more machinery than
+// the contention justifies.
+
+/// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
+static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Tell the telemetry accumulators what a successful fold changed, as the file's
+/// PROJECTIONS before and after.
+///
+/// Called by all three seams and folding BOTH projections at every one — so a
+/// signal added to either projection later is reported from every seam at once
+/// rather than from the ones somebody remembered. The two read disjoint
+/// collections of the same file (`banded_corrections` the picks and trims,
+/// `companion_outcomes` the suggestions), so a record cannot be counted twice.
+///
+/// Projections, not the event: a correction REPLACES the previous answer to the
+/// same baseline, so someone cycling through four blocks has made one decision,
+/// and only the difference between two file states says that. It also means the
+/// only thing that can ever be reported is what actually reached the disk. A
+/// no-op without consent, and a no-op for whichever projection did not move.
+fn observe_feedback_change(
+    before: &sundayrec_core::feedback::RecordingFeedback,
+    after: &sundayrec_core::feedback::RecordingFeedback,
+) {
+    crate::telemetry::corrections::observe_files(before, after);
+    crate::telemetry::companion::observe_files(before, after);
+}
+
+/// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
+/// A panic in another writer says nothing about the FILE — the guard protects a
+/// read-modify-write, not an invariant that could be left half-applied (the
+/// write itself is a temp file plus a rename), and refusing every later
+/// correction because of one unrelated panic would be a worse failure than the
+/// one it reported.
+fn feedback_lock() -> std::sync::MutexGuard<'static, ()> {
+    FEEDBACK_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// What the renderer sends when the human overrides the sermon auto-pick.
+///
+/// The whole segment list travels, not just the two blocks: the record is only
+/// interpretable against the alternatives that existed, and the attention
+/// heuristics read the music/silence blocks the picker never offers.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(
+    export,
+    export_to = "../../src/lib/bindings/EditorSermonPickRequest.ts"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSermonPickRequest {
+    /// The segments as the UI had them WHEN THE CHOICE WAS MADE — i.e. before
+    /// the promotion flips the two `type` fields, so `autoIndex` still points at
+    /// a block the detector labelled `sermon`.
+    pub segments: Vec<EditorSegment>,
+    /// Indices of the blocks the picker offered, in the order it offered them.
+    pub candidate_indices: Vec<u32>,
+    /// Index of the DETECTOR's pick — not whatever is promoted right now, which
+    /// may already be an earlier correction. `None` when it found no sermon.
+    pub auto_index: Option<u32>,
+    /// Index of the block the human picked.
+    pub chosen_index: u32,
+    /// Length of the recording, seconds.
+    pub duration_sec: f64,
+}
+
+fn to_feedback_segments(
+    segments: &[EditorSegment],
+) -> Vec<sundayrec_core::feedback::FeedbackSegment> {
+    use sundayrec_core::feedback::{FeedbackSegment, FeedbackSegmentKind};
+    segments
+        .iter()
+        .enumerate()
+        .map(|(i, s)| FeedbackSegment {
+            index: i as u32,
+            start_sec: s.start,
+            end_sec: s.end,
+            duration_sec: s.duration,
+            kind: FeedbackSegmentKind::from_kind(&s.kind),
+            confidence: s.confidence,
+        })
+        .collect()
+}
+
+/// Read the recording's feedback file. `Err(())` means a file is there that we
+/// must not touch — corrupt, or written by a newer schema. Missing is `Ok` with
+/// an empty file, because "nobody has corrected this recording yet" is the
+/// normal case, not an error.
+fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::RecordingFeedback, ()> {
+    use sundayrec_core::feedback::{RecordingFeedback, FEEDBACK_SCHEMA};
+    let Some(path) = resolve_sidecar(media_path, EditorSidecar::Feedback) else {
+        return Err(());
+    };
+    if !std::path::Path::new(&path).exists() {
+        return Ok(RecordingFeedback::default());
+    }
+    match read_sidecar_typed::<RecordingFeedback>(media_path, EditorSidecar::Feedback) {
+        Some(f) if f.schema == FEEDBACK_SCHEMA => Ok(f),
+        // Deliberately NOT the "start fresh" treatment the other sidecars get.
+        // Those are caches and drafts; this one holds corrections a person made
+        // by hand and will not make again, so an unreadable file is kept as it
+        // is and the write is refused.
+        _ => {
+            tracing::warn!("feedback: {path} is not schema {FEEDBACK_SCHEMA} — leaving it alone");
+            Err(())
+        }
+    }
+}
+
+/// Read one recording's feedback file for the transparency summary (E8.T),
+/// treating "corrupt" the same as "missing" rather than as an error.
+///
+/// [`read_feedback`]'s `Err(())` exists to stop a WRITE from clobbering a file
+/// it cannot parse — there is nothing to clobber here. A summary is read-only
+/// and best-effort by nature: one unreadable sidecar among a whole history
+/// must shrink the count by one recording's worth of corrections, not fail
+/// the whole screen the operator opened to see what the app has noticed.
+pub fn read_feedback_for_summary(media_path: &str) -> sundayrec_core::feedback::RecordingFeedback {
+    read_feedback(media_path).unwrap_or_default()
+}
+
+/// Which block of `segments` the human's stored correction means, or `None`.
+///
+/// This is what makes a correction outlive the editor window: on reopen the
+/// renderer asks, and promotes the answer instead of the detector's.
+pub fn sermon_pick_index(media_path: &str, segments: &[EditorSegment]) -> Option<u32> {
+    let file = read_feedback(media_path).ok()?;
+    let mapped = to_feedback_segments(segments);
+    sundayrec_core::feedback::resolve_sermon_pick(&file, &mapped).map(|i| i as u32)
+}
+
+/// Write a folded feedback record back beside its recording. Returns whether it
+/// persisted.
+///
+/// A record with nothing left in ANY of its collections is deleted rather than
+/// left as an empty assertion — and the emptiness question belongs to
+/// `RecordingFeedback::is_empty`, not to the collection the caller happened to
+/// touch: a withdrawn sermon pick on a recording whose trim was also adjusted
+/// must not take the adjustment with it.
+fn write_feedback(media_path: &str, file: &sundayrec_core::feedback::RecordingFeedback) -> bool {
+    if file.is_empty() {
+        return delete_sidecar(media_path, EditorSidecar::Feedback);
+    }
+    match serde_json::to_string_pretty(file) {
+        Ok(json) => write_sidecar_atomic(media_path, EditorSidecar::Feedback, &json),
+        Err(_) => false,
+    }
+}
+
+/// Fold one sermon-pick correction into the recording's feedback file. Returns
+/// whether anything was persisted — `false` covers both "that was not a
+/// correction" and "we refused to touch an unreadable file".
+pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -> bool {
+    use sundayrec_core::feedback as core;
+    let _guard = feedback_lock();
+    let Ok(mut file) = read_feedback(media_path) else {
+        return false;
+    };
+    let segments = to_feedback_segments(&request.segments);
+    let candidates: Vec<usize> = request
+        .candidate_indices
+        .iter()
+        .map(|i| *i as usize)
+        .collect();
+    let Some(correction) = core::build_sermon_pick_correction(
+        &segments,
+        &candidates,
+        request.auto_index.map(|i| i as usize),
+        request.chosen_index as usize,
+        request.duration_sec,
+        env!("CARGO_PKG_VERSION"),
+    ) else {
+        return false;
+    };
+    let before = file.clone();
+    if !core::record_sermon_pick(&mut file, correction).changed() {
+        return false;
+    }
+    // Only after the write: a fold that did not reach the disk must not be
+    // counted as something the person told us, or the telemetry would be
+    // reporting a correction the app itself has lost.
+    let written = write_feedback(media_path, &file);
+    if written {
+        observe_feedback_change(&before, &file);
+    }
+    written
+}
+
+/// Fold one trim adjustment into the recording's feedback file.
+///
+/// `Some` carries the pure layer's verdict, including the two that write nothing
+/// (the operator published the proposal untouched, or moved the boundaries back
+/// onto it). `None` means we could not persist: an unreadable or newer-schema
+/// file we refuse to overwrite, or a failed write. The caller
+/// ([`crate::learning::record_trim_deltas`]) turns that into a log line — never
+/// into anything the operator sees.
+pub fn record_trim_adjustment(
+    media_path: &str,
+    deltas: sundayrec_core::trim_feedback::TrimDeltas,
+) -> Option<sundayrec_core::feedback::TrimOutcome> {
+    use sundayrec_core::feedback as core;
+    let _guard = feedback_lock();
+    let mut file = read_feedback(media_path).ok()?;
+    let before = file.clone();
+    let outcome = core::record_trim_adjustment(&mut file, deltas, env!("CARGO_PKG_VERSION"));
+    if outcome.changed() {
+        if !write_feedback(media_path, &file) {
+            return None;
+        }
+        // Includes the WITHDRAWN case, which is a decrement rather than an
+        // increment: a correction the operator has taken back must stop being
+        // reported, exactly as it stops being on file.
+        observe_feedback_change(&before, &file);
+    }
+    Some(outcome)
+}
+
+/// Append one companion-suggestion outcome to the recording's feedback file.
+/// Returns whether it persisted; `false` is an unreadable file we left alone or
+/// a failed write, and never reaches the panel.
+pub fn record_companion_suggestion(
+    media_path: &str,
+    kind: sundayrec_core::feedback::CompanionSuggestionKind,
+    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
+    edited_after_accept: bool,
+) -> bool {
+    let _guard = feedback_lock();
+    let Ok(mut file) = read_feedback(media_path) else {
+        return false;
+    };
+    let before = file.clone();
+    sundayrec_core::feedback::record_companion_suggestion(
+        &mut file,
+        kind,
+        outcome,
+        edited_after_accept,
+        env!("CARGO_PKG_VERSION"),
+    );
+    // Only after the write, exactly as the two correction seams do: an outcome
+    // that did not reach the disk must not be counted as something the person
+    // told us, or the telemetry would report what the app itself has lost.
+    let written = write_feedback(media_path, &file);
+    if written {
+        observe_feedback_change(&before, &file);
+    }
+    written
 }
 
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
@@ -1134,7 +1434,7 @@ pub async fn segments<F>(
     _input_path: &str,
     _force: bool,
     _on_progress: F,
-) -> AppResult<Vec<EditorSegment>>
+) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
 where
     F: Fn(f32),
 {
@@ -1637,13 +1937,25 @@ fn read_segments_cache(
 /// probed duration implies at 16 kHz mono s16le. «Analyser opptak» was the last
 /// button in the editor that could run for minutes with nothing but a spinner.
 ///
+/// The second return value is the analysis BEHIND those segments, and it is
+/// `Some` only on a pass that actually ran. [`EditorSegment`] is a lossy
+/// projection — it keeps the bounds and the class but drops `confidence` and
+/// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
+/// cache hit can hand back segments but not the analysis, and `None` says so
+/// rather than reconstructing values that were never on disk.
+///
+/// That distinction is load-bearing for the review queue (E8): the episode-prep
+/// heuristic weighs `confidence` — it breaks sermon-candidate ties on it and
+/// raises the low-confidence attention flag from it — so a queue entry built
+/// from invented confidences would be a guess wearing the detector's clothes.
+///
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn segments<F>(
     input_path: &str,
     force: bool,
     on_progress: F,
-) -> AppResult<Vec<EditorSegment>>
+) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
 where
     F: Fn(f32),
 {
@@ -1658,7 +1970,7 @@ where
     };
     if !force {
         if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
-            return Ok(cached);
+            return Ok((cached, None));
         }
     }
 
@@ -1750,8 +2062,15 @@ where
             duration: d.duration,
             label: d.label,
             kind: d.kind,
+            confidence: Some(d.confidence),
         })
         .collect();
+    // The same classification in the shape the episode-prep heuristic reads,
+    // taken from `grouped` BEFORE the projection above throws the two numeric
+    // features away. Built here rather than recovered later because this is the
+    // only moment in the app's life when they exist.
+    let analysis: Vec<PrepAnalysisSegment> =
+        grouped.iter().map(PrepAnalysisSegment::from).collect();
 
     // Best-effort cache write — a forced re-analysis refreshes it too.
     let cache = SegmentsCache {
@@ -1764,7 +2083,7 @@ where
         let _ = write_sidecar_raw(input_path, EditorSidecar::Segments, &json);
     }
     on_progress(1.0);
-    Ok(segments)
+    Ok((segments, Some(analysis)))
 }
 
 /// Map a core [`ChannelRepair`](sundayrec_core::processing::ChannelRepair) to the
@@ -3192,6 +3511,313 @@ mod tests {
         assert!(read_sidecar(&media, EditorSidecar::Meta).unwrap().is_none());
     }
 
+    // ── Sermon-pick feedback (E8) ──────────────────────────────────────────────
+
+    fn feedback_segments() -> Vec<EditorSegment> {
+        let seg = |start: f64, end: f64, kind: &str| EditorSegment {
+            start,
+            end,
+            duration: end - start,
+            label: kind.to_string(),
+            kind: kind.to_string(),
+            confidence: Some(0.8),
+        };
+        vec![
+            seg(0.0, 300.0, "music"),
+            seg(300.0, 480.0, "sermon"), // the detector's pick — a reading
+            seg(480.0, 700.0, "music"),
+            seg(700.0, 2200.0, "speech"), // the actual message
+            seg(2200.0, 2400.0, "silence"),
+        ]
+    }
+
+    fn pick_request(auto: Option<u32>, chosen: u32) -> EditorSermonPickRequest {
+        EditorSermonPickRequest {
+            segments: feedback_segments(),
+            candidate_indices: vec![1, 3],
+            auto_index: auto,
+            chosen_index: chosen,
+            duration_sec: 2400.0,
+        }
+    }
+
+    /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
+    /// modules' process-wide test lock.
+    ///
+    /// Every write here goes through `observe_feedback_change`, which feeds two
+    /// process-global accumulators. Those are shared mutable state, and the tests
+    /// that assert on them (`telemetry::corrections`, `telemetry::companion`)
+    /// take this same lock — so a feedback test running beside one of them would
+    /// otherwise add counts to a map another test is measuring. The lock also
+    /// leaves consent OFF for the duration, which makes both seams inert and
+    /// keeps THESE tests about the file rather than about telemetry.
+    ///
+    /// Bind the guard, do not discard it: `let (_dir, media, _telemetry) = …`.
+    /// A `_` binding would drop the lock immediately and reintroduce the race.
+    fn feedback_media() -> (
+        tempfile::TempDir,
+        String,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let lock = crate::telemetry::counters::test_lock();
+        let (dir, media) = tmp_media();
+        (dir, media, lock)
+    }
+
+    /// The acceptance gate for E8 phase A, as far as a test without a webview
+    /// can take it: correct the pick, throw the editor's memory away, ask again
+    /// with a freshly analysed segment list — and get the human's block back.
+    #[test]
+    fn a_correction_survives_the_editor_closing() {
+        let (_dir, media, _telemetry) = feedback_media();
+        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
+
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+
+        let expected = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(expected.exists(), "the record lands beside the recording");
+
+        // Reopen: detection returns its own answer (block 1 still wears the
+        // sermon label) and the stored correction points past it.
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
+    }
+
+    #[test]
+    fn re_picking_the_detectors_own_block_writes_nothing() {
+        let (_dir, media, _telemetry) = feedback_media();
+        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 1)));
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(!path.exists(), "agreement is not a correction");
+    }
+
+    #[test]
+    fn going_back_to_the_detectors_block_removes_the_record() {
+        let (_dir, media, _telemetry) = feedback_media();
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), None);
+        // Nothing left to say → no empty file left behind either.
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cycling_through_the_dropdown_leaves_one_record() {
+        let (_dir, media, _telemetry) = feedback_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 0));
+        record_sermon_pick(&media, &pick_request(Some(1), 2));
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let file: sundayrec_core::feedback::RecordingFeedback =
+            read_sidecar_typed(&media, EditorSidecar::Feedback).expect("the record is there");
+        assert_eq!(file.sermon_picks.len(), 1);
+        assert_eq!(file.sermon_picks[0].chosen.index, 3);
+    }
+
+    #[test]
+    fn the_record_carries_no_path_and_no_recording_name() {
+        let (_dir, media, _telemetry) = feedback_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        // The one thing a sidecar is uniquely tempted to write down is where it
+        // came from. It must not be in there — not the path, not the stem.
+        assert!(!raw.contains("service"), "the recording's name leaked");
+        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
+    }
+
+    #[test]
+    fn a_feedback_file_we_cannot_read_is_left_alone() {
+        let (_dir, media, _telemetry) = feedback_media();
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        // A record from a schema this build does not know. Overwriting it would
+        // destroy corrections a person made by hand.
+        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
+        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
+        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
+    }
+
+    #[test]
+    fn an_atomic_write_leaves_no_temp_file_behind() {
+        let (_dir, media, _telemetry) = feedback_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let dir = std::path::Path::new(&media).parent().unwrap();
+        let leftovers: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| sundayrec_core::editor::is_editor_temp_name(n))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    // ── The two later signals into the same file (E8 integration) ─────────────
+
+    fn feedback_path(media: &str) -> std::path::PathBuf {
+        std::path::Path::new(media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json")
+    }
+
+    fn stored(media: &str) -> sundayrec_core::feedback::RecordingFeedback {
+        read_sidecar_typed(media, EditorSidecar::Feedback).expect("the record is there")
+    }
+
+    fn deltas(start: f64, end: f64) -> sundayrec_core::trim_feedback::TrimDeltas {
+        sundayrec_core::trim_feedback::TrimDeltas {
+            start_delta_sec: start,
+            end_delta_sec: end,
+        }
+    }
+
+    /// Rewrite the sidecar as the build that only knew about sermon picks left
+    /// it: the two later collections ABSENT, not empty.
+    fn strip_to_phase_a_shape(media: &str) {
+        let path = feedback_path(media);
+        let mut json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("trimAdjustments");
+        obj.remove("companionSuggestions");
+        std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_trim_adjustment_lands_beside_the_recording() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media, _telemetry) = feedback_media();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(30.0, -50.0)),
+            Some(TrimOutcome::Recorded)
+        );
+        let file = stored(&media);
+        assert_eq!(file.trim_adjustments.len(), 1);
+        assert_eq!(file.trim_adjustments[0].deltas.start_delta_sec, 30.0);
+        assert_eq!(file.trim_adjustments[0].deltas.end_delta_sec, -50.0);
+    }
+
+    #[test]
+    fn publishing_the_proposal_untouched_creates_no_file() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media, _telemetry) = feedback_media();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(0.0, 0.0)),
+            Some(TrimOutcome::NotAnAdjustment)
+        );
+        assert!(!feedback_path(&media).exists());
+    }
+
+    /// The failure this guards is the one nobody would notice: an existing
+    /// correction is destroyed by the next write, on a file the seam happily
+    /// read but only half understood.
+    #[test]
+    fn a_file_written_before_the_later_signals_keeps_its_sermon_pick() {
+        let (_dir, media, _telemetry) = feedback_media();
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        strip_to_phase_a_shape(&media);
+
+        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
+        assert!(record_companion_suggestion(
+            &media,
+            sundayrec_core::feedback::CompanionSuggestionKind::Title,
+            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
+            false,
+        ));
+
+        let file = stored(&media);
+        assert_eq!(
+            file.sermon_picks.len(),
+            1,
+            "the human's correction was lost"
+        );
+        assert_eq!(file.sermon_picks[0].chosen.index, 3);
+        assert_eq!(file.trim_adjustments.len(), 1);
+        assert_eq!(file.companion_suggestions.len(), 1);
+        // And the reopen path still answers with the human's block.
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
+    }
+
+    #[test]
+    fn a_withdrawn_sermon_pick_leaves_a_file_that_still_holds_a_trim() {
+        let (_dir, media, _telemetry) = feedback_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
+        // Back to the detector's block: the sermon-pick record goes, but the
+        // trim adjustment is a separate signal the operator never touched.
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
+
+        assert!(feedback_path(&media).exists(), "the file was deleted whole");
+        let file = stored(&media);
+        assert!(file.sermon_picks.is_empty());
+        assert_eq!(file.trim_adjustments.len(), 1);
+    }
+
+    #[test]
+    fn a_withdrawn_trim_adjustment_takes_an_otherwise_empty_file_with_it() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media, _telemetry) = feedback_media();
+        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(0.0, 0.0)),
+            Some(TrimOutcome::Withdrawn)
+        );
+        assert!(
+            !feedback_path(&media).exists(),
+            "nothing left to say — no empty assertion left behind either"
+        );
+    }
+
+    #[test]
+    fn the_later_signals_also_refuse_a_file_they_cannot_read() {
+        let (_dir, media, _telemetry) = feedback_media();
+        let path = feedback_path(&media);
+        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
+
+        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
+        assert!(!record_companion_suggestion(
+            &media,
+            sundayrec_core::feedback::CompanionSuggestionKind::Title,
+            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
+            false,
+        ));
+        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
+    }
+
+    #[test]
+    fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
+        use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
+        let (_dir, media, _telemetry) = feedback_media();
+        for kind in [K::Title, K::Description, K::Chapters] {
+            assert!(record_companion_suggestion(
+                &media,
+                kind,
+                CompanionSuggestionOutcome::LeftAlone,
+                false,
+            ));
+        }
+        assert_eq!(stored(&media).companion_suggestions.len(), 3);
+
+        let raw = std::fs::read_to_string(feedback_path(&media)).unwrap();
+        assert!(!raw.contains("service"), "the recording's name leaked");
+        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
+    }
+
     #[test]
     fn cuts_draft_and_transcript_use_distinct_files() {
         let (_dir, media) = tmp_media();
@@ -3497,6 +4123,7 @@ mod tests {
             duration: 22.0,
             label: "Preken".into(),
             kind: "sermon".into(),
+            confidence: Some(0.77),
         };
         put_cache(
             &media,
@@ -3513,7 +4140,7 @@ mod tests {
         let got = rt
             .block_on(segments(&media, false, |_| {}))
             .expect("a cache hit must not need ffmpeg");
-        assert_eq!(got, vec![sentinel]);
+        assert_eq!(got, (vec![sentinel], None));
 
         // `force` is what the «Analyser opptak» button sends: it must IGNORE the
         // cache, which on this undecodable file means it fails loudly rather than
@@ -3883,7 +4510,7 @@ mod tests {
 
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
-            let computed = {
+            let (computed, analysis) = {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
@@ -3895,6 +4522,14 @@ mod tests {
                 ticks.lock().unwrap().last().copied(),
                 Some(1.0),
                 "«Analyser opptak» must end on a full bar"
+            );
+            // A pass that RAN carries the analysis the review queue is built
+            // from — with the two features `EditorSegment` drops.
+            let analysis = analysis.expect("a fresh pass must expose its analysis");
+            assert_eq!(analysis.len(), computed.len());
+            assert!(
+                analysis.iter().all(|s| s.confidence.is_finite()),
+                "an unusable confidence would silently mis-flag every episode"
             );
 
             let cache_path = sidecar_of(&src, ".segments.json");
@@ -3914,16 +4549,25 @@ mod tests {
                 duration: 1.0,
                 label: "sentinel".into(),
                 kind: "speech".into(),
+                confidence: Some(0.5),
             };
             let poisoned = SegmentsCache {
                 segments: vec![sentinel.clone()],
                 ..cached
             };
             std::fs::write(&cache_path, serde_json::to_string(&poisoned).unwrap()).unwrap();
+            let (served, no_analysis) = rt.block_on(segments(&src, false, |_| {})).unwrap();
             assert_eq!(
-                rt.block_on(segments(&src, false, |_| {})).unwrap(),
+                served,
                 vec![sentinel],
                 "the automatic run must take the cached answer"
+            );
+            // The cache cannot carry `confidence`, so a cache hit must say it
+            // has no analysis rather than hand back a reconstructed one — the
+            // review queue would otherwise be built on invented numbers.
+            assert!(
+                no_analysis.is_none(),
+                "a cache hit has no analysis to offer"
             );
 
             // … and that «Analyser opptak» (force) redoes the work and refreshes
@@ -3936,7 +4580,14 @@ mod tests {
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("a forced re-analysis should run")
             };
-            assert_eq!(forced, computed, "force must recompute, not read the cache");
+            assert_eq!(
+                forced.0, computed,
+                "force must recompute, not read the cache"
+            );
+            assert!(
+                forced.1.is_some(),
+                "a forced pass ran, so it too must offer its analysis"
+            );
             let refreshed: SegmentsCache =
                 serde_json::from_str(&std::fs::read_to_string(&cache_path).unwrap()).unwrap();
             assert_eq!(

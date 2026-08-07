@@ -256,6 +256,8 @@ export async function loadFile(fp: string): Promise<void> {
   E.cutHistory = []
   E.cutHistoryIdx = -1
   E.suggestions = []
+  // A stale auto-pick index would be read against the NEW file's segments.
+  E.autoSermonIndex = null
   E.filePath = fp
   E.peaks = null
   // Reset BEFORE any work so a failed load can never leave the previous file's

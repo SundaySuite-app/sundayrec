@@ -605,7 +605,23 @@
     "telemetryPreviewNextHint": "This is exactly what would be sent next.",
     "telemetryPreviewHistoryHint": "Diagnostics are off. This shows the shape of the data from your own local history — nothing is sent.",
     "telemetryPreviewEmptyHint": "Nothing to send right now.",
-    "telemetryPreviewFailed": "Could not load the preview."
+    "telemetryPreviewFailed": "Could not load the preview.",
+    "learningCardTitle": "What the app has noticed",
+    "learningCardDesc": "These observations exist so the automatic detection can get better — your corrections are what teach it. Nothing here is shared with anyone unless anonymous diagnostics is switched on.",
+    "learningCardWhere": "Everything is stored locally, next to the recording it belongs to. Deleting a recording deletes its observations too.",
+    "learningLoadBtn": "Show what the app has noticed",
+    "learningLoading": "Loading…",
+    "learningLoadFailed": "Could not load the overview. Try again.",
+    "learningUnavailableRecording": "Not available while a recording is running.",
+    "learningEmptyBody": "Nothing to show yet — that's normal. This fills in only when you correct something the app got wrong.",
+    "learningSermonPickZero": "The automatic sermon pick has not been corrected yet.",
+    "learningSermonPickOne": "The automatic sermon pick has been corrected 1 time.",
+    "learningSermonPickMany": "The automatic sermon pick has been corrected {n} times.",
+    "learningStartTooEarly": "The automatic start often lands too early — on average you have moved it {n} seconds later.",
+    "learningStartTooLate": "The automatic start often lands too late — on average you have moved it {n} seconds earlier.",
+    "learningEndTooEarly": "The automatic end is often cut too early — on average you have moved it {n} seconds later.",
+    "learningEndTooLate": "The automatic end often lands too late — on average you have moved it {n} seconds earlier.",
+    "learningCompanionSummary": "Of the AI suggestions, {accepted} were used ({edited} rewritten afterwards), and {leftAlone} were left alone."
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
@@ -936,7 +952,7 @@
     "consentDesc": "You can share anonymous diagnostics and usage statistics with Sunday Suite, who develop SundayRec. It's always optional and changes nothing about how the app works — you can change your answer any time under Settings → System.",
     "consentDetailsSummary": "What would be collected?",
     "consentCatCrash": "Crash reports — error type, app and OS version. Never file paths or text from the sermon.",
-    "consentCatQuality": "Quality data — whether a recording came through complete (loss percentage, verdict). Never the audio content.",
+    "consentCatQuality": "Quality data — whether a recording came through complete (loss percentage, verdict), coarse ranges for your corrections in the editor, e.g. “30–60 seconds earlier”, and which kinds of automatic suggestion you use — title, summary or chapter marks — and whether you kept or rewrote the result. Never the audio content, any text, or times of day.",
     "consentCatUsage": "Feature usage — which features you use, e.g. «export to MP3». Counts only, never content.",
     "consentNever": "Never: audio, transcripts, sermon text, names, e-mail, file paths, device names or church names.",
     "consentReadMore": "Read the full privacy notice →",
@@ -944,7 +960,9 @@
     "consentNo": "No thanks",
     "consentNote": "Whatever you answer, SundayRec works exactly the same.",
     "promptTitle": "Share anonymous diagnostics?",
-    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System."
+    "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System.",
+    "rePromptTitle": "We are asking you again",
+    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The app can also say which kind of suggestion you used — a title, a summary or chapter marks — and whether you kept it as it was or rewrote it. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
   },
   "time": {
     "yr": "yr",

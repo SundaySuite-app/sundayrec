@@ -5,6 +5,7 @@ import { drawWaveform, drawMinimap } from './waveform'
 import { pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
 import { flagEditorTab } from './tabs'
 import { sermonCandidates } from './sermon-candidates'
+import { autoSermonIndex, buildSermonPickRequest } from './sermon-feedback'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // Segment detection / analyze panel. (Full detection logic lands here in a
@@ -49,6 +50,7 @@ export async function runDetection(auto = false): Promise<void> {
   if (analyzing)   analyzing.style.display = ''
 
   E.suggestions = []
+  E.autoSermonIndex = null
   flagEditorTab('clip', false)
   renderAnalyzePanel()
   hideSuggestionBanner()
@@ -94,6 +96,11 @@ export async function runDetection(auto = false): Promise<void> {
 
   E.suggestions = raw
   E.lastAnalyzedAt = Date.now()
+  // Remember the DETECTOR's own answer before anything is promoted on top of
+  // it: it is the baseline every correction is recorded against, and once a
+  // stored correction has been applied it is no longer visible in the list.
+  E.autoSermonIndex = autoSermonIndex(raw)
+  await applyStoredSermonPick()
 
   if (!auto && btn) { btn.disabled = false; btn.textContent = t('editor.analyzeRun', '▶ Analyser opptak') }
   if (analyzing)   analyzing.style.display = 'none'
@@ -191,16 +198,13 @@ export function applySermonTrim(): void {
   drawMinimap()
 }
 
-/** Promote a specific segment to be the "sermon" (overrides the auto-detected
- *  pick). Demotes the previous sermon back to plain 'speech'.
- *
- *  `segIdx` is an index into `E.suggestions` itself — the value the picker's
- *  options carry. It used to be an index into a filtered copy that the picker
- *  did NOT build its options from, so any recording with a sub-minute speech
- *  block promoted the wrong segment (see `sermon-candidates.ts`). */
-export function setSermonSegment(segIdx: number): void {
+/** Move the 'sermon' label onto `segIdx`, demoting the previous holder back to
+ *  plain 'speech'. In-memory only, and deliberately silent about it — the
+ *  restore path below promotes a block WITHOUT recording a correction, since
+ *  replaying a stored answer is not a new answer. */
+function promoteSermonSegment(segIdx: number): boolean {
   const target = E.suggestions[segIdx]
-  if (!target) return
+  if (!target) return false
   // Reset any current sermon → speech
   for (const s of E.suggestions) {
     if (s.type === 'sermon') { s.type = 'speech'; s.label = t('editor.speechLabel', 'Tale') }
@@ -209,6 +213,55 @@ export function setSermonSegment(segIdx: number): void {
   target.label = 'Preken'
   renderAnalyzePanel()
   drawWaveform()
+  return true
+}
+
+/** Promote a specific segment to be the "sermon" (overrides the auto-detected
+ *  pick), and RECORD that the detector got it wrong.
+ *
+ *  `segIdx` is an index into `E.suggestions` itself — the value the picker's
+ *  options carry. It used to be an index into a filtered copy that the picker
+ *  did NOT build its options from, so any recording with a sub-minute speech
+ *  block promoted the wrong segment (see `sermon-candidates.ts`).
+ *
+ *  The record is built BEFORE the promotion: afterwards the two `type` fields
+ *  have already swapped, and a payload assembled from that says the detector
+ *  picked what the human picked. Whether this counts as a correction at all —
+ *  and what it replaces — is the backend's call (`sundayrec_core::feedback`);
+ *  the renderer reports the event, it does not judge it. */
+export function setSermonSegment(segIdx: number): void {
+  if (!E.suggestions[segIdx]) return
+  const request = E.filePath && E.duration > 0
+    ? buildSermonPickRequest(E.suggestions, E.autoSermonIndex, segIdx, E.duration)
+    : null
+  const filePath = E.filePath
+  if (!promoteSermonSegment(segIdx)) return
+  // Fire-and-forget: a correction that fails to persist must never block the
+  // edit the user is actually doing. The shim swallows the failure.
+  if (request) void window.api.editorRecordSermonPick?.(filePath, request)
+}
+
+/** Put back the sermon block the human corrected us to last time, if any.
+ *
+ *  The gate this whole phase exists for: correct the pick, close the editor,
+ *  reopen — and see YOUR block, not the detector's. Runs on every detection
+ *  result, so it covers the automatic post-open run and an explicit
+ *  «Analyser opptak» alike. The backend matches on offsets, so a re-analysis
+ *  that renumbered the list still lands on the right block, and answers `null`
+ *  when the recording no longer contains it. */
+async function applyStoredSermonPick(): Promise<void> {
+  if (!E.filePath) return
+  const fpAtStart = E.filePath
+  let stored: number | null = null
+  try {
+    stored = await window.api.editorSermonPick?.(E.filePath, E.suggestions) ?? null
+  } catch {
+    stored = null
+  }
+  // The user may have swapped recordings while we were asking.
+  if (fpAtStart !== E.filePath) return
+  if (stored === null || stored === E.autoSermonIndex) return
+  promoteSermonSegment(stored)
 }
 
 /** Render the sermon-picker dropdown so the user can override the auto-pick.
