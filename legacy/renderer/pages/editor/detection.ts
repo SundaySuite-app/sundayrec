@@ -4,6 +4,7 @@ import { formatTime, formatDuration } from './format'
 import { drawWaveform, drawMinimap } from './waveform'
 import { pushCutHistory, renderCutList, updateRemainingDisplay } from './cuts'
 import { flagEditorTab } from './tabs'
+import { sermonCandidates } from './sermon-candidates'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // Segment detection / analyze panel. (Full detection logic lands here in a
@@ -80,7 +81,7 @@ export async function runDetection(auto = false): Promise<void> {
   const fpAtStart = E.filePath
   let raw: Suggestion[] = []
   try {
-    raw = (await window.api.editorDetectSegments(E.filePath, !auto)) as Suggestion[]
+    raw = await window.api.editorDetectSegments(E.filePath, !auto)
   } catch {
     raw = []
   } finally {
@@ -190,17 +191,20 @@ export function applySermonTrim(): void {
   drawMinimap()
 }
 
-/** Promote a specific speech segment to be the "sermon" (overrides the
- *  auto-detected pick). Demotes the previous sermon back to plain 'speech'. */
-export function setSermonSegment(speechIdx: number): void {
+/** Promote a specific segment to be the "sermon" (overrides the auto-detected
+ *  pick). Demotes the previous sermon back to plain 'speech'.
+ *
+ *  `segIdx` is an index into `E.suggestions` itself — the value the picker's
+ *  options carry. It used to be an index into a filtered copy that the picker
+ *  did NOT build its options from, so any recording with a sub-minute speech
+ *  block promoted the wrong segment (see `sermon-candidates.ts`). */
+export function setSermonSegment(segIdx: number): void {
+  const target = E.suggestions[segIdx]
+  if (!target) return
   // Reset any current sermon → speech
   for (const s of E.suggestions) {
     if (s.type === 'sermon') { s.type = 'speech'; s.label = t('editor.speechLabel', 'Tale') }
   }
-  // Promote the chosen speech segment
-  const speeches = E.suggestions.filter(s => s.type === 'speech' || s.type === 'sermon')
-  const target = speeches[speechIdx]
-  if (!target) return
   target.type = 'sermon'
   target.label = 'Preken'
   renderAnalyzePanel()
@@ -216,27 +220,29 @@ export function renderSermonPicker(): void {
   const wrap   = $('editor-sermon-picker-wrap')
   if (!picker || !wrap) return
 
-  // Build list of all speech-like segments (speech + sermon), in time order.
-  const speeches = E.suggestions
-    .filter(s => s.type === 'speech' || s.type === 'sermon')
-    .filter(s => s.duration >= 60)   // 1-min floor — too-short blocks aren't useful as sermon
-    .slice()
-    .sort((a, b) => a.start - b.start)
+  // Speech-like segments worth offering, in time order — each still carrying the
+  // index of the segment it means.
+  const candidates = sermonCandidates(E.suggestions)
 
-  if (speeches.length < 2) {
+  if (candidates.length < 2) {
     wrap.style.display = 'none'
     return
   }
 
   wrap.style.display = ''
   picker.innerHTML = ''
-  for (let i = 0; i < speeches.length; i++) {
-    const s = speeches[i]
+  for (let i = 0; i < candidates.length; i++) {
+    const { index, segment: s } = candidates[i]
     const opt = document.createElement('option')
-    opt.value = String(i)
+    // The SOURCE index, not the display position: filtering out a too-short
+    // block used to shift these apart, so a correction silently promoted (and
+    // trimmed to) a different segment than the one the user chose.
+    opt.value = String(index)
     const startLbl = formatTime(s.start)
     const durLbl   = formatDuration(s.duration)
     const marker   = s.type === 'sermon' ? '★ ' : ''
+    // The NUMBER stays the display position — "Tale-blokk 3" is the third one
+    // in the list the user is looking at, which is the only meaning it can have.
     opt.textContent = `${marker}${t('editor.speechBlock', 'Tale-blokk')} ${i + 1} — ${startLbl} (${durLbl})`
     if (s.type === 'sermon') opt.selected = true
     picker.appendChild(opt)

@@ -12,6 +12,6 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["legacy"],
+  "include": ["legacy", "e2e", "playwright.config.ts"],
   "exclude": ["reference", "node_modules", "dist", "src-tauri"]
 }

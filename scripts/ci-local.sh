@@ -28,6 +28,7 @@ step "frontend — tsc --noEmit";        npm run typecheck
 step "frontend — vitest";              npm run test
 
 step "app version in sync";            npm run version-sync
+step "i18n fallbacks match no.json";   npm run i18n-fallbacks
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check
 step "rust — cargo clippy -D warnings"; npm run lint:rust
@@ -41,6 +42,12 @@ if [ -n "$(git status --porcelain -- legacy/bindings)" ]; then
   git status --porcelain -- legacy/bindings
   exit 1
 fi
+
+step "command reachability regression"; npm run reachability
+
+# The feature-off degradation path must keep COMPILING (ci.yml's "cargo check
+# (feature-off build)" step) — cheap with the shared incremental cache.
+step "rust — cargo check (feature-off)"; cargo check --workspace --no-default-features
 
 step "tauri build (no bundle)";        npm run tauri build -- --no-bundle
 

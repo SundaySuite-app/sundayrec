@@ -75,6 +75,13 @@ jobs:
       - name: App version in sync
         run: npm run version-sync
 
+      # A `data-i18n` fallback in index.html must agree with no.json, or the
+      # first-frame/missing-key text silently describes a UI that no longer
+      # exists (see scripts/check-i18n-fallbacks.mjs). This is in `npm run
+      # check` — mirrored here so a PR can't skip it by never running `check`.
+      - name: i18n fallback keys in sync with no.json
+        run: npm run i18n-fallbacks
+
       # The Rust suite is deliberately device-INDEPENDENT (device enumeration
       # tolerates zero devices; the cpal/ffmpeg streams are not opened in tests;
       # the keychain test skips when no keychain is reachable) so it passes on a
@@ -103,6 +110,13 @@ jobs:
             git --no-pager diff -- legacy/bindings
             exit 1
           fi
+
+      # Regression gate for docs/COMMAND_AUDIT_2026-08.md: fails if a command
+      # that was reachable from the renderer goes dark, or a newly-registered
+      # command sits unreachable without anyone classifying it as intentional.
+      # See scripts/check-command-reachability.mjs for the method.
+      - name: Command reachability regression check
+        run: npm run reachability
 
       # The feature-off degradation path (every editor/whisper/tray/updater
       # command returns feature_disabled) must keep COMPILING — it once broke
@@ -162,6 +176,13 @@ jobs:
       # asio needs the Steinberg SDK so it is left out here) — a feature-gate seam
       # that only breaks off-default used to surface at tag time. This line TRACKS
       # the release list: adding a feature there means adding it here.
+      #
+      # ⚠️ COVERAGE GAP, left open on purpose: because `asio` is missing here, the
+      # exact feature combo release.yml actually SHIPS for Windows is never
+      # compiled in PR CI — only this asio-less approximation is. A PR that only
+      # breaks under `--features asio` (Steinberg SDK not available in this
+      # runner) will show green here and still fail at tag time in release.yml.
+      # Don't assume this step proves the Windows release build compiles.
       - name: cargo check (Windows release feature combo, minus asio)
         working-directory: src-tauri
         run: cargo check --workspace --no-default-features --features editor,tray,updater,email,streaming

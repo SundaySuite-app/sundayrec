@@ -10,6 +10,7 @@ import type { FileFormat } from '../bindings/FileFormat'
 import type { FilenamePattern } from '../bindings/FilenamePattern'
 import type { EpisodePrepStatus } from '../bindings/EpisodePrepStatus'
 import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
+import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
 import type { TranscriptSegment } from '../bindings/TranscriptSegment'
 import type { SermonHighlight } from '../bindings/SermonHighlight'
@@ -22,6 +23,7 @@ export type {
   FilenamePattern,
   EpisodePrepStatus,
   PrepAnalysisSegment,
+  EditorSegment,
   ChapterMarker,
   TranscriptSegment,
   SermonHighlight,

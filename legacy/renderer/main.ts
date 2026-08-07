@@ -1,6 +1,6 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
-import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion } from '../types'
+import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion, EditorSegment } from '../types'
 import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
 import type { ThumbnailView } from '../bindings/ThumbnailView'
 import type { TrashEntry } from '../bindings/TrashEntry'
@@ -200,7 +200,9 @@ declare global {
       editorPickOutputFolder: ()                 => Promise<string | null>
       editorReadMeta:         (filePath: string) => Promise<unknown>
       editorSaveMeta:         (filePath: string, metadata: unknown) => Promise<boolean>
-      editorDetectSegments:   (filePath: string, force?: boolean) => Promise<{ start: number; end: number; duration: number; label: string; type: string }[]>
+      // The generated binding, not a hand-written twin — see `Suggestion` in
+      // pages/editor/state.ts for what the twin cost us.
+      editorDetectSegments:   (filePath: string, force?: boolean) => Promise<EditorSegment[]>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>

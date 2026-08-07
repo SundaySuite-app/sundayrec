@@ -25,7 +25,7 @@
 //      CAMERA preview is still client-side getUserMedia (pages/home.ts), which
 //      is a video device and never contends for the microphone.
 
-import { invoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke, convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   open as openDialog,
@@ -44,6 +44,15 @@ import {
   recordFailure,
   type IpcFailure,
 } from "./ipc-failures-core";
+import {
+  FIXTURE_GLOBAL,
+  FIXTURE_QUERY_PARAM,
+  fixturesHonored,
+  lookupFixture,
+  readFixture,
+  type FixtureGate,
+  type FixtureMap,
+} from "./fixtures-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -115,6 +124,72 @@ async function pickPath(opts: {
  *  OS temp dir for previews/proxies), so this is the supported path. */
 function toAssetUrl(path: string): string {
   return path ? convertFileSrc(path) : "";
+}
+
+// ── The fixture seam (E5.1) ─────────────────────────────────────────────────
+//
+// EVERY `invoke` in this file goes through the wrapper below rather than
+// `@tauri-apps/api`'s directly (the real one is imported as `tauriInvoke`), so
+// the seam covers `call()`, `editorCall()` AND the ~45 direct call sites with
+// one hook instead of 45.
+//
+// Precedence — an honoured fixture > the real invoke > the caller's fallback —
+// and the honour rules live in the pure `fixtures-core`; read its header for the
+// reasoning. The two properties that matter here:
+//
+//   1. With no fixtures installed this is inert. `lookupFixture` misses and the
+//      wrapper is a straight pass-through to `tauriInvoke`, so `call()` and
+//      everything downstream behave exactly as they did before E5.
+//   2. A fixture HIT is not a failure. It short-circuits before `tauriInvoke`,
+//      so E2.4's failure ring never sees it and no toast fires. (A fixture that
+//      THROWS is a different thing entirely: that rejection travels the normal
+//      path and does land in the ring — which is how a test drives the toast.)
+//
+// Install fixtures before the renderer boots, e.g. from Playwright:
+//
+//   await page.addInitScript(() => {
+//     (window as any).__SUNDAYREC_FIXTURES__ = {
+//       app_info: { version: "0.10.0" },             // a value
+//       recordings_list: (args) => rowsFor(args),    // or a function of the args
+//     };
+//   });
+//
+// One thing fixtures deliberately do NOT cover: SETTINGS. `getSettings` reads
+// `localStorage[LS_KEY]` directly (see `loadSettings` below) — there is no
+// invoke to intercept — so a test seeds settings by writing that key in the
+// same init script. `e2e/harness.ts` does both in one call.
+//
+const FIXTURE_GATE: FixtureGate = {
+  inTauri: isTauri(),
+  // Vite inlines this as the literal `false` in a production build, so the
+  // in-Tauri branch of `fixturesHonored` is dead-code-eliminated out of the
+  // shipped bundle: a shipped SundayRec cannot be driven by fixtures.
+  devBuild: !!import.meta.env?.DEV,
+  requested: new URLSearchParams(location.search).has(FIXTURE_QUERY_PARAM),
+};
+const FIXTURES_HONORED = fixturesHonored(FIXTURE_GATE);
+
+/** The installed fixture map, read fresh on every call so a test can swap the
+ *  canned answers mid-journey (e.g. "now the list has one more row"). */
+function installedFixtures(): FixtureMap | undefined {
+  if (!FIXTURES_HONORED) return undefined;
+  return (window as any)[FIXTURE_GLOBAL] as FixtureMap | undefined;
+}
+
+/** `invoke`, with the fixture seam in front of it. Signature-compatible with
+ *  `@tauri-apps/api/core`'s, so every existing call site is unchanged. */
+function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const found = lookupFixture(installedFixtures(), cmd);
+  if (found.hit) {
+    // `Promise.resolve` inside try/catch, not an async fn: a fixture that throws
+    // SYNCHRONOUSLY must still reject the promise rather than blow up the caller.
+    try {
+      return Promise.resolve(readFixture(found.value, args) as T);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+  return tauriInvoke<T>(cmd, args);
 }
 
 /** Every IPC failure this session, bounded, plus the toast rate-limit state.

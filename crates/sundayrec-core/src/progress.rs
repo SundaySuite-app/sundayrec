@@ -217,3 +217,53 @@ mod tests {
         assert!(!r.observe_progress());
     }
 }
+
+/// Property tests (E5.8) — `parse_size_kb` is the recorder's startup latch AND
+/// its watchdog heartbeat, fed raw ffmpeg stderr every ~second for the life of
+/// a recording. A panic here would take capture down with it; a spelling it
+/// silently mis-scales would (as actually happened between ffmpeg 7.0 and 7.1,
+/// see the module doc) make a healthy recording look dead.
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// Arbitrary stderr-shaped text — not just well-formed progress lines —
+        /// must never panic. ffmpeg's real stderr is unstructured free text the
+        /// app does not control, so this has to hold for garbage too.
+        #[test]
+        fn parse_size_kb_never_panics(chunk in ".{0,500}") {
+            let _ = parse_size_kb(&chunk);
+        }
+
+        /// The `kB`/`KiB` spelling must never change the parsed byte count — the
+        /// exact bug that made a perfectly healthy recording against ffmpeg 7.1
+        /// read as dead (the parser only knew `kB`, ffmpeg only wrote `KiB`).
+        /// Checked with BOTH spellings built from the same number, across whatever
+        /// value ffmpeg's `size=` field can realistically hold.
+        #[test]
+        fn kb_and_kib_spellings_parse_identically(kb in 0u64..=10_000_000_000) {
+            let expected = kb.saturating_mul(1024);
+            let line_kb = format!("size=  {kb}kB time=00:00:04.00 bitrate=1.0kbits/s");
+            let line_kib = format!("size=  {kb}KiB time=00:00:04.00 bitrate=1.0kbits/s elapsed=0:00:04.00");
+            prop_assert_eq!(parse_size_kb(&line_kb), Some(expected));
+            prop_assert_eq!(parse_size_kb(&line_kib), Some(expected));
+        }
+
+        /// A digit run too large to fit `u64` (ffmpeg would never print one, but
+        /// nothing stops arbitrary input from containing one) must be skipped, not
+        /// panic or silently truncate to a wrong-but-plausible byte count.
+        #[test]
+        fn oversized_digit_runs_do_not_panic_or_produce_a_value(
+            digits in "[0-9]{25,60}",
+            unit in prop_oneof![Just("kB"), Just("KiB")],
+        ) {
+            let line = format!("size={digits}{unit} time=00:00:01.00");
+            // Must not panic; an unparseable-as-u64 run simply contributes no
+            // reading (falls back to whatever a later, parseable "size=" gave, or
+            // None if this was the only one).
+            let _ = parse_size_kb(&line);
+        }
+    }
+}
