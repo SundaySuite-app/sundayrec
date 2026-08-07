@@ -54,6 +54,7 @@ use ts_rs::TS;
 
 use crate::error::AppError;
 use crate::error::AppResult;
+use sundayrec_core::prep::PrepAnalysisSegment;
 
 // ── IPC DTOs (compile regardless of the feature) ────────────────────────────────
 
@@ -1134,7 +1135,7 @@ pub async fn segments<F>(
     _input_path: &str,
     _force: bool,
     _on_progress: F,
-) -> AppResult<Vec<EditorSegment>>
+) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
 where
     F: Fn(f32),
 {
@@ -1637,13 +1638,25 @@ fn read_segments_cache(
 /// probed duration implies at 16 kHz mono s16le. «Analyser opptak» was the last
 /// button in the editor that could run for minutes with nothing but a spinner.
 ///
+/// The second return value is the analysis BEHIND those segments, and it is
+/// `Some` only on a pass that actually ran. [`EditorSegment`] is a lossy
+/// projection — it keeps the bounds and the class but drops `confidence` and
+/// `avg_rms_db`, and the `.segments.json` cache stores the projection. So a
+/// cache hit can hand back segments but not the analysis, and `None` says so
+/// rather than reconstructing values that were never on disk.
+///
+/// That distinction is load-bearing for the review queue (E8): the episode-prep
+/// heuristic weighs `confidence` — it breaks sermon-candidate ties on it and
+/// raises the low-confidence attention flag from it — so a queue entry built
+/// from invented confidences would be a guess wearing the detector's clothes.
+///
 /// HARDWARE-UNVERIFIED.
 #[cfg(feature = "editor")]
 pub async fn segments<F>(
     input_path: &str,
     force: bool,
     on_progress: F,
-) -> AppResult<Vec<EditorSegment>>
+) -> AppResult<(Vec<EditorSegment>, Option<Vec<PrepAnalysisSegment>>)>
 where
     F: Fn(f32),
 {
@@ -1658,7 +1671,7 @@ where
     };
     if !force {
         if let Some(cached) = read_segments_cache(input_path, size_bytes, mtime_ms) {
-            return Ok(cached);
+            return Ok((cached, None));
         }
     }
 
@@ -1752,6 +1765,12 @@ where
             kind: d.kind,
         })
         .collect();
+    // The same classification in the shape the episode-prep heuristic reads,
+    // taken from `grouped` BEFORE the projection above throws the two numeric
+    // features away. Built here rather than recovered later because this is the
+    // only moment in the app's life when they exist.
+    let analysis: Vec<PrepAnalysisSegment> =
+        grouped.iter().map(PrepAnalysisSegment::from).collect();
 
     // Best-effort cache write — a forced re-analysis refreshes it too.
     let cache = SegmentsCache {
@@ -1764,7 +1783,7 @@ where
         let _ = write_sidecar_raw(input_path, EditorSidecar::Segments, &json);
     }
     on_progress(1.0);
-    Ok(segments)
+    Ok((segments, Some(analysis)))
 }
 
 /// Map a core [`ChannelRepair`](sundayrec_core::processing::ChannelRepair) to the
@@ -3513,7 +3532,7 @@ mod tests {
         let got = rt
             .block_on(segments(&media, false, |_| {}))
             .expect("a cache hit must not need ffmpeg");
-        assert_eq!(got, vec![sentinel]);
+        assert_eq!(got, (vec![sentinel], None));
 
         // `force` is what the «Analyser opptak» button sends: it must IGNORE the
         // cache, which on this undecodable file means it fails loudly rather than
@@ -3883,7 +3902,7 @@ mod tests {
 
             let ticks = std::sync::Arc::new(std::sync::Mutex::new(Vec::<f32>::new()));
             let sink = ticks.clone();
-            let computed = {
+            let (computed, analysis) = {
                 let _guard = ENV_LOCK.lock().unwrap();
                 // SAFETY: serialised by ENV_LOCK; removed before releasing it.
                 unsafe { std::env::set_var("SUNDAYREC_FFMPEG", &ffmpeg) };
@@ -3895,6 +3914,14 @@ mod tests {
                 ticks.lock().unwrap().last().copied(),
                 Some(1.0),
                 "«Analyser opptak» must end on a full bar"
+            );
+            // A pass that RAN carries the analysis the review queue is built
+            // from — with the two features `EditorSegment` drops.
+            let analysis = analysis.expect("a fresh pass must expose its analysis");
+            assert_eq!(analysis.len(), computed.len());
+            assert!(
+                analysis.iter().all(|s| s.confidence.is_finite()),
+                "an unusable confidence would silently mis-flag every episode"
             );
 
             let cache_path = sidecar_of(&src, ".segments.json");
@@ -3920,10 +3947,18 @@ mod tests {
                 ..cached
             };
             std::fs::write(&cache_path, serde_json::to_string(&poisoned).unwrap()).unwrap();
+            let (served, no_analysis) = rt.block_on(segments(&src, false, |_| {})).unwrap();
             assert_eq!(
-                rt.block_on(segments(&src, false, |_| {})).unwrap(),
+                served,
                 vec![sentinel],
                 "the automatic run must take the cached answer"
+            );
+            // The cache cannot carry `confidence`, so a cache hit must say it
+            // has no analysis rather than hand back a reconstructed one — the
+            // review queue would otherwise be built on invented numbers.
+            assert!(
+                no_analysis.is_none(),
+                "a cache hit has no analysis to offer"
             );
 
             // … and that «Analyser opptak» (force) redoes the work and refreshes
@@ -3936,7 +3971,14 @@ mod tests {
                 unsafe { std::env::remove_var("SUNDAYREC_FFMPEG") };
                 r.expect("a forced re-analysis should run")
             };
-            assert_eq!(forced, computed, "force must recompute, not read the cache");
+            assert_eq!(
+                forced.0, computed,
+                "force must recompute, not read the cache"
+            );
+            assert!(
+                forced.1.is_some(),
+                "a forced pass ran, so it too must offer its analysis"
+            );
             let refreshed: SegmentsCache =
                 serde_json::from_str(&std::fs::read_to_string(&cache_path).unwrap()).unwrap();
             assert_eq!(

@@ -46,6 +46,10 @@ pub mod editor;
 #[cfg(feature = "email")]
 pub mod email;
 pub mod error;
+// E8 learning loops — the persistence edge for the corrections a human makes to
+// the detector's proposals. Currently a documented seam awaiting the `Feedback`
+// sidecar; the decisions behind it are `sundayrec_core::trim_feedback`.
+pub mod learning;
 // E2.3 observability — the rotating file log under `<app-data>/logs`. Until it,
 // `tracing_subscriber::fmt()` wrote to stdout and nothing else: release Windows
 // has no console and a macOS .app from Finder discards stdout, so an installed

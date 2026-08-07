@@ -76,6 +76,34 @@ pub fn enqueue(
     entries
 }
 
+/// The entry already holding `recording_path`, if the queue has one.
+///
+/// [`enqueue`] dedups by `prep.id`, which is a fresh uuid minted per call — so
+/// it cannot recognise the same RECORDING arriving twice, only the same prep
+/// object. Automatic population (E8: every fresh content-analysis pass offers
+/// its recording to the queue) needs the other key, or re-running detection on
+/// a file would stack a second entry on top of the first and the operator would
+/// review the same service twice.
+///
+/// Deliberately ignores `status`, so a **published or discarded** entry blocks
+/// re-entry just as firmly as a waiting one. Those two statuses are the
+/// operator's decision on this recording; re-queueing it would overrule a human
+/// with a re-analysis. (`mark_published`/`mark_discarded` leave the entry in the
+/// queue for exactly this reason — see [`crate::prep::EpisodePrepStatus`].)
+///
+/// Path comparison is exact. A recording MOVED to another folder is genuinely
+/// not findable by the path the old entry recorded, and inventing a looser
+/// match — same basename, say — would let two different services on two volumes
+/// collide, which is the worse failure of the two.
+pub fn find_by_recording_path<'a>(
+    entries: &'a [ReviewQueueEntry],
+    recording_path: &str,
+) -> Option<&'a ReviewQueueEntry> {
+    entries
+        .iter()
+        .find(|e| e.prep.recording_path == recording_path)
+}
+
 /// Return the queue with `age_in_days` filled in and sorted newest-first. Ports
 /// `getQueue`.
 pub fn read_with_age(entries: &[ReviewQueueEntry], now: i64) -> Vec<ReviewQueueEntry> {
@@ -339,12 +367,54 @@ mod tests {
         }
     }
 
+    fn prep_at(id: &str, recording_path: &str) -> EpisodePrep {
+        let mut p = prep(id);
+        p.recording_path = recording_path.into();
+        p
+    }
+
     #[test]
     fn enqueue_dedups_by_id() {
         let q = enqueue(vec![], prep("a"), 1000);
         let q = enqueue(q, prep("a"), 2000); // same id replaces
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].added_at, 2000);
+    }
+
+    // ── Path-keyed idempotency (E8 automatic population) ────────────────────
+
+    #[test]
+    fn enqueue_alone_cannot_recognise_the_same_recording_twice() {
+        // The gap `find_by_recording_path` exists to close: two preps built
+        // from the same file carry different ids, so `enqueue` stacks them.
+        let q = enqueue(vec![], prep_at("first", "/rec/service.mp4"), 1000);
+        let q = enqueue(q, prep_at("second", "/rec/service.mp4"), 2000);
+        assert_eq!(q.len(), 2);
+    }
+
+    #[test]
+    fn find_by_recording_path_spots_the_duplicate() {
+        let q = enqueue(vec![], prep_at("a", "/rec/service.mp4"), 1000);
+        assert_eq!(
+            find_by_recording_path(&q, "/rec/service.mp4").map(|e| e.id.as_str()),
+            Some("a"),
+        );
+        assert!(find_by_recording_path(&q, "/rec/other.mp4").is_none());
+        assert!(find_by_recording_path(&[], "/rec/service.mp4").is_none());
+    }
+
+    #[test]
+    fn a_published_recording_is_still_found_so_it_cannot_come_back() {
+        let mut q = enqueue(vec![], prep_at("a", "/rec/service.mp4"), 1000);
+        assert!(mark_published(&mut q, "a", 2000));
+        assert!(find_by_recording_path(&q, "/rec/service.mp4").is_some());
+    }
+
+    #[test]
+    fn a_discarded_recording_is_still_found_so_it_cannot_come_back() {
+        let mut q = enqueue(vec![], prep_at("a", "/rec/service.mp4"), 1000);
+        assert!(mark_discarded(&mut q, "a", 2000));
+        assert!(find_by_recording_path(&q, "/rec/service.mp4").is_some());
     }
 
     #[test]

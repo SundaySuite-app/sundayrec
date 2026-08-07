@@ -94,6 +94,7 @@ pub mod telemetry;
 pub mod test_recording;
 pub mod timeouts;
 pub mod tray;
+pub mod trim_feedback;
 pub mod two_process;
 pub mod update;
 pub mod wake;

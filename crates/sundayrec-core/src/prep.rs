@@ -65,6 +65,46 @@ pub struct PrepAnalysisSegment {
     pub label: String,
 }
 
+/// The classifier's own segment type and this module's are two distinct enums
+/// with identical variants — [`crate::audio_analysis`] predates the prep port
+/// and is not `serde`/`ts-rs`-facing, while this one is the wire shape. Matched
+/// exhaustively rather than transmuted or index-mapped, so that adding a variant
+/// to one is a compile error here instead of a silent misclassification.
+impl From<crate::audio_analysis::SegmentType> for SegmentType {
+    fn from(t: crate::audio_analysis::SegmentType) -> Self {
+        use crate::audio_analysis::SegmentType as A;
+        match t {
+            A::Silence => SegmentType::Silence,
+            A::Speech => SegmentType::Speech,
+            A::Music => SegmentType::Music,
+            A::Mixed => SegmentType::Mixed,
+            A::Unknown => SegmentType::Unknown,
+        }
+    }
+}
+
+/// Lift a classified segment into the prep-facing shape, keeping `confidence`
+/// and `avg_rms_db`.
+///
+/// Those two fields are why this conversion exists at all: the editor's
+/// `EditorSegment` drops both, so a prep assembled from the editor's cache would
+/// have to invent a confidence — and confidence is what breaks sermon-candidate
+/// ties and raises [`reasons::LOW_CONFIDENCE`]. The conversion runs straight off
+/// the classifier's output instead.
+impl From<&crate::audio_analysis::AnalysisSegment> for PrepAnalysisSegment {
+    fn from(s: &crate::audio_analysis::AnalysisSegment) -> Self {
+        PrepAnalysisSegment {
+            start_sec: s.start_sec,
+            end_sec: s.end_sec,
+            duration_sec: s.duration_sec,
+            kind: s.seg_type.into(),
+            confidence: s.confidence,
+            avg_rms_db: s.avg_rms_db,
+            label: s.label.clone(),
+        }
+    }
+}
+
 // ── Sermon detection (port findSermonSegment) ──────────────────────────────
 
 /// The chosen sermon bounds + how confident we are. `seg_index` is the index of
@@ -388,6 +428,87 @@ mod tests {
             confidence: conf,
             avg_rms_db: -20.0,
             label: String::new(),
+        }
+    }
+
+    // ── The classifier → prep conversion (E8) ───────────────────────────────
+
+    #[test]
+    fn every_classifier_segment_type_maps_to_its_twin() {
+        use crate::audio_analysis::SegmentType as A;
+        // Exhaustive on purpose: a silently mismapped class would put the
+        // sermon somewhere plausible but wrong.
+        assert_eq!(SegmentType::from(A::Silence), SegmentType::Silence);
+        assert_eq!(SegmentType::from(A::Speech), SegmentType::Speech);
+        assert_eq!(SegmentType::from(A::Music), SegmentType::Music);
+        assert_eq!(SegmentType::from(A::Mixed), SegmentType::Mixed);
+        assert_eq!(SegmentType::from(A::Unknown), SegmentType::Unknown);
+    }
+
+    #[test]
+    fn the_conversion_carries_confidence_and_level_through() {
+        let analysed = crate::audio_analysis::AnalysisSegment {
+            start_sec: 300.0,
+            end_sec: 1800.0,
+            duration_sec: 1500.0,
+            seg_type: crate::audio_analysis::SegmentType::Speech,
+            confidence: 0.42,
+            avg_rms_db: -18.5,
+            label: "Tale".into(),
+        };
+        let converted = PrepAnalysisSegment::from(&analysed);
+        assert_eq!(
+            converted,
+            seg_full(300.0, 1500.0, SegmentType::Speech, 0.42, -18.5, "Tale")
+        );
+    }
+
+    #[test]
+    fn a_converted_segment_can_still_trip_the_low_confidence_flag() {
+        // The end-to-end point of carrying `confidence`: a prep built from the
+        // conversion must be able to reach `LOW_CONFIDENCE`, which a fabricated
+        // confidence would either suppress forever or fire forever.
+        let analysed = crate::audio_analysis::AnalysisSegment {
+            start_sec: 360.0,
+            end_sec: 1800.0,
+            duration_sec: 1440.0,
+            seg_type: crate::audio_analysis::SegmentType::Speech,
+            confidence: 0.3,
+            avg_rms_db: -20.0,
+            label: String::new(),
+        };
+        let segs: Vec<PrepAnalysisSegment> =
+            [analysed].iter().map(PrepAnalysisSegment::from).collect();
+        let prep = build_episode_prep(
+            "x".into(),
+            "/r.mp4".into(),
+            segs,
+            &PrepDefaults::default(),
+            0,
+        );
+        assert_eq!(prep.status, EpisodePrepStatus::NeedsAttention);
+        assert!(prep
+            .attention_reasons
+            .unwrap()
+            .contains(&reasons::LOW_CONFIDENCE.to_string()));
+    }
+
+    fn seg_full(
+        start: f64,
+        dur: f64,
+        kind: SegmentType,
+        conf: f64,
+        avg_rms_db: f64,
+        label: &str,
+    ) -> PrepAnalysisSegment {
+        PrepAnalysisSegment {
+            start_sec: start,
+            end_sec: start + dur,
+            duration_sec: dur,
+            kind,
+            confidence: conf,
+            avg_rms_db,
+            label: label.into(),
         }
     }
 
