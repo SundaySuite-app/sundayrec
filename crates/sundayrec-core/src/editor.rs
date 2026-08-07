@@ -1417,6 +1417,11 @@ pub enum Sidecar {
     Peaks,
     /// `<base>.segments.json` — the content-detection cache (P3). Same deal.
     Segments,
+    /// `<base>.feedback.json` — what the human told us the detector got wrong
+    /// (E8). NOT derived data and NOT a cache: deleting it destroys a signal
+    /// that only exists because a person took the trouble to correct us once.
+    /// Shape: [`crate::feedback::SermonFeedback`].
+    Feedback,
 }
 
 impl Sidecar {
@@ -1428,7 +1433,36 @@ impl Sidecar {
             Sidecar::Transcript => ".transcript.json",
             Sidecar::Peaks => ".peaks.json",
             Sidecar::Segments => ".segments.json",
+            Sidecar::Feedback => ".feedback.json",
         }
+    }
+
+    /// The next kind in declaration order, `None` at the end of the chain.
+    ///
+    /// Exists only so [`Sidecar::all`] cannot go stale: the match is exhaustive,
+    /// so a new arm does not compile until someone has said where in the chain
+    /// it sits. Every list derived from `all()` — most importantly the trash's
+    /// hand-written suffix table, which decides whether a companion file
+    /// survives a delete/restore — is then complete by construction rather than
+    /// by someone remembering.
+    fn next(self) -> Option<Sidecar> {
+        match self {
+            Sidecar::Meta => Some(Sidecar::CutsDraft),
+            Sidecar::CutsDraft => Some(Sidecar::Transcript),
+            Sidecar::Transcript => Some(Sidecar::Peaks),
+            Sidecar::Peaks => Some(Sidecar::Segments),
+            Sidecar::Segments => Some(Sidecar::Feedback),
+            Sidecar::Feedback => None,
+        }
+    }
+
+    /// Every sidecar kind, in declaration order.
+    pub fn all() -> Vec<Sidecar> {
+        let mut out = vec![Sidecar::Meta];
+        while let Some(next) = out[out.len() - 1].next() {
+            out.push(next);
+        }
+        out
     }
 }
 
@@ -1657,6 +1691,7 @@ mod tests {
             duration: end - start,
             label: kind.to_string(),
             kind: kind.to_string(),
+            confidence: 0.9,
         }
     }
 
@@ -2890,6 +2925,10 @@ mod tests {
             sidecar_path("/rec", "service", Sidecar::Transcript).unwrap(),
             "/rec/service.transcript.json"
         );
+        assert_eq!(
+            sidecar_path("/rec", "service", Sidecar::Feedback).unwrap(),
+            "/rec/service.feedback.json"
+        );
     }
 
     #[test]
@@ -2898,6 +2937,36 @@ mod tests {
         assert!(sidecar_path("/rec", "../evil", Sidecar::Meta).is_none());
         assert!(sidecar_path("/rec", "sub\\evil", Sidecar::Meta).is_none());
         assert!(sidecar_path("/rec", "", Sidecar::Meta).is_none());
+    }
+
+    #[test]
+    fn every_sidecar_kind_refuses_an_escaping_stem() {
+        // The guard is a property of `sidecar_path`, not of one kind — assert it
+        // for all of them so a new arm inherits the coverage automatically.
+        for kind in Sidecar::all() {
+            assert!(sidecar_path("/rec", "../evil", kind).is_none(), "{kind:?}");
+            assert!(sidecar_path("/rec", "sub/evil", kind).is_none(), "{kind:?}");
+            assert!(
+                sidecar_path("/rec", "sub\\evil", kind).is_none(),
+                "{kind:?}"
+            );
+            assert!(sidecar_path("/rec", "", kind).is_none(), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn sidecar_all_is_complete_and_its_suffixes_are_distinct() {
+        let all = Sidecar::all();
+        // Walked from the `next` chain, so this count is the one place a new arm
+        // shows up as a number — and two kinds sharing a suffix would silently
+        // make one overwrite the other's file.
+        assert_eq!(all.len(), 6, "a sidecar kind joined or left the chain");
+        let mut suffixes: Vec<&str> = all.iter().map(|s| s.suffix()).collect();
+        suffixes.sort_unstable();
+        let distinct = suffixes.len();
+        suffixes.dedup();
+        assert_eq!(suffixes.len(), distinct, "two sidecars share a suffix");
+        assert!(suffixes.iter().all(|s| s.starts_with('.')));
     }
 
     // ── inline-vs-stream guard ─────────────────────────────────────────────────────

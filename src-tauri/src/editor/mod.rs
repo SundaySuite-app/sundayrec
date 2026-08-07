@@ -118,6 +118,17 @@ pub struct EditorSegment {
     /// cache, which must NOT be invalidated over this).
     #[serde(rename = "type")]
     pub kind: String,
+    /// How sure the classifier was about `kind`, 0..1.
+    ///
+    /// `#[serde(default)]` on purpose: a `<stem>.segments.json` written before
+    /// this field existed must keep deserialising, because invalidating that
+    /// cache means re-decoding a whole service to gain a number no shipped
+    /// feature depends on. Absent therefore means "that cache predates the
+    /// field", never "the classifier was unsure" — and
+    /// `sundayrec_core::feedback` keeps the two apart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub confidence: Option<f64>,
 }
 
 /// The measured loudness the mastering UI shows before/after a preset, mirroring
@@ -529,6 +540,10 @@ pub enum EditorSidecar {
     Peaks,
     /// `<stem>.segments.json` — the content-detection cache (P3).
     Segments,
+    /// `<stem>.feedback.json` — the human's corrections of what we detected
+    /// (E8). Written/read by the seam only; unlike its two neighbours it is NOT
+    /// derived data, so nothing here may treat losing it as cheap.
+    Feedback,
 }
 
 impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
@@ -539,6 +554,7 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
             EditorSidecar::Transcript => sundayrec_core::editor::Sidecar::Transcript,
             EditorSidecar::Peaks => sundayrec_core::editor::Sidecar::Peaks,
             EditorSidecar::Segments => sundayrec_core::editor::Sidecar::Segments,
+            EditorSidecar::Feedback => sundayrec_core::editor::Sidecar::Feedback,
         }
     }
 }
@@ -634,11 +650,34 @@ fn write_sidecar_raw(media_path: &str, sidecar: EditorSidecar, json: &str) -> bo
     std::fs::write(&path, json).is_ok()
 }
 
+/// Write a sidecar through a temp file in the same directory, then rename.
+///
+/// [`write_sidecar_raw`] truncates the target and streams into it, so a crash,
+/// a full disk or a killed process mid-write leaves a TRUNCATED file where a
+/// complete one used to be. For the derived caches that is a recompute; for the
+/// feedback sidecar it is the loss of something a human did by hand and will
+/// never do again. The temp name carries the editor's `.__editor_tmp` marker so
+/// the startup sweep collects one that a crash left behind.
+fn write_sidecar_atomic(media_path: &str, sidecar: EditorSidecar, json: &str) -> bool {
+    let Some(path) = resolve_sidecar(media_path, sidecar) else {
+        return false;
+    };
+    let tmp = format!("{path}{}", sundayrec_core::editor::EDITOR_TMP_SUFFIX);
+    if std::fs::write(&tmp, json).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    if std::fs::rename(&tmp, &path).is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return false;
+    }
+    true
+}
+
 /// Read a sidecar straight into `T`, skipping the intermediate
 /// `serde_json::Value` (a 2 h peaks cache would otherwise materialise ~720 000
 /// boxed `Number`s just to be thrown away). `None` for missing, unreadable, or
 /// shape-mismatched JSON — a cache is never allowed to fail an open.
-#[cfg(feature = "editor")]
 fn read_sidecar_typed<T: serde::de::DeserializeOwned>(
     media_path: &str,
     sidecar: EditorSidecar,
@@ -697,6 +736,131 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
     match resolve_sidecar(media_path, sidecar) {
         Some(path) => std::fs::remove_file(&path).is_ok(),
         None => false,
+    }
+}
+
+// ── Sermon-pick feedback (E8) — pure decisions in core, fs here ──────────────
+//
+// Not feature-gated: a correction is a human's work, and it must persist in the
+// default build exactly as the meta/cuts sidecars do. The whole of "is this a
+// correction", "what does it replace", "which block does it mean now" lives in
+// `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
+
+/// What the renderer sends when the human overrides the sermon auto-pick.
+///
+/// The whole segment list travels, not just the two blocks: the record is only
+/// interpretable against the alternatives that existed, and the attention
+/// heuristics read the music/silence blocks the picker never offers.
+#[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
+#[ts(
+    export,
+    export_to = "../../src/lib/bindings/EditorSermonPickRequest.ts"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSermonPickRequest {
+    /// The segments as the UI had them WHEN THE CHOICE WAS MADE — i.e. before
+    /// the promotion flips the two `type` fields, so `autoIndex` still points at
+    /// a block the detector labelled `sermon`.
+    pub segments: Vec<EditorSegment>,
+    /// Indices of the blocks the picker offered, in the order it offered them.
+    pub candidate_indices: Vec<u32>,
+    /// Index of the DETECTOR's pick — not whatever is promoted right now, which
+    /// may already be an earlier correction. `None` when it found no sermon.
+    pub auto_index: Option<u32>,
+    /// Index of the block the human picked.
+    pub chosen_index: u32,
+    /// Length of the recording, seconds.
+    pub duration_sec: f64,
+}
+
+fn to_feedback_segments(
+    segments: &[EditorSegment],
+) -> Vec<sundayrec_core::feedback::FeedbackSegment> {
+    use sundayrec_core::feedback::{FeedbackSegment, FeedbackSegmentKind};
+    segments
+        .iter()
+        .enumerate()
+        .map(|(i, s)| FeedbackSegment {
+            index: i as u32,
+            start_sec: s.start,
+            end_sec: s.end,
+            duration_sec: s.duration,
+            kind: FeedbackSegmentKind::from_kind(&s.kind),
+            confidence: s.confidence,
+        })
+        .collect()
+}
+
+/// Read the recording's feedback file. `Err(())` means a file is there that we
+/// must not touch — corrupt, or written by a newer schema. Missing is `Ok` with
+/// an empty file, because "nobody has corrected this recording yet" is the
+/// normal case, not an error.
+fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::SermonFeedback, ()> {
+    use sundayrec_core::feedback::{SermonFeedback, FEEDBACK_SCHEMA};
+    let Some(path) = resolve_sidecar(media_path, EditorSidecar::Feedback) else {
+        return Err(());
+    };
+    if !std::path::Path::new(&path).exists() {
+        return Ok(SermonFeedback::default());
+    }
+    match read_sidecar_typed::<SermonFeedback>(media_path, EditorSidecar::Feedback) {
+        Some(f) if f.schema == FEEDBACK_SCHEMA => Ok(f),
+        // Deliberately NOT the "start fresh" treatment the other sidecars get.
+        // Those are caches and drafts; this one holds corrections a person made
+        // by hand and will not make again, so an unreadable file is kept as it
+        // is and the write is refused.
+        _ => {
+            tracing::warn!("feedback: {path} is not schema {FEEDBACK_SCHEMA} — leaving it alone");
+            Err(())
+        }
+    }
+}
+
+/// Which block of `segments` the human's stored correction means, or `None`.
+///
+/// This is what makes a correction outlive the editor window: on reopen the
+/// renderer asks, and promotes the answer instead of the detector's.
+pub fn sermon_pick_index(media_path: &str, segments: &[EditorSegment]) -> Option<u32> {
+    let file = read_feedback(media_path).ok()?;
+    let mapped = to_feedback_segments(segments);
+    sundayrec_core::feedback::resolve_sermon_pick(&file, &mapped).map(|i| i as u32)
+}
+
+/// Fold one sermon-pick correction into the recording's feedback file. Returns
+/// whether anything was persisted — `false` covers both "that was not a
+/// correction" and "we refused to touch an unreadable file".
+pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -> bool {
+    use sundayrec_core::feedback as core;
+    let Ok(mut file) = read_feedback(media_path) else {
+        return false;
+    };
+    let segments = to_feedback_segments(&request.segments);
+    let candidates: Vec<usize> = request
+        .candidate_indices
+        .iter()
+        .map(|i| *i as usize)
+        .collect();
+    let Some(correction) = core::build_sermon_pick_correction(
+        &segments,
+        &candidates,
+        request.auto_index.map(|i| i as usize),
+        request.chosen_index as usize,
+        request.duration_sec,
+        env!("CARGO_PKG_VERSION"),
+    ) else {
+        return false;
+    };
+    if !core::record_sermon_pick(&mut file, correction).changed() {
+        return false;
+    }
+    // A withdrawal that empties the list leaves nothing to say, so the file goes
+    // rather than sitting there as an empty assertion.
+    if file.sermon_picks.is_empty() {
+        return delete_sidecar(media_path, EditorSidecar::Feedback);
+    }
+    match serde_json::to_string_pretty(&file) {
+        Ok(json) => write_sidecar_atomic(media_path, EditorSidecar::Feedback, &json),
+        Err(_) => false,
     }
 }
 
@@ -1763,6 +1927,7 @@ where
             duration: d.duration,
             label: d.label,
             kind: d.kind,
+            confidence: Some(d.confidence),
         })
         .collect();
     // The same classification in the shape the episode-prep heuristic reads,
@@ -3211,6 +3376,138 @@ mod tests {
         assert!(read_sidecar(&media, EditorSidecar::Meta).unwrap().is_none());
     }
 
+    // ── Sermon-pick feedback (E8) ──────────────────────────────────────────────
+
+    fn feedback_segments() -> Vec<EditorSegment> {
+        let seg = |start: f64, end: f64, kind: &str| EditorSegment {
+            start,
+            end,
+            duration: end - start,
+            label: kind.to_string(),
+            kind: kind.to_string(),
+            confidence: Some(0.8),
+        };
+        vec![
+            seg(0.0, 300.0, "music"),
+            seg(300.0, 480.0, "sermon"), // the detector's pick — a reading
+            seg(480.0, 700.0, "music"),
+            seg(700.0, 2200.0, "speech"), // the actual message
+            seg(2200.0, 2400.0, "silence"),
+        ]
+    }
+
+    fn pick_request(auto: Option<u32>, chosen: u32) -> EditorSermonPickRequest {
+        EditorSermonPickRequest {
+            segments: feedback_segments(),
+            candidate_indices: vec![1, 3],
+            auto_index: auto,
+            chosen_index: chosen,
+            duration_sec: 2400.0,
+        }
+    }
+
+    /// The acceptance gate for E8 phase A, as far as a test without a webview
+    /// can take it: correct the pick, throw the editor's memory away, ask again
+    /// with a freshly analysed segment list — and get the human's block back.
+    #[test]
+    fn a_correction_survives_the_editor_closing() {
+        let (_dir, media) = tmp_media();
+        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
+
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+
+        let expected = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(expected.exists(), "the record lands beside the recording");
+
+        // Reopen: detection returns its own answer (block 1 still wears the
+        // sermon label) and the stored correction points past it.
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
+    }
+
+    #[test]
+    fn re_picking_the_detectors_own_block_writes_nothing() {
+        let (_dir, media) = tmp_media();
+        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 1)));
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(!path.exists(), "agreement is not a correction");
+    }
+
+    #[test]
+    fn going_back_to_the_detectors_block_removes_the_record() {
+        let (_dir, media) = tmp_media();
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), None);
+        // Nothing left to say → no empty file left behind either.
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cycling_through_the_dropdown_leaves_one_record() {
+        let (_dir, media) = tmp_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 0));
+        record_sermon_pick(&media, &pick_request(Some(1), 2));
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let file: sundayrec_core::feedback::SermonFeedback =
+            read_sidecar_typed(&media, EditorSidecar::Feedback).expect("the record is there");
+        assert_eq!(file.sermon_picks.len(), 1);
+        assert_eq!(file.sermon_picks[0].chosen.index, 3);
+    }
+
+    #[test]
+    fn the_record_carries_no_path_and_no_recording_name() {
+        let (_dir, media) = tmp_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        // The one thing a sidecar is uniquely tempted to write down is where it
+        // came from. It must not be in there — not the path, not the stem.
+        assert!(!raw.contains("service"), "the recording's name leaked");
+        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
+    }
+
+    #[test]
+    fn a_feedback_file_we_cannot_read_is_left_alone() {
+        let (_dir, media) = tmp_media();
+        let path = std::path::Path::new(&media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json");
+        // A record from a schema this build does not know. Overwriting it would
+        // destroy corrections a person made by hand.
+        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
+        assert!(!record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        assert!(sermon_pick_index(&media, &feedback_segments()).is_none());
+        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
+    }
+
+    #[test]
+    fn an_atomic_write_leaves_no_temp_file_behind() {
+        let (_dir, media) = tmp_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        let dir = std::path::Path::new(&media).parent().unwrap();
+        let leftovers: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| sundayrec_core::editor::is_editor_temp_name(n))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
     #[test]
     fn cuts_draft_and_transcript_use_distinct_files() {
         let (_dir, media) = tmp_media();
@@ -3516,6 +3813,7 @@ mod tests {
             duration: 22.0,
             label: "Preken".into(),
             kind: "sermon".into(),
+            confidence: Some(0.77),
         };
         put_cache(
             &media,
@@ -3941,6 +4239,7 @@ mod tests {
                 duration: 1.0,
                 label: "sentinel".into(),
                 kind: "speech".into(),
+                confidence: Some(0.5),
             };
             let poisoned = SegmentsCache {
                 segments: vec![sentinel.clone()],

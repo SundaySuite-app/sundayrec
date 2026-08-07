@@ -207,6 +207,11 @@ declare global {
       // The generated binding, not a hand-written twin — see `Suggestion` in
       // pages/editor/state.ts for what the twin cost us.
       editorDetectSegments:   (filePath: string, force?: boolean) => Promise<EditorSegment[]>
+      /** Persist a sermon-pick correction (E8). Resolves to whether it was
+       *  recorded — re-picking the detector's own block is not a correction. */
+      editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
+      /** Index into `segments` of the block the human corrected us to, or null. */
+      editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>

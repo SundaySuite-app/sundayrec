@@ -616,6 +616,8 @@ pub fn run() {
             commands::editor::editor_read_sidecar,
             commands::editor::editor_write_sidecar,
             commands::editor::editor_delete_sidecar,
+            commands::editor::editor_record_sermon_pick,
+            commands::editor::editor_sermon_pick,
             commands::editor::editor_probe_streams,
             commands::editor::editor_read_file,
             commands::editor::editor_cleanup_temp_files,

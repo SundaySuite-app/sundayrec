@@ -661,6 +661,16 @@ pub struct DetectedSegment {
     pub label: String,
     /// One of the `SegmentType` labels, or `"sermon"` for the promoted block.
     pub kind: String,
+    /// The classifier's confidence in `kind`, 0..1 — carried through from
+    /// [`AnalysisSegment::confidence`], which this mapping used to drop.
+    ///
+    /// It changes nothing about detection; it is the number that says how sure
+    /// the machine was, and without it a record of the machine being WRONG
+    /// (`crate::feedback`) cannot distinguish a confident mistake from a coin
+    /// flip. For a promoted sermon spanning several blocks it is the confidence
+    /// of the speech block that BEGINS the span — the same block whose geometry
+    /// the promotion stretches.
+    pub confidence: f64,
 }
 
 fn kind_str(t: SegmentType) -> &'static str {
@@ -699,6 +709,7 @@ pub fn detect_segments(segments: &[AnalysisSegment]) -> Vec<DetectedSegment> {
                     duration: b.end_sec - b.start_sec,
                     label: "Preken".to_string(),
                     kind: "sermon".to_string(),
+                    confidence: s.confidence,
                 }
             } else {
                 DetectedSegment {
@@ -707,6 +718,7 @@ pub fn detect_segments(segments: &[AnalysisSegment]) -> Vec<DetectedSegment> {
                     duration: s.duration_sec,
                     label: s.label.clone(),
                     kind: kind_str(s.seg_type).to_string(),
+                    confidence: s.confidence,
                 }
             }
         })

@@ -1193,6 +1193,7 @@ function closeCurrentFile(): void {
   E.cutHistory = []
   E.cutHistoryIdx = -1
   E.suggestions = []
+  E.autoSermonIndex = null
   E.clipTimes = []
   E.lastAnalyzedAt = 0
   flagEditorTab('clip', false)

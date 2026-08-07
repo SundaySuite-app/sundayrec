@@ -617,6 +617,20 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
      of reading the whole file a second time. Time it: the gap between the
      "Original: −23.4 LUFS → −16 LUFS" line and the first progress tick should
      be short even on a 90-minute recording.
+8. **E8 sermon-pick correction survives a reopen:** on a recording where the
+   auto-pick is wrong, choose the right block in the sermon dropdown, close the
+   editor, and reopen the same recording.
+   - **Expected:** once the analysis card finishes, **your** block is the starred
+     one in the dropdown and the highlighted one on the timeline — not the
+     detector's. A `<base>.feedback.json` sits next to the recording; open it
+     and check what is in it: offsets, durations, confidences and reason CODES,
+     and no path, filename or clock time anywhere.
+   - Picking the detector's own block again DELETES the file (agreement is not a
+     correction), and cycling through three options before settling leaves ONE
+     record — the block you settled on.
+   - The restore rides on detection, so it happens when detection does: video
+     files, review-mode and a restored cuts-draft do not auto-analyse, and there
+     the correction comes back when you press **Analyser opptak**.
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they

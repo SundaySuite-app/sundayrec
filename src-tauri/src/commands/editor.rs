@@ -397,6 +397,38 @@ pub fn editor_delete_sidecar(media_path: String, sidecar: EditorSidecar) -> AppR
     Ok(editor::delete_sidecar(&media_path, sidecar))
 }
 
+/// Record that the human overrode the sermon auto-pick (E8), into the
+/// recording's `<stem>.feedback.json`. Returns whether anything was persisted:
+/// re-picking the block the detector already chose is not a correction, and an
+/// unreadable feedback file is left alone rather than overwritten.
+///
+/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
+/// commands; the target is a file next to a recording the user opened.
+#[tauri::command]
+pub fn editor_record_sermon_pick(
+    media_path: String,
+    request: crate::editor::EditorSermonPickRequest,
+) -> AppResult<bool> {
+    super::path_guard::checked_path(&media_path)?;
+    Ok(editor::record_sermon_pick(&media_path, &request))
+}
+
+/// Which of `segments` the human's stored sermon correction means, or `null`
+/// when there is none (or the recording no longer matches the one it describes).
+/// The reopen half of E8: detection returns its own answer, this says what the
+/// person decided last time.
+///
+/// **Path policy: `UserChosenWrite`** — read-only in effect, but it resolves the
+/// same sidecar path the write side does and gets the same guard.
+#[tauri::command]
+pub fn editor_sermon_pick(
+    media_path: String,
+    segments: Vec<EditorSegment>,
+) -> AppResult<Option<u32>> {
+    super::path_guard::checked_path(&media_path)?;
+    Ok(editor::sermon_pick_index(&media_path, &segments))
+}
+
 /// Probe just has_video/has_audio for the editor's audio-vs-video layout.
 #[tauri::command]
 pub async fn editor_probe_streams(input_path: String) -> AppResult<EditorStreamInfo> {

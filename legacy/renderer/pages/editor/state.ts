@@ -49,6 +49,11 @@ export const E = {
   cutHistory: [] as Cut[][],   // undo/redo stack
   cutHistoryIdx: -1,           // pointer into cutHistory (-1 = no history yet)
   suggestions: [] as Suggestion[],
+  // Index into `suggestions` of the block DETECTION picked as the sermon, null
+  // when it found none. Kept separately because a restored correction promotes
+  // a different block, and from then on the list no longer says what the
+  // machine thought — which is exactly what a correction is recorded against.
+  autoSermonIndex: null as number | null,
 
   // Intro/Outro
   introBuffer: null as AudioBuffer | null,

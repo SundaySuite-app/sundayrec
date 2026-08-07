@@ -1667,6 +1667,17 @@ const api: Record<string, unknown> = {
   // explicit «Analyser opptak» button) re-runs the analysis instead of reading it.
   editorDetectSegments: async (fp: string, force?: boolean) =>
     call("editor_segments", { inputPath: fp, force: force ?? false }, []),
+  // E8 — the sermon dropdown's correction, persisted next to the recording in
+  // `<stem>.feedback.json`. Resolves to whether anything was written: picking
+  // the block the detector already chose is not a correction. Never throws; a
+  // failure to record must not interrupt an edit the user is in the middle of.
+  editorRecordSermonPick: async (fp: string, request: unknown) =>
+    call("editor_record_sermon_pick", { mediaPath: fp, request }, false),
+  // The other half: which of these segments the human's stored correction means
+  // (`null` when there is none). Matched on OFFSETS in the backend, because the
+  // indices in a stored record mean nothing once detection has run again.
+  editorSermonPick: async (fp: string, segments: unknown) =>
+    call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).

@@ -221,6 +221,67 @@ pub mod reasons {
         "Hele opptaket er kort — kanskje en del av en serie eller et avbrutt opptak";
 }
 
+/// The same six reasons as CODES rather than as their Norwegian sentences.
+///
+/// Anything that STORES or SENDS a reason stores one of these — see the
+/// telemetry module's identical rule for self-test reasons
+/// ([`crate::telemetry`] module docs, "sent as CODES, never as their
+/// sentences"). Two independent arguments for it: a sentence is free text whose
+/// wording nobody adding a reason would think of as a wire contract, and a
+/// stored sentence stops matching the moment someone improves the Norwegian.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttentionReason {
+    NoSermonBlock,
+    SpeechAtStart,
+    MidSilence,
+    MostlyMusic,
+    LowConfidence,
+    VeryShort,
+}
+
+impl AttentionReason {
+    /// The stable code. Changing one of these breaks every record already on
+    /// disk, so they are deliberately independent of the Norwegian wording.
+    pub fn code(self) -> &'static str {
+        match self {
+            AttentionReason::NoSermonBlock => "no_sermon_block",
+            AttentionReason::SpeechAtStart => "speech_at_start",
+            AttentionReason::MidSilence => "mid_silence",
+            AttentionReason::MostlyMusic => "mostly_music",
+            AttentionReason::LowConfidence => "low_confidence",
+            AttentionReason::VeryShort => "very_short",
+        }
+    }
+
+    /// Which reason a sentence from [`reasons`] is. `None` for anything else —
+    /// an unrecognised sentence is DROPPED rather than stored, so a future
+    /// `format!`-built reason can never carry an interpolated name onto disk.
+    pub fn from_sentence(sentence: &str) -> Option<Self> {
+        match sentence {
+            reasons::NO_SERMON_BLOCK => Some(AttentionReason::NoSermonBlock),
+            reasons::SPEECH_AT_START => Some(AttentionReason::SpeechAtStart),
+            reasons::MID_SILENCE => Some(AttentionReason::MidSilence),
+            reasons::MOSTLY_MUSIC => Some(AttentionReason::MostlyMusic),
+            reasons::LOW_CONFIDENCE => Some(AttentionReason::LowConfidence),
+            reasons::VERY_SHORT => Some(AttentionReason::VeryShort),
+            _ => None,
+        }
+    }
+}
+
+/// [`derive_attention_reasons`] as codes. Same inputs, same order, same
+/// conditions — only the representation differs.
+pub fn derive_attention_codes(
+    segments: &[PrepAnalysisSegment],
+    sermon: Option<&SermonSegment>,
+    duration_sec: f64,
+) -> Vec<AttentionReason> {
+    derive_attention_reasons(segments, sermon, duration_sec)
+        .iter()
+        .filter_map(|r| AttentionReason::from_sentence(r))
+        .collect()
+}
+
 /// Walk the segments + chosen sermon and derive the human-readable reasons this
 /// episode needs review. Ports `deriveAttentionReasons` exactly (order matters).
 /// An empty list means "this looks normal".
@@ -625,6 +686,90 @@ mod tests {
         let segs = vec![seg(0.0, 300.0, SegmentType::Speech, 0.9)];
         let reasons = derive_attention_reasons(&segs, None, 300.0);
         assert!(reasons.iter().any(|r| r == reasons::VERY_SHORT));
+    }
+
+    // ── Reason codes ───────────────────────────────────────────────────────────
+
+    /// The property that keeps [`derive_attention_codes`] honest: across every
+    /// input that makes a reason fire, the code list is exactly as long as the
+    /// sentence list. A reason added without a code silently shortens the code
+    /// list — and this fails.
+    #[test]
+    fn every_derived_reason_has_a_code() {
+        let low_conf = SermonSegment {
+            start_sec: 360.0,
+            end_sec: 600.0,
+            confidence: 0.4,
+            seg_index: 0,
+        };
+        let good = SermonSegment {
+            confidence: 0.95,
+            ..low_conf
+        };
+        let matrix: Vec<(Vec<PrepAnalysisSegment>, Option<SermonSegment>, f64)> = vec![
+            (vec![seg(0.0, 600.0, SegmentType::Speech, 0.9)], None, 600.0),
+            (vec![seg(0.0, 60.0, SegmentType::Music, 0.9)], None, 600.0),
+            (vec![seg(0.0, 300.0, SegmentType::Speech, 0.9)], None, 300.0),
+            (
+                vec![
+                    seg(0.0, 200.0, SegmentType::Music, 0.8),
+                    seg(200.0, 120.0, SegmentType::Silence, 0.7),
+                    seg(360.0, 240.0, SegmentType::Music, 0.8),
+                ],
+                Some(low_conf),
+                800.0,
+            ),
+            (
+                vec![seg(0.0, 1800.0, SegmentType::Speech, 0.95)],
+                Some(good),
+                1800.0,
+            ),
+        ];
+        let mut seen_any = false;
+        for (segs, sermon, dur) in matrix {
+            let sentences = derive_attention_reasons(&segs, sermon.as_ref(), dur);
+            let codes = derive_attention_codes(&segs, sermon.as_ref(), dur);
+            assert_eq!(
+                sentences.len(),
+                codes.len(),
+                "a reason with no code: {sentences:?}"
+            );
+            seen_any |= !codes.is_empty();
+        }
+        assert!(
+            seen_any,
+            "the matrix never fired a reason — it proves nothing"
+        );
+    }
+
+    #[test]
+    fn reason_codes_are_distinct_and_machine_shaped() {
+        let all = [
+            AttentionReason::NoSermonBlock,
+            AttentionReason::SpeechAtStart,
+            AttentionReason::MidSilence,
+            AttentionReason::MostlyMusic,
+            AttentionReason::LowConfidence,
+            AttentionReason::VeryShort,
+        ];
+        let mut codes: Vec<&str> = all.iter().map(|r| r.code()).collect();
+        codes.sort_unstable();
+        let n = codes.len();
+        codes.dedup();
+        assert_eq!(codes.len(), n, "two reasons share a code");
+        assert!(codes
+            .iter()
+            .all(|c| c.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_')));
+    }
+
+    #[test]
+    fn free_text_is_never_taken_for_a_reason() {
+        // The one thing `from_sentence` must refuse: anything that is not one of
+        // the six constants — including a sentence that merely starts like one.
+        assert!(AttentionReason::from_sentence("Enheten Qu-5 forsvant").is_none());
+        assert!(AttentionReason::from_sentence("").is_none());
+        let almost = format!("{} (Qu-5)", reasons::LOW_CONFIDENCE);
+        assert!(AttentionReason::from_sentence(&almost).is_none());
     }
 
     #[test]
