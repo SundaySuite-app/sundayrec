@@ -212,6 +212,34 @@ pub fn on_failure(entries: &mut [TelemetryEntry], id: &str, error: impl Into<Str
     }
 }
 
+/// Drop an entry the endpoint will never accept. Returns `true` if one went.
+///
+/// The counterpart to [`on_failure`], and the distinction is the whole reason
+/// this function exists rather than being a flag on that one. The backoff ladder
+/// answers "the church wifi is down": wait, try again, the same bytes will
+/// succeed later. It is exactly wrong for "this payload is malformed", because a
+/// malformed payload is malformed the same way all six times — six spread-out
+/// attempts over 24 hours, six identical rejections, and a row that then sits in
+/// `Failed` until the [`QUEUE_MAX`] bound reclaims it.
+///
+/// So a permanent rejection removes the row immediately. The endpoint's half of
+/// this contract is in `sunday-telemetry/src/ingest.ts`: 4xx means "will never be
+/// accepted" and carries `"retryable": false`, with 429 called out as the one
+/// transient 4xx. `src-tauri`'s `telemetry::http_sender::classify` is where a
+/// status becomes one or the other.
+///
+/// Nothing is kept for the settings panel here, unlike an exhausted retry
+/// ladder. A row that ran out of attempts describes something the user might
+/// recognise — a network that has been down for a day. A schema rejection
+/// describes a disagreement between this build and the endpoint, which the user
+/// can neither cause nor fix; it belongs in the log (and in the endpoint's own
+/// rejection log, which records WHICH field), not in a badge they cannot act on.
+pub fn on_permanent_failure(entries: &mut Vec<TelemetryEntry>, id: &str) -> bool {
+    let before = entries.len();
+    entries.retain(|e| e.id != id);
+    entries.len() != before
+}
+
 /// Which entry ids must go so at most `cap` remain, oldest first.
 ///
 /// Ordered by `created_at` (then `id`, so the answer is deterministic when two
@@ -508,5 +536,50 @@ mod tests {
         assert_eq!(s.pending, 0);
         assert_eq!(s.oldest_at, None);
         assert_eq!(s.last_error, None);
+    }
+
+    #[test]
+    fn a_permanent_failure_drops_the_row_instead_of_backing_off() {
+        // The failure this prevents: a payload the endpoint will refuse every
+        // time, retried on a ladder that reaches 24 hours, six times, and then
+        // parked in `Failed` until the bound reclaims it.
+        let mut q = vec![entry("a", 0), entry("b", 1)];
+        assert!(on_permanent_failure(&mut q, "a"));
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0].id, "b");
+        // Idempotent: a second permanent failure for the same id is a no-op, not
+        // a panic and not a second removal.
+        assert!(!on_permanent_failure(&mut q, "a"));
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn a_permanent_failure_leaves_no_attempt_state_behind() {
+        // Contrast with `on_failure`, which is the whole point of having both.
+        let now = 1_800_000_000_000i64;
+        let mut transient = vec![entry("a", 0)];
+        mark_sending(&mut transient, "a");
+        on_failure(&mut transient, "a", "connection reset", now);
+        assert_eq!(transient.len(), 1, "a transient failure keeps the payload");
+        assert_eq!(transient[0].attempts, 1);
+        assert_eq!(transient[0].next_attempt, now + BACKOFF_STEPS_MS[0]);
+
+        let mut permanent = vec![entry("a", 0)];
+        mark_sending(&mut permanent, "a");
+        on_permanent_failure(&mut permanent, "a");
+        assert!(permanent.is_empty(), "a permanent failure keeps nothing");
+    }
+
+    #[test]
+    fn a_dropped_payload_does_not_block_the_next_one() {
+        // A permanently-rejected entry must not wedge the queue behind it: the
+        // pump has to find the next due payload on the very next iteration.
+        let mut q = vec![entry("bad", 0), entry("good", 1)];
+        mark_sending(&mut q, "bad");
+        on_permanent_failure(&mut q, "bad");
+        assert_eq!(
+            pump_decision(true, &q, 1_800_000_000_000),
+            PumpDecision::Send("good".to_string())
+        );
     }
 }

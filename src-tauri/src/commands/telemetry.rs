@@ -45,21 +45,42 @@ pub async fn telemetry_consent_get(db: State<'_, Db>) -> AppResult<TelemetryCons
 ///
 /// `false` is destructive by design: it purges the outbox and the accumulated
 /// counters, so "off" leaves nothing behind that a later "on" could flush.
+///
+/// `true` also starts the sender, if this build has an endpoint and it is not
+/// already running. Without that, a user who says yes mid-session would have
+/// their reports collected, consented to, and queued until the next launch —
+/// which is indistinguishable from the feature being broken. `maybe_spawn` is
+/// idempotent, so toggling consent does not accumulate loops.
 #[tauri::command]
 pub async fn telemetry_consent_set(
+    app: tauri::AppHandle,
     db: State<'_, Db>,
     granted: bool,
 ) -> AppResult<TelemetryConsent> {
-    telemetry::consent_set(&db.pool, granted).await
+    let state = telemetry::consent_set(&db.pool, granted).await?;
+    if granted {
+        telemetry::sender::maybe_spawn(&app, &db.pool).await;
+    }
+    Ok(state)
 }
 
 /// "Delete my data" — the local half.
 ///
 /// Retires the current install id and mints a new, unrelated one, so every
-/// future report belongs to a different install. The retired id is parked for
-/// the remote DELETE a later phase sends. Consent is NOT withdrawn: asking for
-/// the existing data to be removed is a different request from asking to stop
-/// contributing, and conflating them would make one of the two impossible.
+/// future report belongs to a different install. The retired id is parked in
+/// `telemetry.pendingDeletions`, and the sender loop drains that list against
+/// the endpoint's `DELETE /v1/install/:id` — see
+/// [`telemetry::sender::maybe_spawn`]'s `drain_deletions`, including why the
+/// deletion is deliberately NOT behind the consent gate that everything else is.
+///
+/// Consent is NOT withdrawn: asking for the existing data to be removed is a
+/// different request from asking to stop contributing, and conflating them would
+/// make one of the two impossible.
+///
+/// The remote half is best-effort by nature — a machine that is offline when the
+/// user asks will send the DELETE when it next has a network. The local half
+/// (this call) is immediate and unconditional: from this moment nothing the
+/// machine sends is associated with the retired id.
 ///
 /// Returns nothing: the new id is an internal detail, and handing it to the
 /// renderer would make it available to anything running there.
