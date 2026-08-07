@@ -10,7 +10,7 @@ import type { FeedbackSegment } from "./FeedbackSegment";
  * of day plus a duration fingerprints one specific service at one specific
  * church. Offsets within the recording only.** That is why there is no
  * timestamp field here and no ordering field beyond the position in
- * [`SermonFeedback::sermon_picks`]: a record that cannot say WHEN cannot
+ * [`RecordingFeedback::sermon_picks`]: a record that cannot say WHEN cannot
  * identify WHO. Anyone extending this type inherits the rule, and cannot
  * violate it without first deleting this paragraph.
  */

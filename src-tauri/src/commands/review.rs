@@ -391,8 +391,12 @@ pub async fn review_update_trim(
         // An operator who opened review and published without touching the
         // boundaries taught us nothing about them — and a corpus where the
         // untouched majority outvotes the corrections would tune the detector
-        // toward whatever it already does.
-        if let Some((path, deltas)) = feedback.filter(|(_, d)| !d.is_unchanged()) {
+        // toward whatever it already does. Those deltas are nonetheless handed
+        // over rather than filtered out here: an operator who dragged a boundary
+        // BACK onto the proposal looks identical from this side, and the
+        // difference — withdrawing the adjustment recorded earlier — can only be
+        // seen by the layer that holds the file. Neither case is stored.
+        if let Some((path, deltas)) = feedback {
             crate::learning::record_trim_deltas(&path, deltas);
         }
         crate::tray_note_review_queue(&app);

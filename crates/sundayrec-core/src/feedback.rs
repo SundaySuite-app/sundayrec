@@ -1,34 +1,59 @@
-//! What the human told us the detector got wrong — pure, fs-free (E8 phase A).
+//! What the human told us we got wrong — pure, fs-free (E8).
 //!
-//! SundayRec guesses which block of a service is the sermon. When it guesses
-//! wrong the operator fixes it with the sermon dropdown, and until now that fix
-//! lived exactly as long as the editor window did: `setSermonSegment` flipped
-//! two objects in memory and redrew. It is the most valuable signal the app
-//! produces — a person telling us, for free, that the detector was wrong AND
-//! what the right answer was — and it was thrown away every single time.
+//! Three times per service the app makes a guess and a person quietly fixes it,
+//! and all three fixes used to live exactly as long as the window they were made
+//! in: which block is the sermon (`setSermonSegment` flipped two objects in
+//! memory and redrew), where the sermon starts and stops (review's trim, thrown
+//! away at publish), and whether the AI companion's title/summary/chapters were
+//! any use (computed to pick a toast's wording, discarded when the toast faded).
+//! They are the most valuable signals the app produces — a person telling us,
+//! for free, that we were wrong AND what the right answer was.
 //!
-//! This module owns the RECORD of that correction: what to store, when a change
-//! counts as a correction at all, and how to find the corrected block again in a
-//! freshly analysed segment list. It decides nothing about detection — nothing
-//! here is read by any detector, in this phase or by accident. The `src-tauri`
-//! seam does the file I/O (`<stem>.feedback.json`, [`crate::editor::Sidecar`]).
+//! This module owns the RECORD of all three: what to store, when a change counts
+//! as a correction at all, what a later change replaces, and how to find a
+//! corrected block again in a freshly analysed segment list. It decides nothing
+//! about detection — nothing here is read by any detector, in this etappe or by
+//! accident. The `src-tauri` seam does the file I/O (`<stem>.feedback.json`,
+//! [`crate::editor::Sidecar`]).
+//!
+//! ## One file, three collections
+//!
+//! [`RecordingFeedback`] is the whole `<stem>.feedback.json`. Each collection is
+//! `#[serde(default)]` so a file written before it existed still loads with the
+//! others intact: this file is not a cache, and a reader that quietly failed on
+//! an older one would take a human's work with it.
+//!
+//! Each collection also carries a BOUND and an explicit append-or-replace rule,
+//! documented where the constant is declared. Both halves matter and they fail
+//! in opposite directions: replacing where you should append loses the record of
+//! a genuinely separate decision, and appending where you should replace counts
+//! one person's one opinion as many.
 //!
 //! ## Privacy — the same discipline as [`crate::telemetry`]
 //!
-//! A sermon-pick record is about a service someone actually held, so the types
-//! here are built the way the telemetry payload is: a field is a number, a bool,
-//! a closed enum, or a code from a closed vocabulary. There is no free-text
-//! field, no path field, and no name field for anything to leak into — see the
-//! doc comment on [`SermonPickCorrection`] for the rule that must survive.
+//! Every record here is about a service someone actually held, so the types are
+//! built the way the telemetry payload is: a field is a number, a bool, a closed
+//! enum, or a code from a closed vocabulary. There is no free-text field, no
+//! path field, and no name field for anything to leak into — see the doc comment
+//! on [`SermonPickCorrection`] for the rule that must survive, and note that it
+//! binds the two newer records exactly as it binds that one.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::prep::{derive_attention_codes, PrepAnalysisSegment, SegmentType, SermonSegment};
+use crate::trim_feedback::TrimDeltas;
 
 /// Schema version of the `<stem>.feedback.json` file. Bump when the MEANING of a
 /// field changes; a reader that does not recognise the number ignores the file
 /// rather than guessing.
+///
+/// Adding a collection is NOT such a change and must not bump this. The reader
+/// (`src-tauri`'s `read_feedback`) accepts one number and refuses to touch a file
+/// carrying any other, so a bump would make every file already on disk
+/// unreadable — and "unreadable" here means the app stops recording corrections
+/// for that recording and leaves the old ones stranded. New collections are
+/// additive and `#[serde(default)]`; that is what carries an older file forward.
 pub const FEEDBACK_SCHEMA: u32 = 1;
 
 /// How many sermon-pick corrections one recording may accumulate.
@@ -60,6 +85,30 @@ pub const MAX_CANDIDATES_PER_CORRECTION: usize = 32;
 /// segment is 5 s, so a second of slack cannot make two different blocks
 /// ambiguous.
 pub const BOUNDS_MATCH_TOLERANCE_SEC: f64 = 1.0;
+
+/// How many trim adjustments one recording may accumulate.
+///
+/// An adjustment REPLACES the one recorded by the same app version (see
+/// [`record_trim_adjustment`]), so the honest count is one per version this
+/// recording was ever published from — for almost every file, one. A recording
+/// that is still being re-published twenty app versions later has stopped being
+/// evidence about any one detector, so twenty is both far past the plausible
+/// number and the point at which the oldest record has nothing left to say. The
+/// NEWEST are the ones that describe detectors people still run, so the oldest
+/// is dropped.
+pub const MAX_TRIM_ADJUSTMENTS: usize = 20;
+
+/// How many companion-suggestion outcomes one recording may accumulate.
+///
+/// Unlike the two records above, these APPEND (see
+/// [`record_companion_suggestion`]) and therefore actually reach their bound.
+/// Each companion build offers three things and yields at most three events, so
+/// this is twenty rebuilds — well past a working session, in which a person
+/// builds once, maybe again with the language model, and moves on. Past that
+/// the events stop being twenty opinions and start being one habit, so the
+/// oldest go: the newest describe the suggestions actually on screen, and the
+/// companion that produced them.
+pub const MAX_COMPANION_SUGGESTION_EVENTS: usize = 60;
 
 /// What a block was classified as. A closed vocabulary: the detector's `kind`
 /// string is mapped INTO this, and anything unrecognised becomes
@@ -164,7 +213,7 @@ impl FeedbackSegment {
 /// of day plus a duration fingerprints one specific service at one specific
 /// church. Offsets within the recording only.** That is why there is no
 /// timestamp field here and no ordering field beyond the position in
-/// [`SermonFeedback::sermon_picks`]: a record that cannot say WHEN cannot
+/// [`RecordingFeedback::sermon_picks`]: a record that cannot say WHEN cannot
 /// identify WHO. Anyone extending this type inherits the rule, and cannot
 /// violate it without first deleting this paragraph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -194,24 +243,138 @@ pub struct SermonPickCorrection {
     pub app_version: String,
 }
 
-/// The `<stem>.feedback.json` file: everything the human has told us about ONE
-/// recording.
+/// One trim adjustment: how far the operator moved the sermon span the analysis
+/// proposed, and which build proposed it.
+///
+/// The deltas themselves — and the sign convention that makes them readable —
+/// belong to [`crate::trim_feedback`]; this record is that value plus the one
+/// thing needed to attribute it. It inherits [`SermonPickCorrection`]'s rule
+/// whole: two signed durations and a version string, no time of day, no name,
+/// no path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SermonFeedback.ts")]
+#[ts(export, export_to = "../../../src/lib/bindings/TrimAdjustment.ts")]
 #[serde(rename_all = "camelCase")]
-pub struct SermonFeedback {
-    pub schema: u32,
-    /// Append-list, oldest first, bounded by [`MAX_SERMON_PICK_CORRECTIONS`].
-    #[serde(default)]
-    pub sermon_picks: Vec<SermonPickCorrection>,
+pub struct TrimAdjustment {
+    /// How far each boundary moved. Carried as the whole
+    /// [`TrimDeltas`] rather than copied into two `f64`s here, so the sign
+    /// convention cannot be re-stated (and inverted) in a second place.
+    pub deltas: TrimDeltas,
+    /// The app version whose detector proposed the trim being corrected.
+    pub app_version: String,
 }
 
-impl Default for SermonFeedback {
+/// Which of the companion's suggestions an outcome is about. A closed
+/// vocabulary, mirroring the renderer's `CompanionSuggestionKind`
+/// (`legacy/renderer/pages/editor/companion-feedback.ts`) — `highlights` is
+/// absent from both for the same reason: the panel only lets you SEEK to a
+/// highlight, so there is no accept/reject decision to observe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/CompanionSuggestionKind.ts"
+)]
+#[serde(rename_all = "lowercase")]
+pub enum CompanionSuggestionKind {
+    Title,
+    Description,
+    Chapters,
+}
+
+/// What became of one suggestion.
+///
+/// `Rejected` has no producer today — the panel has a "use it" button per kind
+/// and no dismiss gesture, so a suggestion nobody uses is `LeftAlone`. It is in
+/// the vocabulary because a redesigned panel that grows an explicit dismiss must
+/// not need a schema bump, and because the two are genuinely different: one is a
+/// decision, the other is silence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/CompanionSuggestionOutcome.ts"
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CompanionSuggestionOutcome {
+    Accepted,
+    Rejected,
+    LeftAlone,
+}
+
+/// One companion suggestion's fate, as stored.
+///
+/// Categories and outcomes only. The suggested title, the summary, the chapter
+/// titles, the user's rewrite and the transcript they were derived from are all
+/// absent by SHAPE — there is no field on this type any of them could occupy,
+/// which is the same guarantee the renderer's event type makes and the reason
+/// neither of them carries a free-text field "for debugging".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/CompanionSuggestionRecord.ts"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionSuggestionRecord {
+    pub kind: CompanionSuggestionKind,
+    pub outcome: CompanionSuggestionOutcome,
+    /// Only ever `true` alongside [`CompanionSuggestionOutcome::Accepted`]: the
+    /// user took the suggestion as a starting point and rewrote it, which is the
+    /// more interesting of the two accepted cases.
+    pub edited_after_accept: bool,
+    /// The app version that produced the suggestion. Without it an outcome
+    /// cannot be attributed to the companion that earned it, and a corpus that
+    /// cannot separate versions cannot tell whether a change to the companion
+    /// helped.
+    pub app_version: String,
+}
+
+/// The `<stem>.feedback.json` file: everything the human has told us about ONE
+/// recording.
+///
+/// Named for the file, not for its first collection: it started life holding
+/// sermon picks and now holds three unrelated families of correction, and a
+/// reader who takes "sermon" in the type name at face value will look for the
+/// companion events somewhere else.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/RecordingFeedback.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingFeedback {
+    pub schema: u32,
+    /// Oldest first, bounded by [`MAX_SERMON_PICK_CORRECTIONS`]. One record per
+    /// detector baseline; see [`record_sermon_pick`].
+    #[serde(default)]
+    pub sermon_picks: Vec<SermonPickCorrection>,
+    /// Oldest first, bounded by [`MAX_TRIM_ADJUSTMENTS`]. One record per app
+    /// version; see [`record_trim_adjustment`].
+    #[serde(default)]
+    pub trim_adjustments: Vec<TrimAdjustment>,
+    /// Oldest first, bounded by [`MAX_COMPANION_SUGGESTION_EVENTS`]. Genuinely
+    /// append-only; see [`record_companion_suggestion`].
+    #[serde(default)]
+    pub companion_suggestions: Vec<CompanionSuggestionRecord>,
+}
+
+impl Default for RecordingFeedback {
     fn default() -> Self {
         Self {
             schema: FEEDBACK_SCHEMA,
             sermon_picks: Vec::new(),
+            trim_adjustments: Vec::new(),
+            companion_suggestions: Vec::new(),
         }
+    }
+}
+
+impl RecordingFeedback {
+    /// Whether the record has nothing left to say about this recording.
+    ///
+    /// The seam deletes the file rather than leaving an empty one behind, and
+    /// this is the question it must ask — NOT "are the sermon picks empty". A
+    /// withdrawn sermon correction on a recording whose trim was also adjusted
+    /// leaves the file with work in it, and deleting it there would throw away a
+    /// signal the human never touched.
+    pub fn is_empty(&self) -> bool {
+        self.sermon_picks.is_empty()
+            && self.trim_adjustments.is_empty()
+            && self.companion_suggestions.is_empty()
     }
 }
 
@@ -354,7 +517,7 @@ fn bounded_candidates(
 ///     unchanged recording is the same block, and tomorrow's second thought
 ///     replaces today's answer rather than arguing with it.
 pub fn record_sermon_pick(
-    file: &mut SermonFeedback,
+    file: &mut RecordingFeedback,
     correction: SermonPickCorrection,
 ) -> PickOutcome {
     let same_baseline = |existing: &SermonPickCorrection| match (&existing.auto, &correction.auto) {
@@ -387,6 +550,140 @@ pub fn record_sermon_pick(
     PickOutcome::Recorded
 }
 
+/// What [`record_trim_adjustment`] did with a set of deltas. The trim mirror of
+/// [`PickOutcome`], and deliberately the same three cases: the two records
+/// describe the same kind of event (a human either corrected us, agreed with us,
+/// or took a correction back) and reading them should not require learning two
+/// vocabularies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrimOutcome {
+    /// The operator left the proposed boundaries where they were, and there was
+    /// nothing on file to undo. Nothing to learn — the detector was right.
+    NotAnAdjustment,
+    /// The operator moved the boundaries BACK to the proposal, so the adjustment
+    /// already on file was removed.
+    Withdrawn,
+    /// Stored — either as a new record or in place of the previous answer from
+    /// the same app version.
+    Recorded,
+}
+
+impl TrimOutcome {
+    /// Whether the file changed and must be written back.
+    pub fn changed(self) -> bool {
+        !matches!(self, TrimOutcome::NotAnAdjustment)
+    }
+}
+
+/// Fold one trim adjustment into a recording's feedback file.
+///
+/// ## What counts as an adjustment
+///
+///   - **Publishing the proposal untouched is not one.** `deltas` is measured
+///     against what the analysis proposed, so an operator who opened review and
+///     published without dragging anything produces
+///     [`TrimDeltas::is_unchanged`] — see [`crate::trim_feedback::UNCHANGED_TOLERANCE_SEC`]
+///     for why that is a tolerance rather than a zero. Storing those would bury
+///     the real corrections under a much larger number of confirmations, all
+///     pointing at whatever the detector already does.
+///   - **Moving a boundary back to the proposal WITHDRAWS the record.** Same
+///     reasoning as [`record_sermon_pick`]: a record that still claims a
+///     correction the person has since taken back is not weak evidence, it is
+///     false evidence. This is why the caller must hand over unchanged deltas
+///     too instead of filtering them out — only this function can tell "nothing
+///     to say" from "never mind".
+///
+/// ## Why a later adjustment REPLACES rather than appends
+///
+/// Every adjustment for one recording is measured against the same proposal:
+/// `review_update_trim` re-derives it from the entry's immutable
+/// `analysis_segments` precisely so a second adjustment cannot measure against
+/// the operator's own first one. Successive publishes of the same episode are
+/// therefore successive answers to ONE question, and appending them would count
+/// one person's one opinion as many — with the intermediate answers, the ones
+/// they thought better of, outnumbering the one they settled on.
+///
+/// The version is the baseline, because it is the only part of the proposal this
+/// seam can observe: the deltas arrive alone, and the boundary constants the
+/// detector proposes from belong to a build. Two adjustments from two versions
+/// may well be corrections of two different proposals, so they each keep their
+/// own record; two from the same version are the same question asked twice.
+pub fn record_trim_adjustment(
+    file: &mut RecordingFeedback,
+    deltas: TrimDeltas,
+    app_version: &str,
+) -> TrimOutcome {
+    let same_baseline = |a: &TrimAdjustment| a.app_version == app_version;
+
+    if deltas.is_unchanged() {
+        let before = file.trim_adjustments.len();
+        file.trim_adjustments.retain(|a| !same_baseline(a));
+        return if file.trim_adjustments.len() == before {
+            TrimOutcome::NotAnAdjustment
+        } else {
+            TrimOutcome::Withdrawn
+        };
+    }
+
+    let adjustment = TrimAdjustment {
+        deltas,
+        app_version: app_version.to_string(),
+    };
+    match file.trim_adjustments.iter().position(same_baseline) {
+        Some(i) => file.trim_adjustments[i] = adjustment,
+        None => {
+            file.trim_adjustments.push(adjustment);
+            while file.trim_adjustments.len() > MAX_TRIM_ADJUSTMENTS {
+                file.trim_adjustments.remove(0);
+            }
+        }
+    }
+    TrimOutcome::Recorded
+}
+
+/// Append one companion-suggestion outcome to a recording's feedback file.
+///
+/// ## Why this one APPENDS, where the other two replace
+///
+/// A sermon pick and a trim adjustment are answers to a question the app asked
+/// once: there is one detector proposal per recording, so a second answer
+/// supersedes the first. The companion asks again every time it is rebuilt —
+/// each build produces DIFFERENT text (offline extractive vs a language model,
+/// or a new transcript), so "I ignored the title" about build one and "I kept
+/// the title" about build two are two true statements about two different
+/// suggestions, and collapsing them would erase the more informative one.
+///
+/// That is also why the tracker on the renderer side emits exactly one event per
+/// kind per build and never revises one — it is an append-only log by
+/// construction, and this function must not turn it into something else.
+///
+/// The pressure the other two records get from replacement, this one gets from
+/// [`MAX_COMPANION_SUGGESTION_EVENTS`]: someone who rebuilds the companion
+/// twenty times has stopped producing twenty opinions, so the oldest events
+/// fall off rather than accumulating into a vote.
+pub fn record_companion_suggestion(
+    file: &mut RecordingFeedback,
+    kind: CompanionSuggestionKind,
+    outcome: CompanionSuggestionOutcome,
+    edited_after_accept: bool,
+    app_version: &str,
+) {
+    file.companion_suggestions.push(CompanionSuggestionRecord {
+        kind,
+        outcome,
+        // A rewrite is only meaningful as a refinement of an acceptance, and the
+        // renderer can only observe one after telling us the suggestion landed.
+        // Normalised here rather than trusted, so no caller can produce the
+        // uninterpretable "left alone, then edited".
+        edited_after_accept: edited_after_accept
+            && matches!(outcome, CompanionSuggestionOutcome::Accepted),
+        app_version: app_version.to_string(),
+    });
+    while file.companion_suggestions.len() > MAX_COMPANION_SUGGESTION_EVENTS {
+        file.companion_suggestions.remove(0);
+    }
+}
+
 /// Which block of `segments` the human's stored correction means, if any.
 ///
 /// This is what makes a correction survive a reopen: the editor re-runs (or
@@ -398,7 +695,10 @@ pub fn record_sermon_pick(
 /// `None` when nothing matches: the recording has been re-rendered into
 /// something the correction no longer describes, and silently promoting the
 /// nearest block would be a guess wearing a human's authority.
-pub fn resolve_sermon_pick(file: &SermonFeedback, segments: &[FeedbackSegment]) -> Option<usize> {
+pub fn resolve_sermon_pick(
+    file: &RecordingFeedback,
+    segments: &[FeedbackSegment],
+) -> Option<usize> {
     let chosen = &file.sermon_picks.last()?.chosen;
     segments
         .iter()
@@ -575,7 +875,7 @@ mod tests {
 
     #[test]
     fn overriding_the_auto_pick_is_recorded() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         assert_eq!(
             record_sermon_pick(&mut file, correction(Some(1), 3)),
             PickOutcome::Recorded
@@ -586,7 +886,7 @@ mod tests {
 
     #[test]
     fn re_picking_the_detectors_own_block_is_not_a_correction() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         assert_eq!(
             record_sermon_pick(&mut file, correction(Some(1), 1)),
             PickOutcome::NotACorrection
@@ -597,7 +897,7 @@ mod tests {
 
     #[test]
     fn going_back_to_the_detectors_block_withdraws_the_correction() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         assert_eq!(
             record_sermon_pick(&mut file, correction(Some(1), 1)),
@@ -611,7 +911,7 @@ mod tests {
 
     #[test]
     fn cycling_through_options_leaves_one_record_the_one_settled_on() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 0));
         record_sermon_pick(&mut file, correction(Some(1), 2));
         record_sermon_pick(&mut file, correction(Some(1), 3));
@@ -621,7 +921,7 @@ mod tests {
 
     #[test]
     fn a_correction_of_a_different_auto_pick_appends() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         // The recording was re-analysed and the detector now picks block 3; the
         // human moves it somewhere else again. Different baseline, own record.
@@ -631,7 +931,7 @@ mod tests {
 
     #[test]
     fn the_list_is_bounded_and_drops_the_oldest() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         for i in 0..(MAX_SERMON_PICK_CORRECTIONS + 5) {
             // A distinct baseline each time, so nothing collapses by replacement.
             let mut c = correction(Some(1), 3);
@@ -654,7 +954,7 @@ mod tests {
 
     #[test]
     fn a_reopen_resolves_to_the_block_the_human_chose() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         // Reopen: detection runs again and returns its OWN answer (block 1 is
         // still the one wearing the sermon label).
@@ -663,7 +963,7 @@ mod tests {
 
     #[test]
     fn a_reopen_resolves_by_offsets_not_by_index() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         // Re-analysis split the opening music in two: every index shifted by one,
         // and bounds moved by a fraction of a second.
@@ -680,7 +980,7 @@ mod tests {
 
     #[test]
     fn a_recording_the_correction_no_longer_describes_resolves_to_nothing() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         let other = vec![
             seg(0, 0.0, 60.0, FeedbackSegmentKind::Speech),
@@ -692,7 +992,7 @@ mod tests {
     #[test]
     fn an_empty_file_resolves_to_nothing() {
         assert_eq!(
-            resolve_sermon_pick(&SermonFeedback::default(), &service()),
+            resolve_sermon_pick(&RecordingFeedback::default(), &service()),
             None
         );
     }
@@ -701,12 +1001,270 @@ mod tests {
 
     #[test]
     fn the_file_round_trips_through_json() {
-        let mut file = SermonFeedback::default();
+        let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         let json = serde_json::to_string(&file).unwrap();
-        let back: SermonFeedback = serde_json::from_str(&json).unwrap();
+        let back: RecordingFeedback = serde_json::from_str(&json).unwrap();
         assert_eq!(back, file);
         assert_eq!(back.schema, FEEDBACK_SCHEMA);
+    }
+
+    /// The failure this guards is silent: a `.feedback.json` written by the
+    /// build that only knew about sermon picks must keep loading, because the
+    /// seam refuses to WRITE a file it could not read — so a reader that choked
+    /// on an older one would not lose the corrections loudly, it would quietly
+    /// stop collecting new ones and leave the old ones stranded.
+    #[test]
+    fn a_file_written_before_these_collections_existed_still_loads_whole() {
+        let mut before = RecordingFeedback::default();
+        record_sermon_pick(&mut before, correction(Some(1), 3));
+        // Exactly what phase A serialises: no `trimAdjustments`, no
+        // `companionSuggestions` — not empty ones, ABSENT ones.
+        let json = serde_json::json!({
+            "schema": FEEDBACK_SCHEMA,
+            "sermonPicks": serde_json::to_value(&before.sermon_picks).unwrap(),
+        });
+        assert!(json.get("trimAdjustments").is_none());
+
+        let after: RecordingFeedback = serde_json::from_value(json).unwrap();
+        assert_eq!(after.sermon_picks, before.sermon_picks);
+        assert!(after.trim_adjustments.is_empty());
+        assert!(after.companion_suggestions.is_empty());
+
+        // And the read → modify → write cycle the seam performs must carry the
+        // human's correction through, not drop it on the way past.
+        let mut carried = after;
+        record_trim_adjustment(&mut carried, deltas(30.0, 0.0), "0.10.0");
+        let round_tripped: RecordingFeedback =
+            serde_json::from_str(&serde_json::to_string(&carried).unwrap()).unwrap();
+        assert_eq!(round_tripped.sermon_picks, before.sermon_picks);
+        assert_eq!(round_tripped.trim_adjustments.len(), 1);
+    }
+
+    #[test]
+    fn a_file_with_all_three_collections_round_trips() {
+        let mut file = RecordingFeedback::default();
+        record_sermon_pick(&mut file, correction(Some(1), 3));
+        record_trim_adjustment(&mut file, deltas(30.0, -50.0), "0.10.0");
+        record_companion_suggestion(
+            &mut file,
+            CompanionSuggestionKind::Title,
+            CompanionSuggestionOutcome::Accepted,
+            true,
+            "0.10.0",
+        );
+        let back: RecordingFeedback =
+            serde_json::from_str(&serde_json::to_string(&file).unwrap()).unwrap();
+        assert_eq!(back, file);
+    }
+
+    // ── Trim adjustments ───────────────────────────────────────────────────────
+
+    fn deltas(start: f64, end: f64) -> TrimDeltas {
+        TrimDeltas {
+            start_delta_sec: start,
+            end_delta_sec: end,
+        }
+    }
+
+    #[test]
+    fn an_adjustment_records_the_deltas_and_the_build_that_proposed_the_trim() {
+        let mut file = RecordingFeedback::default();
+        assert_eq!(
+            record_trim_adjustment(&mut file, deltas(30.0, -50.0), "0.10.0"),
+            TrimOutcome::Recorded
+        );
+        assert_eq!(file.trim_adjustments.len(), 1);
+        // The sign convention survives the trip into the record intact — a
+        // start/end swap here would be invisible in every other assertion.
+        assert_eq!(file.trim_adjustments[0].deltas.start_delta_sec, 30.0);
+        assert_eq!(file.trim_adjustments[0].deltas.end_delta_sec, -50.0);
+        assert_eq!(file.trim_adjustments[0].app_version, "0.10.0");
+    }
+
+    #[test]
+    fn publishing_the_proposal_untouched_records_nothing() {
+        let mut file = RecordingFeedback::default();
+        assert_eq!(
+            record_trim_adjustment(&mut file, deltas(0.0, 0.0), "0.10.0"),
+            TrimOutcome::NotAnAdjustment
+        );
+        assert!(file.trim_adjustments.is_empty());
+        assert!(!TrimOutcome::NotAnAdjustment.changed());
+    }
+
+    #[test]
+    fn moving_the_boundaries_back_to_the_proposal_withdraws_the_adjustment() {
+        let mut file = RecordingFeedback::default();
+        record_trim_adjustment(&mut file, deltas(30.0, 0.0), "0.10.0");
+        assert_eq!(
+            record_trim_adjustment(&mut file, deltas(0.0, 0.0), "0.10.0"),
+            TrimOutcome::Withdrawn
+        );
+        assert!(
+            file.trim_adjustments.is_empty(),
+            "a boundary dragged back to the proposal must not keep claiming a correction"
+        );
+    }
+
+    #[test]
+    fn republishing_the_same_episode_leaves_one_adjustment_the_settled_one() {
+        let mut file = RecordingFeedback::default();
+        record_trim_adjustment(&mut file, deltas(30.0, 0.0), "0.10.0");
+        record_trim_adjustment(&mut file, deltas(45.0, 0.0), "0.10.0");
+        record_trim_adjustment(&mut file, deltas(40.0, -12.0), "0.10.0");
+        assert_eq!(file.trim_adjustments.len(), 1);
+        assert_eq!(file.trim_adjustments[0].deltas.start_delta_sec, 40.0);
+        assert_eq!(file.trim_adjustments[0].deltas.end_delta_sec, -12.0);
+    }
+
+    #[test]
+    fn an_adjustment_of_a_newer_builds_proposal_keeps_its_own_record() {
+        let mut file = RecordingFeedback::default();
+        record_trim_adjustment(&mut file, deltas(30.0, 0.0), "0.10.0");
+        // A later build may propose the boundaries differently, so this is a
+        // correction of something else, not a second thought about the first.
+        record_trim_adjustment(&mut file, deltas(5.0, 0.0), "0.11.0");
+        assert_eq!(file.trim_adjustments.len(), 2);
+    }
+
+    #[test]
+    fn the_trim_list_is_bounded_and_drops_the_oldest() {
+        let mut file = RecordingFeedback::default();
+        for i in 0..(MAX_TRIM_ADJUSTMENTS + 5) {
+            record_trim_adjustment(&mut file, deltas(i as f64 + 1.0, 0.0), &format!("0.{i}.0"));
+        }
+        assert_eq!(file.trim_adjustments.len(), MAX_TRIM_ADJUSTMENTS);
+        assert_eq!(
+            file.trim_adjustments.last().unwrap().deltas.start_delta_sec,
+            (MAX_TRIM_ADJUSTMENTS + 5) as f64
+        );
+    }
+
+    #[test]
+    fn the_adjustment_holds_no_absolute_time_and_no_text_but_a_version() {
+        let mut file = RecordingFeedback::default();
+        record_trim_adjustment(&mut file, deltas(30.0, -50.0), "0.10.0");
+        let json = serde_json::to_value(&file.trim_adjustments[0]).unwrap();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["appVersion", "deltas"],
+            "a field appeared on the trim record — is it a duration, or does it \
+             say WHEN? see SermonPickCorrection's doc comment"
+        );
+        assert_eq!(
+            json["deltas"],
+            serde_json::json!({ "startDeltaSec": 30.0, "endDeltaSec": -50.0 })
+        );
+    }
+
+    // ── Companion suggestions ──────────────────────────────────────────────────
+
+    fn companion(file: &mut RecordingFeedback, outcome: CompanionSuggestionOutcome, edited: bool) {
+        record_companion_suggestion(
+            file,
+            CompanionSuggestionKind::Title,
+            outcome,
+            edited,
+            "0.10.0",
+        );
+    }
+
+    #[test]
+    fn every_build_appends_its_own_outcome() {
+        let mut file = RecordingFeedback::default();
+        companion(&mut file, CompanionSuggestionOutcome::LeftAlone, false);
+        companion(&mut file, CompanionSuggestionOutcome::Accepted, false);
+        // Two builds, two different suggested titles, two true statements.
+        assert_eq!(file.companion_suggestions.len(), 2);
+        assert_eq!(
+            file.companion_suggestions[0].outcome,
+            CompanionSuggestionOutcome::LeftAlone
+        );
+        assert_eq!(
+            file.companion_suggestions[1].outcome,
+            CompanionSuggestionOutcome::Accepted
+        );
+    }
+
+    #[test]
+    fn an_edit_flag_only_survives_alongside_an_acceptance() {
+        let mut file = RecordingFeedback::default();
+        companion(&mut file, CompanionSuggestionOutcome::Accepted, true);
+        companion(&mut file, CompanionSuggestionOutcome::LeftAlone, true);
+        assert!(file.companion_suggestions[0].edited_after_accept);
+        assert!(
+            !file.companion_suggestions[1].edited_after_accept,
+            "\"left alone, then rewritten\" describes nothing that can happen"
+        );
+    }
+
+    #[test]
+    fn the_companion_list_is_bounded_and_drops_the_oldest() {
+        let mut file = RecordingFeedback::default();
+        for _ in 0..MAX_COMPANION_SUGGESTION_EVENTS {
+            companion(&mut file, CompanionSuggestionOutcome::LeftAlone, false);
+        }
+        companion(&mut file, CompanionSuggestionOutcome::Accepted, false);
+        assert_eq!(
+            file.companion_suggestions.len(),
+            MAX_COMPANION_SUGGESTION_EVENTS
+        );
+        assert_eq!(
+            file.companion_suggestions.last().unwrap().outcome,
+            CompanionSuggestionOutcome::Accepted,
+            "the newest decision is the one that must survive the cap"
+        );
+    }
+
+    #[test]
+    fn the_companion_record_is_categories_and_a_version_and_nothing_else() {
+        let mut file = RecordingFeedback::default();
+        record_companion_suggestion(
+            &mut file,
+            CompanionSuggestionKind::Chapters,
+            CompanionSuggestionOutcome::LeftAlone,
+            false,
+            "0.10.0",
+        );
+        let json = serde_json::to_value(&file.companion_suggestions[0]).unwrap();
+        let obj = json.as_object().unwrap();
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            vec!["appVersion", "editedAfterAccept", "kind", "outcome"],
+            "a field appeared on the companion record — the suggested text, the \
+             user's rewrite and the transcript must have nowhere to go"
+        );
+        // The wire vocabulary the renderer's tracker emits, verbatim.
+        assert_eq!(obj["kind"], "chapters");
+        assert_eq!(obj["outcome"], "left_alone");
+    }
+
+    // ── The file as a whole ────────────────────────────────────────────────────
+
+    #[test]
+    fn a_withdrawn_correction_does_not_empty_a_file_that_still_holds_the_others() {
+        let mut file = RecordingFeedback::default();
+        record_sermon_pick(&mut file, correction(Some(1), 3));
+        record_trim_adjustment(&mut file, deltas(30.0, 0.0), "0.10.0");
+        record_sermon_pick(&mut file, correction(Some(1), 1));
+
+        assert!(file.sermon_picks.is_empty());
+        assert!(
+            !file.is_empty(),
+            "the seam deletes an empty file — an adjustment the human never \
+             touched must not go with a withdrawn sermon pick"
+        );
+        assert!(RecordingFeedback::default().is_empty());
     }
 
     #[test]

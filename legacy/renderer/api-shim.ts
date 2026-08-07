@@ -1678,6 +1678,22 @@ const api: Record<string, unknown> = {
   // indices in a stored record mean nothing once detection has run again.
   editorSermonPick: async (fp: string, segments: unknown) =>
     call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
+  // E8 — what became of one AI-companion suggestion, into the same sidecar.
+  // Three scalars from closed vocabularies rather than the tracker's event
+  // object, so there is no argument the suggested text, the user's rewrite or
+  // the transcript could ride along in; the app version is stamped in the
+  // backend, never sent from here.
+  editorRecordCompanionSuggestion: async (
+    fp: string,
+    kind: string,
+    outcome: string,
+    editedAfterAccept: boolean,
+  ) =>
+    call(
+      "editor_record_companion_suggestion",
+      { mediaPath: fp, kind, outcome, editedAfterAccept },
+      false,
+    ),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).

@@ -34,14 +34,19 @@
 //! asserted in both directions below.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::prep::SuggestedTrim;
 
 /// How far the operator moved each boundary of the proposed sermon trim, in
 /// signed seconds. See the module docs for the sign convention.
 ///
-/// Serialised camelCase to match every other record the app persists.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Serialised camelCase to match every other record the app persists. It IS a
+/// stored shape — [`crate::feedback::TrimAdjustment`] embeds it whole rather
+/// than copying the two numbers out, so the sign convention above is stated in
+/// exactly one place and cannot be inverted by a second, well-meaning copy.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/TrimDeltas.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TrimDeltas {
     /// Seconds the settled start sits AFTER the proposed start (negative = before).

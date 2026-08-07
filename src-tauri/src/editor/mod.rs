@@ -739,12 +739,34 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
     }
 }
 
-// ── Sermon-pick feedback (E8) — pure decisions in core, fs here ──────────────
+// ── Learning feedback (E8) — pure decisions in core, fs here ────────────────
 //
 // Not feature-gated: a correction is a human's work, and it must persist in the
 // default build exactly as the meta/cuts sidecars do. The whole of "is this a
 // correction", "what does it replace", "which block does it mean now" lives in
 // `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
+//
+// Three callers now share that read-modify-write: the sermon dropdown, review's
+// publish, and the AI companion panel. They are independent — a companion batch
+// finalises three events at once while a publish is in flight — and a
+// read-modify-write of one file from two places at once loses whichever write
+// lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
+// all recordings rather than one per path: these writes are a few hundred bytes
+// each and happen at human speed, so a map of locks would be more machinery than
+// the contention justifies.
+
+/// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
+static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
+/// A panic in another writer says nothing about the FILE — the guard protects a
+/// read-modify-write, not an invariant that could be left half-applied (the
+/// write itself is a temp file plus a rename), and refusing every later
+/// correction because of one unrelated panic would be a worse failure than the
+/// one it reported.
+fn feedback_lock() -> std::sync::MutexGuard<'static, ()> {
+    FEEDBACK_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// What the renderer sends when the human overrides the sermon auto-pick.
 ///
@@ -795,15 +817,15 @@ fn to_feedback_segments(
 /// must not touch — corrupt, or written by a newer schema. Missing is `Ok` with
 /// an empty file, because "nobody has corrected this recording yet" is the
 /// normal case, not an error.
-fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::SermonFeedback, ()> {
-    use sundayrec_core::feedback::{SermonFeedback, FEEDBACK_SCHEMA};
+fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::RecordingFeedback, ()> {
+    use sundayrec_core::feedback::{RecordingFeedback, FEEDBACK_SCHEMA};
     let Some(path) = resolve_sidecar(media_path, EditorSidecar::Feedback) else {
         return Err(());
     };
     if !std::path::Path::new(&path).exists() {
-        return Ok(SermonFeedback::default());
+        return Ok(RecordingFeedback::default());
     }
-    match read_sidecar_typed::<SermonFeedback>(media_path, EditorSidecar::Feedback) {
+    match read_sidecar_typed::<RecordingFeedback>(media_path, EditorSidecar::Feedback) {
         Some(f) if f.schema == FEEDBACK_SCHEMA => Ok(f),
         // Deliberately NOT the "start fresh" treatment the other sidecars get.
         // Those are caches and drafts; this one holds corrections a person made
@@ -826,11 +848,30 @@ pub fn sermon_pick_index(media_path: &str, segments: &[EditorSegment]) -> Option
     sundayrec_core::feedback::resolve_sermon_pick(&file, &mapped).map(|i| i as u32)
 }
 
+/// Write a folded feedback record back beside its recording. Returns whether it
+/// persisted.
+///
+/// A record with nothing left in ANY of its collections is deleted rather than
+/// left as an empty assertion — and the emptiness question belongs to
+/// `RecordingFeedback::is_empty`, not to the collection the caller happened to
+/// touch: a withdrawn sermon pick on a recording whose trim was also adjusted
+/// must not take the adjustment with it.
+fn write_feedback(media_path: &str, file: &sundayrec_core::feedback::RecordingFeedback) -> bool {
+    if file.is_empty() {
+        return delete_sidecar(media_path, EditorSidecar::Feedback);
+    }
+    match serde_json::to_string_pretty(file) {
+        Ok(json) => write_sidecar_atomic(media_path, EditorSidecar::Feedback, &json),
+        Err(_) => false,
+    }
+}
+
 /// Fold one sermon-pick correction into the recording's feedback file. Returns
 /// whether anything was persisted — `false` covers both "that was not a
 /// correction" and "we refused to touch an unreadable file".
 pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -> bool {
     use sundayrec_core::feedback as core;
+    let _guard = feedback_lock();
     let Ok(mut file) = read_feedback(media_path) else {
         return false;
     };
@@ -853,15 +894,52 @@ pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -
     if !core::record_sermon_pick(&mut file, correction).changed() {
         return false;
     }
-    // A withdrawal that empties the list leaves nothing to say, so the file goes
-    // rather than sitting there as an empty assertion.
-    if file.sermon_picks.is_empty() {
-        return delete_sidecar(media_path, EditorSidecar::Feedback);
+    write_feedback(media_path, &file)
+}
+
+/// Fold one trim adjustment into the recording's feedback file.
+///
+/// `Some` carries the pure layer's verdict, including the two that write nothing
+/// (the operator published the proposal untouched, or moved the boundaries back
+/// onto it). `None` means we could not persist: an unreadable or newer-schema
+/// file we refuse to overwrite, or a failed write. The caller
+/// ([`crate::learning::record_trim_deltas`]) turns that into a log line — never
+/// into anything the operator sees.
+pub fn record_trim_adjustment(
+    media_path: &str,
+    deltas: sundayrec_core::trim_feedback::TrimDeltas,
+) -> Option<sundayrec_core::feedback::TrimOutcome> {
+    use sundayrec_core::feedback as core;
+    let _guard = feedback_lock();
+    let mut file = read_feedback(media_path).ok()?;
+    let outcome = core::record_trim_adjustment(&mut file, deltas, env!("CARGO_PKG_VERSION"));
+    if outcome.changed() && !write_feedback(media_path, &file) {
+        return None;
     }
-    match serde_json::to_string_pretty(&file) {
-        Ok(json) => write_sidecar_atomic(media_path, EditorSidecar::Feedback, &json),
-        Err(_) => false,
-    }
+    Some(outcome)
+}
+
+/// Append one companion-suggestion outcome to the recording's feedback file.
+/// Returns whether it persisted; `false` is an unreadable file we left alone or
+/// a failed write, and never reaches the panel.
+pub fn record_companion_suggestion(
+    media_path: &str,
+    kind: sundayrec_core::feedback::CompanionSuggestionKind,
+    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
+    edited_after_accept: bool,
+) -> bool {
+    let _guard = feedback_lock();
+    let Ok(mut file) = read_feedback(media_path) else {
+        return false;
+    };
+    sundayrec_core::feedback::record_companion_suggestion(
+        &mut file,
+        kind,
+        outcome,
+        edited_after_accept,
+        env!("CARGO_PKG_VERSION"),
+    );
+    write_feedback(media_path, &file)
 }
 
 /// Stat a media file and decide inline-vs-stream, mirroring `editor-read-file`.
@@ -3458,7 +3536,7 @@ mod tests {
         record_sermon_pick(&media, &pick_request(Some(1), 0));
         record_sermon_pick(&media, &pick_request(Some(1), 2));
         record_sermon_pick(&media, &pick_request(Some(1), 3));
-        let file: sundayrec_core::feedback::SermonFeedback =
+        let file: sundayrec_core::feedback::RecordingFeedback =
             read_sidecar_typed(&media, EditorSidecar::Feedback).expect("the record is there");
         assert_eq!(file.sermon_picks.len(), 1);
         assert_eq!(file.sermon_picks[0].chosen.index, 3);
@@ -3506,6 +3584,158 @@ mod tests {
             .filter(|n| sundayrec_core::editor::is_editor_temp_name(n))
             .collect();
         assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    // ── The two later signals into the same file (E8 integration) ─────────────
+
+    fn feedback_path(media: &str) -> std::path::PathBuf {
+        std::path::Path::new(media)
+            .parent()
+            .unwrap()
+            .join("service.feedback.json")
+    }
+
+    fn stored(media: &str) -> sundayrec_core::feedback::RecordingFeedback {
+        read_sidecar_typed(media, EditorSidecar::Feedback).expect("the record is there")
+    }
+
+    fn deltas(start: f64, end: f64) -> sundayrec_core::trim_feedback::TrimDeltas {
+        sundayrec_core::trim_feedback::TrimDeltas {
+            start_delta_sec: start,
+            end_delta_sec: end,
+        }
+    }
+
+    /// Rewrite the sidecar as the build that only knew about sermon picks left
+    /// it: the two later collections ABSENT, not empty.
+    fn strip_to_phase_a_shape(media: &str) {
+        let path = feedback_path(media);
+        let mut json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.remove("trimAdjustments");
+        obj.remove("companionSuggestions");
+        std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_trim_adjustment_lands_beside_the_recording() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media) = tmp_media();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(30.0, -50.0)),
+            Some(TrimOutcome::Recorded)
+        );
+        let file = stored(&media);
+        assert_eq!(file.trim_adjustments.len(), 1);
+        assert_eq!(file.trim_adjustments[0].deltas.start_delta_sec, 30.0);
+        assert_eq!(file.trim_adjustments[0].deltas.end_delta_sec, -50.0);
+    }
+
+    #[test]
+    fn publishing_the_proposal_untouched_creates_no_file() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media) = tmp_media();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(0.0, 0.0)),
+            Some(TrimOutcome::NotAnAdjustment)
+        );
+        assert!(!feedback_path(&media).exists());
+    }
+
+    /// The failure this guards is the one nobody would notice: an existing
+    /// correction is destroyed by the next write, on a file the seam happily
+    /// read but only half understood.
+    #[test]
+    fn a_file_written_before_the_later_signals_keeps_its_sermon_pick() {
+        let (_dir, media) = tmp_media();
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 3)));
+        strip_to_phase_a_shape(&media);
+
+        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
+        assert!(record_companion_suggestion(
+            &media,
+            sundayrec_core::feedback::CompanionSuggestionKind::Title,
+            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
+            false,
+        ));
+
+        let file = stored(&media);
+        assert_eq!(
+            file.sermon_picks.len(),
+            1,
+            "the human's correction was lost"
+        );
+        assert_eq!(file.sermon_picks[0].chosen.index, 3);
+        assert_eq!(file.trim_adjustments.len(), 1);
+        assert_eq!(file.companion_suggestions.len(), 1);
+        // And the reopen path still answers with the human's block.
+        assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
+    }
+
+    #[test]
+    fn a_withdrawn_sermon_pick_leaves_a_file_that_still_holds_a_trim() {
+        let (_dir, media) = tmp_media();
+        record_sermon_pick(&media, &pick_request(Some(1), 3));
+        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
+        // Back to the detector's block: the sermon-pick record goes, but the
+        // trim adjustment is a separate signal the operator never touched.
+        assert!(record_sermon_pick(&media, &pick_request(Some(1), 1)));
+
+        assert!(feedback_path(&media).exists(), "the file was deleted whole");
+        let file = stored(&media);
+        assert!(file.sermon_picks.is_empty());
+        assert_eq!(file.trim_adjustments.len(), 1);
+    }
+
+    #[test]
+    fn a_withdrawn_trim_adjustment_takes_an_otherwise_empty_file_with_it() {
+        use sundayrec_core::feedback::TrimOutcome;
+        let (_dir, media) = tmp_media();
+        record_trim_adjustment(&media, deltas(30.0, 0.0)).unwrap();
+        assert_eq!(
+            record_trim_adjustment(&media, deltas(0.0, 0.0)),
+            Some(TrimOutcome::Withdrawn)
+        );
+        assert!(
+            !feedback_path(&media).exists(),
+            "nothing left to say — no empty assertion left behind either"
+        );
+    }
+
+    #[test]
+    fn the_later_signals_also_refuse_a_file_they_cannot_read() {
+        let (_dir, media) = tmp_media();
+        let path = feedback_path(&media);
+        std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
+
+        assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
+        assert!(!record_companion_suggestion(
+            &media,
+            sundayrec_core::feedback::CompanionSuggestionKind::Title,
+            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
+            false,
+        ));
+        assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
+    }
+
+    #[test]
+    fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
+        use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
+        let (_dir, media) = tmp_media();
+        for kind in [K::Title, K::Description, K::Chapters] {
+            assert!(record_companion_suggestion(
+                &media,
+                kind,
+                CompanionSuggestionOutcome::LeftAlone,
+                false,
+            ));
+        }
+        assert_eq!(stored(&media).companion_suggestions.len(), 3);
+
+        let raw = std::fs::read_to_string(feedback_path(&media)).unwrap();
+        assert!(!raw.contains("service"), "the recording's name leaked");
+        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
     }
 
     #[test]

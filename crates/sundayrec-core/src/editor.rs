@@ -1417,10 +1417,11 @@ pub enum Sidecar {
     Peaks,
     /// `<base>.segments.json` — the content-detection cache (P3). Same deal.
     Segments,
-    /// `<base>.feedback.json` — what the human told us the detector got wrong
-    /// (E8). NOT derived data and NOT a cache: deleting it destroys a signal
-    /// that only exists because a person took the trouble to correct us once.
-    /// Shape: [`crate::feedback::SermonFeedback`].
+    /// `<base>.feedback.json` — what the human told us we got wrong: the sermon
+    /// pick, the proposed trim, and the companion's suggestions (E8). NOT
+    /// derived data and NOT a cache: deleting it destroys a signal that only
+    /// exists because a person took the trouble to correct us once.
+    /// Shape: [`crate::feedback::RecordingFeedback`].
     Feedback,
 }
 

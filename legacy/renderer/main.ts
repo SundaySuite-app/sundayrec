@@ -212,6 +212,15 @@ declare global {
       editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
+      /** Record what became of one companion suggestion (E8). Categories only —
+       *  the generated bindings are the vocabulary, so a kind or an outcome the
+       *  backend does not know fails to compile here rather than at runtime. */
+      editorRecordCompanionSuggestion: (
+        filePath: string,
+        kind: import('../bindings/CompanionSuggestionKind').CompanionSuggestionKind,
+        outcome: import('../bindings/CompanionSuggestionOutcome').CompanionSuggestionOutcome,
+        editedAfterAccept: boolean,
+      ) => Promise<boolean>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>

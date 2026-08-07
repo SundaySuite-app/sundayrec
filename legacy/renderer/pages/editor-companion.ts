@@ -32,7 +32,7 @@ import { renderChapterList, renderMetaPanel } from './editor/metadata'
 import { drawWaveform } from './editor/waveform'
 import {
   createCompanionFeedbackTracker,
-  companionFeedbackWriteStub,
+  type CompanionSuggestionEvent,
   type CompanionSuggestionKind,
 } from './editor/companion-feedback'
 
@@ -40,10 +40,30 @@ const $ = (id: string) => document.getElementById(id)
 
 let getTranscript: (() => TranscriptData | null) = () => null
 
-// WRITE SEAM: `companionFeedbackWriteStub` is a documented no-op — see its doc
-// comment in editor/companion-feedback.ts for exactly what replaces it and why
-// it isn't wired up in this phase.
-const companionFeedback = createCompanionFeedbackTracker({ write: companionFeedbackWriteStub })
+// The recording the CURRENT suggestion batch belongs to, captured when the
+// batch opens rather than read when an event is written.
+//
+// The two moments are not the same one. A batch is finalized at teardown, and
+// `clearCompanion()` runs from the transcript panel's re-render — which on a
+// file switch happens after `loadFile` has already pointed `E.filePath` at the
+// new recording. Reading it there would write the previous service's answers
+// into the next service's sidecar: the same hazard `cuts.ts` avoids by handing
+// the path to `draftSaver.schedule` up front, and the same fix.
+let batchFilePath: string | null = null
+
+// WRITE SEAM (E8): one IPC call per event, fire-and-forget. A learning signal
+// that fails to persist must never become an error in front of someone editing
+// a service — the shim already swallows the failure, and the `.catch` is the
+// second belt for a rejection that never reaches it.
+function writeCompanionFeedback(event: CompanionSuggestionEvent): void {
+  const fp = batchFilePath
+  if (!fp) return
+  void window.api
+    .editorRecordCompanionSuggestion(fp, event.kind, event.outcome, event.editedAfterAccept)
+    .catch(() => {})
+}
+
+const companionFeedback = createCompanionFeedbackTracker({ write: writeCompanionFeedback })
 
 /** Wire the companion section. `transcriptGetter` lets us read the panel's
  *  current transcript without coupling to its module internals. */
@@ -57,7 +77,10 @@ export function setupCompanionPanel(transcriptGetter: () => TranscriptData | nul
 export function clearCompanion(): void {
   const host = $('editor-companion-body')
   if (host) host.innerHTML = ''
+  // reset() writes the batch's remaining events, so it runs BEFORE the path
+  // they belong to is dropped.
   companionFeedback.reset()
+  batchFilePath = null
 }
 
 function fmtTime(sec: number): string {
@@ -99,7 +122,10 @@ function render(c: SermonCompanion): void {
   if (!host) return
   // A fresh result is now on screen — start a new suggestion batch, closing
   // out whatever the previous one (if any) left undecided as `left_alone`.
+  // The path is claimed AFTER that call, so the events it flushes are still
+  // filed under the recording their own batch was shown for.
   companionFeedback.shown()
+  batchFilePath = E.filePath
 
   const sourceBadge = c.summarySource === 'llm'
     ? `<span class="editor-companion-badge editor-companion-badge--ai" title="${escapeAttr(t('companion.sourceAiHint', 'Oppsummeringen er laget av en språkmodell på serveren'))}">${t('companion.sourceAi', 'AI-oppsummering')}</span>`

@@ -60,33 +60,29 @@ export interface CompanionSuggestionEvent {
 }
 
 /**
- * WRITE SEAM — stub.
+ * WRITE SEAM.
  *
- * `.feedback.json`, the sidecar this is meant to land in, is being built by a
- * parallel Etappe 8 stage, not this one (this phase is TypeScript-only and
- * does not touch Rust or create sidecars). Until that stage exists, events
- * are dropped on the floor on purpose: this module has to be usable, and
- * testable, on its own, without depending on work landing elsewhere at the
- * same time.
+ * Events go wherever the caller's `write` sends them; the real one is in
+ * `../editor-companion.ts`, which appends each event to the recording's
+ * `<stem>.feedback.json` through `editorRecordCompanionSuggestion`. It lives
+ * there, not here, for the reason this module exists at all: the tracker's
+ * state machine stays testable without a DOM, an `E`, or the IPC shim, and
+ * importing either of those to save one indirection would cost exactly that.
  *
- * To connect it: replace the function `../editor-companion.ts` passes as
- * `write` when it calls `createCompanionFeedbackTracker` (search that file
- * for `companionFeedbackWriteStub`) with one that appends `event` to the
- * CURRENT recording's Feedback sidecar — e.g. under a
- * `companionSuggestions: CompanionSuggestionEvent[]` field. Two things the
- * replacement needs to get right:
- *   - which recording: `event` deliberately carries no file path (see
- *     CompanionSuggestionEvent's doc comment), so the replacement must close
- *     over the current file path itself, the way `cuts.ts` binds
- *     `draftSaver`'s `save` to `window.api.editorSaveCutsDraft(fp, …)`.
- *   - never block the panel: mirror the fire-and-forget
- *     `.catch(() => {})` pattern `cuts.ts` uses for its own sidecar write —
- *     a failed feedback write must never surface as a companion error.
+ * Two things any `write` must get right, both of which the real one does:
+ *   - **which recording.** `event` deliberately carries no file path (see
+ *     CompanionSuggestionEvent's doc comment), so the writer must supply one.
+ *     It has to be the path the BATCH was shown for, captured when the batch
+ *     opened — the same discipline `cuts.ts` applies by handing `E.filePath`
+ *     to `draftSaver.schedule` up front rather than reading it when the timer
+ *     fires. `finalize()` runs at teardown, which on a file switch happens
+ *     after `E.filePath` already points at the new recording; a writer that
+ *     read it at that moment would file the previous service's answers under
+ *     the next one.
+ *   - **never block the panel.** Fire-and-forget with `.catch(() => {})`, the
+ *     way `cuts.ts` writes its own sidecar — a failed feedback write must
+ *     never surface as a companion error.
  */
-export const companionFeedbackWriteStub: (event: CompanionSuggestionEvent) => void = () => {
-  // Intentionally empty — see doc comment above.
-}
-
 export interface CompanionFeedbackTracker {
   /** Call when a fresh companion result is rendered. Finalizes whatever the
    *  PREVIOUS result left undecided (as `left_alone`) before tracking the
