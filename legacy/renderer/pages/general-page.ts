@@ -26,6 +26,11 @@ import {
   webhookUrlError,
 } from '../ui/webhook-url-core'
 import { applyParams, buildLearningSummaryView, type CopyLine } from './learning-summary-core'
+import {
+  AUTO_UPDATE_INTERVAL_MS,
+  autoUpdateEnabled,
+  planAutoUpdateSchedule,
+} from './auto-update-schedule-core'
 
 /** Every auto-applying System/Varsler control writes the same way. */
 function generalBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
@@ -102,7 +107,15 @@ export function setupGeneralPage(): void {
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
   bindSetting('opt-show-on-startup', generalBinding({ key: 'showOnStartup' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
-  bindSetting('opt-auto-update',     generalBinding({ key: 'autoUpdate' }))
+  // The only auto-applying control whose effect must not wait for the save to
+  // land. It is a promise to stop contacting a server, and PRIVACY.md makes
+  // that promise without conditions — an `after` hook runs only on a successful
+  // persist, so a failed write would leave the hourly check alive underneath a
+  // switch that reads «av».
+  bindSetting('opt-auto-update', generalBinding({
+    key: 'autoUpdate',
+    apply: () => { collectGeneralSettings(); applyAutoUpdateSchedule() },
+  }))
   // Moving TO beta asks first; moving back to stable never does. Beta is the
   // ring that finds what QA did not, which is another way of saying it is the
   // ring where a version breaks — and the machine reading this may be the one
@@ -209,6 +222,12 @@ export function setupGeneralPage(): void {
   // are disabled in the markup with an honest reason instead of wiring up a
   // guaranteed failure.
 
+  // DELIBERATELY ungated by `autoUpdate`, and PRIVACY.md says so out loud: «Det
+  // ene unntaket er om du selv trykker "Se etter oppdateringer nå", for da er
+  // det du som har bedt om det.» What the toggle switches off is the app
+  // contacting the server on its own; a press of this button is the operator
+  // asking the question, and refusing to answer it would be a different broken
+  // promise. Do not "fix" this by adding a gate.
   document.getElementById('btn-check-updates')?.addEventListener('click', async () => {
     setUpdateStatus('pending', t('update.checking', 'Sjekker etter oppdateringer…'))
     await window.api.checkForUpdates()
@@ -873,13 +892,46 @@ function wireUpdateIpcListeners(): void {
     console.warn('Update error:', msg)
   }))
 
-  // Auto-check on launch + hourly, mirroring the Electron app's updater (which
-  // checked on startup and every 60 min). Listeners above are registered first,
-  // so the synthesized update-* events reach the UI. Gated on the autoUpdate
-  // setting; the manual "Se etter oppdateringer" button always works.
-  if (settings.autoUpdate !== false) {
+  // The schedule is NOT armed here. `setupGeneralPage` runs before
+  // `loadSettings`, so `settings` is still `{}` at this point and the gate this
+  // block used to carry could only ever read "on" — an operator who had switched
+  // «Oppdater automatisk» off got a request to the update server on every launch
+  // regardless. Arming waits for `applyGeneralSettingsToUI`, which runs as soon
+  // as the persisted blob arrives; the listeners registered above are in place
+  // long before that, so the synthesized update-* events still reach the UI.
+}
+
+/**
+ * The hourly auto-check's interval, or null when nothing is scheduled. Lives at
+ * module scope because the timer outlives the call that armed it: the toggle
+ * has to be able to cancel a timer someone else started, which the old
+ * fire-and-forget `setInterval` made impossible.
+ */
+let autoUpdateTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * Make the update schedule match `settings.autoUpdate`, in both directions.
+ *
+ * PRIVACY.md: «Slår du den av, tar appen ikke kontakt med serveren — verken ved
+ * oppstart eller den vanlige sjekken hver time.» That promise is about the
+ * running app, not about the next launch, so this is called on every change of
+ * the setting rather than once at wire-up.
+ *
+ * Safe to call repeatedly: `planAutoUpdateSchedule` only reports transitions, so
+ * re-arming an already-armed schedule is a no-op instead of a second timer.
+ */
+function applyAutoUpdateSchedule(): void {
+  const action = planAutoUpdateSchedule(
+    autoUpdateTimer !== null,
+    autoUpdateEnabled(settings.autoUpdate),
+  )
+  if (action.stop && autoUpdateTimer !== null) {
+    clearInterval(autoUpdateTimer)
+    autoUpdateTimer = null
+  }
+  if (action.start) {
     void window.api.checkForUpdates()
-    setInterval(() => { void window.api.checkForUpdates() }, 60 * 60 * 1000)
+    autoUpdateTimer = setInterval(() => { void window.api.checkForUpdates() }, AUTO_UPDATE_INTERVAL_MS)
   }
 }
 
@@ -901,7 +953,11 @@ export function applyGeneralSettingsToUI(): void {
   // reads the OS; the setting follows it, not the other way round.
   void syncAutostartFromOs()
   setCheckbox('opt-show-on-startup',  !!settings.showOnStartup)
-  setCheckbox('opt-auto-update',      settings.autoUpdate !== false)
+  setCheckbox('opt-auto-update',      autoUpdateEnabled(settings.autoUpdate))
+  // The persisted answer has just landed — this is the first moment the gate can
+  // be evaluated against what the operator actually chose, and the only place
+  // that arms the schedule at startup.
+  applyAutoUpdateSchedule()
   setVal('opt-update-channel',        settings.updateChannel ?? 'stable')
   paintActiveUpdateChannel()
   setCheckbox('opt-ask-open-editor',  settings.askOpenEditor !== false)
