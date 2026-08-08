@@ -28,7 +28,13 @@ const USER_ROOTS: &[&str] = &["/Users/", "/home/", "\\Users\\"];
 /// What a user name is replaced with. Deliberately not empty: a reader should
 /// see that a name WAS there and was removed, rather than wonder about a
 /// malformed path.
-const USER_PLACEHOLDER: &str = "<user>";
+///
+/// Public because [`crate::telemetry`]'s path stripper has to know it: this
+/// placeholder is spliced INTO the middle of a path (`C:\Users\<user>\Opptak`),
+/// and it contains a `>`, which is otherwise a character that ends a path. The
+/// stripper treats this exact string as one atomic path segment so the tail of
+/// such a path is not left behind on the wire.
+pub const USER_PLACEHOLDER: &str = "<user>";
 
 /// Replace absolute user paths in `text` so it carries no operator identity.
 ///

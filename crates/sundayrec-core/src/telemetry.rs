@@ -87,7 +87,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::diagnostics::{DiagnosticFinding, DiagnosticSeverity};
-use crate::redact::{redact_secrets, scrub_paths};
+use crate::redact::{redact_secrets, scrub_paths, USER_PLACEHOLDER};
 use crate::selftest::{
     RecordingTelemetry, SelfTestReport, SelfTestVerdict, FAIL_DROPS, FAIL_GAP_SEC, FAIL_XRUNS,
     WARN_GAP_SEC,
@@ -536,51 +536,202 @@ pub fn sanitize_token(raw: &str) -> Option<String> {
 /// should see that something was removed rather than read a mangled sentence.
 pub const PATH_PLACEHOLDER: &str = "<path>";
 
-/// Whether a whitespace-delimited token names an ABSOLUTE location on someone's
-/// disk — `/Users/…`, `~/Opptak/…`, `C:\…`, a UNC share, or a
-/// [`scrub_paths`]-processed root.
+/// Characters that STRUCTURE a formatted message rather than name a file:
+/// quotes, brackets, the Debug/Display punctuation a `format!` puts around a
+/// value, and the list separators prose uses.
 ///
-/// RELATIVE paths deliberately do not match. `src/recorder/engine.rs:412:9` is
-/// this repository's own layout, identical on every machine, and it is the most
-/// useful thing a crash record carries; an absolute path is a statement about
-/// one person's disk.
-fn is_absolute_path_token(tok: &str) -> bool {
-    let t = tok.trim_start_matches(['(', '[', '«', '"', '\'', '`']);
-    let b = t.as_bytes();
-    t.starts_with('/')
-        || t.starts_with("~/")
-        || t.starts_with("~\\")
-        || t.starts_with("\\\\")
-        || (b.len() >= 3
-            && b[0].is_ascii_alphabetic()
-            && b[1] == b':'
-            && matches!(b[2], b'\\' | b'/'))
+/// They serve two jobs at once, which is why there is one set and not two:
+///
+///   - a path may START right after one (`Some("/Users/…`, `open(/Users/…`),
+///     which is exactly the case the old whitespace tokeniser missed; and
+///   - a path ENDS at one (`…x.wav")`, `…x.wav)`), so the closing punctuation
+///     and the rest of the sentence survive the replacement.
+///
+/// Everything NOT in here and not whitespace is treated as part of a path. A
+/// filename that does contain one of these loses the tail of its name to the
+/// next `<path>` rather than keeping it, which errs safe.
+///
+/// A SPACE is the exception, and it is a real gap rather than a tidy one — see
+/// [`strip_absolute_paths`].
+const PATH_DELIMITERS: &[char] = &[
+    '"', '\'', '`', '(', ')', '[', ']', '{', '}', '<', '>', '«', '»', ',', ';', '=', '|',
+];
+
+/// Whether `c` can sit INSIDE a path — i.e. neither whitespace nor structure.
+///
+/// `:` counts, which is deliberate and load-bearing twice over: it keeps
+/// `C:\Users\…` a single run, and it means the `/` in `https://host/x` is NOT
+/// preceded by a boundary, so a URL is left intact rather than mangled into
+/// `https:<path>`. A URL is a statement about a server, not about someone's
+/// disk, and it is worth keeping in a crash message.
+fn is_path_body(c: char) -> bool {
+    !c.is_whitespace() && !PATH_DELIMITERS.contains(&c)
 }
 
-/// Replace every absolute-path token in `text` with [`PATH_PLACEHOLDER`],
-/// preserving the whitespace between tokens so the sentence still reads.
-fn strip_absolute_paths(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut token = String::new();
-    let flush = |token: &mut String, out: &mut String| {
-        if !token.is_empty() {
-            if is_absolute_path_token(token) {
-                out.push_str(PATH_PLACEHOLDER);
-            } else {
-                out.push_str(token);
-            }
-            token.clear();
-        }
-    };
-    for ch in text.chars() {
-        if ch.is_whitespace() {
-            flush(&mut token, &mut out);
-            out.push(ch);
-        } else {
-            token.push(ch);
-        }
+/// Roots that name an absolute location ON THEIR OWN, matched anywhere in the
+/// text — no left boundary required.
+///
+/// These need no boundary because they cannot mean anything else: a `/Users/`
+/// in a message came from a filesystem. That covers the shapes where the
+/// character to the left is itself path-ish and so would suppress the anchored
+/// rule below — `path:/Users/kari/x`, `file:///Users/kari/x`.
+///
+/// Lowercase, and matched against a lowercased copy: `C:\USERS\Ola` comes back
+/// from Windows APIs in any casing, and macOS is case-insensitive too.
+const ABSOLUTE_ROOTS: &[&str] = &[
+    "/users/",
+    "/home/",
+    "/private/",
+    "/tmp/",
+    "/var/",
+    "/volumes/",
+    "/applications/",
+    "/library/",
+    "/opt/",
+    "/etc/",
+    "/usr/",
+    "/mnt/",
+    "/media/",
+    "/root/",
+    "/srv/",
+    "\\users\\",
+];
+
+/// Whether an absolute path begins at byte offset `i`.
+///
+/// `prev` is the character immediately to the left (`None` at the start of the
+/// text). `lower` is an ASCII-lowercased copy of `text`; lowercasing ASCII never
+/// changes a byte's length, so offsets into the two are interchangeable — the
+/// same trick [`scrub_paths`] already relies on.
+///
+/// Two tiers:
+///
+///   - the [`ABSOLUTE_ROOTS`] and `~/` — unmistakable, so they match anywhere;
+///   - a bare `/`, a UNC `\\`, a `X:\` drive — ambiguous, so they match only at
+///     a LEFT BOUNDARY, meaning the character to their left is not path-ish.
+///
+/// The boundary is what keeps RELATIVE paths intact. `src/recorder/engine.rs`
+/// is this repository's own layout, identical on every machine, and the most
+/// useful thing a crash location carries: its `/` sits after `c`, so no rule
+/// fires. An absolute path is a statement about one person's disk; a relative
+/// one is a statement about this source tree.
+fn path_starts_at(text: &str, lower: &str, i: usize, prev: Option<char>) -> bool {
+    let rest = &text[i..];
+    if ABSOLUTE_ROOTS.iter().any(|r| lower[i..].starts_with(r)) {
+        return true;
     }
-    flush(&mut token, &mut out);
+    if rest.starts_with("~/") || rest.starts_with("~\\") {
+        return true;
+    }
+    // Anchored shapes below this line.
+    if prev.is_some_and(is_path_body) {
+        return false;
+    }
+    let b = rest.as_bytes();
+    // `X:\` or `X:/` — a Windows drive. One letter only, which is why a URL
+    // scheme (`https:`) can never be mistaken for one.
+    if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'\\' | b'/') {
+        return true;
+    }
+    // `\\NAS\share` — a UNC share. Requires something after the two
+    // backslashes, so a lone `\\` in prose is not a path.
+    if let Some(after) = rest.strip_prefix("\\\\") {
+        return after
+            .chars()
+            .next()
+            .is_some_and(|c| c != '\\' && is_path_body(c));
+    }
+    // A bare POSIX root. Requires a following body character, so the `/` in
+    // "og / eller" stays a slash.
+    if let Some(after) = rest.strip_prefix('/') {
+        return after.chars().next().is_some_and(is_path_body);
+    }
+    false
+}
+
+/// Byte offset one past the end of the path run starting at `from`.
+///
+/// Runs to the first whitespace or [`PATH_DELIMITERS`] character — EXCEPT that
+/// a literal [`USER_PLACEHOLDER`] is swallowed whole. [`scrub_paths`] has
+/// already run by this point and may have spliced `<user>` into the middle of
+/// the path; without this the `>` would end the run and leave the rest of the
+/// path (`\Opptak`, the folder name we are here to remove) on the wire.
+fn path_run_end(text: &str, from: usize) -> usize {
+    let mut j = from;
+    while j < text.len() {
+        let rest = &text[j..];
+        if rest.starts_with(USER_PLACEHOLDER) {
+            j += USER_PLACEHOLDER.len();
+            continue;
+        }
+        let Some(c) = rest.chars().next().filter(|c| is_path_body(*c)) else {
+            break;
+        };
+        j += c.len_utf8();
+    }
+    j
+}
+
+/// Replace every absolute path in `text` with [`PATH_PLACEHOLDER`], whether it
+/// stands alone between spaces or sits EMBEDDED in a formatted value.
+///
+/// The embedded case is why this is not a whitespace tokeniser any more. A
+/// tokeniser sees `Some("/Users/kari/Opptak/gudstjeneste.wav")` as one token
+/// that starts with `S`, decides it is not a path, and lets the folder and the
+/// service name through — while [`scrub_paths`] running before it DOES reach
+/// inside, so the operator's name went and everything else stayed. That is the
+/// worst of both: the message still carried a path, so the endpoint's own
+/// validator rejected it with a 400 and the whole crash report was dropped.
+///
+/// Scans for path STARTS instead, so structure is not required to sit at a
+/// space. What survives is the structure around the path — `Some("<path>")`,
+/// `open(<path>)` — which is the part that says what the code was doing.
+///
+/// One residual, named honestly and NOT fixed here. A path is cut at the first
+/// whitespace, so a filename containing a space leaves its tail behind:
+///
+///   `kunne ikke åpne ~/Opptak/Gudstjeneste 9. november.wav`
+///     → `kunne ikke åpne <path> 9. november.wav`
+///
+/// That tail is a name someone typed. The generated `filenamePattern` names are
+/// date/time only, but `FilenameParams::custom_name` — a special recording's
+/// title — goes through `sanitize_filename`, which replaces the path-illegal
+/// characters and trims the ends but keeps INTERIOR spaces. So this is reachable
+/// in practice, not theoretical.
+///
+/// It is left alone deliberately, because every way to close it guesses. A path
+/// run cannot simply eat spaces: `kunne ikke åpne /tmp/x fordi disken er full`
+/// would swallow the whole Norwegian sentence, and losing the message loses the
+/// only thing that tells two crashes apart. Anything smarter (peek ahead for a
+/// token ending in an audio extension) is a heuristic in the one place that must
+/// be obviously correct. Closing it properly belongs where the name is, not
+/// where the text is: keep the operator's title out of the formatted string in
+/// the first place, or cap free text to the shapes that never carry one.
+///
+/// Idempotent: `<path>` holds no separator, drive or `~`, so a second pass
+/// finds no start inside it.
+fn strip_absolute_paths(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0usize;
+    let mut prev: Option<char> = None;
+    while i < text.len() {
+        if path_starts_at(text, &lower, i, prev) {
+            out.push_str(PATH_PLACEHOLDER);
+            i = path_run_end(text, i);
+            // The placeholder ends in `>`, a delimiter — so anything directly
+            // after it is at a boundary, as it would have been after the path.
+            prev = Some('>');
+            continue;
+        }
+        // `i` always sits on a character boundary: it is advanced either by a
+        // whole `char` here or to a run end, which is itself found by walking
+        // whole `char`s. Norwegian text is never cut mid-character.
+        let c = text[i..].chars().next().expect("i is a char boundary");
+        out.push(c);
+        prev = Some(c);
+        i += c.len_utf8();
+    }
     out
 }
 
@@ -599,7 +750,8 @@ fn strip_absolute_paths(text: &str) -> String {
 ///      which no longer names the OPERATOR but still names a folder and a
 ///      service. The local crash file wants that detail; the wire does not, and
 ///      the owner scope excludes file paths outright — so on the way out the
-///      whole token becomes `<path>`;
+///      whole path becomes `<path>`, embedded in a formatted value
+///      (`Some("<path>")`) just as much as standing alone;
 ///   4. a hard character cap (chars, not bytes — a Norwegian message must not be
 ///      cut mid-character).
 ///
@@ -1725,6 +1877,202 @@ mod tests {
         // Idempotent.
         let once = sanitize_free_text("/Users/kari/x token=abc", Some("/Users/kari"), 200);
         assert_eq!(sanitize_free_text(&once, Some("/Users/kari"), 200), once);
+    }
+
+    /// The messages this app can actually produce with a path in them, in the
+    /// shapes a `format!` puts one in. Used by both tests below.
+    ///
+    /// Every one of these is a REAL shape: `{:?}` on an `Option<PathBuf>`, a
+    /// newtype, a function call written into an error string, a config dump.
+    /// The home directory is `/Users/kari`, the folder is `Opptak`, the service
+    /// is `gudstjeneste.wav`.
+    const EMBEDDED_PATH_CASES: &[&str] = &[
+        // Standing alone between spaces — the case that always worked.
+        "kunne ikke åpne /Users/kari/Opptak/gudstjeneste.wav",
+        // Embedded — the case that did not. No whitespace before the path, so
+        // the old whitespace tokeniser never saw it as a path token, while
+        // `scrub_paths` DID reach inside and turned it into `~/Opptak/…`: the
+        // operator's name gone, the folder and the service name still there.
+        r#"kunne ikke åpne Some("/Users/kari/Opptak/gudstjeneste.wav")"#,
+        r#"AudioPath("/Users/kari/Opptak/x.wav") finnes ikke"#,
+        "open(/Users/kari/Opptak/x.wav) feilet",
+        r#"cfg{path:"/Users/kari/x"} er ugyldig"#,
+        // Windows and UNC, embedded the same way.
+        "sti <C:\\Users\\kari\\Opptak> mangler",
+        "listen(\\\\NAS\\opptak\\x.wav) feilet",
+        // A path reached by a route that leaves no boundary to its left.
+        "cfg path:/Users/kari/Opptak/x.wav mangler",
+        "file:///Users/kari/Opptak/x.wav gav 404",
+    ];
+
+    /// Every crash report [`EMBEDDED_PATH_CASES`] can produce, with a HOME and
+    /// without one (a service account, or a profile the app could not resolve —
+    /// the two take different branches through [`scrub_paths`]).
+    fn embedded_case_messages() -> Vec<(&'static str, Option<&'static str>, String)> {
+        let mut out = Vec::new();
+        for raw in EMBEDDED_PATH_CASES {
+            for home in [Some("/Users/kari"), None] {
+                let c = crash_report(
+                    "panic",
+                    1_800_000_000_000,
+                    "0.10.0",
+                    "macos",
+                    raw,
+                    Some(raw),
+                    Some(raw),
+                    false,
+                    home,
+                );
+                out.push((*raw, home, c.message));
+                out.push((*raw, home, c.location.expect("location was given")));
+                out.push((*raw, home, c.task.expect("task was given")));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn an_embedded_path_loses_every_component_not_just_the_user_name() {
+        // PRIVACY.md makes two promises about this field: that file paths from
+        // your machine are never sent, and that the name you gave a recording is
+        // never sent. `~/Opptak/gudstjeneste.wav` breaks both. Scrubbing the
+        // user name out of a path is NOT enough — the folder and the file name
+        // are the recording's identity.
+        //
+        // Fails on main: there the embedded cases come out as
+        // `Some("~/Opptak/gudstjeneste.wav")` and `<C:\Users\<user>\Opptak>`.
+        let needles = [
+            "Opptak",
+            "opptak",
+            "gudstjeneste",
+            "kari",
+            "Kari",
+            "NAS",
+            "x.wav",
+            "/Users",
+            "/users",
+            "\\Users",
+            "C:\\",
+            "C:/",
+            "~/",
+            "~\\",
+            "\\\\",
+            "/home/",
+        ];
+        for (raw, home, got) in embedded_case_messages() {
+            for needle in needles {
+                assert!(
+                    !got.contains(needle),
+                    "the path component {needle:?} survived.\n  in:   {raw}\n  home: {home:?}\n  out:  {got}"
+                );
+            }
+        }
+
+        // …and the SENTENCE survived, which is the whole point of sending a
+        // message at all: two crashes must still be distinguishable.
+        let shape = |raw: &str, home| {
+            crash_report(
+                "panic",
+                1_800_000_000_000,
+                "0.10.0",
+                "macos",
+                raw,
+                None,
+                None,
+                false,
+                home,
+            )
+            .message
+        };
+        assert_eq!(
+            shape(
+                r#"kunne ikke åpne Some("/Users/kari/Opptak/gudstjeneste.wav")"#,
+                Some("/Users/kari")
+            ),
+            r#"kunne ikke åpne Some("<path>")"#
+        );
+        assert_eq!(
+            shape("open(/Users/kari/Opptak/x.wav) feilet", Some("/Users/kari")),
+            "open(<path>) feilet"
+        );
+        assert_eq!(
+            shape(r#"AudioPath("/Users/kari/Opptak/x.wav") finnes ikke"#, None),
+            r#"AudioPath("<path>") finnes ikke"#
+        );
+        assert_eq!(
+            shape("listen(\\\\NAS\\opptak\\x.wav) feilet", None),
+            "listen(<path>) feilet"
+        );
+
+        // Idempotent on the embedded shapes too — running the scrubber on its
+        // own output must not change it further.
+        for (_, home, got) in embedded_case_messages() {
+            assert_eq!(
+                sanitize_free_text(&got, home, MESSAGE_MAX_CHARS),
+                got,
+                "not idempotent: {got}"
+            );
+        }
+    }
+
+    /// The endpoint's own rejection rule, MIRRORED.
+    ///
+    /// Copied verbatim (modulo Rust escaping) from `ABSOLUTE_PATH_RE` in
+    /// `sunday-telemetry/src/schema.ts`, where a string field that matches it is
+    /// rejected with `unscrubbed_path` — a 400, which this client drops without
+    /// retrying. **The two must be changed together.** If you loosen this
+    /// mirror, loosen the Worker; if you tighten the Worker, tighten this.
+    ///
+    /// This is the seam that had no test, which is why the bug survived: both
+    /// repos were internally consistent and disagreed at the boundary, so every
+    /// crash report naming a home-relative path vanished silently. Same shape as
+    /// the truncation defect fixed in `sunday-telemetry/test/truncation.test.ts`.
+    const WORKER_ABSOLUTE_PATH_RE: &str = r#"(^|[\s"'(<\[])(/(Users|home|var|tmp|private|Volumes)/|[A-Za-z]:[\\/]|\\\\[^\s\\]+\\|~[\\/])"#;
+
+    #[test]
+    fn scrubbed_free_text_is_accepted_by_the_endpoints_own_validator() {
+        let re = regex::Regex::new(WORKER_ABSOLUTE_PATH_RE).expect("the mirror must compile");
+
+        // The mirror is LIVE, not vacuous: it flags exactly what the client
+        // used to emit. If this block ever stops matching, the mirror has
+        // drifted from the Worker and the test below proves nothing.
+        for was_sent in [
+            r#"kunne ikke åpne Some("~/Opptak/gudstjeneste.wav")"#,
+            "open(~/Opptak/x.wav) feilet",
+            "sti <C:\\Users\\<user>\\Opptak> mangler",
+            "listen(\\\\NAS\\opptak\\x.wav) feilet",
+            "/Users/kari/x",
+        ] {
+            assert!(
+                re.is_match(was_sent),
+                "the mirror should reject {was_sent:?} — it is an unscrubbed path"
+            );
+        }
+
+        // Nothing the fixed client produces is rejected.
+        for (raw, home, got) in embedded_case_messages() {
+            assert!(
+                !re.is_match(&got),
+                "the endpoint would answer 400 unscrubbed_path and this client \
+                 would drop the report without retrying.\n  in:   {raw}\n  home: {home:?}\n  out:  {got}"
+            );
+        }
+
+        // Every string in a maximal payload, not only the free-text ones.
+        let json = serde_json::to_value(maximal_payload()).expect("serialise");
+        let mut strings = Vec::new();
+        all_strings(&json, &mut strings);
+        assert!(!strings.is_empty(), "the fixture must exercise strings");
+        for s in &strings {
+            assert!(!re.is_match(s), "the endpoint would reject the field {s:?}");
+        }
+
+        // And the thing the report is FOR still gets through: a source location
+        // inside this crate is identical on every machine and is not a path on
+        // anyone's disk.
+        let loc = sanitize_free_text("src/recorder/engine.rs:412:9", None, 200);
+        assert_eq!(loc, "src/recorder/engine.rs:412:9");
+        assert!(!re.is_match(&loc));
     }
 
     // ── The closed enums ─────────────────────────────────────────────────────
