@@ -22,10 +22,11 @@
 // special-case the wrappers at all — it strips comments, then asks whether the
 // command name appears ANYWHERE as a quoted string literal in the renderer
 // source. That is deliberately broader than "at an invoke/call/editorCall call
-// site": `legacy/renderer/api-shim.ts` is the only file in the tree that
-// imports `invoke`, so a string-literal hit anywhere in `legacy/`+`src/` (minus
-// generated bindings, locale JSON, and test files) is, in practice, always a
-// real call site.
+// site": only a couple of files import `invoke` at all, so a string-literal hit
+// anywhere in `legacy/`+`src/` (minus generated bindings, locale JSON, and test
+// files) is, in practice, always a real call site. Which files those are is not
+// assumed here — see `KNOWN_INVOKE_IMPORTERS` below, which fails this gate if
+// the set changes.
 //
 //   node scripts/check-command-reachability.mjs                  check against the baseline
 //   node scripts/check-command-reachability.mjs --write-baseline regenerate the baseline from the current tree
@@ -98,6 +99,58 @@ function collectSourceFiles() {
   };
   for (const r of SEARCH_ROOTS) walk(join(root, r));
   return files;
+}
+
+// ── 2b. The premise this whole measurement rests on ─────────────────────────
+//
+// A string-literal hit only implies "this command is called" because there is
+// no way into the backend EXCEPT the handful of files that import `invoke`. If
+// a third file starts calling the backend directly, a name could appear in one
+// of them without a matching call — or, worse, a command could be reached from
+// a file this script does not even scan.
+//
+// That premise used to be stated as fact in a comment above, and it was WRONG:
+// it named `api-shim.ts` as the only importer while `deeplinks.ts` had been
+// calling `deeplink_confirm_captions` directly since the day both landed. The
+// comment was copied into `docs/COMMAND_AUDIT_2026-08.md`, so the audit rested
+// on it too. Nothing noticed, because nothing checked.
+//
+// So it is checked now. This is a gate, not a note: if the set changes, the
+// measurement's justification has changed with it, and somebody has to re-read
+// the audit rather than trust a number computed under an assumption that no
+// longer holds.
+const KNOWN_INVOKE_IMPORTERS = [
+  // The shim every page goes through — `call()`/`editorCall()` wrap `invoke`.
+  "legacy/renderer/api-shim.ts",
+  // The deep-link confirmation path (E1.1) deliberately bypasses the shim: it
+  // is reached from a native event, not from a page, and its whole point is
+  // that the renderer confirms before anything is written.
+  "legacy/renderer/deeplinks.ts",
+];
+
+function checkInvokeImporters(files) {
+  const found = files
+    .filter((f) => readFileSync(f, "utf8").includes("@tauri-apps/api/core"))
+    .map((f) => relative(root, f))
+    .sort();
+  const expected = [...KNOWN_INVOKE_IMPORTERS].sort();
+  const added = found.filter((f) => !expected.includes(f));
+  const gone = expected.filter((f) => !found.includes(f));
+  if (added.length === 0 && gone.length === 0) return true;
+
+  console.error(
+    "✗ the set of files that reach the backend directly has changed",
+  );
+  if (added.length)
+    console.error(`  now also importing invoke: ${added.join(", ")}`);
+  if (gone.length)
+    console.error(`  no longer importing invoke: ${gone.join(", ")}`);
+  console.error(
+    "  A string-literal hit counts as 'reachable' only because these are the\n" +
+      "  only doors into the backend. Update KNOWN_INVOKE_IMPORTERS here AND\n" +
+      "  re-check docs/COMMAND_AUDIT_2026-08.md §1, which makes the same claim.",
+  );
+  return false;
 }
 
 // ── 3. Comment-stripping, string/template-literal aware ─────────────────────
@@ -183,6 +236,7 @@ function isReachable(name, source) {
 
 const commands = registeredCommands();
 const files = collectSourceFiles();
+const premiseHolds = checkInvokeImporters(files);
 const combined = files
   .map((f) => stripComments(readFileSync(f, "utf8")))
   .join("\n");
@@ -334,8 +388,8 @@ if (removed.length > 0) {
   );
 }
 
-if (!failed) {
+if (!failed && premiseHolds) {
   console.log("\n✓ no reachability regressions, no unclassified new commands");
 }
 
-process.exit(failed ? 1 : 0);
+process.exit(failed || !premiseHolds ? 1 : 0);
