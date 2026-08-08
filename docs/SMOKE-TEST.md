@@ -149,6 +149,11 @@ hatch.
      progress you see comes from the **native writer's byte counter** (not
      ffmpeg `size=` lines — those only appear in video /
      `classic_ffmpeg_audio` sessions).
+   - The renderer half of the start seam (modal → `plan_recording_opts` +
+     `start_recording` → overlay), and the refusal path where the engine says
+     no and the operator gets the localized reason with the modal still open:
+   - VERIFIED-BY: e2e/recorder.spec.ts::manual start flips the app into the recording overlay
+   - VERIFIED-BY: e2e/recorder.spec.ts::a start the engine refuses keeps the modal open and says why
 2. Let it run ~30 seconds, talking so the silence-watcher does **not** fire.
 3. Stop the recording.
    - **Expected:** a graceful stop — the engine raises the stop flag and does a
@@ -156,6 +161,9 @@ hatch.
      only appears at stop if a **delivery encode** (e.g. WAV → FLAC/AAC) runs.
      A **new history row** appears with a plausible **duration (~30 s)** and
      **file size (> 0)**.
+   - The renderer half of the stop seam (confirm guard → `stop_recording` once
+     → an explicit finalizing overlay that waits for a terminal engine event):
+   - VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
 4. Confirm the file exists on disk at the path shown.
 
 > [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device
@@ -185,6 +193,10 @@ surfaces in the diagnose report.
    - **Expected:** a **"Siste opptak (teknisk)"** section with `Dropp`, `xruns`,
      `IPC-overbelastning (tapte nivå-oppdateringer)` and `Avsluttet rent`, plus a
      newest-first **Trend** across recent recordings.
+   - The report content (section + SR-CAPTURE-01 rule) and the modal actually
+     showing the backend's markdown + audio rows:
+   - VERIFIED-BY: crates/sundayrec-core/src/diagnostics.rs::degraded_last_recording_warns_and_renders_section
+   - VERIFIED-BY: e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report
    - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
      type: **native audio** → `ring_overrun_samples 0` + the frame-count
      cross-check verdict exact; **video / ffmpeg** → `Dropp 0`, `xruns 0`.
@@ -222,6 +234,9 @@ surfaces in the diagnose report.
 1. On the new history row, add a note and save.
    - **Expected:** the note persists (it round-trips through `recording_update_note`
      into SQLite; relaunching the app shows it again).
+   - The renderer half (note modal → `recording_update_note` with the text →
+     the row wears the note); the SQLite relaunch round-trip stays a rig check:
+   - VERIFIED-BY: e2e/history.spec.ts::a note reaches the backend and shows on the row
 2. Use "reveal in folder" / open.
    - **Expected:** the OS file manager opens at the recording (via the `opener`
      plugin — capability `opener:allow-open-path` is granted).
@@ -238,9 +253,12 @@ search box wiring and the IPC sidecar-load behave on real data.
 2. In **History**, type into the search box.
    - **Expected:** the list filters live by filename, date, or note text
      (case-insensitive); the stats line ("N opptak · Xt Ym totalt · sist …")
-     stays computed over the **full** history, not the filtered subset (Electron
-     `home.ts` parity). A query that matches nothing shows a no-hits message
-     (`search.noHits`), distinct from the genuinely-empty state.
+     describes the **filtered view** — the same rows as the table (a deliberate
+     departure from the Electron `home.ts` behaviour: `runSearch` renders and
+     counts one set, so the two can never disagree). A query that matches
+     nothing shows a no-hits message (`search.noHits`), distinct from the
+     genuinely-empty state.
+   - VERIFIED-BY: e2e/history.spec.ts::the search box filters live, and a miss says so in its own words
 3. If you also ran §10b (Whisper), open the transcript search surface and search
    for a word you spoke.
    - **Expected:** hits group by recording, newest-first, each with a ~60-char
@@ -304,10 +322,22 @@ wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
 `--no-default-features` build.) The SMTP password is never persisted — it travels
 with the request and is dropped.
 
-1. **Test message** via the Gmail path (Gmail OAuth connected). Pick "Gmail",
-   enter a recipient, **Send testvarsel**.
-   - **Expected:** a "✓ SundayRec — email works" message arrives; the raw
-     message was base64url-encoded and POSTed to `gmail.googleapis.com`.
+The card's gate + block-reason logic and the send dispatch (transport picked
+from the configured settings, recipient + language on the request):
+
+- VERIFIED-BY: e2e/system-support.spec.ts::a build without the email feature gates the card and says so
+- VERIFIED-BY: e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated
+- VERIFIED-BY: e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport
+
+1. **Test message** via the Gmail path. ⚠️ Currently unreachable from the UI:
+   `btn-email-gmail-connect` is disabled in the markup («Google-innlogging er
+   ikke tilgjengelig i denne versjonen» — the Gmail OAuth path needs a
+   `cloud_connect` client id this build does not ship). The Gmail transport in
+   `email_send_test` still exists for an install with a Gmail token; until the
+   connect button is live, test the SMTP path below instead.
+   - **Expected (once connectable):** a "✓ SundayRec — email works" message
+     arrives; the raw message was base64url-encoded and POSTed to
+     `gmail.googleapis.com`.
 2. **Error alert throttle.** Trigger two identical recording errors within
    10 minutes.
    - **Expected:** only the first mails; the second is suppressed by the core
@@ -377,24 +407,24 @@ cargo build -p sundayrec --features publish
      to Drive, made public, and the feed URL is cached for the UI to show
      ("submit this URL to Spotify/Apple").
 
-The **Publisering** panel (R6) drives this: `publish_feed_status` (every build)
-reports the candidate episode count + whether `--features publish` is compiled
-in; **Forhåndsvis feed** renders the feed XML in memory from the recording
-history + the channel metadata from settings (`publish_feed_preview`, pure
-shaping — every build); **Generer feed nå** (`publish_generate_feed`) writes
-`<saveFolder>/podcast.xml` behind the feature (NETWORK-UNVERIFIED; the Drive
-upload + share-URL glue is still deferred — see docs/NEEDS-RICHARD.md PU-3).
+⚠️ **The panel this section used to describe does not exist.** (2026-08-08
+burndown.) There is no **Forhåndsvis feed** control anywhere in the renderer,
+and `publish_feed_status` / `publish_feed_preview` / `publish_generate_feed`
+are registered but reachable from **no** UI path
+(`scripts/command-reachability-baseline.json` lists all three as unreachable).
+The actual podcast surface is the **Opptak/Filer** tab's podcast card, whose
+**Generer feed nå** (`btn-podcast-regenerate`, files-page.ts) calls
+`window.api.podcastRegenerate(service)` — and that shim method is a permanent
+stub (`async () => ({ ok: false })`, api-shim.ts), so today the button always
+ends in «✕ ukjent feil» no matter the build. Until either the shim is wired to
+the `publish_*` commands or the card is gated honestly, there is nothing here a
+rig can verify beyond that stub answer. The XML shaping itself stays
+unit-tested in `sundayrec-core::feed`.
 
-```bash
-npm run tauri dev -- --features publish   # drive the Publisering disclosure
-```
-
-2. (default build) Open **Publisering**, click **Generer feed nå**.
-   - **Expected:** a calm "ikke bygd inn i denne versjonen" hint (GUI-UNVERIFIED).
-     **Forhåndsvis feed** still renders the XML.
-3. (`--features publish`, with a save folder set) **Generer feed nå**.
-   - **Expected:** `podcast.xml` appears in the save folder and its path is shown.
-     Without a save folder a `no_config` hint is shown.
+2. (any build) Open the podcast card, click **Generer feed nå**.
+   - **Expected (today):** «✕ ukjent feil» — the stubbed shim answer. If this
+     ever succeeds, the wiring has been built; rewrite this section and give
+     the flow real steps.
 
 > [NET] File/HTTP publish is NETWORK-UNVERIFIED — only the XML shaping is tested;
 > the per-recording share URLs aren't persisted yet so the preview uses the local
@@ -485,21 +515,16 @@ cargo build -p sundayrec --features bridge
      effect + seq; a `feature_disabled` error means the build lacks `--features
 bridge`.
 
-The **Integrasjoner** panel (R6) drives this: it lists the Sunday-suite peer
-apps, persists the shared connection (churchId / serviceId / Song + Plan API
-URLs) to the `integrations` settings key, and resolves the Realtime channel name
-via `live_bridge_channel` (pure — every build). `live_bridge_status` reports
-whether the native subscribe is compiled in; in the default build the panel
-shows a calm "den innebygde live-broen er ikke bygd inn" hint (GUI-UNVERIFIED).
-
-```bash
-npm run tauri dev -- --features bridge   # drive the Integrasjoner disclosure
-```
-
-3. (any build) Open **Integrasjoner**, fill churchId + serviceId, **Vis
-   kanalnavn**.
-   - **Expected:** `church:<id>:service:<id>` is shown; blank ids show a hint.
-     The amber "native bridge off" banner is present only in the default build.
+⚠️ **The UI this section used to describe does not exist.** (2026-08-08
+burndown.) Today's **Sunday-suite/Avansert** panel (integrations-page.ts) has
+opt-in toggles, a churchId + two API-URL fields and API-key rows — no serviceId
+field, no **Vis kanalnavn** button, no native-bridge banner, and it never calls
+`live_bridge_channel` / `live_bridge_status`: all three `live_bridge_*`
+commands are registered but reachable from no UI path
+(`scripts/command-reachability-baseline.json`). The channel-name derivation and
+the event fold stay unit-tested in
+`sundayrec-core::integrations::live_bridge`; exercising the commands
+themselves is an IPC-harness job, not a rig step, until a UI exists.
 
 > [INFRA] The Realtime handshake + broadcast decode need a live Supabase project
 >
@@ -583,13 +608,18 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
 2. Click **Finn segmenter** and **Mål lydstyrke**.
    - **Expected:** segments list with one **Preken** (sermon) block highlighted
      gold; a loudness reading like `-23.4 LUFS → -16`.
-3. Click **Legg til kutt** one or more times, nudge the start/end (seconds)
-   inputs, and remove one with **✕**.
+3. Mark a cut or two — **click-and-drag on the waveform** («Klikk og dra for å
+   markere et kutt»), or let **Marker preken automatisk** place them. (The old
+   «Legg til kutt» button and its start/end seconds inputs were removed in the
+   v0.9 editor overhaul — drag is the cut gesture now.) Remove one with **✕**.
    - **Expected:** red cut bands overlay the waveform at the marked spots
-     (// GUI-UNVERIFIED); region rows show `m:ss–m:ss`; removed rows disappear.
+     (the canvas paint itself is still // GUI-UNVERIFIED); region rows show
+     `m:ss–m:ss`; removed rows disappear.
+   - VERIFIED-BY: e2e/editor.spec.ts::a cut row shows its range and the ✕ really removes it
 4. Open **Eksporter** WITHOUT picking a destination, choose a format + a
-   mastering target (**Ingen / Podkast −16 / Strømming −14 / Naturlig /
-   Musikk + tale**), and export.
+   mastering target (**Ingen / Tale — naturlig −19 / Tale — tydelig −16 /
+   Tale — kraftig −14 / Musikk + tale −16** — the preset list was renamed from
+   the old Podkast/Strømming set), and export.
    - **Expected:** the destination pill reads "Samme mappe" and a
      `*_redigert.<fmt>` file lands next to the source (no "path must be
      absolute"). The progress bar moves for real — with a mastering target it
@@ -597,6 +627,9 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      marked regions are gone and the loudness is on target.
    - With a mastering target the level row must say **"Volum styres av
      mastring"** rather than promising a normalize gain the export skips.
+   - The modal's two honesty claims (default destination pill «Samme mappe» +
+     the mastering-owns-the-volume level row):
+   - VERIFIED-BY: e2e/editor.spec.ts::the export modal is honest about destination and level
      4b. **Cancel a long export** mid-render. — **Expected:** it stops within a
      second or two and the result row says "Eksport avbrutt" — not a frozen bar.
      4c. **Video file:** open an mp4, keep "Behold video", export.
@@ -609,10 +642,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      anyway — a failed hardware render must never cost the user the export.
 5. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
-   - **Expected:** a **"Fant lagrede kutt fra forrige økt (N)"** banner appears
-     (read from `<base>.cuts-draft.json` written next to the recording by the
-     autosave); **Gjenopprett** brings the cut rows back. After a successful
-     **Eksporter** the draft is deleted, so a later reopen offers nothing.
+   - **Expected:** the cut rows are back — restored **silently** from the
+     cuts-draft sidecar the autosave writes every 2 s (with a 7-day freshness
+     guard; the old «Fant lagrede kutt fra forrige økt»-banner + Gjenopprett
+     button were dropped — the restore is automatic now, see
+     editor/loader.ts). After a successful **Eksporter** the draft is deleted,
+     so a later reopen restores nothing.
+   - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
 6. **P1 mastering A/B preview:** with a mastering target chosen, click
    **Forhåndsvis mastering (15 s)**.
    - **Expected:** an `<audio>` control appears playing a temp
@@ -666,6 +702,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      akkurat nå» while they are on screen. With diagnostics OFF, do the same
      edits and confirm both collections stay empty: nothing is accumulated for
      someone who has not opted in, not even in memory.
+   - The preview surface's half of this (both collections rendered, the caption
+     honest while they are on screen) — the accumulation gating stays
+     backend-verified:
+   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying corrections + companion outcomes shows them, not «ingenting å sende»
+   - The consent question itself (the one-time card, and a decline recorded as
+     a real answer so nothing is ever collected without an explicit yes):
+   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
 
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they
@@ -674,11 +717,12 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
 > HARDWARE-UNVERIFIED.
 
 > [HW] The ffprobe/decode/measure/render runs only execute against real media —
-> never in the gate. Only the core argv-building,
-> filter-graph, loudnorm parse, and VAD/sermon decisions are unit-tested in Rust
-> core; the renderer's peaks→SVG mapping and load→peaks→regions→export data flow
-> have no JS unit-test harness on this branch. The waveform/cut-band paint is
-> // GUI-UNVERIFIED.
+> never in the gate. The core argv-building, filter-graph, loudnorm parse, and
+> VAD/sermon decisions are unit-tested in Rust core, and the renderer's
+> load→peaks→regions→export data flow is covered by the browser tier
+> (e2e/editor.spec.ts — the "no JS unit-test harness on this branch" note that
+> used to sit here predates E5.2). The waveform/cut-band canvas paint itself is
+> still // GUI-UNVERIFIED.
 > A `--no-default-features` build returns `feature_disabled` for every editor
 > command and the panel shows a calm hint; the default build does not.
 
@@ -766,6 +810,8 @@ npm run tauri dev
   server-side at 512 KB regardless of what the UI asks for) and copies it to
   the clipboard, with a toast confirming the copy (or that the log is still
   empty).
+  - VERIFIED-BY: e2e/system-support.spec.ts::«Kopier siste logg» puts the tail on the clipboard and confirms
+  - VERIFIED-BY: e2e/system-support.spec.ts::an empty log is called out instead of copying nothing
 - **Expected:** the file is plain text, newest lines at the bottom; secrets
   (stream keys, SMTP passwords, OAuth tokens) are redacted on the writer
   thread before a line ever reaches disk — confirm none show up if you have
@@ -929,6 +975,10 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
    sections.
    - **Expected:** every field round-trips through `settings_save` (debounced)
      into SQLite and survives a relaunch; the port clamps to 1..=65535.
+   - The church-profile round-trip (debounced save → storage → reload) and the
+     port clamp:
+   - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
+   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port
 
 ---
 
@@ -1013,6 +1063,16 @@ idempotency key, plan metadata/schedule, sundayedit deep link + SRT/VTT parse,
 sidecar paths) are unit-tested in `sundayrec-core::integrations`; the HTTP
 submissions + the `sundayedit://` launch reuse the always-present `reqwest`/opener
 (no new dep, no feature) and are **NETWORK-UNVERIFIED**.
+
+⚠️ **Seam gap found in the 2026-08-08 burndown:** every one of these commands
+is registered but reachable from **no** UI path — the Sunday-suite panel's
+`window.api` methods are permanent stubs in api-shim.ts
+(`getIntegrationSettings: async () => ({ enabled: false })`,
+`setIntegrationSettings`, `songSetApiKey: async () => true`, …), so the panel's
+toggles show «Lagret ✓» while persisting **nothing**, and its API-key save
+never reaches the keychain. The steps below can therefore only be exercised
+through the IPC harness today; do not read the panel's receipts as proof of
+anything until the shim is wired.
 
 1. `integrations_get_settings` / `integrations_set_settings` round-trip the
    opt-in blob under the `integrations` kv key.
