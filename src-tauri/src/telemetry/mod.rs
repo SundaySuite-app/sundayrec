@@ -384,13 +384,18 @@ pub async fn queue_status(pool: &SqlitePool) -> AppResult<TelemetryQueueStatus> 
 /// Everything telemetry does at startup, in order.
 ///
 /// Called once from `setup`, after the pool is managed. With consent off it
-/// reads one settings row and returns — no ring is scanned, no id is minted, no
-/// task is spawned.
+/// reads one settings row and returns — no ring is scanned, no id is minted,
+/// nothing is collected.
 pub async fn startup(app: &AppHandle, pool: &SqlitePool) {
     if !consent_active(pool).await {
         // Leave the counter mirror at its `false` default: with consent off no
         // seam accumulates anything, not even in memory.
         tracing::debug!("telemetry: consent is not active — nothing is collected");
+        // …with ONE exception, and it is the user's own request rather than
+        // ours: a "delete my data" that was parked before the app was last
+        // closed. `maybe_spawn` starts nothing unless one is actually waiting —
+        // see `sender::should_run`.
+        sender::maybe_spawn(app, pool).await;
         return;
     }
     counters::set_active(true);

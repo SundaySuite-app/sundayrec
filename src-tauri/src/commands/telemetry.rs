@@ -84,9 +84,23 @@ pub async fn telemetry_consent_set(
 ///
 /// Returns nothing: the new id is an internal detail, and handing it to the
 /// renderer would make it available to anything running there.
+///
+/// The `maybe_spawn` at the end is what makes «så snart maskinen har nett»
+/// true in THIS session rather than only after the next launch. With consent
+/// off there is no sender loop running — that is the whole point of the consent
+/// gate — so without this call the parked id would wait for a restart before
+/// anything even looked at it. `maybe_spawn` is idempotent and now starts for an
+/// owed deletion as well as for active consent (`sender::should_run`), so this
+/// costs nothing when a loop is already running and starts one when the user has
+/// asked for something that needs the network.
 #[tauri::command]
-pub async fn telemetry_regenerate_install_id(db: State<'_, Db>) -> AppResult<()> {
-    telemetry::regenerate_install_id(&db.pool).await.map(|_| ())
+pub async fn telemetry_regenerate_install_id(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+) -> AppResult<()> {
+    telemetry::regenerate_install_id(&db.pool).await?;
+    telemetry::sender::maybe_spawn(&app, &db.pool).await;
+    Ok(())
 }
 
 /// Increment a named feature counter from a renderer-side seam.

@@ -191,12 +191,43 @@ pub const PUMP_INTERVAL: Duration = Duration::from_secs(60);
 /// toggling consent off and on three times would be sending from four loops.
 static SENDER_STARTED: AtomicBool = AtomicBool::new(false);
 
+/// Whether the sender loop has any work at all — the gate [`maybe_spawn`]
+/// consults before it builds anything.
+///
+/// TWO reasons, not one, and the second is the whole point of this function
+/// existing rather than the expression being inlined:
+///
+///   1. **consent is active** — there may be reports to deliver. [`pump_once`]
+///      re-checks this on every beat, so a revoke mid-session stops the sending
+///      without the loop having to be torn down.
+///   2. **a deletion is parked** — the user pressed «Slett mine data» and the
+///      remote `DELETE` has not been carried out yet. [`drain_deletions`]
+///      explains at length why a deletion is deliberately NOT behind the consent
+///      gate, and this is the other half of that argument: gating the LOOP on
+///      consent made the ungated deletion unreachable in exactly the case it was
+///      written for. Revoke, restart, then press «Slett mine data» and the id was
+///      parked in a list nothing would ever read — PRIVACY.md promises «Den blir
+///      ikke glemt», and before this it was, silently and permanently.
+///
+/// An install that has never consented has never minted an install id, so it can
+/// never have a parked deletion either: the "no telemetry machinery at all"
+/// property this gate was protecting is unchanged.
+pub(super) async fn should_run(pool: &SqlitePool) -> bool {
+    if super::consent_active(pool).await {
+        return true;
+    }
+    !super::pending_deletions(pool)
+        .await
+        .unwrap_or_default()
+        .is_empty()
+}
+
 /// Spawn the sender loop, if there is anything to spawn.
 ///
 /// Returns whether a task was started. Two conditions, in this order:
 ///
-///   1. **consent is active** — checked FIRST, before an endpoint is resolved or
-///      a client is constructed, so with consent off there is no task, no
+///   1. **[`should_run`]** — checked FIRST, before an endpoint is resolved or a
+///      client is constructed, so an install with nothing to do has no task, no
 ///      connection pool and nothing that could resolve a hostname;
 ///   2. **this build has an endpoint** — [`TelemetryEndpoint::resolve`] returns
 ///      `None` when the URL or the key is missing, and then there is still no
@@ -226,17 +257,17 @@ pub async fn maybe_spawn(app: &AppHandle, pool: &SqlitePool) -> bool {
     if SENDER_STARTED.load(Ordering::SeqCst) {
         return false;
     }
-    if !super::consent_active(pool).await {
+    if !should_run(pool).await {
         tracing::debug!(
-            "telemetry: consent is not active — no sender task is spawned, so there is \
-             nothing that could reach the network"
+            "telemetry: consent is not active and no deletion is owed — no sender task is \
+             spawned, so there is nothing that could reach the network"
         );
         return false;
     }
 
     let Some(endpoint) = TelemetryEndpoint::resolve() else {
         tracing::info!(
-            "telemetry: consent is active but this build has no endpoint configured \
+            "telemetry: the sender has work to do but this build has no endpoint configured \
              ({}/{} unset) — reports are queued locally and nothing is sent",
             super::config::BASE_URL_VAR,
             super::config::WRITE_KEY_VAR,
@@ -500,9 +531,49 @@ mod tests {
     }
 
     /// `maybe_spawn` without an `AppHandle` (which a unit test cannot build):
-    /// the consent branch is the part under test, and it is the same expression.
+    /// the gate is the part under test, and it is the same expression.
     async fn maybe_spawn_probe(pool: &SqlitePool) -> bool {
-        crate::telemetry::consent_active(pool).await
+        super::should_run(pool).await
+    }
+
+    #[tokio::test]
+    async fn a_parked_deletion_starts_the_loop_even_with_consent_off() {
+        // The pair of actions the deletion promise is written for: stop
+        // contributing, AND remove what was already contributed. Before
+        // `should_run` looked at the deletion list, a revoke followed by a
+        // restart meant no loop was ever spawned, so the parked id sat in
+        // `telemetry.pendingDeletions` forever — PRIVACY.md says «Den blir ikke
+        // glemt», and it was.
+        let (pool, _d, _g) = temp_pool().await;
+        consent_set(&pool, true).await.unwrap();
+        crate::telemetry::regenerate_install_id(&pool)
+            .await
+            .unwrap();
+        consent_set(&pool, false).await.unwrap();
+
+        assert!(
+            !crate::telemetry::pending_deletions(&pool)
+                .await
+                .unwrap()
+                .is_empty(),
+            "revoking consent must not drop a deletion the user already asked for"
+        );
+        assert!(
+            maybe_spawn_probe(&pool).await,
+            "an owed deletion is work, even though nothing may be SENT"
+        );
+
+        // …and once it has been carried out, the reason to run is gone again.
+        let owed = crate::telemetry::pending_deletions(&pool).await.unwrap();
+        for id in &owed {
+            crate::telemetry::clear_pending_deletion(&pool, id)
+                .await
+                .unwrap();
+        }
+        assert!(
+            !maybe_spawn_probe(&pool).await,
+            "with consent off and nothing owed there is no task at all"
+        );
     }
 
     #[tokio::test]
