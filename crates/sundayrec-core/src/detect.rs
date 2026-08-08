@@ -93,8 +93,26 @@ pub struct PrepAnalysisSegment {
     #[serde(rename = "type")]
     pub kind: SegmentType,
     pub confidence: f64,
+    /// Mean frame RMS in dBFS, or `f64::NEG_INFINITY` for a block with no finite
+    /// frame RMS at all — see [`crate::audio_analysis`]'s `close`, which returns
+    /// exactly that for digital silence.
+    ///
+    /// JSON has no `-Infinity`, so `serde_json` writes any non-finite float as
+    /// `null` — and a plain `f64` field REFUSES to read `null` back. That is a
+    /// lossy round-trip through every store this segment is persisted in, and
+    /// the review queue is one of them: a single silent block made the whole
+    /// queue blob unparseable, which `load_queue` then read as "no queue".
+    /// `null` therefore has to mean here what it meant when it was written.
+    #[serde(deserialize_with = "de_rms_db")]
     pub avg_rms_db: f64,
     pub label: String,
+}
+
+/// Read [`PrepAnalysisSegment::avg_rms_db`], accepting the `null` that
+/// `serde_json` writes for a non-finite float and restoring the value it stood
+/// for. A number is taken as it is.
+fn de_rms_db<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::NEG_INFINITY))
 }
 
 /// The classifier's own segment type and this module's are two distinct enums
@@ -1030,5 +1048,29 @@ mod tests {
         let swapped = analyse_pcm(&pcm, SAMPLE_RATE, FRAME_MS, &AllSpeech);
         let s = swapped.sermon.expect("all-speech scorer yields a sermon");
         assert!((s.confidence - 0.99).abs() < 1e-9);
+    }
+
+    /// `avg_rms_db` is deliberately `-inf` for digital silence, and JSON has no
+    /// way to spell that — `serde_json` writes `null`. Every store this segment
+    /// is persisted in therefore has to be able to read `null` back, or the
+    /// round-trip is lossy and whatever wrapped it becomes unparseable.
+    #[test]
+    fn a_silent_segments_rms_survives_a_json_round_trip() {
+        let seg = PrepAnalysisSegment {
+            start_sec: 0.0,
+            end_sec: 30.0,
+            duration_sec: 30.0,
+            kind: SegmentType::Silence,
+            confidence: 0.9,
+            avg_rms_db: f64::NEG_INFINITY,
+            label: String::new(),
+        };
+        let json = serde_json::to_string(&seg).expect("a segment must serialise");
+        assert!(json.contains("null"), "serde_json spells -inf as null: {json}");
+
+        let back: PrepAnalysisSegment =
+            serde_json::from_str(&json).expect("and it must read its own output back");
+        assert_eq!(back.avg_rms_db, f64::NEG_INFINITY);
+        assert_eq!(back, seg);
     }
 }
