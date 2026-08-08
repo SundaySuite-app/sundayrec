@@ -3870,6 +3870,93 @@ mod tests {
         assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
     }
 
+    /// Every writer of `<stem>.feedback.json` must take [`FEEDBACK_LOCK`].
+    ///
+    /// These four seams are genuinely concurrent in the app: shadow mode writes
+    /// from a DETACHED task that is still running minutes after the editor
+    /// opened, while the companion panel finalises a batch and review publishes.
+    /// A read-modify-write of one file from two places at once loses whichever
+    /// write lands first, and it loses it in the quietest possible way — the
+    /// second writer's record is simply not in the file, and every function
+    /// involved returned `true`.
+    ///
+    /// Asserted on the OUTCOME rather than by inspecting the lock, so a future
+    /// writer that forgets the guard fails here instead of in someone's service.
+    #[test]
+    fn concurrent_writers_do_not_lose_each_others_records() {
+        use sundayrec_core::feedback::{
+            build_shadow_observation, CompanionSuggestionKind as K, CompanionSuggestionOutcome,
+        };
+        let (_dir, media, _telemetry) = feedback_media();
+
+        const ROUNDS: usize = 12;
+        std::thread::scope(|s| {
+            // The companion panel, appending.
+            s.spawn(|| {
+                for _ in 0..ROUNDS {
+                    assert!(record_companion_suggestion(
+                        &media,
+                        K::Title,
+                        CompanionSuggestionOutcome::Accepted,
+                        false,
+                    ));
+                }
+            });
+            // Review's publish, replacing its one record over and over.
+            s.spawn(|| {
+                for i in 0..ROUNDS {
+                    assert!(record_trim_adjustment(&media, deltas(i as f64 + 1.0, 0.0)).is_some());
+                }
+            });
+            // Shadow mode, on its detached task.
+            s.spawn(|| {
+                for _ in 0..ROUNDS {
+                    let observation = build_shadow_observation(
+                        shadow_comparison_fixture(),
+                        sundayrec_core::shadow::ShadowSettings::default(),
+                        "0.11.0",
+                    );
+                    assert!(record_shadow_observation(&media, observation));
+                }
+            });
+        });
+
+        let file = stored(&media);
+        assert_eq!(
+            file.companion_suggestions.len(),
+            ROUNDS,
+            "an append-only record was lost to a concurrent writer"
+        );
+        assert_eq!(
+            file.trim_adjustments.len(),
+            1,
+            "one app version, one adjustment"
+        );
+        assert_eq!(
+            file.shadow_observations.len(),
+            1,
+            "one (version, settings) baseline, one observation"
+        );
+    }
+
+    /// A minimal, finite [`ShadowComparison`] — the shape only, so the lock test
+    /// needs no model and no PCM.
+    fn shadow_comparison_fixture() -> sundayrec_core::shadow::ShadowComparison {
+        sundayrec_core::shadow::ShadowComparison {
+            recording_duration_sec: 2400.0,
+            heuristic_segment_count: 5,
+            shadow_segment_count: 5,
+            speech_agreed_sec: 1500.0,
+            speech_only_heuristic_sec: 0.0,
+            speech_only_shadow_sec: 0.0,
+            heuristic_sermon: None,
+            shadow_sermon: None,
+            sermon_deltas: None,
+            heuristic_attention: Vec::new(),
+            shadow_attention: Vec::new(),
+        }
+    }
+
     #[test]
     fn cuts_draft_and_transcript_use_distinct_files() {
         let (_dir, media) = tmp_media();

@@ -1066,7 +1066,10 @@ mod tests {
             label: String::new(),
         };
         let json = serde_json::to_string(&seg).expect("a segment must serialise");
-        assert!(json.contains("null"), "serde_json spells -inf as null: {json}");
+        assert!(
+            json.contains("null"),
+            "serde_json spells -inf as null: {json}"
+        );
 
         let back: PrepAnalysisSegment =
             serde_json::from_str(&json).expect("and it must read its own output back");

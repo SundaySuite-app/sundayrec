@@ -448,6 +448,30 @@ pub fn editor_read_sidecar(
     editor::read_sidecar(&media_path, sidecar)
 }
 
+/// The feedback sidecar is not a sidecar the generic commands may touch.
+///
+/// [`EditorSidecar::Feedback`]'s own doc comment says "written/read by the seam
+/// only" — but the enum is deserialised straight off IPC, so `Feedback` is a
+/// value the renderer can name, and nothing stopped it. Going through
+/// [`editor_write_sidecar`] would bypass all three things that make that file
+/// safe: [`crate::editor`]'s `FEEDBACK_LOCK` (so a write racing shadow mode's
+/// detached task loses one of them), the schema check that refuses to overwrite
+/// a record this build cannot parse, and the atomic temp-and-rename that keeps a
+/// crash mid-write from truncating it. [`editor_delete_sidecar`] would skip
+/// `RecordingFeedback::is_empty` and remove the whole record — a person's
+/// corrections, the trim adjustments and the companion outcomes together.
+///
+/// The typed commands below are the only way in. This turns an intent that was
+/// only ever written down into one the wiring enforces.
+fn refuse_feedback_sidecar(sidecar: EditorSidecar) -> AppResult<()> {
+    if sidecar == EditorSidecar::Feedback {
+        return Err(crate::error::AppError::Validation(
+            "feedback_sidecar_is_not_generic: use the editor_record_* commands".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Write a per-recording sidecar JSON (pretty). Returns whether it persisted.
 #[tauri::command]
 pub fn editor_write_sidecar(
@@ -456,6 +480,7 @@ pub fn editor_write_sidecar(
     value: serde_json::Value,
 ) -> AppResult<bool> {
     super::path_guard::checked_path(&media_path)?;
+    refuse_feedback_sidecar(sidecar)?;
     Ok(editor::write_sidecar(&media_path, sidecar, &value))
 }
 
@@ -463,6 +488,7 @@ pub fn editor_write_sidecar(
 #[tauri::command]
 pub fn editor_delete_sidecar(media_path: String, sidecar: EditorSidecar) -> AppResult<bool> {
     super::path_guard::checked_path(&media_path)?;
+    refuse_feedback_sidecar(sidecar)?;
     Ok(editor::delete_sidecar(&media_path, sidecar))
 }
 
@@ -751,5 +777,28 @@ mod tests {
 
         // …and `None` for both is the normal case, which must still pass.
         check_export_paths(&request(src.to_str().unwrap(), "")).expect("no clips must pass");
+    }
+
+    /// The generic sidecar commands must not be a second door into the file
+    /// holding a human's corrections. Both the write and the delete would skip
+    /// `FEEDBACK_LOCK`, the schema check and the whole-record emptiness question
+    /// that the typed `editor_record_*` commands go through.
+    #[test]
+    fn the_generic_sidecar_commands_refuse_the_feedback_file() {
+        for sidecar in [
+            EditorSidecar::Meta,
+            EditorSidecar::CutsDraft,
+            EditorSidecar::Transcript,
+            EditorSidecar::Peaks,
+            EditorSidecar::Segments,
+        ] {
+            assert!(
+                refuse_feedback_sidecar(sidecar).is_ok(),
+                "{sidecar:?} is an ordinary sidecar"
+            );
+        }
+        let err = refuse_feedback_sidecar(EditorSidecar::Feedback)
+            .expect_err("the feedback record is not a generic sidecar");
+        assert!(err.to_string().contains("feedback_sidecar_is_not_generic"));
     }
 }
