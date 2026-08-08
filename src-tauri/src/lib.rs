@@ -701,6 +701,7 @@ pub fn run() {
             commands::review::review_update_jingles,
             commands::review::review_process_reminders,
             commands::review::stage_import_manifest,
+            commands::review::stage_import_apply,
             // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
             // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
             commands::integrations::integrations_get_settings,
