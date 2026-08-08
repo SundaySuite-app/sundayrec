@@ -23,15 +23,20 @@ within a few days, not an SLA.
 
 ## Supported versions
 
-Only the **latest release on your channel** is supported. SundayRec
-auto-updates on one of **two** operator-selectable channels —
-`stable` (the default) and `beta` (`UpdateChannel` in
-`crates/sundayrec-core/src/settings.rs`). The channel is a per-machine
-setting, so the feed URL is chosen at RUN time
-(`src-tauri/src/update/mod.rs`), not taken from `tauri.conf.json`; the config
-still names the stable feed as a fallback for any path that bypasses that
-code. There is no LTS branch and no backporting of fixes to older versions.
-Please update before reporting an issue that may already be fixed.
+Only the **latest release on your channel** is supported. There is no LTS
+branch and no backporting of fixes to older versions. Please update before
+reporting an issue that may already be fixed.
+
+SundayRec auto-updates from one of two rings — `stable` and `beta` — chosen per
+install under **Innstillinger → System**. Every install is on `stable` unless
+somebody deliberately moved it. The feed URL is built at run time from that
+setting (`channel_feed_url` in `crates/sundayrec-core/src/update.rs`), not from
+`tauri.conf.json`; the `plugins.updater` block there names the stable feed only
+as a fallback for a build that somehow bypasses that path.
+
+A fix for a security issue lands on `beta` first and is promoted to `stable`
+once it has been through a real service somewhere. If you are reporting against
+a `-beta.N` build, say so — the two rings can be several commits apart.
 
 ## Threat model
 

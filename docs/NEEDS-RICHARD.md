@@ -54,7 +54,7 @@ only remaining release blocker is **notarization** (item 3).
    secret.
 
 4. **Tauri updater — ✅ DONE, proven in prod.** The `plugins.updater` block
-   (pubkey + endpoints) is in `tauri.conf.json`, `includeUpdaterJson: true` is
+   (pubkey + endpoints) is in `tauri.conf.json`, `uploadUpdaterJson: true` is
    set in `release.yml`, the keypair exists (key-id `4f08a2f48edd9a17`, backup
    `~/.tauri/sundayrec_updater.key`), and the `TAURI_SIGNING_PRIVATE_KEY`
    (+ `…_PASSWORD`) secrets are set. The updater has been **live in published
@@ -127,7 +127,7 @@ subset.
      `plugins.updater.pubkey`, with the `endpoints` array pointing at the
      `latest.json` the release CI publishes.
   3. ✅ The release CI secrets `TAURI_SIGNING_PRIVATE_KEY` (+ `…_PASSWORD`) are
-     set and `includeUpdaterJson: true` is in `release.yml` — see
+     set and `uploadUpdaterJson: true` is in `release.yml` — see
      docs/DISTRIBUTION.md "Auto-update signing".
 - The feed fetch, signature verify, download and relaunch are **verified in
   prod**: the `latest.json` feed serves published releases (v0.8.0 current) and
@@ -419,7 +419,7 @@ None of it blocks the default build or the gate.
 - **Updater keypair — ✅ DONE, live since v0.4.x** (`--features updater`, R7):
   `~/.tauri/sundayrec_updater.key` (private, backed up) + the public key in
   `tauri.conf.json` `plugins.updater` + the `TAURI_SIGNING_PRIVATE_KEY` CI
-  secret + `includeUpdaterJson: true` — feed verified in prod. See the R7
+  secret + `uploadUpdaterJson: true` — feed verified in prod. See the R7
   section above and docs/DISTRIBUTION.md "Auto-update signing".
 - What remains here is **account work only** (the Apple PLA + optionally a
   Windows cert), NOT code — the release pipeline consumes the credentials the
