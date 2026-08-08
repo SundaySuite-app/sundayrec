@@ -221,6 +221,81 @@ test.describe("editor", () => {
     await expect(page.locator("#editor-sermon-picker-wrap")).toBeHidden();
   });
 
+  test("a cut row shows its range and the ✕ really removes it", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §12.3 — cuts are drawn by drag or by «Marker preken
+    // automatisk»; the auto-trim is the deterministic way to get one here.
+    await openEditor(page);
+    await page.locator("#editor-tab-clip").click();
+    await page.locator("#btn-apply-auto-trim").click();
+
+    const rows = page.locator("#editor-cuts-list .editor-cut-row");
+    await expect(rows).toHaveCount(2); // everything around SEGMENTS[3]
+    await expect(rows.first().locator(".editor-cut-range")).toHaveText(
+      "0:00 – 3:30",
+    );
+    await expect(page.locator("#btn-editor-undo-all")).toBeVisible();
+
+    // ✕ on the first region: the row disappears, the other stays.
+    await rows.first().locator(".editor-cut-del").click();
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first().locator(".editor-cut-range")).toHaveText(
+      "7:00 – 10:00",
+    );
+  });
+
+  test("unsaved cuts from a previous session come back on reopen", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §12.5 — the cuts-draft sidecar. The autosave writes it every
+    // 2 s and a successful export deletes it; finding one on open means the
+    // last session ended mid-edit, and the cuts are restored (silently, with a
+    // 7-day freshness guard — the old «Fant lagrede kutt» banner is gone).
+    await openEditor(page, {
+      editor_read_sidecar: fn(`(args) =>
+        args.sidecar === "cutsDraft"
+          ? { cuts: [ { start: 60, end: 90 }, { start: 300, end: 330 } ], ts: Date.now() }
+          : null`),
+    });
+
+    const rows = page.locator("#editor-cuts-list .editor-cut-row");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first().locator(".editor-cut-range")).toHaveText(
+      "1:00 – 1:30",
+    );
+    await expect(rows.nth(1).locator(".editor-cut-range")).toHaveText(
+      "5:00 – 5:30",
+    );
+  });
+
+  test("the export modal is honest about destination and level", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §12.4 — two promises the modal must keep straight: with no
+    // destination picked the pill reads «Samme mappe» (the export lands beside
+    // the source), and with a mastering preset the level row says the preset
+    // owns the volume instead of promising a normalize gain the export skips.
+    await openEditor(page);
+    await page.locator("#btn-editor-save").click();
+
+    const modal = page.locator("#editor-export-modal");
+    await expect(modal).toBeVisible();
+    await expect(
+      modal.locator('.export-dest-btn[data-dest="same"]'),
+    ).toHaveClass(/active/);
+    await expect(
+      modal.locator('.export-dest-btn[data-dest="same"]'),
+    ).toHaveText("Samme mappe");
+
+    // Choose a mastering preset while the modal is open — the level summary
+    // must switch to the mastering-owns-the-volume wording.
+    await modal.locator("#enhance-master-preset").selectOption("speech-clear");
+    await expect(modal.locator("#export-proc-summary")).toHaveText(
+      "Volum styres av mastring",
+    );
+  });
+
   // ── Regressions ──────────────────────────────────────────────────────────────
   //
   // Both of these were `test.fail()` pins over real production bugs. They now

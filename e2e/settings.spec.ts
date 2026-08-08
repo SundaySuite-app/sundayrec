@@ -61,6 +61,44 @@ test.describe("settings", () => {
     await expect(page.locator("#opt-ask-open-editor")).toBeChecked();
   });
 
+  test("the church profile fields round-trip into storage and survive a reload", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §R7 settings completeness — the R7 fields (church profile)
+    // must go through the same debounced save as every other setting and come
+    // back after a full teardown, not just sit in the input.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+
+    const field = page.locator("#church-name");
+    await expect(field).toBeVisible();
+    await field.fill("Betel Trondheim");
+    // Free-text commits debounced on input; blur flushes the pending commit.
+    await field.blur();
+
+    await expect(page.locator(".setting-saved-chip").first()).toHaveText(
+      "Lagret ✓",
+    );
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          (key) =>
+            JSON.parse(window.localStorage.getItem(key) || "{}").churchName,
+          SETTINGS_KEY,
+        ),
+      )
+      .toBe("Betel Trondheim");
+
+    await page.reload();
+    await page.waitForFunction(
+      () => typeof (window as any).showPage === "function",
+    );
+    await expect(page.locator("#church-name")).toHaveValue("Betel Trondheim");
+  });
+
   test("the value survives a full reload, not just a re-render", async ({
     page,
   }) => {

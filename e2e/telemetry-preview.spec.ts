@@ -141,6 +141,91 @@ test.describe("telemetry preview", () => {
     await expect(page.locator("#telemetry-preview-body")).toHaveText("");
   });
 
+  test("a payload carrying corrections + companion outcomes shows them, not «ingenting å sende»", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §12.8/§12.9: when correction/companion signals exist and
+    // diagnostics is on, «vis hva som sendes» must list them — and the caption
+    // must NOT claim there is nothing to send while they are on screen.
+    const RICH = JSON.stringify(
+      {
+        installId: "a1b2c3d4-0000-0000-0000-000000000000",
+        app: { version: "0.10.0", os: "macos", arch: "aarch64" },
+        counters: [],
+        corrections: [
+          { signal: "sermon_pick", direction: "other_block", band: "small" },
+        ],
+        companionOutcomes: [
+          { field: "title", outcome: "accepted_edited", count: 1 },
+          { field: "chapters", outcome: "left_alone", count: 1 },
+        ],
+        crashes: [],
+      },
+      null,
+      2,
+    );
+    await openSystemTab(page, {
+      ...TELEMETRY_FIXTURES,
+      telemetry_preview_payload: {
+        json: RICH,
+        isNextPayload: true,
+        isEmpty: false,
+      },
+    });
+    await page.locator("#btn-telemetry-preview").click();
+
+    const body = page.locator("#telemetry-preview-body");
+    await expect(body).toContainText("corrections");
+    await expect(body).toContainText("companionOutcomes");
+    await expect(body).toContainText("accepted_edited");
+    const hint = page.locator("#telemetry-preview-hint");
+    await expect(hint).not.toContainText("Ingenting å sende akkurat nå.");
+    await expect(hint).toHaveText(
+      "Dette er nøyaktig det som sendes neste gang.",
+    );
+  });
+
+  test("the one-time consent card asks, and a decline is recorded as a real answer", async ({
+    page,
+  }) => {
+    // The app's most load-bearing promise: nothing is collected without an
+    // explicit yes. The card must appear when the backend says the install is
+    // due to be asked — and «Nei takk» must write `granted: false` to the
+    // backend (not merely hide the card), so the question is never re-asked.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        telemetry_consent_get: {
+          status: "neverAsked",
+          version: 0,
+          decidedAt: null,
+          currentVersion: 2,
+          needsPrompt: true,
+          active: false,
+        },
+        telemetry_consent_set: fn(`(args) => {
+          (window.__E2E_CONSENT__ ||= []).push(args.granted);
+          return {
+            status: args.granted ? "granted" : "denied", version: 2,
+            decidedAt: Date.now(), currentVersion: 2, needsPrompt: false,
+            active: !!args.granted,
+          };
+        }`),
+      },
+      settings: SETTLED_SETTINGS,
+      goto: "home",
+    });
+
+    const card = page.locator("#telemetry-consent-toast");
+    await expect(card).toBeVisible();
+
+    await page.locator("#telemetry-consent-toast-no").click();
+    await expect(card).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_CONSENT__))
+      .toEqual([false]);
+  });
+
   test("the consent toggle reflects the backend and writes back to it", async ({
     page,
   }) => {
