@@ -119,8 +119,12 @@ Aldri selve lyden, og aldri innholdet i opptaket.
 
 Sammen med dette sendes hvilke _tekniske_ innstillinger som var i bruk:
 filformat, samplerate-modus, om video var på, hvor mange planlagte opptak du
-har satt opp. Aldri klokkeslett, ukedager, kanalnavn eller navnet du har gitt
-et opptak.
+har satt opp. Av selve tidsplanen sendes bare antallet — aldri hvilke
+klokkeslett eller ukedager du har satt opp, aldri kanalnavn, og aldri navnet du
+har gitt et opptak.
+
+Rapporten bærer derimot **når opptaket ble avsluttet**. Se «Om tidspunkter»
+under «Hva samles ALDRI inn» for hva det betyr i praksis.
 
 ### Korrigeringene du gjør i redigeringsverktøyet
 
