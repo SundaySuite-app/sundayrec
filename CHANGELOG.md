@@ -3,6 +3,66 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.11.1-beta.2 — appen begynner å lære av deg
+
+> **Betaversjon.** Du får den fordi du står på beta-kanalen under
+> **Innstillinger → System**. Bytt til «stable» der hvis du vil tilbake til
+> vanlige utgivelser.
+
+Denne versjonen handler om to ting: at appen kan bli bedre av å bli rettet på,
+og at du kan se og styre nøyaktig hva den deler.
+
+### Oppdateringer i to ringer, med nødbrems
+
+Oppdateringer kommer nå fra Sunday Suites egen server i stedet for GitHub, og
+det finnes to kanaler: «stable» og «beta». Du velger selv under
+**Innstillinger → System**.
+
+Det praktiske: en dårlig versjon kan stoppes for alle innen et minutt, i stedet
+for å ligge ute til noen rekker å gjøre noe. Det som allerede er installert
+berøres ikke — men ingen flere får den.
+
+### Anonym diagnostikk, som du bestemmer over
+
+Du blir spurt én gang om du vil dele anonym informasjon om hvordan programmet
+oppfører seg. **Av som standard.** Svarer du nei, endrer ingenting seg.
+
+Under **Innstillinger → System** kan du se den faktiske datapakken appen ville
+sendt — ikke et eksempel, men de virkelige tallene — og be om at alt slettes.
+Personvernerklæringen forklarer hva som sendes, hva som aldri sendes, og hvor
+grensene faktisk går framfor hvor vi skulle ønske de gikk.
+
+### Rettelsene dine blir husket
+
+Når du flytter på appens gjetning om hvor prekenen begynner og slutter, lagres
+det nå ved siden av opptaket. Åpner du filen igjen, står ditt valg — ikke
+appens.
+
+Ny visning i **Innstillinger → System** viser hva appen har lagt merke til
+lokalt: hvor ofte den har bommet, og om forslaget systematisk kommer for tidlig
+eller for sent. Ingenting derfra deles med noen med mindre du har slått på
+diagnostikk.
+
+Gjennomgangskøen fylles også automatisk etter en analyse, i stedet for å stå
+tom.
+
+### Rettet i denne betaen
+
+Elleve feil funnet i en gjennomgang av forrige beta. De du ville merket:
+
+- **Rettelsen din ble lagret og deretter ignorert.** Du korrigerte prekenvalget,
+  alt så ut til å gå bra, og ved gjenåpning valgte editoren en annen blokk
+  likevel.
+- **«Oppdater automatisk» virket ikke.** Hverken ved oppstart eller når du slo
+  den av — appen kontaktet serveren uansett. Nå gjør den ikke det.
+- **Slettedialogen fortalte deg at sletting på serversiden ikke fantes.** Den
+  fantes. Og en slettingsforespørsel gjort mens du var offline ble aldri
+  utført.
+- **Ett stille lydklipp kunne tømme hele gjennomgangskøen** — alle beslutninger
+  om hva som var publisert eller forkastet, borte uten spor.
+- **En beta-maskin kom aldri videre til en ferdig versjon.** Den ville stått
+  fast og meldt «du er oppdatert» for alltid.
+
 ## v0.10.0 — når noe går galt, får du vite det
 
 v0.9.0 ryddet i det du ser. Denne versjonen handler om det du _ikke_ ser: alle
