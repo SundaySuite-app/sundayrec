@@ -140,6 +140,14 @@ pub fn should_check(is_dev: bool) -> bool {
 /// misconfigured feed (e.g. a re-published same-version `latest.json`) never
 /// surfaces a phantom "update available" to the user. Non-semver strings fall
 /// back to a byte comparison so a tag like `"2026.05.31"` still orders sanely.
+///
+/// This re-check OVERRIDES the plugin: `src-tauri/src/update/mod.rs` turns a
+/// `false` here into `UpToDate` no matter what the feed offered. So a version
+/// pair this function gets wrong is a version pair no client can ever cross —
+/// which is why the prerelease half below is spelled out rather than
+/// approximated. `docs/ROLLBACK.md` leans on the same property in the other
+/// direction ("a client only ever moves to a HIGHER version"), so this must
+/// stay strictly monotone: never `true` for an equal or lower candidate.
 pub fn is_newer(candidate: &str, current: &str) -> bool {
     match (parse_semver(candidate), parse_semver(current)) {
         (Some(c), Some(cur)) => c > cur,
@@ -149,12 +157,85 @@ pub fn is_newer(candidate: &str, current: &str) -> bool {
     }
 }
 
-/// Parse a `MAJOR.MINOR.PATCH` semver core (ignoring any `-pre`/`+build`
-/// suffix) into a comparable tuple. Returns `None` if the three numeric
-/// components aren't all present + parseable.
-fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
-    let core = v.trim_start_matches('v');
-    let core = core.split(['-', '+']).next().unwrap_or(core);
+/// One dot-separated field of a prerelease tag (the `beta` and the `1` of
+/// `-beta.1`).
+///
+/// The variant ORDER is load-bearing, not cosmetic: the derived `Ord` orders by
+/// variant first, and semver §11 requires that a purely numeric identifier
+/// always ranks BELOW an alphanumeric one (`1.0.0-1 < 1.0.0-alpha`). Reordering
+/// these two lines silently changes update ordering for the whole fleet.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum PreIdent {
+    /// All-ASCII-digit field, compared as a NUMBER. This is the difference
+    /// between `beta.10` superseding `beta.9` and the beta ring quietly
+    /// freezing at the ninth beta — as strings, `"10" < "9"`.
+    Numeric(u64),
+    /// Anything else, compared lexically in ASCII order (`alpha < beta < rc`).
+    Alpha(String),
+}
+
+/// A parsed semver version, ordered per semver.org §11.
+#[derive(Debug, PartialEq, Eq)]
+struct SemVer {
+    major: u64,
+    minor: u64,
+    patch: u64,
+    /// Empty for a plain release; one entry per dot-separated prerelease field.
+    /// Build metadata (`+…`) is deliberately absent — §10 says it is ignored
+    /// for precedence, so `1.0.0+a` and `1.0.0+b` must compare Equal.
+    pre: Vec<PreIdent>,
+}
+
+impl Ord for SemVer {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        use core::cmp::Ordering;
+
+        (self.major, self.minor, self.patch)
+            .cmp(&(other.major, other.minor, other.patch))
+            .then_with(|| match (self.pre.is_empty(), other.pre.is_empty()) {
+                (true, true) => Ordering::Equal,
+                // A version WITH a prerelease ranks below the same core
+                // WITHOUT one: `0.11.0-beta.1 < 0.11.0`. This is the case the
+                // whole two-ring flow depends on — a tester sitting on
+                // `-beta.1` has to be able to reach the stable `0.11.0` that
+                // the beta was testing FOR. Comparing only the core made these
+                // equal, so that machine stayed on a beta forever, silently.
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                // Both prereleases: field-by-field, left to right. `Vec`'s own
+                // `Ord` is exactly the rule §11 states — compare elementwise,
+                // and if every field of the shorter side matches, the side with
+                // MORE fields wins (`alpha < alpha.1`).
+                (false, false) => self.pre.cmp(&other.pre),
+            })
+    }
+}
+
+impl PartialOrd for SemVer {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Parse `[v]MAJOR.MINOR.PATCH[-prerelease][+build]` into a comparable value.
+/// Returns `None` if it isn't clean semver, which sends [`is_newer`] to its
+/// string-difference fallback (see the `"2026.05.31"` test).
+fn parse_semver(v: &str) -> Option<SemVer> {
+    let s = v.trim_start_matches('v');
+
+    // Build metadata goes first and unconditionally: it is ignored for
+    // precedence (§10), and stripping it here keeps a `+` out of the
+    // prerelease fields below.
+    let s = s.split('+').next().unwrap_or(s);
+
+    // Split core from prerelease at the FIRST `-` only. A prerelease may itself
+    // contain hyphens (`1.2.3-beta-1` is one identifier, "beta-1"), so a
+    // split-on-every-hyphen would mangle it.
+    let (core, pre_str) = match s.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (s, None),
+    };
+
     let mut parts = core.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
@@ -162,7 +243,41 @@ fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
     if parts.next().is_some() {
         return None; // too many components — not a clean semver core
     }
-    Some((major, minor, patch))
+
+    let pre = match pre_str {
+        None => Vec::new(),
+        Some(p) => {
+            let mut fields = Vec::new();
+            for ident in p.split('.') {
+                // An empty field (`1.2.3-` or `1.2.3-beta..1`) is not valid
+                // semver. Rejecting the whole parse is safer than guessing:
+                // the caller then falls back to "newer only if the strings
+                // differ", which cannot invent an ordering out of nothing.
+                if ident.is_empty() {
+                    return None;
+                }
+                if ident.bytes().all(|b| b.is_ascii_digit()) {
+                    // An all-digit field too large for u64 is not something a
+                    // release tag produces; treating it as alphanumeric keeps
+                    // the parse total instead of failing the whole comparison.
+                    match ident.parse::<u64>() {
+                        Ok(n) => fields.push(PreIdent::Numeric(n)),
+                        Err(_) => fields.push(PreIdent::Alpha(ident.to_string())),
+                    }
+                } else {
+                    fields.push(PreIdent::Alpha(ident.to_string()));
+                }
+            }
+            fields
+        }
+    };
+
+    Some(SemVer {
+        major,
+        minor,
+        patch,
+        pre,
+    })
 }
 
 #[cfg(test)]
@@ -250,14 +365,88 @@ mod tests {
     #[test]
     fn is_newer_strips_v_prefix_and_prerelease() {
         assert!(is_newer("v1.2.4", "1.2.3"));
-        // A prerelease of the same core is NOT treated as newer (core equal).
+        // A prerelease of the same core is NOT newer than the release — semver
+        // §11: `1.2.3-beta.1 < 1.2.3`. (This assertion predates prerelease
+        // ordering, where it held for the accidental reason that both sides
+        // collapsed to the same core. It holds for the RIGHT reason now, and a
+        // failure here would mean stable installs being offered betas.)
         assert!(!is_newer("1.2.3-beta.1", "1.2.3"));
+    }
+
+    /// THE two-ring case: a machine promoted onto `0.11.0-beta.1` must be able
+    /// to reach the stable `0.11.0` its Sunday was testing for. Comparing only
+    /// `(major, minor, patch)` made these equal, so the beta ring was a
+    /// one-way door — the tester stayed on a prerelease indefinitely, and the
+    /// app told them "Du er oppdatert" while doing it.
+    #[test]
+    fn a_beta_tester_reaches_the_stable_release_of_the_same_version() {
+        assert!(is_newer("0.11.0", "0.11.0-beta.1"));
+        assert!(is_newer("0.11.0", "0.11.0-beta.9"));
+        assert!(is_newer("1.2.3", "1.2.3-rc.1"));
+    }
+
+    /// The beta ring has to be able to ITERATE: promoting `beta.2` over
+    /// `beta.1` must actually reach the testers already on `beta.1`.
+    #[test]
+    fn a_newer_beta_supersedes_an_older_beta() {
+        assert!(is_newer("0.11.0-beta.2", "0.11.0-beta.1"));
+        assert!(!is_newer("0.11.0-beta.1", "0.11.0-beta.2"));
+    }
+
+    /// Numeric prerelease fields compare as NUMBERS, not strings. As strings
+    /// `"10" < "9"`, so the ring would break at the tenth beta of a version —
+    /// long after anyone would think to suspect the comparator.
+    #[test]
+    fn numeric_prerelease_fields_compare_numerically_not_lexically() {
+        assert!(is_newer("0.11.0-beta.10", "0.11.0-beta.9"));
+        assert!(!is_newer("0.11.0-beta.9", "0.11.0-beta.10"));
+        assert!(is_newer("1.0.0-beta.100", "1.0.0-beta.99"));
+    }
+
+    /// The rest of semver §11's prerelease rules, in the order the spec states
+    /// them: alphanumeric fields compare in ASCII order, more fields beat
+    /// fewer when everything before them matches, and a numeric field ranks
+    /// below an alphanumeric one.
+    #[test]
+    fn prerelease_identifiers_follow_semver_precedence() {
+        assert!(is_newer("1.0.0-rc.1", "1.0.0-beta.1"));
+        assert!(is_newer("1.0.0-beta.1", "1.0.0-alpha.1"));
+        assert!(!is_newer("1.0.0-beta.1", "1.0.0-rc.1"));
+
+        // More fields win when the shared prefix is equal.
+        assert!(is_newer("1.0.0-alpha.1", "1.0.0-alpha"));
+        assert!(!is_newer("1.0.0-alpha", "1.0.0-alpha.1"));
+
+        // Numeric always ranks below alphanumeric (the spec's own example).
+        assert!(is_newer("1.0.0-alpha", "1.0.0-1"));
+        assert!(!is_newer("1.0.0-1", "1.0.0-alpha"));
+
+        // The core still outranks everything: a lower core with a higher-
+        // sorting prerelease is NOT newer.
+        assert!(is_newer("0.11.0-beta.1", "0.10.0"));
+        assert!(!is_newer("0.10.0-rc.9", "0.11.0-alpha.1"));
+    }
+
+    /// Equal is never newer — including when the two sides spell the same
+    /// version differently. Build metadata is ignored for precedence (§10), so
+    /// a re-published manifest that only gained a `+build` must not surface a
+    /// phantom "update available".
+    #[test]
+    fn equal_versions_are_never_newer() {
+        assert!(!is_newer("0.11.0-beta.1", "0.11.0-beta.1"));
+        assert!(!is_newer("v0.11.0-beta.1", "0.11.0-beta.1"));
+        assert!(!is_newer("1.0.0+build.7", "1.0.0"));
+        assert!(!is_newer("1.0.0+build.7", "1.0.0+build.6"));
+        assert!(is_newer("1.0.1+build.1", "1.0.0+build.9"));
     }
 
     #[test]
     fn is_newer_falls_back_to_string_diff_for_non_semver() {
         assert!(is_newer("2026.05.31", "2026.05.30"));
         assert!(!is_newer("nightly", "nightly"));
+        // A malformed prerelease has no defined ordering, so it falls back to
+        // "different strings only" rather than inventing one.
+        assert!(!is_newer("1.0.0-", "1.0.0-"));
     }
 
     #[test]
