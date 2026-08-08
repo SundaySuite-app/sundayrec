@@ -8,8 +8,11 @@ slik at vi kan finne feil og gjøre det bedre.
 - Funksjonen er **av som standard**. Du bestemmer selv.
 - Vi får aldri vite hvem du er, hvilken menighet du tilhører, eller hva som ble
   sagt eller sunget.
-- **Aldri lyd, tekst eller klokkeslett.** Dataformatet har ingen plass å legge
-  det i — det er ikke noe vi filtrerer bort i etterkant.
+- **Aldri lyd, transkripsjon eller prekentekst.** Dataformatet har ingen plass
+  å legge det i — det er ikke noe vi filtrerer bort i etterkant.
+- En krasjrapport bærer selve feilmeldingen, og hver rapport bærer tidspunktet
+  den gjelder. Det står forklart under, med hva vi gjør for at en feilmelding
+  ikke skal røpe noe om deg.
 - Du kan når som helst ombestemme deg, og be om å få alt slettet.
 - Å svare nei endrer ingenting i hvordan SundayRec fungerer for deg.
 
@@ -178,12 +181,28 @@ macOS enn på Windows», uten å vite hvem noen av installasjonene tilhører.
 
 ## Hva samles ALDRI inn
 
-Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Klokkeslett. Filstier
-fra din maskin. Enhetsnavn, som navnet på mikseren eller lydkortet ditt. Kirke-
-eller menighetsnavn.
+Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Filstier fra din
+maskin. Enhetsnavn, som navnet på mikseren eller lydkortet ditt. Kirke- eller
+menighetsnavn.
 
 Dette er ikke bare filtrert bort i etterkant — dataformatet har rett og slett
 ingen plass å legge det i.
+
+### Om tidspunkter, som er det ene unntaket verdt å forklare
+
+Hver rapport bærer **når** den gjelder, som et unix-tidsstempel. En
+krasjrapport sier når krasjet skjedde; en kvalitetsrapport sier når opptaket
+ble avsluttet. Det er nødvendig for å kunne se ting som «denne feilen begynte
+i forrige uke» framfor bare «denne feilen finnes».
+
+Vi sier dette rett ut fordi det har en konsekvens du bør kjenne: et tidspunkt
+sammen med en varighet peker i praksis ut én bestemt gudstjeneste. Vi vet ikke
+hvilken menighet det er, og vi har ingen måte å finne det ut på — men vi kan
+se at _en_ installasjon tok opp noe på et gitt tidspunkt.
+
+Derfor er korrigeringene dine bygget annerledes: de bærer **ingen** tidspunkt i
+det hele tatt, bare avstander innenfor et opptak. Der finnes det ikke noe å
+knytte til en dato.
 
 ---
 
