@@ -218,8 +218,15 @@ async fn build_and_enqueue_inner(
     }
 
     let defaults = prep_defaults(db).await?;
+    // Fold in whatever the operator has corrected since the last episode BEFORE
+    // proposing this one — this is the only moment at which new evidence can
+    // have appeared and the app is about to act on it, and it is safely after
+    // the analysis pass rather than during a recording. A no-op, including the
+    // history walk, unless the operator turned adaptivity on.
+    let tuning = crate::learning::current_tuning(db).await;
     let now = now_i64();
-    let episode = prep::build_episode_prep(new_id(), recording_path, segments, &defaults, now);
+    let episode =
+        prep::build_episode_prep(new_id(), recording_path, segments, &defaults, &tuning, now);
 
     let queue = review_queue::enqueue(queue, episode.clone(), now);
     save_queue(db, &queue).await?;
@@ -599,6 +606,7 @@ mod tests {
             path.to_string(),
             Vec::new(),
             &PrepDefaults::default(),
+            &sundayrec_core::local_adaptivity::SHIPPED_TUNING,
             now,
         )
     }

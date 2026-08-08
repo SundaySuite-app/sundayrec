@@ -621,7 +621,22 @@
     "learningStartTooLate": "The automatic start often lands too late — on average you have moved it {n} seconds earlier.",
     "learningEndTooEarly": "The automatic end is often cut too early — on average you have moved it {n} seconds later.",
     "learningEndTooLate": "The automatic end often lands too late — on average you have moved it {n} seconds earlier.",
-    "learningCompanionSummary": "Of the AI suggestions, {accepted} were used ({edited} rewritten afterwards), and {leftAlone} were left alone."
+    "learningCompanionSummary": "Of the AI suggestions, {accepted} were used ({edited} rewritten afterwards), and {leftAlone} were left alone.",
+    "localNudgeCardTitle": "What the app has adjusted",
+    "localNudgeCardDesc": "If you correct the same thing every Sunday, the app can move its own suggestion that way — for this machine alone. Nothing here is shared with anyone, and you can reset it at any time.",
+    "localNudgeToggle": "Let the app learn from my corrections",
+    "localNudgeToggleHint": "When this is on, the app moves its own suggested sermon start and end toward the way you usually correct them. Never by more than {limit} seconds, and never before you have corrected at least {min} recordings.",
+    "localNudgeOff": "The app does not adjust its own suggestions. It guesses in exactly the same way as a freshly installed app.",
+    "localNudgeWaiting": "The app has not adjusted anything yet. It waits until you have corrected at least {min} recordings — so far it has {samples}.",
+    "localNudgeOn": "The app has adjusted its own suggestions based on your corrections:",
+    "localNudgeStartLater": "The app now suggests that the sermon starts {n} seconds later than it otherwise would. That is based on {samples} corrections from you.",
+    "localNudgeStartEarlier": "The app now suggests that the sermon starts {n} seconds earlier than it otherwise would. That is based on {samples} corrections from you.",
+    "localNudgeEndLater": "The app now suggests that the sermon ends {n} seconds later than it otherwise would. That is based on {samples} corrections from you.",
+    "localNudgeEndEarlier": "The app now suggests that the sermon ends {n} seconds earlier than it otherwise would. That is based on {samples} corrections from you.",
+    "localNudgeAtLimit": "Your corrections point further still, but the app never moves a suggestion by more than {limit} seconds. If the suggestion is still wide of the mark, it is the recordings that need a look — not this setting.",
+    "localNudgeResetBtn": "Reset what the app has learned",
+    "localNudgeResetDone": "Reset. The app now guesses in exactly the same way as a freshly installed app, and will not learn any more until you switch this back on.",
+    "localNudgeLoadFailed": "Could not fetch what the app has adjusted. Please try again."
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",

@@ -315,6 +315,15 @@ export interface Settings {
    */
   useUnifiedRecorder?: boolean
 
+  /**
+   * May the app move its own proposed sermon boundaries toward what THIS
+   * operator keeps correcting them to (E10)? Default OFF — the argument is in
+   * `crates/sundayrec-core/src/local_adaptivity.rs`'s
+   * `DEFAULT_LOCAL_ADAPTIVITY_ENABLED`, because it is a decision about what a
+   * Sunday looks like and belongs next to the mechanism, not next to a type.
+   */
+  localAdaptivity?: boolean
+
   // Editor
   askOpenEditor?: boolean
   editorIntroPath?: string

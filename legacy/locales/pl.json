@@ -621,7 +621,22 @@
     "learningStartTooLate": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
     "learningEndTooEarly": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekund później.",
     "learningEndTooLate": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
-    "learningCompanionSummary": "Spośród sugestii AI {accepted} zostało użytych ({edited} przepisanych później), a {leftAlone} pozostawiono bez zmian."
+    "learningCompanionSummary": "Spośród sugestii AI {accepted} zostało użytych ({edited} przepisanych później), a {leftAlone} pozostawiono bez zmian.",
+    "localNudgeCardTitle": "Co aplikacja dostosowała",
+    "localNudgeCardDesc": "Jeśli w każdą niedzielę poprawiasz to samo, aplikacja może przesunąć własną propozycję w tę stronę — wyłącznie na tym komputerze. Nic stąd nie jest z nikim udostępniane i w każdej chwili możesz to wyzerować.",
+    "localNudgeToggle": "Pozwól aplikacji uczyć się z moich poprawek",
+    "localNudgeToggleHint": "Gdy ta opcja jest włączona, aplikacja przesuwa własną propozycję początku i końca kazania zgodnie z tym, jak zwykle ją poprawiasz. Nigdy o więcej niż {limit} sekund i nigdy zanim poprawisz co najmniej {min} nagrań.",
+    "localNudgeOff": "Aplikacja nie dostosowuje własnych propozycji. Zgaduje dokładnie tak samo jak świeżo zainstalowana aplikacja.",
+    "localNudgeWaiting": "Aplikacja jeszcze niczego nie dostosowała. Czeka, aż poprawisz co najmniej {min} nagrań — na razie ma ich {samples}.",
+    "localNudgeOn": "Aplikacja dostosowała własne propozycje na podstawie Twoich poprawek:",
+    "localNudgeStartLater": "Aplikacja proponuje teraz, że kazanie zaczyna się {n} sekund później, niż zaproponowałaby w przeciwnym razie. Opiera się to na {samples} poprawkach od Ciebie.",
+    "localNudgeStartEarlier": "Aplikacja proponuje teraz, że kazanie zaczyna się {n} sekund wcześniej, niż zaproponowałaby w przeciwnym razie. Opiera się to na {samples} poprawkach od Ciebie.",
+    "localNudgeEndLater": "Aplikacja proponuje teraz, że kazanie kończy się {n} sekund później, niż zaproponowałaby w przeciwnym razie. Opiera się to na {samples} poprawkach od Ciebie.",
+    "localNudgeEndEarlier": "Aplikacja proponuje teraz, że kazanie kończy się {n} sekund wcześniej, niż zaproponowałaby w przeciwnym razie. Opiera się to na {samples} poprawkach od Ciebie.",
+    "localNudgeAtLimit": "Twoje poprawki wskazują jeszcze dalej, ale aplikacja nigdy nie przesuwa propozycji o więcej niż {limit} sekund. Jeśli propozycja nadal trafia źle, to nagraniom trzeba się przyjrzeć — nie temu ustawieniu.",
+    "localNudgeResetBtn": "Wyzeruj to, czego aplikacja się nauczyła",
+    "localNudgeResetDone": "Wyzerowano. Aplikacja zgaduje teraz dokładnie tak samo jak świeżo zainstalowana i nie będzie się dalej uczyć, dopóki nie włączysz tego ponownie.",
+    "localNudgeLoadFailed": "Nie udało się pobrać tego, co aplikacja dostosowała. Spróbuj ponownie."
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",

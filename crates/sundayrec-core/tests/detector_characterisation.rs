@@ -259,6 +259,7 @@ fn run(input: &[AnalysisSegment]) -> Answer {
         "/rec/fixture.mp4".into(),
         segments,
         &PrepDefaults::default(),
+        &sundayrec_core::local_adaptivity::SHIPPED_TUNING,
         0,
     );
 

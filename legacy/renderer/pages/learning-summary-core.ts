@@ -13,6 +13,8 @@
  */
 
 import type { LearningSummary } from '../../bindings/LearningSummary'
+import type { LocalNudge } from '../../bindings/LocalNudge'
+import type { Nudge } from '../../bindings/Nudge'
 
 export interface CopyLine {
   key: string
@@ -135,6 +137,144 @@ export function buildLearningSummaryView(s: LearningSummary): LearningSummaryVie
     startTendency: tendencyLine('start', s.startTendency, s.startAvgAbsDeltaSec),
     endTendency: tendencyLine('end', s.endTendency, s.endAvgAbsDeltaSec),
     companion,
+  }
+}
+
+// ── What the app has adjusted about ITSELF (E10) ─────────────────────────────
+
+/**
+ * The clamp and the evidence bar, restated for the copy.
+ *
+ * A second copy of two numbers that already exist in
+ * `crates/sundayrec-core/src/local_adaptivity.rs` — and they are here rather
+ * than on the wire because they are not observations, they are the RULE, and a
+ * rule that arrived over IPC could disagree with the one the detector actually
+ * applies without anything noticing. `local-nudge-copy.test.ts` asserts they
+ * match the Rust constants, which is the check that keeps them honest.
+ */
+export const MAX_BOUNDARY_NUDGE_SEC = 60
+export const MIN_CORRECTIONS_FOR_NUDGE = 12
+
+export interface LocalNudgeView {
+  /** The one line that is always shown — what the app is or is not doing. */
+  headline: CopyLine
+  /** How the sermon START has been moved, if it has been. */
+  start: CopyLine | null
+  /** How the sermon END has been moved, if it has been. */
+  end: CopyLine | null
+  /** Present only when a clamp decided one of the two numbers above.
+   *  Deliberately its own line rather than a suffix on the boundary line: a
+   *  detector that wanted four minutes and was allowed one is a reason to look
+   *  at the recordings, and burying that inside a sentence about 60 seconds is
+   *  how a saturated clamp reads as a working one. */
+  atLimit: CopyLine | null
+  /** Whether there is anything for the reset button to undo. */
+  canReset: boolean
+}
+
+/** One boundary's sentence, or `null` when the shipped constant still stands.
+ *  Two keys per boundary rather than one with a signed number, for the same
+ *  reason `tendencyLine` above needs four: Norwegian puts the direction in the
+ *  word, not in a minus sign. */
+function nudgeLine(boundary: 'start' | 'end', nudge: Nudge): CopyLine | null {
+  if (nudge.value === 0) return null
+  const n = fmtSeconds(Math.abs(nudge.value))
+  const samples = String(nudge.samples)
+  const later = nudge.value > 0
+  if (boundary === 'start') {
+    return later
+      ? {
+          key: 'general.localNudgeStartLater',
+          fallback:
+            'Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
+          params: { n, samples },
+        }
+      : {
+          key: 'general.localNudgeStartEarlier',
+          fallback:
+            'Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
+          params: { n, samples },
+        }
+  }
+  return later
+    ? {
+        key: 'general.localNudgeEndLater',
+        fallback:
+          'Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
+        params: { n, samples },
+      }
+    : {
+        key: 'general.localNudgeEndEarlier',
+        fallback:
+          'Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
+        params: { n, samples },
+      }
+}
+
+/**
+ * Build the «hva appen har justert» card from the nudge and the toggle.
+ *
+ * `enabled` is read from the checkbox rather than from `nudge`, because the
+ * command returns the shipped value whenever adaptivity is off and the two
+ * states have to read differently: "the app is not adjusting anything" and "the
+ * app is allowed to adjust and has not found reason to yet" are different
+ * answers to the question the operator is asking, and collapsing them into one
+ * sentence is how a switch appears to do nothing.
+ */
+export function buildLocalNudgeView(nudge: LocalNudge, enabled: boolean): LocalNudgeView {
+  if (!enabled) {
+    return {
+      headline: {
+        key: 'general.localNudgeOff',
+        fallback:
+          'Appen justerer ikke sine egne forslag. Den gjetter på nøyaktig samme måte som en nyinstallert app.',
+      },
+      start: null,
+      end: null,
+      atLimit: null,
+      canReset: false,
+    }
+  }
+
+  const start = nudgeLine('start', nudge.sermonStartSec)
+  const end = nudgeLine('end', nudge.sermonEndSec)
+  if (!start && !end) {
+    // The honest waiting state: below the evidence bar the nudge is exactly
+    // zero, not a fraction, so there is nothing to show except how far off the
+    // bar the operator is. `samples` is per boundary and they can differ; the
+    // larger is the one that will cross first.
+    const samples = Math.max(nudge.sermonStartSec.samples, nudge.sermonEndSec.samples)
+    return {
+      headline: {
+        key: 'general.localNudgeWaiting',
+        fallback:
+          'Appen har ikke justert noe ennå. Den venter til du har rettet minst {min} opptak — så langt har den {samples}.',
+        params: { min: String(MIN_CORRECTIONS_FOR_NUDGE), samples: String(samples) },
+      },
+      start: null,
+      end: null,
+      atLimit: null,
+      canReset: false,
+    }
+  }
+
+  const atLimit = nudge.sermonStartSec.atLimit || nudge.sermonEndSec.atLimit
+  return {
+    headline: {
+      key: 'general.localNudgeOn',
+      fallback: 'Appen har justert sine egne forslag etter rettelsene dine:',
+    },
+    start,
+    end,
+    atLimit: atLimit
+      ? {
+          key: 'general.localNudgeAtLimit',
+          fallback:
+            'Rettelsene dine peker enda lenger, men appen flytter aldri et forslag mer enn {limit} sekunder. Treffer forslaget fortsatt dårlig, er det opptakene som bør ses på — ikke denne innstillingen.',
+          params: { limit: String(MAX_BOUNDARY_NUDGE_SEC) },
+        }
+      : null,
+    canReset: true,
   }
 }
 

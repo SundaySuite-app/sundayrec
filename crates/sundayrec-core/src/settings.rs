@@ -501,6 +501,20 @@ pub struct Settings {
     /// Prompt to open the editor after a recording finishes? Default true.
     #[serde(default = "default_true")]
     pub ask_open_editor: bool,
+    /// May the app move its own proposed sermon boundaries toward what THIS
+    /// operator keeps correcting them to (E10)?
+    ///
+    /// Default [`crate::local_adaptivity::DEFAULT_LOCAL_ADAPTIVITY_ENABLED`],
+    /// which is where the argument for that default lives — it is a decision
+    /// about what a Sunday looks like, not a serde detail, so it is not spelled
+    /// `false` here where the reasoning could not follow it.
+    ///
+    /// Off means the shipped detector, exactly: the offsets stay at zero, the
+    /// corrections are still recorded, and the System tab still shows what they
+    /// say. Turning it back off, or pressing Nullstill, restores that
+    /// immediately.
+    #[serde(default = "default_local_adaptivity")]
+    pub local_adaptivity: bool,
 }
 
 // ── Per-field default helpers (so `#[serde(default = "...")]` and the `Default`
@@ -556,6 +570,9 @@ fn default_silence_timeout_minutes() -> i32 {
 }
 fn default_true() -> bool {
     true
+}
+fn default_local_adaptivity() -> bool {
+    crate::local_adaptivity::DEFAULT_LOCAL_ADAPTIVITY_ENABLED
 }
 fn default_smtp_port() -> i32 {
     587
@@ -688,6 +705,7 @@ impl Default for Settings {
             auto_update: true,
             update_channel: default_update_channel(),
             ask_open_editor: true,
+            local_adaptivity: default_local_adaptivity(),
         }
     }
 }

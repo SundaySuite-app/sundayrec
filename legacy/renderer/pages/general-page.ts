@@ -25,7 +25,14 @@ import {
   nextAllowLocal,
   webhookUrlError,
 } from '../ui/webhook-url-core'
-import { applyParams, buildLearningSummaryView, type CopyLine } from './learning-summary-core'
+import {
+  applyParams,
+  buildLearningSummaryView,
+  buildLocalNudgeView,
+  MAX_BOUNDARY_NUDGE_SEC,
+  MIN_CORRECTIONS_FOR_NUDGE,
+  type CopyLine,
+} from './learning-summary-core'
 import {
   AUTO_UPDATE_INTERVAL_MS,
   autoUpdateEnabled,
@@ -143,6 +150,7 @@ export function setupGeneralPage(): void {
   setupWebhookTest()
   setupTelemetryCard()
   setupLearningSummaryCard()
+  setupLocalNudgeCard()
 
   document.getElementById('btn-show-onboarding')?.addEventListener('click', () => window.showOnboarding())
 
@@ -782,6 +790,133 @@ function renderLearningSummary(summary: import('../../bindings/LearningSummary')
   paintLearningLine('learning-summary-companion', view.companion)
 }
 
+/**
+ * «Hva appen har justert» (E10) — the switch, the four sentences, and the
+ * reset.
+ *
+ * Unlike `setupLearningSummaryCard` above, this one DOES paint itself on tab
+ * open (`populateGeneral` calls `refreshLocalNudgeCard`). The reason is the
+ * difference in what the read costs and what the card is for: the summary walks
+ * every recording's sidecar off disk and answers a question the operator came
+ * looking for, while this reads one settings row and answers a question they did
+ * not ask — "is this thing changing what happens on Sunday, and by how much".
+ * A card that only tells you that after you press a button is a card that never
+ * tells most people at all, and an invisible adjustment is the whole failure
+ * this feature was built to avoid.
+ */
+function setupLocalNudgeCard(): void {
+  bindSetting('opt-local-adaptivity', generalBinding({
+    key: 'localAdaptivity',
+    // Repaint AFTER the persist, not on the change event: the card describes
+    // what the backend will actually do next Sunday, and a switch whose card
+    // updated optimistically would claim an adjustment that a failed write left
+    // un-armed.
+    after: () => { void refreshLocalNudgeCard() },
+  }))
+  document
+    .getElementById('btn-local-nudge-reset')
+    ?.addEventListener('click', () => void resetLocalNudge())
+}
+
+/** Re-entrancy guard, same reasoning as `learningSummaryLoading`. */
+let localNudgeLoading = false
+
+async function refreshLocalNudgeCard(): Promise<void> {
+  if (localNudgeLoading) return
+  const hintEl = document.getElementById('local-nudge-toggle-hint')
+  const statusEl = document.getElementById('local-nudge-status')
+  if (!hintEl || !statusEl) return
+
+  hintEl.textContent = applyParams(
+    t(
+      'general.localNudgeToggleHint',
+      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det. Aldri mer enn {limit} sekunder, og aldri før du har rettet minst {min} opptak.',
+    ),
+    { limit: String(MAX_BOUNDARY_NUDGE_SEC), min: String(MIN_CORRECTIONS_FOR_NUDGE) },
+  )
+
+  // Reading the nudge re-folds every recording's sidecar (see
+  // `learning::refresh_nudge` for why it is a recompute and not a cached read),
+  // so it inherits the learning summary's refusal above: the switch and its
+  // explanation stay on screen — a volunteer mid-recording should not find a
+  // card missing — but the read itself waits.
+  if (window.__isRecording) {
+    for (const id of ['local-nudge-headline', 'local-nudge-start', 'local-nudge-end', 'local-nudge-at-limit']) {
+      const el = document.getElementById(id)
+      if (el) el.style.display = 'none'
+    }
+    const resetBtn = document.getElementById('btn-local-nudge-reset')
+    if (resetBtn) resetBtn.style.display = 'none'
+    statusEl.textContent = t('general.learningUnavailableRecording', 'Ikke tilgjengelig mens opptak pågår.')
+    statusEl.style.display = ''
+    return
+  }
+
+  localNudgeLoading = true
+  try {
+    const nudge = await window.api.learningLocalNudge()
+    if (!nudge) {
+      // A real IPC failure, never rendered as "nothing adjusted" — the same
+      // distinction the learning summary makes, and it matters more here: an
+      // adjustment shown as absent is exactly the invisible state this card
+      // exists to prevent.
+      statusEl.textContent = t(
+        'general.localNudgeLoadFailed',
+        'Kunne ikke hente hva appen har justert. Prøv igjen.',
+      )
+      statusEl.style.display = ''
+      return
+    }
+    statusEl.style.display = 'none'
+    renderLocalNudge(nudge)
+  } finally {
+    localNudgeLoading = false
+  }
+}
+
+function renderLocalNudge(nudge: import('../../bindings/LocalNudge').LocalNudge): void {
+  const enabled = !!(document.getElementById('opt-local-adaptivity') as HTMLInputElement | null)
+    ?.checked
+  const view = buildLocalNudgeView(nudge, enabled)
+  paintLearningLine('local-nudge-headline', view.headline)
+  paintLearningLine('local-nudge-start', view.start)
+  paintLearningLine('local-nudge-end', view.end)
+  paintLearningLine('local-nudge-at-limit', view.atLimit)
+  const resetBtn = document.getElementById('btn-local-nudge-reset')
+  if (resetBtn) resetBtn.style.display = view.canReset ? '' : 'none'
+}
+
+/**
+ * The one click that puts the detector back to the shipped constants.
+ *
+ * No confirmation dialog. Every other destructive button in this app asks first
+ * because the thing it destroys cannot be rebuilt — a recording, a queue entry,
+ * a login item. This one throws away a derived number that the corrections on
+ * disk can produce again the moment the operator switches adaptivity back on,
+ * so a dialog would be asking permission to undo something undoable, and would
+ * put one more step between a confused volunteer and a recorder that behaves
+ * like every other install.
+ */
+async function resetLocalNudge(): Promise<void> {
+  const nudge = await window.api.learningLocalNudgeReset()
+  if (!nudge) {
+    toast('error', t('general.localNudgeLoadFailed', 'Kunne ikke hente hva appen har justert. Prøv igjen.'))
+    return
+  }
+  // The backend cleared the flag as well as the value; the checkbox has to
+  // follow, or the card would read "off" from a switch still showing "on".
+  setCheckbox('opt-local-adaptivity', false)
+  patchSettings({ localAdaptivity: false })
+  renderLocalNudge(nudge)
+  toast(
+    'success',
+    t(
+      'general.localNudgeResetDone',
+      'Nullstilt. Appen gjetter nå på nøyaktig samme måte som en nyinstallert app, og lærer ikke mer før du slår det på igjen.',
+    ),
+  )
+}
+
 /** One optional sentence: hidden when `line` is `null` (e.g. the trim
  *  tendency is still `Unclear`), translated + interpolated otherwise. */
 function paintLearningLine(id: string, line: CopyLine | null): void {
@@ -961,6 +1096,8 @@ export function applyGeneralSettingsToUI(): void {
   setVal('opt-update-channel',        settings.updateChannel ?? 'stable')
   paintActiveUpdateChannel()
   setCheckbox('opt-ask-open-editor',  settings.askOpenEditor !== false)
+  setCheckbox('opt-local-adaptivity', !!settings.localAdaptivity)
+  void refreshLocalNudgeCard()
   setVal('email-address', settings.emailAddress   ?? '')
   setVal('email-smtp',    settings.emailSmtp      ?? '')
   setVal('email-port',    settings.emailSmtpPort  ?? 587)
@@ -1037,7 +1174,8 @@ function collectGeneralSettings(): void {
     // Anything the select cannot produce is not a channel; the backend applies
     // the same fallback (UpdateChannel::parse), so the two ends agree.
     updateChannel:     (document.getElementById('opt-update-channel') as HTMLSelectElement | null)?.value === 'beta' ? 'beta' : 'stable',
-    askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked
+    askOpenEditor:     !!(document.getElementById('opt-ask-open-editor')   as HTMLInputElement | null)?.checked,
+    localAdaptivity:   !!(document.getElementById('opt-local-adaptivity')   as HTMLInputElement | null)?.checked
   })
 }
 

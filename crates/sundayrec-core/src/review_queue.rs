@@ -354,6 +354,7 @@ mod tests {
             "/r.mp4".into(),
             segs,
             &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
             0,
         )
     }
