@@ -58,11 +58,20 @@ npm run build          # tsc + vite frontend build
 All four must be green before a smoke test is meaningful. As of this runbook the
 gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest**
 frontend suite (pure logic like the editor cut-history state machine; grows as
-more pure logic is extracted) + clippy `-D warnings`. Every default-off feature
-also compiles in isolation —
-`cargo build -p sundayrec --features <flag>` for `email`/`tray`/`publish`/
-`editor`/`streaming`/`ndi`/`bridge`/`updater` (the `whisper` C++ build is the one
-exception, verified by inspection).
+more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
+in isolation — `cargo build -p sundayrec --features <flag>` for
+`email`/`tray`/`publish`/`editor`/`streaming`/`ndi`/`bridge`/`updater` (the
+`whisper` C++ build is the one exception, verified by inspection).
+
+⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
+sets `default = ["editor", "whisper", "tray", "updater", "email", "streaming"]`,
+so **all six are ON in a plain `npm run tauri dev` / `cargo build` and in every
+release**. The `--features <flag>` lines below them are redundant, not
+prerequisites, and a `feature_disabled` response from any of those six is a BUG
+to report — not the expected result. Only `publish`, `ndi`, `bridge` (plus
+`asio`/`vad`) are genuinely default-off and need an explicit `--features`; those
+sections say so and are correct. To exercise a disabled path deliberately, build
+with `--no-default-features`.
 
 ---
 
@@ -271,17 +280,16 @@ npm run tauri dev
 
 ---
 
-## 8. (Optional) Email alerts [NET] — `--features email`
+## 8. Email alerts [NET] — `email` (IN DEFAULT)
 
-The error/test mailer is behind the **default-off `email`** cargo feature, so
-the shipping build + the CI gate carry no SMTP/Gmail dep. The localized
-templates (7 langs), the throttle/dedup gate, and the RFC 2822/base64url message
-assembly are unit-tested in `sundayrec-core::email`; the **send** is
-NETWORK-UNVERIFIED. Build with the feature to exercise it:
+The error/test mailer is in the **`default` feature set**, so the shipping build
+and a plain `npm run tauri dev` both have it and pull the SMTP dep (`lettre`).
+The localized templates (7 langs), the throttle/dedup gate, and the RFC
+2822/base64url message assembly are unit-tested in `sundayrec-core::email`; the
+**send** is NETWORK-UNVERIFIED. Nothing extra to build — just run the app:
 
 ```bash
-cargo build -p sundayrec --features email
-npm run tauri dev -- --features email   # drive the "E-postvarsler" disclosure
+npm run tauri dev   # drive the "E-postvarsler" disclosure
 # Gmail path reuses the cloud OAuth token (connect Gmail first, §7-style);
 # SMTP path needs a host/port/credentials.
 ```
@@ -290,9 +298,11 @@ The **E-postvarsler** panel (R5) drives this. It reads `email_status` up-front
 (works in every build) to show whether this binary has the `email` feature and
 whether Gmail is already connected, picks the transport (Gmail no-config / SMTP
 host·port·user·pass·from), and fires `email_send_test` with the chosen language.
-In the **default build** (no `--features email`) `email_send_test` returns
-`feature_disabled` and the panel shows a calm "ikke bygd inn" hint (GUI-UNVERIFIED;
-the SMTP password is never persisted — it travels with the request and is dropped).
+In the **default build** `email_status` reports the feature present and
+`email_send_test` really sends — a `feature_disabled` here means something is
+wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
+`--no-default-features` build.) The SMTP password is never persisted — it travels
+with the request and is dropped.
 
 1. **Test message** via the Gmail path (Gmail OAuth connected). Pick "Gmail",
    enter a recipient, **Send testvarsel**.
@@ -307,21 +317,21 @@ the SMTP password is never persisted — it travels with the request and is drop
    - **Expected:** `lettre` connects + delivers; HTML + plaintext parts both
      present in the received mail.
 
-> [NET] The Gmail POST + the SMTP handshake are NETWORK-UNVERIFIED — wired and
-> compiling under `--features email`, never run against a real account/server in
-> the gate.
+> [NET] The Gmail POST + the SMTP handshake are NETWORK-UNVERIFIED — compiled
+> into every default build, never run against a real account/server in the gate.
 
 ---
 
-## 9. (Optional) Menubar tray + deep links [GUI] — `--features tray`
+## 9. Menubar tray + deep links [GUI] — `tray` (IN DEFAULT)
 
 The tray menu-model (localized items, actions, tooltip, icon precedence) and the
 inbound `sundayrec://` deep-link parser are unit-tested in
 `sundayrec-core::{tray, link}`; the native menubar item + scheme registration
-are **GUI-UNVERIFIED** behind the default-off `tray` feature.
+are **GUI-UNVERIFIED**. `tray` is in the **`default` feature set**, so it is
+present in every release build and in a plain `npm run tauri dev`.
 
-As of **R7** the tray is actually **installed** in `setup()` under
-`--features tray` (`tray::install` builds the `TrayIcon` from the core menu
+As of **R7** the tray is actually **installed** in `setup()` whenever the
+feature is on (`tray::install` builds the `TrayIcon` from the core menu
 model, wires `on_menu_event` → `handle_menu_event`, and registers the
 `tauri-plugin-deep-link` scheme handler that routes inbound URLs through
 `tray::dispatch_deep_link`). The menu **start/stop/show** actions are wired to
@@ -330,8 +340,7 @@ preflight / diagnostics / review-queue emit `tray://action` for the renderer to
 turn into the matching `invoke(...)`; **show**/**quit** are handled in-process.
 
 ```bash
-cargo build -p sundayrec --features tray
-npm run tauri dev -- --features tray
+npm run tauri dev   # tray is on by default — nothing to add
 ```
 
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
@@ -393,19 +402,20 @@ npm run tauri dev -- --features publish   # drive the Publisering disclosure
 
 ---
 
-## 10b. (Optional) Whisper transcription [HW] — `--features whisper`
+## 10b. Whisper transcription [HW] — `whisper` (IN DEFAULT)
 
 The model registry (id/url/size/SHA/quality), the whisper-cli/whisper-rs argv +
 thread heuristic, the ffmpeg 16 kHz-mono convert argv, the progress/exit parse,
 the JSON-sidecar → `TranscriptData` normalise, and the long-recording
 chunk-plan + segment-merge are all unit-tested in `sundayrec-core::whisper`. The
 model download (SHA-verified), the ffmpeg conversion, and the actual inference
-are **HARDWARE-UNVERIFIED** behind the default-off `whisper` feature (pulls
-`whisper-rs`, which compiles libwhisper from C/C++ source — needs CMake + a
-C/C++ toolchain).
+are **HARDWARE-UNVERIFIED**. `whisper` is in the **`default` feature set**, so
+every ordinary build pulls `whisper-rs` and compiles libwhisper from C/C++
+source — that needs CMake + a C/C++ toolchain, and it is why a first build is
+slow (~16 s on Apple silicon, cached after).
 
 ```bash
-cargo build -p sundayrec --features whisper   # CMake builds libwhisper
+cargo build -p sundayrec   # default already includes whisper; CMake builds libwhisper
 ```
 
 1. `whisper_list_models` / `whisper_model_status` / `whisper_delete_model` /
@@ -418,22 +428,23 @@ bytesDownloaded, bytesTotal, fraction }` (the shaping is the unit-tested
      flight returns `already_downloading`; `whisper_cancel_download` aborts the
      stream and removes the `.partial`; on completion the SHA-256 is verified
      against the registry (`verify_model_hash`) before the `.bin` is promoted.
-     `feature_disabled` means the build lacks `--features whisper`.
      // NETWORK-UNVERIFIED (the HTTPS stream + write are wired but unproven).
-2. With the feature ON, run `whisper_transcribe` on a short recording.
+2. Run `whisper_transcribe` on a short recording (the default build can).
    - **Expected:** ffmpeg converts to 16 kHz mono, whisper-rs runs, and a
      `TranscriptData` (seconds-based segments) comes back. A `feature_disabled`
-     validation error means the build doesn't have `--features whisper`.
+     validation error here is a BUG in a default build — it should only ever
+     appear under `--no-default-features`.
 
 The **Transkribering** panel (R5) drives this: pick a recording (from history) +
 a model + a language, **Transkriber**, then the segments render and **SRT** /
 **VTT** / **TXT** buttons save the transcript via `whisper_export_transcript`
 (native save dialog). The model registry + the export render work in **every**
-build; only `whisper_transcribe` needs the feature. In the default build the
-panel shows a calm "ikke bygd inn" hint after a transcribe attempt (GUI-UNVERIFIED).
+build; only `whisper_transcribe` needs the feature — which the default build
+has. The calm "ikke bygd inn" hint after a transcribe attempt belongs to a
+`--no-default-features` build only (GUI-UNVERIFIED).
 
 ```bash
-npm run tauri dev -- --features whisper   # drive the Transkribering disclosure
+npm run tauri dev   # drive the Transkribering disclosure
 ```
 
 3. (any build) **Export.** After a transcript exists, click SRT/VTT/TXT.
@@ -519,7 +530,7 @@ and whether the machine truly wakes are HARDWARE-UNVERIFIED.
 
 ---
 
-## 12. Non-destructive editor [HW] — `--features editor`
+## 12. Non-destructive editor [HW] — `editor` (IN DEFAULT)
 
 The editor I/O seam (`src-tauri/src/editor`) drives the bundled ffmpeg/ffprobe
 sidecar over the unit-tested `sundayrec-core::{editor, mastering,
@@ -545,13 +556,13 @@ Three things the editor overhaul settled, and what you are checking here:
   destination defaults to "Samme mappe"; progress is real and the render is
   cancellable and kill-timed.
 
-The ffmpeg runs are **HARDWARE-UNVERIFIED** (they need real media), so the
-commands sit behind the `editor` feature; a build without it returns
-`feature_disabled` and the panel shows a calm "not built into this build" hint.
+The ffmpeg runs are **HARDWARE-UNVERIFIED** (they need real media). `editor` is
+in the **`default` feature set**, so the Rediger screen is live in every release
+and in a plain `npm run tauri dev`; the `feature_disabled` response and the calm
+"not built into this build" hint only exist under `--no-default-features`.
 
 ```bash
-cargo build -p sundayrec --features editor    # must compile (gate verifies this)
-npm run tauri dev -- --features editor          # drive the Redigering disclosure
+npm run tauri dev   # drive the Redigering disclosure — editor is on by default
 ```
 
 1. Record (or import) a short service so it shows in History, open the
@@ -660,16 +671,16 @@ npm run tauri dev -- --features editor          # drive the Redigering disclosur
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they
 > compile and run in the default build and ARE exercised in the gate (real
 > tempdir round-trips). Only the ffmpeg-driven probe/preview/apply are
-> HARDWARE-UNVERIFIED behind `--features editor`.
+> HARDWARE-UNVERIFIED.
 
-> [HW] The ffprobe/decode/measure/render runs only execute under `--features
-editor` against real media — never in the gate. Only the core argv-building,
+> [HW] The ffprobe/decode/measure/render runs only execute against real media —
+> never in the gate. Only the core argv-building,
 > filter-graph, loudnorm parse, and VAD/sermon decisions are unit-tested in Rust
 > core; the renderer's peaks→SVG mapping and load→peaks→regions→export data flow
 > have no JS unit-test harness on this branch. The waveform/cut-band paint is
 > // GUI-UNVERIFIED.
-> The default build deliberately returns `feature_disabled` for every editor
-> command, and the panel shows a calm hint.
+> A `--no-default-features` build returns `feature_disabled` for every editor
+> command and the panel shows a calm hint; the default build does not.
 
 ### 12b. Editor STABILITY loop [HW] — prove the 2026-06 hardening
 
@@ -794,30 +805,32 @@ real camera frame) through the SAME backend a recording uses, then reports
 
 ---
 
-## §R3 — Live streaming (RTMP + lower-thirds) — `--features streaming`
+## §R3 — Live streaming (RTMP + lower-thirds) — `streaming` (IN DEFAULT)
 
 ```bash
-cargo build -p sundayrec --features streaming   # must compile (gate verifies this)
-npm run tauri dev -- --features streaming         # drive the Direktesending disclosure
+npm run tauri dev   # drive the Direktesending disclosure — streaming is on by default
 ```
 
 > [NET][HW] NETWORK + HARDWARE-UNVERIFIED. The camera open, the libx264 encode,
 > the RTMP push, the lower-third compositing, and the live-stats parse only run
-> under `--features streaming` against a real camera + a real RTMP endpoint +
+> against a real camera + a real RTMP endpoint +
 > a real key — never in the gate. Only the core decisions (the tee/encode/
 > overlay argv, the keyframe/bitrate math, the audio-map, the key/URL validation,
 > the key-redacted log copy) are unit-tested in Rust core; the panel's IPC
 > data-flow has no JS unit-test harness on this branch.
 
-1. Open the **Direktesending** disclosure. In the default build (no
-   `--features streaming`) **Start** returns `feature_disabled` and the panel
-   shows a calm "not built into this build" hint — the key vault still works.
+1. Open the **Direktesending** disclosure. In the **default build the START
+   button is live** — `streaming` ships in `default` precisely because the page
+   shipped with an enabled button that only ever raised `feature_disabled`. If
+   you see that error in a default build, it is a BUG. (Under
+   `--no-default-features` **Start** returns `feature_disabled` and the panel
+   shows a calm "not built into this build" hint — the key vault still works.)
 2. Add a destination (name + `rtmp://…` URL), paste a stream key, click
    **Lagre nøkkel**.
    - **Expected:** the key is validated (a key with a space/too short is
      rejected with a clear message) and stored in the OS keychain; the row shows
      a "•••• (lagret)" badge. **Slett nøkkel** removes it.
-3. (streaming build) With at least one enabled destination that has a saved key,
+3. With at least one enabled destination that has a saved key,
    pick a resolution + framerate, optionally tick **Vis tekstplakat** and choose
    a lower-third **Type** (Tekst = title ± subtitle, or Bilde = a logo image
    path); with the toggle off no overlay is sent. Click **Start**.
@@ -870,7 +883,7 @@ feature flag — this was part of PU-6. The **Gjennomgang** panel (R6) drives it
 
 ---
 
-## §R7 — Auto-update (`--features updater`) + settings completeness
+## §R7 — Auto-update (`updater`, IN DEFAULT) + settings completeness
 
 ### Auto-update
 
@@ -878,24 +891,25 @@ The status model (the localized `idle`/`checking`/`upToDate`/`available`/
 `downloading`/`readyToInstall`/`error` phases), the dev-check guard, the
 download-percent math, and the semver "is newer" decision are unit-tested in
 `sundayrec-core::update`. The feed fetch + signature verify + install + relaunch
-are **NETWORK/GUI-UNVERIFIED** behind the default-off `updater` feature, and a
-**real** update additionally needs a SIGNED release + the updater public key in
-`tauri.conf.json` — see docs/NEEDS-RICHARD.md.
+are **NETWORK/GUI-UNVERIFIED**, and a **real** update additionally needs a
+SIGNED release + the updater public key in `tauri.conf.json` — see
+docs/NEEDS-RICHARD.md. `updater` is in the **`default` feature set**, so it is
+present in every release build and in a plain `npm run tauri dev`.
 
 ```bash
-cargo build -p sundayrec --features updater   # must compile (gate verifies this)
-npm run tauri dev -- --features updater          # drive the Oppdateringer disclosure
+npm run tauri dev   # drive the Oppdateringer disclosure — updater is on by default
 ```
 
-1. Open the **Oppdateringer** disclosure. In the **default build** (no
-   `--features updater`) click **Se etter oppdateringer nå**.
-   - **Expected:** a calm "Automatisk oppdatering er ikke bygget inn i denne
-     versjonen." hint (the command returns `feature_disabled`). // GUI-UNVERIFIED.
-2. (`--features updater`, dev build) **Se etter oppdateringer nå**.
+1. Open the **Oppdateringer** disclosure and click **Se etter oppdateringer nå**.
+   - **Expected in a default build:** a real check, not a hint. The calm
+     "Automatisk oppdatering er ikke bygget inn i denne versjonen." message
+     (`feature_disabled`) belongs to a `--no-default-features` build only — seeing
+     it in a default build is a BUG. // GUI-UNVERIFIED.
+2. (dev build) **Se etter oppdateringer nå**.
    - **Expected:** the status reports **Du er oppdatert** — a dev build
      short-circuits the check (the `should_check` guard), so no error from a
      missing feed. // NETWORK-UNVERIFIED.
-3. (`--features updater`, **release** build pointed at a real signed feed) check
+3. (**release** build pointed at a real signed feed) check
    → **Last ned** → **↺ Start på nytt og installer**.
    - **Expected:** the panel walks `available` → `downloading {pct}` →
      `readyToInstall`; the relaunch applies the staged update. Needs the signed

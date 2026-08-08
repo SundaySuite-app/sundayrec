@@ -25,10 +25,15 @@ ikke er teknisk, et 👤-flagg som betyr «eieren må bestemme».
   regnes som **nådd** hvis navnet forekommer som en streng-literal i den
   strippede koden.
 - **Hvorfor navnet-som-streng holder:** `legacy/renderer/api-shim.ts` er den
-  _eneste_ fila i hele renderer-treet som importerer `invoke` fra
-  `@tauri-apps/api/core`. Alle 118 nådde kommandoer går gjennom den. Det finnes
-  ingen annen vei inn til backend, så et strengtreff utenfor kommentarer er i
-  praksis alltid et kall.
+  fila så godt som alle kall går gjennom, så et strengtreff utenfor kommentarer
+  er i praksis alltid et kall.
+  ⚠️ **Korrigert:** den er _ikke_ den eneste fila som importerer `invoke` fra
+  `@tauri-apps/api/core`. `legacy/renderer/deeplinks.ts:32` importerer den også,
+  og når `deeplink_confirm_captions` derfra (`deeplinks.ts:129`) — utenom shim-en.
+  Påstanden «alle nådde kommandoer går gjennom api-shim» er altså feil med
+  nøyaktig én. Målemetoden er upåvirket (den leter etter streng-literaler i hele
+  `legacy/`+`src/`, ikke etter kallsteder), men konklusjonen om at shim-en er
+  eneste vei inn til backend holder ikke.
 - **Kommentar-strippingen er nødvendig, ikke kosmetikk.** Uten den blir
   målingen feil i _optimistisk_ retning: shim-en dokumenterer flere kommandoer
   den ikke kaller (f.eks. `settings_export`, `prep_build_episode`), og et naivt
@@ -46,6 +51,14 @@ eller har en generisk typeparameter som selv inneholder en parentes
 ---
 
 ## 2. Hovedtall
+
+> ⏱️ **Tallene her er et øyeblikksbilde, ikke en løpende sannhet — og de har
+> allerede flyttet seg.** `scripts/check-command-reachability.mjs` (§7) måler det
+> samme på nytt hver `npm run check` og skriver ut avviket selv, f.eks.
+> `registered 191, reachable 130, unreachable 61` mot tabellens 178/118/60.
+> Skriptet **feiler ikke** på et slikt avvik — bare på en ekte regresjon — så
+> tabellen under skal leses som «slik så det ut da revisjonen ble gjort».
+> Kjør skriptet for dagens tall.
 
 | Måling                 | v0.9.0 (`c6325a6`) | Nå (`feat/make-it-real`) |
 | ---------------------- | -----------------: | -----------------------: |
@@ -317,8 +330,19 @@ forvirre neste person som leser:
 
 ## 7. Slik gjentar du målingen
 
-Kort oppskrift, ikke et skript i repoet (det ville vært enda en ting å
-vedlikeholde):
+**Det ER et skript i repoet:** `scripts/check-command-reachability.mjs`. Det
+kjører nøyaktig oppskriften under, og er en obligatorisk port — `npm run
+reachability` inngår i `npm run check` og i CI (`.github/workflows/ci.yml`,
+steget «Command reachability regression check»). Det feiler på en _regresjon_
+(en kommando som var nådd, ikke er det lenger) eller på en nyregistrert
+kommando ingen har klassifisert — ikke på tallene i seg selv.
+
+```bash
+npm run reachability                  # sjekk mot grunnlinja
+npm run reachability:write-baseline   # regenerer grunnlinja fra treet
+```
+
+Oppskriften det følger, om du vil gjøre det for hånd:
 
 1. Hent kommandonavnene ut av `generate_handler![…]` i `src-tauri/src/lib.rs` —
    én per linje på formen `commands::<område>::<navn>,`.
@@ -335,10 +359,14 @@ lytterne.
 
 ---
 
-## 8. Vedlegg — alle 118 nådde kommandoer
+## 8. Vedlegg — de 118 nådde kommandoene i denne målingen
 
-Alle går gjennom `legacy/renderer/api-shim.ts`, som er den eneste fila i
-renderer-treet som importerer `invoke`. Kolonnen «kalt fra» viser hvor
+De 118 radene under går alle gjennom `legacy/renderer/api-shim.ts`. Det er
+**ikke** fordi shim-en er den eneste fila som importerer `invoke` — se §1:
+`legacy/renderer/deeplinks.ts` gjør det også, og `deeplink_confirm_captions`
+nås derfra. Den kommandoen mangler i tabellen under; lista er altså den
+api-shim-baserte delmengden, ikke fasiten på hva som er nåbart. Kjør
+`npm run reachability` for det gjeldende tallet. Kolonnen «kalt fra» viser hvor
 strengen står; `(+N)` betyr at N andre filer også nevner navnet (typisk en
 side som logger eller tester rundt kallet).
 

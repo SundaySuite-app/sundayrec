@@ -3,8 +3,8 @@
 Single, current-state launchpad. The code is gate-green (the full Rust test suite;
 `npm run check` passes). Everything below that is **not** a code change is an owner action
 (secrets / accounts / signing) or a rig verification. Distilled from
-`NEEDS-RICHARD.md`, `DISTRIBUTION.md`, `RELEASE-AUDIT.md`, `SMOKE-TEST.md`,
-`ROLLBACK.md`.
+`NEEDS-RICHARD.md`, `DISTRIBUTION.md`, `archive/RELEASE-AUDIT-2026-06-01.md`,
+`SMOKE-TEST.md`, `ROLLBACK.md`.
 
 ## State of the release pipeline (verified in repo)
 
@@ -13,37 +13,70 @@ Single, current-state launchpad. The code is gate-green (the full Rust test suit
 | Build macOS + Windows on tag (`release.yml`)                                           | ✅ wired                                                                                                        |
 | Beta ring: `-beta.N` tag → GitHub pre-release, automatic                               | ✅ wired (`release.yml`'s `prerelease:` follows the tag)                                                        |
 | Auto-updater plugin + pubkey + endpoints (`tauri.conf.json`)                           | ✅ wired                                                                                                        |
-| `includeUpdaterJson: true` in `release.yml`                                            | ✅ set                                                                                                          |
+| `uploadUpdaterJson: true` in `release.yml`                                             | ✅ set (it was `includeUpdaterJson` until v0.11.0-beta.1 — never a real tauri-action input; the run ignored it) |
 | Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `SundayRec telemetry admin key`                                                  |
 | Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`)               | ⏳ Etappe 7 Worker-side rollout — see `sunday-telemetry` repo                                                   |
-| Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ⏳ pending — see the `qa/e7-update-channel` work; `tauri.conf.json` still points at GitHub as of this checklist |
+| Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ✅ shipped — `tauri.conf.json`'s endpoint and `sundayrec-core::update::DEFAULT_UPDATE_BASE` both name it        |
 | `sundayrec://` deep-link scheme registered (config + Info.plist)                       | ✅ config done — GUI-UNVERIFIED                                                                                 |
 | ts-rs bindings drift                                                                   | ✅ 0 diff (`npm run bindings`)                                                                                  |
-| macOS signing + notarization                                                           | 🔑 needs Apple secrets                                                                                          |
+| macOS signing                                                                          | 🔑 needs `MAC_CERTS` + `MAC_CERTS_PASSWORD` (identity is hardcoded in `release.yml`)                            |
+| macOS notarization                                                                     | 🚫 DISABLED in `release.yml` (env lines commented out — Apple PLA 403). Secrets alone do NOT re-enable it — §2a |
 | Updater signing                                                                        | 🔑 needs `TAURI_SIGNING_*` secrets                                                                              |
 | Windows signing                                                                        | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                       |
 
-## 1. Unblock CI (P0 — gates everything else)
+## 1. CI is not a blocker
 
-- [ ] **GitHub Actions billing**: `ci.yml` and `release.yml` run on Actions and
-      cannot start while the spending limit is frozen. Raise it / fix payment,
-      then re-run on a tag. Fallback while blocked: local `tauri build` (see
-      `RELEASE-AUDIT.md`).
+Nothing to do here. The repo is **public**, so Actions minutes are free —
+`ci.yml`'s own header says so, and it runs the full gate on every push to
+`main`, every PR, `v*` tags and manual dispatch. The frozen-spending-limit
+situation this section used to describe is over. (Historical fallback while it
+lasted: a local `tauri build` — see `docs/archive/RELEASE-AUDIT-2026-06-01.md`.)
 
 ## 2. macOS signing + notarization (Apple secrets)
 
 Settings → Secrets and variables → Actions. Team ID **784GN847G4** is on file.
 
-- [ ] `APPLE_CERTIFICATE` — base64 of the "Developer ID Application" `.p12`.
+> ⚠️ **Use the names below verbatim.** `release.yml` writes `APPLE_CERTIFICATE:`,
+> `APPLE_CERTIFICATE_PASSWORD:` and `APPLE_PASSWORD:` — but those are the
+> **env-var names tauri-action expects**, on the LEFT of the colon. The secrets
+> it actually reads are the ones on the right (`secrets.MAC_CERTS` etc.), which
+> are the Electron-era names kept so nothing had to be re-entered. Creating
+> secrets called `APPLE_CERTIFICATE`/`APPLE_PASSWORD` produces four secrets
+> nothing reads and a build that is still unsigned.
+
+For signing (active today — `release.yml` lines 153–155):
+
+- [ ] `MAC_CERTS` — base64 of the "Developer ID Application" `.p12`.
       ⚠️ The `.p12` on the Desktop reportedly has the **wrong password** —
       re-export from Keychain Access with a known password first.
-- [ ] `APPLE_CERTIFICATE_PASSWORD` — the new export password.
-- [ ] `APPLE_SIGNING_IDENTITY` — `Developer ID Application: … (784GN847G4)`.
+- [ ] `MAC_CERTS_PASSWORD` — the new export password.
+- ✅ **No signing-identity secret exists or is needed.** `APPLE_SIGNING_IDENTITY`
+  is a **hardcoded literal** in `release.yml`
+  (`"Developer ID Application: Richard Fossland (784GN847G4)"`). Changing the
+  identity is a source edit, not a secret.
+
+For notarization (**inactive** — see §2a):
+
 - [ ] `APPLE_ID` — Apple Developer account email.
-- [ ] `APPLE_PASSWORD` — an **app-specific** password. ⚠️ The previous one was
-      **leaked in chat** — revoke it at appleid.apple.com → Sign-In and Security
-      → App-Specific Passwords, generate a fresh one, store only as this secret.
+- [ ] `APPLE_APP_SPECIFIC_PASSWORD` — an **app-specific** password. ⚠️ The
+      previous one was **leaked in chat** — revoke it at appleid.apple.com →
+      Sign-In and Security → App-Specific Passwords, generate a fresh one, store
+      only as this secret.
 - [ ] `APPLE_TEAM_ID` — `784GN847G4`.
+
+### 2a. Notarization needs a source edit, not a secret
+
+Adding the three secrets above changes **nothing on its own**. The
+`APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` env lines in `release.yml` are
+**commented out unconditionally** (lines 163–165), disabled 2026-07-31 because
+Apple's notary service returns 403 _"A required agreement is missing or has
+expired"_ until the updated Program License Agreement is accepted on
+developer.apple.com for team 784GN847G4.
+
+- [ ] Accept the Program License Agreement at developer.apple.com.
+- [ ] **Uncomment those three lines in `release.yml`** and commit. Until that
+      commit exists, every build is Developer ID-signed but NOT notarized, and
+      first launch needs right-click ▸ Open.
 
 ## 3. Auto-update signing (plugin already wired — only secrets remain)
 
