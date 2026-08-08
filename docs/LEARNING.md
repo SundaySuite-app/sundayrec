@@ -220,11 +220,15 @@ Two places where the text and the storage are worth reading carefully together:
 `POST /v1/ingest` → `event_corrections` (raw) and, at the retention cutoff,
 `agg_corrections` (forever). Two properties matter for the ritual:
 
-- **Raw rows live 90 days.** `GET /v1/admin/summary`'s correction query reads
-  `event_corrections` only. Everything older survives as day totals in
-  `agg_corrections`, which **no admin route exposes** — reaching it takes a
-  `wrangler d1 execute` session against the database. A ritual run more than a
-  season after the corrections it wants to read will not see them in the tool.
+- **Raw rows live 90 days; the fold is served separately.** `GET
+/v1/admin/summary`'s correction query reads `event_corrections` only.
+  Everything older survives as day totals in `agg_corrections`, served by `GET
+/v1/admin/history` — a route the tool reads and folds in automatically, so a
+  ritual run a season late still sees the whole corpus. The split is exact (the
+  fold and the raw delete share one `db.batch()`), so summary + history is
+  all-time with no overlap. On a Worker that predates the route the tool gets a
+  404 and SAYS it is reading less than exists, with the `wrangler d1 execute`
+  fallback named in the output.
 - **`app_version` on an aggregate row is the REPORTING build**, not necessarily
   the build whose proposal was corrected (migration 0004 says so out loud). The
   local `TrimAdjustment` carries the right one; the wire does not, to avoid

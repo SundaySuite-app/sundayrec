@@ -17,6 +17,11 @@
 //   GET /v1/admin/channels  — which tag each ring serves. A correction can only
 //                             come from a build that captures corrections, so
 //                             "what is promoted" is part of reading the number.
+//   GET /v1/admin/history   — OPTIONAL: what the purge has already folded into
+//                             `agg_corrections`/`agg_companion`, i.e. everything
+//                             older than the raw window. A 404 means the Worker
+//                             predates the route; the tool then says so instead
+//                             of silently reading less than exists.
 //
 // Both on `https://telemetry.sundaysuite.app`, which is the ADMIN half of the
 // Worker; the public update feed lives on the other hostname and is not touched
@@ -176,10 +181,19 @@ export function signTestP(n, k) {
  * can be tested against a corpus that does not exist yet — which today is the
  * only kind there is.
  */
-export function summariseCorrections(summary, bar) {
-  const rows = Array.isArray(summary?.correctionBands)
+export function summariseCorrections(summary, bar, history = null) {
+  const raw = Array.isArray(summary?.correctionBands)
     ? summary.correctionBands
     : [];
+  // The history route serves day totals (`total`); the summary serves raw rows
+  // (`n`). Normalised here so one fold reads both — evidence does not expire,
+  // and a correction the purge folded means what it meant on day one. The two
+  // sources never overlap (the fold and the raw delete share one db.batch on
+  // the Worker), so plain concatenation cannot double-count.
+  const folded = Array.isArray(history?.corrections?.rows)
+    ? history.corrections.rows.map((r) => ({ ...r, n: r.total }))
+    : [];
+  const rows = [...raw, ...folded];
   const out = [];
   for (const [signal, meaning] of SIGNALS) {
     const mine = rows.filter((r) => r.signal === signal);
@@ -259,16 +273,25 @@ function renderExposure(summary, lines) {
  * evidence bar, returns a string. That is what lets the empty-corpus case be a
  * unit test rather than something only a live run can show.
  */
-export function renderReport({ summary, channels, bar, generatedAt }) {
+export function renderReport({
+  summary,
+  channels,
+  bar,
+  generatedAt,
+  history = null,
+}) {
   const lines = [];
-  const signals = summariseCorrections(summary, bar);
+  const historyRead = history !== null && typeof history === "object";
+  const signals = summariseCorrections(summary, bar, history);
   const grandTotal = signals.reduce((a, s) => a + s.total, 0);
   const unrecognised = signals.reduce((a, s) => a + s.unrecognised, 0);
 
   lines.push(
     "SundayRec — what the fleet's corrections say about the sermon detector",
   );
-  lines.push(`  source ....... ${ADMIN_BASE_URL}/v1/admin/summary (read-only)`);
+  lines.push(
+    `  source ....... ${ADMIN_BASE_URL}/v1/admin/summary${historyRead ? " + /v1/admin/history" : ""} (read-only)`,
+  );
   lines.push(`  read at ...... ${generatedAt}`);
   lines.push("");
 
@@ -341,12 +364,23 @@ export function renderReport({ summary, channels, bar, generatedAt }) {
       "  editor nobody opened and an editor nobody corrected are different facts.",
     );
     lines.push("");
-    lines.push(renderCompanion(summary));
-    lines.push(renderWindowNote(summary));
+    lines.push(renderCompanion(summary, history));
+    lines.push(renderWindowNote(summary, history));
     return lines.join("\n").trimEnd() + "\n";
   }
 
   lines.push("CORRECTIONS — counts, per signal, smallest band first");
+  if (historyRead) {
+    const rawN = (
+      Array.isArray(summary?.correctionBands) ? summary.correctionBands : []
+    ).reduce((a, r) => a + (Number(r.n) || 0), 0);
+    const histN = (
+      Array.isArray(history?.corrections?.rows) ? history.corrections.rows : []
+    ).reduce((a, r) => a + (Number(r.total) || 0), 0);
+    lines.push(
+      `  (${rawN} in the raw window + ${histN} from the folded history)`,
+    );
+  }
   lines.push("");
   for (const s of signals) {
     lines.push(`  ${s.signal}  —  ${s.meaning}`);
@@ -381,8 +415,8 @@ export function renderReport({ summary, channels, bar, generatedAt }) {
     lines.push("");
   }
 
-  lines.push(renderCompanion(summary));
-  lines.push(renderWindowNote(summary));
+  lines.push(renderCompanion(summary, history));
+  lines.push(renderWindowNote(summary, history));
   return lines.join("\n").trimEnd() + "\n";
 }
 
@@ -418,10 +452,16 @@ function renderSkew(s, bar) {
 }
 
 /** The companion's outcomes, which the same ritual reads and the same bar governs. */
-function renderCompanion(summary) {
-  const rows = Array.isArray(summary?.companionOutcomes)
+function renderCompanion(summary, history = null) {
+  const raw = Array.isArray(summary?.companionOutcomes)
     ? summary.companionOutcomes
     : [];
+  // Same normalisation as the corrections: history serves `total`, raw serves
+  // `n`, and the two sides of the purge cutoff never overlap.
+  const folded = Array.isArray(history?.companion?.rows)
+    ? history.companion.rows.map((r) => ({ ...r, n: r.total }))
+    : [];
+  const rows = [...raw, ...folded];
   const total = rows.reduce((a, r) => a + (Number(r.n) || 0), 0);
   if (total === 0) {
     return "COMPANION SUGGESTIONS\n  NOTHING TO READ — no outcome has been reported.\n";
@@ -453,18 +493,31 @@ function renderCompanion(summary) {
  *     each from ten. The sign test above assumes they are independent, and that
  *     assumption cannot be checked from this data.
  */
-function renderWindowNote(summary) {
+function renderWindowNote(summary, history = null) {
   const days = summary?.retention?.retentionDays;
   const oldest = summary?.raw?.oldest;
+  const historyRead = history !== null && typeof history === "object";
   const lines = ["WHAT THIS VIEW CANNOT SEE"];
-  lines.push(
-    `  • Only the raw window${days ? ` (${days} days)` : ""}${
-      oldest ? `, oldest row ${new Date(Number(oldest)).toISOString()}` : ""
-    }. Older corrections live`,
-  );
-  lines.push(
-    "    on in agg_corrections, which no admin route serves — read it with wrangler d1.",
-  );
+  if (historyRead) {
+    lines.push(
+      `  • Nothing by age: the raw window${days ? ` (${days} days)` : ""} AND the folded history were`,
+    );
+    lines.push(
+      "    both read, so corrections older than the window are included as day totals.",
+    );
+  } else {
+    lines.push(
+      `  • Only the raw window${days ? ` (${days} days)` : ""}${
+        oldest ? `, oldest row ${new Date(Number(oldest)).toISOString()}` : ""
+      }. Older corrections live`,
+    );
+    lines.push(
+      "    on in agg_corrections; the /v1/admin/history route that serves them is not",
+    );
+    lines.push(
+      "    deployed on this Worker yet — until it is, read them with wrangler d1.",
+    );
+  }
   lines.push(
     "  • No install id on a correction row (migration 0004). Forty corrections from",
   );
@@ -534,6 +587,35 @@ async function get(path, key) {
   }
 }
 
+/**
+ * Like `get`, but a 404 is an ANSWER, not an error: it means this Worker
+ * predates the `/v1/admin/history` route. The report then says plainly that it
+ * is reading less than exists, instead of either crashing or — worse —
+ * pretending the raw window is the whole story. Every other failure is still
+ * loud: a 401 on this route is the same broken key as everywhere else.
+ */
+async function getOptional(path, key) {
+  let res;
+  try {
+    res = await fetch(`${ADMIN_BASE_URL}${path}`, {
+      method: "GET",
+      headers: { "x-admin-key": key },
+    });
+  } catch (e) {
+    fail(`request to ${path} failed: ${e.message}`);
+  }
+  if (res.status === 404) return null;
+  const text = await res.text();
+  if (!res.ok) {
+    fail(`GET ${path} returned HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    fail(`GET ${path} did not return JSON (${e.message}).`);
+  }
+}
+
 // ── main ────────────────────────────────────────────────────────────────────
 async function main() {
   const wantJson = process.argv.slice(2).includes("--json");
@@ -542,9 +624,10 @@ async function main() {
   const key = readAdminKey();
   const summary = await get("/v1/admin/summary", key);
   const channels = await get("/v1/admin/channels", key);
+  const history = await getOptional("/v1/admin/history", key);
 
   if (wantJson) {
-    console.log(JSON.stringify({ summary, channels }, null, 2));
+    console.log(JSON.stringify({ summary, channels, history }, null, 2));
     return;
   }
 
@@ -552,6 +635,7 @@ async function main() {
     renderReport({
       summary,
       channels,
+      history,
       bar,
       generatedAt: new Date(
         Number(summary?.generatedAt) || Date.now(),
