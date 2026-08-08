@@ -251,6 +251,9 @@ declare global {
       cloudQueueRemove:    (id: string) => Promise<boolean>
       cloudQueueFlush:     () => Promise<boolean>
       podcastRegenerate:   (service: string) => Promise<{ ok: boolean; feedUrl?: string; episodeCount: number; error?: string }>
+      /** Whether this build can write/upload the RSS feed (the `publish` cargo
+       *  feature) — the Filer-page gate's truth source. `null` = could not ask. */
+      podcastFeedStatus:   () => Promise<{ featureBuilt: boolean; episodeCount: number } | null>
       registerTrustedPath: (filePath: string) => Promise<boolean>
       gmailConnect:       () => Promise<{ ok: boolean; email?: string; error?: string }>
       gmailDisconnect:    () => Promise<{ ok: boolean }>
@@ -398,7 +401,10 @@ declare global {
       getServiceLink:          (recordingPath: string) => Promise<ServiceLink | null>
       sundayEditSend:            (opts: { videoPath: string; language?: string; context?: string; glossary?: string[] }) => Promise<{ ok: boolean; error?: string }>
       sundayEditImport:          (recordingPath: string, subtitlePath: string, language?: string) => Promise<{ ok: boolean; transcriptPath?: string; error?: string }>
-      stageImport:             (recordingPath: string, manifestPath: string, wasStreamed?: boolean) => Promise<{ ok: boolean; chapterCount?: number; songCount?: number; error?: string }>
+      /** The complete Stage import: manifest JSON (its CONTENT, not a path — the
+       *  webview can read the picked File, it cannot learn its fs path) →
+       *  chapters into `.meta.json` + `.service.json` beside the recording. */
+      stageImport:             (recordingPath: string, manifestJson: string, wasStreamed?: boolean) => Promise<{ ok: boolean; chapterCount?: number; songCount?: number; error?: string }>
       songSetApiKey:           (key: string) => Promise<void>
       songHasApiKey:           () => Promise<boolean>
       songSubmitUsage:         (recordingPath: string) => Promise<{ ok: boolean; submitted?: number; errors?: Array<{ key: string; error: string }>; error?: string; hint?: string }>

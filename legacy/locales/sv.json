@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Spara destinationer",
     "streamUnsaved": "Inte sparat än",
     "gateCloudExplain": "Molnbackup är inte konfigurerat i det här bygget — Google-nyckeln som krävs för att ansluta ett konto saknas.",
-    "gateCloudHint": "Be om ett bygge med molnbackup påslaget om församlingen behöver det."
+    "gateCloudHint": "Be om ett bygge med molnbackup påslaget om församlingen behöver det.",
+    "unavailableBuild": "ingår inte i den här versionen av SundayRec",
+    "unavailableBuildLong": "RSS-generering ingår inte i den här versionen av SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Kunde inte öppna",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "Adressen måste börja med https://",
     "errChurchId": "Församlings-ID är ett UUID från SundaySong eller SundayPlan",
     "errKeyEmpty": "Klistra in nyckeln först",
-    "keySaved": "✓ API-nyckel sparad (krypterad)"
+    "keySaved": "✓ API-nyckel sparad (krypterad)",
+    "errKeySaveFailed": "Kunde inte spara nyckeln",
+    "errKeyClearFailed": "Kunde inte ta bort nyckeln",
+    "errConnectionSaveFailed": "Kunde inte spara anslutningen",
+    "stageChapters": "kapitel",
+    "stageSongs": "sånger",
+    "stageInvalidManifest": "✕ Ogiltigt manifest",
+    "stageNotInHistory": "✕ Inspelningen finns inte i historiken",
+    "stageFailed": "Fel"
   },
   "live": {
     "title": "Direktsändning",

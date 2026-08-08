@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Enregistrer les destinations",
     "streamUnsaved": "Pas encore enregistré",
     "gateCloudExplain": "La sauvegarde cloud n’est pas configurée dans cette version — la clé Google nécessaire pour connecter un compte est absente.",
-    "gateCloudHint": "Demandez une version avec la sauvegarde cloud activée si la paroisse en a besoin."
+    "gateCloudHint": "Demandez une version avec la sauvegarde cloud activée si la paroisse en a besoin.",
+    "unavailableBuild": "absent de cette version de SundayRec",
+    "unavailableBuildLong": "La génération RSS est absente de cette version de SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Impossible d’ouvrir",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "L’adresse doit commencer par https://",
     "errChurchId": "L’identifiant de paroisse est un UUID issu de SundaySong ou SundayPlan",
     "errKeyEmpty": "Collez d’abord la clé",
-    "keySaved": "✓ Clé API enregistrée (chiffrée)"
+    "keySaved": "✓ Clé API enregistrée (chiffrée)",
+    "errKeySaveFailed": "Impossible d'enregistrer la clé",
+    "errKeyClearFailed": "Impossible de supprimer la clé",
+    "errConnectionSaveFailed": "Impossible d'enregistrer la connexion",
+    "stageChapters": "chapitres",
+    "stageSongs": "chants",
+    "stageInvalidManifest": "✕ Manifeste invalide",
+    "stageNotInHistory": "✕ L'enregistrement n'est pas dans l'historique",
+    "stageFailed": "Erreur"
   },
   "live": {
     "title": "Diffusion en direct",

@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Zapisz cele",
     "streamUnsaved": "Jeszcze nie zapisano",
     "gateCloudExplain": "Kopia w chmurze nie jest skonfigurowana w tej wersji — brakuje klucza Google potrzebnego do połączenia konta.",
-    "gateCloudHint": "Poproś o wersję z włączoną kopią w chmurze, jeśli parafia tego potrzebuje."
+    "gateCloudHint": "Poproś o wersję z włączoną kopią w chmurze, jeśli parafia tego potrzebuje.",
+    "unavailableBuild": "niedostępne w tej kompilacji SundayRec",
+    "unavailableBuildLong": "Generowanie RSS jest niedostępne w tej kompilacji SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Nie udało się otworzyć",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "Adres musi zaczynać się od https://",
     "errChurchId": "Identyfikator parafii to UUID z SundaySong lub SundayPlan",
     "errKeyEmpty": "Najpierw wklej klucz",
-    "keySaved": "✓ Klucz API zapisany (zaszyfrowany)"
+    "keySaved": "✓ Klucz API zapisany (zaszyfrowany)",
+    "errKeySaveFailed": "Nie udało się zapisać klucza",
+    "errKeyClearFailed": "Nie udało się usunąć klucza",
+    "errConnectionSaveFailed": "Nie udało się zapisać połączenia",
+    "stageChapters": "rozdziały",
+    "stageSongs": "pieśni",
+    "stageInvalidManifest": "✕ Nieprawidłowy manifest",
+    "stageNotInHistory": "✕ Nagranie nie znajduje się w historii",
+    "stageFailed": "Błąd"
   },
   "live": {
     "title": "Transmisja na żywo",

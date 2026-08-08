@@ -18,6 +18,17 @@ import { t } from '../i18n'
 import { bindSetting, showSavedChip } from '../ui/bind-setting'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 
+/** Human-readable message from a rejected `window.api` call (Tauri serializes
+ *  AppError to `{ code, message }`, not an `Error`). */
+function errText(e: unknown): string {
+  if (typeof e === 'string') return e
+  if (e instanceof Error) return e.message
+  const o = (e ?? {}) as { message?: unknown; code?: unknown }
+  if (typeof o.message === 'string' && o.message) return o.message
+  if (typeof o.code === 'string' && o.code) return o.code
+  return String(e)
+}
+
 const $ = (id: string) => document.getElementById(id)
 
 /** Accept an empty field or a well-formed http(s) URL — nothing in between. */
@@ -99,9 +110,13 @@ export async function setupIntegrationsPage(): Promise<void> {
       persist: async () => {
         const el = $(id) as HTMLInputElement | null
         try {
-          await window.api.setIntegrationSettings(payload(!!el?.checked))
+          // The backend returns the MERGED settings — keep `current` in step so
+          // the connection card's Avbryt restores what is actually stored.
+          const merged = await window.api.setIntegrationSettings(payload(!!el?.checked))
+          current = merged as typeof current
           return true
         } catch {
+          // `false` → bindSetting shows the error toast and NO «Lagret ✓».
           return false
         }
       },
@@ -125,7 +140,15 @@ export async function setupIntegrationsPage(): Promise<void> {
       return
     }
     setFieldError(inp, null)
-    await window.api.songSetApiKey(key)
+    try {
+      // Keychain write (integrations_song_set_apikey). The ✓ below may only
+      // ever follow a store that actually happened — a rejected save shows its
+      // real reason here instead of an unhandled rejection and a silent field.
+      await window.api.songSetApiKey(key)
+    } catch (err) {
+      setFieldError(inp, `${t('integrations.errKeySaveFailed', 'Kunne ikke lagre nøkkelen')}: ${errText(err)}`)
+      return
+    }
     inp.value = ''
     if (statusEl) statusEl.textContent = t('integrations.keySaved', '✓ API-nøkkel lagret (kryptert)')
     showSavedChip($('btn-song-apikey-save')?.parentElement ?? null)
@@ -161,7 +184,12 @@ export async function setupIntegrationsPage(): Promise<void> {
       return
     }
     setFieldError(inp, null)
-    await window.api.companionSetLlmKey(key)
+    try {
+      await window.api.companionSetLlmKey(key)
+    } catch (err) {
+      setFieldError(inp, `${t('integrations.errKeySaveFailed', 'Kunne ikke lagre nøkkelen')}: ${errText(err)}`)
+      return
+    }
     inp.value = ''
     if (statusEl) statusEl.textContent = t('companion.keyStored', '✓ API-nøkkel lagret (nøkkelring)')
     showSavedChip($('btn-companion-apikey-save')?.parentElement ?? null)
@@ -170,7 +198,15 @@ export async function setupIntegrationsPage(): Promise<void> {
   $('btn-companion-apikey-clear')?.addEventListener('click', async () => {
     const inp = $('integration-companion-apikey') as HTMLInputElement | null
     const statusEl = $('integration-companion-apikey-status')
-    await window.api.companionClearLlmKey()
+    try {
+      await window.api.companionClearLlmKey()
+    } catch (err) {
+      // «Ingen nøkkel» under er et LØFTE om at nøkkelen er borte — det får
+      // ikke stå der hvis slettingen faktisk feilet.
+      setFieldError(inp, `${t('integrations.errKeyClearFailed', 'Kunne ikke fjerne nøkkelen')}: ${errText(err)}`)
+      return
+    }
+    setFieldError(inp, null)
     if (inp) inp.value = ''
     if (statusEl) statusEl.textContent = t('companion.keyNone', 'Ingen nøkkel — lokal oppsummering brukes')
   })
@@ -201,8 +237,14 @@ export async function setupIntegrationsPage(): Promise<void> {
         planApiUrl: planUrlInput2?.value.trim()  || undefined,
       },
     }
-    current = { ...current, ...patch } as typeof current
-    await window.api.setIntegrationSettings(patch)
+    try {
+      // «Lagret ✓» kommer ETTER lagringen — og `current` oppdateres fra det
+      // backend faktisk slo sammen, ikke fra det vi håpet den ville lagre.
+      current = (await window.api.setIntegrationSettings(patch)) as typeof current
+    } catch (err) {
+      setFieldError(churchInput, `${t('integrations.errConnectionSaveFailed', 'Kunne ikke lagre tilkoblingen')}: ${errText(err)}`)
+      return
+    }
     showSavedChip($('btn-integrations-connection-save')?.parentElement ?? null)
   })
 

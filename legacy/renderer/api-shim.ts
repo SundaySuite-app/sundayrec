@@ -1789,10 +1789,14 @@ const api: Record<string, unknown> = {
   companionLlmConfigured: async () =>
     call("companion_llm_configured", undefined, false),
   // Save/clear the Anthropic key in the OS keychain (never settings/bundle).
+  // Bare `invoke`, not `call()`: these back a «✓ lagret»-style receipt, and the
+  // old `call(…, false).then(() => true)` turned a FAILED keychain write into
+  // `true` — the panel then showed ✓ over a key that was never stored. The
+  // rejection must travel so the panel's catch can show the real reason.
   companionSetLlmKey: async (key: string) =>
-    call("companion_set_llm_key", { key }, false).then(() => true),
+    invoke("companion_set_llm_key", { key }).then(() => true),
   companionClearLlmKey: async () =>
-    call("companion_clear_llm_key", undefined, false).then(() => true),
+    invoke("companion_clear_llm_key", undefined).then(() => true),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a
@@ -1994,7 +1998,39 @@ const api: Record<string, unknown> = {
   cloudQueueRetry: async () => true,
   cloudQueueRemove: async () => true,
   cloudQueueFlush: async () => true,
-  podcastRegenerate: async () => ({ ok: false }),
+  // Podcast RSS: `publish_feed_status` answers whether THIS build can write
+  // the feed at all (the default-off `publish` cargo feature) — the Filer-page
+  // gate reads it so the «Generer feed nå» button can say the truth instead of
+  // failing on click. `null` fallback = "could not even ask", which the gate
+  // treats as not-available.
+  podcastFeedStatus: async () =>
+    call<{ featureBuilt: boolean; episodeCount: number } | null>(
+      "publish_feed_status",
+      undefined,
+      null,
+    ),
+  // `publish_generate_feed` writes `podcast.xml` beside the save folder and
+  // returns a FeedPreview; map it onto the old Electron `{ ok, episodeCount,
+  // feedUrl }` the two consumers branch on. This was the stub `{ ok: false }`
+  // — every click ended in «✕ ukjent feil» by construction. On failure the
+  // REAL reason (e.g. `feature_disabled`, `no_config`) is surfaced; the
+  // `service` argument is unused (the Tauri command resolves everything from
+  // settings) but kept for signature parity.
+  podcastRegenerate: async (_service: string) => {
+    try {
+      const r = await invoke<{ episodeCount?: number; feedUrl?: string }>(
+        "publish_generate_feed",
+        undefined,
+      );
+      return {
+        ok: true as const,
+        episodeCount: r?.episodeCount ?? 0,
+        feedUrl: r?.feedUrl,
+      };
+    } catch (e) {
+      return { ok: false as const, episodeCount: 0, error: ipcErrText(e) };
+    }
+  },
   registerTrustedPath: async () => true,
 
   // ── Gmail / YouTube ─────────────────────────────────────────────────────
@@ -2242,17 +2278,130 @@ const api: Record<string, unknown> = {
   ) => call<boolean>("review_update_jingles", { id, jingles }, false),
 
   // ── Integrations (Sunday-suite) ─────────────────────────────────────────
-  getIntegrationSettings: async () => ({ enabled: false }),
-  setIntegrationSettings: async () => ({ enabled: false }),
-  getServiceLink: async () => null,
-  sundayEditSend: async () => ({ ok: false }),
-  sundayEditImport: async () => ({ ok: false }),
-  stageImport: async () => ({ ok: false }),
-  songSetApiKey: async () => true,
-  songHasApiKey: async () => false,
-  songSubmitUsage: async () => ({ ok: false }),
-  planFetchServices: async () => [],
-  planUpdateService: async () => ({ ok: false }),
+  //
+  // Wired to the real `integrations_*` commands (commands/integrations.rs).
+  // These eleven were PERMANENT STUBS from the port — not fixture fallbacks,
+  // stubs that ran in the shipped app too: the whole Integrasjoner panel showed
+  // «Lagret ✓» while persisting nothing, and a pasted SundaySong API key never
+  // reached the keychain. Same failure class as the three `review_update_*`
+  // lies Fase 3 fixed; see docs/COMMAND_AUDIT_2026-08.md §4.2.
+  //
+  // Discipline: READS go through `call()` (a broken backend degrades to the
+  // empty state, visibly, via the E2.4 failure ring). WRITES use a bare
+  // `invoke` and LET THE REJECTION TRAVEL — the callers' catch is what keeps
+  // «Lagret ✓» honest, so a fallback here would reintroduce the lie.
+  getIntegrationSettings: async () =>
+    call("integrations_get_settings", undefined, { enabled: false }),
+  setIntegrationSettings: async (patch: unknown) =>
+    invoke("integrations_set_settings", { patch }),
+  getServiceLink: async (recordingPath: string) =>
+    call("integrations_get_service_link", { recordingPath }, null),
+  // The hand-offs return the backend's structured `{ ok, error?, … }` OpResult
+  // verbatim; a rejected invoke becomes the same shape with the REAL reason,
+  // never a bare `{ ok: false }` (which renders as «✕ ukjent feil»).
+  sundayEditSend: async (opts: {
+    videoPath: string;
+    language?: string;
+    context?: string;
+    glossary?: string[];
+  }) => {
+    try {
+      return await invoke("integrations_sundayedit_send", {
+        videoPath: opts.videoPath,
+        language: opts.language ?? null,
+        context: opts.context ?? null,
+        glossary: opts.glossary ?? null,
+      });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  sundayEditImport: async (
+    recordingPath: string,
+    subtitlePath: string,
+    language?: string,
+  ) => {
+    try {
+      return await invoke("integrations_sundayedit_import", {
+        recordingPath,
+        subtitlePath,
+        language: language ?? null,
+      });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  // The COMPLETE Stage import (stage_import_apply): manifest JSON → chapters
+  // merged into `.meta.json` + `.service.json` written. The recording's start
+  // time — what the manifest's absolute timestamps are aligned against — comes
+  // from its own history row; a file with no row has no start time to align
+  // to, and saying so beats writing chapters at made-up offsets.
+  stageImport: async (
+    recordingPath: string,
+    manifestJson: string,
+    wasStreamed?: boolean,
+  ) => {
+    try {
+      const rows = await invoke<
+        { file_path?: string; started_at?: number; duration_ms?: number | null }[]
+      >("recordings_list", undefined);
+      const row = rows.find((r) => r?.file_path === recordingPath);
+      if (!row || typeof row.started_at !== "number") {
+        return { ok: false as const, error: "recording_not_in_history" };
+      }
+      return await invoke("stage_import_apply", {
+        recordingPath,
+        manifestJson,
+        recordingStartMs: Math.round(row.started_at),
+        durationSec:
+          typeof row.duration_ms === "number"
+            ? Math.round(row.duration_ms / 1000)
+            : null,
+        wasStreamed: wasStreamed ?? null,
+        serviceDate: null,
+      });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  // Keychain-only (SecretProvider::SongApiKey → `integrations.song_api_key`),
+  // mirroring the SMTP-password slot. Never localStorage, never the settings
+  // blob. Rejections travel: the panel's catch shows the reason instead of ✓.
+  songSetApiKey: async (key: string) =>
+    invoke("integrations_song_set_apikey", { plaintext: key }),
+  songHasApiKey: async () =>
+    call<boolean>("integrations_song_has_apikey", undefined, false),
+  songSubmitUsage: async (recordingPath: string) => {
+    try {
+      return await invoke("integrations_song_submit_usage", { recordingPath });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  planFetchServices: async (fromIso?: string) => {
+    try {
+      return await invoke("integrations_plan_fetch_services", {
+        fromIso: fromIso ?? null,
+      });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
+  planUpdateService: async (
+    serviceId: string,
+    wasStreamed?: boolean,
+    recordingUrl?: string,
+  ) => {
+    try {
+      return await invoke("integrations_plan_update_service", {
+        serviceId,
+        wasStreamed: wasStreamed ?? null,
+        recordingUrl: recordingUrl ?? null,
+      });
+    } catch (e) {
+      return { ok: false as const, error: ipcErrText(e) };
+    }
+  },
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
   notifyWeakSignal: noop,

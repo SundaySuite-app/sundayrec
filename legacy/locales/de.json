@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Ziele speichern",
     "streamUnsaved": "Noch nicht gespeichert",
     "gateCloudExplain": "Cloud-Backup ist in dieser Version nicht eingerichtet — der Google-Schlüssel zum Verbinden eines Kontos fehlt.",
-    "gateCloudHint": "Fordern Sie eine Version mit aktiviertem Cloud-Backup an, wenn die Gemeinde das braucht."
+    "gateCloudHint": "Fordern Sie eine Version mit aktiviertem Cloud-Backup an, wenn die Gemeinde das braucht.",
+    "unavailableBuild": "in diesem Build von SundayRec nicht enthalten",
+    "unavailableBuildLong": "Die RSS-Generierung ist in diesem Build von SundayRec nicht enthalten."
   },
   "integrations": {
     "sundayEditFailed": "Konnte nicht geöffnet werden",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "Die Adresse muss mit https:// beginnen",
     "errChurchId": "Die Gemeinde-ID ist eine UUID aus SundaySong oder SundayPlan",
     "errKeyEmpty": "Fügen Sie zuerst den Schlüssel ein",
-    "keySaved": "✓ API-Schlüssel gespeichert (verschlüsselt)"
+    "keySaved": "✓ API-Schlüssel gespeichert (verschlüsselt)",
+    "errKeySaveFailed": "Schlüssel konnte nicht gespeichert werden",
+    "errKeyClearFailed": "Schlüssel konnte nicht entfernt werden",
+    "errConnectionSaveFailed": "Verbindung konnte nicht gespeichert werden",
+    "stageChapters": "Kapitel",
+    "stageSongs": "Lieder",
+    "stageInvalidManifest": "✕ Ungültiges Manifest",
+    "stageNotInHistory": "✕ Die Aufnahme ist nicht in der Historie",
+    "stageFailed": "Fehler"
   },
   "live": {
     "title": "Live-Übertragung",
