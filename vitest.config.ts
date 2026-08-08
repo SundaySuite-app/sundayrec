@@ -8,6 +8,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["legacy/**/*.test.ts"],
+    // `scripts/` is release plumbing (promote-release's manifest gate). It has
+    // no DOM either, so it runs in the same fast node pass rather than needing
+    // a second config — and it means `npm run test`, and therefore CI, the
+    // pre-tag mirror, and `npm run check`, all cover it.
+    include: ["legacy/**/*.test.ts", "scripts/**/*.test.mjs"],
   },
 });
