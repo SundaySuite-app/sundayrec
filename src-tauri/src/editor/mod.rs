@@ -273,6 +273,10 @@ pub struct EditorChannelRepair {
 }
 
 impl EditorChannelRepair {
+    /// The struct stays ungated (it is a ts-rs export the bindings step needs in
+    /// every build), but only the editor seam ever converts it to the core type,
+    /// so the conversion compiles out with the feature.
+    #[cfg(feature = "editor")]
     fn to_core(&self) -> sundayrec_core::processing::ChannelRepair {
         use sundayrec_core::processing::ChannelRepair as R;
         match self.mode.as_str() {
@@ -366,6 +370,9 @@ impl Default for EditorProcessing {
 }
 
 impl EditorProcessing {
+    /// Same deal as [`EditorChannelRepair::to_core`]: the struct is an ungated
+    /// ts-rs export, the conversion is only reachable from editor-gated code.
+    #[cfg(feature = "editor")]
     fn to_core(&self) -> sundayrec_core::processing::VocalChain {
         use sundayrec_core::processing::*;
         VocalChain {
@@ -1340,13 +1347,20 @@ impl ExportEngine {
     }
 
     /// Whether a cancel is pending for the export currently in flight.
+    ///
+    /// Read by the editor's export passes and by the (ungated) cancel tests;
+    /// `request_cancel`/`take` stay ungated because `cancel_export` compiles in
+    /// both feature states.
+    #[cfg(any(feature = "editor", test))]
     fn is_cancelled(&self) -> bool {
         self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Clear the flag at the START of an export — the engine outlives every
     /// export (it is Tauri managed state), so a cancel of the PREVIOUS one must
-    /// not abort the next.
+    /// not abort the next. Only exports (editor-gated) and the cancel tests
+    /// ever clear it, hence the gate.
+    #[cfg(any(feature = "editor", test))]
     fn reset_cancel(&self) {
         self.cancelled
             .store(false, std::sync::atomic::Ordering::SeqCst);
