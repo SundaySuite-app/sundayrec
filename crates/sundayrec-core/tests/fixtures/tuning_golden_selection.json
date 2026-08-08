@@ -1,0 +1,831 @@
+[
+  [
+    "start_floor_lower_would_move_the_pick",
+    {
+      "duration_sec": 1300.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 250.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 250.0,
+          "end": 700.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 700.0,
+          "end": 720.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 720.0,
+          "end": 1020.0,
+          "kind": "speech",
+          "confidence": 0.8
+        },
+        {
+          "start": 1020.0,
+          "end": 1300.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 720.0,
+        "end": 1020.0,
+        "confidence": 0.8,
+        "seg_index": 3
+      },
+      "offered": {
+        "start": 720.0,
+        "end": 1020.0,
+        "confidence": 0.8,
+        "seg_index": 3
+      },
+      "attention": []
+    }
+  ],
+  [
+    "start_floor_raise_would_lose_the_pick",
+    {
+      "duration_sec": 1100.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 310.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 310.0,
+          "end": 760.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 760.0,
+          "end": 800.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 900.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 900.0,
+          "end": 1100.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 310.0,
+        "end": 760.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 310.0,
+        "end": 760.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": []
+    }
+  ],
+  [
+    "duration_floor_raise_would_lose_the_pick",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 320.0,
+          "end": 510.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 510.0,
+          "end": 800.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 880.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 880.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 320.0,
+        "end": 510.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 320.0,
+        "end": 510.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": ["mid_silence"]
+    }
+  ],
+  [
+    "duration_floor_lower_would_create_a_pick",
+    {
+      "duration_sec": 900.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 320.0,
+          "end": 470.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 470.0,
+          "end": 520.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 520.0,
+          "end": 640.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 640.0,
+          "end": 900.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 320.0,
+        "end": 470.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": ["no_sermon_block", "mid_silence"]
+    }
+  ],
+  [
+    "confidence_just_above_the_flag_line",
+    {
+      "duration_sec": 1200.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 320.0,
+          "end": 1000.0,
+          "kind": "speech",
+          "confidence": 0.65
+        },
+        {
+          "start": 1000.0,
+          "end": 1200.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 320.0,
+        "end": 1000.0,
+        "confidence": 0.65,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 320.0,
+        "end": 1000.0,
+        "confidence": 0.65,
+        "seg_index": 1
+      },
+      "attention": []
+    }
+  ],
+  [
+    "confidence_just_below_the_flag_line",
+    {
+      "duration_sec": 1200.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 320.0,
+          "end": 1000.0,
+          "kind": "speech",
+          "confidence": 0.55
+        },
+        {
+          "start": 1000.0,
+          "end": 1200.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 320.0,
+        "end": 1000.0,
+        "confidence": 0.55,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 320.0,
+        "end": 1000.0,
+        "confidence": 0.55,
+        "seg_index": 1
+      },
+      "attention": ["low_confidence"]
+    }
+  ],
+  [
+    "sermon_only_just_inside_the_ratios",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 60.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 60.0,
+          "end": 460.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 460.0,
+          "end": 490.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 490.0,
+          "end": 910.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 910.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 60.0,
+        "end": 910.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 60.0,
+        "end": 910.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": []
+    }
+  ],
+  [
+    "sermon_only_just_outside_the_speech_ratio",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 80.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 80.0,
+          "end": 460.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 460.0,
+          "end": 490.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 490.0,
+          "end": 890.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 890.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 490.0,
+        "end": 890.0,
+        "confidence": 0.9,
+        "seg_index": 3
+      },
+      "offered": {
+        "start": 490.0,
+        "end": 890.0,
+        "confidence": 0.9,
+        "seg_index": 3
+      },
+      "attention": []
+    }
+  ],
+  [
+    "sermon_only_just_outside_the_music_ratio",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 20.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 20.0,
+          "end": 420.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 420.0,
+          "end": 480.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 480.0,
+          "end": 940.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 940.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 480.0,
+        "end": 940.0,
+        "confidence": 0.9,
+        "seg_index": 3
+      },
+      "offered": {
+        "start": 480.0,
+        "end": 940.0,
+        "confidence": 0.9,
+        "seg_index": 3
+      },
+      "attention": []
+    }
+  ],
+  [
+    "all_speech_just_under_a_minute",
+    {
+      "duration_sec": 55.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 55.0,
+          "kind": "speech",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 0.0,
+        "end": 55.0,
+        "confidence": 0.9,
+        "seg_index": 0
+      },
+      "attention": ["no_sermon_block", "very_short"]
+    }
+  ],
+  [
+    "all_speech_just_over_a_minute",
+    {
+      "duration_sec": 70.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 70.0,
+          "kind": "speech",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 0.0,
+        "end": 70.0,
+        "confidence": 0.9,
+        "seg_index": 0
+      },
+      "offered": {
+        "start": 0.0,
+        "end": 70.0,
+        "confidence": 0.9,
+        "seg_index": 0
+      },
+      "attention": ["very_short"]
+    }
+  ],
+  [
+    "music_just_over_half",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 520.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 520.0,
+          "end": 920.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 920.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 520.0,
+        "end": 920.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 520.0,
+        "end": 920.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": ["mostly_music"]
+    }
+  ],
+  [
+    "music_just_under_half",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 480.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 480.0,
+          "end": 920.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 920.0,
+          "end": 1000.0,
+          "kind": "silence",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": {
+        "start": 480.0,
+        "end": 920.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "offered": {
+        "start": 480.0,
+        "end": 920.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": []
+    }
+  ],
+  [
+    "mid_silence_just_over_the_run",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 320.0,
+          "end": 390.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 390.0,
+          "end": 800.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 1000.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 390.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "offered": {
+        "start": 390.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "attention": ["mid_silence"]
+    }
+  ],
+  [
+    "mid_silence_just_under_the_run",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 320.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 320.0,
+          "end": 370.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 370.0,
+          "end": 800.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 1000.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": {
+        "start": 370.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "offered": {
+        "start": 370.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "attention": []
+    }
+  ],
+  [
+    "long_silence_hidden_inside_the_head_guard",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 60.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 60.0,
+          "end": 260.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 260.0,
+          "end": 800.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 1000.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 260.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "attention": ["speech_at_start"]
+    }
+  ],
+  [
+    "long_silence_just_past_the_head_guard",
+    {
+      "duration_sec": 1000.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 130.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 130.0,
+          "end": 230.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 230.0,
+          "end": 800.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 800.0,
+          "end": 1000.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 230.0,
+        "end": 800.0,
+        "confidence": 0.9,
+        "seg_index": 2
+      },
+      "attention": ["speech_at_start", "mid_silence"]
+    }
+  ],
+  [
+    "too_short_for_the_silence_check_to_run",
+    {
+      "duration_sec": 290.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 130.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 130.0,
+          "end": 230.0,
+          "kind": "silence",
+          "confidence": 0.9
+        },
+        {
+          "start": 230.0,
+          "end": 290.0,
+          "kind": "speech",
+          "confidence": 0.9
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 0.0,
+        "end": 130.0,
+        "confidence": 0.9,
+        "seg_index": 0
+      },
+      "attention": ["no_sermon_block", "very_short"]
+    }
+  ],
+  [
+    "just_under_eight_minutes",
+    {
+      "duration_sec": 470.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 60.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 60.0,
+          "end": 400.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 400.0,
+          "end": 470.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 60.0,
+        "end": 400.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": ["speech_at_start", "very_short"]
+    }
+  ],
+  [
+    "just_over_eight_minutes",
+    {
+      "duration_sec": 490.0,
+      "segments": [
+        {
+          "start": 0.0,
+          "end": 60.0,
+          "kind": "music",
+          "confidence": 0.85
+        },
+        {
+          "start": 60.0,
+          "end": 400.0,
+          "kind": "speech",
+          "confidence": 0.9
+        },
+        {
+          "start": 400.0,
+          "end": 490.0,
+          "kind": "music",
+          "confidence": 0.85
+        }
+      ],
+      "sermon": null,
+      "offered": {
+        "start": 60.0,
+        "end": 400.0,
+        "confidence": 0.9,
+        "seg_index": 1
+      },
+      "attention": ["speech_at_start"]
+    }
+  ]
+]

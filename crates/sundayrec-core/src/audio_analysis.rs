@@ -10,6 +10,12 @@
 //! ffmpeg. The `src-tauri` shell decodes the file to f32 PCM and feeds frames
 //! in; this module owns the maths.
 //!
+//! It does NOT own the numbers. Every threshold this module compares against
+//! lives in [`crate::tuning`], with what moving it does to a real recording;
+//! this module re-exports the ones callers already reach for by their old path.
+//! A frame-level threshold changed here moves every segment boundary in every
+//! recording, so read that file's header before touching one.
+//!
 //! This module stops at classified [`AnalysisSegment`]s. Picking a sermon out of
 //! them — and everything above it — is [`crate::detect`]. It used to be BOTH,
 //! with a second, drifted copy of the pick in the review path; see that module's
@@ -23,20 +29,27 @@
 //! [`ScoringInput`] — the PCM *and* the derived frames — because a model needs
 //! samples and the four features here cannot be inverted back into them.
 
-/// Sample rate the analyzer expects (matches the ffmpeg `-ar` the shell uses).
-pub const SAMPLE_RATE: u32 = 16000;
-/// Frame length in milliseconds — 100 ms = 10 frames/sec.
-pub const FRAME_MS: u32 = 100;
-/// Samples per frame at 16 kHz × 100 ms.
-pub const FRAME_SAMPLES: usize = (SAMPLE_RATE as usize * FRAME_MS as usize) / 1000;
-/// FFT size — next power of two ≥ frame size; we zero-pad.
-pub const FFT_SIZE: usize = 2048;
-/// Silence threshold (dBFS). Below this a frame is `silence`.
-pub const SILENCE_DB: f64 = -45.0;
-/// Half-width (frames) of the median smoother (±5 ≈ ±0.5 s).
-pub const SMOOTH_HALF_WIN: usize = 5;
-/// Minimum segment duration (seconds) before merge-into-neighbour.
-pub const MIN_SEGMENT_SEC: f64 = 5.0;
+// ── Tuning constants ────────────────────────────────────────────────────────
+//
+// DEFINED IN [`crate::tuning`], not here. Re-exported so every path that ever
+// worked (`audio_analysis::SILENCE_DB`, and the dozens of
+// `use ...audio_analysis::{FRAME_MS, SAMPLE_RATE}` across the workspace) still
+// resolves, while there is exactly ONE definition of each value — and one place
+// that documents what moving it does to a real recording. Add a threshold there,
+// never here.
+pub use crate::tuning::{
+    FFT_SIZE, FRAME_MS, FRAME_SAMPLES, MIN_SEGMENT_SEC, SAMPLE_RATE, SILENCE_DB, SMOOTH_HALF_WIN,
+};
+
+// Not re-exported: these are used only inside this module's classifier, and
+// their one public home is `crate::tuning`.
+use crate::tuning::{
+    CONF_MIXED, CONF_MUSIC_ALL_THREE, CONF_MUSIC_SOLID, CONF_SPEECH_ALL_FOUR, CONF_SPEECH_SOLID,
+    CONF_UNKNOWN, MERGE_MAX_PASSES, MUSIC_ENERGY_MIN_DB, MUSIC_FLUX_MAX, MUSIC_ZCR_MAX_PER_SEC,
+    SILENCE_CONFIDENCE_FLOOR, SILENCE_CONFIDENCE_FULL_MARGIN_DB, SILENCE_CONFIDENCE_SPAN,
+    SPEECH_CENTROID_MAX_HZ, SPEECH_CENTROID_MIN_HZ, SPEECH_ENERGY_MAX_DB, SPEECH_ENERGY_MIN_DB,
+    SPEECH_FLUX_MIN, SPEECH_ZCR_MAX_PER_SEC, SPEECH_ZCR_MIN_PER_SEC,
+};
 
 /// The five content classes. Mirrors `SegmentType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,18 +287,21 @@ pub fn classify_frame(frame: &AnalysisFrame) -> (SegmentType, f64) {
 
     // silence: hard energy threshold
     if r < SILENCE_DB {
-        let margin = ((SILENCE_DB - r) / 10.0).min(1.0);
-        return (SegmentType::Silence, 0.6 + 0.4 * margin);
+        let margin = ((SILENCE_DB - r) / SILENCE_CONFIDENCE_FULL_MARGIN_DB).min(1.0);
+        return (
+            SegmentType::Silence,
+            SILENCE_CONFIDENCE_FLOOR + SILENCE_CONFIDENCE_SPAN * margin,
+        );
     }
 
-    let speech_zcr = (400.0..=6000.0).contains(&z);
-    let speech_centroid = (300.0..=3500.0).contains(&c);
-    let speech_flux = fx > 8.0;
-    let speech_energy = (-45.0..=-5.0).contains(&r);
+    let speech_zcr = (SPEECH_ZCR_MIN_PER_SEC..=SPEECH_ZCR_MAX_PER_SEC).contains(&z);
+    let speech_centroid = (SPEECH_CENTROID_MIN_HZ..=SPEECH_CENTROID_MAX_HZ).contains(&c);
+    let speech_flux = fx > SPEECH_FLUX_MIN;
+    let speech_energy = (SPEECH_ENERGY_MIN_DB..=SPEECH_ENERGY_MAX_DB).contains(&r);
 
-    let music_zcr = z < 1500.0;
-    let music_flux = fx < 6.0;
-    let music_energy = r >= -40.0;
+    let music_zcr = z < MUSIC_ZCR_MAX_PER_SEC;
+    let music_flux = fx < MUSIC_FLUX_MAX;
+    let music_energy = r >= MUSIC_ENERGY_MIN_DB;
 
     let mut speech_score = 0;
     if speech_energy {
@@ -313,21 +329,21 @@ pub fn classify_frame(frame: &AnalysisFrame) -> (SegmentType, f64) {
     }
 
     if speech_score == 4 && music_score < 3 {
-        return (SegmentType::Speech, 0.9);
+        return (SegmentType::Speech, CONF_SPEECH_ALL_FOUR);
     }
     if music_score == 3 && speech_score <= 2 {
-        return (SegmentType::Music, 0.85);
+        return (SegmentType::Music, CONF_MUSIC_ALL_THREE);
     }
     if speech_score >= 3 && speech_score > music_score {
-        return (SegmentType::Speech, 0.7);
+        return (SegmentType::Speech, CONF_SPEECH_SOLID);
     }
     if music_score >= 2 && music_score >= speech_score {
-        return (SegmentType::Music, 0.65);
+        return (SegmentType::Music, CONF_MUSIC_SOLID);
     }
     if speech_score >= 2 && music_score >= 2 {
-        return (SegmentType::Mixed, 0.5);
+        return (SegmentType::Mixed, CONF_MIXED);
     }
-    (SegmentType::Unknown, 0.3)
+    (SegmentType::Unknown, CONF_UNKNOWN)
 }
 
 // ── The model seam ────────────────────────────────────────────────────────────
@@ -533,8 +549,9 @@ fn collapse_adjacent(segments: Vec<AnalysisSegment>) -> Vec<AnalysisSegment> {
     out
 }
 
-/// Merge segments shorter than `MIN_SEGMENT_SEC` into the longer neighbour.
-/// Ports `mergeShortSegments` (≤10 convergence passes, then `collapseAdjacent`).
+/// Merge segments shorter than [`MIN_SEGMENT_SEC`] into the longer neighbour.
+/// Ports `mergeShortSegments` (≤[`MERGE_MAX_PASSES`] convergence passes, then
+/// `collapseAdjacent`).
 pub fn merge_short_segments(segments: &[AnalysisSegment]) -> Vec<AnalysisSegment> {
     if segments.len() <= 1 {
         return segments.to_vec();
@@ -542,7 +559,7 @@ pub fn merge_short_segments(segments: &[AnalysisSegment]) -> Vec<AnalysisSegment
     let mut work = segments.to_vec();
     let mut changed = true;
     let mut iterations = 0;
-    while changed && iterations < 10 {
+    while changed && iterations < MERGE_MAX_PASSES {
         changed = false;
         iterations += 1;
         let mut next: Vec<AnalysisSegment> = Vec::new();

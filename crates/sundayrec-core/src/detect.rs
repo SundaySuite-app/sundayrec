@@ -36,27 +36,27 @@ use ts_rs::TS;
 
 use crate::audio_analysis::{AnalysisSegment, FrameScorer, ScoringInput};
 
-// ── Tuning constants (port prep-episode.ts) ────────────────────────────────
+// ── Tuning constants ───────────────────────────────────────────────────────
+//
+// DEFINED IN [`crate::tuning`], not here (E10). That file is the ONE table of
+// every number this detector decides with, and it says for each one what moving
+// it does to a real recording and whether anyone ever recorded a reason for its
+// value. Several here have no recorded reason at all — read it before changing
+// one, and run `tests/tuning_golden.rs` after.
+//
+// The three that were already public keep their `detect::` path, because
+// `feedback`, `trim_feedback` and `ab_eval` reach for them there.
+pub use crate::tuning::{
+    ATTENTION_CONFIDENCE_THRESHOLD, MIN_SERMON_DURATION_SEC, MIN_SERMON_START_SEC,
+};
 
-/// Confidence below which we flag the episode `needs-attention` (see the
-/// Electron doc-comment: 0.6 ≈ "two-thirds of frames passed the solid-speech bar").
-pub const ATTENTION_CONFIDENCE_THRESHOLD: f64 = 0.6;
-/// Earliest start (seconds) for sermon-segment candidates — skips the worship/
-/// prayer prelude that opens most services.
-pub const MIN_SERMON_START_SEC: f64 = 5.0 * 60.0;
-/// Shortest segment we'll consider a "real" sermon.
-pub const MIN_SERMON_DURATION_SEC: f64 = 3.0 * 60.0;
-/// A file shorter than this is too short for the "sermon-only recording" shape
-/// to mean anything — a 30 s clip that is all speech is not a sermon.
-const SERMON_ONLY_MIN_DURATION_SEC: f64 = 60.0;
-/// Speech share above which a recording looks like nothing BUT a sermon.
-const SERMON_ONLY_SPEECH_RATIO: f64 = 0.80;
-/// Music share below which the same shape still holds.
-const SERMON_ONLY_MUSIC_RATIO: f64 = 0.05;
-/// Total music ratio above which we suspect a concert.
-const CONCERT_MUSIC_RATIO_THRESHOLD: f64 = 0.5;
-/// Mid-recording silence run above which we suspect editing/dropouts.
-const MID_RECORDING_SILENCE_RUN_SEC: f64 = 60.0;
+// The rest were private to this module and stay that way; `crate::tuning` is
+// their public home.
+use crate::tuning::{
+    CONCERT_MUSIC_RATIO_THRESHOLD, MID_RECORDING_SILENCE_RUN_SEC, MID_SILENCE_EDGE_GUARD_SEC,
+    MID_SILENCE_MIN_RECORDING_SEC, SERMON_ONLY_MIN_DURATION_SEC, SERMON_ONLY_MUSIC_RATIO,
+    SERMON_ONLY_SPEECH_RATIO, VERY_SHORT_RECORDING_SEC,
+};
 
 // ── Segment shapes ─────────────────────────────────────────────────────────
 
@@ -436,9 +436,9 @@ pub fn derive_attention_reasons(
     }
 
     // Mid-recording long silence (after first 2 min, before last 2 min).
-    if duration_sec > 5.0 * 60.0 {
-        let start_guard = 120.0;
-        let end_guard = (duration_sec - 120.0).max(120.0);
+    if duration_sec > MID_SILENCE_MIN_RECORDING_SEC {
+        let start_guard = MID_SILENCE_EDGE_GUARD_SEC;
+        let end_guard = (duration_sec - MID_SILENCE_EDGE_GUARD_SEC).max(MID_SILENCE_EDGE_GUARD_SEC);
         let mut silence_run = 0.0;
         let mut in_mid = false;
         for s in segments {
@@ -471,7 +471,7 @@ pub fn derive_attention_reasons(
     }
 
     // Very short recording (< 8 min).
-    if duration_sec > 0.0 && duration_sec < 8.0 * 60.0 {
+    if duration_sec > 0.0 && duration_sec < VERY_SHORT_RECORDING_SEC {
         out.push(reasons::VERY_SHORT.into());
     }
 

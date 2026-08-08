@@ -53,6 +53,7 @@
 //!   - [`learning_summary`] — folding every recording's feedback file into the counts + trim-direction verdict the transparency screen shows (E8)
 //!   - [`vad`]         — the neural voice-activity seam (E9): the 576-sample framing + two-piece per-stream state a Silero-class model needs, and the `VadBackend` trait that keeps ONNX out of this crate. NOT wired into sermon detection yet
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
+//!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
 
 pub mod ab_eval;
 pub mod audio;
@@ -105,6 +106,7 @@ pub mod test_recording;
 pub mod timeouts;
 pub mod tray;
 pub mod trim_feedback;
+pub mod tuning;
 pub mod two_process;
 pub mod update;
 pub mod vad;
