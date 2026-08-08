@@ -188,6 +188,71 @@ test.describe("historikk", () => {
     await expect(toast.locator(".ui-toast-action")).toHaveText("Angre");
   });
 
+  test("a note reaches the backend and shows on the row", async ({ page }) => {
+    // SMOKE-TEST §6.1 — the durable half (SQLite round-trip on relaunch) is the
+    // backend's; what this tier owns is that the modal's save actually calls
+    // `recording_update_note` with the text, and the row then wears the note.
+    await openHistory(page, {
+      ...HISTORY_FIXTURES,
+      recording_update_note: fn(`(args) => {
+        (window.__E2E_NOTES__ ||= []).push([args.id, args.note]);
+        return true;
+      }`),
+    });
+
+    const row = page.locator("#history-tbody tr.hist-row", {
+      hasText: "Bønnemøte",
+    });
+    await row.locator('a.hist-action[title="Legg til notat"]').click();
+
+    const textarea = page.locator("#note-textarea");
+    await expect(textarea).toBeVisible();
+    await textarea.fill("Dåp — klipp før nattverden");
+    await page.locator("#btn-note-save").click();
+
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__E2E_NOTES__))
+      .toEqual([["rec-short", "Dåp — klipp før nattverden"]]);
+    await expect(row.locator(".hist-note")).toHaveText(
+      "Dåp — klipp før nattverden",
+    );
+  });
+
+  test("the search box filters live, and a miss says so in its own words", async ({
+    page,
+  }) => {
+    // SMOKE-TEST §6b — filename/note matching is live, and the no-hits state is
+    // DISTINCT from the never-recorded-anything empty state. The stats line
+    // follows the filtered view (it describes the same rows as the table —
+    // deliberate; the Electron-era "always full history" behaviour is gone).
+    await openHistory(page);
+
+    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(3);
+    const query = page.locator("#search-query");
+    await query.fill("bønnemøte");
+
+    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(1);
+    await expect(page.locator("#history-tbody")).toContainText("Bønnemøte");
+    // The stats line describes the one matching row, not the archive.
+    await expect(page.locator("#stat-count")).toHaveText("1 opptak");
+
+    // A query nothing matches: the no-hits message names the query…
+    await query.fill("finnesikke");
+    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(0);
+    await expect(page.locator("#search-index-status")).toContainText(
+      "Ingen treff for",
+    );
+    await expect(page.locator("#search-index-status")).toContainText(
+      "finnesikke",
+    );
+    // …and the genuinely-empty state stays out of it.
+    await expect(page.locator("#search-empty")).toBeHidden();
+
+    // Clearing the query brings the full list back.
+    await query.fill("");
+    await expect(page.locator("#history-tbody tr.hist-row")).toHaveCount(3);
+  });
+
   test("«Angre» puts the recording back", async ({ page }) => {
     await openHistory(page, {
       ...HISTORY_FIXTURES,
