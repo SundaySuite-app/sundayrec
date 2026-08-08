@@ -18,23 +18,26 @@ Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
 finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
 chapters, export), whisper transcription, live RTMP streaming with overlays,
 cloud backup + podcast publishing, OS wake-from-sleep scheduling, and a
-menubar/tray — all behind default-off cargo features where a native dependency
-is involved.
+menubar/tray. Most of that is in the **default** build; only the subsystems
+that need an absent SDK or an owner decision are behind default-off cargo
+features (see Architecture below).
 
 ## Architecture
 
 - **`crates/sundayrec-core`** — the pure domain core: GUI-free, Tauri-free,
   fs/network-free, clock injected by the caller. Every recorder/editor/
   streaming/whisper/publish _decision_ lives here and is unit-tested
-  (~1000 tests). Ported knowledge from the Electron app (hardened ffmpeg
+  (~1370 tests). Ported knowledge from the Electron app (hardened ffmpeg
   arguments, device parsers, error classification, silence/watchdog logic) —
   rebuilt cleanly, not copied.
 - **`src-tauri`** — the thin Tauri 2 shell: commands, events, processes,
   keyring, SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
-  `docs/SMOKE-TEST.md`. Optional subsystems are gated behind default-off
-  features (`editor`, `whisper`, `streaming`, `publish`, `email`, `tray`,
-  `ndi`, `bridge`, `updater`, `asio`).
+  `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
+  `editor`, `whisper`, `tray`, `updater`, `email`, `streaming`. Default-OFF and
+  opt-in: `publish`, `ndi`, `bridge`, `asio`, `vad`. `src-tauri/Cargo.toml`'s
+  `[features]` block is the authority — it explains why each one sits where it
+  does.
 - **`legacy/`** — the shipping frontend: the ported Electron vanilla-TS
   renderer (`legacy/renderer` is the Vite root), its `types`/`shared`/`locales`
   trees, and `legacy/bindings/` — the committed ts-rs TypeScript bindings
@@ -71,10 +74,11 @@ npm run e2e                          # starts vite itself, then runs e2e/
 npm run e2e:headed                   # …watching it happen
 npm run e2e:ui                       # …in Playwright's picker/inspector
 
-# The full gate (same steps as CI): prettier + eslint + tsc + vitest +
-# version-sync + rustfmt + clippy -D warnings + cargo test
+# The local gate. See package.json's `check` script for the exact chain —
+# it is not reproduced here, because a prose copy goes stale silently.
+# CI runs it PLUS several steps this does not (see ci.yml).
 npm run check
-bash scripts/ci-local.sh             # CI mirror incl. bindings drift + build
+bash scripts/ci-local.sh             # closer CI mirror incl. bindings drift + build
 ```
 
 ### The browser tier
@@ -90,17 +94,22 @@ Playwright starts the Vite server itself, so `npm run e2e` is the whole command.
 Specs cover onboarding incl. the telemetry consent step, the editor (open a
 recording, the three-tab workspace, the sermon-pick correction), the settings
 roundtrip, Historikk (rows, sort, filter chips, trash + undo) and the telemetry
-payload preview. Two `test.fail()` entries in `e2e/editor.spec.ts` pin KNOWN
-bugs — they pass while the bug is present and fail the day it is fixed.
+payload preview. The two `test.fail()` pins `e2e/editor.spec.ts` used to carry
+are gone: both bugs are fixed and the specs now assert the fixed behaviour
+(see the "Regressions" block there). No `test.fail()` remains in `e2e/`.
 
 Deliberately not wired into `npm run check`: it needs a browser binary
 (`npm run e2e:install`, ~95 MB) that the local gate should not require, and it
 tests a different thing at a different cadence. See the header of
 `playwright.config.ts` for the reasoning behind each config choice.
 
-CI (`.github/workflows/ci.yml`) runs the same gate plus a dependency audit on
-every push to `main`, every PR, `v*` tags, and manual dispatch (the repo is
-public, so Actions minutes are free). Releases are built and
-published as drafts by `.github/workflows/release.yml` (macOS arm64 + Windows;
-signing/notarization activate when the secrets in `docs/NEEDS-RICHARD.md`
-exist).
+CI (`.github/workflows/ci.yml`) runs that gate plus more — a feature-off
+`cargo check`, the `vad` feature, a no-bundle Tauri build, a Windows
+`cargo check`/clippy job, and a dependency audit — on every push to `main`,
+every PR, `v*` tags, and manual dispatch (the repo is public, so Actions
+minutes are free). Releases are built and published as drafts by
+`.github/workflows/release.yml` (macOS arm64 + Windows). macOS **signing**
+activates once the `MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets exist;
+**notarization does not** — its env lines are commented out in `release.yml`
+pending Apple's Program License Agreement, so re-enabling it is a source edit.
+See `docs/RELEASE-CHECKLIST.md` §2/§2a.

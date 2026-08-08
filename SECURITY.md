@@ -23,10 +23,15 @@ within a few days, not an SLA.
 
 ## Supported versions
 
-Only the **latest release** is supported. SundayRec auto-updates on a single
-channel (see `plugins.updater` in `src-tauri/tauri.conf.json`); there is no
-LTS branch and no backporting of fixes to older versions. Please update
-before reporting an issue that may already be fixed.
+Only the **latest release on your channel** is supported. SundayRec
+auto-updates on one of **two** operator-selectable channels —
+`stable` (the default) and `beta` (`UpdateChannel` in
+`crates/sundayrec-core/src/settings.rs`). The channel is a per-machine
+setting, so the feed URL is chosen at RUN time
+(`src-tauri/src/update/mod.rs`), not taken from `tauri.conf.json`; the config
+still names the stable feed as a fallback for any path that bypasses that
+code. There is no LTS branch and no backporting of fixes to older versions.
+Please update before reporting an issue that may already be fixed.
 
 ## Threat model
 
@@ -43,8 +48,32 @@ Trust boundaries the app has to defend at:
   app).
 - **User-configured URLs** — webhook, SMTP, and integration API endpoints the
   operator types in, which can point anywhere, including the local network.
-- **The update feed** — the GitHub Releases endpoint the auto-updater polls
-  and the signed artifact it downloads and installs.
+- **The update feed** — a **first-party Cloudflare Worker** at
+  `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
+  auto-updater polls, plus the signed artifact it downloads and installs.
+  This is a trust boundary that MOVED: the feed used to be GitHub's
+  `releases/latest/download/latest.json`, i.e. GitHub decided what every
+  install was offered. It is now our own service, serving only manifests an
+  operator has explicitly promoted. That is what makes the two rings and the
+  kill-switch possible, and it also means the Worker — not GitHub — is now
+  the thing an attacker would target to push a build at the whole fleet.
+  There is deliberately **no fallback to the old GitHub feed** when the
+  Worker is unreachable: a fallback would defeat the ability to STOP serving
+  a bad version. The installers themselves are still hosted by GitHub
+  Releases, and the minisign check below is what actually gates installation
+  regardless of who served the manifest.
+- **The update Worker's admin API** — the same Worker exposes operator-only
+  routes (`/v1/admin/promote`, `/v1/admin/channel`, `/v1/admin/channels`) on
+  its second custom domain, `https://telemetry.sundaysuite.app`. They decide
+  which published tag each channel serves and whether a channel is paused.
+  Authentication is a single shared **admin key** sent as the `x-admin-key`
+  header; `scripts/promote-release.mjs` reads it from the owner's macOS
+  Keychain (`SundayRec telemetry admin key`) at run time and never accepts it
+  as an argument, an env var, or a literal in the file, and never logs it.
+  Whoever holds that key controls what every install is offered next, so it
+  is the highest-value secret in the release path. The Worker itself lives in
+  the separate `sunday-telemetry` repo and its server-side controls are
+  documented there, not here.
 - **OS-level device access** — audio/video capture devices and the
   filesystem locations the app is granted.
 
