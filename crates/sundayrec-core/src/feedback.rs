@@ -618,14 +618,20 @@ pub fn record_sermon_pick(
         }
     }
 
-    match file.sermon_picks.iter().position(same_baseline) {
-        Some(i) => file.sermon_picks[i] = correction,
-        None => {
-            file.sermon_picks.push(correction);
-            while file.sermon_picks.len() > MAX_SERMON_PICK_CORRECTIONS {
-                file.sermon_picks.remove(0);
-            }
-        }
+    // Replace by REMOVE-then-PUSH, never in place. `sermon_picks` is documented
+    // oldest-first, and two consumers depend on it: `resolve_sermon_pick` reads
+    // `.last()` as "the answer they settled on", and the bound below evicts
+    // `remove(0)` as "the one with nothing left to say". Writing a replacement
+    // into the slot the old record happened to occupy leaves the file sorted by
+    // when each BASELINE was first seen instead — so a second thought about an
+    // earlier baseline is invisible to `.last()`, and the record the human just
+    // touched is the first one the bound throws away.
+    if let Some(i) = file.sermon_picks.iter().position(same_baseline) {
+        file.sermon_picks.remove(i);
+    }
+    file.sermon_picks.push(correction);
+    while file.sermon_picks.len() > MAX_SERMON_PICK_CORRECTIONS {
+        file.sermon_picks.remove(0);
     }
     PickOutcome::Recorded
 }
@@ -709,14 +715,16 @@ pub fn record_trim_adjustment(
         deltas,
         app_version: app_version.to_string(),
     };
-    match file.trim_adjustments.iter().position(same_baseline) {
-        Some(i) => file.trim_adjustments[i] = adjustment,
-        None => {
-            file.trim_adjustments.push(adjustment);
-            while file.trim_adjustments.len() > MAX_TRIM_ADJUSTMENTS {
-                file.trim_adjustments.remove(0);
-            }
-        }
+    // Remove-then-push, not in place — see `record_sermon_pick` for the rule.
+    // `trim_adjustments` is documented oldest-first and the bound evicts from the
+    // front, so a replacement written into the old record's slot would put the
+    // freshest adjustment first in line to be dropped.
+    if let Some(i) = file.trim_adjustments.iter().position(same_baseline) {
+        file.trim_adjustments.remove(i);
+    }
+    file.trim_adjustments.push(adjustment);
+    while file.trim_adjustments.len() > MAX_TRIM_ADJUSTMENTS {
+        file.trim_adjustments.remove(0);
     }
     TrimOutcome::Recorded
 }
@@ -790,14 +798,16 @@ pub fn record_shadow_observation(file: &mut RecordingFeedback, observation: Shad
     let same_baseline = |o: &ShadowObservation| {
         o.app_version == observation.app_version && o.settings == observation.settings
     };
-    match file.shadow_observations.iter().position(same_baseline) {
-        Some(i) => file.shadow_observations[i] = observation,
-        None => {
-            file.shadow_observations.push(observation);
-            while file.shadow_observations.len() > MAX_SHADOW_OBSERVATIONS {
-                file.shadow_observations.remove(0);
-            }
-        }
+    // Remove-then-push, not in place — see `record_sermon_pick` for the rule.
+    // `shadow_observations` is documented oldest-first and the bound evicts from
+    // the front, so re-scoring an early configuration must move it to the back
+    // rather than leave it first in line to be dropped by a later sweep row.
+    if let Some(i) = file.shadow_observations.iter().position(same_baseline) {
+        file.shadow_observations.remove(i);
+    }
+    file.shadow_observations.push(observation);
+    while file.shadow_observations.len() > MAX_SHADOW_OBSERVATIONS {
+        file.shadow_observations.remove(0);
     }
 }
 
@@ -1613,5 +1623,54 @@ mod tests {
         assert!(c.chosen.confidence.is_none());
         // An unknown confidence must not invent a "low confidence" flag.
         assert!(!c.attention.iter().any(|r| r == "low_confidence"));
+    }
+
+    // ── "Oldest first" across a replace ───────────────────────────────────────
+
+    #[test]
+    fn a_second_thought_about_an_earlier_baseline_is_the_one_that_survives() {
+        // Two baselines on one recording: the detector found nothing the first
+        // time (auto = None) and block 1 the second. Then the human answers the
+        // FIRST baseline again — that is the newest thing they have told us.
+        let mut file = RecordingFeedback::default();
+        record_sermon_pick(&mut file, correction(None, 3));
+        record_sermon_pick(&mut file, correction(Some(1), 4));
+        record_sermon_pick(&mut file, correction(None, 0));
+
+        assert_eq!(file.sermon_picks.len(), 2, "two baselines, two records");
+        assert_eq!(
+            file.sermon_picks.last().unwrap().chosen.index,
+            0,
+            "`sermon_picks` is documented oldest-first, so the record the human \
+             just touched must be last"
+        );
+        assert_eq!(
+            resolve_sermon_pick(&file, &service()),
+            Some(0),
+            "the reopen promoted a block the human did not choose"
+        );
+    }
+
+    #[test]
+    fn the_bound_evicts_the_stalest_adjustment_not_the_freshest() {
+        let mut file = RecordingFeedback::default();
+        for v in 0..MAX_TRIM_ADJUSTMENTS {
+            record_trim_adjustment(&mut file, deltas(v as f64 + 1.0, 0.0), &format!("0.{v}.0"));
+        }
+        assert_eq!(file.trim_adjustments.len(), MAX_TRIM_ADJUSTMENTS);
+
+        // The operator re-publishes the very first version's episode: that record
+        // is now the FRESHEST thing in the file.
+        record_trim_adjustment(&mut file, deltas(99.0, 0.0), "0.0.0");
+        // Then one more version arrives and pushes the collection over its bound.
+        record_trim_adjustment(&mut file, deltas(50.0, 0.0), "0.99.0");
+
+        assert_eq!(file.trim_adjustments.len(), MAX_TRIM_ADJUSTMENTS);
+        assert!(
+            file.trim_adjustments
+                .iter()
+                .any(|a| a.app_version == "0.0.0"),
+            "the bound evicted the record the operator had just refreshed"
+        );
     }
 }
