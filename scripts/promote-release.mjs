@@ -59,6 +59,8 @@
 //   node scripts/promote-release.mjs --resume stable
 
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const ADMIN_BASE_URL = "https://telemetry.sundaysuite.app";
 const KEYCHAIN_SERVICE = "SundayRec telemetry admin key";
@@ -66,6 +68,140 @@ const CHANNELS = new Set(["stable", "beta"]);
 
 const STABLE_TAG = /^v\d+\.\d+\.\d+$/;
 const BETA_TAG = /^v\d+\.\d+\.\d+-beta\.\d+$/;
+
+// ── The manifest a tag actually carries ──────────────────────────────────────
+// `latest.json` is a PUBLIC asset on the (already published) GitHub release, so
+// this needs no token — the same unauthenticated GET the Worker itself does.
+const MANIFEST_URL = (tag) =>
+  `https://github.com/SundaySuite-app/sundayrec/releases/download/${tag}/latest.json`;
+
+// The platform keys `tauri-plugin-updater` looks up, and therefore the ones a
+// promotable manifest MUST carry. It searches `{os}-{arch}-{installer}` first
+// and falls back to `{os}-{arch}` (2.10.1, updater.rs `get_urls`); a key that
+// is absent is not "no update available", it is a hard `TargetsNotFound` error
+// on every check that install ever makes.
+//
+// `windows-x86_64-msi` is deliberately NOT required: MSI cannot express a
+// `-beta.N` version (Windows Installer's ProductVersion is three numeric
+// fields), so release.yml builds Windows betas with `--bundles nsis` and the
+// beta manifest legitimately has four entries, not five. NSIS is what the
+// updater installs from either way.
+const REQUIRED_PLATFORMS = [
+  "darwin-aarch64",
+  "darwin-aarch64-app",
+  "windows-x86_64",
+  "windows-x86_64-nsis",
+];
+
+// ── Manifest validation (pure — unit-tested in promote-release.test.mjs) ─────
+//
+// WHY THIS EXISTS. release.yml's matrix runs with `fail-fast: false`, so the
+// two platform legs upload INDEPENDENTLY. When v0.11.0-beta.1's first run
+// failed on Windows (run 31206918593), the macOS leg still finished and
+// uploaded its own `latest.json` — a manifest with only the two darwin keys —
+// to the draft. The run showed red, but the draft it left behind was complete
+// enough to look publishable and would have been accepted for promotion
+// without a murmur, and every Windows install on that ring would have started
+// erroring on every update check.
+//
+// Nothing between "the workflow decides what to build" and "the operator
+// promotes a tag" was checking that those two agreed. This is that check.
+export function manifestProblems(manifest, tag) {
+  const problems = [];
+
+  if (!manifest || typeof manifest !== "object") {
+    return ["latest.json is not a JSON object"];
+  }
+
+  // The tag and the version the manifest announces must be the same release.
+  // The updater compares the manifest's `version` against the installed one —
+  // a mismatch here means clients are offered a version whose bytes came from
+  // somewhere else entirely.
+  const expected = tag.replace(/^v/, "");
+  if (manifest.version !== expected) {
+    problems.push(
+      `latest.json says version "${manifest.version}" but the tag is "${tag}" (expected "${expected}")`,
+    );
+  }
+
+  const platforms =
+    manifest.platforms && typeof manifest.platforms === "object"
+      ? manifest.platforms
+      : null;
+  if (!platforms) {
+    return [...problems, "latest.json has no `platforms` object"];
+  }
+
+  for (const key of REQUIRED_PLATFORMS) {
+    const entry = platforms[key];
+    if (!entry || typeof entry !== "object") {
+      problems.push(
+        `no "${key}" entry — that platform's installs get TargetsNotFound on every update check`,
+      );
+      continue;
+    }
+    // An unsigned artifact is the other silent release failure: the build
+    // succeeds, the assets upload, and every client rejects the update at the
+    // signature check. tauri-action emits an empty string rather than omitting
+    // the field when TAURI_SIGNING_PRIVATE_KEY is absent.
+    if (typeof entry.signature !== "string" || entry.signature.trim() === "") {
+      problems.push(`"${key}" has no signature — clients would reject it`);
+    }
+    if (typeof entry.url !== "string" || entry.url.trim() === "") {
+      problems.push(`"${key}" has no download url`);
+    }
+  }
+
+  return problems;
+}
+
+// Fetch + validate. FAILS CLOSED: an unreachable or unparseable manifest is a
+// refusal, never a shrug — the whole point is that "we could not check" must
+// not read the same as "we checked and it was fine".
+async function assertManifestIsPromotable(tag) {
+  const url = MANIFEST_URL(tag);
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    fail(
+      `could not fetch ${url} (${e.message}).\n` +
+        `  Refusing to promote a tag whose updater manifest could not be checked.`,
+    );
+  }
+  if (res.status === 404) {
+    fail(
+      `${tag} has no latest.json asset (HTTP 404 from ${url}).\n` +
+        `  Either the release is still a DRAFT (publish it first — draft assets are not\n` +
+        `  publicly downloadable), or the build never uploaded an updater manifest.`,
+    );
+  }
+  if (!res.ok) {
+    fail(`fetching ${url} returned HTTP ${res.status} — refusing to promote.`);
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(await res.text());
+  } catch (e) {
+    fail(`${tag}'s latest.json is not valid JSON (${e.message}).`);
+  }
+
+  const problems = manifestProblems(manifest, tag);
+  if (problems.length > 0) {
+    fail(
+      `${tag}'s latest.json is not fit to promote:\n` +
+        problems.map((p) => `    • ${p}`).join("\n") +
+        `\n  Found platforms: ${Object.keys(manifest.platforms ?? {}).join(", ") || "(none)"}\n` +
+        `  This usually means one leg of release.yml's matrix failed while the other\n` +
+        `  still uploaded (the matrix runs fail-fast: false). Re-run the failed job,\n` +
+        `  let it overwrite latest.json, then promote.`,
+    );
+  }
+  console.log(
+    `✓ ${tag} latest.json: version ${manifest.version}, platforms ${Object.keys(manifest.platforms).sort().join(", ")}`,
+  );
+}
 
 function fail(msg) {
   console.error(`✗ ${msg}`);
@@ -216,6 +352,9 @@ async function main() {
       );
     }
     assertTagMatchesChannel(channel, tag);
+    // Checked BEFORE the Keychain read: a tag that isn't fit to promote should
+    // cost neither a secret nor a round trip to the admin API.
+    await assertManifestIsPromotable(tag);
     const key = readAdminKey();
     console.log(`Promoting ${tag} → ${channel} …`);
     printResult(await call("POST", "/v1/admin/promote", key, { channel, tag }));
@@ -231,4 +370,11 @@ async function main() {
   );
 }
 
-await main();
+// Only run when executed as a script, so the unit tests can import
+// `manifestProblems` without `main()` reaching for the Keychain.
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
+  await main();
+}

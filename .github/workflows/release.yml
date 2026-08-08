@@ -79,6 +79,25 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
+      # Everything below keys off `github.ref_name` as though it were a version
+      # tag: `tagName`, `releaseName`, and the `-beta.` tests that drive both
+      # `prerelease` and the Windows `--bundles nsis` switch. On a
+      # `workflow_dispatch` from a BRANCH, `ref_name` is the branch ("main"),
+      # and the run would happily create a draft release literally tagged
+      # `main`, mark it a normal release, and upload a `latest.json` to it.
+      # Nothing downstream would catch it: promote-release.mjs rejects the tag,
+      # but only after somebody has been handed a junk release to wonder about.
+      # Dispatch on a TAG still works — that is the documented way to re-run a
+      # release without re-tagging.
+      - name: Refuse to build a release from a non-tag ref
+        if: github.ref_type != 'tag'
+        shell: bash
+        run: |
+          echo "::error::release.yml ran on ${{ github.ref_type }} '${{ github.ref_name }}'."
+          echo "This workflow only makes sense on a version tag — every release field is"
+          echo "derived from the tag name. Re-run it selecting a tag, or push a v* tag."
+          exit 1
+
       - uses: actions/checkout@v7
 
       - name: Set up Node
