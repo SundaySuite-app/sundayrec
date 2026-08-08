@@ -467,7 +467,12 @@ export async function runPublishingForExport(outputPath: string): Promise<void> 
       const r = await window.api.podcastRegenerate(service) as { ok: boolean; error?: string }
       if (r && r.ok === false) {
         allOk = false
-        messages.push(`RSS: ${r.error ?? 'feil'}`)
+        // «feature_disabled» is the default build telling the truth — say it
+        // in the operator's language rather than echoing the raw code.
+        const reason = (r.error ?? '').includes('feature_disabled')
+          ? t('publish.unavailableBuild', 'ikke med i denne bygningen av SundayRec')
+          : r.error ?? 'feil'
+        messages.push(`RSS: ${reason}`)
       } else {
         messages.push(`RSS: ✓`)
       }
