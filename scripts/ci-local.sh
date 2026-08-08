@@ -45,9 +45,12 @@ fi
 
 step "command reachability regression"; npm run reachability
 
-# The feature-off degradation path must keep COMPILING (ci.yml's "cargo check
-# (feature-off build)" step) — cheap with the shared incremental cache.
-step "rust — cargo check (feature-off)"; cargo check --workspace --no-default-features
+# The feature-off degradation path must keep COMPILING and stay clippy-clean
+# (ci.yml's "cargo clippy (feature-off build)" step). Clippy, not just check:
+# dead_code only fires in the lane where an item's callers are compiled out,
+# and `cargo check` alone let four such findings live on main for weeks.
+step "rust — clippy (feature-off)"
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
 # ci.yml's "Rust clippy + tests (vad feature)" step. E9's neural VAD is
 # default-off, so EVERY step above compiles the seam out — these tests are the

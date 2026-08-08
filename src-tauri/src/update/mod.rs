@@ -332,6 +332,9 @@ pub async fn download_and_install(
 /// stdout goes nowhere (Finder launch), which made the 0.4.2→0.4.4 relaunch
 /// failures undiagnosable after the fact — this file is the flight recorder for
 /// the one code path that, by design, kills its own process.
+///
+/// Only [`relaunch`] writes to it, so it compiles out with the feature.
+#[cfg(feature = "updater")]
 fn relaunch_log(app: &AppHandle, msg: &str) {
     use tauri::Manager;
     tracing::info!("update-relaunch: {msg}");

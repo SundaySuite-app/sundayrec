@@ -121,10 +121,13 @@ jobs:
       # The feature-off degradation path (every editor/whisper/tray/updater
       # command returns feature_disabled) must keep COMPILING — it once broke
       # silently ("Permission updater:default not found") because nothing
-      # gated it. Cheap with the shared cache.
-      - name: cargo check (feature-off build)
+      # gated it. Clippy (not just check) with -D warnings: `cargo check` let
+      # four dead-code findings live on main for weeks, because dead_code only
+      # fires in the lane where the item's callers are compiled out. Cheap with
+      # the shared cache.
+      - name: cargo clippy (feature-off build)
         working-directory: src-tauri
-        run: cargo check --workspace --no-default-features
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
       # E9's neural VAD is DEFAULT-OFF, so every step above compiles the seam
       # OUT. Its value is a set of tests that catch failure modes the model has
