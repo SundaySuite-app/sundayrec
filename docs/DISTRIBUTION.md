@@ -20,17 +20,17 @@ macOS-signed and auto-updating; the one remaining gap is **notarization**
 > review the draft, then publish it so it becomes **Latest**. A
 > built-but-unpublished release is not served to anyone (the updater feed only
 > sees published releases). This flow is proven in prod: every release since
-> v0.4.x has been published as Latest this way (v0.8.0 is current).
+> v0.4.x has been published as Latest this way (v0.11.0-beta.1 is the newest tag; v0.10.0 is the newest stable).
 
 ## Phase status
 
-| Capability                   | State                                                                                                            |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                         |
-| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                         |
-| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; env lines commented out in `release.yml:146-155` pending re-acceptance  |
-| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                        |
-| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `includeUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod |
+| Capability                   | State                                                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Build macOS + Windows on tag | ✅ wired (`release.yml`)                                                                                        |
+| macOS signing                | ✅ LIVE since ~2026-07-31 (`MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets set)                                        |
+| macOS notarization           | ⏸ deliberately disabled — Apple PLA 403; env lines commented out in `release.yml:146-155` pending re-acceptance |
+| Windows signing              | ⏳ deferred (unsigned installer works; SmartScreen warns)                                                       |
+| Auto-update (`latest.json`)  | ✅ LIVE since v0.4.x — plugin + pubkey + `uploadUpdaterJson` + `TAURI_SIGNING_*` secrets; feed verified in prod |
 
 macOS builds are **signed but not notarized**: Gatekeeper warns on first
 launch → right-click ▸ Open. Windows is unsigned → "More info" ▸ "Run anyway".
@@ -117,8 +117,8 @@ tauri-action's `APPLE_*` env vars in `release.yml:143-144`).
 
 The updater is **live in published releases**: the plugin is installed, the
 public key + `endpoints` are in `tauri.conf.json` under `plugins.updater`,
-`includeUpdaterJson: true` is set in `release.yml`, and the signing secrets are
-in place — the `latest.json` feed is verified in prod (v0.8.0 is current).
+`uploadUpdaterJson: true` is set in `release.yml`, and the signing secrets are
+in place — the `latest.json` feed is verified in prod (v0.11.0-beta.1 is the newest tag; v0.10.0 is the newest stable).
 Nothing here remains to set up; the only outstanding release-pipeline gap is
 macOS **notarization** (previous section).
 
