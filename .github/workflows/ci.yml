@@ -148,6 +148,44 @@ jobs:
       - name: Build Tauri app (no bundle)
         run: npm run tauri build -- --no-bundle
 
+  # The Playwright tier — the E5 gate that never actually landed in CI. The
+  # tier existed and caught real seam bugs (the onboarding spec vs. the #100
+  # privacy-copy change), but only when somebody remembered to run it, and
+  # main sat red for days with nobody told. It runs the renderer in a plain
+  # browser through the api-shim fixture seam: no Rust build, no tauri, no
+  # system webview — just node, chromium and the Vite dev server that
+  # playwright.config.ts starts itself. `predev` fetches the ffmpeg sidecars
+  # it insists on, hence no sidecar step here.
+  e2e:
+    name: Playwright e2e (renderer harness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the e2e tier
+        run: npm run e2e
+
+      # Traces are the whole point of a failed e2e run: without them a red
+      # spec on CI is a rumour. Uploaded only on failure to keep artifacts
+      # lean.
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 14
+
   # Windows compile check — closes the "ubuntu-only CI" blind spot: the
   # recorder's Windows halves (windows-sys job objects, cpal WASAPI paths,
   # dshow arg builders, seek_write in the WAV writer) only COMPILE on a
