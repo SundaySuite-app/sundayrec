@@ -5090,7 +5090,7 @@ dependencies = [
 
 [[package]]
 name = "sundayrec"
-version = "0.11.0-beta.1"
+version = "0.11.1-beta.2"
 dependencies = [
  "base64 0.22.1",
  "chrono",
