@@ -400,4 +400,19 @@ updateChannel: UpdateChannel,
 /**
  * Prompt to open the editor after a recording finishes? Default true.
  */
-askOpenEditor: boolean, };
+askOpenEditor: boolean, 
+/**
+ * May the app move its own proposed sermon boundaries toward what THIS
+ * operator keeps correcting them to (E10)?
+ *
+ * Default [`crate::local_adaptivity::DEFAULT_LOCAL_ADAPTIVITY_ENABLED`],
+ * which is where the argument for that default lives — it is a decision
+ * about what a Sunday looks like, not a serde detail, so it is not spelled
+ * `false` here where the reasoning could not follow it.
+ *
+ * Off means the shipped detector, exactly: the offsets stay at zero, the
+ * corrections are still recorded, and the System tab still shows what they
+ * say. Turning it back off, or pressing Nullstill, restores that
+ * immediately.
+ */
+localAdaptivity: boolean, };

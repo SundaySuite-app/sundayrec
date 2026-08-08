@@ -2046,6 +2046,35 @@
         </div>
       </div>
 
+      <!-- «Hva appen har justert» (E10) — the ONLY surface on which this
+           install's own learning is visible, and the reason it is allowed to
+           exist at all. The card above says what the app has noticed; this one
+           says what it has DONE about it, in seconds, in Norwegian, next to the
+           switch that turns it off and the button that undoes it.
+
+           Shipped OFF (see local_adaptivity.rs's DEFAULT_LOCAL_ADAPTIVITY_ENABLED
+           for the argument). The four lines below are painted from JS rather
+           than carrying data-i18n fallbacks because every one of them
+           interpolates a number — the same reason the learning-summary lines
+           above have none. -->
+      <div class="card" id="local-nudge-card">
+        <div class="card-title" data-i18n="general.localNudgeCardTitle">Hva appen har justert</div>
+        <p class="card-desc" data-i18n="general.localNudgeCardDesc">Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.</p>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-title" data-i18n="general.localNudgeToggle">La appen lære av rettelsene mine</div>
+            <div class="toggle-desc" id="local-nudge-toggle-hint"></div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="opt-local-adaptivity" /><span class="toggle-track"></span></label>
+        </div>
+        <p id="local-nudge-headline" class="card-desc"></p>
+        <p id="local-nudge-start" class="card-desc" style="display:none"></p>
+        <p id="local-nudge-end" class="card-desc" style="display:none"></p>
+        <p id="local-nudge-at-limit" class="card-desc" style="display:none"></p>
+        <button type="button" class="btn-secondary" id="btn-local-nudge-reset" style="display:none" data-i18n="general.localNudgeResetBtn">Nullstill det appen har lært</button>
+        <div id="local-nudge-status" class="form-hint" style="display:none"></div>
+      </div>
+
       <!-- Steinberg ASIO attribution. Required by the ASIO SDK licence and shown
            ONLY in the Windows build (the only build with ASIO support) — revealed
            by general-page.ts when the platform is Windows. The trademark notice is

@@ -373,6 +373,17 @@ declare global {
        *  handling for why the distinction matters). */
       learningFeedbackSummary: () => Promise<import('../bindings/LearningSummary').LearningSummary | null>
 
+      // ── What the app has adjusted about itself (E10) ─────────────────────
+      /** The two clamped boundary offsets this install has learned, or the
+       *  shipped zeroes when adaptivity is off. `null` ONLY on a real IPC
+       *  failure — same rule as above, and for the same reason: "nothing
+       *  adjusted" is a legitimate answer that must not be reachable by a
+       *  failed read. */
+      learningLocalNudge: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
+      /** Back to the shipped detector, now: zeroes the offsets and turns
+       *  adaptivity off. `null` on failure. */
+      learningLocalNudgeReset: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
+
       // Thumbnail (podcast cover art)
       thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
       thumbnailClearDefault:   () => Promise<boolean>

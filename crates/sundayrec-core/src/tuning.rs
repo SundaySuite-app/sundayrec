@@ -44,12 +44,24 @@
 //! threshold moves EVERY segment boundary in every recording, while a
 //! sermon-selection threshold only changes which already-drawn block is chosen.
 //!
-//! # ⚠️ There is no trim-offset constant, and you will come looking for one
+//! # ⚠️ There is no trim-offset constant IN THIS TABLE, and you will come looking for one
 //!
 //! The most likely first finding from real corrections is a SKEW: "the proposed
 //! trim starts consistently a few seconds too late". The instinct is then to
-//! look down this list for the number that nudges it. **There isn't one, and
-//! nothing here is a substitute for it.**
+//! look down this list for the number that nudges it. **There isn't one here,
+//! and nothing in this table is a substitute for it.**
+//!
+//! One offset does exist, and it is deliberately not in this table:
+//! [`crate::local_adaptivity::DetectorTuning`] carries `sermon_start_offset_sec`
+//! and `sermon_end_offset_sec`, both **shipped at zero**. They are moved by one
+//! install's own corrections, within hard clamps, only when that install has
+//! opted in — and they are reset to zero by
+//! [`crate::local_adaptivity::SHIPPED_TUNING`]. They are NOT a knob for the
+//! tuning ritual: this file is what every install starts from, and a number that
+//! differs per install has no business being in it. If the fleet's corrections
+//! say the detector opens late everywhere, the fix is below, not there —
+//! nudging every install locally to paper over a shipped default would leave the
+//! default wrong and make it invisible.
 //!
 //! The proposed trim is the chosen segment's own bounds, verbatim, on both
 //! paths — [`crate::prep::build_episode_prep`] copies `start_sec`/`end_sec`
@@ -65,8 +77,12 @@
 //! - move a constant that changes where the SEGMENT BOUNDARY falls — realistically
 //!   [`SILENCE_DB`] (how much of the quiet lead-in counts as talk) or the
 //!   classifier's feature windows; or
-//! - introduce a padding concept that does not exist today, as its own reviewed
-//!   change with its own argument.
+//! - or ship a non-zero default for the offset that
+//!   [`crate::local_adaptivity::DetectorTuning`] already carries. The type exists;
+//!   what does not exist is any argument for making it non-zero for everybody.
+//!   That argument is the whole change, and it is a much larger claim than moving
+//!   a threshold: it says the detector is right about where speech starts and the
+//!   app should nonetheless propose something else.
 //!
 //! What it must NOT become is a reason to move [`MIN_SERMON_START_SEC`] — that
 //! constant chooses WHICH block, and moving it to shave seconds off one

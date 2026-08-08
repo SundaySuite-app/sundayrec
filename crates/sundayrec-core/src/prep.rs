@@ -99,11 +99,20 @@ impl Default for PrepDefaults {
 /// resolved defaults. Ports `buildEpisodePrep` minus the lazy analyze + uuid +
 /// clock (the shell supplies `id`/`now`). Status is `NeedsAttention` whenever
 /// any attention reason fired, else `Ready`.
+///
+/// `tuning` is the only place this install's own learning reaches the operator:
+/// it moves `suggested_trim`, the span review SHOWS, and nothing else. It must
+/// not reach `analysis_segments` — those are what `review_update_trim`
+/// re-derives the un-nudged proposal from when it measures a correction, and a
+/// nudge that leaked into them would make the app measure its own output. See
+/// [`crate::local_adaptivity`]'s module header for what that costs.
+/// [`crate::local_adaptivity::SHIPPED_TUNING`] is the no-op.
 pub fn build_episode_prep(
     id: String,
     recording_path: String,
     segments: Vec<PrepAnalysisSegment>,
     defaults: &PrepDefaults,
+    tuning: &crate::local_adaptivity::DetectorTuning,
     now: i64,
 ) -> EpisodePrep {
     // The STRICT pick: a review queue that always found a sermon would never
@@ -125,9 +134,14 @@ pub fn build_episode_prep(
         timestamp: now,
         status,
         analysis_segments: segments,
-        suggested_trim: sermon.map(|s| SuggestedTrim {
-            start_sec: s.start_sec,
-            end_sec: s.end_sec,
+        suggested_trim: sermon.map(|s| {
+            crate::local_adaptivity::apply_to_trim(
+                tuning,
+                SuggestedTrim {
+                    start_sec: s.start_sec,
+                    end_sec: s.end_sec,
+                },
+            )
         }),
         sermon_confidence: sermon.map(|s| s.confidence),
         master_preset: defaults.master_preset.clone(),
@@ -182,6 +196,7 @@ mod tests {
             "/r.mp4".into(),
             segs,
             &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
             0,
         );
         assert_eq!(prep.status, EpisodePrepStatus::NeedsAttention);
@@ -203,6 +218,7 @@ mod tests {
             "/rec/s.mp4".into(),
             segs,
             &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
             42,
         );
         assert_eq!(prep.status, EpisodePrepStatus::Ready);
@@ -220,13 +236,73 @@ mod tests {
             intro_path: Some("/i.wav".into()),
             outro_path: Some("/o.wav".into()),
         };
-        let prep = build_episode_prep("id2".into(), "/rec/x.mp4".into(), segs, &defaults, 7);
+        let prep = build_episode_prep(
+            "id2".into(),
+            "/rec/x.mp4".into(),
+            segs,
+            &defaults,
+            &crate::local_adaptivity::SHIPPED_TUNING,
+            7,
+        );
         assert_eq!(prep.status, EpisodePrepStatus::NeedsAttention);
         assert_eq!(prep.master_preset, "music-rich");
         assert_eq!(prep.intro_path.as_deref(), Some("/i.wav"));
         assert!(prep.attention_reasons.is_some());
         assert!(prep.suggested_trim.is_none());
         assert_eq!(prep.sermon_confidence, None);
+    }
+
+    #[test]
+    fn a_local_nudge_moves_the_shown_trim_and_leaves_the_segments_untouched() {
+        // The invariant `local_adaptivity`'s header rests on, asserted at the
+        // one seam that could break it: `analysis_segments` is what
+        // `review_update_trim` re-derives the un-nudged proposal from, so a
+        // nudge that reached it would make the app measure its own output.
+        let segs = vec![
+            seg(0.0, 360.0, SegmentType::Speech, 0.9),
+            seg(360.0, 1500.0, SegmentType::Speech, 0.9),
+        ];
+        let plain = build_episode_prep(
+            "id".into(),
+            "/rec/s.mp4".into(),
+            segs.clone(),
+            &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
+            0,
+        );
+        let tuning = crate::local_adaptivity::DetectorTuning {
+            sermon_start_offset_sec: 40.0,
+            ..crate::local_adaptivity::SHIPPED_TUNING
+        };
+        let nudged = build_episode_prep(
+            "id".into(),
+            "/rec/s.mp4".into(),
+            segs,
+            &PrepDefaults::default(),
+            &tuning,
+            0,
+        );
+        // The shipped tuning proposes the picked block's own bounds VERBATIM —
+        // there is no padding constant here and never was. Pinned because
+        // `local_adaptivity`'s offsets are argued from exactly this fact: they
+        // write down a conversion that is currently hardcoded to zero, and if a
+        // padding constant ever appears the argument has to be re-made rather
+        // than quietly acquiring a second term.
+        let picked = detect::find_sermon(
+            &plain.analysis_segments,
+            detect::derive_duration_sec(&plain.analysis_segments),
+            detect::SermonPolicy::Strict,
+        )
+        .unwrap();
+        let proposed = plain.suggested_trim.unwrap();
+        assert_eq!(proposed.start_sec, picked.start_sec);
+        assert_eq!(proposed.end_sec, picked.end_sec);
+
+        assert_eq!(
+            nudged.suggested_trim.unwrap().start_sec,
+            proposed.start_sec + 40.0
+        );
+        assert_eq!(nudged.analysis_segments, plain.analysis_segments);
     }
 
     /// A prep must never be assembled from the editor's BEST GUESS: the queue
@@ -247,6 +323,7 @@ mod tests {
             "/rec/y.mp4".into(),
             segs,
             &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
             0,
         );
         assert_eq!(prep.suggested_trim, None);
@@ -264,6 +341,7 @@ mod tests {
             "/r.mp4".into(),
             vec![seg(0.0, 600.0, SegmentType::Speech, 0.9)],
             &PrepDefaults::default(),
+            &crate::local_adaptivity::SHIPPED_TUNING,
             1,
         );
         let json = serde_json::to_string(&prep).unwrap();

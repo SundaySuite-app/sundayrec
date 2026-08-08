@@ -621,7 +621,22 @@
     "learningStartTooLate": "Den automatiske start rammer ofte for sent — i gennemsnit har du flyttet den {n} sekunder tidligere.",
     "learningEndTooEarly": "Den automatiske slutning bliver ofte klippet for tidligt — i gennemsnit har du flyttet den {n} sekunder senere.",
     "learningEndTooLate": "Den automatiske slutning rammer ofte for sent — i gennemsnit har du flyttet den {n} sekunder tidligere.",
-    "learningCompanionSummary": "Af AI-forslagene er {accepted} taget i brug ({edited} omskrevet bagefter), og {leftAlone} ladt urørt."
+    "learningCompanionSummary": "Af AI-forslagene er {accepted} taget i brug ({edited} omskrevet bagefter), og {leftAlone} ladt urørt.",
+    "localNudgeCardTitle": "Hvad appen har justeret",
+    "localNudgeCardDesc": "Retter du det samme hver søndag, kan appen flytte sit eget forslag den vej — kun for denne maskine. Intet herfra deles med nogen, og du kan nulstille når som helst.",
+    "localNudgeToggle": "Lad appen lære af mine rettelser",
+    "localNudgeToggleHint": "Når dette er slået til, flytter appen sit eget forslag til prædikenens start og slut efter, hvordan du plejer at rette det. Aldrig mere end {limit} sekunder, og aldrig før du har rettet mindst {min} optagelser.",
+    "localNudgeOff": "Appen justerer ikke sine egne forslag. Den gætter på nøjagtig samme måde som en nyinstalleret app.",
+    "localNudgeWaiting": "Appen har ikke justeret noget endnu. Den venter, til du har rettet mindst {min} optagelser — indtil videre har den {samples}.",
+    "localNudgeOn": "Appen har justeret sine egne forslag efter dine rettelser:",
+    "localNudgeStartLater": "Appen foreslår nu, at prædikenen starter {n} sekunder senere, end den ellers ville. Det bygger på {samples} rettelser fra dig.",
+    "localNudgeStartEarlier": "Appen foreslår nu, at prædikenen starter {n} sekunder tidligere, end den ellers ville. Det bygger på {samples} rettelser fra dig.",
+    "localNudgeEndLater": "Appen foreslår nu, at prædikenen slutter {n} sekunder senere, end den ellers ville. Det bygger på {samples} rettelser fra dig.",
+    "localNudgeEndEarlier": "Appen foreslår nu, at prædikenen slutter {n} sekunder tidligere, end den ellers ville. Det bygger på {samples} rettelser fra dig.",
+    "localNudgeAtLimit": "Dine rettelser peger endnu længere, men appen flytter aldrig et forslag mere end {limit} sekunder. Rammer forslaget stadig dårligt, er det optagelserne, der bør ses på — ikke denne indstilling.",
+    "localNudgeResetBtn": "Nulstil det, appen har lært",
+    "localNudgeResetDone": "Nulstillet. Appen gætter nu på nøjagtig samme måde som en nyinstalleret app og lærer ikke mere, før du slår det til igen.",
+    "localNudgeLoadFailed": "Kunne ikke hente, hvad appen har justeret. Prøv igen."
   },
   "error": {
     "tryAgainHint": "Hvis problemet fortsætter, så kør Tjek system i Lyd-indstillingerne eller genstart programmet.",

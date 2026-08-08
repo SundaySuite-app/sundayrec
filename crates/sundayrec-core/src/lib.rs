@@ -51,6 +51,7 @@
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick, the proposed trim, and the AI companion's suggestions — what to store, what counts as a correction, and what a later one replaces (E8)
 //!   - [`trim_feedback`] — how far the operator moved the proposed sermon trim, and the sign convention that makes the deltas readable (E8)
 //!   - [`learning_summary`] — folding every recording's feedback file into the counts + trim-direction verdict the transparency screen shows (E8)
+//!   - [`local_adaptivity`] — the first thing that ACTS on those corrections: a hard-clamped, opt-in, one-click-resettable offset on the proposed sermon boundaries, derived from this install's own corrections (E10)
 //!   - [`vad`]         — the neural voice-activity seam (E9): the 576-sample framing + two-piece per-stream state a Silero-class model needs, and the `VadBackend` trait that keeps ONNX out of this crate. NOT wired into sermon detection yet
 //!   - [`telemetry`]    — the opt-in telemetry WIRE CONTRACT: a payload whose types cannot hold audio, paths, names or device names, plus the durable outbox's pure decisions (E3)
 //!   - [`tuning`]       — EVERY number the sermon detector decides with, in one documented table: what each means, what moving it does, and honestly which ones nobody can justify. [`audio_analysis`] and [`detect`] re-export from here, so there is one definition of each (E10)
@@ -80,6 +81,7 @@ pub mod integrations;
 pub mod learning_summary;
 pub mod levels;
 pub mod link;
+pub mod local_adaptivity;
 pub mod mastering;
 pub mod mjpeg;
 pub mod ndi;
