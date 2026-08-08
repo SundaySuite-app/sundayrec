@@ -8,8 +8,12 @@ slik at vi kan finne feil og gjøre det bedre.
 - Funksjonen er **av som standard**. Du bestemmer selv.
 - Vi får aldri vite hvem du er, hvilken menighet du tilhører, eller hva som ble
   sagt eller sunget.
-- **Aldri lyd, tekst eller klokkeslett.** Dataformatet har ingen plass å legge
-  det i — det er ikke noe vi filtrerer bort i etterkant.
+- **Aldri lyd, og aldri innholdet i et opptak.** For nesten alt vi samler inn er
+  det ikke noe vi filtrerer bort i etterkant — dataformatet har ingen plass å
+  legge det i. Det finnes ett unntak, og vi sier hva det er: en krasjrapport
+  inneholder feilmeldingen fra programmet, som er tekst. Se «Krasjrapporter».
+- **Hvert enkelt punkt er tidfestet** — som et tidspunkt i UTC, uten
+  tidssonen din. Se «Om tidspunktene» for hva det betyr og ikke betyr.
 - Du kan når som helst ombestemme deg, og be om å få alt slettet.
 - Å svare nei endrer ingenting i hvordan SundayRec fungerer for deg.
 
@@ -22,9 +26,17 @@ Resten av dokumentet forklarer detaljene, og hvorfor du kan etterprøve dem.
 Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
 som du finner under **Innstillinger → System**.
 
-Resten av SundayRec sender aldri noe **til Sunday Suite**, uansett hva du
-svarer her. Det finnes ett unntak, oppdateringssjekken, og den er beskrevet i
-sitt eget avsnitt rett under fordi den ikke styres av dette samtykket.
+Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
+hva du svarer her. Det finnes to unntak, og ingen av dem styres av dette
+samtykket:
+
+- **Oppdateringssjekken**, som er beskrevet i sitt eget avsnitt rett under.
+- **Innlogging med Sunday-konto**, hvis du velger å logge inn. Da går
+  innloggingen til vår egen innloggingstjeneste, og den får naturlig nok vite
+  hvem du er — det er hele poenget med å logge inn. Det skjer bare når du selv
+  ber om det, og en installasjon som aldri logger inn tar aldri kontakt.
+  Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
+  ikke utledet fra kontoen din, og de to møtes aldri.
 
 At appen ellers sender ting over nett, gjør den selvsagt. Du kan laste opp et
 opptak til skylagring, sende et varsel til en webhook, sende e-post, laste ned
@@ -44,12 +56,24 @@ stedet.
 Dette skjer uansett hva du har svart på diagnostikk-spørsmålet, fordi en
 oppdateringssjekk ikke er diagnostikk.
 
-**Hva forespørselen inneholder:** ingenting. Ingen installasjons-ID, ingen
-innstillinger, ingenting om opptakene dine — og ikke engang hvilken versjon
-eller hvilket operativsystem du kjører. Appen spør bare «hva er nyeste
-versjon?», får det samme svaret som alle andre, og finner selv ut om det er noe
-nyere enn den den allerede har. Serveren får altså ikke vite hvem som spurte,
+**Hva forespørselen inneholder:** ingen installasjons-ID, ingenting om opptakene
+dine, og ikke engang hvilken versjon eller hvilket operativsystem du kjører.
+Appen spør bare «hva er nyeste versjon?», og finner selv ut om svaret er noe
+nyere enn det den allerede har. Serveren får altså ikke vite hvem som spurte,
 eller hva de hadde fra før.
+
+Én ting følger likevel med, og det er ærligere å si det: **hvilken
+oppdateringskanal du står på.** Appen har to — «stable» og «beta» — og kanalen
+er en del av adressen den spør på. Serveren ser altså at _noen_ på beta spurte,
+uten å se hvem. Står du på stable, som alle gjør med mindre de selv har valgt
+noe annet, er du én av alle. Står du på beta, er den gruppen mindre. Utover det
+sender forespørselen bare det en hvilken som helst nettforespørsel må sende for
+å komme fram.
+
+Selve oppdateringssjekken lagres ikke. Serveren skriver verken en rad, en teller
+eller en loggtekst når den svarer på den — nettopp fordi dette er den ene
+forespørselen som også kommer fra installasjoner som har takket nei til
+diagnostikk.
 
 **Ingen IP-adresse lagres.** Det håndheves på samme måte som for
 diagnostikk-tjenesten, siden det er samme underliggende tjener:
@@ -103,8 +127,27 @@ Hva slags feil som skjedde: feiltype og feilmelding, kuttet til de første 200
 tegnene, og hvor i SundayRecs **egen kildekode** det skjedde, på formen
 `fil.rs:linje:kolonne`.
 
-Filstier fra din maskin sendes aldri. Skulle en dukke opp i en feilmelding,
-fjernes den automatisk og erstattes med `<path>`.
+**Feilmeldingen er fritekst, og det er det eneste stedet i hele datapakken det
+finnes fritekst.** Alt annet vi samler inn er tall og faste valg fra lister vi
+har skrevet på forhånd. Feilmeldingen er et unntak fordi den må være det: uten
+den kan vi ikke se forskjell på to krasj, og da er det ingen grunn til å samle
+inn krasjrapporter i det hele tatt.
+
+Meldingene er skrevet av oss, ikke av deg, og de handler om programmets egen
+tilstand. Før en melding sendes, går den gjennom flere passeringer som fjerner
+filstier og alt som ser ut som et passord eller en nøkkel. En sti som står for
+seg selv erstattes i sin helhet med `<path>`.
+
+Men vi lover ikke at dette fanger alt, for det gjør det ikke. En feilmelding
+settes sammen av programmet mens den skrives, og en sti som står inne i en
+lengre tekst blir ikke alltid kjent igjen som en sti. Da kan brukernavnet ditt
+være borte samtidig som et mappenavn eller et filnavn står igjen. På samme måte
+kan et enhetsnavn stå i en melding uten å ligne på noe filtrene leter etter.
+
+Vi nevner det fordi det er forskjell på «dette kan ikke skje» og «dette prøver
+vi å hindre», og bare det første er en garanti. For feilmeldinger er det det
+andre som gjelder. Rammene rundt er at meldingen kuttes ved 200 tegn, at den
+bare handler om en feil, og at rådataene uansett slettes etter 90 dager.
 
 ### Kvalitetsdata om opptaket
 
@@ -116,8 +159,10 @@ Aldri selve lyden, og aldri innholdet i opptaket.
 
 Sammen med dette sendes hvilke _tekniske_ innstillinger som var i bruk:
 filformat, samplerate-modus, om video var på, hvor mange planlagte opptak du
-har satt opp. Aldri klokkeslett, ukedager, kanalnavn eller navnet du har gitt
-et opptak.
+har satt opp. Aldri ukedager, kanalnavn eller navnet du har gitt et opptak.
+
+Selve tidspunktet opptaket ble avsluttet følger med, sammen med varigheten. Se
+«Om tidspunktene» for hva vi mener om det.
 
 ### Korrigeringene du gjør i redigeringsverktøyet
 
@@ -133,9 +178,10 @@ kunne rekonstruere ett enkelt opptak.
 Det som **aldri** sendes: hva prekenen handlet om, hva som ble sagt, når den
 fant sted, hva du har kalt opptaket, eller tekst av noe slag.
 
-**Klokkeslett sendes aldri**, heller ikke som en del av en korrigering. Et
-klokkeslett sammen med en varighet peker ut én bestemt gudstjeneste i én
-bestemt menighet, og da er tallene ikke anonyme lenger.
+En korrigering er den ene tingen vi samler inn som **ikke er tidfestet i det
+hele tatt**. Den består av tre valg fra faste lister — hvilket punkt, hvilken
+retning, hvilket intervall — og et antall. Det er med vilje: en korrigering
+forteller oss noe om gjetningen vår, og trenger ikke å si når den ble gjort.
 
 Grunnen til at vi ber om dette: den automatiske prekengjenkjenningen skal bli
 bedre for alle som bruker den, og et menneske som retter opp en dårlig gjetning
@@ -165,25 +211,96 @@ liste — for eksempel «eksport til MP3» eller «transkripsjon startet».
 Kun **antall** ganger. Aldri hva som ble eksportert, transkribert eller
 publisert.
 
+### Resultatet av en diagnose du selv har kjørt
+
+Kjører du **Kjør diagnose** i appen, sendes hvilke funn den kom fram til — som
+en fast kode og et alvorlighetsnivå, for eksempel `SR-AUDIO-02` og «advarsel».
+
+Kun koden. Aldri forklaringen som hører til, for det er der detaljene ligger:
+hvilken enhet som manglet, hvilken mappe som var full, hvor mye plass som var
+igjen. Koden alene er nok til å telle hvor ofte hver situasjon oppstår, og det
+er det eneste spørsmålet en anonym statistikk kan svare ærlig på.
+
+En diagnose du kjører mens diagnostikken er slått av, legger ikke igjen noe.
+
+### Planlagte opptak som ikke startet
+
+Var et opptak satt opp til å starte av seg selv, og maskinen ikke våknet eller
+ikke kom i gang, sendes at det skjedde: hvilken type svikt det var, en kode for
+årsaken — for eksempel `no_resume` — og hvor mange sekunder unna klokka landet
+ved en test.
+
+Aldri hva du har kalt det planlagte opptaket, og aldri klokkeslettet det var
+satt opp til. At noe gikk galt er nok til å finne feilen; hva menigheten kaller
+gudstjenesten sin, og når den begynner, er det ikke.
+
 ### Det som følger med hver rapport
 
-Uansett hvilken av kategoriene over det gjelder, følger fire opplysninger med:
-appversjon, operativsystem, prosessorarkitektur og hvilket språk du har valgt i
-appen.
+Uansett hvilken av kategoriene over det gjelder, følger fire opplysninger om
+maskinen med: appversjon, operativsystem, prosessorarkitektur og hvilket språk
+du har valgt i appen.
 
 De er der for at vi skal kunne se mønstre som «denne feilen rammer flere på
 macOS enn på Windows», uten å vite hvem noen av installasjonene tilhører.
+
+I tillegg følger det med fire opplysninger om selve rapporten: installasjons-ID-
+en beskrevet over, tidspunktet pakken ble laget, hvilken utgave av dataformatet
+den bruker, og hvilken versjon av dette samtykket den ble samlet inn under. Den
+siste er der for at vi skal kunne vise, for hver enkelt rapport, nøyaktig hvilket
+omfang du hadde sagt ja til da den ble laget.
+
+### Om tidspunktene
+
+Det står «tidspunkt» flere steder over, og det fortjener et eget avsnitt, for
+her har vi tidligere skrevet noe som ikke stemte.
+
+**Hvert enkelt punkt vi samler inn er tidfestet.** En krasjrapport vet når
+krasjet skjedde, en kvalitetsrapport vet når opptaket ble avsluttet, et mislykket
+planlagt opptak vet når det slo feil, og pakken som helhet vet når den ble laget.
+Uten det kan vi ikke se om en feil ble verre etter en oppdatering, og det er en
+stor del av grunnen til å samle inn noe som helst.
+
+To ting gjør vi for å begrense hva et slikt tidspunkt sier om deg:
+
+- **Tidssonen din følger ikke med.** Tidspunktet lagres som et punkt i UTC. Der
+  appen selv noterer klokkeslett lokalt på maskinen din, står tidssonen i
+  teksten; på vei ut faller den bort.
+- **Ingenting kobler et tidspunkt til et sted eller et navn.** Vi har verken
+  menighetsnavn, IP-adresse, filnavn eller enhetsnavn å knytte det til.
+
+Så la oss være tydelige på hva det ikke betyr. En kvalitetsrapport inneholder
+både når et opptak sluttet og hvor lenge det varte, og av det følger når det
+begynte. Vet man i tillegg omtrent hvilket land en installasjon står i — og
+språkvalget antyder det — er man nærmere «en gudstjeneste et sted» enn tallene
+alene skulle tilsi.
+
+Vi mener det er riktig avveining, og vi mener den tåler å bli sagt høyt heller
+enn å bli beskrevet som noe den ikke er. Rådata slettes uansett etter 90 dager,
+og etter det står bare dagstall igjen.
 
 ---
 
 ## Hva samles ALDRI inn
 
-Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Klokkeslett. Filstier
-fra din maskin. Enhetsnavn, som navnet på mikseren eller lydkortet ditt. Kirke-
-eller menighetsnavn.
+Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Kirke- eller
+menighetsnavn. Navnet du har gitt et opptak. Navnet på mikseren eller lydkortet
+ditt. Mappen du lagrer i. Webhook-adresser og e-postoppsett. Navnene på de
+planlagte opptakene dine, og klokkeslettene de er satt opp til.
 
-Dette er ikke bare filtrert bort i etterkant — dataformatet har rett og slett
-ingen plass å legge det i.
+For alt dette er det ikke bare filtrert bort i etterkant — dataformatet har rett
+og slett ingen plass å legge det i. Hvert felt som forlater maskinen er enten et
+tall, et valg fra en liste vi har skrevet på forhånd, eller en tekst som må
+gjennom én bestemt vask først. Det finnes ingen fjerde mulighet, og en utvikler
+som legger til et felt uten å plassere det i en av de tre, får en feilende test i
+stedet for et smutthull.
+
+To presiseringer hører med, og de står utdypet lenger oppe:
+
+- **Feilmeldingen i en krasjrapport er fritekst.** Den er den ene teksten som
+  sendes, og for den er «ingen plass å legge det i» ikke argumentet — vasken er.
+  Se «Krasjrapporter».
+- **Tidspunkter sendes.** Ikke som lokale klokkeslett, men som punkter i UTC. Se
+  «Om tidspunktene».
 
 ---
 
@@ -231,7 +348,9 @@ ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
 
 **Så snart maskinen har nett:** SundayRec ber serveren slette alt som ligger der
 under den gamle ID-en. Alle enkeltrapporter fjernes — krasjrapporter,
-kvalitetsdata, korrigeringer, bruksmål, alt.
+kvalitetsdata, diagnosefunn, planlagte opptak som ikke startet, korrigeringer,
+forslagsbruk, bruksmål, alt. Også den tekniske raden som teller hvor mange
+rapporter ID-en har sendt, blir borte.
 
 Er maskinen offline når du trykker, sendes forespørselen neste gang den er på
 nett. Den blir ikke glemt. Forespørselen sendes selv om du har slått av
@@ -267,7 +386,13 @@ Hvis en fremtidig versjon begynner å samle inn noe denne erklæringen ikke
 allerede dekker, spør vi deg på nytt før noe sendes.
 
 Et tidligere samtykke dekker kun det omfanget du faktisk sa ja til den gangen.
+Det er ikke bare en hensikt, men slik det er bygget: hvert samtykke er merket med
+hvilket omfang det gjaldt, og sier appen at omfanget har blitt større, stanser
+sendingen av seg selv til du har svart på det nye spørsmålet. Et «nei» blir
+aldri til et «ja» på veien.
+
+Omfanget denne erklæringen beskriver, er **versjon 2**.
 
 ---
 
-_Sist oppdatert: 2026-08-07._
+_Sist oppdatert: 2026-08-08._

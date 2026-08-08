@@ -260,6 +260,30 @@ mod tests {
         assert_eq!(CONSENT_VERSION, 2);
     }
 
+    /// CONSENT_VERSION's own docs say three things move together or the version
+    /// is a lie: this constant, the scope described in `PRIVACY.md`, and the
+    /// re-prompt copy. Nothing enforced the middle one, and it is the one a
+    /// church actually reads — so a bump that left the document behind was a
+    /// silent, and entirely plausible, way to publish a false promise.
+    ///
+    /// This does not check that the PROSE is right; no test can. It checks that
+    /// the document states which scope it describes, and that the number it
+    /// states is this one. A bump now fails here until somebody opens the file,
+    /// which is exactly the moment to notice the categories are stale too.
+    #[test]
+    fn the_privacy_document_states_the_scope_it_describes() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../PRIVACY.md");
+        let doc = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("PRIVACY.md must be readable at {path}: {e}"));
+        let expected = format!("**versjon {CONSENT_VERSION}**");
+        assert!(
+            doc.contains(&expected),
+            "PRIVACY.md must name the consent scope it describes as {expected}. \
+             CONSENT_VERSION is {CONSENT_VERSION}; either the document was not \
+             updated with the bump, or the wording that carries the number moved."
+        );
+    }
+
     #[test]
     fn a_version_one_grant_stops_sending_and_is_asked_again() {
         let v1_yes = ConsentRecord {
