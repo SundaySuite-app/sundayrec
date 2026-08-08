@@ -82,6 +82,10 @@ test.describe("onboarding", () => {
 
     // The "never" list is the promise the whole feature rests on. If this line
     // ever quietly loses an item, that is a privacy regression, not a copy edit.
+    // (One item HAS left it, loudly: PR #100 withdrew «filstier», because path
+    // scrubbing is best-effort — a path inside a longer message can survive —
+    // and «aldri» must only list what the code can guarantee. PRIVACY.md's
+    // krasjrapport section carries the honest version of that promise now.)
     const never = details.locator(".ob-consent-never");
     await expect(never).toBeVisible();
     await expect(never).toContainText("Aldri:");
@@ -91,7 +95,8 @@ test.describe("onboarding", () => {
       "prekentekst",
       "navn",
       "e-post",
-      "filstier",
+      "enhetsnavn",
+      "kirkenavn",
     ]) {
       await expect(never).toContainText(item);
     }
