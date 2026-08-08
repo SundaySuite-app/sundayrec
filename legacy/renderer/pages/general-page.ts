@@ -653,7 +653,7 @@ async function deleteTelemetryData(): Promise<void> {
     title: t('general.telemetryDeleteConfirmTitle', 'Slette dine data?'),
     message: t(
       'general.telemetryDeleteConfirmBody',
-      'Dette bytter ut den anonyme install-IDen din med en ny, og tømmer rapporter i kø som ikke er sendt ennå — begge deler skjer lokalt, med én gang. Data som allerede er sendt til Sunday Suite kan foreløpig ikke slettes på forespørsel; den slettes automatisk etter 90 dager som normalt. Sletting på forespørsel på serversiden kommer i en senere versjon.',
+      'Dette bytter ut den anonyme install-IDen din med en ny, og tømmer rapporter i kø som ikke er sendt ennå — begge deler skjer lokalt, med én gang. Deretter ber SundayRec serveren om å slette alt som ligger der under den gamle IDen. Er maskinen offline, sendes forespørselen så snart den er på nett. Anonyme totaltall blir stående, siden de ikke inneholder noen install-ID og ikke kan knyttes til deg.',
     ),
     confirmLabel: t('general.telemetryDeleteConfirmYes', 'Ja, tøm og bytt ID'),
     cancelLabel: t('general.telemetryDeleteConfirmNo', 'Avbryt'),
