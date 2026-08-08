@@ -63,6 +63,7 @@ pub mod companion;
 pub mod config;
 pub mod corrections;
 pub mod counters;
+mod display_ratchet;
 pub mod http_sender;
 pub mod payload;
 /// The outbox's sqlx persistence. Named `queue_store` at every use site (see the

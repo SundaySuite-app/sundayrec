@@ -705,8 +705,11 @@ fn path_run_end(text: &str, from: usize) -> usize {
 /// only thing that tells two crashes apart. Anything smarter (peek ahead for a
 /// token ending in an audio extension) is a heuristic in the one place that must
 /// be obviously correct. Closing it properly belongs where the name is, not
-/// where the text is: keep the operator's title out of the formatted string in
-/// the first place, or cap free text to the shapes that never carry one.
+/// where the text is — which is what [`telemetry_path`] now does: OUR OWN
+/// format sites render a path as `<path>`/`<path:ext>` at insertion, so the
+/// messages this app writes are born clean and this scanner is only the safety
+/// net for text we do not control. The tail behaviour itself is pinned, not
+/// assumed, by `the_spaced_filename_tail_is_a_pinned_boundary` in the tests.
 ///
 /// Idempotent: `<path>` holds no separator, drive or `~`, so a second pass
 /// finds no start inside it.
@@ -770,6 +773,60 @@ pub fn sanitize_free_text(raw: &str, home: Option<&str>, max: usize) -> String {
     let mut out: String = cleaned.chars().take(max).collect();
     out.push('…');
     out
+}
+
+/// File extensions [`telemetry_path`] is allowed to keep. A CLOSED set, in the
+/// house style of every other vocabulary in this module: an extension in this
+/// list is one the APP chose (its capture containers, its delivery formats, its
+/// own sidecar files), so keeping it can never keep a word a person typed. An
+/// extension outside it might be the tail of a custom recording title
+/// (`Møte.Privat` has the extension `Privat`), so it is dropped, not trusted.
+const TELEMETRY_PATH_EXTENSIONS: &[&str] = &[
+    "wav", "flac", "mp3", "m4a", "aac", "ogg", "opus", "mkv", "mp4", "mov", "json", "sqlite",
+    "txt", "log", "srt", "vtt", "tmp", "part",
+];
+
+/// Render a filesystem path for a message that can reach telemetry: `<path>`,
+/// or `<path:ext>` when the extension is one the app itself produces.
+///
+/// ## Why this exists — the two-layer design
+///
+/// Path hygiene on the wire has two layers, and this helper is the FIRST:
+///
+///   1. **Insertion-site hygiene (this function, primary).** A message that a
+///      panic or a setup error can turn into a crash report must be BORN
+///      without the path, at the `format!` that writes it. A message born clean
+///      has nothing to leak, whatever the scrubber's blind spots are.
+///   2. **[`strip_absolute_paths`] (the safety net).** It washes text we do NOT
+///      control — third-party panic messages, library error `Display`s, code
+///      that forgot layer 1. It is a scanner over free text, and a scanner has
+///      an inherent blind spot: a path run ends at whitespace, so a filename
+///      containing a space leaves its tail behind (`~/Opptak/gudstjeneste
+///      9. november.wav` → `<path> 9. november.wav` — a service date, on the
+///      wire). That tail cannot be closed in the scrubber without guessing at
+///      sentence boundaries; it CAN be closed here, by never inserting the name
+///      at all.
+///
+/// So: when formatting a path into a message that can end up in a panic, a
+/// setup error, or anything else the crash ring records, use this — and keep
+/// the full path in a `tracing::` line if the local log needs it (the log stays
+/// on the machine; the ring goes on the wire).
+///
+/// The kept extension says what KIND of file was involved (often the whole
+/// diagnosis: `.sqlite` vs `.wav`), and comes from the closed
+/// [`TELEMETRY_PATH_EXTENSIONS`] vocabulary so it can never carry user content.
+/// The output is fixed-shape, survives [`sanitize_free_text`] unchanged, and is
+/// accepted by the endpoint's path validator — both proven by test.
+pub fn telemetry_path(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .filter(|e| TELEMETRY_PATH_EXTENSIONS.contains(&e.as_str()));
+    match ext {
+        Some(e) => format!("<path:{e}>"),
+        None => PATH_PLACEHOLDER.to_string(),
+    }
 }
 
 // ── The payload ─────────────────────────────────────────────────────────────
@@ -1877,6 +1934,158 @@ mod tests {
         // Idempotent.
         let once = sanitize_free_text("/Users/kari/x token=abc", Some("/Users/kari"), 200);
         assert_eq!(sanitize_free_text(&once, Some("/Users/kari"), 200), once);
+    }
+
+    /// The scrubber's boundary, PINNED rather than assumed: exactly what a
+    /// filename containing spaces does and does not lose on the way out.
+    ///
+    /// A path run ends at the first whitespace ([`strip_absolute_paths`]'s
+    /// documented residual), so the tail of a spaced filename — user content, a
+    /// service date — survives BOTH this scrubber and the endpoint's own
+    /// validator (asserted below with the mirrored Worker regex). Neither layer
+    /// downstream catches it. That is precisely why the fix for OUR OWN
+    /// messages is [`telemetry_path`] at the insertion site, and why this test
+    /// exists: if the scrubber's behaviour on these shapes ever changes, the
+    /// boundary moved and the division of labour must be re-argued, not
+    /// silently re-assumed.
+    #[test]
+    fn the_spaced_filename_tail_is_a_pinned_boundary() {
+        // (input, home, exact output) — every case a `format!` in this app or a
+        // library could realistically produce.
+        let cases: &[(&str, Option<&str>, &str)] = &[
+            // Tilde path, spaced Norwegian date name: the head goes, the tail stays.
+            (
+                "kunne ikke åpne ~/Opptak/Gudstjeneste 9. november.wav",
+                None,
+                "kunne ikke åpne <path> 9. november.wav",
+            ),
+            // Same through the home branch of `scrub_paths`.
+            (
+                "kunne ikke åpne /Users/kari/Opptak/gudstjeneste 9. november.wav",
+                Some("/Users/kari"),
+                "kunne ikke åpne <path> 9. november.wav",
+            ),
+            // Windows, with a SPACED user name too: the operator's name is
+            // consumed (scrub → `<user>`, and the run swallows the placeholder
+            // whole), only the date tail remains.
+            (
+                "finalize C:\\Users\\Kirke Vert\\Opptak\\gudstjeneste 9. november.wav feilet",
+                None,
+                "finalize <path> 9. november.wav feilet",
+            ),
+            // Quotes around the path: the closing quote survives with the tail.
+            (
+                "kunne ikke åpne \"/Users/kari/Opptak/gudstjeneste 9. november.wav\"",
+                Some("/Users/kari"),
+                "kunne ikke åpne \"<path> 9. november.wav\"",
+            ),
+            (
+                "sti 'C:\\Users\\Kirke Vert\\Opptak\\gudstjeneste 9. november.wav' mangler",
+                None,
+                "sti '<path> 9. november.wav' mangler",
+            ),
+            // æøå are path-body characters: a spaceless Norwegian name is
+            // swallowed WHOLE — no tail, nothing mid-character.
+            (
+                "slette ~/Opptak/påskegudstjeneste-søndag.wav gikk galt",
+                None,
+                "slette <path> gikk galt",
+            ),
+            // A spaceless path at the very end of the string: fully consumed.
+            (
+                "kunne ikke slette ~/Opptak/opptak.wav",
+                None,
+                "kunne ikke slette <path>",
+            ),
+            // The shape that motivated the insertion-site fix in `lib.rs`: the
+            // OS's own app-data dir has a space (`Application Support`), so a
+            // setup error formatted with `.display()` leaves this tail. Not a
+            // person's data — but a path fragment on the wire all the same,
+            // which is why that message is now born clean instead.
+            (
+                "Failed to setup app: opening database at \
+                 ~/Library/Application Support/no.sundaysuite.sundayrec/sundayrec.sqlite: \
+                 unable to open database file",
+                None,
+                "Failed to setup app: opening database at \
+                 <path> Support/no.sundaysuite.sundayrec/sundayrec.sqlite: \
+                 unable to open database file",
+            ),
+        ];
+
+        let re = regex::Regex::new(WORKER_ABSOLUTE_PATH_RE).expect("the mirror must compile");
+        for (raw, home, want) in cases {
+            let got = sanitize_free_text(raw, *home, MESSAGE_MAX_CHARS);
+            assert_eq!(&got, want, "input: {raw}");
+            // The boundary itself: what leaked here would ALSO pass the
+            // endpoint's validator — no layer downstream catches the tail.
+            assert!(
+                !re.is_match(&got),
+                "the endpoint accepts this output, tail and all: {got}"
+            );
+            // Idempotent on the pinned shapes: a second pass changes nothing.
+            assert_eq!(sanitize_free_text(&got, *home, MESSAGE_MAX_CHARS), got);
+            // And in every case: no user name, no folder name, no path root.
+            for needle in [
+                "kari", "Kirke", "Vert", "Opptak", "/Users", "\\Users", "~/", "C:\\",
+            ] {
+                assert!(!got.contains(needle), "{needle:?} survived in: {got}");
+            }
+        }
+    }
+
+    // ── telemetry_path: insertion-site hygiene ───────────────────────────────
+
+    #[test]
+    fn a_telemetry_path_is_born_clean() {
+        use std::path::Path;
+
+        // A known extension is kept — it names a format the APP chose, and it
+        // is often the diagnosis (`.sqlite` vs `.wav`).
+        assert_eq!(
+            telemetry_path(Path::new("/Users/kari/Opptak/gudstjeneste 9. november.wav")),
+            "<path:wav>"
+        );
+        assert_eq!(
+            telemetry_path(Path::new(
+                "/Users/kari/Library/Application Support/no.sundaysuite.sundayrec/sundayrec.sqlite"
+            )),
+            "<path:sqlite>"
+        );
+        // Case-insensitive: a FAT volume shouting `.WAV` is still a wav.
+        assert_eq!(telemetry_path(Path::new("C:\\Opptak\\X.WAV")), "<path:wav>");
+        // No extension → the bare placeholder.
+        assert_eq!(telemetry_path(Path::new("/tmp/x")), "<path>");
+        // An extension OUTSIDE the closed set may be the tail of a title
+        // someone typed (`Møte.Privat` → extension `Privat`): dropped, never
+        // trusted.
+        assert_eq!(
+            telemetry_path(Path::new("/Users/kari/Opptak/Møte.Privat")),
+            "<path>"
+        );
+        // A dotted date with a trailing word is not a keepable extension
+        // either — `9. november` has the "extension" ` november`.
+        assert_eq!(
+            telemetry_path(Path::new("~/Opptak/gudstjeneste 9. november")),
+            "<path>"
+        );
+
+        // The whole point: a message BUILT with the helper passes the wire
+        // pipeline unchanged (nothing to scrub) and the endpoint's validator
+        // (nothing to reject) — proven against both, not assumed.
+        let re = regex::Regex::new(WORKER_ABSOLUTE_PATH_RE).expect("the mirror must compile");
+        let msg = format!(
+            "opening database at {}: unable to open database file",
+            telemetry_path(Path::new(
+                "/Users/kari/Library/Application Support/no.sundaysuite.sundayrec/sundayrec.sqlite"
+            ))
+        );
+        assert_eq!(
+            sanitize_free_text(&msg, Some("/Users/kari"), MESSAGE_MAX_CHARS),
+            msg,
+            "a message born clean must survive the safety net unchanged"
+        );
+        assert!(!re.is_match(&msg));
     }
 
     /// The messages this app can actually produce with a path in them, in the
