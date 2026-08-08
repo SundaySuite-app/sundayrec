@@ -305,16 +305,35 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|e| format!("resolving app data dir: {e}"))?;
-            std::fs::create_dir_all(&db_dir)
-                .map_err(|e| format!("creating app data dir {}: {e}", db_dir.display()))?;
+            // A setup error becomes a PANIC message (tauri: "Failed to setup
+            // app: {e}"), which the crash ring persists and telemetry ships —
+            // so the path goes into the LOCAL log only and the error message is
+            // born clean via `telemetry_path`. The scrubber alone is not
+            // enough here: `~/Library/Application Support/…` has a space, and a
+            // scanned path run ends at whitespace, leaving a tail on the wire.
+            std::fs::create_dir_all(&db_dir).map_err(|e| {
+                tracing::error!(dir = %db_dir.display(), "creating app data dir failed: {e}");
+                format!(
+                    "creating app data dir {}: {e}",
+                    sundayrec_core::telemetry::telemetry_path(&db_dir)
+                )
+            })?;
             // E2.1: the panic hook resolved its own directory before any app
             // existed. Confirm the two computations agree — they are the same
             // rule, so a mismatch means an assumption broke and the records are
             // not where the rest of the diagnostics look.
             crash::verify_dir_matches(&db_dir);
             let db_path = db_dir.join("sundayrec.sqlite");
-            let pool = tauri::async_runtime::block_on(db::store::open_pool(&db_path))
-                .map_err(|e| format!("opening database at {}: {e}", db_path.display()))?;
+            // Same rule as above: full path to the local log, `<path:sqlite>`
+            // to the message the panic hook may end up shipping.
+            let pool =
+                tauri::async_runtime::block_on(db::store::open_pool(&db_path)).map_err(|e| {
+                    tracing::error!(db = %db_path.display(), "opening database failed: {e}");
+                    format!(
+                        "opening database at {}: {e}",
+                        sundayrec_core::telemetry::telemetry_path(&db_path)
+                    )
+                })?;
 
             // Fase 6: drain the durable cloud-upload queue in the background.
             // Idles cleanly when Google OAuth isn't configured (no spinning).
