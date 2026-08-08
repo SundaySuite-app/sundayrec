@@ -13,4 +13,17 @@ import type { SegmentType } from "./SegmentType";
  * camelCase on the wire, mirroring the renderer type, which is itself the mirror
  * of `audio-analysis.ts` `AnalysisSegment`.
  */
-export type PrepAnalysisSegment = { startSec: number, endSec: number, durationSec: number, type: SegmentType, confidence: number, avgRmsDb: number, label: string, };
+export type PrepAnalysisSegment = { startSec: number, endSec: number, durationSec: number, type: SegmentType, confidence: number, 
+/**
+ * Mean frame RMS in dBFS, or `f64::NEG_INFINITY` for a block with no finite
+ * frame RMS at all — see [`crate::audio_analysis`]'s `close`, which returns
+ * exactly that for digital silence.
+ *
+ * JSON has no `-Infinity`, so `serde_json` writes any non-finite float as
+ * `null` — and a plain `f64` field REFUSES to read `null` back. That is a
+ * lossy round-trip through every store this segment is persisted in, and
+ * the review queue is one of them: a single silent block made the whole
+ * queue blob unparseable, which `load_queue` then read as "no queue".
+ * `null` therefore has to mean here what it meant when it was written.
+ */
+avgRmsDb: number, label: string, };

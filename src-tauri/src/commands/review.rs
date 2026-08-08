@@ -48,7 +48,21 @@ fn now_i64() -> i64 {
 
 pub(crate) async fn load_queue(db: &Db) -> AppResult<Vec<ReviewQueueEntry>> {
     match store::get_setting(&db.pool, REVIEW_QUEUE_KEY).await? {
-        Some(json) if !json.is_empty() => Ok(serde_json::from_str(&json).unwrap_or_default()),
+        Some(json) if !json.is_empty() => Ok(serde_json::from_str(&json).unwrap_or_else(|e| {
+            // Degrading to an empty queue is deliberate (see
+            // `load_queue_tolerates_a_corrupt_blob`) — degrading SILENTLY is
+            // not. Everything in here is an operator decision: which episodes
+            // are published, which are discarded, how far up the reminder
+            // ladder each one has climbed. Losing all of it looks exactly like
+            // "no episodes are waiting", and the app would go on to re-enqueue
+            // them as if they were new.
+            tracing::error!(
+                error = %e,
+                "review queue: the stored queue could not be parsed — \
+                 continuing with an EMPTY queue; pending reviews are lost"
+            );
+            Vec::new()
+        })),
         _ => Ok(Vec::new()),
     }
 }
@@ -612,6 +626,74 @@ mod tests {
             avg_rms_db: -20.0,
             label: String::new(),
         }]
+    }
+
+    /// The segment list a stretch of DIGITAL silence actually produces.
+    ///
+    /// Not a hand-written `-inf`: `audio_analysis` returns `NEG_INFINITY` for a
+    /// block with no finite frame RMS in it, deliberately and with its own test
+    /// (`rms_db_of_silence_is_neg_inf`). A muted channel, a gap before the
+    /// service starts, or a file that opens on true zeroes all reach it.
+    fn segments_with_a_digitally_silent_block() -> Vec<PrepAnalysisSegment> {
+        use sundayrec_core::audio_analysis::{FRAME_MS, SAMPLE_RATE};
+        let pcm = vec![0.0f32; (SAMPLE_RATE as usize) * 30];
+        let detection = sundayrec_core::detect::analyse_pcm(
+            &pcm,
+            SAMPLE_RATE,
+            FRAME_MS,
+            &sundayrec_core::audio_analysis::HeuristicScorer,
+        );
+        assert!(
+            detection.segments.iter().any(|s| !s.avg_rms_db.is_finite()),
+            "the fixture no longer produces a non-finite rms — re-read \
+             audio_analysis::close"
+        );
+        let mut segments = sermon_segments();
+        segments.extend(detection.segments);
+        segments
+    }
+
+    /// A queue entry must survive the restart that reads it back.
+    ///
+    /// The seam nobody spans: `audio_analysis` emits `-inf` for digital silence
+    /// (correct, and tested), `save_queue` hands it to `serde_json` which writes
+    /// non-finite floats as `null` (correct, and documented), and `load_queue`
+    /// treats a blob it cannot parse as an empty queue (correct for a corrupt
+    /// blob). Composed, one silent block in one episode discards EVERY entry —
+    /// the operator's published/discarded decisions and the whole reminder
+    /// ladder — and nothing says so.
+    #[tokio::test]
+    async fn a_silent_block_does_not_wipe_the_queue_on_restart() {
+        let (db, d) = temp_db().await;
+        let quiet = media_file(&d, "quiet.m4a");
+        let other = media_file(&d, "other.m4a");
+
+        // An episode the operator has already dealt with, plus the awkward one.
+        build_and_enqueue_inner(&db, other.clone(), sermon_segments())
+            .await
+            .unwrap();
+        let mut queue = load_queue(&db).await.unwrap();
+        let published_id = queue[0].id.clone();
+        assert!(review_queue::mark_published(
+            &mut queue,
+            &published_id,
+            now_i64()
+        ));
+        save_queue(&db, &queue).await.unwrap();
+
+        build_and_enqueue_inner(&db, quiet.clone(), segments_with_a_digitally_silent_block())
+            .await
+            .unwrap();
+
+        // The restart.
+        let after = load_queue(&db).await.unwrap();
+        assert_eq!(after.len(), 2, "the queue did not survive being read back");
+
+        // …and with it gone, re-analysis resurrects what was already published.
+        let (_, added) = build_and_enqueue_inner(&db, other, sermon_segments())
+            .await
+            .unwrap();
+        assert!(!added, "a published episode came back into the queue");
     }
 
     #[tokio::test]
