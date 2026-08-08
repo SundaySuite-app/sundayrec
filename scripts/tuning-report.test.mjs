@@ -238,16 +238,158 @@ describe("read-only, structurally", () => {
     const methods = [...SOURCE.matchAll(/method:\s*"([A-Z]+)"/g)].map(
       (m) => m[1],
     );
-    expect(methods).toEqual(["GET"]);
+    // Two fetch helpers (`get`, `getOptional`), one verb between them. The
+    // assertion is on the SET: any second verb is a write path and must fail.
+    expect(methods.length).toBeGreaterThan(0);
+    expect([...new Set(methods)]).toEqual(["GET"]);
   });
 
-  it("names no route but the two GETs it reads", () => {
+  it("names no route but the three GETs it reads", () => {
     const routes = new Set(
       [...SOURCE.matchAll(/\/v1\/[a-z/]+/g)].map((m) => m[0]),
     );
     expect([...routes].sort()).toEqual([
       "/v1/admin/channels",
+      "/v1/admin/history",
       "/v1/admin/summary",
     ]);
+  });
+});
+
+// ── The history route: the fold beyond the raw window ───────────────────────
+//
+// Three promises: history rows COUNT (evidence does not expire), a 404 is said
+// out loud rather than papered over, and every discipline above — no shares
+// under the floor, unknown vocabulary dropped-and-counted — governs the merged
+// corpus exactly as it governed the raw one.
+describe("the folded history", () => {
+  const histRow = (signal, direction, band_, total) => ({
+    signal,
+    direction,
+    band: band_,
+    total,
+  });
+
+  it("merges history rows into the same fold as the raw window", () => {
+    const summary = {
+      ...emptySummary,
+      raw: { events: 2, installs: 1 },
+      correctionBands: [band("sermon_start", "earlier", "30_60s", 2)],
+    };
+    const history = {
+      beyondRawWindow: true,
+      corrections: {
+        rows: [
+          histRow("sermon_start", "earlier", "30_60s", 9),
+          histRow("sermon_start", "later", "under_15s", 1),
+        ],
+        byVersion: [],
+        span: {
+          first_day: "2026-01-01",
+          last_day: "2026-03-01",
+          days: 12,
+          total: 10,
+        },
+      },
+      companion: { rows: [], span: { days: 0 } },
+    };
+    const rows = summariseCorrections(summary, BAR, history);
+    const s = rows.find((r) => r.signal === "sermon_start");
+    expect(s.earlier).toBe(11);
+    expect(s.later).toBe(1);
+    expect(s.total).toBe(12);
+    // 12 total meets the direction bar, so the sign test may now speak —
+    // history evidence alone lifted it over the floor.
+    expect(s.tier).toBe("sufficient");
+
+    const text = renderReport({
+      summary,
+      channels,
+      history,
+      bar: BAR,
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    });
+    expect(text).toContain(
+      "(2 in the raw window + 10 from the folded history)",
+    );
+    expect(text).toContain("+ /v1/admin/history");
+    expect(text).toContain("Nothing by age");
+  });
+
+  it("a 404 (history: null) says the view is truncated, in so many words", () => {
+    const text = renderReport({
+      summary: emptySummary,
+      channels,
+      history: null,
+      bar: BAR,
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    });
+    expect(text).toContain("is not");
+    expect(text).toContain("deployed on this Worker yet");
+    expect(text).toContain("wrangler d1");
+    expect(text).not.toContain("+ /v1/admin/history");
+  });
+
+  it("below-the-floor stays percent-free even when history contributes", () => {
+    const summary = {
+      ...emptySummary,
+      raw: { events: 1, installs: 1 },
+      correctionBands: [band("sermon_start", "earlier", "30_60s", 1)],
+    };
+    const history = {
+      corrections: {
+        rows: [histRow("sermon_start", "earlier", "60_120s", 2)],
+        byVersion: [],
+        span: { days: 2, total: 2 },
+      },
+      companion: { rows: [], span: { days: 0 } },
+    };
+    const text = renderReport({
+      summary,
+      channels,
+      history,
+      bar: BAR,
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    });
+    // 3 total: under anyConclusion. The merged corpus obeys the same floor.
+    expect(text).not.toContain("%");
+    expect(text).toContain("below the bar");
+  });
+
+  it("history rows in an unknown vocabulary are dropped and counted, not folded", () => {
+    const history = {
+      corrections: {
+        rows: [histRow("sermon_start", "sideways", "30_60s", 4)],
+        byVersion: [],
+        span: { days: 1, total: 4 },
+      },
+      companion: { rows: [], span: { days: 0 } },
+    };
+    const rows = summariseCorrections(emptySummary, BAR, history);
+    const s = rows.find((r) => r.signal === "sermon_start");
+    expect(s.total).toBe(0);
+    expect(s.unrecognised).toBe(4);
+  });
+
+  it("companion outcomes merge the same way", () => {
+    const summary = {
+      ...emptySummary,
+      companionOutcomes: [{ kind: "title", outcome: "kept", n: 3 }],
+    };
+    const history = {
+      corrections: { rows: [], byVersion: [], span: { days: 0 } },
+      companion: {
+        rows: [{ kind: "title", outcome: "kept", total: 7 }],
+        span: { days: 5, total: 7 },
+      },
+    };
+    const text = renderReport({
+      summary,
+      channels,
+      history,
+      bar: BAR,
+      generatedAt: "2026-08-08T00:00:00.000Z",
+    });
+    expect(text).toContain("kept 3, kept 7   (10)");
   });
 });
