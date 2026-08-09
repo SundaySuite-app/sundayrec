@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Analyse av opptaksstart-latens (2026-06-09) med fikser som er landet; beholdt som historikk. Ingen innkommende referanser.
+
 # Recording-start latency — analysis & fixes (2026-06-09)
 
 > Why does starting a recording sometimes feel slow? Is pre-roll to blame? Does

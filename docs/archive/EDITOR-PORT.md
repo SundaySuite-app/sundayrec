@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Portenotat for Electron→Tauri-editoren; beskriver brekkasjer og mellomtilstander som ble fikset før v0.9-editoroverhalingen. Ingen innkommende referanser.
+
 # Editor port — Electron → Tauri (faithful frontend port)
 
 ## Why

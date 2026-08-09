@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Designnotat for oppløsningsgating mot kilden; implementert og dekket av tester — notatet er historikk. Ingen innkommende referanser.
+
 # Video-oppløsning: gating mot kilden (ingen oppskalering)
 
 **Prinsipp (Richard):** Det er greit å **down-scale** (ta opp lavere enn kameraet

@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Nattøkt-rapport (lydbehandling/kapitler/formatstøtte); beskriver arbeid som er landet — dagens sannhet bor i SMOKE-TEST.md §12 og koden. Ingen innkommende referanser.
+
 # Natt-økt: lydbehandling, kapitler og bredt formatstøtte
 
 Dette dokumentet oppsummerer arbeidet gjort i natt-økten (2026-06-03), de
