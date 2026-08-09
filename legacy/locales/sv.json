@@ -268,7 +268,6 @@
     "silenceDesc": "Avslutar inspelningen om ljudet är tyst i mer än 5 minuter",
     "splitTitle": "Dela upp filer per timme",
     "splitDesc": "Skapar en ny ljudfil varje timme — enklare att redigera efteråt",
-    "save": "Spara schema",
     "cancel": "Avbryt",
     "noSlots": "Inga tider tillagda ännu.",
     "errNoDays": "Välj minst en dag.",
@@ -316,7 +315,8 @@
     "errSameTime": "Stopptiden kan inte vara densamma som starten.",
     "errMaxRange": "Maxlängden måste vara mellan 1 och 480 minuter.",
     "prerollEnabledTitle": "Aktivera förhandsbuffert",
-    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen i bakgrunden hela tiden. Medan den körs är det den som matar nivåmätarna på Hem och Livesändning, så de fungerar som förut. Slå på den om du behöver sekunderna innan du trycker på inspelning — Hem visar när bufferten körs."
+    "prerollEnabledDesc": "Bufferten håller mikrofonen öppen i bakgrunden hela tiden. Medan den körs är det den som matar nivåmätarna på Hem och Livesändning, så de fungerar som förut. Slå på den om du behöver sekunderna innan du trycker på inspelning — Hem visar när bufferten körs.",
+    "saveSlot": "Spara tidpunkt"
   },
   "wake": {
     "capability": {

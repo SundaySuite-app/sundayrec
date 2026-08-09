@@ -1,10 +1,11 @@
 import { t, tArr, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { flashSaved, escHtml } from '../helpers'
+import { escHtml } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
 import { showEl, hideEl } from '../ui/motion'
+import { bindSetting, resyncBoundSettings } from '../ui/bind-setting'
 import {
   getNextRecordingState,
   initNextRecordingStore,
@@ -92,7 +93,6 @@ export function setupSchedulePage(): void {
     const editor = document.getElementById('slot-editor')
     if (editor) editor.style.display = 'none'
   })
-  document.getElementById('btn-schedule-save')?.addEventListener('click', saveScheduleSettings)
 
   // Avanserte innstillinger — collapsible toggle. Had no click handler at all,
   // which is why the section was empty and unresponsive when clicked.
@@ -107,17 +107,28 @@ export function setupSchedulePage(): void {
     if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)'
   })
 
-  document.getElementById('opt-wake')?.addEventListener('change', function (this: HTMLInputElement) {
-    setWakeDetailsVisible(this.checked)
-    if (this.checked) {
-      void loadSleepConfig()
-      void refreshWakeReliability()
-    } else {
-      hideEl(document.getElementById('wake-reliability-card'))
-    }
-    // Auto-lagre toggelen umiddelbart (samme mønster som lyd/fil/video-sidene):
-    // brukeren skulle ikke måtte klikke «Lagre» for at valget tar effekt.
-    void saveScheduleSettings().then(() => refreshWakeSummaryFacts())
+  // The wake toggle goes through bindSetting like every other auto-applying
+  // control: persist with revert-on-failure and a «Lagret ✓» receipt. The old
+  // hand-rolled change-handler repainted the whole wake card BEFORE the save
+  // had landed — a failed write left the card claiming a wake schedule the
+  // settings blob did not hold. (The card-level «Lagre tidsplan»-button that
+  // stood under this toggle was removed with it: the toggle is the card's only
+  // setting, it auto-saves, and the button re-saved the same value under the
+  // slot editor's label.)
+  bindSetting('opt-wake', {
+    key: 'wakeFromSleep',
+    apply: value => { patchSettings({ wakeFromSleep: !!value }) },
+    after: value => {
+      const on = !!value
+      setWakeDetailsVisible(on)
+      if (on) {
+        void loadSleepConfig()
+        void refreshWakeReliability()
+      } else {
+        hideEl(document.getElementById('wake-reliability-card'))
+      }
+      void refreshWakeSummaryFacts()
+    },
   })
   // wake-hibernate-* collapsible was removed when the Avanserte-section was
   // restructured into "Vekk maskin fra dvale" in v4.31. Handler dropped.
@@ -518,16 +529,10 @@ export function applyScheduleSettingsToUI(): void {
       void refreshWakeReliability()
     }
   }
+  // The checkbox was just rewritten from settings — rebase the binding's
+  // baseline so the next click is compared against what is on screen.
+  resyncBoundSettings()
   renderSlotsList()
-}
-
-async function saveScheduleSettings(): Promise<void> {
-  const wakeEl = document.getElementById('opt-wake') as HTMLInputElement | null
-  patchSettings({
-    wakeFromSleep: wakeEl?.checked ?? false,
-  })
-  await window.api.saveSettings(settings)
-  flashSaved(document.getElementById('btn-schedule-save'))
 }
 
 export function renderDayPickers(): void {

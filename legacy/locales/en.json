@@ -268,7 +268,6 @@
     "silenceDesc": "Ends the recording if the audio stays silent for more than 5 minutes",
     "splitTitle": "Split files by the hour",
     "splitDesc": "Creates a new audio file every hour — easier to edit afterwards",
-    "save": "Save schedule",
     "cancel": "Cancel",
     "noSlots": "No times added yet.",
     "errNoDays": "Pick at least one day.",
@@ -316,7 +315,8 @@
     "errSameTime": "The stop time cannot be the same as the start.",
     "errMaxRange": "Maximum duration must be between 1 and 480 minutes.",
     "prerollEnabledTitle": "Enable pre-roll buffer",
-    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. While it runs it is also what feeds the level meters on Home and Live, so they keep working as before. Turn it on if you need the seconds before you press record — Home shows when the buffer is running."
+    "prerollEnabledDesc": "The buffer keeps the microphone open in the background at all times. While it runs it is also what feeds the level meters on Home and Live, so they keep working as before. Turn it on if you need the seconds before you press record — Home shows when the buffer is running.",
+    "saveSlot": "Save time slot"
   },
   "wake": {
     "capability": {

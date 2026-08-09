@@ -268,7 +268,6 @@
     "silenceDesc": "Termine l’enregistrement si le son reste silencieux plus de 5 minutes",
     "splitTitle": "Diviser les fichiers par heure",
     "splitDesc": "Crée un nouveau fichier audio toutes les heures — plus facile à monter ensuite",
-    "save": "Enregistrer le planning",
     "cancel": "Annuler",
     "noSlots": "Aucun horaire ajouté pour l’instant.",
     "errNoDays": "Sélectionnez au moins un jour.",
@@ -316,7 +315,8 @@
     "errSameTime": "L’heure de fin ne peut pas être identique à l’heure de début.",
     "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes.",
     "prerollEnabledTitle": "Activer le tampon de pré-enregistrement",
-    "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Tant qu'il tourne, c'est lui qui alimente les vumètres sur Accueil et Diffusion, qui continuent donc de fonctionner. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne."
+    "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Tant qu'il tourne, c'est lui qui alimente les vumètres sur Accueil et Diffusion, qui continuent donc de fonctionner. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne.",
+    "saveSlot": "Enregistrer l'horaire"
   },
   "wake": {
     "capability": {

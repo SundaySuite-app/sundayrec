@@ -268,7 +268,6 @@
     "silenceDesc": "Avslutter opptaket hvis lyden er stille i mer enn 5 minutter",
     "splitTitle": "Del opp filer per time",
     "splitDesc": "Lager ny lydfil for hver time — enklere å redigere etterpå",
-    "save": "Lagre tidsplan",
     "cancel": "Avbryt",
     "noSlots": "Ingen tidspunkt lagt til ennå.",
     "errNoDays": "Velg minst én dag.",
@@ -316,7 +315,8 @@
     "errSameTime": "Stopptidspunktet kan ikke være det samme som starten.",
     "errMaxRange": "Maks varighet må være mellom 1 og 480 minutter.",
     "prerollEnabledTitle": "Aktiver forhåndsbuffer",
-    "prerollEnabledDesc": "Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem og Direktesending, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører."
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem og Direktesending, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører.",
+    "saveSlot": "Lagre tidspunkt"
   },
   "wake": {
     "capability": {

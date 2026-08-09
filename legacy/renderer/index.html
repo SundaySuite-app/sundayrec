@@ -569,7 +569,7 @@
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.save">Lagre tidsplan</button>
+        <button class="btn-primary" id="btn-slot-save" data-i18n="schedule.saveSlot">Lagre tidspunkt</button>
         <button class="btn-ghost" id="btn-slot-cancel" data-i18n="schedule.cancel">Avbryt</button>
       </div>
     </div>
@@ -683,9 +683,10 @@
           <div id="wake-reliability-card" class="ui-reveal" style="display:none"></div>
         </div>
 
-        <div class="btn-row" style="margin-top:16px">
-          <button class="btn-primary" id="btn-schedule-save" data-i18n="schedule.save">Lagre tidsplan</button>
-        </div>
+        <!-- Kortets «Lagre tidsplan»-knapp ble fjernet 2026-08: vekk-
+             bryteren er kortets eneste innstilling og auto-lagrer via
+             bindSetting (med kvittering og tilbakerulling ved feil) — knappen
+             lagret samme verdi én gang til, under feil etikett. -->
       </div>
     </div>
 

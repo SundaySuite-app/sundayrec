@@ -268,7 +268,6 @@
     "silenceDesc": "Beendet die Aufnahme, wenn das Signal länger als 5 Minuten still ist",
     "splitTitle": "Dateien stündlich aufteilen",
     "splitDesc": "Erstellt jede Stunde eine neue Audiodatei — leichter nachzubearbeiten",
-    "save": "Zeitplan speichern",
     "cancel": "Abbrechen",
     "noSlots": "Noch keine Zeiten hinzugefügt.",
     "errNoDays": "Mindestens einen Tag auswählen.",
@@ -316,7 +315,8 @@
     "errSameTime": "Die Stoppzeit darf nicht mit der Startzeit übereinstimmen.",
     "errMaxRange": "Die maximale Dauer muss zwischen 1 und 480 Minuten liegen.",
     "prerollEnabledTitle": "Vorlauf-Puffer aktivieren",
-    "prerollEnabledDesc": "Der Puffer hält das Mikrofon dauerhaft im Hintergrund geöffnet. Solange er läuft, speist er auch die Pegelanzeigen auf Start und Livestream, die also weiterhin funktionieren. Aktivieren Sie ihn, wenn Sie die Sekunden vor dem Tastendruck brauchen — die Startseite zeigt an, wenn der Puffer läuft."
+    "prerollEnabledDesc": "Der Puffer hält das Mikrofon dauerhaft im Hintergrund geöffnet. Solange er läuft, speist er auch die Pegelanzeigen auf Start und Livestream, die also weiterhin funktionieren. Aktivieren Sie ihn, wenn Sie die Sekunden vor dem Tastendruck brauchen — die Startseite zeigt an, wenn der Puffer läuft.",
+    "saveSlot": "Zeitpunkt speichern"
   },
   "wake": {
     "capability": {

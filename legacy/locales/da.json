@@ -268,7 +268,6 @@
     "silenceDesc": "Afslutter optagelsen, hvis der er stille i mere end 5 minutter",
     "splitTitle": "Del filer pr. time",
     "splitDesc": "Opretter en ny lydfil hver time — lettere at redigere bagefter",
-    "save": "Gem tidsplan",
     "cancel": "Annuller",
     "noSlots": "Ingen tidspunkter tilføjet endnu.",
     "errNoDays": "Vælg mindst én dag.",
@@ -316,7 +315,8 @@
     "errSameTime": "Stoptidspunktet kan ikke være det samme som starten.",
     "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter.",
     "prerollEnabledTitle": "Aktivér forhåndsbuffer",
-    "prerollEnabledDesc": "Bufferen holder mikrofonen åben i baggrunden hele tiden. Mens den kører, er det den, der fodrer niveaumålerne på Hjem og Livestream, så de virker som før. Slå den til, hvis du har brug for sekunderne, før du trykker optag — Hjem viser, når bufferen kører."
+    "prerollEnabledDesc": "Bufferen holder mikrofonen åben i baggrunden hele tiden. Mens den kører, er det den, der fodrer niveaumålerne på Hjem og Livestream, så de virker som før. Slå den til, hvis du har brug for sekunderne, før du trykker optag — Hjem viser, når bufferen kører.",
+    "saveSlot": "Gem tidspunkt"
   },
   "wake": {
     "capability": {

@@ -268,7 +268,6 @@
     "silenceDesc": "Kończy nagranie, jeśli dźwięk pozostaje cichy przez ponad 5 minut",
     "splitTitle": "Dziel pliki co godzinę",
     "splitDesc": "Tworzy nowy plik audio co godzinę — łatwiej go potem edytować",
-    "save": "Zapisz harmonogram",
     "cancel": "Anuluj",
     "noSlots": "Nie dodano jeszcze żadnych godzin.",
     "errNoDays": "Wybierz co najmniej jeden dzień.",
@@ -316,7 +315,8 @@
     "errSameTime": "Godzina zakończenia nie może być taka sama jak rozpoczęcia.",
     "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut.",
     "prerollEnabledTitle": "Włącz bufor wstępny",
-    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Gdy działa, to on zasila wskaźniki poziomu na ekranie Start i Transmisja, więc działają one jak wcześniej. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia nagrywania — ekran Start pokazuje, kiedy bufor działa."
+    "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Gdy działa, to on zasila wskaźniki poziomu na ekranie Start i Transmisja, więc działają one jak wcześniej. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia nagrywania — ekran Start pokazuje, kiedy bufor działa.",
+    "saveSlot": "Zapisz termin"
   },
   "wake": {
     "capability": {
