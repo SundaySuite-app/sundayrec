@@ -261,3 +261,51 @@ test.describe("auto-update toggle", () => {
     expect(cleared).toHaveLength(0);
   });
 });
+
+// «Se etter oppdateringer nå» — how the manual check RENDERS its two headless
+// answers (SMOKE-TEST §R7 steps 1–2). The button is deliberately ungated by
+// «Oppdater automatisk» (a manual press is the operator asking), so both boots
+// keep the toggle off and drive the button itself.
+test.describe("manual check answers", () => {
+  test("an upToDate answer paints «Du er oppdatert» and retires stale buttons", async ({
+    page,
+  }) => {
+    // The same answer a dev build's `should_check` short-circuit produces —
+    // the Rust guard is unit-tested in sundayrec-core::update; this pins the
+    // renderer half of SMOKE-TEST §R7 step 2.
+    await boot(page, {
+      fixtures: FIXTURES,
+      settings: { ...SETTLED_SETTINGS, autoUpdate: false },
+      goto: "settings:general",
+    });
+    await page.locator("#btn-check-updates").click();
+    await expect(page.locator("#update-status-text")).toHaveText(
+      "Du er oppdatert",
+    );
+    // update-not-available also retires any stale install/restart button.
+    await expect(page.locator("#btn-restart-install")).toBeHidden();
+  });
+
+  test("a feature_disabled check surfaces as the ordinary error text", async ({
+    page,
+  }) => {
+    // The `--no-default-features` build's answer: `update_check` REJECTS with
+    // feature_disabled. The panel has no dedicated gate hint — the rejection
+    // rides the ordinary update-error path (SMOKE-TEST §R7 step 1; the runbook
+    // used to promise a calm «ikke bygget inn»-message that never existed).
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        update_check: fn(
+          '() => { throw new Error("validation: feature_disabled: automatisk oppdatering er ikke bygget inn i denne versjonen") }',
+        ),
+      },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: false },
+      goto: "settings:general",
+    });
+    await page.locator("#btn-check-updates").click();
+    await expect(page.locator("#update-status-text")).toHaveText(
+      "Kunne ikke sjekke for oppdateringer",
+    );
+  });
+});
