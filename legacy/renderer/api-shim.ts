@@ -685,6 +685,31 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     churchName: typeof s.churchName === "string" ? s.churchName : "",
     responsiblePerson: typeof s.responsiblePerson === "string" ? s.responsiblePerson : "",
     language: typeof s.language === "string" ? s.language : "no",
+    // The release channel the UPDATER follows. `update/mod.rs::current_channel`
+    // reads sqlite — never localStorage — so a beta opt-in that is not in this
+    // curated object never reaches the only reader it has: the renderer saved
+    // beta locally, the chip said «Lagret ✓», and every settings_save quietly
+    // re-defaulted sqlite to stable via `default_update_channel` (rig-observed
+    // on v0.11.1-beta.2; pinned by e2e/update-channel.spec.ts). Worse, a save
+    // that changed ONLY the channel produced a curated JSON identical to the
+    // previous one, so the dedupe above skipped the settings_save entirely.
+    // Whitelisted to the two real channels — mirrors `UpdateChannel::parse`.
+    updateChannel: s.updateChannel === "beta" ? "beta" : "stable",
+    // Same seam, three more fields with REAL backend readers that localStorage
+    // can never reach (each was silently re-defaulted by serde on every save):
+    //   • reminderMinutes → scheduler/mod.rs `upcoming_events(...,
+    //     settings.reminder_minutes, ...)` — the «påminnelse før opptak» lead
+    //     time; un-synced it was always 0 (= no reminder), whatever the UI said.
+    //   • localAdaptivity → learning.rs `enabled()` — the E10 opt-in; un-synced
+    //     the backend read the default `false` and never armed, so the switch
+    //     was a no-op with a confirmation card on top.
+    //   • autoUpdate → core telemetry's environment block reports
+    //     `auto_update`; un-synced it claimed the default `true` for operators
+    //     who had switched it off. (The SCHEDULE itself is renderer-driven, so
+    //     only the report was wrong.) `!== false` mirrors `autoUpdateEnabled`.
+    reminderMinutes: typeof s.reminderMinutes === "number" ? s.reminderMinutes : 0,
+    localAdaptivity: s.localAdaptivity === true,
+    autoUpdate: s.autoUpdate !== false,
   };
 }
 
