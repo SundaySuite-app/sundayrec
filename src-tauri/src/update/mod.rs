@@ -1,5 +1,5 @@
-//! Auto-update I/O plumbing (R7 P2b) — **NETWORK/GUI-UNVERIFIED**, default-off
-//! `updater` feature.
+//! Auto-update I/O plumbing (R7 P2b) — **NETWORK/GUI-UNVERIFIED**, behind the
+//! `updater` feature (in `default` since the signed-release wiring landed).
 //!
 //! The impure half of auto-update. Every *decision* lives in the unit-tested
 //! [`sundayrec_core::update`]:
@@ -27,9 +27,11 @@
 //!
 //! ## Feature flag
 //!
-//! Behind the **default-off `updater`** cargo feature, because a real update
-//! needs a SIGNED release + an updater keypair in `tauri.conf.json` (see
-//! docs/NEEDS-RICHARD.md). The DTO + [`UpdateEngine`] + the public entry points
+//! Behind the **`updater`** cargo feature — nowadays part of `default` (and of
+//! the release feature lists), since a real update needs a SIGNED release + an
+//! updater keypair in `tauri.conf.json` and both exist (see
+//! docs/NEEDS-RICHARD.md; the feature started life default-off while they
+//! didn't). The DTO + [`UpdateEngine`] + the public entry points
 //! compile either way; when the feature is OFF, [`check`]/[`download_and_install`]
 //! return a clear `feature_disabled` error so the renderer surfaces "auto-update
 //! isn't built into this build" (mirrors the `editor`/`streaming` idiom).

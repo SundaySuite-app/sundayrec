@@ -601,14 +601,12 @@ pub fn merge_short_segments(segments: &[AnalysisSegment]) -> Vec<AnalysisSegment
     collapse_adjacent(work)
 }
 
-/// Classify → smooth → group → merge, with the shipped heuristic. Ports
-/// `classifyAndGroup`.
-pub fn classify_and_group(input: ScoringInput<'_>) -> Vec<AnalysisSegment> {
-    classify_and_group_with(input, &HeuristicScorer)
-}
-
-/// [`classify_and_group`] with the frame scorer chosen by the caller — the seam
-/// in use. Everything after the scorer is fixed.
+/// Classify → smooth → group → merge, with the frame scorer chosen by the
+/// caller — the seam in use ([`detect`](crate::detect) passes the shipped
+/// [`HeuristicScorer`], the VAD A/B harness passes its own). Everything after
+/// the scorer is fixed. Ports `classifyAndGroup`. (The zero-argument
+/// `classify_and_group` convenience wrapper was an E9 vestige with no callers
+/// left — removed in R3.)
 pub fn classify_and_group_with(
     input: ScoringInput<'_>,
     scorer: &dyn FrameScorer,

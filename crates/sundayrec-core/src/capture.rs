@@ -137,18 +137,6 @@ impl AudioCodec {
     pub fn uses_bitrate(self) -> bool {
         matches!(self, AudioCodec::Mp3 | AudioCodec::Aac)
     }
-
-    /// The container extension this codec belongs in when none is supplied (used
-    /// to normalise an empty/unknown extension so codec and container always
-    /// agree). AAC lives in m4a; the others share their own name.
-    pub fn default_extension(self) -> &'static str {
-        match self {
-            AudioCodec::Mp3 => "mp3",
-            AudioCodec::PcmS16le => "wav",
-            AudioCodec::Flac => "flac",
-            AudioCodec::Aac => "m4a",
-        }
-    }
 }
 
 /// Map an output file extension (with or without a leading dot, any case) to its

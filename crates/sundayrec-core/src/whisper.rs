@@ -6,16 +6,20 @@
 //! parsing the progress %, normalising the JSON sidecar's segments, mapping a
 //! language code) with the actual I/O (`https.get` download, `crypto` hashing,
 //! `child_process.spawn`, fs). Here we keep ONLY the deterministic decisions; the
-//! `src-tauri` shell (behind the default-off `whisper` feature) owns the model
-//! download, the SHA verify, the ffmpeg conversion, and the whisper-cli spawn.
+//! `src-tauri` shell (behind the `whisper` feature, in `default`) owns the model
+//! download, the SHA verify, the ffmpeg conversion, and the in-process
+//! whisper-rs inference.
 //!
 //! What lives here:
-//!   - the curated [`MODELS`] registry (id/label/url/size/SHA/quality), and the
-//!     installed-vs-expected-size check + best-default selection,
-//!   - the whisper-cli argument builder + the CPU-thread heuristic,
-//!   - the progress-line parser + cancel-code classifier,
+//!   - the curated [`MODELS`] registry (id/label/url/size/SHA/quality) and the
+//!     installed-vs-expected-size check,
+//!   - the CPU-thread heuristic + the ffmpeg WAV-convert argv,
 //!   - the JSON-sidecar → [`TranscriptData`] normaliser,
-//!   - a [`language_label`] map for the curated UI languages.
+//!   - the transcript exporters (SRT/VTT/TXT).
+//!
+//! R3 removed the whisper-CLI vestiges (argv builder, stderr progress/exit
+//! parsers, chunk planner/merger, default-model picker, language map) — the
+//! shell transcribes in-process via whisper-rs and never called them.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -229,43 +233,8 @@ pub fn verify_model_hash(id: &str, computed_sha256_hex: &str) -> bool {
     }
 }
 
-/// Pick the default model: the one marked `Best` IF the user's free disk has
-/// room for it (size + a small margin); otherwise the smallest `High` that fits;
-/// otherwise just the smallest model. Ports the `whisper-models.ts` doc-comment
-/// rule ("the `quality: 'best'` one IF the user's disk has room … otherwise the
-/// smallest 'high'"). `free_bytes == None` means "unknown" → assume room.
-pub fn default_model(free_bytes: Option<u64>) -> WhisperModelMeta {
-    let all = models();
-    // 256 MB of headroom on top of the model file so the disk doesn't end up
-    // bone-dry right after a download (the user still has to record into it).
-    const MARGIN: u64 = 256 * 1024 * 1024;
-    let fits = |m: &WhisperModelMeta| match free_bytes {
-        None => true,
-        Some(free) => free >= m.size_bytes.saturating_add(MARGIN),
-    };
-
-    if let Some(best) = all
-        .iter()
-        .find(|m| m.quality == WhisperQuality::Best && fits(m))
-    {
-        return best.clone();
-    }
-    if let Some(high) = all
-        .iter()
-        .filter(|m| m.quality == WhisperQuality::High && fits(m))
-        .min_by_key(|m| m.size_bytes)
-    {
-        return high.clone();
-    }
-    // Nothing "good" fits — fall back to the smallest model overall.
-    all.iter()
-        .min_by_key(|m| m.size_bytes)
-        .cloned()
-        .expect("MODELS is non-empty")
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-//   whisper-cli invocation (ports whisper.ts buildWhisperArgs + thread heuristic)
+//   Invocation helpers (thread heuristic + the WAV-convert argv)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Transcribe request options. Mirrors `whisper.ts` `TranscribeOptions` minus the
@@ -299,48 +268,6 @@ pub fn thread_count(cpu_count: usize) -> u32 {
     want.clamp(2, 8) as u32
 }
 
-/// Build the whisper-cli argv. Ports `whisper.ts` `buildWhisperArgs` exactly:
-/// `-m -f -l -oj -of -t -pp -np` always, `-tr` when translating, `-ml 100 -sow`
-/// for subtitle style. `out_prefix` is the output prefix WITHOUT extension
-/// (whisper-cli appends `.json`).
-pub fn build_whisper_args(
-    model_file: &str,
-    wav_path: &str,
-    out_prefix: &str,
-    opts: &TranscribeOptions,
-    cpu_count: usize,
-) -> Vec<String> {
-    let threads = thread_count(cpu_count);
-    let mut args = vec![
-        "-m".into(),
-        model_file.to_string(),
-        "-f".into(),
-        wav_path.to_string(),
-        "-l".into(),
-        if opts.language.is_empty() {
-            "auto".into()
-        } else {
-            opts.language.clone()
-        },
-        "-oj".into(),
-        "-of".into(),
-        out_prefix.to_string(),
-        "-t".into(),
-        threads.to_string(),
-        "-pp".into(),
-        "-np".into(),
-    ];
-    if opts.translate {
-        args.push("-tr".into());
-    }
-    if opts.subtitle_style {
-        args.push("-ml".into());
-        args.push("100".into());
-        args.push("-sow".into());
-    }
-    args
-}
-
 /// Build the ffmpeg argv that converts any input to the 16 kHz mono PCM WAV
 /// whisper.cpp requires. Ports the `convertToWhisperWav` argv exactly.
 pub fn build_convert_args(input: &str, output: &str) -> Vec<String> {
@@ -358,63 +285,6 @@ pub fn build_convert_args(input: &str, output: &str) -> Vec<String> {
         "pcm_s16le".into(),
         output.to_string(),
     ]
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   Progress + exit-code parsing (ports the whisper.ts stderr/close handlers)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Parse all `progress = N%` values out of a whisper-cli stderr chunk, in order.
-/// Ports the `/progress\s*=\s*(\d+)%/g` matcher in `runWhisper`. Out-of-range
-/// values (>100) are clamped; the shell dedups against its last-emitted percent.
-pub fn parse_progress(chunk: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    let bytes = chunk.as_bytes();
-    let mut i = 0;
-    while let Some(rel) = chunk[i..].find("progress") {
-        let mut j = i + rel + "progress".len();
-        // optional whitespace
-        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
-            j += 1;
-        }
-        if j >= bytes.len() || bytes[j] != b'=' {
-            i = i + rel + "progress".len();
-            continue;
-        }
-        j += 1;
-        while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
-            j += 1;
-        }
-        let start = j;
-        while j < bytes.len() && bytes[j].is_ascii_digit() {
-            j += 1;
-        }
-        if j > start && j < bytes.len() && bytes[j] == b'%' {
-            if let Ok(n) = chunk[start..j].parse::<u32>() {
-                out.push(n.min(100) as u8);
-            }
-        }
-        i = if j > i { j } else { i + rel + "progress".len() };
-    }
-    out
-}
-
-/// Classify a whisper-cli exit code. Ports the `runWhisper` close handler:
-/// `0` = ok, the SIGTERM-family codes (`null`/130/143/-15) = cancelled,
-/// anything else = a genuine failure. `None` models JS's `code === null`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WhisperExit {
-    Ok,
-    Cancelled,
-    Failed,
-}
-
-pub fn classify_exit(code: Option<i32>) -> WhisperExit {
-    match code {
-        Some(0) => WhisperExit::Ok,
-        None | Some(130) | Some(143) | Some(-15) => WhisperExit::Cancelled,
-        Some(_) => WhisperExit::Failed,
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -515,110 +385,6 @@ pub fn normalize_output(
         translated: if opts.translate { Some(true) } else { None },
         segments,
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   Chunk / merge helpers (long-recording splitting + segment stitching)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A time window (seconds) to transcribe as one whisper pass. Used when a very
-/// long recording is split into overlapping windows so memory stays bounded.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Chunk {
-    pub start_sec: f64,
-    pub end_sec: f64,
-}
-
-/// Split a `total_sec` recording into windows of at most `window_sec` with an
-/// `overlap_sec` lead-in carried into the next window (so a word straddling a
-/// boundary isn't lost). Returns a single full-span chunk when the recording is
-/// shorter than one window. `window_sec` must be > `overlap_sec` (else a single
-/// chunk is returned to avoid a non-advancing loop).
-pub fn plan_chunks(total_sec: f64, window_sec: f64, overlap_sec: f64) -> Vec<Chunk> {
-    if total_sec <= 0.0 || window_sec <= 0.0 || window_sec <= overlap_sec {
-        return vec![Chunk {
-            start_sec: 0.0,
-            end_sec: total_sec.max(0.0),
-        }];
-    }
-    if total_sec <= window_sec {
-        return vec![Chunk {
-            start_sec: 0.0,
-            end_sec: total_sec,
-        }];
-    }
-    let stride = window_sec - overlap_sec;
-    let mut out = Vec::new();
-    let mut start = 0.0_f64;
-    while start < total_sec {
-        let end = (start + window_sec).min(total_sec);
-        out.push(Chunk {
-            start_sec: start,
-            end_sec: end,
-        });
-        if end >= total_sec {
-            break;
-        }
-        start += stride;
-    }
-    out
-}
-
-/// Merge per-chunk segment lists (each already offset into absolute recording
-/// time) into one ordered, de-overlapped list. When two adjacent segments
-/// overlap by more than half the shorter one (the overlap region transcribed
-/// twice), the later duplicate is dropped — keeping the earlier, more-complete
-/// pass. Ports the intent of stitching overlapping whisper windows.
-pub fn merge_segments(mut chunks: Vec<Vec<TranscriptSegment>>) -> Vec<TranscriptSegment> {
-    let mut all: Vec<TranscriptSegment> = chunks.drain(..).flatten().collect();
-    all.sort_by(|a, b| {
-        a.start
-            .partial_cmp(&b.start)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    let mut out: Vec<TranscriptSegment> = Vec::with_capacity(all.len());
-    for seg in all {
-        if let Some(prev) = out.last() {
-            let overlap = prev.end.min(seg.end) - seg.start.max(prev.start);
-            let shorter = (prev.end - prev.start).min(seg.end - seg.start).max(0.0);
-            // Drop a near-duplicate (same text OR heavy time overlap).
-            if seg.text == prev.text || (shorter > 0.0 && overlap > shorter * 0.5) {
-                continue;
-            }
-        }
-        out.push(seg);
-    }
-    out
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   Language map (the curated UI languages, mirrors the suite's 7 + auto)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// The languages offered in the transcription UI: `auto` plus the suite's seven
-/// (no/en/sv/da/de/fr/pl). Returns `(code, label)` pairs in display order.
-pub fn language_options() -> Vec<(&'static str, &'static str)> {
-    vec![
-        ("auto", "Automatisk"),
-        ("no", "Norsk"),
-        ("en", "English"),
-        ("sv", "Svenska"),
-        ("da", "Dansk"),
-        ("de", "Deutsch"),
-        ("fr", "Français"),
-        ("pl", "Polski"),
-    ]
-}
-
-/// Human label for a language code, falling back to the code itself for an
-/// unknown one (whisper accepts ISO-639-1 codes we don't list).
-pub fn language_label(code: &str) -> String {
-    language_options()
-        .into_iter()
-        .find(|(c, _)| *c == code)
-        .map(|(_, l)| l.to_string())
-        .unwrap_or_else(|| code.to_string())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -798,26 +564,6 @@ mod tests {
         assert!(!unknown.installed);
     }
 
-    #[test]
-    fn default_model_prefers_best_when_disk_has_room() {
-        // Plenty of room → the 'best' turbo model.
-        let d = default_model(Some(10_000_000_000));
-        assert_eq!(d.id, "ggml-large-v3-turbo-q5_0");
-        // Unknown free space → assume room → best.
-        assert_eq!(default_model(None).quality, WhisperQuality::Best);
-    }
-
-    #[test]
-    fn default_model_falls_back_to_smallest_high_then_smallest() {
-        // Room for ~600 MB but not the turbo (574 MB + 256 MB margin = 830 MB).
-        // Smallest 'high' that fits = small (487 MB) (medium is 1.5 GB).
-        let d = default_model(Some(800_000_000));
-        assert_eq!(d.id, "ggml-small");
-        // Almost no room → nothing "good" fits → smallest overall (base).
-        let tiny = default_model(Some(1_000));
-        assert_eq!(tiny.id, "ggml-base");
-    }
-
     // ── argv + threads ───────────────────────────────────────────────────────
 
     #[test]
@@ -826,46 +572,6 @@ mod tests {
         assert_eq!(thread_count(4), 2); // floor(2.4)=2
         assert_eq!(thread_count(10), 6); // floor(6.0)=6
         assert_eq!(thread_count(64), 8); // clamp down to 8
-    }
-
-    #[test]
-    fn whisper_argv_matches_electron_default_subtitle_on() {
-        let opts = TranscribeOptions::default();
-        let args = build_whisper_args("/m/ggml-base.bin", "/t/in.wav", "/t/out", &opts, 8);
-        assert_eq!(
-            args,
-            vec![
-                "-m",
-                "/m/ggml-base.bin",
-                "-f",
-                "/t/in.wav",
-                "-l",
-                "auto",
-                "-oj",
-                "-of",
-                "/t/out",
-                "-t",
-                "4",
-                "-pp",
-                "-np",
-                "-ml",
-                "100",
-                "-sow"
-            ]
-        );
-    }
-
-    #[test]
-    fn whisper_argv_translate_and_no_subtitle() {
-        let opts = TranscribeOptions {
-            language: "no".into(),
-            translate: true,
-            subtitle_style: false,
-        };
-        let args = build_whisper_args("/m.bin", "/in.wav", "/out", &opts, 4);
-        assert!(args.contains(&"-tr".to_string()));
-        assert!(!args.contains(&"-ml".to_string()));
-        assert!(args.contains(&"no".to_string()));
     }
 
     #[test]
@@ -888,25 +594,6 @@ mod tests {
                 "/out.wav"
             ]
         );
-    }
-
-    // ── progress + exit ───────────────────────────────────────────────────────
-
-    #[test]
-    fn parses_progress_percentages_in_order_and_clamps() {
-        let line =
-            "whisper_print_progress_callback: progress = 33%\n...progress =  67%\nprogress=150%";
-        assert_eq!(parse_progress(line), vec![33, 67, 100]);
-        assert_eq!(parse_progress("no numbers here"), Vec::<u8>::new());
-    }
-
-    #[test]
-    fn classifies_exit_codes() {
-        assert_eq!(classify_exit(Some(0)), WhisperExit::Ok);
-        assert_eq!(classify_exit(None), WhisperExit::Cancelled);
-        assert_eq!(classify_exit(Some(143)), WhisperExit::Cancelled);
-        assert_eq!(classify_exit(Some(-15)), WhisperExit::Cancelled);
-        assert_eq!(classify_exit(Some(1)), WhisperExit::Failed);
     }
 
     // ── normalise ──────────────────────────────────────────────────────────
@@ -973,42 +660,7 @@ mod tests {
 
     // ── chunks + merge ───────────────────────────────────────────────────────
 
-    #[test]
-    fn short_recording_is_one_chunk() {
-        let c = plan_chunks(120.0, 600.0, 30.0);
-        assert_eq!(c.len(), 1);
-        assert_eq!(c[0].start_sec, 0.0);
-        assert_eq!(c[0].end_sec, 120.0);
-    }
-
-    #[test]
-    fn long_recording_splits_with_overlap_and_covers_to_end() {
-        let c = plan_chunks(1300.0, 600.0, 60.0);
-        // stride = 540: [0,600], [540,1140], [1080,1300]
-        assert_eq!(c.len(), 3);
-        assert_eq!(
-            c[0],
-            Chunk {
-                start_sec: 0.0,
-                end_sec: 600.0
-            }
-        );
-        assert_eq!(
-            c[1],
-            Chunk {
-                start_sec: 540.0,
-                end_sec: 1140.0
-            }
-        );
-        assert_eq!(c[2].end_sec, 1300.0);
-    }
-
-    #[test]
-    fn degenerate_windows_return_single_chunk() {
-        assert_eq!(plan_chunks(1000.0, 30.0, 30.0).len(), 1);
-        assert_eq!(plan_chunks(1000.0, 10.0, 30.0).len(), 1);
-        assert_eq!(plan_chunks(0.0, 600.0, 30.0)[0].end_sec, 0.0);
-    }
+    // ── export ───────────────────────────────────────────────────────────────
 
     fn seg(start: f64, end: f64, text: &str) -> TranscriptSegment {
         TranscriptSegment {
@@ -1017,29 +669,6 @@ mod tests {
             text: text.into(),
         }
     }
-
-    #[test]
-    fn merge_orders_and_drops_overlapping_duplicates() {
-        let a = vec![seg(0.0, 5.0, "one"), seg(5.0, 10.0, "two")];
-        // second window's first segment heavily overlaps "two" (re-transcribed)
-        let b = vec![seg(5.2, 9.8, "two-ish"), seg(10.0, 15.0, "three")];
-        let merged = merge_segments(vec![a, b]);
-        // "two-ish" overlaps "two" by ~4.6s of a ~4.6s span → dropped
-        assert_eq!(
-            merged.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
-            vec!["one", "two", "three"]
-        );
-    }
-
-    #[test]
-    fn merge_drops_identical_text_duplicates() {
-        let a = vec![seg(0.0, 5.0, "amen")];
-        let b = vec![seg(0.1, 5.1, "amen"), seg(6.0, 8.0, "next")];
-        let merged = merge_segments(vec![a, b]);
-        assert_eq!(merged.len(), 2);
-    }
-
-    // ── export ───────────────────────────────────────────────────────────────
 
     fn sample_data() -> TranscriptData {
         TranscriptData {
@@ -1110,18 +739,5 @@ mod tests {
         assert_eq!(TranscriptExportFormat::Srt.extension(), "srt");
         assert_eq!(TranscriptExportFormat::Vtt.extension(), "vtt");
         assert_eq!(TranscriptExportFormat::Txt.extension(), "txt");
-    }
-
-    // ── languages ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn language_options_cover_auto_plus_seven() {
-        let opts = language_options();
-        assert_eq!(opts.len(), 8);
-        assert_eq!(opts[0].0, "auto");
-        assert_eq!(language_label("no"), "Norsk");
-        assert_eq!(language_label("pl"), "Polski");
-        // Unknown ISO code falls through unchanged.
-        assert_eq!(language_label("es"), "es");
     }
 }

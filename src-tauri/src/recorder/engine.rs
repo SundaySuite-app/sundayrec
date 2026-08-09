@@ -487,12 +487,6 @@ impl RecorderEngine {
         lock_recover(&self.audio_engine).1.clone()
     }
 
-    /// Health telemetry of the last recording (drops/xruns/IPC-starvation), for
-    /// the diagnose tool. `None` until the first recording on this engine.
-    pub fn last_recording_telemetry(&self) -> Option<RecordingTelemetry> {
-        lock_recover(&self.last_telemetry).clone()
-    }
-
     /// The current auto-stop deadline (absolute epoch ms), or `None` when no
     /// auto-stop is armed. Exposed via the `recording_scheduled_stop_ms` command
     /// so a (re)mounting screen can rehydrate the countdown synchronously.

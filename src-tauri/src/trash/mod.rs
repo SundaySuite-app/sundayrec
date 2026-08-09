@@ -270,7 +270,17 @@ pub fn move_into_trash(save_dir: &Path, paths: &[String]) -> AppResult<Vec<Trash
             if claimed.contains(&side) {
                 continue;
             }
-            let target = trash_target(&dir, stamp, &side.file_name().unwrap().to_string_lossy());
+            // Guard, don't unwrap: a sidecar path without a final component
+            // cannot be named in the trash. Unreachable through today's
+            // `sidecars_of` (it always joins `stem+suffix`), but this loop runs
+            // inside a user-triggered delete — a panic here would abort the
+            // whole command over a cache file. Skip-with-log, like the
+            // unmovable-sidecar arm below.
+            let Some(side_name) = side.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+                tracing::warn!("trash: skipping unnameable sidecar {}", side.display());
+                continue;
+            };
+            let target = trash_target(&dir, stamp, &side_name);
             match move_file(&side, &target) {
                 Ok(()) => {
                     claimed.push(side.clone());
@@ -634,5 +644,20 @@ mod tests {
             Err(AppError::NotFound { entity, .. }) => assert_eq!(entity, "trash entry"),
             other => panic!("expected NotFound, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_user_triggered_delete_path_never_unwraps_a_file_name() {
+        // Source ratchet for the R3 guard in `move_into_trash`: an `.unwrap()`
+        // on `file_name()` in this module is a panic waiting inside a
+        // user-triggered delete. (The guard's Err arm is unreachable through
+        // today's `sidecars_of`, so a behavioural test cannot pin it — this
+        // pins the shape instead.)
+        let src = include_str!("mod.rs");
+        let needle = concat!("file_name().", "unwrap()");
+        assert!(
+            !src.contains(needle),
+            "guard file_name() with skip-with-log instead of unwrapping"
+        );
     }
 }
