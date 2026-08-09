@@ -82,6 +82,13 @@ jobs:
       - name: i18n fallback keys in sync with no.json
         run: npm run i18n-fallbacks
 
+      # i18n-skralle: antall data-i18n-løse norske prosa-tekstnoder i
+      # index.html kan bare gå NED (baseline i scripts/check-i18n-hardcoded.mjs,
+      # med innebygd selvtest som mutasjonsvern). I `npm run check` og
+      # ci-local.sh også — gate-paritet er lov.
+      - name: i18n hardcoded-text ratchet
+        run: npm run i18n-hardcoded
+
       # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
       # still exist — a pointer at nothing claims coverage that does not exist.
       # In `npm run check` since E11; mirrored here so a PR can't skip it.
