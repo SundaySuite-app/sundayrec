@@ -90,7 +90,7 @@ export async function setupIntegrationsPage(): Promise<void> {
     const keyStatus = $('integration-song-apikey-status')
     if (keyStatus) {
       const hasKey = await window.api.songHasApiKey()
-      keyStatus.textContent = hasKey ? '✓ API-nøkkel lagret (kryptert)' : ''
+      keyStatus.textContent = hasKey ? t('integrations.keySaved', '✓ API-nøkkel lagret (kryptert)') : ''
     }
   } catch {
     masterEl.checked = false
