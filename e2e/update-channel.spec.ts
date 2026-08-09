@@ -1,10 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
   SETTLED_SETTINGS,
   SETTINGS_KEY,
-  fn,
+  SETTINGS_SAVE_SPY,
+  settingsSavePayloads,
 } from "./harness";
 
 // «Oppdateringskanal» — the beta opt-in must reach the BACKEND, because the
@@ -33,26 +34,9 @@ import {
 // invoke boundary through the E5.1 fixture seam — the exact place the curated
 // subset leaves the renderer on its way to sqlite.
 
-/** Spy on `settings_save`: record every curated payload the renderer sends. */
-const SETTINGS_SAVE_SPY = fn(
-  "(args) => { const w = window; (w.__settingsSaves = w.__settingsSaves || []).push(args && args.settings); return args && args.settings; }",
-);
-
+// The `settings_save` spy + payload reader live in harness.ts — shared with
+// settings-seam.spec.ts, which generalises this seam to every backend-read key.
 const FIXTURES = { ...BOOT_FIXTURES, settings_save: SETTINGS_SAVE_SPY };
-
-/** Every curated payload `settings_save` has received so far. */
-async function settingsSavePayloads(
-  page: Page,
-): Promise<Array<Record<string, unknown>>> {
-  return page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __settingsSaves?: Array<Record<string, unknown>>;
-        }
-      ).__settingsSaves ?? [],
-  );
-}
 
 test.describe("update channel", () => {
   test("switching to beta reaches the backend save, not just localStorage", async ({

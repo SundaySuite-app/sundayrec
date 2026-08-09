@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Nattøkt-rapport (api-shim ↔ Rust-sømrevisjon); funnene er enten fikset eller overtatt av docs/COMMAND_AUDIT_2026-08.md + reachability-gaten. Ingen innkommende referanser.
+
 # Natt-økt: seam-audit (api-shim ↔ Rust)
 
 Autonom nattejobb. Tema: den bevist feilutsatte sømmen mellom den ordrett-

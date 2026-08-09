@@ -29,6 +29,7 @@ step "frontend — vitest";              npm run test
 
 step "app version in sync";            npm run version-sync
 step "i18n fallbacks match no.json";   npm run i18n-fallbacks
+step "smoke VERIFIED-BY pointers";     npm run smoke-verified
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check
 step "rust — cargo clippy -D warnings"; npm run lint:rust

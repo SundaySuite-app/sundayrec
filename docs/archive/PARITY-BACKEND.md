@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** Arbeidsnotat for to backend-avhengige frontend-paritetsfeatures; egen status sier «BOTH DONE (2026-06-03)» — alt beskrevet er landet for lengst. Ingen innkommende referanser.
+
 # Frontend-parity — the two backend-dependent features
 
 > **STATUS: BOTH DONE (2026-06-03).**

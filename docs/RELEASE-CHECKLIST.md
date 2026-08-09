@@ -106,6 +106,25 @@ silently keeps offering the previous tag. Steps 5d/5e (and 5g's repeat of
 them) exist specifically to catch that — do not compress them into one
 mental step called "promote", they check different things.
 
+### Direct-to-stable (owner override — the exception, written down)
+
+The **normal** path is beta first (§5a–§5f, then §5g). The owner can order a
+release straight to `stable` — **v0.12.0 shipped that way** (2026-08-09), with
+the beta ring left on v0.11.1-beta.2. That is an owner decision, not a
+shortcut anyone else may take, and the minimum bar is what v0.12.0 actually
+met:
+
+- [ ] Full CI green on the release commit — all six jobs, including the
+      complete Playwright e2e tier in CI (not just locally).
+- [ ] `npm run check` green on merged `main`.
+- [ ] Promote + verify exactly as §5d/§5e, but for `stable`
+      (`node scripts/promote-release.mjs stable vX.Y.Z`, then the
+      no-argument readback) — promote-release's manifest validation is the
+      last automated gate.
+- [ ] §6a still applies: if the release touched recording/editor/meter/boot
+      code, the first real Sunday on it IS the health gate — now run from
+      `stable`, with no ring underneath, so read `ROLLBACK.md` in advance.
+
 ### 5a. Bump + tag (beta ring)
 
 - [ ] Bump version in lockstep to `vX.Y.Z-beta.N`: `package.json`,

@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** «Completion summary» for Tauri-ombyggingen; halvparten beskriver en reversert React-frontend (se dokumentets egen NB fra 2026-07-08), og README peker ikke lenger hit. Sannhetskilder i dag: README, SMOKE-TEST.md, NEEDS-RICHARD.md.
+
 > **NB (2026-07-08):** Deler av dette dokumentet (feature-/paritetsmatrisen og
 > «Redesign»-seksjonene) beskriver en React-basert `src/`-frontend
 > (`src/App.tsx`, `src/design/screens/*`) som ble **reversert** og ikke finnes

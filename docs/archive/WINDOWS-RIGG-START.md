@@ -1,3 +1,5 @@
+> **ARKIVERT 2026-08-09.** «Start her»-instruks for en engangs Windows-rigg-økt (ASIO/WASAPI); øktspesifikk og utdatert som instruks — riggtesting styres nå av SMOKE-TEST.md + PRO-AUDIO-WINDOWS.md. Ingen innkommende referanser.
+
 # START HER — Claude Code på Windows-riggen (SundayRec ASIO/WASAPI)
 
 > Lim hele denne fila inn i Claude Code på Windows-maskinen, eller bare si:

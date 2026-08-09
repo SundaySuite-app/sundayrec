@@ -147,7 +147,11 @@ git push origin v0.1.0
 
 ## CI (every push / PR)
 
-`.github/workflows/ci.yml` runs on `main` pushes and PRs: frontend
-lint/format/typecheck/tests, Rust fmt/clippy/tests across the workspace, a
-ts-rs bindings drift check, and a `--no-bundle` compile of the whole app on
-Linux. No secrets required.
+`.github/workflows/ci.yml` runs on `main` pushes, PRs, `v*` tags and manual
+dispatch, as six parallel jobs: **check** (frontend lint/format/typecheck/
+tests, version/i18n/smoke-pointer/reachability checks, Rust fmt/clippy/tests,
+ts-rs bindings drift, feature-off clippy), **vad** (clippy + tests with the
+`vad` feature), **build-smoke** (a `--no-bundle` compile of the whole app on
+Linux), **e2e** (the Playwright renderer tier), **windows-check** (Windows
+cargo check + clippy), and **audit** (npm + cargo advisories). No secrets
+required.

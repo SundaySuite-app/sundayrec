@@ -1,5 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
-import { boot, BOOT_FIXTURES, SETTLED_SETTINGS, fn } from "./harness";
+import {
+  boot,
+  BOOT_FIXTURES,
+  SETTLED_SETTINGS,
+  SETTINGS_SAVE_SPY,
+  settingsSavePayloads,
+} from "./harness";
 
 // The renderer→sqlite settings seam, held to account for EVERY key with a
 // backend reader — the #113 bug ("updateChannel never crossed") generalised.
@@ -28,26 +34,9 @@ import { boot, BOOT_FIXTURES, SETTLED_SETTINGS, fn } from "./harness";
 // Observable: the `settings_save` payload itself, spied at the invoke
 // boundary — the exact place the curated subset leaves the renderer.
 
-/** Spy on `settings_save`: record every curated payload the renderer sends. */
-const SETTINGS_SAVE_SPY = fn(
-  "(args) => { const w = window; (w.__settingsSaves = w.__settingsSaves || []).push(args && args.settings); return args && args.settings; }",
-);
-
+// The `settings_save` spy + payload reader live in harness.ts — shared with
+// update-channel.spec.ts, which pins the same seam.
 const FIXTURES = { ...BOOT_FIXTURES, settings_save: SETTINGS_SAVE_SPY };
-
-/** Every curated payload `settings_save` has received so far. */
-async function settingsSavePayloads(
-  page: Page,
-): Promise<Array<Record<string, unknown>>> {
-  return page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __settingsSaves?: Array<Record<string, unknown>>;
-        }
-      ).__settingsSaves ?? [],
-  );
-}
 
 /** The boot sync's curated payload (the first `settings_save` after boot). */
 async function bootPayload(page: Page): Promise<Record<string, unknown>> {

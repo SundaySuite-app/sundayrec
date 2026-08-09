@@ -148,30 +148,12 @@ pub async fn integrations_song_submit_usage(
         return Ok(OpResult::err("invalid_path"));
     }
     let settings = parse_settings(get_setting(&db.pool, INTEGRATIONS_KEY).await?.as_deref());
-    if !settings.song_enabled() {
-        return Ok(OpResult::err("disabled"));
-    }
-    let link = match integrations_get_service_link(recording_path) {
-        Some(l) => l,
-        None => {
-            return Ok(OpResult {
-                ok: false,
-                error: Some("no_service_link".into()),
-                hint: Some("Import Stage-kapitler first or link manually.".into()),
-                ..Default::default()
-            })
-        }
+    let link = integrations_get_service_link(recording_path);
+    let payloads = match song_usage_gate(&settings, link) {
+        Ok(p) => p,
+        Err(refusal) => return Ok(refusal),
     };
     let connection = settings.connection.clone().unwrap_or_default();
-    let payloads = build_usage_payloads(&link, &connection);
-    if payloads.is_empty() {
-        return Ok(OpResult {
-            ok: false,
-            error: Some("no_songs".into()),
-            hint: Some("No church_id or empty setlist.".into()),
-            ..Default::default()
-        });
-    }
     let base_url = connection
         .song_api_url
         .clone()
@@ -213,6 +195,39 @@ pub async fn integrations_song_submit_usage(
     })
 }
 
+/// The pre-network decision for [`integrations_song_submit_usage`]: everything
+/// the command decides BEFORE a single byte leaves the machine, extracted pure
+/// so the refusal codes the smoke runbook promises (`disabled`,
+/// `no_service_link`, `no_songs`) are pinned by plain `#[test]`s instead of a
+/// rig. `Ok` carries the payloads the network loop would send.
+fn song_usage_gate(
+    settings: &IntegrationSettings,
+    link: Option<ServiceLink>,
+) -> Result<Vec<sundayrec_core::integrations::song::UsageLogPayload>, OpResult> {
+    if !settings.song_enabled() {
+        return Err(OpResult::err("disabled"));
+    }
+    let Some(link) = link else {
+        return Err(OpResult {
+            ok: false,
+            error: Some("no_service_link".into()),
+            hint: Some("Import Stage-kapitler first or link manually.".into()),
+            ..Default::default()
+        });
+    };
+    let connection = settings.connection.clone().unwrap_or_default();
+    let payloads = build_usage_payloads(&link, &connection);
+    if payloads.is_empty() {
+        return Err(OpResult {
+            ok: false,
+            error: Some("no_songs".into()),
+            hint: Some("No church_id or empty setlist.".into()),
+            ..Default::default()
+        });
+    }
+    Ok(payloads)
+}
+
 // ── SundayPlan ───────────────────────────────────────────────────────────────
 
 /// A fetched Plan service enriched with the derived metadata + schedule. Mirrors
@@ -247,38 +262,10 @@ pub async fn integrations_plan_fetch_services(
     from_iso: Option<String>,
 ) -> AppResult<PlanFetchResult> {
     let settings = parse_settings(get_setting(&db.pool, INTEGRATIONS_KEY).await?.as_deref());
-    let plan_ready = settings.plan_enabled();
-    let connection = settings.connection.clone().unwrap_or_default();
-    let Some(base_url) = connection.plan_api_url.clone().filter(|u| !u.is_empty()) else {
-        return Ok(PlanFetchResult {
-            ok: false,
-            error: Some("plan_not_ready".into()),
-            services: None,
-        });
+    let (base_url, church_id) = match plan_fetch_gate(&settings) {
+        Ok(v) => v,
+        Err(refusal) => return Ok(refusal),
     };
-    if !plan_ready {
-        return Ok(PlanFetchResult {
-            ok: false,
-            error: Some("plan_not_ready".into()),
-            services: None,
-        });
-    }
-    let Some(church_id) = connection.church_id.clone().filter(|c| !c.is_empty()) else {
-        return Ok(PlanFetchResult {
-            ok: false,
-            error: Some("no_church_id".into()),
-            services: None,
-        });
-    };
-    // Refuse to attach the bearer key to a non-HTTPS (or scheme-less) base — the
-    // Plan API URL is user-configurable, so an http:// value would leak the key.
-    if !is_secure_api_base(&base_url) {
-        return Ok(PlanFetchResult {
-            ok: false,
-            error: Some("insecure_api_url".into()),
-            services: None,
-        });
-    }
 
     let from = from_iso.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
     let url = format!(
@@ -351,6 +338,35 @@ pub async fn integrations_plan_fetch_services(
         error: None,
         services: Some(views),
     })
+}
+
+/// The pre-network decision for [`integrations_plan_fetch_services`]: the
+/// refusal codes the smoke runbook promises (`plan_not_ready` until both the
+/// enable flag and a `planApiUrl` exist, `no_church_id` without one, plus the
+/// bearer-over-HTTPS guard), extracted pure so plain `#[test]`s pin them.
+/// `Ok` carries `(base_url, church_id)` for the fetch.
+fn plan_fetch_gate(settings: &IntegrationSettings) -> Result<(String, String), PlanFetchResult> {
+    let refuse = |code: &str| PlanFetchResult {
+        ok: false,
+        error: Some(code.into()),
+        services: None,
+    };
+    let connection = settings.connection.clone().unwrap_or_default();
+    let Some(base_url) = connection.plan_api_url.clone().filter(|u| !u.is_empty()) else {
+        return Err(refuse("plan_not_ready"));
+    };
+    if !settings.plan_enabled() {
+        return Err(refuse("plan_not_ready"));
+    }
+    let Some(church_id) = connection.church_id.clone().filter(|c| !c.is_empty()) else {
+        return Err(refuse("no_church_id"));
+    };
+    // Refuse to attach the bearer key to a non-HTTPS (or scheme-less) base — the
+    // Plan API URL is user-configurable, so an http:// value would leak the key.
+    if !is_secure_api_base(&base_url) {
+        return Err(refuse("insecure_api_url"));
+    }
+    Ok((base_url, church_id))
 }
 
 /// Write the streaming flag + optional recording URL back to a Plan service.
@@ -598,6 +614,140 @@ mod tests {
         let escape = format!("{}/../../etc/passwd.mp4", dir.to_str().unwrap());
         assert!(integrations_get_service_link(escape).is_none());
         assert!(integrations_get_service_link("relative.mp4".into()).is_none());
+    }
+
+    // ── SMOKE-TEST §P2b step 3/4/5: the guard branches, pinned pure ──────────
+    //
+    // These used to be NETWORK-UNVERIFIED claims in the runbook although no
+    // network is involved in refusing: the codes are decided entirely from the
+    // stored settings + the sidecar. The gates are the extracted
+    // `song_usage_gate` / `plan_fetch_gate` the commands now consult.
+
+    fn settings_json(json: &str) -> IntegrationSettings {
+        parse_settings(Some(json))
+    }
+
+    fn linked(service_date: Option<&str>, titles: &[&str]) -> ServiceLink {
+        serde_json::from_value(serde_json::json!({
+            "source": "manual",
+            "serviceId": "svc-1",
+            "serviceDate": service_date,
+            "setlist": titles
+                .iter()
+                .map(|t| serde_json::json!({ "title": t }))
+                .collect::<Vec<_>>(),
+            "linkedAt": 0,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn song_usage_gate_disabled_when_song_flow_off() {
+        // Master on but the song peer off — and the fully-off default — both
+        // refuse with `disabled`, before the sidecar is even considered.
+        for json in ["{}", r#"{"enabled":true,"song":{"enabled":false}}"#] {
+            let refusal = song_usage_gate(
+                &settings_json(json),
+                Some(linked(Some("2026-08-09"), &["Amazing Grace"])),
+            )
+            .expect_err("song flow off must refuse");
+            assert_eq!(refusal.error.as_deref(), Some("disabled"));
+        }
+    }
+
+    #[test]
+    fn song_usage_gate_no_service_link_without_sidecar() {
+        let settings = settings_json(
+            r#"{"enabled":true,"song":{"enabled":true},"connection":{"churchId":"ch1"}}"#,
+        );
+        let refusal = song_usage_gate(&settings, None).expect_err("no sidecar must refuse");
+        assert_eq!(refusal.error.as_deref(), Some("no_service_link"));
+        assert!(refusal.hint.is_some(), "the runbook promises a hint");
+    }
+
+    #[test]
+    fn song_usage_gate_no_songs_without_church_or_setlist() {
+        // An empty setlist — and a missing churchId — both make
+        // `build_usage_payloads` come back empty, which must read `no_songs`.
+        let with_church = settings_json(
+            r#"{"enabled":true,"song":{"enabled":true},"connection":{"churchId":"ch1"}}"#,
+        );
+        let no_church = settings_json(r#"{"enabled":true,"song":{"enabled":true}}"#);
+        for (settings, link) in [
+            (&with_church, linked(Some("2026-08-09"), &[])),
+            (&no_church, linked(Some("2026-08-09"), &["Amazing Grace"])),
+        ] {
+            let refusal =
+                song_usage_gate(settings, Some(link)).expect_err("empty payloads must refuse");
+            assert_eq!(refusal.error.as_deref(), Some("no_songs"));
+        }
+    }
+
+    #[test]
+    fn song_usage_gate_ready_yields_one_payload_per_song() {
+        // The mutation guard: a fully-configured link passes the gate and the
+        // payload count matches the setlist, so none of the refusal arms can be
+        // inverted without this failing.
+        let settings = settings_json(
+            r#"{"enabled":true,"song":{"enabled":true},"connection":{"churchId":"ch1"}}"#,
+        );
+        let payloads = song_usage_gate(
+            &settings,
+            Some(linked(Some("2026-08-09"), &["Amazing Grace", "How Great"])),
+        )
+        .expect("a configured link must pass the gate");
+        assert_eq!(payloads.len(), 2);
+        assert_eq!(payloads[0].church_id, "ch1");
+    }
+
+    #[test]
+    fn plan_fetch_gate_not_ready_until_enabled_and_url() {
+        // No URL (whatever the toggle says) and no toggle (whatever the URL
+        // says) both refuse with `plan_not_ready`.
+        for json in [
+            "{}",
+            r#"{"enabled":true,"plan":{"enabled":true}}"#,
+            r#"{"enabled":true,"plan":{"enabled":false},"connection":{"planApiUrl":"https://plan.example.org","churchId":"ch1"}}"#,
+        ] {
+            let refusal =
+                plan_fetch_gate(&settings_json(json)).expect_err("unready plan must refuse");
+            assert_eq!(refusal.error.as_deref(), Some("plan_not_ready"));
+        }
+    }
+
+    #[test]
+    fn plan_fetch_gate_no_church_id_without_one() {
+        let refusal = plan_fetch_gate(&settings_json(
+            r#"{"enabled":true,"plan":{"enabled":true},"connection":{"planApiUrl":"https://plan.example.org"}}"#,
+        ))
+        .expect_err("no churchId must refuse");
+        assert_eq!(refusal.error.as_deref(), Some("no_church_id"));
+
+        // …and the mutation guard: with everything present the gate passes and
+        // hands back exactly the configured pair.
+        let (base, church) = plan_fetch_gate(&settings_json(
+            r#"{"enabled":true,"plan":{"enabled":true},"connection":{"planApiUrl":"https://plan.example.org","churchId":"ch1"}}"#,
+        ))
+        .expect("a configured plan must pass");
+        assert_eq!(base, "https://plan.example.org");
+        assert_eq!(church, "ch1");
+    }
+
+    #[test]
+    fn sundayedit_import_reports_no_captions_parsed_for_an_empty_vtt() {
+        // A structurally valid caption file that yields zero segments must be
+        // the calm `no_captions_parsed`, not a success writing an empty sidecar.
+        let (dir, rec, _) = media_fixture("import-empty-vtt");
+        let vtt = dir.join("empty.vtt");
+        std::fs::write(&vtt, "WEBVTT\n\n").unwrap();
+        let result =
+            integrations_sundayedit_import(rec, vtt.to_str().unwrap().into(), None).unwrap();
+        assert!(!result.ok);
+        assert_eq!(result.error.as_deref(), Some("no_captions_parsed"));
+        assert!(
+            result.transcript_path.is_none(),
+            "no sidecar path may be reported for a refused import"
+        );
     }
 
     // ── Item 3: Bearer-over-HTTPS guard for the Plan API paths ───────────────
