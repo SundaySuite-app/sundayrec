@@ -16,13 +16,6 @@ import {
 } from '../ui/bind-setting'
 import type { ChannelMode } from '../../types'
 
-function updateVolGradient(): void {
-  const el = document.getElementById('input-volume') as HTMLInputElement | null
-  if (!el) return
-  const pct = +el.value
-  el.style.setProperty('--vol-pct', pct + '%')
-}
-
 export function setupAudioPage(): void {
   // AUTO-APPLY is the ONLY save model on this page — and since bindSetting it
   // is no longer SILENT: each control writes on change and flashes an inline
@@ -78,8 +71,9 @@ export function setupAudioPage(): void {
       })
     }
   }
-  // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
-  // (record-raw philosophy — see saveAudioSettings); no listeners needed.
+  // NB: compressor/limiter/EQ/input-volume have NO controls on this page
+  // (record-raw philosophy — see saveAudioSettings); their settings-values
+  // pass through the blob untouched.
 
   document.getElementById('btn-audio-diagnose')?.addEventListener('click', runAudioDiagnosis)
   document.getElementById('btn-audio-diagnose-close')?.addEventListener('click', () => {
@@ -128,28 +122,19 @@ function onGridChannelCount(count: number): void {
 }
 
 export function applyAudioSettingsToUI(): void {
-  setVal('input-volume', settings.inputVolume ?? 100)
   setRadio('channels', settings.channels ?? 'stereo')
   // Sample-rate mode cards — default Auto (native capture).
   const srMode = settings.sampleRateMode ?? 'auto'
   document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
     r.checked = r.value === srMode
   })
-  updateVolGradient()
   const classicEl = document.getElementById('opt-classic-dshow') as HTMLInputElement | null
   if (classicEl) classicEl.checked = !!settings.classicDirectshow
   const classicFfEl = document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null
   if (classicFfEl) classicFfEl.checked = !!settings.classicFfmpegAudio
-  const compEl = document.getElementById('opt-compressor') as HTMLInputElement | null
-  if (compEl) {
-    compEl.checked = !!settings.compEnabled
-    const cs = document.getElementById('comp-settings')
-    if (cs) cs.style.display = settings.compEnabled ? 'block' : 'none'
-  }
-  setVal('comp-threshold', settings.compThreshold ?? -24)
-  setVal('comp-ratio',     settings.compRatio     ?? 4)
-  setVal('comp-attack',    settings.compAttack    ?? 10)
-  setVal('comp-release',   settings.compRelease   ?? 200)
+  // NB: compressor/limiter/EQ/inputVolume are settings WITHOUT UI (record-raw
+  // philosophy since v4.31). The hidden mirror-inputs this function used to
+  // write are gone — the values live untouched in the settings blob.
   // The DOM was just rewritten from settings — rebase every binding's "last
   // committed value" so the next edit is compared against what is on screen.
   resyncBoundSettings()

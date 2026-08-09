@@ -434,17 +434,7 @@ body.platform-darwin .ui-toast-stack {
 
 /* ── Show / hide helpers used by motion.ts ───────────────────────────────── */
 
-.ui-collapsible {
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease;
-}
-.ui-collapsible.is-leaving {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-
-/* `.ui-reveal` is `.ui-collapsible` with an entrance as well as an exit: the
+/* `.ui-reveal` has an entrance as well as an exit: the
    element starts transparent and only `.is-open` brings it in. Put it on cards
    that appear because STATE changed rather than because the user clicked —
    a missed recording, a failed pre-start check — where popping into the layout

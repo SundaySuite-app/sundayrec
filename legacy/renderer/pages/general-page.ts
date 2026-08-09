@@ -112,7 +112,6 @@ export function setupGeneralPage(): void {
   bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))
 
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
-  bindSetting('opt-show-on-startup', generalBinding({ key: 'showOnStartup' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
   // The only auto-applying control whose effect must not wait for the save to
   // land. It is a promise to stop contacting a server, and PRIVACY.md makes
@@ -1078,7 +1077,6 @@ export function applyGeneralSettingsToUI(): void {
   // the one promise this app cannot afford to break quietly. `get_launch_at_login`
   // reads the OS; the setting follows it, not the other way round.
   void syncAutostartFromOs()
-  setCheckbox('opt-show-on-startup',  !!settings.showOnStartup)
   setCheckbox('opt-auto-update',      autoUpdateEnabled(settings.autoUpdate))
   // The persisted answer has just landed — this is the first moment the gate can
   // be evaluated against what the operator actually chose, and the only place
@@ -1124,7 +1122,9 @@ export function applyGeneralSettingsToUI(): void {
     if (fallback) return `v${fallback[1]}.${fallback[2]}`
     return raw || '—'
   })()
-  ;['app-version', 'sidebar-version', 'hero-app-version'].forEach(id => {
+  // ('hero-app-version' sto i denne listen, men elementet finnes ikke i
+  // markupen — skrivingen traff ingenting og er fjernet.)
+  ;['app-version', 'sidebar-version'].forEach(id => {
     const el = document.getElementById(id)
     if (el) el.textContent = displayVersion
   })
@@ -1158,7 +1158,6 @@ function collectGeneralSettings(): void {
     webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
     webhookOnWarn:     !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
-    showOnStartup:     !!(document.getElementById('opt-show-on-startup')   as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     // Anything the select cannot produce is not a channel; the backend applies
     // the same fallback (UpdateChannel::parse), so the two ends agree.

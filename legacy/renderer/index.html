@@ -113,7 +113,7 @@
      -webkit-app-region CSS, which is inert in WKWebView). With the attribute +
      the window capabilities, this strip drags the window and double-click
      toggles maximize. -->
-<div id="titlebar-drag" class="titlebar-drag" data-tauri-drag-region></div>
+<div class="titlebar-drag" data-tauri-drag-region></div>
 
 <!-- ── Main ────────────────────────────────────────────────────── -->
 <main id="main">
@@ -123,7 +123,7 @@
     <span class="global-error-icon">⚠️</span>
     <div class="global-error-body">
       <span id="global-error-msg" class="global-error-msg"></span>
-      <span id="global-error-hint" class="global-error-hint" data-i18n="error.tryAgainHint">Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.</span>
+      <span class="global-error-hint" data-i18n="error.tryAgainHint">Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.</span>
     </div>
     <button id="global-error-close" class="global-error-close" aria-label="Lukk">✕</button>
   </div>
@@ -471,7 +471,7 @@
          «Avanserte innstillinger». A planned recording on a sleeping machine
          is not a recording, so the state belongs at the top of the page that
          plans them. «Detaljer» opens the full section below. -->
-    <div class="card wake-summary-card" id="wake-summary-card">
+    <div class="card wake-summary-card">
       <span class="wake-status-dot" id="wake-summary-dot"></span>
       <div class="wake-summary-text">
         <div class="wake-summary-title" id="wake-summary-title" data-i18n="wake.summary.checking">Sjekker oppvåkning…</div>
@@ -599,7 +599,7 @@
         <div id="wake-details" style="display:none">
 
           <!-- Hidden placeholders kept for back-compat with schedule-page.ts wake-result handler -->
-          <div id="wake-status-row" class="wake-status-row" style="display:none">
+          <div class="wake-status-row" style="display:none">
             <span id="wake-status-dot" class="wake-status-dot"></span>
             <span id="wake-status-text" class="wake-status-text"></span>
             <button id="btn-schedule-wake" class="btn-ghost btn-sm" data-i18n="schedule.wakeBtn">Planlegg oppvåkning</button>
@@ -608,12 +608,12 @@
           <!-- Sub-card: "Maskinen din" (static capability) ──────────── -->
           <div class="wake-subcard">
             <div class="wake-subcard-title" data-i18n="schedule.wakeCapTitle">Maskinen din</div>
-            <div id="wake-capability-row" class="wake-status-row" style="margin-top:0;padding-top:0;border-top:none">
+            <div class="wake-status-row" style="margin-top:0;padding-top:0;border-top:none">
               <span class="wake-status-dot ok"></span>
               <span id="wake-capability-text" class="wake-status-text" style="flex:1" data-i18n="wake.capability.loading">Sjekker maskinens vekkeegenskaper…</span>
             </div>
             <ul id="wake-capability-issues" class="sleep-config-detail" style="display:none;margin-top:6px;padding-left:18px"></ul>
-            <ul id="wake-capability-static" class="sleep-config-detail" style="margin-top:6px;padding-left:0;list-style:none">
+            <ul class="sleep-config-detail" style="margin-top:6px;padding-left:0;list-style:none">
               <li><span style="color:#4ade80">✓</span> <span data-i18n="schedule.wakeCanSleep">Kan vekkes fra dvale</span></li>
               <li><span style="color:#f87171">✗</span> <span data-i18n="schedule.wakeCannotOff">Kan ikke starte fra fullstendig avslått</span></li>
             </ul>
@@ -627,7 +627,7 @@
           <div class="wake-subcard">
             <div class="wake-subcard-title" data-i18n="schedule.wakeStatusTitle">Status akkurat nå</div>
 
-            <div id="wake-power-row" class="wake-status-row">
+            <div class="wake-status-row">
               <span id="wake-power-dot" class="wake-status-dot"></span>
               <span id="wake-power-text" class="wake-status-text" style="flex:1" data-i18n="wake.power.checking">Sjekker strømkilde…</span>
             </div>
@@ -639,7 +639,7 @@
             </div>
 
             <!-- Legacy auto-fix sleep config row (kept invisible by default; populated by loadSleepConfig) -->
-            <div id="sleep-config-panel" class="sleep-config-panel" style="display:none">
+            <div class="sleep-config-panel" style="display:none">
               <div id="sleep-config-loading" class="sleep-config-loading">
                 <span data-i18n="schedule.sleepChecking">Sjekker dvaleinnstillinger…</span>
               </div>
@@ -649,17 +649,17 @@
                   <span id="sleep-config-text" class="wake-status-text" style="flex:1"></span>
                   <button id="btn-fix-sleep" class="btn-ghost btn-sm" style="display:none" data-i18n="schedule.sleepFixBtn">Fiks automatisk</button>
                 </div>
-                <div id="sleep-config-detail" class="sleep-config-detail" style="display:none"></div>
+                <div class="sleep-config-detail" style="display:none"></div>
               </div>
             </div>
 
-            <div id="wake-verify-row" class="wake-status-row">
+            <div class="wake-status-row">
               <span id="wake-verify-dot" class="wake-status-dot"></span>
               <span id="wake-verify-text" class="wake-status-text" style="flex:1" data-i18n="wake.verify.checking">Sjekker hva som faktisk er planlagt i OS…</span>
               <button id="btn-wake-verify-refresh" class="btn-ghost btn-sm" data-i18n="wake.verify.refresh">Oppdater</button>
             </div>
 
-            <div id="wake-last-test-row" class="wake-status-row">
+            <div class="wake-status-row">
               <span id="wake-last-test-dot" class="wake-status-dot off"></span>
               <span id="wake-last-test-text" class="wake-status-text" style="flex:1" data-i18n="wake.lastTest.none">Ikke testet ennå.</span>
             </div>
@@ -673,7 +673,7 @@
           <div id="wake-test-progress" class="sleep-config-detail" style="display:none;margin-top:8px"></div>
 
           <!-- Always-off note kept at the bottom of wake-details -->
-          <div id="sleep-always-off-note" class="sleep-config-detail wake-tip" style="margin-top:12px" data-i18n="schedule.sleepAlwaysOffNote">
+          <div class="sleep-config-detail wake-tip" style="margin-top:12px" data-i18n="schedule.sleepAlwaysOffNote">
             Vil du at maskinen alltid skal starte opptak? La den stå i dvale (ikke slå den av) og aktiver «Start automatisk med Windows/Mac» under System.
           </div>
 
@@ -768,7 +768,7 @@
 
       <!-- Right column: stats + destinations + quality -->
       <div class="live-side-col">
-        <div class="card live-stats-card" id="live-stats-card">
+        <div class="card live-stats-card">
           <div class="card-title" data-i18n="live.statsTitle">Statistikk</div>
           <div class="live-stats-grid">
             <div class="live-stat">
@@ -927,7 +927,7 @@
         </div>
 
         <div class="card-title" style="margin-top:20px" data-i18n="audio.channels">Kanaler</div>
-        <div class="option-cards" id="channels-group">
+        <div class="option-cards">
           <label class="option-card">
             <input type="radio" name="channels" value="stereo" checked />
             <svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
@@ -988,45 +988,32 @@
       </div>
 
       <div class="card">
-        <!-- Inngangsvolum-slideren er fjernet i v4.31 — ble bestemt at SundayRec
-             skal lagre rå audio og overlate volum/dynamikk-justering til editor.
-             Backend bruker fortsatt inputVolume-feltet i Settings (default 100,
-             dvs. ingen endring), så eksisterende brukere med en annen verdi får
-             den fortsatt anvendt. -->
-        <input type="hidden" id="input-volume" value="100" />
-
         <div class="card-title" data-i18n="audio.sampleRate">Samplingsrate</div>
         <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
           <label class="option-card">
-            <input type="radio" name="sampleRate" value="auto" id="sr-auto" checked />
+            <input type="radio" name="sampleRate" value="auto" checked />
             <div class="option-card-name" data-i18n="audio.sampleRateAuto">Automatisk</div>
             <div class="option-card-badge" data-i18n="audio.recommended">Anbefalt</div>
             <div class="option-card-desc"><span data-i18n="audio.sampleRateAutoDesc">Følger lydkortet — ingen resampling</span><span id="sr-auto-actual"></span></div>
           </label>
           <label class="option-card">
-            <input type="radio" name="sampleRate" value="r44100" id="sr-44" />
+            <input type="radio" name="sampleRate" value="r44100" />
             <div class="option-card-name">44 100 Hz</div>
             <div class="option-card-desc" data-i18n="audio.sampleRateMusicDesc">Musikk, CD og podcast</div>
           </label>
           <label class="option-card">
-            <input type="radio" name="sampleRate" value="r48000" id="sr-48" />
+            <input type="radio" name="sampleRate" value="r48000" />
             <div class="option-card-name">48 000 Hz</div>
             <div class="option-card-desc" data-i18n="audio.sampleRateVideoDesc">Video, Zoom og TV-utstyr</div>
           </label>
         </div>
 
-        <!-- Lydforbedringer (kompressor + limiter + EQ) er fjernet fra opptak-
-             pipelinen i v4.31. Filosofien er nå: ta opp rått, etterbehandle i
-             editoren (Normaliser-knapp, Mastering-presets). Skjulte felter
-             beholdes med defaults så eksisterende user-settings fortsatt
-             parses uten feil. -->
-        <input type="hidden" id="opt-compressor" />
-        <input type="hidden" id="comp-threshold" value="-24" />
-        <input type="hidden" id="comp-ratio"     value="4" />
-        <input type="hidden" id="comp-attack"    value="10" />
-        <input type="hidden" id="comp-release"   value="200" />
-        <input type="hidden" id="opt-limiter"    value="true" />
-        <input type="hidden" id="limiter-ceiling" value="-1" />
+        <!-- Lydforbedringer (kompressor + limiter + EQ) og inngangsvolum ble
+             fjernet fra opptak-pipelinen i v4.31 (ta opp rått, etterbehandle i
+             editoren). De skjulte «kompatibilitets-inputene» som sto her ble
+             fjernet 2026-08: settings-parsing skjer i Rust med serde-defaults
+             og har aldri trengt DOM-elementer — audio-page.ts leste og skrev
+             dem uten at noe brukte verdiene. -->
       </div>
 
       <!-- Advanced escape hatches for the audio engine. Audio-only recordings use
@@ -1083,23 +1070,24 @@
       </div>
       <div class="card">
         <div class="card-title" data-i18n="files.format">Format &amp; Kvalitet</div>
+        <!-- Ingen statiske «~X MB/time»-estimater her: de sto fast i markupen
+             mens samplingsrate og bitrate er innstillinger, så tallene løy for
+             alle andre oppsett enn ett. Hjem-siden viser det EKTE diskestimatet
+             (beregnet fra valgene) — det er den ene sannheten om plassbruk. -->
         <div class="option-cards" id="format-group">
           <label class="option-card format-card">
             <input type="radio" name="format" value="mp3" checked />
             <div class="format-card-name">MP3</div>
-            <div class="format-card-size">~85 MB / time</div>
             <div class="option-card-desc" data-i18n="files.qualityRecommendedDesc">Anbefalt for deling og nett</div>
           </label>
           <label class="option-card format-card">
             <input type="radio" name="format" value="flac" />
             <div class="format-card-name">FLAC</div>
-            <div class="format-card-size">~300 MB / time</div>
             <div class="option-card-desc">Tapsfri komprimering</div>
           </label>
           <label class="option-card format-card">
             <input type="radio" name="format" value="wav" />
             <div class="format-card-name">WAV</div>
-            <div class="format-card-size">~635 MB / time</div>
             <div class="option-card-desc" data-i18n="files.formatWavDesc">Ukomprimert, høyest kvalitet</div>
           </label>
         </div>
@@ -1111,19 +1099,16 @@
               <input type="radio" name="bitrate" value="128" />
               <div class="quality-bars"><div class="qb qb1"></div><div class="qb qb2"></div><div class="qb qb3"></div></div>
               <div class="quality-label">Kompakt</div>
-              <div class="quality-sub">~50 MB / time</div>
             </label>
             <label class="quality-step">
               <input type="radio" name="bitrate" value="256" checked />
               <div class="quality-bars"><div class="qb qb1"></div><div class="qb qb2"></div><div class="qb qb3"></div></div>
               <div class="quality-label">Anbefalt</div>
-              <div class="quality-sub">~115 MB / time</div>
             </label>
             <label class="quality-step">
               <input type="radio" name="bitrate" value="320" />
               <div class="quality-bars"><div class="qb qb1"></div><div class="qb qb2"></div><div class="qb qb3"></div></div>
               <div class="quality-label" data-i18n="files.qualityHighest">Høyeste</div>
-              <div class="quality-sub">~140 MB / time</div>
             </label>
           </div>
         </div>
@@ -1314,69 +1299,12 @@
             </div>
           </div>
 
-          <!-- Dropbox — skjult inntil videre. Backend-koden + tester er bevart;
-               re-aktivér ved å fjerne style="display:none" når Dropbox-app er klar
-               og DROPBOX_APP_KEY er satt i .env / GitHub Secrets. -->
-          <div class="cloud-card" id="cloud-card-dropbox" style="display:none">
-            <div class="cloud-card-header">
-              <svg viewBox="0 0 43 40" width="24" height="24"><path fill="#0061ff" d="M12.5 0L0 7.95l12.5 7.95L25 7.95zm18 0L18 7.95l12.5 7.95L43 7.95zM0 23.85l12.5 7.95L25 23.85l-12.5-7.95zm30.5-7.95L18 23.85l12.5 7.95L43 23.85zM12.5 34.45L25 26.5l-12.5-7.95L0 26.5z"/></svg>
-              <div class="cloud-card-name">Dropbox</div>
-            </div>
-            <div class="cloud-disconnected">
-              <button class="btn-primary" data-cloud-connect="dropbox" data-i18n="publish.connect">Koble til</button>
-            </div>
-            <div class="cloud-connected" style="display:none">
-              <div class="cloud-card-info">
-                <div><span data-i18n="publish.account">Konto</span>: <span class="cloud-account-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.folder">Mappe</span>: <span class="cloud-folder-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.lastUpload">Siste</span>: <span class="cloud-last-upload cloud-info-value">—</span></div>
-              </div>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-enabled="dropbox">
-                <span data-i18n="publish.enabled">Aktivert</span>
-              </label>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-auto="dropbox">
-                <span data-i18n="publish.autoUpload">Last opp automatisk etter opptak</span>
-              </label>
-              <div class="cloud-actions-row">
-                <button class="btn-secondary btn-sm" data-cloud-pick-folder="dropbox" data-i18n="publish.pickFolder">Velg mappe…</button>
-                <button class="btn-ghost" data-cloud-disconnect="dropbox" data-i18n="publish.disconnect">Koble fra</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- OneDrive — skjult inntil videre. Backend-koden + tester er bevart;
-               re-aktivér ved å fjerne style="display:none" når Azure-app er klar
-               og ONEDRIVE_CLIENT_ID er satt i GitHub Secrets. -->
-          <div class="cloud-card" id="cloud-card-onedrive" style="display:none">
-            <div class="cloud-card-header">
-              <svg viewBox="0 0 256 167" width="24" height="24"><path fill="#0364b8" d="M165.7 87.8L154 36.5l-12.4 31.6 13.7 19.6z"/><path fill="#0078d4" d="M154 36.5c-12.6-21.7-40.4-29-62.1-16.4-9.3 5.4-16.4 13.9-20 24l8.1 32.4 38.4-13.1z"/><path fill="#1490df" d="M80 76.5c-6-1-12-1-18 .4-12.6 3-23 12-27.8 24.2L155 122.5z"/><path fill="#28a8ea" d="M34.2 101.1C13.8 107 1.5 127.5 7.4 147.9c4.7 16.4 19.7 27.7 36.7 27.7H210l-55-53.1z"/></svg>
-              <div class="cloud-card-name">OneDrive</div>
-            </div>
-            <div class="cloud-disconnected">
-              <button class="btn-primary" data-cloud-connect="onedrive" data-i18n="publish.connect">Koble til</button>
-            </div>
-            <div class="cloud-connected" style="display:none">
-              <div class="cloud-card-info">
-                <div><span data-i18n="publish.account">Konto</span>: <span class="cloud-account-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.folder">Mappe</span>: <span class="cloud-folder-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.lastUpload">Siste</span>: <span class="cloud-last-upload cloud-info-value">—</span></div>
-              </div>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-enabled="onedrive">
-                <span data-i18n="publish.enabled">Aktivert</span>
-              </label>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-auto="onedrive">
-                <span data-i18n="publish.autoUpload">Last opp automatisk etter opptak</span>
-              </label>
-              <div class="cloud-actions-row">
-                <button class="btn-secondary btn-sm" data-cloud-pick-folder="onedrive" data-i18n="publish.pickFolder">Velg mappe…</button>
-                <button class="btn-ghost" data-cloud-disconnect="onedrive" data-i18n="publish.disconnect">Koble fra</button>
-              </div>
-            </div>
-          </div>
+          <!-- Dropbox- og OneDrive-kortene (skjult med display:none siden de
+               kom) ble FJERNET 2026-08: uten DROPBOX_APP_KEY/ONEDRIVE_CLIENT_ID
+               kan ingen build koble til, og et usynlig kort er død DOM, ikke en
+               feature. Backend-koden + testene lever videre; gjenoppbygg
+               kortet etter Google Drive-malen over når app-nøklene finnes
+               (publish-page.ts: VISIBLE_SERVICES må utvides tilsvarende). -->
 
         </div><!-- /cloud-grid -->
 
@@ -1665,7 +1593,7 @@
         </div>
       </div>
 
-      <div class="card" id="webhook-notify-card">
+      <div class="card">
         <div class="card-title" data-i18n="notify.webhookTitle">Webhook (Slack / Discord / Teams)</div>
         <div class="card-desc notify-webhook-intro" data-i18n="notify.webhookIntro">
           Send varsler til en chat-kanal i tillegg til e-post. Lim inn webhook-URL fra Slack, Discord eller Teams.
@@ -1718,27 +1646,26 @@
         <div class="card">
           <div class="card-title" data-i18n="video.qualityTitle">Kvalitet</div>
           <label class="form-label" data-i18n="video.resolution">OPPLØSNING</label>
+          <!-- Ingen statiske «~X GB/t»-estimater: tallene forutsatte H.264 med
+               auto-bitrate og ingenting oppdaterte dem når kodek (H.265) eller
+               egendefinert bitrate endret regnestykket. -->
           <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr 1fr">
             <label class="option-card">
               <input type="radio" name="video-resolution" value="480p" />
               <div class="option-card-name">480p</div>
-              <div class="option-card-desc" id="est-480p">~1.5 GB / t</div>
             </label>
             <label class="option-card">
               <input type="radio" name="video-resolution" value="720p" />
               <div class="option-card-name">720p</div>
-              <div class="option-card-desc" id="est-720p">~3.5 GB / t</div>
             </label>
             <label class="option-card">
               <input type="radio" name="video-resolution" value="1080p" checked />
               <div class="option-card-name">1080p</div>
               <div class="option-card-badge" data-i18n="video.recommended">Anbefalt</div>
-              <div class="option-card-desc" id="est-1080p">~7 GB / t</div>
             </label>
-            <label class="option-card" id="video-res-2160p">
+            <label class="option-card">
               <input type="radio" name="video-resolution" value="2160p" />
               <div class="option-card-name">4K</div>
-              <div class="option-card-desc" id="est-2160p">~22 GB / t</div>
             </label>
           </div>
           <div id="video-res-warning" class="form-hint" style="display:none;color:var(--warning,#d08700);margin-top:4px"></div>
@@ -1886,13 +1813,9 @@
           </div>
           <label class="toggle"><input type="checkbox" id="opt-autostart" /><span class="toggle-track"></span></label>
         </div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="general.showOnStartup">Vis vindu ved oppstart</div>
-            <div class="toggle-desc" data-i18n="general.showOnStartupDesc">Åpner vinduet automatisk når programmet starter. Ellers starter det diskret i systemfeltet.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-show-on-startup" /><span class="toggle-track"></span></label>
-        </div>
+        <!-- «Vis vindu ved oppstart» (opt-show-on-startup) ble FJERNET 2026-08
+             etter eierbeslutning: ingenting i noen build leste verdien, så
+             bryteren lagret et valg uten virkning. -->
         <div class="toggle-row">
           <div>
             <div class="toggle-title" data-i18n="general.askOpenEditor">Spør om redigering etter opptak</div>
@@ -1907,7 +1830,7 @@
           <span data-i18n="general.currentVersion">Nåværende versjon:</span>
           <span id="app-version" class="version-badge">—</span>
         </div>
-        <div id="update-status-row" class="update-status-row">
+        <div class="update-status-row">
           <span class="update-status-dot" id="update-status-dot"></span>
           <span id="update-status-text" class="update-status-text">—</span>
         </div>
@@ -2011,7 +1934,7 @@
            unprompted mid-service" are different bars — see
            general-page.ts's setupLearningSummaryCard(), which also refuses to
            run this while a recording is active. -->
-      <div class="card" id="learning-summary-card">
+      <div class="card">
         <div class="card-title" data-i18n="general.learningCardTitle">Hva appen har lagt merke til</div>
         <p class="card-desc" data-i18n="general.learningCardDesc">Disse observasjonene finnes for at den automatiske gjenkjenningen skal kunne bli bedre — det er rettelsene dine som lærer den opp. Ingenting herfra deles med noen med mindre anonym diagnostikk er slått på.</p>
         <p class="card-desc" data-i18n="general.learningCardWhere">Alt lagres lokalt, sammen med opptaket det gjelder. Sletter du et opptak, forsvinner observasjonene fra det opptaket også.</p>
@@ -2045,7 +1968,7 @@
            than carrying data-i18n fallbacks because every one of them
            interpolates a number — the same reason the learning-summary lines
            above have none. -->
-      <div class="card" id="local-nudge-card">
+      <div class="card">
         <div class="card-title" data-i18n="general.localNudgeCardTitle">Hva appen har justert</div>
         <p class="card-desc" data-i18n="general.localNudgeCardDesc">Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.</p>
         <div class="toggle-row">
@@ -2172,10 +2095,10 @@
            integrations toggle — chapters/highlights always work on-device; this
            only upgrades the summary/title prose from a language model. The key is
            stored in the OS keychain only, never in settings or a bundle. -->
-      <div class="card" id="integrations-companion-card">
+      <div class="card">
         <div class="card-title" data-i18n="companion.settingsTitle">Prekenhjelp — AI-oppsummering (valgfritt)</div>
         <p class="card-desc" data-i18n="companion.settingsDesc">Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.</p>
-        <div class="form-row" id="integrations-companion-key-row">
+        <div class="form-row">
           <input type="password" class="form-input" id="integration-companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
           <button class="btn-ghost btn-sm" id="btn-companion-apikey-save" data-i18n="companion.keySave">Lagre</button>
           <button class="btn-ghost btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
@@ -3024,7 +2947,7 @@
     </div>
 
     <!-- Publishing options -->
-    <div class="export-publish-section" id="export-publish-section">
+    <div class="export-publish-section">
       <div class="export-section-label" data-i18n="editor.exportPublish">Publisering</div>
       <div id="export-publish-options" class="export-publish-options"></div>
       <a href="#" id="export-publish-configure" class="export-publish-configure" style="display:none" data-i18n="editor.exportPublishConfigure">Konfigurer publisering →</a>
