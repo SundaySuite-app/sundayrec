@@ -1064,15 +1064,21 @@ sidecar paths) are unit-tested in `sundayrec-core::integrations`; the HTTP
 submissions + the `sundayedit://` launch reuse the always-present `reqwest`/opener
 (no new dep, no feature) and are **NETWORK-UNVERIFIED**.
 
-⚠️ **Seam gap found in the 2026-08-08 burndown:** every one of these commands
-is registered but reachable from **no** UI path — the Sunday-suite panel's
-`window.api` methods are permanent stubs in api-shim.ts
-(`getIntegrationSettings: async () => ({ enabled: false })`,
-`setIntegrationSettings`, `songSetApiKey: async () => true`, …), so the panel's
-toggles show «Lagret ✓» while persisting **nothing**, and its API-key save
-never reaches the keychain. The steps below can therefore only be exercised
-through the IPC harness today; do not read the panel's receipts as proof of
-anything until the shim is wired.
+⚠️ **Seam gap found in the 2026-08-08 burndown — CLOSED by PR #114
+(2026-08-09):** the Sunday-suite panel's `window.api` methods were permanent
+stubs in api-shim.ts, so the toggles showed «Lagret ✓» while persisting
+nothing and a pasted API key never reached the keychain. The stubs are now
+wired to the real `integrations_*` commands (all of them left the
+`unreachable` set in `scripts/command-reachability-baseline.json`), and the
+panel's receipts are honest: «Lagret ✓» appears only after the IPC answered, a
+failed save shows its reason instead of the chip, and the key field's ✓ waits
+for the keychain write. The renderer half of that seam is pinned in
+`e2e/integrations.spec.ts`; the steps below exercise the backend half.
+
+- VERIFIED-BY: e2e/integrations.spec.ts::the panel renders the STORED settings and a toggle's receipt follows a real persist
+- VERIFIED-BY: e2e/integrations.spec.ts::a failed integrations save says so — and never shows «Lagret ✓»
+- VERIFIED-BY: e2e/integrations.spec.ts::the Song API key ✓ appears only after the keychain write happened
+- VERIFIED-BY: e2e/integrations.spec.ts::a failed keychain write shows its reason instead of the ✓
 
 1. `integrations_get_settings` / `integrations_set_settings` round-trip the
    opt-in blob under the `integrations` kv key.
