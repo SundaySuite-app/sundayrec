@@ -238,6 +238,12 @@ ts-rs = { version = "12", features = ["serde-compat"] }
 # need just to read free bytes on one volume).
 fs4 = "1.1"
 
+# R3-F: move the Electron-era app-data directory to the OS trash (Papirkurven /
+# Recycle Bin / XDG trash) with user-side recoverability — the consented cleanup
+# in `commands/legacy_data.rs` must NEVER delete bytes in place, and the app's
+# own `.sundayrec-trash` is manifest/file-shaped and cannot purge a directory.
+trash = "5"
+
 # HTTP client for the cloud upload worker + OAuth token exchange/refresh (Fase
 # 6). rustls (no system OpenSSL). The pure decisions (chunk math, retry
 # classification, token-body shaping) live in `sundayrec-core::cloud`; reqwest is
