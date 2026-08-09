@@ -310,7 +310,7 @@ function renderQueue(q: CloudQueueStatus): void {
   }
 
   if (q.entries.length === 0) {
-    panel.innerHTML = `<div class="cloud-queue-empty">${t('publish.queueEmpty', 'Ingen ventende skyopplastinger.')}</div>`
+    panel.innerHTML = `<div class="empty-state">${t('publish.queueEmpty', 'Ingen ventende skyopplastinger.')}</div>`
     return
   }
 
@@ -555,7 +555,7 @@ function renderStreamDestinations(): void {
   list.innerHTML = ''
   if (draftDestinations.length === 0) {
     const empty = document.createElement('div')
-    empty.className = 'stream-destinations-empty'
+    empty.className = 'empty-state'
     empty.textContent = t('publish.streamNoneYet', 'Ingen destinasjoner enda.')
     list.appendChild(empty)
   }

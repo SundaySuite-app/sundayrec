@@ -87,10 +87,7 @@
      rules silently fell back to their grey hardcoded defaults. Bound
      here to the navy system they were meant to reference. */
   --text1:    var(--text);
-  --muted:    var(--text2);
   --surface1: var(--surface);
-  --bg1:      var(--bg);
-  --bg2:      var(--surface);
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -2005,7 +2002,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: var(--surface2);
   border-radius: 8px;
 }
-.cloud-queue-empty { color: var(--text3); font-size: 12px; }
 .cloud-queue-title { margin: 0 0 8px 0; font-size: 14px; }
 .cloud-queue-list  { display: flex; flex-direction: column; gap: 6px; }
 .cloud-queue-row {
@@ -3994,10 +3990,6 @@ button > svg:first-child { flex-shrink: 0; }
   display: flex; flex-direction: column;
   gap: 8px;
 }
-.live-destinations-empty {
-  font-size: 12px; color: var(--text3);
-  padding: 6px 0;
-}
 .live-destination-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 0;
@@ -4102,7 +4094,7 @@ button > svg:first-child { flex-shrink: 0; }
 }
 .live-action-hint {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   line-height: 1.5;
   padding: 4px 2px;
   text-align: center;
@@ -4138,7 +4130,11 @@ button > svg:first-child { flex-shrink: 0; }
   margin-top: 6px;
   margin-bottom: 12px;
 }
-.stream-destinations-empty {
+/* ── Delt inline-tomtilstand ────────────────────────────────────
+   Én form for «ingenting her ennå» inne i kort (fire kort hadde fire
+   divergerende varianter). Full-side-tomtilstanden .search-empty beholder
+   sin større illustrasjonsform. */
+.empty-state {
   padding: 14px;
   text-align: center;
   font-size: 12px; color: var(--text3);
@@ -4146,6 +4142,7 @@ button > svg:first-child { flex-shrink: 0; }
   border: 1px dashed var(--border2);
   border-radius: var(--rsm);
 }
+.empty-state p { margin: 0; }
 .stream-destination-row {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -4177,7 +4174,7 @@ button > svg:first-child { flex-shrink: 0; }
 .editor-thumb-section {
   margin-top: 16px;
   padding: 14px 16px;
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   border: 1px solid var(--border, #2a2a35);
   border-radius: 10px;
 }
@@ -4193,7 +4190,7 @@ button > svg:first-child { flex-shrink: 0; }
 .thumb-preview {
   width: 140px; height: 140px; min-width: 140px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--bg1, #0d0d11);
+  background: var(--bg);
   border: 2px dashed var(--border, #2a2a35);
   border-radius: 8px;
   cursor: pointer;
@@ -4233,7 +4230,7 @@ button > svg:first-child { flex-shrink: 0; }
 .thumb-card-icon {
   display: inline-block;
   border-radius: 4px;
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   object-fit: cover;
   vertical-align: middle;
   flex-shrink: 0;
@@ -4250,7 +4247,7 @@ button > svg:first-child { flex-shrink: 0; }
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   padding: 6px 0;
   user-select: none;
 }
@@ -4264,15 +4261,9 @@ button > svg:first-child { flex-shrink: 0; }
 /* ─── Live overlay configuration ───────────────────────────────────────── */
 .live-overlay-card { margin-top: 16px; }
 .overlay-list { display: flex; flex-direction: column; gap: 10px; }
-.overlay-empty {
-  font-size: 13px;
-  color: var(--muted, #6e6e76);
-  font-style: italic;
-  padding: 12px 0;
-}
 .overlay-row {
   border: 1px solid var(--border, #2a2a32);
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;
@@ -4289,12 +4280,12 @@ button > svg:first-child { flex-shrink: 0; }
 .overlay-row-header .ov-type { flex: 0 0 auto; max-width: 220px; }
 .overlay-row-source {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
 }
-.overlay-row-source .muted { color: var(--muted, #8a8a92); opacity: .8; }
+.overlay-row-source .muted { color: var(--text2); opacity: .8; }
 .overlay-row-hint {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   background: rgba(140,148,255,.06);
   border: 1px solid rgba(140,148,255,.18);
   border-radius: 6px;
@@ -4308,7 +4299,7 @@ button > svg:first-child { flex-shrink: 0; }
 }
 .overlay-ctrl {
   font-size: 11px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   letter-spacing: .3px;
   display: flex;
   flex-direction: column;
