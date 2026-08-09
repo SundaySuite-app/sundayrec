@@ -317,7 +317,8 @@
     "errMaxRange": "Maks varighed skal være mellem 1 og 480 minutter.",
     "prerollEnabledTitle": "Aktivér forhåndsbuffer",
     "prerollEnabledDesc": "Bufferen holder mikrofonen åben i baggrunden hele tiden. Mens den kører, er det den, der fodrer niveaumålerne på Hjem og Livestream, så de virker som før. Slå den til, hvis du har brug for sekunderne, før du trykker optag — Hjem viser, når bufferen kører.",
-    "saveSlot": "Gem tidspunkt"
+    "saveSlot": "Gem tidspunkt",
+    "errCancelTestWake": "Kunne ikke afbryde vækningstesten."
   },
   "wake": {
     "capability": {
@@ -1246,7 +1247,8 @@
     "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
     "overlayToggleTitle": "Slå overlay til/fra",
     "overlayNamePlaceholder": "Navn",
-    "overlayDeleteTitle": "Slet"
+    "overlayDeleteTitle": "Slet",
+    "errStopFailed": "Kunne ikke stoppe strømmen — prøv igen."
   },
   "transcript": {
     "title": "Transskribering",

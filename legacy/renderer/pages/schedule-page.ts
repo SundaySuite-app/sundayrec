@@ -1,6 +1,7 @@
 import { t, tArr, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml, localeTag } from '../helpers'
+import { toast } from '../ui/toast'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
@@ -196,7 +197,13 @@ export function setupSchedulePage(): void {
   })
   document.getElementById('btn-test-wake')?.addEventListener('click', () => { void onTestWakeClick() })
   document.getElementById('btn-cancel-test-wake')?.addEventListener('click', async () => {
-    await window.api.wakeCancelTest()
+    // R3-B: wakeCancelTest is a bare invoke now — a cancel that failed rejects
+    // instead of pretending, and an uncaught rejection here would be silent.
+    try {
+      await window.api.wakeCancelTest()
+    } catch {
+      toast('error', t('schedule.errCancelTestWake', 'Kunne ikke avbryte testen av vekking.'))
+    }
   })
 
   const cleanupProgress = window.api.on('test-wake-progress', (...args: unknown[]) => {

@@ -496,7 +496,10 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
   if (lastStats.active) {
     btn.disabled = true
     if (streamOnlyBtn) streamOnlyBtn.disabled = true
+    // R3-B: streamStop is a bare invoke now — a stop that FAILED (stream
+    // still pushing RTMP) rejects instead of pretending, so surface it.
     try { await window.api.streamStop() }
+    catch { showError(t('live.errStopFailed', 'Kunne ikke stoppe strømmen — prøv igjen.')) }
     finally {
       btn.disabled = false
       if (streamOnlyBtn) streamOnlyBtn.disabled = false

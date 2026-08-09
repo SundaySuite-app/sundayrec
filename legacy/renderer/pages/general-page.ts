@@ -1,4 +1,5 @@
 import { t, loadLocale, currentLang, onLocaleApplied } from '../i18n'
+import { errorCode } from '../error-code-core'
 import { settings, patchSettings } from '../state'
 import { setVal, localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
@@ -373,18 +374,22 @@ async function refreshEmailGate(): Promise<void> {
 }
 
 /** Backend error codes worth translating instead of showing raw. Anything else
- *  is a server/network message the user genuinely needs to read verbatim. */
+ *  is a server/network message the user genuinely needs to read verbatim.
+ *  R3-C: branch on the stable snake code (`errorCode`), never on message prose
+ *  — the old `includes('no_config: smtp host')` broke the moment the Rust
+ *  format string was reworded. The Rust side of the smtp-host seam is
+ *  `commands/email.rs::NO_CONFIG_SMTP_HOST`. */
 function emailErrorText(err: string | undefined): string {
-  if (err?.includes('missing_password')) {
-    return t('notify.errNoPassword', 'Mangler SMTP-passord. Skriv det inn og trykk «Lagre i nøkkelring».')
+  switch (errorCode(err)) {
+    case 'missing_password':
+      return t('notify.errNoPassword', 'Mangler SMTP-passord. Skriv det inn og trykk «Lagre i nøkkelring».')
+    case 'feature_disabled':
+      return t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
+    case 'no_config_smtp_host':
+      return t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com')
+    default:
+      return err ?? '—'
   }
-  if (err?.includes('feature_disabled')) {
-    return t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
-  }
-  if (err?.includes('no_config: smtp host')) {
-    return t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com')
-  }
-  return err ?? '—'
 }
 
 /** Send the backend's localized "email works" message through whichever

@@ -20,6 +20,13 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::settings;
 
+/// The stable snake code for "no SMTP host configured" — the one the renderer's
+/// `emailErrorText` (general-page.ts) branches on via `errorCode()`. A CODE,
+/// not prose: the pre-R3 renderer substring-matched the English message
+/// `"no_config: smtp host"`, which any rewording of the human half would have
+/// silently broken. Seam-tested on both sides (here + error-code-core.test.ts).
+pub const NO_CONFIG_SMTP_HOST: &str = "no_config_smtp_host";
+
 /// Whether this build can send email + whether Gmail is already connected. Works
 /// in every build: `feature_built` reflects the compile-time `email` feature and
 /// `gmail_connected` reads the keychain for a stored Gmail refresh token.
@@ -86,7 +93,7 @@ pub(crate) fn resolve_from_address(
 ///
 /// Errors (all `AppError::Validation`, granular code in the message):
 /// `feature_disabled` · `no_config: Google OAuth not configured` ·
-/// `no_config: smtp host` · `no_config: smtp from` · `missing_password`.
+/// [`NO_CONFIG_SMTP_HOST`] · `no_config: smtp from` · `missing_password`.
 ///
 /// NETWORK-UNVERIFIED against a real provider; a `--no-default-features` build
 /// returns `feature_disabled`.
@@ -125,9 +132,9 @@ pub async fn email_send_test(
             EmailTransportKind::Smtp => {
                 let user = user.filter(|u| !u.trim().is_empty());
                 Transport::Smtp {
-                    host: host
-                        .filter(|h| !h.trim().is_empty())
-                        .ok_or_else(|| AppError::Validation("no_config: smtp host".into()))?,
+                    host: host.filter(|h| !h.trim().is_empty()).ok_or_else(|| {
+                        AppError::Validation(format!("{NO_CONFIG_SMTP_HOST}: smtp host missing"))
+                    })?,
                     port: port.unwrap_or(587),
                     from: resolve_from_address(from.as_deref(), user.as_deref(), &recipient)
                         .ok_or_else(|| AppError::Validation("no_config: smtp from".into()))?,
@@ -248,6 +255,24 @@ pub fn email_has_smtp_password() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_smtp_host_error_leads_with_the_stable_code() {
+        // The Rust half of the general-page.ts seam: the wire message must lead
+        // with `validation: no_config_smtp_host` so `errorCode()` extracts the
+        // exact code the renderer branches on. The prose AFTER the code is free
+        // to change; the prefix is not.
+        let err =
+            crate::error::AppError::Validation(format!("{NO_CONFIG_SMTP_HOST}: smtp host missing"));
+        assert!(err
+            .to_string()
+            .starts_with("validation: no_config_smtp_host"));
+        // And the code itself stays a bare snake token (extractable by the
+        // renderer's `/^[a-z][a-z0-9_]*/` rule).
+        assert!(NO_CONFIG_SMTP_HOST
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'));
+    }
 
     // The keychain itself is only exercised behind `SUNDAYREC_KEYCHAIN_TEST=1`
     // (see `crate::secrets::tests` — an unauthorised keychain BLOCKS on an OS
