@@ -193,6 +193,65 @@ describe("summariseCorrections", () => {
   });
 });
 
+describe("a signal this tool does not know", () => {
+  // The wire vocabulary can grow a NEW signal name before this tool learns it —
+  // the exact "client ahead of the tool" case the band/direction rule already
+  // covers. The same discipline must govern the signal axis: dropping is right
+  // (there is nothing to attribute the rows to), dropping SILENTLY reads as
+  // "fewer corrections", which is the quiet loss the file's own header refuses.
+  const alien = band("sermon_pick", "earlier", "30_60s", 40);
+
+  it("does not read as an empty corpus without a word about the rows", () => {
+    const text = renderReport({
+      summary: { ...emptySummary, correctionBands: [alien] },
+      channels,
+      bar: BAR,
+      generatedAt: "2026-08-09T00:00:00.000Z",
+    });
+    expect(text).toContain("does not recognise");
+    expect(text).toContain("The client is ahead of the tool");
+    expect(text).not.toContain("%");
+  });
+
+  it("is called out beside real counts too, not only over an otherwise-empty corpus", () => {
+    const text = renderReport({
+      summary: {
+        ...emptySummary,
+        correctionBands: [band("sermon_start", "earlier", "30_60s", 7), alien],
+      },
+      channels,
+      bar: BAR,
+      generatedAt: "2026-08-09T00:00:00.000Z",
+    });
+    expect(text).toContain("does not recognise");
+  });
+
+  it("history rows under an unknown signal are counted the same way", () => {
+    const text = renderReport({
+      summary: emptySummary,
+      channels,
+      history: {
+        corrections: {
+          rows: [
+            {
+              signal: "sermon_pick",
+              direction: "earlier",
+              band: "30_60s",
+              total: 4,
+            },
+          ],
+          byVersion: [],
+          span: { days: 1, total: 4 },
+        },
+        companion: { rows: [], span: { days: 0 } },
+      },
+      bar: BAR,
+      generatedAt: "2026-08-09T00:00:00.000Z",
+    });
+    expect(text).toContain("does not recognise");
+  });
+});
+
 describe("signTestP — the arithmetic the evidence bar rests on", () => {
   it("reproduces the numbers ab_eval's constants are derived from", () => {
     // "At n = 5 that is 0.0625: a clean sweep still would not be significant.
@@ -228,6 +287,19 @@ describe("parseEvidenceBar", () => {
 
   it("throws rather than defaulting when the constants move", () => {
     expect(() => parseEvidenceBar("// nothing here")).toThrow(
+      /could not read the evidence bar/,
+    );
+  });
+
+  it("does not read a commented-out declaration as the live constant", () => {
+    // The plausible wrong state: someone comments the old line out while moving
+    // or renaming the constant. A parser that reads the comment reports a bar
+    // nobody derived; failing loud is the whole point of the hard error.
+    const ghost = [
+      "// pub const MIN_CORPUS_FOR_ANY_CONCLUSION: usize = 99;",
+      "// pub const MIN_CORPUS_FOR_A_DIRECTION: usize = 5;",
+    ].join("\n");
+    expect(() => parseEvidenceBar(ghost)).toThrow(
       /could not read the evidence bar/,
     );
   });

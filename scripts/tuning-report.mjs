@@ -28,8 +28,9 @@
 // here. Same split, and the same reason, as scripts/promote-release.mjs.
 //
 // ── READ-ONLY, STRUCTURALLY ─────────────────────────────────────────────────
-// There is exactly one HTTP function below, it hardcodes the method, and the
-// only two paths in this file are the two GETs above. `tuning-report.test.mjs`
+// There are exactly two HTTP functions below (`get`, and the 404-tolerant
+// `getOptional` the history route needs), both hardcode GET, and the only
+// three paths in this file are the three routes above. `tuning-report.test.mjs`
 // asserts both properties against the file's own source text, so a later edit
 // that adds a mutating call fails the gate rather than being noticed by a
 // reviewer. A reporting tool that could also act is a tool nobody can run
@@ -129,7 +130,12 @@ const AB_EVAL_PATH = "crates/sundayrec-core/src/ab_eval.rs";
 
 export function parseEvidenceBar(source) {
   const read = (name) => {
-    const m = source.match(new RegExp(`pub const ${name}: usize = (\\d+);`));
+    // Anchored to the start of a line so a commented-out declaration
+    // (`// pub const … = 99;` left behind by a move or rename) can never be
+    // read as the live constant — absence must throw, not report a ghost bar.
+    const m = source.match(
+      new RegExp(`^pub const ${name}: usize = (\\d+);`, "m"),
+    );
     return m ? Number(m[1]) : undefined;
   };
   const anyConclusion = read("MIN_CORPUS_FOR_ANY_CONCLUSION");
@@ -172,6 +178,28 @@ export function signTestP(n, k) {
 }
 
 // ── Shaping the summary into the rows a human reads ─────────────────────────
+
+/**
+ * Corrections whose SIGNAL name this tool does not know at all.
+ *
+ * `summariseCorrections` below iterates the known signals, so a row under a
+ * NEW signal never enters any fold — which is correct (there is nothing to
+ * attribute it to) but used to be silent, and silence here reads as "fewer
+ * corrections": the exact quiet loss the band/direction rule already refuses.
+ * Same normalisation as the fold: history serves `total`, raw serves `n`.
+ */
+export function countUnknownSignalRows(summary, history = null) {
+  const known = new Set(SIGNALS.map(([signal]) => signal));
+  const raw = Array.isArray(summary?.correctionBands)
+    ? summary.correctionBands
+    : [];
+  const folded = Array.isArray(history?.corrections?.rows)
+    ? history.corrections.rows.map((r) => ({ ...r, n: r.total }))
+    : [];
+  return [...raw, ...folded]
+    .filter((r) => !known.has(r?.signal))
+    .reduce((a, r) => a + (Number(r.n) || 0), 0);
+}
 
 /**
  * Fold `correctionBands` into one entry per signal: the counts per band, the
@@ -284,7 +312,13 @@ export function renderReport({
   const historyRead = history !== null && typeof history === "object";
   const signals = summariseCorrections(summary, bar, history);
   const grandTotal = signals.reduce((a, s) => a + s.total, 0);
-  const unrecognised = signals.reduce((a, s) => a + s.unrecognised, 0);
+  // Both axes of vocabulary drift: an unknown band/direction under a known
+  // signal, and a signal name this tool has never heard of. One number,
+  // because the reader's next move is the same for both — update the
+  // vocabulary here, then re-run.
+  const unrecognised =
+    signals.reduce((a, s) => a + s.unrecognised, 0) +
+    countUnknownSignalRows(summary, history);
 
   lines.push(
     "SundayRec — what the fleet's corrections say about the sermon detector",
@@ -412,6 +446,20 @@ export function renderReport({
       );
     }
     lines.push(`      ${renderSkew(s, bar)}`);
+    lines.push("");
+  }
+
+  const unknownSignals = countUnknownSignalRows(summary, history);
+  if (unknownSignals > 0) {
+    lines.push(
+      `  ⚠ ${unknownSignals} correction${unknownSignals === 1 ? "" : "s"} under a signal this tool does not recognise —`,
+    );
+    lines.push(
+      "    dropped, not folded in. The client is ahead of the tool — update BANDS/SIGNALS",
+    );
+    lines.push(
+      "    here from crates/sundayrec-core/src/telemetry/corrections.rs.",
+    );
     lines.push("");
   }
 
