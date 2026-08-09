@@ -504,7 +504,9 @@
       </div>
       <div class="cal-right">
         <div class="card cal-day-detail" id="cal-day-detail" style="display:none">
-          <div class="cal-day-detail-title" id="cal-day-detail-title">Mandag 2. juni</div>
+          <!-- Painted by calendar-page.ts when a day is clicked (the card is
+               hidden until then) — no fake example date in the markup. -->
+          <div class="cal-day-detail-title" id="cal-day-detail-title">—</div>
           <div class="cal-day-events" id="cal-day-events"></div>
           <div class="form-row">
             <label class="form-label" data-i18n="calendar.name">NAVN (forslag fra kirkekalenderen)</label>
@@ -1075,7 +1077,9 @@
           <option value="datetime" data-i18n="files.patternDatetime">Dato + klokkeslett</option>
         </select>
         <label class="form-label mt" data-i18n="files.preview">FORHÅNDSVISNING</label>
-        <div class="preview-box" id="filename-preview">2025-11-02.mp3</div>
+        <!-- Painted by updateFilenamePreview() (main.ts) from today's date and
+             the chosen pattern — no hardcoded example that drifts stale. -->
+        <div class="preview-box" id="filename-preview">—</div>
       </div>
       <div class="card">
         <div class="card-title" data-i18n="files.format">Format &amp; Kvalitet</div>
@@ -1434,10 +1438,12 @@
 
           <div>
             <label class="form-label">PUBLISER VIA</label>
+            <!-- Kun tjenester som faktisk kan kobles til i denne versjonen
+                 står i listen — ingen «kommer senere»-rader (Dropbox/OneDrive
+                 gjenoppstår her sammen med sky-kortene sine den dagen
+                 app-nøklene finnes). -->
             <select class="form-input" id="podcast-service" style="max-width:280px">
               <option value="google-drive">Google Drive</option>
-              <option value="dropbox" disabled>Dropbox (kommer senere)</option>
-              <!-- OneDrive skjult inntil videre — re-aktivér når Azure-app er klar -->
             </select>
           </div>
 

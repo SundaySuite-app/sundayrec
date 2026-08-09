@@ -104,7 +104,7 @@ async function checkBinaryAvailabilityOnce(): Promise<void> {
     if (!status.binaryAvailable) {
       btn.disabled = true
       btn.title = t('transcript.unavailableHint',
-        'Transkribering er ikke tilgjengelig i denne bygging. Sjekk Innstillinger → System for plattform-informasjon.')
+        'Transkribering er ikke tilgjengelig i denne versjonen av appen på denne maskinen.')
       btn.textContent = t('transcript.unavailable', '✕ Ikke tilgjengelig')
     }
   } catch {

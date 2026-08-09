@@ -659,7 +659,7 @@ function updateStartButtonState(): void {
   if (reason !== 'noEnabled') {
     const link = document.createElement('a')
     link.href = '#'
-    link.textContent = t('live.blockedGoSettings', 'Åpne Deling → Publisering')
+    link.textContent = t('live.blockedGoSettings', 'Åpne Innstillinger → Deling')
     link.addEventListener('click', e => {
       e.preventDefault()
       navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })

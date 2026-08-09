@@ -1129,7 +1129,7 @@ export function applyGeneralSettingsToUI(): void {
     if (el) el.textContent = displayVersion
   })
 
-  setUpdateStatus('', t('update.checkHint', 'Klikk «Se etter oppdateringer» for å sjekke'))
+  setUpdateStatus('', t('update.checkHint', 'Klikk «Se etter oppdateringer nå» for å sjekke'))
   updateEditorClipUI()
   // The DOM now mirrors settings — rebase the bindings' baselines.
   resyncBoundSettings()

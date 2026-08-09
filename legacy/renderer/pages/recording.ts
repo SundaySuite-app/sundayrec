@@ -512,7 +512,7 @@ export function translateNativeError(code: string): string {
     case 'ffmpeg_missing':         return t('recording.errorFfmpegMissing',      'Intern feil: opptaksbinær mangler — reinstaller appen')
     case 'stuck_recording':        return t('recording.errorStuck',              'Opptaket stoppet — ingen lyd fra enheten i 60 sekunder')
     case 'invalid_opts':           return t('recording.errorInvalidOpts',        'Ugyldige opptaksinnstillinger — start på nytt og prøv igjen')
-    case 'no_save_folder':         return t('recording.errorNoSaveFolder',       'Lagringsmappen er ikke valgt — gå til Innstillinger → Lagring')
+    case 'no_save_folder':         return t('recording.errorNoSaveFolder',       'Lagringsmappen er ikke valgt — gå til Innstillinger → Opptak')
     default:
       // Unknown error code — show a generic message instead of raw machine code.
       // The technical detail is still logged for diagnostics.
