@@ -1,6 +1,6 @@
 import { t, tArr, currentLang , onLocaleApplied } from '../i18n'
 import { settings } from '../state'
-import { escHtml, isoDate } from '../helpers'
+import { escHtml, isoDate , localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { getChurchHolidays } from '../../shared/church-calendar'
@@ -127,7 +127,7 @@ function openDayDetail(iso: string, holiday: string): void {
   if (hintCard)   hintCard.style.display   = 'none'
 
   const d = new Date(iso + 'T12:00:00')
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
+  const locale = localeTag()
   if (titleEl) titleEl.textContent = d.toLocaleDateString(locale, { weekday:'long', day:'numeric', month:'long' })
   if (dateEl)  dateEl.value = iso
 
@@ -262,7 +262,7 @@ export function renderPlannedList(): void {
     list.innerHTML = `<div style="color:var(--text3);font-size:13px">${t('calendar.noPlanned')}</div>`
     return
   }
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
+  const locale = localeTag()
   list.innerHTML = sp.map(s => {
     const gIdx    = (settings.specialRecordings ?? []).indexOf(s)
     const dateStr = new Date(s.date + 'T12:00:00').toLocaleDateString(locale, {

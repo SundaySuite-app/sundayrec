@@ -1,6 +1,6 @@
 import { t, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { setVal, setRadio } from '../helpers'
+import { setVal, setRadio, localeTag } from '../helpers'
 import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
@@ -96,7 +96,7 @@ async function showAutoSampleRate(): Promise<void> {
     const ctx = new Ctx()
     const hz = ctx.sampleRate
     void ctx.close()
-    el.textContent = hz ? ` · ${hz.toLocaleString('nb-NO')} Hz` : ''
+    el.textContent = hz ? ` · ${hz.toLocaleString(localeTag())} Hz` : ''
   } catch {
     el.textContent = ''
   }

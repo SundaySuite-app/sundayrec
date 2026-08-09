@@ -1,6 +1,6 @@
 import { t, tArr, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { escHtml } from '../helpers'
+import { escHtml, localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { remindAutostartIfNeeded } from '../autostart-reminder'
@@ -309,7 +309,7 @@ function renderWakeSummary(state: NextRecordingState = getNextRecordingState()):
     // hero can never disagree about when the machine gets up.
     const wakeAt = state.wake?.atMs ?? null
     const when = wakeAt
-      ? new Date(wakeAt).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+      ? new Date(wakeAt).toLocaleString(localeTag(), {
           weekday: 'short', hour: '2-digit', minute: '2-digit',
         })
       : null
@@ -333,7 +333,7 @@ function renderWakeSummary(state: NextRecordingState = getNextRecordingState()):
     testEl.textContent = t('wake.summary.neverTested', 'Aldri testet. Kjør «Test wake nå» under Detaljer før første gudstjeneste.')
     return
   }
-  const when = new Date(last.timestamp).toLocaleString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+  const when = new Date(last.timestamp).toLocaleString(localeTag(), {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
   testEl.textContent = last.kind === 'test_ok'
@@ -502,7 +502,7 @@ function paintWakeReliability(caps: WakeCaps, status: WakeVerify, lastTest: Wake
     const lastText = document.getElementById('wake-last-test-text')
     if (lastDot && lastText) {
       if (lastTest) {
-        const when = new Date(lastTest.timestamp).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+        const when = new Date(lastTest.timestamp).toLocaleString(localeTag(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
         if (lastTest.kind === 'test_ok') {
           lastDot.className = 'wake-status-dot ok'
           lastText.textContent = `${t('wake.lastTest.ok', 'Siste test OK')} (${when}, ${t('wake.test.delay', 'forsinkelse')} ${lastTest.deltaSec}s)`
@@ -728,7 +728,7 @@ function setWakeStatus(cls: string, key: string, fallback: string, count?: numbe
   if (count != null) text = text.replace('{n}', String(count))
   if (nextWake) {
     const d = new Date(nextWake)
-    const dateStr = d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const dateStr = d.toLocaleString(localeTag(), { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     text += ` — ${dateStr}`
   }
   txt.textContent = text

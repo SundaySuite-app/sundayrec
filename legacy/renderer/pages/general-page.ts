@@ -1,6 +1,6 @@
 import { t, loadLocale, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { setVal } from '../helpers'
+import { setVal, localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { toast } from '../ui/toast'
 import { openModal } from '../ui/modal-manager'
@@ -614,7 +614,7 @@ async function refreshTelemetryCard(): Promise<void> {
     parts.push(t('general.telemetryQueueFailed', '{n} kunne ikke sendes.').replace('{n}', String(q.failed)))
   }
   if (q?.oldestAt) {
-    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(currentLang)))
+    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(localeTag())))
   }
   if (q?.lastError) {
     parts.push(t('general.telemetryQueueLastError', 'Siste feil: {error}').replace('{error}', q.lastError))

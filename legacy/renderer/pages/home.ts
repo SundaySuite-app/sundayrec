@@ -1,6 +1,6 @@
 import { t, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
+import { fmtCountdown, fmtStorageHours, fmtDate, localeTag } from '../helpers'
 import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
@@ -1192,7 +1192,7 @@ export async function refreshHome(): Promise<void> {
 function fmtCtx(nowMs = Date.now()): FormatCtx {
   return {
     t,
-    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    parts: intlParts(localeTag()),
     nowMs,
   }
 }

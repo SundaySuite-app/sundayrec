@@ -1,5 +1,5 @@
 import { settings, patchSettings } from '../state'
-import { flashSaved, escHtml } from '../helpers'
+import { flashSaved, escHtml, localeTag } from '../helpers'
 import { t } from '../i18n'
 import { notifyLivePageDestinationsChanged } from './live-page'
 import { closeModal, openModal } from '../ui/modal-manager'
@@ -215,7 +215,7 @@ function renderCard(service: CloudServiceId, status: CloudStatus): void {
     if (folderNameEl)  folderNameEl.textContent  = status.folderName ?? status.folderPath ?? 'Rotmappe'
     if (lastUploadEl) {
       lastUploadEl.textContent = status.lastUpload
-        ? (status.lastUploadOk ? '✓ ' : '✕ ') + new Date(status.lastUpload).toLocaleString('no')
+        ? (status.lastUploadOk ? '✓ ' : '✕ ') + new Date(status.lastUpload).toLocaleString(localeTag())
         : '—'
     }
     renderReauthBanner(card, service, status.needsReauth === true)
@@ -335,7 +335,7 @@ function renderQueue(q: CloudQueueStatus): void {
     const line2 = document.createElement('div')
     line2.className = 'cloud-queue-line2'
     const nextStr = e.nextAttempt > Date.now()
-      ? `${t('publish.queueNextAttempt', 'Neste forsøk')}: ${new Date(e.nextAttempt).toLocaleTimeString()}`
+      ? `${t('publish.queueNextAttempt', 'Neste forsøk')}: ${new Date(e.nextAttempt).toLocaleTimeString(localeTag())}`
       : ''
     line2.textContent = [
       `${t('publish.queueAttempts', 'Forsøk')}: ${e.attempts}`,
