@@ -4,7 +4,7 @@
 //! Both gather live facts (ffmpeg, devices, disk) and delegate the *decisions*
 //! / *formatting* to the pure `sundayrec-core` modules that carry the tests.
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::db::Db;
 use crate::diagnostics::{run_diagnostics as run, DiagnosticsReport};
@@ -16,14 +16,11 @@ use sundayrec_core::preflight::PreflightFinding;
 /// "alt klart"). Resolves the OS Documents dir for the default save folder.
 #[tauri::command]
 pub async fn run_preflight(app: AppHandle, db: State<'_, Db>) -> AppResult<Vec<PreflightFinding>> {
-    // Documents dir for the default `<documents>/SundayRec` save folder; fall
-    // back to the app-data dir if the platform can't report Documents.
-    let documents = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    Ok(preflight(&db.pool, &documents).await)
+    // Documents dir for the default `<Documents>/SundayRec` save folder (with
+    // the app-data fallback). `None` — NOT a relative "." — when the platform
+    // reports neither; the preflight then flags the folder as not writable.
+    let documents = crate::save_folder::documents_dir(&app);
+    Ok(preflight(&db.pool, documents.as_deref()).await)
 }
 
 /// Run diagnostics: build the markdown report, save it under the app-data dir,

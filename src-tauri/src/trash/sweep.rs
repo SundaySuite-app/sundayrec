@@ -58,17 +58,16 @@ async fn tick(app: &AppHandle) {
         return; // pre-setup; the next tick will find it
     };
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    let dir = s.save_folder.unwrap_or_else(|| {
-        app.path()
-            .document_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    });
-    if dir.is_empty() {
-        return;
-    }
-
-    let sweep_dir = std::path::PathBuf::from(dir);
+    // The canonical resolver (R3). The pre-R3 fallback was the BARE Documents
+    // directory — this sweep then purged `<Documents>/.sundayrec-trash`, the
+    // PARENT of the folder the recorder writes into, not the recordings trash.
+    let sweep_dir = match crate::save_folder::resolve(app, s.save_folder.as_deref()) {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("trash: auto-purge skipped, no save folder: {e}");
+            return;
+        }
+    };
     let now = store::now_ms();
     let purged = match tokio::task::spawn_blocking(move || {
         super::purge_older_than(&sweep_dir, super::AUTO_PURGE_DAYS, now)
@@ -98,5 +97,38 @@ async fn tick(app: &AppHandle) {
             super::AUTO_PURGE_DAYS
         ),
         Err(e) => tracing::warn!("trash: purged files but could not drop history rows: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn the_sweep_targets_the_recordings_subfolder_not_bare_documents() {
+        // The exact resolution `tick()` performs with no folder configured.
+        // Before R3 this file resolved the BARE Documents dir itself, so the
+        // sweep purged `<Documents>/.sundayrec-trash` — a directory in the
+        // PARENT of where recordings actually live.
+        let dir =
+            crate::save_folder::resolve_with_documents(None, Some(Path::new("/Users/x/Documents")))
+                .unwrap();
+        assert_eq!(dir, PathBuf::from("/Users/x/Documents/SundayRec"));
+    }
+
+    #[test]
+    fn tick_resolves_only_through_the_canonical_resolver() {
+        // Source ratchet: fails if someone re-inlines a Documents lookup here.
+        let src = include_str!("sweep.rs");
+        assert!(
+            src.contains("save_folder::resolve("),
+            "tick() must resolve via crate::save_folder::resolve"
+        );
+        // Split so this test's own source doesn't match itself.
+        let needle = concat!("document", "_dir");
+        assert!(
+            !src.contains(needle),
+            "sweep must not resolve the Documents dir itself (pre-R3 bare-Documents bug)"
+        );
     }
 }

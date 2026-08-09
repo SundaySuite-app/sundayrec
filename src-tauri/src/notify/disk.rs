@@ -152,18 +152,19 @@ async fn observe(
     }
 }
 
-/// The volume to measure: the configured save folder when it exists, else the
-/// Documents directory. Same fallback as the `get_disk_space` command — a
-/// configured folder that has been unplugged would otherwise make the probe
-/// fail rather than report the disk the recording is actually landing on.
+/// The volume to measure: the canonically-resolved save folder
+/// ([`crate::save_folder::resolve`], R3) when it exists on disk, else the base
+/// directory it hangs under. Same existence fallback as the `get_disk_space`
+/// command — a configured folder that has been unplugged (or a default
+/// `<Documents>/SundayRec` that hasn't been created yet) would otherwise make
+/// the probe fail rather than report the disk the recording is landing on.
 fn save_folder(app: &AppHandle, configured: Option<&str>) -> Option<std::path::PathBuf> {
-    if let Some(folder) = configured.map(str::trim).filter(|f| !f.is_empty()) {
-        let path = std::path::PathBuf::from(folder);
-        if path.exists() {
-            return Some(path);
+    if let Ok(folder) = crate::save_folder::resolve(app, configured) {
+        if folder.exists() {
+            return Some(folder);
         }
     }
-    app.path().document_dir().ok()
+    crate::save_folder::documents_dir(app)
 }
 
 #[cfg(test)]

@@ -226,26 +226,17 @@ pub const MEDIA_EXTENSIONS: &[&str] = &[
 pub const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "vtt"];
 
 /// The effective recordings root: the configured `save_folder`, or the default
-/// `<Documents>/SundayRec`. Mirrors `scheduler::resolve_save_folder` — the
-/// folder the recorder actually writes into — so a root-scoped guard and the
-/// recorder can never disagree about where recordings live.
+/// `<Documents>/SundayRec` — via [`crate::save_folder::resolve`], the same
+/// resolver the recorder itself uses, so a root-scoped guard and the recorder
+/// can never disagree about where recordings live. Errs (fail CLOSED) when no
+/// root can be resolved — the pre-R3 fallback was a RELATIVE `./SundayRec`,
+/// which would have scoped the guard to the process working directory.
 pub async fn recordings_root<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     db: &crate::db::Db,
-) -> PathBuf {
-    use tauri::Manager;
+) -> crate::error::AppResult<PathBuf> {
     let settings = crate::settings::load(&db.pool).await.unwrap_or_default();
-    if let Some(f) = settings.save_folder.as_deref() {
-        if !f.trim().is_empty() {
-            return PathBuf::from(f);
-        }
-    }
-    let base = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("SundayRec")
+    crate::save_folder::resolve(app, settings.save_folder.as_deref())
 }
 
 #[cfg(test)]

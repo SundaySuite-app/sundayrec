@@ -435,7 +435,7 @@ pub(crate) fn build_opts(
     // local UI state that isn't persisted); `None` uses the setting (scheduler).
     video_override: Option<bool>,
 ) -> AppResult<RecordingOpts> {
-    let folder = resolve_save_folder(app, settings);
+    let folder = crate::save_folder::resolve(app, settings.save_folder.as_deref())?;
     std::fs::create_dir_all(&folder)?;
 
     // Video is on when the user wants it (override, else the setting) AND a camera
@@ -526,21 +526,6 @@ pub(crate) fn build_opts(
     })
 }
 
-/// `<saveFolder>` or the default `<Documents>/SundayRec`.
-fn resolve_save_folder(app: &AppHandle, settings: &Settings) -> std::path::PathBuf {
-    if let Some(f) = &settings.save_folder {
-        if !f.trim().is_empty() {
-            return std::path::PathBuf::from(f);
-        }
-    }
-    let base = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    base.join("SundayRec")
-}
-
 fn format_ext(f: FileFormat) -> &'static str {
     match f {
         FileFormat::Mp3 => "mp3",
@@ -556,12 +541,8 @@ fn format_ext(f: FileFormat) -> &'static str {
 
 async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
     use sundayrec_core::preflight::PreflightSeverity;
-    let documents = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let outcome = crate::preflight::run_preflight_detailed(pool, &documents).await;
+    let documents = crate::save_folder::documents_dir(app);
+    let outcome = crate::preflight::run_preflight_detailed(pool, documents.as_deref()).await;
     let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()

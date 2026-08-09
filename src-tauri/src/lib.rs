@@ -74,6 +74,9 @@ pub mod preflight;
 #[cfg(feature = "publish")]
 pub mod publish;
 pub mod recorder;
+// R3: THE save-folder resolution seam — every "configured folder or the
+// Documents default" question goes through here (7 divergent copies before).
+pub mod save_folder;
 pub mod scheduler;
 pub mod secrets;
 pub mod settings;
