@@ -10,7 +10,6 @@ export default tseslint.config(
       "target",
       "src-tauri/target",
       "src-tauri/gen",
-      "reference/**",
       // Generated ts-rs bindings (synced by scripts/sync-bindings.mjs) — not
       // hand-written code, so not linted.
       "legacy/bindings/**",

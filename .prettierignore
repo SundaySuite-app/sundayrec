@@ -10,9 +10,6 @@ target
 # break the byte-for-byte parity with the old app. Leave it exactly as shipped.
 legacy
 
-# Kept React reference (hooks) — not part of the build.
-reference
-
 # ts-rs bindings: src/lib/bindings is the transient regen target; the committed
 # copy lives at legacy/bindings (already covered by the `legacy` entry above —
 # generated code is never reformatted).

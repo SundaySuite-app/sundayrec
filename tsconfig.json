@@ -13,5 +13,5 @@
     "noEmit": true
   },
   "include": ["legacy", "e2e", "playwright.config.ts"],
-  "exclude": ["reference", "node_modules", "dist", "src-tauri"]
+  "exclude": ["node_modules", "dist", "src-tauri"]
 }

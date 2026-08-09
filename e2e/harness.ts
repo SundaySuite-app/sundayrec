@@ -228,6 +228,30 @@ export const BOOT_FIXTURES: Fixtures = {
 };
 
 /**
+ * Spy on `settings_save`: record every curated payload the renderer sends, at
+ * the exact boundary where the curated subset leaves the renderer on its way
+ * to sqlite. Shared by the seam specs (settings-seam, update-channel) — the
+ * #113 family of bugs is pinned on this observable.
+ */
+export const SETTINGS_SAVE_SPY = fn(
+  "(args) => { const w = window; (w.__settingsSaves = w.__settingsSaves || []).push(args && args.settings); return args && args.settings; }",
+);
+
+/** Every curated payload `settings_save` has received so far. */
+export async function settingsSavePayloads(
+  page: Page,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __settingsSaves?: Array<Record<string, unknown>>;
+        }
+      ).__settingsSaves ?? [],
+  );
+}
+
+/**
  * Flip a settings toggle the way a person does.
  *
  * The `<input type="checkbox">` itself is `opacity: 0; width: 0; height: 0` (see
