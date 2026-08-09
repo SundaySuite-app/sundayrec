@@ -199,23 +199,14 @@ export function setupGeneralPage(): void {
     await refreshEmailGate()
   })
 
-  // Gmail OAuth connect (btn-email-gmail-connect) has no working backend yet
-  // (2026-08 audit: gmailConnect was a permanent-failure stub with no `ok`
-  // field, so a click always produced an empty "Kunne ikke koble til Google: "
-  // alert) — the button is disabled in the markup with an honest reason
-  // instead, so there is nothing to wire here until the feature is built.
-
-  document.getElementById('btn-email-gmail-disconnect')?.addEventListener('click', async () => {
-    const ok = await confirmDialog({
-      title:        t('dialog.gmailDisconnectTitle', 'Koble fra Google-kontoen?'),
-      message:      t('notify.emailGmailConfirmDisconnect', 'E-postvarsler vil falle tilbake til SMTP.'),
-      confirmLabel: t('dialog.disconnect', 'Koble fra'),
-      danger:       true,
-    })
-    if (!ok) return
-    await window.api.gmailDisconnect()
-    await refreshGmailStatus()
-  })
+  // The Gmail-OAuth card (btn-email-gmail-connect/-disconnect) was REMOVED
+  // from the markup in 2026-08: gmailConnect was a permanent-failure stub with
+  // no `ok` field, so the connect button sat permanently disabled and the
+  // disconnect path could never be reached. The honest gate is no dead button
+  // at all — re-add the card together with the backend if Gmail OAuth is ever
+  // built. (`EmailFacts.gmailConnected` below still reads the REAL
+  // email_status answer, so a future backend lights the send path up without
+  // renderer changes.)
 
   // Note: btn-export / btn-import / btn-restore handlers were removed in v4.31
   // when the System tab was simplified. The corresponding shim methods
@@ -360,7 +351,7 @@ async function refreshEmailGate(): Promise<void> {
   const reason = emailBlockReason(facts, !!recipient)
   const hintText =
     reason === 'noTransport'
-      ? t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.')
+      ? t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Fyll ut SMTP-feltene under «Oppsett av e-postserver (SMTP)».')
       : reason === 'noRecipient'
         ? t('notify.gateTestNoRecipient', 'Skriv inn en mottakeradresse først.')
         : ''
@@ -1113,8 +1104,6 @@ export function applyGeneralSettingsToUI(): void {
   if (passInput) passInput.value = ''
   void refreshEmailGate()
   toggleEmailSection()
-  // Best-effort — failures are non-fatal (the SMTP path still works).
-  void refreshGmailStatus()
 
   // Version display — show full semver (vX.Y.Z) so brukere ser også patch-
   // releases (hotfixes). Tidligere truncated til major.minor noe som skjulte
@@ -1183,44 +1172,6 @@ function toggleEmailSection(): void {
   const emailSect = document.getElementById('email-section')
   const emailErr  = document.getElementById('opt-email-error') as HTMLInputElement | null
   if (emailSect && emailErr) emailSect.style.display = emailErr.checked ? 'block' : 'none'
-}
-
-/**
- * Read the current Gmail-OAuth status from main and update the
- * email-OAuth-card on screen accordingly. Two states:
- *   • Not connected → show "Logg inn med Google" button + default sub-text
- *   • Connected → show "Koble fra"-knapp + "Sender via <email>"-sub-text
- *
- * Also flips the Avansert SMTP <details> closed when Gmail is connected,
- * since the SMTP fields are no longer required.
- */
-async function refreshGmailStatus(): Promise<void> {
-  let status: { connected: boolean; email?: string; needsReauth?: boolean } = { connected: false }
-  try { status = await window.api.gmailStatus() } catch { /* gmail not available — keep defaults */ }
-
-  const connectBtn    = document.getElementById('btn-email-gmail-connect') as HTMLElement | null
-  const disconnectBtn = document.getElementById('btn-email-gmail-disconnect') as HTMLElement | null
-  const statusEl      = document.getElementById('email-gmail-status') as HTMLElement | null
-  const smtpAdvanced  = document.getElementById('email-smtp-advanced') as HTMLDetailsElement | null
-
-  if (status.connected) {
-    if (connectBtn)    connectBtn.style.display = 'none'
-    if (disconnectBtn) disconnectBtn.style.display = ''
-    if (statusEl) {
-      const reauth = status.needsReauth ? ' ' + t('notify.emailGmailReauth', '⚠ Krever ny pålogging') : ''
-      statusEl.textContent = t('notify.emailGmailSendsAs', 'Sender via') + ' ' + (status.email ?? '—') + reauth
-      statusEl.style.color = status.needsReauth ? 'var(--red)' : 'var(--green)'
-    }
-    // Auto-collapse the SMTP advanced section — Gmail handles the send now.
-    if (smtpAdvanced) smtpAdvanced.open = false
-  } else {
-    if (connectBtn)    connectBtn.style.display = ''
-    if (disconnectBtn) disconnectBtn.style.display = 'none'
-    if (statusEl) {
-      statusEl.textContent = t('notify.emailGmailDesc', 'Send via din Gmail-konto — ingen SMTP-konfig.')
-      statusEl.style.color = ''
-    }
-  }
 }
 
 function setCheckbox(id: string, val: boolean): void {
