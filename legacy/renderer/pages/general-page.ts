@@ -939,7 +939,13 @@ function wireUpdateIpcListeners(): void {
       .filter((b): b is HTMLButtonElement => b !== null)
   const setUpdateButtons = (label: string | null, opts?: { disabled?: boolean; show?: boolean }): void => {
     for (const b of updateButtons()) {
-      if (label !== null) b.textContent = label
+      if (label !== null) {
+        // Write the label into the <span>, never the button: btn-toast-install
+        // carries an <svg> icon that a bare `textContent` write used to wipe.
+        const span = b.querySelector('span')
+        if (span) span.textContent = label
+        else b.textContent = label
+      }
       if (opts?.disabled !== undefined) b.disabled = opts.disabled
       if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
     }
@@ -972,7 +978,8 @@ function wireUpdateIpcListeners(): void {
     setUpdateButtons(`↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
     showUpdateToast(
       t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
-      t('update.toastAvailableInstall', 'Versjon {v} — klikk for å laste ned og installere').replace('{v}', v),
+      // Same key as the status row — the two said the same thing in two keys.
+      t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v),
       true
     )
   }))
@@ -986,6 +993,8 @@ function wireUpdateIpcListeners(): void {
     }
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
     setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
+    // If the update toast is still on screen, its bar shows the same download
+    // live (it was previously written while permanently hidden).
     setToastProgress(pct)
   }))
   updateIpcUnsubs.push(window.api.on('update-downloaded', (info: unknown) => {
@@ -1005,6 +1014,7 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-error', (msg: unknown) => {
     hideProgress()
+    setToastProgress(null)
     setUpdateButtons(null, { disabled: false })
     // The dead-man's switch in api-shim fires this when the process is still
     // alive after a relaunch request — tell the user exactly what to do
@@ -1244,25 +1254,37 @@ export function paintActiveUpdateChannel(): void {
     : t('general.updateChannelActiveStable', 'Denne maskinen henter stabile versjoner.')
 }
 
+/**
+ * DELIBERATE exception to the house toast policy (ui/toast.ts auto-dismisses
+ * non-errors): this toast asks the operator a question — install now or not —
+ * and a prompt that dismisses itself is a decision taken by a timer. It stays
+ * until answered or closed with ×.
+ */
 function showUpdateToast(title: string, text: string, showInstall = false): void {
   const toast   = document.getElementById('update-toast')
   const titleEl = document.getElementById('update-toast-title')
   const textEl  = document.getElementById('update-toast-text')
   const actions = document.getElementById('update-toast-actions')
-  const progEl  = document.getElementById('update-toast-progress')
   if (!toast) return
   if (titleEl) titleEl.textContent = title
   if (textEl)  textEl.textContent  = text
   if (actions) actions.style.display = showInstall ? 'block' : 'none'
-  if (progEl)  progEl.style.display  = showInstall ? 'none'  : 'block'
+  // The progress bar is owned by setToastProgress (download events) — a fresh
+  // toast always opens without one.
+  setToastProgress(null)
   // Re-trigger animation
   toast.style.display = 'none'
   requestAnimationFrame(() => { toast.style.display = 'flex' })
 }
 
-function setToastProgress(pct: number): void {
-  const bar = document.getElementById('update-toast-bar') as HTMLElement | null
-  if (bar) bar.style.width = pct + '%'
+/** Download progress inside the update toast. `null` hides the bar (idle,
+ *  finished, error); a number reveals it — previously the bar was written
+ *  while a `display:none` from showUpdateToast kept it permanently hidden. */
+function setToastProgress(pct: number | null): void {
+  const progEl = document.getElementById('update-toast-progress') as HTMLElement | null
+  const bar    = document.getElementById('update-toast-bar') as HTMLElement | null
+  if (progEl) progEl.style.display = pct === null ? 'none' : 'block'
+  if (bar && pct !== null) bar.style.width = pct + '%'
 }
 
 function hideToast(): void {
