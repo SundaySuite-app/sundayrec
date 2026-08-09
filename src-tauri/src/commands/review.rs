@@ -580,6 +580,110 @@ pub async fn stage_import_manifest(
     })
 }
 
+/// The result of [`stage_import_apply`] — the OpResult convention the
+/// integrations commands use (structured `{ ok, error?, … }`, domain failures
+/// never throw), because the renderer's «↧ Stage-kapitler» button branches on
+/// `ok`/`error` and shows the counts on success.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StageImportOutcome {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chapter_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub song_count: Option<usize>,
+}
+
+impl StageImportOutcome {
+    fn err(code: &str) -> Self {
+        StageImportOutcome {
+            ok: false,
+            error: Some(code.into()),
+            chapter_count: None,
+            song_count: None,
+        }
+    }
+}
+
+/// The COMPLETE Stage import: manifest JSON → chapters + service link →
+/// **written to disk** (`<stem>.meta.json` chapters merged in place,
+/// `<stem>.service.json` created). [`stage_import_manifest`] above only maps —
+/// its doc line "the fs writes are left to the shell's sidecar writer" referred
+/// to the Electron shell, which the Tauri port never grew; until this command
+/// existed the «↧ Stage-kapitler» button had a mapper with nowhere to put the
+/// result. INFRA-UNVERIFIED (no real Stage manifest exercised end-to-end yet).
+///
+/// **Path policy: [`crate::commands::path_guard::PathPolicy::UserChosenWrite`]**
+/// for `recording_path`, matching `integrations_sundayedit_import` — this
+/// derives and writes sidecars beside a recording the editor has open, which
+/// may live on an external volume; what matters is that a caller cannot walk
+/// `..` out of the tree or aim the writer at a protected directory.
+#[tauri::command]
+pub fn stage_import_apply(
+    recording_path: String,
+    manifest_json: String,
+    recording_start_ms: i64,
+    duration_sec: Option<i64>,
+    was_streamed: Option<bool>,
+    service_date: Option<String>,
+) -> AppResult<StageImportOutcome> {
+    use crate::commands::path_guard::{self, PathPolicy};
+
+    if recording_path.is_empty() {
+        return Ok(StageImportOutcome::err("invalid_path"));
+    }
+    if path_guard::check(&recording_path, PathPolicy::UserChosenWrite).is_err() {
+        return Ok(StageImportOutcome::err("invalid_path"));
+    }
+    let Some(manifest) = stage::parse_stage_manifest(&manifest_json) else {
+        return Ok(StageImportOutcome::err("invalid_manifest"));
+    };
+
+    let chapters = stage::manifest_to_chapters(&manifest, recording_start_ms, duration_sec);
+    let service_link = stage::build_service_link(
+        &manifest,
+        recording_start_ms,
+        was_streamed,
+        service_date,
+        now_i64(),
+    );
+    let song_count = service_link.setlist.len();
+
+    // Merge the chapters into the existing meta sidecar (speaker/note/… survive).
+    let mut meta =
+        crate::editor::read_sidecar(&recording_path, crate::editor::EditorSidecar::Meta)?
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| serde_json::json!({}));
+    let chapters_value = match serde_json::to_value(&chapters) {
+        Ok(v) => v,
+        Err(_) => return Ok(StageImportOutcome::err("sidecar_write_failed")),
+    };
+    meta["chapters"] = chapters_value;
+    if !crate::editor::write_sidecar(&recording_path, crate::editor::EditorSidecar::Meta, &meta) {
+        return Ok(StageImportOutcome::err("sidecar_write_failed"));
+    }
+
+    // Write the service link (`<stem>.service.json`) — what `getServiceLink`
+    // reads back and what the SundaySong usage submission is built from.
+    let link_json = match serde_json::to_string_pretty(&service_link) {
+        Ok(j) => j,
+        Err(_) => return Ok(StageImportOutcome::err("service_link_write_failed")),
+    };
+    let link_path = sundayrec_core::integrations::service_link_path(&recording_path);
+    if std::fs::write(&link_path, link_json).is_err() {
+        return Ok(StageImportOutcome::err("service_link_write_failed"));
+    }
+
+    Ok(StageImportOutcome {
+        ok: true,
+        error: None,
+        chapter_count: Some(chapters.len()),
+        song_count: Some(song_count),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     //! Review-queue persistence over a temp sqlite store. The Tauri commands take
@@ -1224,6 +1328,90 @@ mod tests {
             assert_eq!(dto.channel, want_channel);
             assert_eq!(dto.message, want_message);
             assert_eq!(dto.id, "x");
+        }
+    }
+
+    // ── stage_import_apply: the complete manifest→sidecars seam ─────────────
+    //
+    // A plain function (no Tauri state), so the whole flow — guard, parse,
+    // chapter merge, both fs writes — runs against a real tempdir here. The
+    // shape it must uphold: existing meta keys survive the chapter merge, and
+    // the written `.service.json` is exactly what `integrations_get_service_link`
+    // reads back.
+
+    /// A manifest with one song and one sermon cue, 60 s / 300 s into the
+    /// recording when `recording_start_ms` = 1_000_000.
+    fn stage_manifest_json() -> String {
+        r#"{
+          "source": "stage",
+          "serviceId": "svc-9",
+          "startedAtMs": 1000000,
+          "items": [
+            { "atMs": 1060000, "endMs": 1240000, "kind": "song", "label": "Salme 1",
+              "serviceItemId": "item-1", "song": { "title": "Amazing Grace", "ccliSongId": "22025" } },
+            { "atMs": 1300000, "kind": "scripture", "label": "Preken" }
+          ]
+        }"#
+        .into()
+    }
+
+    #[test]
+    fn stage_import_apply_writes_both_sidecars_and_keeps_existing_meta() {
+        let dir = tempfile::tempdir().unwrap();
+        let rec = media_file(&dir, "gudstjeneste.mp3");
+        // Pre-existing meta with a speaker — the merge must not clobber it.
+        crate::editor::write_sidecar(
+            &rec,
+            crate::editor::EditorSidecar::Meta,
+            &serde_json::json!({ "speaker": "Kari" }),
+        );
+
+        let out = stage_import_apply(
+            rec.clone(),
+            stage_manifest_json(),
+            1_000_000,
+            Some(3_600),
+            Some(false),
+            None,
+        )
+        .unwrap();
+        assert!(out.ok, "happy path must succeed: {out:?}");
+        assert_eq!(out.chapter_count, Some(2));
+        assert_eq!(out.song_count, Some(1));
+
+        // Meta: chapters landed AND the speaker survived.
+        let meta = crate::editor::read_sidecar(&rec, crate::editor::EditorSidecar::Meta)
+            .unwrap()
+            .expect("meta sidecar exists");
+        assert_eq!(meta["speaker"], "Kari");
+        assert_eq!(meta["chapters"][0]["time"], 60);
+        assert_eq!(meta["chapters"][0]["title"], "Amazing Grace");
+
+        // Service link: readable through the same reader the app uses.
+        let link = crate::commands::integrations::integrations_get_service_link(rec)
+            .expect("service link written");
+        assert_eq!(link.service_id.as_deref(), Some("svc-9"));
+        assert_eq!(link.setlist.len(), 1);
+        assert_eq!(link.was_streamed, Some(false));
+    }
+
+    #[test]
+    fn stage_import_apply_refuses_garbage_and_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let rec = media_file(&dir, "opptak.mp3");
+
+        let bad = stage_import_apply(rec, "not json".into(), 0, None, None, None).unwrap();
+        assert!(!bad.ok);
+        assert_eq!(bad.error.as_deref(), Some("invalid_manifest"));
+
+        for path in [
+            "".to_string(),
+            "relative.mp3".into(),
+            format!("{}/../../etc/x.mp3", dir.path().display()),
+        ] {
+            let out = stage_import_apply(path, stage_manifest_json(), 0, None, None, None).unwrap();
+            assert!(!out.ok);
+            assert_eq!(out.error.as_deref(), Some("invalid_path"));
         }
     }
 }

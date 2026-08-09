@@ -193,9 +193,14 @@ export function setupFilesPage(): void {
           showFeedUrl(result.feedUrl)
         }
       } else {
+        // The backend's AppError arrives as «validation: <code>: <detail>», so
+        // the two Tauri-era codes match on `includes`, not equality.
+        const err = result.error ?? ''
         const reason = result.error === 'not_connected'    ? t('publish.errConnectFirst',    'koble til skytjenesten først')
                      : result.error === 'no_save_folder'   ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
                      : result.error === 'podcast_disabled' ? t('publish.errEnablePodcast',   'aktiver podcast først')
+                     : err.includes('feature_disabled')    ? t('publish.unavailableBuild',   'ikke med i denne bygningen av SundayRec')
+                     : err.includes('no_config')           ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
                      : result.error ?? t('publish.errUnknown', 'ukjent feil')
         status.textContent = `✕ ${reason}`
       }
@@ -205,6 +210,22 @@ export function setupFilesPage(): void {
       btn.disabled = false
     }
   })
+
+  // Honest gate (UX-natt fase 3): «Generer feed nå» must not offer a write
+  // this build cannot perform. `publish_feed_status` answers at runtime
+  // whether the default-off `publish` cargo feature was compiled in; when it
+  // was not (or the question itself failed), the button is disabled WITH the
+  // reason — not left clickable in front of a guaranteed «✕».
+  void (async () => {
+    const feedStatus = await window.api.podcastFeedStatus()
+    if (feedStatus?.featureBuilt) return
+    const btn      = document.getElementById('btn-podcast-regenerate') as HTMLButtonElement | null
+    const statusEl = document.getElementById('podcast-status')
+    const reason   = t('publish.unavailableBuildLong',
+      'RSS-generering er ikke med i denne bygningen av SundayRec.')
+    if (btn) { btn.disabled = true; btn.title = reason }
+    if (statusEl) statusEl.textContent = reason
+  })()
 }
 
 function showFeedUrl(url: string): void {

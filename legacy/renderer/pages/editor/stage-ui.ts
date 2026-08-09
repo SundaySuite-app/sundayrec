@@ -2,11 +2,17 @@
  * Stage-kapitler UI — «↧ Stage-kapitler»-knapp i analyse-panelet.
  *
  * Vises kun når Stage-integrasjon er skrudd på. Lar brukeren velge
- * Stage-manifestet (service-manifest.json) og kaller main-prosessen som
- * aligner timestamps → ChapterMarker[] → .meta.json. Tegner waveform om igjen
- * (kapitler vises som cyan streker på tidslinjen).
+ * Stage-manifestet (service-manifest.json) og kaller `stage_import_apply`, som
+ * aligner timestamps → ChapterMarker[] → .meta.json + skriver .service.json.
+ * Tegner waveform om igjen (kapitler vises som cyan streker på tidslinjen).
+ *
+ * Manifestet leses som INNHOLD, ikke sti: en `<input type="file">` i webviewen
+ * gir aldri fra seg filsystem-stien (den gamle Electron-koden leste `.path`,
+ * som ikke finnes i Tauri — knappen kunne aldri ha virket). `File.text()` er
+ * derimot alltid lesbart, og backend trenger uansett bare JSON-teksten.
  */
 
+import { t } from '../../i18n'
 import { E } from './state'
 import { drawWaveform } from './waveform'
 
@@ -36,19 +42,17 @@ async function runStageImport(): Promise<void> {
   if (!E.filePath) return
   const btn = $('btn-stage-import') as HTMLButtonElement | null
 
-  // Åpne fil-velger for manifested (ingen native dialog-IPC er nødvendig —
-  // vi bruker input[type=file] via en skjult input-element-trick).
-  const manifestPath = await pickFile(['.json'])
-  if (!manifestPath) return
+  const manifestJson = await pickManifestText()
+  if (manifestJson === null) return
 
   // Sjekk om SundayRec faktisk streamet (settings.streamDestinations) →
-  // sendes som was_streamed til stage_import_manifest.
+  // sendes som was_streamed til stage_import_apply.
   const settings = await window.api.getSettings()
   const isStreaming = !!(settings as { streamDestinations?: unknown[] }).streamDestinations?.length
 
   if (btn) { btn.textContent = '…'; (btn as HTMLButtonElement).disabled = true }
   try {
-    const res = await window.api.stageImport(E.filePath, manifestPath, isStreaming)
+    const res = await window.api.stageImport(E.filePath, manifestJson, isStreaming)
     if (res.ok) {
       // Refresh metadata in the editor — re-read the sidecar just written.
       const meta = await window.api.editorReadMeta?.(E.filePath) as { chapters?: unknown[] } | null
@@ -56,33 +60,37 @@ async function runStageImport(): Promise<void> {
         E.meta.chapters = meta.chapters as typeof E.meta.chapters
         drawWaveform()
       }
-      if (btn) btn.textContent = `✓ ${res.chapterCount} kapitler, ${res.songCount} sanger`
+      if (btn) btn.textContent = `✓ ${res.chapterCount} ${t('integrations.stageChapters', 'kapitler')}, ${res.songCount} ${t('integrations.stageSongs', 'sanger')}`
       setTimeout(() => { if (btn) { btn.textContent = '↧ Stage-kapitler'; (btn as HTMLButtonElement).disabled = false } }, 3000)
     } else {
-      if (btn) btn.textContent = res.error === 'invalid_manifest' ? '✕ Ugyldig manifest' : '✕ Feil'
-      setTimeout(() => { if (btn) { btn.textContent = '↧ Stage-kapitler'; (btn as HTMLButtonElement).disabled = false } }, 2500)
+      // Vis den EKTE grunnen — «✕ Feil» uten forklaring var det gamle mønsteret.
+      if (btn) {
+        btn.textContent = res.error === 'invalid_manifest'
+          ? t('integrations.stageInvalidManifest', '✕ Ugyldig manifest')
+          : res.error === 'recording_not_in_history'
+            ? t('integrations.stageNotInHistory', '✕ Opptaket er ikke i historikken')
+            : `✕ ${res.error ?? t('integrations.stageFailed', 'Feil')}`
+      }
+      setTimeout(() => { if (btn) { btn.textContent = '↧ Stage-kapitler'; (btn as HTMLButtonElement).disabled = false } }, 3500)
     }
   } catch {
-    if (btn) { btn.textContent = '✕ Feil'; setTimeout(() => { if (btn) { btn.textContent = '↧ Stage-kapitler'; (btn as HTMLButtonElement).disabled = false } }, 2500) }
+    if (btn) { btn.textContent = `✕ ${t('integrations.stageFailed', 'Feil')}`; setTimeout(() => { if (btn) { btn.textContent = '↧ Stage-kapitler'; (btn as HTMLButtonElement).disabled = false } }, 2500) }
   }
 }
 
-/** Åpne en fil-velger for JSON-filer. Returnerer absolutt sti eller null. */
-function pickFile(accept: string[]): Promise<string | null> {
+/** Åpne en fil-velger for JSON-filer og les innholdet. `null` = avbrutt. */
+function pickManifestText(): Promise<string | null> {
   return new Promise(resolve => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = accept.join(',')
+    input.accept = '.json,application/json'
     input.style.display = 'none'
     document.body.appendChild(input)
     input.addEventListener('change', () => {
       const file = input.files?.[0]
       document.body.removeChild(input)
-      // Renderer can only read the file object; for the main-process path we
-      // use window.api.editorPickFile-style approach — but a simpler path
-      // here: re-use the file path via the webkitRelativePath or name. For
-      // local Electron apps the file system path IS accessible.
-      resolve(file ? (file as File & { path?: string }).path ?? file.name : null)
+      if (!file) { resolve(null); return }
+      file.text().then(resolve, () => resolve(null))
     })
     input.addEventListener('cancel', () => { document.body.removeChild(input); resolve(null) })
     input.click()

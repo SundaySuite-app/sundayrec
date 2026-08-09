@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Gem destinationer",
     "streamUnsaved": "Ikke gemt endnu",
     "gateCloudExplain": "Sky-backup er ikke konfigureret i denne udgave — Google-nøglen, der skal bruges til at forbinde en konto, mangler.",
-    "gateCloudHint": "Bed om en udgave med sky-backup slået til, hvis menigheden har brug for det."
+    "gateCloudHint": "Bed om en udgave med sky-backup slået til, hvis menigheden har brug for det.",
+    "unavailableBuild": "ikke med i denne udgave af SundayRec",
+    "unavailableBuildLong": "RSS-generering er ikke med i denne udgave af SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åbne",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "Adressen skal begynde med https://",
     "errChurchId": "Menigheds-ID er et UUID fra SundaySong eller SundayPlan",
     "errKeyEmpty": "Indsæt nøglen først",
-    "keySaved": "✓ API-nøgle gemt (krypteret)"
+    "keySaved": "✓ API-nøgle gemt (krypteret)",
+    "errKeySaveFailed": "Kunne ikke gemme nøglen",
+    "errKeyClearFailed": "Kunne ikke fjerne nøglen",
+    "errConnectionSaveFailed": "Kunne ikke gemme forbindelsen",
+    "stageChapters": "kapitler",
+    "stageSongs": "sange",
+    "stageInvalidManifest": "✕ Ugyldigt manifest",
+    "stageNotInHistory": "✕ Optagelsen er ikke i historikken",
+    "stageFailed": "Fejl"
   },
   "live": {
     "title": "Direkte udsendelse",

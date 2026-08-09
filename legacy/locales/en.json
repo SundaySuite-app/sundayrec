@@ -1146,7 +1146,9 @@
     "streamSaveDestinations": "Save destinations",
     "streamUnsaved": "Not saved yet",
     "gateCloudExplain": "Cloud backup is not configured in this build — it lacks the Google key needed to connect an account.",
-    "gateCloudHint": "Ask for a build with cloud backup enabled if the church needs it."
+    "gateCloudHint": "Ask for a build with cloud backup enabled if the church needs it.",
+    "unavailableBuild": "not included in this build of SundayRec",
+    "unavailableBuildLong": "RSS generation is not included in this build of SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
@@ -1155,7 +1157,15 @@
     "errUrlScheme": "The address must start with https://",
     "errChurchId": "The church ID is a UUID from SundaySong or SundayPlan",
     "errKeyEmpty": "Paste the key first",
-    "keySaved": "✓ API key saved (encrypted)"
+    "keySaved": "✓ API key saved (encrypted)",
+    "errKeySaveFailed": "Could not save the key",
+    "errKeyClearFailed": "Could not remove the key",
+    "errConnectionSaveFailed": "Could not save the connection",
+    "stageChapters": "chapters",
+    "stageSongs": "songs",
+    "stageInvalidManifest": "✕ Invalid manifest",
+    "stageNotInHistory": "✕ The recording is not in the history",
+    "stageFailed": "Error"
   },
   "live": {
     "title": "Live broadcast",
