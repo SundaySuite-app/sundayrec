@@ -98,7 +98,12 @@
     "nextShort": "nächste",
     "wakesLead": "({min} Min. vorher)",
     "openInEditor": "Im Editor öffnen",
-    "prerollActive": "Vorlauf-Puffer aktiv ({n} s)"
+    "prerollActive": "Vorlauf-Puffer aktiv ({n} s)",
+    "setupAudioLink": "So richten Sie die Audioquelle ein →",
+    "vuScaleQuiet": "Leise",
+    "vuScaleMax": "Max",
+    "cameraLabel": "KAMERA",
+    "videoQualityLabel": "VIDEOQUALITÄT"
   },
   "update": {
     "checking": "Suche nach Updates…",
@@ -782,7 +787,19 @@
     "vocalChain": "Stimmbearbeitung",
     "exportDoneToast": "Exportiert{name}",
     "gotoReviewOne": "Prüfliste (1 Folge) →",
-    "gotoReviewN": "Prüfliste ({n} Folgen) →"
+    "gotoReviewN": "Prüfliste ({n} Folgen) →",
+    "enhanceNone": "Keine",
+    "vcLight": "Stimme — leicht",
+    "vcPodcast": "Podcast-Stimme (empfohlen)",
+    "vcNoisyRoom": "Lauter Raum",
+    "mpSpeechNatural": "Sprache — natürlich (−19 LUFS)",
+    "mpSpeechClear": "Sprache — klar (−16 LUFS)",
+    "mpSpeechPunchy": "Sprache — kräftig (−14 LUFS)",
+    "mpMusicSpeech": "Musik + Sprache (−16 LUFS)",
+    "crSwapLr": "Links/rechts tauschen",
+    "crDupLeft": "Linken Kanal verwenden (beide)",
+    "crDupRight": "Rechten Kanal verwenden (beide)",
+    "crMonoMix": "Zu Mono mischen"
   },
   "master": {
     "title": "Mastering (Vorbereitung zur Veröffentlichung)",
@@ -808,7 +825,9 @@
     "source": "AUDIOQUELLE",
     "filename": "DATEINAME (optional)",
     "start": "Aufnahme jetzt starten",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "videoSource": "Videoquelle",
+    "loadingDevices": "Geräte werden geladen…"
   },
   "recording": {
     "live": "AUFNAHME LÄUFT",
@@ -851,7 +870,10 @@
     "videoNone": "Kein Video (nur Audio)",
     "videoListError": "Fehler beim Laden der Kameras",
     "cameraFailedAudioOnly": "Kamera ausgefallen — es wird nur Audio aufgenommen",
-    "autostopFailed": "Automatischer Stopp konnte nicht geändert werden. Die Aufnahme läuft weiter — bei Bedarf manuell stoppen."
+    "autostopFailed": "Automatischer Stopp konnte nicht geändert werden. Die Aufnahme läuft weiter — bei Bedarf manuell stoppen.",
+    "autostopIn": "Auto-Stopp in",
+    "extend30": "+ 30 Min.",
+    "cancelAutostop": "Auto-Stopp abbrechen"
   },
   "video": {
     "minBitrateWarn": "Mindestbitrate ist 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Anonyme Diagnosedaten teilen?",
     "promptDesc": "SundayRec kann anonyme Fehler- und Nutzungsdaten an Sunday Suite senden, um die App zu verbessern. Freiwillig, und Sie können jederzeit unter Einstellungen → System antworten.",
     "rePromptTitle": "Wir fragen noch einmal nach",
-    "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Die App kann zudem angeben, welche Art von Vorschlag Sie verwendet haben — Titel, Zusammenfassung oder Kapitelmarken — und ob Sie ihn unverändert übernommen oder umgeschrieben haben. Der Text selbst wird nie gesendet. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten."
+    "rePromptDesc": "Sie haben dies bereits beantwortet, aber wir fragen erneut, weil sich erweitert hat, was gegebenenfalls geteilt wird: Ihre Korrekturen im Editor können jetzt auch ungefähr angeben, wie weit ein automatischer Vorschlag verschoben wurde — zum Beispiel „30–60 Sekunden früher“ — und nicht nur, dass er verschoben wurde. Die App kann zudem angeben, welche Art von Vorschlag Sie verwendet haben — Titel, Zusammenfassung oder Kapitelmarken — und ob Sie ihn unverändert übernommen oder umgeschrieben haben. Der Text selbst wird nie gesendet. Ihre frühere Antwort wurde nicht übernommen, weder als Ja noch als Nein, und es wird nichts gesendet, bevor Sie hier antworten.",
+    "skipBtn": "Überspringen"
   },
   "time": {
     "yr": "J",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "Cloud-Backup ist in dieser Version nicht eingerichtet — der Google-Schlüssel zum Verbinden eines Kontos fehlt.",
     "gateCloudHint": "Fordern Sie eine Version mit aktiviertem Cloud-Backup an, wenn die Gemeinde das braucht.",
     "unavailableBuild": "in diesem Build von SundayRec nicht enthalten",
-    "unavailableBuildLong": "Die RSS-Generierung ist in diesem Build von SundayRec nicht enthalten."
+    "unavailableBuildLong": "Die RSS-Generierung ist in diesem Build von SundayRec nicht enthalten.",
+    "rootFolder": "Stammordner"
   },
   "integrations": {
     "sundayEditFailed": "Konnte nicht geöffnet werden",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "Keine Kamera gefunden. Prüfe, ob sie angeschlossen ist, und wähle sie unter Einstellungen → Video.",
     "errAlreadyActive": "Ein Livestream läuft bereits.",
     "errInvalidDestination": "Ein Ziel ist falsch konfiguriert — prüfe RTMP-Adresse und Stream-Key unter Teilen → Veröffentlichung.",
-    "errSpawnFailed": "Die Video-Engine (ffmpeg) konnte nicht gestartet werden. Starte die App neu und sag Bescheid, falls es wieder passiert."
+    "errSpawnFailed": "Die Video-Engine (ffmpeg) konnte nicht gestartet werden. Starte die App neu und sag Bescheid, falls es wieder passiert.",
+    "overlayPosTl": "Oben links",
+    "overlayPosTc": "Oben Mitte",
+    "overlayPosTr": "Oben rechts",
+    "overlayPosCl": "Mitte links",
+    "overlayPosC": "Mitte",
+    "overlayPosCr": "Mitte rechts",
+    "overlayPosBl": "Unten links",
+    "overlayPosBc": "Unten Mitte",
+    "overlayPosBr": "Unten rechts",
+    "overlayPosFullscreen": "Vollbild",
+    "overlayPosCustom": "Benutzerdefiniert",
+    "overlayTypeImage": "Bild (PNG/JPG)",
+    "overlayTypeScreen": "Bildschirm",
+    "overlayTypeWindow": "Fenster / Bildausschnitt",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Overlay ein-/ausschalten",
+    "overlayNamePlaceholder": "Name",
+    "overlayDeleteTitle": "Löschen"
   },
   "transcript": {
     "title": "Transkription",

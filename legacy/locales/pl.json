@@ -98,7 +98,12 @@
     "nextShort": "następne",
     "wakesLead": "({min} min wcześniej)",
     "openInEditor": "Otwórz w edytorze",
-    "prerollActive": "Bufor wstępny aktywny ({n} s)"
+    "prerollActive": "Bufor wstępny aktywny ({n} s)",
+    "setupAudioLink": "Jak skonfigurować źródło dźwięku →",
+    "vuScaleQuiet": "Cicho",
+    "vuScaleMax": "Maks",
+    "cameraLabel": "KAMERA",
+    "videoQualityLabel": "JAKOŚĆ WIDEO"
   },
   "update": {
     "checking": "Sprawdzanie aktualizacji…",
@@ -782,7 +787,19 @@
     "vocalChain": "Obróbka głosu",
     "exportDoneToast": "Wyeksportowano{name}",
     "gotoReviewOne": "Kolejka przeglądu (1 odcinek) →",
-    "gotoReviewN": "Kolejka przeglądu ({n} odcinków) →"
+    "gotoReviewN": "Kolejka przeglądu ({n} odcinków) →",
+    "enhanceNone": "Brak",
+    "vcLight": "Głos — lekki",
+    "vcPodcast": "Głos podcastowy (zalecane)",
+    "vcNoisyRoom": "Hałaśliwe pomieszczenie",
+    "mpSpeechNatural": "Mowa — naturalna (−19 LUFS)",
+    "mpSpeechClear": "Mowa — wyraźna (−16 LUFS)",
+    "mpSpeechPunchy": "Mowa — mocna (−14 LUFS)",
+    "mpMusicSpeech": "Muzyka + mowa (−16 LUFS)",
+    "crSwapLr": "Zamień lewy/prawy",
+    "crDupLeft": "Użyj lewego kanału (oba)",
+    "crDupRight": "Użyj prawego kanału (oba)",
+    "crMonoMix": "Zmiksuj do mono"
   },
   "master": {
     "title": "Mastering (przygotuj do publikacji)",
@@ -808,7 +825,9 @@
     "source": "ŹRÓDŁO DŹWIĘKU",
     "filename": "NAZWA PLIKU (opcjonalnie)",
     "start": "Rozpocznij nagrywanie teraz",
-    "cancel": "Anuluj"
+    "cancel": "Anuluj",
+    "videoSource": "Źródło wideo",
+    "loadingDevices": "Wczytywanie urządzeń…"
   },
   "recording": {
     "live": "TRWA NAGRYWANIE",
@@ -851,7 +870,10 @@
     "videoNone": "Bez wideo (tylko dźwięk)",
     "videoListError": "Błąd ładowania kamer",
     "cameraFailedAudioOnly": "Awaria kamery — nagrywany jest tylko dźwięk",
-    "autostopFailed": "Nie udało się zmienić automatycznego zatrzymania. Nagrywanie trwa — zatrzymaj ręcznie w razie potrzeby."
+    "autostopFailed": "Nie udało się zmienić automatycznego zatrzymania. Nagrywanie trwa — zatrzymaj ręcznie w razie potrzeby.",
+    "autostopIn": "Automatyczne zatrzymanie za",
+    "extend30": "+ 30 min",
+    "cancelAutostop": "Anuluj automatyczne zatrzymanie"
   },
   "video": {
     "minBitrateWarn": "Minimalny bitrate to 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Udostępniać anonimową diagnostykę?",
     "promptDesc": "SundayRec może wysyłać anonimowe statystyki błędów i użycia do Sunday Suite, aby ulepszyć aplikację. Dobrowolne — możesz odpowiedzieć w dowolnym momencie w Ustawienia → System.",
     "rePromptTitle": "Pytamy jeszcze raz",
-    "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Aplikacja może dodatkowo podać, jakiego rodzaju propozycji użyto — tytuł, streszczenie lub znaczniki rozdziałów — i czy zachowano ją bez zmian, czy przepisano. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj."
+    "rePromptDesc": "Odpowiadałeś już na to pytanie, ale zadajemy je ponownie, ponieważ zakres tego, co ewentualnie jest udostępniane, został rozszerzony: Twoje korekty w edytorze mogą teraz również podawać, o ile mniej więcej przesunięto automatyczną propozycję — na przykład „30–60 sekund wcześniej” — a nie tylko to, że została przesunięta. Aplikacja może dodatkowo podać, jakiego rodzaju propozycji użyto — tytuł, streszczenie lub znaczniki rozdziałów — i czy zachowano ją bez zmian, czy przepisano. Sam tekst nigdy nie jest wysyłany. Twoja poprzednia odpowiedź nie została przyjęta ani jako tak, ani jako nie, i nic nie zostanie wysłane, dopóki nie odpowiesz tutaj.",
+    "skipBtn": "Pomiń"
   },
   "time": {
     "yr": "r",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "Kopia w chmurze nie jest skonfigurowana w tej wersji — brakuje klucza Google potrzebnego do połączenia konta.",
     "gateCloudHint": "Poproś o wersję z włączoną kopią w chmurze, jeśli parafia tego potrzebuje.",
     "unavailableBuild": "niedostępne w tej kompilacji SundayRec",
-    "unavailableBuildLong": "Generowanie RSS jest niedostępne w tej kompilacji SundayRec."
+    "unavailableBuildLong": "Generowanie RSS jest niedostępne w tej kompilacji SundayRec.",
+    "rootFolder": "Folder główny"
   },
   "integrations": {
     "sundayEditFailed": "Nie udało się otworzyć",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "Nie znaleziono kamery. Sprawdź, czy jest podłączona, i wybierz ją w Ustawienia → Wideo.",
     "errAlreadyActive": "Transmisja na żywo już trwa.",
     "errInvalidDestination": "Jedno z miejsc docelowych jest źle skonfigurowane — sprawdź adres RTMP i klucz transmisji w Udostępnianie → Publikowanie.",
-    "errSpawnFailed": "Nie udało się uruchomić silnika wideo (ffmpeg). Uruchom aplikację ponownie i daj znać, jeśli powtórzy się to ponownie."
+    "errSpawnFailed": "Nie udało się uruchomić silnika wideo (ffmpeg). Uruchom aplikację ponownie i daj znać, jeśli powtórzy się to ponownie.",
+    "overlayPosTl": "Lewy górny",
+    "overlayPosTc": "Górny środek",
+    "overlayPosTr": "Prawy górny",
+    "overlayPosCl": "Lewy środek",
+    "overlayPosC": "Środek",
+    "overlayPosCr": "Prawy środek",
+    "overlayPosBl": "Lewy dolny",
+    "overlayPosBc": "Dolny środek",
+    "overlayPosBr": "Prawy dolny",
+    "overlayPosFullscreen": "Pełny ekran",
+    "overlayPosCustom": "Niestandardowy",
+    "overlayTypeImage": "Obraz (PNG/JPG)",
+    "overlayTypeScreen": "Ekran",
+    "overlayTypeWindow": "Okno / wycinek regionu",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Włącz/wyłącz nakładkę",
+    "overlayNamePlaceholder": "Nazwa",
+    "overlayDeleteTitle": "Usuń"
   },
   "transcript": {
     "title": "Transkrypcja",

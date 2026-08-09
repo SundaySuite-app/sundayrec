@@ -98,7 +98,12 @@
     "nextShort": "næste",
     "wakesLead": "({min} min før)",
     "openInEditor": "Åbn i redigering",
-    "prerollActive": "Forhåndsbuffer aktiv ({n} s)"
+    "prerollActive": "Forhåndsbuffer aktiv ({n} s)",
+    "setupAudioLink": "Sådan sætter du lydkilden op →",
+    "vuScaleQuiet": "Stille",
+    "vuScaleMax": "Maks",
+    "cameraLabel": "KAMERA",
+    "videoQualityLabel": "VIDEOKVALITET"
   },
   "update": {
     "checking": "Søger efter opdateringer…",
@@ -782,7 +787,19 @@
     "vocalChain": "Stemmebehandling",
     "exportDoneToast": "Eksporteret{name}",
     "gotoReviewOne": "Gennemgangskø (1 episode) →",
-    "gotoReviewN": "Gennemgangskø ({n} episoder) →"
+    "gotoReviewN": "Gennemgangskø ({n} episoder) →",
+    "enhanceNone": "Ingen",
+    "vcLight": "Stemme — let",
+    "vcPodcast": "Podcast-stemme (anbefalet)",
+    "vcNoisyRoom": "Støjende rum",
+    "mpSpeechNatural": "Tale — naturlig (−19 LUFS)",
+    "mpSpeechClear": "Tale — tydelig (−16 LUFS)",
+    "mpSpeechPunchy": "Tale — kraftig (−14 LUFS)",
+    "mpMusicSpeech": "Musik + tale (−16 LUFS)",
+    "crSwapLr": "Byt venstre/højre",
+    "crDupLeft": "Brug venstre kanal (begge)",
+    "crDupRight": "Brug højre kanal (begge)",
+    "crMonoMix": "Miks til mono"
   },
   "master": {
     "title": "Mastering (klargør til udgivelse)",
@@ -808,7 +825,9 @@
     "source": "LYDKILDE",
     "filename": "FILNAVN (valgfrit)",
     "start": "Start optagelse nu",
-    "cancel": "Annuller"
+    "cancel": "Annuller",
+    "videoSource": "Videokilde",
+    "loadingDevices": "Indlæser enheder…"
   },
   "recording": {
     "live": "OPTAGER NU",
@@ -851,7 +870,10 @@
     "videoNone": "Ingen video (kun lyd)",
     "videoListError": "Fejl ved indlæsning af kameraer",
     "cameraFailedAudioOnly": "Kameraet fejlede — optager kun lyd",
-    "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal."
+    "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal.",
+    "autostopIn": "Autostop om",
+    "extend30": "+ 30 min",
+    "cancelAutostop": "Annullér autostop"
   },
   "video": {
     "minBitrateWarn": "Mindste bitrate er 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Dele anonym diagnostik?",
     "promptDesc": "SundayRec kan sende anonym fejl- og brugsstatistik til Sunday Suite for at forbedre appen. Frivilligt, og du kan svare når som helst under Indstillinger → System.",
     "rePromptTitle": "Vi spørger dig igen",
-    "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Appen kan desuden angive hvilken type forslag du brugte — titel, resumé eller kapitelmærker — og om du beholdt det, som det var, eller omskrev det. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her."
+    "rePromptDesc": "Du har svaret på dette før, men vi spørger igen, fordi det, der eventuelt deles, er udvidet: dine rettelser i redigeringsværktøjet kan nu også angive omtrent hvor meget et automatisk forslag blev flyttet — for eksempel »30–60 sekunder tidligere« — og ikke kun at det blev flyttet. Appen kan desuden angive hvilken type forslag du brugte — titel, resumé eller kapitelmærker — og om du beholdt det, som det var, eller omskrev det. Selve teksten sendes aldrig. Dit tidligere svar er ikke lagt til grund, hverken som ja eller som nej, og der sendes intet, før du svarer her.",
+    "skipBtn": "Spring over"
   },
   "time": {
     "yr": "år",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "Sky-backup er ikke konfigureret i denne udgave — Google-nøglen, der skal bruges til at forbinde en konto, mangler.",
     "gateCloudHint": "Bed om en udgave med sky-backup slået til, hvis menigheden har brug for det.",
     "unavailableBuild": "ikke med i denne udgave af SundayRec",
-    "unavailableBuildLong": "RSS-generering er ikke med i denne udgave af SundayRec."
+    "unavailableBuildLong": "RSS-generering er ikke med i denne udgave af SundayRec.",
+    "rootFolder": "Rodmappe"
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åbne",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "Fandt ikke kameraet. Tjek at det er tilsluttet, og vælg det under Indstillinger → Video.",
     "errAlreadyActive": "En livestream kører allerede.",
     "errInvalidDestination": "En destination er sat forkert op — tjek RTMP-adressen og stream-nøglen under Deling → Udgivelse.",
-    "errSpawnFailed": "Kunne ikke starte videomotoren (ffmpeg). Genstart appen, og sig til hvis det sker igen."
+    "errSpawnFailed": "Kunne ikke starte videomotoren (ffmpeg). Genstart appen, og sig til hvis det sker igen.",
+    "overlayPosTl": "Øverst til venstre",
+    "overlayPosTc": "Øverst i midten",
+    "overlayPosTr": "Øverst til højre",
+    "overlayPosCl": "Midt til venstre",
+    "overlayPosC": "Midten",
+    "overlayPosCr": "Midt til højre",
+    "overlayPosBl": "Nederst til venstre",
+    "overlayPosBc": "Nederst i midten",
+    "overlayPosBr": "Nederst til højre",
+    "overlayPosFullscreen": "Fuld skærm",
+    "overlayPosCustom": "Tilpasset",
+    "overlayTypeImage": "Billede (PNG/JPG)",
+    "overlayTypeScreen": "Skærm",
+    "overlayTypeWindow": "Vindue / regionsudsnit",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Slå overlay til/fra",
+    "overlayNamePlaceholder": "Navn",
+    "overlayDeleteTitle": "Slet"
   },
   "transcript": {
     "title": "Transskribering",

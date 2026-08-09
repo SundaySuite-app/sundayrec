@@ -98,7 +98,12 @@
     "nextShort": "nästa",
     "wakesLead": "({min} min innan)",
     "openInEditor": "Öppna i redigering",
-    "prerollActive": "Förhandsbuffert aktiv ({n} s)"
+    "prerollActive": "Förhandsbuffert aktiv ({n} s)",
+    "setupAudioLink": "Så ställer du in ljudkälla →",
+    "vuScaleQuiet": "Tyst",
+    "vuScaleMax": "Max",
+    "cameraLabel": "KAMERA",
+    "videoQualityLabel": "VIDEOKVALITET"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -782,7 +787,19 @@
     "vocalChain": "Röstbehandling",
     "exportDoneToast": "Exporterad{name}",
     "gotoReviewOne": "Granskningskö (1 avsnitt) →",
-    "gotoReviewN": "Granskningskö ({n} avsnitt) →"
+    "gotoReviewN": "Granskningskö ({n} avsnitt) →",
+    "enhanceNone": "Ingen",
+    "vcLight": "Röst — lätt",
+    "vcPodcast": "Poddröst (rekommenderas)",
+    "vcNoisyRoom": "Bullrigt rum",
+    "mpSpeechNatural": "Tal — naturligt (−19 LUFS)",
+    "mpSpeechClear": "Tal — tydligt (−16 LUFS)",
+    "mpSpeechPunchy": "Tal — kraftfullt (−14 LUFS)",
+    "mpMusicSpeech": "Musik + tal (−16 LUFS)",
+    "crSwapLr": "Byt vänster/höger",
+    "crDupLeft": "Använd vänster kanal (båda)",
+    "crDupRight": "Använd höger kanal (båda)",
+    "crMonoMix": "Mixa till mono"
   },
   "master": {
     "title": "Mastring (förbered för publicering)",
@@ -808,7 +825,9 @@
     "source": "LJUDKÄLLA",
     "filename": "FILNAMN (valfritt)",
     "start": "Starta inspelning nu",
-    "cancel": "Avbryt"
+    "cancel": "Avbryt",
+    "videoSource": "Videokälla",
+    "loadingDevices": "Läser in enheter…"
   },
   "recording": {
     "live": "SPELAR IN NU",
@@ -851,7 +870,10 @@
     "videoNone": "Ingen video (endast ljud)",
     "videoListError": "Fel vid inläsning av kameror",
     "cameraFailedAudioOnly": "Kameran misslyckades — spelar endast in ljud",
-    "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver."
+    "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver.",
+    "autostopIn": "Autostopp om",
+    "extend30": "+ 30 min",
+    "cancelAutostop": "Avbryt autostopp"
   },
   "video": {
     "minBitrateWarn": "Minsta bithastighet är 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Dela anonym diagnostik?",
     "promptDesc": "SundayRec kan skicka anonym fel- och användningsstatistik till Sunday Suite för att förbättra appen. Frivilligt, och du kan svara när som helst under Inställningar → System.",
     "rePromptTitle": "Vi frågar dig igen",
-    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Appen kan dessutom ange vilken typ av förslag du använde — titel, sammanfattning eller kapitelmarkeringar — och om du behöll det som det var eller skrev om det. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här."
+    "rePromptDesc": "Du har svarat på detta tidigare, men vi frågar igen eftersom det som eventuellt delas har utvidgats: dina korrigeringar i redigeraren kan nu också ange ungefär hur mycket ett automatiskt förslag flyttades — till exempel ”30–60 sekunder tidigare” — och inte bara att det flyttades. Appen kan dessutom ange vilken typ av förslag du använde — titel, sammanfattning eller kapitelmarkeringar — och om du behöll det som det var eller skrev om det. Själva texten skickas aldrig. Ditt tidigare svar har inte lagts till grund, varken som ja eller som nej, och ingenting skickas förrän du svarar här.",
+    "skipBtn": "Hoppa över"
   },
   "time": {
     "yr": "år",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "Molnbackup är inte konfigurerat i det här bygget — Google-nyckeln som krävs för att ansluta ett konto saknas.",
     "gateCloudHint": "Be om ett bygge med molnbackup påslaget om församlingen behöver det.",
     "unavailableBuild": "ingår inte i den här versionen av SundayRec",
-    "unavailableBuildLong": "RSS-generering ingår inte i den här versionen av SundayRec."
+    "unavailableBuildLong": "RSS-generering ingår inte i den här versionen av SundayRec.",
+    "rootFolder": "Rotmapp"
   },
   "integrations": {
     "sundayEditFailed": "Kunde inte öppna",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "Hittade ingen kamera. Kontrollera att den är ansluten och välj den under Inställningar → Video.",
     "errAlreadyActive": "En direktsändning pågår redan.",
     "errInvalidDestination": "En destination är felaktigt inställd — kontrollera RTMP-adressen och stream-nyckeln under Delning → Publicering.",
-    "errSpawnFailed": "Kunde inte starta videomotorn (ffmpeg). Starta om appen och säg till om det händer igen."
+    "errSpawnFailed": "Kunde inte starta videomotorn (ffmpeg). Starta om appen och säg till om det händer igen.",
+    "overlayPosTl": "Uppe till vänster",
+    "overlayPosTc": "Uppe i mitten",
+    "overlayPosTr": "Uppe till höger",
+    "overlayPosCl": "Mitten vänster",
+    "overlayPosC": "Mitten",
+    "overlayPosCr": "Mitten höger",
+    "overlayPosBl": "Nere till vänster",
+    "overlayPosBc": "Nere i mitten",
+    "overlayPosBr": "Nere till höger",
+    "overlayPosFullscreen": "Helskärm",
+    "overlayPosCustom": "Anpassad",
+    "overlayTypeImage": "Bild (PNG/JPG)",
+    "overlayTypeScreen": "Skärm",
+    "overlayTypeWindow": "Fönster / regionsutsnitt",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Slå på/av overlay",
+    "overlayNamePlaceholder": "Namn",
+    "overlayDeleteTitle": "Ta bort"
   },
   "transcript": {
     "title": "Transkribering",

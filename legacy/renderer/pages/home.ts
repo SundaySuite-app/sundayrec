@@ -643,6 +643,8 @@ export function setupHome(): void {
   onLocaleApplied(() => {
     renderNextRecording()          // #hero-ready-title + sidebar #status-label
     paintHeroWarnDetail()
+    updateVideoToggleButton()      // «Video av/på» — painted from settings
+    updateAudioSeparateButton()    // «Separat lydfil / Ingen lydfil»
     if (videoPlaceholderPaint) {
       const el = document.getElementById('video-preview-placeholder-text')
       if (el) el.textContent = videoPlaceholderPaint()

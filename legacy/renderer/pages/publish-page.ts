@@ -212,7 +212,7 @@ function renderCard(service: CloudServiceId, status: CloudStatus): void {
     connectedSection?.style.setProperty('display', '')
     disconnectedSection?.style.setProperty('display', 'none')
     if (accountNameEl) accountNameEl.textContent = status.accountName ?? ''
-    if (folderNameEl)  folderNameEl.textContent  = status.folderName ?? status.folderPath ?? 'Rotmappe'
+    if (folderNameEl)  folderNameEl.textContent  = status.folderName ?? status.folderPath ?? t('publish.rootFolder', 'Rotmappe')
     if (lastUploadEl) {
       lastUploadEl.textContent = status.lastUpload
         ? (status.lastUploadOk ? '✓ ' : '✕ ') + new Date(status.lastUpload).toLocaleString(localeTag())

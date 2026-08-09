@@ -98,7 +98,12 @@
     "nextShort": "next",
     "wakesLead": "({min} min before)",
     "openInEditor": "Open in editor",
-    "prerollActive": "Pre-roll buffer active ({n} s)"
+    "prerollActive": "Pre-roll buffer active ({n} s)",
+    "setupAudioLink": "How to set up an audio source →",
+    "vuScaleQuiet": "Quiet",
+    "vuScaleMax": "Max",
+    "cameraLabel": "CAMERA",
+    "videoQualityLabel": "VIDEO QUALITY"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -782,7 +787,19 @@
     "vocalChain": "Voice processing",
     "exportDoneToast": "Exported{name}",
     "gotoReviewOne": "Review queue (1 episode) →",
-    "gotoReviewN": "Review queue ({n} episodes) →"
+    "gotoReviewN": "Review queue ({n} episodes) →",
+    "enhanceNone": "None",
+    "vcLight": "Voice — light",
+    "vcPodcast": "Podcast voice (recommended)",
+    "vcNoisyRoom": "Noisy room",
+    "mpSpeechNatural": "Speech — natural (−19 LUFS)",
+    "mpSpeechClear": "Speech — clear (−16 LUFS)",
+    "mpSpeechPunchy": "Speech — punchy (−14 LUFS)",
+    "mpMusicSpeech": "Music + speech (−16 LUFS)",
+    "crSwapLr": "Swap left/right",
+    "crDupLeft": "Use left channel (both)",
+    "crDupRight": "Use right channel (both)",
+    "crMonoMix": "Mix to mono"
   },
   "master": {
     "title": "Mastering (prepare for publishing)",
@@ -808,7 +825,9 @@
     "source": "AUDIO SOURCE",
     "filename": "FILE NAME (optional)",
     "start": "Start recording now",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "videoSource": "Video source",
+    "loadingDevices": "Loading devices…"
   },
   "recording": {
     "live": "RECORDING NOW",
@@ -851,7 +870,10 @@
     "videoNone": "No video (audio only)",
     "videoListError": "Error loading cameras",
     "cameraFailedAudioOnly": "Camera failed — recording audio only",
-    "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to."
+    "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to.",
+    "autostopIn": "Auto-stop in",
+    "extend30": "+ 30 min",
+    "cancelAutostop": "Cancel auto-stop"
   },
   "video": {
     "minBitrateWarn": "Minimum bitrate is 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Share anonymous diagnostics?",
     "promptDesc": "SundayRec can send anonymous error and usage statistics to Sunday Suite to improve the app. Optional, and you can answer any time under Settings → System.",
     "rePromptTitle": "We are asking you again",
-    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The app can also say which kind of suggestion you used — a title, a summary or chapter marks — and whether you kept it as it was or rewrote it. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here."
+    "rePromptDesc": "You have answered this before, but we are asking again because what would be shared has been extended: your corrections in the editor can now also say roughly how far an automatic suggestion was moved — for example “30–60 seconds earlier” — and not only that it was moved. The app can also say which kind of suggestion you used — a title, a summary or chapter marks — and whether you kept it as it was or rewrote it. The text itself is never sent. Your previous answer has not been assumed, neither as a yes nor as a no, and nothing is sent until you answer here.",
+    "skipBtn": "Skip"
   },
   "time": {
     "yr": "yr",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "Cloud backup is not configured in this build — it lacks the Google key needed to connect an account.",
     "gateCloudHint": "Ask for a build with cloud backup enabled if the church needs it.",
     "unavailableBuild": "not included in this build of SundayRec",
-    "unavailableBuildLong": "RSS generation is not included in this build of SundayRec."
+    "unavailableBuildLong": "RSS generation is not included in this build of SundayRec.",
+    "rootFolder": "Root folder"
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "No camera found. Check that it is connected, and pick it under Settings → Video.",
     "errAlreadyActive": "A live stream is already running.",
     "errInvalidDestination": "A destination is misconfigured — check its RTMP address and stream key under Sharing → Publishing.",
-    "errSpawnFailed": "Could not start the video engine (ffmpeg). Restart the app, and say so if it happens again."
+    "errSpawnFailed": "Could not start the video engine (ffmpeg). Restart the app, and say so if it happens again.",
+    "overlayPosTl": "Top left",
+    "overlayPosTc": "Top centre",
+    "overlayPosTr": "Top right",
+    "overlayPosCl": "Centre left",
+    "overlayPosC": "Centre",
+    "overlayPosCr": "Centre right",
+    "overlayPosBl": "Bottom left",
+    "overlayPosBc": "Bottom centre",
+    "overlayPosBr": "Bottom right",
+    "overlayPosFullscreen": "Full screen",
+    "overlayPosCustom": "Custom",
+    "overlayTypeImage": "Image (PNG/JPG)",
+    "overlayTypeScreen": "Screen",
+    "overlayTypeWindow": "Window / region crop",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Toggle overlay on/off",
+    "overlayNamePlaceholder": "Name",
+    "overlayDeleteTitle": "Delete"
   },
   "transcript": {
     "title": "Transcription",

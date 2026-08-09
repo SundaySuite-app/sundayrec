@@ -98,7 +98,12 @@
     "nextShort": "suivant",
     "wakesLead": "({min} min avant)",
     "openInEditor": "Ouvrir dans l’éditeur",
-    "prerollActive": "Tampon de pré-enregistrement actif ({n} s)"
+    "prerollActive": "Tampon de pré-enregistrement actif ({n} s)",
+    "setupAudioLink": "Configurer la source audio →",
+    "vuScaleQuiet": "Silence",
+    "vuScaleMax": "Max",
+    "cameraLabel": "CAMÉRA",
+    "videoQualityLabel": "QUALITÉ VIDÉO"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -782,7 +787,19 @@
     "vocalChain": "Traitement de la voix",
     "exportDoneToast": "Exporté{name}",
     "gotoReviewOne": "File de relecture (1 épisode) →",
-    "gotoReviewN": "File de relecture ({n} épisodes) →"
+    "gotoReviewN": "File de relecture ({n} épisodes) →",
+    "enhanceNone": "Aucun",
+    "vcLight": "Voix — léger",
+    "vcPodcast": "Voix podcast (recommandé)",
+    "vcNoisyRoom": "Pièce bruyante",
+    "mpSpeechNatural": "Parole — naturelle (−19 LUFS)",
+    "mpSpeechClear": "Parole — claire (−16 LUFS)",
+    "mpSpeechPunchy": "Parole — punchy (−14 LUFS)",
+    "mpMusicSpeech": "Musique + parole (−16 LUFS)",
+    "crSwapLr": "Inverser gauche/droite",
+    "crDupLeft": "Utiliser le canal gauche (les deux)",
+    "crDupRight": "Utiliser le canal droit (les deux)",
+    "crMonoMix": "Mixer en mono"
   },
   "master": {
     "title": "Mastering (préparation à la publication)",
@@ -808,7 +825,9 @@
     "source": "SOURCE AUDIO",
     "filename": "NOM DU FICHIER (facultatif)",
     "start": "Démarrer l’enregistrement",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "videoSource": "Source vidéo",
+    "loadingDevices": "Chargement des périphériques…"
   },
   "recording": {
     "live": "ENREGISTREMENT EN COURS",
@@ -851,7 +870,10 @@
     "videoNone": "Pas de vidéo (audio seulement)",
     "videoListError": "Erreur de chargement des caméras",
     "cameraFailedAudioOnly": "Échec de la caméra — enregistrement audio uniquement",
-    "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire."
+    "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire.",
+    "autostopIn": "Arrêt auto dans",
+    "extend30": "+ 30 min",
+    "cancelAutostop": "Annuler l'arrêt auto"
   },
   "video": {
     "minBitrateWarn": "Le débit minimal est de 500 kbps",
@@ -968,7 +990,8 @@
     "promptTitle": "Partager des diagnostics anonymes ?",
     "promptDesc": "SundayRec peut envoyer des statistiques anonymes d’erreurs et d’utilisation à Sunday Suite pour améliorer l’application. Facultatif, et vous pouvez répondre à tout moment dans Paramètres → Système.",
     "rePromptTitle": "Nous vous reposons la question",
-    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. L’application peut en outre indiquer quel type de suggestion vous avez utilisé — titre, résumé ou marques de chapitre — et si vous l’avez conservé tel quel ou réécrit. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici."
+    "rePromptDesc": "Vous avez déjà répondu à cette question, mais nous la reposons parce que ce qui serait partagé a été élargi : vos corrections dans l’éditeur peuvent désormais indiquer approximativement de combien une suggestion automatique a été déplacée — par exemple « 30–60 secondes plus tôt » — et pas seulement qu’elle a été déplacée. L’application peut en outre indiquer quel type de suggestion vous avez utilisé — titre, résumé ou marques de chapitre — et si vous l’avez conservé tel quel ou réécrit. Le texte lui-même n’est jamais envoyé. Votre réponse précédente n’a pas été reprise, ni comme un oui ni comme un non, et rien n’est envoyé avant que vous ne répondiez ici.",
+    "skipBtn": "Passer"
   },
   "time": {
     "yr": "an",
@@ -1130,7 +1153,8 @@
     "gateCloudExplain": "La sauvegarde cloud n’est pas configurée dans cette version — la clé Google nécessaire pour connecter un compte est absente.",
     "gateCloudHint": "Demandez une version avec la sauvegarde cloud activée si la paroisse en a besoin.",
     "unavailableBuild": "absent de cette version de SundayRec",
-    "unavailableBuildLong": "La génération RSS est absente de cette version de SundayRec."
+    "unavailableBuildLong": "La génération RSS est absente de cette version de SundayRec.",
+    "rootFolder": "Dossier racine"
   },
   "integrations": {
     "sundayEditFailed": "Impossible d’ouvrir",
@@ -1213,7 +1237,25 @@
     "errNoCamera": "Aucune caméra trouvée. Vérifiez qu’elle est branchée et sélectionnez-la dans Réglages → Vidéo.",
     "errAlreadyActive": "Une diffusion en direct est déjà en cours.",
     "errInvalidDestination": "Une destination est mal configurée — vérifiez son adresse RTMP et sa clé de flux dans Partage → Publication.",
-    "errSpawnFailed": "Impossible de démarrer le moteur vidéo (ffmpeg). Redémarrez l’application et signalez-le si cela se reproduit."
+    "errSpawnFailed": "Impossible de démarrer le moteur vidéo (ffmpeg). Redémarrez l’application et signalez-le si cela se reproduit.",
+    "overlayPosTl": "En haut à gauche",
+    "overlayPosTc": "En haut au centre",
+    "overlayPosTr": "En haut à droite",
+    "overlayPosCl": "Au centre à gauche",
+    "overlayPosC": "Centre",
+    "overlayPosCr": "Au centre à droite",
+    "overlayPosBl": "En bas à gauche",
+    "overlayPosBc": "En bas au centre",
+    "overlayPosBr": "En bas à droite",
+    "overlayPosFullscreen": "Plein écran",
+    "overlayPosCustom": "Personnalisé",
+    "overlayTypeImage": "Image (PNG/JPG)",
+    "overlayTypeScreen": "Écran",
+    "overlayTypeWindow": "Fenêtre / découpe de région",
+    "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
+    "overlayToggleTitle": "Activer/désactiver l'overlay",
+    "overlayNamePlaceholder": "Nom",
+    "overlayDeleteTitle": "Supprimer"
   },
   "transcript": {
     "title": "Transcription",

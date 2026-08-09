@@ -194,7 +194,7 @@
         <div class="hero-detail" id="hero-warn-detail" data-i18n="home.warnDetail">Koble til mikseren via USB før søndag</div>
       </div>
       <button class="btn-fix" id="btn-how-to-fix" data-i18n="home.howToFix">Slik løser du det</button>
-      <a href="#" class="setup-hint-link" id="btn-how-to-fix-audio">Slik setter du opp lydkilde →</a>
+      <a href="#" class="setup-hint-link" id="btn-how-to-fix-audio" data-i18n="home.setupAudioLink">Slik setter du opp lydkilde →</a>
     </div>
 
     <!-- Single big recording button + video toggle -->
@@ -243,8 +243,8 @@
         <div class="vu-bar-scale-row">
           <span class="vu-bar-lbl"></span>
           <div class="vu-bar-scale">
-            <span style="left:0%">Stille</span>
-            <span style="left:100%">Maks</span>
+            <span style="left:0%" data-i18n="home.vuScaleQuiet">Stille</span>
+            <span style="left:100%" data-i18n="home.vuScaleMax">Maks</span>
           </div>
           <div class="vu-bar-clip-spacer"></div>
           <span class="vu-bar-val-spacer"></span>
@@ -278,7 +278,7 @@
         <div class="video-source-bar">
           <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" style="flex-shrink:0;opacity:.5"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
           <select id="home-video-device-select" class="video-source-select">
-            <option value="">Velg kamera…</option>
+            <option value="" data-i18n="home.cameraSelect">Velg kamera…</option>
           </select>
           <button id="btn-home-video-refresh" class="btn-icon-refresh" title="Oppdater enhetsliste" data-i18n-title="tooltip.refreshDevices">
             <svg viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"/></svg>
@@ -356,22 +356,22 @@
           <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
         </div>
         <div class="info-card-body">
-          <div class="info-card-label">KAMERA</div>
+          <div class="info-card-label" data-i18n="home.cameraLabel">KAMERA</div>
           <div class="info-card-value" id="home-video-device-name">—</div>
           <div class="info-card-sub" id="home-video-device-status"></div>
         </div>
-        <a href="#" class="info-card-action" id="btn-go-video-source">Endre</a>
+        <a href="#" class="info-card-action" id="btn-go-video-source" data-i18n="home.changeSettings">Endre</a>
       </div>
       <div class="info-card info-card-video">
         <div class="info-card-icon">
           <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
         </div>
         <div class="info-card-body">
-          <div class="info-card-label">VIDEOKVALITET</div>
+          <div class="info-card-label" data-i18n="home.videoQualityLabel">VIDEOKVALITET</div>
           <div class="info-card-value" id="home-video-quality">—</div>
           <div class="info-card-sub" id="home-video-mode">—</div>
         </div>
-        <a href="#" class="info-card-action" id="btn-go-video-quality">Endre</a>
+        <a href="#" class="info-card-action" id="btn-go-video-quality" data-i18n="home.changeSettings">Endre</a>
       </div>
     </div>
 
@@ -2916,27 +2916,27 @@
       <div id="enhance-summary" class="export-proc-summary" style="display:none;margin-bottom:8px;opacity:.85"></div>
       <label class="export-field-label" data-i18n="editor.vocalChain" style="display:block;margin-bottom:4px">Stemmebehandling</label>
       <select id="enhance-vocal-chain" class="export-select" style="margin-bottom:8px;width:100%">
-        <option value="">Ingen</option>
-        <option value="voice-light">Stemme — lett</option>
-        <option value="voice-podcast">Podkast-stemme (anbefalt)</option>
-        <option value="voice-noisy-room">Støyete rom</option>
+        <option value="" data-i18n="editor.enhanceNone">Ingen</option>
+        <option value="voice-light" data-i18n="editor.vcLight">Stemme — lett</option>
+        <option value="voice-podcast" data-i18n="editor.vcPodcast">Podkast-stemme (anbefalt)</option>
+        <option value="voice-noisy-room" data-i18n="editor.vcNoisyRoom">Støyete rom</option>
       </select>
       <label class="export-field-label" data-i18n="editor.masterPreset" style="display:block;margin-bottom:4px">Mastering (utgivelsesnivå)</label>
       <select id="enhance-master-preset" class="export-select" style="margin-bottom:8px;width:100%">
-        <option value="">Ingen</option>
-        <option value="speech-natural">Tale — naturlig (−19 LUFS)</option>
-        <option value="speech-clear">Tale — tydelig (−16 LUFS)</option>
-        <option value="speech-punchy">Tale — kraftig (−14 LUFS)</option>
-        <option value="music-speech">Musikk + tale (−16 LUFS)</option>
+        <option value="" data-i18n="editor.enhanceNone">Ingen</option>
+        <option value="speech-natural" data-i18n="editor.mpSpeechNatural">Tale — naturlig (−19 LUFS)</option>
+        <option value="speech-clear" data-i18n="editor.mpSpeechClear">Tale — tydelig (−16 LUFS)</option>
+        <option value="speech-punchy" data-i18n="editor.mpSpeechPunchy">Tale — kraftig (−14 LUFS)</option>
+        <option value="music-speech" data-i18n="editor.mpMusicSpeech">Musikk + tale (−16 LUFS)</option>
       </select>
       <label class="export-field-label" data-i18n="editor.channelRepair" style="display:block;margin-bottom:4px">Kanalreparasjon</label>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
         <select id="enhance-channel-repair" class="export-select" style="flex:1">
-          <option value="">Ingen</option>
-          <option value="swapLr">Bytt venstre/høyre</option>
-          <option value="duplicateLeft">Bruk venstre kanal (begge)</option>
-          <option value="duplicateRight">Bruk høyre kanal (begge)</option>
-          <option value="monoMix">Bland til mono</option>
+          <option value="" data-i18n="editor.enhanceNone">Ingen</option>
+          <option value="swapLr" data-i18n="editor.crSwapLr">Bytt venstre/høyre</option>
+          <option value="duplicateLeft" data-i18n="editor.crDupLeft">Bruk venstre kanal (begge)</option>
+          <option value="duplicateRight" data-i18n="editor.crDupRight">Bruk høyre kanal (begge)</option>
+          <option value="monoMix" data-i18n="editor.crMonoMix">Bland til mono</option>
         </select>
         <button class="btn-ghost btn-sm" id="btn-diagnose-channels" data-i18n="editor.diagnoseChannels">Diagnostiser</button>
       </div>
@@ -2984,10 +2984,10 @@
     <div id="manual-video-section" style="display:none">
       <div class="manual-section-divider">
         <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
-        <span>Videokilde</span>
+        <span data-i18n="manual.videoSource">Videokilde</span>
       </div>
       <select class="form-input" id="manual-video-device">
-        <option value="">Laster enheter…</option>
+        <option value="" data-i18n="manual.loadingDevices">Laster enheter…</option>
       </select>
       <div id="manual-video-hint" class="manual-video-hint" style="display:none"></div>
     </div>
@@ -3085,11 +3085,11 @@
         <span class="rec-silence-text" id="rec-silence-text" data-i18n="recording.silenceWarn">Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.</span>
       </div>
       <div class="rec-autostop" id="rec-autostop" style="display:none">
-        <div class="rec-autostop-label">Auto-stopp om</div>
+        <div class="rec-autostop-label" data-i18n="recording.autostopIn">Auto-stopp om</div>
         <div class="rec-autostop-countdown" id="rec-autostop-countdown">—</div>
         <div class="rec-autostop-actions">
-          <button class="btn-extend" id="btn-extend-30">+ 30 min</button>
-          <button class="btn-cancel-sched" id="btn-cancel-autostop">Avbryt auto-stopp</button>
+          <button class="btn-extend" id="btn-extend-30" data-i18n="recording.extend30">+ 30 min</button>
+          <button class="btn-cancel-sched" id="btn-cancel-autostop" data-i18n="recording.cancelAutostop">Avbryt auto-stopp</button>
         </div>
       </div>
       <button class="btn-stop-big" id="btn-stop-overlay" data-i18n="recording.stop">Trykk for å stoppe opptaket</button>
@@ -3102,13 +3102,13 @@
       <div class="rec-video-header">
         <div style="display:flex;align-items:center;gap:6px">
           <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" style="opacity:.7"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"/></svg>
-          <span class="rec-video-label">KAMERA</span>
+          <span class="rec-video-label" data-i18n="home.cameraLabel">KAMERA</span>
           <span id="rec-video-bytes" class="rec-video-bytes">0 MB</span>
         </div>
       </div>
       <div class="rec-video-wrap">
         <img id="rec-video-preview-img" class="rec-video-img" alt="" style="display:none" />
-        <div id="rec-video-placeholder" class="rec-video-placeholder">Starter kamera…</div>
+        <div id="rec-video-placeholder" class="rec-video-placeholder" data-i18n="home.cameraStarting">Starter kamera…</div>
       </div>
     </div>
 
@@ -3143,7 +3143,7 @@
   <div class="ob-card">
     <div class="ob-header">
       <div class="ob-progress" id="ob-progress"></div>
-      <button class="ob-skip-btn" id="ob-btn-skip-all">Hopp over</button>
+      <button class="ob-skip-btn" id="ob-btn-skip-all" data-i18n="onboarding.skipBtn">Hopp over</button>
     </div>
     <div class="ob-body" id="ob-body"></div>
   </div>
@@ -3184,7 +3184,7 @@
 <div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cloud-folder-modal-title">
   <div class="modal modal-sm cloud-folder-modal">
     <div class="modal-header">
-      <span class="modal-title" id="cloud-folder-modal-title">Velg mappe…</span>
+      <span class="modal-title" id="cloud-folder-modal-title" data-i18n="publish.pickFolder">Velg mappe…</span>
       <button id="cloud-folder-modal-close" class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
     </div>
     <div id="cloud-folder-list" class="cloud-folder-list"></div>
