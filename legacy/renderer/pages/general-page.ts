@@ -268,7 +268,7 @@ function paintSmtpPasswordState(stored: boolean): void {
   if (input) {
     input.placeholder = stored ? t('notify.smtpPassSaved', '••••••••  (lagret)') : ''
   }
-  if (clearBtn) clearBtn.style.display = stored ? 'inline' : 'none'
+  if (clearBtn) clearBtn.style.display = stored ? '' : 'none'
   if (storedHint) storedHint.style.display = stored ? '' : 'none'
 }
 

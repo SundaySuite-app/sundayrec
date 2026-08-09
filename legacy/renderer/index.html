@@ -1256,7 +1256,7 @@
             <div class="thumb-warning" id="publish-thumb-warning" style="display:none"></div>
             <div class="thumb-button-row">
               <button class="btn-secondary btn-sm" id="btn-publish-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-sm" id="btn-publish-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
+              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-publish-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
             </div>
           </div>
         </div>
@@ -1568,7 +1568,7 @@
               <div class="pass-row">
                 <input type="password" class="form-input" id="email-pass" autocomplete="off" />
                 <button type="button" class="btn-secondary btn-sm" id="btn-save-smtp-pass" data-i18n="notify.savePassToKeychain">Lagre i nøkkelring</button>
-                <button type="button" class="btn-link" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
+                <button type="button" class="btn-ghost btn-ghost-danger btn-sm" id="btn-clear-smtp-pass" style="display:none" data-i18n="general.clearPass">Fjern</button>
               </div>
               <div class="form-hint" data-i18n="notify.smtpPassHint">Gmail krever et «App-passord» fra kontosikkerhetsinnstillingene.</div>
               <div class="form-hint" id="email-pass-state" style="display:none" data-i18n="notify.smtpPassStored">Passordet er lagret i nøkkelringen på denne maskinen.</div>
@@ -1901,7 +1901,7 @@
         <div id="telemetry-queue-status" class="form-hint" style="display:none"></div>
         <div class="btn-row mt">
           <button type="button" class="btn-secondary" id="btn-telemetry-preview" data-i18n="general.telemetryPreviewBtn">Vis hva som sendes</button>
-          <button type="button" class="btn-secondary" id="btn-telemetry-delete" data-i18n="general.telemetryDeleteBtn">Slett mine data</button>
+          <button type="button" class="btn-danger" id="btn-telemetry-delete" data-i18n="general.telemetryDeleteBtn">Slett mine data</button>
         </div>
         <div class="form-hint">
           <a href="#" id="telemetry-privacy-link" class="privacy-link" data-i18n="general.telemetryReadMore">Les personvernerklæringen ↗</a>
@@ -1984,7 +1984,7 @@
         <p id="local-nudge-start" class="card-desc" style="display:none"></p>
         <p id="local-nudge-end" class="card-desc" style="display:none"></p>
         <p id="local-nudge-at-limit" class="card-desc" style="display:none"></p>
-        <button type="button" class="btn-secondary" id="btn-local-nudge-reset" style="display:none" data-i18n="general.localNudgeResetBtn">Nullstill det appen har lært</button>
+        <button type="button" class="btn-ghost btn-ghost-danger" id="btn-local-nudge-reset" style="display:none" data-i18n="general.localNudgeResetBtn">Nullstill det appen har lært</button>
         <div id="local-nudge-status" class="form-hint" style="display:none"></div>
       </div>
 
@@ -2103,7 +2103,7 @@
         <div class="form-row">
           <input type="password" class="form-input" id="integration-companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
           <button class="btn-ghost btn-sm" id="btn-companion-apikey-save" data-i18n="companion.keySave">Lagre</button>
-          <button class="btn-ghost btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
+          <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
         </div>
         <div class="form-hint" id="integration-companion-apikey-status"></div>
       </div>
@@ -2153,13 +2153,13 @@
       <div class="section-header">
         <h2 data-i18n="home.recentRecordings">Siste opptak</h2>
         <div style="display:flex;gap:10px;align-items:center">
-          <a href="#" class="view-all" id="btn-clear-history" title="Slett alle opptak fra historikken" data-i18n-title="tooltip.deleteAllHistory" data-i18n="history.clearBtn">Slett alle</a>
+          <button type="button" class="btn-ghost btn-ghost-danger btn-sm" id="btn-clear-history" title="Slett alle opptak fra historikken" data-i18n-title="tooltip.deleteAllHistory" data-i18n="history.clearBtn">Slett alle</button>
           <button class="btn-history-more" id="btn-history-more" title="Vedlikehold" data-i18n-title="tooltip.maintenance" aria-expanded="false">⋯</button>
         </div>
       </div>
       <div id="history-more-panel" class="history-more-panel" style="display:none">
-        <a href="#" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feil</a>
-        <a href="#" id="btn-prune-history" data-i18n="history.pruneBtn">Rydd opp</a>
+        <button type="button" class="btn-ghost btn-ghost-danger btn-sm" id="btn-delete-errors" data-i18n="history.clearErrors">Slett feil</button>
+        <button type="button" class="btn-ghost btn-sm" id="btn-prune-history" data-i18n="history.pruneBtn">Rydd opp</button>
       </div>
       <div id="history-stats" style="display:none;gap:16px;font-size:12px;color:var(--text3);margin-bottom:8px;flex-wrap:wrap">
         <span id="stat-count"></span>
@@ -2191,7 +2191,7 @@
       <div class="section-header">
         <h2 data-i18n="trash.title">Papirkurv</h2>
         <div style="display:flex;gap:10px;align-items:center">
-          <a href="#" class="view-all" id="btn-trash-empty" data-i18n="trash.emptyAll">Tøm papirkurven</a>
+          <button type="button" class="btn-ghost btn-ghost-danger btn-sm" id="btn-trash-empty" data-i18n="trash.emptyAll">Tøm papirkurven</button>
           <button class="btn-ghost btn-sm" id="btn-trash-close" data-i18n="trash.back">← Tilbake til historikken</button>
         </div>
       </div>
@@ -2650,7 +2650,7 @@
           <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-sundayedit" style="display:none" title="Send til SundayEdit for pro-teksting">→ SundayEdit</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
+          <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
         </div>
         <div id="editor-transcript-body" class="editor-transcript-body">
           <div class="editor-transcript-empty" data-i18n="transcript.empty">Ingen transkripsjon ennå. Klikk «Transkriber» for å lage søkbar tekst av talen.</div>
@@ -2687,7 +2687,7 @@
             <div class="thumb-button-row">
               <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
               <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
+              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
             </div>
           </div>
         </div>
@@ -2994,7 +2994,7 @@
     <label class="form-label mt" data-i18n="manual.filename">NAVN PÅ FIL (valgfritt)</label>
     <input type="text" class="form-input" id="manual-filename" placeholder="Gudstjeneste" />
     <div class="btn-row mt">
-      <button class="btn-danger" id="btn-manual-start"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/></svg><span data-i18n="manual.start">Start opptak nå</span></button>
+      <button class="btn-primary" id="btn-manual-start"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/></svg><span data-i18n="manual.start">Start opptak nå</span></button>
       <button class="btn-ghost" id="btn-manual-cancel" data-i18n="manual.cancel">Avbryt</button>
     </div>
   </div>
