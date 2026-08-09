@@ -3,6 +3,50 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.12.0 — den store kvalitetsutgivelsen
+
+Dette er den første vanlige utgivelsen siden v0.10.0, og den samler seks ukers
+kvalitetsarbeid: alt fra beta-rundene v0.11.x, pluss en natt med feilretting som
+fant ting ingen hadde merket. Kommer du fra v0.10.0 er alt under nytt for deg —
+overskriftene fra betaene står lenger ned og gjelder fortsatt.
+
+### Rettet: innstillinger som ikke ble tatt på alvor
+
+Ni innstillinger ble vist og bekreftet i appen uten at motoren noen gang fikk
+beskjed. De viktigste:
+
+- **Automatisk sletting av gamle opptak virket ikke** — uansett hva du valgte,
+  ble ingenting slettet automatisk. Nå følger motoren valget ditt. Sjekk
+  gjerne verdien under **Innstillinger** før søndag, siden den nå betyr noe.
+- **Bytte av oppdateringskanal ble ikke lagret.** Du kunne trykke «Ja, bruk
+  beta» og forbli på stabil uten å få vite det. Nå lagres valget, og
+  tekstlinjen under velgeren forteller hvilken kanal maskinen faktisk henter
+  fra.
+- Påminnelses-forsprang, inngangsvolum og «lær av rettelsene mine» nådde
+  heller ikke fram. Alle gjør det nå, og en automatisk vakt hindrer at nye
+  innstillinger kan havne i samme felle.
+
+### Rettet: Integrasjoner-panelet sa «Lagret ✓» uten å lagre
+
+Hele Integrasjoner-panelet kvitterte suksess mens ingenting ble tatt vare på.
+Nå er elleve av funksjonene koblet til ordentlig lagring, og de som ennå ikke
+finnes bak panelet sier det ærlig i stedet for å late som.
+
+### Rettet: filnavn kunne havne i krasjrapporter
+
+Feilmeldinger som nevnte filer med mellomrom i navnet («gudstjeneste 9. november.wav») kunne slippe deler av navnet gjennom vaskingen som anonym
+diagnostikk går gjennom. Meldinger fødes nå rene ved kilden, og en automatisk
+vakt passer på at nye feilmeldinger ikke kan gjøre samme feil.
+
+### Raskere å jobbe med
+
+En byggefeil gjorde at deler av appen ble bygget på nytt hver eneste gang,
+uansett om noe var endret. Utviklingssyklusen er en femtedel raskere og
+kvalitetskontrollen i skyen omtrent dobbelt så rask — noe som betyr at
+rettelser når deg raskere.
+
+---
+
 ## v0.11.1-beta.2 — appen begynner å lære av deg
 
 > **Betaversjon.** Du får den fordi du står på beta-kanalen under

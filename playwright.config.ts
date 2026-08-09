@@ -24,9 +24,12 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
 
-  // A journey is boot + navigate + a few interactions. 30 s is roomy for that
-  // and still short enough that a hang fails rather than stalls the run.
-  timeout: 30_000,
+  // A journey is boot + navigate + a few interactions. 45 s is roomy for that
+  // and still short enough that a hang fails rather than stalls the run. It was
+  // 30 s until the night audit measured the editor cut-row journey at 24.9 s
+  // under full parallelism — a 0.83 utilisation of its budget, which is not a
+  // margin, it is a coin waiting to flip on a slow CI runner.
+  timeout: 45_000,
   // Web-first assertions retry until this. The long pole is the first paint
   // after `?goto=`, which waits on the renderer's own 150 ms + 50 ms poll.
   expect: { timeout: 10_000 },
