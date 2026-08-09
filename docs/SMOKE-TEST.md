@@ -99,6 +99,20 @@ Google client configured) `cloud upload worker idle: Google OAuth client not
 configured`. The cloud worker idling cleanly with no config is itself a thing to
 verify here — there should be **no** repeated cloud log spam.
 
+**First run:** a fresh install (no `onboardingDone`) boots into the wizard; a
+settled install goes straight to Hjem. The wizard's consent step (E3.6) asks
+the telemetry question with the «Aldri»-list on display, records the answer —
+yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal
+(«Alt er klart!» either way), and cannot trap the operator if the backend
+rejects the answer. The renderer half of all of that is pinned in the browser
+tier; only the native window/DB boot itself stays a rig observation:
+
+- VERIFIED-BY: e2e/onboarding.spec.ts::first run shows the wizard; a settled install does not
+- VERIFIED-BY: e2e/onboarding.spec.ts::the consent step exists, and says what is and is not collected
+- VERIFIED-BY: e2e/onboarding.spec.ts::«Ja, del anonymt» grants consent and finishes the wizard
+- VERIFIED-BY: e2e/onboarding.spec.ts::«Nei takk» declines — and the app is otherwise identical
+- VERIFIED-BY: e2e/onboarding.spec.ts::a backend that cannot record the answer does not trap the operator
+
 ---
 
 ## 3. Channel grid → live meters move → two-tap L/R [HW]
@@ -347,8 +361,9 @@ from the configured settings, recipient + language on the request):
    - **Expected:** `lettre` connects + delivers; HTML + plaintext parts both
      present in the received mail.
 
-> [NET] The Gmail POST + the SMTP handshake are NETWORK-UNVERIFIED — compiled
-> into every default build, never run against a real account/server in the gate.
+> [NET] The Gmail POST + the SMTP handshake are compiled into every default
+> build but never run against a real account/server in the gate — se markøren
+> i §8-innledningen («the **send** is …»).
 
 ---
 
@@ -386,9 +401,9 @@ npm run tauri dev   # tray is on by default — nothing to add
      `dispatch_deep_link` brings the window forward + emits `deeplink://import`.
 
 > [GUI] The `tauri::tray` item install, the menu paint, and the
-> `tauri-plugin-deep-link` scheme delivery are GUI-UNVERIFIED — they need a real
-> desktop session. The dedicated tray icon assets aren't bundled yet (the app's
-> default window icon is reused) — see docs/NEEDS-RICHARD.md PU-2.
+> `tauri-plugin-deep-link` scheme delivery need a real desktop session — se
+> markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
+> (the app's default window icon is reused) — see docs/NEEDS-RICHARD.md PU-2.
 
 ---
 
@@ -407,28 +422,33 @@ cargo build -p sundayrec --features publish
      to Drive, made public, and the feed URL is cached for the UI to show
      ("submit this URL to Spotify/Apple").
 
-⚠️ **The panel this section used to describe does not exist.** (2026-08-08
-burndown.) There is no **Forhåndsvis feed** control anywhere in the renderer,
-and `publish_feed_status` / `publish_feed_preview` / `publish_generate_feed`
-are registered but reachable from **no** UI path
-(`scripts/command-reachability-baseline.json` lists all three as unreachable).
-The actual podcast surface is the **Opptak/Filer** tab's podcast card, whose
-**Generer feed nå** (`btn-podcast-regenerate`, files-page.ts) calls
-`window.api.podcastRegenerate(service)` — and that shim method is a permanent
-stub (`async () => ({ ok: false })`, api-shim.ts), so today the button always
-ends in «✕ ukjent feil» no matter the build. Until either the shim is wired to
-the `publish_*` commands or the card is gated honestly, there is nothing here a
-rig can verify beyond that stub answer. The XML shaping itself stays
+The actual podcast surface is the **Opptak/Filer** tab's podcast card. Since
+PR #114 (2026-08-09) its **Generer feed nå** (`btn-podcast-regenerate`,
+files-page.ts) is real: `window.api.podcastRegenerate(service)` invokes
+`publish_generate_feed` — the old permanent stub (`async () => ({ ok: false })`,
+every click ending in «✕ ukjent feil») is gone, and a failure now names its
+actual reason. The card is also honestly gated: on panel load
+`podcastFeedStatus` → `publish_feed_status` asks whether the default-off
+`publish` feature was compiled in, and a build without it disables the button
+with «RSS-generering er ikke med i denne bygningen av SundayRec.» instead of
+offering a doomed click. (There is still no **Forhåndsvis feed** control —
+`publish_feed_preview` remains reachable from no UI path, see
+`scripts/command-reachability-baseline.json`.) The XML shaping itself stays
 unit-tested in `sundayrec-core::feed`.
 
-2. (any build) Open the podcast card, click **Generer feed nå**.
-   - **Expected (today):** «✕ ukjent feil» — the stubbed shim answer. If this
-     ever succeeds, the wiring has been built; rewrite this section and give
-     the flow real steps.
+2. (`--features publish` build) Open the podcast card, click **Generer feed
+   nå**.
+   - **Expected:** the status walks «Genererer…» → «✓ N episoder publisert»
+     and the feed URL row appears; a failure states its reason (e.g. «velg
+     lagringsmappe først», «koble til skytjenesten først») — never «ukjent
+     feil» for a known code. In a **default** build the button must be
+     disabled by the feature gate; a clickable button that then fails is the
+     bug to report now.
 
-> [NET] File/HTTP publish is NETWORK-UNVERIFIED — only the XML shaping is tested;
-> the per-recording share URLs aren't persisted yet so the preview uses the local
-> file path as a placeholder `audio_url` (see `commands::publish` + NEEDS-RICHARD).
+> [NET] File/HTTP publish never runs in the gate — only the XML shaping is
+> tested (se markøren i §10-innledningen); the per-recording share URLs aren't
+> persisted yet so the preview uses the local file path as a placeholder
+> `audio_url` (see `commands::publish` + NEEDS-RICHARD).
 
 ---
 
@@ -470,8 +490,14 @@ a model + a language, **Transkriber**, then the segments render and **SRT** /
 **VTT** / **TXT** buttons save the transcript via `whisper_export_transcript`
 (native save dialog). The model registry + the export render work in **every**
 build; only `whisper_transcribe` needs the feature — which the default build
-has. The calm "ikke bygd inn" hint after a transcribe attempt belongs to a
-`--no-default-features` build only (GUI-UNVERIFIED).
+has. There is **no calm gate hint** on this panel: in a
+`--no-default-features` build a transcribe attempt surfaces the
+`feature_disabled` rejection through the ordinary error dialog
+(«Transkribering feilet» with the real reason) — this runbook used to promise
+a calm «ikke bygd inn»-hint that has never existed here. The renderer half is
+browser-tier pinned:
+
+- VERIFIED-BY: e2e/editor.spec.ts::a feature_disabled transcribe surfaces its reason in the error dialog
 
 ```bash
 npm run tauri dev   # drive the Transkribering disclosure
@@ -713,16 +739,16 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
 > The sidecar read/write/delete + the 400 MB inline-vs-stream guard + the
 > `__editor_tmp`/`__editor_bak` startup sweep are **fs, not ffmpeg** — they
 > compile and run in the default build and ARE exercised in the gate (real
-> tempdir round-trips). Only the ffmpeg-driven probe/preview/apply are
-> HARDWARE-UNVERIFIED.
+> tempdir round-trips). Only the ffmpeg-driven probe/preview/apply need real
+> media — se [HW]-markøren i §12-innledningen.
 
 > [HW] The ffprobe/decode/measure/render runs only execute against real media —
-> never in the gate. The core argv-building, filter-graph, loudnorm parse, and
-> VAD/sermon decisions are unit-tested in Rust core, and the renderer's
-> load→peaks→regions→export data flow is covered by the browser tier
-> (e2e/editor.spec.ts — the "no JS unit-test harness on this branch" note that
-> used to sit here predates E5.2). The waveform/cut-band canvas paint itself is
-> still // GUI-UNVERIFIED.
+> never in the gate (samme markør). The core argv-building, filter-graph,
+> loudnorm parse, and VAD/sermon decisions are unit-tested in Rust core, and
+> the renderer's load→peaks→regions→export data flow is covered by the browser
+> tier (e2e/editor.spec.ts — the "no JS unit-test harness on this branch" note
+> that used to sit here predates E5.2). The waveform/cut-band canvas paint
+> itself is still unproven — se markøren i steg 3 over.
 > A `--no-default-features` build returns `feature_disabled` for every editor
 > command and the panel shows a calm hint; the default build does not.
 
@@ -863,7 +889,8 @@ npm run tauri dev   # drive the Direktesending disclosure — streaming is on by
 > a real key — never in the gate. Only the core decisions (the tee/encode/
 > overlay argv, the keyframe/bitrate math, the audio-map, the key/URL validation,
 > the key-redacted log copy) are unit-tested in Rust core; the panel's IPC
-> data-flow has no JS unit-test harness on this branch.
+> data-flow is browser-tier testable (the e2e/ harness exists since E5.2) but
+> has no spec covering it yet.
 
 1. Open the **Direktesending** disclosure. In the **default build the START
    button is live** — `streaming` ships in `default` precisely because the page
@@ -883,7 +910,7 @@ npm run tauri dev   # drive the Direktesending disclosure — streaming is on by
    - **Expected:** one ffmpeg opens the camera/mic, composites the overlay, and
      pushes to every enabled destination; **Status** shows `active` + a live
      bitrate/fps. A second **Start** is refused (`stream_already_active`).
-     // NETWORK/HARDWARE-UNVERIFIED.
+     (Se [NET][HW]-markøren i §R3-innledningen.)
 4. Click **Stopp**.
    - **Expected:** the stream goes idle; the broadcast ends on the platform.
 
@@ -924,8 +951,9 @@ feature flag — this was part of PU-6. The **Gjennomgang** panel (R6) drives it
 3. Run the reminder sweep (`review_process_reminders`).
    - **Expected:** entries past their reminder window surface a notification.
 
-> The core decisions are unit-tested in Rust; the panel data-flow + IPC have no
-> JS unit-test harness on this branch; the on-screen render is // GUI-UNVERIFIED.
+> The core decisions are unit-tested in Rust; the panel data-flow + IPC are
+> browser-tier testable (the e2e/ harness exists since E5.2) but have no spec
+> covering them yet; the on-screen render is // GUI-UNVERIFIED.
 
 ---
 
@@ -946,15 +974,42 @@ present in every release build and in a plain `npm run tauri dev`.
 npm run tauri dev   # drive the Oppdateringer disclosure — updater is on by default
 ```
 
+**«Oppdater automatisk»** (Generelt) is the privacy gate PRIVACY.md promises:
+off = the app never contacts the update server on its own (no startup check,
+no hourly repeat — not even in the window where the settings blob is still
+loading, the #11 race fixed in PR #101); on = one immediate check plus exactly
+one hourly schedule; flipping it mid-session arms/cancels the schedule without
+firing extra checks. All four renderer paths are pinned in the browser tier:
+
+- VERIFIED-BY: e2e/auto-update.spec.ts::off at startup: zero update_check even while settings load slowly (the #11 race)
+- VERIFIED-BY: e2e/auto-update.spec.ts::on at startup: one immediate check, and the hourly repeat is scheduled
+- VERIFIED-BY: e2e/auto-update.spec.ts::toggling off while running stops the schedule and further checks
+- VERIFIED-BY: e2e/auto-update.spec.ts::toggling back on re-arms: an immediate check and a fresh schedule
+
+**«Oppdateringskanal»** must cross the renderer→sqlite seam with its value —
+the backend (`update/mod.rs::current_channel`) reads sqlite, never
+localStorage, and the v0.11.1-beta.2 rig bug #113 was precisely this select
+saying «Lagret ✓» while the machine silently stayed on the stable feed:
+
+- VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the backend save, not just localStorage
+- VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
+
 1. Open the **Oppdateringer** disclosure and click **Se etter oppdateringer nå**.
-   - **Expected in a default build:** a real check, not a hint. The calm
-     "Automatisk oppdatering er ikke bygget inn i denne versjonen." message
-     (`feature_disabled`) belongs to a `--no-default-features` build only — seeing
-     it in a default build is a BUG. // GUI-UNVERIFIED.
+   - **Expected in a default build:** a real check, not an error. Under
+     `--no-default-features` the `update_check` command rejects with
+     `feature_disabled`, and the panel has **no dedicated gate hint** for it —
+     the rejection surfaces through the ordinary error path as «Kunne ikke
+     sjekke for oppdateringer» (this runbook used to promise a calm «ikke
+     bygget inn»-message that has never existed in this renderer). Seeing
+     that error text in a default build with network is a BUG.
+   - VERIFIED-BY: e2e/auto-update.spec.ts::a feature_disabled check surfaces as the ordinary error text
 2. (dev build) **Se etter oppdateringer nå**.
    - **Expected:** the status reports **Du er oppdatert** — a dev build
-     short-circuits the check (the `should_check` guard), so no error from a
-     missing feed. // NETWORK-UNVERIFIED.
+     short-circuits the check (the `should_check` guard, unit-tested in
+     `sundayrec-core::update`), so no error from a missing feed. The renderer
+     half — an `upToDate` answer paints «Du er oppdatert» and retires any
+     stale install button — is browser-tier pinned:
+   - VERIFIED-BY: e2e/auto-update.spec.ts::an upToDate answer paints «Du er oppdatert» and retires stale buttons
 3. (**release** build pointed at a real signed feed) check
    → **Last ned** → **↺ Start på nytt og installer**.
    - **Expected:** the panel walks `available` → `downloading {pct}` →
@@ -979,6 +1034,14 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
      port clamp:
    - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port
+   - Every settings key with a backend reader must also cross the curated
+     `settings_save` **with its value** — the #113 seam shape generalised
+     (`autoDeleteDays`, `showLiveLevels`, `inputVolume`, `trimSilence`,
+     `launchAtLogin` all had a backend reader and were silently re-defaulted
+     on every save), including the float→integer coercion that otherwise
+     fails the whole save:
+   - VERIFIED-BY: e2e/settings-seam.spec.ts::non-default values reach the backend save, not just localStorage
+   - VERIFIED-BY: e2e/settings-seam.spec.ts::an untouched install sends the Rust defaults, and numbers stay integers
 
 ---
 
@@ -1090,16 +1153,29 @@ for the keychain write. The renderer half of that seam is pinned in
    `integrations_song_submit_usage` POSTs one payload per song to
    `<songApiUrl>/v1/usage/log` (409 = duplicate counts as submitted).
    - **Expected:** `disabled` when the song flow is off; `no_service_link` /
-     `no_songs` with a hint when the sidecar/setlist is missing. // NETWORK-UNVERIFIED.
+     `no_songs` with a hint when the sidecar/setlist is missing. The guard
+     decision is the pure `song_usage_gate`, tested; only the POST itself
+     stays network-bound (se markøren i innledningen).
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_disabled_when_song_flow_off
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_no_service_link_without_sidecar
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_no_songs_without_church_or_setlist
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_ready_yields_one_payload_per_song
 4. `integrations_plan_fetch_services` reads `<planApiUrl>/rest/v1/service`,
    enriching each with `meta` (title/speaker) + `schedule` (local 2-h window);
    `integrations_plan_update_service` PATCHes `was_streamed_flag`/`recording_url`.
    - **Expected:** `plan_not_ready` until `plan.enabled` + a `planApiUrl` are set;
-     `no_church_id` without one. // NETWORK-UNVERIFIED.
+     `no_church_id` without one. The guard decision is the pure
+     `plan_fetch_gate`, tested; only the HTTP fetch itself stays network-bound
+     (se markøren i innledningen).
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::plan_fetch_gate_not_ready_until_enabled_and_url
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::plan_fetch_gate_no_church_id_without_one
 5. `integrations_sundayedit_send` opens `sundayedit://import?…`; `..._import` parses a
    SundayEdit SRT/VTT into the recording's `.transcript.json`.
-   - **Expected:** `sundayedit_not_installed` when no scheme handler;
-     `no_captions_parsed` when the subtitle file yields no segments. // NETWORK-UNVERIFIED.
+   - **Expected:** `sundayedit_not_installed` when no scheme handler (that
+     half needs the peer app — se markøren i innledningen);
+     `no_captions_parsed` when the subtitle file yields no segments — the
+     import parse is a plain function and is pinned:
+   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::sundayedit_import_reports_no_captions_parsed_for_an_empty_vtt
 
 (SundayStage manifest import is `stage_import_manifest`, covered by §PU-6.)
 

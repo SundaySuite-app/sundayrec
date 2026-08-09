@@ -54,11 +54,12 @@ eller har en generisk typeparameter som selv inneholder en parentes
 
 > ⏱️ **Tallene her er et øyeblikksbilde, ikke en løpende sannhet — og de har
 > allerede flyttet seg.** `scripts/check-command-reachability.mjs` (§7) måler det
-> samme på nytt hver `npm run check` og skriver ut avviket selv, f.eks.
-> `registered 191, reachable 130, unreachable 61` mot tabellens 178/118/60.
-> Skriptet **feiler ikke** på et slikt avvik — bare på en ekte regresjon — så
-> tabellen under skal leses som «slik så det ut da revisjonen ble gjort».
-> Kjør skriptet for dagens tall.
+> samme på nytt hver `npm run check` og skriver ut avviket selv: per 2026-08-09
+> (etter PR #114–#118) er tallene 194 registrert / 145 nådd / **49 unådd** mot
+> tabellens 178/118/60 — integrasjons- og publish-oppkoblingen i #114 flyttet
+> en hel gruppe fra «ikke nådd» til «nådd». Skriptet **feiler ikke** på et
+> slikt avvik — bare på en ekte regresjon — så tabellen under skal leses som
+> «slik så det ut da revisjonen ble gjort». Kjør skriptet for dagens tall.
 
 | Måling                 | v0.9.0 (`c6325a6`) | Nå (`feat/make-it-real`) |
 | ---------------------- | -----------------: | -----------------------: |
@@ -157,7 +158,17 @@ Det er riktig oppførsel å beholde inntil ID-en finnes.
 utgår fra produktet. Halvveis er ikke et alternativ som koster noe i dag, men
 det er 13 kommandoer og et helt UI som vedlikeholdes uten å brukes.
 
-### 4.2 Sunday-suite-integrasjoner — 10 kommandoer · anbefaling: **KOBLE OPP** · 👤
+### 4.2 Sunday-suite-integrasjoner — 10 kommandoer · ✅ **LØST i PR #114 (2026-08-09)**
+
+> **Denne gruppa er koblet opp.** PR #114 byttet stubbene i `api-shim.ts` mot
+> ekte `invoke`-kall for alle ti kommandoene under: panelet lagrer nå gjennom
+> `integrations_get/set_settings`, API-nøkkelen når nøkkelringen, og
+> kvitteringene er ærlige («Lagret ✓» først etter at IPC-en svarte; en feilet
+> lagring viser grunnen). Renderer-halvdelen er pinnet i
+> `e2e/integrations.spec.ts`, og alle ti forlot `unreachable`-settet i
+> `scripts/command-reachability-baseline.json`. Tabellen under står som
+> beslutningsgrunnlaget slik det så ut FØR #114 — les «Anbefaling» som
+> historikk, ikke som gjenstående arbeid.
 
 | Kommando                           | Anbefaling | Begrunnelse                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -172,14 +183,11 @@ det er 13 kommandoer og et helt UI som vedlikeholdes uten å brukes.
 | `integrations_sundayedit_send`     | koble opp  | Stub returnerer `{ ok: false }`.                                                                                                                                                                                                                                                                                                         |
 | `integrations_sundayedit_import`   | koble opp  | Stub returnerer `{ ok: false }`.                                                                                                                                                                                                                                                                                                         |
 
-**Dette er den høyest prioriterte gruppa i hele revisjonen.** Alle andre
-uåpnelige kommandoer er skjult bak en ærlig port eller helt uten UI. Denne har
-et fullt synlig, klikkbart panel over seg, og elleve stubber under. Backend-siden
-er ferdig og enhetstestet; det som mangler er shim-metodene.
-
-**👤 Eierbeslutning:** skal Sunday-suite-integrasjonene med i v0.11, eller skal
-panelet skjules bak samme ærlige port som sky-lagring inntil videre? Å la det
-stå slik det står nå er det eneste svaret som ikke er akseptabelt.
+**Dette VAR den høyest prioriterte gruppa i hele revisjonen** — et fullt
+synlig, klikkbart panel over stubber. Det uakseptable mellomstadiet er borte:
+shim-metodene er ekte siden PR #114, og HTTP-sidene av kommandoene står igjen
+som det de alltid var — NETTVERK-UVERIFISERT til en rigg med søsterappene
+prøver dem (se `SMOKE-TEST.md` §P2b).
 
 ### 4.3 Innstillinger — 6 kommandoer · anbefaling: **DELT**
 

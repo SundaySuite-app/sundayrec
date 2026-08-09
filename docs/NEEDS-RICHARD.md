@@ -464,13 +464,15 @@ videoBitrateKbps, audioBitrateKbps, alsoRecord, overlays}` og signaturen
   stemmer. `streaming` er dessuten i `default` nå, så knappen er ikke lenger et
   `feature_disabled`-svar. Selve RTMP-pushen er fortsatt uverifisert mot rigg.
 
-**LENGER IKKE SANT (rettet 2026-08):** notatet under sa at «e-post/webhook/cloud/
-integrasjoner … frontend-metodene deres er bevisste no-op-stubs i `api-shim.ts`
-→ backend drives aldri av dem». Det gjelder nå **kun cloud og integrasjoner**.
-E-post og webhook er ekte: `email_send_test`, `email_test_webhook` og
-nøkkelring-kommandoene er koblet opp, og — viktigere — det ble funnet at
-kirke-/e-post-/webhook-innstillingene **aldri nådde sqlite i det hele tatt**
-(de lå kun i `localStorage`, så backend leste defaults). Det kuraterte
-subsettet i `syncBackendRecordingSettings` er utvidet deretter. Se
-`docs/COMMAND_AUDIT_2026-08.md` §4.2 for integrasjons-stubbene, som fortsatt
-står — med et fullt synlig panel over seg.
+**LENGER IKKE SANT (rettet 2026-08, sist 2026-08-09):** notatet under sa at
+«e-post/webhook/cloud/integrasjoner … frontend-metodene deres er bevisste
+no-op-stubs i `api-shim.ts` → backend drives aldri av dem». Det gjelder nå
+**kun cloud**. E-post og webhook er ekte: `email_send_test`,
+`email_test_webhook` og nøkkelring-kommandoene er koblet opp, og — viktigere —
+det ble funnet at kirke-/e-post-/webhook-innstillingene **aldri nådde sqlite i
+det hele tatt** (de lå kun i `localStorage`, så backend leste defaults). Det
+kuraterte subsettet i `syncBackendRecordingSettings` er utvidet deretter.
+**Integrasjons-stubbene er også borte:** PR #114 (2026-08-09) koblet alle ti
+`integrations_*`-kommandoene til ekte kall med ærlige kvitteringer (pinnet i
+`e2e/integrations.spec.ts`); se `docs/COMMAND_AUDIT_2026-08.md` §4.2, som nå
+er merket løst. HTTP-sidene forblir nettverks-uverifiserte til riggtest.

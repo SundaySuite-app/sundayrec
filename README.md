@@ -27,7 +27,8 @@ features (see Architecture below).
 - **`crates/sundayrec-core`** — the pure domain core: GUI-free, Tauri-free,
   fs/network-free, clock injected by the caller. Every recorder/editor/
   streaming/whisper/publish _decision_ lives here and is unit-tested
-  (~1370 tests). Ported knowledge from the Electron app (hardened ffmpeg
+  (~1420 tests as of v0.12.0; the `src-tauri` shell carries a further ~730).
+  Ported knowledge from the Electron app (hardened ffmpeg
   arguments, device parsers, error classification, silence/watchdog logic) —
   rebuilt cleanly, not copied.
 - **`src-tauri`** — the thin Tauri 2 shell: commands, events, processes,
@@ -42,10 +43,11 @@ features (see Architecture below).
   renderer (`legacy/renderer` is the Vite root), its `types`/`shared`/`locales`
   trees, and `legacy/bindings/` — the committed ts-rs TypeScript bindings
   generated from the Rust types (`npm run bindings`; CI fails if they drift).
-- **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), completion
-  state (`COMPLETION.md`), hardware smoke tests (`SMOKE-TEST.md`), the
-  account/key checklist (`NEEDS-RICHARD.md`), and the current improvement
-  backlog (`BACKLOG-AUDIT-2026-07-07.md`).
+- **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), hardware
+  smoke tests (`SMOKE-TEST.md`), the account/key checklist
+  (`NEEDS-RICHARD.md`), and an improvement-backlog snapshot from 2026-07-07
+  (`BACKLOG-AUDIT-2026-07-07.md`). Superseded snapshots live in
+  `docs/archive/`.
 
 The original Electron app remains the **behavioural specification**, not a
 template. See [`docs/MIGRATION-TAURI2.md`](docs/MIGRATION-TAURI2.md) for the
@@ -91,23 +93,28 @@ deep-links into any screen, and the E5.1 fixture seam
 it with populated state instead of empty ones. No Tauri, no ffmpeg, no device —
 Playwright starts the Vite server itself, so `npm run e2e` is the whole command.
 
-Specs cover onboarding incl. the telemetry consent step, the editor (open a
-recording, the three-tab workspace, the sermon-pick correction), the settings
-roundtrip, Historikk (rows, sort, filter chips, trash + undo) and the telemetry
-payload preview. The two `test.fail()` pins `e2e/editor.spec.ts` used to carry
-are gone: both bugs are fixed and the specs now assert the fixed behaviour
-(see the "Regressions" block there). No `test.fail()` remains in `e2e/`.
+The spec files under `e2e/` are the inventory — one file per surface, each
+with a header saying exactly what it pins and why (onboarding/consent, the
+recorder seam, the editor, Historikk, settings and the renderer→sqlite
+settings seam, auto-update, the update channel, integrations, system support,
+telemetry preview). `npx playwright test --list` gives the current count; an
+enumerated prose copy here rotted twice, so there isn't one any more. No
+`test.fail()` remains in `e2e/`, and `docs/SMOKE-TEST.md`'s `VERIFIED-BY:`
+pointers into these specs are gate-checked (`npm run smoke-verified`).
 
 Deliberately not wired into `npm run check`: it needs a browser binary
 (`npm run e2e:install`, ~95 MB) that the local gate should not require, and it
 tests a different thing at a different cadence. See the header of
 `playwright.config.ts` for the reasoning behind each config choice.
 
-CI (`.github/workflows/ci.yml`) runs that gate plus more — a feature-off
-`cargo check`, the `vad` feature, a no-bundle Tauri build, a Windows
-`cargo check`/clippy job, and a dependency audit — on every push to `main`,
-every PR, `v*` tags, and manual dispatch (the repo is public, so Actions
-minutes are free). Releases are built and published as drafts by
+CI (`.github/workflows/ci.yml`) runs six parallel jobs on every push to
+`main`, every PR, `v*` tags, and manual dispatch (the repo is public, so
+Actions minutes are free): **check** (the `npm run check` chain plus a
+feature-off `cargo clippy`), **vad** (clippy + tests with the default-off
+`vad` feature), **build-smoke** (a `--no-bundle` Tauri build), **e2e** (the
+Playwright tier), **windows-check** (Windows `cargo check` + clippy, incl. an
+asio-less approximation of the release feature combo), and **audit**
+(npm + cargo dependency audit). Releases are built and published as drafts by
 `.github/workflows/release.yml` (macOS arm64 + Windows). macOS **signing**
 activates once the `MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets exist;
 **notarization does not** — its env lines are commented out in `release.yml`
