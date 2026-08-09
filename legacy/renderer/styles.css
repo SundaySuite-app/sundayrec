@@ -1376,12 +1376,15 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 
 /* ── Telemetry consent toast (E3.6) ──────────────────────────────
  * The one-time prompt for installs that already finished onboarding
- * (telemetry-consent-prompt.ts). Deliberately its OWN corner — top-right,
- * below the titlebar — rather than .update-toast's bottom-right: the two are
- * both "maybe shown at startup" and neither should have to know whether the
- * other is currently on screen. */
+ * (telemetry-consent-prompt.ts). Deliberately its OWN corner — BOTTOM-LEFT.
+ * Not migrated into ui/toast.ts (the house toast carries at most one action;
+ * consent needs two equal answers, a privacy link and a close). Not top-right:
+ * that is .ui-toast-stack's corner, and on macOS the two used to land on top
+ * of each other. Not bottom-right: that is .update-toast's, and both are
+ * "maybe shown at startup" — neither should have to know whether the other is
+ * currently on screen. */
 .telemetry-consent-toast {
-  position: fixed; top: 40px; right: 22px; z-index: var(--z-toast);
+  position: fixed; bottom: 22px; left: 22px; z-index: var(--z-toast);
   width: 320px;
   background: var(--surface2); border: 1px solid var(--border2);
   border-radius: 14px; padding: 16px 16px 14px;
@@ -1701,17 +1704,14 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   border-radius: 12px; padding: 14px 18px; width: 260px;
   box-shadow: 0 8px 32px rgba(0,0,0,.5);
   display: flex; align-items: flex-start; gap: 12px;
-  animation: slideUp .28s cubic-bezier(.22,1,.36,1);
+  animation: toast-in .28s cubic-bezier(.22,1,.36,1);
   transition: opacity .2s, transform .2s;
 }
 .editor-prompt-toast.toast-dismissing {
   opacity: 0;
   transform: translateY(10px);
 }
-@keyframes slideUp {
-  from { transform: translateY(14px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
+/* (@keyframes slideUp var byte-identisk med toast-in — dedupet 2026-08.) */
 
 /* ── Page transition ─────────────────────────────────────────────── */
 @keyframes pageEnter {
