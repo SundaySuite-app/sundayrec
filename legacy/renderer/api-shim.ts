@@ -710,7 +710,40 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     reminderMinutes: typeof s.reminderMinutes === "number" ? s.reminderMinutes : 0,
     localAdaptivity: s.localAdaptivity === true,
     autoUpdate: s.autoUpdate !== false,
+    // The #113 bug, generalised: these five were found by enumerating EVERY
+    // `settings.*` read behind `settings::load` in the backend and diffing
+    // against this object. Each had a real reader that could only ever see the
+    // serde default, because the one writer (this curated sync) dropped it.
+    //   • autoDeleteDays → commands/db.rs `recordings_prune` reads sqlite to
+    //     decide retention; un-synced it was always 0 = pruning permanently
+    //     disabled ("slett automatisk" saved to localStorage, chip said Lagret,
+    //     and no recording was ever pruned).
+    //   • showLiveLevels → scheduler/mod.rs passes it as `live_levels` to the
+    //     recorder (the astats meter tap that can starve capture on a weak
+    //     machine). No UI control writes it TODAY, so the value is the default
+    //     — synced so a value that does land in the blob (hand-edited,
+    //     imported profile, future toggle) reaches its reader instead of being
+    //     re-defaulted to `true` on every save.
+    //   • inputVolume / trimSilence / launchAtLogin → core telemetry's
+    //     environment block and the diagnose report describe the install with
+    //     them; un-synced every install claimed the defaults (100 / off / off),
+    //     which is exactly the `autoUpdate` case above again.
+    // The two numeric fields are integer-coerced BEFORE the invoke: serde
+    // rejects a float for an `i32`, and one bad value fails the WHOLE
+    // settings_save (the filenamePattern trap), dropping all recorder sync.
+    // Ranges mirror Rust `validate()` (0..=3650, 0..=200).
+    autoDeleteDays: clampInt(s.autoDeleteDays, 0, 3650, 0),
+    showLiveLevels: s.showLiveLevels !== false,
+    inputVolume: clampInt(s.inputVolume, 0, 200, 100),
+    trimSilence: s.trimSilence === true,
+    launchAtLogin: s.launchAtLogin === true,
   };
+}
+
+/** `v` rounded and clamped to `[lo, hi]`, or `fallback` when not a finite number. */
+function clampInt(v: unknown, lo: number, hi: number, fallback: number): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
+  return Math.min(hi, Math.max(lo, Math.round(v)));
 }
 
 function sanitizeSlots(v: unknown): Array<Record<string, unknown>> {

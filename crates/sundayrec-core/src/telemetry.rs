@@ -998,8 +998,10 @@ pub struct WireSettings {
     pub classic_ffmpeg_audio: bool,
     /// The Windows DirectShow escape hatch, same question.
     pub classic_directshow: bool,
-    /// Automatic updates. SundayRec has no update CHANNEL concept (one feed for
-    /// everyone), so this flag is the whole of it.
+    /// Automatic updates on/off. (An update CHANNEL — stable/beta — exists too,
+    /// see [`crate::settings::UpdateChannel`], but it does not travel here.
+    /// Note before adding it: the beta ring is small, so "beta" on a report
+    /// narrows who sent it — that is a schema decision, not a field to slip in.)
     pub auto_update: bool,
     pub launch_at_login: bool,
     pub wake_from_sleep: bool,
