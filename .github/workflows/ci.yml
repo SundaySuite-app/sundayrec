@@ -129,22 +129,106 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
-      # E9's neural VAD is DEFAULT-OFF, so every step above compiles the seam
-      # OUT. Its value is a set of tests that catch failure modes the model has
-      # no error for — a 512-sample window instead of 576, `sr` at 8000, inputs
-      # bound by index, a lost symbolic batch dim — and a test that never runs
-      # protects nothing. This is the step where they run. It also keeps the
-      # feature-ON side under `-D warnings`: the default gate can never see it,
-      # which is exactly how a stub and its real implementation drift apart.
+  # E9's neural VAD is DEFAULT-OFF, so every step in `check` compiles the seam
+  # OUT. Its value is a set of tests that catch failure modes the model has
+  # no error for — a 512-sample window instead of 576, `sr` at 8000, inputs
+  # bound by index, a lost symbolic batch dim — and a test that never runs
+  # protects nothing. This is the job where they run. It also keeps the
+  # feature-ON side under `-D warnings`: the default gate can never see it,
+  # which is exactly how a stub and its real implementation drift apart.
+  #
+  # Its own JOB (split out of `check` 2026-08-09) purely for wall time: the
+  # vad lane took ~4½ min at the END of a ~21 min serial job while every other
+  # job in the pipeline had been idle for 15. Same two commands, same flags —
+  # only the job boundary moved. It pays its own ~2 min setup (apt + npm) to
+  # keep the environment byte-identical with the old in-job step, and carries
+  # its own Swatinem cache key (rust-cache keys by job id).
+  vad:
+    name: Rust clippy + tests (vad feature)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri + audio system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libasound2-dev
+
+      - run: npm ci
+
+      # Same real sidecars as `check` (not the Windows job's stubs), so any
+      # vad-adjacent test that resolves a binary behaves exactly as before.
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: npm run ffmpeg
+
       - name: Rust clippy + tests (vad feature)
         working-directory: src-tauri
         run: |
           cargo clippy --workspace --all-targets --features vad -- -D warnings
           cargo test --workspace --features vad vad::
 
-      # Compile the frontend + the Rust app on Linux (fast smoke; the real
-      # macOS/Windows bundles are built in release.yml). --no-bundle skips
-      # installer packaging.
+  # Compile the frontend + the Rust app on Linux (fast smoke; the real
+  # macOS/Windows bundles are built in release.yml). --no-bundle skips
+  # installer packaging.
+  #
+  # Its own JOB (split out of `check` 2026-08-09) for the same wall-time
+  # reason as `vad`: this release-profile build shares no artifacts with the
+  # debug-profile clippy/test steps anyway, and as the last step of a serial
+  # job it alone held the pipeline ~7 min past every other job's finish.
+  # Identical command; own cache key means the release artifacts stop
+  # competing with the debug artifacts for the shared cache's 2 GB budget.
+  build-smoke:
+    name: Build Tauri app (no bundle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri + audio system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libasound2-dev
+
+      - run: npm ci
+
+      - name: Fetch ffmpeg/ffprobe sidecars
+        run: npm run ffmpeg
+
       - name: Build Tauri app (no bundle)
         run: npm run tauri build -- --no-bundle
 
