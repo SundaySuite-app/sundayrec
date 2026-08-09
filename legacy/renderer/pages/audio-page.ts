@@ -1,4 +1,4 @@
-import { t } from '../i18n'
+import { t, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { setVal, setRadio } from '../helpers'
 import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
@@ -423,6 +423,7 @@ function renderIpcFailuresSection(): string {
  */
 async function runAudioDiagnosis(): Promise<void> {
   const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
+  diagnoseRunning = true
   if (btn) { btn.disabled = true; btn.textContent = t('audio.diagnoseRunning', 'Analyserer…') }
 
   try {
@@ -504,9 +505,19 @@ async function runAudioDiagnosis(): Promise<void> {
 
     openModal('audio-diagnose-modal')
   } finally {
+    diagnoseRunning = false
     if (btn) { btn.disabled = false; btn.textContent = t('audio.diagnose', 'Diagnose') }
   }
 }
+
+/** Språkbytte mid-analyse: keep the transient label truthful (the data-i18n
+ *  pass resets it to the idle default while the analysis is still running). */
+let diagnoseRunning = false
+onLocaleApplied(() => {
+  if (!diagnoseRunning) return
+  const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
+  if (btn) btn.textContent = t('audio.diagnoseRunning', 'Analyserer…')
+})
 
 function escHtml(str: unknown): string {
   return String(str ?? '').replace(/[&<>"']/g, m =>

@@ -23,7 +23,7 @@
  *   2. stopMonitoring() → unsubscribes from the telemetry + tears down the UI timers
  *   3. The backend emits `recording://finished` → renderer hides overlay, shows history
  */
-import { t } from '../i18n'
+import { t, onLocaleApplied } from '../i18n'
 import { settings } from '../state'
 import { getAudioDevices } from '../audio/capture'
 import { setVUBar } from '../audio/vu'
@@ -257,10 +257,9 @@ export function setupRecording(): void {
       // The backend message is a hardcoded Norwegian string (not run through
       // this app's i18n) — fall back to our own localized copy whenever the
       // payload carries that generic text (or nothing at all).
-      const msg = d?.message && d.message !== 'Stillhet oppdaget i lydsignalet'
+      showSilenceLine(() => d?.message && d.message !== 'Stillhet oppdaget i lydsignalet'
         ? d.message
-        : t('recording.silenceWarn', 'Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.')
-      showSilenceLine(msg)
+        : t('recording.silenceWarn', 'Stillhet oppdaget — opptaket stopper automatisk hvis stillheten fortsetter.'))
     }),
     window.api.on('recording-quality', (data) => {
       // Session-end truth verdict FAILED: the delivered file provably holds
@@ -766,7 +765,17 @@ async function stopMonitoring(): Promise<void> {
 
 let finalizing = false
 let finalizeTimer: ReturnType<typeof setTimeout> | null = null
-let stopBtnLabel: string | null = null
+/** Paint the stop button from the finalizing state — used both by the
+ *  enter/exit transitions and by a language switch (i18n.onLocaleApplied),
+ *  which used to reset a mid-finalize «Fullfører opptak …» back to the
+ *  default stop label via the data-i18n pass. */
+function paintStopButton(): void {
+  const btn = document.getElementById('btn-stop-overlay') as HTMLButtonElement | null
+  if (!btn) return
+  btn.textContent = finalizing
+    ? t('recording.finalizing', 'Fullfører opptak …')
+    : t('recording.stop', 'Trykk for å stoppe opptaket')
+}
 /** Long enough that a slow disk finishing a 90-minute FLAC is never cut short;
  *  short enough that a user is not stranded staring at a frozen overlay. The
  *  REAL backstop is Rust-side — this only guarantees the UI can't strand. */
@@ -777,11 +786,8 @@ function enterFinalizing(): void {
   finalizing = true
   document.getElementById('recording-overlay')?.classList.add('is-finalizing')
   const btn = document.getElementById('btn-stop-overlay') as HTMLButtonElement | null
-  if (btn) {
-    if (stopBtnLabel === null) stopBtnLabel = btn.textContent
-    btn.disabled = true
-    btn.textContent = t('recording.finalizing', 'Fullfører opptak …')
-  }
+  if (btn) btn.disabled = true
+  paintStopButton()
   const hint = document.getElementById('rec-finalizing-hint')
   if (hint) hint.style.display = ''
   // The elapsed clock stops: the take is over, and a timer still counting up
@@ -809,10 +815,8 @@ function exitFinalizing(): void {
   finalizing = false
   document.getElementById('recording-overlay')?.classList.remove('is-finalizing')
   const btn = document.getElementById('btn-stop-overlay') as HTMLButtonElement | null
-  if (btn) {
-    btn.disabled = false
-    if (stopBtnLabel !== null) btn.textContent = stopBtnLabel
-  }
+  if (btn) btn.disabled = false
+  paintStopButton()
   const hint = document.getElementById('rec-finalizing-hint')
   if (hint) hint.style.display = 'none'
 }
@@ -1064,14 +1068,26 @@ function hideReconnectBanner(): void {
  *  the meter sees signal again — the engine emits no "silence over" event, and
  *  a warning that outlives its cause is a warning people learn to ignore. */
 let silenceShown = false
-function showSilenceLine(message: string): void {
+let silencePaint: (() => string) | null = null
+function showSilenceLine(message: () => string): void {
   const el = document.getElementById('rec-silence')
   if (!el) return
+  silencePaint = message
   const textEl = document.getElementById('rec-silence-text')
-  if (textEl) textEl.textContent = message
+  if (textEl) textEl.textContent = message()
   el.style.display = 'flex'
   silenceShown = true
 }
+
+// Språkbytte: repaint the live overlay surfaces from state, after the
+// data-i18n pass has re-applied the static defaults.
+onLocaleApplied(() => {
+  paintStopButton()
+  if (silenceShown && silencePaint) {
+    const textEl = document.getElementById('rec-silence-text')
+    if (textEl) textEl.textContent = silencePaint()
+  }
+})
 
 function hideSilenceLine(): void {
   if (!silenceShown) return

@@ -1,4 +1,4 @@
-import { t, loadLocale, currentLang } from '../i18n'
+import { t, loadLocale, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { setVal } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
@@ -937,19 +937,25 @@ function wireUpdateIpcListeners(): void {
     ['btn-toast-install', 'btn-restart-install']
       .map(id => document.getElementById(id) as HTMLButtonElement | null)
       .filter((b): b is HTMLButtonElement => b !== null)
-  const setUpdateButtons = (label: string | null, opts?: { disabled?: boolean; show?: boolean }): void => {
+  // The label is a THUNK so a language switch can re-run the last paint in the
+  // new language (i18n.onLocaleApplied) — the data-i18n pass used to reset a
+  // live «Laster ned…» back to the markup default mid-download.
+  let lastButtonLabel: (() => string) | null = null
+  const setUpdateButtons = (label: (() => string) | null, opts?: { disabled?: boolean; show?: boolean }): void => {
+    if (label !== null) lastButtonLabel = label
     for (const b of updateButtons()) {
       if (label !== null) {
         // Write the label into the <span>, never the button: btn-toast-install
         // carries an <svg> icon that a bare `textContent` write used to wipe.
         const span = b.querySelector('span')
-        if (span) span.textContent = label
-        else b.textContent = label
+        if (span) span.textContent = label()
+        else b.textContent = label()
       }
       if (opts?.disabled !== undefined) b.disabled = opts.disabled
       if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
     }
   }
+  onLocaleApplied(() => { if (lastButtonLabel) setUpdateButtons(lastButtonLabel) })
   // The update download's bar + remaining time. Attached on the first progress
   // event and torn down when the download ends, so a second round starts with a
   // fresh rate estimate rather than the previous download's.
@@ -975,7 +981,7 @@ function wireUpdateIpcListeners(): void {
     const v = (info as { version: string }).version
     setUpdateStatus('ready', t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v))
     // The label must say what the click DOES from here: download + install.
-    setUpdateButtons(`↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
+    setUpdateButtons(() => `↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
     showUpdateToast(
       t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
       // Same key as the status row — the two said the same thing in two keys.
@@ -992,7 +998,7 @@ function wireUpdateIpcListeners(): void {
       updateUi.update(Math.max(0, Math.min(1, pct / 100)), t('update.btnDownloading', 'Laster ned…'))
     }
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
-    setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
+    setUpdateButtons(() => t('update.btnDownloading', 'Laster ned…'), { disabled: true })
     // If the update toast is still on screen, its bar shows the same download
     // live (it was previously written while permanently hidden).
     setToastProgress(pct)
@@ -1000,7 +1006,7 @@ function wireUpdateIpcListeners(): void {
   updateIpcUnsubs.push(window.api.on('update-downloaded', (info: unknown) => {
     const v = (info as { version: string }).version
     hideProgress()
-    setUpdateButtons(`↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
+    setUpdateButtons(() => `↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
     setUpdateStatus('ready', t('update.readyInstall', 'Versjon {v} er klar — start på nytt for å installere').replace('{v}', v))
     showUpdateToast(
       t('update.toastReadyTitle', 'Klar for installasjon'),
@@ -1010,7 +1016,7 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-restarting', () => {
     setUpdateStatus('pending', t('update.restarting', 'Starter på nytt…'))
-    setUpdateButtons(t('update.restarting', 'Starter på nytt…'), { disabled: true })
+    setUpdateButtons(() => t('update.restarting', 'Starter på nytt…'), { disabled: true })
   }))
   updateIpcUnsubs.push(window.api.on('update-error', (msg: unknown) => {
     hideProgress()

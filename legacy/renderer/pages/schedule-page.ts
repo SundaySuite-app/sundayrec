@@ -1,4 +1,4 @@
-import { t, tArr, currentLang } from '../i18n'
+import { t, tArr, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { flashSaved, escHtml } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
@@ -43,6 +43,26 @@ function renderNextRecordingPreview(
 }
 
 export function setupSchedulePage(): void {
+  // Språkbytte: repaint the wake surfaces from cached state, after the
+  // data-i18n pass has re-applied the static defaults.
+  onLocaleApplied(() => {
+    // Transient button labels («Fikser…») survive a mid-operation switch.
+    if (fixSleepRunning) {
+      const b = document.getElementById('btn-fix-sleep') as HTMLButtonElement | null
+      if (b) b.textContent = t('schedule.sleepFixing') || 'Fikser…'
+    }
+    if (standbyFixRunning) {
+      const b = document.getElementById('btn-wake-standby-fix') as HTMLButtonElement | null
+      if (b) b.textContent = t('schedule.sleepFixing', 'Fikser…')
+    }
+    renderWakeSummary()
+    if (lastWakeReliability) {
+      paintWakeReliability(lastWakeReliability.caps, lastWakeReliability.status, lastWakeReliability.lastTest)
+    }
+    if (lastWakeStatus) setWakeStatus(...lastWakeStatus)
+    if (lastSleepConfigStatus) setSleepConfigStatus(...lastSleepConfigStatus)
+  })
+
   // Render the "neste opptak" line from the shared store, now and on every
   // scheduler event.
   initNextRecordingStore()
@@ -115,6 +135,7 @@ export function setupSchedulePage(): void {
   })
   document.getElementById('btn-fix-sleep')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-fix-sleep') as HTMLButtonElement | null
+    fixSleepRunning = true
     if (btn) { btn.disabled = true; btn.textContent = t('schedule.sleepFixing') || 'Fikser…' }
     try {
       const isMac = navigator.platform.toLowerCase().includes('mac')
@@ -134,7 +155,9 @@ export function setupSchedulePage(): void {
     } catch {
       setSleepConfigStatus('error', 'schedule.sleepFixFail', 'Automatisk fiks mislyktes')
     } finally {
-      if (btn) btn.disabled = false
+      fixSleepRunning = false
+      // Restore the idle label — it used to stay «Fikser…» forever after a fix.
+      if (btn) { btn.disabled = false; btn.textContent = t('schedule.sleepFixBtn', 'Fiks automatisk') }
     }
   })
 
@@ -147,6 +170,7 @@ export function setupSchedulePage(): void {
   })
   document.getElementById('btn-wake-standby-fix')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-wake-standby-fix') as HTMLButtonElement | null
+    standbyFixRunning = true
     if (btn) { btn.disabled = true; btn.textContent = t('schedule.sleepFixing', 'Fikser…') }
     try {
       const result = await window.api.fixMacSleep()
@@ -155,6 +179,7 @@ export function setupSchedulePage(): void {
       }
     } catch { /* ignore */ }
     finally {
+      standbyFixRunning = false
       if (btn) { btn.disabled = false; btn.textContent = t('wake.standby.fix', 'Slå av dyp dvale') }
     }
   })
@@ -352,13 +377,35 @@ async function onTestWakeClick(): Promise<void> {
   }
 }
 
+type WakeCaps = Awaited<ReturnType<typeof window.api.wakeDetectCapabilities>>
+type WakeVerify = Awaited<ReturnType<typeof window.api.wakeVerifyScheduled>>
+type WakeHistoryEntry = Awaited<ReturnType<typeof window.api.wakeFailureHistory>>[number]
+
+/** Last fetched wake-reliability facts, so a language switch can repaint the
+ *  card without re-asking the OS (i18n.onLocaleApplied). */
+let lastWakeReliability: { caps: WakeCaps; status: WakeVerify; lastTest: WakeHistoryEntry | undefined } | null = null
+
 async function refreshWakeReliability(): Promise<void> {
   const card = document.getElementById('wake-reliability-card')
   if (!card) return
   try {
     const caps = await window.api.wakeDetectCapabilities()
     const status = await window.api.wakeVerifyScheduled()
+    const history = await window.api.wakeFailureHistory()
+    const lastTest = history.find(e => e.kind === 'test_ok' || e.kind === 'test_fail')
+    lastWakeReliability = { caps, status, lastTest }
+    paintWakeReliability(caps, status, lastTest)
+    showEl(card)
+    // Keep the top-of-page summary in step with the detail it summarises.
+    void refreshWakeSummaryFacts()
+  } catch (err) {
+    console.error('[wake-reliability] refresh failed:', err)
+  }
+}
 
+/** Sync paint half of refreshWakeReliability — also run on language switch. */
+function paintWakeReliability(caps: WakeCaps, status: WakeVerify, lastTest: WakeHistoryEntry | undefined): void {
+  {
     // Capability summary
     const capText = document.getElementById('wake-capability-text')
     if (capText) capText.textContent = platformLabel(caps.platform) || caps.platform
@@ -440,8 +487,6 @@ async function refreshWakeReliability(): Promise<void> {
     }
 
     // Last test-wake
-    const history = await window.api.wakeFailureHistory()
-    const lastTest = history.find(e => e.kind === 'test_ok' || e.kind === 'test_fail')
     const lastDot  = document.getElementById('wake-last-test-dot')
     const lastText = document.getElementById('wake-last-test-text')
     if (lastDot && lastText) {
@@ -459,12 +504,6 @@ async function refreshWakeReliability(): Promise<void> {
         lastText.textContent = t('wake.lastTest.none', 'Ikke testet ennå.')
       }
     }
-
-    showEl(card)
-    // Keep the top-of-page summary in step with the detail it summarises.
-    void refreshWakeSummaryFacts()
-  } catch (err) {
-    console.error('[wake-reliability] refresh failed:', err)
   }
 }
 
@@ -669,7 +708,13 @@ function setWakeDetailsVisible(visible: boolean): void {
   if (details) details.style.display = visible ? 'block' : 'none'
 }
 
+let fixSleepRunning = false
+let standbyFixRunning = false
+let lastWakeStatus: [string, string, string, number?, (string | null)?] | null = null
+let lastSleepConfigStatus: [string, string, string, boolean?] | null = null
+
 function setWakeStatus(cls: string, key: string, fallback: string, count?: number, nextWake?: string | null): void {
+  lastWakeStatus = [cls, key, fallback, count, nextWake]
   const dot = document.getElementById('wake-status-dot')
   const txt = document.getElementById('wake-status-text')
   if (!dot || !txt) return
@@ -697,6 +742,7 @@ function wakeResultToStatus(result: unknown): void {
 }
 
 function setSleepConfigStatus(cls: string, key: string, fallback: string, showFix = false): void {
+  lastSleepConfigStatus = [cls, key, fallback, showFix]
   const loading = document.getElementById('sleep-config-loading')
   const result  = document.getElementById('sleep-config-result')
   const dot     = document.getElementById('sleep-config-dot')
