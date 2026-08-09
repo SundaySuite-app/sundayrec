@@ -172,7 +172,7 @@
     "empty": "Papperskorgen är tom.",
     "alreadyEmpty": "Papperskorgen är tom",
     "deleteEntry": "Flytta till papperskorgen",
-    "movedOne": "«{name}» ligger i papperskorgen",
+    "movedOne": "”{name}” ligger i papperskorgen",
     "movedN": "{n} inspelningar ligger i papperskorgen",
     "undo": "Ångra",
     "undoFailed": "Kunde inte hämta tillbaka allt — se i papperskorgen.",
@@ -181,7 +181,7 @@
     "restore": "Återställ",
     "restoreFailed": "Kunde inte återställa",
     "deleteForever": "Radera för gott",
-    "confirmPurgeOne": "Radera «{name}» för gott?",
+    "confirmPurgeOne": "Radera ”{name}” för gott?",
     "confirmEmptyN": "Radera {n} inspelningar för gott?",
     "confirmEmptyBody": "Filerna raderas från disken. Detta kan inte ångras.",
     "deletedAt": "Raderad",
@@ -370,7 +370,7 @@
       "okTitle": "Datorn vaknar automatiskt",
       "okNext": "Nästa uppvakning {when} — {n} minuter innan inspelningen startar.",
       "okNoNext": "Ingen kommande inspelning att vakna till just nu.",
-      "neverTested": "Aldrig testat. Kör «Testa wake nu» under Detaljer före första gudstjänsten."
+      "neverTested": "Aldrig testat. Kör ”Testa wake nu” under Detaljer före första gudstjänsten."
     }
   },
   "calendar": {
@@ -498,7 +498,7 @@
     "patternPlain": "Gudstjänst + datum",
     "patternDatetime": "Datum + klockslag",
     "preview": "FÖRHANDSVISNING",
-    "format": "Format & Kvalitet",
+    "format": "Format & kvalitet",
     "quality": "KVALITET (MP3)",
     "autoDelete": "Radera automatiskt efter 90 dagar",
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
@@ -700,7 +700,7 @@
     "analyzeSpeech": "Talsegment",
     "analyzeMusic": "Musiksegment",
     "analyzeSilence": "Tystnad",
-    "layersNotAnalyzed": "Kör «Analysera inspelning» under Klippverktyg för att se tal, musik och tystnad här.",
+    "layersNotAnalyzed": "Kör ”Analysera inspelning” under Klippverktyg för att se tal, musik och tystnad här.",
     "markSermon": "↦ Markera predikan automatiskt",
     "markSermonHint": "Trimmer allt före och efter det markerade predikoblocket.",
     "sermonPickerLabel": "Är detta inte predikan?",
@@ -981,7 +981,7 @@
     "consentDetailsSummary": "Vad skulle i så fall samlas in?",
     "consentCatCrash": "Kraschrapporter — feltyp, programmets felmeddelande, app- och OS-version. Filsökvägar tvättas bort. Aldrig text från predikan.",
     "consentCatQuality": "Kvalitetsdata — om en inspelning blev komplett (bortfallsprocent, utfall), grova intervall för dina korrigeringar i redigeraren, t.ex. ”30–60 sekunder tidigare”, och vilka typer av automatiska förslag du använder — titel, sammanfattning eller kapitelmarkeringar — och om du behöll eller skrev om resultatet. Aldrig ljudinnehållet eller text. Tidpunkten följer med, utan din tidszon.",
-    "consentCatUsage": "Funktionsanvändning — vilka funktioner du använder, t.ex. «export till MP3». Bara antal, aldrig innehåll.",
+    "consentCatUsage": "Funktionsanvändning — vilka funktioner du använder, t.ex. ”export till MP3”. Bara antal, aldrig innehåll.",
     "consentNever": "Aldrig: ljud, transkriptioner, predikotext, namn, e-post, enhetsnamn eller församlingsnamn.",
     "consentReadMore": "Läs hela integritetspolicyn →",
     "consentYes": "Ja, dela anonymt",
