@@ -333,13 +333,22 @@ pub(crate) enum DiskVerdict {
 /// `free` is `None` when the volume could not be probed — an unreadable disk is
 /// not evidence of a full one, so we keep recording (the writer's own
 /// `DiskFull` error is the backstop that cannot be fooled).
+///
+/// `split_threshold` is passed IN rather than read from
+/// `wav::forced_split_threshold_bytes()` here, because that function consults a
+/// process-global environment override (`SUNDAYREC_TEST_SPLIT_BYTES`, debug
+/// builds only) that the long-run harness sets while its own tests run. A
+/// "pure" function that quietly reads ambient state is not pure, and a table
+/// test of it is a coin flip against whatever else happens to be running —
+/// which is precisely how this arrived (green locally, red in CI).
 pub(crate) fn disk_guard_verdict(
     deliverable_bytes: u64,
     segment_bytes: u64,
     free: Option<u64>,
     headroom: u64,
+    split_threshold: u64,
 ) -> DiskVerdict {
-    if sundayrec_core::wav::should_force_split(deliverable_bytes.saturating_add(segment_bytes)) {
+    if deliverable_bytes.saturating_add(segment_bytes) >= split_threshold {
         return DiskVerdict::ForceSplit;
     }
     match free {
@@ -787,7 +796,13 @@ where
             // and its ORDER live in `disk_guard_verdict`.
             _ = disk_tick.tick() => {
                 let seg_bytes = seg.bytes();
-                match disk_guard_verdict(deliverable_bytes, seg_bytes, (env.free_bytes)(), disk_headroom) {
+                match disk_guard_verdict(
+                    deliverable_bytes,
+                    seg_bytes,
+                    (env.free_bytes)(),
+                    disk_headroom,
+                    sundayrec_core::wav::forced_split_threshold_bytes(),
+                ) {
                     DiskVerdict::Continue => {}
                     DiskVerdict::ForceSplit => {
                         tracing::warn!(
@@ -892,21 +907,29 @@ mod tests {
 
     // ── The two verdicts, as tables ──────────────────────────────────────────
 
-    /// The 4 GiB WAV ceiling minus the guard's 500 MiB headroom — the point
-    /// `should_force_split` starts saying yes. Derived, not typed, so the test
-    /// tracks the constant rather than a copy of it.
-    fn just_over_riff_cap() -> u64 {
-        let mut n = 3 * 1024 * 1024 * 1024_u64;
-        while !sundayrec_core::wav::should_force_split(n) {
-            n += 64 * 1024 * 1024;
-        }
-        n
+    /// A stand-in threshold for the table tests. The real one is a runtime
+    /// function of a process-global env override, so the tests below pass their
+    /// own — that is the whole reason `disk_guard_verdict` takes it.
+    const CAP: u64 = 3 * 1024 * 1024 * 1024 + 500 * 1024 * 1024;
+
+    /// A byte count guaranteed to be BELOW any threshold the production code
+    /// can legally use. `forced_split_threshold_bytes` clamps its override into
+    /// `MIN_TEST_SPLIT_BYTES ..= FORCED_SPLIT_DELIVERABLE_BYTES`, so anything
+    /// under the floor is under every possible threshold — the value the
+    /// end-to-end tests below use when they must NOT trigger a rollover.
+    fn under_every_possible_threshold() -> u64 {
+        sundayrec_core::wav::MIN_TEST_SPLIT_BYTES - 1
+    }
+
+    /// …and the mirror: at or above every legal threshold.
+    fn over_every_possible_threshold() -> u64 {
+        sundayrec_core::wav::FORCED_SPLIT_DELIVERABLE_BYTES
     }
 
     #[test]
     fn disk_guard_continues_on_a_healthy_volume() {
         assert_eq!(
-            disk_guard_verdict(0, 10_000_000, Some(500 * 1024 * 1024 * 1024), 1024),
+            disk_guard_verdict(0, 10_000_000, Some(500 * 1024 * 1024 * 1024), 1024, CAP),
             DiskVerdict::Continue
         );
     }
@@ -915,7 +938,7 @@ mod tests {
     fn disk_guard_stops_when_the_volume_is_nearly_full() {
         // Zero free bytes cannot be talked out of by any reserve arithmetic.
         assert_eq!(
-            disk_guard_verdict(0, 10_000_000, Some(0), min_disk_headroom_bytes(false)),
+            disk_guard_verdict(0, 10_000_000, Some(0), min_disk_headroom_bytes(false), CAP),
             DiskVerdict::DiskStop
         );
     }
@@ -925,28 +948,28 @@ mod tests {
         assert_eq!(
             disk_guard_verdict(
                 0,
-                just_over_riff_cap(),
+                CAP,
                 Some(500 * 1024 * 1024 * 1024),
-                min_disk_headroom_bytes(false)
+                min_disk_headroom_bytes(false),
+                CAP
             ),
             DiskVerdict::ForceSplit
         );
     }
 
-    /// The deliverable's PREVIOUS fragments count towards the ceiling: three
-    /// 1.5 GiB `_rN` pieces concat to more than 4 GiB even though no single
-    /// fragment is close.
+    /// The deliverable's PREVIOUS fragments count towards the ceiling: several
+    /// `_rN` pieces concat to more than 4 GiB even though no single fragment is
+    /// close.
     #[test]
     fn disk_guard_counts_previous_fragments_towards_the_ceiling() {
-        let cap = just_over_riff_cap();
-        let previous = cap - 100 * 1024 * 1024;
+        let previous = CAP - 100 * 1024 * 1024;
         assert_eq!(
-            disk_guard_verdict(previous, 0, Some(u64::MAX / 2), 1024),
+            disk_guard_verdict(previous, 0, Some(u64::MAX / 2), 1024, CAP),
             DiskVerdict::Continue,
             "just under the cap: keep going"
         );
         assert_eq!(
-            disk_guard_verdict(previous, 200 * 1024 * 1024, Some(u64::MAX / 2), 1024),
+            disk_guard_verdict(previous, 200 * 1024 * 1024, Some(u64::MAX / 2), 1024, CAP),
             DiskVerdict::ForceSplit,
             "the current fragment pushed the SUM over — the split is the sum's job"
         );
@@ -962,9 +985,10 @@ mod tests {
         assert_eq!(
             disk_guard_verdict(
                 0,
-                just_over_riff_cap(),
+                CAP,
                 Some(0), // disk also screaming
-                min_disk_headroom_bytes(false)
+                min_disk_headroom_bytes(false),
+                CAP
             ),
             DiskVerdict::ForceSplit,
             "a 4 GiB deliverable must roll over, not end the service"
@@ -977,14 +1001,27 @@ mod tests {
     #[test]
     fn an_unprobeable_volume_does_not_stop_the_recording() {
         assert_eq!(
-            disk_guard_verdict(0, 10_000_000, None, min_disk_headroom_bytes(false)),
+            disk_guard_verdict(0, 10_000_000, None, min_disk_headroom_bytes(false), CAP),
             DiskVerdict::Continue
         );
         // …but the RIFF cap still applies: it needs no disk probe at all.
         assert_eq!(
-            disk_guard_verdict(0, just_over_riff_cap(), None, 1024),
+            disk_guard_verdict(0, CAP, None, 1024, CAP),
             DiskVerdict::ForceSplit
         );
+    }
+
+    /// The production threshold is only ever allowed to move DOWN, into
+    /// `MIN_TEST_SPLIT_BYTES ..= FORCED_SPLIT_DELIVERABLE_BYTES`. The
+    /// end-to-end tests below lean on that clamp to stay deterministic while
+    /// another test is busy setting the override, so it is pinned here.
+    #[test]
+    fn the_split_threshold_is_always_inside_its_clamp() {
+        let t = sundayrec_core::wav::forced_split_threshold_bytes();
+        assert!(t >= sundayrec_core::wav::MIN_TEST_SPLIT_BYTES);
+        assert!(t <= sundayrec_core::wav::FORCED_SPLIT_DELIVERABLE_BYTES);
+        assert!(under_every_possible_threshold() < t);
+        assert!(over_every_possible_threshold() >= t);
     }
 
     #[test]
@@ -1655,7 +1692,8 @@ mod tests {
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
             .unwrap();
-        r.bytes.store(just_over_riff_cap(), Ordering::Relaxed);
+        r.bytes
+            .store(over_every_possible_threshold(), Ordering::Relaxed);
         let opts = test_opts("/tmp/x.wav");
         let out = drive(
             &mut r,
@@ -1754,7 +1792,10 @@ mod tests {
     async fn progress_is_silent_until_the_capture_has_started() {
         let mut r = rig();
         let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.bytes.store(100_000, Ordering::Relaxed);
+        // Below every legal split threshold, so a concurrent test that
+        // lowers the override cannot turn this into a rollover.
+        r.bytes
+            .store(under_every_possible_threshold(), Ordering::Relaxed);
         let tx = r.tx.clone();
         let script = tokio::spawn(async move {
             // Five seconds of bytes-on-disk with no `Started` — no progress.
