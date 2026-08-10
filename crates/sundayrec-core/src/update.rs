@@ -449,6 +449,144 @@ mod tests {
         assert!(!is_newer("1.0.0-", "1.0.0-"));
     }
 
+    // ── Conformance suite ────────────────────────────────────────────────────
+    //
+    // Written against the HAND-ROLLED parser, BEFORE swapping it for the
+    // `semver` crate, so the swap has something to be measured against rather
+    // than merely re-asserted by tests written to match its outcome. Every
+    // assertion below passes on both implementations EXCEPT the two explicitly
+    // marked `PINS TODAY'S BEHAVIOUR` — those record where the swap
+    // deliberately changes what `is_newer` answers, so the change shows up as a
+    // line in the diff instead of as a surprise in the fleet.
+
+    /// `v` is stripped repeatedly, not once. Nothing produces `vv1.2.3`
+    /// deliberately, but a tag-to-version step that prefixes an already
+    /// prefixed tag would, and the answer must not silently become "any
+    /// difference is newer".
+    #[test]
+    fn a_repeated_v_prefix_is_still_stripped() {
+        assert!(is_newer("vv1.2.4", "1.2.3"));
+        assert!(!is_newer("vv1.2.3", "v1.2.3"));
+        assert!(!is_newer("v1.2.3", "vv1.2.3"));
+    }
+
+    /// Build metadata is ignored for precedence (§10) — in BOTH directions.
+    ///
+    /// This is the assertion that stops the guard from degenerating into the
+    /// updater plugin's own test: `tauri-plugin-updater` 2.10.1 decides with
+    /// `release.version > self.current_version`, and `semver::Version`'s `Ord`
+    /// compares build metadata so that the type has a total order. A feed that
+    /// re-published `1.0.0` as `1.0.0+build.7` therefore looks like an update
+    /// TO THE PLUGIN. This guard is what makes it not one.
+    #[test]
+    fn build_metadata_is_ignored_for_precedence_in_both_directions() {
+        assert!(!is_newer("1.0.0+build.7", "1.0.0+build.6"));
+        assert!(!is_newer("1.0.0+build.6", "1.0.0+build.7"));
+        assert!(!is_newer("1.0.0+build.7", "1.0.0"));
+        assert!(!is_newer("1.0.0", "1.0.0+build.7"));
+        // Metadata is ignored, not weighted: the core still decides.
+        assert!(is_newer("1.0.1+build.1", "1.0.0+build.9"));
+        assert!(!is_newer("1.0.0+build.9", "1.0.1+build.1"));
+        // …and it is ignored on prereleases too.
+        assert!(!is_newer("1.0.0-beta.1+a", "1.0.0-beta.1+b"));
+        assert!(is_newer("1.0.0-beta.2+a", "1.0.0-beta.1+z"));
+    }
+
+    /// Double-digit prerelease numbers, from both sides. As strings
+    /// `"10" < "9"`, so a lexical comparator freezes the beta ring at the
+    /// ninth beta of a version — the near-miss this module already documents.
+    #[test]
+    fn double_digit_prereleases_order_numerically() {
+        assert!(is_newer("0.11.0-beta.10", "0.11.0-beta.9"));
+        assert!(is_newer("0.11.0-beta.10", "0.11.0-beta.2"));
+        assert!(!is_newer("0.11.0-beta.9", "0.11.0-beta.10"));
+        assert!(!is_newer("0.11.0-beta.2", "0.11.0-beta.10"));
+    }
+
+    /// A prerelease never supersedes the release it was testing for — bug #95
+    /// in the opposite direction. A stable install must never be offered a
+    /// beta of the version it is already running.
+    #[test]
+    fn a_prerelease_never_supersedes_its_own_release() {
+        assert!(!is_newer("1.2.3-beta.1", "1.2.3"));
+        assert!(!is_newer("1.2.3-rc.9", "1.2.3"));
+        assert!(!is_newer("1.2.3-alpha", "1.2.3"));
+        // …but a prerelease of a HIGHER core still is newer (that is how the
+        // beta ring gets ahead of stable in the first place).
+        assert!(is_newer("1.2.4-alpha", "1.2.3"));
+    }
+
+    /// Every release this project has actually cut, in order, must form a
+    /// strictly increasing chain: each tag newer than its predecessor, never
+    /// the reverse, and never newer than itself. This is `docs/ROLLBACK.md`'s
+    /// "a client only ever moves to a HIGHER version" stated as an executable
+    /// property over the real tag history rather than a prose claim.
+    #[test]
+    fn the_real_release_history_is_strictly_monotone() {
+        // `git tag --list 'v0.*'`, in release order.
+        let tags = [
+            "v0.2.0",
+            "v0.3.0",
+            "v0.3.1",
+            "v0.4.0",
+            "v0.4.1",
+            "v0.4.2",
+            "v0.4.3",
+            "v0.4.4",
+            "v0.4.5",
+            "v0.4.6",
+            "v0.5.0",
+            "v0.5.1",
+            "v0.6.0",
+            "v0.7.0",
+            "v0.8.0",
+            "v0.8.1",
+            "v0.9.0",
+            "v0.10.0",
+            "v0.11.0-beta.1",
+            "v0.11.1-beta.2",
+            "v0.12.0",
+            "v0.13.0",
+        ];
+        for (i, newer) in tags.iter().enumerate() {
+            assert!(!is_newer(newer, newer), "{newer} is not newer than itself");
+            for older in &tags[..i] {
+                assert!(is_newer(newer, older), "{newer} must supersede {older}");
+                assert!(
+                    !is_newer(older, newer),
+                    "{older} must NOT be offered to a client on {newer}"
+                );
+            }
+        }
+    }
+
+    /// PINS TODAY'S BEHAVIOUR — flips with the `semver`-crate swap.
+    ///
+    /// The hand-rolled parser accepts a zero-padded date tag (`u64::from_str`
+    /// is happy with `"05"`) and orders it numerically, so a downgrade is
+    /// refused. The `semver` crate rejects the leading zero (§2 forbids it),
+    /// which sends the pair to the string-difference fallback — and there,
+    /// "the strings differ" means "newer". See the swap commit for why that is
+    /// an acceptable loss.
+    #[test]
+    fn a_zero_padded_date_tag_orders_numerically_today() {
+        assert!(!is_newer("2026.05.30", "2026.05.31"));
+        assert!(is_newer("2026.05.31", "2026.05.30"));
+    }
+
+    /// PINS TODAY'S BEHAVIOUR — flips with the `semver`-crate swap.
+    ///
+    /// The hand-rolled parser does not trim, so a version that arrives with
+    /// the build environment's stray whitespace fails to parse, falls to the
+    /// string-difference fallback, and reports a PHANTOM UPDATE to the same
+    /// version the machine is already running. `channel_feed_url` already
+    /// trims its input for exactly this reason; this half never did.
+    #[test]
+    fn surrounding_whitespace_produces_a_phantom_update_today() {
+        assert!(is_newer(" 1.2.3 ", "1.2.3"));
+        assert!(is_newer("1.2.3", " 1.2.3 "));
+    }
+
     #[test]
     fn each_channel_gets_its_own_feed() {
         // These two strings are the live contract with the Worker — a change
