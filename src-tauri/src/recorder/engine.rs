@@ -920,6 +920,10 @@ const MAX_AUTOSTOP_MINUTES: u32 = 1440;
 
 /// Why the current segment's capture stopped — drives what the supervisor does
 /// next. Shared by the ffmpeg `run_segment` and the native `run_native_segment`.
+///
+/// `Debug`/`PartialEq` so a test can assert on the outcome of a driven segment
+/// (`native_capture::segment::drive_native_segment`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SegmentOutcome {
     /// Graceful stop requested by the user → finalise + end the session.
     GracefulStop,
