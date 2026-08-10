@@ -8,7 +8,6 @@ import type { PodcastSettings } from "./PodcastSettings";
 import type { SampleRate } from "./SampleRate";
 import type { ScheduleSlot } from "./ScheduleSlot";
 import type { SpecialRecording } from "./SpecialRecording";
-import type { StreamDestinationStored } from "./StreamDestinationStored";
 import type { UpdateChannel } from "./UpdateChannel";
 
 /**
@@ -418,32 +417,6 @@ editorOutroPath: string | null,
  * unavailable — only faster.
  */
 editorHwEncode: boolean, 
-/**
- * Persisted stream destinations, WITHOUT keys (keys live in the OS
- * keychain via `stream_set_key`; `has_key` is the only trace here).
- */
-streamDestinations: Array<StreamDestinationStored>, 
-/**
- * Default stream quality tag: `"480p"` | `"720p"` (default) | `"1080p"`.
- */
-streamResolution: string, 
-/**
- * Default stream framerate: 25 | 30 (default). Normalised in `validate()`.
- */
-streamFramerate: number, 
-/**
- * Optional video-bitrate override in kbps; `None` = auto from resolution.
- */
-streamVideoBitrate: number | null, 
-/**
- * Live overlay configurations, persisted as OPAQUE JSON. The overlay
- * vocabulary (type/source/chroma-key/crop) is renderer-owned — see the
- * hand-written `OverlayConfig` in `legacy/types/index.ts` — and differs
- * from [`crate::overlay::OverlayConfig`] (the ffmpeg builder's input), so
- * the backend persists without interpreting. Malformed JSON costs this
- * field only (lenient), never the blob.
- */
-streamOverlays: Array<unknown>, 
 /**
  * Google Drive backup preferences, or `None` when never configured.
  */

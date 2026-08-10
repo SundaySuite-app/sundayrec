@@ -1,12 +1,13 @@
 # Needs Richard — Electron-parity seams (PU-1…R7)
 
 The pure decision logic for these features is ported into `sundayrec-core` and
-fully unit-tested; the impure seams sit behind cargo features. **Six of them are
-now in `default`** — `editor`, `whisper`, `tray`, `updater`, `email` and
-`streaming` — so the Rediger-screen, transcription, the tray, auto-update,
-failure e-mail and Direkte all ship in a normal build. The remaining
-**default-off** features are `publish`, `ndi` and `bridge`; scheduler/wake are
-always compiled. The items below need a real account / desktop session / device
+fully unit-tested; the impure seams sit behind cargo features. **Five of them
+are in `default`** — `editor`, `whisper`, `tray`, `updater` and `email` — so
+the Rediger-screen, transcription, the tray, auto-update and
+failure e-mail all ship in a normal build. The remaining
+**default-off** feature is `publish`; scheduler/wake are
+always compiled. (v0.14: `streaming`, `ndi` and `bridge` were REMOVED together
+with the Direkte page — their sections below are kept only as struck history.) The items below need a real account / desktop session / device
 / signing identity that the headless gate cannot provide. None block the default
 build or the gate. The consolidated "what only Richard can provide" checklist is
 at the bottom of this file.
@@ -221,7 +222,12 @@ subset.
     percentage + an ETA on the bar (`export_timeout_ms` is still the tested
     kill-timer).
 
-## Bridge Integration #2 — Live cue bridge (`--features bridge`)
+## ~~Bridge Integration #2 — Live cue bridge (`--features bridge`)~~ — **FJERNET v0.14**
+
+> Den native WebSocket-halvdelen (`bridge_live::subscribe`, `bridge`-feature-et,
+> `live_bridge_*`-kommandoene) ble fjernet med Direkte-siden. Den RENE
+> kontrakt-speilingen (`sundayrec-core::integrations::live_bridge`) består,
+> testet, med et doknotat om hvorfor — en framtidig konsument starter derfra.
 
 - **A live Supabase project + SundayStage publishing.** The Rec side SUBSCRIBES
   to `church:{churchId}:service:{serviceId}` and folds inbound `LiveEvent`s into
@@ -237,7 +243,11 @@ subset.
   emitting a Tauri event for the UI is the remaining glue. The Supabase URL +
   anon key also need to flow from settings (the integration `connection` config).
 
-## R3 — Live streaming (`streaming`, now in `default`)
+## ~~R3 — Live streaming (`streaming`)~~ — **FJERNET v0.14**
+
+> Hele strømme-flaten (Direkte-siden, `stream_*`-kommandoene, motoren,
+> `sundayrec-core::{streaming,overlay}`) ble fjernet i v0.14 — SundayRec er et
+> opptaksprogram. Riggpunktene under er derfor DØDE; historikk beholdt.
 
 - **A real camera + a real RTMP endpoint + a stream key.** The `streaming`
   feature compiles the ffmpeg spawn seam (`src-tauri/src/streaming/mod.rs`)
@@ -270,7 +280,10 @@ subset.
   keychain round-trips on the target machine (the tolerant test skips when no
   keychain is reachable).
 
-## R3 NDI — receiver (`--features ndi`) — **SDK NOT BUNDLED**
+## ~~R3 NDI — receiver (`--features ndi`)~~ — **FJERNET v0.14**
+
+> Eierbeslutningen fra kommando-revisjonens §4.5 falt: NDI (mottak OG sending,
+> stub + kjerne) er fjernet. Historikk beholdt under.
 
 - **The NDI SDK runtime + a native FFI binding + an NDI source on the LAN.** The
   `ndi` feature compiles a **STUB** seam (`src-tauri/src/ndi/mod.rs`):
@@ -372,9 +385,6 @@ None of it blocks the default build or the gate.
   the 30 s capture → history row → reveal-in-folder path, and the OS mic/camera
   permission prompts. Reconnect/split/preroll/two-process-fallback paths are
   wired but unproven on a device.
-- **Stream** (`streaming`, in `default`, smoke §R3): a real camera + a real RTMP
-  endpoint + a stream key. Auto-recovery + live stats are wired now; what is
-  missing is having seen them survive a real disconnect.
 - **Whisper** (`whisper`, in `default`, smoke §10b): a C/C++ toolchain + CMake,
   a downloaded model (download + SHA-256 verify are wired, with a real
   percentage), and a real recording.
@@ -382,8 +392,6 @@ None of it blocks the default build or the gate.
   worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
 - **OS wake-timers** (smoke §11): a real box for the `pmset`/`schtasks`/`powercfg`
   shell-outs + admin/UAC prompts + a true sleep/wake cycle.
-- **NDI** (`--features ndi`): the NDI SDK runtime + an FFI binding + a LAN NDI
-  source — the seam is a deliberate STUB until the SDK is vendored (see above).
 - **Observability** (no feature flag, smoke §13): live-exercise
   `SUNDAYREC_TEST_PANIC` end to end, run the capture probe against the Qu-5 and
   the video probe with the camera held by another app, watch log rotation

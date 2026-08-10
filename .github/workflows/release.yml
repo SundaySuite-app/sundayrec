@@ -59,12 +59,9 @@ jobs:
           # `email` ships the SMTP/Gmail alerter — pure-Rust `lettre`, no native
           # dep. THESE LISTS ARE EXPLICIT: flipping Cargo.toml's `default` alone
           # never reaches a release, so both platform lines carry `email` too.
-          # `streaming` (R3, Fase 6) is the same story: the Direkte page shipped
-          # in every release with an enabled START button whose only effect was
-          # a raw `feature_disabled` string. It adds NO dependency (ffmpeg is a
-          # sidecar), so both platform lines carry it.
+          # (`streaming` left both lines in v0.14 — the feature is gone.)
           - platform: macos-latest
-            args: "-- --no-default-features --features editor,tray,updater,whisper,email,streaming"
+            args: "-- --no-default-features --features editor,tray,updater,whisper,email"
           # Windows adds `asio`: a low-latency, single-device multichannel audio
           # backend for pro interfaces (the dshow path splits them into stereo
           # pairs). It needs the Steinberg ASIO SDK + LLVM + MSVC at build time —
@@ -75,7 +72,7 @@ jobs:
           # ci.yml's windows-check job, which checks default features incl.
           # whisper — enabling it here is an owner decision + rig test).
           - platform: windows-latest
-            args: "-- --no-default-features --features editor,tray,asio,updater,email,streaming"
+            args: "-- --no-default-features --features editor,tray,asio,updater,email"
 
     runs-on: ${{ matrix.platform }}
     steps:

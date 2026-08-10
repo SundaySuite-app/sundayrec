@@ -3,6 +3,25 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Upublisert (v0.14)
+
+### Direkte-siden er fjernet — SundayRec er et opptaksprogram
+
+Live-streaming (Direkte-siden, RTMP-destinasjoner med stream-nøkler,
+lower-third-overlays) er tatt ut av appen. Funksjonen var aldri riggverifisert,
+og kirker som strømmer har allerede dedikerte verktøy til det — SundayRecs jobb
+er opptaket som overlever søndagen. Med på lasset gikk NDI-støtten (som aldri
+hadde SDK-et sitt), den frakoblede forhåndsvisnings-motoren for kamera (kameraet
+i selve opptaks-overlayet er en egen mekanisme og virker som før) og
+cue-broens nettverkshalvdel. Gamle innstillinger med stream-felter leses trygt —
+feltene droppes stille, alt annet beholdes. Stream-nøkler du har lagret ligger
+igjen i maskinens nøkkelring; slett dem der om du vil (Nøkkelringtilgang →
+søk «sundayrec»).
+
+### Lisens
+
+SundayRec er nå åpen kildekode under MIT-lisensen.
+
 ## v0.13.0 — ryddesjauen
 
 Én dag etter v0.12.0, og hele utgivelsen handler om å gjøre appen ærligere:

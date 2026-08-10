@@ -906,7 +906,6 @@ impl Default for Settings {
             editor_outro_path: None,
             editor_hw_encode: false,
 
-
             cloud_google_drive: None,
             cloud_dropbox: None,
             cloud_one_drive: None,
@@ -1885,7 +1884,10 @@ mod tests {
             "streamVideoBitrate",
             "streamOverlays",
         ] {
-            assert!(!obj.contains_key(gone), "{gone} must not survive the round-trip");
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
         }
     }
 
