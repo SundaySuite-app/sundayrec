@@ -1,4 +1,4 @@
-import { t, tArr, currentLang, onLocaleApplied } from '../i18n'
+import { t, tArr, tf, tn, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml, localeTag } from '../helpers'
 import { toast } from '../ui/toast'
@@ -39,7 +39,9 @@ function renderNextRecordingPreview(
   if (!previewEl) return
   previewEl.textContent = formatSchedulePreview(state, {
     t,
-    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    tf,
+    tn,
+    parts: intlParts(localeTag()),
     nowMs: Date.now(),
   })
 }
@@ -324,9 +326,8 @@ function renderWakeSummary(state: NextRecordingState = getNextRecordingState()):
       'ok',
       t('wake.summary.okTitle', 'Maskinen vekkes automatisk'),
       when
-        ? t('wake.summary.okNext', 'Neste oppvåkning {when} — {n} minutter før opptaket starter.')
-            .replace('{when}', when)
-            .replace('{n}', String(state.wake?.leadMinutes ?? 10))
+        ? tn('wake.summary.okNext', state.wake?.leadMinutes ?? 10, { when },
+            'Neste oppvåkning {when} — {n} minutter før opptaket starter.')
         : t('wake.summary.okNoNext', 'Ingen kommende opptak å våkne til akkurat nå.'),
     )
   }
@@ -731,8 +732,10 @@ function setWakeStatus(cls: string, key: string, fallback: string, count?: numbe
   const txt = document.getElementById('wake-status-text')
   if (!dot || !txt) return
   dot.className = `wake-status-dot ${cls}`
-  let text = t(key) || fallback
-  if (count != null) text = text.replace('{n}', String(count))
+  // `count != null` means the copy is count-governed, so the key holds a plural
+  // GROUP and the form has to be picked before it is shown (`tn` degrades to a
+  // flat string, so a non-plural key passed with a count still works).
+  let text = count != null ? tn(key, count, {}, fallback) : (t(key) || fallback)
   if (nextWake) {
     const d = new Date(nextWake)
     const dateStr = d.toLocaleString(localeTag(), { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

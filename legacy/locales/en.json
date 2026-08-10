@@ -20,8 +20,14 @@
     "ok": "READY TO RECORD",
     "warn": "ACTION NEEDED",
     "noSchedule": "No recording scheduled",
-    "preflightErrors": "{n} errors to fix before the recording",
-    "preflightWarns": "{n} things to check before the recording",
+    "preflightErrors": {
+      "one": "{n} error to fix before the recording",
+      "other": "{n} errors to fix before the recording"
+    },
+    "preflightWarns": {
+      "one": "{n} thing to check before the recording",
+      "other": "{n} things to check before the recording"
+    },
     "preflightAction": "Open settings",
     "dismiss": "Hide",
     "preflightMore": "more — see Settings → Audio"
@@ -154,9 +160,14 @@
     "deleteFailed": "Could not delete",
     "clearNone": "The list is empty",
     "errorsNone": "No failed entries",
-    "confirmClearN": "Delete all {n} entries?",
-    "confirmDeleteErrorsOne": "Delete 1 failed entry?",
-    "confirmDeleteErrorsN": "Delete {n} failed entries?",
+    "confirmClear": {
+      "one": "Delete the entry?",
+      "other": "Delete all {n} entries?"
+    },
+    "confirmDeleteErrors": {
+      "one": "Delete {n} failed entry?",
+      "other": "Delete {n} failed entries?"
+    },
     "emptyFiltered": "No recordings match this filter"
   },
   "trash": {
@@ -168,30 +179,53 @@
     "empty": "The trash is empty.",
     "alreadyEmpty": "The trash is empty",
     "deleteEntry": "Move to trash",
-    "movedOne": "«{name}» is in the trash",
-    "movedN": "{n} recordings are in the trash",
+    "moved": {
+      "one": "{n} recording is in the trash",
+      "other": "{n} recordings are in the trash"
+    },
     "undo": "Undo",
     "undoFailed": "Could not bring everything back — check the trash.",
-    "clearHistoryBody": "The recordings move to the trash, where they stay for {d} days before being deleted for good.",
-    "deleteErrorsBody": "{n} failed entries are removed. Files that still exist move to the trash.",
+    "clearHistoryBody": {
+      "one": "The recordings move to the trash, where they stay for {d} day before being deleted for good.",
+      "other": "The recordings move to the trash, where they stay for {d} days before being deleted for good."
+    },
+    "deleteErrorsBody": {
+      "one": "{n} failed entry is removed. Files that still exist move to the trash.",
+      "other": "{n} failed entries are removed. Files that still exist move to the trash."
+    },
     "restore": "Restore",
     "restoreFailed": "Could not restore",
     "deleteForever": "Delete for good",
     "confirmPurgeOne": "Delete «{name}» for good?",
-    "confirmEmptyN": "Delete {n} recordings for good?",
+    "confirmEmpty": {
+      "one": "Delete {n} recording for good?",
+      "other": "Delete {n} recordings for good?"
+    },
     "confirmEmptyBody": "The files are deleted from disk. This cannot be undone.",
     "deletedAt": "Deleted",
     "today": "today",
     "yesterday": "yesterday",
-    "daysAgo": "{n} days ago",
-    "daysLeft": "{n} days left",
+    "daysAgo": {
+      "one": "{n} day ago",
+      "other": "{n} days ago"
+    },
+    "daysLeft": {
+      "one": "{n} day left",
+      "other": "{n} days left"
+    },
     "dueNow": "goes at the next cleanup",
-    "related": "+ {n} related files"
+    "related": {
+      "one": "+ {n} related file",
+      "other": "+ {n} related files"
+    },
+    "movedNamed": "«{name}» is in the trash"
   },
   "review": {
     "queueTitle": "Ready for review and publishing",
-    "queueCount": "{n} episodes",
-    "queueCountOne": "1 episode",
+    "queueCount": {
+      "one": "{n} episode",
+      "other": "{n} episodes"
+    },
     "needsAttention": "Needs attention",
     "openReview": "Review →",
     "sermonGuess": "Sermon estimate: {min} min",
@@ -224,8 +258,10 @@
     ],
     "ageNow": "Just now",
     "ageHours": "{n}h ago",
-    "ageDayOne": "1 day ago",
-    "ageDays": "{n} days ago",
+    "ageDays": {
+      "one": "{n} day ago",
+      "other": "{n} days ago"
+    },
     "ageOldest": "Over 14 days ago",
     "confident": "confident",
     "errNotFound": "This episode is no longer in the review queue — it may already have been published or discarded."
@@ -250,7 +286,10 @@
     "wakeTitle": "Wake the computer from sleep",
     "wakeDesc": "The computer wakes automatically 10 minutes before the recording starts",
     "wakeBtn": "Schedule wake-up",
-    "wakeStatusOk": "{n} wake-up scheduled",
+    "wakeStatusOk": {
+      "one": "{n} wake-up scheduled",
+      "other": "{n} wake-ups scheduled"
+    },
     "wakeStatusNone": "No upcoming recordings to schedule",
     "wakeStatusOff": "Wake-up is turned off",
     "wakeStatusCancelled": "Denied — try again and approve",
@@ -364,7 +403,10 @@
       "standbyTitle": "Deep sleep is enabled",
       "mismatchTitle": "The operating system is missing some wake-ups",
       "okTitle": "The machine wakes up automatically",
-      "okNext": "Next wake-up {when} — {n} minutes before the recording starts.",
+      "okNext": {
+        "one": "Next wake-up {when} — {n} minute before the recording starts.",
+        "other": "Next wake-up {when} — {n} minutes before the recording starts."
+      },
       "okNoNext": "No upcoming recording to wake up for right now.",
       "neverTested": "Never tested. Run «Test wake now» under Details before the first service."
     }
@@ -435,7 +477,10 @@
     "benchResult": "Measured {m}s of {e}s ({p} % loss)",
     "scanChannels": "🔍 Find channels with signal (3 s)",
     "scanRunning": "Listening for 3 s — play audio on the channels …",
-    "scanFound": "{n} channels with signal: {list}",
+    "scanFound": {
+      "one": "{n} channel with signal: {list}",
+      "other": "{n} channels with signal: {list}"
+    },
     "scanNone": "No channels with signal — play audio and try again",
     "deviceHelp": "Choose the mixer or audio interface that records the church's sound. A USB mixer is recommended over the built-in microphone.",
     "deviceNotShown": "Don't see the right device? Check that the interface is connected and its driver is installed.",
@@ -454,7 +499,10 @@
     "gridMonoChip": "CHANNEL (mono)",
     "gridTapHint": "Tap the channel for left, then the channel for right.",
     "gridTapHintMono": "Tap the channel carrying signal to select it.",
-    "gridMeta": "{n} channels — live signal",
+    "gridMeta": {
+      "one": "{n} channel — live signal",
+      "other": "{n} channels — live signal"
+    },
     "gridSaved": "Saved ✓",
     "channelNum": "Channel {n}",
     "diagnoseCopied": "✓ Copied",
@@ -497,7 +545,10 @@
     "autoDeleteDesc": "Frees up disk space automatically by removing old recordings",
     "trimSilence": "Trim silence",
     "trimSilenceDesc": "Automatically trims silent seconds at the start and end of the recording",
-    "confirmAutoDeleteShort": "Recordings older than {n} days are deleted automatically and cannot be recovered.",
+    "confirmAutoDeleteShort": {
+      "one": "Recordings older than {n} day are deleted automatically and cannot be recovered.",
+      "other": "Recordings older than {n} days are deleted automatically and cannot be recovered."
+    },
     "behaviourTitle": "Recording behaviour",
     "behaviourDesc": "Fine-tune how the recording starts, is protected, and split.",
     "whileRecording": "While a recording is running",
@@ -584,9 +635,14 @@
     "telemetryPreviewBtn": "Show what gets sent",
     "telemetryDeleteBtn": "Delete my data",
     "telemetryReadMore": "Read the privacy notice ↗",
-    "telemetryQueuePendingOne": "1 report is waiting to be sent.",
-    "telemetryQueuePendingMany": "{n} reports are waiting to be sent.",
-    "telemetryQueueFailed": "{n} could not be sent.",
+    "telemetryQueuePending": {
+      "one": "{n} report is waiting to be sent.",
+      "other": "{n} reports are waiting to be sent."
+    },
+    "telemetryQueueFailed": {
+      "one": "{n} could not be sent.",
+      "other": "{n} could not be sent."
+    },
     "telemetryQueueOldestSince": "The oldest is from {date}.",
     "telemetryQueueLastError": "Last error: {error}",
     "telemetryDeleteConfirmTitle": "Delete your data?",
@@ -609,12 +665,26 @@
     "learningUnavailableRecording": "Not available while a recording is running.",
     "learningEmptyBody": "Nothing to show yet — that's normal. This fills in only when you correct something the app got wrong.",
     "learningSermonPickZero": "The automatic sermon pick has not been corrected yet.",
-    "learningSermonPickOne": "The automatic sermon pick has been corrected 1 time.",
-    "learningSermonPickMany": "The automatic sermon pick has been corrected {n} times.",
-    "learningStartTooEarly": "The automatic start often lands too early — on average you have moved it {n} seconds later.",
-    "learningStartTooLate": "The automatic start often lands too late — on average you have moved it {n} seconds earlier.",
-    "learningEndTooEarly": "The automatic end is often cut too early — on average you have moved it {n} seconds later.",
-    "learningEndTooLate": "The automatic end often lands too late — on average you have moved it {n} seconds earlier.",
+    "learningSermonPick": {
+      "one": "The automatic sermon pick has been corrected {n} time.",
+      "other": "The automatic sermon pick has been corrected {n} times."
+    },
+    "learningStartTooEarly": {
+      "one": "The automatic start often lands too early — on average you have moved it {n} second later.",
+      "other": "The automatic start often lands too early — on average you have moved it {n} seconds later."
+    },
+    "learningStartTooLate": {
+      "one": "The automatic start often lands too late — on average you have moved it {n} second earlier.",
+      "other": "The automatic start often lands too late — on average you have moved it {n} seconds earlier."
+    },
+    "learningEndTooEarly": {
+      "one": "The automatic end is often cut too early — on average you have moved it {n} second later.",
+      "other": "The automatic end is often cut too early — on average you have moved it {n} seconds later."
+    },
+    "learningEndTooLate": {
+      "one": "The automatic end often lands too late — on average you have moved it {n} second earlier.",
+      "other": "The automatic end often lands too late — on average you have moved it {n} seconds earlier."
+    },
     "learningCompanionSummary": "Of the AI suggestions, {accepted} were used ({edited} rewritten afterwards), and {leftAlone} were left alone.",
     "localNudgeCardTitle": "What the app has adjusted",
     "localNudgeCardDesc": "If you correct the same thing every Sunday, the app can move its own suggestion that way — for this machine alone. Nothing here is shared with anyone, and you can reset it at any time.",
@@ -792,8 +862,10 @@
     "videoFormat": "Video format",
     "vocalChain": "Voice processing",
     "exportDoneToast": "Exported{name}",
-    "gotoReviewOne": "Review queue (1 episode) →",
-    "gotoReviewN": "Review queue ({n} episodes) →",
+    "gotoReviewCount": {
+      "one": "Review queue ({n} episode) →",
+      "other": "Review queue ({n} episodes) →"
+    },
     "enhanceNone": "None",
     "vcLight": "Voice — light",
     "vcPodcast": "Podcast voice (recommended)",
@@ -1018,7 +1090,10 @@
     "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
     "deviceMissing": "The audio device “{device}” is not connected.",
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
-    "reviewOverdue": "An episode has been waiting {days} days for review: {episode}",
+    "reviewOverdue": {
+      "one": "An episode has been waiting {days} day for review: {episode}",
+      "other": "An episode has been waiting {days} days for review: {episode}"
+    },
     "systemTitle": "System notifications",
     "emailTitle": "Email notifications",
     "smtpServer": "EMAIL SERVICE (SMTP)",
@@ -1116,9 +1191,10 @@
     "queueStatusPending": "Pending",
     "pickFolderTitle": "Choose folder",
     "loading": "Loading…",
-    "episodeSingular": "episode",
-    "episodePlural": "episodes",
-    "published": "published",
+    "publishedCount": {
+      "one": "{n} episode published",
+      "other": "{n} episodes published"
+    },
     "errConnectFirst": "connect to the cloud service first",
     "errPickFolderFirst": "choose a save folder first",
     "errEnablePodcast": "enable podcast first",
@@ -1250,7 +1326,10 @@
     "noHighlights": "No clear highlights found",
     "useMeta": "→ Use in metadata",
     "useMetaHint": "Put the title + summary in metadata — used on export and by SundayEdit/Stage",
-    "useChapters": "→ Add {n} chapters",
+    "useChapters": {
+      "one": "→ Add {n} chapter",
+      "other": "→ Add {n} chapters"
+    },
     "copy": "⧉ Copy",
     "copied": "Copied",
     "copyFailed": "Couldn't copy",
@@ -1338,8 +1417,10 @@
     "dismiss": "Close"
   },
   "missed": {
-    "bannerOne": "A scheduled recording never ran",
-    "bannerMany": "{n} scheduled recordings never ran",
+    "banner": {
+      "one": "{n} scheduled recording never ran",
+      "other": "{n} scheduled recordings never ran"
+    },
     "hint": "Check that the machine was on, that SundayRec was running and that “Wake the computer automatically” is enabled.",
     "dismiss": "Got it",
     "openSchedule": "Open schedule",
@@ -1349,7 +1430,10 @@
   "guard": {
     "title": "{what} now?",
     "duringRecording": "A recording is running right now. The change can interrupt or ruin what is being recorded.",
-    "beforeRecording": "The next scheduled recording starts in {n} minutes. The change will affect that recording.",
+    "beforeRecording": {
+      "one": "The next scheduled recording starts in {n} minute. The change will affect that recording.",
+      "other": "The next scheduled recording starts in {n} minutes. The change will affect that recording."
+    },
     "confirm": "Yes, change anyway",
     "cancel": "Not now"
   },

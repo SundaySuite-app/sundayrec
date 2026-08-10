@@ -1,4 +1,4 @@
-import { t, onLocaleApplied } from '../i18n'
+import { t, tf, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { setVal, setRadio, localeTag } from '../helpers'
 import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
@@ -372,11 +372,11 @@ function groupIpcFailures(
 function relativeAgo(atMs: number, nowMs: number): string {
   const diffSec = Math.max(0, Math.round((nowMs - atMs) / 1000))
   if (diffSec < 5) return t('audio.diagIpcJustNow', 'akkurat nå')
-  if (diffSec < 60) return t('audio.diagIpcSecAgo', '{n} sek siden').replace('{n}', String(diffSec))
+  if (diffSec < 60) return tf('audio.diagIpcSecAgo', { n: diffSec }, '{n} sek siden')
   const diffMin = Math.round(diffSec / 60)
-  if (diffMin < 60) return t('audio.diagIpcMinAgo', '{n} min siden').replace('{n}', String(diffMin))
+  if (diffMin < 60) return tf('audio.diagIpcMinAgo', { n: diffMin }, '{n} min siden')
   const diffHour = Math.round(diffMin / 60)
-  return t('audio.diagIpcHourAgo', '{n} t siden').replace('{n}', String(diffHour))
+  return tf('audio.diagIpcHourAgo', { n: diffHour }, '{n} t siden')
 }
 
 function ipcFailureRow(g: IpcFailureGroup, nowMs: number): string {

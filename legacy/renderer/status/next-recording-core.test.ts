@@ -27,6 +27,31 @@ import {
 // carries the same placeholders.
 const t = (key: string, fallback = ''): string => (fallback ? `${key}::${fallback}` : key)
 
+/** Interpolating stub: same near-identity, then real `{param}` substitution —
+ *  so a formatter that forgets to pass a param still leaves a visible `{x}`
+ *  for the assertions to catch. */
+const tf = (
+  key: string,
+  params: Record<string, string | number>,
+  fallback = '',
+): string => {
+  let out = t(key, fallback)
+  for (const [k, v] of Object.entries(params)) out = out.replaceAll(`{${k}}`, String(v))
+  return out
+}
+
+/** Count-aware stub. The CLDR category is appended to the key so an assertion
+ *  can still tell singular from plural without knowing any language's words;
+ *  nb-NO stands in for "the active language" (the real per-language form
+ *  selection is proven against all seven catalogues in i18n.test.ts). */
+const tn = (
+  key: string,
+  count: number,
+  params: Record<string, string | number> = {},
+  fallback = '',
+): string =>
+  tf(`${key}.${new Intl.PluralRules('nb-NO').select(count)}`, { n: count, ...params }, fallback)
+
 // Deterministic date rendering — no ICU, no timezone, no locale data.
 const parts = (ms: number): DateParts => ({
   weekdayLong: `LONG@${ms}`,
@@ -36,7 +61,7 @@ const parts = (ms: number): DateParts => ({
 })
 
 const NOW = 1_000_000
-const ctx = (nowMs = NOW): FormatCtx => ({ t, parts, nowMs })
+const ctx = (nowMs = NOW): FormatCtx => ({ t, tf, tn, parts, nowMs })
 
 /** Countdown duration stub — the app injects `fmtCountdown`. */
 const duration = (ms: number): string => `DUR(${ms})`
@@ -275,9 +300,9 @@ describe('missed + preflight formatting', () => {
         { at: AT, label: 'Kveldsmøte' },
       ],
     })
-    expect(formatMissedBanner(one, ctx())).toContain('missed.bannerOne')
+    expect(formatMissedBanner(one, ctx())).toContain('missed.banner.one')
     const many = formatMissedBanner(two, ctx())!
-    expect(many).toContain('missed.bannerMany')
+    expect(many).toContain('missed.banner.other')
     expect(many).toContain('2')
     expect(many).not.toContain('{n}')
   })
@@ -306,6 +331,7 @@ describe('missed + preflight formatting', () => {
       ctx(),
     )!
     expect(out.severity).toBe('error')
+    expect(out.text).toContain('status.preflightErrors.one')
     expect(out.text).toContain('1')
   })
 
@@ -318,6 +344,7 @@ describe('missed + preflight formatting', () => {
       ctx(),
     )!
     expect(out.severity).toBe('warn')
+    expect(out.text).toContain('status.preflightWarns.other')
     expect(out.text).toContain('2')
   })
 })

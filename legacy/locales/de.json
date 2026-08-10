@@ -20,8 +20,14 @@
     "ok": "AUFNAHMEBEREIT",
     "warn": "AKTION ERFORDERLICH",
     "noSchedule": "Keine Aufnahme geplant",
-    "preflightErrors": "{n} Fehler müssen vor der Aufnahme behoben werden",
-    "preflightWarns": "{n} Punkte sollten Sie vor der Aufnahme prüfen",
+    "preflightErrors": {
+      "one": "{n} Fehler muss vor der Aufnahme behoben werden",
+      "other": "{n} Fehler müssen vor der Aufnahme behoben werden"
+    },
+    "preflightWarns": {
+      "one": "{n} Punkt sollten Sie vor der Aufnahme prüfen",
+      "other": "{n} Punkte sollten Sie vor der Aufnahme prüfen"
+    },
     "preflightAction": "Einstellungen öffnen",
     "dismiss": "Ausblenden",
     "preflightMore": "weitere — siehe Einstellungen → Ton"
@@ -154,9 +160,14 @@
     "deleteFailed": "Löschen fehlgeschlagen",
     "clearNone": "Die Liste ist leer",
     "errorsNone": "Keine fehlerhaften Einträge",
-    "confirmClearN": "Alle {n} Einträge löschen?",
-    "confirmDeleteErrorsOne": "1 fehlerhaften Eintrag löschen?",
-    "confirmDeleteErrorsN": "{n} fehlerhafte Einträge löschen?",
+    "confirmClear": {
+      "one": "Den Eintrag löschen?",
+      "other": "Alle {n} Einträge löschen?"
+    },
+    "confirmDeleteErrors": {
+      "one": "{n} fehlerhaften Eintrag löschen?",
+      "other": "{n} fehlerhafte Einträge löschen?"
+    },
     "emptyFiltered": "Keine Aufnahmen in diesem Filter"
   },
   "trash": {
@@ -168,30 +179,53 @@
     "empty": "Der Papierkorb ist leer.",
     "alreadyEmpty": "Der Papierkorb ist leer",
     "deleteEntry": "In den Papierkorb verschieben",
-    "movedOne": "„{name}“ liegt im Papierkorb",
-    "movedN": "{n} Aufnahmen liegen im Papierkorb",
+    "moved": {
+      "one": "{n} Aufnahme liegt im Papierkorb",
+      "other": "{n} Aufnahmen liegen im Papierkorb"
+    },
     "undo": "Rückgängig",
     "undoFailed": "Es konnte nicht alles zurückgeholt werden — sieh im Papierkorb nach.",
-    "clearHistoryBody": "Die Aufnahmen wandern in den Papierkorb und bleiben dort {d} Tage, bevor sie endgültig gelöscht werden.",
-    "deleteErrorsBody": "{n} fehlerhafte Einträge werden entfernt. Vorhandene Dateien wandern in den Papierkorb.",
+    "clearHistoryBody": {
+      "one": "Die Aufnahmen wandern in den Papierkorb und bleiben dort {d} Tag, bevor sie endgültig gelöscht werden.",
+      "other": "Die Aufnahmen wandern in den Papierkorb und bleiben dort {d} Tage, bevor sie endgültig gelöscht werden."
+    },
+    "deleteErrorsBody": {
+      "one": "{n} fehlerhafter Eintrag wird entfernt. Vorhandene Dateien wandern in den Papierkorb.",
+      "other": "{n} fehlerhafte Einträge werden entfernt. Vorhandene Dateien wandern in den Papierkorb."
+    },
     "restore": "Wiederherstellen",
     "restoreFailed": "Wiederherstellen fehlgeschlagen",
     "deleteForever": "Endgültig löschen",
     "confirmPurgeOne": "„{name}“ endgültig löschen?",
-    "confirmEmptyN": "{n} Aufnahmen endgültig löschen?",
+    "confirmEmpty": {
+      "one": "{n} Aufnahme endgültig löschen?",
+      "other": "{n} Aufnahmen endgültig löschen?"
+    },
     "confirmEmptyBody": "Die Dateien werden von der Festplatte gelöscht. Das lässt sich nicht rückgängig machen.",
     "deletedAt": "Gelöscht",
     "today": "heute",
     "yesterday": "gestern",
-    "daysAgo": "vor {n} Tagen",
-    "daysLeft": "noch {n} Tage",
+    "daysAgo": {
+      "one": "vor {n} Tag",
+      "other": "vor {n} Tagen"
+    },
+    "daysLeft": {
+      "one": "noch {n} Tag",
+      "other": "noch {n} Tage"
+    },
     "dueNow": "wird beim nächsten Aufräumen gelöscht",
-    "related": "+ {n} zugehörige Dateien"
+    "related": {
+      "one": "+ {n} zugehörige Datei",
+      "other": "+ {n} zugehörige Dateien"
+    },
+    "movedNamed": "„{name}“ liegt im Papierkorb"
   },
   "review": {
     "queueTitle": "Bereit zur Prüfung und Veröffentlichung",
-    "queueCount": "{n} Episoden",
-    "queueCountOne": "1 Episode",
+    "queueCount": {
+      "one": "{n} Episode",
+      "other": "{n} Episoden"
+    },
     "needsAttention": "Aufmerksamkeit erforderlich",
     "openReview": "Prüfen →",
     "sermonGuess": "Vermutete Predigt: {min} Min.",
@@ -224,8 +258,10 @@
     ],
     "ageNow": "Gerade jetzt",
     "ageHours": "vor {n}h",
-    "ageDayOne": "vor 1 Tag",
-    "ageDays": "vor {n} Tagen",
+    "ageDays": {
+      "one": "vor {n} Tag",
+      "other": "vor {n} Tagen"
+    },
     "ageOldest": "vor über 14 Tagen",
     "confident": "sicher",
     "errNotFound": "Diese Folge ist nicht mehr in der Prüfliste — sie wurde möglicherweise bereits veröffentlicht oder verworfen."
@@ -250,7 +286,10 @@
     "wakeTitle": "Computer aus dem Ruhezustand wecken",
     "wakeDesc": "Der Computer wird automatisch 10 Minuten vor Aufnahmebeginn aufgeweckt",
     "wakeBtn": "Aufwecken planen",
-    "wakeStatusOk": "{n} Aufwecken geplant",
+    "wakeStatusOk": {
+      "one": "{n} Aufwecken geplant",
+      "other": "{n} Aufwecken geplant"
+    },
     "wakeStatusNone": "Keine anstehenden Aufnahmen zum Planen",
     "wakeStatusOff": "Aufwecken ist deaktiviert",
     "wakeStatusCancelled": "Abgelehnt — erneut versuchen und genehmigen",
@@ -364,7 +403,10 @@
       "standbyTitle": "Tiefschlaf ist aktiviert",
       "mismatchTitle": "Dem Betriebssystem fehlen einige Weckzeiten",
       "okTitle": "Der Rechner wacht automatisch auf",
-      "okNext": "Nächstes Aufwecken {when} — {n} Minuten vor Aufnahmebeginn.",
+      "okNext": {
+        "one": "Nächstes Aufwecken {when} — {n} Minute vor Aufnahmebeginn.",
+        "other": "Nächstes Aufwecken {when} — {n} Minuten vor Aufnahmebeginn."
+      },
       "okNoNext": "Derzeit keine anstehende Aufnahme, für die aufgewacht werden muss.",
       "neverTested": "Noch nie getestet. Führen Sie „Wake jetzt testen“ unter „Details“ vor dem ersten Gottesdienst aus."
     }
@@ -435,7 +477,10 @@
     "benchResult": "Gemessen {m}s von {e}s ({p} % Verlust)",
     "scanChannels": "🔍 Kanäle mit Signal finden (3 s)",
     "scanRunning": "Höre 3 s zu — Audio auf den Kanälen abspielen …",
-    "scanFound": "{n} Kanäle mit Signal: {list}",
+    "scanFound": {
+      "one": "{n} Kanal mit Signal: {list}",
+      "other": "{n} Kanäle mit Signal: {list}"
+    },
     "scanNone": "Keine Kanäle mit Signal — Audio abspielen und erneut versuchen",
     "deviceHelp": "Wähle das Mischpult oder Audiointerface, das den Ton der Kirche aufnimmt. Ein USB-Mischpult wird gegenüber dem eingebauten Mikrofon empfohlen.",
     "deviceNotShown": "Wird das richtige Gerät nicht angezeigt? Prüfe, ob das Interface angeschlossen und der Treiber installiert ist.",
@@ -454,7 +499,10 @@
     "gridMonoChip": "KANAL (Mono)",
     "gridTapHint": "Tippe auf den Kanal für links, dann auf den Kanal für rechts.",
     "gridTapHintMono": "Tippe auf den Kanal mit Signal, um ihn auszuwählen.",
-    "gridMeta": "{n} Kanäle — Live-Signal",
+    "gridMeta": {
+      "one": "{n} Kanal — Live-Signal",
+      "other": "{n} Kanäle — Live-Signal"
+    },
     "gridSaved": "Gespeichert ✓",
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopiert",
@@ -497,7 +545,10 @@
     "autoDeleteDesc": "Gibt Speicherplatz automatisch frei, indem alte Aufnahmen gelöscht werden",
     "trimSilence": "Stille trimmen",
     "trimSilenceDesc": "Schneidet automatisch stille Sekunden am Anfang und Ende der Aufnahme",
-    "confirmAutoDeleteShort": "Aufnahmen, die älter als {n} Tage sind, werden automatisch gelöscht und können nicht wiederhergestellt werden.",
+    "confirmAutoDeleteShort": {
+      "one": "Aufnahmen, die älter als {n} Tag sind, werden automatisch gelöscht und können nicht wiederhergestellt werden.",
+      "other": "Aufnahmen, die älter als {n} Tage sind, werden automatisch gelöscht und können nicht wiederhergestellt werden."
+    },
     "behaviourTitle": "Aufnahmeverhalten",
     "behaviourDesc": "Feinjustieren Sie, wie die Aufnahme startet, geschützt und aufgeteilt wird.",
     "whileRecording": "Während einer laufenden Aufnahme",
@@ -584,9 +635,14 @@
     "telemetryPreviewBtn": "Anzeigen, was gesendet wird",
     "telemetryDeleteBtn": "Meine Daten löschen",
     "telemetryReadMore": "Datenschutzerklärung lesen ↗",
-    "telemetryQueuePendingOne": "1 Bericht wartet darauf, gesendet zu werden.",
-    "telemetryQueuePendingMany": "{n} Berichte warten darauf, gesendet zu werden.",
-    "telemetryQueueFailed": "{n} konnten nicht gesendet werden.",
+    "telemetryQueuePending": {
+      "one": "{n} Bericht wartet darauf, gesendet zu werden.",
+      "other": "{n} Berichte warten darauf, gesendet zu werden."
+    },
+    "telemetryQueueFailed": {
+      "one": "{n} konnte nicht gesendet werden.",
+      "other": "{n} konnten nicht gesendet werden."
+    },
     "telemetryQueueOldestSince": "Der älteste ist vom {date}.",
     "telemetryQueueLastError": "Letzter Fehler: {error}",
     "telemetryDeleteConfirmTitle": "Ihre Daten löschen?",
@@ -609,12 +665,26 @@
     "learningUnavailableRecording": "Nicht verfügbar, während eine Aufnahme läuft.",
     "learningEmptyBody": "Noch nichts zu zeigen — das ist normal. Dies füllt sich erst, wenn du etwas korrigierst, das die App falsch geraten hat.",
     "learningSermonPickZero": "Die automatische Predigtauswahl wurde noch nicht korrigiert.",
-    "learningSermonPickOne": "Die automatische Predigtauswahl wurde 1 Mal korrigiert.",
-    "learningSermonPickMany": "Die automatische Predigtauswahl wurde {n} Mal korrigiert.",
-    "learningStartTooEarly": "Der automatische Start liegt oft zu früh — im Schnitt hast du ihn um {n} Sekunden nach hinten verschoben.",
-    "learningStartTooLate": "Der automatische Start liegt oft zu spät — im Schnitt hast du ihn um {n} Sekunden nach vorne verschoben.",
-    "learningEndTooEarly": "Das automatische Ende wird oft zu früh abgeschnitten — im Schnitt hast du es um {n} Sekunden nach hinten verschoben.",
-    "learningEndTooLate": "Das automatische Ende liegt oft zu spät — im Schnitt hast du es um {n} Sekunden nach vorne verschoben.",
+    "learningSermonPick": {
+      "one": "Die automatische Predigtauswahl wurde {n} Mal korrigiert.",
+      "other": "Die automatische Predigtauswahl wurde {n} Mal korrigiert."
+    },
+    "learningStartTooEarly": {
+      "one": "Der automatische Start liegt oft zu früh — im Schnitt hast du ihn um {n} Sekunde nach hinten verschoben.",
+      "other": "Der automatische Start liegt oft zu früh — im Schnitt hast du ihn um {n} Sekunden nach hinten verschoben."
+    },
+    "learningStartTooLate": {
+      "one": "Der automatische Start liegt oft zu spät — im Schnitt hast du ihn um {n} Sekunde nach vorne verschoben.",
+      "other": "Der automatische Start liegt oft zu spät — im Schnitt hast du ihn um {n} Sekunden nach vorne verschoben."
+    },
+    "learningEndTooEarly": {
+      "one": "Das automatische Ende wird oft zu früh abgeschnitten — im Schnitt hast du es um {n} Sekunde nach hinten verschoben.",
+      "other": "Das automatische Ende wird oft zu früh abgeschnitten — im Schnitt hast du es um {n} Sekunden nach hinten verschoben."
+    },
+    "learningEndTooLate": {
+      "one": "Das automatische Ende liegt oft zu spät — im Schnitt hast du es um {n} Sekunde nach vorne verschoben.",
+      "other": "Das automatische Ende liegt oft zu spät — im Schnitt hast du es um {n} Sekunden nach vorne verschoben."
+    },
     "learningCompanionSummary": "Von den KI-Vorschlägen wurden {accepted} übernommen ({edited} davon anschließend umgeschrieben), und {leftAlone} unangetastet gelassen.",
     "localNudgeCardTitle": "Was die App angepasst hat",
     "localNudgeCardDesc": "Wenn Sie jeden Sonntag dasselbe korrigieren, kann die App ihren eigenen Vorschlag in diese Richtung verschieben — nur für diesen Rechner. Nichts davon wird mit jemandem geteilt, und Sie können es jederzeit zurücksetzen.",
@@ -792,8 +862,10 @@
     "videoFormat": "Videoformat",
     "vocalChain": "Stimmbearbeitung",
     "exportDoneToast": "Exportiert{name}",
-    "gotoReviewOne": "Prüfliste (1 Folge) →",
-    "gotoReviewN": "Prüfliste ({n} Folgen) →",
+    "gotoReviewCount": {
+      "one": "Prüfliste ({n} Folge) →",
+      "other": "Prüfliste ({n} Folgen) →"
+    },
     "enhanceNone": "Keine",
     "vcLight": "Stimme — leicht",
     "vcPodcast": "Podcast-Stimme (empfohlen)",
@@ -1018,7 +1090,10 @@
     "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
     "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
-    "reviewOverdue": "Eine Folge wartet seit {days} Tagen auf Durchsicht: {episode}",
+    "reviewOverdue": {
+      "one": "Eine Folge wartet seit {days} Tag auf Durchsicht: {episode}",
+      "other": "Eine Folge wartet seit {days} Tagen auf Durchsicht: {episode}"
+    },
     "systemTitle": "Systembenachrichtigungen",
     "emailTitle": "E-Mail-Benachrichtigungen",
     "smtpServer": "E-MAIL-DIENST (SMTP)",
@@ -1116,9 +1191,10 @@
     "queueStatusPending": "Wartet",
     "pickFolderTitle": "Ordner wählen",
     "loading": "Lädt…",
-    "episodeSingular": "Episode",
-    "episodePlural": "Episoden",
-    "published": "veröffentlicht",
+    "publishedCount": {
+      "one": "{n} Episode veröffentlicht",
+      "other": "{n} Episoden veröffentlicht"
+    },
     "errConnectFirst": "zuerst mit Cloud-Dienst verbinden",
     "errPickFolderFirst": "zuerst Speicherordner wählen",
     "errEnablePodcast": "zuerst Podcast aktivieren",
@@ -1250,7 +1326,10 @@
     "noHighlights": "Keine deutlichen Höhepunkte gefunden",
     "useMeta": "→ In Metadaten übernehmen",
     "useMetaHint": "Titel + Zusammenfassung in die Metadaten übernehmen — beim Export und von SundayEdit/Stage verwendet",
-    "useChapters": "→ {n} Kapitel hinzufügen",
+    "useChapters": {
+      "one": "→ {n} Kapitel hinzufügen",
+      "other": "→ {n} Kapitel hinzufügen"
+    },
     "copy": "⧉ Kopieren",
     "copied": "Kopiert",
     "copyFailed": "Kopieren fehlgeschlagen",
@@ -1338,8 +1417,10 @@
     "dismiss": "Schließen"
   },
   "missed": {
-    "bannerOne": "Eine geplante Aufnahme wurde nicht ausgeführt",
-    "bannerMany": "{n} geplante Aufnahmen wurden nicht ausgeführt",
+    "banner": {
+      "one": "{n} geplante Aufnahme wurde nicht ausgeführt",
+      "other": "{n} geplante Aufnahmen wurden nicht ausgeführt"
+    },
     "hint": "Prüfen Sie, ob der Computer eingeschaltet war, SundayRec lief und „Computer automatisch aufwecken“ aktiviert ist.",
     "dismiss": "Verstanden",
     "openSchedule": "Zeitplan öffnen",
@@ -1349,7 +1430,10 @@
   "guard": {
     "title": "{what} jetzt?",
     "duringRecording": "Gerade läuft eine Aufnahme. Die Änderung kann die laufende Aufnahme unterbrechen oder unbrauchbar machen.",
-    "beforeRecording": "Die nächste geplante Aufnahme startet in {n} Minuten. Die Änderung wirkt sich auf diese Aufnahme aus.",
+    "beforeRecording": {
+      "one": "Die nächste geplante Aufnahme startet in {n} Minute. Die Änderung wirkt sich auf diese Aufnahme aus.",
+      "other": "Die nächste geplante Aufnahme startet in {n} Minuten. Die Änderung wirkt sich auf diese Aufnahme aus."
+    },
     "confirm": "Ja, trotzdem ändern",
     "cancel": "Jetzt nicht"
   },

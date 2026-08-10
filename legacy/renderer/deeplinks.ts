@@ -33,7 +33,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 import { baseName, rejectionCopy } from './deeplinks-core'
-import { t } from './i18n'
+import { t, tf } from './i18n'
 import { confirmDialog } from './ui/dialog'
 import { toast } from './ui/toast'
 
@@ -86,7 +86,7 @@ function announceCaptions(p: CaptionsPayload, handlers: DeeplinkHandlers): void 
   const name = baseName(p.recording) || t('deeplink.theRecording', 'opptaket')
   toast(
     'success',
-    t('deeplink.captionsOk', 'Teksting mottatt for «{name}».').replace('{name}', name),
+    tf('deeplink.captionsOk', { name }, 'Teksting mottatt for «{name}».'),
     {
       action: {
         label: t('deeplink.openEditor', 'Åpne i redigering'),
@@ -116,12 +116,13 @@ async function askAndApplyCaptions(
   const subtitleName = p.subtitleName || baseName(p.subtitle) || ''
 
   const accept = await confirmDialog({
-    title: t('deeplink.confirmCaptionsTitle', 'Legge til teksting for «{name}»?')
-      .replace('{name}', recordingName),
-    message: t(
+    title: tf('deeplink.confirmCaptionsTitle', { name: recordingName },
+      'Legge til teksting for «{name}»?'),
+    message: tf(
       'deeplink.confirmCaptionsBody',
+      { file: subtitleName },
       'En annen app har sendt tekstfilen «{file}». Sier du ja, lagres teksten ved siden av opptaket.',
-    ).replace('{file}', subtitleName),
+    ),
     confirmLabel: t('deeplink.confirmCaptionsAccept', 'Ja, legg til teksting'),
     cancelLabel: t('deeplink.confirmCaptionsReject', 'Nei, ikke gjør noe'),
   }).catch(() => false)
@@ -176,8 +177,8 @@ export function initDeeplinks(handlers: DeeplinkHandlers): void {
         return
       }
       handlers.openInEditor(path)
-      toast('info', t('deeplink.imported', 'Åpnet «{name}» i redigering.')
-        .replace('{name}', baseName(path) || path))
+      toast('info', tf('deeplink.imported', { name: baseName(path) || path },
+        'Åpnet «{name}» i redigering.'))
     }),
   )
 

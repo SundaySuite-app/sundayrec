@@ -274,11 +274,18 @@ export function etaBucket(ms: number | null): EtaBucket {
 /** The translator shape this module needs — `i18n.t`, without importing it. */
 export type TranslateFn = (key: string, fallback?: string) => string
 
+/** Interpolating localizer (`i18n.tf`), injected for the same reason as `t`. */
+export type TranslateFFn = (
+  key: string,
+  params: Record<string, string | number>,
+  fallback?: string,
+) => string
+
 /**
  * Render an estimate as the one line we put under a progress bar.
  * `null` (or an unstable reading) renders «beregner …», never a guess.
  */
-export function formatEta(ms: number | null, t: TranslateFn): string {
+export function formatEta(ms: number | null, t: TranslateFn, tf: TranslateFFn): string {
   const b = etaBucket(ms)
   switch (b.kind) {
     case 'unknown':
@@ -286,15 +293,13 @@ export function formatEta(ms: number | null, t: TranslateFn): string {
     case 'under10s':
       return t('progress.etaUnder10s', 'under 10 s igjen')
     case 'seconds':
-      return t('progress.etaSeconds', 'ca. {n} s igjen').replace('{n}', String(b.value))
+      return tf('progress.etaSeconds', { n: b.value }, 'ca. {n} s igjen')
     case 'minutes':
-      return t('progress.etaMinutes', 'ca. {n} min igjen').replace('{n}', String(b.value))
+      return tf('progress.etaMinutes', { n: b.value }, 'ca. {n} min igjen')
     case 'hours':
       return b.minutes === 0
-        ? t('progress.etaHours', 'ca. {h} t igjen').replace('{h}', String(b.hours))
-        : t('progress.etaHoursMinutes', 'ca. {h} t {m} min igjen')
-            .replace('{h}', String(b.hours))
-            .replace('{m}', String(b.minutes))
+        ? tf('progress.etaHours', { h: b.hours }, 'ca. {h} t igjen')
+        : tf('progress.etaHoursMinutes', { h: b.hours, m: b.minutes }, 'ca. {h} t {m} min igjen')
   }
 }
 

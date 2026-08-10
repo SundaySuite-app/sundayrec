@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import no from '../../locales/no.json'
 import en from '../../locales/en.json'
 import {
+  WARNING_COUNT_PARAMS,
   WARNING_KEYS,
   interpolate,
   toWarningView,
@@ -20,7 +21,22 @@ function localizer(tree: Record<string, unknown>) {
   }
 }
 
+/** A `tn` backed by a real locale tree: picks the CLDR form for `count` out of
+ *  the plural GROUP the key now holds, exactly as `i18n.tn` does. */
+function pluralizer(tree: Record<string, unknown>, lang: string) {
+  return (key: string, count: number, fallback: string): string => {
+    const node = key
+      .split('.')
+      .reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], tree)
+    if (typeof node === 'string') return node
+    if (!node || typeof node !== 'object') return fallback
+    const group = node as Record<string, string>
+    return group[new Intl.PluralRules(lang).select(count)] ?? group.other ?? fallback
+  }
+}
+
 const t = localizer(no as Record<string, unknown>)
+const tn = pluralizer(no as Record<string, unknown>, 'nb-NO')
 
 function warning(over: Partial<BackendWarning> = {}): BackendWarning {
   return {
@@ -98,6 +114,7 @@ describe('toWarningView', () => {
     const view = toWarningView(
       warning({ code: 'disk_low', params: { freeBytes: '1073741824' } }),
       t,
+      tn,
     )
     expect(view?.kind).toBe('warn')
     expect(view?.text).toContain('1.0 GB')
@@ -113,6 +130,7 @@ describe('toWarningView', () => {
         params: { device: 'Qu-5' },
       }),
       t,
+      tn,
     )
     expect(view?.kind).toBe('error')
     expect(view?.text).toContain('Qu-5')
@@ -124,6 +142,7 @@ describe('toWarningView', () => {
     const view = toWarningView(
       warning({ code: 'cloud_reauth_required', msg: 'Skylagringen må kobles til på nytt.' }),
       localizer(en as Record<string, unknown>),
+      pluralizer(en as Record<string, unknown>, 'en'),
     )
     expect(view?.text).toContain('Cloud storage')
     expect(view?.text).not.toContain('Skylagringen')
@@ -136,25 +155,49 @@ describe('toWarningView', () => {
     const view = toWarningView(
       warning({ code: 'something_new', msg: 'Noe uventet skjedde.' }),
       t,
+      tn,
     )
     expect(view?.text).toBe('Noe uventet skjedde.')
   })
 
   it('falls back to the bare code when there is no wording at all', () => {
-    expect(toWarningView(warning({ code: 'something_new', msg: null }), t)?.text).toBe(
+    expect(toWarningView(warning({ code: 'something_new', msg: null }), t, tn)?.text).toBe(
       'something_new',
     )
+  })
+
+  it('picks the plural form for a count-governed warning', () => {
+    // review_overdue reads «har ventet i {days} dager» — one string per count
+    // before this. Norwegian needs «1 dag»; Polish needs a third form for 2–4.
+    const norsk = (days: string) =>
+      toWarningView(
+        warning({ code: 'review_overdue', msg: null, params: { days, episode: 'Gudstjeneste' } }),
+        t,
+        tn,
+      )?.text
+    expect(norsk('1')).toBe('En episode har ventet i 1 dag på gjennomgang: Gudstjeneste')
+    expect(norsk('5')).toBe('En episode har ventet i 5 dager på gjennomgang: Gudstjeneste')
+  })
+
+  it('lists every count-governed warning against a real plural group', () => {
+    for (const [code, param] of Object.entries(WARNING_COUNT_PARAMS)) {
+      const node = WARNING_KEYS[code]
+        .split('.')
+        .reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], no as Record<string, unknown>)
+      expect(typeof node, `${code} → ${WARNING_KEYS[code]} must be a plural group`).toBe('object')
+      expect(param.length).toBeGreaterThan(0)
+    }
   })
 
   it('survives every shape a malformed payload can take', () => {
     // This crosses an IPC boundary. A warning that throws while telling you
     // about a problem is worse than the problem.
-    expect(toWarningView(undefined, t)).toBeNull()
-    expect(toWarningView(null, t)).toBeNull()
-    expect(toWarningView('a string', t)).toBeNull()
-    expect(toWarningView({}, t)).toBeNull()
-    expect(toWarningView({ code: '', msg: '' }, t)).toBeNull()
+    expect(toWarningView(undefined, t, tn)).toBeNull()
+    expect(toWarningView(null, t, tn)).toBeNull()
+    expect(toWarningView('a string', t, tn)).toBeNull()
+    expect(toWarningView({}, t, tn)).toBeNull()
+    expect(toWarningView({ code: '', msg: '' }, t, tn)).toBeNull()
     // A code with no params still renders — the placeholder simply stays.
-    expect(toWarningView({ code: 'device_missing' }, t)?.text).toContain('{device}')
+    expect(toWarningView({ code: 'device_missing' }, t, tn)?.text).toContain('{device}')
   })
 })

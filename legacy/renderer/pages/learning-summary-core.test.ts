@@ -54,15 +54,18 @@ describe('buildLearningSummaryView — sermon-pick line', () => {
     expect(v.sermonPick.params).toBeUndefined()
   })
 
-  it('uses the singular fallback at exactly one', () => {
-    const v = buildLearningSummaryView({ ...EMPTY, sermonPickCorrections: 1 })
-    expect(v.sermonPick.key).toBe('general.learningSermonPickOne')
-  })
+  it('hands the count to the DOM layer instead of picking a form itself', () => {
+    // One key, plus the count: which of Norwegian's two (or Polish's four)
+    // forms it becomes is `tn`'s job, not this module's — it has no locale.
+    const one = buildLearningSummaryView({ ...EMPTY, sermonPickCorrections: 1 })
+    expect(one.sermonPick.key).toBe('general.learningSermonPick')
+    expect(one.sermonPick.count).toBe(1)
+    expect(one.sermonPick.params).toEqual({ n: '1' })
 
-  it('uses the plural fallback with the count above one', () => {
-    const v = buildLearningSummaryView({ ...EMPTY, sermonPickCorrections: 4 })
-    expect(v.sermonPick.key).toBe('general.learningSermonPickMany')
-    expect(v.sermonPick.params).toEqual({ n: '4' })
+    const many = buildLearningSummaryView({ ...EMPTY, sermonPickCorrections: 4 })
+    expect(many.sermonPick.key).toBe('general.learningSermonPick')
+    expect(many.sermonPick.count).toBe(4)
+    expect(many.sermonPick.params).toEqual({ n: '4' })
   })
 })
 
@@ -85,6 +88,7 @@ describe('buildLearningSummaryView — the trim-tendency sentence', () => {
       fallback:
         'Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.',
       params: { n: '40' },
+      count: 40,
     })
   })
 
@@ -178,11 +182,17 @@ describe('every fallback matches legacy/locales/no.json, key for key', () => {
   // baked into this module is a THIRD copy of the Norwegian sentence (the
   // other two are no.json itself and, for the static card text, index.html),
   // and nothing else watches this one for drift.
-  const general = no.general as Record<string, string>
+  const general = no.general as Record<string, unknown>
+
+  /** A pluralized key holds a GROUP; the module's fallback is written in the
+   *  plural, so it is the `other` form that must match. */
+  const noValue = (leaf: string): unknown => {
+    const v = general[leaf]
+    return v && typeof v === 'object' ? (v as Record<string, string>).other : v
+  }
 
   const allLines: CopyLine[] = [
     { key: 'general.learningSermonPickZero', fallback: 'Det automatiske prekenvalget er ikke rettet ennå.' },
-    { key: 'general.learningSermonPickOne', fallback: 'Det automatiske prekenvalget er rettet 1 gang.' },
     buildLearningSummaryView({ ...EMPTY, sermonPickCorrections: 4 }).sermonPick,
     buildLearningSummaryView({
       ...EMPTY,
@@ -215,7 +225,7 @@ describe('every fallback matches legacy/locales/no.json, key for key', () => {
   for (const line of allLines) {
     it(line.key, () => {
       const leaf = line.key.replace('general.', '')
-      expect(general[leaf]).toBe(line.fallback)
+      expect(noValue(leaf)).toBe(line.fallback)
     })
   }
 })

@@ -23,7 +23,7 @@
  *   2. stopMonitoring() → unsubscribes from the telemetry + tears down the UI timers
  *   3. The backend emits `recording://finished` → renderer hides overlay, shows history
  */
-import { t, onLocaleApplied } from '../i18n'
+import { t, tf, onLocaleApplied } from '../i18n'
 import { settings } from '../state'
 import { getAudioDevices } from '../audio/capture'
 import { setVUBar } from '../audio/vu'
@@ -274,13 +274,12 @@ export function setupRecording(): void {
       // kind and (b) FORCE-NAVIGATES to home — yanking the user off whatever
       // they were doing, and away from the recording the message is about. A
       // keyed banner persists until dismissed and carries the way forward.
-      let msg = t('recording.qualityAlarm', 'ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det.')
-        .replace('{m}', String(measured))
-        .replace('{e}', String(expected))
+      let msg = tf('recording.qualityAlarm', { m: measured, e: expected },
+        'ADVARSEL: Opptaket mangler lyd — fila inneholder {m} av {e} sekunder. Sjekk opptaket før du stoler på det.')
       // The engine's reasons are the diagnostic detail that decides whether
       // this is a device problem or a disk problem — carry them.
       if (reasons.length) {
-        msg += ' ' + t('recording.qualityReasons', 'Årsak: {r}').replace('{r}', reasons.join(', '))
+        msg += ' ' + tf('recording.qualityReasons', { r: reasons.join(', ') }, 'Årsak: {r}')
       }
       banner('rec-quality', 'error', msg, [
         {

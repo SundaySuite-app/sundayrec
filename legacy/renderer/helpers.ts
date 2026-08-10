@@ -1,4 +1,4 @@
-import { t, currentLang } from './i18n'
+import { localeTag, t } from './i18n'
 import { toast } from './ui/toast'
 
 export function escHtml(str: unknown): string {
@@ -52,10 +52,13 @@ export function flashMsg(_btn: HTMLElement | null, msg: string, ok = true): void
  *  gives nynorsk-flavoured output in some engines), else the UI language.
  *  Every toLocale*-call in the renderer goes through this — six divergent
  *  conventions ('no', 'nb-NO', currentLang, undefined…) meant the same
- *  timestamp rendered differently from card to card. */
-export function localeTag(): string {
-  return currentLang === 'no' ? 'nb-NO' : currentLang
-}
+ *  timestamp rendered differently from card to card.
+ *
+ *  The implementation MOVED to i18n.ts (where `currentLang` lives) when `tn()`
+ *  needed the same tag for Intl.PluralRules — importing it the other way round
+ *  would have made i18n.ts ↔ helpers.ts a cycle. Re-exported here so the
+ *  existing call sites and the "one tag" rule are untouched. */
+export { localeTag }
 
 export function fmtDate(iso: string): string {
   if (!iso) return '—'

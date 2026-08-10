@@ -89,6 +89,15 @@ jobs:
       - name: i18n hardcoded-text ratchet
         run: npm run i18n-hardcoded
 
+      # i18n-flertallsgate: hver `tn()`-nøkkel må være en CLDR-flertallsgruppe,
+      # hver gruppe må ha nøyaktig kategoriene språket trenger (regnet ut med
+      # Intl.PluralRules, ikke listet for hånd), og ingen gruppe må leses med
+      # `t()`. En manglende `few` i pl.json er ellers helt stille: teksten er
+      # bare gal for 2–4 og 22–24. Selvtest innebygd som mutasjonsvern. I
+      # `npm run check` og ci-local.sh også — gate-paritet er lov.
+      - name: i18n plural groups complete in every locale
+        run: npm run i18n-plurals
+
       # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
       # still exist — a pointer at nothing claims coverage that does not exist.
       # In `npm run check` since E11; mirrored here so a PR can't skip it.

@@ -25,7 +25,7 @@
  * about what the panel shows or does.
  */
 
-import { t } from '../i18n'
+import { t, tn } from '../i18n'
 import type { TranscriptData, SermonCompanion } from '../../types'
 import { E } from './editor/state'
 import { renderChapterList, renderMetaPanel } from './editor/metadata'
@@ -149,7 +149,7 @@ function render(c: SermonCompanion): void {
     <p class="editor-companion-summary"></p>
     <div class="editor-companion-actions">
       <button class="btn-ghost btn-sm" id="btn-companion-use-meta" title="${escapeAttr(t('companion.useMetaHint', 'Legg tittel + oppsummering i metadata — brukes ved eksport og av SundayEdit/Stage'))}">${t('companion.useMeta', '→ Bruk i metadata')}</button>
-      <button class="btn-ghost btn-sm" id="btn-companion-use-chapters">${t('companion.useChapters', '→ Legg til {n} kapitler').replace('{n}', String(chapterCount))}</button>
+      <button class="btn-ghost btn-sm" id="btn-companion-use-chapters">${tn('companion.useChapters', chapterCount, {}, '→ Legg til {n} kapitler')}</button>
       <button class="btn-ghost btn-sm" id="btn-companion-copy">${t('companion.copy', '⧉ Kopier')}</button>
       <span id="companion-action-hint" class="editor-companion-action-hint"></span>
     </div>

@@ -28,6 +28,11 @@ import type { ToastKind } from '../ui/toast'
 /** The localizer shape, injected so this module is testable in isolation. */
 export type Translate = (key: string, fallback: string) => string
 
+/** The count-aware localizer (`i18n.tn`). Injected for the same reason, and
+ *  required rather than optional: a warning whose copy is governed by a count
+ *  must never quietly fall back to the un-pluralized template. */
+export type TranslateCount = (key: string, count: number, fallback: string) => string
+
 /**
  * Stable backend code → locale key. Mirrors `sundayrec_core::notify::code`;
  * the Rust side's `code::ALL` is the authority and this table is checked
@@ -41,6 +46,18 @@ export const WARNING_KEYS: Record<string, string> = {
   device_missing: 'notify.deviceMissing',
   disk_low: 'notify.diskLow',
   review_overdue: 'notify.reviewOverdue',
+}
+
+/**
+ * Codes whose copy is governed by a count, and which param carries it.
+ *
+ * `review_overdue` says «har ventet i {days} dager» — one string for every
+ * count, which is wrong in Polish for 1 («1 dnia», not «1 dni») and in every
+ * language for 1 day. The locale value for these keys is a plural GROUP, so
+ * the template has to be picked before it is interpolated.
+ */
+export const WARNING_COUNT_PARAMS: Record<string, string> = {
+  review_overdue: 'days',
 }
 
 /** What home.ts needs to raise the toast. */
@@ -91,7 +108,11 @@ export function interpolate(template: string, params: Record<string, string>): s
  * warning that throws while telling you about a problem is worse than the
  * problem.
  */
-export function toWarningView(data: unknown, t: Translate): WarningView | null {
+export function toWarningView(
+  data: unknown,
+  t: Translate,
+  tn: TranslateCount,
+): WarningView | null {
   if (!data || typeof data !== 'object') return null
   const w = data as BackendWarning
   const code = typeof w.code === 'string' ? w.code : ''
@@ -99,12 +120,20 @@ export function toWarningView(data: unknown, t: Translate): WarningView | null {
   if (!code && !msg) return null
 
   const key = WARNING_KEYS[code]
-  // `t` returns its fallback when the key is missing from the active locale, so
-  // an untranslated key degrades to the backend's own wording, then to the code.
-  const template = key ? t(key, msg || code) : msg || code
+  const params = warningParams(w)
+  // `t`/`tn` return the fallback when the key is missing from the active
+  // locale, so an untranslated key degrades to the backend's own wording, then
+  // to the code.
+  const countParam = WARNING_COUNT_PARAMS[code]
+  const count = countParam === undefined ? NaN : Number(params[countParam])
+  const template = !key
+    ? msg || code
+    : Number.isFinite(count)
+      ? tn(key, count, msg || code)
+      : t(key, msg || code)
 
   return {
     kind: warningToastKind(w.severity),
-    text: interpolate(template, warningParams(w)),
+    text: interpolate(template, params),
   }
 }

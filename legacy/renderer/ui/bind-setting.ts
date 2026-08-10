@@ -23,7 +23,7 @@
  * `bind-setting-core.ts` and are unit-tested; this file is the DOM around them.
  */
 
-import { t } from '../i18n'
+import { t, tf, tn } from '../i18n'
 import { saveSettingsDebounced } from '../state'
 import { getNextRecordingState } from '../status/next-recording'
 import { WAKE_LEAD_MINUTES } from '../status/next-recording-core'
@@ -185,12 +185,14 @@ export function recordingImminentGuard(
             'guard.duringRecording',
             'Et opptak pågår akkurat nå. Endringen kan avbryte eller ødelegge det som tas opp.',
           )
-        : t(
+        : tn(
             'guard.beforeRecording',
+            minutesUntil(state.next?.atMs ?? Date.now(), Date.now()),
+            {},
             'Neste planlagte opptak starter om {n} minutter. Endringen rekker å slå ut på det opptaket.',
-          ).replace('{n}', String(minutesUntil(state.next?.atMs ?? Date.now(), Date.now())))
+          )
     return {
-      title: t('guard.title', '{what} nå?').replace('{what}', what),
+      title: tf('guard.title', { what }, '{what} nå?'),
       message,
       confirmLabel: t('guard.confirm', 'Ja, endre likevel'),
       cancelLabel: t('guard.cancel', 'Ikke nå'),

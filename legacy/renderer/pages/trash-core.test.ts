@@ -89,7 +89,11 @@ describe('toTrashRows', () => {
 })
 
 describe('ageText', () => {
-  const words = { today: 'i dag', yesterday: 'i går', daysAgo: '{n} dager siden' }
+  const words = {
+    today: 'i dag',
+    yesterday: 'i går',
+    daysAgo: (n: number) => `${n} dager siden`,
+  }
 
   it('reads as a person would say it', () => {
     expect(ageText(0, words)).toBe('i dag')

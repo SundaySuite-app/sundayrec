@@ -1,4 +1,4 @@
-import { t } from '../i18n'
+import { t, tf, tn } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingEntry, RecordingMetadata } from '../../types'
@@ -540,7 +540,8 @@ function loadAndUpdateReviewBanner(): void {
   if (detail) {
     if (reviewPrep.suggestedTrim) {
       const lenMin = Math.round((reviewPrep.suggestedTrim.endSec - reviewPrep.suggestedTrim.startSec) / 60)
-      detail.textContent = t('review.detectedSermon', 'Vi har detektert {min} min preken og foreslått trim. Gå over og trykk publiser.').replace('{min}', String(lenMin))
+      detail.textContent = tf('review.detectedSermon', { min: lenMin },
+        'Vi har detektert {min} min preken og foreslått trim. Gå over og trykk publiser.')
     } else {
       detail.textContent = t('review.noSermonFound', 'Vi fant ingen klar preken-blokk. Sjekk filen før publisering.')
     }
@@ -1128,9 +1129,8 @@ async function refreshEmptyStateReviewLink(): Promise<void> {
       e.prep.status !== 'published' && e.prep.status !== 'discarded')
     if (pending.length === 0) return
     if (link) {
-      link.textContent = pending.length === 1
-        ? t('editor.gotoReviewOne', 'Gjennomgangs-kø (1 episode) →')
-        : t('editor.gotoReviewN', 'Gjennomgangs-kø ({n} episoder) →').replace('{n}', String(pending.length))
+      link.textContent = tn('editor.gotoReviewCount', pending.length, {},
+        'Gjennomgangs-kø ({n} episoder) →')
     }
     wrap.style.display = ''
   } catch (err) {

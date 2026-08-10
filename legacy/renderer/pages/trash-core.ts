@@ -84,12 +84,16 @@ export function toTrashRows(entries: TrashEntry[], now: number): TrashRow[] {
 /**
  * "i dag" / "i går" / "3 dager siden". Takes its words from the caller so the
  * module stays free of the i18n import (and therefore of the DOM).
+ *
+ * `daysAgo` is a FUNCTION of the count, not a template with a `{n}` in it: the
+ * right noun form depends on the count in a way only the locale knows (Polish
+ * «2 dni» vs «1 dzień»), and this module has no locale.
  */
 export function ageText(
   ageDays: number,
-  words: { today: string; yesterday: string; daysAgo: string },
+  words: { today: string; yesterday: string; daysAgo: (n: number) => string },
 ): string {
   if (ageDays <= 0) return words.today
   if (ageDays === 1) return words.yesterday
-  return words.daysAgo.replace('{n}', String(ageDays))
+  return words.daysAgo(ageDays)
 }

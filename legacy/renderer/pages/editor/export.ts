@@ -1,4 +1,4 @@
-import { t } from '../../i18n'
+import { t, tf } from '../../i18n'
 import { errorCode } from '../../error-code-core'
 import { settings } from '../../state'
 import { E, $, clearDirty } from './state'
@@ -569,7 +569,7 @@ export async function runExport(): Promise<void> {
     const out = result.outputPath
     toast(
       'success',
-      t('editor.exportDoneToast', 'Eksportert{name}').replace('{name}', fname ? ` — ${fname}` : ''),
+      tf('editor.exportDoneToast', { name: fname ? ` — ${fname}` : '' }, 'Eksportert{name}'),
       out
         ? { action: { label: t('general.showInFolder', 'Vis i mappe'), onClick: () => { void window.api.revealFile(out) } } }
         : undefined,

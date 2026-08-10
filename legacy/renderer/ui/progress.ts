@@ -24,7 +24,7 @@
  * What it must never be is a bar frozen at 0 %.
  */
 
-import { t } from '../i18n'
+import { t, tf } from '../i18n'
 import { prefersReducedMotion } from './motion'
 import { createEtaEstimator, formatEta, formatPercent, type EtaEstimator } from './progress-core'
 
@@ -139,7 +139,7 @@ export function attachProgress(host: HTMLElement, opts: ProgressOpts = {}): Prog
   function etaText(): string {
     if (!showEta || finished || !everNumeric) return ''
     const reading = est.read(performance.now())
-    return formatEta(reading.stable ? reading.etaMs : null, t)
+    return formatEta(reading.stable ? reading.etaMs : null, t, tf)
   }
 
   function schedule(): void {

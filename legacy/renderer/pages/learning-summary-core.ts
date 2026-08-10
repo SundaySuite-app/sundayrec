@@ -20,6 +20,11 @@ export interface CopyLine {
   key: string
   fallback: string
   params?: Record<string, string>
+  /** Present when the line's grammar is governed by a count: the DOM layer
+   *  then resolves `key` through `tn()` (CLDR plural form) instead of `t()`.
+   *  Without it «rettet 2 ganger» / «{n} sekunder» were single strings, which
+   *  is wrong in Polish for 2–4 and in every language for 1. */
+  count?: number
 }
 
 export interface LearningSummaryView {
@@ -65,6 +70,7 @@ function tendencyLine(
   if (tendency === 'unclear') return null
   const n = fmtSeconds(avgAbsDeltaSec)
   const tooEarly = tendency === 'too_early'
+  const count = Math.round(avgAbsDeltaSec)
   if (boundary === 'start') {
     return tooEarly
       ? {
@@ -72,12 +78,14 @@ function tendencyLine(
           fallback:
             'Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.',
           params: { n },
+          count,
         }
       : {
           key: 'general.learningStartTooLate',
           fallback:
             'Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.',
           params: { n },
+          count,
         }
   }
   return tooEarly
@@ -86,12 +94,14 @@ function tendencyLine(
         fallback:
           'Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.',
         params: { n },
+        count,
       }
     : {
         key: 'general.learningEndTooLate',
         fallback:
           'Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.',
         params: { n },
+        count,
       }
 }
 
@@ -106,16 +116,12 @@ export function buildLearningSummaryView(s: LearningSummary): LearningSummaryVie
           key: 'general.learningSermonPickZero',
           fallback: 'Det automatiske prekenvalget er ikke rettet ennå.',
         }
-      : s.sermonPickCorrections === 1
-        ? {
-            key: 'general.learningSermonPickOne',
-            fallback: 'Det automatiske prekenvalget er rettet 1 gang.',
-          }
-        : {
-            key: 'general.learningSermonPickMany',
-            fallback: 'Det automatiske prekenvalget er rettet {n} ganger.',
-            params: { n: String(s.sermonPickCorrections) },
-          }
+      : {
+          key: 'general.learningSermonPick',
+          fallback: 'Det automatiske prekenvalget er rettet {n} ganger.',
+          params: { n: String(s.sermonPickCorrections) },
+          count: s.sermonPickCorrections,
+        }
 
   const companion: CopyLine | null =
     s.companionTotal === 0
