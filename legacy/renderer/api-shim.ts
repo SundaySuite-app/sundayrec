@@ -667,6 +667,25 @@ const api: Record<string, unknown> = {
     void syncLaunchAtLogin(s);
     return true;
   },
+  // ── Settings profile (F1.3, wired in R4) ────────────────────────────────
+  // Export/import the whole (validated) settings object as a JSON file. The
+  // native dialogs are the path authorisation; the backend re-checks with its
+  // UserChosenWrite/Read path policies. WRITES both — rejections travel
+  // (R3-B) so the card can say what actually went wrong.
+  settingsExportToFile: async (path: string) =>
+    invoke<void>("settings_export_to_file", { path }),
+  // Returns the stored (merged + validated) settings so the caller can
+  // rehydrate the UI without a second round-trip.
+  settingsImportFromFile: async (path: string) =>
+    invoke<Settings>("settings_import_from_file", { path }),
+  /** JSON-profile open picker for the import button. Cancel → null. */
+  pickSettingsFile: async () =>
+    pickPath({
+      filters: [
+        { name: "Innstillingsprofil (JSON)", extensions: ["json"] },
+        { name: "Alle filer", extensions: ["*"] },
+      ],
+    }),
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
   // { date } | null.
@@ -1805,15 +1824,10 @@ const api: Record<string, unknown> = {
   },
   registerTrustedPath: async () => true,
 
-  // ── YouTube (stubs) ─────────────────────────────────────────────────────
-  // R3: gmailConnect/gmailDisconnect/gmailStatus/youtubeConnect deleted — R2's
-  // panel cleanup removed their last callers, and all four were permanent
-  // stubs (no Rust command behind them). youtubeStatus stays: the editor's
-  // publish flow still reads it. youtubeDisconnect/youtubeUpload are
-  // caller-less stubs too — left for R4's stub sweep.
-  youtubeDisconnect: async () => true,
-  youtubeStatus: async () => ({ connected: false }),
-  youtubeUpload: async () => ({ ok: false }),
+  // (The youtube* stubs died in R4's stub sweep: youtubeStatus answered a
+  // permanent false, which made the editor's whole publish-to-YouTube branch
+  // unreachable by construction — the branch went with the stubs. R3 had
+  // already removed gmail*/youtubeConnect the same way.)
 
   // ── Streaming / overlays ────────────────────────────────────────────────
   // streamStatus shape (idle) matches old fields; live telemetry arrives via the

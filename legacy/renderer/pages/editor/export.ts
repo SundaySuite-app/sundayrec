@@ -274,11 +274,10 @@ export interface PublishState {
   dropbox:  boolean
   onedrive: boolean
   podcast:  boolean
-  youtube:  boolean
 }
-const publishSelections: PublishState = { gdrive: false, dropbox: false, onedrive: false, podcast: false, youtube: false }
-let configuredCache: { gdrive: boolean; dropbox: boolean; onedrive: boolean; youtubeConnected: boolean } =
-  { gdrive: false, dropbox: false, onedrive: false, youtubeConnected: false }
+const publishSelections: PublishState = { gdrive: false, dropbox: false, onedrive: false, podcast: false }
+let configuredCache: { gdrive: boolean; dropbox: boolean; onedrive: boolean } =
+  { gdrive: false, dropbox: false, onedrive: false }
 
 /**
  * Build the publishing checkbox list in the export modal. Each service is
@@ -287,14 +286,14 @@ let configuredCache: { gdrive: boolean; dropbox: boolean; onedrive: boolean; you
  * configured, we show a single "Konfigurer publisering →" link to the
  * publish settings page.
  *
- * YouTube appears for video files ONLY when an account is connected. There
- * used to be a live «→ Koble til YouTube»-link here, but `youtubeConnect` is
- * a permanent-failure stub (same 2026-08 audit finding as the Gmail button on
- * the Varsler tab), so every click produced an empty «Tilkobling feilet: ».
- * Same honest gate as Gmail got: no live affordance to a dead backend — the
- * row simply is not rendered until the backend exists. A disabled Vimeo
- * "roadmap" row («Kommer i en senere versjon…») went with it: the coming-soon
- * chip was deliberately retired app-wide (see ui/feature-gate.ts).
+ * YouTube left in R4's stub sweep: the row was gated on
+ * `youtubeStatus().connected`, and `youtubeStatus` is a permanent stub
+ * answering false (no Rust command backs any of the youtube* surface), so
+ * the row, the upload task behind it and the progress listener were
+ * unreachable by construction — dead weight wearing a feature's name. The
+ * 2026-08 audit had already removed the «→ Koble til YouTube» affordance for
+ * the same reason (a permanent-failure `youtubeConnect` stub); this removes
+ * the rest. When a real backend lands, the surface comes back WITH it.
  */
 export async function renderPublishOptions(): Promise<void> {
   const wrap     = $('export-publish-options')
@@ -313,13 +312,11 @@ export async function renderPublishOptions(): Promise<void> {
     configuredCache.gdrive   = await window.api.cloudIsConfigured('google-drive') as boolean
     configuredCache.dropbox  = await window.api.cloudIsConfigured('dropbox') as boolean
     configuredCache.onedrive = await window.api.cloudIsConfigured('onedrive') as boolean
-    const yt = await window.api.youtubeStatus()
-    configuredCache.youtubeConnected = !!yt?.connected
   } catch { /* leave defaults — falsy */ }
 
   const podcastEnabled = settings.podcast?.enabled === true
 
-  const haveAny = configuredCache.gdrive || configuredCache.dropbox || configuredCache.onedrive || podcastEnabled || (E.isVideoFile && configuredCache.youtubeConnected)
+  const haveAny = configuredCache.gdrive || configuredCache.dropbox || configuredCache.onedrive || podcastEnabled
   configL.style.display = haveAny ? 'none' : ''
   // The "Eksporter og publiser" button is only meaningful if at least one
   // service is configured.
@@ -345,19 +342,11 @@ export async function renderPublishOptions(): Promise<void> {
   publishSelections.dropbox  = false
   publishSelections.onedrive = false
   publishSelections.podcast  = false
-  publishSelections.youtube  = false
 
   if (configuredCache.gdrive)   addRow('gdrive',   t('editor.exportPublishGdrive',   'Last opp til Google Drive'), true)
   if (configuredCache.dropbox)  addRow('dropbox',  t('editor.exportPublishDropbox',  'Last opp til Dropbox'),       true)
   if (configuredCache.onedrive) addRow('onedrive', t('editor.exportPublishOnedrive', 'Last opp til OneDrive'),      true)
   if (podcastEnabled)           addRow('podcast',  t('editor.exportPublishPodcast',  'Oppdater podcast RSS-feed'),  true)
-
-  // Video files: YouTube upload rides an already-connected account. Rendered
-  // only when the backend reports a connection (see the doc comment above for
-  // why there is no inline connect-link).
-  if (E.isVideoFile && configuredCache.youtubeConnected) {
-    addRow('youtube', t('editor.exportPublishYoutube', 'Last opp video til YouTube (privat)'), true)
-  }
 }
 
 /**
@@ -379,38 +368,6 @@ export async function runPublishingForExport(outputPath: string): Promise<void> 
   }
   if (publishSelections.onedrive) {
     tasks.push({ label: 'OneDrive', run: () => window.api.cloudUploadFile('onedrive', outputPath) as Promise<{ ok: boolean; error?: string }> })
-  }
-  if (publishSelections.youtube) {
-    // Build metadata from the file name + chapter metadata.
-    const title = (E.meta.title?.trim() || (outputPath.split(/[/\\]/).pop() ?? 'SundayRec opptak')).replace(/\.[^.]+$/, '')
-    const description = (E.meta.description ?? '').slice(0, 5000)
-    tasks.push({
-      label: 'YouTube',
-      run: async () => {
-        // Subscribe to progress events for this upload so the user sees a
-        // live percentage instead of a frozen "Laster opp…" string. The
-        // unsubscribe call is fired when the upload-promise settles.
-        const unsub = window.api.on?.('youtube-upload-progress', (payload: unknown) => {
-          if (progress && payload && typeof payload === 'object') {
-            const { uploadedBytes, totalBytes } = payload as { uploadedBytes: number; totalBytes: number }
-            if (totalBytes > 0) {
-              const pct = Math.floor((uploadedBytes / totalBytes) * 100)
-              progress.textContent = `${t('editor.publishUploading', 'Laster opp til')} YouTube… ${pct}%`
-            }
-          }
-        })
-        try {
-          const r = await window.api.youtubeUpload(outputPath, {
-            title,
-            description,
-            privacyStatus: 'private',  // safe default — user changes from YouTube Studio if they want public
-          })
-          return { ok: !!r?.ok, error: r?.error, url: r?.url }
-        } finally {
-          unsub?.()
-        }
-      },
-    })
   }
 
   let allOk = true

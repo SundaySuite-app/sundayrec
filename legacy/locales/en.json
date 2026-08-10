@@ -631,7 +631,19 @@
     "localNudgeAtLimit": "Your corrections point further still, but the app never moves a suggestion by more than {limit} seconds. If the suggestion is still wide of the mark, it is the recordings that need a look — not this setting.",
     "localNudgeResetBtn": "Reset what the app has learned",
     "localNudgeResetDone": "Reset. The app now guesses in exactly the same way as a freshly installed app, and will not learn any more until you switch this back on.",
-    "localNudgeLoadFailed": "Could not fetch what the app has adjusted. Please try again."
+    "localNudgeLoadFailed": "Could not fetch what the app has adjusted. Please try again.",
+    "settingsProfileTitle": "Settings profile",
+    "settingsProfileDesc": "Save every setting as a single file — as a backup, or to set up another machine identically (e.g. via a USB stick). Passwords and stream keys are never included.",
+    "settingsExportBtn": "Export settings…",
+    "settingsImportBtn": "Import settings…",
+    "settingsProfileHint": "Import replaces the settings on this machine. Out-of-range values are adjusted automatically.",
+    "settingsExported": "Settings exported.",
+    "settingsExportFailed": "Could not export the settings",
+    "settingsImportConfirmTitle": "Import settings?",
+    "settingsImportConfirm": "This replaces the settings on this machine with the file's contents. Recordings, history and passwords are untouched.",
+    "settingsImportBtnConfirm": "Yes, import",
+    "settingsImported": "Settings imported.",
+    "settingsImportFailed": "Could not import the settings"
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",

@@ -631,7 +631,19 @@
     "localNudgeAtLimit": "Rettelsene dine peker enda lenger, men appen flytter aldri et forslag mer enn {limit} sekunder. Treffer forslaget fortsatt dårlig, er det opptakene som bør ses på — ikke denne innstillingen.",
     "localNudgeResetBtn": "Nullstill det appen har lært",
     "localNudgeResetDone": "Nullstilt. Appen gjetter nå på nøyaktig samme måte som en nyinstallert app, og lærer ikke mer før du slår det på igjen.",
-    "localNudgeLoadFailed": "Kunne ikke hente hva appen har justert. Prøv igjen."
+    "localNudgeLoadFailed": "Kunne ikke hente hva appen har justert. Prøv igjen.",
+    "settingsProfileTitle": "Innstillingsprofil",
+    "settingsProfileDesc": "Lagre alle innstillingene som én fil — for sikkerhetskopi, eller for å sette opp en annen maskin likt (f.eks. via minnepinne). Passord og strømmenøkler er aldri med.",
+    "settingsExportBtn": "Eksporter innstillinger…",
+    "settingsImportBtn": "Importer innstillinger…",
+    "settingsProfileHint": "Import erstatter innstillingene på denne maskinen. Verdier utenfor gyldige grenser justeres automatisk.",
+    "settingsExported": "Innstillingene ble eksportert.",
+    "settingsExportFailed": "Kunne ikke eksportere innstillingene",
+    "settingsImportConfirmTitle": "Importere innstillinger?",
+    "settingsImportConfirm": "Dette erstatter innstillingene på denne maskinen med innholdet i filen. Opptak, historikk og passord berøres ikke.",
+    "settingsImportBtnConfirm": "Ja, importer",
+    "settingsImported": "Innstillingene ble importert.",
+    "settingsImportFailed": "Kunne ikke importere innstillingene"
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.",
