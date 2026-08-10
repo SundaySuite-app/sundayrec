@@ -2,7 +2,8 @@
 //!
 //! Ported from the Electron `recorder.ts`:
 //!   - `reconnectDelay(attempt)` (line 1247): `min(2000 + attempt*1500, 10000)`.
-//!   - `MAX_RECONNECT_ATTEMPTS = 20` (line 1244).
+//!   - `MAX_RECONNECT_ATTEMPTS = 20` (line 1244) — **replaced by a time budget**,
+//!     see [`reconnect_verdict`].
 //!   - the stuck-progress watchdog: if the written byte count hasn't advanced in
 //!     `stuck_progress_ms` (60 s), the encoder is wedged and the recorder
 //!     reconnects.
@@ -12,13 +13,57 @@
 //! the encoder looks stuck, and whether another reconnect attempt is allowed — so
 //! every rule is deterministic and unit-tested. The `src-tauri` layer turns these
 //! verdicts into real tokio sleeps and respawns.
+//!
+//! ## Why the attempt cap became a TIME cap (2026-08-10)
+//!
+//! The ported `MAX_RECONNECT_ATTEMPTS = 20` is an attempt count, and with the
+//! back-off ladder below it buys **2 min 55 s** (2000+3500+5000+6500+8000+9500
+//! + 14 × 10 000 = 174 500 ms). A church service is ninety minutes. So the
+//! shipped policy's actual behaviour was: *a USB mixer unplugged during the
+//! sermon fail-stops the recording three minutes later, and nobody notices until
+//! after the service.* Three minutes is a plausible time to find the right cable
+//! — it is not a plausible time to give up on a recording that is otherwise
+//! going fine.
+//!
+//! OBS Studio's precedent (its reconnect keeps retrying for as long as the
+//! output lives) is the right shape, and the shape adopted here — with one
+//! addition, because "retry forever" must never mean "loop silently forever":
+//!
+//! | elapsed since the streak began | verdict |
+//! |---|---|
+//! | `0 .. RECONNECT_GRACE_MS` (3 min) | [`ReconnectVerdict::Retry`] — behaviour identical to the old policy |
+//! | `RECONNECT_GRACE_MS .. RECONNECT_HARD_CAP_MS` | [`ReconnectVerdict::RetryDegraded`] — still retrying, but the host MUST tell the user the device has been gone this long |
+//! | `≥ RECONNECT_HARD_CAP_MS` (4 h) | [`ReconnectVerdict::GiveUp`] — an honest terminal state |
+//!
+//! The back-off *shape* is untouched: the same linear ramp, the same 10 s
+//! ceiling. Only the budget it is spent against changed.
 
-/// Maximum number of reconnect attempts before the recorder gives up and
-/// fail-stops. Mirrors the Electron constant. With [`reconnect_delay`] this is
-/// ~3 minutes of total back-off — long enough to outlast a fumbled USB-cable
-/// reseat, short enough to surface a truly-dead device before the whole service
-/// is wasted.
-pub const MAX_RECONNECT_ATTEMPTS: u32 = 20;
+/// How long a reconnect streak may run before the host must start telling the
+/// user the device has been gone a long time (milliseconds).
+///
+/// **3 minutes** is chosen so nothing regresses: it is (just over) the 2 min 55 s
+/// the retired 20-attempt ladder spent in total, so everything the old policy
+/// EVER did now happens inside the grace window, with the identical delays. Past
+/// it we keep going — but honestly.
+pub const RECONNECT_GRACE_MS: u64 = 180_000;
+
+/// How long a reconnect streak may run before the recorder gives up for good
+/// (milliseconds). **4 hours.**
+///
+/// The number answers "how long can a device be *continuously* gone before
+/// retrying is no longer serving anybody?" The longest plausible single
+/// SundayRec session — a service with rehearsal, a concert, a conference
+/// morning — is well under four hours, so this cap cannot fire inside a
+/// recording anyone is still attending. Past it the device is not coming back
+/// on this session, and a process retrying into the night with no operator
+/// present is worse than a `Failed` state plus a preserved recovery manifest:
+/// the audio captured BEFORE the disconnect is already on disk either way, and
+/// only a terminal state gets it surfaced.
+///
+/// At the 10 s back-off ceiling this is ~1 440 attempts, each a device
+/// enumeration — cheap, and in practice most of those waits are cut short by the
+/// OS device-change signal rather than slept through.
+pub const RECONNECT_HARD_CAP_MS: u64 = 4 * 60 * 60 * 1_000;
 
 /// Back-off (milliseconds) before reconnect `attempt` (0-based).
 ///
@@ -29,10 +74,49 @@ pub fn reconnect_delay(attempt: u32) -> u64 {
     (2_000 + u64::from(attempt) * 1_500).min(10_000)
 }
 
-/// Whether another reconnect attempt is permitted, given how many have already
-/// been made. `attempts_so_far` is the count already consumed (0 means none yet).
-pub fn may_reconnect(attempts_so_far: u32) -> bool {
-    attempts_so_far < MAX_RECONNECT_ATTEMPTS
+/// Whether another reconnect attempt is permitted, and with what honesty.
+///
+/// `gone_ms` is how long the CURRENT reconnect streak has lasted — the elapsed
+/// time since the first failure that has not yet been followed by a successful
+/// respawn. A streak that recovers resets it, so a long, healthy session that
+/// survives ten brief dropouts never approaches the cap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReconnectVerdict {
+    /// Retry. The device has been gone less than [`RECONNECT_GRACE_MS`] — the
+    /// ordinary "somebody knocked the cable" case; the UI may say "reconnecting"
+    /// and imply it is about to work.
+    Retry,
+    /// Retry, but the device has now been gone for `gone_ms` ≥
+    /// [`RECONNECT_GRACE_MS`]. The recorder keeps trying for the rest of the
+    /// session — and the host MUST surface how long it has been gone, so a
+    /// silent forever-loop is impossible. This variant exists purely to make
+    /// that obligation un-skippable at the type level.
+    RetryDegraded { gone_ms: u64 },
+    /// Stop retrying: the streak has passed [`RECONNECT_HARD_CAP_MS`].
+    GiveUp,
+}
+
+impl ReconnectVerdict {
+    /// Whether this verdict permits another attempt.
+    pub fn may_retry(self) -> bool {
+        !matches!(self, ReconnectVerdict::GiveUp)
+    }
+}
+
+/// The reconnect policy: decide from the streak's elapsed time alone.
+///
+/// Deliberately NOT a function of the attempt count — that was the old bug. A
+/// slow device that takes 40 s per failed open and a fast one that fails
+/// instantly used to get wildly different real-world budgets from the same
+/// "20 attempts"; both now get the same wall-clock patience.
+pub fn reconnect_verdict(gone_ms: u64) -> ReconnectVerdict {
+    if gone_ms >= RECONNECT_HARD_CAP_MS {
+        ReconnectVerdict::GiveUp
+    } else if gone_ms >= RECONNECT_GRACE_MS {
+        ReconnectVerdict::RetryDegraded { gone_ms }
+    } else {
+        ReconnectVerdict::Retry
+    }
 }
 
 /// The watchdog's verdict on whether the encoder is making progress.
@@ -124,17 +208,80 @@ mod tests {
         assert_eq!(reconnect_delay(1_000), 10_000);
     }
 
+    /// The retired attempt cap spent 2 min 55 s in total; the grace window must
+    /// cover ALL of it, so nothing the old policy did got shorter.
     #[test]
-    fn max_attempts_is_twenty() {
-        assert_eq!(MAX_RECONNECT_ATTEMPTS, 20);
+    fn grace_window_covers_the_whole_retired_attempt_ladder() {
+        let old_ladder_ms: u64 = (0..20).map(reconnect_delay).sum();
+        assert_eq!(old_ladder_ms, 174_500, "the ladder the 20-attempt cap bought");
+        assert!(
+            RECONNECT_GRACE_MS >= old_ladder_ms,
+            "grace ({RECONNECT_GRACE_MS} ms) must cover the retired ladder ({old_ladder_ms} ms)"
+        );
     }
 
     #[test]
-    fn may_reconnect_exhausts_at_max() {
-        assert!(may_reconnect(0));
-        assert!(may_reconnect(19));
-        assert!(!may_reconnect(20));
-        assert!(!may_reconnect(21));
+    fn verdict_retries_normally_inside_the_grace_window() {
+        assert_eq!(reconnect_verdict(0), ReconnectVerdict::Retry);
+        assert_eq!(reconnect_verdict(60_000), ReconnectVerdict::Retry);
+        assert_eq!(
+            reconnect_verdict(RECONNECT_GRACE_MS - 1),
+            ReconnectVerdict::Retry
+        );
+    }
+
+    #[test]
+    fn verdict_degrades_past_the_grace_window_but_keeps_retrying() {
+        // The exact boundary flips, and the verdict CARRIES the elapsed time so
+        // the host cannot report "reconnecting" without saying for how long.
+        assert_eq!(
+            reconnect_verdict(RECONNECT_GRACE_MS),
+            ReconnectVerdict::RetryDegraded {
+                gone_ms: RECONNECT_GRACE_MS
+            }
+        );
+        let mid = RECONNECT_GRACE_MS + 30 * 60_000;
+        assert_eq!(
+            reconnect_verdict(mid),
+            ReconnectVerdict::RetryDegraded { gone_ms: mid }
+        );
+        assert!(reconnect_verdict(mid).may_retry());
+    }
+
+    /// The whole point of the change: a device pulled at the start of a service
+    /// is still being retried an hour later, where the old policy had fail-
+    /// stopped after three minutes.
+    #[test]
+    fn still_retrying_an_hour_into_a_service() {
+        let one_hour = 60 * 60 * 1_000;
+        assert!(
+            reconnect_verdict(one_hour).may_retry(),
+            "the recorder must never give up mid-service"
+        );
+        assert!(reconnect_verdict(90 * 60_000).may_retry());
+    }
+
+    /// …and it must still reach an honest terminal state eventually.
+    #[test]
+    fn verdict_gives_up_at_the_hard_cap() {
+        assert!(reconnect_verdict(RECONNECT_HARD_CAP_MS - 1).may_retry());
+        assert_eq!(
+            reconnect_verdict(RECONNECT_HARD_CAP_MS),
+            ReconnectVerdict::GiveUp
+        );
+        assert_eq!(
+            reconnect_verdict(RECONNECT_HARD_CAP_MS * 3),
+            ReconnectVerdict::GiveUp
+        );
+        assert!(!reconnect_verdict(RECONNECT_HARD_CAP_MS).may_retry());
+    }
+
+    #[test]
+    fn hard_cap_outlasts_any_plausible_session() {
+        // A four-hour service does not exist; the cap must sit above the
+        // longest one anybody records in one take.
+        assert!(RECONNECT_HARD_CAP_MS > 3 * 60 * 60 * 1_000);
+        assert!(RECONNECT_GRACE_MS < RECONNECT_HARD_CAP_MS);
     }
 
     #[test]

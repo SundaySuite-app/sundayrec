@@ -44,7 +44,8 @@ use crate::recorder::engine::{
     PROGRESS_EVENT, SILENCE_EVENT, STARTED_EVENT, STATE_EVENT,
 };
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
+    build_input_stream_any, find_device, negotiate, open_host, ring_capacity, CpalHostKind,
+    StreamSink,
 };
 use crate::recorder::native_capture::writer::{
     spawn_wav_writer, WriterConfig, WriterErrorKind, WriterEvent, FLUSH_EVERY,
@@ -136,10 +137,10 @@ pub async fn spawn_native_segment(
         "recorder: native capture starting"
     );
 
-    // ≥1 s of routed audio (96 kHz stereo ⇒ 192 000 f32, <1 MB) so a transient
-    // writer stall never drops samples; overrun drops whole frames + counts.
-    let ring_capacity = (spec.sample_rate as usize * out_ch as usize).max(96_000);
-    let (prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity).split();
+    // The shared capture cushion (5 s of routed audio — see `stream::RING_SECONDS`)
+    // so a writer stall never drops samples; overrun drops whole frames + counts.
+    let (prod, cons) =
+        ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
 
     let stream_stop = Arc::new(AtomicBool::new(false));
     let writer_stop = Arc::new(AtomicBool::new(false));
