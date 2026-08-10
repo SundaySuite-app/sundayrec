@@ -1,7 +1,7 @@
 {
   "name": "sundayrec",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -27,7 +27,7 @@
     "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
     "fmt:rust": "cargo fmt --all",
     "fmt:rust:check": "cargo fmt --all --check",
-    "bindings": "cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs && node scripts/sync-bindings.mjs",
+    "bindings": "node scripts/clean-bindings.mjs && cargo test export_bindings --workspace && node scripts/fix-bindings-imports.mjs && node scripts/sync-bindings.mjs",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "version-sync": "node scripts/check-version-sync.mjs",
     "i18n-fallbacks": "node scripts/check-i18n-fallbacks.mjs",
@@ -35,7 +35,7 @@
     "reachability": "node scripts/check-command-reachability.mjs",
     "smoke-verified": "node scripts/check-smoke-verified.mjs",
     "reachability:write-baseline": "node scripts/check-command-reachability.mjs --write-baseline",
-    "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale \u2014 run npm run bindings and commit legacy/bindings' && exit 1)",
+    "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale — run npm run bindings and commit legacy/bindings' && exit 1)",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-fallbacks && npm run i18n-hardcoded && npm run i18n-plurals && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky",

@@ -15,6 +15,12 @@ export default tseslint.config(
       "legacy/bindings/**",
       "coverage",
       "node_modules",
+      // Agent worktrees live inside the repo and are gitignored, so CI never
+      // sees them — but eslint walks the filesystem, not git, and a checkout
+      // of the whole tree inside `.claude/` makes `npm run check` fail locally
+      // with hundreds of parser errors while CI is green. A gate that is red
+      // only on the developer's machine teaches people to ignore it.
+      ".claude/**",
     ],
   },
 
