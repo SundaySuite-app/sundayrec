@@ -70,7 +70,6 @@ const VIDEO_EXT = [
   "mp4", "mov", "mkv", "m4v", "webm", "avi", "wmv", "ts", "mts", "m2ts", "flv",
   "3gp", "asf", "f4v",
 ];
-const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif"];
 // The "les mer"-link every telemetry consent surface offers (onboarding step
 // 5, the startup toast, the System-tab card). The repo is public
 // (github.com/SundaySuite-app/sundayrec), and `opener:default` already
@@ -79,8 +78,7 @@ const IMAGE_EXT = ["png", "jpg", "jpeg", "webp", "gif"];
 // already carries `opener:default`; see openPrivacyPolicy below).
 const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/main/PRIVACY.md";
 
-// Cover art is the same list MINUS gif. An animated overlay logo is a
-// reasonable thing to want; an animated podcast cover is not something Apple
+// Cover art: no gif — an animated podcast cover is not something Apple
 // Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
 // regardless (`sundayrec-core::image_probe`), so this only spares the user the
 // round trip of picking one and being told no.
@@ -337,19 +335,9 @@ const EVENT_MAP: Record<string, string> = {
   "vu-levels": "vu://levels",
   "recording-reconnecting": "recording://reconnecting",
   "recording-reconnected": "recording://reconnected",
-  "video-preview-frame": "preview://frame",
-  // A camera that failed to start / lost its device. The backend's only live
-  // camera-failure emitter is the preview module's `preview://error`
-  // (media/preview.rs), whose `PreviewError.message` is already user-facing.
-  // The consumer (pages/recording.ts) swaps the dead placeholder for "Kamera
-  // feilet — opptar kun lyd". Caveat worth knowing: the in-recording preview is
-  // a file sink, not this module, so this only fires when a backend preview is
-  // actually running (the Direktesending page starts one).
-  "video-capture-error": "preview://error",
   "master-progress": "editor-master-progress",
   "whisper-progress": "whisper://progress",
   "whisper-model-progress": "whisper://model-progress",
-  "stream-stats": "streaming://stats",
   "editor-export-progress": "editor://export-progress",
   // Fase 9: the three editor passes that used to run for minutes behind a
   // spinner. All three carry the same `EditorDecodeProgress { fraction }`;
@@ -388,18 +376,6 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
   "recording-warning": (p) => {
     const d = (p ?? {}) as { code?: string; message?: string };
     return { ...d, error: d.code };
-  },
-  // PreviewFrame { data: <base64>, … } → the legacy frame handlers expect raw
-  // JPEG bytes (normalizeFrameData). Decode base64 → Uint8Array.
-  "video-preview-frame": (p) => {
-    const d = p as { data?: string } | undefined;
-    if (d && typeof d.data === "string") {
-      const bin = atob(d.data);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return arr;
-    }
-    return p;
   },
   // EditorMasterProgress → the mastering panel reads jobId/currentSec/totalSec.
   //
@@ -572,23 +548,6 @@ const cloudStatusStub = {
   dropbox: { connected: false },
   oneDrive: { connected: false },
 };
-// The IDLE `StreamStatus` — the fallback when `stream_status` itself fails.
-// Field-for-field with the Rust struct (src-tauri/src/streaming/mod.rs), because
-// the live page now branches on `active` to decide between «—» and a real
-// measurement: a stub missing `startedAt`/`lastLine` would make an unreachable
-// backend look like a cleanly stopped stream.
-const streamStatusStub = {
-  active: false,
-  startedAt: null,
-  bitrateKbps: 0,
-  fps: 0,
-  dropped: 0,
-  lastLine: "",
-  destinations: [],
-  targetBitrateKbps: 0,
-  bitrateStep: 0,
-};
-
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
 type RecordingRow = {
   id: string;
@@ -1328,41 +1287,8 @@ const api: Record<string, unknown> = {
     return (inv.video_inputs ?? []).map((d) => ({ name: d.name, index: d.index }));
   },
   // The SETUP-phase camera preview on HOME is client-side getUserMedia
-  // (home.ts) — no backend involvement there. But the Direkte (live) page's
-  // IDLE preview (live-page.ts startIdleCameraPreview/stopIdleCameraPreview)
-  // calls THIS method, and it was a no-op stub that always reported success
-  // while the `video-preview-frame` listener sat waiting for frames that never
-  // arrived — a silently-dead preview (the backend `start_preview`/
-  // `stop_preview` commands are real and already emit `preview://frame`,
-  // mapped + base64-decoded above). `device` prefers the stored ffmpeg device
-  // INDEX (a digit string resolves without enumeration, matching the
-  // recorder's own device-token resolution); falls back to the device NAME for
-  // a fuzzy match, or `null` for the default camera.
-  videoPreviewStart: async (opts: unknown) => {
-    const o = (opts ?? {}) as {
-      videoDeviceName?: string | null;
-      videoDeviceIndex?: number | null;
-      videoFramerate?: number | null;
-    };
-    const device =
-      o.videoDeviceIndex != null ? String(o.videoDeviceIndex) : o.videoDeviceName || null;
-    try {
-      await invoke("start_preview", { device, fps: o.videoFramerate ?? null });
-      return true;
-    } catch (e) {
-      console.warn("[api-shim] start_preview failed", e);
-      return false;
-    }
-  },
-  videoPreviewStop: async () => {
-    try {
-      await invoke("stop_preview");
-      return true;
-    } catch (e) {
-      console.warn("[api-shim] stop_preview failed", e);
-      return false;
-    }
-  },
+  // (home.ts) — no backend involvement there. (The idle backend preview engine
+  // that served the old Direkte page is gone with that page.)
   // DURING recording the backend owns the camera and writes a preview JPEG to a
   // file; the renderer polls this (~base64 JPEG, or null when no fresh frame).
   recordingPreviewFrame: async () =>
@@ -1830,66 +1756,6 @@ const api: Record<string, unknown> = {
   // permanent false, which made the editor's whole publish-to-YouTube branch
   // unreachable by construction — the branch went with the stubs. R3 had
   // already removed gmail*/youtubeConnect the same way.)
-
-  // ── Streaming / overlays ────────────────────────────────────────────────
-  // streamStatus shape (idle) matches old fields; live telemetry arrives via the
-  // streaming://stats event. The action commands are wired:
-  streamStatus: async () => call("stream_status", undefined, streamStatusStub),
-  // stream_start resolves device tokens / snapshot / record-path itself from
-  // settings — the renderer only sends the stream CONFIG. Map the resolution to
-  // the backend enum's lowercase tag ("720p" → "p720"), pass full destination
-  // views (incl. hasKey) + overlays, and surface the real error.
-  streamStart: async (params: unknown) => {
-    const p = (params ?? {}) as {
-      resolution?: string;
-      framerate?: number;
-      videoBitrateKbps?: number;
-      audioBitrateKbps?: number;
-      destinations?: unknown[];
-      overlays?: unknown[];
-      alsoRecord?: boolean;
-    };
-    const resMap: Record<string, string> = {
-      "480p": "p480",
-      "720p": "p720",
-      "1080p": "p1080",
-    };
-    try {
-      const status = await invoke("stream_start", {
-        destinations: p.destinations ?? [],
-        resolution: resMap[p.resolution ?? "720p"] ?? "p720",
-        framerate: p.framerate ?? 30,
-        videoBitrateKbps: p.videoBitrateKbps ?? null,
-        audioBitrateKbps: p.audioBitrateKbps ?? null,
-        alsoRecord: !!p.alsoRecord,
-        overlays: p.overlays ?? [],
-      });
-      return { ok: true, ...(status as object) };
-    } catch (e) {
-      return { ok: false, error: ipcErrText(e) };
-    }
-  },
-  // WRITES — bare invoke, rejection travels (R3-B). `stream_stop` reporting
-  // `true` over a stream that is still pushing RTMP was the worst of the nine
-  // fallback-==-success lies this round removed.
-  streamStop: async () => invoke("stream_stop", undefined).then(() => true),
-  streamPreviewPath: async () => call("stream_preview_path", undefined, ""),
-  // Keychain write with a receipt contract: publish-page reads `{ ok, error }`
-  // and branches on the `safeStorage_unavailable`/`invalid_key` codes. The old
-  // `call(…, true).then(() => true)` returned a bare `true` — `r.ok` was
-  // undefined, so the panel logged an error even on SUCCESS and `hasKey` never
-  // stuck, while a genuinely failed keychain write showed nothing at all.
-  streamSetKey: async (destId: string, key: string) =>
-    invoke("stream_set_key", { destId, key }).then(
-      () => ({ ok: true as const }),
-      (e) => ({ ok: false as const, error: errorCode(e) || ipcErrText(e) }),
-    ),
-  streamDeleteKey: async (destId: string) =>
-    invoke("stream_delete_key", { destId }).then(() => true),
-  overlayListScreens: async () => [],
-  overlayListNdiSources: async () => ({ available: false, sources: [] }),
-  overlayPickImage: async () =>
-    pickPath({ name: "Bilde", extensions: IMAGE_EXT }),
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
   // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this

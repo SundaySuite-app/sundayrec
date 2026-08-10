@@ -31,7 +31,6 @@ import { RELEASE_TAU_MS, alphaFor } from '../audio/smoothing'
 import { RecordingWaveform } from '../audio/waveform'
 import { fmtCountdown, flashMsg, isoDate } from '../helpers'
 import { stopVU as stopHomeVU, startVU as startHomeVU } from './home-vu'
-import { stopVuMeter as stopLiveVuMeter } from './live-page'
 import { stopChannelGrid as stopAudioPageMonitoring } from './channel-grid'
 import { renderRecentRecordings, stopVideoPreview, startVideoPreview } from './home'
 import { closeModal, openModal } from '../ui/modal-manager'
@@ -49,7 +48,6 @@ let recStartTime = 0
 let recBytes     = 0
 let previewRestartTimer: ReturnType<typeof setTimeout> | null = null
 let recPreviewUnsub:      (() => void) | undefined
-let recCaptureErrUnsub:   (() => void) | undefined
 let recVideoDimsSet   = false
 let recFrameBlobUrl:  string | null = null
 
@@ -538,7 +536,7 @@ export function showGlobalError(msg: string): void {
 // ── Monitoring stream (VU only) ──────────────────────────────────────────────
 
 /** Release every meter's hold on the shared backend VU feed (home VU,
- *  audio-settings channel grid, live-page VU). Called BEFORE the recorder opens
+ *  audio-settings channel grid). Called BEFORE the recorder opens
  *  the device and from the engine-resync path.
  *
  *  Since the renderer stopped owning microphones (audio/vu-feed.ts), this is no
@@ -550,7 +548,6 @@ export function showGlobalError(msg: string): void {
 export function releaseRendererAudioCaptures(): void {
   try { stopHomeVU() } catch {}
   try { stopAudioPageMonitoring() } catch {}
-  try { stopLiveVuMeter() } catch {}
   // NOT the pre-roll buffer. It is a mic owner too, but stopping it HERE would
   // destroy the very thing it exists for: `start_recording` harvests the clip
   // from the running loop (`preroll.is_active()`), and a loop we killed a tick
@@ -857,7 +854,6 @@ function showOverlay(opts: RecordingOpts): void {
     if (recPh)   { recPh.textContent = t('home.cameraStarting', 'Starter kamera…'); recPh.style.display = '' }
 
     recPreviewUnsub?.()
-    recCaptureErrUnsub?.()
     recVideoDimsSet = false
     // DURING recording the backend recorder owns the camera and writes a low-fps
     // preview JPEG to a file; we POLL it (base64) here. (The old Electron app got
@@ -893,10 +889,9 @@ function showOverlay(opts: RecordingOpts): void {
       if (recPh) recPh.style.display = 'none'
     }, recPollMs)
     recPreviewUnsub = () => clearInterval(recPollTimer)
-    recCaptureErrUnsub = window.api.on('video-capture-error', () => {
-      if (recPh) { recPh.textContent = t('recording.cameraFailedAudioOnly', 'Kamera feilet — opptar kun lyd'); recPh.style.display = '' }
-      if (recImg) recImg.style.display = 'none'
-    })
+    // (The old 'video-capture-error' listener died with the idle-preview
+    // engine: its only emitter was media/preview.rs' `preview://error`, which
+    // never fired during recording — the in-recording preview is a file sink.)
   }
   const overlay = document.getElementById('recording-overlay')
   if (overlay) {
@@ -972,7 +967,6 @@ function hideOverlay(): void {
 
   // Clean up overlay video preview
   recPreviewUnsub?.(); recPreviewUnsub = undefined
-  recCaptureErrUnsub?.(); recCaptureErrUnsub = undefined
   if (recFrameBlobUrl) { URL.revokeObjectURL(recFrameBlobUrl); recFrameBlobUrl = null }
   recVideoDimsSet = false
   const recVideoSection = document.getElementById('rec-video-section')

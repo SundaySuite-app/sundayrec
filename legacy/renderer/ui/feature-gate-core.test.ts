@@ -5,7 +5,6 @@ import {
   emailBlockReason,
   emailGateStatus,
   hasEmailTransport,
-  liveBlockReason,
   mapGate,
 } from './feature-gate-core'
 
@@ -145,17 +144,5 @@ describe('emailBlockReason', () => {
     expect(emailBlockReason({ ...base, gmailConnected: false }, true)).toBe('noTransport')
     expect(emailBlockReason(base, false)).toBe('noRecipient')
     expect(emailBlockReason(base, true)).toBeNull()
-  })
-})
-
-describe('liveBlockReason', () => {
-  it('names the specific thing that is missing', () => {
-    expect(liveBlockReason({ total: 0, enabled: 0, ready: 0 })).toBe('noDestinations')
-    expect(liveBlockReason({ total: 2, enabled: 0, ready: 0 })).toBe('noEnabled')
-    expect(liveBlockReason({ total: 2, enabled: 1, ready: 0 })).toBe('noKey')
-  })
-
-  it('returns null when the button may be pressed', () => {
-    expect(liveBlockReason({ total: 2, enabled: 1, ready: 1 })).toBeNull()
   })
 })
