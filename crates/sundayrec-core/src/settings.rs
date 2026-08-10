@@ -27,6 +27,8 @@
 //! When those land, add the field here with its serde tag matching the Electron
 //! key and extend [`Settings::validate`] / [`Default`] accordingly.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -155,6 +157,185 @@ where
         .unwrap_or_else(default_update_channel))
 }
 
+/// Lenient per-field deserializer (R4): tolerate a malformed VALUE by taking
+/// the field's `Default` instead of failing the whole blob.
+///
+/// Same reasoning as [`deserialize_update_channel`]: [`Settings::from_json_merged`]
+/// falls back to the FULL defaults the moment ANY field rejects its value, so a
+/// hand-edited or drifted value in one of the R4 fields would otherwise reset
+/// the save folder, the schedule and every audio setting along with it. Here a
+/// bad value costs that one field and nothing else. Fields whose default is not
+/// `T::default()` (e.g. `stream_resolution`'s `"720p"`) are subsequently
+/// normalised by [`Settings::validate`], which every load/save runs.
+fn lenient<'de, D, T>(de: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let raw = serde_json::Value::deserialize(de)?;
+    Ok(serde_json::from_value(raw).unwrap_or_default())
+}
+
+/// A per-device input-channel pair — which two native device channels feed the
+/// LEFT/RIGHT of a stereo recording (e.g. an X32's 16/17). Keyed by device id in
+/// [`Settings::device_channels`]; the flat [`Settings::input_channel_l`]/`_r`
+/// the recorder reads are DERIVED from this map in [`Settings::validate`].
+/// Serialised camelCase to match the Electron `DeviceChannels`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/DeviceChannels.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceChannels {
+    /// 0-based device channel routed to the LEFT output. Clamped 0..=31.
+    #[serde(default)]
+    pub channel_l: i32,
+    /// 0-based device channel routed to the RIGHT output. Clamped 0..=31.
+    #[serde(default)]
+    pub channel_r: i32,
+}
+
+/// One live-stream destination as PERSISTED — the stream key is deliberately
+/// absent (it lives in the OS keychain via `stream_set_key`; `has_key` is the
+/// only trace it leaves here, so the UI can show «•••• (lagret)»). Mirrors the
+/// Electron `StreamDestinationStored` field-for-field.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../src/lib/bindings/StreamDestinationStored.ts"
+)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamDestinationStored {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub rtmp_url: String,
+    #[serde(default)]
+    pub enabled: bool,
+    /// Whether a stream key is stored in the keychain for this destination.
+    #[serde(default)]
+    pub has_key: bool,
+}
+
+/// Per-cloud-service backup preferences (enable/auto-upload/target folder).
+/// Tokens are NOT here — they belong to the OS keychain when the cloud glue
+/// lands; this is only the panel's configuration state. Mirrors the Electron
+/// `CloudServiceSettings`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/CloudServicePrefs.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct CloudServicePrefs {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub auto_upload: bool,
+    #[serde(default)]
+    pub folder_id: Option<String>,
+    #[serde(default)]
+    pub folder_name: Option<String>,
+    #[serde(default)]
+    pub folder_path: Option<String>,
+}
+
+/// Podcast/RSS channel configuration (R4 — the Electron `podcast` object as a
+/// real settings field). The feed generator (`commands::publish::resolve_channel`)
+/// reads THIS — previously it read ten `app_setting` rows
+/// (`podcastTitle`, …) that no code path ever wrote, so the feed always
+/// rendered the fallbacks whatever the UI said. Defaults for blank/missing
+/// values are applied by the READER (blank title → "SundayRec" etc.), matching
+/// the old renderer's display fallbacks; here blank simply means unset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/PodcastSettings.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct PodcastSettings {
+    /// Master switch for the podcast pipeline (feed + prep-and-review).
+    #[serde(default)]
+    pub enabled: bool,
+    /// Which cloud service hosts the audio + feed:
+    /// `"google-drive"` (default) | `"dropbox"` | `"onedrive"`.
+    #[serde(default = "default_podcast_service")]
+    pub service: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub author: String,
+    /// ISO 639-1 feed language. Default `"no"`.
+    #[serde(default = "default_podcast_language")]
+    pub language: String,
+    /// iTunes category. Default `"Religion & Spirituality"`.
+    #[serde(default = "default_podcast_category")]
+    pub category: String,
+    #[serde(default)]
+    pub explicit: bool,
+    /// Church homepage, or `None`.
+    #[serde(default)]
+    pub link: Option<String>,
+    /// Cover art URL (1400–3000 px square), or `None`.
+    #[serde(default)]
+    pub image_url: Option<String>,
+    /// Owner contact email (required by Apple), or `None`.
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Set after the first successful publish — what the user submits to
+    /// Spotify/Apple.
+    #[serde(default)]
+    pub feed_url: Option<String>,
+    /// Auto-run prep + queue the episode for review after each recording.
+    /// Default true (the v5.0 pipeline's own default).
+    #[serde(default = "default_true")]
+    pub auto_prep_enabled: bool,
+    /// Per-church default intro jingle, or `None` (falls back to
+    /// `editor_intro_path`).
+    #[serde(default)]
+    pub default_intro_path: Option<String>,
+    /// Per-church default outro jingle, or `None`.
+    #[serde(default)]
+    pub default_outro_path: Option<String>,
+    /// Master preset for the prep pipeline. Default `"speech-clear"`.
+    #[serde(default = "default_podcast_master_preset")]
+    pub default_master_preset: String,
+}
+
+fn default_podcast_service() -> String {
+    "google-drive".to_string()
+}
+fn default_podcast_language() -> String {
+    "no".to_string()
+}
+fn default_podcast_category() -> String {
+    "Religion & Spirituality".to_string()
+}
+fn default_podcast_master_preset() -> String {
+    "speech-clear".to_string()
+}
+
+impl Default for PodcastSettings {
+    fn default() -> Self {
+        // Must stay in lockstep with the per-field serde defaults above — the
+        // round-trip test `podcast_default_matches_empty_json` enforces it.
+        Self {
+            enabled: false,
+            service: default_podcast_service(),
+            title: String::new(),
+            description: String::new(),
+            author: String::new(),
+            language: default_podcast_language(),
+            category: default_podcast_category(),
+            explicit: false,
+            link: None,
+            image_url: None,
+            email: None,
+            feed_url: None,
+            auto_prep_enabled: true,
+            default_intro_path: None,
+            default_outro_path: None,
+            default_master_preset: default_podcast_master_preset(),
+        }
+    }
+}
+
 /// The complete (Fase-1 subset) settings model.
 ///
 /// Every field carries `#[serde(default)]` so a partial or older JSON blob
@@ -183,6 +364,13 @@ pub struct Settings {
     /// Stored capture device human-readable name (the device-match moat input).
     #[serde(default)]
     pub device_name: Option<String>,
+    /// Per-DEVICE channel routing, keyed by device id (R4). This is the SOURCE
+    /// the channel grid writes; the flat `input_channel_l`/`_r` the recorder
+    /// reads are derived from it for the selected device in
+    /// [`Settings::validate`], so switching devices switches routing with it
+    /// (the api-shim bridge used to do this flattening renderer-side).
+    #[serde(default, deserialize_with = "lenient")]
+    pub device_channels: HashMap<String, DeviceChannels>,
 
     // ── Video device (F2.1 — "alt som mater opptak") ─────────────────────────
     /// Capture video (camera) alongside audio? Default false (audio-only is the
@@ -224,6 +412,13 @@ pub struct Settings {
     /// Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
     #[serde(default)]
     pub video_flip: bool,
+    /// Recording video bitrate in kbps; 0 = auto from resolution (the default).
+    /// Non-zero values clamp to 500..=50000 in `validate()`. NOTE: today only
+    /// the UI reads this (the bitrate control + Home's info strip) — the
+    /// capture pipeline does not consume it yet; it is persisted so the
+    /// operator's choice survives until it does.
+    #[serde(default, deserialize_with = "lenient")]
+    pub video_bitrate: i32,
     /// Output muxing: `"combined"` (one A/V file) | `"separate"` (split files).
     /// Default `"combined"`.
     #[serde(default = "default_output_mode")]
@@ -362,6 +557,15 @@ pub struct Settings {
     /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
     #[serde(default)]
     pub pre_roll_seconds: i32,
+    /// Advanced opt-in for the ROLLING pre-roll buffer (R4). Distinct from
+    /// `pre_roll_seconds` on purpose and NOT derivable from it: the buffer is a
+    /// continuous background capture on the recording microphone, so a user who
+    /// picked a pre-roll length but never flipped this stays un-armed — deriving
+    /// it from `pre_roll_seconds > 0` would silently start that capture for
+    /// them. The renderer's `preroll-lifecycle.ts` is the gatekeeper that reads
+    /// it. Default false.
+    #[serde(default)]
+    pub preroll_enabled: bool,
     /// Show the live L/R level meters during recording? Default true. When off,
     /// the recorder drops the `astats` levels filter from its ffmpeg chain — the
     /// meter's per-frame stderr can starve capture on a loaded machine, so turning
@@ -482,6 +686,46 @@ pub struct Settings {
     /// unavailable — only faster.
     #[serde(default)]
     pub editor_hw_encode: bool,
+
+    // ── Live streaming (R4 — Electron `stream*`) ──────────────────────────────
+    /// Persisted stream destinations, WITHOUT keys (keys live in the OS
+    /// keychain via `stream_set_key`; `has_key` is the only trace here).
+    #[serde(default, deserialize_with = "lenient")]
+    pub stream_destinations: Vec<StreamDestinationStored>,
+    /// Default stream quality tag: `"480p"` | `"720p"` (default) | `"1080p"`.
+    #[serde(default = "default_stream_resolution", deserialize_with = "lenient")]
+    pub stream_resolution: String,
+    /// Default stream framerate: 25 | 30 (default). Normalised in `validate()`.
+    #[serde(default = "default_stream_framerate", deserialize_with = "lenient")]
+    pub stream_framerate: i32,
+    /// Optional video-bitrate override in kbps; `None` = auto from resolution.
+    #[serde(default, deserialize_with = "lenient")]
+    pub stream_video_bitrate: Option<i32>,
+    /// Live overlay configurations, persisted as OPAQUE JSON. The overlay
+    /// vocabulary (type/source/chroma-key/crop) is renderer-owned — see the
+    /// hand-written `OverlayConfig` in `legacy/types/index.ts` — and differs
+    /// from [`crate::overlay::OverlayConfig`] (the ffmpeg builder's input), so
+    /// the backend persists without interpreting. Malformed JSON costs this
+    /// field only (lenient), never the blob.
+    #[serde(default, deserialize_with = "lenient")]
+    #[ts(type = "Array<unknown>")]
+    pub stream_overlays: Vec<serde_json::Value>,
+
+    // ── Cloud backup preferences (R4 — Electron `cloudGoogleDrive` & co) ─────
+    /// Google Drive backup preferences, or `None` when never configured.
+    #[serde(default, deserialize_with = "lenient")]
+    pub cloud_google_drive: Option<CloudServicePrefs>,
+    /// Dropbox backup preferences.
+    #[serde(default, deserialize_with = "lenient")]
+    pub cloud_dropbox: Option<CloudServicePrefs>,
+    /// OneDrive backup preferences.
+    #[serde(default, deserialize_with = "lenient")]
+    pub cloud_one_drive: Option<CloudServicePrefs>,
+
+    // ── Podcast (R4 — Electron `podcast`) ────────────────────────────────────
+    /// Podcast/RSS channel configuration. See [`PodcastSettings`].
+    #[serde(default, deserialize_with = "lenient")]
+    pub podcast: PodcastSettings,
 
     // ── Misc ─────────────────────────────────────────────────────────────────
     /// Download and install updates automatically? Default true.
@@ -605,6 +849,13 @@ fn default_separate_audio_format() -> FileFormat {
 fn default_update_channel() -> UpdateChannel {
     UpdateChannel::Stable
 }
+fn default_stream_resolution() -> String {
+    // 720p: the safe default for a church uplink — 1080p is an explicit choice.
+    "720p".to_string()
+}
+fn default_stream_framerate() -> i32 {
+    30
+}
 
 impl Default for Settings {
     /// The Electron `defaults` object (`store.ts` lines 6+), field-for-field.
@@ -616,6 +867,7 @@ impl Default for Settings {
 
             device_id: None,
             device_name: None,
+            device_channels: HashMap::new(),
 
             video_enabled: false,
             video_device_name: None,
@@ -626,6 +878,7 @@ impl Default for Settings {
             video_codec: default_video_codec(),
             video_encoder: default_video_encoder(),
             video_flip: false,
+            video_bitrate: 0,
             output_mode: default_output_mode(),
             keep_separate_audio: false,
             classic_directshow: false,
@@ -665,6 +918,7 @@ impl Default for Settings {
             trim_silence: false,
             manual_max_minutes: 0,
             pre_roll_seconds: 0,
+            preroll_enabled: false,
             show_live_levels: true,
             reminder_minutes: 0,
 
@@ -697,6 +951,18 @@ impl Default for Settings {
             editor_intro_path: None,
             editor_outro_path: None,
             editor_hw_encode: false,
+
+            stream_destinations: Vec::new(),
+            stream_resolution: default_stream_resolution(),
+            stream_framerate: default_stream_framerate(),
+            stream_video_bitrate: None,
+            stream_overlays: Vec::new(),
+
+            cloud_google_drive: None,
+            cloud_dropbox: None,
+            cloud_one_drive: None,
+
+            podcast: PodcastSettings::default(),
 
             auto_update: true,
             update_channel: default_update_channel(),
@@ -780,6 +1046,57 @@ impl Settings {
         // a valid TCP port (Electron left it un-clamped, but a 0/negative port
         // would be a hard ffmpeg/lettre error — clamp defensively).
         self.email_smtp_port = clamp_i32(self.email_smtp_port, 1, 65_535);
+
+        // Recording video bitrate (R4): 0 = auto stays 0; anything else clamps
+        // to the Electron-documented 500..=50000 kbps range.
+        if self.video_bitrate != 0 {
+            self.video_bitrate = clamp_i32(self.video_bitrate, 500, 50_000);
+        }
+
+        // Per-device channel map (R4): clamp every stored pair to real channel
+        // indices, then DERIVE the flat recorder fields from the map. The map is
+        // the source of truth whenever it exists at all: the selected device's
+        // entry becomes `input_channel_l`/`_r`, and a selected device WITHOUT an
+        // entry clears them (default routing) — exactly what the api-shim bridge
+        // used to compute, so switching to an unmapped device cannot inherit the
+        // previous device's channels. An EMPTY map leaves the flat fields alone,
+        // so an older exported profile that only carried `inputChannelL`/`R`
+        // keeps working.
+        for ch in self.device_channels.values_mut() {
+            ch.channel_l = clamp_i32(ch.channel_l, 0, 31);
+            ch.channel_r = clamp_i32(ch.channel_r, 0, 31);
+        }
+        if !self.device_channels.is_empty() {
+            if let Some(id) = self.device_id.as_deref() {
+                let pair = self.device_channels.get(id);
+                self.input_channel_l = pair.map(|p| p.channel_l);
+                self.input_channel_r = pair.map(|p| p.channel_r);
+            }
+        }
+
+        // Streaming (R4): normalise the quality tags the same way the video
+        // tags above are — a garbage value becomes the default, never bad
+        // ffmpeg args. (The lenient deserializer can also leave "" / 0 here.)
+        if !matches!(self.stream_resolution.as_str(), "480p" | "720p" | "1080p") {
+            self.stream_resolution = default_stream_resolution();
+        }
+        if !matches!(self.stream_framerate, 25 | 30) {
+            self.stream_framerate = default_stream_framerate();
+        }
+        self.stream_video_bitrate = self
+            .stream_video_bitrate
+            .filter(|&v| v > 0)
+            .map(|v| clamp_i32(v, 100, 50_000));
+
+        // Podcast (R4): the service tag is a closed set; anything else falls
+        // back to the default host. Blank-vs-default text fields are the
+        // READER's concern (resolve_channel), not clamping's.
+        if !matches!(
+            self.podcast.service.as_str(),
+            "google-drive" | "dropbox" | "onedrive"
+        ) {
+            self.podcast.service = default_podcast_service();
+        }
     }
 
     /// Validated copy — convenience for callers that prefer a value.
@@ -1496,6 +1813,244 @@ mod tests {
         let mut back = Settings::from_json_merged(&json);
         back.validate();
         assert_eq!(back, original);
+    }
+
+    // ── R4 unification fields ────────────────────────────────────────────────
+
+    #[test]
+    fn r4_fields_default_and_serialise_camel_case() {
+        let s = Settings::default();
+        assert!(s.device_channels.is_empty());
+        assert_eq!(s.video_bitrate, 0);
+        assert!(!s.preroll_enabled);
+        assert!(s.stream_destinations.is_empty());
+        assert_eq!(s.stream_resolution, "720p");
+        assert_eq!(s.stream_framerate, 30);
+        assert_eq!(s.stream_video_bitrate, None);
+        assert!(s.stream_overlays.is_empty());
+        assert_eq!(s.cloud_google_drive, None);
+        assert_eq!(s.podcast, PodcastSettings::default());
+
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for key in [
+            "deviceChannels",
+            "videoBitrate",
+            "prerollEnabled",
+            "streamDestinations",
+            "streamResolution",
+            "streamFramerate",
+            "streamVideoBitrate",
+            "streamOverlays",
+            "cloudGoogleDrive",
+            "cloudDropbox",
+            "cloudOneDrive",
+            "podcast",
+        ] {
+            assert!(obj.contains_key(key), "missing camelCase key {key}");
+        }
+    }
+
+    #[test]
+    fn podcast_default_matches_empty_json() {
+        // The custom Default impl and the per-field serde defaults are two
+        // spellings of one truth; this pins them together.
+        let from_serde: PodcastSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(from_serde, PodcastSettings::default());
+        assert_eq!(from_serde.service, "google-drive");
+        assert_eq!(from_serde.language, "no");
+        assert_eq!(from_serde.category, "Religion & Spirituality");
+        assert!(from_serde.auto_prep_enabled);
+        assert_eq!(from_serde.default_master_preset, "speech-clear");
+    }
+
+    #[test]
+    fn r4_fields_round_trip_through_json() {
+        let mut dc = HashMap::new();
+        dc.insert(
+            "dev-1".to_string(),
+            DeviceChannels {
+                channel_l: 16,
+                channel_r: 17,
+            },
+        );
+        let original = Settings {
+            device_id: Some("dev-1".to_string()),
+            device_channels: dc,
+            video_bitrate: 8_000,
+            preroll_enabled: true,
+            stream_destinations: vec![StreamDestinationStored {
+                id: "yt".into(),
+                name: "YouTube".into(),
+                rtmp_url: "rtmp://a.rtmp.youtube.com/live2".into(),
+                enabled: true,
+                has_key: true,
+            }],
+            stream_resolution: "1080p".into(),
+            stream_framerate: 25,
+            stream_video_bitrate: Some(4_500),
+            stream_overlays: vec![serde_json::json!({
+                "id": "o1", "name": "Logo", "enabled": true,
+                "type": "image", "source": "/tmp/logo.png",
+                "position": "br", "scale": 0.2, "opacity": 1.0
+            })],
+            cloud_google_drive: Some(CloudServicePrefs {
+                enabled: true,
+                auto_upload: true,
+                folder_id: Some("f1".into()),
+                folder_name: Some("Opptak".into()),
+                folder_path: None,
+            }),
+            podcast: PodcastSettings {
+                enabled: true,
+                title: "Domkirken".into(),
+                email: Some("post@kirke.no".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .validated();
+
+        let json = serde_json::to_string(&original).unwrap();
+        let back = Settings::from_json_merged(&json).validated();
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn r4_malformed_field_costs_only_that_field() {
+        // The lenient rule, per field: garbage in one R4 value must not reset
+        // the rest of the blob (the from_json_merged full-defaults trapdoor).
+        let s = Settings::from_json_merged(
+            r#"{
+                "sampleRate": 44100,
+                "deviceChannels": "not-a-map",
+                "videoBitrate": "high",
+                "streamDestinations": 7,
+                "streamResolution": 1080,
+                "streamFramerate": "fast",
+                "streamVideoBitrate": "auto",
+                "streamOverlays": {"oops": true},
+                "cloudGoogleDrive": [1, 2],
+                "podcast": "yes please"
+            }"#,
+        )
+        .validated();
+        // The neighbour survived — the whole point.
+        assert_eq!(s.sample_rate, 44_100);
+        // Every malformed field landed on its (validated) default.
+        assert!(s.device_channels.is_empty());
+        assert_eq!(s.video_bitrate, 0);
+        assert!(s.stream_destinations.is_empty());
+        assert_eq!(s.stream_resolution, "720p");
+        assert_eq!(s.stream_framerate, 30);
+        assert_eq!(s.stream_video_bitrate, None);
+        assert!(s.stream_overlays.is_empty());
+        assert_eq!(s.cloud_google_drive, None);
+        assert_eq!(s.podcast, PodcastSettings::default());
+    }
+
+    #[test]
+    fn validate_derives_recorder_channels_from_the_device_map() {
+        let mut dc = HashMap::new();
+        dc.insert(
+            "qu5".to_string(),
+            DeviceChannels {
+                channel_l: 99, // clamps to 31
+                channel_r: -3, // clamps to 0
+            },
+        );
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            device_channels: dc,
+            // Stale flat values that must be overwritten by the derivation.
+            input_channel_l: Some(4),
+            input_channel_r: Some(5),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, Some(31));
+        assert_eq!(s.input_channel_r, Some(0));
+        // Idempotent: a second validate changes nothing.
+        let once = s.clone();
+        s.validate();
+        assert_eq!(s, once);
+    }
+
+    #[test]
+    fn validate_clears_recorder_channels_for_an_unmapped_selected_device() {
+        // The bridge behaviour, preserved: switching to a device with no stored
+        // mapping means DEFAULT routing — inheriting the previous device's
+        // channels would record the wrong source (the 2026-07-31 Qu-5 class).
+        let mut dc = HashMap::new();
+        dc.insert(
+            "other-device".to_string(),
+            DeviceChannels {
+                channel_l: 16,
+                channel_r: 17,
+            },
+        );
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            device_channels: dc,
+            input_channel_l: Some(16),
+            input_channel_r: Some(17),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, None);
+        assert_eq!(s.input_channel_r, None);
+    }
+
+    #[test]
+    fn validate_keeps_flat_channels_when_no_map_exists() {
+        // Back-compat: an older exported profile carries only the flat fields.
+        let mut s = Settings {
+            device_id: Some("qu5".to_string()),
+            input_channel_l: Some(2),
+            input_channel_r: Some(3),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.input_channel_l, Some(2));
+        assert_eq!(s.input_channel_r, Some(3));
+    }
+
+    #[test]
+    fn validate_clamps_and_normalises_r4_stream_fields() {
+        let mut s = Settings {
+            video_bitrate: 100, // non-zero → clamps up to 500
+            stream_resolution: "4k".into(),
+            stream_framerate: 60,
+            stream_video_bitrate: Some(999_999),
+            ..Default::default()
+        };
+        s.validate();
+        assert_eq!(s.video_bitrate, 500);
+        assert_eq!(s.stream_resolution, "720p");
+        assert_eq!(s.stream_framerate, 30);
+        assert_eq!(s.stream_video_bitrate, Some(50_000));
+
+        // 0/negative override means "auto", spelled None.
+        let mut auto = Settings {
+            video_bitrate: -5,
+            stream_video_bitrate: Some(0),
+            ..Default::default()
+        };
+        auto.validate();
+        assert_eq!(auto.video_bitrate, 500);
+        assert_eq!(auto.stream_video_bitrate, None);
+
+        let mut zero = Settings {
+            video_bitrate: 0,
+            ..Default::default()
+        };
+        zero.validate();
+        assert_eq!(zero.video_bitrate, 0, "0 = auto passes through");
+
+        let mut podcast_svc = Settings::default();
+        podcast_svc.podcast.service = "megaupload".into();
+        podcast_svc.validate();
+        assert_eq!(podcast_svc.podcast.service, "google-drive");
     }
 
     // ── resolve_save_folder — the canonical rule ─────────────────────────────

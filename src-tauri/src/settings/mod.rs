@@ -33,8 +33,21 @@ pub async fn load(pool: &SqlitePool) -> AppResult<Settings> {
 }
 
 /// Validate then persist the settings, returning the stored (validated) value.
+///
+/// R4: this is also where ended special recordings are pruned — the ONE pruner.
+/// The scheduler used to prune sqlite while the renderer's in-memory copy
+/// stayed stale, so the next full-object `settings_save` resurrected exactly
+/// what was just removed (R3 papered over it with a renderer-side mirror, now
+/// deleted). Pruning at the write boundary makes the prune un-revertable: no
+/// save can put a >7-days-ended special back, whoever sends it.
 pub async fn save(pool: &SqlitePool, mut settings: Settings) -> AppResult<Settings> {
     settings.validate();
+    let now = chrono::Local::now().naive_local();
+    let (kept, pruned) =
+        sundayrec_core::schedule::prune_specials(&settings.special_recordings, now);
+    if pruned > 0 {
+        settings.special_recordings = kept;
+    }
     let json = serde_json::to_string(&settings)?;
     store::set_setting(pool, SETTINGS_KEY, &json).await?;
     Ok(settings)
@@ -341,6 +354,46 @@ mod tests {
 
         let loaded = load(&pool).await.unwrap();
         assert_eq!(loaded, full, "full settings survive the DB round-trip");
+    }
+
+    #[tokio::test]
+    async fn save_prunes_long_ended_specials_so_a_stale_save_cannot_resurrect_them() {
+        use sundayrec_core::schedule::SpecialRecording;
+        let (pool, _d) = temp_pool().await;
+        let mk = |id: &str, date: &str| SpecialRecording {
+            id: Some(id.to_string()),
+            date: date.to_string(),
+            name: "Konsert".to_string(),
+            start: "10:00".to_string(),
+            stop: "12:00".to_string(),
+            device_id: None,
+        };
+        let old = mk("old", "2000-01-01"); // ended decades ago → pruned
+        let future = mk(
+            "future",
+            &(chrono::Local::now().date_naive() + chrono::Duration::days(30))
+                .format("%Y-%m-%d")
+                .to_string(),
+        );
+
+        // The scenario that produced the R3 mirror: the backend pruned, a
+        // renderer holding a STALE copy saves the full object again. The write
+        // boundary itself must drop the ended special.
+        let stored = save(
+            &pool,
+            Settings {
+                special_recordings: vec![old.clone(), future.clone()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(stored.special_recordings, vec![future.clone()]);
+        assert_eq!(
+            load(&pool).await.unwrap().special_recordings,
+            vec![future],
+            "the persisted list is the pruned one"
+        );
     }
 
     #[tokio::test]
