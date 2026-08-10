@@ -111,6 +111,11 @@ videoBitrate: number,
 outputMode: string, 
 /**
  * Also keep the standalone high-quality audio file next to a combined MP4?
+ * Default TRUE (R4): the renderer's default has always been «behold også
+ * ren lydfil», and the api-shim bridge synced that `true` into sqlite on
+ * every boot — so `true` is the deployed behaviour on every install. The
+ * old `false` here was only ever visible to code reading defaults before
+ * the first bridge sync.
  */
 keepSeparateAudio: boolean, 
 /**

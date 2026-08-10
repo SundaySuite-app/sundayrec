@@ -424,7 +424,12 @@ pub struct Settings {
     #[serde(default = "default_output_mode")]
     pub output_mode: String,
     /// Also keep the standalone high-quality audio file next to a combined MP4?
-    #[serde(default)]
+    /// Default TRUE (R4): the renderer's default has always been «behold også
+    /// ren lydfil», and the api-shim bridge synced that `true` into sqlite on
+    /// every boot — so `true` is the deployed behaviour on every install. The
+    /// old `false` here was only ever visible to code reading defaults before
+    /// the first bridge sync.
+    #[serde(default = "default_true")]
     pub keep_separate_audio: bool,
     /// Windows ONLY escape hatch: force the legacy ffmpeg **DirectShow** audio
     /// capture instead of the modern cpal (WASAPI/ASIO) path. Default `false` —
@@ -880,7 +885,7 @@ impl Default for Settings {
             video_flip: false,
             video_bitrate: 0,
             output_mode: default_output_mode(),
-            keep_separate_audio: false,
+            keep_separate_audio: true,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             classic_ffmpeg_preroll: false,
@@ -1218,7 +1223,8 @@ mod tests {
         assert_eq!(s.video_resolution, "1080p");
         assert_eq!(s.video_framerate, 30);
         assert_eq!(s.output_mode, "combined");
-        assert!(!s.keep_separate_audio);
+        // R4: true — the deployed (bridge-synced) renderer default, see the field doc.
+        assert!(s.keep_separate_audio);
         assert_eq!(s.separate_audio_format, FileFormat::Wav);
         assert!(s.av_sync);
         // Audio processing
