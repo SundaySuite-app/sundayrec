@@ -642,6 +642,124 @@ pub(crate) mod tests {
         eprintln!("heartbeat: {bytes} bytes / {secs:.2} s read from the real progress line");
     }
 
+    /// HEARTBEAT REGRESSION, MACHINE CHANNEL — the same question as the test
+    /// above, asked of the channel the recorder now actually depends on.
+    ///
+    /// Since the migration the recording argv carries `-progress pipe:1
+    /// -nostats`: stdout is where `recording://started` and the watchdog's byte
+    /// growth come from, and stderr no longer prints the periodic stats line at
+    /// all. Fixtures prove the parser handles the bytes we captured; only the
+    /// real binary proves the bytes still come. If a future sidecar bump
+    /// reworded the progress vocabulary the way 7.1 reworded stderr, every
+    /// fixture in the suite would still be green and only this test would fail.
+    ///
+    /// Asserts, against the ACTUALLY BUNDLED binary: blocks arrive at all; the
+    /// byte count is real bytes (not kB — a wrong scale is what the whole
+    /// migration is about); `progress=end` terminates; `out_time_ms` is
+    /// microseconds; and `-nostats` really does clear the periodic stats line
+    /// off stderr.
+    #[test]
+    fn the_real_binary_speaks_the_progress_protocol_or_skips() {
+        use sundayrec_core::progress::{ProgressStream, PROGRESS_ARGS};
+
+        let _guard = ENV_LOCK.lock().unwrap();
+        let Some(ffmpeg) = fetched_sidecar("ffmpeg") else {
+            eprintln!("SKIP: no fetched ffmpeg sidecar (run `npm run ffmpeg`)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("progress.wav");
+
+        // `-re` paces the encode in real time so ffmpeg emits SEVERAL blocks
+        // (one per `-stats_period`, default 0.5 s) rather than a single closing
+        // one — the growth the watchdog reads is only observable across blocks.
+        //
+        // The production `-af` chain rides along on purpose: `ametadata` writes
+        // the level lines straight to stderr at ~94 prints/s while the progress
+        // blocks go to stdout. The two channels must not interleave into each
+        // other — that is the one thing fixtures alone cannot demonstrate, and
+        // it is the load the 2026-07-31 sample-loss incident ran at.
+        let af = format!(
+            "aresample=async=1000:first_pts=0,silencedetect=noise=-55dB:duration=1,{}",
+            sundayrec_core::ffmpeg::build_levels_detect_filter(
+                sundayrec_core::ffmpeg::Platform::MacOS
+            )
+        );
+        let mut cmd = std::process::Command::new(&ffmpeg);
+        cmd.args(["-hide_banner", "-nostdin"])
+            .args(PROGRESS_ARGS)
+            .args([
+                "-re",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=2",
+                "-af",
+                &af,
+                "-c:a",
+                "pcm_s16le",
+                "-y",
+            ])
+            .arg(&out);
+        let run = cmd.output().expect("ffmpeg should run");
+        assert!(run.status.success(), "ffmpeg -progress render failed");
+
+        let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&run.stderr).into_owned();
+        let updates = ProgressStream::new().push(&stdout);
+        assert!(
+            !updates.is_empty(),
+            "this ffmpeg produced no parseable -progress blocks — the recorder \
+             would never fire recording://started and its watchdog would see a \
+             dead file.\nstdout was:\n{stdout}"
+        );
+        let last = *updates.last().unwrap();
+        assert!(last.done, "the stream must end with progress=end: {stdout}");
+
+        // BYTES, not kB. The on-disk file is the ground truth; a wrong scale
+        // would be off by ~1024×, which this bracket cannot absorb.
+        let on_disk = std::fs::metadata(&out).expect("output exists").len();
+        let bytes = last
+            .total_size
+            .expect("the final block must carry a byte count");
+        assert!(
+            bytes > on_disk / 2 && bytes < on_disk * 2,
+            "progress reported {bytes} bytes for a {on_disk}-byte file"
+        );
+        // Growth is what the watchdog actually polls.
+        assert!(
+            updates.first().unwrap().total_size < last.total_size,
+            "byte count must GROW across blocks: {updates:?}"
+        );
+
+        // MICROseconds, not milliseconds (ffmpeg trac #7345). 2 s of media.
+        let us = last.out_time_us.expect("the final block must carry a time");
+        let secs = us as f64 / 1_000_000.0;
+        assert!(
+            (secs - 2.0).abs() <= 0.15,
+            "out_time read as {secs} s for a 2 s render — the µs/ms scale is wrong"
+        );
+
+        // …and `-nostats` really did take the PERIODIC stats line off stderr.
+        // ffmpeg still prints ONE closing `size=` summary when the muxer shuts
+        // down (verified on 6.0 and 8.1.2); more than that means the flag
+        // stopped working and stderr is carrying the old heartbeat again.
+        assert!(
+            stderr.matches("size=").count() <= 1,
+            "-nostats no longer suppresses the periodic stats line:\n{stderr}"
+        );
+        // …while the levels the meters need are still there, on stderr, where
+        // the reader expects them.
+        assert!(
+            stderr.contains("lavfi.astats.1.Peak_level="),
+            "the ametadata levels must survive -nostats:\n{stderr}"
+        );
+        eprintln!(
+            "progress protocol: {} blocks, {bytes} bytes / {secs:.2} s",
+            updates.len()
+        );
+    }
+
     /// 96 kHz DURATION-EXACT REAL-FFMPEG TEST — the sample-loss regression
     /// guard at the rate where the 2026-07-31 incident lost up to 56 %. Runs a
     /// 10 s lavfi sine at 96 kHz through the EXACT recording chain (levels +

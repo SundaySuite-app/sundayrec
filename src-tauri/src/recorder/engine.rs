@@ -82,7 +82,7 @@ use sundayrec_core::levels::{parse_ametadata_peak, ChannelLevels, SILENCE_FLOOR_
 use sundayrec_core::preflight::{
     finalize_reserve_bytes, low_disk_should_stop, min_disk_headroom_bytes,
 };
-use sundayrec_core::progress::{parse_size_kb, StartupResolver};
+use sundayrec_core::progress::{parse_size_kb, ProgressStream, StartupResolver};
 use sundayrec_core::reconnect::{WatchdogState, WatchdogVerdict};
 use sundayrec_core::recorder::{RecorderState, RecordingSession, RecoveryDecision};
 use sundayrec_core::recovery::{
@@ -1929,6 +1929,85 @@ impl ReaderCtx {
     }
 }
 
+/// Mutable state of the STDOUT reader — the `-progress` channel's half of what
+/// [`ReaderCtx`] used to do alone. Same three jobs, same shapes: latch startup
+/// once, keep the watchdog's byte atomic live, coalesce the UI counter.
+struct ProgressCtx {
+    stream: ProgressStream,
+    startup: StartupResolver,
+    started_sent: bool,
+    last_progress_forward: std::time::Instant,
+}
+
+impl ProgressCtx {
+    fn new() -> Self {
+        Self {
+            stream: ProgressStream::new(),
+            startup: StartupResolver::new(),
+            started_sent: false,
+            last_progress_forward: std::time::Instant::now() - Duration::from_secs(60),
+        }
+    }
+}
+
+/// Fold one read of ffmpeg's `-progress` stdout into the startup latch, the
+/// watchdog byte atomic and the UI counter.
+///
+/// This is the migration of the recorder's heartbeat OFF the free-form stderr
+/// stats line. That line is a human report ffmpeg may reword — and did, when
+/// 7.1 renamed `size=…kB` to `KiB`; against a `kB`-only parser a perfectly
+/// healthy recording never fires `recording://started` and never appears to
+/// grow (caught 2026-08-06 on the 6.0 → 8.1.2 sidecar bump). The `-progress`
+/// blocks are the vocabulary ffmpeg treats as an interface — verified
+/// byte-identical across both binaries this app has shipped.
+///
+/// Startup is latched on BLOCK ARRIVAL, not on a byte count: ffmpeg 6.0's first
+/// block legitimately says `total_size=0`, and the `null` muxer says `N/A` for
+/// its whole run. A block existing at all is the proof that the device opened
+/// and encoding began — exactly what the first stderr stats line used to mean.
+///
+/// ## The zero-back-pressure invariant applies here too
+///
+/// Called from the task that drains a pipe ffmpeg BLOCKS on. It must never
+/// await: every hand-off is an atomic store or an mpsc `try_send`. See
+/// [`classify_stderr_line`] — the reasoning is identical, and the consequence
+/// of getting it wrong (avfoundation dropping samples) is the same.
+fn classify_progress_chunk(
+    chunk: &str,
+    ctx: &mut ProgressCtx,
+    msg_tx: &tokio::sync::mpsc::Sender<ReaderMsg>,
+    segment_bytes: &AtomicU64,
+    telemetry: &Arc<Mutex<RecordingTelemetry>>,
+) {
+    for update in ctx.stream.push(chunk) {
+        // A block arrived → ffmpeg is running. Retry the send until one lands
+        // (a `try_send` can drop it on a full channel; the startup watchdog
+        // depends on it arriving).
+        if ctx.startup.observe_progress() || !ctx.started_sent {
+            if msg_tx.try_send(ReaderMsg::Started).is_ok() {
+                ctx.started_sent = true;
+            } else {
+                lock_recover(telemetry).note_msg_dropped();
+            }
+        }
+        // The watchdog's byte count rides the shared atomic — delivered even if
+        // every Progress MESSAGE were dropped. `None` (an `N/A` reading) HOLDS
+        // the previous value rather than storing 0: a shrink would read as a
+        // file that stopped growing.
+        let Some(bytes) = update.total_size else {
+            continue;
+        };
+        segment_bytes.store(bytes, Ordering::Relaxed);
+        // UI byte counter: ~1/s is plenty (blocks arrive ~2/s).
+        if ctx.last_progress_forward.elapsed() >= Duration::from_secs(1) {
+            ctx.last_progress_forward = std::time::Instant::now();
+            if msg_tx.try_send(ReaderMsg::Progress(bytes)).is_err() {
+                lock_recover(telemetry).note_msg_dropped();
+            }
+        }
+    }
+}
+
 /// Classify a single ffmpeg stderr line (split on `\r`/`\n` by the reader).
 ///
 /// ## The zero-back-pressure invariant (2026-07-31 incident)
@@ -2034,6 +2113,12 @@ async fn run_segment(
     let Some(stderr) = child.stderr.take() else {
         return SegmentOutcome::UnexpectedExit { last_error: None };
     };
+    // stdout carries the `-progress` blocks (see `capture::PROGRESS_ARGS`). It
+    // is now LOAD-BEARING: with `-nostats` the periodic stats line is gone from
+    // stderr, so this pipe is where startup and the heartbeat come from.
+    let Some(stdout) = child.stdout.take() else {
+        return SegmentOutcome::UnexpectedExit { last_error: None };
+    };
     let mut stdin = child.stdin.take();
 
     // The in-recording live preview is now a DEADLOCK-PROOF file sink: the
@@ -2054,6 +2139,53 @@ async fn run_segment(
         peak_db_left: SILENCE_FLOOR_DB,
         peak_db_right: None,
     });
+    // PROGRESS reader task: drains ffmpeg's `-progress` stdout → the startup
+    // latch, the watchdog byte atomic, and the coalesced UI counter. Same
+    // zero-back-pressure discipline as the stderr reader: its only await is the
+    // `read()` itself, so no consumer can stall it and let the pipe fill.
+    //
+    // Draining is not optional. With stdout previously nulled the channel cost
+    // nothing; now ffmpeg writes ~120 bytes into it twice a second, and a
+    // stalled reader would fill the pipe buffer in minutes and block the
+    // capture — the 2026-07-31 failure mode. Hence: no locks, no channels that
+    // can block, and a task that only ends at EOF.
+    //
+    // ⚠️ HARDWARE-UNVERIFIED. The protocol itself is proven against the real
+    // bundled binary (`media::ffmpeg`'s
+    // `the_real_binary_speaks_the_progress_protocol_or_skips`) and the
+    // dispatcher against the exact blocks it emits, but this task has only ever
+    // been run against a lavfi source: an avfoundation/dshow capture on a real
+    // rig is what would show whether the first block still arrives inside
+    // `STARTUP_TIMEOUT_MS` when a device (not a filter) has to open first.
+    let progress_bytes = Arc::clone(&segment_bytes);
+    let progress_telemetry = Arc::clone(&telemetry);
+    let progress_tx = msg_tx.clone();
+    let progress_reader = tauri::async_runtime::spawn(async move {
+        let mut ctx = ProgressCtx::new();
+        let mut stdout = BufReader::new(stdout);
+        let mut chunk = [0u8; 4096];
+        loop {
+            let n = match stdout.read(&mut chunk).await {
+                Ok(0) => break, // stdout closed → ffmpeg exited
+                Ok(n) => n,
+                Err(e) => {
+                    tracing::warn!("recorder progress read error: {e}");
+                    break;
+                }
+            };
+            // The block parser owns line reassembly, so a chunk that ends
+            // mid-key is held rather than dropped — no framing logic here.
+            let text = String::from_utf8_lossy(&chunk[..n]);
+            classify_progress_chunk(
+                &text,
+                &mut ctx,
+                &progress_tx,
+                &progress_bytes,
+                &progress_telemetry,
+            );
+        }
+    });
+
     let reader_bytes = Arc::clone(&segment_bytes);
     // The reader task takes ownership of the telemetry handle; keep our own so
     // the end of this segment can seal the capture process's drop/dup window.
@@ -2384,9 +2516,12 @@ async fn run_segment(
         }
     };
 
-    // Make sure the reader + levels forwarder are done (the reader sends Exit
-    // then returns; dropping its `levels_tx` also ends the forwarder loop).
+    // Make sure the readers + levels forwarder are done (the stderr reader sends
+    // Exit then returns; dropping its `levels_tx` also ends the forwarder loop).
+    // The progress reader ends on its own at stdout EOF; aborting it here covers
+    // the paths where the child was killed rather than allowed to finish.
     reader.abort();
+    progress_reader.abort();
     levels_forwarder.abort();
     // E6.3: this capture PROCESS is over. Fold its cumulative `drop=`/`dup=`
     // maxima into the session totals so the next segment's counters (which
@@ -2504,13 +2639,19 @@ pub(crate) async fn wait_opt(s: &mut Option<std::pin::Pin<Box<tokio::time::Sleep
 
 /// Spawn ffmpeg taking ownership of the child (the supervisor holds it for the
 /// segment's whole life; dropping it triggers `kill_on_drop`).
-/// Spawn a RECORDING ffmpeg segment. Unlike the shared [`spawn_ffmpeg`] (which
-/// pipes stdout for the preview/editor MJPEG readers), the recording capture has NO
-/// stdout consumer — its live preview is a file sink, not a pipe. Leaving stdout
-/// piped but undrained is a latent deadlock: if ffmpeg ever wrote to it, the full
-/// pipe would stall the process → dropped capture samples ("hakkete"). So we send
-/// stdout to null here. stdin stays piped (we write `q` for a graceful, container-
-/// finalising stop) and stderr stays piped (the progress/levels/error reader).
+/// Spawn a RECORDING ffmpeg segment. All three standard streams are piped:
+///
+/// * **stdin** — we write `q` for a graceful, container-finalising stop.
+/// * **stdout** — the `-progress` blocks (`capture::PROGRESS_ARGS`): the startup
+///   latch and the watchdog heartbeat. It used to be `null`, because the only
+///   thing that had ever wanted stdout was the MJPEG preview tee, and an
+///   UNDRAINED media pipe is a deadlock that stalls ffmpeg and makes
+///   avfoundation drop samples ("hakkete"). That reasoning still stands and is
+///   why `run_segment` spawns a dedicated, never-awaiting reader for this pipe
+///   before anything else can block: the channel is now tiny (~120 B twice a
+///   second) but it is drained unconditionally, not left to fill.
+/// * **stderr** — errors + the `ametadata` level lines.
+///
 /// `kill_on_drop` prevents a zombie ffmpeg if the supervisor task is dropped.
 async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child> {
     use std::process::Stdio;
@@ -2519,7 +2660,7 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
     tokio::process::Command::new(crate::media::ffmpeg::ffmpeg_path())
         .args(&arg_refs)
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
@@ -3548,15 +3689,20 @@ mod tests {
             "video is CFR-locked; got: {args:?}"
         );
         // The mp4 is the PRIMARY output; a video recording also writes the
-        // deadlock-proof preview JPEG (file sink, `-update 1`) as the tail — NEVER
-        // a `pipe:1` (the pipe was what could freeze the capture).
+        // deadlock-proof preview JPEG (file sink, `-update 1`) as the tail —
+        // never a MEDIA output on `pipe:1` (the pipe was what could freeze the
+        // capture). The one permitted `pipe:1` is the `-progress` channel's: a
+        // global flag, tiny, and drained unconditionally by its own reader task.
         assert!(
             args.iter().any(|a| a == "/tmp/av.mp4"),
             "mp4 present; got: {args:?}"
         );
         assert!(
-            !args.iter().any(|a| a == "pipe:1"),
-            "no pipe; got: {args:?}"
+            args.iter()
+                .enumerate()
+                .filter(|(_, a)| a.as_str() == "pipe:1")
+                .all(|(i, _)| i > 0 && args[i - 1] == "-progress"),
+            "no MEDIA output on the pipe; got: {args:?}"
         );
         assert!(
             args.windows(2).any(|w| w == ["-update", "1"]),
@@ -3919,6 +4065,177 @@ mod tests {
         }
         assert_eq!(started, 1, "Started delivered exactly once when it lands");
         assert_eq!(progress, 1, "intra-second progress messages are coalesced");
+    }
+
+    /// The `-progress` dispatcher does the same three jobs the stderr one did:
+    /// latch `Started` exactly once, keep the byte atomic live on EVERY block,
+    /// and coalesce the UI counter to ≤1/s. Fed the exact block shape the
+    /// bundled 8.1.2 sidecar emits.
+    #[test]
+    fn progress_reader_latches_started_once_and_keeps_bytes_live() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for (size, us) in [(96_334u64, 1_024_000u64), (143_438, 1_514_667)] {
+            classify_progress_chunk(
+                &format!(
+                    "bitrate= 752.6kbits/s\ntotal_size={size}\nout_time_us={us}\n\
+                     out_time_ms={us}\nout_time=00:00:01.024000\ndup_frames=0\n\
+                     drop_frames=0\nspeed=2.01x\nprogress=continue\n"
+                ),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 143_438, "latest bytes live");
+
+        let mut started = 0;
+        let mut progress = 0;
+        while let Ok(m) = rx.try_recv() {
+            match m {
+                ReaderMsg::Started => started += 1,
+                ReaderMsg::Progress(_) => progress += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(started, 1, "Started delivered exactly once");
+        assert_eq!(progress, 1, "intra-second progress messages are coalesced");
+    }
+
+    /// Startup is latched on BLOCK ARRIVAL, never on a byte count. ffmpeg 6.0's
+    /// first block really does say `total_size=0`, and an `N/A` reading happens
+    /// for real. Either must still announce that the recording started — and an
+    /// `N/A` must HOLD the previous byte count, not reset it to zero (a shrink
+    /// reads to the watchdog exactly like a file that stopped growing).
+    #[test]
+    fn a_zero_or_na_block_still_starts_and_never_shrinks_the_byte_count() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        // ffmpeg 6.0's opening block: zero bytes, no speed yet.
+        classify_progress_chunk(
+            "bitrate=N/A\ntotal_size=0\nout_time_us=0\nspeed=N/A\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        assert!(
+            matches!(rx.try_recv(), Ok(ReaderMsg::Started)),
+            "a zero-byte first block still resolves startup"
+        );
+        // A real reading, then an N/A one.
+        classify_progress_chunk(
+            "total_size=50000\nout_time_us=500000\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        classify_progress_chunk(
+            "total_size=N/A\nout_time_us=1000000\nprogress=continue\n",
+            &mut ctx,
+            &tx,
+            &bytes,
+            &telemetry,
+        );
+        assert_eq!(
+            bytes.load(Ordering::Relaxed),
+            50_000,
+            "an N/A reading holds the last count instead of shrinking it"
+        );
+    }
+
+    /// The pipe splits blocks wherever it likes; a `Started` must not wait for a
+    /// tidy boundary that never comes. Fed one byte at a time, the dispatcher
+    /// still produces exactly one `Started` and the live byte count.
+    #[test]
+    fn progress_survives_reads_that_split_mid_block() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        let blob = "total_size=1234\nout_time_us=500000\nprogress=continue\n\
+                    total_size=5678\nout_time_us=1000000\nprogress=end\n";
+        for ch in blob.chars() {
+            classify_progress_chunk(&ch.to_string(), &mut ctx, &tx, &bytes, &telemetry);
+        }
+        assert_eq!(bytes.load(Ordering::Relaxed), 5678);
+        let mut started = 0;
+        while let Ok(m) = rx.try_recv() {
+            if matches!(m, ReaderMsg::Started) {
+                started += 1;
+            }
+        }
+        assert_eq!(started, 1);
+    }
+
+    /// MUTATION PROOF: the progress dispatcher must NOT accept the human stderr
+    /// stats line. If it did, a misrouted stream would half-work — and the
+    /// whole point of this channel is that the shape ffmpeg reserves the right
+    /// to reword can no longer decide whether a recording looks alive.
+    #[test]
+    fn the_progress_reader_ignores_the_human_stats_line() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ReaderMsg>(512);
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for unit in ["kB", "KiB"] {
+            classify_progress_chunk(
+                &format!("size=    1024{unit} time=00:00:10.00 bitrate= 838.9kbits/s\n"),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        assert_eq!(
+            bytes.load(Ordering::Relaxed),
+            0,
+            "no heartbeat from stderr shape"
+        );
+        assert!(rx.try_recv().is_err(), "and no Started either");
+    }
+
+    /// The zero-back-pressure invariant, for the NEW pipe. `classify_progress_chunk`
+    /// runs in the task that drains a pipe ffmpeg blocks on, so a full mpsc must
+    /// cost a COUNTED message and nothing else — never a stall that would let
+    /// the pipe fill and push avfoundation into dropping samples.
+    #[test]
+    fn progress_classify_never_blocks_when_the_channel_is_full() {
+        let (tx, _rx) = tokio::sync::mpsc::channel::<ReaderMsg>(1);
+        tx.try_send(ReaderMsg::Progress(0)).unwrap(); // permanently full
+        let bytes = AtomicU64::new(0);
+        let telemetry = Arc::new(Mutex::new(RecordingTelemetry::default()));
+        let mut ctx = ProgressCtx::new();
+
+        for i in 1..=5u64 {
+            classify_progress_chunk(
+                &format!(
+                    "total_size={}\nout_time_us={}\nprogress=continue\n",
+                    i * 1000,
+                    i * 1000
+                ),
+                &mut ctx,
+                &tx,
+                &bytes,
+                &telemetry,
+            );
+        }
+        // The byte count reached the atomic even though every MESSAGE dropped.
+        assert_eq!(bytes.load(Ordering::Relaxed), 5000);
+        assert!(
+            lock_recover(&telemetry).msgs_dropped > 0,
+            "full-channel drops must be counted as telemetry"
+        );
     }
 
     #[test]
