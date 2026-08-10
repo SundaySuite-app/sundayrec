@@ -317,7 +317,8 @@
     "errMaxRange": "La durée maximale doit être comprise entre 1 et 480 minutes.",
     "prerollEnabledTitle": "Activer le tampon de pré-enregistrement",
     "prerollEnabledDesc": "Le tampon garde le microphone ouvert en permanence en arrière-plan. Tant qu'il tourne, c'est lui qui alimente les vumètres sur Accueil et Diffusion, qui continuent donc de fonctionner. Activez-le si vous avez besoin des secondes précédant l'appui — l'Accueil indique quand le tampon tourne.",
-    "saveSlot": "Enregistrer l'horaire"
+    "saveSlot": "Enregistrer l'horaire",
+    "errCancelTestWake": "Impossible d'annuler le test de réveil."
   },
   "wake": {
     "capability": {
@@ -1246,7 +1247,8 @@
     "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
     "overlayToggleTitle": "Activer/désactiver l'overlay",
     "overlayNamePlaceholder": "Nom",
-    "overlayDeleteTitle": "Supprimer"
+    "overlayDeleteTitle": "Supprimer",
+    "errStopFailed": "Impossible d'arrêter le flux — réessayez."
   },
   "transcript": {
     "title": "Transcription",

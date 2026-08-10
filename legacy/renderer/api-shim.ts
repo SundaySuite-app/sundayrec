@@ -36,6 +36,8 @@ import { navigateTo } from "./ui/navigate";
 import { toast } from "./ui/toast";
 import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
+import { errorCode } from "./error-code-core";
+import { pruneEndedSpecials } from "./prune-specials-core";
 import { stripLegacySecrets } from "./purge-legacy-secrets-core";
 import {
   createIpcFailureState,
@@ -297,12 +299,12 @@ const THUMBNAIL_ERROR_CODES = ["empty_file", "too_large", "unsupported_format"];
  * `"validation: <code>"`. The panel's `errorLabel()` matches on the BARE code
  * and echoes anything it doesn't recognise verbatim, so handing it the prefixed
  * string would print «validation: too_large» at the user instead of «Filen er
- * for stor (over 20 MB)».
+ * for stor (over 20 MB)». R3-C: extracted via `errorCode()` (the leading
+ * stable snake code), not an anywhere-in-the-message `includes` scan.
  */
 function thumbnailError(e: unknown): { error: string } {
-  const msg = ipcErrText(e);
-  const known = THUMBNAIL_ERROR_CODES.find((code) => msg.includes(code));
-  return { error: known ?? msg };
+  const code = errorCode(e);
+  return { error: THUMBNAIL_ERROR_CODES.includes(code) ? code : ipcErrText(e) };
 }
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
@@ -460,7 +462,6 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   preRollSeconds: 0,
   prerollEnabled: false,
   launchAtLogin: false,
-  showOnStartup: false,
   minimizeToTray: true,
   wakeFromSleep: true,
   protectRecording: true,
@@ -507,6 +508,11 @@ function loadSettings(): Record<string, unknown> {
   try {
     const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
     const merged = { ...DEFAULT_SETTINGS, ...saved };
+    // R3-D (interim until R4's single-owner dedup): apply the scheduler's
+    // 7-day specials prune HERE, where localStorage is read — otherwise the
+    // next save sends the unpruned list back through `settings_save` and
+    // resurrects exactly what the backend's `prune_specials` just removed.
+    merged.specialRecordings = pruneEndedSpecials(merged.specialRecordings, Date.now());
     if (VERIFY_GOTO) {
       merged.hasLaunched = true; // skip onboarding during verify screenshots
       merged.onboardingDone = true;
@@ -651,6 +657,15 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
     slots: sanitizeSlots(s.slots),
     specialRecordings: sanitizeSpecials(s.specialRecordings),
+    // «Varsle når opptak starter/stopper» (R3-H). Read by the BACKEND
+    // scheduler's `should_notify` gate — while these were absent from the
+    // bridge, Rust's `#[serde(default = "default_true")]` re-defaulted them to
+    // `true` on every settings_save, so the toggles saved «Lagret ✓» and
+    // changed nothing (the same trap `filenamePattern`/`wakeFromSleep` fell
+    // into). Failure/error notifications are NOT governed by these — see
+    // scheduler/mod.rs::should_notify.
+    notifyStart: s.notifyStart ?? true,
+    notifyStop: s.notifyStop ?? true,
     // Editor video export: opt into the macOS VideoToolbox hardware encoder.
     // Read by `editor_export`; must be synced or Rust's `#[serde(default)]`
     // re-defaults it to `false` on every settings_save and the toggle never
@@ -1042,7 +1057,11 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  stopRecordingNow: async () => call("stop_recording", undefined, true).then(() => true),
+  // WRITE — bare invoke, rejection travels (R3-B; house rule at the
+  // integrations block below). The old `call(…, true)` turned a FAILED stop
+  // into `true`: recording.ts then waited politely for a terminal event that
+  // was never coming instead of running its own teardown catch.
+  stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
   // ── Auto-stop, owned by the recorder ───────────────────────────────────
   // The overlay's "+30 min" / "Avbryt auto-stopp" used to be renderer-local
   // setTimeouts that RE-implemented (and disagreed with) the engine's real
@@ -1337,6 +1356,21 @@ const api: Record<string, unknown> = {
       captureOk: null,
       videoOk: null,
     }),
+
+  // ── Electron-era app-data cleanup (R3-F) ────────────────────────────────
+  // Both commands are argument-less by design (the target directory is derived
+  // and re-validated in Rust — see commands/legacy_data.rs). No UI calls these
+  // yet; the System/Diagnostikk row that offers «Rydd opp gamle programdata
+  // (X MB)» is a follow-up. READ degrades to "nothing found"; the CLEAN is a
+  // write, so the rejection travels.
+  legacyDataScan: async () =>
+    call<import("../bindings/LegacyDataInfo").LegacyDataInfo | null>(
+      "legacy_data_scan",
+      undefined,
+      null,
+    ),
+  legacyDataClean: async () =>
+    invoke<import("../bindings/LegacyDataInfo").LegacyDataInfo>("legacy_data_clean", undefined),
 
   // ── Log file (E2.6) ─────────────────────────────────────────────────────
   // Backs the System tab's «Vis logg» / «Kopier siste logg». Both Rust
@@ -1658,10 +1692,12 @@ const api: Record<string, unknown> = {
     }),
   wakeTest: async (secondsAhead?: number) =>
     call("wake_test", { secondsAhead: secondsAhead ?? null }, { ok: false }),
-  wakeCancelTest: async () => call("wake_cancel_test", undefined, true).then(() => true),
+  // WRITES — bare invoke, rejection travels (R3-B): a cancel/clear that
+  // silently didn't happen used to report `true` anyway.
+  wakeCancelTest: async () => invoke("wake_cancel_test", undefined).then(() => true),
   wakeFailureHistory: async () => call("wake_failure_history", undefined, []),
   wakeClearFailureHistory: async () =>
-    call("wake_clear_failure_history", undefined, true).then(() => true),
+    invoke("wake_clear_failure_history", undefined).then(() => true),
 
   // ── Editor ──────────────────────────────────────────────────────────────
   // Local path → asset:// URL for <audio>/<video> playback (WKWebView blocks
@@ -1969,8 +2005,10 @@ const api: Record<string, unknown> = {
   },
   masterApply: async (params: unknown) =>
     editorCall("editor_master_apply", { request: params }),
+  // WRITE — bare invoke, rejection travels (R3-B); mastering.ts already
+  // wraps its call in try/catch.
   masterCancel: async (jobId: string) =>
-    call("editor_master_cancel", { jobId }, true).then(() => true),
+    invoke("editor_master_cancel", { jobId }).then(() => true),
 
   // ── Episode image / cover art (thumbnail_*) ─────────────────────────────
   //
@@ -2066,11 +2104,12 @@ const api: Record<string, unknown> = {
   },
   registerTrustedPath: async () => true,
 
-  // ── Gmail / YouTube ─────────────────────────────────────────────────────
-  gmailConnect: async () => okFalse,
-  gmailDisconnect: async () => true,
-  gmailStatus: async () => ({ connected: false }),
-  youtubeConnect: async () => okFalse,
+  // ── YouTube (stubs) ─────────────────────────────────────────────────────
+  // R3: gmailConnect/gmailDisconnect/gmailStatus/youtubeConnect deleted — R2's
+  // panel cleanup removed their last callers, and all four were permanent
+  // stubs (no Rust command behind them). youtubeStatus stays: the editor's
+  // publish flow still reads it. youtubeDisconnect/youtubeUpload are
+  // caller-less stubs too — left for R4's stub sweep.
   youtubeDisconnect: async () => true,
   youtubeStatus: async () => ({ connected: false }),
   youtubeUpload: async () => ({ ok: false }),
@@ -2113,12 +2152,23 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  streamStop: async () => call("stream_stop", undefined, true).then(() => true),
+  // WRITES — bare invoke, rejection travels (R3-B). `stream_stop` reporting
+  // `true` over a stream that is still pushing RTMP was the worst of the nine
+  // fallback-==-success lies this round removed.
+  streamStop: async () => invoke("stream_stop", undefined).then(() => true),
   streamPreviewPath: async () => call("stream_preview_path", undefined, ""),
+  // Keychain write with a receipt contract: publish-page reads `{ ok, error }`
+  // and branches on the `safeStorage_unavailable`/`invalid_key` codes. The old
+  // `call(…, true).then(() => true)` returned a bare `true` — `r.ok` was
+  // undefined, so the panel logged an error even on SUCCESS and `hasKey` never
+  // stuck, while a genuinely failed keychain write showed nothing at all.
   streamSetKey: async (destId: string, key: string) =>
-    call("stream_set_key", { destId, key }, true).then(() => true),
+    invoke("stream_set_key", { destId, key }).then(
+      () => ({ ok: true as const }),
+      (e) => ({ ok: false as const, error: errorCode(e) || ipcErrText(e) }),
+    ),
   streamDeleteKey: async (destId: string) =>
-    call("stream_delete_key", { destId }, true).then(() => true),
+    invoke("stream_delete_key", { destId }).then(() => true),
   overlayListScreens: async () => [],
   overlayListNdiSources: async () => ({ available: false, sources: [] }),
   overlayPickImage: async () =>
@@ -2211,18 +2261,20 @@ const api: Record<string, unknown> = {
       await invoke("whisper_download_model", { id: modelId });
       return { ok: true as const };
     } catch (e) {
-      const msg = ipcErrText(e);
-      // The renderer suppresses the alert only for the exact "cancelled".
+      // The renderer suppresses the alert only for the exact "cancelled" —
+      // matched on the stable code (R3-C), not the message's tail.
       return {
         ok: false as const,
-        error: msg.endsWith("cancelled") ? "cancelled" : msg,
+        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
       };
     }
   },
+  // WRITES — bare invoke, rejection travels (R3-B). A model "deleted" while
+  // still on disk used to report `true`; editor-transcript.ts catches.
   whisperCancelDownload: async (modelId: string) =>
-    call("whisper_cancel_download", { id: modelId }, true).then(() => true),
+    invoke("whisper_cancel_download", { id: modelId }).then(() => true),
   whisperDeleteModel: async (modelId: string) =>
-    call("whisper_delete_model", { id: modelId }, true).then(() => true),
+    invoke("whisper_delete_model", { id: modelId }).then(() => true),
   // old { filePath, modelId, language, translate, jobId } → whisper_transcribe
   // (input_path, model_id, language, translate, subtitle_style, job_id). The
   // command returns the TranscriptData itself on success — wrap it in the
@@ -2242,10 +2294,9 @@ const api: Record<string, unknown> = {
       });
       return { ok: true as const, transcript };
     } catch (e) {
-      const msg = ipcErrText(e);
       return {
         ok: false as const,
-        error: msg.endsWith("cancelled") ? "cancelled" : msg,
+        error: errorCode(e) === "cancelled" ? "cancelled" : ipcErrText(e),
       };
     }
   },

@@ -19,6 +19,7 @@ pub mod editor;
 pub mod email;
 pub mod haptics;
 pub mod integrations;
+pub mod legacy_data;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;

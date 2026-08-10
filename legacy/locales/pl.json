@@ -317,7 +317,8 @@
     "errMaxRange": "Maksymalny czas musi wynosić od 1 do 480 minut.",
     "prerollEnabledTitle": "Włącz bufor wstępny",
     "prerollEnabledDesc": "Bufor stale trzyma mikrofon otwarty w tle. Gdy działa, to on zasila wskaźniki poziomu na ekranie Start i Transmisja, więc działają one jak wcześniej. Włącz go, jeśli potrzebujesz sekund sprzed naciśnięcia nagrywania — ekran Start pokazuje, kiedy bufor działa.",
-    "saveSlot": "Zapisz termin"
+    "saveSlot": "Zapisz termin",
+    "errCancelTestWake": "Nie udało się anulować testu wybudzania."
   },
   "wake": {
     "capability": {
@@ -1246,7 +1247,8 @@
     "overlayTypeNdi": "NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)",
     "overlayToggleTitle": "Włącz/wyłącz nakładkę",
     "overlayNamePlaceholder": "Nazwa",
-    "overlayDeleteTitle": "Usuń"
+    "overlayDeleteTitle": "Usuń",
+    "errStopFailed": "Nie udało się zatrzymać transmisji — spróbuj ponownie."
   },
   "transcript": {
     "title": "Transkrypcja",

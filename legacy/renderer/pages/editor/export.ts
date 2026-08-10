@@ -1,4 +1,5 @@
 import { t } from '../../i18n'
+import { errorCode } from '../../error-code-core'
 import { settings } from '../../state'
 import { E, $, clearDirty } from './state'
 import { closeModal, openModal } from '../../ui/modal-manager'
@@ -656,13 +657,17 @@ const EXPORT_ERROR_CODES = [
  * Falls back to the raw text so an unfamiliar error still surfaces something
  * the user can search for.
  *
- * Matched by CONTAINMENT, not equality: `AppError` serializes as
- * "<category>: <code>" (e.g. "recording error: timeout"), so the old
- * `switch (err)` on the bare code never fired and every friendly message below
- * was dead — the user got "✕ Feil: validation: no_audio_remaining".
+ * Matched on the stable LEADING code (`errorCode()`, R3-C): `AppError`
+ * serializes as "<category>: <code>[: detail]", and an anywhere-in-the-message
+ * `includes` scan could fire on prose that merely mentions a code word. The
+ * one non-code entry — path_guard's `'path must be absolute'` message — keeps
+ * a containment fallback until it grows a snake code of its own.
  */
 export function describeExportError(err: string | undefined): string {
-  const code = err ? EXPORT_ERROR_CODES.find((c) => err.includes(c)) : undefined
+  const lead = errorCode(err)
+  const code =
+    EXPORT_ERROR_CODES.find((c) => c === lead) ??
+    (err ? EXPORT_ERROR_CODES.find((c) => err.includes(c)) : undefined)
   switch (code) {
     case 'no_audio_remaining':
       return '✕ ' + t('editor.errNoAudioRemaining', 'Ingen lyd igjen — kuttene dekker hele opptaket. Fjern minst ett kutt før du eksporterer.')

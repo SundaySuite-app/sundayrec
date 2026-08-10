@@ -256,7 +256,6 @@ export interface Settings {
 
   // System behaviour
   launchAtLogin: boolean
-  showOnStartup: boolean
   minimizeToTray: boolean
   wakeFromSleep: boolean
   protectRecording: boolean

@@ -255,9 +255,6 @@ declare global {
        *  feature) — the Filer-page gate's truth source. `null` = could not ask. */
       podcastFeedStatus:   () => Promise<{ featureBuilt: boolean; episodeCount: number } | null>
       registerTrustedPath: (filePath: string) => Promise<boolean>
-      gmailConnect:       () => Promise<{ ok: boolean; email?: string; error?: string }>
-      gmailDisconnect:    () => Promise<{ ok: boolean }>
-      gmailStatus:        () => Promise<{ connected: boolean; email?: string; needsReauth?: boolean }>
 
       // Mirrors the Rust `StreamStatus` (src-tauri/src/streaming/mod.rs) — which
       // is where the destinations shape came from, and where it never matched:
@@ -293,7 +290,6 @@ declare global {
       whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
       whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
-      youtubeConnect:      () => Promise<{ ok: boolean; error?: string }>
       youtubeDisconnect:   () => Promise<{ ok: boolean }>
       youtubeStatus:       () => Promise<{ connected: boolean }>
       youtubeUpload:       (filePath: string, metadata: unknown) => Promise<{ ok: boolean; videoId?: string; url?: string; error?: string }>

@@ -101,10 +101,14 @@ pub async fn run_diagnostics(app: &AppHandle, pool: &SqlitePool) -> AppResult<Di
         .map(|d| d.name)
         .collect();
 
-    // Save folder: free space + writability.
-    let folder = resolve_diag_folder(app, &s);
-    let free_disk_bytes = fs4::available_space(&folder).ok();
-    let save_folder_writable = Some(folder_is_writable(&folder));
+    // Save folder: free space + writability. An unresolvable folder (nothing
+    // configured, no Documents dir) reports honest unknowns rather than failing
+    // the whole diagnose — this is the tool you reach for when things are
+    // broken. Pre-R3 this could probe a literal "." (the unwrap_or sat outside
+    // the join); the canonical resolver never yields that.
+    let folder = crate::save_folder::resolve(app, s.save_folder.as_deref()).ok();
+    let free_disk_bytes = folder.as_deref().and_then(|f| fs4::available_space(f).ok());
+    let save_folder_writable = folder.as_deref().map(folder_is_writable);
 
     // OS permissions (macOS reports real status; elsewhere Unknown → None).
     let mic_permission = auth_to_opt(perm_status(MediaKind::Microphone));
@@ -317,24 +321,6 @@ fn auth_to_opt(s: AuthStatus) -> Option<String> {
         AuthStatus::NotDetermined => Some("not_determined".into()),
         AuthStatus::Unknown => None,
     }
-}
-
-/// Resolve the save folder for the diagnose probe (settings override → default).
-/// Mirrors the scheduler's resolver without depending on its private helper.
-fn resolve_diag_folder(
-    app: &AppHandle,
-    s: &sundayrec_core::settings::Settings,
-) -> std::path::PathBuf {
-    if let Some(f) = &s.save_folder {
-        if !f.trim().is_empty() {
-            return std::path::PathBuf::from(f);
-        }
-    }
-    app.path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .map(|d| d.join("SundayRec"))
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
 }
 
 /// Best-effort writability probe: create the dir, write + remove a marker file.

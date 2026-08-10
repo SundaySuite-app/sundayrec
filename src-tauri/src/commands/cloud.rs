@@ -126,7 +126,7 @@ pub async fn cloud_enqueue_backup(
     file_path: String,
     entry_timestamp: Option<i64>,
 ) -> AppResult<String> {
-    let root = crate::commands::path_guard::recordings_root(&app, &db).await;
+    let root = crate::commands::path_guard::recordings_root(&app, &db).await?;
     crate::commands::path_guard::check(
         &file_path,
         crate::commands::path_guard::PathPolicy::RecordingsRooted(&root),

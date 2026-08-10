@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tauri::{Manager, State};
+use tauri::State;
 use ts_rs::TS;
 
 use sundayrec_core::history::{decide_prune, PruneCandidate};
@@ -188,15 +188,6 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
     let s = settings::load(&db.pool).await.unwrap_or_default();
     let days = s.auto_delete_days as i64;
 
-    // Resolve the save folder (fall back to the OS documents dir, mirroring the
-    // Electron default). An empty save dir disables pruning in the core decision.
-    let save_dir = s.save_folder.clone().unwrap_or_else(|| {
-        app.path()
-            .document_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    });
-
     if days <= 0 {
         return Ok(PruneSummary {
             deleted: 0,
@@ -204,6 +195,14 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
             disabled: true,
         });
     }
+
+    // The canonical resolver (R3). The pre-R3 fallback was the BARE Documents
+    // directory, so `decide_prune`'s "lives under the save dir" guard accepted
+    // ANY file under Documents — pruning could unlink recordings (or rows)
+    // outside `<Documents>/SundayRec`, the folder the recorder writes into.
+    let save_dir = crate::save_folder::resolve(&app, s.save_folder.as_deref())?
+        .to_string_lossy()
+        .into_owned();
 
     let rows = store::list_recordings(&db.pool).await?;
     let cutoff_ms = (store::now_ms() as i64) - days * 86_400_000;
@@ -239,4 +238,36 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
         kept_awaiting_cloud: decision.kept_awaiting_cloud,
         disabled: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn prune_scopes_to_the_recordings_subfolder_not_bare_documents() {
+        // The exact resolution `recordings_prune` performs with no folder
+        // configured. Before R3 it resolved the BARE Documents dir, so
+        // `decide_prune`'s under-the-save-dir guard accepted any old file
+        // anywhere under Documents.
+        let dir =
+            crate::save_folder::resolve_with_documents(None, Some(Path::new("/Users/x/Documents")))
+                .unwrap();
+        assert_eq!(dir, PathBuf::from("/Users/x/Documents/SundayRec"));
+    }
+
+    #[test]
+    fn prune_resolves_only_through_the_canonical_resolver() {
+        // Source ratchet: fails if someone re-inlines a Documents lookup here.
+        let src = include_str!("db.rs");
+        assert!(
+            src.contains("save_folder::resolve("),
+            "recordings_prune must resolve via crate::save_folder::resolve"
+        );
+        let needle = concat!("document", "_dir");
+        assert!(
+            !src.contains(needle),
+            "db commands must not resolve the Documents dir themselves"
+        );
+    }
 }

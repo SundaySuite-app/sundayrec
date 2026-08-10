@@ -269,10 +269,6 @@ reminderMinutes: number,
  */
 launchAtLogin: boolean, 
 /**
- * Show the window on startup (vs starting in the tray)?
- */
-showOnStartup: boolean, 
-/**
  * Minimise to the system tray instead of quitting? Default true.
  */
 minimizeToTray: boolean, 

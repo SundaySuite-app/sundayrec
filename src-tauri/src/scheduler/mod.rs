@@ -323,11 +323,16 @@ async fn fire(
                 tracing::warn!(
                     "scheduler: a recording is already active — skipping the scheduled start"
                 );
-                notify_user(
-                    app,
-                    "SundayRec",
-                    "Planlagt opptak hoppet over — et opptak pågår allerede.",
-                );
+                // ALWAYS fires — a skipped scheduled start is a problem report:
+                // should_notify pins SkippedBusy on regardless of the
+                // notify_start/notify_stop comfort toggles.
+                if should_notify(SchedulerNotice::SkippedBusy, settings) {
+                    notify_user(
+                        app,
+                        "SundayRec",
+                        "Planlagt opptak hoppet over — et opptak pågår allerede.",
+                    );
+                }
                 return;
             }
             let (custom_name, slot_max) = match ev.source {
@@ -365,6 +370,14 @@ async fn fire(
                                 sundayrec_core::telemetry::CounterName::RecordingStartedScheduled,
                             );
                             tracing::info!("scheduler: started scheduled recording");
+                            // R3-H: «Varsel på PC når opptak starter» — the
+                            // unattended case is exactly when this is useful (a
+                            // manual start needs no notification; the operator
+                            // just pressed the button). Gated; the FAILURE arms
+                            // below are not.
+                            if should_notify(SchedulerNotice::StartedScheduled, settings) {
+                                notify_user(app, "SundayRec", "Planlagt opptak startet.");
+                            }
                         }
                         // A scheduled recording that does not start is the single
                         // worst thing this app can do quietly: nobody is watching
@@ -407,13 +420,25 @@ async fn fire(
         ScheduledEventKind::Stop => {
             app.state::<RecorderEngine>().stop();
             tracing::info!("scheduler: stop fired");
+            // R3-H: «Varsel på PC når opptak avsluttes». Fires when the
+            // scheduled stop is DISPATCHED (finalisation continues in the
+            // engine); a stop that later fails to finalise reaches the operator
+            // through the failure dispatch, which is never gated.
+            if should_notify(SchedulerNotice::StoppedScheduled, settings) {
+                notify_user(app, "SundayRec", "Planlagt opptak avsluttet.");
+            }
         }
         ScheduledEventKind::Reminder => {
             let body = reminder_body(settings.language.as_deref(), settings.reminder_minutes);
-            notify_user(app, "SundayRec", &body);
+            // ALWAYS fires (should_notify pins Reminder on — not governed by
+            // notify_start/notify_stop): the reminder has its own opt-in,
+            // `reminder_minutes` = 0 means the event is never scheduled at all.
+            if should_notify(SchedulerNotice::Reminder, settings) {
+                notify_user(app, "SundayRec", &body);
+            }
         }
         ScheduledEventKind::Preflight => {
-            run_scheduled_preflight(app, pool).await;
+            run_scheduled_preflight(app, pool, settings).await;
         }
     }
 }
@@ -435,7 +460,7 @@ pub(crate) fn build_opts(
     // local UI state that isn't persisted); `None` uses the setting (scheduler).
     video_override: Option<bool>,
 ) -> AppResult<RecordingOpts> {
-    let folder = resolve_save_folder(app, settings);
+    let folder = crate::save_folder::resolve(app, settings.save_folder.as_deref())?;
     std::fs::create_dir_all(&folder)?;
 
     // Video is on when the user wants it (override, else the setting) AND a camera
@@ -526,21 +551,6 @@ pub(crate) fn build_opts(
     })
 }
 
-/// `<saveFolder>` or the default `<Documents>/SundayRec`.
-fn resolve_save_folder(app: &AppHandle, settings: &Settings) -> std::path::PathBuf {
-    if let Some(f) = &settings.save_folder {
-        if !f.trim().is_empty() {
-            return std::path::PathBuf::from(f);
-        }
-    }
-    let base = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    base.join("SundayRec")
-}
-
 fn format_ext(f: FileFormat) -> &'static str {
     match f {
         FileFormat::Mp3 => "mp3",
@@ -554,21 +564,22 @@ fn format_ext(f: FileFormat) -> &'static str {
 //   Preflight + missed-check
 // ─────────────────────────────────────────────────────────────────────────────
 
-async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool) {
+async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &Settings) {
     use sundayrec_core::preflight::PreflightSeverity;
-    let documents = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().app_data_dir())
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let outcome = crate::preflight::run_preflight_detailed(pool, &documents).await;
+    let documents = crate::save_folder::documents_dir(app);
+    let outcome = crate::preflight::run_preflight_detailed(pool, documents.as_deref()).await;
     let findings = outcome.findings;
     let errors: Vec<_> = findings
         .iter()
         .filter(|f| f.severity == PreflightSeverity::Error)
         .collect();
     if let Some(first) = errors.first() {
-        notify_user(app, "SundayRec — sjekk før opptak", &first.message);
+        // ALWAYS fires — a preflight ERROR half an hour before a service is a
+        // problem report: should_notify pins PreflightFinding on regardless of
+        // the notify_start/notify_stop comfort toggles.
+        if should_notify(SchedulerNotice::PreflightFinding, settings) {
+            notify_user(app, "SundayRec — sjekk før opptak", &first.message);
+        }
     }
 
     // The preflight card only appears if someone opens the app. A configured
@@ -747,6 +758,44 @@ fn notify_user(app: &AppHandle, title: &str, body: &str) {
     crate::notify::native(app, title, body);
 }
 
+/// The scheduler's notification classes, for [`should_notify`]. Only the two
+/// SUCCESS notices are operator-silenceable; everything else is a problem
+/// report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SchedulerNotice {
+    /// «Planlagt opptak startet.» — governed by `notify_start`.
+    StartedScheduled,
+    /// «Planlagt opptak avsluttet.» — governed by `notify_stop`.
+    StoppedScheduled,
+    /// A scheduled start was skipped because a recording is already active.
+    SkippedBusy,
+    /// The pre-service reminder («Opptak starter om N minutter»). Its own gate
+    /// is `reminder_minutes` (0 = the event is never scheduled at all).
+    Reminder,
+    /// A scheduled-preflight ERROR finding («sjekk før opptak»).
+    PreflightFinding,
+}
+
+/// Whether the operator's «Varsle når opptak starter/stopper» toggles
+/// (`notify_start`/`notify_stop` — R3-H, the first thing that ever READ them)
+/// allow this notice.
+///
+/// INVARIANT, pinned by `failure_notices_ignore_the_toggles` below: only the
+/// two success notices are gated. Every failure/problem class — the skipped
+/// start, preflight findings, and everything routed through
+/// [`dispatch_scheduler_failure`]/[`crate::notify::dispatch_failure`] (which
+/// deliberately never consults this function) — ALWAYS fires: a failed
+/// recording mid-service must never be silenced by a comfort toggle.
+fn should_notify(notice: SchedulerNotice, settings: &Settings) -> bool {
+    match notice {
+        SchedulerNotice::StartedScheduled => settings.notify_start,
+        SchedulerNotice::StoppedScheduled => settings.notify_stop,
+        SchedulerNotice::SkippedBusy
+        | SchedulerNotice::Reminder
+        | SchedulerNotice::PreflightFinding => true,
+    }
+}
+
 /// A scheduled recording did not happen. Routes the SAME sentence the operator
 /// used to see as a bare native notification through the full dispatch, so it
 /// also reaches the inbox and the chat channel of whoever configured them.
@@ -784,6 +833,45 @@ fn reminder_body(lang: Option<&str>, minutes: i32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── R3-H: the notify_start/notify_stop gate ──────────────────────────────
+
+    #[test]
+    fn the_toggles_silence_exactly_their_own_success_notice() {
+        // «Varsle når opptak starter/stopper» OFF → that notice is suppressed.
+        // Before R3-H nothing read these settings at all (the toggles saved and
+        // changed nothing).
+        let mut s = Settings {
+            notify_start: false,
+            notify_stop: true,
+            ..Settings::default()
+        };
+        assert!(!should_notify(SchedulerNotice::StartedScheduled, &s));
+        assert!(should_notify(SchedulerNotice::StoppedScheduled, &s));
+
+        s.notify_start = true;
+        s.notify_stop = false;
+        assert!(should_notify(SchedulerNotice::StartedScheduled, &s));
+        assert!(!should_notify(SchedulerNotice::StoppedScheduled, &s));
+    }
+
+    #[test]
+    fn failure_notices_ignore_the_toggles() {
+        // THE invariant: with BOTH comfort toggles off, every problem-report
+        // class still fires. A failed or skipped recording mid-service must
+        // never be silenced — the failure dispatch path
+        // (dispatch_scheduler_failure → notify::dispatch_failure) never even
+        // consults should_notify, and the classes it and the direct sites use
+        // are pinned always-on here.
+        let s = Settings {
+            notify_start: false,
+            notify_stop: false,
+            ..Settings::default()
+        };
+        assert!(should_notify(SchedulerNotice::SkippedBusy, &s));
+        assert!(should_notify(SchedulerNotice::PreflightFinding, &s));
+        assert!(should_notify(SchedulerNotice::Reminder, &s));
+    }
 
     #[test]
     fn fmt_dt_is_zoneless_local_iso() {

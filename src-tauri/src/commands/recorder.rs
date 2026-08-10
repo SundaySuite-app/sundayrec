@@ -50,7 +50,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use ts_rs::TS;
 
 use sundayrec_core::device_match::FfmpegDevice;
@@ -513,34 +513,36 @@ pub struct DiskSpace {
 /// Extracted (E5.3) because the fallback chain is real logic that used to be
 /// reachable only through `AppHandle` + a live filesystem: an unset save folder,
 /// a save folder on an ejected USB stick, and no documents dir at all are three
-/// different answers, and the last one must still be *a* path or the probe
-/// reports "unknown free space" on a perfectly healthy machine.
+/// different answers.
 ///
-/// Mirrors the Electron `if (!fs.existsSync(folder)) folder = documents` guard.
+/// R3: the folder itself comes from the canonical resolver; this function only
+/// adds the Electron `if (!fs.existsSync(folder)) folder = documents` volume
+/// fallback (a default `<Documents>/SundayRec` that hasn't been created yet
+/// still sits on the Documents volume). With nothing to stat it returns `None`
+/// — "free space unknown" — instead of the pre-R3 relative `"."`, which
+/// reported the free space of whatever the process's working directory was.
 /// `exists` is injected so the test does not need the directories to be real.
 pub fn resolve_disk_probe_path(
     save_folder: Option<&str>,
     documents_dir: Option<std::path::PathBuf>,
     exists: impl Fn(&std::path::Path) -> bool,
-) -> std::path::PathBuf {
-    let configured = save_folder
-        .map(std::path::PathBuf::from)
-        .or_else(|| documents_dir.clone())
-        .unwrap_or_default();
-    if !configured.as_os_str().is_empty() && exists(&configured) {
-        return configured;
+) -> Option<std::path::PathBuf> {
+    let resolved =
+        sundayrec_core::settings::resolve_save_folder(save_folder, documents_dir.as_deref()).ok();
+    match resolved {
+        Some(folder) if exists(&folder) => Some(folder),
+        _ => documents_dir,
     }
-    documents_dir.unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
 /// Read the free disk space for the configured save folder.
 #[tauri::command]
 pub async fn get_disk_space(app: AppHandle, db: State<'_, Db>) -> AppResult<DiskSpace> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
-    let documents = app.path().document_dir().ok();
+    let documents = crate::save_folder::documents_dir(&app);
     let probe = resolve_disk_probe_path(s.save_folder.as_deref(), documents, |p| p.exists());
     Ok(DiskSpace {
-        free_bytes: fs4::available_space(&probe).ok(),
+        free_bytes: probe.and_then(|p| fs4::available_space(&p).ok()),
     })
 }
 
@@ -1010,7 +1012,7 @@ mod tests {
                 Some(p("/Users/x/Documents")),
                 |_| true
             ),
-            p("/Volumes/Stick")
+            Some(p("/Volumes/Stick"))
         );
     }
 
@@ -1023,23 +1025,31 @@ mod tests {
                 Some(p("/Users/x/Documents")),
                 |_| false
             ),
-            p("/Users/x/Documents")
+            Some(p("/Users/x/Documents"))
         );
     }
 
     #[test]
-    fn disk_probe_uses_documents_when_no_save_folder_is_configured() {
+    fn disk_probe_uses_the_default_subfolder_when_it_exists() {
+        // R3: the unset-folder default is the canonical `<Documents>/SundayRec`,
+        // not the bare Documents dir.
         assert_eq!(
             resolve_disk_probe_path(None, Some(p("/Users/x/Documents")), |_| true),
-            p("/Users/x/Documents")
+            Some(p("/Users/x/Documents/SundayRec"))
+        );
+        // Not created yet → stat the volume it hangs under.
+        assert_eq!(
+            resolve_disk_probe_path(None, Some(p("/Users/x/Documents")), |_| false),
+            Some(p("/Users/x/Documents"))
         );
     }
 
     #[test]
-    fn disk_probe_never_returns_an_empty_path() {
-        // An empty path makes `available_space` fail, which the UI reads as
-        // "free space unknown" on a perfectly healthy machine.
-        assert_eq!(resolve_disk_probe_path(None, None, |_| true), p("."));
-        assert_eq!(resolve_disk_probe_path(Some(""), None, |_| true), p("."));
+    fn disk_probe_never_returns_a_relative_path() {
+        // Pre-R3 this returned "." — the free space of the process's working
+        // directory, which is not any disk the recording lands on. `None` is
+        // the honest "free space unknown".
+        assert_eq!(resolve_disk_probe_path(None, None, |_| true), None);
+        assert_eq!(resolve_disk_probe_path(Some(""), None, |_| true), None);
     }
 }

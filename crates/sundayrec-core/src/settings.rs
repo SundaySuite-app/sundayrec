@@ -377,9 +377,6 @@ pub struct Settings {
     /// Launch the app at OS login?
     #[serde(default)]
     pub launch_at_login: bool,
-    /// Show the window on startup (vs starting in the tray)?
-    #[serde(default)]
-    pub show_on_startup: bool,
     /// Minimise to the system tray instead of quitting? Default true.
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
@@ -672,7 +669,6 @@ impl Default for Settings {
             reminder_minutes: 0,
 
             launch_at_login: false,
-            show_on_startup: false,
             minimize_to_tray: true,
             wake_from_sleep: true,
             protect_recording: true,
@@ -833,6 +829,57 @@ impl Settings {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//   Save-folder resolution — THE canonical resolver
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The default folder name under the OS Documents directory, i.e. the
+/// `<Documents>/SundayRec` every screen and background job means when no
+/// `save_folder` is configured (mirrors Electron `preflight.ts:39`).
+pub const DEFAULT_SAVE_SUBFOLDER: &str = "SundayRec";
+
+/// No save folder could be resolved: nothing is configured AND the platform
+/// could not report a usable Documents (or app-data) directory. The message
+/// leads with the stable `no_save_folder` snake code the renderer localizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoSaveFolder;
+
+impl std::fmt::Display for NoSaveFolder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            "no_save_folder: no folder is configured and the OS reported no Documents directory",
+        )
+    }
+}
+
+impl std::error::Error for NoSaveFolder {}
+
+/// Resolve the effective save folder — the ONE rule every caller shares
+/// (recorder, scheduler, preflight, diagnostics, prune, trash sweep, disk
+/// probes, path guards):
+///
+///   - a non-blank configured `save_folder` wins verbatim;
+///   - otherwise the default is `<documents_dir>/SundayRec` — the SUBFOLDER,
+///     never the bare Documents directory (three pre-R3 callers pruned/swept
+///     the PARENT because they skipped the join);
+///   - no configured folder and no usable Documents dir is an ERROR — never a
+///     silent `"."`, which would point destructive jobs at whatever the
+///     process's working directory happens to be.
+pub fn resolve_save_folder(
+    save_folder: Option<&str>,
+    documents_dir: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf, NoSaveFolder> {
+    if let Some(f) = save_folder {
+        if !f.trim().is_empty() {
+            return Ok(std::path::PathBuf::from(f));
+        }
+    }
+    match documents_dir {
+        Some(d) if !d.as_os_str().is_empty() => Ok(d.join(DEFAULT_SAVE_SUBFOLDER)),
+        _ => Err(NoSaveFolder),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -891,7 +938,6 @@ mod tests {
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
-        assert!(!s.show_on_startup);
         assert!(s.minimize_to_tray);
         assert!(s.wake_from_sleep);
         assert!(s.protect_recording);
@@ -1450,5 +1496,46 @@ mod tests {
         let mut back = Settings::from_json_merged(&json);
         back.validate();
         assert_eq!(back, original);
+    }
+
+    // ── resolve_save_folder — the canonical rule ─────────────────────────────
+
+    #[test]
+    fn resolve_save_folder_configured_wins_verbatim() {
+        let docs = std::path::Path::new("/Users/x/Documents");
+        assert_eq!(
+            resolve_save_folder(Some("/Volumes/Rig/Opptak"), Some(docs)).unwrap(),
+            std::path::PathBuf::from("/Volumes/Rig/Opptak")
+        );
+    }
+
+    #[test]
+    fn resolve_save_folder_default_is_the_subfolder_never_bare_documents() {
+        // The pre-R3 bug: three callers (trash sweep, recordings_prune, trash
+        // commands) used the BARE Documents dir as the recordings root. The
+        // canonical rule always appends the subfolder.
+        let docs = std::path::Path::new("/Users/x/Documents");
+        for unset in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                resolve_save_folder(unset, Some(docs)).unwrap(),
+                std::path::PathBuf::from("/Users/x/Documents/SundayRec")
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_save_folder_without_documents_errors_never_dot() {
+        // diagnostics/mod.rs pre-R3 could yield a literal "." (the unwrap_or
+        // sat OUTSIDE the join). The canonical rule refuses instead.
+        for docs in [None, Some(std::path::Path::new(""))] {
+            let err = resolve_save_folder(None, docs).unwrap_err();
+            assert_eq!(err, NoSaveFolder);
+            assert!(err.to_string().starts_with("no_save_folder"));
+        }
+        // A configured folder needs no Documents dir at all.
+        assert_eq!(
+            resolve_save_folder(Some("/Volumes/Rig/Opptak"), None).unwrap(),
+            std::path::PathBuf::from("/Volumes/Rig/Opptak")
+        );
     }
 }

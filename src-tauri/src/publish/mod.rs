@@ -6,18 +6,17 @@
 //!   - turn the recording history (+ a per-recording public-share-URL map) into
 //!     [`PodcastEpisode`]s ([`episodes_from_rows`], a pure, tested mapping),
 //!   - build the feed XML and write `podcast.xml` next to the save folder
-//!     ([`write_feed`]),
-//!   - upload it to Drive + make it public ([`publish_feed`] — the
-//!     NETWORK-UNVERIFIED part).
+//!     ([`write_feed`]).
 //!
-//! ## ⚠️ NETWORK-UNVERIFIED / schema gap
+//! ## ⚠️ Schema gap — no upload half yet
 //!
-//! [`publish_feed`] is wired to compile under `--features publish` but its Drive
-//! upload + share-URL creation are unproven on the wire. The per-recording
-//! public-share URLs it consumes are not yet persisted — the current `recording`
-//! table has no `cloudUrls` column (the Electron history did). Until that lands,
-//! the caller supplies the share-URL map explicitly (and `episodes_from_rows`
-//! simply skips rows without one). See docs/NEEDS-RICHARD.md (PU-3).
+//! The Drive upload + public-share-URL creation are NOT implemented (a dead
+//! `publish_feed` wrapper that pretended otherwise was removed in R3). The
+//! per-recording public-share URLs a feed needs are not yet persisted — the
+//! current `recording` table has no `cloudUrls` column (the Electron history
+//! did). Until that lands, the caller supplies the share-URL map explicitly
+//! (and `episodes_from_rows` simply skips rows without one). See
+//! docs/NEEDS-RICHARD.md (PU-3).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -97,39 +96,12 @@ pub fn write_feed(
     Ok(path)
 }
 
-/// Build + write the feed, then upload it to Drive and make it public, returning
-/// the public feed URL. **NETWORK-UNVERIFIED** — the Drive upload + share-URL
-/// creation are wired but unproven on the wire, and the per-recording share URLs
-/// are not yet persisted (see the module header + docs/NEEDS-RICHARD.md). The
-/// `_access_token` is threaded in (the caller mints it like the cloud worker);
-/// the actual Drive calls are deferred to the glue commit.
-pub async fn publish_feed(
-    save_folder: &Path,
-    channel: &PodcastChannel,
-    episodes: &[PodcastEpisode],
-    _access_token: &str,
-) -> AppResult<PublishOutcome> {
-    let local_path = write_feed(save_folder, channel, episodes)?;
-    // NETWORK-UNVERIFIED: the Drive resumable upload + createPublicShareUrl glue
-    // (reusing the cloud worker's upload path) lands once a recording→share-URL
-    // column exists to feed it. For now we report the local write so the UI can
-    // surface "feed written locally; connect Drive to publish".
-    Ok(PublishOutcome {
-        local_path,
-        feed_url: None,
-        episode_count: episodes.len(),
-    })
-}
-
-/// The result of a publish attempt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PublishOutcome {
-    /// Where the feed was written on disk.
-    pub local_path: PathBuf,
-    /// The public feed URL once uploaded + shared (None until the Drive glue lands).
-    pub feed_url: Option<String>,
-    pub episode_count: usize,
-}
+// R3 note: a `publish_feed` half-implementation used to live here — it wrapped
+// [`write_feed`] and returned a `PublishOutcome` whose Drive-upload half never
+// landed. The command layer (`commands/publish.rs::publish_feed_preview`)
+// superseded it by calling [`write_feed`] directly, so the wrapper was a dead
+// second entry point pretending to be the upload path. The real upload lands
+// with the recording→share-URL column (docs/NEEDS-RICHARD.md, PU-3).
 
 #[cfg(test)]
 mod tests {

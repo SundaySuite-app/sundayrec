@@ -202,9 +202,10 @@ pub async fn publish_generate_feed(db: State<'_, Db>) -> AppResult<FeedPreview> 
         let channel = resolve_channel(&db).await?;
         let rows = store::list_recordings(&db.pool).await?;
         let episodes = preview_episodes(&rows);
-        // NETWORK-UNVERIFIED: the Drive upload + share-URL creation land once a
-        // recording→share-URL column exists; for now we write the feed locally and
-        // report the path (mirrors `crate::publish::publish_feed`'s local half).
+        // The Drive upload + share-URL creation land once a recording→share-URL
+        // column exists; until then this writes the feed locally and reports
+        // the path (the whole implemented half of publishing — see
+        // `crate::publish`'s module docs).
         let path = crate::publish::write_feed(Path::new(&save_folder), &channel, &episodes)?;
         let xml = std::fs::read_to_string(&path)?;
         Ok(FeedPreview {

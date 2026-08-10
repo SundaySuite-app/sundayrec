@@ -2,7 +2,7 @@
 //!
 //! Ported from the Electron main process `src/main/cloud/*` (the behavioural
 //! specification). That code interleaved the *decisions* (PKCE derivation,
-//! auth-URL shaping, OAuth-callback validation, retry classification, the
+//! auth-URL shaping, OAuth-callback validation, the
 //! upload-queue state machine, Drive's resumable-chunk arithmetic) with the
 //! actual I/O (`fetch`, `electron-store`, `safeStorage`, an `http` loopback
 //! server). Here we keep ONLY the deterministic decisions: every function takes
@@ -23,7 +23,6 @@
 //!
 //! Submodules:
 //!   - [`oauth`] — PKCE challenge, auth-URL + token-request builders, token-response parsing, loopback-callback validation, state-replay guard, refresh-error classification
-//!   - [`retry`] — transient-error classification, `Retry-After` parsing, exponential-backoff delay (the deterministic part of `withRetry`)
 //!   - [`queue`] — the upload-queue state machine (enqueue/dedup, select-next, success/failure transitions, backoff schedule, next-wakeup)
 //!   - [`drive`] — Drive resumable-upload arithmetic: chunk planning, `Content-Range` building, resume-offset parsing, MIME mapping
 
@@ -33,7 +32,6 @@ use ts_rs::TS;
 pub mod drive;
 pub mod oauth;
 pub mod queue;
-pub mod retry;
 
 /// A cloud service the user can connect via OAuth. Serialised kebab-case to
 /// match the Electron `TokenServiceId` strings exactly (`'google-drive'`,

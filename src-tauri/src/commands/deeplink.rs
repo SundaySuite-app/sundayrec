@@ -330,7 +330,23 @@ pub async fn offer_captions<R: Runtime>(
     subtitle: String,
 ) {
     let root = match app.try_state::<Db>() {
-        Some(db) => path_guard::recordings_root(app, &db).await,
+        Some(db) => match path_guard::recordings_root(app, &db).await {
+            Ok(root) => root,
+            // No resolvable recordings root: fail CLOSED like the no-Db arm —
+            // an unscoped captions import must never happen.
+            Err(e) => {
+                tracing::warn!("deeplink: no recordings root, refusing captions hand-back: {e}");
+                let _ = app.emit(
+                    captions_event,
+                    serde_json::json!({
+                        "ok": false,
+                        "recording": recording,
+                        "error": CaptionsReject::RecordingOutsideSaveFolder.code(),
+                    }),
+                );
+                return;
+            }
+        },
         // No database (should not happen in a running app): fail CLOSED rather
         // than fall back to an unscoped import.
         None => {
@@ -411,7 +427,7 @@ pub async fn deeplink_confirm_captions(
         return Ok(OpResult::error_code("declined"));
     }
 
-    let root = path_guard::recordings_root(&app, &db).await;
+    let root = path_guard::recordings_root(&app, &db).await?;
     match validate_captions_request(Some(&request.recording), &request.subtitle, &root) {
         Ok(v) => integrations_sundayedit_import(v.recording, v.subtitle, None),
         Err(reject) => {

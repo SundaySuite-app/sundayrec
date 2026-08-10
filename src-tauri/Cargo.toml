@@ -44,7 +44,14 @@ default = ["editor", "whisper", "tray", "updater", "email", "streaming"]
 email = ["dep:lettre"]
 # PU-2: native menubar tray + `sundayrec://` scheme handler.
 tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
-# PU-3: write/upload the podcast RSS feed (reuses `reqwest` + the cloud worker).
+# PU-3: write/upload the podcast RSS feed. DELIBERATELY an empty feature: it
+# pulls no dependency (the XML shaping is `sundayrec-core::feed`, the planned
+# upload reuses `reqwest` + the cloud worker) — it exists only as the cfg-gate
+# `commands/publish.rs` switches the local feed WRITE on, and as the named
+# switch the Drive-upload half attaches to when the recording→share-URL column
+# lands (docs/NEEDS-RICHARD.md; R4 candidate). Not in `default`: without the
+# upload half the feature is a local file write the UI reports honestly via
+# `publish_feed_status.featureBuilt`.
 publish = []
 # R1: non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/
 # export/frame-extract over the unit-tested
@@ -230,6 +237,12 @@ ts-rs = { version = "12", features = ["serde-compat"] }
 # heavier `sysinfo` (which pulls a whole process/CPU/disk inventory we don't
 # need just to read free bytes on one volume).
 fs4 = "1.1"
+
+# R3-F: move the Electron-era app-data directory to the OS trash (Papirkurven /
+# Recycle Bin / XDG trash) with user-side recoverability — the consented cleanup
+# in `commands/legacy_data.rs` must NEVER delete bytes in place, and the app's
+# own `.sundayrec-trash` is manifest/file-shaped and cannot purge a directory.
+trash = "5"
 
 # HTTP client for the cloud upload worker + OAuth token exchange/refresh (Fase
 # 6). rustls (no system OpenSSL). The pure decisions (chunk math, retry

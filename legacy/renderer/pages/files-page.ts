@@ -2,6 +2,7 @@ import { settings, patchSettings, saveSettingsDebounced } from '../state'
 import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
 import { setVal, setRadio, isoDate } from '../helpers'
 import { t } from '../i18n'
+import { errorCode } from '../error-code-core'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
 import { reconcilePreroll } from '../preroll-lifecycle'
@@ -193,14 +194,15 @@ export function setupFilesPage(): void {
           showFeedUrl(result.feedUrl)
         }
       } else {
-        // The backend's AppError arrives as «validation: <code>: <detail>», so
-        // the two Tauri-era codes match on `includes`, not equality.
-        const err = result.error ?? ''
+        // The backend's AppError arrives as «validation: <code>: <detail>» —
+        // branch on the stable leading code (errorCode, R3-C), never on
+        // message prose.
+        const code = errorCode(result.error)
         const reason = result.error === 'not_connected'    ? t('publish.errConnectFirst',    'koble til skytjenesten først')
                      : result.error === 'no_save_folder'   ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
                      : result.error === 'podcast_disabled' ? t('publish.errEnablePodcast',   'aktiver podcast først')
-                     : err.includes('feature_disabled')    ? t('publish.unavailableBuild',   'ikke med i denne bygningen av SundayRec')
-                     : err.includes('no_config')           ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
+                     : code === 'feature_disabled'         ? t('publish.unavailableBuild',   'ikke med i denne bygningen av SundayRec')
+                     : code === 'no_config'                ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
                      : result.error ?? t('publish.errUnknown', 'ukjent feil')
         status.textContent = `✕ ${reason}`
       }
