@@ -206,14 +206,12 @@ Two places where the text and the storage are worth reading carefully together:
   the correction — a correction made three weeks ago drains today — so the
   sentence is defensible, and the distinction is the one to state if anyone
   asks, rather than repeating the sentence.
-- **The text's example is about dragging the guessed start or end.** The wire
-  also carries `sermon_pick_start` / `sermon_pick_end`, which is a person
-  promoting a _different block_, measured at each end. Same shape, same bands,
-  same guarantees — and `corrections.rs` keeps the two families apart on purpose
-  because they describe different failures. But the Norwegian paragraph does not
-  name that act. It is covered by the sentence's shape and unnamed by its
-  example, which is an owner decision to make deliberately (name it in the text,
-  or drop the two signals) rather than one to leave implicit.
+- **Both correction families are named in the text** (resolved 2026-08-10, owner
+  decision). `PRIVACY.md`'s correction section now describes the two acts
+  separately — dragging the guessed start/end, and promoting a _different
+  block_ (`sermon_pick_start` / `sermon_pick_end`) — and states that they are
+  reported apart because they describe different failures. Nothing on the wire
+  changed; the text caught up with it.
 
 ## 4. Aggregate — what the server keeps
 

@@ -166,10 +166,16 @@ Selve tidspunktet opptaket ble avsluttet følger med, sammen med varigheten. Se
 
 ### Korrigeringene du gjør i redigeringsverktøyet
 
-Når SundayRec gjetter hvor prekenen begynner og slutter, og du flytter på det,
-sendes **hvor ofte** du flyttet noe og **omtrent hvor mye** — oppgitt som et
-grovt intervall, for eksempel «prekenstarten ble flyttet 30–60 sekunder
-tidligere».
+Det finnes to måter å rette appens gjetning på, og begge telles. Den ene er å
+**flytte på grensene** — appen fant riktig del av opptaket, men begynte eller
+sluttet litt feil. Den andre er å **velge en annen del av opptaket** — appen
+trodde noe annet var prekenen, for eksempel et leseinnslag eller en sang, og du
+pekte på den riktige blokka. De to rapporteres hver for seg, fordi de forteller
+oss to ulike ting om hva som gikk galt.
+
+For begge sendes det samme: **hvor ofte** det skjedde og **omtrent hvor mye**
+grensen flyttet seg — oppgitt som et grovt intervall, for eksempel
+«prekenstarten ble flyttet 30–60 sekunder tidligere».
 
 Intervallene er med vilje grove. Hensikten er å se mønstre på tvers av mange
 opptak — at forslaget for eksempel systematisk kommer litt for sent — ikke å
