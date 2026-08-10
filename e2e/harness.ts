@@ -151,6 +151,18 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
       };
     }
 
+    // `@tauri-apps/api`'s `unlisten` goes to a SECOND internals object
+    // (`__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener`) that only the
+    // real event plugin installs. Without it every page-switch that tears a
+    // listener down (e.g. home → settings stopping the VU feed) threw an
+    // unhandled TypeError into the console. A no-op is the truth here: the
+    // harness's `plugin:event|listen` never registers anything to remove.
+    if (!w.__TAURI_EVENT_PLUGIN_INTERNALS__) {
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener() {},
+      };
+    }
+
     const revive = (v: unknown): unknown => {
       if (v && typeof v === "object") {
         const o = v as Record<string, unknown>;

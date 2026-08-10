@@ -543,10 +543,15 @@ const platform = navigator.userAgent.toLowerCase().includes("mac")
 
 // Common stub shapes so renderers that read fields/iterate don't throw.
 const okFalse = { connected: false, configured: false };
+// Keys MUST be the renderer's `CloudServiceId` strings ('google-drive' &c.) —
+// publish-page indexes `status['google-drive'].connected` per visible card, so
+// the old camelCase spelling (`googleDrive`) made every refresh throw an
+// unhandled TypeError and left the card frozen in its markup state. Found by
+// the v0.14 no-live-surface e2e's clean-console assertion.
 const cloudStatusStub = {
-  googleDrive: { connected: false },
+  "google-drive": { connected: false },
   dropbox: { connected: false },
-  oneDrive: { connected: false },
+  onedrive: { connected: false },
 };
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
 type RecordingRow = {
