@@ -20,8 +20,14 @@
     "ok": "REDO ATT SPELA IN",
     "warn": "ÅTGÄRD KRÄVS",
     "noSchedule": "Ingen inspelning schemalagd",
-    "preflightErrors": "{n} fel måste åtgärdas före inspelningen",
-    "preflightWarns": "{n} saker att se över före inspelningen",
+    "preflightErrors": {
+      "one": "{n} fel måste åtgärdas före inspelningen",
+      "other": "{n} fel måste åtgärdas före inspelningen"
+    },
+    "preflightWarns": {
+      "one": "{n} sak att se över före inspelningen",
+      "other": "{n} saker att se över före inspelningen"
+    },
     "preflightAction": "Öppna inställningar",
     "dismiss": "Dölj",
     "preflightMore": "till — se Inställningar → Ljud"
@@ -154,9 +160,14 @@
     "deleteFailed": "Kunde inte radera",
     "clearNone": "Listan är tom",
     "errorsNone": "Inga felposter",
-    "confirmClearN": "Radera alla {n} posterna?",
-    "confirmDeleteErrorsOne": "Radera 1 felpost?",
-    "confirmDeleteErrorsN": "Radera {n} felposter?",
+    "confirmClear": {
+      "one": "Radera posten?",
+      "other": "Radera alla {n} posterna?"
+    },
+    "confirmDeleteErrors": {
+      "one": "Radera {n} felpost?",
+      "other": "Radera {n} felposter?"
+    },
     "emptyFiltered": "Inga inspelningar i det här filtret"
   },
   "trash": {
@@ -168,30 +179,53 @@
     "empty": "Papperskorgen är tom.",
     "alreadyEmpty": "Papperskorgen är tom",
     "deleteEntry": "Flytta till papperskorgen",
-    "movedOne": "”{name}” ligger i papperskorgen",
-    "movedN": "{n} inspelningar ligger i papperskorgen",
+    "moved": {
+      "one": "{n} inspelning ligger i papperskorgen",
+      "other": "{n} inspelningar ligger i papperskorgen"
+    },
     "undo": "Ångra",
     "undoFailed": "Kunde inte hämta tillbaka allt — se i papperskorgen.",
-    "clearHistoryBody": "Inspelningarna flyttas till papperskorgen, där de ligger i {d} dagar innan de raderas för gott.",
-    "deleteErrorsBody": "{n} poster med fel tas bort. Filer som finns flyttas till papperskorgen.",
+    "clearHistoryBody": {
+      "one": "Inspelningarna flyttas till papperskorgen, där de ligger i {d} dag innan de raderas för gott.",
+      "other": "Inspelningarna flyttas till papperskorgen, där de ligger i {d} dagar innan de raderas för gott."
+    },
+    "deleteErrorsBody": {
+      "one": "{n} post med fel tas bort. Filer som finns flyttas till papperskorgen.",
+      "other": "{n} poster med fel tas bort. Filer som finns flyttas till papperskorgen."
+    },
     "restore": "Återställ",
     "restoreFailed": "Kunde inte återställa",
     "deleteForever": "Radera för gott",
     "confirmPurgeOne": "Radera ”{name}” för gott?",
-    "confirmEmptyN": "Radera {n} inspelningar för gott?",
+    "confirmEmpty": {
+      "one": "Radera {n} inspelning för gott?",
+      "other": "Radera {n} inspelningar för gott?"
+    },
     "confirmEmptyBody": "Filerna raderas från disken. Detta kan inte ångras.",
     "deletedAt": "Raderad",
     "today": "i dag",
     "yesterday": "i går",
-    "daysAgo": "{n} dagar sedan",
-    "daysLeft": "{n} dagar kvar",
+    "daysAgo": {
+      "one": "{n} dag sedan",
+      "other": "{n} dagar sedan"
+    },
+    "daysLeft": {
+      "one": "{n} dag kvar",
+      "other": "{n} dagar kvar"
+    },
     "dueNow": "raderas vid nästa rensning",
-    "related": "+ {n} tillhörande filer"
+    "related": {
+      "one": "+ {n} tillhörande fil",
+      "other": "+ {n} tillhörande filer"
+    },
+    "movedNamed": "”{name}” ligger i papperskorgen"
   },
   "review": {
     "queueTitle": "Klara för granskning och publicering",
-    "queueCount": "{n} avsnitt",
-    "queueCountOne": "1 avsnitt",
+    "queueCount": {
+      "one": "{n} avsnitt",
+      "other": "{n} avsnitt"
+    },
     "needsAttention": "Behöver åtgärdas",
     "openReview": "Granska →",
     "sermonGuess": "Förmodad predikan: {min} min",
@@ -224,8 +258,10 @@
     ],
     "ageNow": "Just nu",
     "ageHours": "{n}t sedan",
-    "ageDayOne": "1 dag sedan",
-    "ageDays": "{n} dagar sedan",
+    "ageDays": {
+      "one": "{n} dag sedan",
+      "other": "{n} dagar sedan"
+    },
     "ageOldest": "Över 14 dagar sedan",
     "confident": "säker",
     "errNotFound": "Avsnittet finns inte längre i granskningskön — det kan redan ha publicerats eller kastats."
@@ -250,7 +286,10 @@
     "wakeTitle": "Väck datorn ur viloläge",
     "wakeDesc": "Datorn väcks automatiskt 10 minuter innan inspelningen börjar",
     "wakeBtn": "Schemalägg väckning",
-    "wakeStatusOk": "{n} väckning schemalagd",
+    "wakeStatusOk": {
+      "one": "{n} väckning schemalagd",
+      "other": "{n} väckningar schemalagda"
+    },
     "wakeStatusNone": "Inga kommande inspelningar att schemalägga",
     "wakeStatusOff": "Väckning är avstängd",
     "wakeStatusCancelled": "Nekad — försök igen och godkänn",
@@ -364,7 +403,10 @@
       "standbyTitle": "Djup viloläge är påslaget",
       "mismatchTitle": "Operativsystemet saknar några uppvakningar",
       "okTitle": "Datorn vaknar automatiskt",
-      "okNext": "Nästa uppvakning {when} — {n} minuter innan inspelningen startar.",
+      "okNext": {
+        "one": "Nästa uppvakning {when} — {n} minut innan inspelningen startar.",
+        "other": "Nästa uppvakning {when} — {n} minuter innan inspelningen startar."
+      },
       "okNoNext": "Ingen kommande inspelning att vakna till just nu.",
       "neverTested": "Aldrig testat. Kör ”Testa wake nu” under Detaljer före första gudstjänsten."
     }
@@ -435,7 +477,10 @@
     "benchResult": "Uppmätt {m}s av {e}s ({p} % förlust)",
     "scanChannels": "🔍 Hitta kanaler med signal (3 s)",
     "scanRunning": "Lyssnar i 3 s — spela ljud på kanalerna …",
-    "scanFound": "{n} kanaler med signal: {list}",
+    "scanFound": {
+      "one": "{n} kanal med signal: {list}",
+      "other": "{n} kanaler med signal: {list}"
+    },
     "scanNone": "Inga kanaler med signal — spela ljud och försök igen",
     "deviceHelp": "Välj mixern eller ljudkortet som spelar in kyrkans ljud. USB-mixer rekommenderas framför den inbyggda mikrofonen.",
     "deviceNotShown": "Ser du inte rätt enhet? Kontrollera att ljudkortet är anslutet och att drivrutinen är installerad.",
@@ -454,7 +499,10 @@
     "gridMonoChip": "KANAL (mono)",
     "gridTapHint": "Tryck på kanalen för vänster, sedan kanalen för höger.",
     "gridTapHintMono": "Tryck på kanalen med signal för att välja den.",
-    "gridMeta": "{n} kanaler — livesignal",
+    "gridMeta": {
+      "one": "{n} kanal — livesignal",
+      "other": "{n} kanaler — livesignal"
+    },
     "gridSaved": "Sparat ✓",
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopierat",
@@ -497,7 +545,10 @@
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
     "trimSilence": "Klipp bort tystnad",
     "trimSilenceDesc": "Klipper automatiskt bort tysta sekunder i början och slutet av inspelningen",
-    "confirmAutoDeleteShort": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas.",
+    "confirmAutoDeleteShort": {
+      "one": "Inspelningar äldre än {n} dag tas bort automatiskt och kan inte återställas.",
+      "other": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas."
+    },
     "behaviourTitle": "Inspelningsbeteende",
     "behaviourDesc": "Finjustera hur inspelningen startar, skyddas och delas upp.",
     "whileRecording": "Medan en inspelning pågår",
@@ -584,9 +635,14 @@
     "telemetryPreviewBtn": "Visa vad som skickas",
     "telemetryDeleteBtn": "Radera min data",
     "telemetryReadMore": "Läs integritetspolicyn ↗",
-    "telemetryQueuePendingOne": "1 rapport väntar på att skickas.",
-    "telemetryQueuePendingMany": "{n} rapporter väntar på att skickas.",
-    "telemetryQueueFailed": "{n} kunde inte skickas.",
+    "telemetryQueuePending": {
+      "one": "{n} rapport väntar på att skickas.",
+      "other": "{n} rapporter väntar på att skickas."
+    },
+    "telemetryQueueFailed": {
+      "one": "{n} kunde inte skickas.",
+      "other": "{n} kunde inte skickas."
+    },
     "telemetryQueueOldestSince": "Äldsta är från {date}.",
     "telemetryQueueLastError": "Senaste fel: {error}",
     "telemetryDeleteConfirmTitle": "Radera din data?",
@@ -609,12 +665,26 @@
     "learningUnavailableRecording": "Inte tillgängligt medan en inspelning pågår.",
     "learningEmptyBody": "Inget att visa än — helt normalt. Det här fylls bara i när du rättar något appen gissade fel på.",
     "learningSermonPickZero": "Det automatiska predikovalet har inte rättats än.",
-    "learningSermonPickOne": "Det automatiska predikovalet har rättats 1 gång.",
-    "learningSermonPickMany": "Det automatiska predikovalet har rättats {n} gånger.",
-    "learningStartTooEarly": "Den automatiska starten hamnar ofta för tidigt — i snitt har du flyttat den {n} sekunder senare.",
-    "learningStartTooLate": "Den automatiska starten hamnar ofta för sent — i snitt har du flyttat den {n} sekunder tidigare.",
-    "learningEndTooEarly": "Det automatiska slutet klipps ofta för tidigt — i snitt har du flyttat det {n} sekunder senare.",
-    "learningEndTooLate": "Det automatiska slutet hamnar ofta för sent — i snitt har du flyttat det {n} sekunder tidigare.",
+    "learningSermonPick": {
+      "one": "Det automatiska predikovalet har rättats {n} gång.",
+      "other": "Det automatiska predikovalet har rättats {n} gånger."
+    },
+    "learningStartTooEarly": {
+      "one": "Den automatiska starten hamnar ofta för tidigt — i snitt har du flyttat den {n} sekund senare.",
+      "other": "Den automatiska starten hamnar ofta för tidigt — i snitt har du flyttat den {n} sekunder senare."
+    },
+    "learningStartTooLate": {
+      "one": "Den automatiska starten hamnar ofta för sent — i snitt har du flyttat den {n} sekund tidigare.",
+      "other": "Den automatiska starten hamnar ofta för sent — i snitt har du flyttat den {n} sekunder tidigare."
+    },
+    "learningEndTooEarly": {
+      "one": "Det automatiska slutet klipps ofta för tidigt — i snitt har du flyttat det {n} sekund senare.",
+      "other": "Det automatiska slutet klipps ofta för tidigt — i snitt har du flyttat det {n} sekunder senare."
+    },
+    "learningEndTooLate": {
+      "one": "Det automatiska slutet hamnar ofta för sent — i snitt har du flyttat det {n} sekund tidigare.",
+      "other": "Det automatiska slutet hamnar ofta för sent — i snitt har du flyttat det {n} sekunder tidigare."
+    },
     "learningCompanionSummary": "Av AI-förslagen har {accepted} använts ({edited} omskrivna efteråt), och {leftAlone} lämnats orörda.",
     "localNudgeCardTitle": "Vad appen har justerat",
     "localNudgeCardDesc": "Rättar du samma sak varje söndag kan appen flytta sitt eget förslag åt det hållet — bara för den här maskinen. Inget härifrån delas med någon, och du kan nollställa när som helst.",
@@ -792,8 +862,10 @@
     "videoFormat": "Videoformat",
     "vocalChain": "Röstbehandling",
     "exportDoneToast": "Exporterad{name}",
-    "gotoReviewOne": "Granskningskö (1 avsnitt) →",
-    "gotoReviewN": "Granskningskö ({n} avsnitt) →",
+    "gotoReviewCount": {
+      "one": "Granskningskö ({n} avsnitt) →",
+      "other": "Granskningskö ({n} avsnitt) →"
+    },
     "enhanceNone": "Ingen",
     "vcLight": "Röst — lätt",
     "vcPodcast": "Poddröst (rekommenderas)",
@@ -1018,7 +1090,10 @@
     "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
-    "reviewOverdue": "Ett avsnitt har väntat i {days} dagar på genomgång: {episode}",
+    "reviewOverdue": {
+      "one": "Ett avsnitt har väntat i {days} dag på genomgång: {episode}",
+      "other": "Ett avsnitt har väntat i {days} dagar på genomgång: {episode}"
+    },
     "systemTitle": "Systemaviseringar",
     "emailTitle": "E-postaviseringar",
     "smtpServer": "E-POSTTJÄNST (SMTP)",
@@ -1116,9 +1191,10 @@
     "queueStatusPending": "Väntar",
     "pickFolderTitle": "Välj mapp",
     "loading": "Laddar…",
-    "episodeSingular": "avsnitt",
-    "episodePlural": "avsnitt",
-    "published": "publicerad",
+    "publishedCount": {
+      "one": "{n} avsnitt publicerat",
+      "other": "{n} avsnitt publicerade"
+    },
     "errConnectFirst": "anslut till molntjänsten först",
     "errPickFolderFirst": "välj lagringsmapp först",
     "errEnablePodcast": "aktivera podd först",
@@ -1250,7 +1326,10 @@
     "noHighlights": "Inga tydliga höjdpunkter hittades",
     "useMeta": "→ Använd i metadata",
     "useMetaHint": "Lägg titel + sammanfattning i metadata — används vid export och av SundayEdit/Stage",
-    "useChapters": "→ Lägg till {n} kapitel",
+    "useChapters": {
+      "one": "→ Lägg till {n} kapitel",
+      "other": "→ Lägg till {n} kapitel"
+    },
     "copy": "⧉ Kopiera",
     "copied": "Kopierat",
     "copyFailed": "Kunde inte kopiera",
@@ -1338,8 +1417,10 @@
     "dismiss": "Stäng"
   },
   "missed": {
-    "bannerOne": "En planerad inspelning blev aldrig av",
-    "bannerMany": "{n} planerade inspelningar blev aldrig av",
+    "banner": {
+      "one": "{n} planerad inspelning blev aldrig av",
+      "other": "{n} planerade inspelningar blev aldrig av"
+    },
     "hint": "Kontrollera att datorn var på, att SundayRec kördes och att ”Väck datorn automatiskt” är påslaget.",
     "dismiss": "Okej",
     "openSchedule": "Öppna tidsplan",
@@ -1349,7 +1430,10 @@
   "guard": {
     "title": "{what} nu?",
     "duringRecording": "En inspelning pågår just nu. Ändringen kan avbryta eller förstöra det som spelas in.",
-    "beforeRecording": "Nästa schemalagda inspelning startar om {n} minuter. Ändringen hinner påverka den inspelningen.",
+    "beforeRecording": {
+      "one": "Nästa schemalagda inspelning startar om {n} minut. Ändringen hinner påverka den inspelningen.",
+      "other": "Nästa schemalagda inspelning startar om {n} minuter. Ändringen hinner påverka den inspelningen."
+    },
     "confirm": "Ja, ändra ändå",
     "cancel": "Inte nu"
   },

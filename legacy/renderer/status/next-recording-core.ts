@@ -30,6 +30,23 @@ import type { PreflightFinding } from '../../bindings/PreflightFinding'
 /** i18n lookup, injected so the formatters stay pure. */
 export type Translate = (key: string, fallback?: string) => string
 
+/** Interpolating lookup (`i18n.tf`), injected for the same reason. */
+export type TranslateF = (
+  key: string,
+  params: Record<string, string | number>,
+  fallback?: string,
+) => string
+
+/** Count-aware lookup (`i18n.tn`), injected for the same reason. Picks the
+ *  CLDR plural form for `count` in the active language — the thing `=== 1`
+ *  could never do for Polish, where 2–4 takes its own noun form. */
+export type TranslateN = (
+  key: string,
+  count: number,
+  params?: Record<string, string | number>,
+  fallback?: string,
+) => string
+
 /**
  * The little of a one-off special this module needs. Structural on purpose: the
  * renderer's `SpecialRecording` (optional `id`) and the ts-rs binding (nullable
@@ -180,6 +197,8 @@ export function intlParts(locale: string): DatePartsFn {
 /** Everything a formatter needs beyond the state itself. */
 export interface FormatCtx {
   t: Translate
+  tf: TranslateF
+  tn: TranslateN
   parts: DatePartsFn
   /** `Date.now()` at render time — passed in so a tick is testable. */
   nowMs: number
@@ -200,9 +219,11 @@ export function formatNextTitle(state: NextRecordingState, ctx: FormatCtx): stri
       : t('home.readyNoSchedule', 'Klar — sett opp en tidsplan for å starte automatisk')
   }
   const p = ctx.parts(state.next.atMs)
-  return t('home.readyTitleDay', 'Alt er klart til {day} {time}')
-    .replace('{day}', p.weekdayLong)
-    .replace('{time}', p.time)
+  return ctx.tf(
+    'home.readyTitleDay',
+    { day: p.weekdayLong, time: p.time },
+    'Alt er klart til {day} {time}',
+  )
 }
 
 /** Hero date line: "torsdag 7. juni" — with the special's name when it has one. */
@@ -280,9 +301,9 @@ export function formatWakeHint(state: NextRecordingState, ctx: FormatCtx): strin
   const wake = state.wake
   if (!wake || !wake.enabled || !state.next) return null
   const time = ctx.parts(wake.atMs).time
-  return ctx.t('home.wakesBefore', 'Maskinen vekkes automatisk kl. {time}').replace('{time}', time)
+  return ctx.tf('home.wakesBefore', { time }, 'Maskinen vekkes automatisk kl. {time}')
     + ' '
-    + ctx.t('home.wakesLead', '({min} min før)').replace('{min}', String(wake.leadMinutes))
+    + ctx.tf('home.wakesLead', { min: wake.leadMinutes }, '({min} min før)')
 }
 
 /**
@@ -311,9 +332,7 @@ export function formatMissed(missed: MissedRecordingInfo, ctx: FormatCtx): strin
 export function formatMissedBanner(state: NextRecordingState, ctx: FormatCtx): string | null {
   const n = state.missed.length
   if (n === 0) return null
-  return n === 1
-    ? ctx.t('missed.bannerOne', 'Et planlagt opptak ble ikke tatt opp')
-    : ctx.t('missed.bannerMany', '{n} planlagte opptak ble ikke tatt opp').replace('{n}', String(n))
+  return ctx.tn('missed.banner', n, {}, '{n} planlagte opptak ble ikke tatt opp')
 }
 
 /** Preflight headline: errors dominate warnings. */
@@ -327,11 +346,11 @@ export function formatPreflightHeadline(
   if (errors > 0) {
     return {
       severity: 'error',
-      text: ctx.t('status.preflightErrors', '{n} feil må rettes før opptaket').replace('{n}', String(errors)),
+      text: ctx.tn('status.preflightErrors', errors, {}, '{n} feil må rettes før opptaket'),
     }
   }
   return {
     severity: 'warn',
-    text: ctx.t('status.preflightWarns', '{n} ting å se på før opptaket').replace('{n}', String(warns)),
+    text: ctx.tn('status.preflightWarns', warns, {}, '{n} ting å se på før opptaket'),
   }
 }

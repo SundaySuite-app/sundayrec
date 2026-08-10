@@ -19,7 +19,7 @@
  *    that fixed the phantom L=0/R=0 mapping (2026-07-31).
  */
 
-import { t } from '../i18n'
+import { t, tf, tn } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { createLevelSmoother } from '../audio/smoothing'
 import type { LevelSmoother } from '../audio/smoothing'
@@ -176,7 +176,7 @@ export async function startChannelGrid(deviceId: string, deviceName: string | nu
           state.phase = 'live'
           renderGrid(false)
         }
-        setStatus(t('audio.gridMeta', '{n} kanaler — live signal').replace('{n}', String(n)))
+        setStatus(tn('audio.gridMeta', n, {}, '{n} kanaler — live signal'))
         showFallbackRow(false)
         state.onCount?.(n)
       } else if (feed === 'failed') {
@@ -257,7 +257,7 @@ function renderGrid(skeleton: boolean): void {
     root.dataset.ch = String(i)
     const label = state.chLabels[i]
     if (label) root.title = label
-    root.setAttribute('aria-label', t('audio.channelNum', 'Kanal {n}').replace('{n}', String(i + 1)))
+    root.setAttribute('aria-label', tf('audio.channelNum', { n: i + 1 }, 'Kanal {n}'))
 
     const badge = document.createElement('span')
     badge.className = 'ch-col-badge'
@@ -312,12 +312,12 @@ function renderChips(): void {
   const mode = currentMode()
   const spec = chipSpec(mode)
   const chName = (ch: number): string =>
-    t('audio.channelNum', 'Kanal {n}').replace('{n}', String(ch + 1))
+    tf('audio.channelNum', { n: ch + 1 }, 'Kanal {n}')
 
   // Rebuild ONLY when the set of chips actually changes (a mono/stereo switch,
   // or a language change). Every tap used to throw both buttons away and parse
   // fresh HTML — which also killed any focus or :active state mid-interaction.
-  const shape = spec.map(s => s.slot + ' ' + s.label).join('|')
+  const shape = spec.map(s => s.slot + '\u0000' + s.label).join('|')
   if (shape !== chipShape || !row.firstElementChild) {
     chipShape = shape
     chipEls.clear()
@@ -434,12 +434,12 @@ function setupScanFallback(): void {
         const p = peaks.find(x => x.channel === i + 1)
         const loud = !!p && p.peakDb > -50
         col.root.classList.toggle('has-signal', loud)
-        if (p) col.root.title = `${t('audio.channelNum', 'Kanal {n}').replace('{n}', String(i + 1))} · ${p.peakDb.toFixed(0)} dB`
+        if (p) col.root.title = `${tf('audio.channelNum', { n: i + 1 }, 'Kanal {n}')} · ${p.peakDb.toFixed(0)} dB`
       }
       status.textContent = live.length
-        ? t('audio.scanFound', '{n} kanaler med signal: {list}')
-            .replace('{n}', String(live.length))
-            .replace('{list}', live.map(p => p.channel).join(', '))
+        ? tn('audio.scanFound', live.length,
+            { list: live.map(p => p.channel).join(', ') },
+            '{n} kanaler med signal: {list}')
         : t('audio.scanNone', 'Ingen kanaler med signal — spill lyd og prøv igjen')
     } catch (err) {
       status.textContent = '❌ ' + errTextLocal(err)

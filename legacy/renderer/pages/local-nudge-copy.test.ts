@@ -131,7 +131,7 @@ describe('the clamp and the evidence bar match the Rust constants', () => {
 })
 
 describe('every fallback matches legacy/locales/no.json, key for key', () => {
-  const general = no.general as Record<string, string>
+  const general = no.general as Record<string, unknown>
   const lines: CopyLine[] = [
     buildLocalNudgeView(SHIPPED, false).headline,
     buildLocalNudgeView(SHIPPED, true).headline,

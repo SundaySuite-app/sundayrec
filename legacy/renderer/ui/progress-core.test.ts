@@ -17,6 +17,16 @@ const tKey = (key: string): string => key
 /** The Norwegian fallbacks, so assertions can read the actual sentence. */
 const tFallback = (_key: string, fallback = ''): string => fallback
 
+/** `tf` counterparts: same near-identity, then real substitution. */
+const interp = (str: string, params: Record<string, string | number>): string =>
+  Object.entries(params).reduce((acc, [k, v]) => acc.replaceAll(`{${k}}`, String(v)), str)
+const tfKey = (key: string): string => key
+const tfFallback = (
+  _key: string,
+  params: Record<string, string | number>,
+  fallback = '',
+): string => interp(fallback, params)
+
 /**
  * Drive a run at a constant rate. Returns the reading after the last sample.
  * `rate` is fraction per second; samples land every `stepMs`.
@@ -170,7 +180,7 @@ describe('createEtaEstimator — stalls', () => {
     const stalled = est.read(nowMs + STALL_MS)
     expect(stalled.stable).toBe(false)
     expect(stalled.etaMs).toBeNull()
-    expect(formatEta(stalled.etaMs, tKey)).toBe('progress.etaCalculating')
+    expect(formatEta(stalled.etaMs, tKey, tfKey)).toBe('progress.etaCalculating')
   })
 
   it('recovers as soon as the job moves again', () => {
@@ -297,21 +307,21 @@ describe('etaBucket', () => {
 
 describe('formatEta', () => {
   it('uses one key per bucket', () => {
-    expect(formatEta(null, tKey)).toBe('progress.etaCalculating')
-    expect(formatEta(5_000, tKey)).toBe('progress.etaUnder10s')
-    expect(formatEta(20_000, tKey)).toBe('progress.etaSeconds')
-    expect(formatEta(120_000, tKey)).toBe('progress.etaMinutes')
-    expect(formatEta(3600_000, tKey)).toBe('progress.etaHours')
-    expect(formatEta(3600_000 + 20 * 60_000, tKey)).toBe('progress.etaHoursMinutes')
+    expect(formatEta(null, tKey, tfKey)).toBe('progress.etaCalculating')
+    expect(formatEta(5_000, tKey, tfKey)).toBe('progress.etaUnder10s')
+    expect(formatEta(20_000, tKey, tfKey)).toBe('progress.etaSeconds')
+    expect(formatEta(120_000, tKey, tfKey)).toBe('progress.etaMinutes')
+    expect(formatEta(3600_000, tKey, tfKey)).toBe('progress.etaHours')
+    expect(formatEta(3600_000 + 20 * 60_000, tKey, tfKey)).toBe('progress.etaHoursMinutes')
   })
 
   it('renders the Norwegian sentences with the numbers substituted', () => {
-    expect(formatEta(null, tFallback)).toBe('beregner …')
-    expect(formatEta(3_000, tFallback)).toBe('under 10 s igjen')
-    expect(formatEta(21_000, tFallback)).toBe('ca. 20 s igjen')
-    expect(formatEta(150_000, tFallback)).toBe('ca. 3 min igjen')
-    expect(formatEta(2 * 3600_000, tFallback)).toBe('ca. 2 t igjen')
-    expect(formatEta(3600_000 + 31 * 60_000, tFallback)).toBe('ca. 1 t 30 min igjen')
+    expect(formatEta(null, tFallback, tfFallback)).toBe('beregner …')
+    expect(formatEta(3_000, tFallback, tfFallback)).toBe('under 10 s igjen')
+    expect(formatEta(21_000, tFallback, tfFallback)).toBe('ca. 20 s igjen')
+    expect(formatEta(150_000, tFallback, tfFallback)).toBe('ca. 3 min igjen')
+    expect(formatEta(2 * 3600_000, tFallback, tfFallback)).toBe('ca. 2 t igjen')
+    expect(formatEta(3600_000 + 31 * 60_000, tFallback, tfFallback)).toBe('ca. 1 t 30 min igjen')
   })
 })
 

@@ -20,8 +20,18 @@
     "ok": "GOTOWY DO NAGRYWANIA",
     "warn": "WYMAGANE DZIAŁANIE",
     "noSchedule": "Brak zaplanowanego nagrania",
-    "preflightErrors": "{n} błędów do naprawienia przed nagraniem",
-    "preflightWarns": "{n} rzeczy do sprawdzenia przed nagraniem",
+    "preflightErrors": {
+      "one": "{n} błąd do naprawienia przed nagraniem",
+      "few": "{n} błędy do naprawienia przed nagraniem",
+      "many": "{n} błędów do naprawienia przed nagraniem",
+      "other": "{n} błędów do naprawienia przed nagraniem"
+    },
+    "preflightWarns": {
+      "one": "{n} rzecz do sprawdzenia przed nagraniem",
+      "few": "{n} rzeczy do sprawdzenia przed nagraniem",
+      "many": "{n} rzeczy do sprawdzenia przed nagraniem",
+      "other": "{n} rzeczy do sprawdzenia przed nagraniem"
+    },
     "preflightAction": "Otwórz ustawienia",
     "dismiss": "Ukryj",
     "preflightMore": "więcej — zobacz Ustawienia → Dźwięk"
@@ -154,9 +164,18 @@
     "deleteFailed": "Nie udało się usunąć",
     "clearNone": "Lista jest pusta",
     "errorsNone": "Brak wpisów z błędem",
-    "confirmClearN": "Usunąć wszystkie {n} wpisów?",
-    "confirmDeleteErrorsOne": "Usunąć 1 wpis z błędem?",
-    "confirmDeleteErrorsN": "Usunąć {n} wpisów z błędem?",
+    "confirmClear": {
+      "one": "Usunąć wpis?",
+      "few": "Usunąć wszystkie {n} wpisy?",
+      "many": "Usunąć wszystkie {n} wpisów?",
+      "other": "Usunąć wszystkie {n} wpisów?"
+    },
+    "confirmDeleteErrors": {
+      "one": "Usunąć {n} wpis z błędem?",
+      "few": "Usunąć {n} wpisy z błędem?",
+      "many": "Usunąć {n} wpisów z błędem?",
+      "other": "Usunąć {n} wpisów z błędem?"
+    },
     "emptyFiltered": "Brak nagrań w tym filtrze"
   },
   "trash": {
@@ -168,30 +187,69 @@
     "empty": "Kosz jest pusty.",
     "alreadyEmpty": "Kosz jest pusty",
     "deleteEntry": "Przenieś do kosza",
-    "movedOne": "„{name}” jest w koszu",
-    "movedN": "{n} nagrań jest w koszu",
+    "moved": {
+      "one": "{n} nagranie jest w koszu",
+      "few": "{n} nagrania są w koszu",
+      "many": "{n} nagrań jest w koszu",
+      "other": "{n} nagrań jest w koszu"
+    },
     "undo": "Cofnij",
     "undoFailed": "Nie udało się przywrócić wszystkiego — sprawdź kosz.",
-    "clearHistoryBody": "Nagrania trafiają do kosza, gdzie leżą {d} dni, zanim zostaną usunięte na dobre.",
-    "deleteErrorsBody": "{n} błędnych wpisów zostaje usuniętych. Istniejące pliki trafiają do kosza.",
+    "clearHistoryBody": {
+      "one": "Nagrania trafiają do kosza, gdzie leżą {d} dzień, zanim zostaną usunięte na dobre.",
+      "few": "Nagrania trafiają do kosza, gdzie leżą {d} dni, zanim zostaną usunięte na dobre.",
+      "many": "Nagrania trafiają do kosza, gdzie leżą {d} dni, zanim zostaną usunięte na dobre.",
+      "other": "Nagrania trafiają do kosza, gdzie leżą {d} dni, zanim zostaną usunięte na dobre."
+    },
+    "deleteErrorsBody": {
+      "one": "{n} błędny wpis zostaje usunięty. Istniejące pliki trafiają do kosza.",
+      "few": "{n} błędne wpisy zostają usunięte. Istniejące pliki trafiają do kosza.",
+      "many": "{n} błędnych wpisów zostaje usuniętych. Istniejące pliki trafiają do kosza.",
+      "other": "{n} błędnych wpisów zostaje usuniętych. Istniejące pliki trafiają do kosza."
+    },
     "restore": "Przywróć",
     "restoreFailed": "Nie udało się przywrócić",
     "deleteForever": "Usuń na dobre",
     "confirmPurgeOne": "Usunąć „{name}” na dobre?",
-    "confirmEmptyN": "Usunąć {n} nagrań na dobre?",
+    "confirmEmpty": {
+      "one": "Usunąć {n} nagranie na dobre?",
+      "few": "Usunąć {n} nagrania na dobre?",
+      "many": "Usunąć {n} nagrań na dobre?",
+      "other": "Usunąć {n} nagrań na dobre?"
+    },
     "confirmEmptyBody": "Pliki zostaną usunięte z dysku. Tego nie da się cofnąć.",
     "deletedAt": "Usunięto",
     "today": "dzisiaj",
     "yesterday": "wczoraj",
-    "daysAgo": "{n} dni temu",
-    "daysLeft": "pozostało {n} dni",
+    "daysAgo": {
+      "one": "{n} dzień temu",
+      "few": "{n} dni temu",
+      "many": "{n} dni temu",
+      "other": "{n} dni temu"
+    },
+    "daysLeft": {
+      "one": "pozostał {n} dzień",
+      "few": "pozostały {n} dni",
+      "many": "pozostało {n} dni",
+      "other": "pozostało {n} dni"
+    },
     "dueNow": "zniknie przy następnym porządkowaniu",
-    "related": "+ {n} powiązanych plików"
+    "related": {
+      "one": "+ {n} powiązany plik",
+      "few": "+ {n} powiązane pliki",
+      "many": "+ {n} powiązanych plików",
+      "other": "+ {n} powiązanych plików"
+    },
+    "movedNamed": "„{name}” jest w koszu"
   },
   "review": {
     "queueTitle": "Gotowe do przeglądu i publikacji",
-    "queueCount": "Odcinki: {n}",
-    "queueCountOne": "1 odcinek",
+    "queueCount": {
+      "one": "{n} odcinek",
+      "few": "{n} odcinki",
+      "many": "{n} odcinków",
+      "other": "{n} odcinków"
+    },
     "needsAttention": "Wymaga uwagi",
     "openReview": "Przejrzyj →",
     "sermonGuess": "Przypuszczalne kazanie: {min} min",
@@ -224,8 +282,12 @@
     ],
     "ageNow": "Przed chwilą",
     "ageHours": "{n}h temu",
-    "ageDayOne": "1 dzień temu",
-    "ageDays": "{n} dni temu",
+    "ageDays": {
+      "one": "{n} dzień temu",
+      "few": "{n} dni temu",
+      "many": "{n} dni temu",
+      "other": "{n} dni temu"
+    },
     "ageOldest": "Ponad 14 dni temu",
     "confident": "pewności",
     "errNotFound": "Tego odcinka nie ma już w kolejce przeglądu — mógł zostać już opublikowany lub odrzucony."
@@ -250,7 +312,12 @@
     "wakeTitle": "Wybudź komputer z uśpienia",
     "wakeDesc": "Komputer wybudzi się automatycznie 10 minut przed rozpoczęciem nagrania",
     "wakeBtn": "Zaplanuj wybudzenie",
-    "wakeStatusOk": "Zaplanowane wybudzenia: {n}",
+    "wakeStatusOk": {
+      "one": "{n} zaplanowane wybudzenie",
+      "few": "{n} zaplanowane wybudzenia",
+      "many": "{n} zaplanowanych wybudzeń",
+      "other": "{n} zaplanowanych wybudzeń"
+    },
     "wakeStatusNone": "Brak nadchodzących nagrań do zaplanowania",
     "wakeStatusOff": "Wybudzanie jest wyłączone",
     "wakeStatusCancelled": "Odrzucono — spróbuj ponownie i zatwierdź",
@@ -364,7 +431,12 @@
       "standbyTitle": "Włączony jest głęboki uśpienie",
       "mismatchTitle": "W systemie brakuje części wybudzeń",
       "okTitle": "Komputer wybudzi się automatycznie",
-      "okNext": "Następne wybudzenie {when} — {n} min przed startem nagrania.",
+      "okNext": {
+        "one": "Następne wybudzenie {when} — {n} minutę przed startem nagrania.",
+        "few": "Następne wybudzenie {when} — {n} minuty przed startem nagrania.",
+        "many": "Następne wybudzenie {when} — {n} minut przed startem nagrania.",
+        "other": "Następne wybudzenie {when} — {n} minut przed startem nagrania."
+      },
       "okNoNext": "Na razie nie ma nadchodzącego nagrania, do którego trzeba się wybudzić.",
       "neverTested": "Nigdy nie testowano. Uruchom „Testuj wybudzanie” w Szczegółach przed pierwszym nabożeństwem."
     }
@@ -435,7 +507,12 @@
     "benchResult": "Zmierzono {m}s z {e}s ({p} % straty)",
     "scanChannels": "🔍 Znajdź kanały z sygnałem (3 s)",
     "scanRunning": "Nasłuch przez 3 s — odtwórz dźwięk na kanałach …",
-    "scanFound": "{n} kanałów z sygnałem: {list}",
+    "scanFound": {
+      "one": "{n} kanał z sygnałem: {list}",
+      "few": "{n} kanały z sygnałem: {list}",
+      "many": "{n} kanałów z sygnałem: {list}",
+      "other": "{n} kanałów z sygnałem: {list}"
+    },
     "scanNone": "Brak kanałów z sygnałem — odtwórz dźwięk i spróbuj ponownie",
     "deviceHelp": "Wybierz mikser lub interfejs audio, który nagrywa dźwięk w kościele. Zalecamy mikser USB zamiast wbudowanego mikrofonu.",
     "deviceNotShown": "Nie widzisz właściwego urządzenia? Sprawdź, czy interfejs jest podłączony i czy sterownik jest zainstalowany.",
@@ -454,7 +531,12 @@
     "gridMonoChip": "KANAŁ (mono)",
     "gridTapHint": "Dotknij kanału dla lewej strony, potem kanału dla prawej.",
     "gridTapHintMono": "Dotknij kanału z sygnałem, aby go wybrać.",
-    "gridMeta": "{n} kanałów — sygnał na żywo",
+    "gridMeta": {
+      "one": "{n} kanał — sygnał na żywo",
+      "few": "{n} kanały — sygnał na żywo",
+      "many": "{n} kanałów — sygnał na żywo",
+      "other": "{n} kanałów — sygnał na żywo"
+    },
     "gridSaved": "Zapisano ✓",
     "channelNum": "Kanał {n}",
     "diagnoseCopied": "✓ Skopiowano",
@@ -497,7 +579,12 @@
     "autoDeleteDesc": "Automatycznie zwalnia miejsce na dysku, usuwając stare nagrania",
     "trimSilence": "Wytnij ciszę",
     "trimSilenceDesc": "Automatycznie przycina ciche sekundy na początku i końcu nagrania",
-    "confirmAutoDeleteShort": "Nagrania starsze niż {n} dni są usuwane automatycznie i nie można ich odzyskać.",
+    "confirmAutoDeleteShort": {
+      "one": "Nagrania starsze niż {n} dzień są usuwane automatycznie i nie można ich odzyskać.",
+      "few": "Nagrania starsze niż {n} dni są usuwane automatycznie i nie można ich odzyskać.",
+      "many": "Nagrania starsze niż {n} dni są usuwane automatycznie i nie można ich odzyskać.",
+      "other": "Nagrania starsze niż {n} dni są usuwane automatycznie i nie można ich odzyskać."
+    },
     "behaviourTitle": "Zachowanie nagrywania",
     "behaviourDesc": "Dopracuj sposób uruchamiania, ochrony i dzielenia nagrania.",
     "whileRecording": "Podczas trwającego nagrania",
@@ -584,9 +671,18 @@
     "telemetryPreviewBtn": "Pokaż, co jest wysyłane",
     "telemetryDeleteBtn": "Usuń moje dane",
     "telemetryReadMore": "Przeczytaj politykę prywatności ↗",
-    "telemetryQueuePendingOne": "1 raport czeka na wysłanie.",
-    "telemetryQueuePendingMany": "{n} raportów czeka na wysłanie.",
-    "telemetryQueueFailed": "{n} nie udało się wysłać.",
+    "telemetryQueuePending": {
+      "one": "{n} raport czeka na wysłanie.",
+      "few": "{n} raporty czekają na wysłanie.",
+      "many": "{n} raportów czeka na wysłanie.",
+      "other": "{n} raportów czeka na wysłanie."
+    },
+    "telemetryQueueFailed": {
+      "one": "{n} nie udało się wysłać.",
+      "few": "{n} nie udało się wysłać.",
+      "many": "{n} nie udało się wysłać.",
+      "other": "{n} nie udało się wysłać."
+    },
     "telemetryQueueOldestSince": "Najstarszy jest z {date}.",
     "telemetryQueueLastError": "Ostatni błąd: {error}",
     "telemetryDeleteConfirmTitle": "Usunąć Twoje dane?",
@@ -609,12 +705,36 @@
     "learningUnavailableRecording": "Niedostępne, gdy trwa nagrywanie.",
     "learningEmptyBody": "Nic tu jeszcze nie ma — to normalne. To pole wypełnia się dopiero, gdy poprawisz coś, co aplikacja źle zgadła.",
     "learningSermonPickZero": "Automatyczny wybór kazania nie był jeszcze poprawiany.",
-    "learningSermonPickOne": "Automatyczny wybór kazania został poprawiony 1 raz.",
-    "learningSermonPickMany": "Automatyczny wybór kazania został poprawiony {n} razy.",
-    "learningStartTooEarly": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekund później.",
-    "learningStartTooLate": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
-    "learningEndTooEarly": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekund później.",
-    "learningEndTooLate": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
+    "learningSermonPick": {
+      "one": "Automatyczny wybór kazania został poprawiony {n} raz.",
+      "few": "Automatyczny wybór kazania został poprawiony {n} razy.",
+      "many": "Automatyczny wybór kazania został poprawiony {n} razy.",
+      "other": "Automatyczny wybór kazania został poprawiony {n} razy."
+    },
+    "learningStartTooEarly": {
+      "one": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekundę później.",
+      "few": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekundy później.",
+      "many": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekund później.",
+      "other": "Automatyczny początek często wypada za wcześnie — średnio przesuwasz go o {n} sekund później."
+    },
+    "learningStartTooLate": {
+      "one": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekundę wcześniej.",
+      "few": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekundy wcześniej.",
+      "many": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
+      "other": "Automatyczny początek często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej."
+    },
+    "learningEndTooEarly": {
+      "one": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekundę później.",
+      "few": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekundy później.",
+      "many": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekund później.",
+      "other": "Automatyczny koniec jest często ucinany za wcześnie — średnio przesuwasz go o {n} sekund później."
+    },
+    "learningEndTooLate": {
+      "one": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekundę wcześniej.",
+      "few": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekundy wcześniej.",
+      "many": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej.",
+      "other": "Automatyczny koniec często wypada za późno — średnio przesuwasz go o {n} sekund wcześniej."
+    },
     "learningCompanionSummary": "Spośród sugestii AI {accepted} zostało użytych ({edited} przepisanych później), a {leftAlone} pozostawiono bez zmian.",
     "localNudgeCardTitle": "Co aplikacja dostosowała",
     "localNudgeCardDesc": "Jeśli w każdą niedzielę poprawiasz to samo, aplikacja może przesunąć własną propozycję w tę stronę — wyłącznie na tym komputerze. Nic stąd nie jest z nikim udostępniane i w każdej chwili możesz to wyzerować.",
@@ -792,8 +912,12 @@
     "videoFormat": "Format wideo",
     "vocalChain": "Obróbka głosu",
     "exportDoneToast": "Wyeksportowano{name}",
-    "gotoReviewOne": "Kolejka przeglądu (1 odcinek) →",
-    "gotoReviewN": "Kolejka przeglądu ({n} odcinków) →",
+    "gotoReviewCount": {
+      "one": "Kolejka przeglądu ({n} odcinek) →",
+      "few": "Kolejka przeglądu ({n} odcinki) →",
+      "many": "Kolejka przeglądu ({n} odcinków) →",
+      "other": "Kolejka przeglądu ({n} odcinków) →"
+    },
     "enhanceNone": "Brak",
     "vcLight": "Głos — lekki",
     "vcPodcast": "Głos podcastowy (zalecane)",
@@ -1018,7 +1142,12 @@
     "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
-    "reviewOverdue": "Odcinek czeka na przegląd od {days} dni: {episode}",
+    "reviewOverdue": {
+      "one": "Odcinek czeka na przegląd od {days} dnia: {episode}",
+      "few": "Odcinek czeka na przegląd od {days} dni: {episode}",
+      "many": "Odcinek czeka na przegląd od {days} dni: {episode}",
+      "other": "Odcinek czeka na przegląd od {days} dni: {episode}"
+    },
     "systemTitle": "Powiadomienia systemowe",
     "emailTitle": "Powiadomienia e-mail",
     "smtpServer": "USŁUGA E-MAIL (SMTP)",
@@ -1116,9 +1245,12 @@
     "queueStatusPending": "Oczekuje",
     "pickFolderTitle": "Wybierz folder",
     "loading": "Wczytywanie…",
-    "episodeSingular": "odcinek",
-    "episodePlural": "odcinków",
-    "published": "opublikowane",
+    "publishedCount": {
+      "one": "Opublikowano {n} odcinek",
+      "few": "Opublikowano {n} odcinki",
+      "many": "Opublikowano {n} odcinków",
+      "other": "Opublikowano {n} odcinków"
+    },
     "errConnectFirst": "najpierw połącz z usługą chmurową",
     "errPickFolderFirst": "najpierw wybierz folder zapisu",
     "errEnablePodcast": "najpierw włącz podcast",
@@ -1250,7 +1382,12 @@
     "noHighlights": "Nie znaleziono wyraźnych momentów",
     "useMeta": "→ Użyj w metadanych",
     "useMetaHint": "Umieść tytuł + podsumowanie w metadanych — używane przy eksporcie i przez SundayEdit/Stage",
-    "useChapters": "→ Dodaj {n} rozdziałów",
+    "useChapters": {
+      "one": "→ Dodaj {n} rozdział",
+      "few": "→ Dodaj {n} rozdziały",
+      "many": "→ Dodaj {n} rozdziałów",
+      "other": "→ Dodaj {n} rozdziałów"
+    },
     "copy": "⧉ Kopiuj",
     "copied": "Skopiowano",
     "copyFailed": "Nie udało się skopiować",
@@ -1338,8 +1475,12 @@
     "dismiss": "Zamknij"
   },
   "missed": {
-    "bannerOne": "Zaplanowane nagranie nie zostało wykonane",
-    "bannerMany": "Zaplanowane nagrania ({n}) nie zostały wykonane",
+    "banner": {
+      "one": "{n} zaplanowane nagranie nie zostało wykonane",
+      "few": "{n} zaplanowane nagrania nie zostały wykonane",
+      "many": "{n} zaplanowanych nagrań nie zostało wykonanych",
+      "other": "{n} zaplanowanych nagrań nie zostało wykonanych"
+    },
     "hint": "Sprawdź, czy komputer był włączony, czy SundayRec działał i czy opcja „Automatyczne wybudzanie komputera” jest włączona.",
     "dismiss": "Rozumiem",
     "openSchedule": "Otwórz harmonogram",
@@ -1349,7 +1490,12 @@
   "guard": {
     "title": "{what} teraz?",
     "duringRecording": "Nagrywanie właśnie trwa. Zmiana może przerwać lub zepsuć to, co jest nagrywane.",
-    "beforeRecording": "Następne zaplanowane nagranie zacznie się za {n} min. Zmiana wpłynie na to nagranie.",
+    "beforeRecording": {
+      "one": "Następne zaplanowane nagranie zacznie się za {n} minutę. Zmiana wpłynie na to nagranie.",
+      "few": "Następne zaplanowane nagranie zacznie się za {n} minuty. Zmiana wpłynie na to nagranie.",
+      "many": "Następne zaplanowane nagranie zacznie się za {n} minut. Zmiana wpłynie na to nagranie.",
+      "other": "Następne zaplanowane nagranie zacznie się za {n} minut. Zmiana wpłynie na to nagranie."
+    },
     "confirm": "Tak, zmień mimo to",
     "cancel": "Nie teraz"
   },

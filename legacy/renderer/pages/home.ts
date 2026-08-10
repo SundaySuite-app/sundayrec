@@ -1,4 +1,4 @@
-import { t, currentLang, onLocaleApplied } from '../i18n'
+import { t, tf, tn, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { fmtCountdown, fmtStorageHours, fmtDate, localeTag } from '../helpers'
 import { startVU } from './home-vu'
@@ -302,7 +302,8 @@ export async function refreshHomeVideoDevices(): Promise<void> {
 
     // Bug 6: inform user when previously saved camera is no longer available
     if (savedName && !match) {
-      setVideoPlaceholder(() => t('home.cameraSavedMissing', 'Kamera "{name}" ikke funnet — velg et annet').replace('{name}', savedName))
+      setVideoPlaceholder(() => tf('home.cameraSavedMissing', { name: savedName },
+        'Kamera "{name}" ikke funnet — velg et annet'))
     } else {
       const hasPick = !!sel.value
       setVideoPlaceholder(() => hasPick ? t('home.cameraStarting', 'Starter kamera…') : t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater'))
@@ -673,8 +674,7 @@ export function setupHome(): void {
     // command returns when it returns, and the number can reach 30/30 while the
     // recording is still finishing.
     const fmtProgress = (n: number): string =>
-      t('home.testProgress', 'Tar opp test… ca. {n}/{total} s')
-        .replace('{n}', String(n)).replace('{total}', String(TOTAL))
+      tf('home.testProgress', { n, total: TOTAL }, 'Tar opp test… ca. {n}/{total} s')
     status.textContent = fmtProgress(0)
     healthProgress('determinate', 0)
     const tick = setInterval(() => {
@@ -820,10 +820,11 @@ export function setupHome(): void {
       const loss = Math.max(0, (r.expectedSec ?? 0) - (r.measuredSec ?? 0))
       const pct = r.expectedSec ? (loss / r.expectedSec * 100) : 0
       status.textContent = `${r.verdict === 'pass' ? '✅' : r.verdict === 'warn' ? '⚠️' : '❌'} ` +
-        t('audio.benchResult', 'Målt {m}s av {e}s ({p} % tap)')
-          .replace('{m}', (r.measuredSec ?? 0).toFixed(2))
-          .replace('{e}', (r.expectedSec ?? 0).toFixed(0))
-          .replace('{p}', pct.toFixed(2)) +
+        tf('audio.benchResult', {
+          m: (r.measuredSec ?? 0).toFixed(2),
+          e: (r.expectedSec ?? 0).toFixed(0),
+          p: pct.toFixed(2),
+        }, 'Målt {m}s av {e}s ({p} % tap)') +
         (r.reasons?.length ? ` — ${r.reasons.join('; ')}` : '')
     } catch (err) {
       status.textContent = '❌ ' + errText(err)
@@ -1048,7 +1049,7 @@ function wireHomeIpcListeners(): void {
   // Norwegian `msg` to a German user — with `msg` kept as the fallback for a
   // code this renderer build does not know yet. See status/backend-warning-core.
   homeIpcUnsubs.push(window.api.on('backend-warning', (data: unknown) => {
-    const view = toWarningView(data, t)
+    const view = toWarningView(data, t, (k, c, f) => tn(k, c, {}, f))
     if (view) toast(view.kind, view.text)
   }))
 
@@ -1085,8 +1086,7 @@ function renderPrerollChip(active: boolean, seconds: number): void {
   if (!chip) return
   if (!active) { chip.style.display = 'none'; return }
   if (text) {
-    text.textContent = t('home.prerollActive', 'Forhåndsbuffer aktiv ({n} s)')
-      .replace('{n}', String(seconds))
+    text.textContent = tf('home.prerollActive', { n: seconds }, 'Forhåndsbuffer aktiv ({n} s)')
   }
   chip.style.display = ''
 }
@@ -1194,6 +1194,8 @@ export async function refreshHome(): Promise<void> {
 function fmtCtx(nowMs = Date.now()): FormatCtx {
   return {
     t,
+    tf,
+    tn,
     parts: intlParts(localeTag()),
     nowMs,
   }
@@ -1367,7 +1369,7 @@ function paintHeroWarnDetail(): void {
   const el = document.getElementById('hero-warn-detail')
   if (!el) return
   el.textContent = heroWarnDeviceName
-    ? t('home.reconnectDevice', 'Koble til {name} via USB').replace('{name}', heroWarnDeviceName)
+    ? tf('home.reconnectDevice', { name: heroWarnDeviceName }, 'Koble til {name} via USB')
     : t('home.warnDetail', 'Koble til mikseren via USB før søndag')
 }
 
@@ -1456,12 +1458,13 @@ export async function loadHomeInfoStrip(): Promise<void> {
     let chLine = ''
     if (stored) {
       chLine = mode === 'monoL'
-        ? t('home.sourceChannelMono', 'Kanal {n}').replace('{n}', String((stored.channelL ?? 0) + 1))
+        ? tf('home.sourceChannelMono', { n: (stored.channelL ?? 0) + 1 }, 'Kanal {n}')
         : mode === 'monoR'
-          ? t('home.sourceChannelMono', 'Kanal {n}').replace('{n}', String((stored.channelR ?? 1) + 1))
-          : t('home.sourceChannels', 'Kanal {l}/{r}')
-              .replace('{l}', String((stored.channelL ?? 0) + 1))
-              .replace('{r}', String((stored.channelR ?? 1) + 1))
+          ? tf('home.sourceChannelMono', { n: (stored.channelR ?? 1) + 1 }, 'Kanal {n}')
+          : tf('home.sourceChannels', {
+              l: (stored.channelL ?? 0) + 1,
+              r: (stored.channelR ?? 1) + 1,
+            }, 'Kanal {l}/{r}')
       const modeLabel = mode === 'stereo' ? t('audio.stereo', 'Stereo') : 'Mono'
       chLine = `${chLine} · ${modeLabel} — `
     }

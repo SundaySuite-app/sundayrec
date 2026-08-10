@@ -1,4 +1,4 @@
-import { t, loadLocale, currentLang, onLocaleApplied } from '../i18n'
+import { t, tf, tn, loadLocale, currentLang, onLocaleApplied } from '../i18n'
 import { errorCode } from '../error-code-core'
 import { settings, patchSettings } from '../state'
 import { setVal, localeTag } from '../helpers'
@@ -95,10 +95,11 @@ export function setupGeneralPage(): void {
       if (!needsLocalConfirmation(url, !!settings.webhookAllowLocal)) return null
       return {
         title: t('notify.webhookLocalTitle', 'Denne adressen er på ditt lokale nett'),
-        message: t(
+        message: tf(
           'notify.webhookLocalBody',
+          { host: hostOf(url) ?? url },
           'SundayRec sender varsler til {host}, som ligger på ditt eget nettverk og ikke på internett. Tillat det bare hvis du vet hvilket utstyr som svarer der.',
-        ).replace('{host}', hostOf(url) ?? url),
+        ),
         confirmLabel: t('notify.webhookLocalAllow', 'Ja, tillat lokalt nett'),
         cancelLabel: t('notify.webhookLocalDeny', 'Avbryt'),
       }
@@ -419,8 +420,9 @@ async function sendTestEmail(): Promise<void> {
     })
     toast(res.ok ? 'success' : 'error',
       res.ok
-        ? t('notify.testEmailSent', 'Test-e-post sendt til {to}').replace('{to}', recipient)
-        : t('notify.testEmailFailed', 'Test-e-posten gikk ikke gjennom: {err}').replace('{err}', emailErrorText(res.error)))
+        ? tf('notify.testEmailSent', { to: recipient }, 'Test-e-post sendt til {to}')
+        : tf('notify.testEmailFailed', { err: emailErrorText(res.error) },
+            'Test-e-posten gikk ikke gjennom: {err}'))
   } finally {
     if (btn) btn.disabled = false
   }
@@ -661,18 +663,17 @@ async function refreshTelemetryCard(): Promise<void> {
   const q = await window.api.telemetryQueueStatus().catch(() => null)
   const parts: string[] = []
   if (q && q.pending > 0) {
-    parts.push(q.pending === 1
-      ? t('general.telemetryQueuePendingOne', '1 rapport venter på å bli sendt.')
-      : t('general.telemetryQueuePendingMany', '{n} rapporter venter på å bli sendt.').replace('{n}', String(q.pending)))
+    parts.push(tn('general.telemetryQueuePending', q.pending, {}, '{n} rapporter venter på å bli sendt.'))
   }
   if (q && q.failed > 0) {
-    parts.push(t('general.telemetryQueueFailed', '{n} kunne ikke sendes.').replace('{n}', String(q.failed)))
+    parts.push(tn('general.telemetryQueueFailed', q.failed, {}, '{n} kunne ikke sendes.'))
   }
   if (q?.oldestAt) {
-    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(localeTag())))
+    parts.push(tf('general.telemetryQueueOldestSince',
+      { date: new Date(q.oldestAt).toLocaleDateString(localeTag()) }, 'Eldste er fra {date}.'))
   }
   if (q?.lastError) {
-    parts.push(t('general.telemetryQueueLastError', 'Siste feil: {error}').replace('{error}', q.lastError))
+    parts.push(tf('general.telemetryQueueLastError', { error: q.lastError }, 'Siste feil: {error}'))
   }
   statusEl.textContent = parts.join(' ')
   statusEl.style.display = parts.length ? '' : 'none'
@@ -971,7 +972,11 @@ function paintLearningLine(id: string, line: CopyLine | null): void {
     el.style.display = 'none'
     return
   }
-  el.textContent = applyParams(t(line.key, line.fallback), line.params)
+  // A count-governed line resolves through `tn` (CLDR plural form), everything
+  // else through `t` — see CopyLine.count in learning-summary-core.ts.
+  el.textContent = line.count === undefined
+    ? applyParams(t(line.key, line.fallback), line.params)
+    : tn(line.key, line.count, line.params ?? {}, line.fallback)
   el.style.display = ''
 }
 
@@ -1034,13 +1039,14 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-available',         (info: unknown) => {
     const v = (info as { version: string }).version
-    setUpdateStatus('ready', t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v))
+    setUpdateStatus('ready', tf('update.availableInstall', { v },
+      'Versjon {v} tilgjengelig — klikk for å laste ned og installere'))
     // The label must say what the click DOES from here: download + install.
     setUpdateButtons(() => `↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
     showUpdateToast(
       t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
       // Same key as the status row — the two said the same thing in two keys.
-      t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v),
+      tf('update.availableInstall', { v }, 'Versjon {v} tilgjengelig — klikk for å laste ned og installere'),
       true
     )
   }))
@@ -1052,7 +1058,7 @@ function wireUpdateIpcListeners(): void {
       if (!updateUi) updateUi = attachProgress(host, { compact: true })
       updateUi.update(Math.max(0, Math.min(1, pct / 100)), t('update.btnDownloading', 'Laster ned…'))
     }
-    setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
+    setUpdateStatus('pending', tf('update.downloading', { pct }, 'Laster ned… {pct}%'))
     setUpdateButtons(() => t('update.btnDownloading', 'Laster ned…'), { disabled: true })
     // If the update toast is still on screen, its bar shows the same download
     // live (it was previously written while permanently hidden).
@@ -1062,10 +1068,10 @@ function wireUpdateIpcListeners(): void {
     const v = (info as { version: string }).version
     hideProgress()
     setUpdateButtons(() => `↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
-    setUpdateStatus('ready', t('update.readyInstall', 'Versjon {v} er klar — start på nytt for å installere').replace('{v}', v))
+    setUpdateStatus('ready', tf('update.readyInstall', { v }, 'Versjon {v} er klar — start på nytt for å installere'))
     showUpdateToast(
       t('update.toastReadyTitle', 'Klar for installasjon'),
-      t('update.toastReadyText', 'Versjon {v} er lastet ned').replace('{v}', v),
+      tf('update.toastReadyText', { v }, 'Versjon {v} er lastet ned'),
       true
     )
   }))

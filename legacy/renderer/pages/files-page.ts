@@ -1,7 +1,7 @@
 import { settings, patchSettings, saveSettingsDebounced } from '../state'
 import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
 import { setVal, setRadio, isoDate } from '../helpers'
-import { t } from '../i18n'
+import { t, tn } from '../i18n'
 import { errorCode } from '../error-code-core'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
@@ -21,10 +21,12 @@ function autoDeleteGuard(days: number): GuardDescriptor | null {
   if (!(days > 0 && days < 30)) return null
   return {
     title: t('dialog.autoDeleteTitle', 'Slette opptak automatisk?'),
-    message: t(
+    message: tn(
       'files.confirmAutoDeleteShort',
+      days,
+      {},
       'Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.',
-    ).replace('{n}', String(days)),
+    ),
     confirmLabel: t('dialog.autoDeleteConfirm', 'Ja, slett automatisk'),
   }
 }
@@ -185,10 +187,10 @@ export function setupFilesPage(): void {
       const result  = await window.api.podcastRegenerate(service)
       if (result.ok) {
         const count = result.episodeCount
-        const epWord = count === 1
-          ? t('publish.episodeSingular', 'episode')
-          : t('publish.episodePlural', 'episoder')
-        status.textContent = `✓ ${count} ${epWord} ${t('publish.published', 'publisert')}`
+        // One sentence per plural form, not a noun glued between a number and
+        // a participle: the word order and the participle's agreement are the
+        // locale's business (Polish uses the impersonal «Opublikowano …»).
+        status.textContent = `✓ ${tn('publish.publishedCount', count, {}, '{n} episoder publisert')}`
         if (result.feedUrl) {
           settings.podcast = { ...(settings.podcast ?? {} as PodcastSettings), feedUrl: result.feedUrl }
           showFeedUrl(result.feedUrl)

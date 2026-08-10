@@ -30,6 +30,7 @@ step "frontend — vitest";              npm run test
 step "app version in sync";            npm run version-sync
 step "i18n fallbacks match no.json";   npm run i18n-fallbacks
 step "i18n hardcoded-tekst-skralle";    npm run i18n-hardcoded
+step "i18n flertallsgrupper";          npm run i18n-plurals
 step "smoke VERIFIED-BY pointers";     npm run smoke-verified
 
 step "rust — cargo fmt --check";       npm run fmt:rust:check

@@ -36,10 +36,11 @@
     "smoke-verified": "node scripts/check-smoke-verified.mjs",
     "reachability:write-baseline": "node scripts/check-command-reachability.mjs --write-baseline",
     "bindings:check": "npm run bindings && git diff --quiet -- legacy/bindings || (echo 'ts-rs bindings are stale \u2014 run npm run bindings and commit legacy/bindings' && exit 1)",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-fallbacks && npm run i18n-hardcoded && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run version-sync && npm run i18n-fallbacks && npm run i18n-hardcoded && npm run i18n-plurals && npm run smoke-verified && npm run fmt:rust:check && npm run lint:rust && npm run test:rust && npm run bindings:check && npm run reachability",
     "ci": "bash scripts/ci-local.sh",
     "prepare": "husky",
     "i18n-hardcoded": "node scripts/check-i18n-hardcoded.mjs",
+    "i18n-plurals": "node scripts/check-i18n-plurals.mjs",
     "i18n-hardcoded:write-baseline": "node scripts/check-i18n-hardcoded.mjs --write-baseline"
   },
   "lint-staged": {

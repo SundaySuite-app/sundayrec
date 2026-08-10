@@ -9,7 +9,7 @@
  * serves both "browse all recordings" and "search inside sermons".
  */
 
-import { t } from '../i18n'
+import { t, tf, tn } from '../i18n'
 import { fmtDate, flashMsg } from '../helpers'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { confirmDialog } from '../ui/dialog'
@@ -320,7 +320,7 @@ export function renderHistoryRows(
         return
       }
       trashedToast(
-        t('trash.movedOne', '«{name}» ligger i papirkurven').replace('{name}', name),
+        tf('trash.movedNamed', { name }, '«{name}» ligger i papirkurven'),
         moved,
       )
       void refreshTrashButton()
@@ -439,9 +439,9 @@ export function setupHistoryTools(rerender: () => void): void {
     const n = fullHistory.length
     if (!n) { flashMsg(document.getElementById('btn-clear-history'), t('history.clearNone', 'Listen er tom'), true); return }
     const ok = await confirmDialog({
-      title:        t('history.confirmClearN', 'Slett alle {n} oppføringene?').replace('{n}', String(n)),
-      message:      t('trash.clearHistoryBody', 'Opptakene flyttes til papirkurven, der de ligger i {d} dager før de slettes for godt.')
-        .replace('{d}', String(TRASH_KEEP_DAYS)),
+      title:        tn('history.confirmClear', n, {}, 'Slett alle {n} oppføringene?'),
+      message:      tn('trash.clearHistoryBody', TRASH_KEEP_DAYS, { d: TRASH_KEEP_DAYS },
+        'Opptakene flyttes til papirkurven, der de ligger i {d} dager før de slettes for godt.'),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
@@ -450,7 +450,7 @@ export function setupHistoryTools(rerender: () => void): void {
     await loadHistory()
     rerender()
     trashedToast(
-      t('trash.movedN', '{n} opptak ligger i papirkurven').replace('{n}', String(moved.length)),
+      tn('trash.moved', moved.length, {}, '{n} opptak ligger i papirkurven'),
       moved,
     )
   })
@@ -463,10 +463,9 @@ export function setupHistoryTools(rerender: () => void): void {
       return
     }
     const ok = await confirmDialog({
-      title:        errors.length === 1
-        ? t('history.confirmDeleteErrorsOne', 'Slett 1 feiloppføring?')
-        : t('history.confirmDeleteErrorsN', 'Slett {n} feiloppføringer?').replace('{n}', String(errors.length)),
-      message:      t('trash.deleteErrorsBody', '{n} oppføringer med feil fjernes. Filer som finnes flyttes til papirkurven.').replace('{n}', String(errors.length)),
+      title:        tn('history.confirmDeleteErrors', errors.length, {}, 'Slett {n} feiloppføringer?'),
+      message:      tn('trash.deleteErrorsBody', errors.length, {},
+        '{n} oppføringer med feil fjernes. Filer som finnes flyttes til papirkurven.'),
       confirmLabel: t('dialog.delete', 'Slett'),
       danger:       true,
     })
@@ -476,7 +475,7 @@ export function setupHistoryTools(rerender: () => void): void {
     rerender()
     if (moved.length) {
       trashedToast(
-        t('trash.movedN', '{n} opptak ligger i papirkurven').replace('{n}', String(moved.length)),
+        tn('trash.moved', moved.length, {}, '{n} opptak ligger i papirkurven'),
         moved,
       )
     }
@@ -550,7 +549,7 @@ function setupTrashView(rerender: () => void): void {
     // The one irreversible step in the whole design, and the only one that
     // still gets a danger dialog.
     const ok = await confirmDialog({
-      title:        t('trash.confirmEmptyN', 'Slett {n} opptak for godt?').replace('{n}', String(n)),
+      title:        tn('trash.confirmEmpty', n, {}, 'Slett {n} opptak for godt?'),
       message:      t('trash.confirmEmptyBody', 'Filene slettes fra disken. Dette kan ikke angres.'),
       confirmLabel: t('trash.deleteForever', 'Slett for godt'),
       danger:       true,
@@ -589,7 +588,7 @@ async function renderTrashList(): Promise<void> {
   const words = {
     today:     t('trash.today', 'i dag'),
     yesterday: t('trash.yesterday', 'i går'),
-    daysAgo:   t('trash.daysAgo', '{n} dager siden'),
+    daysAgo:   (n: number) => tn('trash.daysAgo', n, {}, '{n} dager siden'),
   }
 
   for (const row of rows) {
@@ -608,13 +607,13 @@ async function renderTrashList(): Promise<void> {
     const parts = [
       `${t('trash.deletedAt', 'Slettet')} ${ageText(row.ageDays, words)}`,
       row.daysLeft > 0
-        ? t('trash.daysLeft', '{n} dager igjen').replace('{n}', String(row.daysLeft))
+        ? tn('trash.daysLeft', row.daysLeft, {}, '{n} dager igjen')
         : t('trash.dueNow', 'slettes ved neste opprydding'),
     ]
     // Say that the companions travelled: a restore that silently also brings
     // back nine JSON files is fine, but it should not be a surprise.
     if (row.relatedCount > 0) {
-      parts.push(t('trash.related', '+ {n} tilhørende filer').replace('{n}', String(row.relatedCount)))
+      parts.push(tn('trash.related', row.relatedCount, {}, '+ {n} tilhørende filer'))
     }
     meta.textContent = parts.join(' · ')
     main.appendChild(name)
@@ -650,7 +649,7 @@ async function renderTrashList(): Promise<void> {
     })
     forever.addEventListener('click', async () => {
       const ok = await confirmDialog({
-        title:        t('trash.confirmPurgeOne', 'Slett «{name}» for godt?').replace('{name}', row.name),
+        title:        tf('trash.confirmPurgeOne', { name: row.name }, 'Slett «{name}» for godt?'),
         message:      t('trash.confirmEmptyBody', 'Filene slettes fra disken. Dette kan ikke angres.'),
         confirmLabel: t('trash.deleteForever', 'Slett for godt'),
         danger:       true,

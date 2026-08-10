@@ -20,8 +20,14 @@
     "ok": "KLAR FOR OPPTAK",
     "warn": "KREVER HANDLING",
     "noSchedule": "Ingen opptak planlagt",
-    "preflightErrors": "{n} feil må rettes før opptaket",
-    "preflightWarns": "{n} ting å se på før opptaket",
+    "preflightErrors": {
+      "one": "{n} feil må rettes før opptaket",
+      "other": "{n} feil må rettes før opptaket"
+    },
+    "preflightWarns": {
+      "one": "{n} ting å se på før opptaket",
+      "other": "{n} ting å se på før opptaket"
+    },
     "preflightAction": "Se innstillinger",
     "dismiss": "Skjul",
     "preflightMore": "flere — se Innstillinger → Lyd"
@@ -154,9 +160,14 @@
     "deleteFailed": "Kunne ikke slette",
     "clearNone": "Listen er tom",
     "errorsNone": "Ingen feiloppføringer",
-    "confirmClearN": "Slett alle {n} oppføringene?",
-    "confirmDeleteErrorsOne": "Slett 1 feiloppføring?",
-    "confirmDeleteErrorsN": "Slett {n} feiloppføringer?",
+    "confirmClear": {
+      "one": "Slett oppføringen?",
+      "other": "Slett alle {n} oppføringene?"
+    },
+    "confirmDeleteErrors": {
+      "one": "Slett {n} feiloppføring?",
+      "other": "Slett {n} feiloppføringer?"
+    },
     "emptyFiltered": "Ingen opptak i dette filteret"
   },
   "trash": {
@@ -168,30 +179,53 @@
     "empty": "Papirkurven er tom.",
     "alreadyEmpty": "Papirkurven er tom",
     "deleteEntry": "Flytt til papirkurven",
-    "movedOne": "«{name}» ligger i papirkurven",
-    "movedN": "{n} opptak ligger i papirkurven",
+    "moved": {
+      "one": "{n} opptak ligger i papirkurven",
+      "other": "{n} opptak ligger i papirkurven"
+    },
     "undo": "Angre",
     "undoFailed": "Kunne ikke hente alt tilbake — se i papirkurven.",
-    "clearHistoryBody": "Opptakene flyttes til papirkurven, der de ligger i {d} dager før de slettes for godt.",
-    "deleteErrorsBody": "{n} oppføringer med feil fjernes. Filer som finnes flyttes til papirkurven.",
+    "clearHistoryBody": {
+      "one": "Opptakene flyttes til papirkurven, der de ligger i {d} dag før de slettes for godt.",
+      "other": "Opptakene flyttes til papirkurven, der de ligger i {d} dager før de slettes for godt."
+    },
+    "deleteErrorsBody": {
+      "one": "{n} oppføring med feil fjernes. Filer som finnes flyttes til papirkurven.",
+      "other": "{n} oppføringer med feil fjernes. Filer som finnes flyttes til papirkurven."
+    },
     "restore": "Gjenopprett",
     "restoreFailed": "Kunne ikke gjenopprette",
     "deleteForever": "Slett for godt",
     "confirmPurgeOne": "Slett «{name}» for godt?",
-    "confirmEmptyN": "Slett {n} opptak for godt?",
+    "confirmEmpty": {
+      "one": "Slett {n} opptak for godt?",
+      "other": "Slett {n} opptak for godt?"
+    },
     "confirmEmptyBody": "Filene slettes fra disken. Dette kan ikke angres.",
     "deletedAt": "Slettet",
     "today": "i dag",
     "yesterday": "i går",
-    "daysAgo": "{n} dager siden",
-    "daysLeft": "{n} dager igjen",
+    "daysAgo": {
+      "one": "{n} dag siden",
+      "other": "{n} dager siden"
+    },
+    "daysLeft": {
+      "one": "{n} dag igjen",
+      "other": "{n} dager igjen"
+    },
     "dueNow": "slettes ved neste opprydding",
-    "related": "+ {n} tilhørende filer"
+    "related": {
+      "one": "+ {n} tilhørende fil",
+      "other": "+ {n} tilhørende filer"
+    },
+    "movedNamed": "«{name}» ligger i papirkurven"
   },
   "review": {
     "queueTitle": "Klare for gjennomgang og publisering",
-    "queueCount": "{n} episoder",
-    "queueCountOne": "1 episode",
+    "queueCount": {
+      "one": "{n} episode",
+      "other": "{n} episoder"
+    },
     "needsAttention": "Trenger oppmerksomhet",
     "openReview": "Gjennomgå →",
     "sermonGuess": "Preken antatt: {min} min",
@@ -224,8 +258,10 @@
     ],
     "ageNow": "Akkurat nå",
     "ageHours": "{n}t siden",
-    "ageDayOne": "1 dag siden",
-    "ageDays": "{n} dager siden",
+    "ageDays": {
+      "one": "{n} dag siden",
+      "other": "{n} dager siden"
+    },
     "ageOldest": "Over 14 dager siden",
     "confident": "sikker",
     "errNotFound": "Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet."
@@ -250,7 +286,10 @@
     "wakeTitle": "Vekk datamaskinen fra dvale",
     "wakeDesc": "Maskinen vekkes automatisk 10 minutter før opptaket starter",
     "wakeBtn": "Planlegg oppvåkning",
-    "wakeStatusOk": "{n} oppvåkning planlagt",
+    "wakeStatusOk": {
+      "one": "{n} oppvåkning planlagt",
+      "other": "{n} oppvåkninger planlagt"
+    },
     "wakeStatusNone": "Ingen kommende opptak å planlegge",
     "wakeStatusOff": "Oppvåkning er slått av",
     "wakeStatusCancelled": "Avvist — prøv igjen og godkjenn",
@@ -364,7 +403,10 @@
       "standbyTitle": "Dyp dvale er slått på",
       "mismatchTitle": "Operativsystemet mangler noen oppvåkninger",
       "okTitle": "Maskinen vekkes automatisk",
-      "okNext": "Neste oppvåkning {when} — {n} minutter før opptaket starter.",
+      "okNext": {
+        "one": "Neste oppvåkning {when} — {n} minutt før opptaket starter.",
+        "other": "Neste oppvåkning {when} — {n} minutter før opptaket starter."
+      },
       "okNoNext": "Ingen kommende opptak å våkne til akkurat nå.",
       "neverTested": "Aldri testet. Kjør «Test wake nå» under Detaljer før første gudstjeneste."
     }
@@ -435,7 +477,10 @@
     "benchResult": "Målt {m}s av {e}s ({p} % tap)",
     "scanChannels": "🔍 Finn kanaler med signal (3 sek)",
     "scanRunning": "Lytter i 3 sek — spill lyd på kanalene …",
-    "scanFound": "{n} kanaler med signal: {list}",
+    "scanFound": {
+      "one": "{n} kanal med signal: {list}",
+      "other": "{n} kanaler med signal: {list}"
+    },
     "scanNone": "Ingen kanaler med signal — spill lyd og prøv igjen",
     "deviceHelp": "Velg mikseren eller lydkortet som tar opp lyden i kirken. USB-mikser anbefales fremfor innebygd mikrofon.",
     "deviceNotShown": "Ser du ikke riktig enhet? Kontroller at lydkortet er koblet til og at driveren er installert.",
@@ -454,7 +499,10 @@
     "gridMonoChip": "KANAL (mono)",
     "gridTapHint": "Trykk på kanalen for venstre, så kanalen for høyre.",
     "gridTapHintMono": "Trykk på kanalen med signal for å velge den.",
-    "gridMeta": "{n} kanaler — live signal",
+    "gridMeta": {
+      "one": "{n} kanal — live signal",
+      "other": "{n} kanaler — live signal"
+    },
     "gridSaved": "Lagret ✓",
     "channelNum": "Kanal {n}",
     "diagnoseCopied": "✓ Kopiert",
@@ -497,7 +545,10 @@
     "autoDeleteDesc": "Frigjør diskplass automatisk ved å slette gamle opptak",
     "trimSilence": "Trim stillhet",
     "trimSilenceDesc": "Kutter automatisk stille sekunder i starten og slutten av opptaket",
-    "confirmAutoDeleteShort": "Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes.",
+    "confirmAutoDeleteShort": {
+      "one": "Opptak eldre enn {n} dag slettes automatisk og kan ikke gjenopprettes.",
+      "other": "Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes."
+    },
     "behaviourTitle": "Opptaksoppførsel",
     "behaviourDesc": "Finjuster hvordan opptaket starter, beskyttes og deles opp.",
     "whileRecording": "Mens et opptak går",
@@ -584,9 +635,14 @@
     "telemetryPreviewBtn": "Vis hva som sendes",
     "telemetryDeleteBtn": "Slett mine data",
     "telemetryReadMore": "Les personvernerklæringen ↗",
-    "telemetryQueuePendingOne": "1 rapport venter på å bli sendt.",
-    "telemetryQueuePendingMany": "{n} rapporter venter på å bli sendt.",
-    "telemetryQueueFailed": "{n} kunne ikke sendes.",
+    "telemetryQueuePending": {
+      "one": "{n} rapport venter på å bli sendt.",
+      "other": "{n} rapporter venter på å bli sendt."
+    },
+    "telemetryQueueFailed": {
+      "one": "{n} kunne ikke sendes.",
+      "other": "{n} kunne ikke sendes."
+    },
     "telemetryQueueOldestSince": "Eldste er fra {date}.",
     "telemetryQueueLastError": "Siste feil: {error}",
     "telemetryDeleteConfirmTitle": "Slette dine data?",
@@ -609,12 +665,26 @@
     "learningUnavailableRecording": "Ikke tilgjengelig mens opptak pågår.",
     "learningEmptyBody": "Ingenting å vise ennå — helt normalt. Dette fylles bare ut når du retter noe appen har gjettet feil på.",
     "learningSermonPickZero": "Det automatiske prekenvalget er ikke rettet ennå.",
-    "learningSermonPickOne": "Det automatiske prekenvalget er rettet 1 gang.",
-    "learningSermonPickMany": "Det automatiske prekenvalget er rettet {n} ganger.",
-    "learningStartTooEarly": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.",
-    "learningStartTooLate": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.",
-    "learningEndTooEarly": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekunder senere.",
-    "learningEndTooLate": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere.",
+    "learningSermonPick": {
+      "one": "Det automatiske prekenvalget er rettet {n} gang.",
+      "other": "Det automatiske prekenvalget er rettet {n} ganger."
+    },
+    "learningStartTooEarly": {
+      "one": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekund senere.",
+      "other": "Den automatiske starten treffer ofte for tidlig — i snitt har du flyttet den {n} sekunder senere."
+    },
+    "learningStartTooLate": {
+      "one": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekund tidligere.",
+      "other": "Den automatiske starten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere."
+    },
+    "learningEndTooEarly": {
+      "one": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekund senere.",
+      "other": "Den automatiske slutten kuttes ofte for tidlig — i snitt har du flyttet den {n} sekunder senere."
+    },
+    "learningEndTooLate": {
+      "one": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekund tidligere.",
+      "other": "Den automatiske slutten treffer ofte for sent — i snitt har du flyttet den {n} sekunder tidligere."
+    },
     "learningCompanionSummary": "Av AI-forslagene er {accepted} tatt i bruk ({edited} skrevet om etterpå), og {leftAlone} latt være urørt.",
     "localNudgeCardTitle": "Hva appen har justert",
     "localNudgeCardDesc": "Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.",
@@ -792,8 +862,10 @@
     "videoFormat": "Video-format",
     "vocalChain": "Stemmebehandling",
     "exportDoneToast": "Eksportert{name}",
-    "gotoReviewOne": "Gjennomgangs-kø (1 episode) →",
-    "gotoReviewN": "Gjennomgangs-kø ({n} episoder) →",
+    "gotoReviewCount": {
+      "one": "Gjennomgangs-kø ({n} episode) →",
+      "other": "Gjennomgangs-kø ({n} episoder) →"
+    },
     "enhanceNone": "Ingen",
     "vcLight": "Stemme — lett",
     "vcPodcast": "Podkast-stemme (anbefalt)",
@@ -1018,7 +1090,10 @@
     "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
-    "reviewOverdue": "En episode har ventet i {days} dager på gjennomgang: {episode}",
+    "reviewOverdue": {
+      "one": "En episode har ventet i {days} dag på gjennomgang: {episode}",
+      "other": "En episode har ventet i {days} dager på gjennomgang: {episode}"
+    },
     "systemTitle": "Systemvarsler",
     "emailTitle": "E-postvarsler",
     "smtpServer": "E-POSTTJENESTE (SMTP)",
@@ -1116,9 +1191,10 @@
     "queueStatusPending": "Venter",
     "pickFolderTitle": "Velg mappe",
     "loading": "Laster…",
-    "episodeSingular": "episode",
-    "episodePlural": "episoder",
-    "published": "publisert",
+    "publishedCount": {
+      "one": "{n} episode publisert",
+      "other": "{n} episoder publisert"
+    },
     "errConnectFirst": "koble til skytjenesten først",
     "errPickFolderFirst": "velg lagringsmappe først",
     "errEnablePodcast": "aktiver podcast først",
@@ -1250,7 +1326,10 @@
     "noHighlights": "Ingen tydelige høydepunkter funnet",
     "useMeta": "→ Bruk i metadata",
     "useMetaHint": "Legg tittel + oppsummering i metadata — brukes ved eksport og av SundayEdit/Stage",
-    "useChapters": "→ Legg til {n} kapitler",
+    "useChapters": {
+      "one": "→ Legg til {n} kapittel",
+      "other": "→ Legg til {n} kapitler"
+    },
     "copy": "⧉ Kopier",
     "copied": "Kopiert",
     "copyFailed": "Kunne ikke kopiere",
@@ -1338,8 +1417,10 @@
     "dismiss": "Lukk"
   },
   "missed": {
-    "bannerOne": "Et planlagt opptak ble ikke tatt opp",
-    "bannerMany": "{n} planlagte opptak ble ikke tatt opp",
+    "banner": {
+      "one": "{n} planlagt opptak ble ikke tatt opp",
+      "other": "{n} planlagte opptak ble ikke tatt opp"
+    },
     "hint": "Sjekk at maskinen var på, at SundayRec kjørte og at «Vekk maskin automatisk» er slått på.",
     "dismiss": "Greit",
     "openSchedule": "Åpne tidsplan",
@@ -1349,7 +1430,10 @@
   "guard": {
     "title": "{what} nå?",
     "duringRecording": "Et opptak pågår akkurat nå. Endringen kan avbryte eller ødelegge det som tas opp.",
-    "beforeRecording": "Neste planlagte opptak starter om {n} minutter. Endringen rekker å slå ut på det opptaket.",
+    "beforeRecording": {
+      "one": "Neste planlagte opptak starter om {n} minutt. Endringen rekker å slå ut på det opptaket.",
+      "other": "Neste planlagte opptak starter om {n} minutter. Endringen rekker å slå ut på det opptaket."
+    },
     "confirm": "Ja, endre likevel",
     "cancel": "Ikke nå"
   },

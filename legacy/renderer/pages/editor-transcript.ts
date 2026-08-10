@@ -707,7 +707,6 @@ async function deleteTranscript(): Promise<void> {
  */
 async function exportSubtitleFile(fmt: 'srt' | 'vtt' | 'txt'): Promise<void> {
   if (!currentTranscript || !currentFilePath) return
-  const baseName = currentFilePath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') ?? 'transcript'
   const path = await window.api.pickSavePath({
     defaultPath: `${currentFilePath.replace(/\.[^./\\]+$/, '')}.${fmt}`,
     name:        fmt.toUpperCase(),
@@ -716,7 +715,8 @@ async function exportSubtitleFile(fmt: 'srt' | 'vtt' | 'txt'): Promise<void> {
   if (!path) return
   const res = await window.api.whisperExportTranscript(currentTranscript, fmt, path)
   if (res.ok) {
-    toast('success', t('transcript.exportDone', 'Transkripsjon lagret').replace('{name}', baseName), {
+    // The key carries no {name}; the old `.replace('{name}', …)` was a no-op.
+    toast('success', t('transcript.exportDone', 'Transkripsjon lagret'), {
       action: {
         label:   t('general.showInFolder', 'Vis i mappe'),
         onClick: () => { void window.api.revealFile(path) },

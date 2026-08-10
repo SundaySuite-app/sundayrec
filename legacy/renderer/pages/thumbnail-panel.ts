@@ -5,7 +5,7 @@
  * rendering, and clear/reset buttons against the appropriate IPC endpoints.
  */
 
-import { t } from '../i18n'
+import { t, tf } from '../i18n'
 import type { ThumbnailInfo, ThumbnailResolved, ThumbnailResult } from '../main'
 
 const APPLE_MIN_PX = 1400
@@ -37,11 +37,11 @@ function fmtBytes(b: number): string {
 
 function fmtInfo(info: ThumbnailInfo): string {
   // Template: "{w}×{h} px · {size}" — kept simple, applies in every locale.
-  const tmpl = t('thumbnail.info.size', '{w}×{h} px · {size}')
-  return tmpl
-    .replace('{w}', String(info.width))
-    .replace('{h}', String(info.height))
-    .replace('{size}', fmtBytes(info.byteSize))
+  return tf(
+    'thumbnail.info.size',
+    { w: info.width, h: info.height, size: fmtBytes(info.byteSize) },
+    '{w}×{h} px · {size}',
+  )
 }
 
 function buildWarnings(info: ThumbnailInfo): string[] {

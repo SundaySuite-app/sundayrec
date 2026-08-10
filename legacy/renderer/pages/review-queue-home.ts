@@ -11,7 +11,7 @@
  */
 
 import type { ReviewQueueEntry } from '../../types'
-import { t, tArr } from '../i18n'
+import { t, tArr, tf, tn, onLocaleApplied } from '../i18n'
 
 function fmtDate(timestamp: number): string {
   const d = new Date(timestamp)
@@ -39,7 +39,7 @@ function fmtSermonInfo(entry: ReviewQueueEntry): string {
   const trim = entry.prep.suggestedTrim
   if (!trim) return t('review.sermonNotFound', 'Preken ikke detektert')
   const lenMin = Math.round((trim.endSec - trim.startSec) / 60)
-  return t('review.sermonGuess', 'Preken antatt: {min} min').replace('{min}', String(lenMin))
+  return tf('review.sermonGuess', { min: lenMin }, 'Preken antatt: {min} min')
 }
 
 function attentionBadge(entry: ReviewQueueEntry): HTMLElement | null {
@@ -52,17 +52,18 @@ function attentionBadge(entry: ReviewQueueEntry): HTMLElement | null {
 
 function ageLabel(ageInDays: number): string {
   if (ageInDays < 1 / 24) return t('review.ageNow', 'Akkurat nå')
-  if (ageInDays < 1) return t('review.ageHours', '{n}t siden').replace('{n}', String(Math.floor(ageInDays * 24)))
-  if (ageInDays < 2) return t('review.ageDayOne', '1 dag siden')
-  if (ageInDays < 14) return t('review.ageDays', '{n} dager siden').replace('{n}', String(Math.floor(ageInDays)))
+  if (ageInDays < 1) return tf('review.ageHours', { n: Math.floor(ageInDays * 24) }, '{n}t siden')
+  if (ageInDays < 14) return tn('review.ageDays', Math.floor(ageInDays), {}, '{n} dager siden')
   return t('review.ageOldest', 'Over 14 dager siden')
 }
 
+/** The last queue we drew, kept so a language switch can repaint from cached
+ *  state instead of another IPC round-trip (see i18n.onLocaleApplied). */
+let lastPending: ReviewQueueEntry[] = []
+
 export async function refreshReviewQueue(): Promise<void> {
   const card = document.getElementById('review-queue-card')
-  const list = document.getElementById('review-queue-list')
-  const count = document.getElementById('review-queue-count')
-  if (!card || !list) return
+  if (!card) return
 
   let entries: ReviewQueueEntry[] = []
   try {
@@ -74,25 +75,40 @@ export async function refreshReviewQueue(): Promise<void> {
 
   // Filter out published/discarded — those are kept briefly by the backend
   // but should not show up in the "pending review" UI.
-  const pending = entries.filter(e => e.prep.status !== 'published' && e.prep.status !== 'discarded')
+  lastPending = entries.filter(e => e.prep.status !== 'published' && e.prep.status !== 'discarded')
+  paintReviewQueue()
+}
 
-  if (pending.length === 0) {
+/**
+ * Draw the card from `lastPending`. Synchronous and idempotent, because this is
+ * also the language-switch repaint: the count line is not a static `data-i18n`
+ * node but a COUNT-dependent one — «1 episode» vs «2 episoder», and four forms
+ * in Polish — so re-applying the locale has to re-pick the plural form, which
+ * only the count can do.
+ */
+function paintReviewQueue(): void {
+  const card = document.getElementById('review-queue-card')
+  const list = document.getElementById('review-queue-list')
+  const count = document.getElementById('review-queue-count')
+  if (!card || !list) return
+
+  if (lastPending.length === 0) {
     card.style.display = 'none'
     return
   }
 
   card.style.display = ''
   if (count) {
-    count.textContent = pending.length === 1
-      ? t('review.queueCountOne', '1 episode')
-      : t('review.queueCount', '{n} episoder').replace('{n}', String(pending.length))
+    count.textContent = tn('review.queueCount', lastPending.length, {}, '{n} episoder')
   }
 
   list.innerHTML = ''
-  for (const entry of pending) {
+  for (const entry of lastPending) {
     list.appendChild(renderEntry(entry))
   }
 }
+
+onLocaleApplied(paintReviewQueue)
 
 function renderEntry(entry: ReviewQueueEntry): HTMLElement {
   const item = document.createElement('div')
