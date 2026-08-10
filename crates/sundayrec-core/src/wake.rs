@@ -2,7 +2,7 @@
 //!
 //! Ported from the Electron `src/main/wake.ts` and `src/main/wake-verification.ts`.
 //! Those files interleaved the *decisions* (which wake points to schedule, how to
-//! format a `pmset`/`schtasks` time, classifying an error string, parsing the OS
+//! format a `pmset` time, classifying an error string, parsing the OS
 //! power tools' text output, matching expected wakes against observed ones,
 //! deciding platform capabilities) with the actual I/O (`execFile` of
 //! `pmset`/`osascript`/`powershell`/`powercfg`, `powerSaveBlocker`,
@@ -194,7 +194,7 @@ pub fn key_of(dates: &[NaiveDateTime]) -> String {
 /// for `new_points`, and whether the user explicitly initiated this (`forced`).
 ///
 /// The decision is split out as a pure function so the dedup + stale-timer logic
-/// can be tested without spawning `pmset`/`schtasks`. The crucial correctness
+/// can be tested without touching `pmset` or a wake timer. The crucial correctness
 /// point: when the new set is *empty* we must still apply (to cancel any stale OS
 /// wakes the previous key registered) and record the empty key — otherwise a
 /// later re-add of the same time would dedup against a key whose OS timers were

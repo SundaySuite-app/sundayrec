@@ -59,6 +59,9 @@ pub fn cf_absolute_to_local(abs: f64, utc_offset_secs: i32) -> Option<NaiveDateT
 
 /// The `kIOPMPowerEventTypeKey` values that mean "the machine comes up".
 /// `sleep`/`shutdown` events live in the same list and must not be counted.
+///
+/// The literals come from `IOKit/pwr_mgt/IOPMKeys.h`: `kIOPMAutoWake` = `"wake"`,
+/// `kIOPMAutoPowerOn` = `"poweron"`, `kIOPMAutoWakeOrPowerOn` = `"wakepoweron"`.
 pub fn is_wake_event(event_type: &str) -> bool {
     matches!(
         event_type.to_ascii_lowercase().as_str(),
@@ -182,6 +185,12 @@ mod imp {
     }
 
     /// The whole IOKit walk, with every container type checked before it is used.
+    ///
+    /// The three key literals are the values of `kIOPMPowerEventTimeKey`,
+    /// `kIOPMPowerEventAppNameKey` and `kIOPMPowerEventTypeKey` in
+    /// `IOKit/pwr_mgt/IOPMKeys.h` — verified against the installed SDK header, not
+    /// guessed. Getting one wrong is silent: the lookup just returns NULL and the
+    /// event is skipped, so the panel would report "nothing scheduled" forever.
     pub fn read(utc_offset_secs: i32) -> Vec<VerifiedWake> {
         let (Some(time_key), Some(app_key), Some(type_key)) = (
             OwnedKey::new("time"),        // kIOPMPowerEventTimeKey

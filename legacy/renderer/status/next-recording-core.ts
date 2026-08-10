@@ -64,7 +64,7 @@ export interface SpecialLike {
  *
  * This is not a guess: it MIRRORS `WAKE_LEAD_MINUTES` in
  * `crates/sundayrec-core/src/wake.rs:29`, which is what actually schedules the
- * pmset/schtasks wake point. The Tidsplan copy used to promise "~2 min", the
+ * OS wake point. The Tidsplan copy used to promise "~2 min", the
  * home badge assumed 10 — the machine has always woken at 10.
  */
 export const WAKE_LEAD_MINUTES = 10
