@@ -938,7 +938,7 @@ mod tests {
             rms_db: -20.0,
             zcr_per_sec: 2000.0,
             spectral_centroid: 1500.0,
-            spectral_flux: 12.0,
+            spectral_flux: 0.6,
         };
         assert_eq!(classify_frame(&frame).0, SegmentType::Speech);
         let pcm = vec![0.0f32; SAMPLE_RATE as usize / 10];
