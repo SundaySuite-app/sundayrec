@@ -174,6 +174,16 @@ pub struct ProgressUpdate {
     /// `true` for the terminating `progress=end` block, `false` for
     /// `progress=continue`.
     pub done: bool,
+    /// ffmpeg's running `drop_frames=` count.
+    ///
+    /// Read from the machine channel because `-nostats` (part of
+    /// [`PROGRESS_ARGS`]) removes the human stats line the `drop=`/`dup=`
+    /// scrapers in `selftest` were written against — so a capture that asks for
+    /// `-progress` and then looks for drops on stderr finds zero, always. The
+    /// soak harness reads these.
+    pub drop_frames: u64,
+    /// ffmpeg's running `dup_frames=` count. See [`ProgressUpdate::drop_frames`].
+    pub dup_frames: u64,
 }
 
 /// A partial block being accumulated across reads.
@@ -183,6 +193,8 @@ struct Pending {
     out_time_us: Option<u64>,
     out_time_ms_field: Option<u64>,
     out_time_hms_us: Option<u64>,
+    drop_frames: u64,
+    dup_frames: u64,
 }
 
 impl Pending {
@@ -197,6 +209,8 @@ impl Pending {
                 .or(self.out_time_ms_field)
                 .or(self.out_time_hms_us),
             done,
+            drop_frames: self.drop_frames,
+            dup_frames: self.dup_frames,
         }
     }
 }
@@ -267,13 +281,17 @@ impl ProgressStream {
             // MICROseconds — see `ProgressUpdate::out_time_us`. No ×1000.
             "out_time_ms" => self.pending.out_time_ms_field = value.parse().ok(),
             "out_time" => self.pending.out_time_hms_us = parse_hms_micros(value),
+            // Running counters, not per-block deltas — the LAST block's value
+            // is the run's total.
+            "drop_frames" => self.pending.drop_frames = value.parse().unwrap_or(0),
+            "dup_frames" => self.pending.dup_frames = value.parse().unwrap_or(0),
             "progress" => {
                 let done = value == "end";
                 let update = std::mem::take(&mut self.pending).finish(done);
                 return Some(update);
             }
-            // frame, fps, bitrate, speed, dup_frames, drop_frames,
-            // stream_N_N_q … — real keys we simply have no use for. Ignored
+            // frame, fps, bitrate, speed, stream_N_N_q … — real keys we
+            // simply have no use for. Ignored
             // rather than rejected: the vocabulary only ever grows.
             _ => {}
         }
@@ -485,6 +503,52 @@ mod progress_protocol_tests {
     #[test]
     fn the_recording_argv_flags_are_the_ones_we_captured_with() {
         assert_eq!(PROGRESS_ARGS, ["-progress", "pipe:1", "-nostats"]);
+    }
+
+    /// `-nostats` deletes the human stats line that `drop=`/`dup=` were scraped
+    /// from, so the counters have to come off the machine channel or not at all.
+    #[test]
+    fn drop_and_dup_counters_come_off_the_progress_channel() {
+        let mut s = ProgressStream::new();
+        let out = s.push(
+            "bitrate= 768.2kbits/s\n\
+             total_size=288078\n\
+             out_time_us=3000000\n\
+             dup_frames=4\n\
+             drop_frames=17\n\
+             speed=1.17e+03x\n\
+             progress=continue\n",
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].drop_frames, 17);
+        assert_eq!(out[0].dup_frames, 4);
+    }
+
+    /// They are RUNNING totals, not per-block deltas: the last block wins, and
+    /// a block that omits them must not read as a reset to zero mid-run.
+    #[test]
+    fn drop_and_dup_are_running_totals() {
+        let mut s = ProgressStream::new();
+        let a = s.push("drop_frames=2\nprogress=continue\n");
+        let b = s.push("drop_frames=9\nprogress=continue\n");
+        assert_eq!(a[0].drop_frames, 2);
+        assert_eq!(b[0].drop_frames, 9);
+        // A healthy run reports 0, which must not be confused with "absent".
+        let c = s.push("total_size=1\nprogress=end\n");
+        assert_eq!(c[0].drop_frames, 0);
+        assert_eq!(c[0].dup_frames, 0);
+    }
+
+    #[test]
+    fn a_garbled_counter_does_not_poison_the_block() {
+        let mut s = ProgressStream::new();
+        let out = s.push("drop_frames=N/A\ntotal_size=99\nprogress=end\n");
+        assert_eq!(out[0].drop_frames, 0, "unparseable reads as none-so-far");
+        assert_eq!(
+            out[0].total_size,
+            Some(99),
+            "the rest of the block survives"
+        );
     }
 
     /// The bundled 8.1.2 sidecar's real output, end to end.

@@ -66,7 +66,8 @@ use tauri::AppHandle;
 use crate::audio::asio::build_route_plan;
 use crate::audio::vu::{emit_vu_levels, VU_SAMPLE_INTERVAL};
 use crate::recorder::native_capture::stream::{
-    build_input_stream_any, find_device, negotiate, open_host, CpalHostKind, StreamSink,
+    build_input_stream_any, find_device, negotiate, open_host, ring_capacity, CpalHostKind,
+    StreamSink,
 };
 use crate::recorder::native_capture::writer::{patch_sizes, FLUSH_EVERY};
 use crate::recorder::preroll::{
@@ -462,9 +463,9 @@ async fn spawn_preroll_stack(
         "preroll(native): rolling buffer starting"
     );
 
-    // ≥1 s of routed audio, exactly like the capture engine's ring.
-    let ring_capacity = (spec.sample_rate as usize * out_ch as usize).max(96_000);
-    let (prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity).split();
+    // Exactly the capture engine's cushion (`stream::RING_SECONDS`) — one
+    // function, so the two can never drift apart.
+    let (prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
 
     let stream_stop = Arc::new(AtomicBool::new(false));
     let writer_stop = Arc::new(AtomicBool::new(false));

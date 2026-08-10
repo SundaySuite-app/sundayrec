@@ -8,6 +8,8 @@
 //!   - [`device_enum`] real ffmpeg `-list_devices` enumeration (recorder addressing)
 //!   - [`asio`]        Windows ASIO device + channel enumeration (Fase 2)
 //!   - [`vu`]          the VU engine: cpal input stream → `PeakMeters` → `vu://levels`
+//!   - [`device_watch`] the OS device-list-change signal that cuts short the
+//!     recorder's reconnect back-off (macOS CoreAudio; see its header)
 //!
 //! The pure metering math (peak/RMS/dBFS, the lock-free `PeakMeters`) lives in
 //! `sundayrec-core::audio` and is fully unit-tested without hardware. The cpal
@@ -17,5 +19,6 @@
 pub mod asio;
 pub mod channel_probe;
 pub mod device_enum;
+pub mod device_watch;
 pub mod devices;
 pub mod vu;

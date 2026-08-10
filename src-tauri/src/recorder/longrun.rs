@@ -856,8 +856,17 @@ mod tests {
                 include_str!("native_capture/segment.rs"),
             ),
         ] {
+            // Either spelling of the guard counts. The ffmpeg path calls
+            // `should_force_split` directly; the native path reads the
+            // threshold and compares in `segment::disk_guard_verdict`, because
+            // `should_force_split` consults a process-global env override and a
+            // decision function that quietly reads ambient state cannot be
+            // table-tested (it is a coin flip against whatever else is running
+            // — how the 2026-08-10 CI-only failure arrived). What this test
+            // guards is that BOTH paths still consult the cap at all.
             assert!(
-                src.contains("wav::should_force_split"),
+                src.contains("wav::should_force_split")
+                    || src.contains("wav::forced_split_threshold_bytes"),
                 "{name} no longer consults the 4 GiB RIFF-cap guard — a long \
                  service will silently produce an unreadable capture"
             );

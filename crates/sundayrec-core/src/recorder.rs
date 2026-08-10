@@ -45,7 +45,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::errors::RecordingErrorCode;
-use crate::reconnect::{may_reconnect, reconnect_delay};
+use crate::reconnect::{reconnect_delay, reconnect_verdict, ReconnectVerdict};
 
 /// The recorder lifecycle, surfaced to the UI as a `recording://state` event.
 ///
@@ -160,9 +160,20 @@ pub enum RecoveryDecision {
         attempt: u32,
         /// The fresh segment path the reconnected ffmpeg writes to.
         next_segment: String,
+        /// `Some(gone_ms)` once the current streak has run past
+        /// [`crate::reconnect::RECONNECT_GRACE_MS`]: the device has been
+        /// continuously absent this long and we are STILL retrying (the
+        /// 2026-08-10 time-budget policy). The host must say so in the
+        /// `recording://reconnecting` payload — a recorder that retries for an
+        /// hour while the UI keeps showing the same cheerful "reconnecting" is
+        /// exactly the silent-forever-loop this policy is required not to be.
+        ///
+        /// `None` inside the grace window (the ordinary knocked-cable retry).
+        degraded_for_ms: Option<u64>,
     },
     /// Give up — fail-stop. Either the error is fatal (won't be fixed by a
-    /// retry) or the reconnect budget is exhausted.
+    /// retry) or the reconnect time budget
+    /// ([`crate::reconnect::RECONNECT_HARD_CAP_MS`]) is exhausted.
     GiveUp,
 }
 
@@ -212,8 +223,21 @@ pub struct RecordingSession {
     /// Original session start (epoch ms) — NEVER updated on reconnect/split, so
     /// the whole-session duration spans every deliverable.
     session_start_ms: u64,
-    /// How many reconnects have happened (Electron `reconnectCount`).
+    /// How many reconnects have happened (Electron `reconnectCount`). Monotonic
+    /// for the whole session — it names the `_rN` fragments, so it must never
+    /// go backwards.
     reconnect_count: u32,
+    /// Epoch ms the CURRENT reconnect streak began: the first failure not yet
+    /// followed by a successful respawn. `None` while the capture is healthy.
+    /// The time budget ([`crate::reconnect::reconnect_verdict`]) is measured
+    /// from here, so a long session that survives ten brief dropouts never
+    /// approaches the cap — only a device that stays gone does.
+    streak_start_ms: Option<u64>,
+    /// Failures in the current streak. Drives the back-off ladder (a recovered
+    /// device starts over at the 2 s rung instead of inheriting the previous
+    /// streak's 10 s ceiling), which is why this is separate from the monotonic
+    /// `reconnect_count`.
+    streak_attempts: u32,
     /// How many *split* rotations have happened (drives the `_N` suffix).
     split_count: u32,
     /// The base path (deliverable 0's first fragment) all suffixed segment names
@@ -237,6 +261,8 @@ impl RecordingSession {
         Self {
             session_start_ms: start_ms,
             reconnect_count: 0,
+            streak_start_ms: None,
+            streak_attempts: 0,
             split_count: 0,
             base_path,
             deliverables: vec![first],
@@ -327,11 +353,14 @@ impl RecordingSession {
     /// `reconnect_count` and appended the new `_rN` segment, so the caller need
     /// only sleep `delay_ms` and respawn against `next_segment`.
     ///
-    /// Policy (ported from Electron `startWatchdog` + `tryReconnect`):
+    /// Policy (Electron `startWatchdog` + `tryReconnect`, with the 2026-08-10
+    /// time budget replacing the attempt cap):
     ///   1. A fatal error ([`is_fatal_reconnect_error`]) → [`RecoveryDecision::GiveUp`].
-    ///   2. Budget exhausted ([`may_reconnect`] false) → `GiveUp`.
-    ///   3. Otherwise reconnect: bump the count, append the `_rN` segment, and
-    ///      return the back-off from [`reconnect_delay`] for this attempt.
+    ///   2. The streak has run past [`crate::reconnect::RECONNECT_HARD_CAP_MS`]
+    ///      ([`reconnect_verdict`] says `GiveUp`) → `GiveUp`.
+    ///   3. Otherwise reconnect: bump the counts, append the `_rN` segment, and
+    ///      return the back-off from [`reconnect_delay`] for this streak
+    ///      attempt — flagged `degraded_for_ms` once past the grace window.
     pub fn on_unexpected_exit(
         &mut self,
         now_ms: u64,
@@ -342,12 +371,21 @@ impl RecordingSession {
                 return RecoveryDecision::GiveUp;
             }
         }
-        if !may_reconnect(self.reconnect_count) {
-            return RecoveryDecision::GiveUp;
-        }
+        // The streak clock starts at the FIRST failure, not at this one — so a
+        // device that has been gone for an hour is judged on the hour, however
+        // many attempts that took.
+        let streak_start = *self.streak_start_ms.get_or_insert(now_ms);
+        let gone_ms = now_ms.saturating_sub(streak_start);
+        let degraded_for_ms = match reconnect_verdict(gone_ms) {
+            ReconnectVerdict::GiveUp => return RecoveryDecision::GiveUp,
+            ReconnectVerdict::Retry => None,
+            ReconnectVerdict::RetryDegraded { gone_ms } => Some(gone_ms),
+        };
         // `attempt` is 1-based for the UI; `reconnect_delay` is 0-based, so the
-        // FIRST attempt (attempt=1) uses the attempt-0 back-off (2000 ms).
-        let zero_based = self.reconnect_count;
+        // FIRST attempt of a streak (attempt=1) uses the attempt-0 back-off
+        // (2000 ms).
+        let zero_based = self.streak_attempts;
+        self.streak_attempts += 1;
         self.reconnect_count += 1;
         let attempt = self.reconnect_count;
         // The reconnect fragment derives from the CURRENT deliverable's primary
@@ -378,7 +416,32 @@ impl RecordingSession {
             delay_ms: reconnect_delay(zero_based),
             attempt,
             next_segment,
+            degraded_for_ms,
         }
+    }
+
+    /// The capture is running again after a reconnect: close the streak.
+    ///
+    /// This resets BOTH the time budget (the next dropout gets a fresh grace
+    /// window and a fresh four hours) and the back-off ladder (the next dropout
+    /// starts at the 2 s rung instead of inheriting a 10 s ceiling). It does NOT
+    /// touch `reconnect_count` — that names the `_rN` fragments already on disk
+    /// and is what the UI counts.
+    ///
+    /// The host MUST call this on every successful respawn. Without it the
+    /// time-based cap would measure "time since the first ever dropout" rather
+    /// than "time this device has been gone", and a healthy four-hour session
+    /// with one early hiccup would fail-stop.
+    pub fn on_reconnect_success(&mut self) {
+        self.streak_start_ms = None;
+        self.streak_attempts = 0;
+    }
+
+    /// How long the current reconnect streak has lasted at `now_ms`, or `None`
+    /// when the capture is healthy. Diagnostics + the host's UI message.
+    pub fn reconnect_streak_ms(&self, now_ms: u64) -> Option<u64> {
+        self.streak_start_ms
+            .map(|start| now_ms.saturating_sub(start))
     }
 
     /// Rotate to a fresh split segment: a split CLOSES the current deliverable
@@ -627,7 +690,7 @@ pub fn concat_inputs(fragments: &[String], preroll_clip_path: Option<&str>) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reconnect::MAX_RECONNECT_ATTEMPTS;
+    use crate::reconnect::{RECONNECT_GRACE_MS, RECONNECT_HARD_CAP_MS};
 
     // ── State machine ─────────────────────────────────────────────────────────
 
@@ -715,10 +778,12 @@ mod tests {
                 delay_ms,
                 attempt,
                 next_segment,
+                degraded_for_ms,
             } => {
                 assert_eq!(delay_ms, reconnect_delay(0)); // 2000
                 assert_eq!(attempt, 1);
                 assert_eq!(next_segment, "/rec/sermon_r1.mp3");
+                assert_eq!(degraded_for_ms, None, "the first failure is never degraded");
             }
             other => panic!("expected Reconnect, got {other:?}"),
         }
@@ -742,6 +807,7 @@ mod tests {
                     delay_ms,
                     attempt,
                     next_segment,
+                    ..
                 } => {
                     assert_eq!(attempt, n);
                     assert_eq!(delay_ms, reconnect_delay(n - 1));
@@ -753,19 +819,140 @@ mod tests {
         assert_eq!(s.reconnect_count(), 3);
     }
 
+    /// The 2026-08-10 policy: a hundred fast failures inside the grace window
+    /// do NOT exhaust anything — only elapsed time can. Under the retired
+    /// 20-attempt cap this session had fail-stopped 80 attempts ago.
     #[test]
-    fn reconnect_gives_up_when_budget_exhausted() {
+    fn a_hundred_fast_failures_do_not_exhaust_the_budget() {
         let mut s = RecordingSession::new("/rec/x.mp3", 0);
-        // Burn the whole budget.
-        for _ in 0..MAX_RECONNECT_ATTEMPTS {
-            assert!(matches!(
-                s.on_unexpected_exit(0, None),
-                RecoveryDecision::Reconnect { .. }
-            ));
+        for _ in 0..100 {
+            assert!(
+                matches!(
+                    s.on_unexpected_exit(1_000, None),
+                    RecoveryDecision::Reconnect { .. }
+                ),
+                "attempt count must not be a budget any more"
+            );
         }
-        assert_eq!(s.reconnect_count(), MAX_RECONNECT_ATTEMPTS);
-        // The next one gives up.
-        assert_eq!(s.on_unexpected_exit(0, None), RecoveryDecision::GiveUp);
+        assert_eq!(s.reconnect_count(), 100);
+    }
+
+    #[test]
+    fn reconnect_flags_degraded_past_the_grace_window() {
+        let mut s = RecordingSession::new("/rec/x.mp3", 0);
+        // t=10 s: the streak starts here.
+        assert!(matches!(
+            s.on_unexpected_exit(10_000, None),
+            RecoveryDecision::Reconnect {
+                degraded_for_ms: None,
+                ..
+            }
+        ));
+        // Still inside the grace window (measured from the streak start).
+        assert!(matches!(
+            s.on_unexpected_exit(10_000 + RECONNECT_GRACE_MS - 1, None),
+            RecoveryDecision::Reconnect {
+                degraded_for_ms: None,
+                ..
+            }
+        ));
+        // Past it: still reconnecting, but the host is handed the elapsed time.
+        match s.on_unexpected_exit(10_000 + RECONNECT_GRACE_MS + 5_000, None) {
+            RecoveryDecision::Reconnect {
+                degraded_for_ms: Some(gone),
+                ..
+            } => assert_eq!(gone, RECONNECT_GRACE_MS + 5_000),
+            other => panic!("expected a degraded Reconnect, got {other:?}"),
+        }
+    }
+
+    /// The headline behaviour change: an hour into a service with the mixer
+    /// still unplugged, the recorder is STILL trying.
+    #[test]
+    fn still_reconnecting_an_hour_after_the_device_vanished() {
+        let mut s = RecordingSession::new("/rec/x.mp3", 0);
+        s.on_unexpected_exit(0, None);
+        assert!(matches!(
+            s.on_unexpected_exit(60 * 60 * 1_000, None),
+            RecoveryDecision::Reconnect { .. }
+        ));
+    }
+
+    #[test]
+    fn reconnect_gives_up_when_the_time_budget_is_exhausted() {
+        let mut s = RecordingSession::new("/rec/x.mp3", 0);
+        // Streak starts at t=1000.
+        assert!(matches!(
+            s.on_unexpected_exit(1_000, None),
+            RecoveryDecision::Reconnect { .. }
+        ));
+        // Just under the hard cap: still trying.
+        assert!(matches!(
+            s.on_unexpected_exit(1_000 + RECONNECT_HARD_CAP_MS - 1, None),
+            RecoveryDecision::Reconnect { .. }
+        ));
+        // At the cap: an honest terminal state.
+        assert_eq!(
+            s.on_unexpected_exit(1_000 + RECONNECT_HARD_CAP_MS, None),
+            RecoveryDecision::GiveUp
+        );
+    }
+
+    /// A successful respawn closes the streak: the clock AND the back-off
+    /// ladder start over, so a long session that survives repeated brief
+    /// dropouts can never accumulate its way to the hard cap.
+    #[test]
+    fn a_successful_reconnect_resets_the_streak_clock_and_ladder() {
+        let mut s = RecordingSession::new("/rec/x.mp3", 0);
+        for n in 0..3u32 {
+            match s.on_unexpected_exit(1_000 + u64::from(n) * 1_000, None) {
+                RecoveryDecision::Reconnect { delay_ms, .. } => {
+                    assert_eq!(delay_ms, reconnect_delay(n));
+                }
+                other => panic!("expected Reconnect, got {other:?}"),
+            }
+        }
+        assert_eq!(s.reconnect_streak_ms(10_000), Some(9_000));
+        s.on_reconnect_success();
+        assert_eq!(s.reconnect_streak_ms(10_000), None);
+
+        // Three hours later the device drops again: back to the 2 s rung, with
+        // a full budget — NOT "3 h into the streak, give up".
+        let much_later = 3 * 60 * 60 * 1_000;
+        match s.on_unexpected_exit(much_later, None) {
+            RecoveryDecision::Reconnect {
+                delay_ms,
+                attempt,
+                degraded_for_ms,
+                ..
+            } => {
+                assert_eq!(delay_ms, reconnect_delay(0), "ladder restarts at 2 s");
+                assert_eq!(attempt, 4, "but the fragment numbering keeps counting");
+                assert_eq!(degraded_for_ms, None, "a fresh streak is not degraded");
+            }
+            other => panic!("expected Reconnect, got {other:?}"),
+        }
+        // And the fresh streak still gets the whole hard cap from HERE.
+        assert!(matches!(
+            s.on_unexpected_exit(much_later + RECONNECT_HARD_CAP_MS - 1, None),
+            RecoveryDecision::Reconnect { .. }
+        ));
+    }
+
+    #[test]
+    fn a_non_monotonic_clock_never_ends_the_streak_early() {
+        let mut s = RecordingSession::new("/rec/x.mp3", 0);
+        s.on_unexpected_exit(100_000, None);
+        // A clock that jumps backwards must not panic or produce a huge
+        // `gone_ms` that trips the hard cap.
+        assert!(matches!(
+            s.on_unexpected_exit(50_000, None),
+            RecoveryDecision::Reconnect {
+                degraded_for_ms: None,
+                ..
+            }
+        ));
+        assert_eq!(s.reconnect_streak_ms(50_000), Some(0));
     }
 
     #[test]

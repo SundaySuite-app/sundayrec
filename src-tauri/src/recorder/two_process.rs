@@ -52,7 +52,6 @@ use sundayrec_core::two_process::{
     av_offset_decision, build_audio_capture_args, build_mux_args, build_video_capture_args,
 };
 use tauri::{AppHandle, Emitter};
-use tokio::io::BufReader;
 
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
@@ -216,10 +215,12 @@ pub async fn run_two_process_session(
     let video_stderr = video_child.stderr.take();
     let audio_stderr = audio_child.stderr.take();
     let vt = video_tail.clone();
-    let video_log = video_stderr.map(|s| tauri::async_runtime::spawn(drain_stderr(s, "video", vt)));
+    let video_log = video_stderr.map(|s| {
+        tauri::async_runtime::spawn(crate::recorder::stderr_tail::drain_stderr(s, "video", vt))
+    });
     let audio_log = audio_stderr.map(|s| {
         let sink = Arc::new(Mutex::new(String::new()));
-        tauri::async_runtime::spawn(drain_stderr(s, "audio", sink))
+        tauri::async_runtime::spawn(crate::recorder::stderr_tail::drain_stderr(s, "audio", sink))
     });
 
     let mut video_stdin = video_child.stdin.take();
@@ -302,7 +303,7 @@ pub async fn run_two_process_session(
     // opaque "mux_failed". Surface the actual reason from the camera's stderr and
     // stop here; the audio temp is intact, so point history at it (nothing lost).
     if video_died_early {
-        let tail = video_tail.lock().map(|g| g.clone()).unwrap_or_default();
+        let tail = crate::recorder::stderr_tail::snapshot(&video_tail);
         let reason = sundayrec_core::two_process::summarize_camera_failure(&tail);
         tracing::error!("recorder: two-process video capture failed: {reason}");
         emit_error(&app, "video_capture_failed", &reason);
@@ -436,34 +437,6 @@ async fn spawn_owned(args: &[String]) -> AppResult<tokio::process::Child> {
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| AppError::Recording(format!("failed to spawn ffmpeg: {e}")))
-}
-
-/// Drain a child's stderr to the trace log so a failing capture is diagnosable,
-/// and keep the last ~2 KB in `tail` (the failure reason lives near the end) so
-/// the caller can report WHY a capture died.
-async fn drain_stderr<R>(
-    stderr: R,
-    which: &'static str,
-    tail: std::sync::Arc<std::sync::Mutex<String>>,
-) where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    use tokio::io::AsyncBufReadExt;
-    let mut lines = BufReader::new(stderr).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        tracing::trace!(target: "two_process_ffmpeg", which, "{line}");
-        if let Ok(mut t) = tail.lock() {
-            t.push_str(&line);
-            t.push('\n');
-            if t.len() > 2048 {
-                let mut cut = t.len() - 2048;
-                while cut < t.len() && !t.is_char_boundary(cut) {
-                    cut += 1;
-                }
-                *t = t.split_off(cut);
-            }
-        }
-    }
 }
 
 /// Emit a classified error to the renderer. Mirrors `engine::emit_error`.

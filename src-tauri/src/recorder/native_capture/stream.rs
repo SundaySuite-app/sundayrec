@@ -105,13 +105,69 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
         .filter_map(|d| d.name().ok())
         .map(|n| FfmpegDevice::new(n, "cpal", None))
         .collect();
-    let target = find_best_device_match(&candidates, name)
-        .map(|d| d.name.clone())
-        .unwrap_or_else(|| name.to_string());
+    let target = resolve_device_target(&candidates, name);
     devices
         .into_iter()
         .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
         .ok_or_else(|| format!("input device not found: {name}"))
+}
+
+/// The DECISION half of [`find_device`]: which cpal device name should be opened
+/// for the user's stored label?
+///
+/// Split out so it can be exercised without a sound card, and so the ffmpeg
+/// pipe path (`recorder::cpal_capture`) resolves through exactly the same rule
+/// as the native engine instead of a second copy of it.
+///
+/// Falls back to the requested name VERBATIM when nothing matches, so the caller
+/// reports "input device not found: <what the user asked for>" rather than the
+/// name of some unrelated device the fuzzy matcher happened to like least.
+pub fn resolve_device_target(candidates: &[FfmpegDevice], requested: &str) -> String {
+    find_best_device_match(candidates, requested)
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| requested.to_string())
+}
+
+// ── The capture ring ─────────────────────────────────────────────────────────
+
+/// Seconds of routed audio the capture ring holds between the real-time cpal
+/// callback and the writer thread.
+///
+/// **Was 1 s; raised to 5 s (2026-08-10).** The ring is the ONLY thing standing
+/// between a stalled writer and lost samples: the callback may never block, so
+/// once the ring is full it drops whole frames and counts them. One second
+/// survives a scheduler hiccup; it does NOT survive the stalls that actually
+/// happen on a church PC — a spinning-rust fsync behind a virus scanner, a
+/// Windows Defender scan of the growing WAV, a Time Machine snapshot. Ardour's
+/// precedent is the same reasoning (its disk-thread buffer is sized in seconds,
+/// not milliseconds), and the cost is trivial: at the worst case this app can
+/// negotiate — 96 kHz **stereo** f32 — 5 s is 96 000 × 2 × 5 × 4 B = **3.66 MiB**.
+///
+/// The overrun counter's MEANING is unchanged: it still counts *samples dropped
+/// by the RT callback*, and 0 still means "nothing was lost". Only the stall
+/// length required to reach the first drop moves (1 s → 5 s).
+pub const RING_SECONDS: usize = 5;
+
+/// Floor for [`ring_capacity`], in f32 samples: [`RING_SECONDS`] of 96 kHz mono.
+///
+/// A device that negotiates a low rate and one channel would otherwise get a
+/// ring measured in tens of kilobytes; the floor keeps every capture on the same
+/// stall budget regardless of format. (Pre-2026-08-10 this was a bare `96_000`,
+/// i.e. the same 1 s of 96 kHz mono — the floor scales with the constant so the
+/// two can never drift apart.)
+pub const MIN_RING_SAMPLES: usize = 96_000 * RING_SECONDS;
+
+/// Capacity (in f32 samples) of the ring between the RT callback and the writer:
+/// [`RING_SECONDS`] of ROUTED audio, never below [`MIN_RING_SAMPLES`].
+///
+/// One function so the capture engine (`native_capture::segment`) and the
+/// pre-roll buffer (`native_capture::preroll`) cannot end up with different
+/// cushions — they were two hand-inlined copies of the same expression.
+pub fn ring_capacity(sample_rate: u32, out_channels: u16) -> usize {
+    (sample_rate as usize)
+        .saturating_mul(out_channels.max(1) as usize)
+        .saturating_mul(RING_SECONDS)
+        .max(MIN_RING_SAMPLES)
 }
 
 // ── Format negotiation ───────────────────────────────────────────────────────
@@ -493,6 +549,85 @@ mod tests {
             pick_input_config(&ranges, Some(96_000), 48_000),
             Some((48_000, 8, SampleFormat::F32))
         );
+    }
+
+    fn cpal_devices(names: &[&str]) -> Vec<FfmpegDevice> {
+        names
+            .iter()
+            .map(|n| FfmpegDevice::new(*n, "cpal", None))
+            .collect()
+    }
+
+    #[test]
+    fn device_target_prefers_an_exact_name() {
+        let devs = cpal_devices(&["MacBook Pro Microphone", "Qu-5", "Qu-5 (2)"]);
+        assert_eq!(resolve_device_target(&devs, "Qu-5"), "Qu-5");
+    }
+
+    #[test]
+    fn device_target_bridges_a_web_audio_label_to_the_cpal_name() {
+        // The stored name is the frontend's Web Audio label, which is NOT the
+        // cpal name. Before this bridge existed the mismatch made cpal silently
+        // never engage.
+        let devs = cpal_devices(&["MacBook Pro Microphone", "Allen & Heath Qu-5"]);
+        assert_eq!(
+            resolve_device_target(&devs, "Allen & Heath Qu-5 (USB Audio)"),
+            "Allen & Heath Qu-5"
+        );
+    }
+
+    #[test]
+    fn device_target_falls_back_to_the_requested_name_verbatim() {
+        // Nothing plausible in the list → hand back what the user asked for so
+        // the error message names THEIR device, not a random survivor.
+        assert_eq!(
+            resolve_device_target(&cpal_devices(&[]), "Qu-5"),
+            "Qu-5",
+            "an empty device list must not invent a target"
+        );
+        assert_eq!(
+            resolve_device_target(&cpal_devices(&["Zoom Audio Device"]), "Qu-5"),
+            "Qu-5"
+        );
+    }
+
+    #[test]
+    fn ring_holds_five_seconds_of_routed_audio() {
+        // 48 kHz stereo: 48 000 × 2 × 5 samples.
+        assert_eq!(ring_capacity(48_000, 2), 480_000);
+        // 96 kHz stereo — the worst case this app can negotiate.
+        assert_eq!(ring_capacity(96_000, 2), 960_000);
+    }
+
+    #[test]
+    fn ring_is_five_seconds_not_one() {
+        // The regression guard for the 2026-08-10 raise: a 48 kHz stereo ring
+        // must be FIVE times the old one-second capacity, and comfortably
+        // above the old flat 96 000-sample floor.
+        assert_eq!(ring_capacity(48_000, 2), 5 * (48_000 * 2));
+        assert!(
+            ring_capacity(48_000, 2) > 96_000,
+            "the pre-2026-08-10 one-second ring must no longer be produced"
+        );
+    }
+
+    #[test]
+    fn ring_stays_under_four_megabytes_at_the_worst_format() {
+        // The cost argument in RING_SECONDS' docs, pinned: 96 kHz stereo f32.
+        let bytes = ring_capacity(96_000, 2) * std::mem::size_of::<f32>();
+        assert!(
+            bytes < 4 * 1024 * 1024,
+            "worst-case ring is {bytes} B — the raise was justified as <4 MB"
+        );
+    }
+
+    #[test]
+    fn ring_floor_applies_to_small_formats() {
+        // 8 kHz mono would otherwise get 40 000 samples; the floor lifts it.
+        assert_eq!(ring_capacity(8_000, 1), MIN_RING_SAMPLES);
+        // A zero channel count is treated as mono rather than producing a
+        // zero-capacity ring the producer could never push into.
+        assert_eq!(ring_capacity(8_000, 0), MIN_RING_SAMPLES);
     }
 
     #[test]

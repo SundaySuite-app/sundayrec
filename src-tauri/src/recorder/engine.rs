@@ -99,6 +99,7 @@ use ts_rs::TS;
 use crate::audio::device_enum::{
     enumerate_ffmpeg_devices, enumerate_ffmpeg_devices_within, RECORD_START_ENUM_MAX_AGE,
 };
+use crate::audio::device_watch::BackoffOutcome;
 use crate::db::store::{insert_recording, RecordingRow};
 use crate::error::{AppError, AppResult};
 use crate::recorder::concat::{finalize_deliverable, output_is_valid, DeliverySpec};
@@ -919,6 +920,10 @@ const MAX_AUTOSTOP_MINUTES: u32 = 1440;
 
 /// Why the current segment's capture stopped — drives what the supervisor does
 /// next. Shared by the ffmpeg `run_segment` and the native `run_native_segment`.
+///
+/// `Debug`/`PartialEq` so a test can assert on the outcome of a driven segment
+/// (`native_capture::segment::drive_native_segment`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SegmentOutcome {
     /// Graceful stop requested by the user → finalise + end the session.
     GracefulStop,
@@ -1160,6 +1165,12 @@ async fn run_session(
             hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
         });
         let mut session = RecordingSession::new(session_output, start_ms);
+        // The OS device-list-change signal. Grabbed once per session (it installs
+        // the platform listener on first use and is a process-wide singleton
+        // thereafter) so a reconnect back-off can be cut short the moment the
+        // mixer is plugged back in, instead of sleeping out the remaining
+        // seconds. See `audio::device_watch` — no-op where no listener ships.
+        let device_signal = crate::audio::device_watch::device_change_signal();
         // How many deliverables have already been finalised (concat + history row).
         // Each split closes one; session end finalises the rest. The pre-roll clip is
         // prepended only to deliverable 0 (`finalize_one` checks `index == 0`).
@@ -1503,6 +1514,7 @@ async fn run_session(
                             delay_ms,
                             attempt,
                             next_segment,
+                            degraded_for_ms,
                         } => {
                             // Respawn loop. A FAILED respawn is treated as just another
                             // unexpected exit: re-consult the pure policy and try again
@@ -1513,26 +1525,39 @@ async fn run_session(
                             let mut delay_ms = delay_ms;
                             let mut attempt = attempt;
                             let mut next_segment = next_segment;
+                            let mut degraded_for_ms = degraded_for_ms;
                             loop {
                                 emit_state(RecorderState::Reconnecting, session.reconnect_count());
                                 let _ = app.emit(
-                                RECONNECTING_EVENT,
-                                RecordingEvent {
-                                    code: "reconnecting".into(),
-                                    message: format!(
-                                        "Mister kontakt — forsøker å koble til igjen ({attempt}/{})",
-                                        sundayrec_core::reconnect::MAX_RECONNECT_ATTEMPTS
-                                    ),
-                                },
-                            );
-                                tracing::warn!(attempt, delay_ms, segment = %next_segment, "recorder: reconnecting");
+                                    RECONNECTING_EVENT,
+                                    RecordingEvent {
+                                        code: "reconnecting".into(),
+                                        message: reconnecting_message(attempt, degraded_for_ms),
+                                    },
+                                );
+                                tracing::warn!(attempt, delay_ms, degraded_for_ms, segment = %next_segment, "recorder: reconnecting");
                                 // The back-off must stay stop-responsive: with a dead
                                 // child there is nothing to wind down, so a stop (or
                                 // app quit) during the wait goes STRAIGHT to the
-                                // graceful finalize instead of respawning first.
-                                tokio::select! {
-                                    _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => {}
-                                    _ = stop_rx.recv() => {
+                                // graceful finalize instead of respawning first. It is
+                                // also cut short when the OS reports a device-list
+                                // change — the device is back, so waiting out the
+                                // remaining seconds only lengthens the gap in the
+                                // recording (`audio::device_watch`).
+                                match crate::audio::device_watch::wait_reconnect_backoff(
+                                    Duration::from_millis(delay_ms),
+                                    &device_signal,
+                                    &mut stop_rx,
+                                )
+                                .await
+                                {
+                                    BackoffOutcome::Elapsed => {}
+                                    BackoffOutcome::DeviceChanged => {
+                                        tracing::info!(
+                                            "recorder: OS reported a device-list change — retrying now"
+                                        );
+                                    }
+                                    BackoffOutcome::Stopped => {
                                         tracing::info!("recorder: stop requested during reconnect back-off — finalizing");
                                         break 'session;
                                     }
@@ -1650,6 +1675,13 @@ async fn run_session(
                                             pinned_rate = Some(seg.spec.sample_rate);
                                         }
                                         child = c;
+                                        // The capture is alive again: close the
+                                        // reconnect STREAK. Both the time budget and
+                                        // the back-off ladder start over, so a long
+                                        // service that survives repeated brief dropouts
+                                        // can never accumulate its way to the hard cap
+                                        // (see `RecordingSession::on_reconnect_success`).
+                                        session.on_reconnect_success();
                                         let _ = app.emit(
                                             RECONNECTED_EVENT,
                                             RecordingEvent {
@@ -1672,10 +1704,12 @@ async fn run_session(
                                                 delay_ms: next_delay,
                                                 attempt: next_attempt,
                                                 next_segment: seg,
+                                                degraded_for_ms: next_degraded,
                                             } => {
                                                 delay_ms = next_delay;
                                                 attempt = next_attempt;
                                                 next_segment = seg;
+                                                degraded_for_ms = next_degraded;
                                             }
                                             RecoveryDecision::GiveUp => {
                                                 emit_error(
@@ -2669,6 +2703,30 @@ async fn spawn_ffmpeg_owned(args: &[String]) -> AppResult<tokio::process::Child>
 
 /// Emit a classified TERMINAL error to the renderer (the UI tears the recording
 /// overlay down on this event — see [`ERROR_EVENT`]).
+/// The `recording://reconnecting` message for this attempt.
+///
+/// Used to read `"… ({attempt}/20)"`, which was a promise the recorder could
+/// keep only because it gave up after twenty tries. Under the 2026-08-10
+/// time-budget policy there is no denominator — so the message says the true
+/// thing instead: how many tries so far, and (once the streak passes
+/// `RECONNECT_GRACE_MS`) how long the device has been gone. That second half is
+/// the whole reason `degraded_for_ms` exists: a recorder that retries for an
+/// hour while the UI shows an unchanging cheerful "reconnecting" is the silent
+/// forever-loop the policy is required not to be.
+pub(crate) fn reconnecting_message(attempt: u32, degraded_for_ms: Option<u64>) -> String {
+    match degraded_for_ms {
+        None => format!("Mister kontakt — forsøker å koble til igjen (forsøk {attempt})"),
+        Some(gone_ms) => {
+            // Whole minutes: the operator needs "a while now", not precision.
+            let minutes = gone_ms / 60_000;
+            format!(
+                "Lydenheten har vært borte i {minutes} min — opptaket fortsetter å prøve \
+                 (forsøk {attempt}). Sjekk kabel og strøm til lydutstyret."
+            )
+        }
+    }
+}
+
 pub(crate) fn emit_error(app: &AppHandle, code: &str, message: &str) {
     let _ = app.emit(
         ERROR_EVENT,
@@ -3215,6 +3273,34 @@ pub(crate) fn error_code_str(code: RecordingErrorCode) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnecting_message_promises_no_denominator() {
+        // The old text was "(1/20)" — a countdown to giving up. The time-budget
+        // policy has no such number, and printing one would be a lie.
+        let m = reconnecting_message(1, None);
+        assert!(m.contains("forsøk 1"), "{m}");
+        assert!(
+            !m.contains("/20"),
+            "the retired attempt cap must not reappear: {m}"
+        );
+        assert!(!m.contains('/'), "no denominator at all: {m}");
+    }
+
+    #[test]
+    fn reconnecting_message_reports_how_long_the_device_has_been_gone() {
+        // Past the grace window the operator must be told the DURATION — this is
+        // what makes "keep retrying for the whole session" honest rather than a
+        // silent forever-loop.
+        let m = reconnecting_message(41, Some(23 * 60_000 + 30_000));
+        assert!(m.contains("23 min"), "whole minutes of absence: {m}");
+        assert!(m.contains("forsøk 41"), "{m}");
+        assert_ne!(
+            m,
+            reconnecting_message(41, None),
+            "a degraded streak must not read like an ordinary retry"
+        );
+    }
 
     #[test]
     fn backend_routing_matrix() {
