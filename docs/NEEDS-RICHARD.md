@@ -147,11 +147,28 @@ subset.
 ## PU-4 — OS wake-timers + scheduled launch (no feature flag)
 
 - **A real Mac/Windows box.** The scheduler supervisor's wall-clock timing, the
-  `pmset`/`osascript`/`powershell`/`powercfg` shell-outs, the admin/UAC prompts,
-  and whether the machine _truly_ wakes from sleep are all HARDWARE-UNVERIFIED.
-  The next-fire / catch-up / missed / wake-point decisions are unit-tested in
-  `sundayrec_core::{schedule, wake}`; this is the "validated on a real rig" exit
-  the migration tracks (smoke §11).
+  `pmset`/`osascript` admin prompt, and whether the machine _truly_ wakes from
+  sleep remain HARDWARE-UNVERIFIED. What is NO LONGER unverified: the command
+  shaping and its quoting, the macOS escalation ladder and its
+  Permission/Cancelled classification, the Windows arm/clear ladder, the
+  `wmic`→CIM fallback, and the dedup invariants — all unit-tested over a fake
+  shell and fake timers in `src-tauri/src/wake/{plan,shell,win_timer,mod}.rs`.
+  The macOS IOKit read runs for real in the gate. Decisions stay in
+  `sundayrec_core::{schedule, wake}`; the rig exit is smoke §11.
+- **Windows wakes only while SundayRec runs.** The mechanism is an in-process
+  `SetWaitableTimer(fResume = TRUE)`, not a scheduled task: no UAC prompt and
+  nothing left behind on the machine, but the timer dies with the process. That
+  is the owner-approved model (autostart + tray), and it is stated in the app's
+  own capability text — please confirm on the rig that quitting the app really
+  does stop the wake, so nobody later "fixes" it back into a scheduled task.
+- **Windows code is compile-checked only here.** Nothing on a Mac builds the
+  `SetWaitableTimer` path; CI's `windows-check` lane is the only thing that
+  proves it compiles, and no automated test anywhere proves it wakes.
+- **Apple Silicon can lie about its own schedule.** `pmset -g sched` is known to
+  omit active schedules, so verification reads IOKit first and falls back to
+  `pmset`. A wake we cannot see is reported as a mismatch (prompting a
+  re-register) rather than assumed present — expect the occasional
+  "click Planlegg again" that turns out to have been unnecessary.
 - **Missed-recording persistence** still waits on a `status`/`error` column on
   the `recording` table (see the `scheduler/mod.rs` honest-gaps note).
 
@@ -390,8 +407,10 @@ None of it blocks the default build or the gate.
   percentage), and a real recording.
 - **Cloud upload** (smoke §7): a connected Google Drive + network — the resumable
   worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
-- **OS wake-timers** (smoke §11): a real box for the `pmset`/`schtasks`/`powercfg`
-  shell-outs + admin/UAC prompts + a true sleep/wake cycle.
+- **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
+  Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
+  shaping, quoting and escalation ladders are unit-tested; the resume is not and
+  cannot be.
 - **Observability** (no feature flag, smoke §13): live-exercise
   `SUNDAYREC_TEST_PANIC` end to end, run the capture probe against the Qu-5 and
   the video probe with the camera held by another app, watch log rotation

@@ -230,7 +230,8 @@ pub fn run() {
         // start/stop/reminder/preflight events (Fase 5). Started in setup once
         // the db pool is managed.
         .manage(scheduler::SchedulerEngine::new())
-        // The wake engine schedules OS wake-from-sleep timers (pmset/schtasks)
+        // The wake engine schedules OS wake-from-sleep timers (pmset on macOS,
+        // an in-process SetWaitableTimer on Windows)
         // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
         .manage(wake::WakeEngine::new())
         // The recorder engine holds at most one running unified ffmpeg capture

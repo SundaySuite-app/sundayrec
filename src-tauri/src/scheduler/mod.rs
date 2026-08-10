@@ -36,7 +36,7 @@
 //! - **Special device override.** `SpecialRecording.device_id` is a stored id, but
 //!   the recorder matches by NAME; mapping id→name needs the device list. Until
 //!   then a special uses the global `device_name`.
-//! - **Wake-from-sleep.** Actually waking the machine (pmset/schtasks/powercfg) is
+//! - **Wake-from-sleep.** Actually waking the machine (pmset / SetWaitableTimer) is
 //!   Fase 5.2; this slice schedules and fires while the app is running/awake.
 
 use std::sync::{Arc, Mutex};

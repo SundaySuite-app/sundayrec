@@ -346,7 +346,7 @@
     "silenceTimeoutLabel": "TID FÖRE STOPP",
     "platformMacArm": "Apple Silicon-Mac (M-serien) — kan väckas från viloläge, inte från avstängt",
     "platformMacIntel": "Intel Mac — kan väckas från viloläge och avstängt läge (manuell aktivering krävs för det sistnämnda)",
-    "platformWin": "Windows — kan väckas från viloläge; uppstart från helt avstängt kräver BIOS-konfig",
+    "platformWin": "Windows — kan väckas från viloläge så länge SundayRec körs; uppstart från helt avstängt kräver BIOS-konfig",
     "platformLinux": "Linux — automatisk uppvakning stöds inte",
     "platformOther": "Plattformen stöds inte för automatisk uppvakning",
     "weeklyDesc": "Fasta inspelningar som upprepas varje vecka — till exempel gudstjänst varje söndag. Datorn startar och stoppar inspelningen automatiskt, även om ingen är på plats.",

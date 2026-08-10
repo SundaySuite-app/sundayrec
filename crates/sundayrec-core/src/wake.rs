@@ -2,7 +2,7 @@
 //!
 //! Ported from the Electron `src/main/wake.ts` and `src/main/wake-verification.ts`.
 //! Those files interleaved the *decisions* (which wake points to schedule, how to
-//! format a `pmset`/`schtasks` time, classifying an error string, parsing the OS
+//! format a `pmset` time, classifying an error string, parsing the OS
 //! power tools' text output, matching expected wakes against observed ones,
 //! deciding platform capabilities) with the actual I/O (`execFile` of
 //! `pmset`/`osascript`/`powershell`/`powercfg`, `powerSaveBlocker`,
@@ -14,8 +14,10 @@
 //!   - macOS Apple Silicon: `pmset` *wake* works, *poweron* does not; deep-sleep
 //!     (standby) can sabotage wake.
 //!   - macOS Intel: wake works, poweron needs a manual System-Settings toggle.
-//!   - Windows: Task Scheduler `WakeToRun` works from S3/S4; S5 needs a BIOS
-//!     toggle we can't reach. Laptops often disable wake timers on battery.
+//!   - Windows: a `SetWaitableTimer(fResume = TRUE)` armed by the RUNNING
+//!     process wakes the machine from S3/S4. It dies with the process, which is
+//!     acceptable because SundayRec autostarts and lives in the tray. S5 needs a
+//!     BIOS toggle we can't reach. Laptops often disable wake timers on battery.
 //!   - Linux/other: no supported wake mechanism.
 
 use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
@@ -111,10 +113,14 @@ pub fn detect_capabilities(platform: WakePlatform) -> WakeCapabilities {
             can_wake_from_off: false,
             needs_admin: false,
             known_issues: vec![
+                "Vekkingen settes av SundayRec mens programmet kjører. Avslutter du SundayRec helt, forsvinner vekketimeren."
+                    .to_string(),
                 "Wake fra fullstendig avslått (S5) krever at «Wake on RTC from S5» er aktivert i BIOS — kan ikke aktiveres fra programvare."
                     .to_string(),
             ],
             recommendations: vec![
+                "La SundayRec være i gang — den starter automatisk ved pålogging og ligger i systemkurven."
+                    .to_string(),
                 "Sett maskinen i dvale (Sleep/Hibernate), ikke skru den av.".to_string(),
                 "Tilkoblet strøm bør være på — mange bærbare deaktiverer vekketimere på batteri."
                     .to_string(),
@@ -188,7 +194,7 @@ pub fn key_of(dates: &[NaiveDateTime]) -> String {
 /// for `new_points`, and whether the user explicitly initiated this (`forced`).
 ///
 /// The decision is split out as a pure function so the dedup + stale-timer logic
-/// can be tested without spawning `pmset`/`schtasks`. The crucial correctness
+/// can be tested without touching `pmset` or a wake timer. The crucial correctness
 /// point: when the new set is *empty* we must still apply (to cancel any stale OS
 /// wakes the previous key registered) and record the empty key — otherwise a
 /// later re-add of the same time would dedup against a key whose OS timers were
@@ -237,8 +243,10 @@ pub fn format_pmset_date(d: NaiveDateTime) -> String {
     )
 }
 
-/// Windows `New-ScheduledTaskTrigger -At` format: `YYYY-MM-DDTHH:MM:00`. Port of
-/// `formatWinDateTime`.
+/// Windows wall-clock label: `YYYY-MM-DDTHH:MM:00`. Was the
+/// `New-ScheduledTaskTrigger -At` argument; since the scheduled-task mechanism
+/// was replaced by `SetWaitableTimer` (see the module header) it survives as the
+/// human-readable label each armed timer carries in logs and diagnostics.
 pub fn format_win_datetime(d: NaiveDateTime) -> String {
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:00",
@@ -248,31 +256,6 @@ pub fn format_win_datetime(d: NaiveDateTime) -> String {
         d.hour(),
         d.minute(),
     )
-}
-
-/// Build the PowerShell that registers one `SundayRec-Wake-N` scheduled task per
-/// wake point (each `-WakeToRun`, 1-minute limit, runs `cmd /c exit`). Direct
-/// port of `wake.ts` `buildWinTaskDefs`. `elevated` adds `-RunLevel Highest`.
-pub fn build_win_task_defs(wake_points: &[NaiveDateTime], elevated: bool) -> String {
-    wake_points
-        .iter()
-        .enumerate()
-        .map(|(i, d)| {
-            let dt = format_win_datetime(*d);
-            let run_level = if elevated { "-RunLevel Highest " } else { "" };
-            [
-                format!("$t{i} = New-ScheduledTaskTrigger -Once -At '{dt}'"),
-                format!("$s{i} = New-ScheduledTaskSettingsSet -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Minutes 1)"),
-                format!("$a{i} = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit'"),
-                format!(
-                    "Register-ScheduledTask -TaskName 'SundayRec-Wake-{}' -TaskPath '\\SundayRec' -Action $a{i} -Trigger $t{i} -Settings $s{i} {run_level}-Force | Out-Null",
-                    i + 1
-                ),
-            ]
-            .join("; ")
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
 }
 
 /// Why an OS wake-scheduling attempt failed — the `reason` the UI localises.
@@ -304,24 +287,29 @@ impl WakeErrorReason {
     }
 }
 
-/// How a Windows scheduling failure should be classified. Port of `classifyWinError`.
+/// How a Windows `powercfg` failure should be classified. Port of `classifyWinError`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WinErrorKind {
-    /// Access-denied / unauthorized / privilege — retry without elevation, or surface a permission error.
+    /// Access-denied / unauthorized / privilege — the call needs elevation.
     Permission,
     /// Anything else.
     Error,
 }
 
-/// Classify a Windows scheduling stderr string. Based on `wake.ts`
-/// `classifyWinError`, with one deliberate improvement: the Electron pattern
+/// Classify a Windows power-tool stderr string. Based on `wake.ts`
+/// `classifyWinError`, with two deliberate improvements: the Electron pattern
 /// `access.?denied` only matches `accessdenied` / `access denied`, NOT the
 /// canonical Windows wording "**Access is denied.**" — so the original would
-/// mis-classify the most common permission failure as a generic error and skip
-/// the un-elevated retry. We accept `access is denied` too.
+/// mis-classify the most common permission failure as a generic error. We accept
+/// `access is denied`, and `administrator` (the wording `powercfg /setacvalueindex`
+/// uses), too.
+///
+/// Since the wake *scheduling* moved off `Register-ScheduledTask` and onto an
+/// in-process `SetWaitableTimer` (which needs no elevation at all), the only
+/// remaining caller is the `powercfg` "allow wake timers" fix.
 pub fn classify_win_error(msg: &str) -> WinErrorKind {
     static RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege").unwrap()
+        Regex::new(r"(?i)access\s*(is\s+)?denied|unauthorized|privilege|administrator").unwrap()
     });
     if RE.is_match(msg) {
         WinErrorKind::Permission
@@ -494,8 +482,22 @@ pub fn parse_pmset_sched(stdout: &str, ref_year: Option<i32>) -> Vec<VerifiedWak
     out
 }
 
-/// Parse `powercfg -waketimers`, extracting each timer's expiry + owning task.
-/// Port of `parsePowercfgWaketimers`.
+/// Parse `powercfg -waketimers`, extracting each timer's expiry + owner.
+/// Port of `parsePowercfgWaketimers`, extended for the wake mechanism actually
+/// in use.
+///
+/// `powercfg` labels a timer by who set it, and the two forms differ:
+///
+/// ```text
+/// Timer set by [SYSTEM\TaskScheduler] … Reason: … 'NT TASK\SundayRec\SundayRec-Wake-1' …
+/// Timer set by [PROCESS] \Device\HarddiskVolume3\Program Files\SundayRec\SundayRec.exe …
+/// ```
+///
+/// The first is the old `Register-ScheduledTask` mechanism; the second is what a
+/// `SetWaitableTimer` armed by the running process reports. The `[PROCESS]` form
+/// carries no quotes at all, so the quoted-token branch alone would have labelled
+/// every one of our own timers `unknown` — the verification panel would show the
+/// timer but never recognise it as ours.
 pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
     static BLOCK_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\r?\n\s*\r?\n").unwrap());
     static EXPIRES: LazyLock<Regex> = LazyLock::new(|| {
@@ -506,8 +508,11 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
     });
     static TASK: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"(?i)['"]([^'"]*SundayRec[^'"]*)['"]"#).unwrap());
+    static PROCESS: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)set\s+by\s+\[PROCESS\]\s+(\S.*?)\s+expires").unwrap());
     static REASON: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)Reason:\s*(.+)").unwrap());
-    let (block_split, expires, task, reason) = (&*BLOCK_SPLIT, &*EXPIRES, &*TASK, &*REASON);
+    let (block_split, expires, task, process, reason) =
+        (&*BLOCK_SPLIT, &*EXPIRES, &*TASK, &*PROCESS, &*REASON);
 
     let mut out = Vec::new();
     for block in block_split.split(stdout) {
@@ -534,14 +539,13 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
             continue;
         };
 
-        // Owner: task name from the path, else the Reason line, else 'unknown'.
+        // Owner: task name from the quoted path, else the `[PROCESS]` executable,
+        // else the Reason line, else 'unknown'.
         let owner = if let Some(t) = task.captures(block) {
             let path = &t[1];
-            path.split('\\')
-                .next_back()
-                .filter(|s| !s.is_empty())
-                .unwrap_or(path)
-                .to_string()
+            basename(path)
+        } else if let Some(p) = process.captures(block) {
+            basename(p[1].trim())
         } else if let Some(r) = reason.captures(block) {
             r[1].trim().chars().take(80).collect()
         } else {
@@ -553,6 +557,15 @@ pub fn parse_powercfg_waketimers(stdout: &str) -> Vec<VerifiedWake> {
         });
     }
     out
+}
+
+/// The last `\`- or `/`-separated component of a Windows path, or the whole
+/// string when it has no separator (or ends in one).
+fn basename(path: &str) -> String {
+    path.rsplit(['\\', '/'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 /// Compare expected wakes to observed ones within `tolerance_ms`. Returns
@@ -809,17 +822,6 @@ mod tests {
     }
 
     #[test]
-    fn win_task_defs_contains_wake_to_run_and_indexed_names() {
-        let defs = build_win_task_defs(&[dt("2026-05-31 10:30:00")], false);
-        assert!(defs.contains("New-ScheduledTaskTrigger -Once -At '2026-05-31T10:30:00'"));
-        assert!(defs.contains("-WakeToRun"));
-        assert!(defs.contains("SundayRec-Wake-1"));
-        assert!(!defs.contains("-RunLevel Highest"));
-        let elevated = build_win_task_defs(&[dt("2026-05-31 10:30:00")], true);
-        assert!(elevated.contains("-RunLevel Highest"));
-    }
-
-    #[test]
     fn classify_win_error_detects_permission() {
         assert_eq!(
             classify_win_error("Access is denied."),
@@ -827,6 +829,12 @@ mod tests {
         );
         assert_eq!(
             classify_win_error("Unauthorized operation"),
+            WinErrorKind::Permission
+        );
+        // The wording `powercfg` uses when the shell is not elevated — this is
+        // the only remaining caller now that scheduling is an in-process timer.
+        assert_eq!(
+            classify_win_error("You do not have permission; run as administrator"),
             WinErrorKind::Permission
         );
         assert_eq!(
@@ -925,6 +933,19 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
         assert_eq!(wakes.len(), 1);
         assert_eq!(wakes[0].scheduled_at, dt("2026-05-31 17:30:00"));
         assert_eq!(wakes[0].owner_label, "SundayRec-Wake-1");
+    }
+
+    #[test]
+    fn parse_powercfg_waketimers_names_the_owning_process() {
+        // What a `SetWaitableTimer(fResume = TRUE)` armed by the running app
+        // looks like: no quoted task path at all, just `[PROCESS] <exe path>`.
+        // Before the `[PROCESS]` branch this block parsed as owner `unknown`,
+        // so the verification panel could not tell our own timer from anyone's.
+        let out = "Timer set by [PROCESS] \\Device\\HarddiskVolume3\\Program Files\\SundayRec\\SundayRec.exe expires at 10:20:00 AM on 5/31/2026.\n  Reason: Scheduled wake";
+        let wakes = parse_powercfg_waketimers(out);
+        assert_eq!(wakes.len(), 1);
+        assert_eq!(wakes[0].scheduled_at, dt("2026-05-31 10:20:00"));
+        assert_eq!(wakes[0].owner_label, "SundayRec.exe");
     }
 
     #[test]

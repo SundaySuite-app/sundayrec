@@ -346,7 +346,7 @@
     "silenceTimeoutLabel": "DAUER BIS STOPP",
     "platformMacArm": "Apple Silicon Mac (M-Serie) — kann aus Ruhezustand aufgeweckt werden, nicht aus ausgeschaltetem Zustand",
     "platformMacIntel": "Intel Mac — kann aus Ruhezustand und aus ausgeschaltetem Zustand aufgeweckt werden (manuelle Aktivierung erforderlich)",
-    "platformWin": "Windows — kann aus Ruhezustand aufgeweckt werden; Kaltstart aus vollständig ausgeschaltetem Zustand erfordert BIOS-Konfiguration",
+    "platformWin": "Windows — kann aus dem Ruhezustand aufgeweckt werden, solange SundayRec läuft; Kaltstart aus vollständig ausgeschaltetem Zustand erfordert BIOS-Konfiguration",
     "platformLinux": "Linux — automatisches Aufwachen wird nicht unterstützt",
     "platformOther": "Plattform wird für automatisches Aufwachen nicht unterstützt",
     "weeklyDesc": "Feste Aufnahmen, die sich jede Woche wiederholen — zum Beispiel der Gottesdienst jeden Sonntag. Der Rechner startet und stoppt die Aufnahme automatisch, auch wenn niemand anwesend ist.",

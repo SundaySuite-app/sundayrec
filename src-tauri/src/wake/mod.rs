@@ -2,47 +2,82 @@
 //! [`sundayrec_core::wake`] decision core.
 //!
 //! Ported from the Electron `src/main/wake.ts` + `wake-verification.ts`. The
-//! *decisions* — which wake points to register, how to format a `pmset`/
-//! `schtasks` time, classifying errors, parsing `pmset`/`powercfg` output,
-//! matching expected vs observed wakes, platform capabilities — all live in the
-//! core and carry the tests. This module only spawns the OS tools and assembles
-//! their parsed results.
+//! *decisions* — which wake points to register, how to format a `pmset` time,
+//! classifying errors, parsing the power tools' output, matching expected vs
+//! observed wakes, platform capabilities — live in the core and carry the tests.
+//! This module owns the OS side of it, split into four seams so the OS side is
+//! testable too:
 //!
-//! ## ⚠️ OS/HARDWARE-UNVERIFIED
+//!   - [`plan`] — pure command PLANS (program + argv) for every invocation,
+//!     including the two-layer quoting the elevated macOS path needs;
+//!   - [`shell`] — the `Shell` trait that runs them, with a `FakeShell` the tests
+//!     drive the escalation ladders through;
+//!   - [`win_timer`] — the Windows mechanism, `SetWaitableTimer(fResume = TRUE)`;
+//!   - [`mac_read`] — the unprivileged IOKit read of scheduled power events.
 //!
-//! Every function here shells out to `pmset` / `osascript` / `powershell` /
-//! `powercfg` / `wmic`. The argument shaping + output parsing are unit-tested in
-//! the core, but the actual scheduling, the admin/UAC elevation prompts, and
-//! whether the machine *truly* wakes can only be confirmed on a real Mac/Windows
-//! box. On this dev host the read-only probes (`get_sleep_config`, `verify`) may
-//! run for real; the mutating ones (schedule, fix) are wired but unexercised.
+//! ## Platform mechanisms, honestly
+//!
+//! **macOS.** Writing a scheduled wake means `IOPMSchedulePowerEvent`, which
+//! requires root — `pmset` is itself just a shell over it. So there is no binding
+//! that avoids the privilege: we run `pmset` unelevated first (it succeeds when
+//! the user already holds the right) and escalate to ONE `osascript … with
+//! administrator privileges` prompt only when that fails. Reading, by contrast,
+//! is unprivileged, so verification goes through IOKit ([`mac_read`]) and falls
+//! back to `pmset -g sched` text only when IOKit reports nothing.
+//!
+//! **Windows.** The wake is an in-process `SetWaitableTimer` with `fResume =
+//! TRUE`. No elevation, no UAC ladder, no scheduled task left behind on the
+//! machine — **and no wake at all if SundayRec is not running**. That is the
+//! owner-approved model: the app autostarts and lives in the tray, and a machine
+//! that woke with SundayRec closed would not have recorded anyway. Neither
+//! mechanism can start a machine from S5 (full shutdown). See [`win_timer`].
+//!
+//! ## ⚠️ HARDWARE-UNVERIFIED
+//!
+//! Argument shaping, the escalation ladders and the output parsing are unit-tested
+//! here and in the core, and the macOS IOKit read runs for real in the gate. What
+//! remains unproven without a real box: whether the admin prompt behaves, whether
+//! `SetWaitableTimer` truly resumes a sleeping Windows machine, and whether the
+//! Windows code even compiles here (it does not — that is the `windows-check` CI
+//! lane's job; nothing on this Mac builds it).
 //!
 //! ## Honestly deferred
 //!
-//! The Electron `testWake` (schedule a near-future wake, *sleep the machine*,
-//! and measure the resume via `powerMonitor`) is NOT ported here: Tauri has no
-//! built-in power-resume event, and sleeping the user's machine without a
-//! reliable resume signal is worse than not offering it. The pure verdict
+//! The Electron `testWake` (schedule a near-future wake, *sleep the machine*, and
+//! measure the resume via `powerMonitor`) is NOT ported: Tauri has no built-in
+//! power-resume event, and sleeping the user's machine without a reliable resume
+//! signal is worse than not offering it. The pure verdict
 //! ([`sundayrec_core::wake::classify_test_wake_delta`]) is ready for when a
 //! power-monitor capability lands.
 
-use std::sync::Mutex;
-use std::time::Duration as StdDuration;
+pub mod mac_read;
+pub mod plan;
+pub mod shell;
+pub mod win_timer;
 
-use chrono::{NaiveDateTime, Utc};
+use std::sync::{Arc, LazyLock, Mutex};
+
+use chrono::{Datelike, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 use ts_rs::TS;
 
 use sundayrec_core::wake::{
-    build_win_task_defs, classify_win_error, compare_expected_to_observed, decide_reschedule,
-    format_pmset_date, key_of, parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched,
-    parse_pmset_standby, parse_powercfg_waketimers, parse_win_wake_timers,
-    parse_wmic_battery_status, wake_points, SleepConfig, WakeErrorReason, WakePlatform,
-    WakeRescheduleAction, WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
+    classify_win_error, compare_expected_to_observed, decide_reschedule, key_of,
+    parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched, parse_pmset_standby,
+    parse_powercfg_waketimers, parse_win_wake_timers, parse_wmic_battery_status, wake_points,
+    SleepConfig, VerifiedWake, WakeErrorReason, WakePlatform, WakeRescheduleAction, WinErrorKind,
+    WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
 };
 
 use crate::util::lock_recover;
+use plan::{
+    plan_mac_batt, plan_mac_cancel_all, plan_mac_elevated_schedule, plan_mac_fix_sleep,
+    plan_mac_sched, plan_mac_schedule_one, plan_mac_sleep_config, plan_win_battery_cim,
+    plan_win_battery_wmic, plan_win_fix_wake_timers, plan_win_wake_timers_query,
+    plan_win_waketimers, WAKE_OWNER,
+};
+use shell::{run_text, RealShell, Shell};
+use win_timer::{plan_wake_timers, WaitableTimers};
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -92,9 +127,9 @@ pub struct ObservedWake {
 /// reports, plus power facts. Mirrors the Electron `WakeStatus` minus the
 /// `capabilities` field — the UI reads those from the separate
 /// `wake_capabilities` command, so this src-tauri type doesn't embed the
-/// core-crate [`WakeCapabilities`] (a cross-crate ts-rs embed produces a broken
-/// relative import path; commands returning core types separately are the
-/// codebase convention).
+/// core-crate [`sundayrec_core::wake::WakeCapabilities`] (a cross-crate ts-rs
+/// embed produces a broken relative import path; commands returning core types
+/// separately are the codebase convention).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/lib/bindings/WakeStatus.ts")]
 #[serde(rename_all = "camelCase")]
@@ -116,20 +151,67 @@ pub struct WakeFixResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//   The process-wide OS handles
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The real shell. A unit struct, so one shared instance is free.
+fn real_shell() -> Arc<dyn Shell> {
+    static SHELL: LazyLock<Arc<dyn Shell>> = LazyLock::new(|| Arc::new(RealShell));
+    SHELL.clone()
+}
+
+/// The process's wake timers. Deliberately ONE instance for the whole process:
+/// a waitable timer belongs to whoever armed it, so the engine's reschedule and
+/// the manual test-wake have to operate on the same set.
+fn global_timers() -> Arc<dyn WaitableTimers> {
+    static TIMERS: LazyLock<Arc<dyn WaitableTimers>> = LazyLock::new(win_timer::real_timers);
+    TIMERS.clone()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //   Engine (Tauri-managed state) — dedups repeated scheduling
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Managed-state handle. Holds the last successfully-scheduled wake-point key so
 /// an unchanged reschedule (the common case — the supervisor recomputes often)
 /// is a cheap no-op. Mirrors the Electron `lastScheduledByPlatform` dedup.
-#[derive(Default)]
 pub struct WakeEngine {
     last_key: Mutex<Option<String>>,
+    shell: Arc<dyn Shell>,
+    timers: Arc<dyn WaitableTimers>,
+    platform: WakePlatform,
+}
+
+impl Default for WakeEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WakeEngine {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            last_key: Mutex::new(None),
+            shell: real_shell(),
+            timers: global_timers(),
+            platform: current_platform(),
+        }
+    }
+
+    /// Build an engine over substituted OS handles — the seam the ladder tests
+    /// drive.
+    #[cfg(test)]
+    fn with(
+        shell: Arc<dyn Shell>,
+        timers: Arc<dyn WaitableTimers>,
+        platform: WakePlatform,
+    ) -> Self {
+        Self {
+            last_key: Mutex::new(None),
+            shell,
+            timers,
+            platform,
+        }
     }
 
     /// Schedule OS wakes for the `upcoming` recording starts (the lead is
@@ -159,7 +241,15 @@ impl WakeEngine {
             return WakeResult::ok(points.len() as u32, points.first().map(fmt_local));
         }
 
-        let result = schedule_os_wakes(&points, allow_admin).await;
+        let result = schedule_os_wakes(
+            self.shell.as_ref(),
+            self.timers.as_ref(),
+            self.platform,
+            &points,
+            now,
+            allow_admin,
+        )
+        .await;
         if result.ok {
             // Record the applied set — INCLUDING the empty key after a clear, so a
             // later re-add of the same time is recognised as a real change and
@@ -174,17 +264,32 @@ impl WakeEngine {
 //   Scheduling
 // ─────────────────────────────────────────────────────────────────────────────
 
-async fn schedule_os_wakes(points: &[NaiveDateTime], allow_admin: bool) -> WakeResult {
-    match current_platform() {
-        WakePlatform::MacArm | WakePlatform::MacIntel => schedule_mac(points, allow_admin).await,
-        WakePlatform::Win => schedule_windows(points).await,
+async fn schedule_os_wakes(
+    shell: &dyn Shell,
+    timers: &dyn WaitableTimers,
+    platform: WakePlatform,
+    points: &[NaiveDateTime],
+    now: NaiveDateTime,
+    allow_admin: bool,
+) -> WakeResult {
+    match platform {
+        WakePlatform::MacArm | WakePlatform::MacIntel => {
+            schedule_mac(shell, points, allow_admin).await
+        }
+        WakePlatform::Win => schedule_windows(timers, points, now),
         _ => WakeResult::fail(WakeErrorReason::Unsupported, None),
     }
 }
 
-async fn schedule_mac(points: &[NaiveDateTime], allow_admin: bool) -> WakeResult {
+/// macOS ladder: cancel ours, try each `pmset` unelevated, and only if some
+/// failed escalate to ONE admin prompt covering the whole set.
+async fn schedule_mac(
+    shell: &dyn Shell,
+    points: &[NaiveDateTime],
+    allow_admin: bool,
+) -> WakeResult {
     // Clear our previously-scheduled wakes (best-effort).
-    let _ = run("pmset", &["schedule", "cancelall", "SundayRec"], 3000).await;
+    let _ = run_text(shell, &plan_mac_cancel_all()).await;
 
     if points.is_empty() {
         return WakeResult::ok(0, None);
@@ -192,11 +297,7 @@ async fn schedule_mac(points: &[NaiveDateTime], allow_admin: bool) -> WakeResult
 
     let mut scheduled = 0u32;
     for d in points {
-        let stamp = format_pmset_date(*d);
-        if run("pmset", &["schedule", "wake", &stamp, "SundayRec"], 5000)
-            .await
-            .is_ok()
-        {
+        if run_text(shell, &plan_mac_schedule_one(*d)).await.is_ok() {
             scheduled += 1;
         }
     }
@@ -205,25 +306,15 @@ async fn schedule_mac(points: &[NaiveDateTime], allow_admin: bool) -> WakeResult
     }
 
     if !allow_admin {
+        // A background reschedule must never raise a modal password prompt on a
+        // machine nobody is sitting at; the UI surfaces this as "click Planlegg".
         return WakeResult::fail(WakeErrorReason::Permission, None);
     }
 
-    // Elevated retry: one osascript admin prompt running all the pmset commands.
-    let cmds = points
-        .iter()
-        .map(|d| {
-            format!(
-                "pmset schedule wake \\\"{}\\\" SundayRec",
-                format_pmset_date(*d)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" && ");
-    let script = format!("do shell script \"{cmds}\" with administrator privileges");
-    match run("osascript", &["-e", &script], 30000).await {
+    match run_text(shell, &plan_mac_elevated_schedule(points, WAKE_OWNER)).await {
         Ok(_) => WakeResult::ok(points.len() as u32, points.first().map(fmt_local)),
         Err(msg) => {
-            if msg.contains("User canceled") {
+            if is_admin_prompt_cancel(&msg) {
                 WakeResult::fail(WakeErrorReason::Cancelled, None)
             } else {
                 WakeResult::fail(WakeErrorReason::Permission, Some(msg))
@@ -232,44 +323,42 @@ async fn schedule_mac(points: &[NaiveDateTime], allow_admin: bool) -> WakeResult
     }
 }
 
-async fn schedule_windows(points: &[NaiveDateTime]) -> WakeResult {
-    // Remove our previously-registered wake tasks (best-effort).
-    let _ = run(
-        "powershell",
-        &[
-            "-NoProfile",
-            "-Command",
-            "Get-ScheduledTask -TaskPath '\\SundayRec\\*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false",
-        ],
-        10000,
-    )
-    .await;
+/// True when an `osascript … with administrator privileges` failure is the user
+/// dismissing the prompt rather than something being wrong.
+///
+/// osascript reports this as `User canceled.` with AppleScript error `-128`. Both
+/// spellings and the numeric code are accepted: the wording is localisable, the
+/// code is not, and telling "you clicked Avbryt" apart from "your password is
+/// wrong" is the difference between a calm UI message and a scary one.
+fn is_admin_prompt_cancel(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("user canceled") || lower.contains("user cancelled") || lower.contains("-128")
+}
+
+/// Windows: cancel whatever we armed, then arm one `SetWaitableTimer` per point.
+/// Synchronous — there is no process to spawn any more.
+fn schedule_windows(
+    timers: &dyn WaitableTimers,
+    points: &[NaiveDateTime],
+    now: NaiveDateTime,
+) -> WakeResult {
+    // Always cancel first: the timers are ours, and a reschedule replaces the
+    // whole set rather than adding to it.
+    timers.clear();
 
     if points.is_empty() {
         return WakeResult::ok(0, None);
     }
-
-    // Try elevated first, fall back to standard user on a permission error.
-    for elevated in [true, false] {
-        let defs = build_win_task_defs(points, elevated);
-        match run(
-            "powershell",
-            &["-NoProfile", "-NonInteractive", "-Command", &defs],
-            20000,
-        )
-        .await
-        {
-            Ok(_) => return WakeResult::ok(points.len() as u32, points.first().map(fmt_local)),
-            Err(msg) => match classify_win_error(&msg) {
-                WinErrorKind::Permission if elevated => continue,
-                WinErrorKind::Permission => {
-                    return WakeResult::fail(WakeErrorReason::Permission, Some(msg))
-                }
-                WinErrorKind::Error => return WakeResult::fail(WakeErrorReason::Error, Some(msg)),
-            },
-        }
+    let plans = plan_wake_timers(points, now);
+    if plans.is_empty() {
+        // Every point was already past by the time we got here.
+        return WakeResult::ok(0, None);
     }
-    WakeResult::fail(WakeErrorReason::Permission, None)
+    let next = plans.first().map(|p| fmt_local(&p.at));
+    match timers.arm(&plans) {
+        Ok(count) => WakeResult::ok(count, next),
+        Err(msg) => WakeResult::fail(WakeErrorReason::Error, Some(msg)),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,12 +389,25 @@ pub struct TestWakeResult {
 /// history) is OS-level and GUI-driven — the pure verdict lives in
 /// [`sundayrec_core::wake::test_wake_outcome`].
 ///
-/// ⚠️ HARDWARE-UNVERIFIED — spawns `pmset`/`schtasks`; the actual wake can't be
-/// proven in the gate (the machine has to sleep, then wake). See SMOKE-TEST.md.
+/// Note it REPLACES the currently-scheduled wakes on both platforms (macOS
+/// `cancelall`, Windows clear-then-arm), exactly as the Electron original did.
+/// The next supervisor tick re-registers the real schedule.
+///
+/// ⚠️ HARDWARE-UNVERIFIED — the actual wake can't be proven in the gate (the
+/// machine has to sleep, then wake). See SMOKE-TEST.md.
 pub async fn schedule_test_wake(seconds_ahead: i64) -> TestWakeResult {
     let secs = seconds_ahead.clamp(5, 3600);
-    let target = (Utc::now() + chrono::Duration::seconds(secs)).naive_local();
-    let result = schedule_os_wakes(std::slice::from_ref(&target), true).await;
+    let now = chrono::Local::now().naive_local();
+    let target = now + chrono::Duration::seconds(secs);
+    let result = schedule_os_wakes(
+        real_shell().as_ref(),
+        global_timers().as_ref(),
+        current_platform(),
+        std::slice::from_ref(&target),
+        now,
+        true,
+    )
+    .await;
     if result.ok {
         TestWakeResult {
             ok: true,
@@ -328,21 +430,15 @@ pub async fn schedule_test_wake(seconds_ahead: i64) -> TestWakeResult {
 pub async fn cancel_test_wake() -> bool {
     match current_platform() {
         WakePlatform::MacArm | WakePlatform::MacIntel => {
-            run("pmset", &["schedule", "cancelall", "SundayRec"], 3000)
+            run_text(real_shell().as_ref(), &plan_mac_cancel_all())
                 .await
                 .is_ok()
         }
-        WakePlatform::Win => run(
-            "powershell",
-            &[
-                "-NoProfile",
-                "-Command",
-                "Get-ScheduledTask -TaskPath '\\SundayRec\\*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false",
-            ],
-            10000,
-        )
-        .await
-        .is_ok(),
+        WakePlatform::Win => {
+            // Closing the handles IS the cancel; there is nothing to fail.
+            global_timers().clear();
+            true
+        }
         _ => false,
     }
 }
@@ -353,27 +449,30 @@ pub async fn cancel_test_wake() -> bool {
 
 /// Read the OS sleep/power configuration. Port of `getSleepConfig`.
 pub async fn get_sleep_config() -> SleepConfig {
-    match current_platform() {
-        WakePlatform::MacArm | WakePlatform::MacIntel => match run("pmset", &["-g"], 5000).await {
-            Ok(out) => parse_mac_sleep_config(&out),
-            Err(e) => SleepConfig {
-                error: Some(e),
-                ..Default::default()
-            },
-        },
-        WakePlatform::Win => {
-            let cmd = "$s = (powercfg /getactivescheme) -replace '.*GUID: ([\\w-]+).*','$1'; powercfg /query $s 238C9FA8-0AAD-41ED-83F4-97BE242C8F20 BD3B718A-0680-4D9D-8AB2-E1D2B4AC806D";
-            match run("powershell", &["-NoProfile", "-Command", cmd], 10000).await {
-                Ok(out) => SleepConfig {
-                    wake_timers_enabled: parse_win_wake_timers(&out),
-                    ..Default::default()
-                },
+    read_sleep_config(real_shell().as_ref(), current_platform()).await
+}
+
+async fn read_sleep_config(shell: &dyn Shell, platform: WakePlatform) -> SleepConfig {
+    match platform {
+        WakePlatform::MacArm | WakePlatform::MacIntel => {
+            match run_text(shell, &plan_mac_sleep_config()).await {
+                Ok(out) => parse_mac_sleep_config(&out),
                 Err(e) => SleepConfig {
                     error: Some(e),
                     ..Default::default()
                 },
             }
         }
+        WakePlatform::Win => match run_text(shell, &plan_win_wake_timers_query()).await {
+            Ok(out) => SleepConfig {
+                wake_timers_enabled: parse_win_wake_timers(&out),
+                ..Default::default()
+            },
+            Err(e) => SleepConfig {
+                error: Some(e),
+                ..Default::default()
+            },
+        },
         _ => SleepConfig::default(),
     }
 }
@@ -381,16 +480,14 @@ pub async fn get_sleep_config() -> SleepConfig {
 /// Disable autopoweroff + raise standbydelay so a Mac stays in (wakeable) sleep.
 /// Port of `fixMacSleep`. Requires an admin prompt.
 pub async fn fix_mac_sleep() -> WakeFixResult {
-    let cmd = "pmset -a autopoweroff 0; pmset -a standbydelay 86400";
-    let script = format!("do shell script \"{cmd}\" with administrator privileges");
-    match run("osascript", &["-e", &script], 30000).await {
+    match run_text(real_shell().as_ref(), &plan_mac_fix_sleep()).await {
         Ok(_) => WakeFixResult {
             ok: true,
             message: None,
         },
         Err(msg) => WakeFixResult {
             ok: false,
-            message: Some(if msg.contains("User canceled") {
+            message: Some(if is_admin_prompt_cancel(&msg) {
                 "cancelled".to_string()
             } else {
                 msg
@@ -400,39 +497,22 @@ pub async fn fix_mac_sleep() -> WakeFixResult {
 }
 
 /// Enable wake timers (AC + DC) in the active power scheme. Port of `fixWinWakeTimers`.
+///
+/// This is the ONE Windows path that can still need elevation — the wake itself
+/// no longer does — so the permission classification lives here and nowhere else.
 pub async fn fix_win_wake_timers() -> WakeFixResult {
-    let cmd = "$s = (powercfg /getactivescheme) -replace '.*GUID: ([\\w-]+).*','$1'; powercfg /setacvalueindex $s 238C9FA8-0AAD-41ED-83F4-97BE242C8F20 BD3B718A-0680-4D9D-8AB2-E1D2B4AC806D 1; powercfg /setdcvalueindex $s 238C9FA8-0AAD-41ED-83F4-97BE242C8F20 BD3B718A-0680-4D9D-8AB2-E1D2B4AC806D 1; powercfg /setactive $s";
-    match run(
-        "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", cmd],
-        15000,
-    )
-    .await
-    {
+    match run_text(real_shell().as_ref(), &plan_win_fix_wake_timers()).await {
         Ok(_) => WakeFixResult {
             ok: true,
             message: None,
         },
-        Err(msg) => {
-            let lower = msg.to_lowercase();
-            let admin = [
-                "access",
-                "denied",
-                "unauthorized",
-                "privilege",
-                "administrator",
-            ]
-            .iter()
-            .any(|p| lower.contains(p));
-            WakeFixResult {
-                ok: false,
-                message: Some(if admin {
-                    "admin_required".to_string()
-                } else {
-                    msg
-                }),
-            }
-        }
+        Err(msg) => WakeFixResult {
+            ok: false,
+            message: Some(match classify_win_error(&msg) {
+                WinErrorKind::Permission => "admin_required".to_string(),
+                WinErrorKind::Error => msg,
+            }),
+        },
     }
 }
 
@@ -441,13 +521,24 @@ pub async fn fix_win_wake_timers() -> WakeFixResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Compare what we expect the OS to have scheduled (from `expected`) against
-/// what it actually reports, plus capabilities + power facts. Port of
-/// `verifyScheduledWakes`.
+/// what it actually reports, plus power facts. Port of `verifyScheduledWakes`.
 pub async fn verify_scheduled_wakes(expected: &[NaiveDateTime]) -> WakeStatus {
     let platform = current_platform();
-    let observed = query_observed_wakes(platform).await;
-    let on_battery = check_power_source(platform).await;
-    let standby_enabled = check_standby(platform).await;
+    // The IOKit read happens here (it is synchronous and privilege-free) and is
+    // handed in, so the fallback ladder below stays testable.
+    let iokit = mac_read::read_scheduled_wakes(local_utc_offset_secs());
+    verify_with(real_shell().as_ref(), platform, iokit, expected).await
+}
+
+async fn verify_with(
+    shell: &dyn Shell,
+    platform: WakePlatform,
+    iokit: Option<Vec<VerifiedWake>>,
+    expected: &[NaiveDateTime],
+) -> WakeStatus {
+    let observed = observed_wakes(shell, platform, iokit).await;
+    let on_battery = check_power_source(shell, platform).await;
+    let standby_enabled = check_standby(shell, platform).await;
     let (has_mismatch, _missing) =
         compare_expected_to_observed(expected, &observed, WAKE_MATCH_TOLERANCE_MS);
 
@@ -466,15 +557,30 @@ pub async fn verify_scheduled_wakes(expected: &[NaiveDateTime]) -> WakeStatus {
     }
 }
 
-async fn query_observed_wakes(platform: WakePlatform) -> Vec<sundayrec_core::wake::VerifiedWake> {
+/// What the OS says it has scheduled.
+///
+/// On macOS the IOKit answer wins when it has anything to say; an EMPTY IOKit
+/// answer still falls through to `pmset -g sched`, because the two sources are
+/// known to disagree on Apple Silicon and reporting "nothing scheduled" would
+/// make the UI tell the user to re-register a wake that already exists.
+async fn observed_wakes(
+    shell: &dyn Shell,
+    platform: WakePlatform,
+    iokit: Option<Vec<VerifiedWake>>,
+) -> Vec<VerifiedWake> {
     match platform {
         WakePlatform::MacArm | WakePlatform::MacIntel => {
-            match run("pmset", &["-g", "sched"], 5000).await {
+            if let Some(wakes) = iokit {
+                if !wakes.is_empty() {
+                    return wakes;
+                }
+            }
+            match run_text(shell, &plan_mac_sched()).await {
                 Ok(out) => parse_pmset_sched(&out, Some(Utc::now().year_ce().1 as i32)),
                 Err(_) => Vec::new(),
             }
         }
-        WakePlatform::Win => match run("powercfg", &["-waketimers"], 5000).await {
+        WakePlatform::Win => match run_text(shell, &plan_win_waketimers()).await {
             Ok(out) => parse_powercfg_waketimers(&out),
             Err(_) => Vec::new(),
         },
@@ -482,44 +588,29 @@ async fn query_observed_wakes(platform: WakePlatform) -> Vec<sundayrec_core::wak
     }
 }
 
-async fn check_power_source(platform: WakePlatform) -> Option<bool> {
+async fn check_power_source(shell: &dyn Shell, platform: WakePlatform) -> Option<bool> {
     match platform {
-        WakePlatform::MacArm | WakePlatform::MacIntel => run("pmset", &["-g", "batt"], 5000)
+        WakePlatform::MacArm | WakePlatform::MacIntel => run_text(shell, &plan_mac_batt())
             .await
             .ok()
             .and_then(|o| parse_pmset_batt(&o)),
         WakePlatform::Win => {
-            if let Ok(o) = run(
-                "wmic",
-                &["path", "Win32_Battery", "get", "BatteryStatus", "/value"],
-                5000,
-            )
-            .await
-            {
+            if let Ok(o) = run_text(shell, &plan_win_battery_wmic()).await {
                 return parse_wmic_battery_status(&o);
             }
             // Newer Windows may lack wmic — fall back to PowerShell CIM.
-            run(
-                "powershell",
-                &[
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "(Get-CimInstance -ClassName Win32_Battery | Select-Object -First 1 -ExpandProperty BatteryStatus)",
-                ],
-                8000,
-            )
-            .await
-            .ok()
-            .and_then(|o| o.trim().parse::<i32>().ok().map(|s| s == 1))
+            run_text(shell, &plan_win_battery_cim())
+                .await
+                .ok()
+                .and_then(|o| o.trim().parse::<i32>().ok().map(|s| s == 1))
         }
         _ => None,
     }
 }
 
-async fn check_standby(platform: WakePlatform) -> Option<bool> {
+async fn check_standby(shell: &dyn Shell, platform: WakePlatform) -> Option<bool> {
     match platform {
-        WakePlatform::MacArm | WakePlatform::MacIntel => run("pmset", &["-g"], 5000)
+        WakePlatform::MacArm | WakePlatform::MacIntel => run_text(shell, &plan_mac_sleep_config())
             .await
             .ok()
             .and_then(|o| parse_pmset_standby(&o)),
@@ -530,8 +621,6 @@ async fn check_standby(platform: WakePlatform) -> Option<bool> {
 // ─────────────────────────────────────────────────────────────────────────────
 //   Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-use chrono::Datelike;
 
 /// The host class for wake purposes, from the running OS + arch.
 pub fn current_platform() -> WakePlatform {
@@ -549,28 +638,408 @@ pub fn current_platform() -> WakePlatform {
     }
 }
 
+/// This machine's current UTC offset in seconds — the one impure input
+/// [`mac_read::cf_absolute_to_local`] needs.
+fn local_utc_offset_secs() -> i32 {
+    use chrono::Offset;
+    chrono::Local::now().offset().fix().local_minus_utc()
+}
+
 /// Format a wall-clock datetime as a zone-less local ISO string for the UI.
 fn fmt_local(d: &NaiveDateTime) -> String {
     d.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-/// Run an external command with a timeout, returning stdout on success or a
-/// stderr/error string on failure (non-zero exit or spawn error).
-async fn run(program: &str, args: &[&str], timeout_ms: u64) -> Result<String, String> {
-    let fut = Command::new(program).args(args).output();
-    let output = match tokio::time::timeout(StdDuration::from_millis(timeout_ms), fut).await {
-        Ok(Ok(o)) => o,
-        Ok(Err(e)) => return Err(e.to_string()),
-        Err(_) => return Err(format!("{program} timed out")),
-    };
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(if stderr.trim().is_empty() {
-            format!("{program} exited with {}", output.status)
-        } else {
-            stderr.into_owned()
-        })
+#[cfg(test)]
+mod tests {
+    use super::shell::{CmdOutput, FakeShell};
+    use super::*;
+    use std::sync::Mutex as StdMutex;
+
+    fn dtm(s: &str) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M").unwrap()
+    }
+
+    /// A [`WaitableTimers`] that records what it was asked to do.
+    #[derive(Default)]
+    struct FakeTimers {
+        clears: StdMutex<u32>,
+        armed: StdMutex<Vec<String>>,
+        fail_with: Option<String>,
+    }
+
+    impl FakeTimers {
+        fn failing(msg: &str) -> Self {
+            Self {
+                fail_with: Some(msg.to_string()),
+                ..Default::default()
+            }
+        }
+        fn clears(&self) -> u32 {
+            *lock_recover(&self.clears)
+        }
+        fn armed(&self) -> Vec<String> {
+            lock_recover(&self.armed).clone()
+        }
+    }
+
+    impl WaitableTimers for FakeTimers {
+        fn clear(&self) {
+            *lock_recover(&self.clears) += 1;
+        }
+        fn arm(&self, plans: &[win_timer::WinTimerPlan]) -> Result<u32, String> {
+            if let Some(msg) = &self.fail_with {
+                return Err(msg.clone());
+            }
+            let mut log = lock_recover(&self.armed);
+            for p in plans {
+                log.push(p.label());
+            }
+            Ok(plans.len() as u32)
+        }
+    }
+
+    fn no_timers() -> Arc<dyn WaitableTimers> {
+        Arc::new(FakeTimers::default())
+    }
+
+    // ── macOS ladder ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn mac_cancels_first_then_schedules_each_point_unelevated() {
+        let shell = Arc::new(FakeShell::new());
+        let res = schedule_mac(
+            shell.as_ref(),
+            &[dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")],
+            false,
+        )
+        .await;
+        assert!(res.ok);
+        assert_eq!(res.count, Some(2));
+        assert_eq!(res.next_wake.as_deref(), Some("2026-05-31T10:20:00"));
+        let log = shell.log();
+        // Cancel-then-register, in that order — the reverse would delete the
+        // wakes we had just filed.
+        assert_eq!(log[0], "pmset schedule cancelall SundayRec");
+        assert_eq!(log.len(), 3);
+        assert!(log[1].contains("05/31/26 10:20:00"));
+        assert!(log[2].contains("06/07/26 10:20:00"));
+        // The happy path must NOT raise an admin prompt.
+        assert_eq!(shell.count("osascript"), 0);
+    }
+
+    #[tokio::test]
+    async fn mac_partial_failure_without_admin_reports_permission_and_stays_silent() {
+        // One of two `pmset` calls fails and this is a BACKGROUND reschedule:
+        // a modal password prompt on an unattended machine is worse than a
+        // reported failure the UI can surface.
+        let shell = Arc::new(
+            FakeShell::new()
+                .on("06/07/26", Ok(CmdOutput::failed(1, "not authorized")))
+                .otherwise(Ok(CmdOutput::ok(""))),
+        );
+        let res = schedule_mac(
+            shell.as_ref(),
+            &[dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")],
+            false,
+        )
+        .await;
+        assert!(!res.ok);
+        assert_eq!(res.reason.as_deref(), Some("permission"));
+        assert_eq!(shell.count("osascript"), 0);
+    }
+
+    #[tokio::test]
+    async fn mac_partial_failure_escalates_to_one_admin_prompt_for_the_whole_set() {
+        let shell = Arc::new(
+            FakeShell::new()
+                .on("osascript", Ok(CmdOutput::ok("")))
+                .on("schedule wake", Ok(CmdOutput::failed(1, "not authorized")))
+                .otherwise(Ok(CmdOutput::ok(""))),
+        );
+        let points = [dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")];
+        let res = schedule_mac(shell.as_ref(), &points, true).await;
+        assert!(res.ok);
+        assert_eq!(res.count, Some(2));
+        // ONE prompt, not one per wake point — two password dialogs in a row is
+        // how a volunteer decides the feature is broken.
+        assert_eq!(shell.count("osascript"), 1);
+        let script = shell
+            .log()
+            .into_iter()
+            .find(|l| l.contains("osascript"))
+            .unwrap();
+        assert!(script.contains("05/31/26 10:20:00"));
+        assert!(script.contains("06/07/26 10:20:00"));
+    }
+
+    #[tokio::test]
+    async fn mac_admin_prompt_dismissal_is_cancelled_not_permission() {
+        let shell = Arc::new(
+            FakeShell::new()
+                .on(
+                    "osascript",
+                    Ok(CmdOutput::failed(
+                        1,
+                        "execution error: User canceled. (-128)",
+                    )),
+                )
+                .otherwise(Ok(CmdOutput::failed(1, "not authorized"))),
+        );
+        let res = schedule_mac(shell.as_ref(), &[dtm("2026-05-31 10:20")], true).await;
+        assert!(!res.ok);
+        assert_eq!(res.reason.as_deref(), Some("cancelled"));
+        assert!(res.message.is_none());
+    }
+
+    #[tokio::test]
+    async fn mac_admin_prompt_real_failure_is_permission_and_keeps_the_message() {
+        let shell = Arc::new(
+            FakeShell::new()
+                .on(
+                    "osascript",
+                    Ok(CmdOutput::failed(1, "pmset: Operation not permitted")),
+                )
+                .otherwise(Ok(CmdOutput::failed(1, "not authorized"))),
+        );
+        let res = schedule_mac(shell.as_ref(), &[dtm("2026-05-31 10:20")], true).await;
+        assert_eq!(res.reason.as_deref(), Some("permission"));
+        assert!(res.message.unwrap().contains("Operation not permitted"));
+    }
+
+    #[tokio::test]
+    async fn mac_empty_schedule_cancels_and_registers_nothing() {
+        let shell = Arc::new(FakeShell::new());
+        let res = schedule_mac(shell.as_ref(), &[], true).await;
+        assert!(res.ok);
+        assert_eq!(res.count, Some(0));
+        assert_eq!(shell.log(), vec!["pmset schedule cancelall SundayRec"]);
+    }
+
+    // ── Windows mechanism ───────────────────────────────────────────────────
+
+    #[test]
+    fn windows_clears_then_arms_one_waitable_timer_per_point() {
+        let timers = FakeTimers::default();
+        let now = dtm("2026-05-31 10:00");
+        let res = schedule_windows(
+            &timers,
+            &[dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")],
+            now,
+        );
+        assert!(res.ok);
+        assert_eq!(res.count, Some(2));
+        assert_eq!(res.next_wake.as_deref(), Some("2026-05-31T10:20:00"));
+        assert_eq!(timers.clears(), 1);
+        assert_eq!(
+            timers.armed(),
+            vec!["2026-05-31T10:20:00", "2026-06-07T10:20:00"]
+        );
+    }
+
+    #[test]
+    fn windows_empty_schedule_clears_without_arming() {
+        let timers = FakeTimers::default();
+        let res = schedule_windows(&timers, &[], dtm("2026-05-31 10:00"));
+        assert!(res.ok);
+        assert_eq!(res.count, Some(0));
+        // The clear still has to happen — that is how a removed slot's wake
+        // stops firing.
+        assert_eq!(timers.clears(), 1);
+        assert!(timers.armed().is_empty());
+    }
+
+    #[test]
+    fn windows_arm_failure_surfaces_an_error_not_a_silent_success() {
+        let timers = FakeTimers::failing("SetWaitableTimer failed (error 5)");
+        let res = schedule_windows(&timers, &[dtm("2026-05-31 10:20")], dtm("2026-05-31 10:00"));
+        assert!(!res.ok);
+        assert_eq!(res.reason.as_deref(), Some("error"));
+        assert!(res.message.unwrap().contains("error 5"));
+    }
+
+    #[test]
+    fn windows_reports_the_next_armed_wake_not_the_first_requested() {
+        // The first point is already past, so it is never armed; reporting it as
+        // "next wake" would show the user a time that will never happen.
+        let timers = FakeTimers::default();
+        let now = dtm("2026-05-31 10:00");
+        let res = schedule_windows(
+            &timers,
+            &[dtm("2026-05-31 09:00"), dtm("2026-05-31 11:00")],
+            now,
+        );
+        assert_eq!(res.count, Some(1));
+        assert_eq!(res.next_wake.as_deref(), Some("2026-05-31T11:00:00"));
+    }
+
+    // ── Platform routing + dedup ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn unsupported_platform_reports_unsupported_without_touching_the_os() {
+        let shell = Arc::new(FakeShell::new());
+        let timers = FakeTimers::default();
+        let res = schedule_os_wakes(
+            shell.as_ref(),
+            &timers,
+            WakePlatform::Linux,
+            &[dtm("2026-05-31 10:20")],
+            dtm("2026-05-31 10:00"),
+            true,
+        )
+        .await;
+        assert_eq!(res.reason.as_deref(), Some("unsupported"));
+        assert!(shell.log().is_empty());
+        assert_eq!(timers.clears(), 0);
+    }
+
+    #[tokio::test]
+    async fn engine_dedups_an_unchanged_schedule() {
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        let now = dtm("2026-05-31 10:00");
+        let upcoming = [dtm("2026-05-31 11:00")];
+
+        let first = engine.reschedule(&upcoming, now, true, false).await;
+        assert!(first.ok);
+        let after_first = shell.log().len();
+        assert!(after_first > 0);
+
+        // Same set, not user-initiated → no OS work at all, no second prompt.
+        let second = engine.reschedule(&upcoming, now, true, false).await;
+        assert!(second.ok);
+        assert_eq!(shell.log().len(), after_first);
+
+        // User-initiated ALWAYS re-runs, even unchanged.
+        let forced = engine.reschedule(&upcoming, now, true, true).await;
+        assert!(forced.ok);
+        assert!(shell.log().len() > after_first);
+    }
+
+    #[tokio::test]
+    async fn engine_records_the_empty_key_so_a_re_add_re_registers() {
+        // The invariant the dedup nearly loses: after the schedule empties out we
+        // cancel the OS timers AND store the empty key. If we stored nothing, the
+        // old key would still be current, and re-adding the same time would look
+        // "unchanged" — dedup'd away against timers that no longer exist.
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        let now = dtm("2026-05-31 10:00");
+        let upcoming = [dtm("2026-05-31 11:00")];
+
+        assert!(engine.reschedule(&upcoming, now, true, false).await.ok);
+        // Schedule emptied → cancel, and the empty key is recorded.
+        assert!(engine.reschedule(&[], now, true, false).await.ok);
+        assert_eq!(lock_recover(&engine.last_key).as_deref(), Some(""));
+
+        let before = shell.count("schedule wake");
+        // Re-add the very same time: this MUST reach the OS again.
+        assert!(engine.reschedule(&upcoming, now, true, false).await.ok);
+        assert!(
+            shell.count("schedule wake") > before,
+            "re-add after a clear was silently dedup'd"
+        );
+    }
+
+    #[tokio::test]
+    async fn engine_reports_disabled_without_touching_the_os() {
+        let shell = Arc::new(FakeShell::new());
+        let engine = WakeEngine::with(shell.clone(), no_timers(), WakePlatform::MacArm);
+        let res = engine
+            .reschedule(
+                &[dtm("2026-05-31 11:00")],
+                dtm("2026-05-31 10:00"),
+                false,
+                true,
+            )
+            .await;
+        assert_eq!(res.reason.as_deref(), Some("disabled"));
+        assert!(shell.log().is_empty());
+    }
+
+    // ── Verification reads ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn mac_observed_wakes_prefer_iokit_and_skip_the_pmset_spawn() {
+        let shell = Arc::new(FakeShell::new().otherwise(Err("pmset must not run".into())));
+        let iokit = vec![VerifiedWake {
+            scheduled_at: dtm("2026-05-31 10:20"),
+            owner_label: "SundayRec".into(),
+        }];
+        let got = observed_wakes(shell.as_ref(), WakePlatform::MacArm, Some(iokit)).await;
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].owner_label, "SundayRec");
+        assert_eq!(shell.count("pmset"), 0);
+    }
+
+    #[tokio::test]
+    async fn mac_observed_wakes_fall_back_to_pmset_when_iokit_reports_nothing() {
+        // Apple Silicon can hold an active schedule IOKit does not list. Treating
+        // an empty IOKit answer as authoritative would tell the user their wake is
+        // missing and prompt a pointless admin re-register.
+        let sched = "Scheduled power events:\n [0]  wake at 5/31/2026 10:20:00 by 'SundayRec'\n";
+        let shell = Arc::new(FakeShell::new().on("pmset -g sched", Ok(CmdOutput::ok(sched))));
+        let got = observed_wakes(shell.as_ref(), WakePlatform::MacArm, Some(Vec::new())).await;
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].scheduled_at, dtm("2026-05-31 10:20"));
+        assert_eq!(shell.count("pmset -g sched"), 1);
+    }
+
+    #[tokio::test]
+    async fn windows_battery_read_falls_back_from_wmic_to_cim() {
+        // `wmic` is gone from recent Windows builds; without the fallback the
+        // power-source panel would read "unknown" on every modern laptop.
+        let shell = Arc::new(
+            FakeShell::new()
+                .on("wmic", Err("program not found".into()))
+                .on("Get-CimInstance", Ok(CmdOutput::ok("1\r\n"))),
+        );
+        let on_battery = check_power_source(shell.as_ref(), WakePlatform::Win).await;
+        assert_eq!(on_battery, Some(true));
+        assert_eq!(shell.count("wmic"), 1);
+        assert_eq!(shell.count("Get-CimInstance"), 1);
+    }
+
+    #[tokio::test]
+    async fn windows_battery_read_stops_at_wmic_when_it_answers() {
+        let shell = Arc::new(
+            FakeShell::new()
+                .on("wmic", Ok(CmdOutput::ok("BatteryStatus=2\r\n")))
+                .on("Get-CimInstance", Err("must not be reached".into())),
+        );
+        assert_eq!(
+            check_power_source(shell.as_ref(), WakePlatform::Win).await,
+            Some(false)
+        );
+        assert_eq!(shell.count("Get-CimInstance"), 0);
+    }
+
+    #[tokio::test]
+    async fn verify_flags_a_mismatch_when_the_os_is_missing_one_of_our_wakes() {
+        let shell = Arc::new(FakeShell::new().otherwise(Ok(CmdOutput::ok(""))));
+        let expected = [dtm("2026-05-31 10:20"), dtm("2026-06-07 10:20")];
+        let iokit = vec![VerifiedWake {
+            scheduled_at: dtm("2026-05-31 10:20"),
+            owner_label: "SundayRec".into(),
+        }];
+        let status =
+            verify_with(shell.as_ref(), WakePlatform::MacArm, Some(iokit), &expected).await;
+        assert!(status.has_mismatch);
+        assert_eq!(status.expected_wakes.len(), 2);
+        assert_eq!(status.observed_wakes.len(), 1);
+        assert_eq!(status.observed_wakes[0].scheduled_at, "2026-05-31T10:20:00");
+    }
+
+    // ── Error classification ────────────────────────────────────────────────
+
+    #[test]
+    fn admin_prompt_cancel_is_told_apart_from_a_real_failure() {
+        assert!(is_admin_prompt_cancel(
+            "execution error: User canceled. (-128)"
+        ));
+        assert!(is_admin_prompt_cancel("User cancelled"));
+        assert!(is_admin_prompt_cancel("AppleScript error -128"));
+        assert!(!is_admin_prompt_cancel("Authentication failed"));
+        assert!(!is_admin_prompt_cancel("pmset: command not found"));
     }
 }

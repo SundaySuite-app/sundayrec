@@ -346,7 +346,7 @@
     "silenceTimeoutLabel": "VARIGHET FØR STOPP",
     "platformMacArm": "Apple Silicon-Mac (M-serie) — kan vekkes fra dvale, ikke fra avslått",
     "platformMacIntel": "Intel Mac — kan vekkes fra dvale og avslått (krever manuell aktivering for sistnevnte)",
-    "platformWin": "Windows — kan vekkes fra dvale; oppstart fra fullstendig avslått krever BIOS-konfig",
+    "platformWin": "Windows — kan vekkes fra dvale så lenge SundayRec kjører; oppstart fra fullstendig avslått krever BIOS-konfig",
     "platformLinux": "Linux — automatisk wake støttes ikke",
     "platformOther": "Plattform støttes ikke for automatisk wake",
     "weeklyDesc": "Faste opptak som gjentas hver uke — for eksempel gudstjeneste hver søndag. Maskinen starter og stopper opptaket automatisk, selv om ingen er til stede.",
