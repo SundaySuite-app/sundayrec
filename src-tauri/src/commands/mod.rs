@@ -8,7 +8,6 @@ pub mod account;
 pub mod app;
 pub mod audio;
 pub mod bridge;
-pub mod bridge_live;
 pub mod calendar;
 pub mod cloud;
 pub mod companion;
@@ -24,7 +23,6 @@ pub mod legacy_data;
 // directory they can touch is computed in-process (see the module docs).
 pub mod logs;
 pub mod media;
-pub mod ndi;
 pub mod path_guard;
 // E1.3 — a TEST-only module: the coverage ratchet that makes it impossible to
 // land a new path-taking command without classifying it as guarded or exempt.
@@ -35,7 +33,6 @@ pub mod recorder;
 pub mod review;
 pub mod scheduler;
 pub mod settings;
-pub mod streaming;
 // E3 — opt-in telemetry: consent, deletion, counters, and the "show me exactly
 // what you would send" preview. None takes a path (see the module docs).
 pub mod telemetry;

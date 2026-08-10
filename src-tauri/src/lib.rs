@@ -20,11 +20,6 @@
 // decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
 pub mod account;
 pub mod audio;
-// Bridge Integration #2 — the Rec-side live cue-bridge consumer. The
-// channel-name + LiveEvent→chapter fold live in `sundayrec_core`; this seam
-// owns the Supabase Realtime subscribe behind the default-off `bridge` feature
-// (INFRA-UNVERIFIED). The pure decode/channel helpers compile either way.
-pub mod bridge_live;
 pub mod cloud;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
@@ -57,10 +52,6 @@ pub mod learning;
 // app's log went to a file descriptor pointed at nothing.
 pub mod logfile;
 pub mod media;
-// R3 NDI receiver — default-off `ndi` feature (STUB; SDK not bundled). The
-// source-discovery/pixfmt/input-arg logic is `sundayrec_core::ndi`; this seam
-// returns `feature_disabled` (default) or a clear "NDI SDK not bundled" error.
-pub mod ndi;
 // The notification dispatch seam — ONE place a failure reaches the operator
 // (native + e-mail + webhook) and one place a degradation reaches the screen.
 // Featureless: the `email` leg compiles out cleanly under
@@ -87,12 +78,6 @@ pub mod settings;
 // samples RSS + open descriptors throughout. Everything long is `#[ignore]`d;
 // the nightly `.github/workflows/soak.yml` runs the lavfi variant.
 pub mod soak;
-// R3 live RTMP streaming — default-off `streaming` feature (NETWORK/HARDWARE-
-// UNVERIFIED). The tee/encode/overlay argv + key validation are
-// `sundayrec_core::{streaming,overlay}`; this seam spawns ffmpeg + reads the
-// per-destination keys from the keychain. `stream_start` returns
-// `feature_disabled` in the default build.
-pub mod streaming;
 // E3 opt-in telemetry — the persistence seam around the pure wire contract and
 // consent state machine in `sundayrec_core::telemetry`. Owns the random install
 // id, the consent row, the counter map and the durable outbox. Featureless, and
@@ -103,8 +88,8 @@ pub mod telemetry;
 // scheduler had this pattern inline and was the only task that did; extracting
 // it gave the cloud worker, the review-reminder tick and the trash sweep the
 // same self-healing, and gave every restart a record. Session-scoped tasks
-// (recorder/streaming/preview supervisors, the low-disk poller) deliberately
-// stay bare — see the module docs for why restarting them would be WRONG.
+// (the recorder supervisor, the low-disk poller) deliberately stay bare — see
+// the module docs for why restarting them would be WRONG.
 pub mod supervise;
 pub mod test_recording;
 // PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
@@ -248,17 +233,9 @@ pub fn run() {
         // The wake engine schedules OS wake-from-sleep timers (pmset/schtasks)
         // for upcoming recordings + dedups repeated reschedules (Fase 5.2).
         .manage(wake::WakeEngine::new())
-        // The preview engine holds at most one running ffmpeg MJPEG stream.
-        .manage(media::preview::PreviewEngine::new())
         // The recorder engine holds at most one running unified ffmpeg capture
         // (Spike B). Commands reach it through managed state.
         .manage(recorder::engine::RecorderEngine::new())
-        // R3: the live-stream engine holds at most one running RTMP ffmpeg.
-        // Compiles in every build; only the spawn is feature-gated.
-        .manage(streaming::StreamEngine::new())
-        // R3 NDI: the transmit engine holds at most one running NDI output
-        // (camera → libndi). Compiles in every build; the sender is feature-gated.
-        .manage(ndi::NdiOutputEngine::new())
         // R7: the update engine holds the live check/download status the
         // renderer polls. Compiles in every build; the network/install seam is
         // gated behind the `updater` feature (in `default`).
@@ -351,7 +328,7 @@ pub fn run() {
             // must never shoot the primary's live capture) and before both the
             // crash-recovery scan (which reads, then deletes, the very files an
             // orphan is still writing) and our first own sidecar spawn
-            // (preroll/preview below), which the sweep can't tell from an
+            // (preroll below), which the sweep can't tell from an
             // orphan. Sweep first, THEN arm the reaper (the sweep must not
             // shoot the fresh reaper's pattern-carrying shell).
             platform::sweep_orphaned_sidecars();
@@ -560,8 +537,6 @@ pub fn run() {
             commands::audio::start_vu,
             commands::audio::stop_vu,
             commands::media::ffmpeg_health,
-            commands::media::start_preview,
-            commands::media::stop_preview,
             commands::media::media_permissions,
             commands::recorder::list_recording_devices,
             commands::recorder::recording_preview_frame,
@@ -724,17 +699,6 @@ pub fn run() {
             // link to a sidecar write. Rust validated + parked the request; this
             // is the operator's answer.
             commands::deeplink::deeplink_confirm_captions,
-            // Bridge #2 — live cue → chapter mapping (renderer-driven).
-            commands::bridge_live::live_bridge_status,
-            commands::bridge_live::live_bridge_channel,
-            commands::bridge_live::live_bridge_map_event,
-            // R3 live streaming (tee/overlay argv pure; spawn gated by `streaming`).
-            commands::streaming::stream_status,
-            commands::streaming::stream_start,
-            commands::streaming::stream_stop,
-            commands::streaming::stream_preview_path,
-            commands::streaming::stream_set_key,
-            commands::streaming::stream_delete_key,
             // Episode images (cover art) — default + per-episode override. Pure
             // header probing in `sundayrec-core::image_probe`; no feature gate,
             // no ffmpeg. The renderer had these six as stubs since the port.
@@ -744,12 +708,6 @@ pub fn run() {
             commands::thumbnail::thumbnail_set_episode,
             commands::thumbnail::thumbnail_clear_episode,
             commands::thumbnail::thumbnail_resolve,
-            // R3 NDI source discovery + receiver (STUB; gated by `ndi`).
-            commands::ndi::ndi_list_sources,
-            commands::ndi::ndi_start_receiver,
-            commands::ndi::ndi_output_runtime_available,
-            commands::ndi::ndi_output_start,
-            commands::ndi::ndi_output_stop,
             // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
             commands::publish::publish_feed_status,
             commands::publish::publish_feed_preview,
@@ -779,9 +737,8 @@ pub fn run() {
                 app_handle
                     .state::<recorder::engine::RecorderEngine>()
                     .stop();
-                app_handle.state::<media::preview::PreviewEngine>().stop();
                 app_handle.state::<audio::vu::VuEngine>().stop();
-                tracing::info!("app exit requested — stopped recorder/preview/vu sidecars");
+                tracing::info!("app exit requested — stopped recorder/vu sidecars");
             }
         });
 }

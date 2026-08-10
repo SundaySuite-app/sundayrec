@@ -3,8 +3,8 @@
 //! avfoundation only LISTS a device's supported modes when you request an
 //! UNSUPPORTED one — so we ask for `-framerate 1` and parse the "Supported modes"
 //! block it prints to stderr. Both the recorder (to pin a supported INPUT mode)
-//! and the live preview (to open a KNOWN-good mode instead of thrashing a
-//! guess-matrix) use this, so a camera that only does 15/30 never gets fed the
+//! and the diagnose video probe (`media::video_probe`, to open a KNOWN-good
+//! mode) use this, so a camera that only does 15/30 never gets fed the
 //! 25/29.97 it rejects.
 //!
 //! macOS-only (avfoundation is the only backend with this hard rejection); other

@@ -258,7 +258,7 @@ async fn run_capture_probe(
     //    that records audio only would be a permission prompt for nothing.
     let mut video_ok = None;
     if s.video_enabled {
-        match crate::media::preview::probe_video_frame(s.video_device_name.clone()).await {
+        match crate::media::video_probe::probe_video_frame(s.video_device_name.clone()).await {
             Ok(ok) => video_ok = Some(ok),
             Err(e) => tracing::warn!("video probe skipped: {e}"),
         }

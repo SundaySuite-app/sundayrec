@@ -23,14 +23,12 @@
 //! ## What is deliberately NOT supervised
 //!
 //! Restarting is only correct for a task that is *supposed* to run forever.
-//! Three long-running tasks in this app are session-scoped — they own a device
-//! or a process for exactly as long as the user asked, and their handle is held
-//! by an engine so `stop()` can abort them:
+//! One long-running task in this app is session-scoped — it owns a device
+//! or a process for exactly as long as the user asked, and its handle is held
+//! by an engine so `stop()` can abort it:
 //!
 //!   - the **recorder supervisor** (`recorder::engine`): re-spawning it after a
-//!     stop would start recording again;
-//!   - the **streaming supervisor** (`streaming`): same, for a live RTMP push;
-//!   - the **preview engine** (`media::preview`): same, for the camera.
+//!     stop would start recording again.
 //!
 //! and one is per-recording by design:
 //!
