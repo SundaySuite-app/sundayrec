@@ -2,8 +2,10 @@
 //!
 //! These borrow the managed [`Db`] pool and delegate to the persistence
 //! functions (which carry the tests). Every command returns the validated,
-//! persisted [`Settings`] so the renderer's cache reflects exactly what the
-//! backend stored (post-clamping), with no second round-trip.
+//! persisted [`Settings`] so a caller CAN read back exactly what the backend
+//! stored (post-clamping) without a second round-trip. (The renderer's
+//! `saveSettings` currently discards the return value and keeps its in-memory
+//! copy — clamped/pruned differences surface at the next `settings_get`.)
 
 use std::path::PathBuf;
 

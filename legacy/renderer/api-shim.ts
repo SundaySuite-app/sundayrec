@@ -946,10 +946,12 @@ const api: Record<string, unknown> = {
   getAppVersion: async () =>
     (await call<{ version?: string }>("app_info", undefined, {})).version ?? "—",
   getPlatform: async () => platform,
-  // The menubar tray renders its labels in Rust, from a language it cannot read:
-  // the UI language lives in THIS renderer's settings blob and was never part of
-  // the curated `settings_save` payload. i18n.ts pushes it here on every locale
-  // load. Best-effort — a build without the `tray` feature answers with a no-op.
+  // The menubar tray renders its labels in Rust. Since R4 the backend COULD
+  // read `settings.language` from sqlite itself, but the tray must also follow
+  // a locale change the moment it happens (and the "follow the OS" null case
+  // is resolved renderer-side), so i18n.ts keeps pushing the effective code
+  // here on every locale load. Best-effort — a build without the `tray`
+  // feature answers with a no-op.
   traySetLanguage: async (code: string) => {
     try {
       await invoke("tray_set_language", { code });

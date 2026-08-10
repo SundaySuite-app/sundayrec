@@ -110,7 +110,7 @@ export function setupGeneralPage(): void {
       collectGeneralSettings()
     },
   }))
-  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))
+  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarning' }))
 
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))

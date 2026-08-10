@@ -79,10 +79,10 @@ export function setupVideoPage(): void {
   }))
 
   bindRadioGroup('video-mode', videoBinding({
-    key: 'videoSeparate',
+    key: 'outputMode',
     after: () => { updateKeepAudioVisibility(); afterVideoSave() },
   }))
-  bindSetting('opt-video-keep-audio',  videoBinding({ key: 'videoKeepAudio' }))
+  bindSetting('opt-video-keep-audio',  videoBinding({ key: 'keepSeparateAudio' }))
   bindSetting('opt-editor-hw-encode',  videoBinding({ key: 'editorHwEncode' }))
 
   // Auto vs custom bitrate. These two radios share a name but carry no distinct

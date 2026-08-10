@@ -85,6 +85,28 @@ describe("settings store pin — sqlite is the ONE store", () => {
     ).toBe(false);
   });
 
+  it("the old vocabulary lives ONLY in the migration mapper", () => {
+    // The retired settings-field names, as bare quoted strings. R4's promise is
+    // "no living compat code elsewhere" — the rename table exists in ONE place
+    // (mapLegacyBlob), so a stale `'videoSeparate'` in a page is either dead
+    // metadata or a bug about to happen. i18n keys like `'notify.webhookOnWarn'`
+    // are a different namespace and do not match these bare-string patterns.
+    const OLD_NAMES = ["webhookOnWarn", "videoSeparate", "videoKeepAudio"];
+    const patterns = OLD_NAMES.flatMap((n) => [`'${n}'`, `"${n}"`, `\`${n}\``]);
+    const offenders = rendererSources()
+      .filter((p) => !ALLOWLIST.has(relative(RENDERER_ROOT, p)))
+      .filter((p) => {
+        const code = codeOf(p);
+        return patterns.some((pat) => code.includes(pat));
+      })
+      .map((p) => relative(RENDERER_ROOT, p));
+    expect(
+      offenders,
+      "these files use a retired settings-field name — the unified vocabulary is " +
+        "webhookOnWarning / outputMode / keepSeparateAudio; renames live only in mapLegacyBlob",
+    ).toEqual([]);
+  });
+
   it("the curated bridge stays dead", () => {
     // `backendRecordingSettings` was the curated-subset bridge — 180 lines of
     // per-field archaeology that existed to compensate for the dual store.
