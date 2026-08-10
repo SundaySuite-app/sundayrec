@@ -2,9 +2,8 @@
 //!
 //! Ported from the Electron `src/main/integrations/*` (the behavioural spec).
 //! Opt-in connections to the sister apps (Stage, Plan, Song). Every shape here
-//! is a *decision* or a *mapper*; the actual fs sidecars, HTTP submissions, and
-//! Supabase Realtime subscription are I/O the `src-tauri` shell owns (some behind
-//! the default-off `bridge` feature).
+//! is a *decision* or a *mapper*; the actual fs sidecars and HTTP submissions
+//! are I/O the `src-tauri` shell owns.
 //!
 //! Submodules:
 //!   - [`stage`] — SundayStage manifest → chapter markers + setlist (the
@@ -12,7 +11,8 @@
 //!   - [`live_bridge`] — Integration #2: the live cue channel. The pure mapping
 //!     of an inbound `LiveEvent` (cue.advanced / now_playing / service.live /
 //!     service.ended) to recording metadata (chapter markers) + state, plus the
-//!     channel-name helper.
+//!     channel-name helper. (Its native WebSocket half was removed in v0.14 —
+//!     see the module docs for why the pure mirror stays.)
 //!
 //! ## Contract mirror
 //!

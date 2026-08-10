@@ -348,10 +348,11 @@ pub enum CounterName {
     #[serde(rename = "trash.restored")]
     TrashRestored,
 
-    // ── Live + system ────────────────────────────────────────────────────────
-    /// A live stream was started.
-    #[serde(rename = "streaming.started")]
-    StreamingStarted,
+    // ── System ───────────────────────────────────────────────────────────────
+    // (v0.14: `streaming.started` left the vocabulary with the live-streaming
+    // feature. Removing the SENDER is enough — the Worker treats counter names
+    // as opaque strings, and an old client still sending it is simply a name
+    // this enum no longer parses.)
     /// The diagnose report was run.
     #[serde(rename = "diagnose.run")]
     DiagnoseRun,
@@ -386,7 +387,6 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::PublishFeedGenerated,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
-    CounterName::StreamingStarted,
     CounterName::DiagnoseRun,
     CounterName::UpdateInstalled,
     CounterName::CloudUploadOk,
@@ -420,7 +420,6 @@ impl CounterName {
             Self::PublishFeedGenerated => "publish.feed.generated",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
-            Self::StreamingStarted => "streaming.started",
             Self::DiagnoseRun => "diagnose.run",
             Self::UpdateInstalled => "update.installed",
             Self::CloudUploadOk => "cloud.upload.ok",

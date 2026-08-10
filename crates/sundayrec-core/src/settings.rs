@@ -18,7 +18,6 @@
 //! This is the Fase-1 subset of the Electron `Settings`. Fields that belong to
 //! later phases are deliberately NOT modelled yet and will be added in their
 //! own phase so the model stays honest about what is actually wired:
-//!   - `streamDestinations` (live streaming)               → Fase 7
 //!   - `email*` / webhook / notify* (notifications)        → Fase 6
 //!   - `editorIntroPath` / `editorOutroPath` (editor)      → Fase 4
 //!   - `deviceChannels` (per-device channel maps)          → Fase 2/3
@@ -165,7 +164,7 @@ where
 /// hand-edited or drifted value in one of the R4 fields would otherwise reset
 /// the save folder, the schedule and every audio setting along with it. Here a
 /// bad value costs that one field and nothing else. Fields whose default is not
-/// `T::default()` (e.g. `stream_resolution`'s `"720p"`) are subsequently
+/// `T::default()` (e.g. `update_channel`'s `Stable`) are subsequently
 /// normalised by [`Settings::validate`], which every load/save runs.
 fn lenient<'de, D, T>(de: D) -> Result<T, D::Error>
 where
@@ -191,30 +190,6 @@ pub struct DeviceChannels {
     /// 0-based device channel routed to the RIGHT output. Clamped 0..=31.
     #[serde(default)]
     pub channel_r: i32,
-}
-
-/// One live-stream destination as PERSISTED — the stream key is deliberately
-/// absent (it lives in the OS keychain via `stream_set_key`; `has_key` is the
-/// only trace it leaves here, so the UI can show «•••• (lagret)»). Mirrors the
-/// Electron `StreamDestinationStored` field-for-field.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/StreamDestinationStored.ts"
-)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamDestinationStored {
-    #[serde(default)]
-    pub id: String,
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub rtmp_url: String,
-    #[serde(default)]
-    pub enabled: bool,
-    /// Whether a stream key is stored in the keychain for this destination.
-    #[serde(default)]
-    pub has_key: bool,
 }
 
 /// Per-cloud-service backup preferences (enable/auto-upload/target folder).
@@ -692,29 +667,11 @@ pub struct Settings {
     #[serde(default)]
     pub editor_hw_encode: bool,
 
-    // ── Live streaming (R4 — Electron `stream*`) ──────────────────────────────
-    /// Persisted stream destinations, WITHOUT keys (keys live in the OS
-    /// keychain via `stream_set_key`; `has_key` is the only trace here).
-    #[serde(default, deserialize_with = "lenient")]
-    pub stream_destinations: Vec<StreamDestinationStored>,
-    /// Default stream quality tag: `"480p"` | `"720p"` (default) | `"1080p"`.
-    #[serde(default = "default_stream_resolution", deserialize_with = "lenient")]
-    pub stream_resolution: String,
-    /// Default stream framerate: 25 | 30 (default). Normalised in `validate()`.
-    #[serde(default = "default_stream_framerate", deserialize_with = "lenient")]
-    pub stream_framerate: i32,
-    /// Optional video-bitrate override in kbps; `None` = auto from resolution.
-    #[serde(default, deserialize_with = "lenient")]
-    pub stream_video_bitrate: Option<i32>,
-    /// Live overlay configurations, persisted as OPAQUE JSON. The overlay
-    /// vocabulary (type/source/chroma-key/crop) is renderer-owned — see the
-    /// hand-written `OverlayConfig` in `legacy/types/index.ts` — and differs
-    /// from [`crate::overlay::OverlayConfig`] (the ffmpeg builder's input), so
-    /// the backend persists without interpreting. Malformed JSON costs this
-    /// field only (lenient), never the blob.
-    #[serde(default, deserialize_with = "lenient")]
-    #[ts(type = "Array<unknown>")]
-    pub stream_overlays: Vec<serde_json::Value>,
+    // (Live streaming was removed in v0.14. Old sqlite blobs may still carry
+    // `streamDestinations`/`streamResolution`/`streamFramerate`/
+    // `streamVideoBitrate`/`streamOverlays` — serde ignores unknown fields, so
+    // they are DROPPED tolerantly on the next load/save. See the test
+    // `legacy_blob_with_stream_fields_imports_cleanly`.)
 
     // ── Cloud backup preferences (R4 — Electron `cloudGoogleDrive` & co) ─────
     /// Google Drive backup preferences, or `None` when never configured.
@@ -854,14 +811,6 @@ fn default_separate_audio_format() -> FileFormat {
 fn default_update_channel() -> UpdateChannel {
     UpdateChannel::Stable
 }
-fn default_stream_resolution() -> String {
-    // 720p: the safe default for a church uplink — 1080p is an explicit choice.
-    "720p".to_string()
-}
-fn default_stream_framerate() -> i32 {
-    30
-}
-
 impl Default for Settings {
     /// The Electron `defaults` object (`store.ts` lines 6+), field-for-field.
     fn default() -> Self {
@@ -957,11 +906,6 @@ impl Default for Settings {
             editor_outro_path: None,
             editor_hw_encode: false,
 
-            stream_destinations: Vec::new(),
-            stream_resolution: default_stream_resolution(),
-            stream_framerate: default_stream_framerate(),
-            stream_video_bitrate: None,
-            stream_overlays: Vec::new(),
 
             cloud_google_drive: None,
             cloud_dropbox: None,
@@ -1078,20 +1022,6 @@ impl Settings {
                 self.input_channel_r = pair.map(|p| p.channel_r);
             }
         }
-
-        // Streaming (R4): normalise the quality tags the same way the video
-        // tags above are — a garbage value becomes the default, never bad
-        // ffmpeg args. (The lenient deserializer can also leave "" / 0 here.)
-        if !matches!(self.stream_resolution.as_str(), "480p" | "720p" | "1080p") {
-            self.stream_resolution = default_stream_resolution();
-        }
-        if !matches!(self.stream_framerate, 25 | 30) {
-            self.stream_framerate = default_stream_framerate();
-        }
-        self.stream_video_bitrate = self
-            .stream_video_bitrate
-            .filter(|&v| v > 0)
-            .map(|v| clamp_i32(v, 100, 50_000));
 
         // Podcast (R4): the service tag is a closed set; anything else falls
         // back to the default host. Blank-vs-default text fields are the
@@ -1829,11 +1759,6 @@ mod tests {
         assert!(s.device_channels.is_empty());
         assert_eq!(s.video_bitrate, 0);
         assert!(!s.preroll_enabled);
-        assert!(s.stream_destinations.is_empty());
-        assert_eq!(s.stream_resolution, "720p");
-        assert_eq!(s.stream_framerate, 30);
-        assert_eq!(s.stream_video_bitrate, None);
-        assert!(s.stream_overlays.is_empty());
         assert_eq!(s.cloud_google_drive, None);
         assert_eq!(s.podcast, PodcastSettings::default());
 
@@ -1843,11 +1768,6 @@ mod tests {
             "deviceChannels",
             "videoBitrate",
             "prerollEnabled",
-            "streamDestinations",
-            "streamResolution",
-            "streamFramerate",
-            "streamVideoBitrate",
-            "streamOverlays",
             "cloudGoogleDrive",
             "cloudDropbox",
             "cloudOneDrive",
@@ -1885,21 +1805,6 @@ mod tests {
             device_channels: dc,
             video_bitrate: 8_000,
             preroll_enabled: true,
-            stream_destinations: vec![StreamDestinationStored {
-                id: "yt".into(),
-                name: "YouTube".into(),
-                rtmp_url: "rtmp://a.rtmp.youtube.com/live2".into(),
-                enabled: true,
-                has_key: true,
-            }],
-            stream_resolution: "1080p".into(),
-            stream_framerate: 25,
-            stream_video_bitrate: Some(4_500),
-            stream_overlays: vec![serde_json::json!({
-                "id": "o1", "name": "Logo", "enabled": true,
-                "type": "image", "source": "/tmp/logo.png",
-                "position": "br", "scale": 0.2, "opacity": 1.0
-            })],
             cloud_google_drive: Some(CloudServicePrefs {
                 enabled: true,
                 auto_upload: true,
@@ -1931,11 +1836,6 @@ mod tests {
                 "sampleRate": 44100,
                 "deviceChannels": "not-a-map",
                 "videoBitrate": "high",
-                "streamDestinations": 7,
-                "streamResolution": 1080,
-                "streamFramerate": "fast",
-                "streamVideoBitrate": "auto",
-                "streamOverlays": {"oops": true},
                 "cloudGoogleDrive": [1, 2],
                 "podcast": "yes please"
             }"#,
@@ -1946,13 +1846,47 @@ mod tests {
         // Every malformed field landed on its (validated) default.
         assert!(s.device_channels.is_empty());
         assert_eq!(s.video_bitrate, 0);
-        assert!(s.stream_destinations.is_empty());
-        assert_eq!(s.stream_resolution, "720p");
-        assert_eq!(s.stream_framerate, 30);
-        assert_eq!(s.stream_video_bitrate, None);
-        assert!(s.stream_overlays.is_empty());
         assert_eq!(s.cloud_google_drive, None);
         assert_eq!(s.podcast, PodcastSettings::default());
+    }
+
+    // Live streaming was removed in v0.14, but installed apps upgraded from
+    // older versions still carry the stream fields in their sqlite settings
+    // blob. The migration contract: those fields are DROPPED tolerantly — the
+    // blob imports cleanly, every neighbour keeps its value, and nothing fails.
+    #[test]
+    fn legacy_blob_with_stream_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "sampleRate": 44100,
+                "churchName": "Domkirken",
+                "streamDestinations": [
+                    {"id": "yt", "name": "YouTube",
+                     "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
+                     "enabled": true, "hasKey": true}
+                ],
+                "streamResolution": "1080p",
+                "streamFramerate": 25,
+                "streamVideoBitrate": 4500,
+                "streamOverlays": [{"id": "o1", "type": "image"}]
+            }"#,
+        )
+        .validated();
+        // The neighbours survived — dropping stream fields costs nothing else.
+        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.church_name, "Domkirken");
+        // And the round-trip writes a blob WITHOUT the retired fields.
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "streamDestinations",
+            "streamResolution",
+            "streamFramerate",
+            "streamVideoBitrate",
+            "streamOverlays",
+        ] {
+            assert!(!obj.contains_key(gone), "{gone} must not survive the round-trip");
+        }
     }
 
     #[test]
@@ -2022,29 +1956,21 @@ mod tests {
     }
 
     #[test]
-    fn validate_clamps_and_normalises_r4_stream_fields() {
+    fn validate_clamps_and_normalises_r4_video_fields() {
         let mut s = Settings {
             video_bitrate: 100, // non-zero → clamps up to 500
-            stream_resolution: "4k".into(),
-            stream_framerate: 60,
-            stream_video_bitrate: Some(999_999),
             ..Default::default()
         };
         s.validate();
         assert_eq!(s.video_bitrate, 500);
-        assert_eq!(s.stream_resolution, "720p");
-        assert_eq!(s.stream_framerate, 30);
-        assert_eq!(s.stream_video_bitrate, Some(50_000));
 
-        // 0/negative override means "auto", spelled None.
+        // Negative means "clamp up", same rule.
         let mut auto = Settings {
             video_bitrate: -5,
-            stream_video_bitrate: Some(0),
             ..Default::default()
         };
         auto.validate();
         assert_eq!(auto.video_bitrate, 500);
-        assert_eq!(auto.stream_video_bitrate, None);
 
         let mut zero = Settings {
             video_bitrate: 0,

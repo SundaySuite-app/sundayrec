@@ -43,9 +43,6 @@
 //!   - [`prep`]         — episode-prep assembly: sermon detection + attention reasons + EpisodePrep build (PU-6)
 //!   - [`review_queue`] — the human-review queue state machine + reminder timeline (PU-6)
 //!   - [`integrations`] — Sunday-suite hand-offs: Stage manifest→chapters/setlist + the live cue-bridge consumer (PU-6 + Bridge #2)
-//!   - [`streaming`]    — live RTMP multi-destination `tee` muxer arg-building + bitrate/keyframe options + stream-key validation (R3)
-//!   - [`overlay`]      — ffmpeg `filter_complex` generation for lower-thirds: image + drawtext, position/opacity (R3)
-//!   - [`ndi`]          — NDI source-discovery model + the pure loopback-TCP rawvideo input-arg builder (R3)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick, the proposed trim, and the AI companion's suggestions — what to store, what counts as a correction, and what a later one replaces (E8)
@@ -84,9 +81,7 @@ pub mod link;
 pub mod local_adaptivity;
 pub mod mastering;
 pub mod mjpeg;
-pub mod ndi;
 pub mod notify;
-pub mod overlay;
 pub mod preflight;
 pub mod prep;
 pub mod preroll;
@@ -102,7 +97,6 @@ pub mod selftest;
 pub mod settings;
 pub mod shadow;
 pub mod silence;
-pub mod streaming;
 pub mod telemetry;
 pub mod test_recording;
 pub mod timeouts;
