@@ -346,7 +346,7 @@
     "silenceTimeoutLabel": "DURATION BEFORE STOP",
     "platformMacArm": "Apple Silicon Mac (M-series) — can wake from sleep, not from shutdown",
     "platformMacIntel": "Intel Mac — can wake from sleep and shutdown (manual activation required for the latter)",
-    "platformWin": "Windows — can wake from sleep; cold-start from full shutdown requires BIOS configuration",
+    "platformWin": "Windows — can wake from sleep as long as SundayRec is running; cold-start from full shutdown requires BIOS configuration",
     "platformLinux": "Linux — automatic wake is not supported",
     "platformOther": "Platform not supported for automatic wake",
     "weeklyDesc": "Fixed recordings that repeat every week — for example a service every Sunday. The machine starts and stops the recording automatically, even if nobody is present.",

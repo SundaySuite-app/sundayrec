@@ -25,7 +25,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 
 use sunday_auth::{pkce, session, supabase};
@@ -351,15 +351,10 @@ async fn await_callback(listener: &TcpListener, expected_state: &str) -> AppResu
             .await
             .map_err(|e| AppError::Internal(format!("loopback accept: {e}")))?;
 
-        let mut buf = vec![0u8; 8192];
-        let n = stream.read(&mut buf).await.unwrap_or(0);
-        let request = String::from_utf8_lossy(&buf[..n]);
-        // First line: `GET /?state=…&code=… HTTP/1.1`.
-        let target = request
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .unwrap_or("");
+        // First line: `GET /?state=…&code=… HTTP/1.1`. Read until the line
+        // terminator, not until the first packet — see `util::read_request_line`.
+        let request_line = crate::util::read_request_line(&mut stream).await;
+        let target = request_line.split_whitespace().nth(1).unwrap_or("");
 
         // Requests without our params (favicon, etc.): keep waiting.
         if !target.contains("code=") && !target.contains("error=") {

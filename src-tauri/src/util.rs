@@ -95,10 +95,60 @@ pub fn url_encode(s: &str) -> String {
     out
 }
 
+/// Hard cap on the loopback request line we will buffer. A browser redirect
+/// carrying an OAuth code is a few hundred bytes; anything past this is either a
+/// broken client or someone feeding the loopback listener garbage, and neither
+/// deserves unbounded memory.
+pub const MAX_REQUEST_LINE: usize = 8 * 1024;
+
+/// Read one HTTP request line (everything before the first `LF`) from a stream.
+///
+/// The loopback OAuth listeners used to do a single `read()` into an 8 KiB buffer
+/// and take `lines().next()`. That is only correct if the whole request arrives in
+/// one TCP segment. It usually does — which is exactly what makes the bug nasty:
+/// a request split across segments (a slow or proxied browser, a large cookie
+/// header, MTU) yields a partial first line, the `code=` parameter is not there,
+/// and the listener quietly answers "Venter på innlogging …" and waits forever on
+/// a callback that already happened.
+///
+/// So: read until the line terminator instead of until the first packet. A closed
+/// or erroring peer ends the read with whatever arrived; the trailing `CR` of the
+/// `CRLF` is stripped.
+pub async fn read_request_line<R>(stream: &mut R) -> String
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncReadExt;
+
+    let mut line = Vec::with_capacity(256);
+    let mut chunk = [0u8; 1024];
+    loop {
+        if let Some(pos) = line.iter().position(|b| *b == b'\n') {
+            line.truncate(pos);
+            break;
+        }
+        if line.len() >= MAX_REQUEST_LINE {
+            line.truncate(MAX_REQUEST_LINE);
+            break;
+        }
+        match stream.read(&mut chunk).await {
+            // Peer closed (or errored) before sending a newline — parse what we
+            // have rather than hanging.
+            Ok(0) | Err(_) => break,
+            Ok(n) => line.extend_from_slice(&chunk[..n]),
+        }
+    }
+    if line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    String::from_utf8_lossy(&line).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
+    use tokio::io::AsyncWriteExt;
 
     #[test]
     fn url_encode_keeps_unreserved_and_escapes_the_rest() {
@@ -109,6 +159,45 @@ mod tests {
             "550e8400-e29b-41d4-a716-446655440000"
         );
         assert_eq!(url_encode(""), "");
+    }
+
+    #[tokio::test]
+    async fn request_line_survives_a_split_across_tcp_segments() {
+        // The regression: the `code=` parameter lands in the SECOND segment. A
+        // single `read()` sees only "GET /?state=abc&co" and the callback is
+        // silently ignored as if it were a favicon request.
+        let (mut client, mut server) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            client.write_all(b"GET /?state=abc&co").await.unwrap();
+            tokio::task::yield_now().await;
+            client
+                .write_all(b"de=xyz HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                .await
+                .unwrap();
+        });
+        let line = read_request_line(&mut server).await;
+        assert_eq!(line, "GET /?state=abc&code=xyz HTTP/1.1");
+        assert!(line.contains("code=xyz"));
+    }
+
+    #[tokio::test]
+    async fn request_line_stops_at_the_first_crlf_and_tolerates_a_truncated_request() {
+        let (mut client, mut server) = tokio::io::duplex(4096);
+        client
+            .write_all(b"GET /?code=1 HTTP/1.1\r\nCookie: a=b\r\n\r\n")
+            .await
+            .unwrap();
+        assert_eq!(
+            read_request_line(&mut server).await,
+            "GET /?code=1 HTTP/1.1"
+        );
+
+        // No newline at all, peer hangs up: return what arrived instead of
+        // blocking the login flow forever.
+        let (mut c2, mut s2) = tokio::io::duplex(4096);
+        c2.write_all(b"GET /?code=2 HTTP/1.1").await.unwrap();
+        drop(c2);
+        assert_eq!(read_request_line(&mut s2).await, "GET /?code=2 HTTP/1.1");
     }
 
     #[test]

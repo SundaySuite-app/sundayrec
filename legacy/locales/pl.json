@@ -374,7 +374,7 @@
     "silenceTimeoutLabel": "CZAS PRZED ZATRZYMANIEM",
     "platformMacArm": "Apple Silicon Mac (seria M) — można wybudzić z uśpienia, ale nie z wyłączenia",
     "platformMacIntel": "Intel Mac — można wybudzić z uśpienia i wyłączenia (wymaga ręcznej aktywacji)",
-    "platformWin": "Windows — można wybudzić z uśpienia; uruchomienie z pełnego wyłączenia wymaga konfiguracji BIOS",
+    "platformWin": "Windows — można wybudzić z uśpienia, dopóki SundayRec działa; uruchomienie z pełnego wyłączenia wymaga konfiguracji BIOS",
     "platformLinux": "Linux — automatyczne wybudzanie nie jest obsługiwane",
     "platformOther": "Platforma nieobsługiwana dla automatycznego wybudzania",
     "weeklyDesc": "Stałe nagrania powtarzane co tydzień — na przykład nabożeństwo w każdą niedzielę. Komputer uruchamia i zatrzymuje nagrywanie automatycznie, nawet gdy nikogo nie ma.",

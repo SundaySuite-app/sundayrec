@@ -561,24 +561,63 @@ themselves is an IPC-harness job, not a rig step, until a UI exists.
 
 ## 11. OS wake-timers + scheduled launch [HW] (already wired, no feature)
 
-The scheduler→recorder launch and the `pmset`/`schtasks`/`powercfg` shell-outs
-are wired in `src-tauri/src/{scheduler,wake}` (no feature flag — they were part
-of Fase 5). The next-fire / catch-up / skip _decisions_ are unit-tested in
-`sundayrec-core::{schedule, wake}`; the live clock-tick, the admin/UAC prompts,
-and whether the machine truly wakes are HARDWARE-UNVERIFIED.
+The scheduler→recorder launch and the OS wake plumbing are wired in
+`src-tauri/src/{scheduler,wake}` (no feature flag — they were part of Fase 5).
+The next-fire / catch-up / skip _decisions_ are unit-tested in
+`sundayrec-core::{schedule, wake}`.
+
+**The two mechanisms, so you know what you are testing:**
+
+- **macOS** — scheduling is `pmset schedule wake`, run unelevated first and
+  escalated to ONE `osascript … with administrator privileges` prompt when that
+  fails (writing a power event needs root; there is no unprivileged path).
+  _Reading_ what is scheduled goes through IOKit
+  (`IOPMCopyScheduledPowerEvents`, unprivileged), with `pmset -g sched` kept as a
+  fallback because Apple Silicon is known to hold schedules `-g sched` does not
+  list.
+- **Windows** — scheduling is an in-process `SetWaitableTimer(fResume = TRUE)`.
+  No UAC prompt, no scheduled task left on the machine — **and no wake at all if
+  SundayRec is not running.** That is the model: the app autostarts and lives in
+  the tray. Neither platform can start a machine from S5 (full shutdown).
+
+The command shaping, the AppleScript/shell quoting, the escalation ladders, the
+`wmic`→CIM fallback and the dedup invariants now have unit tests over a fake
+shell and fake timers:
+
+- VERIFIED-BY: src-tauri/src/wake/plan.rs::mac_elevated_plan_is_byte_exact_for_a_normal_schedule
+- VERIFIED-BY: src-tauri/src/wake/plan.rs::mac_elevated_plan_keeps_a_hostile_owner_label_inside_the_literal
+- VERIFIED-BY: src-tauri/src/wake/mod.rs::mac_partial_failure_escalates_to_one_admin_prompt_for_the_whole_set
+- VERIFIED-BY: src-tauri/src/wake/mod.rs::mac_admin_prompt_dismissal_is_cancelled_not_permission
+- VERIFIED-BY: src-tauri/src/wake/mod.rs::windows_clears_then_arms_one_waitable_timer_per_point
+- VERIFIED-BY: src-tauri/src/wake/mod.rs::engine_records_the_empty_key_so_a_re_add_re_registers
+- VERIFIED-BY: src-tauri/src/wake/mac_read.rs::live_iokit_read_is_callable_unprivileged
+
+What is left for the rig:
 
 1. Add a slot a couple of minutes ahead; leave the app running.
    - **Expected:** at the slot time the recorder starts unattended; the tray /
      UI "next recording" updates; a reminder notification fires `reminder_minutes`
      before.
-2. Enable wake-from-sleep, reschedule (accept the admin prompt), sleep the Mac
-   just before a slot.
-   - **Expected:** `pmset -g sched` lists a SundayRec wake; the machine wakes and
-     records. (Sleeping + measuring the resume is not automated — see the
-     `wake/mod.rs` "honestly deferred" note.)
+2. **macOS:** enable wake-from-sleep, reschedule (accept the admin prompt), sleep
+   the Mac just before a slot.
+   - **Expected:** the Status panel lists the wake (read via IOKit); the machine
+     wakes and records. Cross-check with `pmset -g sched` — and note that on
+     Apple Silicon the two can legitimately disagree; the panel is deliberately
+     pessimistic, so "missing" there means "click Planlegg again", not "broken".
+3. **Windows:** enable wake-from-sleep, reschedule (no prompt should appear),
+   confirm `powercfg -waketimers` lists a timer set by `[PROCESS] …SundayRec.exe`,
+   then sleep the machine just before a slot.
+   - **Expected:** the machine resumes and records. If it does not, check
+     "Tillat vekketimere" in the power options first — an armed timer with that
+     setting off fires without waking anything, and nothing in the arming call
+     reports it.
+4. **Windows, the honest limit:** quit SundayRec entirely, then sleep the machine.
+   - **Expected:** it does **not** wake. This is by design, not a bug — verify it
+     so nobody later "fixes" it back into a scheduled task.
 
-> [HW] Wall-clock timing + the real OS wake can only be confirmed on a Mac/Windows
-> box with the power tools available.
+> [HW] Wall-clock timing, the admin prompt, and the real OS resume can only be
+> confirmed on a Mac/Windows box. The `SetWaitableTimer` call itself does not even
+> compile on macOS — CI's `windows-check` lane is what proves it builds.
 
 ---
 

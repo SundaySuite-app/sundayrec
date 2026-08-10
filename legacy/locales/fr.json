@@ -346,7 +346,7 @@
     "silenceTimeoutLabel": "DURÉE AVANT ARRÊT",
     "platformMacArm": "Mac Apple Silicon (série M) — peut sortir de veille, mais pas d’extinction",
     "platformMacIntel": "Mac Intel — peut sortir de veille et d’extinction (activation manuelle requise)",
-    "platformWin": "Windows — peut sortir de veille ; un démarrage à froid nécessite une configuration BIOS",
+    "platformWin": "Windows — peut sortir de veille tant que SundayRec est en cours d'exécution ; un démarrage à froid nécessite une configuration BIOS",
     "platformLinux": "Linux — le réveil automatique n’est pas pris en charge",
     "platformOther": "Plateforme non prise en charge pour le réveil automatique",
     "weeklyDesc": "Enregistrements fixes répétés chaque semaine — par exemple le culte chaque dimanche. La machine démarre et arrête l’enregistrement automatiquement, même si personne n’est présent.",

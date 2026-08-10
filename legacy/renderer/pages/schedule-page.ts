@@ -357,7 +357,7 @@ function platformLabel(key: string): string {
   switch (key) {
     case 'mac-arm':   return t('schedule.platformMacArm',   'Apple Silicon-Mac (M-serie) — kan vekkes fra dvale, ikke fra avslått')
     case 'mac-intel': return t('schedule.platformMacIntel', 'Intel Mac — kan vekkes fra dvale og avslått (krever manuell aktivering for sistnevnte)')
-    case 'win':       return t('schedule.platformWin',      'Windows — kan vekkes fra dvale; oppstart fra fullstendig avslått krever BIOS-konfig')
+    case 'win':       return t('schedule.platformWin',      'Windows — kan vekkes fra dvale så lenge SundayRec kjører; oppstart fra fullstendig avslått krever BIOS-konfig')
     case 'linux':     return t('schedule.platformLinux',    'Linux — automatisk wake støttes ikke')
     default:          return t('schedule.platformOther',    'Plattform støttes ikke for automatisk wake')
   }
