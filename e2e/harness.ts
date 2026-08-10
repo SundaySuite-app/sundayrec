@@ -1,19 +1,27 @@
 import type { Page } from "@playwright/test";
+import { SETTINGS_DEFAULTS } from "../legacy/renderer/settings-defaults";
 
 // The one way a spec boots the app.
 //
-// Two things have to be in place BEFORE the renderer's module scripts run, and
-// both go in the same `addInitScript`:
+// Everything a spec needs in place BEFORE the renderer's module scripts run
+// goes in one `addInitScript`: `window.__SUNDAYREC_FIXTURES__` — the E5.1
+// seam. Outside Tauri fixtures are honoured unconditionally (there is no
+// backend to shadow), so no query param is needed here; see
+// legacy/renderer/fixtures-core.ts.
 //
-//   1. `window.__SUNDAYREC_FIXTURES__` — the E5.1 seam. Outside Tauri fixtures
-//      are honoured unconditionally (there is no backend to shadow), so no query
-//      param is needed here; see legacy/renderer/fixtures-core.ts.
-//   2. `localStorage["sundayrec.settings"]` — settings are NOT an invoke. The
-//      shim's `getSettings` reads that key directly, so a fixture cannot seed
-//      them and a test that tried would be quietly testing the defaults.
+// SETTINGS are fixtures like everything else since R4 (`settings_get` /
+// `settings_save` invokes — the localStorage store is dead). The harness
+// installs a tiny FIXTURE-BACKED STORE standing in for the backend's sqlite
+// row: a spec's partial `settings` seed is merged over `SETTINGS_DEFAULTS`
+// (emulating Rust's merge-over-defaults), every `settings_save` replaces the
+// stored object and is recorded for `settingsSavePayloads`, and the store
+// itself survives `page.reload()` — persistence across a teardown is exactly
+// what the reload specs assert. A spec can still override any of the three
+// commands with its own fixture; the store handlers are defaults.
 
-/** The localStorage key `api-shim.ts` persists settings under (`LS_KEY`). */
-export const SETTINGS_KEY = "sundayrec.settings";
+/** Where the harness's fake settings row lives between reloads. Not an app
+ *  key — the app never reads it — just the emulated backend's disk. */
+export const SETTINGS_DB_KEY = "__e2e.settingsDb";
 
 /** A canned answer per Tauri command name: a value, or a function of the args. */
 export type Fixtures = Record<string, unknown>;
@@ -73,7 +81,8 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
   const payload = {
     fixtures: opts.fixtures ?? {},
     settings: opts.settings ?? null,
-    key: SETTINGS_KEY,
+    defaults: SETTINGS_DEFAULTS as unknown as Record<string, unknown>,
+    dbKey: SETTINGS_DB_KEY,
     marker: FN_MARKER,
     voidMarker: VOID_MARKER,
     // An init script runs on EVERY navigation in the context, including
@@ -155,15 +164,56 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
     const map: Record<string, unknown> = {};
     for (const [cmd, value] of Object.entries(p.fixtures))
       map[cmd] = revive(value);
+
+    // ── The fixture-backed settings store (stands in for sqlite) ────────────
+    // Installed as DEFAULT handlers — a spec's own fixture for any of these
+    // commands wins. The store is a localStorage row under a harness-only key,
+    // which is what lets a value survive `page.reload()` the way sqlite would.
+    const db = {
+      read: (): Record<string, unknown> => {
+        const raw = window.localStorage.getItem(p.dbKey);
+        return raw
+          ? (JSON.parse(raw) as Record<string, unknown>)
+          : { ...p.defaults };
+      },
+      write: (v: Record<string, unknown>): void =>
+        window.localStorage.setItem(p.dbKey, JSON.stringify(v)),
+    };
+    if (!("settings_get" in map)) map.settings_get = () => db.read();
+    if (!("settings_save" in map))
+      map.settings_save = (args?: Record<string, unknown>) => {
+        const s = (args?.settings ?? {}) as Record<string, unknown>;
+        db.write(s);
+        ((w.__settingsSaves ??= []) as unknown[]).push(s);
+        return s;
+      };
+    if (!("settings_import" in map))
+      map.settings_import = (args?: Record<string, unknown>) => {
+        // Emulates the backend's merge-over-defaults (`Settings::from_json_merged`).
+        const merged = {
+          ...p.defaults,
+          ...(JSON.parse((args?.json as string) ?? "{}") as Record<
+            string,
+            unknown
+          >),
+        };
+        db.write(merged);
+        ((w.__settingsImports ??= []) as unknown[]).push(args?.json);
+        return merged;
+      };
+
     // Fixtures ARE re-installed every navigation: they stand in for a backend,
     // and a backend does not disappear because the page reloaded.
     w.__SUNDAYREC_FIXTURES__ = map;
 
     if (window.localStorage.getItem(p.seedOnce)) return;
     window.localStorage.setItem(p.seedOnce, "1");
-    if (p.settings)
-      window.localStorage.setItem(p.key, JSON.stringify(p.settings));
-    else window.localStorage.removeItem(p.key);
+    // Seed the fake sqlite row exactly once per boot(): a reload then keeps
+    // what the app saved, so "survives a reload" assertions test the app.
+    window.localStorage.setItem(
+      p.dbKey,
+      JSON.stringify({ ...p.defaults, ...(p.settings ?? {}) }),
+    );
   }, payload);
 
   await page.goto(opts.goto ? `/?goto=${encodeURIComponent(opts.goto)}` : "/");
@@ -196,7 +246,6 @@ export const BOOT_FIXTURES: Fixtures = {
   app_info: { version: "0.10.0-e2e" },
   scheduler_status: { next: null },
   scheduler_reschedule: VOID,
-  settings_save: VOID,
   get_disk_space: { freeBytes: 250_000_000_000, totalBytes: 500_000_000_000 },
   recordings_list: [],
   trash_list: [],
@@ -228,16 +277,13 @@ export const BOOT_FIXTURES: Fixtures = {
 };
 
 /**
- * Spy on `settings_save`: record every curated payload the renderer sends, at
- * the exact boundary where the curated subset leaves the renderer on its way
- * to sqlite. Shared by the seam specs (settings-seam, update-channel) — the
- * #113 family of bugs is pinned on this observable.
+ * Every FULL settings object `settings_save` has received so far — recorded by
+ * the harness's default store handler at the exact boundary where the object
+ * leaves the renderer on its way to sqlite. The seam specs (settings-seam,
+ * update-channel) pin the R4 invariant on this observable: the payload is the
+ * whole vocabulary, so a field written is a field read back — nothing curated,
+ * nothing silently re-defaulted (the #113 family's ending).
  */
-export const SETTINGS_SAVE_SPY = fn(
-  "(args) => { const w = window; (w.__settingsSaves = w.__settingsSaves || []).push(args && args.settings); return args && args.settings; }",
-);
-
-/** Every curated payload `settings_save` has received so far. */
 export async function settingsSavePayloads(
   page: Page,
 ): Promise<Array<Record<string, unknown>>> {
@@ -248,6 +294,30 @@ export async function settingsSavePayloads(
           __settingsSaves?: Array<Record<string, unknown>>;
         }
       ).__settingsSaves ?? [],
+  );
+}
+
+/** The fake sqlite row as it stands right now — what a fresh `settings_get`
+ *  would answer. The storage-layer observable for "it actually persisted". */
+export async function storedSettings(
+  page: Page,
+): Promise<Record<string, unknown>> {
+  return page.evaluate(
+    (key) =>
+      JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<
+        string,
+        unknown
+      >,
+    SETTINGS_DB_KEY,
+  );
+}
+
+/** Every raw JSON string `settings_import` has received (the migration path). */
+export async function settingsImportPayloads(page: Page): Promise<string[]> {
+  return page.evaluate(
+    () =>
+      (window as unknown as { __settingsImports?: string[] })
+        .__settingsImports ?? [],
   );
 }
 
