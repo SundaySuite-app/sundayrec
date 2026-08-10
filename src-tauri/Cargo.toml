@@ -3,6 +3,7 @@ name = "sundayrec"
 version = "0.13.0"
 description = "Recording for church services — part of the Sunday suite (Tauri 2 rebuild of the Electron app)"
 authors = ["Richard Fossland"]
+license = "MIT"
 edition = "2021"
 
 [lib]
