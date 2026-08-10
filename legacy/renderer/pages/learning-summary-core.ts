@@ -25,6 +25,19 @@ export interface CopyLine {
    *  Without it «rettet 2 ganger» / «{n} sekunder» were single strings, which
    *  is wrong in Polish for 2–4 and in every language for 1. */
   count?: number
+  /**
+   * Further sentences, appended after this one with a single space, each
+   * carrying its OWN `count` and therefore its own plural group.
+   *
+   * A plural group inflects for exactly one number, so a sentence naming TWO
+   * counts — «{n} sekunder … {samples} rettelser» — cannot be one group: Polish
+   * wants «1 sekundę / 2 sekundy / 5 sekund» AND «1 poprawka / 2 poprawki /
+   * 5 poprawek», independently, and picking one form for both is wrong for
+   * every pair that straddles a category boundary. So each count gets its own
+   * unit and the caller composes them, rather than the catalogue trying to
+   * express a product of two grammars in one string.
+   */
+  extra?: CopyLine[]
 }
 
 export interface LearningSummaryView {
@@ -178,42 +191,61 @@ export interface LocalNudgeView {
   canReset: boolean
 }
 
+/** «Det bygger på {n} rettelser fra deg.» — the second sentence of every
+ *  boundary line, and a unit of its own because it is inflected by the
+ *  CORRECTION count while the sentence before it is inflected by the SECOND
+ *  count. See `CopyLine.extra`. */
+function evidenceLine(samples: number): CopyLine {
+  return {
+    key: 'general.localNudgeEvidence',
+    fallback: 'Det bygger på {n} rettelser fra deg.',
+    count: samples,
+  }
+}
+
 /** One boundary's sentence, or `null` when the shipped constant still stands.
  *  Two keys per boundary rather than one with a signed number, for the same
  *  reason `tendencyLine` above needs four: Norwegian puts the direction in the
- *  word, not in a minus sign. */
+ *  word, not in a minus sign.
+ *
+ *  `count` is the ROUNDED second count, not the raw one: it has to be the
+ *  number the sentence actually shows, or 1.4 s would render «1 sekunder». */
 function nudgeLine(boundary: 'start' | 'end', nudge: Nudge): CopyLine | null {
   if (nudge.value === 0) return null
-  const n = fmtSeconds(Math.abs(nudge.value))
-  const samples = String(nudge.samples)
+  const seconds = Math.round(Math.abs(nudge.value))
+  const extra = [evidenceLine(nudge.samples)]
   const later = nudge.value > 0
   if (boundary === 'start') {
     return later
       ? {
           key: 'general.localNudgeStartLater',
           fallback:
-            'Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
-          params: { n, samples },
+            'Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort.',
+          count: seconds,
+          extra,
         }
       : {
           key: 'general.localNudgeStartEarlier',
           fallback:
-            'Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
-          params: { n, samples },
+            'Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort.',
+          count: seconds,
+          extra,
         }
   }
   return later
     ? {
         key: 'general.localNudgeEndLater',
         fallback:
-          'Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
-        params: { n, samples },
+          'Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort.',
+        count: seconds,
+        extra,
       }
     : {
         key: 'general.localNudgeEndEarlier',
         fallback:
-          'Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.',
-        params: { n, samples },
+          'Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort.',
+        count: seconds,
+        extra,
       }
 }
 
@@ -254,8 +286,17 @@ export function buildLocalNudgeView(nudge: LocalNudge, enabled: boolean): LocalN
       headline: {
         key: 'general.localNudgeWaiting',
         fallback:
-          'Appen har ikke justert noe ennå. Den venter til du har rettet minst {min} opptak — så langt har den {samples}.',
-        params: { min: String(MIN_CORRECTIONS_FOR_NUDGE), samples: String(samples) },
+          'Appen har ikke justert noe ennå. Den venter til du har rettet minst {n} opptak.',
+        count: MIN_CORRECTIONS_FOR_NUDGE,
+        // The bar and the progress toward it are two counts, so two units —
+        // the same split as the boundary lines. See `CopyLine.extra`.
+        extra: [
+          {
+            key: 'general.localNudgeWaitingSoFar',
+            fallback: 'Så langt har den {n} opptak.',
+            count: samples,
+          },
+        ],
       },
       start: null,
       end: null,

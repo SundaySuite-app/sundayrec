@@ -689,14 +689,45 @@
     "localNudgeCardTitle": "Ce que l'application a ajusté",
     "localNudgeCardDesc": "Si vous corrigez la même chose chaque dimanche, l'application peut déplacer sa propre proposition dans ce sens — pour cette machine uniquement. Rien n'est partagé avec qui que ce soit, et vous pouvez réinitialiser à tout moment.",
     "localNudgeToggle": "Laisser l'application apprendre de mes corrections",
-    "localNudgeToggleHint": "Lorsque cette option est activée, l'application déplace sa propre proposition de début et de fin de prédication selon la façon dont vous la corrigez habituellement. Jamais de plus de {limit} secondes, et jamais avant que vous ayez corrigé au moins {min} enregistrements.",
+    "localNudgeToggleHint": "Lorsque cette option est activée, l'application déplace sa propre proposition de début et de fin de prédication selon la façon dont vous la corrigez habituellement.",
+    "localNudgeLimitSeconds": {
+      "one": "Jamais de plus de {n} seconde.",
+      "other": "Jamais de plus de {n} secondes."
+    },
+    "localNudgeLimitRecordings": {
+      "one": "Et jamais avant que vous ayez corrigé au moins {n} enregistrement.",
+      "other": "Et jamais avant que vous ayez corrigé au moins {n} enregistrements."
+    },
     "localNudgeOff": "L'application n'ajuste pas ses propres propositions. Elle devine exactement comme une application fraîchement installée.",
-    "localNudgeWaiting": "L'application n'a encore rien ajusté. Elle attend que vous ayez corrigé au moins {min} enregistrements — pour l'instant elle en a {samples}.",
+    "localNudgeWaiting": {
+      "one": "L'application n'a encore rien ajusté. Elle attend que vous ayez corrigé au moins {n} enregistrement.",
+      "other": "L'application n'a encore rien ajusté. Elle attend que vous ayez corrigé au moins {n} enregistrements."
+    },
+    "localNudgeWaitingSoFar": {
+      "one": "Pour l'instant, elle en a {n} enregistrement.",
+      "other": "Pour l'instant, elle en a {n} enregistrements."
+    },
     "localNudgeOn": "L'application a ajusté ses propres propositions d'après vos corrections :",
-    "localNudgeStartLater": "L'application propose désormais que la prédication commence {n} secondes plus tard qu'elle ne l'aurait fait. Cela repose sur {samples} corrections de votre part.",
-    "localNudgeStartEarlier": "L'application propose désormais que la prédication commence {n} secondes plus tôt qu'elle ne l'aurait fait. Cela repose sur {samples} corrections de votre part.",
-    "localNudgeEndLater": "L'application propose désormais que la prédication se termine {n} secondes plus tard qu'elle ne l'aurait fait. Cela repose sur {samples} corrections de votre part.",
-    "localNudgeEndEarlier": "L'application propose désormais que la prédication se termine {n} secondes plus tôt qu'elle ne l'aurait fait. Cela repose sur {samples} corrections de votre part.",
+    "localNudgeStartLater": {
+      "one": "L'application propose désormais que la prédication commence {n} seconde plus tard qu'elle ne l'aurait fait.",
+      "other": "L'application propose désormais que la prédication commence {n} secondes plus tard qu'elle ne l'aurait fait."
+    },
+    "localNudgeStartEarlier": {
+      "one": "L'application propose désormais que la prédication commence {n} seconde plus tôt qu'elle ne l'aurait fait.",
+      "other": "L'application propose désormais que la prédication commence {n} secondes plus tôt qu'elle ne l'aurait fait."
+    },
+    "localNudgeEndLater": {
+      "one": "L'application propose désormais que la prédication se termine {n} seconde plus tard qu'elle ne l'aurait fait.",
+      "other": "L'application propose désormais que la prédication se termine {n} secondes plus tard qu'elle ne l'aurait fait."
+    },
+    "localNudgeEndEarlier": {
+      "one": "L'application propose désormais que la prédication se termine {n} seconde plus tôt qu'elle ne l'aurait fait.",
+      "other": "L'application propose désormais que la prédication se termine {n} secondes plus tôt qu'elle ne l'aurait fait."
+    },
+    "localNudgeEvidence": {
+      "one": "Cela repose sur {n} correction de votre part.",
+      "other": "Cela repose sur {n} corrections de votre part."
+    },
     "localNudgeAtLimit": "Vos corrections vont encore plus loin, mais l'application ne déplace jamais une proposition de plus de {limit} secondes. Si la proposition tombe toujours à côté, ce sont les enregistrements qu'il faut examiner — pas ce réglage.",
     "localNudgeResetBtn": "Réinitialiser ce que l'application a appris",
     "localNudgeResetDone": "Réinitialisé. L'application devine désormais exactement comme une application fraîchement installée et n'apprendra plus rien tant que vous ne réactivez pas l'option.",

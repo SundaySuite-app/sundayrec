@@ -46,16 +46,23 @@ describe('the switch is on but nothing has been earned yet', () => {
   it('says so, and says how far off the bar the operator is', () => {
     const view = buildLocalNudgeView(nudge({ value: 0, samples: 5 }), true)
     expect(view.headline.key).toBe('general.localNudgeWaiting')
-    expect(view.headline.params).toEqual({
-      min: String(MIN_CORRECTIONS_FOR_NUDGE),
-      samples: '5',
-    })
+    // The bar and the progress toward it are two counts, so two units: one
+    // plural group cannot inflect «12 opptak» and «5 opptak» at once, and in
+    // Polish those are two different noun forms (nagrań / nagrania).
+    expect(view.headline.count).toBe(MIN_CORRECTIONS_FOR_NUDGE)
+    expect(view.headline.extra).toEqual([
+      {
+        key: 'general.localNudgeWaitingSoFar',
+        fallback: 'Så langt har den {n} opptak.',
+        count: 5,
+      },
+    ])
     expect(view.canReset).toBe(false)
   })
 
   it('reads the larger of the two boundaries — the one that will cross first', () => {
     const view = buildLocalNudgeView(nudge({ samples: 3 }, { samples: 9 }), true)
-    expect(view.headline.params?.samples).toBe('9')
+    expect(view.headline.extra?.[0].count).toBe(9)
   })
 
   it('never shows a reset button when there is nothing to reset', () => {
@@ -67,20 +74,43 @@ describe('an adjustment is in force', () => {
   it('names the direction in the word, not in a minus sign', () => {
     const later = buildLocalNudgeView(nudge({ value: 40, samples: 14 }), true)
     expect(later.start?.key).toBe('general.localNudgeStartLater')
-    expect(later.start?.params).toEqual({ n: '40', samples: '14' })
+    expect(later.start?.count).toBe(40)
 
     const earlier = buildLocalNudgeView(nudge({ value: -40, samples: 14 }), true)
     expect(earlier.start?.key).toBe('general.localNudgeStartEarlier')
     // The sentence supplies "tidligere"; the number must not also be negative,
     // or it reads as «40 sekunder tidligere» with a minus sign in front of it.
-    expect(earlier.start?.params?.n).toBe('40')
+    expect(earlier.start?.count).toBe(40)
+  })
+
+  it('carries the seconds and the corrections as separately inflected units', () => {
+    // The whole point of the split: `count` on the sentence is the SECOND
+    // count, `extra[0].count` is the CORRECTION count, and no single plural
+    // group is asked to be right about both.
+    const view = buildLocalNudgeView(nudge({ value: 40, samples: 14 }), true)
+    expect(view.start?.count).toBe(40)
+    expect(view.start?.extra).toEqual([
+      {
+        key: 'general.localNudgeEvidence',
+        fallback: 'Det bygger på {n} rettelser fra deg.',
+        count: 14,
+      },
+    ])
+  })
+
+  it('rounds the seconds before choosing a form, so 1.4 s is never «1 sekunder»', () => {
+    // `count` governs the noun; it has to be the number the sentence prints,
+    // not the raw float behind it.
+    expect(buildLocalNudgeView(nudge({ value: 1.4, samples: 14 }), true).start?.count).toBe(1)
+    expect(buildLocalNudgeView(nudge({ value: -1.6, samples: 14 }), true).start?.count).toBe(2)
   })
 
   it('judges the end boundary independently of the start', () => {
     const view = buildLocalNudgeView(nudge({ value: 40, samples: 14 }, { value: -25, samples: 14 }), true)
     expect(view.start?.key).toBe('general.localNudgeStartLater')
     expect(view.end?.key).toBe('general.localNudgeEndEarlier')
-    expect(view.end?.params).toEqual({ n: '25', samples: '14' })
+    expect(view.end?.count).toBe(25)
+    expect(view.end?.extra?.[0].count).toBe(14)
   })
 
   it('shows only the boundary that moved', () => {
@@ -130,6 +160,12 @@ describe('the clamp and the evidence bar match the Rust constants', () => {
   })
 })
 
+/** A line and every unit it composes: an `extra` is a catalogue key in its own
+ *  right, so it has to be checked like one. */
+function units(line: CopyLine): CopyLine[] {
+  return [line, ...(line.extra ?? [])]
+}
+
 describe('every fallback matches legacy/locales/no.json, key for key', () => {
   const general = no.general as Record<string, unknown>
   const lines: CopyLine[] = [
@@ -141,18 +177,38 @@ describe('every fallback matches legacy/locales/no.json, key for key', () => {
     buildLocalNudgeView(nudge({}, { value: 40, samples: 14 }), true).end as CopyLine,
     buildLocalNudgeView(nudge({}, { value: -40, samples: 14 }), true).end as CopyLine,
     buildLocalNudgeView(nudge({ value: 60, atLimit: true, samples: 14 }), true).atLimit as CopyLine,
-  ]
+  ].flatMap(units)
+  const seen = new Set<string>()
   for (const line of lines) {
+    if (seen.has(line.key)) continue
+    seen.add(line.key)
     it(line.key, () => {
-      expect(general[line.key.replace('general.', '')]).toBe(line.fallback)
+      const node = general[line.key.replace('general.', '')]
+      // A counted unit is a plural GROUP in the catalogue, and its inline
+      // fallback is the `other` form — the convention every `tn()` call site
+      // in the app already follows.
+      expect(line.count === undefined ? node : (node as Record<string, string>).other).toBe(
+        line.fallback,
+      )
     })
   }
 
-  // The three strings the DOM layer holds rather than this module — the toggle
-  // hint and the two outcomes of pressing the reset. Nothing else watches them.
+  // The strings the DOM layer holds rather than this module — the toggle hint,
+  // its two counted clauses, and the two outcomes of pressing the reset.
+  // Nothing else watches them.
   it('general.localNudgeToggleHint', () => {
     expect(general.localNudgeToggleHint).toBe(
-      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det. Aldri mer enn {limit} sekunder, og aldri før du har rettet minst {min} opptak.',
+      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det.',
+    )
+  })
+  it('general.localNudgeLimitSeconds', () => {
+    expect((general.localNudgeLimitSeconds as Record<string, string>).other).toBe(
+      'Aldri mer enn {n} sekunder.',
+    )
+  })
+  it('general.localNudgeLimitRecordings', () => {
+    expect((general.localNudgeLimitRecordings as Record<string, string>).other).toBe(
+      'Aldri før du har rettet minst {n} opptak.',
     )
   })
   it('general.localNudgeResetDone', () => {
@@ -168,15 +224,33 @@ describe('every fallback matches legacy/locales/no.json, key for key', () => {
 })
 
 describe('the interpolated sentences read as Norwegian', () => {
+  /** What `general-page.ts` paints, minus the catalogue: every unit filled from
+   *  its own fallback and its own count, joined by a space. `{n}` comes from
+   *  `count` exactly as `tn()` binds it. */
+  const render = (line: CopyLine): string =>
+    units(line)
+      .map(part =>
+        applyParams(part.fallback, {
+          ...(part.count === undefined ? {} : { n: String(part.count) }),
+          ...part.params,
+        }),
+      )
+      .join(' ')
+
   it('fills every placeholder — a stray {n} on screen is the visible failure', () => {
     const view = buildLocalNudgeView(nudge({ value: 40, samples: 14 }, { value: -60, atLimit: true, samples: 14 }), true)
     for (const line of [view.headline, view.start, view.end, view.atLimit]) {
       if (!line) continue
-      const rendered = applyParams(line.fallback, line.params)
-      expect(rendered).not.toMatch(/\{[a-z]+\}/i)
+      expect(render(line)).not.toMatch(/\{[a-z]+\}/i)
     }
-    expect(applyParams(view.start!.fallback, view.start!.params)).toBe(
+    expect(render(view.start!)).toBe(
       'Appen foreslår nå at prekenen starter 40 sekunder senere enn den ellers ville gjort. Det bygger på 14 rettelser fra deg.',
+    )
+  })
+
+  it('still reads as one paragraph when the app is waiting', () => {
+    expect(render(buildLocalNudgeView(nudge({ samples: 5 }), true).headline)).toBe(
+      'Appen har ikke justert noe ennå. Den venter til du har rettet minst 12 opptak. Så langt har den 5 opptak.',
     )
   })
 })

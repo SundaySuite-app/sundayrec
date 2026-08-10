@@ -689,14 +689,45 @@
     "localNudgeCardTitle": "Was die App angepasst hat",
     "localNudgeCardDesc": "Wenn Sie jeden Sonntag dasselbe korrigieren, kann die App ihren eigenen Vorschlag in diese Richtung verschieben — nur für diesen Rechner. Nichts davon wird mit jemandem geteilt, und Sie können es jederzeit zurücksetzen.",
     "localNudgeToggle": "Die App aus meinen Korrekturen lernen lassen",
-    "localNudgeToggleHint": "Wenn dies aktiviert ist, verschiebt die App ihren eigenen Vorschlag für Anfang und Ende der Predigt danach, wie Sie ihn üblicherweise korrigieren. Nie um mehr als {limit} Sekunden und nie, bevor Sie mindestens {min} Aufnahmen korrigiert haben.",
+    "localNudgeToggleHint": "Wenn dies aktiviert ist, verschiebt die App ihren eigenen Vorschlag für Anfang und Ende der Predigt danach, wie Sie ihn üblicherweise korrigieren.",
+    "localNudgeLimitSeconds": {
+      "one": "Nie um mehr als {n} Sekunde.",
+      "other": "Nie um mehr als {n} Sekunden."
+    },
+    "localNudgeLimitRecordings": {
+      "one": "Und nie, bevor Sie mindestens {n} Aufnahme korrigiert haben.",
+      "other": "Und nie, bevor Sie mindestens {n} Aufnahmen korrigiert haben."
+    },
     "localNudgeOff": "Die App passt ihre eigenen Vorschläge nicht an. Sie schätzt genauso wie eine frisch installierte App.",
-    "localNudgeWaiting": "Die App hat noch nichts angepasst. Sie wartet, bis Sie mindestens {min} Aufnahmen korrigiert haben — bisher sind es {samples}.",
+    "localNudgeWaiting": {
+      "one": "Die App hat noch nichts angepasst. Sie wartet, bis Sie mindestens {n} Aufnahme korrigiert haben.",
+      "other": "Die App hat noch nichts angepasst. Sie wartet, bis Sie mindestens {n} Aufnahmen korrigiert haben."
+    },
+    "localNudgeWaitingSoFar": {
+      "one": "Bisher ist es {n} Aufnahme.",
+      "other": "Bisher sind es {n} Aufnahmen."
+    },
     "localNudgeOn": "Die App hat ihre eigenen Vorschläge anhand Ihrer Korrekturen angepasst:",
-    "localNudgeStartLater": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden später beginnt als sonst. Das beruht auf {samples} Korrekturen von Ihnen.",
-    "localNudgeStartEarlier": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden früher beginnt als sonst. Das beruht auf {samples} Korrekturen von Ihnen.",
-    "localNudgeEndLater": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden später endet als sonst. Das beruht auf {samples} Korrekturen von Ihnen.",
-    "localNudgeEndEarlier": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden früher endet als sonst. Das beruht auf {samples} Korrekturen von Ihnen.",
+    "localNudgeStartLater": {
+      "one": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunde später beginnt als sonst.",
+      "other": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden später beginnt als sonst."
+    },
+    "localNudgeStartEarlier": {
+      "one": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunde früher beginnt als sonst.",
+      "other": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden früher beginnt als sonst."
+    },
+    "localNudgeEndLater": {
+      "one": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunde später endet als sonst.",
+      "other": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden später endet als sonst."
+    },
+    "localNudgeEndEarlier": {
+      "one": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunde früher endet als sonst.",
+      "other": "Die App schlägt jetzt vor, dass die Predigt {n} Sekunden früher endet als sonst."
+    },
+    "localNudgeEvidence": {
+      "one": "Das beruht auf {n} Korrektur von Ihnen.",
+      "other": "Das beruht auf {n} Korrekturen von Ihnen."
+    },
     "localNudgeAtLimit": "Ihre Korrekturen deuten noch weiter, aber die App verschiebt einen Vorschlag nie um mehr als {limit} Sekunden. Trifft der Vorschlag weiterhin schlecht, sollten die Aufnahmen geprüft werden — nicht diese Einstellung.",
     "localNudgeResetBtn": "Gelerntes zurücksetzen",
     "localNudgeResetDone": "Zurückgesetzt. Die App schätzt jetzt genauso wie eine frisch installierte App und lernt nicht weiter, bis Sie dies wieder aktivieren.",

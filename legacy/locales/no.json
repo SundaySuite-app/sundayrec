@@ -689,14 +689,45 @@
     "localNudgeCardTitle": "Hva appen har justert",
     "localNudgeCardDesc": "Retter du det samme hver søndag, kan appen flytte sitt eget forslag den veien — for denne maskinen alene. Ingenting her deles med noen, og du kan når som helst nullstille.",
     "localNudgeToggle": "La appen lære av rettelsene mine",
-    "localNudgeToggleHint": "Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det. Aldri mer enn {limit} sekunder, og aldri før du har rettet minst {min} opptak.",
+    "localNudgeToggleHint": "Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det.",
+    "localNudgeLimitSeconds": {
+      "one": "Aldri mer enn {n} sekund.",
+      "other": "Aldri mer enn {n} sekunder."
+    },
+    "localNudgeLimitRecordings": {
+      "one": "Aldri før du har rettet minst {n} opptak.",
+      "other": "Aldri før du har rettet minst {n} opptak."
+    },
     "localNudgeOff": "Appen justerer ikke sine egne forslag. Den gjetter på nøyaktig samme måte som en nyinstallert app.",
-    "localNudgeWaiting": "Appen har ikke justert noe ennå. Den venter til du har rettet minst {min} opptak — så langt har den {samples}.",
+    "localNudgeWaiting": {
+      "one": "Appen har ikke justert noe ennå. Den venter til du har rettet minst {n} opptak.",
+      "other": "Appen har ikke justert noe ennå. Den venter til du har rettet minst {n} opptak."
+    },
+    "localNudgeWaitingSoFar": {
+      "one": "Så langt har den {n} opptak.",
+      "other": "Så langt har den {n} opptak."
+    },
     "localNudgeOn": "Appen har justert sine egne forslag etter rettelsene dine:",
-    "localNudgeStartLater": "Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.",
-    "localNudgeStartEarlier": "Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.",
-    "localNudgeEndLater": "Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.",
-    "localNudgeEndEarlier": "Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort. Det bygger på {samples} rettelser fra deg.",
+    "localNudgeStartLater": {
+      "one": "Appen foreslår nå at prekenen starter {n} sekund senere enn den ellers ville gjort.",
+      "other": "Appen foreslår nå at prekenen starter {n} sekunder senere enn den ellers ville gjort."
+    },
+    "localNudgeStartEarlier": {
+      "one": "Appen foreslår nå at prekenen starter {n} sekund tidligere enn den ellers ville gjort.",
+      "other": "Appen foreslår nå at prekenen starter {n} sekunder tidligere enn den ellers ville gjort."
+    },
+    "localNudgeEndLater": {
+      "one": "Appen foreslår nå at prekenen slutter {n} sekund senere enn den ellers ville gjort.",
+      "other": "Appen foreslår nå at prekenen slutter {n} sekunder senere enn den ellers ville gjort."
+    },
+    "localNudgeEndEarlier": {
+      "one": "Appen foreslår nå at prekenen slutter {n} sekund tidligere enn den ellers ville gjort.",
+      "other": "Appen foreslår nå at prekenen slutter {n} sekunder tidligere enn den ellers ville gjort."
+    },
+    "localNudgeEvidence": {
+      "one": "Det bygger på {n} rettelse fra deg.",
+      "other": "Det bygger på {n} rettelser fra deg."
+    },
     "localNudgeAtLimit": "Rettelsene dine peker enda lenger, men appen flytter aldri et forslag mer enn {limit} sekunder. Treffer forslaget fortsatt dårlig, er det opptakene som bør ses på — ikke denne innstillingen.",
     "localNudgeResetBtn": "Nullstill det appen har lært",
     "localNudgeResetDone": "Nullstilt. Appen gjetter nå på nøyaktig samme måte som en nyinstallert app, og lærer ikke mer før du slår det på igjen.",

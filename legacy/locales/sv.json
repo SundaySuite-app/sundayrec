@@ -689,14 +689,45 @@
     "localNudgeCardTitle": "Vad appen har justerat",
     "localNudgeCardDesc": "Rättar du samma sak varje söndag kan appen flytta sitt eget förslag åt det hållet — bara för den här maskinen. Inget härifrån delas med någon, och du kan nollställa när som helst.",
     "localNudgeToggle": "Låt appen lära sig av mina rättelser",
-    "localNudgeToggleHint": "När det här är på flyttar appen sitt eget förslag på predikans start och slut efter hur du brukar rätta det. Aldrig mer än {limit} sekunder, och aldrig innan du har rättat minst {min} inspelningar.",
+    "localNudgeToggleHint": "När det här är på flyttar appen sitt eget förslag på predikans start och slut efter hur du brukar rätta det.",
+    "localNudgeLimitSeconds": {
+      "one": "Aldrig mer än {n} sekund.",
+      "other": "Aldrig mer än {n} sekunder."
+    },
+    "localNudgeLimitRecordings": {
+      "one": "Och aldrig innan du har rättat minst {n} inspelning.",
+      "other": "Och aldrig innan du har rättat minst {n} inspelningar."
+    },
     "localNudgeOff": "Appen justerar inte sina egna förslag. Den gissar på exakt samma sätt som en nyinstallerad app.",
-    "localNudgeWaiting": "Appen har inte justerat något ännu. Den väntar tills du har rättat minst {min} inspelningar — hittills har den {samples}.",
+    "localNudgeWaiting": {
+      "one": "Appen har inte justerat något ännu. Den väntar tills du har rättat minst {n} inspelning.",
+      "other": "Appen har inte justerat något ännu. Den väntar tills du har rättat minst {n} inspelningar."
+    },
+    "localNudgeWaitingSoFar": {
+      "one": "Hittills har den {n} inspelning.",
+      "other": "Hittills har den {n} inspelningar."
+    },
     "localNudgeOn": "Appen har justerat sina egna förslag efter dina rättelser:",
-    "localNudgeStartLater": "Appen föreslår nu att predikan börjar {n} sekunder senare än den annars skulle ha gjort. Det bygger på {samples} rättelser från dig.",
-    "localNudgeStartEarlier": "Appen föreslår nu att predikan börjar {n} sekunder tidigare än den annars skulle ha gjort. Det bygger på {samples} rättelser från dig.",
-    "localNudgeEndLater": "Appen föreslår nu att predikan slutar {n} sekunder senare än den annars skulle ha gjort. Det bygger på {samples} rättelser från dig.",
-    "localNudgeEndEarlier": "Appen föreslår nu att predikan slutar {n} sekunder tidigare än den annars skulle ha gjort. Det bygger på {samples} rättelser från dig.",
+    "localNudgeStartLater": {
+      "one": "Appen föreslår nu att predikan börjar {n} sekund senare än den annars skulle ha gjort.",
+      "other": "Appen föreslår nu att predikan börjar {n} sekunder senare än den annars skulle ha gjort."
+    },
+    "localNudgeStartEarlier": {
+      "one": "Appen föreslår nu att predikan börjar {n} sekund tidigare än den annars skulle ha gjort.",
+      "other": "Appen föreslår nu att predikan börjar {n} sekunder tidigare än den annars skulle ha gjort."
+    },
+    "localNudgeEndLater": {
+      "one": "Appen föreslår nu att predikan slutar {n} sekund senare än den annars skulle ha gjort.",
+      "other": "Appen föreslår nu att predikan slutar {n} sekunder senare än den annars skulle ha gjort."
+    },
+    "localNudgeEndEarlier": {
+      "one": "Appen föreslår nu att predikan slutar {n} sekund tidigare än den annars skulle ha gjort.",
+      "other": "Appen föreslår nu att predikan slutar {n} sekunder tidigare än den annars skulle ha gjort."
+    },
+    "localNudgeEvidence": {
+      "one": "Det bygger på {n} rättelse från dig.",
+      "other": "Det bygger på {n} rättelser från dig."
+    },
     "localNudgeAtLimit": "Dina rättelser pekar ännu längre, men appen flyttar aldrig ett förslag mer än {limit} sekunder. Om förslaget fortfarande träffar dåligt är det inspelningarna som bör ses över — inte den här inställningen.",
     "localNudgeResetBtn": "Nollställ det appen har lärt sig",
     "localNudgeResetDone": "Nollställt. Appen gissar nu på exakt samma sätt som en nyinstallerad app och lär sig inget mer förrän du slår på det igen.",

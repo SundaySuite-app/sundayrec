@@ -689,14 +689,45 @@
     "localNudgeCardTitle": "What the app has adjusted",
     "localNudgeCardDesc": "If you correct the same thing every Sunday, the app can move its own suggestion that way — for this machine alone. Nothing here is shared with anyone, and you can reset it at any time.",
     "localNudgeToggle": "Let the app learn from my corrections",
-    "localNudgeToggleHint": "When this is on, the app moves its own suggested sermon start and end toward the way you usually correct them. Never by more than {limit} seconds, and never before you have corrected at least {min} recordings.",
+    "localNudgeToggleHint": "When this is on, the app moves its own suggested sermon start and end toward the way you usually correct them.",
+    "localNudgeLimitSeconds": {
+      "one": "Never by more than {n} second.",
+      "other": "Never by more than {n} seconds."
+    },
+    "localNudgeLimitRecordings": {
+      "one": "And never before you have corrected at least {n} recording.",
+      "other": "And never before you have corrected at least {n} recordings."
+    },
     "localNudgeOff": "The app does not adjust its own suggestions. It guesses in exactly the same way as a freshly installed app.",
-    "localNudgeWaiting": "The app has not adjusted anything yet. It waits until you have corrected at least {min} recordings — so far it has {samples}.",
+    "localNudgeWaiting": {
+      "one": "The app has not adjusted anything yet. It waits until you have corrected at least {n} recording.",
+      "other": "The app has not adjusted anything yet. It waits until you have corrected at least {n} recordings."
+    },
+    "localNudgeWaitingSoFar": {
+      "one": "So far it has {n} recording.",
+      "other": "So far it has {n} recordings."
+    },
     "localNudgeOn": "The app has adjusted its own suggestions based on your corrections:",
-    "localNudgeStartLater": "The app now suggests that the sermon starts {n} seconds later than it otherwise would. That is based on {samples} corrections from you.",
-    "localNudgeStartEarlier": "The app now suggests that the sermon starts {n} seconds earlier than it otherwise would. That is based on {samples} corrections from you.",
-    "localNudgeEndLater": "The app now suggests that the sermon ends {n} seconds later than it otherwise would. That is based on {samples} corrections from you.",
-    "localNudgeEndEarlier": "The app now suggests that the sermon ends {n} seconds earlier than it otherwise would. That is based on {samples} corrections from you.",
+    "localNudgeStartLater": {
+      "one": "The app now suggests that the sermon starts {n} second later than it otherwise would.",
+      "other": "The app now suggests that the sermon starts {n} seconds later than it otherwise would."
+    },
+    "localNudgeStartEarlier": {
+      "one": "The app now suggests that the sermon starts {n} second earlier than it otherwise would.",
+      "other": "The app now suggests that the sermon starts {n} seconds earlier than it otherwise would."
+    },
+    "localNudgeEndLater": {
+      "one": "The app now suggests that the sermon ends {n} second later than it otherwise would.",
+      "other": "The app now suggests that the sermon ends {n} seconds later than it otherwise would."
+    },
+    "localNudgeEndEarlier": {
+      "one": "The app now suggests that the sermon ends {n} second earlier than it otherwise would.",
+      "other": "The app now suggests that the sermon ends {n} seconds earlier than it otherwise would."
+    },
+    "localNudgeEvidence": {
+      "one": "That is based on {n} correction from you.",
+      "other": "That is based on {n} corrections from you."
+    },
     "localNudgeAtLimit": "Your corrections point further still, but the app never moves a suggestion by more than {limit} seconds. If the suggestion is still wide of the mark, it is the recordings that need a look — not this setting.",
     "localNudgeResetBtn": "Reset what the app has learned",
     "localNudgeResetDone": "Reset. The app now guesses in exactly the same way as a freshly installed app, and will not learn any more until you switch this back on.",

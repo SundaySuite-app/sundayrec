@@ -164,6 +164,55 @@ describe('the Polish repair — the learning nudges said «{n} sekund» for ever
   }
 })
 
+describe('the Polish repair — two counts in one sentence need two forms', () => {
+  // The six localNudge sentences named a SECOND count and a CORRECTION count in
+  // one string. A plural group inflects for one number, so whichever count the
+  // group was keyed on, the other noun took its form: «40 sekund … 2 poprawek»
+  // where Polish wants «2 poprawki». The fix splits each sentence into units
+  // that are pluralized separately and joined by the caller — this is that
+  // composition, done here the way general-page.ts does it.
+  const paragraph = (lang: string, key: string, seconds: number, samples: number): string =>
+    render(lang, key, seconds) + ' ' + render(lang, 'general.localNudgeEvidence', samples)
+
+  it('inflects the seconds and the corrections independently', () => {
+    expect(paragraph('pl', 'general.localNudgeStartLater', 1, 2)).toBe(
+      'Aplikacja proponuje teraz, że kazanie zaczyna się o 1 sekundę później, ' +
+        'niż zaproponowałaby w przeciwnym razie. Podstawą są 2 poprawki od Ciebie.',
+    )
+    expect(paragraph('pl', 'general.localNudgeEndEarlier', 22, 25)).toBe(
+      'Aplikacja proponuje teraz, że kazanie kończy się o 22 sekundy wcześniej, ' +
+        'niż zaproponowałaby w przeciwnym razie. Podstawą jest 25 poprawek od Ciebie.',
+    )
+  })
+
+  it('gives the corrections all three Polish forms', () => {
+    const evidence = (n: number) => render('pl', 'general.localNudgeEvidence', n)
+    expect(evidence(1)).toContain('1 poprawka')
+    expect(evidence(2)).toContain('2 poprawki')
+    expect(evidence(5)).toContain('5 poprawek')
+    // 22–24 fall back to `few`, which is the boundary a naive `n === 1` misses.
+    expect(evidence(22)).toContain('22 poprawki')
+    expect(evidence(25)).toContain('25 poprawek')
+  })
+
+  it('gives the waiting bar and the progress toward it separate forms', () => {
+    // 12 recordings required, 2 corrected: «12 nagrań» and «2 nagrania» in the
+    // same paragraph — the pair the single string could not render.
+    expect(render('pl', 'general.localNudgeWaiting', 12)).toContain('12 nagrań')
+    expect(render('pl', 'general.localNudgeWaitingSoFar', 2)).toBe('Na razie ma 2 nagrania.')
+    expect(render('pl', 'general.localNudgeWaitingSoFar', 1)).toBe('Na razie ma 1 nagranie.')
+    expect(render('pl', 'general.localNudgeWaitingSoFar', 7)).toBe('Na razie ma 7 nagrań.')
+  })
+
+  it('keeps the toggle hint’s two clauses independent too', () => {
+    expect(render('pl', 'general.localNudgeLimitSeconds', 60)).toBe('Nigdy o więcej niż 60 sekund.')
+    expect(render('pl', 'general.localNudgeLimitSeconds', 2)).toBe('Nigdy o więcej niż 2 sekundy.')
+    expect(render('pl', 'general.localNudgeLimitRecordings', 12)).toBe(
+      'I nigdy, zanim poprawisz co najmniej 12 nagrań.',
+    )
+  })
+})
+
 describe('every language gets its own singular', () => {
   const expected: Record<string, [string, string]> = {
     no: ['1 dag siden', '5 dager siden'],

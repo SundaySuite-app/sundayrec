@@ -873,13 +873,28 @@ async function refreshLocalNudgeCard(): Promise<void> {
   const statusEl = document.getElementById('local-nudge-status')
   if (!hintEl || !statusEl) return
 
-  hintEl.textContent = applyParams(
+  // Three sentences rather than one string: the promise («aldri mer enn 60
+  // sekunder») and the bar («minst 12 opptak») count different nouns, and one
+  // plural group inflects for one number. Polish reads «60 sekund» and «12
+  // nagrań» — two forms the single sentence could never both be right about.
+  hintEl.textContent = [
     t(
       'general.localNudgeToggleHint',
-      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det. Aldri mer enn {limit} sekunder, og aldri før du har rettet minst {min} opptak.',
+      'Når dette er på, flytter appen sitt eget forslag til preken-start og -slutt etter hvordan du pleier å rette det.',
     ),
-    { limit: String(MAX_BOUNDARY_NUDGE_SEC), min: String(MIN_CORRECTIONS_FOR_NUDGE) },
-  )
+    tn(
+      'general.localNudgeLimitSeconds',
+      MAX_BOUNDARY_NUDGE_SEC,
+      {},
+      'Aldri mer enn {n} sekunder.',
+    ),
+    tn(
+      'general.localNudgeLimitRecordings',
+      MIN_CORRECTIONS_FOR_NUDGE,
+      {},
+      'Aldri før du har rettet minst {n} opptak.',
+    ),
+  ].join(' ')
 
   // Reading the nudge re-folds every recording's sidecar (see
   // `learning::refresh_nudge` for why it is a recompute and not a cached read),
@@ -972,12 +987,23 @@ function paintLearningLine(id: string, line: CopyLine | null): void {
     el.style.display = 'none'
     return
   }
-  // A count-governed line resolves through `tn` (CLDR plural form), everything
-  // else through `t` — see CopyLine.count in learning-summary-core.ts.
-  el.textContent = line.count === undefined
-    ? applyParams(t(line.key, line.fallback), line.params)
-    : tn(line.key, line.count, line.params ?? {}, line.fallback)
+  el.textContent = renderCopyLine(line)
   el.style.display = ''
+}
+
+/** A count-governed unit resolves through `tn` (CLDR plural form), everything
+ *  else through `t` — see CopyLine.count in learning-summary-core.ts. A line
+ *  that names two counts is several such units (CopyLine.extra), each inflected
+ *  by its own number and joined here with a space; nothing in the catalogue
+ *  ever has to pick one noun form for two counts. */
+function renderCopyLine(line: CopyLine): string {
+  return [line, ...(line.extra ?? [])]
+    .map(part =>
+      part.count === undefined
+        ? applyParams(t(part.key, part.fallback), part.params)
+        : tn(part.key, part.count, part.params ?? {}, part.fallback),
+    )
+    .join(' ')
 }
 
 // Lifetime `window.api.on` subscriptions + the hourly auto-check interval —
