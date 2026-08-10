@@ -24,6 +24,38 @@ have instead are two separate, narrower levers, and neither of them is undo:
 
 Both are real and both work. Neither reaches a machine that already updated.
 
+## The guarantee holds for strict semver, and only for strict semver
+
+The guard delegates to the `semver` crate (the same one Cargo and
+`tauri-plugin-updater` use), so it enforces semver.org exactly: build metadata
+is ignored for precedence, `0.11.0-beta.2` supersedes `-beta.1`, `-beta.10`
+supersedes `-beta.9`, and the stable `0.11.0` supersedes every `0.11.0-*`.
+
+For a version string that is **not** valid semver, the guard has nothing to
+order by and falls back to "the strings differ, so it is newer". That fallback
+is not an ordering — it answers _newer_ in both directions — so **the "only
+ever moves to a HIGHER version" promise above does not cover it.**
+
+In practice you cannot reach it, and three separate things have to break at
+once before you could:
+
+- The running version comes from the app's own package metadata, and **Cargo
+  refuses to build a package whose version is not strict semver** (a
+  zero-padded date like `2026.05.31` fails with "invalid leading zero in minor
+  version number").
+- The offered version comes from `tauri-plugin-updater`, which has already
+  parsed the manifest into a `semver::Version` before the guard sees it. A
+  manifest the crate cannot parse never gets this far.
+- `scripts/promote-release.mjs` requires `latest.json`'s `version` to equal the
+  tag without its `v`, and every tag this project has cut is
+  `vMAJOR.MINOR.PATCH[-beta.N]`.
+
+**The operating rule: tag releases as strict semver.** `v0.13.0`,
+`v0.14.0-beta.1`. Not `v2026.05.31`, not `v1.0`, not a leading zero in any
+field. A date-shaped tag is the one shape that looks reasonable and is not
+covered — `v2026.5.31` would be fine, `v2026.05.31` would not, and nothing in
+the pipeline will tell you which one you picked.
+
 ## What the kill-switch does NOT do
 
 - **It does not touch a machine that already downloaded and applied the bad
