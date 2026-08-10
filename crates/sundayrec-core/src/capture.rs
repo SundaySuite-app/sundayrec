@@ -753,6 +753,20 @@ pub fn build_unified_capture_args(
     opts: &CaptureOpts,
 ) -> Vec<String> {
     let mut args: Vec<String> = vec!["-hide_banner".into()];
+    // MACHINE-READABLE PROGRESS. `-progress pipe:1 -nostats` moves the startup
+    // latch and the watchdog heartbeat off ffmpeg's human stats line — the line
+    // whose size unit was silently renamed `kB` → `KiB` in 7.1, which against a
+    // `kB`-only parser makes a perfectly healthy recording look dead (caught
+    // 2026-08-06 when the sidecar went 6.0 → 8.1.2). The `key=value` blocks the
+    // flag produces are the vocabulary ffmpeg treats as an interface: verified
+    // byte-identical across 6.0 and 8.1.2 in `progress::PROGRESS_ARGS`'s
+    // fixtures. The engine MUST drain stdout (`recorder::engine`) — see the
+    // const's docs for why an undrained pipe is a capture hazard.
+    args.extend(
+        crate::progress::PROGRESS_ARGS
+            .iter()
+            .map(|s| (*s).to_string()),
+    );
 
     // Build the audio filter chain shared by every platform, IN ORDER:
     //   1. drift correction (`aresample`, Windows only — two device clocks),
@@ -965,6 +979,42 @@ mod tests {
 
     fn has_pair(args: &[String], a: &str, b: &str) -> bool {
         args.windows(2).any(|w| w[0] == a && w[1] == b)
+    }
+
+    /// stdout carries the `-progress` channel and NOTHING else. Every `pipe:1`
+    /// in the argv must be the operand of `-progress` — a MEDIA output on
+    /// stdout is the deadlock that froze capture when the preview lived there.
+    fn only_progress_uses_pipe1(args: &[String]) -> bool {
+        args.iter()
+            .enumerate()
+            .filter(|(_, a)| a.as_str() == "pipe:1")
+            .all(|(i, _)| i > 0 && args[i - 1] == "-progress")
+    }
+
+    /// The recording argv asks for the machine-readable channel, on EVERY
+    /// platform and for audio-only as well as A/V. Without these three flags
+    /// the engine's stdout reader sees an immediate EOF and the recording never
+    /// announces that it started.
+    #[test]
+    fn every_recording_argv_requests_the_progress_channel() {
+        for (plat, vid, aud, path) in [
+            (Platform::MacOS, None, "1", "/tmp/a.m4a"),
+            (Platform::MacOS, Some("0"), "1", "/tmp/av.mp4"),
+            (Platform::Windows, None, "Mic", "C:/a.wav"),
+            (Platform::Windows, Some("Cam"), "Mic", "C:/av.mp4"),
+            (Platform::Linux, None, "1", "/tmp/l.flac"),
+        ] {
+            let args = build_unified_capture_args(plat, vid, aud, path, &CaptureOpts::default());
+            assert!(has_pair(&args, "-progress", "pipe:1"), "got: {args:?}");
+            assert!(
+                args.iter().any(|a| a == "-nostats"),
+                "stderr must stop carrying the human stats line; got: {args:?}"
+            );
+            // Global flags belong before the first input, never after an output.
+            let progress = args.iter().position(|a| a == "-progress").unwrap();
+            let first_input = args.iter().position(|a| a == "-i").unwrap();
+            assert!(progress < first_input, "got: {args:?}");
+        }
     }
 
     // ── camera mode probe parsing + resolution (the framerate fix) ──
@@ -1601,11 +1651,14 @@ mod tests {
                 "mp4 is the only output; got: {args:?}"
             );
             assert_eq!(args[args.len() - 2], "-y", "preceded by -y; got: {args:?}");
-            // No second-output preview plumbing anywhere.
+            // No second-output preview plumbing anywhere. The ONE permitted
+            // `pipe:1` is the `-progress` channel's (a global flag, not an
+            // output) — a MEDIA output on stdout is what would deadlock.
             assert!(
-                !args.iter().any(|a| a == "pipe:1" || a == "mjpeg"),
+                only_progress_uses_pipe1(&args),
                 "no stdout/MJPEG preview output; got: {args:?}"
             );
+            assert!(!args.iter().any(|a| a == "mjpeg"), "got: {args:?}");
             // Video codec + the A/V-sync CFR lock are still there.
             assert!(has_pair(&args, "-c:v", "libx264"), "got: {args:?}");
             assert!(has_pair(&args, "-fps_mode", "cfr"), "got: {args:?}");
@@ -1627,7 +1680,7 @@ mod tests {
         // The preview is the FINAL output, written to the file (NOT a pipe).
         assert_eq!(args.last().unwrap(), "/tmp/preview.jpg", "got: {args:?}");
         assert!(
-            !args.iter().any(|a| a == "pipe:1"),
+            only_progress_uses_pipe1(&args),
             "preview is a file, never a pipe; got: {args:?}"
         );
         assert!(
@@ -1663,8 +1716,8 @@ mod tests {
         ] {
             let args = build_unified_capture_args(plat, None, aud, path, &CaptureOpts::default());
             assert!(
-                !args.iter().any(|a| a == "pipe:1"),
-                "audio-only must not write to stdout; got: {args:?}"
+                only_progress_uses_pipe1(&args),
+                "audio-only must not write MEDIA to stdout; got: {args:?}"
             );
             assert!(
                 !args.iter().any(|a| a == "mjpeg"),

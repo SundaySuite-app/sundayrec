@@ -1,0 +1,50 @@
+Output #0, wav, to '/private/tmp/claude-501/-Users-richardfossland/91d5a332-3428-4dce-af0b-620bdfbcf3b9/scratchpad/fixtures/out_chain.wav':
+  Metadata:
+    ISFT            : Lavf62.12.102
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, mono, s16, 768 kb/s
+    Metadata:
+      encoder         : Lavc62.28.102 pcm_s16le
+frame:0    pts:0       pts_time:0
+lavfi.astats.1.Peak_level=-18.063656
+frame:1    pts:4800    pts_time:0.1
+lavfi.astats.1.Peak_level=-18.063656
+frame:2    pts:9600    pts_time:0.2
+lavfi.astats.1.Peak_level=-18.063656
+frame:3    pts:14400   pts_time:0.3
+lavfi.astats.1.Peak_level=-18.063656
+frame:4    pts:19200   pts_time:0.4
+lavfi.astats.1.Peak_level=-18.063656
+frame:5    pts:24000   pts_time:0.5
+lavfi.astats.1.Peak_level=-18.063656
+frame:6    pts:28800   pts_time:0.6
+lavfi.astats.1.Peak_level=-18.063656
+frame:7    pts:33600   pts_time:0.7
+lavfi.astats.1.Peak_level=-18.063656
+frame:8    pts:38400   pts_time:0.8
+lavfi.astats.1.Peak_level=-18.063656
+frame:9    pts:43200   pts_time:0.9
+lavfi.astats.1.Peak_level=-18.063656
+frame:10   pts:48000   pts_time:1
+lavfi.astats.1.Peak_level=-18.063656
+frame:11   pts:52800   pts_time:1.1
+lavfi.astats.1.Peak_level=-18.063656
+frame:12   pts:57600   pts_time:1.2
+lavfi.astats.1.Peak_level=-18.063656
+frame:13   pts:62400   pts_time:1.3
+lavfi.astats.1.Peak_level=-18.063656
+frame:14   pts:67200   pts_time:1.4
+lavfi.astats.1.Peak_level=-18.063656
+frame:15   pts:72000   pts_time:1.5
+lavfi.astats.1.Peak_level=-18.063656
+frame:16   pts:76800   pts_time:1.6
+lavfi.astats.1.Peak_level=-18.063656
+frame:17   pts:81600   pts_time:1.7
+lavfi.astats.1.Peak_level=-18.063656
+frame:18   pts:86400   pts_time:1.8
+lavfi.astats.1.Peak_level=-18.063656
+frame:19   pts:91200   pts_time:1.9
+lavfi.astats.1.Peak_level=-18.063656
+[Parsed_astats_3 @ 0x12e70adb0] Channel: 1
+[Parsed_astats_3 @ 0x12e70adb0] Peak level dB: -18.063656
+[out#0/wav @ 0x12e704f00] video:0KiB audio:188KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.040625%
+size=     188KiB time=00:00:02.00 bitrate= 768.3kbits/s speed=1.34x elapsed=0:00:01.49    
