@@ -3,6 +3,17 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.14.1-beta.1
+
+### Polsk grammatikk i «Hva appen har justert»
+
+Setningene som forteller hva appen har flyttet på, teller to ting samtidig —
+sekunder og rettelser. På polsk har begge tre former («1 sekundę / 2 sekundy /
+5 sekund», «1 poprawka / 2 poprawki / 5 poprawek»), og appen kunne bare velge
+én av dem for hele setningen. Dermed sto det alltid feil ord om minst det ene
+tallet. Nå bøyes hvert tall for seg — også i ventetilstanden og i forklaringen
+under bryteren.
+
 ## v0.14.0 — slankere, og stødigere der det gjelder
 
 ### Direkte-siden er fjernet — SundayRec er et opptaksprogram
