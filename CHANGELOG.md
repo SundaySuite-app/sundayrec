@@ -3,7 +3,7 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Upublisert (v0.14)
+## v0.14.0 — slankere, og stødigere der det gjelder
 
 ### Direkte-siden er fjernet — SundayRec er et opptaksprogram
 
@@ -21,6 +21,43 @@ søk «sundayrec»).
 ### Lisens
 
 SundayRec er nå åpen kildekode under MIT-lisensen.
+
+### Appen gir ikke lenger opp midt i gudstjenesten
+
+Forsvinner lydenheten under et opptak — en usb-kabel som løsner, en mikser som
+starter på nytt — prøvde appen å koble seg til igjen tjue ganger og ga så opp.
+Det tok rundt tre minutter. Skjedde det under prekenen, var resten av
+gudstjenesten tapt.
+
+Nå måles tålmodigheten i tid i stedet for forsøk: de tre første minuttene
+oppfører appen seg nøyaktig som før, og deretter fortsetter den å prøve — i
+inntil fire timer — samtidig som den sier tydelig fra om hvor lenge enheten har
+vært borte. Den slutter aldri stille.
+
+To ting til i samme gate: appen merker med én gang at enheten er tilbake i
+stedet for å vente ut pausen sin, og den holder nå fem sekunder med lyd i
+minnet i stedet for ett — så et lite hikk i maskinen ikke koster deg sekunder
+av opptaket.
+
+### Riktige tallformer på alle språk
+
+«2 opptak» og «1 opptak» ble før valgt med en enkel regel som bare stemmer på
+norsk. For polske brukere ga det grammatisk gale former hele veien; tysk, fransk
+og de andre manglet entallsformer flere steder. Nå velges formen etter hvert
+språks egne regler.
+
+### Under panseret
+
+- **Oppdateringssjekken** kunne tilby deg en oppdatering til versjonen du
+  allerede kjørte. Sammenligningen er nå overlatt til et bredt brukt bibliotek
+  i stedet for egen kode.
+- **Appen ser tydeligere at et opptak lever.** Signalet den bruker til å avgjøre
+  «kom opptaket i gang» og «vokser filen fortsatt» kommer nå fra en maskinlesbar
+  kanal i stedet for tekst ment for mennesker — teksten endret seg mellom to
+  ffmpeg-versjoner, og et friskt opptak kunne da se dødt ut.
+- **Planlagt vekking** av maskinen er skrevet om på Windows og leser nå status
+  gjennom systemets eget grensesnitt på macOS. Merk: en test-vekking erstatter
+  den planlagte — sett tidsplanen på nytt etterpå.
 
 ## v0.13.0 — ryddesjauen
 
