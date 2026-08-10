@@ -404,7 +404,7 @@ function s4(body: HTMLElement): void {
         s => s.days.length === 1 && s.days[0] === selectedDay && s.start === startVal && s.stop === stopVal,
       )
       if (!duplicate) {
-        patchSettings({ slots: [...existing, { days: [selectedDay], start: startVal, stop: stopVal }] })
+        patchSettings({ slots: [...existing, { days: [selectedDay], start: startVal, stop: stopVal, max: null }] })
         void window.api.saveSettings(settings)
       }
     }

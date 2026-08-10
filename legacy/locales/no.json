@@ -635,7 +635,9 @@
   },
   "error": {
     "tryAgainHint": "Hvis problemet vedvarer, sjekk Sjekk system i Lyd-innstillingene eller restart programmet.",
-    "ipcFailed": "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig."
+    "ipcFailed": "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.",
+    "settingsLoadFailed": "Kunne ikke lese innstillingene — viser standardinnstillinger. Endringer du gjør nå kan gå tapt.",
+    "settingsMigrationCorrupt": "Innstillingene fra forrige versjon kunne ikke leses — appen starter med standardinnstillinger."
   },
   "editor": {
     "title": "Rediger lydfil",

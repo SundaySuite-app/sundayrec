@@ -234,12 +234,12 @@ async function saveSpecial(): Promise<void> {
 
   const wasAdd = editingIndex < 0
   if (editingIndex >= 0) {
-    settings.specialRecordings[editingIndex] = { date, name, start, stop }
+    settings.specialRecordings[editingIndex] = { id: null, deviceId: null, date, name, start, stop }
     editingIndex = -1
     paintAddSpecialBtn()
   } else {
     const exists = settings.specialRecordings.some(s => s.date === date && s.name === name)
-    if (!exists) settings.specialRecordings.push({ date, name, start, stop })
+    if (!exists) settings.specialRecordings.push({ id: null, deviceId: null, date, name, start, stop })
   }
 
   if (nameEl) nameEl.value = ''

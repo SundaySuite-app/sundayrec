@@ -635,7 +635,9 @@
   },
   "error": {
     "tryAgainHint": "If the problem persists, run Check system in the Audio settings or restart the app.",
-    "ipcFailed": "Something in the background did not respond, so this view may be incomplete."
+    "ipcFailed": "Something in the background did not respond, so this view may be incomplete.",
+    "settingsLoadFailed": "Could not read the settings — showing defaults. Changes you make now may be lost.",
+    "settingsMigrationCorrupt": "The settings from the previous version could not be read — the app starts with defaults."
   },
   "editor": {
     "title": "Edit audio file",

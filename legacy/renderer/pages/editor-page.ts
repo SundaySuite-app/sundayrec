@@ -1,7 +1,7 @@
 import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
-import type { RecordingMetadata } from '../../types'
+import type { RecordingEntry, RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { navigateTo } from '../ui/navigate'
 import { alertDialog, confirmDialog } from '../ui/dialog'
@@ -695,8 +695,8 @@ function setupReviewBanner(): void {
       loadAndUpdateReviewBanner()
     })
   }
-  wireJingle('editor-review-intro-select', 'introPath', () => settings.editorIntroPath)
-  wireJingle('editor-review-outro-select', 'outroPath', () => settings.editorOutroPath)
+  wireJingle('editor-review-intro-select', 'introPath', () => settings.editorIntroPath ?? undefined)
+  wireJingle('editor-review-outro-select', 'outroPath', () => settings.editorOutroPath ?? undefined)
 
   // Mastering preset → the queue entry.
   //
@@ -1064,8 +1064,10 @@ export function showState(state: 'empty' | 'loading' | 'workspace'): void {
 
 /**
  * Render the "Nylig brukte filer" list in the empty state. Pulls the last
- * 5 entries from settings.recordingHistory that have a valid `path`, and
- * makes each item clickable to load via openEditorWithFile.
+ * 5 history entries with a valid `path` from the recordings table (the R4
+ * home of history — `settings.recordingHistory` was the localStorage-era
+ * shadow copy, which stopped being written when the sqlite `recording` table
+ * became authoritative), and makes each item clickable via openEditorWithFile.
  *
  * Also shows the "Gjennomgangs-kø" link when there are pending review-queue
  * entries. The link navigates to home (where the prep queue lives).
@@ -1075,11 +1077,16 @@ function renderRecentFiles(): void {
   // entirely by the early return below, so a fresh install with a queued
   // episode but no recent-file history never saw it.
   void refreshEmptyStateReviewLink()
+  void renderRecentFilesFromHistory()
+}
 
+async function renderRecentFilesFromHistory(): Promise<void> {
   const wrap = $('editor-empty-recents')
   const list = $('editor-empty-recents-list')
   if (!wrap || !list) return
-  const hist = settings.recordingHistory ?? []
+  // `getHistory` already excludes trashed recordings; a failed read answers []
+  // (the E2.4 fallback discipline), which renders as "no recents", not a throw.
+  const hist = (await window.api.getHistory()) as RecordingEntry[]
   const recent = hist
     .filter(e => e.path && e.status === 'ok')
     .slice(0, 5)

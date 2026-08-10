@@ -194,7 +194,7 @@ export function updateAudioSeparateButton(): void {
   const card  = document.getElementById('home-format-card')
   if (!btn || !label) return
   const videoOn   = settings.videoEnabled ?? false
-  const keepAudio = settings.videoKeepAudio ?? true
+  const keepAudio = settings.keepSeparateAudio
   btn.style.display = videoOn ? 'inline-flex' : 'none'
   btn.classList.toggle('audio-separate-on', keepAudio)
   btn.setAttribute('aria-checked', keepAudio ? 'true' : 'false')
@@ -885,8 +885,8 @@ export function setupHome(): void {
   // its bitrate silently changed what the next recording would produce — an
   // invisible state change from a gesture that looked like inspection.
   const toggleSeparateAudio = async (): Promise<void> => {
-    const nowKeep = !(settings.videoKeepAudio ?? true)
-    patchSettings({ videoKeepAudio: nowKeep })
+    const nowKeep = !settings.keepSeparateAudio
+    patchSettings({ keepSeparateAudio: nowKeep })
     await window.api.saveSettings({ ...settings })
     updateAudioSeparateButton()
     // Sync the Video-tab toggle (no-op if the tab hasn't been opened yet)
@@ -1433,7 +1433,7 @@ export function loadVideoInfoStrip(): void {
     ? ` · ${settings.videoBitrate} kbps`
     : ''
   if (qualityEl) qualityEl.textContent = `${res} · ${fps} fps${bitrate}`
-  if (modeEl)    modeEl.textContent    = settings.videoSeparate ? 'Separate filer (video + lyd)' : 'Kombinert MP4'
+  if (modeEl)    modeEl.textContent    = settings.outputMode === 'separate' ? 'Separate filer (video + lyd)' : 'Kombinert MP4'
 }
 
 export async function loadHomeInfoStrip(): Promise<void> {

@@ -635,7 +635,9 @@
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
-    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny."
+    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny.",
+    "settingsLoadFailed": "Nie można odczytać ustawień — wyświetlane są ustawienia domyślne. Wprowadzone teraz zmiany mogą zostać utracone.",
+    "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi."
   },
   "editor": {
     "title": "Edytuj plik audio",

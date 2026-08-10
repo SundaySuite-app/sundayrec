@@ -36,9 +36,10 @@ import { navigateTo } from "./ui/navigate";
 import { toast } from "./ui/toast";
 import { t } from "./i18n";
 import type { TrashEntry } from "../bindings/TrashEntry";
+import type { Settings } from "../bindings/Settings";
 import { errorCode } from "./error-code-core";
-import { pruneEndedSpecials } from "./prune-specials-core";
-import { stripLegacySecrets } from "./purge-legacy-secrets-core";
+import { SETTINGS_DEFAULTS } from "./settings-defaults";
+import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
   createIpcFailureState,
   failureSummary,
@@ -156,10 +157,9 @@ function toAssetUrl(path: string): string {
 //     };
 //   });
 //
-// One thing fixtures deliberately do NOT cover: SETTINGS. `getSettings` reads
-// `localStorage[LS_KEY]` directly (see `loadSettings` below) — there is no
-// invoke to intercept — so a test seeds settings by writing that key in the
-// same init script. `e2e/harness.ts` does both in one call.
+// Settings are covered like everything else since R4: `getSettings`/`saveSettings`
+// are `settings_get`/`settings_save` invokes, so `e2e/harness.ts` seeds them
+// with a fixture-backed store — no localStorage involved on either side.
 //
 const FIXTURE_GATE: FixtureGate = {
   inTauri: isTauri(),
@@ -427,71 +427,14 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
   },
 };
 
-// ── Default settings (mirrors OLD src/main/store.ts `defaults`) ───────────────
-const DEFAULT_SETTINGS: Record<string, unknown> = {
-  language: null,
-  hasLaunched: false,
-  deviceId: null,
-  deviceName: null,
-  deviceChannels: {},
-  channels: "stereo",
-  sampleRate: 48000,
-  sampleRateMode: "auto",
-  inputVolume: 100,
-  eqBass: 0,
-  eqMid: 0,
-  eqTreble: 0,
-  compEnabled: false,
-  compThreshold: -24,
-  compRatio: 4,
-  compAttack: 10,
-  compRelease: 200,
-  limiterEnabled: true,
-  limiterCeiling: -1,
-  format: "mp3",
-  bitrate: "256",
-  filenamePattern: "date",
-  saveFolder: null,
-  autoDeleteDays: 0,
-  slots: [],
-  specialRecordings: [],
-  stopOnSilence: false,
-  splitMinutes: 0,
-  reminderMinutes: 0,
-  manualMaxMinutes: 0,
-  preRollSeconds: 0,
-  prerollEnabled: false,
-  launchAtLogin: false,
-  minimizeToTray: true,
-  wakeFromSleep: true,
-  protectRecording: true,
-  notifyStart: true,
-  notifyStop: true,
-  emailOnError: false,
-  emailAddress: "",
-  emailSmtp: "",
-  emailSmtpPort: 587,
-  emailSmtpUser: "",
-  emailSmtpFrom: "",
-  emailSmtpPass: "",
-  autoUpdate: true,
-  askOpenEditor: true,
-  editorIntroPath: undefined,
-  editorOutroPath: undefined,
-  editorHwEncode: false,
-  cloudGoogleDrive: undefined,
-  cloudDropbox: undefined,
-  cloudOneDrive: undefined,
-  churchName: "",
-  responsiblePerson: "",
-  integrations: { enabled: false },
-  activeRecovery: null,
-  nextExpectedRecordingISO: null,
-  recordingHistory: [],
-  wakeFailureHistory: [],
-};
-
-const LS_KEY = "sundayrec.settings";
+// ── Settings (R4: sqlite is the ONE store) ──────────────────────────────────
+//
+// `settings_get`/`settings_save` carry the FULL settings object in the unified
+// (Rust-named) vocabulary — the localStorage blob, the curated
+// `backendRecordingSettings` bridge and its 400 lines of "this field too was
+// silently re-defaulted" archaeology all died here. What remains renderer-side:
+// the one-shot migration below, a loud fallback for a broken store, and the
+// launch-at-login OS sync.
 
 // Dev/verification hook (inert in normal use): `?goto=<page>` skips first-run
 // onboarding and navigates to the named page after boot, so each screen can be
@@ -504,312 +447,63 @@ const LS_KEY = "sundayrec.settings";
 // navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
 
-function loadSettings(): Record<string, unknown> {
+// The one-shot localStorage → sqlite migration. Storage side effects live in
+// `migrate-legacy-settings.ts` (the only module allowed near the legacy key —
+// see settings-store-pin.test.ts); `invoke` is injected so the calls ride the
+// fixture seam. `getSettings` awaits this, so the first `settings_get` always
+// sees the imported values.
+const settingsMigration = migrateLegacySettingsOnce({
+  invoke,
+  onCorruptBlob: () => {
+    if (!isTauri()) return;
+    toast(
+      "error",
+      t(
+        "error.settingsMigrationCorrupt",
+        "Innstillingene fra forrige versjon kunne ikke leses — appen starter med standardinnstillinger.",
+      ),
+    );
+  },
+});
+
+/** Whether the defaults-fallback toast has fired this session — once is
+ *  information, once a second is an outage of its own. */
+let settingsLoadFailureToasted = false;
+
+/**
+ * `settings_get`, with the two renderer-side responsibilities that remain:
+ * wait for the one-shot migration, and make a FAILED read loud. The fallback
+ * is `SETTINGS_DEFAULTS` so the UI still renders, but never silently — a
+ * broken settings store rendered as "everything is default" is exactly the
+ * kind of quiet lie E2.4 exists to end.
+ */
+async function loadSettingsFromBackend(): Promise<Settings> {
+  await settingsMigration;
+  let s: Settings;
   try {
-    const saved = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
-    const merged = { ...DEFAULT_SETTINGS, ...saved };
-    // R3-D (interim until R4's single-owner dedup): apply the scheduler's
-    // 7-day specials prune HERE, where localStorage is read — otherwise the
-    // next save sends the unpruned list back through `settings_save` and
-    // resurrects exactly what the backend's `prune_specials` just removed.
-    merged.specialRecordings = pruneEndedSpecials(merged.specialRecordings, Date.now());
-    if (VERIFY_GOTO) {
-      merged.hasLaunched = true; // skip onboarding during verify screenshots
-      merged.onboardingDone = true;
-    }
-    return merged;
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-// SECURITY (2026-08 audit): the Rust backend has a real keychain slot for the
-// SMTP password (secrets::SecretProvider::SmtpPassword, cleared via
-// email_clear_smtp_password) but no command to SET it — the port never wired
-// a save path there. This function was the ONLY place the raw password
-// landed, so every save wrote it to localStorage in cleartext, forever. Strip
-// it before persisting; `emailSmtpPass` lives in the in-memory `settings`
-// singleton for the current session only, matching the field's own doc
-// comment in types/index.ts ("runtime only — always '' in store").
-function saveSettingsLocal(s: unknown): boolean {
-  try {
-    const { emailSmtpPass: _droppedSmtpPass, ...persisted } = (s ?? {}) as Record<string, unknown>;
-    localStorage.setItem(LS_KEY, JSON.stringify(persisted));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// SECURITY (2026-08 audit, E1.6): the strip above only fires on the NEXT save.
-// An install that saved a password before that fix landed still has it sitting
-// in its existing localStorage blob — potentially forever, if the user never
-// happens to touch a setting that triggers a re-save. Purge it once, here, at
-// module load: this file is loaded as a script BEFORE main.ts (see the file
-// header), and runs before the first `loadSettings()` call a few lines down
-// (`syncBackendRecordingSettings`/`syncLaunchAtLogin` on boot), so nothing
-// ever reads the lingering secret back out of storage. Guarded by a versioned
-// flag so it runs at most once per install; wrapped so a corrupt blob or a
-// storage error degrades to "did nothing" rather than blocking boot.
-const SMTP_PASS_PURGE_FLAG = "sundayrec.purge.smtpPass.v1";
-function purgeLegacySmtpPasswordOnce(): void {
-  try {
-    if (localStorage.getItem(SMTP_PASS_PURGE_FLAG)) return;
-    const { changed, out } = stripLegacySecrets(localStorage.getItem(LS_KEY));
-    if (changed) localStorage.setItem(LS_KEY, out);
-    localStorage.setItem(SMTP_PASS_PURGE_FLAG, "1");
-  } catch {
-    // Never let a cleanup step block boot.
-  }
-}
-purgeLegacySmtpPasswordOnce();
-
-// The UI's full settings live in localStorage (83 fields, superset of the Rust
-// Settings). But the RECORDER reads the backend (sqlite) settings via
-// `plan_recording_opts` → `settings::load(db)`, which the UI never wrote to — so
-// the user's resolution/format/camera/codec choices NEVER reached an actual
-// recording (it used backend DEFAULTS). This pushes the recording-critical subset
-// to the backend so manual + scheduled recordings honour the UI. Only a curated
-// set of fields with KNOWN-COMPATIBLE types is sent (the Rust enums for
-// format/channels are ported 1:1, so the string values match); everything else
-// defaults backend-side. Best-effort — a deserialize error leaves the backend
-// unchanged (no regression). `settings_save` deserializes with serde(default).
-function backendRecordingSettings(s: Record<string, unknown>): Record<string, unknown> {
-  // Channel L/R: the recorder reads TOP-LEVEL inputChannelL/R (custom_channel_map_filter
-  // records ANY two device channels into a stereo file — e.g. an X32 mixer on ch 16/17),
-  // but the audio-page stores the mapping PER DEVICE in deviceChannels[deviceId]. So the
-  // recorder never saw it → channel selection was silently ignored (always default 0/1).
-  // Translate the SELECTED device's mapping to the top-level fields; clamp 0..31 mirrors
-  // the Rust validate(). Default (0,1) is a no-op in custom_channel_map_filter, so this
-  // only changes behaviour when the user actually picked non-default channels.
-  const deviceChannels = (s.deviceChannels ?? {}) as Record<
-    string,
-    { channelL?: unknown; channelR?: unknown }
-  >;
-  const selDeviceId = (s.deviceId as string | null) ?? null;
-  const chMap = (selDeviceId && deviceChannels[selDeviceId]) || {};
-  const clampCh = (v: unknown): number | null =>
-    typeof v === "number" && Number.isInteger(v) ? Math.min(31, Math.max(0, v)) : null;
-  return {
-    deviceId: s.deviceId ?? null,
-    deviceName: s.deviceName ?? null,
-    videoEnabled: s.videoEnabled ?? false,
-    videoDeviceName: s.videoDeviceName ?? null,
-    videoDeviceIndex: s.videoDeviceIndex ?? null,
-    videoResolution: s.videoResolution ?? "1080p",
-    videoFramerate: s.videoFramerate ?? 30,
-    videoContainer: s.videoContainer ?? "mp4",
-    videoCodec: s.videoCodec ?? "h264",
-    videoEncoder: s.videoEncoder ?? "hardware",
-    videoFlip: s.videoFlip ?? false,
-    outputMode: s.videoSeparate ? "separate" : "combined",
-    keepSeparateAudio: s.videoKeepAudio !== false,
-    // Windows escape hatch: force legacy DirectShow audio over cpal (WASAPI/ASIO).
-    classicDirectshow: s.classicDirectshow ?? false,
-    // Escape hatch: force legacy ffmpeg audio capture over the native engine.
-    classicFfmpegAudio: s.classicFfmpegAudio ?? false,
-    // Escape hatch: force the legacy rolling-ffmpeg pre-roll buffer over the
-    // native one. Carried through so a settings save can't silently reset a
-    // hatch the owner set on a rig (`settings_save` takes the WHOLE object).
-    classicFfmpegPreroll: s.classicFfmpegPreroll ?? false,
-    separateAudioFormat: s.format ?? "wav",
-    channels: s.channels ?? "stereo",
-    inputChannelL: clampCh(chMap.channelL),
-    inputChannelR: clampCh(chMap.channelR),
-    // Sample-rate policy → Rust SampleRate enum. The recorder uses this (Auto =
-    // native capture, no -ar resampling); the numeric `sampleRate` is client-only.
-    // Whitelisted so a stale value can't fail the whole settings_save.
-    sampleRateMode: (["auto", "r44100", "r48000", "r96000"] as const).includes(
-      s.sampleRateMode as "auto" | "r44100" | "r48000" | "r96000",
-    )
-      ? (s.sampleRateMode as string)
-      : "auto",
-    format: s.format ?? "mp3",
-    bitrate: String(s.bitrate ?? "256"),
-    saveFolder: s.saveFolder ?? null,
-    // The filename pattern drives the recorder's output filename (build_opts →
-    // build_filename). Omitting it let Rust's #[serde(default)] re-default it to
-    // `date` on every settings_save, so a user who picked church/plain/datetime
-    // had every recording silently named with the `date` pattern. Whitelisted
-    // because a stale/corrupt localStorage value would otherwise fail the WHOLE
-    // settings_save (serde rejects an unknown enum), dropping ALL recorder sync.
-    filenamePattern: (["date", "church", "plain", "datetime"] as const).includes(
-      s.filenamePattern as "date" | "church" | "plain" | "datetime",
-    )
-      ? (s.filenamePattern as string)
-      : "date",
-    stopOnSilence: s.stopOnSilence ?? false,
-    silenceThreshold: s.silenceThreshold ?? -50,
-    silenceTimeoutMinutes: s.silenceTimeoutMinutes ?? 5,
-    splitMinutes: s.splitMinutes ?? 0,
-    manualMaxMinutes: s.manualMaxMinutes ?? 0,
-    preRollSeconds: s.preRollSeconds ?? 0,
-    // Wake-from-sleep drives the BACKEND scheduler's OS-wake arming
-    // (scheduler/mod.rs reads settings.wake_from_sleep). Must be synced or the
-    // Rust `#[serde(default = "default_true")]` re-defaults it to `true` on every
-    // settings_save → a user who turns wake OFF could never make it stick and the
-    // machine would keep waking for scheduled recordings.
-    wakeFromSleep: s.wakeFromSleep ?? true,
-    // The weekly schedule + one-off recordings drive the BACKEND scheduler
-    // (which couldn't see them while settings lived only in localStorage → no
-    // scheduled recording ever fired). SANITISED so a single malformed entry
-    // can't fail the whole settings_save (which would also drop the recording
-    // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
-    slots: sanitizeSlots(s.slots),
-    specialRecordings: sanitizeSpecials(s.specialRecordings),
-    // «Varsle når opptak starter/stopper» (R3-H). Read by the BACKEND
-    // scheduler's `should_notify` gate — while these were absent from the
-    // bridge, Rust's `#[serde(default = "default_true")]` re-defaulted them to
-    // `true` on every settings_save, so the toggles saved «Lagret ✓» and
-    // changed nothing (the same trap `filenamePattern`/`wakeFromSleep` fell
-    // into). Failure/error notifications are NOT governed by these — see
-    // scheduler/mod.rs::should_notify.
-    notifyStart: s.notifyStart ?? true,
-    notifyStop: s.notifyStop ?? true,
-    // Editor video export: opt into the macOS VideoToolbox hardware encoder.
-    // Read by `editor_export`; must be synced or Rust's `#[serde(default)]`
-    // re-defaults it to `false` on every settings_save and the toggle never
-    // sticks (the same trap `filenamePattern`/`wakeFromSleep` fell into).
-    editorHwEncode: s.editorHwEncode ?? false,
-    // E-mail alerts. These live in localStorage like the rest of the UI's
-    // settings, but the thing that SENDS an alert is the backend — it has no
-    // way to read localStorage, so an operator could fill in the whole panel
-    // and the failure mail would still go nowhere (the same trap
-    // `filenamePattern` and `wakeFromSleep` fell into). The password is
-    // deliberately NOT here: it lives in the OS keychain via
-    // `email_set_smtp_password`.
-    emailOnError: s.emailOnError ?? false,
-    emailAddress: s.emailAddress ?? "",
-    emailSmtp: s.emailSmtp ?? "",
-    emailSmtpPort: s.emailSmtpPort ?? 587,
-    emailSmtpUser: s.emailSmtpUser ?? "",
-    emailSmtpFrom: s.emailSmtpFrom ?? "",
-    // Same reasoning for the chat webhook — the backend posts it on failure.
-    webhookUrl: s.webhookUrl ?? "",
-    webhookOnWarning: s.webhookOnWarn ?? false,
-    // E1.4: the per-URL "yes, that address is on my own network" confirmation.
-    // MUST be synced, and for the opposite reason to the fields above: the
-    // backend refuses a loopback/private/link-local webhook without it, so an
-    // un-synced flag would silently disable a LAN webhook the operator just
-    // approved (and Rust's `#[serde(default)]` would re-clear it on every save).
-    webhookAllowLocal: s.webhookAllowLocal ?? false,
-    // The alert mail is rendered backend-side FROM these: the subject is
-    // «Opptaksfeil — {church} — {dato}» and the greeting «Hei {navn},». Without
-    // them the mail would greet nobody on behalf of "SundayRec". `churchName`
-    // also feeds the `church` filename pattern, which had the same blind spot.
-    churchName: typeof s.churchName === "string" ? s.churchName : "",
-    responsiblePerson: typeof s.responsiblePerson === "string" ? s.responsiblePerson : "",
-    language: typeof s.language === "string" ? s.language : "no",
-    // The release channel the UPDATER follows. `update/mod.rs::current_channel`
-    // reads sqlite — never localStorage — so a beta opt-in that is not in this
-    // curated object never reaches the only reader it has: the renderer saved
-    // beta locally, the chip said «Lagret ✓», and every settings_save quietly
-    // re-defaulted sqlite to stable via `default_update_channel` (rig-observed
-    // on v0.11.1-beta.2; pinned by e2e/update-channel.spec.ts). Worse, a save
-    // that changed ONLY the channel produced a curated JSON identical to the
-    // previous one, so the dedupe above skipped the settings_save entirely.
-    // Whitelisted to the two real channels — mirrors `UpdateChannel::parse`.
-    updateChannel: s.updateChannel === "beta" ? "beta" : "stable",
-    // Same seam, three more fields with REAL backend readers that localStorage
-    // can never reach (each was silently re-defaulted by serde on every save):
-    //   • reminderMinutes → scheduler/mod.rs `upcoming_events(...,
-    //     settings.reminder_minutes, ...)` — the «påminnelse før opptak» lead
-    //     time; un-synced it was always 0 (= no reminder), whatever the UI said.
-    //   • localAdaptivity → learning.rs `enabled()` — the E10 opt-in; un-synced
-    //     the backend read the default `false` and never armed, so the switch
-    //     was a no-op with a confirmation card on top.
-    //   • autoUpdate → core telemetry's environment block reports
-    //     `auto_update`; un-synced it claimed the default `true` for operators
-    //     who had switched it off. (The SCHEDULE itself is renderer-driven, so
-    //     only the report was wrong.) `!== false` mirrors `autoUpdateEnabled`.
-    reminderMinutes: typeof s.reminderMinutes === "number" ? s.reminderMinutes : 0,
-    localAdaptivity: s.localAdaptivity === true,
-    autoUpdate: s.autoUpdate !== false,
-    // The #113 bug, generalised: these five were found by enumerating EVERY
-    // `settings.*` read behind `settings::load` in the backend and diffing
-    // against this object. Each had a real reader that could only ever see the
-    // serde default, because the one writer (this curated sync) dropped it.
-    //   • autoDeleteDays → commands/db.rs `recordings_prune` reads sqlite to
-    //     decide retention; un-synced it was always 0 = pruning permanently
-    //     disabled ("slett automatisk" saved to localStorage, chip said Lagret,
-    //     and no recording was ever pruned).
-    //   • showLiveLevels → scheduler/mod.rs passes it as `live_levels` to the
-    //     recorder (the astats meter tap that can starve capture on a weak
-    //     machine). No UI control writes it TODAY, so the value is the default
-    //     — synced so a value that does land in the blob (hand-edited,
-    //     imported profile, future toggle) reaches its reader instead of being
-    //     re-defaulted to `true` on every save.
-    //   • inputVolume / trimSilence / launchAtLogin → core telemetry's
-    //     environment block and the diagnose report describe the install with
-    //     them; un-synced every install claimed the defaults (100 / off / off),
-    //     which is exactly the `autoUpdate` case above again.
-    // The two numeric fields are integer-coerced BEFORE the invoke: serde
-    // rejects a float for an `i32`, and one bad value fails the WHOLE
-    // settings_save (the filenamePattern trap), dropping all recorder sync.
-    // Ranges mirror Rust `validate()` (0..=3650, 0..=200).
-    autoDeleteDays: clampInt(s.autoDeleteDays, 0, 3650, 0),
-    showLiveLevels: s.showLiveLevels !== false,
-    inputVolume: clampInt(s.inputVolume, 0, 200, 100),
-    trimSilence: s.trimSilence === true,
-    launchAtLogin: s.launchAtLogin === true,
-  };
-}
-
-/** `v` rounded and clamped to `[lo, hi]`, or `fallback` when not a finite number. */
-function clampInt(v: unknown, lo: number, hi: number, fallback: number): number {
-  if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
-  return Math.min(hi, Math.max(lo, Math.round(v)));
-}
-
-function sanitizeSlots(v: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((sl) => sl && Array.isArray((sl as { days?: unknown }).days))
-    .map((sl) => {
-      const o = sl as Record<string, unknown>;
-      return {
-        days: (o.days as unknown[]).filter((d) => Number.isInteger(d)),
-        start: typeof o.start === "string" ? o.start : "10:00",
-        stop: typeof o.stop === "string" ? o.stop : "12:00",
-        max: typeof o.max === "number" ? o.max : null,
-      };
-    });
-}
-
-function sanitizeSpecials(v: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((r) => r && typeof (r as { date?: unknown }).date === "string")
-    .map((r) => {
-      const o = r as Record<string, unknown>;
-      return {
-        id: typeof o.id === "string" ? o.id : null,
-        date: o.date as string,
-        name: typeof o.name === "string" ? o.name : "",
-        start: typeof o.start === "string" ? o.start : "10:00",
-        stop: typeof o.stop === "string" ? o.stop : "12:00",
-      };
-    });
-}
-
-let lastSyncedJson = "";
-async function syncBackendRecordingSettings(s: unknown): Promise<void> {
-  try {
-    const curated = backendRecordingSettings((s ?? {}) as Record<string, unknown>);
-    const json = JSON.stringify(curated);
-    if (json === lastSyncedJson) return; // nothing changed
-    lastSyncedJson = json;
-    await invoke("settings_save", { settings: curated });
-    // Wake the scheduler supervisor so it picks up new/changed slots immediately
-    // (settings_save alone doesn't recompute the schedule).
-    try {
-      await invoke("scheduler_reschedule");
-    } catch {
-      /* scheduler reschedule is best-effort */
-    }
+    s = await invoke<Settings>("settings_get");
   } catch (e) {
-    console.warn("[api-shim] backend settings sync failed (recording will use defaults)", e);
+    console.warn("[api-shim] settings_get failed → defaults", e);
+    recordFailure(ipcFailures, "settings_get", ipcErrText(e), Date.now());
+    // Outside Tauri (dev/fixture boot in a browser) every unfixtured command
+    // rejects by construction — same guard as E2.4's failure toast.
+    if (isTauri() && !settingsLoadFailureToasted) {
+      settingsLoadFailureToasted = true;
+      toast(
+        "error",
+        t(
+          "error.settingsLoadFailed",
+          "Kunne ikke lese innstillingene — viser standardinnstillinger. Endringer du gjør nå kan gå tapt.",
+        ),
+      );
+    }
+    s = { ...SETTINGS_DEFAULTS };
   }
+  if (VERIFY_GOTO) {
+    // Skip onboarding during verify screenshots (session-only, never saved).
+    s = { ...s, hasLaunched: true, onboardingDone: true };
+  }
+  return s;
 }
 
 // Sync the launch-at-login OS login item with the saved setting. The old toggle
@@ -958,13 +652,20 @@ const api: Record<string, unknown> = {
   getRecentIpcFailures: (): IpcFailure[] => recentFailures(ipcFailures),
   getIpcFailureSummary: () => failureSummary(ipcFailures),
 
-  // ── Settings ────────────────────────────────────────────────────────────
-  getSettings: async () => loadSettings(),
+  // ── Settings (R4: sqlite is the ONE store) ──────────────────────────────
+  getSettings: async () => loadSettingsFromBackend(),
+  // WRITE — the FULL object crosses in one vocabulary; nothing is curated, so
+  // nothing can be silently re-defaulted (the #113/#115 class ends here, not
+  // per-field). A rejected `settings_save` travels to the caller (R3-B): the
+  // debounced saver resolves `false` and the «Lagret ✓» chip stays honest.
   saveSettings: async (s: unknown) => {
-    const ok = saveSettingsLocal(s);
-    void syncBackendRecordingSettings(s); // push recording-critical subset to sqlite
-    void syncLaunchAtLogin(s); // register/remove the OS login item to match the toggle
-    return ok;
+    await invoke("settings_save", { settings: s });
+    // Wake the scheduler so new/changed slots take effect immediately
+    // (settings_save alone doesn't recompute the schedule).
+    void invoke("scheduler_reschedule").catch(() => {});
+    // Register/remove the OS login item to match the toggle.
+    void syncLaunchAtLogin(s);
+    return true;
   },
   // ── Schedule / next recording ───────────────────────────────────────────
   // scheduler_status → { next: ISO string | null }; old getNextRecording returns
@@ -1033,9 +734,8 @@ const api: Record<string, unknown> = {
     call("get_disk_space", undefined, { freeBytes: null, totalBytes: null }),
   // Recording: the old renderer builds a full (old-shape) RecordingOpts, but the
   // Rust recorder wants its own RecordingOpts. plan_recording_opts builds the
-  // correct one from the backend settings; we only forward customName/maxMinutes/
-  // video from the old opts. (Device/format come from the Rust DB settings, not
-  // the client-side localStorage settings — a known limit of the split.)
+  // correct one from the persisted settings (the same sqlite store the renderer
+  // reads/writes since R4); we only forward customName/maxMinutes/video here.
   startRecordingNow: async (opts: unknown) => {
     const o = (opts ?? {}) as {
       customName?: string;
@@ -1206,10 +906,11 @@ const api: Record<string, unknown> = {
   clearSmtpPassword: async () =>
     call<boolean>("email_clear_smtp_password", undefined, false),
 
-  // The keychain write path. Until now the SMTP password had nowhere to live:
-  // `saveSettingsLocal` strips it (it used to be persisted to localStorage in
-  // cleartext) and no command could store it, so it survived only until the tab
-  // was left. `email_set_smtp_password` puts it in the OS keychain; passing
+  // The keychain write path — the SMTP password's ONLY home (it is not a
+  // `Settings` field, so it can never ride a settings save into the store; the
+  // Electron-era cleartext copies were purged in E1.6 and the whole legacy blob
+  // is removed by the R4 migration). `email_set_smtp_password` puts it in the
+  // OS keychain; passing
   // undefined/"" clears it. Resolves true when a password is now stored.
   // NOT wrapped in `call`: a keychain write that fails must be visible to the
   // caller (it shows an error toast), not silently swallowed into `false`.
@@ -2521,13 +2222,20 @@ const api: Record<string, unknown> = {
 
 (window as any).api = api;
 
-// Seed the backend (sqlite) recording settings from localStorage ON BOOT, so a
-// fresh launch where the user records without re-saving still uses their saved
-// resolution/format/camera choices (not backend defaults). Best-effort.
-void syncBackendRecordingSettings(loadSettings());
-// Keep the OS login item in sync with the saved launch-at-login flag on boot
-// (re-registers if the OS dropped it; idempotent otherwise).
-void syncLaunchAtLogin(loadSettings());
+// Keep the OS login item in sync with the persisted launch-at-login flag on
+// boot (re-registers if the OS dropped it; idempotent otherwise). Reads the
+// backend store — a failed read syncs nothing rather than syncing a guess.
+// (The old boot-time settings_save "seed" is gone with the bridge: sqlite IS
+// the store now, so there is nothing to push at boot, only to read.)
+void (async () => {
+  try {
+    await settingsMigration;
+    const s = await invoke<Settings>("settings_get");
+    void syncLaunchAtLogin(s);
+  } catch {
+    /* no backend (browser tier) or broken store — nothing to sync */
+  }
+})();
 
 // ── Native drag-drop bridge ───────────────────────────────────────────────
 // Tauri intercepts OS file drags (dragDropEnabled defaults to true), so the

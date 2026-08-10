@@ -514,9 +514,6 @@ function setupSmtpCard(): void {
       emailSmtp:     hostVal,
       emailSmtpUser: userVal,
       emailSmtpFrom: fromVal,
-      // Runtime-only mirror (stripped before persistence) — the real password
-      // goes to the keychain just below.
-      emailSmtpPass: pass?.value ?? '',
       emailSmtpPort: +((document.getElementById('email-port') as HTMLInputElement | null)?.value ?? 587),
     })
     const ok = await window.api.saveSettings(settings).catch(() => false)
@@ -1114,7 +1111,7 @@ export function applyGeneralSettingsToUI(): void {
   setVal('email-user',    settings.emailSmtpUser  ?? '')
   setVal('email-from',    settings.emailSmtpFrom  ?? '')
   setVal('webhook-url',   settings.webhookUrl     ?? '')
-  setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarn)
+  setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarning)
   // The password never comes back from storage — the field starts empty and the
   // «lagret» state is read from the OS keychain, not from a settings flag. (It
   // used to read `settings.emailSmtpPassSet`, an Electron-era field the Tauri
@@ -1177,7 +1174,7 @@ function collectGeneralSettings(): void {
     emailOnError:      !!(document.getElementById('opt-email-error')  as HTMLInputElement | null)?.checked,
     emailAddress:      (document.getElementById('email-address')     as HTMLInputElement | null)?.value ?? '',
     webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
-    webhookOnWarn:     !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
+    webhookOnWarning:  !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     // Anything the select cannot produce is not a channel; the backend applies

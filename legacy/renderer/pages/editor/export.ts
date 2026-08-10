@@ -562,8 +562,8 @@ export async function runExport(): Promise<void> {
     // of a video exports the bare track — so sending a path either way only risks
     // failing the export on the backend's path guard for a file it then ignores.
     // The UI says so: `editor.jinglesVideoUnsupported`.
-    introPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorIntroPath : undefined,
-    outroPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorOutroPath : undefined,
+    introPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorIntroPath ?? undefined : undefined,
+    outroPath: (!E.isVideoFile && E.includeIntroOutro) ? settings.editorOutroPath ?? undefined : undefined,
     metadata:     E.meta,
     masterPreset: E.masterPreset,
     vocalChainPreset,
