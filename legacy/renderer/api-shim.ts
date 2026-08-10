@@ -462,7 +462,6 @@ const DEFAULT_SETTINGS: Record<string, unknown> = {
   preRollSeconds: 0,
   prerollEnabled: false,
   launchAtLogin: false,
-  showOnStartup: false,
   minimizeToTray: true,
   wakeFromSleep: true,
   protectRecording: true,
@@ -658,6 +657,15 @@ function backendRecordingSettings(s: Record<string, unknown>): Record<string, un
     // settings). Shapes match the Rust ScheduleSlot / SpecialRecording.
     slots: sanitizeSlots(s.slots),
     specialRecordings: sanitizeSpecials(s.specialRecordings),
+    // «Varsle når opptak starter/stopper» (R3-H). Read by the BACKEND
+    // scheduler's `should_notify` gate — while these were absent from the
+    // bridge, Rust's `#[serde(default = "default_true")]` re-defaulted them to
+    // `true` on every settings_save, so the toggles saved «Lagret ✓» and
+    // changed nothing (the same trap `filenamePattern`/`wakeFromSleep` fell
+    // into). Failure/error notifications are NOT governed by these — see
+    // scheduler/mod.rs::should_notify.
+    notifyStart: s.notifyStart ?? true,
+    notifyStop: s.notifyStop ?? true,
     // Editor video export: opt into the macOS VideoToolbox hardware encoder.
     // Read by `editor_export`; must be synced or Rust's `#[serde(default)]`
     // re-defaults it to `false` on every settings_save and the toggle never
@@ -2096,11 +2104,12 @@ const api: Record<string, unknown> = {
   },
   registerTrustedPath: async () => true,
 
-  // ── Gmail / YouTube ─────────────────────────────────────────────────────
-  gmailConnect: async () => okFalse,
-  gmailDisconnect: async () => true,
-  gmailStatus: async () => ({ connected: false }),
-  youtubeConnect: async () => okFalse,
+  // ── YouTube (stubs) ─────────────────────────────────────────────────────
+  // R3: gmailConnect/gmailDisconnect/gmailStatus/youtubeConnect deleted — R2's
+  // panel cleanup removed their last callers, and all four were permanent
+  // stubs (no Rust command behind them). youtubeStatus stays: the editor's
+  // publish flow still reads it. youtubeDisconnect/youtubeUpload are
+  // caller-less stubs too — left for R4's stub sweep.
   youtubeDisconnect: async () => true,
   youtubeStatus: async () => ({ connected: false }),
   youtubeUpload: async () => ({ ok: false }),

@@ -377,9 +377,6 @@ pub struct Settings {
     /// Launch the app at OS login?
     #[serde(default)]
     pub launch_at_login: bool,
-    /// Show the window on startup (vs starting in the tray)?
-    #[serde(default)]
-    pub show_on_startup: bool,
     /// Minimise to the system tray instead of quitting? Default true.
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
@@ -672,7 +669,6 @@ impl Default for Settings {
             reminder_minutes: 0,
 
             launch_at_login: false,
-            show_on_startup: false,
             minimize_to_tray: true,
             wake_from_sleep: true,
             protect_recording: true,
@@ -942,7 +938,6 @@ mod tests {
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
-        assert!(!s.show_on_startup);
         assert!(s.minimize_to_tray);
         assert!(s.wake_from_sleep);
         assert!(s.protect_recording);

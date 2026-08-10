@@ -86,6 +86,11 @@ describe("backendRecordingSettings ↔ Settings binding", () => {
       "inputVolume",
       "trimSilence",
       "launchAtLogin",
+      // R3-H: the scheduler's should_notify gate reads these two — absent from
+      // the bridge they re-defaulted to true on every save, which is why the
+      // toggles chirped «Lagret ✓» while changing nothing.
+      "notifyStart",
+      "notifyStop",
     ]) {
       expect(keys, `curated set lost ${k}`).toContain(k);
     }
