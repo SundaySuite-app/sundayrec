@@ -1,11 +1,19 @@
 //! Live cue-bridge consumer (Bridge Integration #2) — pure mapping (P2a).
 //!
+//! ⚠️ NATIVE HALF REMOVED (v0.14): the `src-tauri` WebSocket seam that owned
+//! the actual Supabase Realtime subscribe (`src-tauri/src/bridge_live/`, the
+//! `bridge_*` commands and the `bridge` cargo feature) was removed together
+//! with the Direkte page — it was NETWORK/INFRA-unverified, default-off, and
+//! nothing in the shipping app reached it. This PURE module stays because it
+//! is the tested, contract-mirroring half: the channel-name derivation and the
+//! event→chapter fold are exactly what a future consumer (Rec or another
+//! Sunday app) needs, and deleting a verified contract mirror to save dead
+//! bytes would just force someone to re-derive it against Stage's emitter.
+//!
 //! SundayStage publishes "what is on the stage right now" over a Supabase
-//! Realtime channel (`church:{churchId}:service:{serviceId}`); SundayRec
-//! SUBSCRIBES so the running recording gains live chapter markers and tracks the
-//! service's live/ended state. The actual Realtime subscribe is a NETWORK/INFRA
-//! seam the `src-tauri` shell owns (behind the default-off `bridge` feature);
-//! THIS module is the pure, deterministic mapping:
+//! Realtime channel (`church:{churchId}:service:{serviceId}`); a subscriber
+//! can fold that feed into live chapter markers and the service's live/ended
+//! state. THIS module is the pure, deterministic mapping:
 //!   - [`live_channel_name`] — the channel-name derivation (matches the
 //!     canonical `liveChannel` and Stage's `liveEmitter.ts`),
 //!   - [`LiveEvent`] — the mirrored event union,

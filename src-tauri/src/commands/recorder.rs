@@ -14,7 +14,7 @@
 //! ordering is the whole feature:
 //!
 //! ```text
-//!   preview.stop_and_release()  ‖  preroll harvest     (concurrent: camera vs mic)
+//!   preroll harvest                                    (frees the mic)
 //!         → preroll.stop()                             (the leak guard)
 //!         → vu.stop()                                  (the last other owner)
 //!         → 400 ms settle                              (WebKit tears down async)
@@ -22,15 +22,16 @@
 //! ```
 //!
 //! Every arrow is rig-verified and every one of them was, at some point, a bug:
-//! the camera held by the preview so video silently failed; the rolling pre-roll
-//! ffmpeg keeping the mic for a whole VIDEO session; the Qu-5 refusing to open
-//! because WebKit still had the device in a 2-channel format (2026-07-31).
+//! the rolling pre-roll ffmpeg keeping the mic for a whole VIDEO session; the
+//! Qu-5 refusing to open because WebKit still had the device in a 2-channel
+//! format (2026-07-31). (Until v0.14 the diagram had one more concurrent arrow:
+//! releasing the idle camera-preview engine, which died with the Direkte page.)
 //!
 //! Until now that ordering lived only as a comment, because a `#[tauri::command]`
-//! taking five `State<'_, …>` handles cannot be called from a test — nothing in
-//! the repo invokes a command at all. So the body moved into
+//! taking several `State<'_, …>` handles cannot be called from a test — nothing
+//! in the repo invokes a command at all. So the body moved into
 //! [`start_recording_impl`], generic over [`StartRecordingDeps`]: the command is
-//! now a shim that pulls the five engines out of managed state, and the sequence
+//! now a shim that pulls the engines out of managed state, and the sequence
 //! is asserted against a recording mock in this module's tests.
 //!
 //! ### The rule for the ~16 command files still to do
@@ -204,11 +205,6 @@ pub trait StartRecordingDeps {
     /// Is the rolling pre-roll buffer running right now?
     fn preroll_is_active(&self) -> bool;
 
-    /// Release the camera preview and WAIT for it: on macOS a camera has a single
-    /// owner, and while the Home preview's ffmpeg child still holds it the
-    /// recorder's avfoundation video input can't open it and video silently fails.
-    fn release_preview(&self) -> impl std::future::Future<Output = ()> + Send;
-
     /// Harvest the trimmed clip of audio captured BEFORE this press (F3.2). Also
     /// frees the mic. `None` when nothing was captured.
     fn harvest_preroll(
@@ -244,24 +240,19 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
     opts: RecordingOpts,
 ) -> AppResult<()> {
     let pre_roll_seconds = deps.load_pre_roll_seconds().await?;
-    // Decided up front rather than inside the harvest future. Equivalent — the
-    // preview release touches the CAMERA and cannot change whether the pre-roll
-    // loop is running — and it makes the decision a value a test can assert.
+    // Decided up front so the decision is a value a test can assert.
     let plan = plan_preroll_harvest(pre_roll_seconds, deps.preroll_is_active(), &opts);
 
-    // Two independent device hand-offs must finish before the engine opens its
-    // devices: (1) release the camera preview, and (2) harvest the pre-roll clip
-    // (which also frees the mic). They touch DIFFERENT devices (camera vs mic), so
-    // we run them CONCURRENTLY instead of back-to-back — when both apply (video +
-    // pre-roll + a live preview), this shaves off roughly the smaller of the two
-    // waits from the felt start time.
-    let harvest = async {
-        match plan {
-            Some(plan) => deps.harvest_preroll(plan).await,
-            None => None,
-        }
+    // The mic hand-off must finish before the engine opens its devices: harvest
+    // the pre-roll clip (which also frees the mic). (Until v0.14 a second,
+    // concurrent hand-off released the idle camera-preview engine here; that
+    // engine died with the Direkte page — the webview never owns the camera
+    // during a start, and the in-recording preview is the recorder's own file
+    // sink.)
+    let clip = match plan {
+        Some(plan) => deps.harvest_preroll(plan).await,
+        None => None,
     };
-    let (_, clip) = tokio::join!(deps.release_preview(), harvest);
 
     // LEAK GUARD (2026-07-31 audit): the harvest above only STOPS the rolling
     // pre-roll capture on the audio-only path. For a VIDEO session (or pre-roll
@@ -286,7 +277,7 @@ pub async fn start_recording_impl<D: StartRecordingDeps + Sync>(
     started
 }
 
-/// The real [`StartRecordingDeps`]: the five managed engines + the pool, borrowed
+/// The real [`StartRecordingDeps`]: the managed engines + the pool, borrowed
 /// out of the command's `State` handles. Holds no logic of its own — every method
 /// is one call — which is the point: everything that could be wrong is now in
 /// [`start_recording_impl`], where it is tested.
@@ -294,7 +285,6 @@ struct TauriStartDeps<'a> {
     app: AppHandle,
     engine: &'a RecorderEngine,
     preroll: &'a PrerollEngine,
-    preview: &'a crate::media::preview::PreviewEngine,
     vu: &'a crate::audio::vu::VuEngine,
     pool: sqlx::SqlitePool,
 }
@@ -306,10 +296,6 @@ impl StartRecordingDeps for TauriStartDeps<'_> {
 
     fn preroll_is_active(&self) -> bool {
         self.preroll.is_active()
-    }
-
-    async fn release_preview(&self) {
-        self.preview.stop_and_release().await
     }
 
     async fn harvest_preroll(&self, plan: HarvestPlan) -> Option<PrerollClip> {
@@ -359,7 +345,6 @@ pub async fn start_recording(
     app: AppHandle,
     engine: State<'_, RecorderEngine>,
     preroll: State<'_, PrerollEngine>,
-    preview: State<'_, crate::media::preview::PreviewEngine>,
     vu: State<'_, crate::audio::vu::VuEngine>,
     db: State<'_, Db>,
     opts: RecordingOpts,
@@ -368,7 +353,6 @@ pub async fn start_recording(
         app,
         engine: &engine,
         preroll: &preroll,
-        preview: &preview,
         vu: &vu,
         pool: db.pool.clone(),
     };
@@ -688,8 +672,6 @@ mod tests {
     #[derive(Debug, Clone, PartialEq)]
     enum Step {
         LoadSettings,
-        ReleasePreviewStart,
-        ReleasePreviewEnd,
         HarvestStart(HarvestPlan),
         HarvestEnd,
         StopPreroll,
@@ -708,10 +690,6 @@ mod tests {
         preroll_active: bool,
         clip: Option<PrerollClip>,
         engine_fails: bool,
-        /// When set, `release_preview` blocks until `harvest_preroll` fires the
-        /// other half. A sequential implementation would deadlock on it.
-        preview_gate_rx: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
-        preview_gate_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     }
 
     impl MockDeps {
@@ -723,18 +701,7 @@ mod tests {
                 preroll_active: false,
                 clip: None,
                 engine_fails: false,
-                preview_gate_rx: Mutex::new(None),
-                preview_gate_tx: Mutex::new(None),
             }
-        }
-
-        /// Make the preview release wait for the harvest, so only a genuinely
-        /// CONCURRENT implementation can finish.
-        fn with_concurrency_handshake(mut self) -> Self {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            self.preview_gate_rx = Mutex::new(Some(rx));
-            self.preview_gate_tx = Mutex::new(Some(tx));
-            self
         }
 
         fn push(&self, step: Step) {
@@ -770,21 +737,8 @@ mod tests {
             self.preroll_active
         }
 
-        async fn release_preview(&self) {
-            self.push(Step::ReleasePreviewStart);
-            let gate = self.preview_gate_rx.lock().unwrap().take();
-            if let Some(rx) = gate {
-                let _ = rx.await;
-            }
-            self.push(Step::ReleasePreviewEnd);
-        }
-
         async fn harvest_preroll(&self, plan: HarvestPlan) -> Option<PrerollClip> {
             self.push(Step::HarvestStart(plan));
-            let gate = self.preview_gate_tx.lock().unwrap().take();
-            if let Some(tx) = gate {
-                let _ = tx.send(());
-            }
             tokio::task::yield_now().await;
             self.push(Step::HarvestEnd);
             self.clip.clone()
@@ -823,12 +777,12 @@ mod tests {
     }
 
     /// Run the impl under a deadline, so a choreography that never completes
-    /// (the sequential-instead-of-concurrent regression) fails loudly instead of
-    /// hanging the suite. Time is paused, so the deadline costs no wall clock.
+    /// fails loudly instead of hanging the suite. Time is paused, so the
+    /// deadline costs no wall clock.
     async fn run(deps: &MockDeps, o: RecordingOpts) -> AppResult<()> {
         tokio::time::timeout(Duration::from_secs(30), start_recording_impl(deps, o))
             .await
-            .expect("start_recording_impl did not finish — the two hand-offs are not concurrent")
+            .expect("start_recording_impl did not finish")
     }
 
     #[tokio::test(start_paused = true)]
@@ -842,40 +796,26 @@ mod tests {
                 start_offset_ms: 0,
             }),
             ..MockDeps::new()
-        }
-        .with_concurrency_handshake();
+        };
 
         run(&deps, opts()).await.expect("start should succeed");
 
         // 1. Settings first — the harvest plan depends on them.
         assert_eq!(deps.steps().first(), Some(&Step::LoadSettings));
 
-        // 2. The camera release and the mic harvest run CONCURRENTLY. Enforced
-        //    structurally: the mock's preview release blocks until the harvest
-        //    signals it, so a back-to-back implementation cannot reach here at
-        //    all — it deadlocks and `run` times out. The assertions then just
-        //    confirm both actually started before either finished.
-        let preview_start = deps.at(&Step::ReleasePreviewStart);
-        let preview_end = deps.at(&Step::ReleasePreviewEnd);
+        // 2. The mic harvest runs to completion before anything else touches
+        //    the device.
         let harvest_start = deps
             .steps()
             .iter()
             .position(|s| matches!(s, Step::HarvestStart(_)))
             .expect("the harvest never ran");
         let harvest_end = deps.at(&Step::HarvestEnd);
-        assert!(
-            harvest_start < preview_end,
-            "harvest must start before the preview release finishes"
-        );
-        assert!(
-            preview_start < harvest_end,
-            "the preview release must start before the harvest finishes"
-        );
+        assert!(harvest_start < harvest_end);
 
-        // 3. THEN the leak guard, and only after BOTH hand-offs are done: a
+        // 3. THEN the leak guard, only after the hand-off is done: a
         //    `preroll.stop()` racing the harvest would cut the clip short.
         let stop_preroll = deps.at(&Step::StopPreroll);
-        assert!(stop_preroll > preview_end);
         assert!(stop_preroll > harvest_end);
 
         // 4. The VU engine is the last other owner of the mic; it lets go after
@@ -953,7 +893,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn every_release_still_happens_when_nothing_is_running() {
-        // The boring path: no preview, no pre-roll, no meters. The releases are
+        // The boring path: no pre-roll, no meters. The releases are
         // unconditional on purpose — they are cheap, and "I thought it wasn't
         // running" is how the device ends up with two owners.
         let deps = MockDeps::new();
@@ -962,8 +902,6 @@ mod tests {
             deps.steps(),
             vec![
                 Step::LoadSettings,
-                Step::ReleasePreviewStart,
-                Step::ReleasePreviewEnd,
                 Step::StopPreroll,
                 Step::StopVu,
                 Step::Settle(DEVICE_SETTLE),

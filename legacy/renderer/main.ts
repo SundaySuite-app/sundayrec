@@ -24,7 +24,6 @@ import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
 import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
 import { setupIntegrationsPage } from './pages/integrations-page'
-import { setupLivePage, deactivateLivePage, reactivateLivePage } from './pages/live-page'
 import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
@@ -264,22 +263,6 @@ declare global {
       podcastFeedStatus:   () => Promise<{ featureBuilt: boolean; episodeCount: number } | null>
       registerTrustedPath: (filePath: string) => Promise<boolean>
 
-      // Mirrors the Rust `StreamStatus` (src-tauri/src/streaming/mod.rs) — which
-      // is where the destinations shape came from, and where it never matched:
-      // this said `{ id, state }` while the backend has always sent `{ name, ok }`,
-      // so the live page assigned `undefined` to every destination dot on every
-      // event and no dot ever moved. Two fields were missing outright, too.
-      streamStatus:       () => Promise<{ active: boolean; startedAt: number | null; bitrateKbps: number; fps: number; dropped: number; lastLine: string; destinations: Array<{ name: string; ok: boolean }>; targetBitrateKbps: number; bitrateStep: number }>
-      streamStart:        (params: { resolution?: string; framerate?: number; videoBitrateKbps?: number; destinations: Array<{ id: string; name: string; rtmpUrl: string; enabled: boolean; hasKey?: boolean }>; overlays?: unknown[]; alsoRecord?: boolean }) => Promise<{ ok: boolean; error?: string }>
-      streamStop:         () => Promise<boolean>
-      streamPreviewPath:  () => Promise<string>
-      streamSetKey:       (destId: string, key: string) => Promise<{ ok: boolean; error?: string }>
-      streamDeleteKey:    (destId: string) => Promise<boolean>
-
-      overlayListScreens:    () => Promise<Array<{ id: string; label: string; bounds: { x: number; y: number; w: number; h: number }; isPrimary: boolean }>>
-      overlayListNdiSources: () => Promise<{ available: boolean; reason?: string; sources: Array<{ name: string; url: string }> }>
-      overlayPickImage:      () => Promise<{ path: string; name: string } | null>
-
       /** Every transcribed recording's sidecar. `basePath` is the recording path
        *  with its media extension stripped — the join key against `baseNoExt(row.path)`. */
       transcriptListAll:       () => Promise<Array<{ basePath: string; transcript: import('../types').TranscriptData }>>
@@ -311,8 +294,6 @@ declare global {
       reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
-      videoPreviewStart: (opts: unknown) => Promise<boolean>
-      videoPreviewStop:  () => Promise<void>
       recordingPreviewFrame: () => Promise<string | null>
       editorLoadRecording:     (filePath: string) => Promise<{ durationSec: number; hasVideo: boolean; hasAudio: boolean; channels: number | null; sampleFmt: string | null; sampleRate: number | null } | null>
       editorAllowAssetPath:    (filePath: string) => Promise<boolean>
@@ -451,7 +432,6 @@ async function applyAllSettingsToUI(s: Settings): Promise<void> {
 function showPage(id: string): void {
   if (id !== 'home') { stopVU(); stopVideoPreview(); deactivateHome() }
   if (id !== 'editor') deactivateEditor()
-  if (id !== 'live') deactivateLivePage()
   if (id !== 'settings') stopChannelGrid()
 
   const outgoing = document.querySelector<HTMLElement>('.page.active')
@@ -471,7 +451,6 @@ function showPage(id: string): void {
     if (id === 'home')     refreshHome()
     if (id === 'schedule') renderCalendar()
     if (id === 'editor')   reactivateEditor()
-    if (id === 'live')     reactivateLivePage()
     if (id === 'search')   activateSearchPage()
     if (id === 'settings') {
       const activeTab = document.querySelector<HTMLElement>('#settings-tabs .inner-tab.active')?.dataset.tab
@@ -605,7 +584,6 @@ async function init(): Promise<void> {
   setupEditorPage()
   setupPublishPage()
   void setupIntegrationsPage()
-  setupLivePage()
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()

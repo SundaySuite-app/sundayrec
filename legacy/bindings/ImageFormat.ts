@@ -3,10 +3,9 @@
 /**
  * The image formats the cover-art panels accept.
  *
- * GIF is deliberately absent. It is in the renderer's generic image-picker
- * extension list (shared with the overlay picker, where an animated logo makes
- * sense), but an animated cover image is not something Apple Podcasts, Spotify
- * or any RSS consumer will take, so the thumbnail path must not quietly accept
- * one and produce a broken feed later.
+ * GIF is deliberately absent: an animated cover image is not something Apple
+ * Podcasts, Spotify or any RSS consumer will take, so the thumbnail path must
+ * not quietly accept one and produce a broken feed later — whatever extension
+ * list a picker happens to offer.
  */
 export type ImageFormat = "jpeg" | "png" | "webp";

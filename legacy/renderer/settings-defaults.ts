@@ -124,13 +124,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   editorOutroPath: null,
   editorHwEncode: false,
 
-  // Live streaming
-  streamDestinations: [],
-  streamResolution: "720p",
-  streamFramerate: 30,
-  streamVideoBitrate: null,
-  streamOverlays: [],
-
   // Cloud backup preferences
   cloudGoogleDrive: null,
   cloudDropbox: null,

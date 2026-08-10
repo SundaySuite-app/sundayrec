@@ -45,14 +45,12 @@ async function runStageImport(): Promise<void> {
   const manifestJson = await pickManifestText()
   if (manifestJson === null) return
 
-  // Sjekk om SundayRec faktisk streamet (settings.streamDestinations) →
-  // sendes som was_streamed til stage_import_apply.
-  const settings = await window.api.getSettings()
-  const isStreaming = !!(settings as { streamDestinations?: unknown[] }).streamDestinations?.length
-
+  // was_streamed er alltid false siden v0.14: SundayRec er et opptaksprogram
+  // og har ingen strømme-funksjon lenger (feltet består i stage_import_apply
+  // for kontraktens skyld).
   if (btn) { btn.textContent = '…'; (btn as HTMLButtonElement).disabled = true }
   try {
-    const res = await window.api.stageImport(E.filePath, manifestJson, isStreaming)
+    const res = await window.api.stageImport(E.filePath, manifestJson, false)
     if (res.ok) {
       // Refresh metadata in the editor — re-read the sidecar just written.
       const meta = await window.api.editorReadMeta?.(E.filePath) as { chapters?: unknown[] } | null

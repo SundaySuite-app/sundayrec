@@ -16,17 +16,20 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 
 Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
 finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
-chapters, export), whisper transcription, live RTMP streaming with overlays,
+chapters, export), whisper transcription,
 cloud backup + podcast publishing, OS wake-from-sleep scheduling, and a
 menubar/tray. Most of that is in the **default** build; only the subsystems
 that need an absent SDK or an owner decision are behind default-off cargo
-features (see Architecture below).
+features (see Architecture below). SundayRec is deliberately a RECORDING app:
+live streaming (the old Direkte page, RTMP/NDI/overlays) was removed in v0.14 —
+churches that stream have OBS and friends; this app's job is the take that
+survives the Sunday.
 
 ## Architecture
 
 - **`crates/sundayrec-core`** — the pure domain core: GUI-free, Tauri-free,
   fs/network-free, clock injected by the caller. Every recorder/editor/
-  streaming/whisper/publish _decision_ lives here and is unit-tested
+  whisper/publish _decision_ lives here and is unit-tested
   (~1420 tests as of v0.12.0; the `src-tauri` shell carries a further ~730).
   Ported knowledge from the Electron app (hardened ffmpeg
   arguments, device parsers, error classification, silence/watchdog logic) —
@@ -35,8 +38,8 @@ features (see Architecture below).
   keyring, SQLite (sqlx), tracing. Impure paths that need a device/network/GUI
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
   `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
-  `editor`, `whisper`, `tray`, `updater`, `email`, `streaming`. Default-OFF and
-  opt-in: `publish`, `ndi`, `bridge`, `asio`, `vad`. `src-tauri/Cargo.toml`'s
+  `editor`, `whisper`, `tray`, `updater`, `email`. Default-OFF and
+  opt-in: `publish`, `asio`, `vad`. `src-tauri/Cargo.toml`'s
   `[features]` block is the authority — it explains why each one sits where it
   does.
 - **`legacy/`** — the shipping frontend: the ported Electron vanilla-TS
@@ -120,3 +123,12 @@ activates once the `MAC_CERTS`/`MAC_CERTS_PASSWORD` secrets exist;
 **notarization does not** — its env lines are commented out in `release.yml`
 pending Apple's Program License Agreement, so re-enabling it is a source edit.
 See `docs/RELEASE-CHECKLIST.md` §2/§2a.
+
+## Lisens
+
+SundayRec er lisensiert under [MIT-lisensen](LICENSE).
+
+De medfølgende `ffmpeg`/`ffprobe`-sidecar-binærene er GPL-bygg fra tredjepart
+(lastet ned og sjekksum-verifisert av `scripts/fetch-ffmpeg.mjs`). De kjøres
+som SEPARATE prosesser og lenkes ikke inn i appen, så appens egen kode kan
+være MIT; binærenes egen lisens følger binærene.

@@ -2,11 +2,10 @@
  * feature-gate-core — deciding what a section is allowed to claim.
  *
  * SundayRec ships several panels whose backend is not in this build: cloud
- * backup needs an OAuth client id that is not compiled in, e-mail sending is
- * behind a default-off cargo feature, thumbnails have no Rust side at all, and
- * the live-stats emitter was never written. Until tonight those panels looked
+ * backup needs an OAuth client id that is not compiled in, and e-mail sending
+ * is behind a default-off cargo feature. Until tonight those panels looked
  * exactly like working ones — a «Koble til» button that fails, a «Send test»
- * that reports a failure it invented, a statistics grid frozen at 0.
+ * that reports a failure it invented.
  *
  * A volunteer cannot tell "you configured this wrong" from "this does not exist
  * yet", and will spend a Saturday evening trying. So each such section states
@@ -146,27 +145,5 @@ export function emailBlockReason(facts: EmailFacts, hasRecipient: boolean): Emai
   if (!facts.featureBuilt) return 'noFeature'
   if (!hasEmailTransport(facts)) return 'noTransport'
   if (!hasRecipient) return 'noRecipient'
-  return null
-}
-
-/**
- * Why the live START button is disabled. The button knew; it just never said.
- * Returns null when it is enabled.
- */
-export type LiveBlockReason = 'noDestinations' | 'noEnabled' | 'noKey' | null
-
-export interface LiveDestinationFacts {
-  /** Destination exists in settings. */
-  total: number
-  /** Enabled for this session. */
-  enabled: number
-  /** Enabled AND holding a stream key. */
-  ready: number
-}
-
-export function liveBlockReason(facts: LiveDestinationFacts): LiveBlockReason {
-  if (facts.total === 0) return 'noDestinations'
-  if (facts.enabled === 0) return 'noEnabled'
-  if (facts.ready === 0) return 'noKey'
   return null
 }

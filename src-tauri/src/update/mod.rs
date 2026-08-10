@@ -377,7 +377,6 @@ pub fn relaunch(app: &AppHandle) -> AppResult<()> {
     relaunch_log(app, "single-instance lock destroyed");
     app.state::<crate::recorder::engine::RecorderEngine>()
         .stop();
-    app.state::<crate::media::preview::PreviewEngine>().stop();
     app.state::<crate::audio::vu::VuEngine>().stop();
     relaunch_log(app, "engines stopped");
 

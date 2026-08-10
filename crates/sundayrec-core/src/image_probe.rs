@@ -15,7 +15,8 @@
 //!   - **JPEG** — no fixed header: the dimensions live in a Start-Of-Frame
 //!     segment somewhere after an arbitrary run of APPn/COM/DQT segments, so the
 //!     marker chain has to be walked. That walk already exists, proven, in
-//!     [`crate::mjpeg::read_jpeg_dimensions`] (it feeds the live camera preview);
+//!     [`crate::mjpeg::read_jpeg_dimensions`] (the in-recording preview's JPEG
+//!     frames go through the same walk);
 //!     this module only adds the magic-number check it deliberately omits, since
 //!     a lone SOF-shaped byte pair can occur in any file.
 //!   - **WebP** — a RIFF container with three different frame headers depending
@@ -34,11 +35,10 @@ use ts_rs::TS;
 
 /// The image formats the cover-art panels accept.
 ///
-/// GIF is deliberately absent. It is in the renderer's generic image-picker
-/// extension list (shared with the overlay picker, where an animated logo makes
-/// sense), but an animated cover image is not something Apple Podcasts, Spotify
-/// or any RSS consumer will take, so the thumbnail path must not quietly accept
-/// one and produce a broken feed later.
+/// GIF is deliberately absent: an animated cover image is not something Apple
+/// Podcasts, Spotify or any RSS consumer will take, so the thumbnail path must
+/// not quietly accept one and produce a broken feed later — whatever extension
+/// list a picker happens to offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/lib/bindings/ImageFormat.ts")]
 #[serde(rename_all = "lowercase")]
@@ -379,9 +379,9 @@ mod tests {
     }
 
     #[test]
-    fn a_gif_is_refused_even_though_the_picker_lists_the_extension() {
-        // GIF89a header. The shared image picker offers .gif for overlays; a
-        // cover image must not accept one, or the podcast feed breaks later.
+    fn a_gif_is_refused_even_though_a_picker_may_list_the_extension() {
+        // GIF89a header. Whatever a file picker offers, a cover image must not
+        // accept a GIF, or the podcast feed breaks later.
         let mut gif = b"GIF89a".to_vec();
         gif.extend_from_slice(&[0x90, 0x01, 0x2c, 0x01, 0x00, 0x00, 0x00]);
         assert!(probe_image(&gif).is_none());

@@ -2,9 +2,9 @@
 //! the `keyring` crate — NEVER plaintext files. Replaces Electron's
 //! `safeStorage`.
 //!
-//! OAuth tokens (Drive/YouTube/Gmail) and stream keys are written here in later
-//! phases (6/7); Phase 0 establishes the seam and the resolution precedence so
-//! the rest of the app has one place to reach for a credential.
+//! OAuth tokens (Drive/Gmail) and the SMTP password are written here; Phase 0
+//! established the seam and the resolution precedence so the rest of the app
+//! has one place to reach for a credential.
 
 use keyring::Entry;
 
@@ -25,7 +25,15 @@ pub enum SecretProvider {
     YouTube,
     /// Gmail OAuth refresh token (notification mailer).
     Gmail,
-    /// RTMP stream key (live streaming).
+    /// HISTORICAL — the RTMP stream-key slot from the removed live-streaming
+    /// feature (v0.14). Nothing writes it any more, but the variant stays so
+    /// (a) the account string remains a documented part of the storage
+    /// contract and (b) `all()`-driven sweeps can still DELETE a key an older
+    /// install left in the keychain. Per-destination keys
+    /// (`stream.key.{destId}`) are orphaned by design: their ids lived only in
+    /// the retired `streamDestinations` setting, keyring cannot enumerate
+    /// accounts, and a startup cleanup could block launch on a locked-keychain
+    /// authorization prompt — the keys are inert in the user's own keychain.
     StreamKey,
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
@@ -92,51 +100,6 @@ pub fn has(provider: SecretProvider) -> bool {
 /// Delete a provider's secret. A missing entry is success, not an error.
 pub fn delete(provider: SecretProvider) -> AppResult<()> {
     match entry(provider)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(AppError::Internal(format!("keychain delete: {e}"))),
-    }
-}
-
-// ── Per-destination stream keys (R3) ──────────────────────────────────────────
-//
-// Live streaming pushes to MANY destinations, each with its own key — the single
-// [`SecretProvider::StreamKey`] slot isn't enough. We namespace each destination
-// under its own keychain account derived from the destination id. Mirrors the
-// Electron `stream-keys.ts` per-`destId` store, but in the OS keychain (never a
-// plaintext JSON file).
-
-/// The keychain account for a destination's stream key. Pure so the namespacing
-/// (and the fact that ids are kept distinct from the OAuth accounts above) is
-/// unit-tested without a real keychain.
-fn stream_key_account(dest_id: &str) -> String {
-    format!("stream.key.{dest_id}")
-}
-
-fn stream_key_entry(dest_id: &str) -> AppResult<Entry> {
-    Entry::new(SERVICE, &stream_key_account(dest_id))
-        .map_err(|e| AppError::Internal(format!("keychain entry: {e}")))
-}
-
-/// Store (or replace) a destination's stream key.
-pub fn set_stream_key(dest_id: &str, key: &str) -> AppResult<()> {
-    stream_key_entry(dest_id)?
-        .set_password(key)
-        .map_err(|e| AppError::Internal(format!("keychain set: {e}")))
-}
-
-/// Read a destination's stream key, or `None` when unset/unreadable.
-pub fn get_stream_key(dest_id: &str) -> Option<String> {
-    stream_key_entry(dest_id).ok()?.get_password().ok()
-}
-
-/// Whether a destination has a stored stream key (drives the UI's "saved" badge).
-pub fn has_stream_key(dest_id: &str) -> bool {
-    get_stream_key(dest_id).is_some()
-}
-
-/// Delete a destination's stream key. A missing entry is success.
-pub fn delete_stream_key(dest_id: &str) -> AppResult<()> {
-    match stream_key_entry(dest_id)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(AppError::Internal(format!("keychain delete: {e}"))),
     }
@@ -217,41 +180,6 @@ mod tests {
     }
 
     #[test]
-    fn stream_key_accounts_are_namespaced_and_distinct_from_oauth() {
-        assert_eq!(stream_key_account("yt"), "stream.key.yt");
-        assert_ne!(stream_key_account("a"), stream_key_account("b"));
-        // Must not collide with the single OAuth StreamKey slot's account.
-        assert_ne!(stream_key_account("x"), SecretProvider::StreamKey.account());
-    }
-
-    // Tolerant: exercise the REAL keychain for a per-destination key when one is
-    // reachable, otherwise skip so headless CI stays green.
-    #[test]
-    fn real_stream_key_round_trip_or_skip() {
-        if !keychain_test_opted_in() {
-            return;
-        }
-        let id = "sundayrec-test-dest";
-        let sentinel = "stream-key-sentinel-1234";
-        match set_stream_key(id, sentinel) {
-            // Some headless backends (e.g. the GitHub Linux runner) accept the
-            // write but don't persist it, so the read won't round-trip. Only
-            // assert the full cycle when the value actually comes back; otherwise
-            // treat it as "no functional keychain" and skip (best-effort cleanup).
-            Ok(()) if get_stream_key(id).as_deref() == Some(sentinel) => {
-                assert!(has_stream_key(id));
-                delete_stream_key(id).expect("delete should succeed");
-                assert!(!has_stream_key(id));
-            }
-            Ok(()) => {
-                let _ = delete_stream_key(id);
-                eprintln!("SKIP: keychain write did not round-trip in this environment");
-            }
-            Err(e) => eprintln!("SKIP: no reachable keychain: {e}"),
-        }
-    }
-
-    #[test]
     fn provider_accounts_are_distinct() {
         let mut accounts: Vec<&str> = SecretProvider::all().iter().map(|p| p.account()).collect();
         let count = accounts.len();
@@ -262,7 +190,10 @@ mod tests {
 
     // Tolerant integration test: exercises the REAL keychain when one is
     // reachable, otherwise skips so the gate stays green in headless CI. Uses
-    // the StreamKey slot with a sentinel value it always cleans up.
+    // the historical StreamKey slot with a sentinel value it always cleans up —
+    // deliberately: it is the ONE provider nothing real writes any more, so the
+    // test's delete can never destroy a credential an install depends on
+    // (SmtpPassword/GoogleDrive/… are live slots).
     #[test]
     fn real_keychain_round_trip_or_skip() {
         if !keychain_test_opted_in() {
@@ -271,8 +202,8 @@ mod tests {
         let provider = SecretProvider::StreamKey;
         let sentinel = "sundayrec-test-sentinel-value";
         match set(provider, sentinel) {
-            // See `real_stream_key_round_trip_or_skip`: a write that succeeds but
-            // doesn't read back (headless CI keychain) is a skip, not a failure.
+            // A write that succeeds but doesn't read back (headless CI
+            // keychain) is a skip, not a failure.
             Ok(()) if get(provider).as_deref() == Some(sentinel) => {
                 assert!(has(provider));
                 delete(provider).expect("delete should succeed");

@@ -24,7 +24,6 @@ import type { ScheduleSlot } from '../bindings/ScheduleSlot'
 import type { SpecialRecording } from '../bindings/SpecialRecording'
 import type { PodcastSettings } from '../bindings/PodcastSettings'
 import type { CloudServicePrefs } from '../bindings/CloudServicePrefs'
-import type { StreamDestinationStored } from '../bindings/StreamDestinationStored'
 export type {
   ChannelMode,
   FileFormat,
@@ -34,7 +33,6 @@ export type {
   SpecialRecording,
   PodcastSettings,
   CloudServicePrefs,
-  StreamDestinationStored,
   EpisodePrepStatus,
   PrepAnalysisSegment,
   EditorSegment,
@@ -133,94 +131,12 @@ export interface ReviewQueueEntry {
  * The settings model (R4): THE generated binding, one vocabulary end to end —
  * `crates/sundayrec-core/src/settings.rs` is the source, sqlite is the store,
  * and a Rust field rename/removal is a tsc error on every consumer here.
- *
- * The single override: `streamOverlays`. The backend persists overlays as
- * opaque JSON (their vocabulary — type/source/chroma-key/crop — is
- * renderer-owned and differs from the ffmpeg builder's `OverlayConfig` on the
- * Rust side), so the generated type says `Array<unknown>` and the renderer
- * narrows it to its own `OverlayConfig[]` here.
  */
-export type Settings = Omit<SettingsGen, 'streamOverlays'> & {
-  streamOverlays: OverlayConfig[]
-}
+export type Settings = SettingsGen
 
 /** Back-compat alias — the generated `CloudServicePrefs` is the same shape the
  *  old hand-written `CloudServiceSettings` described (tokens live elsewhere). */
 export type CloudServiceSettings = CloudServicePrefs
-
-/**
- * Overlay placement preset. 9-grid + fullscreen + free positioning.
- * Coordinates resolve to ffmpeg overlay X:Y expressions based on output WxH.
- */
-export type OverlayPosition =
-  | 'tl' | 'tc' | 'tr'
-  | 'cl' | 'c'  | 'cr'
-  | 'bl' | 'bc' | 'br'
-  | 'fullscreen'
-  | 'custom'
-
-/**
- * What kind of source feeds this overlay:
- *  - image:  static PNG/JPG on disk (logo, lower-third graphic)
- *  - screen: whole monitor capture (avfoundation/gdigrab)
- *  - window: monitor capture with crop region (used to approximate a single
- *            EasyWorship/ProPresenter window when running on the same machine)
- *  - ndi:    NDI network source — implementation lands in a follow-up release;
- *            field is reserved so settings persist across the upgrade.
- */
-export type OverlaySourceType = 'image' | 'screen' | 'window' | 'ndi'
-
-export interface OverlayChromaKey {
-  /** Hex color e.g. "#00FF00" — typically the solid background EW outputs. */
-  color:      string
-  /** 0..1 — how close a pixel must be to `color` to be keyed (default 0.10). */
-  similarity: number
-  /** 0..1 — soft edge blend (default 0.10). */
-  blend:      number
-}
-
-export interface OverlayCrop {
-  /** All values are fractions of the SOURCE input dimensions (0..1). */
-  x: number; y: number; w: number; h: number
-}
-
-export interface OverlayConfig {
-  /** Stable id used to key UI controls and persisted settings. */
-  id:      string
-  /** User-facing label (e.g. "Logo", "Lyrics fra EasyWorship"). */
-  name:    string
-  /** Master on/off — when false the overlay is skipped in the filter graph. */
-  enabled: boolean
-
-  type: OverlaySourceType
-  /** For type=image: absolute path. For type=screen/window: capture id
-   *  ('1', 'screen:0:0' on Mac, 'desktop' or display index on Win). For
-   *  type=ndi: NDI source name as discovered on the network. */
-  source: string
-
-  /** Placement preset. */
-  position: OverlayPosition
-  /** Only used when position='custom' — fraction of output WxH (0..1). */
-  customX?: number
-  customY?: number
-
-  /** Overlay width as fraction of output width (0..1). Height auto-scales
-   *  preserving aspect. For fullscreen this is forced to 1.0. */
-  scale: number
-  /** 0..1 — final opacity after chroma key. */
-  opacity: number
-
-  /** Chroma key (set null/undefined to disable). */
-  chromaKey?: OverlayChromaKey | null
-
-  /** Crop input before scaling. Mostly useful for type=window to grab a
-   *  region of a monitor. Values are 0..1 of the source dimensions. */
-  crop?: OverlayCrop | null
-}
-
-// StreamDestinationStored is generated (re-exported above): persisted WITHOUT
-// the stream key — that lives in the OS keychain via `stream_set_key`, and
-// `hasKey` is the only trace it leaves in settings.
 
 export interface RecordingOpts extends Partial<Settings> {
   deviceId?: string | null

@@ -1089,7 +1089,7 @@ mod tests {
         use sundayrec_core::telemetry::CounterName;
         let (pool, _d, _g) = temp_pool().await;
         consent_set(&pool, true).await.unwrap();
-        counters::count(CounterName::StreamingStarted);
+        counters::count(CounterName::DiagnoseRun);
         assert_eq!(counters::snapshot().len(), 1);
 
         consent_set(&pool, false).await.unwrap();
@@ -1105,7 +1105,7 @@ mod tests {
         );
 
         // Counting after a revoke accumulates nothing at all.
-        counters::count(CounterName::StreamingStarted);
+        counters::count(CounterName::DiagnoseRun);
         assert!(counters::snapshot().is_empty());
     }
 

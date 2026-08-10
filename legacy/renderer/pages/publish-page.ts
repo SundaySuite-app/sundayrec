@@ -1,14 +1,12 @@
 import { settings, patchSettings } from '../state'
-import { flashSaved, escHtml, localeTag } from '../helpers'
+import { flashSaved, localeTag } from '../helpers'
 import { t } from '../i18n'
-import { notifyLivePageDestinationsChanged } from './live-page'
 import { closeModal, openModal } from '../ui/modal-manager'
-import { alertDialog, confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, refresh as refreshThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
-import { bindRadioGroup, bindSetting, showSavedChip } from '../ui/bind-setting'
+import { showSavedChip } from '../ui/bind-setting'
 import { applyFeatureGate } from '../ui/feature-gate'
 import { cloudGateStatus } from '../ui/feature-gate-core'
-import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus, StreamDestinationStored } from '../../types'
+import type { CloudServiceId, CloudServiceSettings, CloudStatus, CloudQueueStatus } from '../../types'
 
 type ServiceStatus = Record<CloudServiceId, CloudStatus>
 
@@ -39,7 +37,6 @@ export function setupPublishPage(): void {
   refreshStatus()
   refreshConfigured()
   refreshQueue()
-  setupStreamDestinations()
 
   // Default-thumbnail panel ("Standard episodebilde") — sits at the top of the
   // Deling tab's Publisering section. Gated «kommer» through v0.9.0 because
@@ -463,240 +460,6 @@ function showUploadStatus(service: CloudServiceId, message: string, isError: boo
 export function applyPublishSettingsToUI(): void {
   refreshStatus()
   refreshQueue()
-  applyStreamSettingsToUI()
   const thumbEls = panelElementsByPrefix('publish')
   if (thumbEls) void refreshThumbPanel(thumbEls, { kind: 'default' })
-}
-
-// ─── Live-stream destinations ───────────────────────────────────────────
-//
-// A draft list of destinations the user is editing. It mirrors
-// settings.streamDestinations until saveStreamDestinations() persists it.
-// Each entry tracks the optional user-entered stream key (`pendingKey`) so we
-// can push it to the encrypted store on save without ever placing it in the
-// settings JSON.
-
-const STREAM_MAX_DESTINATIONS = 5
-
-interface DraftDestination extends StreamDestinationStored {
-  /** New key the user has typed in the input. Empty = no change. */
-  pendingKey?: string
-  /** Existing destination id, or '' for a newly-added row that isn't saved yet. */
-  draftOnly?: boolean
-}
-
-let draftDestinations: DraftDestination[] = []
-/** Ids removed by the user during this editing session — keys are deleted on save. */
-const removedDestIds = new Set<string>()
-
-function setupStreamDestinations(): void {
-  applyStreamSettingsToUI()
-  document.getElementById('btn-add-stream-destination')?.addEventListener('click', () => {
-    if (draftDestinations.length >= STREAM_MAX_DESTINATIONS) return
-    draftDestinations.push({
-      id:      `dest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name:    '',
-      rtmpUrl: '',
-      enabled: true,
-      hasKey:  false,
-      draftOnly: true,
-    })
-    renderStreamDestinations()
-    markStreamDirty(true)
-  })
-
-  // EXPLICIT save — one of the three exceptions to auto-apply. A destination is
-  // a URL + a stream key that only work as a set, and the key leaves the app for
-  // the OS keychain on save; committing it a keystroke at a time would push a
-  // dozen truncated keys into the keychain and leave the last one wrong.
-  document.getElementById('btn-stream-dest-save')?.addEventListener('click', () => {
-    void saveStreamDestinations()
-  })
-  document.getElementById('btn-stream-dest-cancel')?.addEventListener('click', () => {
-    removedDestIds.clear()
-    draftDestinations = cloneFromSettings()
-    renderStreamDestinations()
-    markStreamDirty(false)
-  })
-
-  // Quality + framerate are plain settings, not part of the destination set —
-  // they auto-apply like everything else.
-  bindRadioGroup('stream-resolution', {
-    key: 'streamResolution',
-    apply: (value) => patchSettings({ streamResolution: value as '480p' | '720p' | '1080p' }),
-  })
-  bindSetting('stream-framerate', {
-    key: 'streamFramerate',
-    apply: (value) => patchSettings({ streamFramerate: (Number(value) || 30) as 25 | 30 }),
-  })
-}
-
-function applyStreamSettingsToUI(): void {
-  draftDestinations = cloneFromSettings()
-  removedDestIds.clear()
-  renderStreamDestinations()
-  markStreamDirty(false)
-  // Quality + framerate radios
-  const res = settings.streamResolution ?? '720p'
-  const radio = document.querySelector<HTMLInputElement>(`input[name="stream-resolution"][value="${res}"]`)
-  if (radio) radio.checked = true
-  const fr = settings.streamFramerate ?? 30
-  const sel = document.getElementById('stream-framerate') as HTMLSelectElement | null
-  if (sel) sel.value = String(fr)
-}
-
-function cloneFromSettings(): DraftDestination[] {
-  return (settings.streamDestinations ?? []).map(d => ({ ...d }))
-}
-
-function renderStreamDestinations(): void {
-  const list = document.getElementById('stream-destinations-list')
-  if (!list) return
-  list.innerHTML = ''
-  if (draftDestinations.length === 0) {
-    const empty = document.createElement('div')
-    empty.className = 'empty-state'
-    empty.textContent = t('publish.streamNoneYet', 'Ingen destinasjoner enda.')
-    list.appendChild(empty)
-  }
-  draftDestinations.forEach((d, idx) => {
-    const row = document.createElement('div')
-    row.className = 'stream-destination-row'
-    row.dataset.idx = String(idx)
-    const keyPlaceholder = d.hasKey
-      ? t('publish.streamKeySaved', '•••••• Lagret')
-      : t('publish.streamKeyPlaceholder', 'Lim inn stream-key her')
-    row.innerHTML = `
-      <div class="stream-destination-grid">
-        <div>
-          <label class="form-label" data-i18n="publish.streamName">NAVN</label>
-          <input type="text" class="form-input" data-stream-field="name" value="${escHtml(d.name)}" placeholder="YouTube / Facebook / Kirkens server" />
-        </div>
-        <div>
-          <label class="form-label" data-i18n="publish.streamRtmpUrl">RTMP-URL</label>
-          <input type="text" class="form-input" data-stream-field="rtmpUrl" value="${escHtml(d.rtmpUrl)}" placeholder="rtmp://a.rtmp.youtube.com/live2" />
-        </div>
-        <div>
-          <label class="form-label" data-i18n="publish.streamKey">STREAM-KEY</label>
-          <input type="password" class="form-input" data-stream-field="streamKey" value="" placeholder="${escHtml(keyPlaceholder)}" />
-        </div>
-      </div>
-      <div class="stream-destination-actions">
-        <label class="toggle-row stream-destination-enabled">
-          <span data-i18n="publish.enabled">Aktivert</span>
-          <label class="toggle">
-            <input type="checkbox" data-stream-field="enabled" ${d.enabled ? 'checked' : ''} />
-            <span class="toggle-track"></span>
-          </label>
-        </label>
-        <button class="btn-ghost btn-sm" type="button" data-stream-action="delete" aria-label="Slett">✕</button>
-      </div>
-    `
-
-    row.querySelectorAll<HTMLInputElement>('input[data-stream-field]').forEach(inp => {
-      inp.addEventListener('input', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
-      inp.addEventListener('change', () => { updateDraftFromRow(idx, row); markStreamDirty(true) })
-    })
-    row.querySelector<HTMLElement>('[data-stream-action="delete"]')?.addEventListener('click', async () => {
-      const ok = await confirmDialog({
-        title:        t('publish.streamConfirmDelete', 'Slette denne destinasjonen?'),
-        message:      draftDestinations[idx]?.name || undefined,
-        confirmLabel: t('dialog.delete', 'Slett'),
-        danger:       true,
-      })
-      if (!ok) return
-      const removed = draftDestinations[idx]
-      if (removed && !removed.draftOnly) removedDestIds.add(removed.id)
-      draftDestinations.splice(idx, 1)
-      renderStreamDestinations()
-      markStreamDirty(true)
-    })
-    list.appendChild(row)
-  })
-}
-
-function updateDraftFromRow(idx: number, row: HTMLElement): void {
-  const d = draftDestinations[idx]
-  if (!d) return
-  const name    = (row.querySelector('input[data-stream-field="name"]')    as HTMLInputElement | null)?.value ?? ''
-  const rtmpUrl = (row.querySelector('input[data-stream-field="rtmpUrl"]') as HTMLInputElement | null)?.value ?? ''
-  const key     = (row.querySelector('input[data-stream-field="streamKey"]') as HTMLInputElement | null)?.value ?? ''
-  const enabled = !!(row.querySelector('input[data-stream-field="enabled"]') as HTMLInputElement | null)?.checked
-  d.name       = name
-  d.rtmpUrl    = rtmpUrl
-  d.enabled    = enabled
-  d.pendingKey = key
-}
-
-/** Persist current draft to settings + encrypted key store. Called after the
- *  publish-tab's main save (which writes the other settings). */
-async function saveStreamDestinations(): Promise<void> {
-  // Validate: keep only rows that have a name + url. Skip silently otherwise
-  // (the row stays in the DOM until the user explicitly removes it).
-  const valid = draftDestinations.filter(d => d.name.trim() && d.rtmpUrl.trim())
-
-  // Push keys before settings — that way `hasKey` reflects the saved state.
-  for (const d of valid) {
-    if (d.pendingKey && d.pendingKey.length > 0) {
-      try {
-        const r = await window.api.streamSetKey(d.id, d.pendingKey)
-        if (r.ok) {
-          d.hasKey = true
-          d.pendingKey = ''
-        } else if (r.error === 'safeStorage_unavailable') {
-          // Refuse to silently lose the key — surface to user so they can
-          // decide (use a different machine, or accept the risk on a personal box).
-          await alertDialog({
-            title:   t('dialog.streamKeyUnsafeTitle', 'Stream-nøkkelen ble ikke lagret'),
-            message: t('dialog.streamKeyUnsafeBody', 'Systemets nøkkelring (Mac Keychain / Windows Credential Manager) er ikke tilgjengelig. Nøkkelen lagres derfor ikke, slik at den ikke havner som klartekst på disk. Logg inn som en bruker med nøkkelring og prøv igjen.'),
-            tone:    'error',
-          })
-        } else {
-          console.error('[publish] streamSetKey failed', d.id, r.error)
-        }
-      } catch (err) {
-        console.error('[publish] streamSetKey failed for', d.id, err)
-      }
-    }
-  }
-  // Delete keys for removed destinations
-  for (const id of removedDestIds) {
-    try { await window.api.streamDeleteKey(id) } catch (err) { console.error('[publish] streamDeleteKey failed', id, err) }
-  }
-  removedDestIds.clear()
-
-  const resolution = (document.querySelector('input[name="stream-resolution"]:checked') as HTMLInputElement | null)?.value as ('480p' | '720p' | '1080p' | undefined)
-  const framerate  = parseInt((document.getElementById('stream-framerate') as HTMLSelectElement | null)?.value ?? '30', 10) as 25 | 30
-
-  const stored: StreamDestinationStored[] = valid.map(d => ({
-    id: d.id, name: d.name, rtmpUrl: d.rtmpUrl, enabled: d.enabled, hasKey: d.hasKey,
-  }))
-
-  patchSettings({
-    streamDestinations: stored,
-    streamResolution:   resolution ?? settings.streamResolution ?? '720p',
-    streamFramerate:    framerate,
-  })
-  try { await window.api.saveSettings(settings) } catch (err) { console.error('[publish] saveSettings failed', err) }
-
-  // Refresh draft so future edits start from the saved state (hasKey may have
-  // flipped, pendingKey is cleared).
-  draftDestinations = cloneFromSettings()
-  renderStreamDestinations()
-  markStreamDirty(false)
-  showSavedChip(document.getElementById('btn-stream-dest-save')?.parentElement ?? null)
-
-  notifyLivePageDestinationsChanged()
-}
-
-/**
- * Show/clear the "unsaved destinations" state on the explicit-save card. This
- * is the ONLY place in settings that still has a dirty state, and it is honest:
- * nothing has been written until «Lagre destinasjoner» is pressed.
- */
-function markStreamDirty(dirty: boolean): void {
-  const card = document.getElementById('stream-destinations-card')
-  card?.classList.toggle('has-unsaved', dirty)
-  const hint = document.getElementById('stream-dest-dirty-hint')
-  if (hint) hint.style.display = dirty ? '' : 'none'
 }

@@ -60,18 +60,19 @@ gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest*
 frontend suite (pure logic like the editor cut-history state machine; grows as
 more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
 in isolation — `cargo build -p sundayrec --features <flag>` for
-`email`/`tray`/`publish`/`editor`/`streaming`/`ndi`/`bridge`/`updater` (the
+`email`/`tray`/`publish`/`editor`/`updater` (the
 `whisper` C++ build is the one exception, verified by inspection).
 
 ⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
-sets `default = ["editor", "whisper", "tray", "updater", "email", "streaming"]`,
-so **all six are ON in a plain `npm run tauri dev` / `cargo build` and in every
+sets `default = ["editor", "whisper", "tray", "updater", "email"]`,
+so **all five are ON in a plain `npm run tauri dev` / `cargo build` and in every
 release**. The `--features <flag>` lines below them are redundant, not
-prerequisites, and a `feature_disabled` response from any of those six is a BUG
-to report — not the expected result. Only `publish`, `ndi`, `bridge` (plus
-`asio`/`vad`) are genuinely default-off and need an explicit `--features`; those
+prerequisites, and a `feature_disabled` response from any of those five is a BUG
+to report — not the expected result. Only `publish` (plus
+`asio`/`vad`) is genuinely default-off and needs an explicit `--features`; those
 sections say so and are correct. To exercise a disabled path deliberately, build
-with `--no-default-features`.
+with `--no-default-features`. (v0.14: `streaming`/`ndi`/`bridge` were removed
+with the Direkte page — their old §R3/§R3b sections are gone from this runbook.)
 
 ---
 
@@ -839,7 +840,7 @@ npm run tauri dev
   - VERIFIED-BY: e2e/system-support.spec.ts::«Kopier siste logg» puts the tail on the clipboard and confirms
   - VERIFIED-BY: e2e/system-support.spec.ts::an empty log is called out instead of copying nothing
 - **Expected:** the file is plain text, newest lines at the bottom; secrets
-  (stream keys, SMTP passwords, OAuth tokens) are redacted on the writer
+  (SMTP passwords, OAuth tokens — and defensively RTMP keys) are redacted on the writer
   thread before a line ever reaches disk — confirm none show up if you have
   any of those configured.
 
@@ -874,63 +875,6 @@ real camera frame) through the SAME backend a recording uses, then reports
 > rotate on a REAL disk, does the REAL device refuse the probe at the right
 > moments — needs a rig. See `docs/NEEDS-RICHARD.md` for what is still
 > owner-verified only.
-
----
-
-## §R3 — Live streaming (RTMP + lower-thirds) — `streaming` (IN DEFAULT)
-
-```bash
-npm run tauri dev   # drive the Direktesending disclosure — streaming is on by default
-```
-
-> [NET][HW] NETWORK + HARDWARE-UNVERIFIED. The camera open, the libx264 encode,
-> the RTMP push, the lower-third compositing, and the live-stats parse only run
-> against a real camera + a real RTMP endpoint +
-> a real key — never in the gate. Only the core decisions (the tee/encode/
-> overlay argv, the keyframe/bitrate math, the audio-map, the key/URL validation,
-> the key-redacted log copy) are unit-tested in Rust core; the panel's IPC
-> data-flow is browser-tier testable (the e2e/ harness exists since E5.2) but
-> has no spec covering it yet.
-
-1. Open the **Direktesending** disclosure. In the **default build the START
-   button is live** — `streaming` ships in `default` precisely because the page
-   shipped with an enabled button that only ever raised `feature_disabled`. If
-   you see that error in a default build, it is a BUG. (Under
-   `--no-default-features` **Start** returns `feature_disabled` and the panel
-   shows a calm "not built into this build" hint — the key vault still works.)
-2. Add a destination (name + `rtmp://…` URL), paste a stream key, click
-   **Lagre nøkkel**.
-   - **Expected:** the key is validated (a key with a space/too short is
-     rejected with a clear message) and stored in the OS keychain; the row shows
-     a "•••• (lagret)" badge. **Slett nøkkel** removes it.
-3. With at least one enabled destination that has a saved key,
-   pick a resolution + framerate, optionally tick **Vis tekstplakat** and choose
-   a lower-third **Type** (Tekst = title ± subtitle, or Bilde = a logo image
-   path); with the toggle off no overlay is sent. Click **Start**.
-   - **Expected:** one ffmpeg opens the camera/mic, composites the overlay, and
-     pushes to every enabled destination; **Status** shows `active` + a live
-     bitrate/fps. A second **Start** is refused (`stream_already_active`).
-     (Se [NET][HW]-markøren i §R3-innledningen.)
-4. Click **Stopp**.
-   - **Expected:** the stream goes idle; the broadcast ends on the platform.
-
-> The argv is logged KEY-REDACTED (`rtmp://…/***`) — confirm no stream key
-> appears in the `tauri dev` stderr.
-
-## §R3b — NDI (STUB) — `--features ndi`
-
-```bash
-cargo build -p sundayrec --features ndi          # must compile (gate verifies this)
-```
-
-> [NEEDS-RICHARD] The NDI SDK is NOT bundled in this repo. Even WITH
-> `--features ndi` the seam is a STUB: `ndi_list_sources` returns empty and
-> `ndi_start_receiver` returns `ndi_not_bundled: NDI SDK not bundled — see
-docs/NEEDS-RICHARD.md`. The default build returns `feature_disabled`. The pure
-> source-discovery / FourCC→pixfmt / rawvideo input-arg logic
-> (`sundayrec_core::ndi`) IS unit-tested. Wiring the real libndi FFI + the
-> loopback-TCP frame pump needs the SDK runtime + an NDI source on the LAN — see
-> the NEEDS-RICHARD doc.
 
 ---
 
@@ -1083,7 +1027,7 @@ vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
    real stop, at the length a real service runs, on the hardware this church
    actually uses (not a laptop mic standing in for the mixer).
 4. Exercise whatever else this release changed for real, not just launch it —
-   an editor change gets an edit, a streaming change gets a stream, an
+   an editor change gets an edit, an
    email-alert change gets left running long enough to prove it fires (or
    correctly doesn't).
 

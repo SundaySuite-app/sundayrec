@@ -3,6 +3,7 @@ name = "sundayrec-core"
 version = "0.1.0"
 description = "Pure, GUI-free domain core for SundayRec — recorder logic, ffmpeg argument building, error classification, silence state machine. No Tauri dependency."
 authors = ["Richard Fossland"]
+license = "MIT"
 edition = "2021"
 
 # This crate intentionally depends on NOTHING from Tauri. It holds the

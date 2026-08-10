@@ -207,7 +207,7 @@ the only action that makes a v0.11.0+ install able to see the release at all.
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
 - [ ] §2–11 smoke test on a real Mac/Windows rig (capture, VU, editor ffmpeg,
-      whisper, wake/scheduler, streaming).
+      whisper, wake/scheduler).
 - [ ] **Deep-link**: after a signed `tauri build`, open `sundayrec://…` and
       confirm it routes into the app (the config is in place but GUI-UNVERIFIED;
       requires the `tray` feature, which release builds include).

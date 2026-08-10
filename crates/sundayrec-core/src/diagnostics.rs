@@ -55,9 +55,9 @@ pub struct SettingsSummary {
 
 impl SettingsSummary {
     /// Project the full [`Settings`](crate::settings::Settings) down to the
-    /// non-secret subset. The F2.2 `Settings` model carries no secret fields yet
-    /// (cloud/stream/e-mail land in later phases), but this projection is the
-    /// single, explicit allow-list so adding those fields later cannot
+    /// non-secret subset. The `Settings` model itself carries no secret fields
+    /// (credentials live in the OS keychain), but this projection is the
+    /// single, explicit allow-list so adding such fields later cannot
     /// accidentally widen the report.
     pub fn from_settings(s: &crate::settings::Settings) -> Self {
         Self {

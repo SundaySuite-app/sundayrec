@@ -164,6 +164,11 @@ webhook. Speil `cloud/*`, `publish/*`, `prep-episode.ts`, `review-queue.ts`,
 
 ### Fase 7 — Streaming + NDI + overlays · ~4–6 uker
 
+> **Etterskrift (v0.14):** denne fasen ble bygget (minus NDI-SDK-et) — og
+> deretter FJERNET i sin helhet. Direkte-siden, RTMP/tee/overlays, NDI-stubben
+> og cue-broens native halvdel gikk ut; SundayRec er et opptaksprogram.
+> Planteksten under står som historie.
+
 RTMP-streamer, stream-keys (keyring), overlays (filter_complex-bygger), **NDI via
 libndi FFI**. Speil `streamer.ts`, `stream-keys.ts`, `overlay.ts`, `ndi-receiver.ts`.
 **Exit:** live-stream til YouTube med overlay; NDI-kilde fungerer.

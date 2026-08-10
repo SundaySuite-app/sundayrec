@@ -339,13 +339,10 @@ pub fn log_startup_banner() {
     let features: Vec<&str> = [
         ("editor", cfg!(feature = "editor")),
         ("whisper", cfg!(feature = "whisper")),
-        ("streaming", cfg!(feature = "streaming")),
         ("email", cfg!(feature = "email")),
         ("tray", cfg!(feature = "tray")),
         ("updater", cfg!(feature = "updater")),
         ("publish", cfg!(feature = "publish")),
-        ("ndi", cfg!(feature = "ndi")),
-        ("bridge", cfg!(feature = "bridge")),
         ("asio", cfg!(feature = "asio")),
     ]
     .iter()

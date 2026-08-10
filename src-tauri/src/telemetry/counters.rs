@@ -357,7 +357,7 @@ mod tests {
     async fn purging_clears_memory_and_storage() {
         let _g = guard();
         let (pool, _d) = temp_pool().await;
-        count(CounterName::StreamingStarted);
+        count(CounterName::DiagnoseRun);
         persist(&pool).await.unwrap();
         purge(&pool).await.unwrap();
         assert!(snapshot().is_empty());

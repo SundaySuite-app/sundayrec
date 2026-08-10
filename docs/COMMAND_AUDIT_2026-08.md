@@ -1,5 +1,13 @@
 # Kommando-revisjon — august 2026
 
+> **Etterskrift (v0.14):** Direkte-fjerningen tok 16 av kommandoene i denne
+> revisjonen ut av registeret: `stream_*` (6), `ndi_*` (5, §4.5 —
+> eierbeslutningen falt på _fjern_), `live_bridge_*` (3, §4.6) og
+> `start_preview`/`stop_preview`. (`open_in_sundayedit`/`open_in_sundaystudio`
+> i `commands/bridge.rs` er en annen bro og består.) Tallene og tabellene under er ØYEBLIKKSBILDET
+> fra august og oppdateres ikke; `scripts/check-command-reachability.mjs` +
+> baselinen er den levende sannheten.
+
 **Hva dette er:** en fullstendig gjennomgang av hver eneste Tauri-kommando appen
 registrerer, og svaret på ett spørsmål per kommando: _kan brukergrensesnittet i
 det hele tatt kalle den?_

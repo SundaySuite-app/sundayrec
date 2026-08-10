@@ -103,8 +103,10 @@ So a future auditor doesn't have to re-derive these from scratch:
   where applicable, rooted under the configured save folder) before they
   reach the filesystem or ffmpeg. A test ratchet (E1.3) keeps commands that
   take a path from silently launching without going through it.
-- **Stream-key redaction in logs.** RTMP/streaming keys are kept out of log
-  output.
+- **Secret redaction in logs.** Credential-shaped values (`key=…`, Bearer
+  tokens, and — defensively, though SundayRec no longer streams — the trailing
+  key segment of RTMP URLs) are kept out of log output
+  (`crates/sundayrec-core/src/redact.rs`).
 - **Whisper model integrity.** Downloaded transcription models are
   SHA-256-verified against a pinned hash and only renamed into place
   (`.partial` → final) after the hash matches; a mismatch deletes the partial
@@ -112,7 +114,7 @@ So a future auditor doesn't have to re-derive these from scratch:
 - **ffmpeg/ffprobe sidecar pinning.** Bundled binaries are fetched and
   checked against pinned SHA-256 hashes (`scripts/fetch-ffmpeg.mjs`,
   `scripts/ffmpeg-checksums.json`) before use.
-- **OS keychain for credentials.** OAuth refresh tokens, the stream key, the
+- **OS keychain for credentials.** OAuth refresh tokens, the
   SMTP password, and API keys are stored via the OS-native credential store
   (macOS Keychain / Windows Credential Manager through the `keyring` crate;
   `src-tauri/src/secrets/`) — never in plaintext settings files. (E1.6 closed

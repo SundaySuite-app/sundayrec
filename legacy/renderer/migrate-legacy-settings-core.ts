@@ -125,22 +125,6 @@ function sanitizeDeviceChannels(v: unknown): Dict | undefined {
   return out;
 }
 
-function sanitizeDestinations(v: unknown): Dict[] {
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((d) => d && typeof (d as { id?: unknown }).id === "string")
-    .map((d) => {
-      const o = d as Dict;
-      return {
-        id: o.id as string,
-        name: typeof o.name === "string" ? o.name : "",
-        rtmpUrl: typeof o.rtmpUrl === "string" ? o.rtmpUrl : "",
-        enabled: o.enabled === true,
-        hasKey: o.hasKey === true,
-      };
-    });
-}
-
 function sanitizeCloudPrefs(v: unknown): Dict | undefined {
   if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
   const o = v as Dict;
@@ -304,19 +288,10 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("editorOutroPath", strOrNull(s.editorOutroPath));
   put("editorHwEncode", bool(s.editorHwEncode));
 
-  // Live streaming
-  put(
-    "streamDestinations",
-    Array.isArray(s.streamDestinations) ? sanitizeDestinations(s.streamDestinations) : undefined,
-  );
-  put("streamResolution", oneOf(s.streamResolution, ["480p", "720p", "1080p"]));
-  put(
-    "streamFramerate",
-    s.streamFramerate === 25 || s.streamFramerate === 30 ? s.streamFramerate : undefined,
-  );
-  put("streamVideoBitrate", s.streamVideoBitrate === null ? null : int(s.streamVideoBitrate, 100, 50_000));
-  // Overlays are opaque to the backend; forward the array as-is.
-  put("streamOverlays", Array.isArray(s.streamOverlays) ? s.streamOverlays : undefined);
+  // Live streaming (removed in v0.14): old blobs may still carry
+  // streamDestinations/streamResolution/streamFramerate/streamVideoBitrate/
+  // streamOverlays — the whitelist mapper simply never copies them, so a
+  // legacy config with stream fields imports cleanly without them.
 
   // Cloud backup preferences
   put("cloudGoogleDrive", sanitizeCloudPrefs(s.cloudGoogleDrive));

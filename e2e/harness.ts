@@ -32,7 +32,7 @@ export interface BootOptions {
   /** Seeded settings, merged over the shim's defaults by `loadSettings`. */
   settings?: Record<string, unknown>;
   /**
-   * `?goto=<page>[:<tab>]`. Pages: `home`, `schedule`, `live`, `settings`,
+   * `?goto=<page>[:<tab>]`. Pages: `home`, `schedule`, `settings`,
    * `search` (that is Historikk — there is no `history` page), `editor`.
    *
    * ⚠️ `?goto=` also forces `hasLaunched`/`onboardingDone` true so screenshots
@@ -148,6 +148,18 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
           currentWindow: { label: "main" },
           currentWebview: { label: "main" },
         },
+      };
+    }
+
+    // `@tauri-apps/api`'s `unlisten` goes to a SECOND internals object
+    // (`__TAURI_EVENT_PLUGIN_INTERNALS__.unregisterListener`) that only the
+    // real event plugin installs. Without it every page-switch that tears a
+    // listener down (e.g. home → settings stopping the VU feed) threw an
+    // unhandled TypeError into the console. A no-op is the truth here: the
+    // harness's `plugin:event|listen` never registers anything to remove.
+    if (!w.__TAURI_EVENT_PLUGIN_INTERNALS__) {
+      w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+        unregisterListener() {},
       };
     }
 

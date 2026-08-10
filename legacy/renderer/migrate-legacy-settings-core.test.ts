@@ -155,13 +155,6 @@ describe("mapLegacyBlob", () => {
     expect(out.preRollSeconds).toBe(30);
     expect(out.deviceChannels).toEqual({ "qu5-usb": { channelL: 16, channelR: 17 } });
     expect(out.slots).toEqual([{ days: [6], start: "10:30", stop: "12:30", max: 150 }]);
-    expect(out.streamDestinations).toEqual([
-      { id: "yt", name: "YouTube", rtmpUrl: "rtmp://a/live2", enabled: true, hasKey: true },
-    ]);
-    expect(out.streamResolution).toBe("1080p");
-    expect(out.streamFramerate).toBe(25);
-    expect(out.streamVideoBitrate).toBe(4500);
-    expect(out.streamOverlays).toEqual(REALISTIC_BLOB.streamOverlays);
     expect(out.cloudGoogleDrive).toMatchObject({ enabled: true, autoUpload: false });
     expect(out.podcast).toMatchObject({
       enabled: true,
@@ -191,6 +184,27 @@ describe("mapLegacyBlob", () => {
     ]) {
       expect(out, `${gone} must not migrate`).not.toHaveProperty(gone);
     }
+  });
+
+  // Live streaming was removed in v0.14. Old blobs still carry its fields —
+  // they must be DROPPED tolerantly (imports cleanly without them), never fail
+  // the migration or leak into the unified store where the Rust merge would
+  // choke on unknown keys' shapes.
+  it("drops the retired stream fields tolerantly — the rest imports cleanly", () => {
+    const out = mapLegacyBlob(JSON.stringify(REALISTIC_BLOB))!;
+    expect(out).not.toBeNull();
+    for (const gone of [
+      "streamDestinations",
+      "streamResolution",
+      "streamFramerate",
+      "streamVideoBitrate",
+      "streamOverlays",
+    ]) {
+      expect(out, `${gone} must not migrate`).not.toHaveProperty(gone);
+    }
+    // The neighbours still cross intact — dropping stream fields costs nothing else.
+    expect(out.churchName).toBe("Domkirken");
+    expect(out.videoEnabled).toBe(true);
   });
 
   it("a partial blob maps only what it has (merge-over-defaults is Rust's job)", () => {

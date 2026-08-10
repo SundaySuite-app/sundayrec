@@ -47,10 +47,6 @@
       <svg viewBox="0 0 20 20"><path d="M6 2v2H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2V2h-2v2H8V2zm8 6H6v2h8zm0 4H6v2h8z"/></svg>
       <span data-i18n="nav.schedule">Tidsplan</span>
     </a></li>
-    <li><a class="nav-link" data-page="live" href="#">
-      <svg viewBox="0 0 20 20" fill="currentColor"><circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="6" stroke="currentColor" stroke-width="1" fill="none" opacity=".5"/></svg>
-      <span data-i18n="nav.live">Direkte</span>
-    </a></li>
     <li><a href="#" class="nav-link" data-page="editor">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10h14M3 6h3m11 0h-3M3 14h3m11 0h-3" stroke-linecap="round"/><circle cx="7.5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="12.5" cy="14" r="1.5" fill="currentColor" stroke="none"/></svg>
       <span data-i18n="nav.editor">Rediger</span>
@@ -693,192 +689,6 @@
   </section>
 
   <!-- ══ DIREKTE ═════════════════════════════════════════════════ -->
-  <section id="page-live" class="page">
-
-    <div class="page-header live-page-header">
-      <div>
-        <h1 data-i18n="live.title">Direkte sending</h1>
-        <p class="subtitle" data-i18n="live.subtitle">Stream til YouTube, Facebook eller egen RTMP-server</p>
-      </div>
-      <span id="live-status-pill" class="live-status-pill is-idle">
-        <span class="live-status-pill-dot"></span>
-        <span id="live-status-pill-text" data-i18n="live.statusReady">Klar</span>
-      </span>
-    </div>
-
-    <!-- Top row: preview + stats/destinations -->
-    <div class="live-grid">
-
-      <!-- Big preview -->
-      <div class="card live-preview-card">
-        <div class="live-preview-frame">
-          <img id="live-preview-img" class="live-preview-img" alt="" />
-          <div id="live-preview-placeholder" class="live-preview-placeholder">
-            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
-              <rect x="6" y="10" width="36" height="28" rx="3"/>
-              <circle cx="24" cy="24" r="6"/>
-              <circle cx="24" cy="24" r="2" fill="currentColor"/>
-            </svg>
-            <div class="live-preview-placeholder-text" data-i18n="live.previewWaiting">Forhåndsvisning kommer når stream starter</div>
-          </div>
-          <div id="live-preview-overlay-tag" class="live-preview-overlay-tag" style="display:none">
-            <span class="live-preview-overlay-dot"></span>
-            <span data-i18n="live.statusLive">🔴 Live</span>
-          </div>
-        </div>
-        <div class="vu-section live-vu-section">
-          <div class="vu-section-head">
-            <span class="vu-section-label" data-i18n="home.audioLevel">Lydnivå — live</span>
-            <div class="signal-row">
-              <span class="signal-dot" id="live-signal-dot"></span>
-              <span class="signal-text" id="live-signal-text">—</span>
-              <span class="signal-peak" id="live-signal-peak"></span>
-            </div>
-          </div>
-          <div class="vu-bar-group">
-            <div class="vu-bar-row">
-              <span class="vu-bar-lbl">L</span>
-              <div class="vu-bar-track">
-                <div class="vu-bar-fill" id="live-vu-l"></div>
-                <div class="vu-bar-peak" id="live-vu-peak-l"></div>
-              </div>
-              <div class="vu-bar-clip" id="live-vu-clip-l" title="Clip — klikk for å nullstille" data-i18n-title="tooltip.clipReset"></div>
-              <span class="vu-bar-val" id="live-vu-db-l">—</span>
-            </div>
-            <div class="vu-bar-row">
-              <span class="vu-bar-lbl">R</span>
-              <div class="vu-bar-track">
-                <div class="vu-bar-fill" id="live-vu-r"></div>
-                <div class="vu-bar-peak" id="live-vu-peak-r"></div>
-              </div>
-              <div class="vu-bar-clip" id="live-vu-clip-r" title="Clip — klikk for å nullstille" data-i18n-title="tooltip.clipReset"></div>
-              <span class="vu-bar-val" id="live-vu-db-r">—</span>
-            </div>
-            <div class="vu-bar-scale-row">
-              <span class="vu-bar-lbl"></span>
-              <div class="vu-bar-scale">
-                <span style="left:0%">Stille</span>
-                <span style="left:100%">Maks</span>
-              </div>
-              <div class="vu-bar-clip-spacer"></div>
-              <span class="vu-bar-val-spacer"></span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Right column: stats + destinations + quality -->
-      <div class="live-side-col">
-        <div class="card live-stats-card">
-          <div class="card-title" data-i18n="live.statsTitle">Statistikk</div>
-          <div class="live-stats-grid">
-            <div class="live-stat">
-              <div class="live-stat-label" data-i18n="live.uptime">Tid</div>
-              <div class="live-stat-value" id="live-stat-uptime">00:00</div>
-            </div>
-            <div class="live-stat">
-              <div class="live-stat-label" data-i18n="live.bitrate">Bitrate</div>
-              <div class="live-stat-value" id="live-stat-bitrate">0 kbps</div>
-            </div>
-            <div class="live-stat">
-              <div class="live-stat-label" data-i18n="live.fps">FPS</div>
-              <div class="live-stat-value" id="live-stat-fps">0</div>
-            </div>
-            <div class="live-stat">
-              <div class="live-stat-label" data-i18n="live.dropped">Tapte rammer</div>
-              <div class="live-stat-value" id="live-stat-dropped">—</div>
-            </div>
-          </div>
-          <!-- The supervisor's commentary: reconnect attempts, a destination
-               that dropped, an adaptive quality step-down. Maintained in the
-               Rust status from the start; until Fase 6 it had nowhere to go. -->
-          <div class="live-stats-note" id="live-stats-note" style="display:none"></div>
-        </div>
-
-        <div class="card live-destinations-card">
-          <div class="card-title" data-i18n="live.destinations">Destinasjoner</div>
-          <div id="live-destinations-list"></div>
-          <div id="live-destinations-empty" class="empty-state" style="display:none">
-            <p data-i18n="live.noDestinations">Ingen destinasjoner konfigurert. Gå til Innstillinger → Deling.</p>
-          </div>
-          <a href="#" class="live-config-link" id="live-config-link" data-i18n="live.configDestinations">→ Konfigurer destinasjoner</a>
-        </div>
-
-        <div class="card live-quality-card">
-          <div class="card-title" data-i18n="publish.streamQuality">STREAM-KVALITET</div>
-          <div class="option-cards live-quality-options" style="grid-template-columns:1fr 1fr 1fr">
-            <label class="option-card">
-              <input type="radio" name="live-resolution" value="480p" />
-              <div class="option-card-name">480p</div>
-              <div class="option-card-desc">1.5 Mbps</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="live-resolution" value="720p" checked />
-              <div class="option-card-name">720p</div>
-              <div class="option-card-badge" data-i18n="video.recommended">Anbefalt</div>
-              <div class="option-card-desc">4.5 Mbps</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="live-resolution" value="1080p" />
-              <div class="option-card-name">1080p</div>
-              <div class="option-card-desc">6 Mbps</div>
-            </label>
-          </div>
-          <label class="form-label mt" data-i18n="publish.streamFramerate">BILDERATE</label>
-          <select id="live-framerate" class="form-input" style="max-width:200px">
-            <option value="25">25 fps</option>
-            <option value="30" selected>30 fps</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- ─── Overlays ─────────────────────────────────────────────── -->
-    <div class="card live-overlay-card">
-      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span data-i18n="live.overlays">Overlays — grafikk og presentasjon</span>
-        <button class="btn-secondary btn-sm" id="btn-add-overlay" type="button" data-i18n="live.addOverlay">+ Legg til overlay</button>
-      </div>
-      <p class="card-desc" data-i18n="live.overlaysDesc">
-        Legg over kirkens logo, lyrics fra EasyWorship (via skjerm-capture på samme maskin), eller
-        annen grafikk på det som sendes ut. Overlays påvirker bare direktesendingen — opptak gjøres rent.
-      </p>
-      <div id="overlay-list" class="overlay-list"></div>
-      <div id="overlay-empty" class="empty-state">
-        Ingen overlays. Klikk «+ Legg til overlay» for å begynne.
-      </div>
-    </div>
-
-    <!-- Start/Stop bar — primary button starts BOTH stream + local
-         recording (most users want a master file for editing). The
-         secondary button under is for the rare case where only the
-         livestream is needed. -->
-    <div class="live-action-bar">
-      <button class="live-start-btn" id="btn-live-start" type="button" data-also-record="true">
-        <span data-i18n="live.startBtn">🔴 Start direktesending + opptak</span>
-      </button>
-      <button class="live-start-btn-secondary" id="btn-live-start-stream-only" type="button">
-        <span data-i18n="live.startStreamOnly">Bare direktesending (uten lokal opptak)</span>
-      </button>
-      <!-- Why the start button is greyed out. It used to be disabled with the
-           reason known only to updateStartButtonState(). -->
-      <div class="blocked-reason" id="live-start-reason" style="display:none"></div>
-      <div class="live-error" id="live-error" style="display:none"></div>
-      <!-- Said out loud rather than discovered on a Sunday: the RTMP push has
-           never been run against a real camera and a real ingest endpoint. The
-           feature ships (a button that raises `feature_disabled` is worse than
-           an honest one), and this line is the rest of the truth. -->
-      <div class="live-action-note" data-i18n="live.notRigVerified">
-        Direktesending er ikke riggverifisert ennå — prøv den på en vanlig ukedag før du stoler på den en søndag.
-      </div>
-      <div class="live-action-hint" data-i18n="live.alsoRecordHint">
-        Lokal opptaksfil havner i Siste opptak når strømmen stopper —
-        høyere bitrate enn livestreamen, klar for redigering eller podkast.
-      </div>
-    </div>
-
-  </section>
-
   <!-- ══ INNSTILLINGER ════════════════════════════════════════════ -->
   <section id="page-settings" class="page">
     <!-- Five tabs, not seven. «Publisering» and «Varsler» were two halves of
@@ -1220,7 +1030,7 @@
         <div class="toggle-row">
           <div>
             <div class="toggle-title" data-i18n="schedule.prerollEnabledTitle">Aktiver forhåndsbuffer</div>
-            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem og Direktesending, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører.</div>
+            <div class="toggle-desc" data-i18n="schedule.prerollEnabledDesc">Bufferen holder mikrofonen åpen i bakgrunnen hele tiden. Mens den kjører er det den som mater nivåmålerne på Hjem, så de virker som før. Slå den på hvis du trenger sekundene før du trykker opptak — Hjem viser når bufferen kjører.</div>
           </div>
           <label class="toggle"><input type="checkbox" id="opt-preroll-enabled" /><span class="toggle-track"></span></label>
         </div>
@@ -1311,48 +1121,6 @@
 
         <!-- Queue-panelet rendres her av publish-page.ts -->
         <div id="cloud-queue-anchor"></div>
-      </div>
-
-      <!-- ── Direktesending (RTMP / live-stream-destinasjoner) ───── -->
-      <div class="card" id="stream-destinations-card">
-        <div class="card-title" data-i18n="publish.streamTitle">Direktesending</div>
-        <p class="card-desc" data-i18n="publish.streamIntro">Stream gudstjenester live til YouTube, Facebook eller egen RTMP-server.</p>
-        <div id="stream-destinations-list" class="stream-destinations-list"></div>
-        <button class="btn-secondary btn-sm" id="btn-add-stream-destination" type="button" data-i18n="publish.streamAddDestination">+ Legg til destinasjon</button>
-
-        <!-- EXPLICIT SAVE: en destinasjon er URL + stream-key som bare virker
-             sammen, og nøkkelen skrives til OS-nøkkelringen ved lagring. -->
-        <div class="btn-row explicit-save-row">
-          <button type="button" class="btn-primary btn-sm" id="btn-stream-dest-save" data-i18n="publish.streamSaveDestinations">Lagre destinasjoner</button>
-          <button type="button" class="btn-ghost btn-sm" id="btn-stream-dest-cancel" data-i18n="general.cancel">Avbryt</button>
-          <span class="explicit-save-hint" id="stream-dest-dirty-hint" style="display:none" data-i18n="publish.streamUnsaved">Ikke lagret ennå</span>
-        </div>
-
-        <label class="form-label mt" data-i18n="publish.streamQuality">STREAM-KVALITET</label>
-        <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr">
-          <label class="option-card">
-            <input type="radio" name="stream-resolution" value="480p" />
-            <div class="option-card-name">480p</div>
-            <div class="option-card-desc">1.5 Mbps</div>
-          </label>
-          <label class="option-card">
-            <input type="radio" name="stream-resolution" value="720p" checked />
-            <div class="option-card-name">720p</div>
-            <div class="option-card-badge" data-i18n="video.recommended">Anbefalt</div>
-            <div class="option-card-desc">4.5 Mbps</div>
-          </label>
-          <label class="option-card">
-            <input type="radio" name="stream-resolution" value="1080p" />
-            <div class="option-card-name">1080p</div>
-            <div class="option-card-desc">6 Mbps</div>
-          </label>
-        </div>
-
-        <label class="form-label mt" data-i18n="publish.streamFramerate">BILDERATE</label>
-        <select id="stream-framerate" class="form-input" style="max-width:200px">
-          <option value="25">25 fps</option>
-          <option value="30" selected>30 fps</option>
-        </select>
       </div>
 
       <!-- ── Podcast RSS-feed (auto-publisering) ─────────────────── -->

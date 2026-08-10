@@ -9,7 +9,7 @@
 //!     the name has to go BEFORE it lands in the file, not before it is sent.
 //!   - [`redact_secrets`] removes credentials from a log line. The file log is
 //!     the one artefact a volunteer operator will cheerfully paste into a chat
-//!     channel; a stream key or an SMTP password in it is a leak with a very
+//!     channel; an SMTP password or an API key in it is a leak with a very
 //!     short fuse.
 //!
 //! Both are deliberately conservative: they may over-redact (a directory called
@@ -17,9 +17,12 @@
 //! one unreadable log line; the cost of a false negative is a credential in a
 //! chat channel.
 //!
-//! The discipline is the one `streaming::loggable_args` already applies to the
-//! ffmpeg argv (a parallel "loggable" copy with keys replaced by `***`) —
-//! generalised here so every OTHER formatted string gets the same treatment.
+//! The discipline: whenever a formatted string might carry a credential, the
+//! version that reaches a log/file is a parallel "loggable" copy with the
+//! secret replaced by `***` — applied here in ONE place so every formatted
+//! string gets the same treatment. (The stream-key/RTMP rules below outlived
+//! the live-streaming feature on purpose: redaction is defence-in-depth, and a
+//! pasted OBS config or an old install's log line should stay safe to share.)
 
 /// Path roots whose FIRST segment is a user name. Matched case-insensitively so
 /// a Windows path that came back from an API as `C:\USERS\Ola\…` is caught too.
@@ -125,8 +128,8 @@ const SECRET_KEYS: &[&str] = &[
     "bearer",
 ];
 
-/// What a redacted value is replaced with — the same marker
-/// `streaming::loggable_args` already uses, so a reader sees one convention.
+/// What a redacted value is replaced with — one marker, everywhere, so a
+/// reader sees one convention.
 pub const SECRET_PLACEHOLDER: &str = "***";
 
 /// Remove credentials from one line of text before it reaches the log file.
@@ -138,7 +141,9 @@ pub const SECRET_PLACEHOLDER: &str = "***";
 ///     [`SECRET_KEYS`] (case-insensitive, `-`/`_` equivalent);
 ///   - `Bearer <token>` in an Authorization header;
 ///   - the last path segment of an `rtmp://`/`rtmps://` URL, which for every
-///     streaming destination in existence IS the stream key.
+///     RTMP ingest in existence IS the stream key. (Defensive: SundayRec no
+///     longer streams, but a URL pasted into a note or surfaced by another
+///     tool must still never land in a log with its key intact.)
 ///
 /// Conservative by design: the *name* is what triggers the redaction, so a
 /// value that merely looks secret is left alone (unreadable logs help nobody),
