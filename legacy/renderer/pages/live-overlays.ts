@@ -21,19 +21,33 @@ import type { OverlayConfig, OverlayPosition, OverlaySourceType } from '../../ty
 let listEl: HTMLElement | null = null
 let emptyEl: HTMLElement | null = null
 
-const POSITION_LABELS: Record<OverlayPosition, string> = {
-  tl: '↖ Topp venstre',  tc: '↑ Topp midt',    tr: '↗ Topp høyre',
-  cl: '← Senter venstre', c: '· Senter',        cr: '→ Senter høyre',
-  bl: '↙ Bunn venstre',  bc: '↓ Bunn midt',    br: '↘ Bunn høyre',
-  fullscreen: '◼ Fullskjerm',
-  custom:     '⊕ Tilpasset',
+// Labels are FUNCTIONS (not consts) so every render reads the active locale —
+// module-level literals froze the boot language. Glyphs live in code (house
+// style), translations carry pure text.
+const POSITION_GLYPHS: Record<OverlayPosition, string> = {
+  tl: '↖', tc: '↑', tr: '↗', cl: '←', c: '·', cr: '→', bl: '↙', bc: '↓', br: '↘',
+  fullscreen: '◼', custom: '⊕',
 }
-
-const TYPE_LABELS: Record<OverlaySourceType, string> = {
-  image:  'Bilde (PNG/JPG)',
-  screen: 'Skjerm',
-  window: 'Vindu / regionsutsnitt',
-  ndi:    'NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)',
+function positionLabel(p: OverlayPosition): string {
+  const keys: Record<OverlayPosition, [string, string]> = {
+    tl: ['live.overlayPosTl', 'Topp venstre'], tc: ['live.overlayPosTc', 'Topp midt'], tr: ['live.overlayPosTr', 'Topp høyre'],
+    cl: ['live.overlayPosCl', 'Senter venstre'], c: ['live.overlayPosC', 'Senter'], cr: ['live.overlayPosCr', 'Senter høyre'],
+    bl: ['live.overlayPosBl', 'Bunn venstre'], bc: ['live.overlayPosBc', 'Bunn midt'], br: ['live.overlayPosBr', 'Bunn høyre'],
+    fullscreen: ['live.overlayPosFullscreen', 'Fullskjerm'],
+    custom: ['live.overlayPosCustom', 'Tilpasset'],
+  }
+  const [key, fallback] = keys[p]
+  return `${POSITION_GLYPHS[p]} ${t(key, fallback)}`
+}
+const TYPE_KEYS: Record<OverlaySourceType, [string, string]> = {
+  image:  ['live.overlayTypeImage', 'Bilde (PNG/JPG)'],
+  screen: ['live.overlayTypeScreen', 'Skjerm'],
+  window: ['live.overlayTypeWindow', 'Vindu / regionsutsnitt'],
+  ndi:    ['live.overlayTypeNdi', 'NDI (EasyWorship · ProPresenter · OBS · Keynote/PowerPoint)'],
+}
+function typeLabel(ty: OverlaySourceType): string {
+  const [key, fallback] = TYPE_KEYS[ty]
+  return t(key, fallback)
 }
 
 // ─── Setup ───────────────────────────────────────────────────────────────
@@ -86,18 +100,18 @@ function renderOverlayRow(ov: OverlayConfig): string {
   return `
   <div class="overlay-row" data-overlay-id="${escHtml(ov.id)}">
     <div class="overlay-row-header">
-      <label class="overlay-toggle" title="Slå overlay av/på">
+      <label class="overlay-toggle" title="${escHtml(t('live.overlayToggleTitle', 'Slå overlay av/på'))}">
         <input type="checkbox" class="ov-enabled" ${ov.enabled ? 'checked' : ''} />
         <span class="overlay-toggle-knob"></span>
       </label>
-      <input class="ov-name form-input form-input-sm" type="text" value="${escHtml(ov.name)}" placeholder="Navn" />
+      <input class="ov-name form-input form-input-sm" type="text" value="${escHtml(ov.name)}" placeholder="${escHtml(t('live.overlayNamePlaceholder', 'Navn'))}" />
       <select class="ov-type form-input form-input-sm">
-        ${(Object.keys(TYPE_LABELS) as OverlaySourceType[]).map(t =>
-          `<option value="${t}" ${ov.type === t ? 'selected' : ''}>${escHtml(TYPE_LABELS[t])}</option>`,
+        ${(Object.keys(TYPE_KEYS) as OverlaySourceType[]).map(ty =>
+          `<option value="${ty}" ${ov.type === ty ? 'selected' : ''}>${escHtml(typeLabel(ty))}</option>`,
         ).join('')}
       </select>
       <button class="btn-secondary btn-sm ov-pick-source" type="button">${escHtml(pickButtonLabel(ov.type))}</button>
-      <button class="btn-secondary btn-sm ov-delete" type="button" title="Slett">✕</button>
+      <button class="btn-secondary btn-sm ov-delete" type="button" title="${escHtml(t('live.overlayDeleteTitle', 'Slett'))}">✕</button>
     </div>
     <div class="overlay-row-source">
       <span class="muted">Kilde:</span> ${sourceLabel}
@@ -107,8 +121,8 @@ function renderOverlayRow(ov: OverlayConfig): string {
       <label class="overlay-ctrl">
         Posisjon
         <select class="ov-position form-input form-input-sm">
-          ${(Object.keys(POSITION_LABELS) as OverlayPosition[]).map(p =>
-            `<option value="${p}" ${ov.position === p ? 'selected' : ''}>${escHtml(POSITION_LABELS[p])}</option>`,
+          ${(Object.keys(POSITION_GLYPHS) as OverlayPosition[]).map(p =>
+            `<option value="${p}" ${ov.position === p ? 'selected' : ''}>${escHtml(positionLabel(p))}</option>`,
           ).join('')}
         </select>
       </label>

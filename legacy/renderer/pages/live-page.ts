@@ -14,7 +14,7 @@
  */
 
 import { navigateTo } from '../ui/navigate'
-import { t } from '../i18n'
+import { t, onLocaleApplied } from '../i18n'
 import { settings } from '../state'
 import { escHtml } from '../helpers'
 import { makeVuState, paintVuPair, pushVuLevels, stopVuState } from '../audio/vu'
@@ -324,7 +324,7 @@ function applyStatus(s: StreamStatusView): void {
   lastStats = s
   renderStats(s)
   renderDestinationStates(s)
-  setStatusPill(livePillState(s), pillLabel(s))
+  setStatusPill(livePillState(s), () => pillLabel(s))
   updateStartButton(s.active)
   const tag = document.getElementById('live-preview-overlay-tag')
   if (tag) tag.style.display = s.active ? '' : 'none'
@@ -515,7 +515,7 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
   const framerate  = parseInt((document.getElementById('live-framerate') as HTMLSelectElement | null)?.value
                   ?? String(settings.streamFramerate ?? 30), 10) as 25 | 30
 
-  setStatusPill('is-preparing', t('live.statusPreparing', 'Forbereder…'))
+  setStatusPill('is-preparing', () => t('live.statusPreparing', 'Forbereder…'))
   btn.disabled = true
   if (streamOnlyBtn) streamOnlyBtn.disabled = true
 
@@ -538,7 +538,7 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
     })
     if (!result.ok) {
       showError(startErrorText(result.error ?? ''))
-      setStatusPill('is-idle', t('live.statusReady', 'Klar'))
+      setStatusPill('is-idle', () => t('live.statusReady', 'Klar'))
       // Stream-start failed — restart idle preview so the user isn't
       // staring at a black box wondering what's going on.
       startIdleCameraPreview()
@@ -549,7 +549,7 @@ async function onStartStopClick(alsoRecord: boolean): Promise<void> {
     refreshPreviewPath()
   } catch (err) {
     showError(startErrorText((err as Error).message))
-    setStatusPill('is-idle', t('live.statusReady', 'Klar'))
+    setStatusPill('is-idle', () => t('live.statusReady', 'Klar'))
     startIdleCameraPreview()
   } finally {
     btn.disabled = false
@@ -659,7 +659,7 @@ function updateStartButtonState(): void {
   if (reason !== 'noEnabled') {
     const link = document.createElement('a')
     link.href = '#'
-    link.textContent = t('live.blockedGoSettings', 'Åpne Deling → Publisering')
+    link.textContent = t('live.blockedGoSettings', 'Åpne Innstillinger → Deling')
     link.addEventListener('click', e => {
       e.preventDefault()
       navigateTo('settings', { tab: 'settings-sharing', anchor: '#stream-destinations-card' })
@@ -671,13 +671,20 @@ function updateStartButtonState(): void {
 
 // ── Status pill helpers ──────────────────────────────────────────────────
 
-function setStatusPill(stateClass: 'is-idle' | 'is-preparing' | 'is-live' | 'is-error', label: string): void {
+/** Last pill paint, as a thunk: a language switch re-runs it so the pill keeps
+ *  its live STATE in the new language (i18n.onLocaleApplied) instead of being
+ *  reset to the markup default by the data-i18n pass. */
+let lastPill: { cls: 'is-idle' | 'is-preparing' | 'is-live' | 'is-error'; label: () => string } | null = null
+onLocaleApplied(() => { if (lastPill) setStatusPill(lastPill.cls, lastPill.label) })
+
+function setStatusPill(stateClass: 'is-idle' | 'is-preparing' | 'is-live' | 'is-error', label: () => string): void {
+  lastPill = { cls: stateClass, label }
   const pill = document.getElementById('live-status-pill')
   const text = document.getElementById('live-status-pill-text')
   if (!pill) return
   pill.classList.remove('is-idle', 'is-preparing', 'is-live', 'is-error')
   pill.classList.add(stateClass)
-  if (text) text.textContent = label
+  if (text) text.textContent = label()
 }
 
 function showError(msg: string): void {

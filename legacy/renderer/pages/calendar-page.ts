@@ -1,6 +1,6 @@
-import { t, tArr, currentLang } from '../i18n'
+import { t, tArr, currentLang , onLocaleApplied } from '../i18n'
 import { settings } from '../state'
-import { escHtml, isoDate } from '../helpers'
+import { escHtml, isoDate , localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { clearFieldErrors, setFieldError } from '../ui/field-error'
 import { getChurchHolidays } from '../../shared/church-calendar'
@@ -12,6 +12,18 @@ let calSelectedIso: string | null = null
 let lastStart     = '11:00'
 let lastStop      = '12:00'
 let editingIndex  = -1
+
+/** «Legg til» vs «Oppdater» is add/edit STATE — painted from editingIndex so a
+ *  language switch repaints the mode instead of resetting to the markup
+ *  default (i18n.onLocaleApplied). */
+function paintAddSpecialBtn(): void {
+  const addBtn = document.getElementById('btn-add-special')
+  if (!addBtn) return
+  addBtn.textContent = editingIndex >= 0
+    ? t('calendar.updateRecording', 'Oppdater opptak')
+    : '+ ' + t('calendar.addRecording', 'Legg til opptak')
+}
+onLocaleApplied(paintAddSpecialBtn)
 
 export function setupCalendarPage(): void {
   document.getElementById('btn-today')?.addEventListener('click', () => {
@@ -115,12 +127,12 @@ function openDayDetail(iso: string, holiday: string): void {
   if (hintCard)   hintCard.style.display   = 'none'
 
   const d = new Date(iso + 'T12:00:00')
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
+  const locale = localeTag()
   if (titleEl) titleEl.textContent = d.toLocaleDateString(locale, { weekday:'long', day:'numeric', month:'long' })
   if (dateEl)  dateEl.value = iso
 
   editingIndex = -1
-  if (addBtn) addBtn.textContent = '+ ' + t('calendar.addRecording', 'Legg til opptak')
+  paintAddSpecialBtn()
   if (nameEl) nameEl.value  = holiday || ''
   if (startEl) startEl.value = lastStart
   if (stopEl)  stopEl.value  = lastStop
@@ -144,6 +156,7 @@ function openDayDetail(iso: string, holiday: string): void {
           const s = settings.specialRecordings?.[+(btn as HTMLElement).dataset.index!]
           if (!s) return
           editingIndex = +(btn as HTMLElement).dataset.index!
+          paintAddSpecialBtn()
           if (nameEl)  nameEl.value  = s.name
           if (startEl) startEl.value = s.start
           if (stopEl)  stopEl.value  = s.stop
@@ -164,7 +177,7 @@ function openDayDetail(iso: string, holiday: string): void {
           if (!ok) return
           if (editingIndex === idx) {
             editingIndex = -1
-            if (addBtn) addBtn.textContent = '+ ' + t('calendar.addRecording', 'Legg til opptak')
+            paintAddSpecialBtn()
           }
           settings.specialRecordings!.splice(idx, 1)
           await window.api.saveSettings(settings)
@@ -223,8 +236,7 @@ async function saveSpecial(): Promise<void> {
   if (editingIndex >= 0) {
     settings.specialRecordings[editingIndex] = { date, name, start, stop }
     editingIndex = -1
-    const addBtn = document.getElementById('btn-add-special')
-    if (addBtn) addBtn.textContent = '+ ' + t('calendar.addRecording', 'Legg til opptak')
+    paintAddSpecialBtn()
   } else {
     const exists = settings.specialRecordings.some(s => s.date === date && s.name === name)
     if (!exists) settings.specialRecordings.push({ date, name, start, stop })
@@ -250,7 +262,7 @@ export function renderPlannedList(): void {
     list.innerHTML = `<div style="color:var(--text3);font-size:13px">${t('calendar.noPlanned')}</div>`
     return
   }
-  const locale = currentLang === 'no' ? 'nb-NO' : currentLang
+  const locale = localeTag()
   list.innerHTML = sp.map(s => {
     const gIdx    = (settings.specialRecordings ?? []).indexOf(s)
     const dateStr = new Date(s.date + 'T12:00:00').toLocaleDateString(locale, {

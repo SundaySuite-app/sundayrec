@@ -87,10 +87,7 @@
      rules silently fell back to their grey hardcoded defaults. Bound
      here to the navy system they were meant to reference. */
   --text1:    var(--text);
-  --muted:    var(--text2);
   --surface1: var(--surface);
-  --bg1:      var(--bg);
-  --bg2:      var(--surface);
 }
 
 html, body { height: 100%; overflow: hidden; }
@@ -194,7 +191,6 @@ body.platform-win32 ::-webkit-scrollbar-thumb { border-radius: 4px; }
 .page-header { margin-bottom: 24px; }
 .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 4px; }
 .subtitle { color: var(--text2); font-size: 13px; line-height: 1.5; }
-.mb16 { margin-bottom: 16px; }
 
 /* ── Inner tabs ────────────────────────────────────────────────── */
 .inner-tabs {
@@ -396,6 +392,14 @@ select:focus:not(:focus-visible) {
 .btn-danger { background: var(--red); color: #fff; box-shadow: 0 2px 8px rgba(239,68,68,.3); }
 .btn-danger:hover { opacity: .88; box-shadow: 0 4px 14px rgba(239,68,68,.4); transform: translateY(-1px); }
 .btn-danger:active { transform: translateY(0); }
+/* Quiet destructive variant: real <button> semantics with a small footprint
+   but unmistakably red intent — used with .btn-ghost for the small
+   «Fjern»/«Slett»-actions where a solid red button would shout. */
+.btn-ghost.btn-ghost-danger { color: var(--red); }
+.btn-ghost.btn-ghost-danger:hover {
+  color: var(--red); border-color: var(--red);
+  background: rgba(239, 68, 68, .08);
+}
 .btn-sm { font-size: 12px; padding: 6px 12px; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 
@@ -494,7 +498,6 @@ select:focus:not(:focus-visible) {
 /* Format cards (3 columns, taller) */
 .format-card { padding: 16px 12px 14px; }
 .format-card-name { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -.5px; }
-.format-card-size { font-size: 11px; color: var(--accent2); font-weight: 500; margin: 2px 0; }
 
 /* MP3 quality scale */
 .quality-scale {
@@ -535,32 +538,8 @@ select:focus:not(:focus-visible) {
 .quality-step:has(input:checked) .qb { background: var(--accent); }
 .quality-step:hover .qb { background: var(--accent-border); }
 .quality-label { font-size: 13px; font-weight: 600; color: var(--text); }
-.quality-sub { font-size: 11px; color: var(--text3); }
 
 /* Volume slider with color gradient */
-.vol-slider-wrap {
-  display: flex; align-items: center; gap: 12px; margin-top: 8px; margin-bottom: 6px;
-}
-.vol-icon { width: 18px; height: 18px; color: var(--text3); flex-shrink: 0; }
-.vol-slider { flex: 1; --vol-pct: 100%; height: 6px; }
-.vol-slider::-webkit-slider-runnable-track {
-  height: 6px; border-radius: 3px;
-  background: linear-gradient(to right,
-    var(--accent) 0%, var(--accent) var(--vol-pct),
-    var(--surface3) var(--vol-pct), var(--surface3) 100%
-  ) !important;
-}
-.vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
-  background: var(--accent); margin-top: -5px;
-  box-shadow: 0 0 0 3px rgba(235,184,75,.2), var(--shadow-sm);
-  transition: box-shadow .15s;
-}
-.vol-slider::-webkit-slider-thumb:hover { box-shadow: 0 0 0 5px rgba(235,184,75,.25), var(--shadow-sm); }
-.vol-badge {
-  font-size: 12px; font-weight: 600; color: var(--text2);
-  min-width: 36px; text-align: right;
-}
 
 /* The sticky Save/Cancel «page-footer» is gone (Fase 3, 2026-08): settings
    auto-apply with an inline «Lagret ✓», and the three staged surfaces use
@@ -595,15 +574,10 @@ select:focus:not(:focus-visible) {
 }
 
 /* ── Widgets row ───────────────────────────────────────────────── */
-.widgets-row { display: flex; gap: 14px; margin-bottom: 22px; align-items: flex-start; }
 .widget {
   flex: 1; background: var(--surface);
   border: 1px solid var(--border); border-radius: var(--r);
   padding: 16px;
-}
-.widget-label {
-  font-size: 10px; font-weight: 700; letter-spacing: 1px;
-  color: var(--text3); margin-bottom: 12px; text-transform: uppercase;
 }
 
 /* ── Unified horizontal VU bar (home + recording) ───────────────── */
@@ -718,23 +692,6 @@ select:focus:not(:focus-visible) {
 }
 
 /* ── Storage widget ────────────────────────────────────────────── */
-.storage-folder-row {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 10px;
-}
-.storage-folder {
-  font-size: 12px; color: var(--text2); font-weight: 500;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  flex: 1; min-width: 0;
-}
-.storage-folder-link {
-  font-size: 11px; font-weight: 600; color: var(--text3);
-  text-decoration: none; transition: color .15s; flex-shrink: 0;
-}
-.storage-folder-link:hover { color: var(--accent2); }
-.storage-bar-wrap { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
-.storage-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 3px; transition: width .4s; width: 0%; }
-.storage-text { font-size: 12px; color: var(--text2); line-height: 1.5; }
 
 /* ── Section header ────────────────────────────────────────────── */
 .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
@@ -751,8 +708,7 @@ select:focus:not(:focus-visible) {
   padding: 7px 10px; background: var(--surface2); border-radius: 6px;
   font-size: 12px;
 }
-.history-more-panel a { color: var(--text3); text-decoration: none; transition: color .15s; }
-.history-more-panel a:hover { color: var(--red); }
+/* (the panel's actions became real <button>-er 2026-08 — no anchor styling) */
 
 /* ── Papirkurv ─────────────────────────────────────────────────── */
 .trash-note {
@@ -837,9 +793,6 @@ select:focus:not(:focus-visible) {
   padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
   letter-spacing: .02em;
 }
-.badge-ok    { background: rgba(34,197,94,.14); color: var(--green);  border: 1px solid rgba(34,197,94,.2); box-shadow: 0 0 8px rgba(34,197,94,.12); }
-.badge-error { background: rgba(239,68,68,.14); color: var(--red);    border: 1px solid rgba(239,68,68,.2); box-shadow: 0 0 8px rgba(239,68,68,.12); }
-.badge-sched { background: var(--accent-bg);    color: var(--accent2); border: 1px solid var(--accent-border); }
 
 /* ── Cards ─────────────────────────────────────────────────────── */
 .card {
@@ -848,7 +801,6 @@ select:focus:not(:focus-visible) {
 }
 .card-title { font-size: 14px; font-weight: 700; letter-spacing: -.2px; margin-bottom: 14px; color: var(--text); }
 .card-desc  { font-size: 13px; color: var(--text2); margin-bottom: 14px; line-height: 1.6; }
-.card-hdr   { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 
 /* Setting highlight — pulsing glow when navigating from home Endre button */
 @keyframes settingPulse {
@@ -869,8 +821,6 @@ select:focus:not(:focus-visible) {
 .form-row { margin-bottom: 14px; }
 .form-row.two-col   { display: flex; gap: 12px; }
 .form-row.two-col > div { flex: 1; }
-.form-row.three-col { display: flex; gap: 12px; }
-.form-row.three-col > div { flex: 1; }
 .form-input {
   width: 100%; background: var(--surface2); border: 1px solid var(--border);
   color: var(--text); border-radius: var(--rsm);
@@ -893,8 +843,7 @@ select.form-input {
 .split-select { width: auto; min-width: 130px; }
 .pass-row { display: flex; align-items: center; gap: 10px; }
 .pass-row .form-input { flex: 1; }
-.btn-link { background: none; border: none; color: var(--text3); font-size: 12px; cursor: pointer; padding: 0; text-decoration: underline; white-space: nowrap; }
-.btn-link:hover { color: var(--red); }
+/* .btn-link ble fjernet 2026-08 — siste bruker (SMTP «Fjern») er nå en ekte danger-ghost-knapp. */
 
 /* ── Toggles ───────────────────────────────────────────────────── */
 .toggle-row {
@@ -933,7 +882,6 @@ select.form-input {
   transition: box-shadow .15s;
 }
 .slider::-webkit-slider-thumb:hover { box-shadow: 0 0 0 5px rgba(235,184,75,.25), var(--shadow-sm); }
-.slider-value { font-size: 12px; color: var(--text2); margin-top: 5px; text-align: right; }
 
 /* ── Folder row ────────────────────────────────────────────────── */
 .folder-row { display: flex; gap: 10px; }
@@ -1125,28 +1073,11 @@ select.form-input {
 }
 
 /* ── General misc ──────────────────────────────────────────────── */
-.lang-detected {
-  font-size: 12px; color: var(--text2); background: var(--surface2);
-  border-radius: var(--rsm); padding: 10px 14px;
-  margin-bottom: 14px; border-left: 3px solid var(--accent);
-  line-height: 1.5;
-}
 .update-row  { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 13px; color: var(--text2); }
-.update-banner {
-  margin-top: 12px; padding: 12px 14px; border-radius: var(--rsm);
-  background: var(--green-bg); border: 1px solid rgba(34,197,94,.2);
-  font-size: 13px; color: var(--green); line-height: 1.5;
-}
 .version-badge {
   padding: 3px 10px; background: var(--surface2); border: 1px solid var(--border);
   border-radius: 20px; font-size: 12px; font-family: monospace; color: var(--text);
   font-weight: 600;
-}
-.hero-version-badge {
-  display: inline-block; margin-top: 6px;
-  padding: 2px 9px; border-radius: 20px;
-  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
-  font-size: 11px; color: var(--text3); font-family: monospace;
 }
 
 /* ── Modals ────────────────────────────────────────────────────── */
@@ -1442,12 +1373,15 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 
 /* ── Telemetry consent toast (E3.6) ──────────────────────────────
  * The one-time prompt for installs that already finished onboarding
- * (telemetry-consent-prompt.ts). Deliberately its OWN corner — top-right,
- * below the titlebar — rather than .update-toast's bottom-right: the two are
- * both "maybe shown at startup" and neither should have to know whether the
- * other is currently on screen. */
+ * (telemetry-consent-prompt.ts). Deliberately its OWN corner — BOTTOM-LEFT.
+ * Not migrated into ui/toast.ts (the house toast carries at most one action;
+ * consent needs two equal answers, a privacy link and a close). Not top-right:
+ * that is .ui-toast-stack's corner, and on macOS the two used to land on top
+ * of each other. Not bottom-right: that is .update-toast's, and both are
+ * "maybe shown at startup" — neither should have to know whether the other is
+ * currently on screen. */
 .telemetry-consent-toast {
-  position: fixed; top: 40px; right: 22px; z-index: var(--z-toast);
+  position: fixed; bottom: 22px; left: 22px; z-index: var(--z-toast);
   width: 320px;
   background: var(--surface2); border: 1px solid var(--border2);
   border-radius: 14px; padding: 16px 16px 14px;
@@ -1767,17 +1701,14 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   border-radius: 12px; padding: 14px 18px; width: 260px;
   box-shadow: 0 8px 32px rgba(0,0,0,.5);
   display: flex; align-items: flex-start; gap: 12px;
-  animation: slideUp .28s cubic-bezier(.22,1,.36,1);
+  animation: toast-in .28s cubic-bezier(.22,1,.36,1);
   transition: opacity .2s, transform .2s;
 }
 .editor-prompt-toast.toast-dismissing {
   opacity: 0;
   transform: translateY(10px);
 }
-@keyframes slideUp {
-  from { transform: translateY(14px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
-}
+/* (@keyframes slideUp var byte-identisk med toast-in — dedupet 2026-08.) */
 
 /* ── Page transition ─────────────────────────────────────────────── */
 @keyframes pageEnter {
@@ -2071,7 +2002,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: var(--surface2);
   border-radius: 8px;
 }
-.cloud-queue-empty { color: var(--text3); font-size: 12px; }
 .cloud-queue-title { margin: 0 0 8px 0; font-size: 14px; }
 .cloud-queue-list  { display: flex; flex-direction: column; gap: 6px; }
 .cloud-queue-row {
@@ -2221,29 +2151,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   margin-bottom: 14px;
   font-style: italic;
 }
-.search-results { display: flex; flex-direction: column; gap: 10px; }
-.search-section-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--text3);
-  margin: 8px 0 4px;
-}
-.search-recent-card,
-.search-result-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  transition: border-color .12s, background .12s;
-}
-.search-recent-card { cursor: pointer; }
-.search-recent-card:hover,
-.search-result-card:hover { border-color: var(--accent-border, rgba(235,184,75,.35)); }
-.search-recent-name,
-.search-result-name { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 3px; }
-.search-recent-meta,
-.search-result-meta { font-size: 12px; color: var(--text3); }
-.search-result-header { margin-bottom: 8px; }
 .search-hit-row {
   display: flex; gap: 12px; align-items: flex-start;
   padding: 6px 8px; margin: 4px 0;
@@ -2260,17 +2167,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .search-hit-text { flex: 1; font-size: 13px; color: var(--text2); line-height: 1.5; }
 .search-hit-text mark {
   background: rgba(235,184,75,.30); color: var(--text); padding: 0 2px; border-radius: 2px;
-}
-.search-hit-more {
-  font-size: 11px; color: var(--accent);
-  padding: 4px 8px;
-  cursor: pointer;
-  font-style: italic;
-}
-.search-hit-more:hover { text-decoration: underline; }
-.search-no-hits {
-  padding: 30px 20px; text-align: center;
-  color: var(--text3); font-size: 14px;
 }
 .search-empty {
   text-align: center; padding: 60px 20px;
@@ -2622,12 +2518,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .hero-warn { animation: heroGlowWarn 3s ease-in-out infinite; }
 
 /* ── Hero — recording state (btn-record.recording sibling) ─────── */
-.hero-ok.hero-recording {
-  background: linear-gradient(135deg, rgba(239,68,68,.08), rgba(239,68,68,.02));
-  border-color: rgba(239,68,68,.28);
-  animation: none;
-  box-shadow: 0 0 32px rgba(239,68,68,.15);
-}
 
 /* ── Recording button ring ─────────────────────────────────────── */
 .btn-record { position: relative; overflow: visible; }
@@ -2791,8 +2681,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .hist-row td { transition: background .1s; }
 
 /* ── Rec-table status column — compact icon + text ───────────── */
-.badge-ok::before    { content: '✓'; margin-right: 2px; opacity: .7; }
-.badge-error::before { content: '✕'; margin-right: 2px; opacity: .7; }
 
 /* ── Forms — focus ring improvement ──────────────────────────── */
 .form-input:focus {
@@ -2966,57 +2854,17 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .cloud-grid { gap: 10px !important; }
 .cloud-account-name, .cloud-folder-name { word-break: break-word; }
 .cloud-error { font-size: 12px; color: var(--red); padding: 6px 10px; background: rgba(239,68,68,.08); border-radius: 6px; margin-top: 6px; }
-.schedule-howto { animation: fadeIn .2s ease; }
-.schedule-howto-card {
-  background: rgba(122,170,255,.07);
-  border: 1px solid rgba(122,170,255,.25);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 14px;
-  font-size: 13px;
-  color: var(--text2);
-  line-height: 1.5;
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.schedule-howto-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
-.schedule-howto-body { flex: 1; }
-.schedule-howto-strong { color: var(--text); }
-.schedule-howto-dismiss {
-  color: var(--accent);
-  font-size: 12px;
-  margin-left: 6px;
-  text-decoration: none;
-}
-.schedule-howto-dismiss:hover { opacity: .7; }
 .cloud-card-header {
   display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
 }
 .cloud-card-icon { width: 32px; height: 32px; flex-shrink: 0; }
 .cloud-card-name { font-weight: 700; font-size: 15px; flex: 1; }
-.cloud-status-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-}
-.cloud-dot-ok  { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,.4); }
-.cloud-dot-off { background: var(--text3); }
-.cloud-folder-row {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; margin-bottom: 6px;
-}
-.cloud-folder-label { color: var(--text3); }
 .cloud-folder-name  { flex: 1; font-weight: 600; }
-.cloud-upload-row {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; margin-bottom: 8px;
-}
-.cloud-last-upload-label { color: var(--text3); }
 .cloud-last-upload { font-size: 12px; color: var(--text2); }
 .cloud-toggle-row {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; margin-bottom: 6px;
 }
-.cloud-disconnect-btn { margin-top: 6px; color: var(--red); }
 .cloud-error {
   margin-top: 6px; font-size: 12px; color: var(--red);
   background: rgba(239,68,68,.08); border-radius: 6px; padding: 6px 10px;
@@ -3333,10 +3181,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: var(--surface2);
   flex-wrap: wrap;
 }
-.video-source-label {
-  font-size: var(--fs-xs); font-weight: 700; letter-spacing: 1px;
-  color: var(--text3); text-transform: uppercase; flex-shrink: 0;
-}
 /* Segmented video-feed size control (small / medium / large). Pushed to the far
    right of the source bar (margin-left:auto) so it reads as separate from the
    source-select / refresh / mirror controls on the left. */
@@ -3373,11 +3217,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
   background: rgba(235,184,75,.15); border-color: rgba(235,184,75,.4); color: var(--accent);
 }
 .video-preview-img.video-flip { transform: scaleX(-1); }
-.video-progress-badge {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 12px; color: var(--red); font-weight: 600;
-  animation: pulse-opacity 1.5s infinite; margin-left: auto;
-}
 .video-preview-wrap {
   position: relative; background: #000;
   width: 100%; aspect-ratio: 16 / 9; overflow: hidden;
@@ -3986,10 +3825,6 @@ button > svg:first-child { flex-shrink: 0; }
   padding: 4px 0; user-select: none;
 }
 .export-publish-option input { margin: 0; }
-.export-publish-option.is-disabled {
-  opacity: .5; cursor: not-allowed;
-}
-.export-publish-option.is-disabled input { cursor: not-allowed; }
 .export-publish-configure {
   display: inline-block; color: var(--accent); font-size: 12px;
   text-decoration: none; margin-top: 4px;
@@ -4155,10 +3990,6 @@ button > svg:first-child { flex-shrink: 0; }
   display: flex; flex-direction: column;
   gap: 8px;
 }
-.live-destinations-empty {
-  font-size: 12px; color: var(--text3);
-  padding: 6px 0;
-}
 .live-destination-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 0;
@@ -4263,7 +4094,7 @@ button > svg:first-child { flex-shrink: 0; }
 }
 .live-action-hint {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   line-height: 1.5;
   padding: 4px 2px;
   text-align: center;
@@ -4299,7 +4130,11 @@ button > svg:first-child { flex-shrink: 0; }
   margin-top: 6px;
   margin-bottom: 12px;
 }
-.stream-destinations-empty {
+/* ── Delt inline-tomtilstand ────────────────────────────────────
+   Én form for «ingenting her ennå» inne i kort (fire kort hadde fire
+   divergerende varianter). Full-side-tomtilstanden .search-empty beholder
+   sin større illustrasjonsform. */
+.empty-state {
   padding: 14px;
   text-align: center;
   font-size: 12px; color: var(--text3);
@@ -4307,6 +4142,7 @@ button > svg:first-child { flex-shrink: 0; }
   border: 1px dashed var(--border2);
   border-radius: var(--rsm);
 }
+.empty-state p { margin: 0; }
 .stream-destination-row {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -4338,7 +4174,7 @@ button > svg:first-child { flex-shrink: 0; }
 .editor-thumb-section {
   margin-top: 16px;
   padding: 14px 16px;
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   border: 1px solid var(--border, #2a2a35);
   border-radius: 10px;
 }
@@ -4354,7 +4190,7 @@ button > svg:first-child { flex-shrink: 0; }
 .thumb-preview {
   width: 140px; height: 140px; min-width: 140px;
   display: flex; align-items: center; justify-content: center;
-  background: var(--bg1, #0d0d11);
+  background: var(--bg);
   border: 2px dashed var(--border, #2a2a35);
   border-radius: 8px;
   cursor: pointer;
@@ -4394,45 +4230,15 @@ button > svg:first-child { flex-shrink: 0; }
 .thumb-card-icon {
   display: inline-block;
   border-radius: 4px;
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   object-fit: cover;
   vertical-align: middle;
   flex-shrink: 0;
 }
 .thumb-card-icon-home { width: 48px; height: 48px; margin-right: 10px; }
 
-/* ─── Gmail OAuth card on the email-notifications settings ────────────── */
-.email-oauth-block { display: flex; flex-direction: column; gap: 6px; }
-.email-oauth-card {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--rsm);
-  padding: 12px 14px;
-}
-.email-oauth-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.email-oauth-text {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-.email-oauth-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-.email-oauth-sub {
-  font-size: 12px;
-  color: var(--muted, #8a8a92);
-  line-height: 1.4;
-}
-
-/* Avansert SMTP collapsible — feels secondary so it doesn't compete with
-   the primary "Logg inn med Google" CTA above it. */
+/* SMTP collapsible — the one e-mail send method that exists (the Gmail-OAuth
+   card above it was removed 2026-08 along with its dead backend stub). */
 .email-advanced {
   border-top: 1px solid var(--border);
   padding-top: 10px;
@@ -4441,7 +4247,7 @@ button > svg:first-child { flex-shrink: 0; }
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   padding: 6px 0;
   user-select: none;
 }
@@ -4455,15 +4261,9 @@ button > svg:first-child { flex-shrink: 0; }
 /* ─── Live overlay configuration ───────────────────────────────────────── */
 .live-overlay-card { margin-top: 16px; }
 .overlay-list { display: flex; flex-direction: column; gap: 10px; }
-.overlay-empty {
-  font-size: 13px;
-  color: var(--muted, #6e6e76);
-  font-style: italic;
-  padding: 12px 0;
-}
 .overlay-row {
   border: 1px solid var(--border, #2a2a32);
-  background: var(--bg2, #15151b);
+  background: var(--surface);
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;
@@ -4480,20 +4280,12 @@ button > svg:first-child { flex-shrink: 0; }
 .overlay-row-header .ov-type { flex: 0 0 auto; max-width: 220px; }
 .overlay-row-source {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
 }
-.overlay-row-source .muted { color: var(--muted, #8a8a92); opacity: .8; }
-.overlay-row-warn {
-  font-size: 12px;
-  color: #f5a623;
-  background: rgba(245,166,35,.08);
-  border: 1px solid rgba(245,166,35,.25);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
+.overlay-row-source .muted { color: var(--text2); opacity: .8; }
 .overlay-row-hint {
   font-size: 12px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   background: rgba(140,148,255,.06);
   border: 1px solid rgba(140,148,255,.18);
   border-radius: 6px;
@@ -4507,7 +4299,7 @@ button > svg:first-child { flex-shrink: 0; }
 }
 .overlay-ctrl {
   font-size: 11px;
-  color: var(--muted, #8a8a92);
+  color: var(--text2);
   letter-spacing: .3px;
   display: flex;
   flex-direction: column;
@@ -4557,19 +4349,8 @@ button > svg:first-child { flex-shrink: 0; }
 }
 .overlay-toggle input:checked + .overlay-toggle-knob { background: #2db66c; }
 .overlay-toggle input:checked + .overlay-toggle-knob::before { transform: translateX(16px); }
-.thumb-card-icon-search { width: 64px; height: 64px; margin-right: 12px; }
 
 /* Diagnose-rapport (samlet diagnose-verktøy) */
-.diag-findings { display: flex; flex-direction: column; gap: 8px; }
-.diag-finding { padding: 8px 10px; border-radius: 8px; border-left: 4px solid var(--text3, #888); background: rgba(127,127,127,0.08); }
-.diag-finding.diag-critical { border-left-color: #e5484d; background: rgba(229,72,77,0.10); }
-.diag-finding.diag-warning  { border-left-color: #f0a020; background: rgba(240,160,32,0.10); }
-.diag-finding.diag-info     { border-left-color: #4a90d9; background: rgba(74,144,217,0.10); }
-.diag-finding.diag-ok       { border-left-color: #2db66c; background: rgba(45,182,108,0.10); }
-.diag-finding-head { font-size: 13px; }
-.diag-finding-head code { font-size: 12px; opacity: 0.85; }
-.diag-finding-detail { font-size: 12px; color: var(--text2, #aaa); margin-top: 2px; }
-.diag-finding-hint { font-size: 12px; margin-top: 2px; }
 .diag-report { white-space: pre-wrap; font-size: 11px; max-height: 320px; overflow: auto; background: rgba(0,0,0,0.18); padding: 8px; border-radius: 6px; }
 
 /* Lyd → Diagnose: the audio answer as READABLE ROWS. The modal used to lead with

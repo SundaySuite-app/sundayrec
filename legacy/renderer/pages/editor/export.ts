@@ -286,8 +286,14 @@ let configuredCache: { gdrive: boolean; dropbox: boolean; onedrive: boolean; you
  * configured, we show a single "Konfigurer publisering →" link to the
  * publish settings page.
  *
- * For video files we also append disabled placeholder rows for YouTube +
- * Vimeo so the user can see the roadmap.
+ * YouTube appears for video files ONLY when an account is connected. There
+ * used to be a live «→ Koble til YouTube»-link here, but `youtubeConnect` is
+ * a permanent-failure stub (same 2026-08 audit finding as the Gmail button on
+ * the Varsler tab), so every click produced an empty «Tilkobling feilet: ».
+ * Same honest gate as Gmail got: no live affordance to a dead backend — the
+ * row simply is not rendered until the backend exists. A disabled Vimeo
+ * "roadmap" row («Kommer i en senere versjon…») went with it: the coming-soon
+ * chip was deliberately retired app-wide (see ui/feature-gate.ts).
  */
 export async function renderPublishOptions(): Promise<void> {
   const wrap     = $('export-publish-options')
@@ -318,13 +324,12 @@ export async function renderPublishOptions(): Promise<void> {
   // service is configured.
   ;(andBtn as HTMLElement).style.display = haveAny ? '' : 'none'
 
-  function addRow(key: keyof PublishState, label: string, enabled: boolean, disabled = false, tooltip = ''): void {
+  function addRow(key: keyof PublishState, label: string, enabled: boolean): void {
     const row = document.createElement('label')
-    row.className = 'export-publish-option' + (disabled ? ' is-disabled' : '')
-    if (tooltip) row.title = tooltip
+    row.className = 'export-publish-option'
     const chk = document.createElement('input')
     chk.type = 'checkbox'
-    chk.disabled = disabled || !enabled
+    chk.disabled = !enabled
     chk.checked = false
     chk.addEventListener('change', () => { publishSelections[key] = chk.checked })
     const span = document.createElement('span')
@@ -346,42 +351,11 @@ export async function renderPublishOptions(): Promise<void> {
   if (configuredCache.onedrive) addRow('onedrive', t('editor.exportPublishOnedrive', 'Last opp til OneDrive'),      true)
   if (podcastEnabled)           addRow('podcast',  t('editor.exportPublishPodcast',  'Oppdater podcast RSS-feed'),  true)
 
-  // Video files: surface YouTube as an actionable row. If user is connected,
-  // checkbox enables upload; otherwise we render a "Koble til YouTube"-link
-  // so they can opt-in inline without leaving the modal.
-  if (E.isVideoFile) {
-    if (configuredCache.youtubeConnected) {
-      addRow('youtube', t('editor.exportPublishYoutube', 'Last opp video til YouTube (privat)'), true)
-    } else {
-      const row = document.createElement('div')
-      row.className = 'export-publish-option export-publish-connect-row'
-      const span = document.createElement('span')
-      span.textContent = t('editor.exportPublishYoutube', 'Last opp video til YouTube')
-      const link = document.createElement('a')
-      link.href = '#'
-      link.className = 'export-publish-connect-link'
-      link.textContent = t('editor.exportPublishYoutubeConnect', '→ Koble til YouTube')
-      link.addEventListener('click', async (e) => {
-        e.preventDefault()
-        link.textContent = t('editor.exportPublishYoutubeConnecting', 'Åpner Google-pålogging…')
-        const res = await window.api.youtubeConnect()
-        if (res?.ok) {
-          configuredCache.youtubeConnected = true
-          await renderPublishOptions()
-        } else {
-          link.textContent = `${t('editor.exportPublishYoutubeFailed', 'Tilkobling feilet')}: ${res?.error ?? ''}`.slice(0, 80)
-        }
-      })
-      row.appendChild(span)
-      row.appendChild(link)
-      wrap.appendChild(row)
-    }
-
-    // Vimeo placeholder remains for later phase — it has a fundamentally
-    // different OAuth+API model so it's a separate workstream.
-    const vmLabel = t('editor.exportPublishVimeo', 'Last opp video til Vimeo')
-    const phase2  = t('editor.exportPublishPhase2', 'Kommer i en senere versjon — krever separat OAuth-oppsett')
-    addRow('gdrive', vmLabel, false, /*disabled*/ true, phase2)
+  // Video files: YouTube upload rides an already-connected account. Rendered
+  // only when the backend reports a connection (see the doc comment above for
+  // why there is no inline connect-link).
+  if (E.isVideoFile && configuredCache.youtubeConnected) {
+    addRow('youtube', t('editor.exportPublishYoutube', 'Last opp video til YouTube (privat)'), true)
   }
 }
 

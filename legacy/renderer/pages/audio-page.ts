@@ -1,6 +1,6 @@
-import { t } from '../i18n'
+import { t, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { setVal, setRadio } from '../helpers'
+import { setVal, setRadio, localeTag } from '../helpers'
 import { getAudioDevices, isBuiltInDevice } from '../audio/capture'
 import { setupChannelGrid, startChannelGrid } from './channel-grid'
 import { refreshHomeDiskSpace, loadHomeInfoStrip } from './home'
@@ -15,13 +15,6 @@ import {
   showSavedChip,
 } from '../ui/bind-setting'
 import type { ChannelMode } from '../../types'
-
-function updateVolGradient(): void {
-  const el = document.getElementById('input-volume') as HTMLInputElement | null
-  if (!el) return
-  const pct = +el.value
-  el.style.setProperty('--vol-pct', pct + '%')
-}
 
 export function setupAudioPage(): void {
   // AUTO-APPLY is the ONLY save model on this page — and since bindSetting it
@@ -78,8 +71,9 @@ export function setupAudioPage(): void {
       })
     }
   }
-  // NB: compressor/limiter/EQ/input-volume controls are hidden inert inputs
-  // (record-raw philosophy — see saveAudioSettings); no listeners needed.
+  // NB: compressor/limiter/EQ/input-volume have NO controls on this page
+  // (record-raw philosophy — see saveAudioSettings); their settings-values
+  // pass through the blob untouched.
 
   document.getElementById('btn-audio-diagnose')?.addEventListener('click', runAudioDiagnosis)
   document.getElementById('btn-audio-diagnose-close')?.addEventListener('click', () => {
@@ -102,7 +96,7 @@ async function showAutoSampleRate(): Promise<void> {
     const ctx = new Ctx()
     const hz = ctx.sampleRate
     void ctx.close()
-    el.textContent = hz ? ` · ${hz.toLocaleString('nb-NO')} Hz` : ''
+    el.textContent = hz ? ` · ${hz.toLocaleString(localeTag())} Hz` : ''
   } catch {
     el.textContent = ''
   }
@@ -128,28 +122,19 @@ function onGridChannelCount(count: number): void {
 }
 
 export function applyAudioSettingsToUI(): void {
-  setVal('input-volume', settings.inputVolume ?? 100)
   setRadio('channels', settings.channels ?? 'stereo')
   // Sample-rate mode cards — default Auto (native capture).
   const srMode = settings.sampleRateMode ?? 'auto'
   document.querySelectorAll<HTMLInputElement>('input[name="sampleRate"]').forEach(r => {
     r.checked = r.value === srMode
   })
-  updateVolGradient()
   const classicEl = document.getElementById('opt-classic-dshow') as HTMLInputElement | null
   if (classicEl) classicEl.checked = !!settings.classicDirectshow
   const classicFfEl = document.getElementById('opt-classic-ffmpeg') as HTMLInputElement | null
   if (classicFfEl) classicFfEl.checked = !!settings.classicFfmpegAudio
-  const compEl = document.getElementById('opt-compressor') as HTMLInputElement | null
-  if (compEl) {
-    compEl.checked = !!settings.compEnabled
-    const cs = document.getElementById('comp-settings')
-    if (cs) cs.style.display = settings.compEnabled ? 'block' : 'none'
-  }
-  setVal('comp-threshold', settings.compThreshold ?? -24)
-  setVal('comp-ratio',     settings.compRatio     ?? 4)
-  setVal('comp-attack',    settings.compAttack    ?? 10)
-  setVal('comp-release',   settings.compRelease   ?? 200)
+  // NB: compressor/limiter/EQ/inputVolume are settings WITHOUT UI (record-raw
+  // philosophy since v4.31). The hidden mirror-inputs this function used to
+  // write are gone — the values live untouched in the settings blob.
   // The DOM was just rewritten from settings — rebase every binding's "last
   // committed value" so the next edit is compared against what is on screen.
   resyncBoundSettings()
@@ -438,6 +423,7 @@ function renderIpcFailuresSection(): string {
  */
 async function runAudioDiagnosis(): Promise<void> {
   const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
+  diagnoseRunning = true
   if (btn) { btn.disabled = true; btn.textContent = t('audio.diagnoseRunning', 'Analyserer…') }
 
   try {
@@ -519,9 +505,19 @@ async function runAudioDiagnosis(): Promise<void> {
 
     openModal('audio-diagnose-modal')
   } finally {
+    diagnoseRunning = false
     if (btn) { btn.disabled = false; btn.textContent = t('audio.diagnose', 'Diagnose') }
   }
 }
+
+/** Språkbytte mid-analyse: keep the transient label truthful (the data-i18n
+ *  pass resets it to the idle default while the analysis is still running). */
+let diagnoseRunning = false
+onLocaleApplied(() => {
+  if (!diagnoseRunning) return
+  const btn = document.getElementById('btn-audio-diagnose') as HTMLButtonElement | null
+  if (btn) btn.textContent = t('audio.diagnoseRunning', 'Analyserer…')
+})
 
 function escHtml(str: unknown): string {
   return String(str ?? '').replace(/[&<>"']/g, m =>

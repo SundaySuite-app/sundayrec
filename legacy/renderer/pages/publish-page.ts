@@ -1,5 +1,5 @@
 import { settings, patchSettings } from '../state'
-import { flashSaved, escHtml } from '../helpers'
+import { flashSaved, escHtml, localeTag } from '../helpers'
 import { t } from '../i18n'
 import { notifyLivePageDestinationsChanged } from './live-page'
 import { closeModal, openModal } from '../ui/modal-manager'
@@ -29,6 +29,11 @@ const configured: Record<CloudServiceId, boolean> = {
   'dropbox':      true,
   'onedrive':     true,
 }
+
+/** The services that have a card in the DOM. Dropbox/OneDrive were removed
+ *  2026-08 (no app key in any build → the hidden cards were dead DOM);
+ *  extend this list together with the markup when a key exists. */
+const VISIBLE_SERVICES: CloudServiceId[] = ['google-drive']
 
 export function setupPublishPage(): void {
   refreshStatus()
@@ -148,8 +153,7 @@ async function refreshStatus(): Promise<void> {
 }
 
 async function refreshConfigured(): Promise<void> {
-  const services: CloudServiceId[] = ['google-drive', 'dropbox', 'onedrive']
-  await Promise.all(services.map(async s => {
+  await Promise.all(VISIBLE_SERVICES.map(async s => {
     try {
       configured[s] = await window.api.cloudIsConfigured(s) as boolean
     } catch { configured[s] = true }
@@ -162,7 +166,10 @@ async function refreshConfigured(): Promise<void> {
   // not, «Koble til» cannot work for anyone — so say that once, at the top of
   // the section, and turn the buttons off, instead of letting the user press a
   // button that opens nothing and reports an error they cannot act on.
-  const anyConfigured = Object.values(configured).some(Boolean)
+  // Only the services with a card on screen count — the `configured` map's
+  // optimistic defaults for card-less services must not mask a build where
+  // Google Drive (the one visible card) has no client id.
+  const anyConfigured = VISIBLE_SERVICES.some(s => configured[s])
   applyFeatureGate('cloud-backup-card', {
     status: cloudGateStatus(anyConfigured),
     chipText: t('gate.chipUnconfigured', 'Ikke konfigurert'),
@@ -184,8 +191,7 @@ async function refreshQueue(): Promise<void> {
 }
 
 function renderAllCards(status: ServiceStatus): void {
-  const services: CloudServiceId[] = ['google-drive', 'dropbox', 'onedrive']
-  for (const id of services) {
+  for (const id of VISIBLE_SERVICES) {
     renderCard(id, status[id])
   }
 }
@@ -206,10 +212,10 @@ function renderCard(service: CloudServiceId, status: CloudStatus): void {
     connectedSection?.style.setProperty('display', '')
     disconnectedSection?.style.setProperty('display', 'none')
     if (accountNameEl) accountNameEl.textContent = status.accountName ?? ''
-    if (folderNameEl)  folderNameEl.textContent  = status.folderName ?? status.folderPath ?? 'Rotmappe'
+    if (folderNameEl)  folderNameEl.textContent  = status.folderName ?? status.folderPath ?? t('publish.rootFolder', 'Rotmappe')
     if (lastUploadEl) {
       lastUploadEl.textContent = status.lastUpload
-        ? (status.lastUploadOk ? '✓ ' : '✕ ') + new Date(status.lastUpload).toLocaleString('no')
+        ? (status.lastUploadOk ? '✓ ' : '✕ ') + new Date(status.lastUpload).toLocaleString(localeTag())
         : '—'
     }
     renderReauthBanner(card, service, status.needsReauth === true)
@@ -304,7 +310,7 @@ function renderQueue(q: CloudQueueStatus): void {
   }
 
   if (q.entries.length === 0) {
-    panel.innerHTML = `<div class="cloud-queue-empty">${t('publish.queueEmpty', 'Ingen ventende skyopplastinger.')}</div>`
+    panel.innerHTML = `<div class="empty-state">${t('publish.queueEmpty', 'Ingen ventende skyopplastinger.')}</div>`
     return
   }
 
@@ -329,7 +335,7 @@ function renderQueue(q: CloudQueueStatus): void {
     const line2 = document.createElement('div')
     line2.className = 'cloud-queue-line2'
     const nextStr = e.nextAttempt > Date.now()
-      ? `${t('publish.queueNextAttempt', 'Neste forsøk')}: ${new Date(e.nextAttempt).toLocaleTimeString()}`
+      ? `${t('publish.queueNextAttempt', 'Neste forsøk')}: ${new Date(e.nextAttempt).toLocaleTimeString(localeTag())}`
       : ''
     line2.textContent = [
       `${t('publish.queueAttempts', 'Forsøk')}: ${e.attempts}`,
@@ -549,7 +555,7 @@ function renderStreamDestinations(): void {
   list.innerHTML = ''
   if (draftDestinations.length === 0) {
     const empty = document.createElement('div')
-    empty.className = 'stream-destinations-empty'
+    empty.className = 'empty-state'
     empty.textContent = t('publish.streamNoneYet', 'Ingen destinasjoner enda.')
     list.appendChild(empty)
   }

@@ -1,6 +1,6 @@
-import { t, currentLang } from '../i18n'
+import { t, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { fmtCountdown, fmtStorageHours, fmtDate } from '../helpers'
+import { fmtCountdown, fmtStorageHours, fmtDate, localeTag } from '../helpers'
 import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
@@ -253,6 +253,17 @@ async function runSilentPreflightOnce(): Promise<void> {
   }
 }
 
+/** Språkbytte-repaint (see i18n.onLocaleApplied): the video placeholder is
+ *  painted from many async states — cache the last paint as a thunk so a
+ *  language switch repaints the same STATE in the new language instead of
+ *  letting the data-i18n pass reset it to the markup default. */
+let videoPlaceholderPaint: (() => string) | null = null
+function setVideoPlaceholder(paint: () => string): void {
+  videoPlaceholderPaint = paint
+  const el = document.getElementById('video-preview-placeholder-text')
+  if (el) el.textContent = paint()
+}
+
 export async function refreshHomeVideoDevices(): Promise<void> {
   const sel   = document.getElementById('home-video-device-select') as HTMLSelectElement | null
   if (!sel) return
@@ -279,7 +290,7 @@ export async function refreshHomeVideoDevices(): Promise<void> {
     })
 
     if (!devices.length) {
-      if (phTxt) phTxt.textContent = t('home.cameraNoneFound', 'Ingen kameraer funnet — sjekk tilkobling')
+      setVideoPlaceholder(() => t('home.cameraNoneFound', 'Ingen kameraer funnet — sjekk tilkobling'))
       sel.disabled = false
       return
     }
@@ -290,18 +301,18 @@ export async function refreshHomeVideoDevices(): Promise<void> {
     sel.disabled = false
 
     // Bug 6: inform user when previously saved camera is no longer available
-    if (savedName && !match && phTxt) {
-      phTxt.textContent = t('home.cameraSavedMissing', 'Kamera "{name}" ikke funnet — velg et annet').replace('{name}', savedName)
-    } else if (phTxt) {
-      phTxt.textContent = sel.value ? t('home.cameraStarting', 'Starter kamera…') : t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
+    if (savedName && !match) {
+      setVideoPlaceholder(() => t('home.cameraSavedMissing', 'Kamera "{name}" ikke funnet — velg et annet').replace('{name}', savedName))
+    } else {
+      const hasPick = !!sel.value
+      setVideoPlaceholder(() => hasPick ? t('home.cameraStarting', 'Starter kamera…') : t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater'))
     }
   } catch (err) {
     console.warn('[home] device list failed:', err)
     sel.innerHTML = ''
     sel.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: t('home.cameraListError', 'Feil ved lasting') }))
     sel.disabled = false
-    const phTxt2 = document.getElementById('video-preview-placeholder-text')
-    if (phTxt2) phTxt2.textContent = t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser')
+    setVideoPlaceholder(() => t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser'))
     const phDiv2 = document.getElementById('video-preview-placeholder')
     if (phDiv2) phDiv2.style.display = ''
   }
@@ -324,8 +335,7 @@ async function applyHomeVideoDeviceSelection(): Promise<void> {
     startVideoPreview()
   } else {
     const phDiv = document.getElementById('video-preview-placeholder')
-    const phTxt = document.getElementById('video-preview-placeholder-text')
-    if (phTxt) phTxt.textContent = t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
+    setVideoPlaceholder(() => t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater'))
     if (phDiv) phDiv.style.display = ''
   }
 }
@@ -383,14 +393,14 @@ export async function startVideoPreview(): Promise<void> {
   const video  = document.getElementById('video-preview-video') as HTMLVideoElement | null
 
   if (!settings.videoDeviceName) {
-    if (phTxt) phTxt.textContent = t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater')
+    setVideoPlaceholder(() => t('home.cameraPickAndRefresh', 'Velg kamera og trykk oppdater'))
     if (phDiv) phDiv.style.display = ''
     return
   }
 
   if (previewActive) return
   previewActive = true
-  if (phTxt) phTxt.textContent = t('home.cameraStarting', 'Starter kamera…')
+  setVideoPlaceholder(() => t('home.cameraStarting', 'Starter kamera…'))
   if (phDiv) phDiv.style.display = ''
 
   try {
@@ -446,9 +456,9 @@ export async function startVideoPreview(): Promise<void> {
   } catch (err) {
     previewActive = false
     const name = (err as DOMException)?.name
-    if (phTxt) phTxt.textContent = name === 'NotAllowedError'
+    setVideoPlaceholder(() => name === 'NotAllowedError'
       ? t('home.cameraDenied', 'Kameratilgang nektet — sjekk Systeminnstillinger')
-      : t('home.cameraNoResponse', 'Kamera svarte ikke — prøv å oppdatere')
+      : t('home.cameraNoResponse', 'Kamera svarte ikke — prøv å oppdatere'))
     if (phDiv) phDiv.style.display = ''
     if (video) video.style.display = 'none'
   }
@@ -628,6 +638,19 @@ function healthProgress(
 }
 
 export function setupHome(): void {
+  // Språkbytte: repaint the live-painted Home surfaces from cached state,
+  // AFTER the data-i18n pass has re-applied the static defaults.
+  onLocaleApplied(() => {
+    renderNextRecording()          // #hero-ready-title + sidebar #status-label
+    paintHeroWarnDetail()
+    updateVideoToggleButton()      // «Video av/på» — painted from settings
+    updateAudioSeparateButton()    // «Separat lydfil / Ingen lydfil»
+    if (videoPlaceholderPaint) {
+      const el = document.getElementById('video-preview-placeholder-text')
+      if (el) el.textContent = videoPlaceholderPaint()
+    }
+  })
+
   // Wire up Test-recording and Preflight buttons. Both used to live on Home but
   // were moved to Settings → Lyd in the UX reorganization. The "btn-go-health"
   // anchor on Home jumps to that section. Buttons are bound by ID so both the
@@ -1145,8 +1168,7 @@ export async function refreshHome(): Promise<void> {
       if (settings.videoDeviceName && !window.__isRecording) startVideoPreview()
     }).catch((err) => {
       console.warn('[home] device list failed:', err)
-      const phTxt = document.getElementById('video-preview-placeholder-text')
-      if (phTxt) phTxt.textContent = t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser')
+      setVideoPlaceholder(() => t('home.cameraListFailed', 'Kunne ikke hente kameraliste — sjekk tillatelser'))
       const phDiv = document.getElementById('video-preview-placeholder')
       if (phDiv) phDiv.style.display = ''
     })
@@ -1172,7 +1194,7 @@ export async function refreshHome(): Promise<void> {
 function fmtCtx(nowMs = Date.now()): FormatCtx {
   return {
     t,
-    parts: intlParts(currentLang === 'no' ? 'nb-NO' : currentLang),
+    parts: intlParts(localeTag()),
     nowMs,
   }
 }
@@ -1339,6 +1361,16 @@ export async function renderRecentRecordings(): Promise<void> {
   })
 }
 
+/** The device name shown in #hero-warn-detail, or null for the generic line. */
+let heroWarnDeviceName: string | null = null
+function paintHeroWarnDetail(): void {
+  const el = document.getElementById('hero-warn-detail')
+  if (!el) return
+  el.textContent = heroWarnDeviceName
+    ? t('home.reconnectDevice', 'Koble til {name} via USB').replace('{name}', heroWarnDeviceName)
+    : t('home.warnDetail', 'Koble til mikseren via USB før søndag')
+}
+
 async function checkStatus(): Promise<void> {
   const devices = await getAudioDevices()
   let connected = !settings.deviceId || devices.some(d => d.deviceId === settings.deviceId)
@@ -1357,14 +1389,11 @@ async function checkStatus(): Promise<void> {
   if (heroOk)   heroOk.style.display   = connected ? 'flex' : 'none'
   if (heroWarn) heroWarn.style.display = connected ? 'none' : 'flex'
 
-  // Update hero-warn detail with device name so user knows what to reconnect
-  if (!connected && settings.deviceName) {
-    const warnDetail = document.getElementById('hero-warn-detail')
-    if (warnDetail) {
-      warnDetail.textContent = t('home.reconnectDevice', 'Koble til {name} via USB')
-        .replace('{name}', settings.deviceName)
-    }
-  }
+  // Update hero-warn detail with device name so user knows what to reconnect.
+  // State + painter are split so a language switch can repaint the same state
+  // (i18n.onLocaleApplied) instead of the data-i18n pass erasing the name.
+  heroWarnDeviceName = !connected && settings.deviceName ? settings.deviceName : null
+  if (!connected) paintHeroWarnDetail()
 
   // The sidebar dot/label is rendered from the shared state, not computed here:
   // this function's only contribution is whether the device is present.

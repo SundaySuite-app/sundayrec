@@ -1,6 +1,6 @@
-import { t, loadLocale, currentLang } from '../i18n'
+import { t, loadLocale, currentLang, onLocaleApplied } from '../i18n'
 import { settings, patchSettings } from '../state'
-import { setVal } from '../helpers'
+import { setVal, localeTag } from '../helpers'
 import { confirmDialog } from '../ui/dialog'
 import { toast } from '../ui/toast'
 import { openModal } from '../ui/modal-manager'
@@ -112,7 +112,6 @@ export function setupGeneralPage(): void {
   bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))
 
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
-  bindSetting('opt-show-on-startup', generalBinding({ key: 'showOnStartup' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
   // The only auto-applying control whose effect must not wait for the save to
   // land. It is a promise to stop contacting a server, and PRIVACY.md makes
@@ -199,23 +198,14 @@ export function setupGeneralPage(): void {
     await refreshEmailGate()
   })
 
-  // Gmail OAuth connect (btn-email-gmail-connect) has no working backend yet
-  // (2026-08 audit: gmailConnect was a permanent-failure stub with no `ok`
-  // field, so a click always produced an empty "Kunne ikke koble til Google: "
-  // alert) — the button is disabled in the markup with an honest reason
-  // instead, so there is nothing to wire here until the feature is built.
-
-  document.getElementById('btn-email-gmail-disconnect')?.addEventListener('click', async () => {
-    const ok = await confirmDialog({
-      title:        t('dialog.gmailDisconnectTitle', 'Koble fra Google-kontoen?'),
-      message:      t('notify.emailGmailConfirmDisconnect', 'E-postvarsler vil falle tilbake til SMTP.'),
-      confirmLabel: t('dialog.disconnect', 'Koble fra'),
-      danger:       true,
-    })
-    if (!ok) return
-    await window.api.gmailDisconnect()
-    await refreshGmailStatus()
-  })
+  // The Gmail-OAuth card (btn-email-gmail-connect/-disconnect) was REMOVED
+  // from the markup in 2026-08: gmailConnect was a permanent-failure stub with
+  // no `ok` field, so the connect button sat permanently disabled and the
+  // disconnect path could never be reached. The honest gate is no dead button
+  // at all — re-add the card together with the backend if Gmail OAuth is ever
+  // built. (`EmailFacts.gmailConnected` below still reads the REAL
+  // email_status answer, so a future backend lights the send path up without
+  // renderer changes.)
 
   // Note: btn-export / btn-import / btn-restore handlers were removed in v4.31
   // when the System tab was simplified. The corresponding shim methods
@@ -278,7 +268,7 @@ function paintSmtpPasswordState(stored: boolean): void {
   if (input) {
     input.placeholder = stored ? t('notify.smtpPassSaved', '••••••••  (lagret)') : ''
   }
-  if (clearBtn) clearBtn.style.display = stored ? 'inline' : 'none'
+  if (clearBtn) clearBtn.style.display = stored ? '' : 'none'
   if (storedHint) storedHint.style.display = stored ? '' : 'none'
 }
 
@@ -360,7 +350,7 @@ async function refreshEmailGate(): Promise<void> {
   const reason = emailBlockReason(facts, !!recipient)
   const hintText =
     reason === 'noTransport'
-      ? t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Logg inn med Google, eller fyll ut SMTP-feltene under Avansert.')
+      ? t('notify.gateNoTransport', 'Ingen sendemetode er satt opp ennå. Fyll ut SMTP-feltene under «Oppsett av e-postserver (SMTP)».')
       : reason === 'noRecipient'
         ? t('notify.gateTestNoRecipient', 'Skriv inn en mottakeradresse først.')
         : ''
@@ -624,7 +614,7 @@ async function refreshTelemetryCard(): Promise<void> {
     parts.push(t('general.telemetryQueueFailed', '{n} kunne ikke sendes.').replace('{n}', String(q.failed)))
   }
   if (q?.oldestAt) {
-    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(currentLang)))
+    parts.push(t('general.telemetryQueueOldestSince', 'Eldste er fra {date}.').replace('{date}', new Date(q.oldestAt).toLocaleDateString(localeTag())))
   }
   if (q?.lastError) {
     parts.push(t('general.telemetryQueueLastError', 'Siste feil: {error}').replace('{error}', q.lastError))
@@ -947,13 +937,25 @@ function wireUpdateIpcListeners(): void {
     ['btn-toast-install', 'btn-restart-install']
       .map(id => document.getElementById(id) as HTMLButtonElement | null)
       .filter((b): b is HTMLButtonElement => b !== null)
-  const setUpdateButtons = (label: string | null, opts?: { disabled?: boolean; show?: boolean }): void => {
+  // The label is a THUNK so a language switch can re-run the last paint in the
+  // new language (i18n.onLocaleApplied) — the data-i18n pass used to reset a
+  // live «Laster ned…» back to the markup default mid-download.
+  let lastButtonLabel: (() => string) | null = null
+  const setUpdateButtons = (label: (() => string) | null, opts?: { disabled?: boolean; show?: boolean }): void => {
+    if (label !== null) lastButtonLabel = label
     for (const b of updateButtons()) {
-      if (label !== null) b.textContent = label
+      if (label !== null) {
+        // Write the label into the <span>, never the button: btn-toast-install
+        // carries an <svg> icon that a bare `textContent` write used to wipe.
+        const span = b.querySelector('span')
+        if (span) span.textContent = label()
+        else b.textContent = label()
+      }
       if (opts?.disabled !== undefined) b.disabled = opts.disabled
       if (opts?.show !== undefined) b.style.display = opts.show ? 'inline-flex' : 'none'
     }
   }
+  onLocaleApplied(() => { if (lastButtonLabel) setUpdateButtons(lastButtonLabel) })
   // The update download's bar + remaining time. Attached on the first progress
   // event and torn down when the download ends, so a second round starts with a
   // fresh rate estimate rather than the previous download's.
@@ -979,10 +981,11 @@ function wireUpdateIpcListeners(): void {
     const v = (info as { version: string }).version
     setUpdateStatus('ready', t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v))
     // The label must say what the click DOES from here: download + install.
-    setUpdateButtons(`↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
+    setUpdateButtons(() => `↓ ${t('update.btnDownloadInstall', 'Last ned og installer')} v${v}`, { show: true, disabled: false })
     showUpdateToast(
       t('update.toastAvailableTitle', 'Oppdatering tilgjengelig'),
-      t('update.toastAvailableInstall', 'Versjon {v} — klikk for å laste ned og installere').replace('{v}', v),
+      // Same key as the status row — the two said the same thing in two keys.
+      t('update.availableInstall', 'Versjon {v} tilgjengelig — klikk for å laste ned og installere').replace('{v}', v),
       true
     )
   }))
@@ -995,13 +998,15 @@ function wireUpdateIpcListeners(): void {
       updateUi.update(Math.max(0, Math.min(1, pct / 100)), t('update.btnDownloading', 'Laster ned…'))
     }
     setUpdateStatus('pending', t('update.downloading', 'Laster ned… {pct}%').replace('{pct}', String(pct)))
-    setUpdateButtons(t('update.btnDownloading', 'Laster ned…'), { disabled: true })
+    setUpdateButtons(() => t('update.btnDownloading', 'Laster ned…'), { disabled: true })
+    // If the update toast is still on screen, its bar shows the same download
+    // live (it was previously written while permanently hidden).
     setToastProgress(pct)
   }))
   updateIpcUnsubs.push(window.api.on('update-downloaded', (info: unknown) => {
     const v = (info as { version: string }).version
     hideProgress()
-    setUpdateButtons(`↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
+    setUpdateButtons(() => `↺ ${t('update.btnRestartInstall', 'Start på nytt og installer')}`, { show: true, disabled: false })
     setUpdateStatus('ready', t('update.readyInstall', 'Versjon {v} er klar — start på nytt for å installere').replace('{v}', v))
     showUpdateToast(
       t('update.toastReadyTitle', 'Klar for installasjon'),
@@ -1011,10 +1016,11 @@ function wireUpdateIpcListeners(): void {
   }))
   updateIpcUnsubs.push(window.api.on('update-restarting', () => {
     setUpdateStatus('pending', t('update.restarting', 'Starter på nytt…'))
-    setUpdateButtons(t('update.restarting', 'Starter på nytt…'), { disabled: true })
+    setUpdateButtons(() => t('update.restarting', 'Starter på nytt…'), { disabled: true })
   }))
   updateIpcUnsubs.push(window.api.on('update-error', (msg: unknown) => {
     hideProgress()
+    setToastProgress(null)
     setUpdateButtons(null, { disabled: false })
     // The dead-man's switch in api-shim fires this when the process is still
     // alive after a relaunch request — tell the user exactly what to do
@@ -1087,7 +1093,6 @@ export function applyGeneralSettingsToUI(): void {
   // the one promise this app cannot afford to break quietly. `get_launch_at_login`
   // reads the OS; the setting follows it, not the other way round.
   void syncAutostartFromOs()
-  setCheckbox('opt-show-on-startup',  !!settings.showOnStartup)
   setCheckbox('opt-auto-update',      autoUpdateEnabled(settings.autoUpdate))
   // The persisted answer has just landed — this is the first moment the gate can
   // be evaluated against what the operator actually chose, and the only place
@@ -1113,8 +1118,6 @@ export function applyGeneralSettingsToUI(): void {
   if (passInput) passInput.value = ''
   void refreshEmailGate()
   toggleEmailSection()
-  // Best-effort — failures are non-fatal (the SMTP path still works).
-  void refreshGmailStatus()
 
   // Version display — show full semver (vX.Y.Z) so brukere ser også patch-
   // releases (hotfixes). Tidligere truncated til major.minor noe som skjulte
@@ -1135,12 +1138,14 @@ export function applyGeneralSettingsToUI(): void {
     if (fallback) return `v${fallback[1]}.${fallback[2]}`
     return raw || '—'
   })()
-  ;['app-version', 'sidebar-version', 'hero-app-version'].forEach(id => {
+  // ('hero-app-version' sto i denne listen, men elementet finnes ikke i
+  // markupen — skrivingen traff ingenting og er fjernet.)
+  ;['app-version', 'sidebar-version'].forEach(id => {
     const el = document.getElementById(id)
     if (el) el.textContent = displayVersion
   })
 
-  setUpdateStatus('', t('update.checkHint', 'Klikk «Se etter oppdateringer» for å sjekke'))
+  setUpdateStatus('', t('update.checkHint', 'Klikk «Se etter oppdateringer nå» for å sjekke'))
   updateEditorClipUI()
   // The DOM now mirrors settings — rebase the bindings' baselines.
   resyncBoundSettings()
@@ -1169,7 +1174,6 @@ function collectGeneralSettings(): void {
     webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
     webhookOnWarn:     !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
-    showOnStartup:     !!(document.getElementById('opt-show-on-startup')   as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     // Anything the select cannot produce is not a channel; the backend applies
     // the same fallback (UpdateChannel::parse), so the two ends agree.
@@ -1183,44 +1187,6 @@ function toggleEmailSection(): void {
   const emailSect = document.getElementById('email-section')
   const emailErr  = document.getElementById('opt-email-error') as HTMLInputElement | null
   if (emailSect && emailErr) emailSect.style.display = emailErr.checked ? 'block' : 'none'
-}
-
-/**
- * Read the current Gmail-OAuth status from main and update the
- * email-OAuth-card on screen accordingly. Two states:
- *   • Not connected → show "Logg inn med Google" button + default sub-text
- *   • Connected → show "Koble fra"-knapp + "Sender via <email>"-sub-text
- *
- * Also flips the Avansert SMTP <details> closed when Gmail is connected,
- * since the SMTP fields are no longer required.
- */
-async function refreshGmailStatus(): Promise<void> {
-  let status: { connected: boolean; email?: string; needsReauth?: boolean } = { connected: false }
-  try { status = await window.api.gmailStatus() } catch { /* gmail not available — keep defaults */ }
-
-  const connectBtn    = document.getElementById('btn-email-gmail-connect') as HTMLElement | null
-  const disconnectBtn = document.getElementById('btn-email-gmail-disconnect') as HTMLElement | null
-  const statusEl      = document.getElementById('email-gmail-status') as HTMLElement | null
-  const smtpAdvanced  = document.getElementById('email-smtp-advanced') as HTMLDetailsElement | null
-
-  if (status.connected) {
-    if (connectBtn)    connectBtn.style.display = 'none'
-    if (disconnectBtn) disconnectBtn.style.display = ''
-    if (statusEl) {
-      const reauth = status.needsReauth ? ' ' + t('notify.emailGmailReauth', '⚠ Krever ny pålogging') : ''
-      statusEl.textContent = t('notify.emailGmailSendsAs', 'Sender via') + ' ' + (status.email ?? '—') + reauth
-      statusEl.style.color = status.needsReauth ? 'var(--red)' : 'var(--green)'
-    }
-    // Auto-collapse the SMTP advanced section — Gmail handles the send now.
-    if (smtpAdvanced) smtpAdvanced.open = false
-  } else {
-    if (connectBtn)    connectBtn.style.display = ''
-    if (disconnectBtn) disconnectBtn.style.display = 'none'
-    if (statusEl) {
-      statusEl.textContent = t('notify.emailGmailDesc', 'Send via din Gmail-konto — ingen SMTP-konfig.')
-      statusEl.style.color = ''
-    }
-  }
 }
 
 function setCheckbox(id: string, val: boolean): void {
@@ -1294,25 +1260,37 @@ export function paintActiveUpdateChannel(): void {
     : t('general.updateChannelActiveStable', 'Denne maskinen henter stabile versjoner.')
 }
 
+/**
+ * DELIBERATE exception to the house toast policy (ui/toast.ts auto-dismisses
+ * non-errors): this toast asks the operator a question — install now or not —
+ * and a prompt that dismisses itself is a decision taken by a timer. It stays
+ * until answered or closed with ×.
+ */
 function showUpdateToast(title: string, text: string, showInstall = false): void {
   const toast   = document.getElementById('update-toast')
   const titleEl = document.getElementById('update-toast-title')
   const textEl  = document.getElementById('update-toast-text')
   const actions = document.getElementById('update-toast-actions')
-  const progEl  = document.getElementById('update-toast-progress')
   if (!toast) return
   if (titleEl) titleEl.textContent = title
   if (textEl)  textEl.textContent  = text
   if (actions) actions.style.display = showInstall ? 'block' : 'none'
-  if (progEl)  progEl.style.display  = showInstall ? 'none'  : 'block'
+  // The progress bar is owned by setToastProgress (download events) — a fresh
+  // toast always opens without one.
+  setToastProgress(null)
   // Re-trigger animation
   toast.style.display = 'none'
   requestAnimationFrame(() => { toast.style.display = 'flex' })
 }
 
-function setToastProgress(pct: number): void {
-  const bar = document.getElementById('update-toast-bar') as HTMLElement | null
-  if (bar) bar.style.width = pct + '%'
+/** Download progress inside the update toast. `null` hides the bar (idle,
+ *  finished, error); a number reveals it — previously the bar was written
+ *  while a `display:none` from showUpdateToast kept it permanently hidden. */
+function setToastProgress(pct: number | null): void {
+  const progEl = document.getElementById('update-toast-progress') as HTMLElement | null
+  const bar    = document.getElementById('update-toast-bar') as HTMLElement | null
+  if (progEl) progEl.style.display = pct === null ? 'none' : 'block'
+  if (bar && pct !== null) bar.style.width = pct + '%'
 }
 
 function hideToast(): void {

@@ -68,6 +68,27 @@ export function setApplyHook(fn: () => void): void {
   _applyTranslations = fn
 }
 
+/**
+ * Live-painted surfaces vs. the data-i18n pass.
+ *
+ * `applyTranslations()` rewrites every `[data-i18n]` node from the locale
+ * table — which is exactly wrong for the ~20 nodes whose text is painted from
+ * STATE (the sidebar status, the wake card, the stop button mid-finalize…):
+ * a language switch used to reset them to their markup defaults, erasing live
+ * truth. The house fix (index.html's update-channel comment) is "repaint via
+ * hook": modules register a cheap, synchronous repaint-from-cached-state here,
+ * and it runs AFTER the data-i18n pass — so the cold-render default still
+ * translates, and live state always wins the same synchronous frame.
+ *
+ * Callbacks must be idempotent, synchronous and safe to run at any time
+ * (including before the page they paint has been visited).
+ */
+const localeRepaints = new Set<() => void>()
+
+export function onLocaleApplied(fn: () => void): void {
+  localeRepaints.add(fn)
+}
+
 function applyTranslations(): void {
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = (el as HTMLElement).dataset.i18n!
@@ -86,4 +107,6 @@ function applyTranslations(): void {
     const v = t(key); if (v) el.setAttribute('aria-label', v)
   })
   _applyTranslations()
+  // After the attribute pass, so live state repaints over the defaults.
+  for (const fn of localeRepaints) fn()
 }

@@ -48,9 +48,18 @@ export function flashMsg(_btn: HTMLElement | null, msg: string, ok = true): void
   toast(ok ? 'success' : 'error', stripStatusGlyph(msg))
 }
 
+/** The ONE BCP-47 tag for date/number formatting: bokmål for 'no' (plain 'no'
+ *  gives nynorsk-flavoured output in some engines), else the UI language.
+ *  Every toLocale*-call in the renderer goes through this — six divergent
+ *  conventions ('no', 'nb-NO', currentLang, undefined…) meant the same
+ *  timestamp rendered differently from card to card. */
+export function localeTag(): string {
+  return currentLang === 'no' ? 'nb-NO' : currentLang
+}
+
 export function fmtDate(iso: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(currentLang === 'no' ? 'nb-NO' : currentLang, {
+  return new Date(iso).toLocaleDateString(localeTag(), {
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
   })
 }
