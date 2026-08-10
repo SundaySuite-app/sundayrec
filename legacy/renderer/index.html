@@ -1884,6 +1884,21 @@
         <div class="form-hint" data-i18n="general.logHint">Hvis noe går galt, kan denne loggen sendes til den som hjelper deg. Den inneholder ingen lyd og ingen passord.</div>
       </div>
 
+      <!-- Innstillingsprofil (R4). Backed by settings_export_to_file /
+           settings_import_from_file — commands that existed since the port
+           (F1.3) and became reachable for the first time here. The native
+           dialogs are the path authorisation; the backend re-checks with
+           PathPolicy::UserChosenWrite/Read. -->
+      <div class="card">
+        <div class="card-title" data-i18n="general.settingsProfileTitle">Innstillingsprofil</div>
+        <p class="card-desc" data-i18n="general.settingsProfileDesc">Lagre alle innstillingene som én fil — for sikkerhetskopi, eller for å sette opp en annen maskin likt (f.eks. via minnepinne). Passord og strømmenøkler er aldri med.</p>
+        <div class="btn-row">
+          <button type="button" class="btn-secondary" id="btn-settings-export" data-i18n="general.settingsExportBtn">Eksporter innstillinger…</button>
+          <button type="button" class="btn-secondary" id="btn-settings-import" data-i18n="general.settingsImportBtn">Importer innstillinger…</button>
+        </div>
+        <div class="form-hint" data-i18n="general.settingsProfileHint">Import erstatter innstillingene på denne maskinen. Verdier utenfor gyldige grenser justeres automatisk.</div>
+      </div>
+
       <!-- Anonym diagnostikk (E3.7). State lives behind telemetry_consent_get/
            set (the app_setting bag in src-tauri), NOT the Settings blob — see
            general-page.ts's setupTelemetryCard() for why the toggle below

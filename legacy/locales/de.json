@@ -631,11 +631,25 @@
     "localNudgeAtLimit": "Ihre Korrekturen deuten noch weiter, aber die App verschiebt einen Vorschlag nie um mehr als {limit} Sekunden. Trifft der Vorschlag weiterhin schlecht, sollten die Aufnahmen geprüft werden — nicht diese Einstellung.",
     "localNudgeResetBtn": "Gelerntes zurücksetzen",
     "localNudgeResetDone": "Zurückgesetzt. Die App schätzt jetzt genauso wie eine frisch installierte App und lernt nicht weiter, bis Sie dies wieder aktivieren.",
-    "localNudgeLoadFailed": "Konnte nicht abrufen, was die App angepasst hat. Bitte erneut versuchen."
+    "localNudgeLoadFailed": "Konnte nicht abrufen, was die App angepasst hat. Bitte erneut versuchen.",
+    "settingsProfileTitle": "Einstellungsprofil",
+    "settingsProfileDesc": "Alle Einstellungen als eine Datei speichern — als Sicherung, oder um eine zweite Maschine identisch einzurichten (z. B. per USB-Stick). Passwörter und Stream-Schlüssel sind nie enthalten.",
+    "settingsExportBtn": "Einstellungen exportieren…",
+    "settingsImportBtn": "Einstellungen importieren…",
+    "settingsProfileHint": "Der Import ersetzt die Einstellungen auf dieser Maschine. Werte außerhalb gültiger Grenzen werden automatisch angepasst.",
+    "settingsExported": "Einstellungen exportiert.",
+    "settingsExportFailed": "Einstellungen konnten nicht exportiert werden",
+    "settingsImportConfirmTitle": "Einstellungen importieren?",
+    "settingsImportConfirm": "Dies ersetzt die Einstellungen auf dieser Maschine durch den Inhalt der Datei. Aufnahmen, Verlauf und Passwörter bleiben unberührt.",
+    "settingsImportBtnConfirm": "Ja, importieren",
+    "settingsImported": "Einstellungen importiert.",
+    "settingsImportFailed": "Einstellungen konnten nicht importiert werden"
   },
   "error": {
     "tryAgainHint": "Wenn das Problem weiterhin besteht, führen Sie „System prüfen“ in den Audio-Einstellungen aus oder starten Sie das Programm neu.",
-    "ipcFailed": "Etwas im Hintergrund hat nicht geantwortet, daher ist diese Ansicht möglicherweise unvollständig."
+    "ipcFailed": "Etwas im Hintergrund hat nicht geantwortet, daher ist diese Ansicht möglicherweise unvollständig.",
+    "settingsLoadFailed": "Die Einstellungen konnten nicht gelesen werden — es werden Standardwerte angezeigt. Änderungen können verloren gehen.",
+    "settingsMigrationCorrupt": "Die Einstellungen der vorherigen Version konnten nicht gelesen werden — die App startet mit Standardwerten."
   },
   "editor": {
     "title": "Audiodatei bearbeiten",

@@ -4,7 +4,7 @@ import {
   BOOT_FIXTURES,
   flipToggle,
   SETTLED_SETTINGS,
-  SETTINGS_KEY,
+  storedSettings,
 } from "./harness";
 
 // ── Språkbytte midt i en økt ─────────────────────────────────────────────────
@@ -99,12 +99,10 @@ test.describe("notify toggles persist", () => {
     // Persisted at the storage layer — a checked-state assertion alone would
     // also pass for a pure UI flip that never wrote anything.
     await expect
-      .poll(async () =>
-        page.evaluate((key) => {
-          const s = JSON.parse(window.localStorage.getItem(key) || "{}");
-          return [s.notifyStart, s.notifyStop];
-        }, SETTINGS_KEY),
-      )
+      .poll(async () => {
+        const s = await storedSettings(page);
+        return [s.notifyStart, s.notifyStop];
+      })
       .toEqual([false, false]);
 
     // Leave the tab and come back — the controls re-bind from settings.

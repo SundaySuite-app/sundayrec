@@ -604,7 +604,7 @@ function openSlotEditor(index: number): void {
   clearFieldErrors(document.getElementById('slot-editor'))
   const slot: ScheduleSlot = index >= 0 && settings.slots?.[index]
     ? settings.slots[index]
-    : { days: [6], start: '11:00', stop: '12:00' }
+    : { days: [6], start: '11:00', stop: '12:00', max: null }
   const startEl = document.getElementById('slot-start') as HTMLInputElement | null
   const stopEl  = document.getElementById('slot-stop')  as HTMLInputElement | null
   const maxEl   = document.getElementById('slot-max')   as HTMLInputElement | null
@@ -663,7 +663,7 @@ async function saveSlot(): Promise<void> {
     return
   }
 
-  const slot: ScheduleSlot = { days, start, stop, ...(maxV ? { max: maxV } : {}) }
+  const slot: ScheduleSlot = { days, start, stop, max: maxV || null }
   if (!settings.slots) settings.slots = []
   const wasAdd = editingSlotIndex < 0
   if (editingSlotIndex >= 0) settings.slots[editingSlotIndex] = slot

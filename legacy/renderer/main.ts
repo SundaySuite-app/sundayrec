@@ -72,6 +72,14 @@ declare global {
     api: {
       getSettings:         () => Promise<Settings>
       saveSettings:        (s: Settings) => Promise<boolean>
+      /** Write the whole (validated) settings object to a user-chosen JSON
+       *  file. Rejects on failure — the profile card shows the reason. */
+      settingsExportToFile: (path: string) => Promise<void>
+      /** Import a settings JSON file (merge-over-defaults + validate) and
+       *  return the stored result. Rejects on failure. */
+      settingsImportFromFile: (path: string) => Promise<Settings>
+      /** Open-dialog picker for a settings-profile JSON. Cancel → null. */
+      pickSettingsFile:    () => Promise<string | null>
       getNextRecording:    () => Promise<{ date: string } | null>
       getHistory:          () => Promise<unknown[]>
       deleteHistoryEntry:  (ts: number) => Promise<void>
@@ -290,9 +298,6 @@ declare global {
       whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
       whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
-      youtubeDisconnect:   () => Promise<{ ok: boolean }>
-      youtubeStatus:       () => Promise<{ connected: boolean }>
-      youtubeUpload:       (filePath: string, metadata: unknown) => Promise<{ ok: boolean; videoId?: string; url?: string; error?: string }>
       reviewQueueList:                () => Promise<import('../types').ReviewQueueEntry[]>
       reviewQueueGet:                 (id: string) => Promise<import('../types').ReviewQueueEntry | null>
       reviewQueuePublish:             (id: string) => Promise<{ ok: boolean; error?: string }>

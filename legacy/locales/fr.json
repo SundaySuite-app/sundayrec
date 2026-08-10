@@ -631,11 +631,25 @@
     "localNudgeAtLimit": "Vos corrections vont encore plus loin, mais l'application ne déplace jamais une proposition de plus de {limit} secondes. Si la proposition tombe toujours à côté, ce sont les enregistrements qu'il faut examiner — pas ce réglage.",
     "localNudgeResetBtn": "Réinitialiser ce que l'application a appris",
     "localNudgeResetDone": "Réinitialisé. L'application devine désormais exactement comme une application fraîchement installée et n'apprendra plus rien tant que vous ne réactivez pas l'option.",
-    "localNudgeLoadFailed": "Impossible de récupérer ce que l'application a ajusté. Réessayez."
+    "localNudgeLoadFailed": "Impossible de récupérer ce que l'application a ajusté. Réessayez.",
+    "settingsProfileTitle": "Profil de réglages",
+    "settingsProfileDesc": "Enregistrer tous les réglages dans un seul fichier — comme sauvegarde, ou pour configurer une autre machine à l’identique (p. ex. via une clé USB). Les mots de passe et clés de stream ne sont jamais inclus.",
+    "settingsExportBtn": "Exporter les réglages…",
+    "settingsImportBtn": "Importer les réglages…",
+    "settingsProfileHint": "L’import remplace les réglages de cette machine. Les valeurs hors limites sont ajustées automatiquement.",
+    "settingsExported": "Réglages exportés.",
+    "settingsExportFailed": "Impossible d’exporter les réglages",
+    "settingsImportConfirmTitle": "Importer les réglages ?",
+    "settingsImportConfirm": "Ceci remplace les réglages de cette machine par le contenu du fichier. Les enregistrements, l’historique et les mots de passe ne sont pas touchés.",
+    "settingsImportBtnConfirm": "Oui, importer",
+    "settingsImported": "Réglages importés.",
+    "settingsImportFailed": "Impossible d’importer les réglages"
   },
   "error": {
     "tryAgainHint": "Si le problème persiste, lancez la vérification du système dans les réglages Audio ou redémarrez l’application.",
-    "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet."
+    "ipcFailed": "Un composant en arrière-plan n’a pas répondu, cet affichage peut donc être incomplet.",
+    "settingsLoadFailed": "Impossible de lire les réglages — affichage des valeurs par défaut. Les modifications effectuées maintenant peuvent être perdues.",
+    "settingsMigrationCorrupt": "Les réglages de la version précédente n’ont pas pu être lus — l’application démarre avec les valeurs par défaut."
   },
   "editor": {
     "title": "Éditer le fichier audio",

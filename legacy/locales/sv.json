@@ -631,11 +631,25 @@
     "localNudgeAtLimit": "Dina rättelser pekar ännu längre, men appen flyttar aldrig ett förslag mer än {limit} sekunder. Om förslaget fortfarande träffar dåligt är det inspelningarna som bör ses över — inte den här inställningen.",
     "localNudgeResetBtn": "Nollställ det appen har lärt sig",
     "localNudgeResetDone": "Nollställt. Appen gissar nu på exakt samma sätt som en nyinstallerad app och lär sig inget mer förrän du slår på det igen.",
-    "localNudgeLoadFailed": "Kunde inte hämta vad appen har justerat. Försök igen."
+    "localNudgeLoadFailed": "Kunde inte hämta vad appen har justerat. Försök igen.",
+    "settingsProfileTitle": "Inställningsprofil",
+    "settingsProfileDesc": "Spara alla inställningar som en enda fil — som säkerhetskopia, eller för att sätta upp en annan maskin likadant (t.ex. via USB-minne). Lösenord och strömnycklar följer aldrig med.",
+    "settingsExportBtn": "Exportera inställningar…",
+    "settingsImportBtn": "Importera inställningar…",
+    "settingsProfileHint": "Import ersätter inställningarna på den här maskinen. Värden utanför giltiga gränser justeras automatiskt.",
+    "settingsExported": "Inställningarna exporterades.",
+    "settingsExportFailed": "Kunde inte exportera inställningarna",
+    "settingsImportConfirmTitle": "Importera inställningar?",
+    "settingsImportConfirm": "Detta ersätter inställningarna på den här maskinen med filens innehåll. Inspelningar, historik och lösenord berörs inte.",
+    "settingsImportBtnConfirm": "Ja, importera",
+    "settingsImported": "Inställningarna importerades.",
+    "settingsImportFailed": "Kunde inte importera inställningarna"
   },
   "error": {
     "tryAgainHint": "Om problemet kvarstår, kör Kontrollera systemet i Ljud-inställningarna eller starta om programmet.",
-    "ipcFailed": "Något i bakgrunden svarade inte, så den här vyn kan vara ofullständig."
+    "ipcFailed": "Något i bakgrunden svarade inte, så den här vyn kan vara ofullständig.",
+    "settingsLoadFailed": "Kunde inte läsa inställningarna — visar standardinställningar. Ändringar du gör nu kan gå förlorade.",
+    "settingsMigrationCorrupt": "Inställningarna från föregående version kunde inte läsas — appen startar med standardinställningar."
   },
   "editor": {
     "title": "Redigera ljudfil",

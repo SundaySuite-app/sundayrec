@@ -986,12 +986,14 @@ firing extra checks. All four renderer paths are pinned in the browser tier:
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling off while running stops the schedule and further checks
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling back on re-arms: an immediate check and a fresh schedule
 
-**«Oppdateringskanal»** must cross the renderer→sqlite seam with its value —
-the backend (`update/mod.rs::current_channel`) reads sqlite, never
-localStorage, and the v0.11.1-beta.2 rig bug #113 was precisely this select
-saying «Lagret ✓» while the machine silently stayed on the stable feed:
+**«Oppdateringskanal»** must reach the STORE with its value — the backend
+(`update/mod.rs::current_channel`) reads sqlite, and the v0.11.1-beta.2 rig bug
+#113 was precisely this select saying «Lagret ✓» while the machine silently
+stayed on the stable feed. R4 removed the curated bridge that dropped it: the
+renderer saves the full object through `settings_save`, sqlite is the one
+store:
 
-- VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the backend save, not just localStorage
+- VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
 
 1. Open the **Oppdateringer** disclosure and click **Se etter oppdateringer nå**.
@@ -1034,14 +1036,16 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
      port clamp:
    - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::validate_clamps_smtp_port
-   - Every settings key with a backend reader must also cross the curated
-     `settings_save` **with its value** — the #113 seam shape generalised
-     (`autoDeleteDays`, `showLiveLevels`, `inputVolume`, `trimSilence`,
-     `launchAtLogin` all had a backend reader and were silently re-defaulted
-     on every save), including the float→integer coercion that otherwise
-     fails the whole save:
-   - VERIFIED-BY: e2e/settings-seam.spec.ts::non-default values reach the backend save, not just localStorage
-   - VERIFIED-BY: e2e/settings-seam.spec.ts::an untouched install sends the Rust defaults, and numbers stay integers
+   - Since R4 there is no curated subset to drop a key from: `settings_save`
+     carries the FULL object in one vocabulary, boot only reads, and a field
+     written is a field read back (the #113/#115 class ends structurally):
+   - VERIFIED-BY: e2e/settings-seam.spec.ts::boot performs no settings_save at all
+   - VERIFIED-BY: e2e/settings-seam.spec.ts::one change saves the whole vocabulary — untouched fields keep their stored values
+   - An existing install's localStorage blob is migrated into sqlite exactly
+     once (old names translated, floats coerced, secrets stripped, key
+     removed):
+   - VERIFIED-BY: e2e/settings-migration.spec.ts::an old blob is imported once, translated, and the key removed
+   - VERIFIED-BY: e2e/settings-migration.spec.ts::a corrupt blob yields defaults without crashing, and is not retried
 
 ---
 

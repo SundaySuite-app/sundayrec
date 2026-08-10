@@ -631,11 +631,25 @@
     "localNudgeAtLimit": "Twoje poprawki wskazują jeszcze dalej, ale aplikacja nigdy nie przesuwa propozycji o więcej niż {limit} sekund. Jeśli propozycja nadal trafia źle, to nagraniom trzeba się przyjrzeć — nie temu ustawieniu.",
     "localNudgeResetBtn": "Wyzeruj to, czego aplikacja się nauczyła",
     "localNudgeResetDone": "Wyzerowano. Aplikacja zgaduje teraz dokładnie tak samo jak świeżo zainstalowana i nie będzie się dalej uczyć, dopóki nie włączysz tego ponownie.",
-    "localNudgeLoadFailed": "Nie udało się pobrać tego, co aplikacja dostosowała. Spróbuj ponownie."
+    "localNudgeLoadFailed": "Nie udało się pobrać tego, co aplikacja dostosowała. Spróbuj ponownie.",
+    "settingsProfileTitle": "Profil ustawień",
+    "settingsProfileDesc": "Zapisz wszystkie ustawienia jako jeden plik — jako kopię zapasową lub aby skonfigurować inną maszynę identycznie (np. przez pendrive). Hasła i klucze streamu nigdy nie są dołączane.",
+    "settingsExportBtn": "Eksportuj ustawienia…",
+    "settingsImportBtn": "Importuj ustawienia…",
+    "settingsProfileHint": "Import zastępuje ustawienia na tej maszynie. Wartości poza dozwolonym zakresem są korygowane automatycznie.",
+    "settingsExported": "Ustawienia wyeksportowane.",
+    "settingsExportFailed": "Nie udało się wyeksportować ustawień",
+    "settingsImportConfirmTitle": "Importować ustawienia?",
+    "settingsImportConfirm": "To zastąpi ustawienia na tej maszynie zawartością pliku. Nagrania, historia i hasła pozostają nietknięte.",
+    "settingsImportBtnConfirm": "Tak, importuj",
+    "settingsImported": "Ustawienia zaimportowane.",
+    "settingsImportFailed": "Nie udało się zaimportować ustawień"
   },
   "error": {
     "tryAgainHint": "Jeśli problem będzie się powtarzał, uruchom sprawdzanie systemu w ustawieniach Dźwięku lub uruchom program ponownie.",
-    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny."
+    "ipcFailed": "Coś w tle nie odpowiedziało, więc ten widok może być niekompletny.",
+    "settingsLoadFailed": "Nie można odczytać ustawień — wyświetlane są ustawienia domyślne. Wprowadzone teraz zmiany mogą zostać utracone.",
+    "settingsMigrationCorrupt": "Nie można odczytać ustawień z poprzedniej wersji — aplikacja uruchamia się z ustawieniami domyślnymi."
   },
   "editor": {
     "title": "Edytuj plik audio",

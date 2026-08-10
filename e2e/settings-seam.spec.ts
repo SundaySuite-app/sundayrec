@@ -1,105 +1,127 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
+  flipToggle,
   SETTLED_SETTINGS,
-  SETTINGS_SAVE_SPY,
   settingsSavePayloads,
+  storedSettings,
 } from "./harness";
 
-// The renderer→sqlite settings seam, held to account for EVERY key with a
-// backend reader — the #113 bug ("updateChannel never crossed") generalised.
+// The renderer↔sqlite settings seam, after R4's unification.
 //
-// The seam: the UI's full settings live in localStorage; the backend reads
-// sqlite via `settings::load(db)`, which only ever sees the CURATED object
-// `backendRecordingSettings` sends through `settings_save`. Rust deserialises
-// that object with `#[serde(default)]` on every field, so a key that is read
-// backend-side but absent from the curated object is not merely "not synced" —
-// it is actively RE-DEFAULTED on every save. Both halves stay green: the
-// renderer really saves, the backend really defaults, and the seam between
-// them silently drops the field. That shape produced #113 (updateChannel), and
-// this spec pins the five further keys a reader-by-reader enumeration of
-// `settings.*` uses behind `settings::load` found in the same hole:
+// The seam this spec used to guard is DEAD: settings lived in localStorage,
+// the backend read sqlite, and a curated `settings_save` subset bridged them —
+// any key missing from the subset was actively re-defaulted by serde on every
+// save (#113 updateChannel, #115 autoDeleteDays, and seven siblings). The
+// instance-level pins this file carried (key X rides the curated sync) are
+// meaningless now, because there IS no curated sync.
 //
-//   autoDeleteDays  → commands/db.rs `recordings_prune`: retention was always
-//                     0 = pruning permanently disabled, whatever the UI said.
-//   showLiveLevels  → scheduler/mod.rs `live_levels`: the astats meter tap for
-//                     scheduled recordings (no UI writer today; the sync keeps
-//                     an imported/hand-set value from being re-defaulted).
-//   inputVolume,
-//   trimSilence,
-//   launchAtLogin   → core telemetry's environment block + the diagnose
-//                     report: every install claimed the defaults.
+// What replaces them is the CLASS-level invariant the unification promises:
 //
-// Observable: the `settings_save` payload itself, spied at the invoke
-// boundary — the exact place the curated subset leaves the renderer.
+//   1. Boot READS — it never writes. The old module-load "sync" pushed a
+//      settings_save on every boot; a boot-time write is exactly where a stale
+//      copy overwrites the store, so zero saves at boot is a property.
+//   2. A save carries the FULL object in one vocabulary: the field you changed
+//      AND every field you didn't, with the values the store handed out. A
+//      field written is a field read back — nothing curated, nothing for
+//      serde to re-default.
+//   3. The round trip closes at the storage layer: what `settings_save`
+//      persisted is what the next `settings_get` answers (here: the harness's
+//      fake sqlite row, which `page.reload()` proves in settings.spec.ts).
 
-// The `settings_save` spy + payload reader live in harness.ts — shared with
-// update-channel.spec.ts, which pins the same seam.
-const FIXTURES = { ...BOOT_FIXTURES, settings_save: SETTINGS_SAVE_SPY };
+test.describe("settings seam — the full object crosses, boot only reads", () => {
+  test("boot performs no settings_save at all", async ({ page }) => {
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:general",
+    });
+    // Give the module-load path room to misbehave before asserting silence.
+    await expect(page.locator("#page-settings")).toBeVisible();
+    expect(await settingsSavePayloads(page)).toEqual([]);
+  });
 
-/** The boot sync's curated payload (the first `settings_save` after boot). */
-async function bootPayload(page: Page): Promise<Record<string, unknown>> {
-  await expect
-    .poll(() => settingsSavePayloads(page).then((p) => p.length))
-    .toBeGreaterThan(0);
-  const saves = await settingsSavePayloads(page);
-  return saves[0];
-}
-
-test.describe("settings seam — every backend-read key crosses with its value", () => {
-  test("non-default values reach the backend save, not just localStorage", async ({
+  test("one change saves the whole vocabulary — untouched fields keep their stored values", async ({
     page,
   }) => {
-    // Seed the localStorage blob the way a real install that USED these
-    // settings would have it, then let the module-load sync run. Value
-    // transport is the property: presence alone would pass a bridge that
-    // hardcodes the defaults.
+    // Seed NON-default values across unrelated corners of the model. Under the
+    // old curated bridge, any of these missing from the subset would be
+    // re-defaulted by the very save this test triggers — value transport for
+    // fields the journey never touched is the property.
     await boot(page, {
-      fixtures: FIXTURES,
+      // `launchAtLogin` is OS-truth since R3: the checkbox (and thus the next
+      // collect) mirrors `get_launch_at_login`, not the stored flag — so the
+      // OS fixture must agree with the seed for the value to survive a save.
+      fixtures: { ...BOOT_FIXTURES, get_launch_at_login: true },
       settings: {
         ...SETTLED_SETTINGS,
         autoDeleteDays: 90,
-        showLiveLevels: false,
         inputVolume: 80,
         trimSilence: true,
         launchAtLogin: true,
+        showLiveLevels: false,
+        updateChannel: "beta",
+        reminderMinutes: 15,
+        churchName: "Domkirken",
+        webhookOnWarning: true,
+        deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
+        podcast: {
+          enabled: true,
+          service: "google-drive",
+          title: "Domkirken taler",
+          description: "",
+          author: "",
+          language: "no",
+          category: "Religion & Spirituality",
+          explicit: false,
+          link: null,
+          imageUrl: null,
+          email: null,
+          feedUrl: null,
+          autoPrepEnabled: true,
+          defaultIntroPath: null,
+          defaultOutroPath: null,
+          defaultMasterPreset: "speech-clear",
+        },
       },
       goto: "settings:general",
     });
 
-    const payload = await bootPayload(page);
+    // The one change: flip «spør om å åpne redigering» (seeded default true).
+    await flipToggle(page, "opt-ask-open-editor");
+    await expect(page.locator(".setting-saved-chip").first()).toBeVisible();
+
+    await expect
+      .poll(() => settingsSavePayloads(page).then((p) => p.length))
+      .toBeGreaterThan(0);
+    const saves = await settingsSavePayloads(page);
+    const payload = saves[saves.length - 1];
+
+    // The changed field crossed…
+    expect(payload.askOpenEditor).toBe(false);
+    // …and every seeded, UNTOUCHED field crossed WITH ITS VALUE — the exact
+    // thing the curated bridge silently dropped, one key at a time.
     expect(payload.autoDeleteDays).toBe(90);
-    expect(payload.showLiveLevels).toBe(false);
     expect(payload.inputVolume).toBe(80);
     expect(payload.trimSilence).toBe(true);
     expect(payload.launchAtLogin).toBe(true);
-  });
-
-  test("an untouched install sends the Rust defaults, and numbers stay integers", async ({
-    page,
-  }) => {
-    // The defaults must MATCH Rust's per-field defaults (0 / true / 100 /
-    // false / false): the sync fires on every boot, so a wrong default here is
-    // not neutral — it would overwrite sqlite with a value the user never set.
-    //
-    // `inputVolume` is additionally seeded with a FLOAT: serde rejects a
-    // fractional number for an `i32`, and one bad field fails the WHOLE
-    // settings_save (dropping all recorder sync with it) — so the bridge must
-    // integer-coerce before the invoke, the same trap `filenamePattern`
-    // documents.
-    await boot(page, {
-      fixtures: FIXTURES,
-      settings: { ...SETTLED_SETTINGS, inputVolume: 80.5 },
-      goto: "settings:general",
+    expect(payload.showLiveLevels).toBe(false);
+    expect(payload.updateChannel).toBe("beta");
+    expect(payload.reminderMinutes).toBe(15);
+    expect(payload.churchName).toBe("Domkirken");
+    expect(payload.webhookOnWarning).toBe(true);
+    expect(payload.deviceChannels).toEqual({
+      "qu5-usb": { channelL: 16, channelR: 17 },
     });
+    expect((payload.podcast as { title?: unknown })?.title).toBe(
+      "Domkirken taler",
+    );
 
-    const payload = await bootPayload(page);
-    expect(payload.autoDeleteDays).toBe(0);
-    expect(payload.showLiveLevels).toBe(true);
-    expect(payload.trimSilence).toBe(false);
-    expect(payload.launchAtLogin).toBe(false);
-    expect(Number.isInteger(payload.inputVolume)).toBe(true);
-    expect(payload.inputVolume).toBe(81);
+    // The round trip closes: the store now answers what the save sent.
+    const stored = await storedSettings(page);
+    expect(stored.askOpenEditor).toBe(false);
+    expect(stored.autoDeleteDays).toBe(90);
+    expect(stored.updateChannel).toBe("beta");
   });
 });

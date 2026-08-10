@@ -18,10 +18,23 @@ import type { CompanionChapter } from '../bindings/CompanionChapter'
 import type { SummarySource } from '../bindings/SummarySource'
 import type { SermonCompanion } from '../bindings/SermonCompanion'
 import type { UpdateChannel } from '../bindings/UpdateChannel'
+import type { Settings as SettingsGen } from '../bindings/Settings'
+import type { DeviceChannels } from '../bindings/DeviceChannels'
+import type { ScheduleSlot } from '../bindings/ScheduleSlot'
+import type { SpecialRecording } from '../bindings/SpecialRecording'
+import type { PodcastSettings } from '../bindings/PodcastSettings'
+import type { CloudServicePrefs } from '../bindings/CloudServicePrefs'
+import type { StreamDestinationStored } from '../bindings/StreamDestinationStored'
 export type {
   ChannelMode,
   FileFormat,
   FilenamePattern,
+  DeviceChannels,
+  ScheduleSlot,
+  SpecialRecording,
+  PodcastSettings,
+  CloudServicePrefs,
+  StreamDestinationStored,
   EpisodePrepStatus,
   PrepAnalysisSegment,
   EditorSegment,
@@ -35,34 +48,7 @@ export type {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
-export type RecordingPhase =
-  | 'idle'          // no active session
-  | 'starting'      // startSession() called, ffmpeg being spawned
-  | 'recording'     // ffmpeg active, audio/video flowing
-  | 'reconnecting'  // device disconnect detected, trying to reconnect
-  | 'stopping'      // stopSession() called, waiting for ffmpeg to exit
-  | 'finalizing'    // ffmpeg exited, writing history entry
-
-export interface DeviceChannels {
-  channelL: number
-  channelR: number
-}
-
-export interface ScheduleSlot {
-  days: number[]       // 0=Mon … 6=Sun
-  start: string        // HH:MM
-  stop: string         // HH:MM
-  max?: number         // max minutes
-}
-
-export interface SpecialRecording {
-  id?: string
-  date: string         // YYYY-MM-DD
-  name: string
-  start: string        // HH:MM
-  stop: string         // HH:MM
-  deviceId?: string
-}
+// DeviceChannels / ScheduleSlot / SpecialRecording are generated (re-exported above).
 
 export interface CutRegion {
   start: number  // seconds
@@ -85,34 +71,8 @@ export interface RecordingEntry {
   cloudUrls?: Record<string, string>  // service ID → public/share URL (used by podcast RSS feed)
 }
 
-export interface PodcastSettings {
-  enabled:     boolean
-  service:     'google-drive' | 'dropbox' | 'onedrive'  // which cloud service hosts the audio + feed
-  title:       string
-  description: string
-  author:      string
-  language:    string   // ISO 639-1, default 'no'
-  category:    string   // iTunes category, default 'Religion & Spirituality'
-  explicit:    boolean
-  link?:       string   // church homepage
-  imageUrl?:   string   // cover art (1400-3000px square)
-  email?:      string   // owner contact email (required by Apple)
-  /** Set after the first successful publish — the URL the user submits to Spotify/Apple */
-  feedUrl?:    string
-
-  // ── Prep-and-review pipeline (v5.0) ──────────────────────────────────────
-  /** When podcast.enabled is true, automatically run prep + queue the episode
-   *  for human review after each successful recording. Default true. */
-  autoPrepEnabled?:     boolean
-  /** Per-church default intro jingle (applies to every prepped episode unless
-   *  the user overrides per-episode). Defaults to settings.editorIntroPath. */
-  defaultIntroPath?:    string
-  /** Per-church default outro jingle (applies to every prepped episode unless
-   *  the user overrides per-episode). Defaults to settings.editorOutroPath. */
-  defaultOutroPath?:    string
-  /** Master preset used by the prep pipeline. Default 'speech-clear'. */
-  defaultMasterPreset?: string
-}
+// PodcastSettings is generated (re-exported above) — the Rust
+// `sundayrec_core::settings::PodcastSettings`, one vocabulary with the store.
 
 // PrepAnalysisSegment + EpisodePrepStatus are generated (re-exported above).
 //
@@ -168,229 +128,25 @@ export interface ReviewQueueEntry {
   ageInDays: number
 }
 
-export interface ActiveRecovery {
-  outputPath?:      string    // v4.1+: current audio file being written
-  tempPath?:        string    // legacy: pre-v4.1 temp WebM path (kept for backward compat)
-  videoOutputPath?: string    // current video file being written (if any)
-  segments:         string[]  // all completed audio segment paths (for split recordings)
-  startTime:        number
-  sessionId:        string
-  phase:            RecordingPhase
-  updatedAt:        number    // unix ms — for detecting stale recovery
+
+/**
+ * The settings model (R4): THE generated binding, one vocabulary end to end —
+ * `crates/sundayrec-core/src/settings.rs` is the source, sqlite is the store,
+ * and a Rust field rename/removal is a tsc error on every consumer here.
+ *
+ * The single override: `streamOverlays`. The backend persists overlays as
+ * opaque JSON (their vocabulary — type/source/chroma-key/crop — is
+ * renderer-owned and differs from the ffmpeg builder's `OverlayConfig` on the
+ * Rust side), so the generated type says `Array<unknown>` and the renderer
+ * narrows it to its own `OverlayConfig[]` here.
+ */
+export type Settings = Omit<SettingsGen, 'streamOverlays'> & {
+  streamOverlays: OverlayConfig[]
 }
 
-export interface Settings {
-  // System
-  language: string | null
-  hasLaunched?: boolean
-  onboardingDone?: boolean
-
-  // Audio device
-  deviceId: string | null
-  deviceName: string | null
-  deviceChannels: Record<string, DeviceChannels>
-
-  // Audio processing
-  channels: ChannelMode
-  /** Sample rate in Hz. Valid: 8000–192000. Default: 48000. Derived from
-   *  {@link sampleRateMode} for client-side use (VU monitor + disk estimate). */
-  sampleRate: number
-  /** Capture sample-rate policy the recorder honours. `auto` (default) records at
-   *  the device's native rate (no `-ar`, no resampling → no choppiness on a 44.1
-   *  kHz mixer); the explicit modes force that rate. Maps 1:1 to the Rust
-   *  `SampleRate` enum. */
-  sampleRateMode?: 'auto' | 'r44100' | 'r48000'
-  /** Windows ONLY escape hatch: force the legacy ffmpeg DirectShow audio capture
-   *  instead of the modern cpal (WASAPI/ASIO) path. Default false. No effect on Mac. */
-  classicDirectshow?: boolean
-  /** Escape hatch: force the legacy ffmpeg audio capture instead of the native
-   *  cpal engine that writes the WAV directly. Default false. */
-  classicFfmpegAudio?: boolean
-  /** Input gain as percentage. Valid: 0–200. Default: 100 */
-  inputVolume: number
-  /** Bass EQ gain in dB. Valid: -24–+24. Default: 0 */
-  eqBass: number
-  /** Mid EQ gain in dB. Valid: -24–+24. Default: 0 */
-  eqMid: number
-  /** Treble EQ gain in dB. Valid: -24–+24. Default: 0 */
-  eqTreble: number
-  compEnabled: boolean
-  /** Compressor threshold in dBFS. Valid: -60–0 */
-  compThreshold: number
-  /** Compressor ratio. Valid: 1–100 */
-  compRatio: number
-  /** Compressor attack in ms. Valid: 0.1–2000 */
-  compAttack: number
-  /** Compressor release in ms. Valid: 1–9000 */
-  compRelease: number
-  limiterEnabled: boolean
-  /** Limiter ceiling in dBFS. Valid: -10–0. Default: -1 */
-  limiterCeiling: number
-
-  // Output format
-  format: FileFormat
-  bitrate: string
-  filenamePattern: FilenamePattern
-  saveFolder: string | null
-  autoDeleteDays: number
-
-  // Schedule
-  slots: ScheduleSlot[]
-  specialRecordings: SpecialRecording[]
-  stopOnSilence: boolean
-  silenceThreshold?: number        // dBFS threshold, default -50
-  silenceTimeoutMinutes?: number   // minutes of silence before stop, default 5
-  /** Auto-split interval in minutes. Valid: 0–480. 0 = disabled */
-  splitMinutes: number     // 0 = off; split every N minutes from recording start
-  trimSilence?: boolean    // run ffmpeg silenceremove on output
-  /** Reminder notification before scheduled recording, in minutes. Valid: 0–60. 0 = disabled */
-  reminderMinutes: number  // 0 = off; system notification N min before scheduled recording
-  /** Auto-stop manual recordings after N minutes. Valid: 0–1440 (24h). 0 = disabled */
-  manualMaxMinutes: number // 0 = off; auto-stop manual recordings after N minutes
-  preRollSeconds: number   // 0 = off; 15 or 30 — capture N seconds before manual record press
-  /** Advanced opt-in for the rolling pre-roll buffer. Default OFF: the buffer is
-   *  a CONTINUOUS background capture on the same microphone the live meters use,
-   *  and the renderer's getUserMedia meters are not part of the backend's
-   *  device hand-off. See renderer/preroll-lifecycle.ts for the full reasoning. */
-  prerollEnabled?: boolean
-
-  // System behaviour
-  launchAtLogin: boolean
-  minimizeToTray: boolean
-  wakeFromSleep: boolean
-  protectRecording: boolean
-
-  // Notifications
-  notifyStart: boolean
-  notifyStop: boolean
-  emailOnError: boolean
-  emailAddress: string
-  emailSmtp: string
-  emailSmtpPort: number
-  emailSmtpUser: string
-  /** Explicit `From:` address. Empty = derive it backend-side (username, else
-   *  recipient) — exactly what the renderer used to synthesise inline. Needed
-   *  when the SMTP login name is not a mailbox (SendGrid's literal `apikey`) or
-   *  the provider insists on a verified sender. Rust: `Settings.email_smtp_from`. */
-  emailSmtpFrom?: string
-  emailSmtpPass: string       // runtime only — always '' in store; real value in emailSmtpPassEnc
-  emailSmtpPassSet?: boolean  // populated by main before sending to renderer
-  emailSmtpPassEnc?: string   // internal: base64-encoded safeStorage ciphertext
-  /** Slack/Discord/generic webhook URL — POSTed on error-severity backend warnings */
-  webhookUrl?: string
-  /** Also send the webhook on warnings (in addition to errors). Default false. */
-  webhookOnWarn?: boolean
-  /** The operator confirmed that `webhookUrl` points at a device on their OWN
-   *  network (E1.4). The backend refuses loopback/private/link-local webhook
-   *  targets without it — the webhook URL is otherwise a blind SSRF. Set only by
-   *  the Varsler panel's confirmation, and cleared whenever the URL changes to a
-   *  public one. Rust: `Settings.webhook_allow_local`. */
-  webhookAllowLocal?: boolean
-
-  // Video recording
-  videoEnabled?: boolean
-  videoDeviceName?: string | null
-  videoDeviceIndex?: number | null
-  videoResolution?: '2160p' | '1080p' | '720p' | '480p'
-  /** Video bitrate in kbps. Valid: 500–50000. 0 = auto based on resolution */
-  videoBitrate?: number        // kbps (0 = auto based on resolution)
-  /** Video framerate in fps. Valid: 1–120. Default: 30 */
-  videoFramerate?: number      // fps, default 30
-  /** Recording video container: 'mp4' (default) | 'mov'. */
-  videoContainer?: 'mp4' | 'mov'
-  /** Recording video codec: 'h264' (default) | 'h265' (HEVC). */
-  videoCodec?: 'h264' | 'h265'
-  /** Recording encoder backend: 'software' (default) | 'hardware' (VideoToolbox). */
-  videoEncoder?: 'software' | 'hardware'
-  videoSeparate?: boolean      // true = keep audio + video as separate files; false = mux into combined MP4
-  videoKeepAudio?: boolean     // when combined MP4: also keep the separate high-quality audio file (default true)
-  videoFlip?: boolean          // mirror the camera horizontally (e.g. front-facing cameras)
-
-  /**
-   * Experimental: route audio + video through a single ffmpeg process
-   * instead of two parallel processes + post-mux. Eliminates A/V drift at
-   * the source by sharing the same clock. Default OFF until we have
-   * production-hours-on-it confidence. Toggle via Settings → Video.
-   */
-  useUnifiedRecorder?: boolean
-
-  /**
-   * May the app move its own proposed sermon boundaries toward what THIS
-   * operator keeps correcting them to (E10)? Default OFF — the argument is in
-   * `crates/sundayrec-core/src/local_adaptivity.rs`'s
-   * `DEFAULT_LOCAL_ADAPTIVITY_ENABLED`, because it is a decision about what a
-   * Sunday looks like and belongs next to the mechanism, not next to a type.
-   */
-  localAdaptivity?: boolean
-
-  // Editor
-  askOpenEditor?: boolean
-  editorIntroPath?: string
-  editorOutroPath?: string
-  /** Use the Apple VideoToolbox hardware encoder for the editor's VIDEO export?
-   *  Default false (software x264/x265). macOS only; a hardware render that
-   *  fails is retried once in software, so this only ever affects speed. */
-  editorHwEncode?: boolean
-
-  // (`defaultThumbnailPath` lived here — an Electron-era field describing a
-  // `userData/thumbnails/default.{ext}` layout that the Tauri build never wrote
-  // and never read, and whose per-recording sibling was `<name>.thumb.{ext}`
-  // rather than the `<stem>.cover.{ext}` the real backend uses. The default
-  // cover is now `thumbnail_get_default_info`, so the field described nothing
-  // that existed while contradicting something that does.)
-
-  // Cloud backup
-  cloudGoogleDrive?: CloudServiceSettings
-  cloudDropbox?: CloudServiceSettings
-  cloudOneDrive?: CloudServiceSettings
-
-  // Podcast publishing (RSS feed auto-generated from uploaded recordings)
-  podcast?: PodcastSettings
-
-  // Prep-and-review queue (v5.0) — persisted via electron-store
-  reviewQueue?: ReviewQueueEntry[]
-
-  // Updates
-  autoUpdate: boolean
-  /** Which release feed this install follows. `stable` (default) is versions
-   *  that have been through a real Sunday; `beta` is the promoted-but-unverified
-   *  ring. Selects the Worker feed at check time — Rust: `Settings.update_channel`. */
-  updateChannel: UpdateChannel
-
-  // Church profile
-  churchName: string
-  responsiblePerson: string
-
-  // Crash recovery (internal)
-  activeRecovery?: ActiveRecovery | null
-
-  // Next expected scheduled recording — used to detect missed recordings on next launch
-  nextExpectedRecordingISO?: string | null
-
-  // History (internal — never exported)
-  recordingHistory?: RecordingEntry[]
-
-  // Wake reliability — capped log of recent missed wakes and test-wake outcomes (max 20)
-  wakeFailureHistory?: WakeFailureEntry[]
-
-  // Live streaming destinations. Stream keys are stored ENCRYPTED via
-  // electron-store's safeStorage in the store layer — never persist them
-  // in plain settings JSON.
-  streamDestinations?: StreamDestinationStored[]
-  /** Default stream quality preset. */
-  streamResolution?: '480p' | '720p' | '1080p'
-  /** Default stream framerate. */
-  streamFramerate?: 25 | 30
-  /** Optional override of video bitrate in kbps. Empty/null = auto from resolution. */
-  streamVideoBitrate?: number | null
-
-  // Live overlays — composited on top of camera during streaming.
-  streamOverlays?: OverlayConfig[]
-
-  // Sunday-suite integrations. Entirely opt-in; absent/disabled means
-  // SundayRec behaves exactly as a standalone app (no integration code runs).
-  integrations?: IntegrationSettings
-}
+/** Back-compat alias — the generated `CloudServicePrefs` is the same shape the
+ *  old hand-written `CloudServiceSettings` described (tokens live elsewhere). */
+export type CloudServiceSettings = CloudServicePrefs
 
 /**
  * Overlay placement preset. 9-grid + fullscreen + free positioning.
@@ -462,18 +218,9 @@ export interface OverlayConfig {
   crop?: OverlayCrop | null
 }
 
-/** Destination record as stored in settings. Stream key is encrypted at rest;
- *  fetched via getStreamKey() in main, never returned to renderer directly. */
-export interface StreamDestinationStored {
-  id:        string
-  name:      string
-  rtmpUrl:   string
-  enabled:   boolean
-  /** Set true once user has saved a key. Renderer uses this to render
-   *  "•••••• (saved)" vs the input field. The key itself lives in
-   *  encrypted store and is read main-side only when starting a stream. */
-  hasKey:    boolean
-}
+// StreamDestinationStored is generated (re-exported above): persisted WITHOUT
+// the stream key — that lives in the OS keychain via `stream_set_key`, and
+// `hasKey` is the only trace it leaves in settings.
 
 export interface RecordingOpts extends Partial<Settings> {
   deviceId?: string | null
@@ -500,25 +247,6 @@ export interface WakeResult {
   message?: string
 }
 
-/**
- * Stored log of wake-attempt outcomes — produced by checkMissedRecordings (failure)
- * and by testWake (success/failure). Used by the UI to show recent wake history.
- * Capped at 20 entries (oldest dropped).
- */
-export interface WakeFailureEntry {
-  /** unix ms — when the missed-wake or test-wake outcome was recorded */
-  timestamp:   number
-  /** ISO string — what time the wake was supposed to fire */
-  scheduledAt: string
-  /** 'missed' = scheduled recording never ran. 'test_ok' / 'test_fail' = manual test result. */
-  kind:        'missed' | 'test_ok' | 'test_fail'
-  /** Human-readable label (slot name, "Spesialopptak", "Test-wake") */
-  label:       string
-  /** Free-form reason (e.g. 'no_resume', 'too_late', 'on_battery', or empty) */
-  reason?:     string
-  /** Actual delta in seconds between expected and observed (test-wake only) */
-  deltaSec?:   number
-}
 
 export interface UpdateProgress {
   percent: number
@@ -569,13 +297,7 @@ export interface TranscriptData {
 // 'gmail'), which models OAuth account kinds — this one is the backup targets.
 export type CloudServiceId = 'google-drive' | 'dropbox' | 'onedrive'
 
-export interface CloudServiceSettings {
-  enabled: boolean
-  autoUpload: boolean
-  folderId?: string
-  folderName?: string
-  folderPath?: string
-}
+// CloudServiceSettings: see the generated `CloudServicePrefs` alias above.
 
 export interface CloudStatus {
   connected: boolean

@@ -110,7 +110,7 @@ export function setupGeneralPage(): void {
       collectGeneralSettings()
     },
   }))
-  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarn' }))
+  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarning' }))
 
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
@@ -148,6 +148,7 @@ export function setupGeneralPage(): void {
   setupSmtpCard()
   void refreshEmailGate()
   setupWebhookTest()
+  setupSettingsProfileCard()
   setupTelemetryCard()
   setupLearningSummaryCard()
   setupLocalNudgeCard()
@@ -514,9 +515,6 @@ function setupSmtpCard(): void {
       emailSmtp:     hostVal,
       emailSmtpUser: userVal,
       emailSmtpFrom: fromVal,
-      // Runtime-only mirror (stripped before persistence) — the real password
-      // goes to the keychain just below.
-      emailSmtpPass: pass?.value ?? '',
       emailSmtpPort: +((document.getElementById('email-port') as HTMLInputElement | null)?.value ?? 587),
     })
     const ok = await window.api.saveSettings(settings).catch(() => false)
@@ -561,6 +559,58 @@ function setupSmtpCard(): void {
  * action would be friction with no matching friction on the way back out —
  * which is itself a shape of dark pattern this feature is trying to avoid.
  */
+/**
+ * «Innstillingsprofil» — export/import the whole settings object as a JSON
+ * file (R4; the backing commands existed since F1.3 and were never reachable).
+ *
+ * Export: native save dialog → `settings_export_to_file`. Import: native open
+ * dialog → a confirm (it REPLACES this machine's settings) →
+ * `settings_import_from_file` → `window.loadSettings()` so every page
+ * re-renders from the imported values immediately, plus a scheduler nudge so
+ * imported slots take effect now rather than at the next save.
+ */
+function setupSettingsProfileCard(): void {
+  document.getElementById('btn-settings-export')?.addEventListener('click', async () => {
+    const path = await window.api.pickSavePath({
+      defaultPath: 'sundayrec-innstillinger.json',
+      name: 'Innstillingsprofil (JSON)',
+      extensions: ['json'],
+    })
+    if (!path) return
+    try {
+      await window.api.settingsExportToFile(path)
+      toast('success', t('general.settingsExported', 'Innstillingene ble eksportert.'))
+    } catch (e) {
+      toast('error', `${t('general.settingsExportFailed', 'Kunne ikke eksportere innstillingene')}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  })
+
+  document.getElementById('btn-settings-import')?.addEventListener('click', async () => {
+    const path = await window.api.pickSettingsFile()
+    if (!path) return
+    const ok = await confirmDialog({
+      title: t('general.settingsImportConfirmTitle', 'Importere innstillinger?'),
+      message: t('general.settingsImportConfirm', 'Dette erstatter innstillingene på denne maskinen med innholdet i filen. Opptak, historikk og passord berøres ikke.'),
+      confirmLabel: t('general.settingsImportBtnConfirm', 'Ja, importer'),
+      cancelLabel: t('general.cancel', 'Avbryt'),
+    })
+    if (!ok) return
+    try {
+      await window.api.settingsImportFromFile(path)
+      // Rehydrate the whole UI from the imported store…
+      await window.loadSettings()
+      // …and run one save of what we just loaded: the value is already
+      // persisted (idempotent), but saveSettings is also the path that wakes
+      // the scheduler and syncs the OS login item — both of which the
+      // imported profile may have changed.
+      try { await window.api.saveSettings(settings) } catch { /* store already holds the import */ }
+      toast('success', t('general.settingsImported', 'Innstillingene ble importert.'))
+    } catch (e) {
+      toast('error', `${t('general.settingsImportFailed', 'Kunne ikke importere innstillingene')}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  })
+}
+
 function setupTelemetryCard(): void {
   void refreshTelemetryCard()
 
@@ -1114,7 +1164,7 @@ export function applyGeneralSettingsToUI(): void {
   setVal('email-user',    settings.emailSmtpUser  ?? '')
   setVal('email-from',    settings.emailSmtpFrom  ?? '')
   setVal('webhook-url',   settings.webhookUrl     ?? '')
-  setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarn)
+  setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarning)
   // The password never comes back from storage — the field starts empty and the
   // «lagret» state is read from the OS keychain, not from a settings flag. (It
   // used to read `settings.emailSmtpPassSet`, an Electron-era field the Tauri
@@ -1177,7 +1227,7 @@ function collectGeneralSettings(): void {
     emailOnError:      !!(document.getElementById('opt-email-error')  as HTMLInputElement | null)?.checked,
     emailAddress:      (document.getElementById('email-address')     as HTMLInputElement | null)?.value ?? '',
     webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
-    webhookOnWarn:     !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
+    webhookOnWarning:  !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     // Anything the select cannot produce is not a channel; the backend applies

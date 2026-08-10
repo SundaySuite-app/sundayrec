@@ -370,15 +370,15 @@ function collectFilesSettings(): void {
     language:    (document.getElementById('podcast-language')    as HTMLSelectElement | null)?.value ?? 'no',
     category:    (document.getElementById('podcast-category')    as HTMLSelectElement | null)?.value ?? 'Religion & Spirituality',
     explicit:    false,
-    email:       (document.getElementById('podcast-email')       as HTMLInputElement | null)?.value.trim() || undefined,
-    link:        (document.getElementById('podcast-link')        as HTMLInputElement | null)?.value.trim() || undefined,
-    imageUrl:    (document.getElementById('podcast-image')       as HTMLInputElement | null)?.value.trim() || undefined,
-    feedUrl:     settings.podcast?.feedUrl,  // preserve last published URL across saves
+    email:       (document.getElementById('podcast-email')       as HTMLInputElement | null)?.value.trim() || null,
+    link:        (document.getElementById('podcast-link')        as HTMLInputElement | null)?.value.trim() || null,
+    imageUrl:    (document.getElementById('podcast-image')       as HTMLInputElement | null)?.value.trim() || null,
+    feedUrl:     settings.podcast.feedUrl,  // preserve last published URL across saves
     // Prep-and-review (v5.0) extras
     autoPrepEnabled:     (document.getElementById('opt-podcast-auto-prep') as HTMLInputElement | null)?.checked !== false,
     defaultMasterPreset: (document.getElementById('podcast-default-master-preset') as HTMLSelectElement | null)?.value || 'speech-clear',
-    defaultIntroPath:    (document.getElementById('podcast-default-intro') as HTMLInputElement | null)?.value.trim() || undefined,
-    defaultOutroPath:    (document.getElementById('podcast-default-outro') as HTMLInputElement | null)?.value.trim() || undefined,
+    defaultIntroPath:    (document.getElementById('podcast-default-intro') as HTMLInputElement | null)?.value.trim() || null,
+    defaultOutroPath:    (document.getElementById('podcast-default-outro') as HTMLInputElement | null)?.value.trim() || null,
   }
 
   const protectEl     = document.getElementById('opt-protect')           as HTMLInputElement  | null

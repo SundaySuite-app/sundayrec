@@ -64,40 +64,34 @@ pub struct FeedPreview {
     pub feed_url: Option<String>,
 }
 
-/// Resolve the channel metadata from settings, mirroring the Electron `podcast`
-/// settings object's fields + defaults (`regeneratePodcastFeed`). A missing/blank
-/// setting falls back to the same defaults the renderer showed.
+/// Resolve the channel metadata from `settings.podcast` (R4 — the unified
+/// store), applying the same blank-means-default fallbacks the renderer showed.
+///
+/// Before R4 this read TEN standalone `app_setting` rows (`podcastTitle`, …)
+/// that no code path ever WROTE — the UI persisted the `podcast` object into
+/// its localStorage blob — so the feed always rendered the fallbacks whatever
+/// the operator typed. The podcast object is a real `Settings` field now, so
+/// the panel's save and this read finally share one store.
 async fn resolve_channel(db: &Db) -> AppResult<PodcastChannel> {
-    let read = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
-    let get = |key: &'static str| {
-        let pool = db.pool.clone();
-        async move { store::get_setting(&pool, key).await }
+    let read = |v: &str| {
+        let t = v.trim();
+        (!t.is_empty()).then(|| t.to_string())
     };
+    let read_opt = |v: &Option<String>| v.as_deref().and_then(read);
 
-    let title = read(get("podcastTitle").await?).unwrap_or_else(|| "SundayRec".into());
-    let description =
-        read(get("podcastDescription").await?).unwrap_or_else(|| "Lydopptak fra SundayRec".into());
-    let author = read(get("podcastAuthor").await?).unwrap_or_else(|| title.clone());
-    let language = read(get("podcastLanguage").await?).unwrap_or_else(|| "no".into());
-    let category =
-        read(get("podcastCategory").await?).unwrap_or_else(|| "Religion & Spirituality".into());
-    // `explicit` is a JSON bool stored as a string; anything but "true" is false.
-    let explicit = get("podcastExplicit")
-        .await?
-        .map(|v| v.trim() == "true")
-        .unwrap_or(false);
-
+    let p = crate::settings::load(&db.pool).await?.podcast;
+    let title = read(&p.title).unwrap_or_else(|| "SundayRec".into());
     Ok(PodcastChannel {
+        description: read(&p.description).unwrap_or_else(|| "Lydopptak fra SundayRec".into()),
+        author: read(&p.author).unwrap_or_else(|| title.clone()),
+        language: read(&p.language).unwrap_or_else(|| "no".into()),
+        category: read(&p.category).unwrap_or_else(|| "Religion & Spirituality".into()),
+        explicit: p.explicit,
+        link: read_opt(&p.link),
+        image_url: read_opt(&p.image_url),
+        email: read_opt(&p.email),
+        feed_url: read_opt(&p.feed_url),
         title,
-        description,
-        link: read(get("podcastLink").await?),
-        author,
-        language,
-        image_url: read(get("podcastImageUrl").await?),
-        category,
-        explicit,
-        email: read(get("podcastEmail").await?),
-        feed_url: read(get("podcastFeedUrl").await?),
     })
 }
 
@@ -175,7 +169,10 @@ pub async fn publish_feed_preview(db: State<'_, Db>) -> AppResult<FeedPreview> {
 /// shows a calm "not built into this build" hint. NETWORK-UNVERIFIED.
 #[tauri::command]
 #[cfg_attr(not(feature = "publish"), allow(unused_variables))]
-pub async fn publish_generate_feed(db: State<'_, Db>) -> AppResult<FeedPreview> {
+pub async fn publish_generate_feed(
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+) -> AppResult<FeedPreview> {
     #[cfg(not(feature = "publish"))]
     {
         Err(crate::error::AppError::Validation(
@@ -186,15 +183,13 @@ pub async fn publish_generate_feed(db: State<'_, Db>) -> AppResult<FeedPreview> 
 
     #[cfg(feature = "publish")]
     {
-        use crate::error::AppError;
-        use std::path::Path;
-
-        // The local save folder the recorder writes into (mirrors the recorder's
-        // `saveFolder` setting). The feed is written alongside it.
-        let save_folder = store::get_setting(&db.pool, "saveFolder")
-            .await?
-            .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| AppError::Validation("no_config: save folder not set".into()))?;
+        // The effective save folder, via THE canonical resolver (R4 fix: this
+        // used to read a standalone `app_setting` row `"saveFolder"` that no
+        // code path ever wrote — settings are one JSON blob under `"settings"`
+        // — so generating the feed always failed `no_config`, configured save
+        // folder or not).
+        let settings = crate::settings::load(&db.pool).await?;
+        let save_folder = crate::save_folder::resolve(&app, settings.save_folder.as_deref())?;
 
         crate::telemetry::counters::count(
             sundayrec_core::telemetry::CounterName::PublishFeedGenerated,
@@ -206,7 +201,7 @@ pub async fn publish_generate_feed(db: State<'_, Db>) -> AppResult<FeedPreview> 
         // column exists; until then this writes the feed locally and reports
         // the path (the whole implemented half of publishing — see
         // `crate::publish`'s module docs).
-        let path = crate::publish::write_feed(Path::new(&save_folder), &channel, &episodes)?;
+        let path = crate::publish::write_feed(&save_folder, &channel, &episodes)?;
         let xml = std::fs::read_to_string(&path)?;
         Ok(FeedPreview {
             xml,

@@ -3,57 +3,32 @@ import {
   boot,
   BOOT_FIXTURES,
   SETTLED_SETTINGS,
-  SETTINGS_KEY,
-  SETTINGS_SAVE_SPY,
   settingsSavePayloads,
+  storedSettings,
 } from "./harness";
 
-// «Oppdateringskanal» — the beta opt-in must reach the BACKEND, because the
-// backend is the only reader that matters.
+// «Oppdateringskanal» — the beta opt-in must reach the STORE, because the
+// backend is the only reader that matters: `update/mod.rs::current_channel`
+// reads `settings.update_channel` from sqlite, never from renderer memory.
 //
-// The updater resolves its feed in Rust: `update/mod.rs::current_channel` reads
-// `settings.update_channel` from sqlite (`settings::load(db)`), never from the
-// renderer's localStorage blob. The renderer's save path forks in api-shim's
-// `saveSettings`: the full blob goes to localStorage, and a CURATED subset
-// (`backendRecordingSettings`) goes to sqlite via `settings_save` — deduped
-// against the previous curated JSON (`lastSyncedJson`), so a save whose curated
-// subset is unchanged sends nothing at all.
-//
-// The bug this spec pins (rig-observed on v0.11.1-beta.2, 2026-08-08): the
-// curated subset did not include `updateChannel`. Switching the select to beta
-// and confirming «Ja, bruk beta» wrote beta to localStorage — chip said
-// «Lagret ✓», the select showed beta — while the curated JSON came out
-// byte-identical to the boot sync, so NOT ONE `settings_save` left the app.
-// sqlite kept `updateChannel: "stable"` (every earlier save re-defaulted it via
-// serde's `default_update_channel`), and the machine silently stayed on the
-// stable feed. Both halves were green: the renderer really saved, the backend
-// really defaulted — the seam between them dropped the one field the feature
-// is made of.
-//
-// The observable is therefore the `settings_save` payload itself, spied at the
-// invoke boundary through the E5.1 fixture seam — the exact place the curated
-// subset leaves the renderer on its way to sqlite.
-
-// The `settings_save` spy + payload reader live in harness.ts — shared with
-// settings-seam.spec.ts, which generalises this seam to every backend-read key.
-const FIXTURES = { ...BOOT_FIXTURES, settings_save: SETTINGS_SAVE_SPY };
+// History: this spec was born pinning #113 (rig-observed on v0.11.1-beta.2) —
+// the curated `settings_save` bridge did not include `updateChannel`, so
+// picking Beta wrote localStorage, the chip said «Lagret ✓», and sqlite kept
+// stable forever. R4 removed the bridge outright: the renderer saves the FULL
+// object through `settings_save`, so there is no curated subset left to drop a
+// key from. What this spec still owes the owner is the journey end-to-end:
+// pick Beta → answer the guard → the save's payload carries the channel → the
+// STORE (the thing the updater reads) now says beta.
 
 test.describe("update channel", () => {
-  test("switching to beta reaches the backend save, not just localStorage", async ({
+  test("switching to beta reaches the store, not just the select", async ({
     page,
   }) => {
     await boot(page, {
-      fixtures: FIXTURES,
+      fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings:general",
     });
-
-    // The module-load sync pushes one curated payload at boot; wait for it so
-    // the assertion below is about the CHANGE, not about boot timing.
-    await expect
-      .poll(() => settingsSavePayloads(page).then((p) => p.length))
-      .toBeGreaterThan(0);
-    const bootSaves = (await settingsSavePayloads(page)).length;
 
     // The owner's exact journey: pick Beta …
     await page.selectOption("#opt-update-channel", "beta");
@@ -66,45 +41,25 @@ test.describe("update channel", () => {
     await expect(confirmBtn).toHaveText("Ja, bruk beta");
     await confirmBtn.click();
 
-    // … and see the renderer half succeed: the debounced save lands in
-    // localStorage. (This half always worked — it is what made the bug quiet.)
-    await expect
-      .poll(async () =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(window.localStorage.getItem(key) || "{}").updateChannel,
-          SETTINGS_KEY,
-        ),
-      )
-      .toBe("beta");
-
-    // THE PIN: the same save must also cross the seam. A NEW `settings_save`
-    // must fire (the curated JSON changed, so the dedupe must not swallow it) …
+    // … and the save must fire, carrying the channel in the full object.
     await expect
       .poll(() => settingsSavePayloads(page).then((p) => p.length))
-      .toBeGreaterThan(bootSaves);
-
-    // … and its payload must carry the channel. Without `updateChannel` in the
-    // curated subset, Rust's `#[serde(default = "default_update_channel")]`
-    // re-defaults sqlite to stable and the updater never leaves the stable feed.
+      .toBeGreaterThan(0);
     const saves = await settingsSavePayloads(page);
-    const payload = saves[saves.length - 1];
-    expect(payload.updateChannel).toBe("beta");
+    expect(saves[saves.length - 1].updateChannel).toBe("beta");
 
-    // The three neighbours the same seam dropped (each has a real backend
-    // reader — scheduler reminders, learning.rs::enabled, telemetry's
-    // environment block) must ride the curated sync too. Defaults here, since
-    // this journey never touched them: present is the property under test.
-    expect(payload.reminderMinutes).toBe(0);
-    expect(payload.localAdaptivity).toBe(false);
-    expect(payload.autoUpdate).toBe(true);
+    // The pin that matters: the STORE — what `current_channel` reads at the
+    // next update check — now says beta.
+    await expect
+      .poll(async () => (await storedSettings(page)).updateChannel)
+      .toBe("beta");
   });
 
   test("switching back to stable syncs too, and asks no question", async ({
     page,
   }) => {
     await boot(page, {
-      fixtures: FIXTURES,
+      fixtures: BOOT_FIXTURES,
       settings: { ...SETTLED_SETTINGS, updateChannel: "beta" },
       goto: "settings:general",
     });
@@ -116,10 +71,7 @@ test.describe("update channel", () => {
     await expect(page.locator(".ui-dialog")).toHaveCount(0);
 
     await expect
-      .poll(async () => {
-        const saves = await settingsSavePayloads(page);
-        return saves.length ? saves[saves.length - 1].updateChannel : undefined;
-      })
+      .poll(async () => (await storedSettings(page)).updateChannel)
       .toBe("stable");
   });
 });

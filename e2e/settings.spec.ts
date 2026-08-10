@@ -4,7 +4,7 @@ import {
   BOOT_FIXTURES,
   flipToggle,
   SETTLED_SETTINGS,
-  SETTINGS_KEY,
+  storedSettings,
 } from "./harness";
 
 // The settings roundtrip: flip something, see it saved, leave, come back, and
@@ -42,13 +42,7 @@ test.describe("settings", () => {
     // 2. It actually persisted — checked at the storage layer, because "the
     //    checkbox is still checked" would also be true of a pure UI change.
     await expect
-      .poll(async () =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(window.localStorage.getItem(key) || "{}").askOpenEditor,
-          SETTINGS_KEY,
-        ),
-      )
+      .poll(async () => (await storedSettings(page)).askOpenEditor)
       .toBe(true);
 
     // 3. Navigate away and back — the tab is re-entered, the control re-bound.
@@ -83,13 +77,7 @@ test.describe("settings", () => {
       "Lagret ✓",
     );
     await expect
-      .poll(async () =>
-        page.evaluate(
-          (key) =>
-            JSON.parse(window.localStorage.getItem(key) || "{}").churchName,
-          SETTINGS_KEY,
-        ),
-      )
+      .poll(async () => (await storedSettings(page)).churchName)
       .toBe("Betel Trondheim");
 
     await page.reload();

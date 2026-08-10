@@ -1,5 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { boot, BOOT_FIXTURES, fn, type Fixtures } from "./harness";
+import {
+  boot,
+  BOOT_FIXTURES,
+  fn,
+  storedSettings,
+  type Fixtures,
+} from "./harness";
 
 // The first-run wizard, and in particular the consent step E3.6 just added.
 //
@@ -137,11 +143,9 @@ test.describe("onboarding", () => {
 
     await page.locator("#ob-done").click();
     await expect(page.locator("#onboarding-overlay")).toBeHidden();
-    // First-run is over: it must not reappear on the next boot.
-    const stored = await page.evaluate(() =>
-      JSON.parse(window.localStorage.getItem("sundayrec.settings") || "{}"),
-    );
-    expect(stored.onboardingDone).toBe(true);
+    // First-run is over: it must not reappear on the next boot — checked at
+    // the storage layer (the fake sqlite row a fresh settings_get would read).
+    expect((await storedSettings(page)).onboardingDone).toBe(true);
   });
 
   test("a backend that cannot record the answer does not trap the operator", async ({

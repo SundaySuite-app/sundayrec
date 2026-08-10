@@ -79,10 +79,10 @@ export function setupVideoPage(): void {
   }))
 
   bindRadioGroup('video-mode', videoBinding({
-    key: 'videoSeparate',
+    key: 'outputMode',
     after: () => { updateKeepAudioVisibility(); afterVideoSave() },
   }))
-  bindSetting('opt-video-keep-audio',  videoBinding({ key: 'videoKeepAudio' }))
+  bindSetting('opt-video-keep-audio',  videoBinding({ key: 'keepSeparateAudio' }))
   bindSetting('opt-editor-hw-encode',  videoBinding({ key: 'editorHwEncode' }))
 
   // Auto vs custom bitrate. These two radios share a name but carry no distinct
@@ -220,13 +220,13 @@ export function applyVideoSettingsToUI(): void {
   if (encoderEl) encoderEl.value = settings.videoEncoder ?? 'hardware'
 
   // Output mode
-  const separate   = settings.videoSeparate ?? false
+  const separate   = settings.outputMode === 'separate'
   const modeEl     = document.querySelector<HTMLInputElement>(`input[name="video-mode"][value="${separate ? 'separate' : 'combined'}"]`)
   if (modeEl) modeEl.checked = true
 
   // Keep audio toggle — only visible when NOT separate
   const keepAudioEl = document.getElementById('opt-video-keep-audio') as HTMLInputElement | null
-  if (keepAudioEl) keepAudioEl.checked = settings.videoKeepAudio !== false
+  if (keepAudioEl) keepAudioEl.checked = settings.keepSeparateAudio
   updateKeepAudioVisibility()
 
   // Editor video-export hardware encoder — opt-in, default off.
@@ -443,9 +443,6 @@ function collectVideoSettings(): void {
   const hwEncodeEl  = document.getElementById('opt-editor-hw-encode') as HTMLInputElement | null
   const editorHwEncode = hwEncodeEl ? hwEncodeEl.checked : false
 
-  // Perfekt A/V-synk er alltid på (valget er fjernet).
-  const useUnifiedRecorder = true
-
   const updated = {
     ...settings,
     videoEnabled:      enabled,
@@ -457,10 +454,9 @@ function collectVideoSettings(): void {
     videoCodec,
     videoEncoder,
     videoBitrate:      bitrate,
-    videoSeparate:     separate,
-    videoKeepAudio:    keepAudio,
+    outputMode:        separate ? 'separate' : 'combined',
+    keepSeparateAudio: keepAudio,
     editorHwEncode,
-    useUnifiedRecorder,
   }
 
   patchSettings(updated as Settings)
