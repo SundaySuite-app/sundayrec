@@ -1529,12 +1529,12 @@ async fn run_session(
                             loop {
                                 emit_state(RecorderState::Reconnecting, session.reconnect_count());
                                 let _ = app.emit(
-                                RECONNECTING_EVENT,
-                                RecordingEvent {
-                                    code: "reconnecting".into(),
-                                    message: reconnecting_message(attempt, degraded_for_ms),
-                                },
-                            );
+                                    RECONNECTING_EVENT,
+                                    RecordingEvent {
+                                        code: "reconnecting".into(),
+                                        message: reconnecting_message(attempt, degraded_for_ms),
+                                    },
+                                );
                                 tracing::warn!(attempt, delay_ms, degraded_for_ms, segment = %next_segment, "recorder: reconnecting");
                                 // The back-off must stay stop-responsive: with a dead
                                 // child there is nothing to wind down, so a stop (or
@@ -3280,7 +3280,10 @@ mod tests {
         // policy has no such number, and printing one would be a lie.
         let m = reconnecting_message(1, None);
         assert!(m.contains("forsøk 1"), "{m}");
-        assert!(!m.contains("/20"), "the retired attempt cap must not reappear: {m}");
+        assert!(
+            !m.contains("/20"),
+            "the retired attempt cap must not reappear: {m}"
+        );
         assert!(!m.contains('/'), "no denominator at all: {m}");
     }
 

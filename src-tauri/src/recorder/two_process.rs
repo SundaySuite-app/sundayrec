@@ -215,7 +215,9 @@ pub async fn run_two_process_session(
     let video_stderr = video_child.stderr.take();
     let audio_stderr = audio_child.stderr.take();
     let vt = video_tail.clone();
-    let video_log = video_stderr.map(|s| tauri::async_runtime::spawn(crate::recorder::stderr_tail::drain_stderr(s, "video", vt)));
+    let video_log = video_stderr.map(|s| {
+        tauri::async_runtime::spawn(crate::recorder::stderr_tail::drain_stderr(s, "video", vt))
+    });
     let audio_log = audio_stderr.map(|s| {
         let sink = Arc::new(Mutex::new(String::new()));
         tauri::async_runtime::spawn(crate::recorder::stderr_tail::drain_stderr(s, "audio", sink))

@@ -465,8 +465,7 @@ async fn spawn_preroll_stack(
 
     // Exactly the capture engine's cushion (`stream::RING_SECONDS`) — one
     // function, so the two can never drift apart.
-    let (prod, cons) =
-        ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
+    let (prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
 
     let stream_stop = Arc::new(AtomicBool::new(false));
     let writer_stop = Arc::new(AtomicBool::new(false));

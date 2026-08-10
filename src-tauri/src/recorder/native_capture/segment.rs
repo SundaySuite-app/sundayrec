@@ -139,8 +139,7 @@ pub async fn spawn_native_segment(
 
     // The shared capture cushion (5 s of routed audio — see `stream::RING_SECONDS`)
     // so a writer stall never drops samples; overrun drops whole frames + counts.
-    let (prod, cons) =
-        ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
+    let (prod, cons) = ringbuf::HeapRb::<f32>::new(ring_capacity(spec.sample_rate, out_ch)).split();
 
     let stream_stop = Arc::new(AtomicBool::new(false));
     let writer_stop = Arc::new(AtomicBool::new(false));
@@ -1037,8 +1036,7 @@ mod tests {
         let out = dir.path().join("never-started.wav");
         let out_str = out.to_string_lossy().into_owned();
         let mut opts = test_opts(&out_str);
-        opts.audio_device_name =
-            "no-such-device-2f0a1c8e-never-enumerated-by-any-host".to_string();
+        opts.audio_device_name = "no-such-device-2f0a1c8e-never-enumerated-by-any-host".to_string();
 
         let err = match spawn_native_segment(CpalHostKind::Default, &opts, &out_str, None).await {
             Err(e) => e,
@@ -1270,7 +1268,8 @@ mod tests {
         let mut r = rig();
         let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         let clock = FakeClock::default();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let opts = test_opts("/tmp/x.wav");
 
         let h = tokio::spawn({
@@ -1331,7 +1330,11 @@ mod tests {
             }
         );
         assert!(r.sink.has(&Ev::Error("start_timeout".into())));
-        assert_eq!(r.stops.load(Ordering::Relaxed), 1, "the stack must be torn down");
+        assert_eq!(
+            r.stops.load(Ordering::Relaxed),
+            1,
+            "the stack must be torn down"
+        );
     }
 
     /// The stuck detector: bytes frozen past the tolerance while the segment is
@@ -1342,15 +1345,16 @@ mod tests {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         let clock = FakeClock::default();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.bytes.store(44, Ordering::Relaxed); // a header, then nothing
 
         let ticker = tokio::spawn({
             let handle = clock.handle();
             async move {
                 // Walk both clocks forward together, past the stall tolerance.
-                for _ in 0..(RecorderTimeouts::STUCK_PROGRESS_MS / RecorderTimeouts::STUCK_POLL_MS
-                    + 2)
+                for _ in
+                    0..(RecorderTimeouts::STUCK_PROGRESS_MS / RecorderTimeouts::STUCK_POLL_MS + 2)
                 {
                     tokio::time::sleep(Duration::from_millis(RecorderTimeouts::STUCK_POLL_MS))
                         .await;
@@ -1383,7 +1387,8 @@ mod tests {
     async fn a_writer_that_vanishes_is_an_unexpected_exit() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::WriterGone).unwrap();
         let opts = test_opts("/tmp/x.wav");
         let out = drive(
@@ -1405,7 +1410,8 @@ mod tests {
     async fn a_disk_full_writer_error_is_fatal_and_warned_as_an_error() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Error {
             kind: WriterErrorKind::DiskFull,
             message: "No space left on device".into(),
@@ -1443,7 +1449,8 @@ mod tests {
     async fn a_transient_writer_error_is_a_warning() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Error {
             kind: WriterErrorKind::Io,
             message: "input/output error".into(),
@@ -1467,10 +1474,9 @@ mod tests {
                 last_error: Some(RecordingErrorCode::DeviceError)
             }
         );
-        assert!(r.sink.has(&Ev::Warning(error_code_str(
-            RecordingErrorCode::DeviceError
-        )
-        .into())));
+        assert!(r.sink.has(&Ev::Warning(
+            error_code_str(RecordingErrorCode::DeviceError).into()
+        )));
     }
 
     /// A cpal device error mid-session: warn (not error — the fragment is
@@ -1480,7 +1486,8 @@ mod tests {
     async fn a_device_error_finalises_the_fragment_and_asks_for_a_reconnect() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::StreamError("device removed".into()))
             .unwrap();
         let opts = test_opts("/tmp/x.wav");
@@ -1518,7 +1525,8 @@ mod tests {
         // ORDERED, and `SILENCE_WARN_MS` happens to equal the one-minute
         // setting, which would make this a coin flip in `select!`.
         opts.silence_timeout_minutes = 5;
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Silence(
             SilenceEvent::Start,
         )))
@@ -1551,7 +1559,8 @@ mod tests {
         let mut opts = test_opts("/tmp/x.wav");
         opts.stop_on_silence = true;
         opts.silence_timeout_minutes = 1;
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::Writer(WriterEvent::Silence(
             SilenceEvent::Start,
         )))
@@ -1595,7 +1604,8 @@ mod tests {
         let clock = FakeClock::default();
         clock.advance(1_000_000); // a plausible epoch
         let handle = clock.handle();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         // Deadline 10 s out.
         w_tx.send_replace(Some(handle.load(Ordering::Relaxed) + 10_000));
 
@@ -1643,7 +1653,8 @@ mod tests {
     async fn the_riff_cap_ends_the_segment_as_a_split() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.bytes.store(just_over_riff_cap(), Ordering::Relaxed);
         let opts = test_opts("/tmp/x.wav");
         let out = drive(
@@ -1669,7 +1680,8 @@ mod tests {
     async fn a_full_disk_stops_the_segment_with_disk_full() {
         let mut r = rig();
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let opts = test_opts("/tmp/x.wav");
         let out = drive(
             &mut r,
@@ -1694,7 +1706,8 @@ mod tests {
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         let mut opts = test_opts("/tmp/x.wav");
         opts.split_minutes = 30;
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let out = drive(
             &mut r,
             &opts,
@@ -1712,7 +1725,9 @@ mod tests {
         let mut r2 = rig();
         let (stop_tx2, mut stop_rx2, _w2, mut w_rx2) = channels();
         let off = test_opts("/tmp/x.wav");
-        r2.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r2.tx
+            .send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let ender = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(60 * 60 * 4)).await;
             let _ = stop_tx2.send(()).await;
@@ -1766,7 +1781,10 @@ mod tests {
         };
         assert_eq!(before, SegmentOutcome::GracefulStop);
         let seen = r.sink.seen();
-        let first_started = seen.iter().position(|e| e == &Ev::Started).expect("started");
+        let first_started = seen
+            .iter()
+            .position(|e| e == &Ev::Started)
+            .expect("started");
         let first_progress = seen
             .iter()
             .position(|e| matches!(e, Ev::Progress(_)))
@@ -1786,7 +1804,8 @@ mod tests {
         let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         let mut off = test_opts("/tmp/x.wav");
         off.live_levels = false;
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let ender = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await;
             let _ = stop_tx.send(()).await;
@@ -1816,7 +1835,9 @@ mod tests {
         };
         let (stop_tx2, mut stop_rx2, _w2, mut w_rx2) = channels();
         let on = test_opts("/tmp/x.wav");
-        r2.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r2.tx
+            .send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let ender2 = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(2)).await;
             let _ = stop_tx2.send(()).await;
@@ -1849,7 +1870,8 @@ mod tests {
         let (_stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
         r.overrun.store(4_096, Ordering::Relaxed);
         r.frames.store(96_000, Ordering::Relaxed); // 2 s at 48 kHz
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         r.tx.send(SegmentSignal::WriterGone).unwrap();
         let tel = telemetry();
         let opts = test_opts("/tmp/x.wav");
@@ -1910,7 +1932,8 @@ mod tests {
     async fn a_graceful_stop_is_quiet() {
         let mut r = rig();
         let (stop_tx, mut stop_rx, _w_tx, mut w_rx) = channels();
-        r.tx.send(SegmentSignal::Writer(WriterEvent::Started)).unwrap();
+        r.tx.send(SegmentSignal::Writer(WriterEvent::Started))
+            .unwrap();
         let ender = tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(3)).await;
             let _ = stop_tx.send(()).await;
@@ -1932,7 +1955,6 @@ mod tests {
         assert!(r.sink.seen().iter().all(|e| !matches!(e, Ev::Error(_))));
         assert_eq!(r.stops.load(Ordering::Relaxed), 1);
     }
-
 
     fn test_opts(out: &str) -> RecordingOpts {
         RecordingOpts {

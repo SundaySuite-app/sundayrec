@@ -213,7 +213,10 @@ mod tests {
     #[test]
     fn grace_window_covers_the_whole_retired_attempt_ladder() {
         let old_ladder_ms: u64 = (0..20).map(reconnect_delay).sum();
-        assert_eq!(old_ladder_ms, 174_500, "the ladder the 20-attempt cap bought");
+        assert_eq!(
+            old_ladder_ms, 174_500,
+            "the ladder the 20-attempt cap bought"
+        );
         assert!(
             RECONNECT_GRACE_MS >= old_ladder_ms,
             "grace ({RECONNECT_GRACE_MS} ms) must cover the retired ladder ({old_ladder_ms} ms)"

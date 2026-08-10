@@ -346,7 +346,10 @@ mod tests {
         // The permit stored during the floor is not lost — the wait still ends
         // on the device change rather than sleeping the full 10 s.
         assert_eq!(out, BackoffOutcome::DeviceChanged);
-        assert_eq!(start.elapsed(), Duration::from_millis(DEVICE_CHANGE_FLOOR_MS));
+        assert_eq!(
+            start.elapsed(),
+            Duration::from_millis(DEVICE_CHANGE_FLOOR_MS)
+        );
     }
 
     #[tokio::test(start_paused = true)]
