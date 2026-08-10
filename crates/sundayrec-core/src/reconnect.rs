@@ -18,12 +18,12 @@
 //!
 //! The ported `MAX_RECONNECT_ATTEMPTS = 20` is an attempt count, and with the
 //! back-off ladder below it buys **2 min 55 s** (2000+3500+5000+6500+8000+9500
-//! + 14 × 10 000 = 174 500 ms). A church service is ninety minutes. So the
-//! shipped policy's actual behaviour was: *a USB mixer unplugged during the
+//! plus 14 × 10 000 = 174 500 ms). A church service is ninety minutes. So the
+//! shipped policy's actual behaviour was this: a USB mixer unplugged during the
 //! sermon fail-stops the recording three minutes later, and nobody notices until
-//! after the service.* Three minutes is a plausible time to find the right cable
-//! — it is not a plausible time to give up on a recording that is otherwise
-//! going fine.
+//! after the service. Three minutes is a plausible time to find the right cable.
+//! It is not a plausible time to give up on a recording that is otherwise going
+//! fine.
 //!
 //! OBS Studio's precedent (its reconnect keeps retrying for as long as the
 //! output lives) is the right shape, and the shape adopted here — with one
@@ -280,8 +280,8 @@ mod tests {
     fn hard_cap_outlasts_any_plausible_session() {
         // A four-hour service does not exist; the cap must sit above the
         // longest one anybody records in one take.
-        assert!(RECONNECT_HARD_CAP_MS > 3 * 60 * 60 * 1_000);
-        assert!(RECONNECT_GRACE_MS < RECONNECT_HARD_CAP_MS);
+        const { assert!(RECONNECT_HARD_CAP_MS > 3 * 60 * 60 * 1_000) };
+        const { assert!(RECONNECT_GRACE_MS < RECONNECT_HARD_CAP_MS) };
     }
 
     #[test]

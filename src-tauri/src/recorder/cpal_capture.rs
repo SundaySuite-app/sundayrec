@@ -8,7 +8,8 @@
 //! ([`crate::recorder::native_capture`]: cpal → ring → direct WAV writer, full
 //! split/reconnect/silence support). This module remains for **Windows VIDEO
 //! sessions** (camera via dshow + cpal audio piped into one ffmpeg) and as the
-//! legacy path behind the `classic_ffmpeg_audio` hatch.
+//! legacy path behind the `classic_ffmpeg_audio` hatch. It can only be retired
+//! when the native engine grows video — so it is HARDENED, not deleted.
 //!
 //! ## Why this exists
 //!
@@ -38,11 +39,21 @@
 //!   - **Stop = EOF on the pipe.** stdin carries PCM, so we CANNOT also send the
 //!     `q` graceful-stop nudge; the writer drains the ring, drops `ChildStdin`
 //!     (EOF), and ffmpeg finalises the container cleanly.
-//!   - **Channel routing + sample conversion in the callback**: the callback
-//!     converts ANY sample format to f32 (cpal `from_sample`, so 24-bit pro
-//!     devices work) and copies only the chosen channel indices
-//!     ([`crate::audio::asio::build_route_plan`]), so the pipe carries exactly the
-//!     recorded layout and ffmpeg needs no `pan` filter.
+//!   - **Channel routing + sample conversion in the callback**: handled by the
+//!     shared cpal layer ([`crate::recorder::native_capture::stream`]), which
+//!     converts ANY sample format to f32 and copies only the chosen channel
+//!     indices, so the pipe carries exactly the recorded layout and ffmpeg needs
+//!     no `pan` filter.
+//!
+//! ## Shared with the native engine (nothing here is a second copy)
+//!
+//! Host opening, fuzzy device resolution, format dispatch, the frame-aligned
+//! ring push and the routed metering all come from
+//! [`crate::recorder::native_capture::stream`] — the module that was created to
+//! de-duplicate exactly this file. The stderr tail comes from
+//! [`crate::recorder::stderr_tail`]. What remains here is only what is genuinely
+//! specific to the pipe-into-ffmpeg shape: the writer task and the session
+//! supervisor.
 //!
 //! ## Scope (the rest falls back to the dshow path)
 //!
@@ -58,142 +69,173 @@
 //! START, the engine falls back to the dshow capture automatically (see
 //! `engine::start`).
 //!
+//! ## It compiles everywhere now (2026-08-10)
+//!
+//! This file used to be one `#[cfg(windows)]` block with an off-Windows stub, so
+//! **no macOS or Linux build — including CI — ever type-checked a line of it**,
+//! and it could not hold a single test. Once the duplicated cpal layer moved out
+//! to `native_capture::stream`, nothing left in here was actually
+//! Windows-specific: the platform difference lives entirely inside
+//! `stream::open_host`, which returns a clear `Err` for the WASAPI/ASIO host ids
+//! off-Windows. So the gate is gone. The module compiles and is linted on every
+//! platform, and [`run_cpal_session`] fails honestly off-Windows for exactly the
+//! same reason the stub used to — the host cannot be opened — instead of because
+//! a hand-written stub said so.
+//!
+//! The engine still only ROUTES here on Windows (`use_cpal` is `cfg!(windows) &&
+//! …`), so this changes no behaviour; it changes what the compiler can see.
+//!
 //! ## ⚠️ HARDWARE-UNVERIFIED — Windows only
 //!
-//! The capture path compiles only under `#[cfg(windows)]` (ASIO host-open under
-//! the extra `feature = "asio"`) and can only be exercised on a Windows rig. The
-//! pure parts (arg building, channel routing) live in [`sundayrec_core::capture`]
-//! / [`crate::audio::asio`] and ARE unit-tested off-Windows. Off-Windows this
-//! module is a stub that signals a clear error (never reached — the engine only
-//! routes here on Windows).
+//! The live capture can only be exercised on a Windows rig (ASIO host-open needs
+//! the extra `feature = "asio"` on top). The decision-shaped parts — device
+//! resolution, the history row, the writer's drain/EOF contract, the ring size,
+//! the stderr tail — are pure or `AsyncWrite`-generic and ARE unit-tested off
+//! Windows (below). What remains unverified is the real WASAPI/ASIO stream and
+//! the real ffmpeg pipe.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+use crate::db::store::RecordingRow;
 
 /// Which cpal host to capture through. WASAPI is the default Windows path
 /// (replaces dshow for normal devices); ASIO is the pro-interface path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CpalHostKind {
-    Wasapi,
-    Asio,
+///
+/// Re-exported from the shared cpal layer rather than redeclared: this file used
+/// to carry its own two-variant twin of that enum, so the two capture paths
+/// could not be handed the same value without a conversion nobody wrote.
+pub use crate::recorder::native_capture::stream::CpalHostKind;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//   The platform-independent halves — unit-tested on every platform
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Split out of the session supervisor so they can be driven directly by a test:
+// untestable is how this file got to 817 lines with zero tests.
+
+/// How many f32 samples the writer moves per drain pass. One page-ish block: big
+/// enough that the `write_all` syscall cost is amortised, small enough that stop
+/// latency stays inside a couple of milliseconds.
+const WRITER_BLOCK_SAMPLES: usize = 8192;
+
+/// How long the writer parks when the ring is empty and no stop is pending.
+const WRITER_IDLE_POLL: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// Build the history row for a finished cpal recording.
+///
+/// Pure, and split out for one specific reason: this row used to ship
+/// `started_at: 0.0` and a 0 ms duration, which sorted every cpal recording to
+/// **1 January 1970** in every start-time-ordered view and made the sidecar
+/// duration meaningless. The values are epoch MILLISECONDS carried in REAL
+/// columns (`db::store::now_ms`'s convention) — the same shape
+/// `engine::finalize_one` writes.
+///
+/// `id` and `created_at` are left empty/zero on purpose: `insert_recording`
+/// stamps both.
+pub(crate) fn history_row(
+    final_path: &str,
+    device_name: &str,
+    started_ms: u64,
+    duration_ms: f64,
+    byte_size: Option<i64>,
+) -> RecordingRow {
+    RecordingRow {
+        id: String::new(),
+        file_path: final_path.to_string(),
+        device_name: Some(device_name.to_string()),
+        started_at: started_ms as f64,
+        duration_ms: Some(duration_ms),
+        byte_size,
+        created_at: 0.0,
+        note: None,
+    }
 }
 
-#[cfg(windows)]
+/// Drain the ring into `sink` as little-endian f32 bytes until stop is requested
+/// AND the ring is empty, then drop the sink so ffmpeg sees EOF and finalises.
+///
+/// Generic over the sink (rather than taking `tokio::process::ChildStdin`) so
+/// the drain/EOF contract can be driven by `tokio::io::duplex` in a test: that
+/// contract is the whole stop semantics of this path — stdin carries PCM, so we
+/// cannot ALSO send ffmpeg the `q` nudge, and a writer that exits with samples
+/// still in the ring silently truncates the recording.
+///
+/// The sink is consumed (not borrowed) because dropping it IS the stop signal.
+async fn writer_task<W>(mut cons: ringbuf::HeapCons<f32>, mut sink: W, stop: Arc<AtomicBool>)
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use ringbuf::traits::Consumer;
+    use tokio::io::AsyncWriteExt;
+
+    let mut samples = vec![0.0f32; WRITER_BLOCK_SAMPLES];
+    let mut bytes: Vec<u8> = Vec::with_capacity(WRITER_BLOCK_SAMPLES * 4);
+    loop {
+        let n = cons.pop_slice(&mut samples);
+        if n > 0 {
+            bytes.clear();
+            for &s in &samples[..n] {
+                bytes.extend_from_slice(&s.to_le_bytes());
+            }
+            if sink.write_all(&bytes).await.is_err() {
+                break; // ffmpeg closed its input (e.g. it died)
+            }
+        } else if stop.load(Ordering::Relaxed) {
+            break; // stop requested and ring drained
+        } else {
+            tokio::time::sleep(WRITER_IDLE_POLL).await;
+        }
+    }
+    let _ = sink.flush().await;
+    drop(sink); // EOF → ffmpeg flushes + finalises the container
+}
+
 pub use imp::run_cpal_session;
 
-#[cfg(not(windows))]
-#[allow(clippy::too_many_arguments)]
-pub async fn run_cpal_session(
-    _host_kind: CpalHostKind,
-    _app: tauri::AppHandle,
-    _pool: Option<sqlx::SqlitePool>,
-    _opts: crate::recorder::engine::RecordingOpts,
-    _video: Option<sundayrec_core::device_match::FfmpegDevice>,
-    _stop_rx: tokio::sync::mpsc::Receiver<()>,
-    ready_tx: tokio::sync::oneshot::Sender<crate::error::AppResult<()>>,
-    _last_state: std::sync::Arc<std::sync::Mutex<sundayrec_core::recorder::RecorderState>>,
-    _scheduled_stop: std::sync::Arc<tokio::sync::watch::Sender<Option<u64>>>,
-) {
-    let _ = ready_tx.send(Err(crate::error::AppError::Recording(
-        "cpal capture is only available on Windows".into(),
-    )));
-}
-
-#[cfg(windows)]
-#[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human device name we match settings against.
 mod imp {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
 
     use std::time::Duration;
 
-    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-    use cpal::{FromSample, Sample, SampleFormat};
+    use cpal::traits::StreamTrait;
+    use cpal::SampleFormat;
     use sqlx::SqlitePool;
-    use sundayrec_core::audio::PeakMeters;
+    use sundayrec_core::audio::MeterBanks;
     use sundayrec_core::capture::{build_cpal_pipe_audio_args, build_cpal_pipe_video_args};
-    use sundayrec_core::device_match::{find_best_device_match, FfmpegDevice};
+    use sundayrec_core::device_match::FfmpegDevice;
     use sundayrec_core::recorder::RecorderState;
     use tauri::{AppHandle, Emitter};
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-    use super::CpalHostKind;
-    use crate::audio::asio::{build_route_plan, route_frame, ChannelRoute};
-    use crate::db::store::{insert_recording, RecordingRow};
+    use super::{history_row, writer_task, CpalHostKind};
+    use crate::audio::asio::{build_route_plan, ChannelRoute};
+    use crate::db::store::insert_recording;
     use crate::error::{AppError, AppResult};
     use crate::media::ffmpeg::spawn_ffmpeg;
     use crate::recorder::engine::{
         extract_separate_audio, now_ms, RecorderStatePayload, RecordingEvent, RecordingFinished,
         RecordingLevels, RecordingOpts, ERROR_EVENT, FINISHED_EVENT, LEVELS_EVENT, STATE_EVENT,
     };
+    use crate::recorder::native_capture::stream::{
+        build_input_stream_any, find_device, open_host, ring_capacity, StreamSink,
+    };
+    use crate::recorder::stderr_tail;
 
-    /// Ring capacity in f32 samples: ~500 ms of stereo audio at 96 kHz. A generous
-    /// cushion so a transient writer/pipe stall never drops samples; on overrun the
-    /// callback drops the newest block (and bumps a counter) — it never blocks the
-    /// real-time thread.
-    const RING_CAPACITY: usize = 96_000;
-
-    /// Open the requested cpal host. WASAPI is always available on Windows; ASIO
-    /// only when compiled with `--features asio`.
-    fn open_host(kind: CpalHostKind) -> Result<cpal::Host, String> {
-        match kind {
-            CpalHostKind::Wasapi => cpal::host_from_id(cpal::HostId::Wasapi)
-                .map_err(|e| format!("could not open WASAPI host: {e}")),
-            CpalHostKind::Asio => {
-                #[cfg(feature = "asio")]
-                {
-                    cpal::host_from_id(cpal::HostId::Asio)
-                        .map_err(|e| format!("could not open ASIO host: {e}"))
-                }
-                #[cfg(not(feature = "asio"))]
-                {
-                    Err("ASIO support not compiled in (build with --features asio)".to_string())
-                }
-            }
-        }
-    }
-
-    /// Find an input device by name (empty → host default).
+    /// Probe a device's stream config WITHOUT keeping the (`!Send`) handle:
+    /// returns the native sample rate, total input-channel count, and sample
+    /// format as plain `Copy` values for building the ffmpeg args. Runs on a
+    /// blocking thread.
     ///
-    /// The stored name comes from the frontend's Web Audio label, which is NOT
-    /// guaranteed identical to cpal's device name — so we FUZZY-match it against the
-    /// cpal device list with the same `find_best_device_match` moat the dshow path
-    /// uses (exact → substring → word-overlap), then open the matched device by its
-    /// exact cpal name. Without this, a label/name mismatch made cpal silently never
-    /// engage (always falling back to dshow).
-    fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String> {
-        if name.is_empty() {
-            return host
-                .default_input_device()
-                .ok_or_else(|| "no default input device".to_string());
-        }
-        let devices: Vec<cpal::Device> = host
-            .input_devices()
-            .map_err(|e| format!("listing input devices: {e}"))?
-            .collect();
-        let candidates: Vec<FfmpegDevice> = devices
-            .iter()
-            .filter_map(|d| d.name().ok())
-            .map(|n| FfmpegDevice::new(n, "cpal", None))
-            .collect();
-        let target = find_best_device_match(&candidates, name)
-            .map(|d| d.name.clone())
-            .unwrap_or_else(|| name.to_string());
-        devices
-            .into_iter()
-            .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
-            .ok_or_else(|| format!("input device not found: {name}"))
-    }
-
-    /// The OUTPUT channel count of a route plan (1 mono / 2 stereo).
-    fn out_channels(plan: &[ChannelRoute]) -> u8 {
-        plan.len() as u8
-    }
-
-    /// Probe a device's stream config WITHOUT keeping the (`!Send`) handle: returns
-    /// the native sample rate, total input-channel count, and sample format as
-    /// plain `Copy` values for building the ffmpeg args. Runs on a blocking thread.
+    /// Deliberately `default_input_config()` rather than the native engine's
+    /// range-walk negotiation: this path's ffmpeg args are built from the probe
+    /// BEFORE the stream exists, so probe and stream must agree by construction.
+    #[allow(deprecated)] // cpal 0.17 deprecates `name()`; still the human device name.
     fn probe_config(
         host_kind: CpalHostKind,
         device_name: &str,
     ) -> AppResult<(u32, u16, SampleFormat)> {
+        use cpal::traits::DeviceTrait;
         let host = open_host(host_kind).map_err(AppError::Recording)?;
         let device = find_device(&host, device_name).map_err(AppError::Recording)?;
         let cfg = device
@@ -202,83 +244,10 @@ mod imp {
         Ok((cfg.sample_rate(), cfg.channels(), cfg.sample_format()))
     }
 
-    /// Build an input stream for sample type `T`: convert each sample to f32 via
-    /// cpal `from_sample` (covers i16/i32/f32/**I24**/u16/…), route the chosen
-    /// channels, and push into the ring. `conv` + `scratch` are allocated once here,
-    /// never in the real-time callback.
-    #[allow(clippy::too_many_arguments)]
-    fn build_typed<T>(
-        device: &cpal::Device,
-        config: &cpal::StreamConfig,
-        total: usize,
-        plan: Vec<ChannelRoute>,
-        mut prod: ringbuf::HeapProd<f32>,
-        dropped: Arc<AtomicU64>,
-        peaks: Arc<PeakMeters>,
-        err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
-    ) -> Result<cpal::Stream, cpal::BuildStreamError>
-    where
-        T: cpal::SizedSample,
-        f32: FromSample<T>,
-    {
-        use ringbuf::traits::{Observer, Producer};
-        let out_ch = plan.len();
-        let mut conv: Vec<f32> = Vec::with_capacity(4096);
-        let mut scratch: Vec<f32> = Vec::with_capacity(4096);
-        device.build_input_stream(
-            config,
-            move |data: &[T], _: &cpal::InputCallbackInfo| {
-                if total == 0 {
-                    return;
-                }
-                conv.clear();
-                conv.extend(data.iter().map(|&s| f32::from_sample(s)));
-                scratch.clear();
-                for frame in conv.chunks_exact(total) {
-                    route_frame(&plan, frame, &mut scratch);
-                }
-                // Per-output-channel block peak → the live VU meters (H1). RT-safe:
-                // a bounded max pass + an atomic observe (peak-hold; sampler resets).
-                for ch in 0..out_ch {
-                    let mut pk = 0.0_f32;
-                    let mut i = ch;
-                    while i < scratch.len() {
-                        let a = scratch[i].abs();
-                        if a > pk {
-                            pk = a;
-                        }
-                        i += out_ch;
-                    }
-                    peaks.observe(ch, pk);
-                }
-                // FRAME-ALIGNED push: on overrun, drop whole frames only. A
-                // partial frame in the ring would permanently swap the L/R
-                // interleaving for the rest of the file — the writer reads a flat
-                // sample stream and has no way to resynchronise. Mirrors the
-                // native engine's fix in `native_capture::stream`.
-                let frame_samples = out_ch.max(1);
-                let want = scratch.len();
-                let fit = prod.vacant_len();
-                let take = if fit >= want {
-                    want
-                } else {
-                    (fit / frame_samples) * frame_samples
-                };
-                let pushed = prod.push_slice(&scratch[..take]);
-                debug_assert_eq!(pushed, take, "aligned push must fit fully");
-                if take < want {
-                    dropped.fetch_add((want - take) as u64, Ordering::Relaxed);
-                }
-            },
-            err_fn,
-            None,
-        )
-    }
-
     /// The cpal stream thread. Reopens the host (the `!Send` `Stream`/`Device`
     /// never leave this thread, exactly like `audio/vu.rs`), builds + plays the
-    /// stream, then parks until `stop` flips and drops it. Reports the build result
-    /// through `built_tx` exactly once.
+    /// stream through the SHARED typed builder, then parks until `stop` flips and
+    /// drops it. Reports the build result through `built_tx` exactly once.
     #[allow(clippy::too_many_arguments)]
     fn stream_thread(
         host_kind: CpalHostKind,
@@ -289,8 +258,8 @@ mod imp {
         plan: Vec<ChannelRoute>,
         prod: ringbuf::HeapProd<f32>,
         stop: Arc<AtomicBool>,
-        dropped: Arc<AtomicU64>,
-        peaks: Arc<PeakMeters>,
+        overrun: Arc<AtomicU64>,
+        meters: Arc<MeterBanks>,
         built_tx: std::sync::mpsc::Sender<Result<(), String>>,
         err_tx: tokio::sync::mpsc::Sender<String>,
     ) {
@@ -302,7 +271,6 @@ mod imp {
                 sample_rate, // cpal 0.17: SampleRate is a plain u32
                 buffer_size: cpal::BufferSize::Default,
             };
-            let total = total_channels as usize;
             // On a device error mid-recording (USB pulled, driver reset) cpal calls
             // this — tell the supervisor so it finalises instead of hanging on a
             // pipe that will never get more data.
@@ -310,37 +278,19 @@ mod imp {
                 tracing::error!("cpal input stream error: {e}");
                 let _ = err_tx.try_send(e.to_string());
             };
-
-            use cpal::SampleFormat as SF;
-            let stream = match sample_format {
-                SF::I8 => {
-                    build_typed::<i8>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::I16 => {
-                    build_typed::<i16>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::I24 => build_typed::<cpal::I24>(
-                    &device, &config, total, plan, prod, dropped, peaks, err_fn,
-                ),
-                SF::I32 => {
-                    build_typed::<i32>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::U8 => {
-                    build_typed::<u8>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::U16 => {
-                    build_typed::<u16>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::F32 => {
-                    build_typed::<f32>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                SF::F64 => {
-                    build_typed::<f64>(&device, &config, total, plan, prod, dropped, peaks, err_fn)
-                }
-                other => return Err(format!("unsupported sample format: {other:?}")),
-            }
-            .map_err(|e| format!("building input stream: {e}"))?;
-
+            let stream = build_input_stream_any(
+                &device,
+                &config,
+                sample_format,
+                total_channels as usize,
+                StreamSink::Capture {
+                    meters,
+                    plan,
+                    prod,
+                    overrun,
+                },
+                err_fn,
+            )?;
             stream.play().map_err(|e| format!("starting stream: {e}"))?;
             Ok(stream)
         })();
@@ -349,7 +299,7 @@ mod imp {
             Ok(stream) => {
                 let _ = built_tx.send(Ok(()));
                 while !stop.load(Ordering::Relaxed) {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    std::thread::sleep(Duration::from_millis(50));
                 }
                 drop(stream); // stops capture cleanly
             }
@@ -357,36 +307,6 @@ mod imp {
                 let _ = built_tx.send(Err(e));
             }
         }
-    }
-
-    /// Drain the ring into ffmpeg's stdin as little-endian f32 bytes until stop is
-    /// requested AND the ring is empty, then drop stdin (EOF) so ffmpeg finalises.
-    async fn writer_task(
-        mut cons: ringbuf::HeapCons<f32>,
-        mut stdin: tokio::process::ChildStdin,
-        stop: Arc<AtomicBool>,
-    ) {
-        use ringbuf::traits::Consumer;
-        let mut samples = vec![0.0f32; 8192];
-        let mut bytes: Vec<u8> = Vec::with_capacity(8192 * 4);
-        loop {
-            let n = cons.pop_slice(&mut samples);
-            if n > 0 {
-                bytes.clear();
-                for &s in &samples[..n] {
-                    bytes.extend_from_slice(&s.to_le_bytes());
-                }
-                if stdin.write_all(&bytes).await.is_err() {
-                    break; // ffmpeg closed its input (e.g. it died)
-                }
-            } else if stop.load(Ordering::Relaxed) {
-                break; // stop requested and ring drained
-            } else {
-                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
-            }
-        }
-        let _ = stdin.flush().await;
-        drop(stdin); // EOF → ffmpeg flushes + finalises the container
     }
 
     /// Run a cpal capture session (audio-only OR video+cpal-audio) over the given
@@ -403,10 +323,7 @@ mod imp {
         last_state: Arc<Mutex<RecorderState>>,
         scheduled_stop: Arc<tokio::sync::watch::Sender<Option<u64>>>,
     ) {
-        let label = match host_kind {
-            CpalHostKind::Wasapi => "WASAPI",
-            CpalHostKind::Asio => "ASIO",
-        };
+        let label = host_kind.label();
 
         // ── Resolve device config + routing (pure once probed) ───────────────
         let device_name = opts.audio_device_name.clone();
@@ -432,7 +349,7 @@ mod imp {
             opts.input_channel_r,
             total_channels,
         );
-        let out_ch = out_channels(&plan);
+        let out_ch = plan.len() as u8;
 
         // ── Build ffmpeg args (audio-only or video+pipe) ─────────────────────
         let has_video = video.is_some();
@@ -477,22 +394,21 @@ mod imp {
                 return;
             }
         };
-        let stderr_tail = Arc::new(Mutex::new(String::new()));
+        let tail = Arc::new(Mutex::new(String::new()));
         let stderr_log = child.stderr.take().map(|s| {
-            let tail = Arc::clone(&stderr_tail);
-            tauri::async_runtime::spawn(drain_stderr(s, tail))
+            let tail = Arc::clone(&tail);
+            tauri::async_runtime::spawn(stderr_tail::drain_stderr(s, "cpal", tail))
         });
 
         // ── Ring + threads ───────────────────────────────────────────────────
         let stop = Arc::new(AtomicBool::new(false));
-        let dropped = Arc::new(AtomicU64::new(0));
-        // Per-output-channel peak-hold for the live VU meters (H1). Shared between
-        // the cpal callback (observe) and the sampler task below (take + emit).
-        let peaks = Arc::new(PeakMeters::new(out_ch as usize));
-        let rb = ringbuf::HeapRb::<f32>::new(RING_CAPACITY);
+        let overrun = Arc::new(AtomicU64::new(0));
+        // Per-output-channel meters for the live VU (H1). Shared between the cpal
+        // callback (observe, via `StreamSink::Capture`) and the sampler below.
+        let meters = Arc::new(MeterBanks::new(out_ch.max(1) as usize));
         let (prod, cons) = {
             use ringbuf::traits::Split;
-            rb.split()
+            ringbuf::HeapRb::<f32>::new(ring_capacity(sample_rate, u16::from(out_ch))).split()
         };
 
         let (built_tx, built_rx) = std::sync::mpsc::channel::<Result<(), String>>();
@@ -500,8 +416,8 @@ mod imp {
         let st_name = device_name.clone();
         let st_plan = plan.clone();
         let st_stop = Arc::clone(&stop);
-        let st_dropped = Arc::clone(&dropped);
-        let st_peaks = Arc::clone(&peaks);
+        let st_overrun = Arc::clone(&overrun);
+        let st_meters = Arc::clone(&meters);
         let stream_handle = std::thread::Builder::new()
             .name("cpal-capture".into())
             .spawn(move || {
@@ -514,8 +430,8 @@ mod imp {
                     st_plan,
                     prod,
                     st_stop,
-                    st_dropped,
-                    st_peaks,
+                    st_overrun,
+                    st_meters,
                     built_tx,
                     err_tx,
                 )
@@ -562,20 +478,26 @@ mod imp {
         // `recording://levels` so the in-recording meters work on the cpal path too.
         let levels_task = {
             let app = app.clone();
-            let peaks = Arc::clone(&peaks);
+            let meters = Arc::clone(&meters);
             let stop = Arc::clone(&stop);
             let stereo = out_ch >= 2;
             tauri::async_runtime::spawn(async move {
                 let mut tick = tokio::time::interval(Duration::from_millis(33));
                 // Silence is NEG_INFINITY dBFS; clamp to a finite floor the UI renders.
-                let floor = |db: f32| if db.is_finite() { db as f64 } else { -100.0 };
+                let floor = |db: f32| {
+                    if db.is_finite() {
+                        f64::from(db)
+                    } else {
+                        sundayrec_core::levels::SILENCE_FLOOR_DB
+                    }
+                };
                 while !stop.load(Ordering::Relaxed) {
                     tick.tick().await;
                     let _ = app.emit(
                         LEVELS_EVENT,
                         RecordingLevels {
-                            peak_db_left: floor(peaks.take_dbfs(0)),
-                            peak_db_right: stereo.then(|| floor(peaks.take_dbfs(1))),
+                            peak_db_left: floor(meters.peak.take_dbfs(0)),
+                            peak_db_right: stereo.then(|| floor(meters.peak.take_dbfs(1))),
                         },
                     );
                 }
@@ -640,8 +562,8 @@ mod imp {
                 }
                 status = child.wait() => {
                     tracing::warn!(?status, "recorder: cpal — ffmpeg exited unexpectedly");
-                    let tail = stderr_tail.lock().map(|g| g.clone()).unwrap_or_default();
-                    emit_error(&app, "ffmpeg_exited", tail.lines().last().unwrap_or("ffmpeg stopped"));
+                    let t = stderr_tail::snapshot(&tail);
+                    emit_error(&app, "ffmpeg_exited", t.lines().last().unwrap_or("ffmpeg stopped"));
                     break;
                 }
             }
@@ -657,10 +579,10 @@ mod imp {
         if let Some(h) = stderr_log {
             h.abort();
         }
-        let dropped_total = dropped.load(Ordering::Relaxed);
-        if dropped_total > 0 {
+        let overrun_total = overrun.load(Ordering::Relaxed);
+        if overrun_total > 0 {
             tracing::warn!(
-                dropped_total,
+                overrun_total,
                 "recorder: cpal — ring overran, samples dropped"
             );
         }
@@ -761,10 +683,7 @@ mod imp {
     }
 
     /// Best-effort history row for the finished file (None pool / DB error = no-op).
-    ///
-    /// `started_ms` is the session's epoch-ms start and `duration_ms` its measured
-    /// span — the same convention `engine::finalize_one` writes (`RecordingRow`'s
-    /// REAL columns hold epoch milliseconds as f64, see `db::store::now_ms`).
+    /// The row itself is built by the tested [`history_row`].
     async fn write_history(
         pool: &Option<SqlitePool>,
         final_path: &str,
@@ -777,41 +696,210 @@ mod imp {
             .map(|m| m.len() as i64)
             .ok();
         let Some(pool) = pool else { return };
-        let row = RecordingRow {
-            id: String::new(),
-            file_path: final_path.to_string(),
-            device_name: Some(device_name.to_string()),
-            started_at: started_ms as f64,
-            duration_ms: Some(duration_ms),
-            byte_size,
-            created_at: 0.0,
-            note: None,
-        };
+        let row = history_row(final_path, device_name, started_ms, duration_ms, byte_size);
         if let Err(e) = insert_recording(pool, row).await {
             tracing::error!("recorder: cpal failed to write history row: {e}");
         }
     }
+}
 
-    /// Drain ffmpeg stderr to the log and keep the last ~2 KB so a failure can
-    /// report the real reason (mirrors `two_process::drain_stderr`).
-    async fn drain_stderr<R>(stderr: R, tail: Arc<Mutex<String>>)
-    where
-        R: tokio::io::AsyncRead + Unpin,
-    {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            tracing::trace!(target: "cpal_ffmpeg", "{line}");
-            if let Ok(mut t) = tail.lock() {
-                t.push_str(&line);
-                t.push('\n');
-                if t.len() > 2048 {
-                    let mut cut = t.len() - 2048;
-                    while cut < t.len() && !t.is_char_boundary(cut) {
-                        cut += 1;
-                    }
-                    *t = t.split_off(cut);
-                }
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ringbuf::traits::{Producer, Split};
+    use std::time::Duration;
+    use tokio::io::AsyncReadExt;
+
+    // ── The history row (the 1970 bug site) ──────────────────────────────────
+
+    /// GOLDEN. These five values are the whole row; the ones that were wrong
+    /// were `started_at` (0.0 → epoch 1970) and `duration_ms` (0 ms).
+    #[test]
+    fn history_row_is_stamped_with_the_real_session_span() {
+        // 2026-08-10T09:00:00Z, a 92-minute service.
+        let started_ms = 1_786_179_600_000_u64;
+        let duration_ms = 92.0 * 60_000.0;
+        let row = history_row(
+            "/Opptak/gudstjeneste.mp3",
+            "Allen & Heath Qu-5",
+            started_ms,
+            duration_ms,
+            Some(132_451_200),
+        );
+        assert_eq!(row.file_path, "/Opptak/gudstjeneste.mp3");
+        assert_eq!(row.device_name.as_deref(), Some("Allen & Heath Qu-5"));
+        assert_eq!(row.started_at, started_ms as f64);
+        assert_eq!(row.duration_ms, Some(5_520_000.0));
+        assert_eq!(row.byte_size, Some(132_451_200));
+        // `insert_recording` stamps these — the row must not pre-empt it.
+        assert_eq!(row.id, "");
+        assert_eq!(row.created_at, 0.0);
+    }
+
+    #[test]
+    fn history_row_never_reports_a_1970_start() {
+        // The regression guard for the original bug: `started_at` must carry the
+        // epoch-ms the caller measured, NOT 0.
+        let row = history_row("/x.mp3", "Mic", 1_786_179_600_000, 1.0, None);
+        assert!(
+            row.started_at > 1_000_000_000_000.0,
+            "started_at {} would sort the recording to 1970",
+            row.started_at
+        );
+    }
+
+    #[test]
+    fn history_row_tolerates_an_unmeasurable_file() {
+        // `metadata()` can fail (the file was moved between finalise and stat);
+        // the row must still be written, just without a size.
+        let row = history_row("/x.mp3", "Mic", 42, 0.0, None);
+        assert_eq!(row.byte_size, None);
+        assert_eq!(row.duration_ms, Some(0.0));
+        assert_eq!(row.started_at, 42.0);
+    }
+
+    // ── The writer's drain / EOF contract ────────────────────────────────────
+
+    fn ring(cap: usize) -> (ringbuf::HeapProd<f32>, ringbuf::HeapCons<f32>) {
+        ringbuf::HeapRb::<f32>::new(cap).split()
+    }
+
+    /// Every sample that reached the ring must reach the sink, little-endian.
+    #[tokio::test]
+    async fn writer_pipes_every_sample_as_little_endian_f32() {
+        let (mut prod, cons) = ring(1024);
+        let samples: Vec<f32> = vec![0.0, 1.0, -1.0, 0.5, -0.25];
+        assert_eq!(prod.push_slice(&samples), samples.len());
+        let stop = Arc::new(AtomicBool::new(true)); // stop already requested: drain + exit
+
+        let (sink, mut reader) = tokio::io::duplex(64 * 1024);
+        let w = tokio::spawn(writer_task(cons, sink, stop));
+
+        let mut got = Vec::new();
+        reader.read_to_end(&mut got).await.expect("read");
+        w.await.expect("writer joined");
+
+        let expect: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        assert_eq!(got, expect);
+    }
+
+    /// The stop contract: the writer must DRAIN the ring before exiting. A
+    /// writer that exited on the stop flag with samples still queued would
+    /// silently truncate the tail of every recording.
+    #[tokio::test]
+    async fn writer_drains_the_ring_before_honouring_stop() {
+        let (mut prod, cons) = ring(8192);
+        // More than one drain block, so the loop must go round several times.
+        let samples: Vec<f32> = (0..5_000).map(|i| i as f32).collect();
+        assert_eq!(prod.push_slice(&samples), samples.len());
+        let stop = Arc::new(AtomicBool::new(true));
+
+        let (sink, mut reader) = tokio::io::duplex(1024 * 1024);
+        let w = tokio::spawn(writer_task(cons, sink, stop));
+        let mut got = Vec::new();
+        reader.read_to_end(&mut got).await.expect("read");
+        w.await.expect("writer joined");
+
+        assert_eq!(
+            got.len(),
+            samples.len() * 4,
+            "the writer dropped {} samples on stop",
+            samples.len() - got.len() / 4
+        );
+    }
+
+    /// Dropping the sink is the ONLY stop signal ffmpeg gets on this path (stdin
+    /// carries PCM, so there is no `q` nudge). If the writer returned without
+    /// dropping it, ffmpeg would wait forever and never finalise the container.
+    #[tokio::test]
+    async fn writer_closes_the_sink_so_ffmpeg_sees_eof() {
+        let (_prod, cons) = ring(64);
+        let stop = Arc::new(AtomicBool::new(true));
+        let (sink, mut reader) = tokio::io::duplex(1024);
+        let w = tokio::spawn(writer_task(cons, sink, stop));
+
+        let mut got = Vec::new();
+        // `read_to_end` only returns once the write half is dropped — this
+        // assertion IS the EOF proof.
+        let n = tokio::time::timeout(Duration::from_secs(5), reader.read_to_end(&mut got))
+            .await
+            .expect("writer never closed the pipe — ffmpeg would hang")
+            .expect("read");
+        assert_eq!(n, 0);
+        w.await.expect("writer joined");
+    }
+
+    /// Samples that arrive AFTER the writer started must still be picked up: the
+    /// writer polls, it does not snapshot the ring once.
+    #[tokio::test]
+    async fn writer_keeps_draining_until_stop_is_raised() {
+        let (mut prod, cons) = ring(1024);
+        let stop = Arc::new(AtomicBool::new(false));
+        let (sink, mut reader) = tokio::io::duplex(64 * 1024);
+        let w = tokio::spawn(writer_task(cons, sink, Arc::clone(&stop)));
+
+        // Feed after the task is already looping on an empty ring.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(prod.push_slice(&[1.0f32, 2.0, 3.0]), 3);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        stop.store(true, Ordering::Relaxed);
+
+        let mut got = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), reader.read_to_end(&mut got))
+            .await
+            .expect("writer never finished")
+            .expect("read");
+        w.await.expect("writer joined");
+        assert_eq!(got.len(), 3 * 4, "late samples were lost");
+    }
+
+    /// ffmpeg dying mid-recording closes the pipe. The writer must NOTICE and
+    /// return — spinning on a broken pipe would leak the task for the life of
+    /// the app and (on the tear-down path) hang the `writer.await`.
+    #[tokio::test]
+    async fn writer_gives_up_when_the_sink_dies() {
+        let (mut prod, cons) = ring(64 * 1024);
+        let samples = vec![0.25f32; 32_768];
+        prod.push_slice(&samples);
+        let stop = Arc::new(AtomicBool::new(false)); // NEVER stopped
+
+        let (sink, reader) = tokio::io::duplex(16);
+        drop(reader); // ffmpeg died
+        let w = tokio::spawn(writer_task(cons, sink, stop));
+
+        tokio::time::timeout(Duration::from_secs(5), w)
+            .await
+            .expect("writer spun forever on a broken pipe")
+            .expect("writer joined");
+    }
+
+    #[tokio::test]
+    async fn writer_on_an_empty_ring_writes_nothing_and_still_closes() {
+        let (_prod, cons) = ring(64);
+        let stop = Arc::new(AtomicBool::new(true));
+        let (sink, mut reader) = tokio::io::duplex(1024);
+        let w = tokio::spawn(writer_task(cons, sink, stop));
+        let mut got = Vec::new();
+        reader.read_to_end(&mut got).await.expect("read");
+        w.await.expect("writer joined");
+        assert!(got.is_empty());
+    }
+
+    // ── Ring sizing on this path ─────────────────────────────────────────────
+
+    /// This path used to size its ring with a hand-written `96_000` constant
+    /// ("~500 ms of stereo at 96 kHz") while the native engine used a computed
+    /// one — two cushions, drifting apart. It now goes through the same
+    /// `stream::ring_capacity`, so the 2026-08-10 raise applies here too.
+    #[test]
+    fn the_pipe_path_uses_the_shared_ring_size() {
+        use crate::recorder::native_capture::stream::ring_capacity;
+        // What this file used to allocate, at the format it named.
+        let old_flat = 96_000;
+        assert!(
+            ring_capacity(96_000, 2) > old_flat,
+            "the pipe path must no longer get the old half-second ring"
+        );
+        assert_eq!(ring_capacity(48_000, 2), 480_000);
     }
 }

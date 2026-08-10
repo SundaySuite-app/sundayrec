@@ -34,6 +34,7 @@
 pub mod concat;
 pub mod cpal_capture;
 pub mod engine;
+pub mod stderr_tail;
 // E6.2/E6.4 — the headless long-run harness (forced-split + fault injection).
 // Test-only: it re-implements the supervisor's control flow around the REAL
 // capture/concat/finalize/history pieces, because those take a `Wry` AppHandle

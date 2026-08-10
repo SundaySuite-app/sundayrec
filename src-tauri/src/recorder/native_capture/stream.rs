@@ -105,13 +105,27 @@ pub fn find_device(host: &cpal::Host, name: &str) -> Result<cpal::Device, String
         .filter_map(|d| d.name().ok())
         .map(|n| FfmpegDevice::new(n, "cpal", None))
         .collect();
-    let target = find_best_device_match(&candidates, name)
-        .map(|d| d.name.clone())
-        .unwrap_or_else(|| name.to_string());
+    let target = resolve_device_target(&candidates, name);
     devices
         .into_iter()
         .find(|d| d.name().ok().as_deref() == Some(target.as_str()))
         .ok_or_else(|| format!("input device not found: {name}"))
+}
+
+/// The DECISION half of [`find_device`]: which cpal device name should be opened
+/// for the user's stored label?
+///
+/// Split out so it can be exercised without a sound card, and so the ffmpeg
+/// pipe path (`recorder::cpal_capture`) resolves through exactly the same rule
+/// as the native engine instead of a second copy of it.
+///
+/// Falls back to the requested name VERBATIM when nothing matches, so the caller
+/// reports "input device not found: <what the user asked for>" rather than the
+/// name of some unrelated device the fuzzy matcher happened to like least.
+pub fn resolve_device_target(candidates: &[FfmpegDevice], requested: &str) -> String {
+    find_best_device_match(candidates, requested)
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| requested.to_string())
 }
 
 // ── The capture ring ─────────────────────────────────────────────────────────
@@ -534,6 +548,46 @@ mod tests {
         assert_eq!(
             pick_input_config(&ranges, Some(96_000), 48_000),
             Some((48_000, 8, SampleFormat::F32))
+        );
+    }
+
+    fn cpal_devices(names: &[&str]) -> Vec<FfmpegDevice> {
+        names
+            .iter()
+            .map(|n| FfmpegDevice::new(*n, "cpal", None))
+            .collect()
+    }
+
+    #[test]
+    fn device_target_prefers_an_exact_name() {
+        let devs = cpal_devices(&["MacBook Pro Microphone", "Qu-5", "Qu-5 (2)"]);
+        assert_eq!(resolve_device_target(&devs, "Qu-5"), "Qu-5");
+    }
+
+    #[test]
+    fn device_target_bridges_a_web_audio_label_to_the_cpal_name() {
+        // The stored name is the frontend's Web Audio label, which is NOT the
+        // cpal name. Before this bridge existed the mismatch made cpal silently
+        // never engage.
+        let devs = cpal_devices(&["MacBook Pro Microphone", "Allen & Heath Qu-5"]);
+        assert_eq!(
+            resolve_device_target(&devs, "Allen & Heath Qu-5 (USB Audio)"),
+            "Allen & Heath Qu-5"
+        );
+    }
+
+    #[test]
+    fn device_target_falls_back_to_the_requested_name_verbatim() {
+        // Nothing plausible in the list → hand back what the user asked for so
+        // the error message names THEIR device, not a random survivor.
+        assert_eq!(
+            resolve_device_target(&cpal_devices(&[]), "Qu-5"),
+            "Qu-5",
+            "an empty device list must not invent a target"
+        );
+        assert_eq!(
+            resolve_device_target(&cpal_devices(&["Zoom Audio Device"]), "Qu-5"),
+            "Qu-5"
         );
     }
 
