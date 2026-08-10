@@ -3,6 +3,45 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## v0.13.0 — ryddesjauen
+
+Én dag etter v0.12.0, og hele utgivelsen handler om å gjøre appen ærligere:
+fjerne det som ikke virket, få det som så ut som det virket til å faktisk
+virke, og luke ut tekst som pekte feil vei.
+
+### Innstillingene har fått ett hjem
+
+All lagring av innstillinger går nå ett sted, i stedet for to halvveis synkroniserte.
+Det var todelingen som lå bak feilene i v0.12.0 («automatisk sletting virket
+aldri», «kanalbytte ble ikke lagret») — nå er selve årsaken borte, ikke bare
+symptomene. Første gang du starter denne versjonen flyttes innstillingene dine
+over automatisk; du skal ikke merke noe.
+
+### Brytere som nå gjør det de sier
+
+- **«Varsle når opptak starter/stopper» virker** — de to bryterne lagret valget
+  ditt og gjorde ingenting. Nå styrer de faktisk varslene. Feilvarsler kan
+  aldri slås av: går et opptak galt, får du beskjed uansett.
+- **«Vis vindu ved oppstart» er fjernet** — den gjorde aldri noe, og har ikke
+  gjort det på lenge. Borte er også en håndfull andre døde valg og knapper som
+  lovte ting appen ikke kunne holde, blant dem en YouTube-kobling som alltid
+  feilet med en tom feilmelding.
+
+### Mindre rot, riktigere tekst
+
+- Bytter du språk midt i økta, beholder skjermen nå det den holdt på med, i
+  stedet for å nullstille status-tekster til standardverdier.
+- Integrasjoner-panelet finnes nå på alle sju språk.
+- Flere tekster som pekte til faner eller knapper som ikke finnes, er rettet.
+- Sletteknapper ser nå ut som sletteknapper.
+- Opprydding av gamle opptak og papirkurven jobber nå garantert i opptaksmappen
+  din — en intern uenighet om hvor den lå, kunne før la dem lete i feil mappe.
+- Har du oppgradert helt fra den gamle utgaven av SundayRec, kan appen nå finne
+  igjen de gamle programfilene dens forgjenger la igjen — de ryddes aldri uten
+  at du sier ja.
+
+---
+
 ## v0.12.0 — den store kvalitetsutgivelsen
 
 Dette er den første vanlige utgivelsen siden v0.10.0, og den samler seks ukers
