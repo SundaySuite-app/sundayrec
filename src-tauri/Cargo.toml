@@ -162,7 +162,7 @@ serde_json = "1"
 
 # base64 data URLs over IPC: the in-recording preview frame poll and the
 # thumbnail panel both hand the renderer `data:image/...;base64,…` strings.
-base64 = "0.22"
+base64 = "0.23"
 
 # Async process control for the ffmpeg sidecar. We use `tokio::process` (not
 # `std::process`) for the recorder because we need to stream
