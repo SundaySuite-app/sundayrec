@@ -5076,7 +5076,7 @@ dependencies = [
 name = "sundayrec"
 version = "0.14.1-beta.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "cpal",
  "dispatch2",
@@ -5121,7 +5121,7 @@ dependencies = [
 name = "sundayrec-core"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "proptest",
  "regex",

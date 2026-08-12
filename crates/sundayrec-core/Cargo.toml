@@ -45,7 +45,7 @@ regex = "1"
 # generates the random verifier; this crate only does the deterministic
 # challenge derivation and the base64url-encoding used across the cloud module.
 sha2 = "0.11"
-base64 = "0.22"
+base64 = "0.23"
 # Semver precedence for the updater guard (`src/update.rs`). This is the SAME
 # crate, at the same major, that `tauri-plugin-updater` and `tauri-utils` already
 # resolve to (it was in Cargo.lock before this dependency existed), so it adds
