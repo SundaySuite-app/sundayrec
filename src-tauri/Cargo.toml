@@ -148,7 +148,7 @@ tauri-plugin-notification = "2"
 # that 0.15 could not represent — and 0.17.3 carries the ASIO linker fixes (0.17.1
 # had broken ASIO). The Windows-only `asio` feature turns on `cpal/asio` (see
 # [features]).
-cpal = "0.17.3"
+cpal = "0.18.1"
 # Lock-free SPSC ring buffer between the cpal real-time callback (producer) and
 # the writer (consumer): the audio callback must NEVER block on I/O, so it
 # pushes routed PCM into the ring and the writer drains it. Used by the native
