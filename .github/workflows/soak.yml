@@ -106,7 +106,7 @@ jobs:
       # into the step summary above).
       - name: Archive results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soak-results
           path: |
