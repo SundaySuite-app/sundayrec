@@ -148,9 +148,6 @@ pub fn editor_allow_asset_path(app: tauri::AppHandle, path: String) -> AppResult
 /// Cached in a `<stem>.segments.json` sidecar. `force` (the explicit «Analyser
 /// opptak» button) skips the cache read and re-runs the analysis; the automatic
 /// post-open run leaves it unset and gets the cached answer for free.
-///
-/// A pass that actually ran also offers the recording to the review queue — see
-/// [`offer_to_review_queue`].
 #[tauri::command]
 pub async fn editor_segments(
     app: tauri::AppHandle,
@@ -166,7 +163,6 @@ pub async fn editor_segments(
     .await?;
     if let Some(detection) = analysis {
         shadow_the_analysis(&app, &input_path, &detection);
-        offer_to_review_queue(&app, input_path, detection);
     }
     Ok(segments)
 }
@@ -185,9 +181,9 @@ pub async fn editor_segments(
 ///     it is in a build without the feature; nothing the operator is watching
 ///     waits on the model.
 ///   - **Only on a pass that actually ran.** `analysis` is `Some` only when the
-///     detection was computed rather than read from the segments cache — the
-///     same condition [`offer_to_review_queue`] uses. A cache hit has no
-///     `Detection` to compare against, and re-deriving one to shadow it would be
+///     detection was computed rather than read from the segments cache. A cache
+///     hit has no `Detection` to compare against, and re-deriving one to shadow
+///     it would be
 ///     two full passes for a screen the operator already has.
 ///   - **Only where a shadow is safe to run.** This is reachable from the
 ///     editor, on a machine that has just finished an analysis pass. It is not
@@ -203,9 +199,8 @@ fn shadow_the_analysis(
     detection: &sundayrec_core::detect::Detection,
 ) {
     let input_path = input_path.to_string();
-    // Cloned, not moved: the review queue is handed the SAME detection a moment
-    // later, and the shadow pass must never be able to reach the one the app
-    // acts on.
+    // Cloned, not moved: the shadow pass must never be able to reach the
+    // detection the app acts on.
     let heuristic = detection.clone();
     let progress = decode_progress(app.clone(), "editor://shadow-progress");
     crate::crash::watch_handle(
@@ -234,70 +229,6 @@ fn shadow_the_analysis(
     _input_path: &str,
     _detection: &sundayrec_core::detect::Detection,
 ) {
-}
-
-/// Put a freshly analysed recording into the review queue, in the background.
-///
-/// ## Why here, and not at the end of a recording or on a startup sweep
-///
-/// [`crate::commands::review::prep_build_episode`] consumes analysis segments
-/// rather than computing them, and the segments it needs carry `confidence`.
-/// That narrows the honest call sites to one:
-///
-///   - **End of a recording** is too early — no analysis exists yet, and
-///     producing it means a full decode + FFT pass over a service that has just
-///     finished, on the machine still finalising it. The rule that nothing may
-///     slow a recording rules this out even if the file were ready.
-///   - **A startup sweep** has two options and neither survives contact. Read
-///     the `<stem>.segments.json` cache and it must invent `confidence`, which
-///     the cache does not store. Run the analysis itself and it is a full
-///     decode and FFT pass per un-queued recording, at launch, unattended — on
-///     an app whose scheduler may be about to start a service.
-///   - **The end of an analysis pass** is where the segments exist, in full, for
-///     free. So that is where the queue is fed.
-///
-/// The consequence, stated plainly: a recording enters the queue the first time
-/// it is analysed, which in practice is the first time it is opened in the
-/// editor (the post-open detection runs on its own). A recording nobody ever
-/// opens never enters the queue — the alternative was a queue built on invented
-/// confidences, and a queue that is honest about fewer episodes beats one that
-/// is wrong about more.
-///
-/// «Offer», not «add»: the editor opens whatever the operator points it at, and
-/// only files the app actually recorded are episodes of this church's service.
-/// [`review::build_and_enqueue_if_recorded`] is where that is decided.
-///
-/// Detached (`spawn`) so the operator's segment view never waits on a settings
-/// read and a queue write, and best-effort: a failure is a log line. This runs
-/// while a service may be minutes from starting, and an episode that failed to
-/// reach a review queue is not something a volunteer can act on mid-service.
-fn offer_to_review_queue(
-    app: &tauri::AppHandle,
-    input_path: String,
-    detection: sundayrec_core::detect::Detection,
-) {
-    let app = app.clone();
-    crate::crash::watch_handle(
-        "review::offer_from_analysis",
-        tauri::async_runtime::spawn(async move {
-            use tauri::Manager;
-            let Some(db) = app.try_state::<crate::db::Db>() else {
-                return;
-            };
-            // Idempotent on the path, so the re-analysis that «Analyser opptak»
-            // forces lands here and changes nothing.
-            if let Err(e) = crate::commands::review::build_and_enqueue_if_recorded(
-                &app,
-                &db,
-                input_path,
-                detection.segments,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "review queue: could not enqueue analysed recording");
-            }
-        }),
-    );
 }
 
 /// The built-in mastering presets for the editor's preset dropdown. Pure core

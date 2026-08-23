@@ -505,11 +505,11 @@ mod tests {
         assert_eq!(
             direction_of(
                 crate::trim_feedback::trim_deltas(
-                    Some(crate::prep::SuggestedTrim {
+                    Some(crate::detect::SuggestedTrim {
                         start_sec: 300.0,
                         end_sec: 2000.0
                     }),
-                    crate::prep::SuggestedTrim {
+                    crate::detect::SuggestedTrim {
                         start_sec: 330.0,
                         end_sec: 2000.0
                     },

@@ -263,7 +263,6 @@ export const BOOT_FIXTURES: Fixtures = {
   trash_list: [],
   transcripts_list: [],
   list_audio_devices: [],
-  review_queue_list: [],
   whisper_list_models: [],
   thumbnail_get_default_info: null,
   email_status: { featureBuilt: false, gmailConnected: false },

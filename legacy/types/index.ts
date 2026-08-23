@@ -8,7 +8,6 @@
 import type { ChannelMode } from '../bindings/ChannelMode'
 import type { FileFormat } from '../bindings/FileFormat'
 import type { FilenamePattern } from '../bindings/FilenamePattern'
-import type { EpisodePrepStatus } from '../bindings/EpisodePrepStatus'
 import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
 import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
@@ -33,7 +32,6 @@ export type {
   SpecialRecording,
   PodcastSettings,
   CloudServicePrefs,
-  EpisodePrepStatus,
   PrepAnalysisSegment,
   EditorSegment,
   ChapterMarker,
@@ -71,61 +69,6 @@ export interface RecordingEntry {
 
 // PodcastSettings is generated (re-exported above) — the Rust
 // `sundayrec_core::settings::PodcastSettings`, one vocabulary with the store.
-
-// PrepAnalysisSegment + EpisodePrepStatus are generated (re-exported above).
-//
-// EpisodePrep status lifecycle:
-//   analyzing       — background analysis running
-//   ready           — prep complete, all defaults applied, no concerns
-//   needs-attention — prep complete, but the suggested sermon segment is
-//                     low-confidence or absent. Human review required.
-//   published       — user clicked "Godkjenn og publiser" and the upload
-//                     pipeline ran to completion.
-//   discarded       — user clicked "Ikke publiser denne uka".
-export interface EpisodePrep {
-  id:                string                       // uuid
-  recordingPath:     string                       // source file
-  timestamp:         number                       // when recording finished
-  status:            EpisodePrepStatus
-  analysisSegments?: PrepAnalysisSegment[]        // raw segments from audio-analysis.ts
-  /** Sermon-only range derived from segments — the area between startSec and
-   *  endSec is "keep", everything else is intended to be cut. */
-  suggestedTrim?:    { startSec: number; endSec: number }
-  /** 0..1 — how confident we are that suggestedTrim covers the sermon. */
-  sermonConfidence?: number
-  masterPreset:      string                       // default 'speech-clear'
-  introPath?:        string                       // null = no intro for this episode
-  outroPath?:        string                       // null = no outro for this episode
-  /** Norwegian — why this needs human review beyond normal QC. */
-  attentionReasons?: string[]
-  /** Reserved for Phase 2 YouTube auto-publish. Currently unused. */
-  publishYoutube?:   boolean
-  createdAt:         number
-  updatedAt:         number
-  /** Set after a successful publish — guards against double-publishing
-   *  if the user clicks the button twice. */
-  publishedAt?:      number
-  /** History timestamp of the source recording entry (used to mark the
-   *  recording as published when this prep is published). */
-  recordingTimestamp?: number
-}
-
-/**
- * A single entry in the human-review queue. Wraps EpisodePrep with bookkeeping
- * (reminder count, age). Stored in electron-store under key `reviewQueue`.
- */
-export interface ReviewQueueEntry {
-  id:        string
-  prep:      EpisodePrep
-  addedAt:   number
-  /** Reminders sent so far: 0 = none, 1 = 24h sent, 2 = 48h sent, 3 = 7d sent.
-   *  At 4, the entry has been auto-discarded (14d) — but at that point the
-   *  entry is removed from the queue rather than kept around. */
-  reminded:  number
-  /** Days since addedAt — computed on read from getQueue(), not persisted. */
-  ageInDays: number
-}
-
 
 /**
  * The settings model (R4): THE generated binding, one vocabulary end to end —

@@ -40,8 +40,6 @@
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
 //!   - [`cloud`]        — Google cloud-backup backbone: OAuth/PKCE, retry mat, upload-queue, Drive resumable bits (Fase 6)
 //!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
-//!   - [`prep`]         — episode-prep assembly: sermon detection + attention reasons + EpisodePrep build (PU-6)
-//!   - [`review_queue`] — the human-review queue state machine + reminder timeline (PU-6)
 //!   - [`integrations`] — Sunday-suite hand-offs: Stage manifest→chapters/setlist + the live cue-bridge consumer (PU-6 + Bridge #2)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
@@ -83,7 +81,6 @@ pub mod mastering;
 pub mod mjpeg;
 pub mod notify;
 pub mod preflight;
-pub mod prep;
 pub mod preroll;
 pub mod processing;
 pub mod progress;
@@ -91,7 +88,6 @@ pub mod reconnect;
 pub mod recorder;
 pub mod recovery;
 pub mod redact;
-pub mod review_queue;
 pub mod schedule;
 pub mod selftest;
 pub mod settings;

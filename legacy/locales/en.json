@@ -220,52 +220,6 @@
     },
     "movedNamed": "«{name}» is in the trash"
   },
-  "review": {
-    "queueTitle": "Ready for review and publishing",
-    "queueCount": {
-      "one": "{n} episode",
-      "other": "{n} episodes"
-    },
-    "needsAttention": "Needs attention",
-    "openReview": "Review →",
-    "sermonGuess": "Sermon estimate: {min} min",
-    "sermonNotFound": "Sermon not detected",
-    "bannerDetail": "We've detected the sermon and suggested a trim. Look it over and click publish.",
-    "detectedSermon": "We detected a {min}-min sermon and suggested a trim. Review and click publish.",
-    "noSermonFound": "No clear sermon block found. Review the file before publishing.",
-    "dayNames": [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday"
-    ],
-    "monthNames": [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December"
-    ],
-    "ageNow": "Just now",
-    "ageHours": "{n}h ago",
-    "ageDays": {
-      "one": "{n} day ago",
-      "other": "{n} days ago"
-    },
-    "ageOldest": "Over 14 days ago",
-    "confident": "confident",
-    "errNotFound": "This episode is no longer in the review queue — it may already have been published or discarded."
-  },
   "schedule": {
     "title": "Weekly schedule",
     "subtitle": "Fixed recordings that repeat automatically every week.",
@@ -766,8 +720,6 @@
     "saveError": "✕ Save failed",
     "promptTitle": "Want to edit the recording?",
     "promptOpen": "Open in Editor",
-    "reviewEdit": "↻ Edit details",
-    "reviewDiscard": "✗ Don't publish this week",
     "normalizePeak": "Normalize peak level",
     "normalizeHint": "Adjusts the peak to -1 dBFS for a safe final mix.",
     "normalizeApplied": "Normalized",
@@ -799,7 +751,6 @@
     "closeFile": "Close file",
     "emptyTitleDrop": "Drop a file here — or click to open",
     "recentTitle": "Recent files",
-    "gotoReview": "Review queue →",
     "analyzeTitle": "Analyze recording",
     "analyzeRun": "▶ Analyze recording",
     "analyzing": "Analyzing…",
@@ -893,10 +844,6 @@
     "videoFormat": "Video format",
     "vocalChain": "Voice processing",
     "exportDoneToast": "Exported{name}",
-    "gotoReviewCount": {
-      "one": "Review queue ({n} episode) →",
-      "other": "Review queue ({n} episodes) →"
-    },
     "enhanceNone": "None",
     "vcLight": "Voice — light",
     "vcPodcast": "Podcast voice (recommended)",
@@ -1121,10 +1068,6 @@
     "recoverySkipped": "An interrupted recording could not be fully recovered: {file}",
     "deviceMissing": "The audio device “{device}” is not connected.",
     "diskLow": "Disk space is running low — {freeGb} GB free. The recording will stop on its own if the disk fills up.",
-    "reviewOverdue": {
-      "one": "An episode has been waiting {days} day for review: {episode}",
-      "other": "An episode has been waiting {days} days for review: {episode}"
-    },
     "systemTitle": "System notifications",
     "emailTitle": "Email notifications",
     "smtpServer": "EMAIL SERVICE (SMTP)",
@@ -1437,12 +1380,7 @@
     "pickScreenTitle": "Choose a screen",
     "deleteTranscriptBody": "The recording itself is kept. You can transcribe it again later.",
     "discardEditsBody": "The cuts you have made will be lost. The recording file itself is untouched.",
-    "discardEdits": "Discard the changes",
-    "discardEpisodeTitle": "Discard this episode?",
-    "discardEpisodeBody": "The recording is kept, but it will not be published.",
-    "discardEpisode": "Discard",
-    "publishFailedTitle": "Could not publish",
-    "discardFailedTitle": "Could not discard the episode"
+    "discardEdits": "Discard the changes"
   },
   "toast": {
     "dismiss": "Close"

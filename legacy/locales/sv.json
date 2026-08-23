@@ -220,52 +220,6 @@
     },
     "movedNamed": "”{name}” ligger i papperskorgen"
   },
-  "review": {
-    "queueTitle": "Klara för granskning och publicering",
-    "queueCount": {
-      "one": "{n} avsnitt",
-      "other": "{n} avsnitt"
-    },
-    "needsAttention": "Behöver åtgärdas",
-    "openReview": "Granska →",
-    "sermonGuess": "Förmodad predikan: {min} min",
-    "sermonNotFound": "Predikan inte upptäckt",
-    "bannerDetail": "Vi har hittat predikan och föreslagit en trim. Gå igenom och tryck publicera.",
-    "detectedSermon": "Vi har detekterat {min} min predikan och föreslagit trim. Granska och klicka publicera.",
-    "noSermonFound": "Hittade inget tydligt predikoblock. Granska filen före publicering.",
-    "dayNames": [
-      "Söndag",
-      "Måndag",
-      "Tisdag",
-      "Onsdag",
-      "Torsdag",
-      "Fredag",
-      "Lördag"
-    ],
-    "monthNames": [
-      "januari",
-      "februari",
-      "mars",
-      "april",
-      "maj",
-      "juni",
-      "juli",
-      "augusti",
-      "september",
-      "oktober",
-      "november",
-      "december"
-    ],
-    "ageNow": "Just nu",
-    "ageHours": "{n}t sedan",
-    "ageDays": {
-      "one": "{n} dag sedan",
-      "other": "{n} dagar sedan"
-    },
-    "ageOldest": "Över 14 dagar sedan",
-    "confident": "säker",
-    "errNotFound": "Avsnittet finns inte längre i granskningskön — det kan redan ha publicerats eller kastats."
-  },
   "schedule": {
     "title": "Veckoschema",
     "subtitle": "Fasta inspelningar som upprepas automatiskt varje vecka.",
@@ -766,8 +720,6 @@
     "saveError": "✕ Fel vid sparande",
     "promptTitle": "Vill du redigera inspelningen?",
     "promptOpen": "Öppna i Redigera",
-    "reviewEdit": "↻ Ändra detaljer",
-    "reviewDiscard": "✗ Publicera inte denna vecka",
     "normalizePeak": "Normalisera ljudnivå",
     "normalizeHint": "Justerar toppvärdet till -1 dBFS för en säker slutmix.",
     "normalizeApplied": "Normaliserad",
@@ -799,7 +751,6 @@
     "closeFile": "Stäng fil",
     "emptyTitleDrop": "Släpp filen här — eller klicka för att öppna",
     "recentTitle": "Senast använda filer",
-    "gotoReview": "Granskningskö →",
     "analyzeTitle": "Analysera inspelning",
     "analyzeRun": "▶ Analysera inspelning",
     "analyzing": "Analyserar…",
@@ -893,10 +844,6 @@
     "videoFormat": "Videoformat",
     "vocalChain": "Röstbehandling",
     "exportDoneToast": "Exporterad{name}",
-    "gotoReviewCount": {
-      "one": "Granskningskö ({n} avsnitt) →",
-      "other": "Granskningskö ({n} avsnitt) →"
-    },
     "enhanceNone": "Ingen",
     "vcLight": "Röst — lätt",
     "vcPodcast": "Poddröst (rekommenderas)",
@@ -1121,10 +1068,6 @@
     "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
     "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
     "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full.",
-    "reviewOverdue": {
-      "one": "Ett avsnitt har väntat i {days} dag på genomgång: {episode}",
-      "other": "Ett avsnitt har väntat i {days} dagar på genomgång: {episode}"
-    },
     "systemTitle": "Systemaviseringar",
     "emailTitle": "E-postaviseringar",
     "smtpServer": "E-POSTTJÄNST (SMTP)",
@@ -1437,12 +1380,7 @@
     "pickScreenTitle": "Välj skärm",
     "deleteTranscriptBody": "Själva inspelningen behålls. Du kan transkribera på nytt senare.",
     "discardEditsBody": "Klippen du har gjort går förlorade. Själva inspelningsfilen rörs inte.",
-    "discardEdits": "Förkasta ändringarna",
-    "discardEpisodeTitle": "Förkasta det här avsnittet?",
-    "discardEpisodeBody": "Inspelningen behålls, men den publiceras inte.",
-    "discardEpisode": "Förkasta",
-    "publishFailedTitle": "Kunde inte publicera",
-    "discardFailedTitle": "Kunde inte kasta avsnittet"
+    "discardEdits": "Förkasta ändringarna"
   },
   "toast": {
     "dismiss": "Stäng"

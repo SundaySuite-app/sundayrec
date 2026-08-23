@@ -3,8 +3,12 @@
 //!
 //! SundayRec shipped two detectors over the same classified segments: the
 //! editor's (`audio_analysis::detect_segments`, a best guess that always
-//! answers) and the review queue's (`prep::find_sermon_segment` +
-//! `derive_attention_codes`, which may answer "no sermon here" and says why).
+//! answers) and the (since-removed) review queue's (`prep::find_sermon_segment`
+//! + `derive_attention_codes`, which may answer "no sermon here" and says why).
+//!
+//! The queue is gone, but its STRICT pick is still `Detection::sermon`, which
+//! is what the learning modules measure corrections against — so the frozen
+//! answers stay binding for both columns.
 //! Unifying them is only safe if it is possible to SEE a behaviour change, and
 //! the two paths' output is a handful of floats — the kind of thing that moves
 //! slightly and is noticed on a Sunday.
@@ -213,11 +217,13 @@ struct Answer {
     prep_sermon: Option<SermonOut>,
     /// The attention reasons, as stable codes.
     prep_attention: Vec<String>,
-    /// `build_episode_prep`'s resulting status.
+    /// What `build_episode_prep` derived as the status: `Ready` when no
+    /// attention reason fired, else `NeedsAttention`.
     prep_status: String,
-    /// `build_episode_prep`'s `suggested_trim`.
+    /// What `build_episode_prep` copied into `suggested_trim`: the strict pick's
+    /// own bounds, verbatim (the local nudge is the no-op `SHIPPED_TUNING`).
     prep_trim: Option<(f64, f64)>,
-    /// `build_episode_prep`'s `sermon_confidence`.
+    /// What `build_episode_prep` copied into `sermon_confidence`.
     prep_sermon_confidence: Option<f64>,
 }
 
@@ -228,8 +234,8 @@ struct Answer {
 /// this function is the only part of this file the unification was allowed to
 /// rewrite — the golden file it is compared against is frozen.
 fn run(input: &[AnalysisSegment]) -> Answer {
-    use sundayrec_core::detect::{self, PrepAnalysisSegment};
-    use sundayrec_core::prep::{build_episode_prep, PrepDefaults};
+    use sundayrec_core::detect::{self, PrepAnalysisSegment, SuggestedTrim};
+    use sundayrec_core::local_adaptivity::{apply_to_trim, SHIPPED_TUNING};
 
     let segments: Vec<PrepAnalysisSegment> = input.iter().map(PrepAnalysisSegment::from).collect();
     let detection = detect::detect(segments.clone());
@@ -247,21 +253,30 @@ fn run(input: &[AnalysisSegment]) -> Answer {
         })
         .collect();
 
-    // ── What the review queue shows ──
+    // ── What the review queue showed (the strict pick + attention reasons) ──
+    // `build_episode_prep` is gone; this is exactly what it did with a
+    // `Detection`, so the frozen column keeps its meaning.
     let sermon = detection.sermon;
-    let prep_attention = detection
+    let prep_attention: Vec<String> = detection
         .attention_codes()
         .into_iter()
         .map(|c| c.code().to_string())
         .collect();
-    let episode = build_episode_prep(
-        "fixture".into(),
-        "/rec/fixture.mp4".into(),
-        segments,
-        &PrepDefaults::default(),
-        &sundayrec_core::local_adaptivity::SHIPPED_TUNING,
-        0,
-    );
+    let prep_status = if prep_attention.is_empty() {
+        "Ready".to_string()
+    } else {
+        "NeedsAttention".to_string()
+    };
+    let prep_trim = sermon.map(|s| {
+        let t = apply_to_trim(
+            &SHIPPED_TUNING,
+            SuggestedTrim {
+                start_sec: s.start_sec,
+                end_sec: s.end_sec,
+            },
+        );
+        (t.start_sec, t.end_sec)
+    });
 
     Answer {
         editor_segments,
@@ -272,9 +287,9 @@ fn run(input: &[AnalysisSegment]) -> Answer {
             seg_index: s.seg_index,
         }),
         prep_attention,
-        prep_status: format!("{:?}", episode.status),
-        prep_trim: episode.suggested_trim.map(|t| (t.start_sec, t.end_sec)),
-        prep_sermon_confidence: episode.sermon_confidence,
+        prep_status,
+        prep_trim,
+        prep_sermon_confidence: sermon.map(|s| s.confidence),
     }
 }
 

@@ -220,52 +220,6 @@
     },
     "movedNamed": "«{name}» ligger i papirkurven"
   },
-  "review": {
-    "queueTitle": "Klare for gjennomgang og publisering",
-    "queueCount": {
-      "one": "{n} episode",
-      "other": "{n} episoder"
-    },
-    "needsAttention": "Trenger oppmerksomhet",
-    "openReview": "Gjennomgå →",
-    "sermonGuess": "Preken antatt: {min} min",
-    "sermonNotFound": "Preken ikke detektert",
-    "bannerDetail": "Vi har detektert prekenen og foreslått trim. Gå over og trykk publiser.",
-    "detectedSermon": "Vi har detektert {min} min preken og foreslått trim. Gå over og trykk publiser.",
-    "noSermonFound": "Vi fant ingen klar preken-blokk. Sjekk filen før publisering.",
-    "dayNames": [
-      "Søndag",
-      "Mandag",
-      "Tirsdag",
-      "Onsdag",
-      "Torsdag",
-      "Fredag",
-      "Lørdag"
-    ],
-    "monthNames": [
-      "januar",
-      "februar",
-      "mars",
-      "april",
-      "mai",
-      "juni",
-      "juli",
-      "august",
-      "september",
-      "oktober",
-      "november",
-      "desember"
-    ],
-    "ageNow": "Akkurat nå",
-    "ageHours": "{n}t siden",
-    "ageDays": {
-      "one": "{n} dag siden",
-      "other": "{n} dager siden"
-    },
-    "ageOldest": "Over 14 dager siden",
-    "confident": "sikker",
-    "errNotFound": "Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet."
-  },
   "schedule": {
     "title": "Ukentlig tidsplan",
     "subtitle": "Faste opptak som gjentas automatisk hver uke.",
@@ -766,8 +720,6 @@
     "saveError": "✕ Feil ved lagring",
     "promptTitle": "Vil du redigere opptaket?",
     "promptOpen": "Åpne i Rediger",
-    "reviewEdit": "↻ Endre detaljer",
-    "reviewDiscard": "✗ Ikke publiser denne uka",
     "normalizePeak": "Normaliser lydnivå",
     "normalizeHint": "Justerer toppunktet til -1 dBFS for trygg sluttmiks.",
     "normalizeApplied": "Normalisert",
@@ -799,7 +751,6 @@
     "closeFile": "Lukk fil",
     "emptyTitleDrop": "Slipp fil her — eller klikk for å åpne",
     "recentTitle": "Nylig brukte filer",
-    "gotoReview": "Gjennomgangs-kø →",
     "analyzeTitle": "Analyser opptak",
     "analyzeRun": "▶ Analyser opptak",
     "analyzing": "Analyserer…",
@@ -893,10 +844,6 @@
     "videoFormat": "Video-format",
     "vocalChain": "Stemmebehandling",
     "exportDoneToast": "Eksportert{name}",
-    "gotoReviewCount": {
-      "one": "Gjennomgangs-kø ({n} episode) →",
-      "other": "Gjennomgangs-kø ({n} episoder) →"
-    },
     "enhanceNone": "Ingen",
     "vcLight": "Stemme — lett",
     "vcPodcast": "Podkast-stemme (anbefalt)",
@@ -1121,10 +1068,6 @@
     "recoverySkipped": "Et avbrutt opptak kunne ikke gjenopprettes helt: {file}",
     "deviceMissing": "Lydenheten «{device}» er ikke tilkoblet.",
     "diskLow": "Det begynner å bli lite plass på disken — {freeGb} GB ledig. Opptaket stopper av seg selv hvis den blir full.",
-    "reviewOverdue": {
-      "one": "En episode har ventet i {days} dag på gjennomgang: {episode}",
-      "other": "En episode har ventet i {days} dager på gjennomgang: {episode}"
-    },
     "systemTitle": "Systemvarsler",
     "emailTitle": "E-postvarsler",
     "smtpServer": "E-POSTTJENESTE (SMTP)",
@@ -1437,12 +1380,7 @@
     "pickScreenTitle": "Velg skjerm",
     "deleteTranscriptBody": "Selve opptaket beholdes. Du kan transkribere på nytt senere.",
     "discardEditsBody": "Kuttene du har gjort går tapt. Selve opptaksfilen røres ikke.",
-    "discardEdits": "Forkast endringene",
-    "discardEpisodeTitle": "Forkast denne episoden?",
-    "discardEpisodeBody": "Selve opptaket beholdes, men det blir ikke publisert.",
-    "discardEpisode": "Forkast",
-    "publishFailedTitle": "Kunne ikke publisere",
-    "discardFailedTitle": "Kunne ikke forkaste episoden"
+    "discardEdits": "Forkast endringene"
   },
   "toast": {
     "dismiss": "Lukk"

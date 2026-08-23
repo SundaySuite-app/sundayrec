@@ -64,7 +64,7 @@
 //! default wrong and make it invisible.
 //!
 //! The proposed trim is the chosen segment's own bounds, verbatim, on both
-//! paths — [`crate::prep::build_episode_prep`] copies `start_sec`/`end_sec`
+//! paths — the (since-removed) review prep copied `start_sec`/`end_sec`
 //! straight into `suggested_trim`, and [`crate::detect::promote_sermon`] hands
 //! the same two numbers to the editor, which [`crate::editor::sermon_cut_regions`]
 //! cuts to unchanged. (`editor::KEEP_EPSILON` is 0.05 s and only decides whether

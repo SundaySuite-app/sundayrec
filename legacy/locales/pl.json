@@ -242,56 +242,6 @@
     },
     "movedNamed": "„{name}” jest w koszu"
   },
-  "review": {
-    "queueTitle": "Gotowe do przeglądu i publikacji",
-    "queueCount": {
-      "one": "{n} odcinek",
-      "few": "{n} odcinki",
-      "many": "{n} odcinków",
-      "other": "{n} odcinków"
-    },
-    "needsAttention": "Wymaga uwagi",
-    "openReview": "Przejrzyj →",
-    "sermonGuess": "Przypuszczalne kazanie: {min} min",
-    "sermonNotFound": "Nie wykryto kazania",
-    "bannerDetail": "Wykryliśmy kazanie i zaproponowaliśmy przycięcie. Sprawdź i kliknij Publikuj.",
-    "detectedSermon": "Wykryliśmy {min}-min kazanie i zaproponowaliśmy przycięcie. Przejrzyj i kliknij publikuj.",
-    "noSermonFound": "Nie znaleziono wyraźnego bloku kazania. Sprawdź plik przed publikacją.",
-    "dayNames": [
-      "Niedziela",
-      "Poniedziałek",
-      "Wtorek",
-      "Środa",
-      "Czwartek",
-      "Piątek",
-      "Sobota"
-    ],
-    "monthNames": [
-      "stycznia",
-      "lutego",
-      "marca",
-      "kwietnia",
-      "maja",
-      "czerwca",
-      "lipca",
-      "sierpnia",
-      "września",
-      "października",
-      "listopada",
-      "grudnia"
-    ],
-    "ageNow": "Przed chwilą",
-    "ageHours": "{n}h temu",
-    "ageDays": {
-      "one": "{n} dzień temu",
-      "few": "{n} dni temu",
-      "many": "{n} dni temu",
-      "other": "{n} dni temu"
-    },
-    "ageOldest": "Ponad 14 dni temu",
-    "confident": "pewności",
-    "errNotFound": "Tego odcinka nie ma już w kolejce przeglądu — mógł zostać już opublikowany lub odrzucony."
-  },
   "schedule": {
     "title": "Harmonogram tygodniowy",
     "subtitle": "Stałe nagrania, które powtarzają się automatycznie co tydzień.",
@@ -834,8 +784,6 @@
     "saveError": "✕ Błąd podczas zapisu",
     "promptTitle": "Chcesz edytować nagranie?",
     "promptOpen": "Otwórz w edytorze",
-    "reviewEdit": "↻ Edytuj szczegóły",
-    "reviewDiscard": "✗ Nie publikuj w tym tygodniu",
     "normalizePeak": "Normalizuj poziom dźwięku",
     "normalizeHint": "Ustawia szczyt na -1 dBFS dla bezpiecznego miksu końcowego.",
     "normalizeApplied": "Znormalizowane",
@@ -867,7 +815,6 @@
     "closeFile": "Zamknij plik",
     "emptyTitleDrop": "Upuść plik tutaj — lub kliknij, aby otworzyć",
     "recentTitle": "Ostatnio używane pliki",
-    "gotoReview": "Kolejka przeglądu →",
     "analyzeTitle": "Analizuj nagranie",
     "analyzeRun": "▶ Analizuj nagranie",
     "analyzing": "Analizowanie…",
@@ -961,12 +908,6 @@
     "videoFormat": "Format wideo",
     "vocalChain": "Obróbka głosu",
     "exportDoneToast": "Wyeksportowano{name}",
-    "gotoReviewCount": {
-      "one": "Kolejka przeglądu ({n} odcinek) →",
-      "few": "Kolejka przeglądu ({n} odcinki) →",
-      "many": "Kolejka przeglądu ({n} odcinków) →",
-      "other": "Kolejka przeglądu ({n} odcinków) →"
-    },
     "enhanceNone": "Brak",
     "vcLight": "Głos — lekki",
     "vcPodcast": "Głos podcastowy (zalecane)",
@@ -1191,12 +1132,6 @@
     "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
     "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
     "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni.",
-    "reviewOverdue": {
-      "one": "Odcinek czeka na przegląd od {days} dnia: {episode}",
-      "few": "Odcinek czeka na przegląd od {days} dni: {episode}",
-      "many": "Odcinek czeka na przegląd od {days} dni: {episode}",
-      "other": "Odcinek czeka na przegląd od {days} dni: {episode}"
-    },
     "systemTitle": "Powiadomienia systemowe",
     "emailTitle": "Powiadomienia e-mail",
     "smtpServer": "USŁUGA E-MAIL (SMTP)",
@@ -1513,12 +1448,7 @@
     "pickScreenTitle": "Wybierz ekran",
     "deleteTranscriptBody": "Samo nagranie zostaje. Możesz je transkrybować ponownie później.",
     "discardEditsBody": "Wykonane cięcia zostaną utracone. Sam plik nagrania pozostanie nienaruszony.",
-    "discardEdits": "Odrzuć zmiany",
-    "discardEpisodeTitle": "Odrzucić ten odcinek?",
-    "discardEpisodeBody": "Nagranie zostaje, ale nie zostanie opublikowane.",
-    "discardEpisode": "Odrzuć",
-    "publishFailedTitle": "Nie udało się opublikować",
-    "discardFailedTitle": "Nie udało się odrzucić odcinka"
+    "discardEdits": "Odrzuć zmiany"
   },
   "toast": {
     "dismiss": "Zamknij"

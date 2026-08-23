@@ -35,8 +35,8 @@
 //! - **The two surfaces also correct two different picks.** The editor promotes
 //!   [`crate::detect::Detection::offered`] (the best guess), and that is what a
 //!   sermon-pick correction is a correction OF. Review's `suggested_trim` comes
-//!   from [`crate::detect::Detection::sermon`] (the strict pick) — see
-//!   [`crate::prep::build_episode_prep`]. Comparing a scorer's strict pick to a
+//!   from [`crate::detect::Detection::sermon`] (the strict pick — what the
+//!   since-removed review prep copied). Comparing a scorer's strict pick to a
 //!   correction of its offered pick would score the wrong thing, so
 //!   [`ScorerSelection::for_truth`] chooses per truth kind.
 //! - **A recording with no correction is not a recording we got right.** The
@@ -316,8 +316,8 @@ pub struct GroundTruth {
 /// record asserts.
 ///
 /// `heuristic_strict` is the current build's strict pick for this recording,
-/// which is what `suggested_trim` was derived from
-/// ([`crate::prep::build_episode_prep`]) and therefore what a trim delta is
+/// which is what `suggested_trim` was derived from (the since-removed review
+/// prep) and therefore what a trim delta is
 /// measured against. `None` there means the strict search now finds nothing, so
 /// no trim record can be reconstructed at all.
 pub fn ground_truths(

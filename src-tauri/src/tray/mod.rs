@@ -13,7 +13,7 @@
 //!
 //! The menu used to be built ONCE at startup from `TrayState::default()` and
 //! never touched again: a tray that permanently said "✅ Klar / Start opptak nå"
-//! even mid-recording, with no next-recording line and no review-queue callout.
+//! even mid-recording, with no next-recording line.
 //! [`TrayController`] closes that loop. It is Tauri-managed state holding the
 //! live [`TrayState`] + [`TrayLang`] and the `TrayIcon` handle, and every mutation
 //! goes through [`update`], which re-renders the menu, the tooltip and the icon
@@ -61,7 +61,6 @@ pub fn action_id(action: TrayAction) -> &'static str {
     match action {
         TrayAction::ShowOnError => "show-on-error",
         TrayAction::None => "none",
-        TrayAction::OpenReviewQueue => "open-review-queue",
         TrayAction::OpenWindow => "open-window",
         TrayAction::StartRecording => "start-recording",
         TrayAction::StopRecording => "stop-recording",
@@ -77,7 +76,6 @@ pub fn action_from_id(id: &str) -> Option<TrayAction> {
     Some(match id {
         "show-on-error" => TrayAction::ShowOnError,
         "none" => TrayAction::None,
-        "open-review-queue" => TrayAction::OpenReviewQueue,
         "open-window" => TrayAction::OpenWindow,
         "start-recording" => TrayAction::StartRecording,
         "stop-recording" => TrayAction::StopRecording,
@@ -126,7 +124,7 @@ pub fn build_menu<R: Runtime>(
 ///   - **quit** → exit.
 ///
 /// Everything else (start — which needs the renderer's device/settings context,
-/// preflight, diagnostics, review-queue) is emitted as [`TRAY_ACTION_EVENT`] for
+/// preflight, diagnostics) is emitted as [`TRAY_ACTION_EVENT`] for
 /// the renderer to turn into the matching `invoke(...)`. This mirrors how the
 /// Electron `tray.ts` mixed `app.quit()`/`win.show()` + a direct stop with
 /// `webContents.send(...)` for the rest.
@@ -296,8 +294,8 @@ fn status_icon<R: Runtime>(
 }
 
 /// Mutate the tray state and re-render if anything actually changed. The single
-/// write path — every source (recorder, scheduler, review queue, language)
-/// funnels through here. A no-op mutation does no work.
+/// write path — every source (recorder, scheduler, language) funnels through
+/// here. A no-op mutation does no work.
 pub fn update<R: Runtime>(app: &AppHandle<R>, mutate: impl FnOnce(&mut TrayState)) {
     let Some(ctl) = app.try_state::<TrayController<R>>() else {
         return; // tray not installed (headless / install failed)
@@ -336,21 +334,6 @@ pub fn set_lang<R: Runtime>(app: &AppHandle<R>, lang: TrayLang) {
         guard.clone()
     };
     ctl.render(app, &next);
-}
-
-/// Recount the review queue in the background and push it to the tray. Reads the
-/// SAME persisted blob `review_queue_list` serves, so the callout can never
-/// disagree with the in-app card. Cheap enough to call on every recorder/
-/// scheduler tick as well as after each review write.
-pub fn refresh_review_queue<R: Runtime>(app: &AppHandle<R>) {
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let Some(db) = handle.try_state::<crate::db::Db>() else {
-            return;
-        };
-        let count = crate::commands::review::pending_review_count(&db).await;
-        update(&handle, |s| s.review_queue_count = count);
-    });
 }
 
 /// Localized weekday abbreviations, Monday-first (chrono's
@@ -440,10 +423,6 @@ pub fn wire_state_sources<R: Runtime>(app: &AppHandle<R>) {
                 s.has_error = true;
             }
         });
-        if !live {
-            // A finished session may have queued an episode for review.
-            refresh_review_queue(&h);
-        }
     });
 
     // Terminal recorder error (the reconnect budget is gone / a fatal code).
@@ -463,7 +442,6 @@ pub fn wire_state_sources<R: Runtime>(app: &AppHandle<R>) {
         let lang = current_lang(&h);
         let label = format_next_label(iso.as_deref(), lang);
         update(&h, |s| s.next_recording_label = label);
-        refresh_review_queue(&h);
     });
 }
 
@@ -565,7 +543,6 @@ mod tests {
         for action in [
             TrayAction::ShowOnError,
             TrayAction::None,
-            TrayAction::OpenReviewQueue,
             TrayAction::OpenWindow,
             TrayAction::StartRecording,
             TrayAction::StopRecording,

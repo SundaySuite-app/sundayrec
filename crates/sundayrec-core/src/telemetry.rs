@@ -330,12 +330,6 @@ pub enum CounterName {
     /// The AI sermon companion built chapters/highlights/summary.
     #[serde(rename = "companion.build")]
     CompanionBuild,
-    /// An episode was published from the review queue.
-    #[serde(rename = "review.published")]
-    ReviewPublished,
-    /// An episode was discarded from the review queue.
-    #[serde(rename = "review.discarded")]
-    ReviewDiscarded,
     /// A podcast RSS feed was generated.
     #[serde(rename = "publish.feed.generated")]
     PublishFeedGenerated,
@@ -382,8 +376,6 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorChaptersDetected,
     CounterName::TranscribeRun,
     CounterName::CompanionBuild,
-    CounterName::ReviewPublished,
-    CounterName::ReviewDiscarded,
     CounterName::PublishFeedGenerated,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
@@ -415,8 +407,6 @@ impl CounterName {
             Self::EditorChaptersDetected => "editor.chapters.detected",
             Self::TranscribeRun => "transcribe.run",
             Self::CompanionBuild => "companion.build",
-            Self::ReviewPublished => "review.published",
-            Self::ReviewDiscarded => "review.discarded",
             Self::PublishFeedGenerated => "publish.feed.generated",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",

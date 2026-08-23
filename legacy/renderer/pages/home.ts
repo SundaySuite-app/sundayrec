@@ -5,7 +5,6 @@ import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
 import { getAudioDevices, healStoredDeviceId } from '../audio/capture'
-import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { buildHealthFindings } from '../status/health-findings'
@@ -1061,18 +1060,14 @@ function wireHomeIpcListeners(): void {
     if (rec && !rec.splitRestart) showRecordingFinishedSummary(rec)
   }))
 
-  // Wire up the review-queue card — listens to IPC events from main so the card
-  // updates instantly when a new prep lands or the user publishes/discards.
-  setupReviewQueueListeners()
-
   // The pre-roll buffer's own surface on the LYDKILDE card.
   homeIpcUnsubs.push(subscribePrerollStatus(renderPrerollChip))
 
-  // Tray menu hooks used to live here as `tray-open-review-queue` /
-  // `tray-run-preflight` listeners — Electron channel names no Rust code has
-  // ever emitted, so both were unreachable. The Rust tray emits ONE
-  // `tray://action` event; it is adapted in tray-actions.ts, wired once in
-  // main.ts, and calls openReviewQueueFromTray / the preflight button from there.
+  // Tray menu hooks used to live here as `tray-run-preflight` listeners —
+  // Electron channel names no Rust code has ever emitted, so they were
+  // unreachable. The Rust tray emits ONE `tray://action` event; it is adapted
+  // in tray-actions.ts, wired once in main.ts, and calls the preflight button
+  // from there.
 }
 
 /** Render the pre-roll chip on the LYDKILDE card. The rolling buffer holds the
@@ -1089,15 +1084,6 @@ function renderPrerollChip(active: boolean, seconds: number): void {
     text.textContent = tf('home.prerollActive', { n: seconds }, 'Forhåndsbuffer aktiv ({n} s)')
   }
   chip.style.display = ''
-}
-
-/** Bring the review-queue card to the front, freshly loaded — the destination of
- *  the tray's "📬 N episoder klare" row. Exported for tray-actions.ts. */
-export function openReviewQueueFromTray(): void {
-  navigateTo('home', { anchor: '#review-queue-card' })
-  refreshReviewQueue().catch(err =>
-    console.warn('[home] review-queue refresh from tray failed:', err),
-  )
 }
 
 /** The info cards that wait on an async load, so they can show a skeleton
@@ -1139,7 +1125,6 @@ export async function refreshHome(): Promise<void> {
     renderRecentRecordings(),
     checkStatus(),
     loadHomeInfoStrip(),
-    refreshReviewQueue(),
   ])
   // The recorder owns the device during a take (`start_recording` stops the VU
   // engine itself), and the overlay's meter reads `recording://levels`. Asking

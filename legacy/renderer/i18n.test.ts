@@ -292,9 +292,8 @@ describe('tf / tn against the live catalogue (default locale: no)', () => {
 
   it('tn takes extra params, and lets them override n', () => {
     expect(tn('trash.clearHistoryBody', 30, { d: 30 })).toContain('30 dager')
-    expect(tn('notify.reviewOverdue', 1, { days: 1, episode: 'Kveldsmøte' })).toBe(
-      'En episode har ventet i 1 dag på gjennomgang: Kveldsmøte',
-    )
+    // The form follows `count` (singular); an explicit `n` still wins the slot.
+    expect(tn('trash.daysLeft', 1, { n: 4 })).toBe('4 dag igjen')
   })
 
   it('tn falls back to the literal for an unknown key', () => {

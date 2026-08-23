@@ -1,10 +1,10 @@
-import { t, tf, tn } from '../i18n'
+import { t } from '../i18n'
 import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingEntry, RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { navigateTo } from '../ui/navigate'
-import { alertDialog, confirmDialog } from '../ui/dialog'
+import { confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
@@ -18,9 +18,6 @@ import { togglePlay, stopPlay, seekTo, seekBy, jumpToCutBoundary, updateTimecode
 import { fitAll, zoomBy } from './editor/viewport'
 import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
-import { PICK, jinglePathFor, jingleValueFor } from './editor/review-jingles'
-import { keptSpanFromCuts } from './editor/review-trim'
-import { toast } from '../ui/toast'
 import { setupMasteringPanel } from './editor/mastering'
 import { setupStageUi } from './editor/stage-ui'
 import { setupEditorTabs, flagEditorTab } from './editor/tabs'
@@ -50,12 +47,6 @@ export function setupEditorPage(): void {
     // Don't double-fire when the inner button is clicked
     if ((e.target as HTMLElement).closest('button')) return
     pickAndLoad()
-  })
-
-  // Empty-state review queue link
-  $('editor-empty-review-link')?.addEventListener('click', (e) => {
-    e.preventDefault()
-    window.showPage('home')
   })
 
   // Intro/Outro panel header collapses on click of chevron
@@ -363,7 +354,6 @@ export function setupEditorPage(): void {
   }
   setupTranscriptPanel(seekToSec)
   setupDragDrop()
-  setupReviewBanner()
 
   if (E.canvas && E.canvas.parentElement) {
     // Track the observer so repeated setupEditorPage() calls (after a renderer
@@ -387,8 +377,6 @@ export function setupEditorPage(): void {
 let resizeObserver: ResizeObserver | null = null
 
 export function openEditorWithFile(fp: string, seekToSec?: number): void {
-  reviewPrepId = null
-  loadAndUpdateReviewBanner()
   window.showPage('editor')
   // Set the seek target applied once the file finishes loading. Consumed at the
   // tail of loadFile(). The CustomEvent path was racy because loadFile zeroes
@@ -450,322 +438,6 @@ function setupMasteringCollapse(): void {
   })
 }
 
-// ── Review mode state (prep-and-review v5.0) ──────────────────────────────
-// When non-null, the editor is in "review mode" — it pre-applies suggested
-// cuts/preset/jingles from the queue entry and shows the green publish banner.
-// Exported (read-only) so loader.ts can skip auto-detection in review mode.
-export let reviewPrepId: string | null = null
-let reviewPrep: import('../../types').EpisodePrep | null = null
-
-/**
- * Entry point from the home-page review queue. Opens the editor, loads the
- * recording, pre-applies the suggested sermon trim as cuts (cut before
- * suggestedTrim.startSec + cut after suggestedTrim.endSec), pre-selects the
- * mastering preset, and surfaces a "Klargjort for publisering" banner with
- * the three big action buttons.
- */
-export async function openEditorReviewMode(prepId: string, filePath: string): Promise<void> {
-  reviewPrepId = prepId
-  try {
-    const entry = await window.api.reviewQueueGet(prepId)
-    reviewPrep = entry?.prep ?? null
-  } catch {
-    reviewPrep = null
-  }
-  loadAndUpdateReviewBanner()
-  window.showPage('editor')
-  await loadFile(filePath)
-  // After loadFile sets `duration`, apply the suggested trim as cuts. We have
-  // to wait one tick for showState('workspace') and the canvas to settle.
-  requestAnimationFrame(() => applyReviewModeDefaults())
-}
-
-function applyReviewModeDefaults(): void {
-  if (!reviewPrep || !E.duration) return
-  const trim = reviewPrep.suggestedTrim
-  // Pre-apply the suggested trim as cuts (everything before + after).
-  if (trim && trim.endSec > trim.startSec) {
-    E.cuts = []
-    if (trim.startSec > 0.5) {
-      E.cuts.push({ start: 0, end: Math.min(trim.startSec, E.duration) })
-    }
-    if (trim.endSec < E.duration - 0.5) {
-      E.cuts.push({ start: Math.max(0, trim.endSec), end: E.duration })
-    }
-    pushCutHistory()
-    renderCutList()
-    updateRemainingDisplay()
-    drawWaveform()
-    drawMinimap()
-  }
-  // Pre-select the mastering preset the review prep recommends.
-  //
-  // This used to poke `#editor-master-preset`, an id that has never existed in
-  // index.html — so the preselect was a silent no-op and a review-mode export
-  // shipped unmastered. The real control is the export modal's
-  // `#enhance-master-preset`, and `setupEnhanceSection` syncs it FROM `E` every
-  // time the modal opens: setting `E.masterPreset` is what actually takes
-  // effect, both in the select and in the modal's level row (which reads `E`).
-  // The select is also updated directly, for the case where the modal is
-  // already open when review mode loads a file into it.
-  if (reviewPrep.masterPreset) {
-    E.masterPreset = reviewPrep.masterPreset
-    const presetSel = $('enhance-master-preset') as HTMLSelectElement | null
-    if (presetSel) presetSel.value = E.masterPreset
-  }
-}
-
-function loadAndUpdateReviewBanner(): void {
-  const banner = $('editor-review-banner')
-  if (!banner) return
-  banner.style.display = reviewPrepId ? '' : 'none'
-
-  if (!reviewPrep || !reviewPrepId) return
-
-  // Attention reasons block
-  const attention = $('editor-review-attention')
-  if (attention) {
-    const reasons = reviewPrep.attentionReasons ?? []
-    if (reasons.length > 0) {
-      attention.innerHTML = '<strong>⚠ Trenger oppmerksomhet:</strong><ul style="margin:4px 0 0 18px;padding:0">' +
-        reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('') + '</ul>'
-      attention.style.display = ''
-    } else {
-      attention.style.display = 'none'
-    }
-  }
-
-  // Banner detail
-  const detail = $('editor-review-banner-detail')
-  if (detail) {
-    if (reviewPrep.suggestedTrim) {
-      const lenMin = Math.round((reviewPrep.suggestedTrim.endSec - reviewPrep.suggestedTrim.startSec) / 60)
-      detail.textContent = tf('review.detectedSermon', { min: lenMin },
-        'Vi har detektert {min} min preken og foreslått trim. Gå over og trykk publiser.')
-    } else {
-      detail.textContent = t('review.noSermonFound', 'Vi fant ingen klar preken-blokk. Sjekk filen før publisering.')
-    }
-  }
-
-  // Jingle dropdowns reflect current prep state
-  const introSel = $('editor-review-intro-select') as HTMLSelectElement | null
-  const outroSel = $('editor-review-outro-select') as HTMLSelectElement | null
-  const introLbl = $('editor-review-intro-label')
-  const outroLbl = $('editor-review-outro-label')
-  if (introSel) {
-    const ip = reviewPrep.introPath
-    introSel.value = jingleValueFor(ip, settings.editorIntroPath)
-    if (introLbl) introLbl.textContent = ip ? ip.split(/[/\\]/).pop() ?? '' : ''
-  }
-  if (outroSel) {
-    const op = reviewPrep.outroPath
-    outroSel.value = jingleValueFor(op, settings.editorOutroPath)
-    if (outroLbl) outroLbl.textContent = op ? op.split(/[/\\]/).pop() ?? '' : ''
-  }
-}
-
-/** Say that the episode has left the queue, and put the banner's controls back
- *  where the (unchanged) prep says they belong.
- *
- *  Every push can come back `false`: the queue is a shared blob, and 14 days of
- *  neglect auto-discards an entry while an editor window sits open on it. Before
- *  the pushes were real this could not happen, because nothing was ever saved. */
-function reviewEntryVanished(): void {
-  toast('warn', t('review.errNotFound',
-    'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.'))
-  loadAndUpdateReviewBanner()
-}
-
-/** Turn a review-queue error code into a sentence. The one code the backend
- *  produces on its own is "the id is no longer in the queue" — which reads as
- *  a mystery unless we say what it means. */
-function describeReviewError(code: string | undefined): string | undefined {
-  if (!code) return undefined
-  if (code === 'review_entry_not_found') {
-    return t('review.errNotFound', 'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.')
-  }
-  return code
-}
-
-function setupReviewBanner(): void {
-  $('btn-review-publish')?.addEventListener('click', async () => {
-    if (!reviewPrepId) return
-    const btn = $('btn-review-publish') as HTMLButtonElement | null
-    if (!btn) return
-    // Idempotency: disable immediately on first click
-    if (btn.disabled) return
-    btn.disabled = true
-    const orig = btn.textContent
-    btn.textContent = 'Publiserer…'
-    try {
-      // Before the publish, not after: publishing is what the operator is
-      // waiting on, and `review_update_trim` patches an entry that must still
-      // be in the queue when it lands.
-      await pushSettledTrim(reviewPrepId)
-      const r = await window.api.reviewQueuePublish(reviewPrepId)
-      if (r.ok) {
-        btn.textContent = '✓ Publisert!'
-        setTimeout(() => {
-          reviewPrepId = null
-          reviewPrep = null
-          loadAndUpdateReviewBanner()
-          window.showPage('home')
-        }, 1500)
-      } else {
-        btn.disabled = false
-        btn.textContent = orig
-        await alertDialog({
-          title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
-          message: describeReviewError(r.error),
-          tone:    'error',
-        })
-      }
-    } catch (err) {
-      btn.disabled = false
-      btn.textContent = orig
-      await alertDialog({
-        title:   t('dialog.publishFailedTitle', 'Kunne ikke publisere'),
-        message: (err as Error).message,
-        tone:    'error',
-      })
-    }
-  })
-
-  $('btn-review-edit')?.addEventListener('click', () => {
-    // Drop the review banner so the user gets the normal editor — the file
-    // and cuts stay loaded, they just lose the publish-button shortcut.
-    reviewPrepId = null
-    loadAndUpdateReviewBanner()
-  })
-
-  $('btn-review-discard')?.addEventListener('click', async () => {
-    if (!reviewPrepId) return
-    const ok = await confirmDialog({
-      title:        t('dialog.discardEpisodeTitle', 'Forkast denne episoden?'),
-      message:      t('dialog.discardEpisodeBody', 'Selve opptaket beholdes, men det blir ikke publisert.'),
-      confirmLabel: t('dialog.discardEpisode', 'Forkast'),
-      danger:       true,
-    })
-    if (!ok) return
-    // The backend answers with a bool: false means the entry was already gone
-    // from the queue. Silently pretending it worked would send the user home
-    // believing they had made a decision that never landed.
-    const done = await window.api.reviewQueueDiscard(reviewPrepId)
-    if (!done) {
-      await alertDialog({
-        title:   t('dialog.discardFailedTitle', 'Kunne ikke forkaste episoden'),
-        message: describeReviewError('review_entry_not_found'),
-        tone:    'error',
-      })
-      return
-    }
-    reviewPrepId = null
-    reviewPrep = null
-    loadAndUpdateReviewBanner()
-    window.showPage('home')
-  })
-
-  // Jingle selectors. Both dropdowns run the same three steps — resolve the
-  // value to a path (opening the picker for «Egen fil»), push ONLY that field,
-  // and mirror it locally if and only if the push landed.
-  const wireJingle = (
-    selectId: string,
-    field: 'introPath' | 'outroPath',
-    defaultPath: () => string | undefined,
-  ): void => {
-    $(selectId)?.addEventListener('change', async () => {
-      if (!reviewPrepId) return
-      const sel = $(selectId) as HTMLSelectElement
-      const stored = reviewPrep?.[field]
-      let path = jinglePathFor(sel.value, defaultPath())
-      if (path === PICK) {
-        const fp = await window.api.pickAudioFile()
-        if (!fp) {
-          // Cancelled: back to what is actually stored (which may be «Ingen» —
-          // the old restore assumed «Standard» and quietly changed the choice).
-          sel.value = jingleValueFor(stored, defaultPath())
-          return
-        }
-        path = fp
-      }
-      // One key per call: the backend leaves the OTHER jingle untouched
-      // precisely because it is absent from this patch.
-      const ok = await window.api.reviewQueueUpdateJingles(reviewPrepId, { [field]: path })
-      if (!ok) { reviewEntryVanished(); return }
-      if (reviewPrep) reviewPrep[field] = path ?? undefined
-      loadAndUpdateReviewBanner()
-    })
-  }
-  wireJingle('editor-review-intro-select', 'introPath', () => settings.editorIntroPath ?? undefined)
-  wireJingle('editor-review-outro-select', 'outroPath', () => settings.editorOutroPath ?? undefined)
-
-  // Mastering preset → the queue entry.
-  //
-  // `applyReviewModeDefaults` seeds the export modal's select FROM the prep;
-  // this is the return leg, which never existed — an operator who reviewed the
-  // episode and changed the preset had that choice live only in `E`, so it was
-  // gone the moment the editor closed and the next open re-seeded the old one.
-  //
-  // Only a deliberate human pick pushes: the seeding above and the export
-  // modal's one-click auto-enhance both assign `.value` programmatically, which
-  // does not fire `change`. That is the wanted split — auto-enhance clears
-  // mastering for THIS export rather than proposing a new default for the
-  // episode. The listener is attached once here (the select is static markup);
-  // export.ts keeps its own listener for `E`, and both run.
-  $('enhance-master-preset')?.addEventListener('change', async () => {
-    if (!reviewPrepId) return
-    const presetId = ($('enhance-master-preset') as HTMLSelectElement).value
-    const ok = await window.api.reviewQueueUpdateMasterPreset(reviewPrepId, presetId)
-    // No banner repaint on failure: the preset the user just picked still
-    // governs the export they are about to run — only the queue entry (which no
-    // longer exists) missed it.
-    if (!ok) { toast('warn', t('review.errNotFound',
-      'Episoden ligger ikke lenger i gjennomgangs-køen — den kan allerede være publisert eller forkastet.')); return }
-    if (reviewPrep) reviewPrep.masterPreset = presetId
-  })
-
-}
-
-/**
- * Push the trim the operator settled on back into the queue entry, so the
- * backend can record how far it moved from what the analysis proposed.
- *
- * This is the caller the standing note in `setupReviewBanner` was waiting for.
- * That note refused to collapse `E.cuts` into `suggestedTrim`, and rightly:
- * cuts are removed ranges anywhere in the file, and flattening them into one
- * kept span would discard every cut but the outer two. `keptSpanFromCuts` asks
- * the narrower, answerable question instead — where does the kept material
- * begin and end — and leaves interior cuts untouched. See `review-trim.ts`.
- *
- * ## Why at publish, and not on every cut edit
- *
- * A trim mid-edit is not a decision, it is a hand on a mouse. Publishing is the
- * moment the operator commits to the boundaries, and it is the only moment
- * their span means "this is where the sermon is". Pushing on every drag would
- * fill the record with intermediate positions that no human ever endorsed.
- *
- * ## Quiet on failure, always
- *
- * Awaited — it has to land while the entry is still in the queue — but it never
- * rejects and never raises a dialog. This runs seconds before a publish and
- * possibly minutes before a service; a queue entry that vanished
- * (auto-discarded while the editor sat open) is not something a volunteer can
- * do anything about, and the publish itself reports its own failures perfectly
- * well. Losing one recording's worth of training data is the cheapest possible
- * outcome here.
- */
-async function pushSettledTrim(prepId: string): Promise<void> {
-  try {
-    const span = keptSpanFromCuts(E.cuts, E.duration)
-    // No usable span: the cuts remove everything, or no file is loaded. Pushing
-    // nothing is right — the stored proposal is better than a broken trim.
-    if (!span) return
-    await window.api.reviewQueueUpdateTrim(prepId, span)
-  } catch (err) {
-    console.warn('[review] could not record the settled trim:', err)
-  }
-}
-
 /** Called when the user navigates BACK to the editor tab. Repaints the
  *  waveform if a file is still loaded — the canvas might have been resized
  *  or had its backing store cleared while away. Cheap no-op if no file. */
@@ -798,10 +470,8 @@ export function deactivateEditor(): void {
     E.videoEl.pause()
   }
   // Note: deliberately NOT touching peaks / playerEl / cuts / cutHistory /
-  // suggestions / clipTimes / meta / isVideoFile / audioGainDb / reviewPrepId.
-  // Those are owned by the open-file lifecycle, not the tab-visibility one.
-  reviewPrep = null
-  loadAndUpdateReviewBanner()
+  // suggestions / clipTimes / meta / isVideoFile / audioGainDb. Those are
+  // owned by the open-file lifecycle, not the tab-visibility one.
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────
@@ -1069,15 +739,8 @@ export function showState(state: 'empty' | 'loading' | 'workspace'): void {
  * home of history — `settings.recordingHistory` was the localStorage-era
  * shadow copy, which stopped being written when the sqlite `recording` table
  * became authoritative), and makes each item clickable via openEditorWithFile.
- *
- * Also shows the "Gjennomgangs-kø" link when there are pending review-queue
- * entries. The link navigates to home (where the prep queue lives).
  */
 function renderRecentFiles(): void {
-  // The review-queue link is decided on its own — it used to be skipped
-  // entirely by the early return below, so a fresh install with a queued
-  // episode but no recent-file history never saw it.
-  void refreshEmptyStateReviewLink()
   void renderRecentFilesFromHistory()
 }
 
@@ -1107,35 +770,6 @@ async function renderRecentFilesFromHistory(): Promise<void> {
       if (e.path) openEditorWithFile(e.path)
     })
     list.appendChild(item)
-  }
-}
-
-/**
- * Show the "Gjennomgangs-kø →" link only when there is something in the queue.
- *
- * It used to be shown unconditionally — a link promising a queue that, until
- * this branch wired `review_queue_list` up, was always empty. Now the queue is
- * real, so ask it: an empty queue gets no link, and a non-empty one says how
- * many are waiting.
- */
-async function refreshEmptyStateReviewLink(): Promise<void> {
-  const wrap = $('editor-empty-review')
-  const link = $('editor-empty-review-link')
-  if (!wrap) return
-  wrap.style.display = 'none'
-  try {
-    const entries = await window.api.reviewQueueList()
-    const pending = entries.filter(e =>
-      e.prep.status !== 'published' && e.prep.status !== 'discarded')
-    if (pending.length === 0) return
-    if (link) {
-      link.textContent = tn('editor.gotoReviewCount', pending.length, {},
-        'Gjennomgangs-kø ({n} episoder) →')
-    }
-    wrap.style.display = ''
-  } catch (err) {
-    // A queue we cannot read is not a queue we should advertise.
-    console.warn('[editor] review queue lookup failed:', err)
   }
 }
 
@@ -1218,9 +852,6 @@ function closeCurrentFile(): void {
   E.isVideoFile = false
   E.audioGainDb = 0
   setNormalizeUI(0, false)
-  reviewPrepId = null
-  reviewPrep = null
-  loadAndUpdateReviewBanner()
   E.filePath = ''
   E.duration = 0
   showState('empty')

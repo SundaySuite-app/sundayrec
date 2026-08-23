@@ -565,11 +565,6 @@ type RecordingRow = {
   note: string | null;
 };
 
-/** The bit of `ReviewQueueEntry` the shim itself needs (picking by id). The
- *  full shape is the renderer's `ReviewQueueEntry` / the ts-rs binding — the
- *  backend already serialises it camelCase, so it passes through untouched. */
-type ReviewQueueEntryLike = { id: string };
-
 // Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
 // so deleteHistoryEntry(timestamp) can call recordings_delete(id).
 const historyIdByTs = new Map<number, string>();
@@ -1890,64 +1885,6 @@ const api: Record<string, unknown> = {
   },
   whisperCancelTranscribe: async (jobId: string) =>
     call("whisper_cancel_transcribe", { jobId }, false),
-
-  // ── Review queue ────────────────────────────────────────────────────────
-  // `review_queue_list` (commands/review.rs) returns the persisted queue
-  // newest-first with `ageInDays` filled in — already the renderer's
-  // `ReviewQueueEntry` shape (camelCase), so no adaptation is needed. An empty
-  // queue is the normal case: the home card hides itself on `[]`.
-  reviewQueueList: async () =>
-    call<ReviewQueueEntryLike[]>("review_queue_list", undefined, []),
-  // No `review_queue_get` command exists — the queue is a single JSON blob, so
-  // reading one entry means reading the list and picking. Cheap (a handful of
-  // entries) and keeps the backend surface as it is.
-  reviewQueueGet: async (id: string) => {
-    const all = await call<ReviewQueueEntryLike[]>(
-      "review_queue_list",
-      undefined,
-      [],
-    );
-    return all.find((e) => e?.id === id) ?? null;
-  },
-  // `review_mark_published` returns a bool: false = no such id in the queue
-  // (already published, or the queue was cleared). Surface that as a real
-  // reason instead of a silent no-op — the editor shows `error` in a dialog.
-  reviewQueuePublish: async (id: string) => {
-    try {
-      const ok = await invoke<boolean>("review_mark_published", { id });
-      return ok
-        ? { ok: true as const }
-        : { ok: false as const, error: "review_entry_not_found" };
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  reviewQueueDiscard: async (id: string) =>
-    call<boolean>("review_mark_discarded", { id }, false),
-  // The three field pushes back INTO the queue entry. Each returns the
-  // backend's own bool verbatim: `false` = that id is no longer in the queue
-  // (published, discarded, or auto-discarded while the editor sat open), which
-  // the editor turns into a toast instead of a local mutation nobody saved.
-  // These three were `async () => true` — the intro/outro dropdowns reported
-  // success and changed nothing on disk.
-  //
-  // `false` is also the `call` fallback, on purpose: a rejected invoke is not a
-  // silent success either.
-  reviewQueueUpdateTrim: async (
-    id: string,
-    trim: { startSec: number; endSec: number },
-  ) => call<boolean>("review_update_trim", { id, trim }, false),
-  reviewQueueUpdateMasterPreset: async (id: string, presetId: string) =>
-    call<boolean>("review_update_master_preset", { id, presetId }, false),
-  // `jingles` is a PARTIAL patch and the backend reads three states per field:
-  // an omitted key leaves that jingle alone, an explicit `null` clears it, a
-  // string sets it. Send ONE key per call (which is what the two dropdowns do)
-  // and the other jingle is guaranteed untouched. See `JinglesPatch` in
-  // src-tauri/src/commands/review.rs for the contract.
-  reviewQueueUpdateJingles: async (
-    id: string,
-    jingles: { introPath?: string | null; outroPath?: string | null },
-  ) => call<boolean>("review_update_jingles", { id, jingles }, false),
 
   // ── Integrations (Sunday-suite) ─────────────────────────────────────────
   //

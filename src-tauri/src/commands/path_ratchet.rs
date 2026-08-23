@@ -75,13 +75,11 @@ const GUARDED: &[&str] = &[
     "integrations_song_submit_usage",
     "integrations_sundayedit_send",
     "integrations_sundayedit_import",
-    "stage_import_apply",
     "settings_export_to_file",
     "settings_import_from_file",
     "cloud_enqueue_backup",
     "open_in_sundayedit",
     "open_in_sundaystudio",
-    "prep_build_episode",
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process

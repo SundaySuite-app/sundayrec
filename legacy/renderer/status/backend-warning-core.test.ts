@@ -51,8 +51,8 @@ function warning(over: Partial<BackendWarning> = {}): BackendWarning {
 describe('code → locale key', () => {
   it('has a key for every code the Rust side can emit', () => {
     // Mirrors `sundayrec_core::notify::code::ALL`, which is asserted to have
-    // exactly these seven entries. A backend code with no entry here degrades
-    // to the Norwegian `msg` — survivable, but not what we ship.
+    // exactly these entries. A backend code with no entry here degrades to
+    // the Norwegian `msg` — survivable, but not what we ship.
     expect(Object.keys(WARNING_KEYS).sort()).toEqual([
       'cloud_reauth_required',
       'cloud_upload_failed',
@@ -60,7 +60,6 @@ describe('code → locale key', () => {
       'disk_low',
       'preroll_dead',
       'recovery_skipped',
-      'review_overdue',
     ])
   })
 
@@ -164,19 +163,6 @@ describe('toWarningView', () => {
     expect(toWarningView(warning({ code: 'something_new', msg: null }), t, tn)?.text).toBe(
       'something_new',
     )
-  })
-
-  it('picks the plural form for a count-governed warning', () => {
-    // review_overdue reads «har ventet i {days} dager» — one string per count
-    // before this. Norwegian needs «1 dag»; Polish needs a third form for 2–4.
-    const norsk = (days: string) =>
-      toWarningView(
-        warning({ code: 'review_overdue', msg: null, params: { days, episode: 'Gudstjeneste' } }),
-        t,
-        tn,
-      )?.text
-    expect(norsk('1')).toBe('En episode har ventet i 1 dag på gjennomgang: Gudstjeneste')
-    expect(norsk('5')).toBe('En episode har ventet i 5 dager på gjennomgang: Gudstjeneste')
   })
 
   it('lists every count-governed warning against a real plural group', () => {

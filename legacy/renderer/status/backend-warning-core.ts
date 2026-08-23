@@ -45,20 +45,18 @@ export const WARNING_KEYS: Record<string, string> = {
   recovery_skipped: 'notify.recoverySkipped',
   device_missing: 'notify.deviceMissing',
   disk_low: 'notify.diskLow',
-  review_overdue: 'notify.reviewOverdue',
 }
 
 /**
  * Codes whose copy is governed by a count, and which param carries it.
  *
- * `review_overdue` says «har ventet i {days} dager» — one string for every
- * count, which is wrong in Polish for 1 («1 dnia», not «1 dni») and in every
- * language for 1 day. The locale value for these keys is a plural GROUP, so
- * the template has to be picked before it is interpolated.
+ * Empty today (the one count-governed code, the review queue's «har ventet i
+ * {days} dager», left with the review queue). The mechanism stays: a locale
+ * value under one of these keys is a plural GROUP, so the template has to be
+ * picked before it is interpolated — wrong in Polish for 1 («1 dnia», not
+ * «1 dni») and in every language for 1 day otherwise.
  */
-export const WARNING_COUNT_PARAMS: Record<string, string> = {
-  review_overdue: 'days',
-}
+export const WARNING_COUNT_PARAMS: Record<string, string> = {}
 
 /** What home.ts needs to raise the toast. */
 export interface WarningView {

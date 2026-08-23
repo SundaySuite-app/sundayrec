@@ -57,10 +57,6 @@ pub mod code {
     /// — well above the engine's terminal stop threshold, so this is a nudge
     /// while there is still time to act, not the emergency stop.
     pub const DISK_LOW: &str = "disk_low";
-    /// An episode has sat in the review queue for a week. Two more and the
-    /// queue discards it on its own, so this is the last rung that still asks
-    /// rather than acts.
-    pub const REVIEW_OVERDUE: &str = "review_overdue";
 
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
@@ -71,7 +67,6 @@ pub mod code {
         RECOVERY_SKIPPED,
         DEVICE_MISSING,
         DISK_LOW,
-        REVIEW_OVERDUE,
     ];
 }
 

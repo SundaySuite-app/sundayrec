@@ -51,7 +51,6 @@ use sundayrec_core::webhook::{build_webhook_body, WebhookPayload, WebhookSeverit
 use crate::db::Db;
 
 pub mod disk;
-pub mod reminders;
 
 pub use sundayrec_core::notify::code;
 

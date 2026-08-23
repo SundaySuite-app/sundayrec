@@ -17,7 +17,7 @@ import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from
 import { loadTranscriptForFile } from '../editor-transcript'
 import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
 
-import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
+import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
 import { updateStageButton } from './stage-ui'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
@@ -483,9 +483,8 @@ export async function loadFile(fp: string): Promise<void> {
 
   // Auto-run segment analysis. Runs in the background so the editor is
   // immediately interactive — when analysis completes we surface the
-  // auto-trim suggestion banner so the user can one-click prep a podcast
-  // episode. Skipped if cuts were restored from a draft (they're already
-  // editing) or if the user is in review-mode (handled separately).
+  // auto-trim suggestion banner so the user can one-click trim to the sermon.
+  // Skipped if cuts were restored from a draft (they're already editing).
   //
   // Fired after the peaks + transport are resolved (never off a load-time
   // timer): detection can be another full ffmpeg pass over the recording, and
@@ -494,7 +493,7 @@ export async function loadFile(fp: string): Promise<void> {
   // further to idle time so the FIRST PAINT of the workspace is never competing
   // with a decode; on a reopen the backend answers from its segments cache and
   // this returns almost immediately anyway.
-  if (!E.isVideoFile && E.cuts.length === 0 && !reviewPrepId) {
+  if (!E.isVideoFile && E.cuts.length === 0) {
     whenIdle(() => {
       if (seq === E.loadSeq) void runDetection(true)
     })

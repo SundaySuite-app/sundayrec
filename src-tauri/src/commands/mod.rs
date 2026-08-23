@@ -30,7 +30,6 @@ pub mod path_guard;
 mod path_ratchet;
 pub mod publish;
 pub mod recorder;
-pub mod review;
 pub mod scheduler;
 pub mod settings;
 // E3 — opt-in telemetry: consent, deletion, counters, and the "show me exactly

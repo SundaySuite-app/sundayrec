@@ -103,17 +103,9 @@ pub mod tray;
 // until the entry is purged, which is the only step that loses anything.
 pub mod trash;
 
-/// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
-/// feature is off, so callers (the review commands) stay `cfg`-free.
-#[cfg(feature = "tray")]
-pub(crate) fn tray_note_review_queue(app: &tauri::AppHandle) {
-    tray::refresh_review_queue(app);
-}
-#[cfg(not(feature = "tray"))]
-pub(crate) fn tray_note_review_queue(_app: &tauri::AppHandle) {}
-
 /// Set the menubar tray's language from a UI language code. No-op without the
-/// `tray` feature — see [`tray_note_review_queue`].
+/// `tray` feature, so the caller (the `tray_set_language` command) stays
+/// `cfg`-free.
 #[cfg(feature = "tray")]
 pub(crate) fn tray_note_language(app: &tauri::AppHandle, code: &str) {
     tray::set_lang(app, sundayrec_core::tray::TrayLang::from_code(Some(code)));
@@ -407,15 +399,6 @@ pub fn run() {
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
-            // Arm the review-queue reminder tick. The 24 h / 48 h / 7 d / auto-
-            // discard ladder in `sundayrec_core::review_queue` was complete and
-            // tested, and reachable only through a command with no callers —
-            // so an episode nobody reviewed sat in silence until it deleted
-            // itself a fortnight later. Its own small task, deliberately not the
-            // scheduler supervisor: nothing about a reminder belongs inside the
-            // loop that has to fire a recording start on time.
-            notify::reminders::spawn(app.handle().clone());
-
             // Expire the Papirkurv. Without this the trash is a folder that
             // only ever grows — a delete that silently keeps every byte
             // forever is not a delete, it is a leak with a nice name.
@@ -494,12 +477,7 @@ pub fn run() {
                 // it arrives via `tray_set_language` on boot; Norwegian until then.
                 let lang = TrayLang::from_code(None);
                 match tray::install(app.handle(), &TrayState::default(), lang) {
-                    Ok(()) => {
-                        tray::wire_state_sources(app.handle());
-                        // First paint of the review-queue callout — the scheduler
-                        // event that normally refreshes it may be minutes away.
-                        tray::refresh_review_queue(app.handle());
-                    }
+                    Ok(()) => tray::wire_state_sources(app.handle()),
                     Err(e) => tracing::warn!("tray install failed: {e}"),
                 }
 
@@ -673,17 +651,6 @@ pub fn run() {
             commands::companion::companion_llm_status,
             commands::companion::companion_set_llm_key,
             commands::companion::companion_clear_llm_key,
-            // PU-6 episode prep + review queue + Stage import.
-            commands::review::prep_build_episode,
-            commands::review::review_queue_list,
-            commands::review::review_mark_published,
-            commands::review::review_mark_discarded,
-            commands::review::review_update_trim,
-            commands::review::review_update_master_preset,
-            commands::review::review_update_jingles,
-            commands::review::review_process_reminders,
-            commands::review::stage_import_manifest,
-            commands::review::stage_import_apply,
             // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
             // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
             commands::integrations::integrations_get_settings,

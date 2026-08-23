@@ -5,7 +5,7 @@ import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInf
 import type { ThumbnailView } from '../bindings/ThumbnailView'
 import type { TrashEntry } from '../bindings/TrashEntry'
 
-import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
+import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
 import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList } from './pages/audio-page'
 import { stopChannelGrid } from './pages/channel-grid'
@@ -18,7 +18,7 @@ import {
   paintActiveUpdateChannel,
 } from './pages/general-page'
 import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
-import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
+import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
@@ -67,7 +67,6 @@ declare global {
     showOnboarding: () => void
     __isRecording: boolean
     openEditorWithFile: (filePath: string, seekToSec?: number) => void
-    openEditorReviewMode?: (prepId: string, filePath: string) => void
     api: {
       getSettings:         () => Promise<Settings>
       saveSettings:        (s: Settings) => Promise<boolean>
@@ -281,17 +280,6 @@ declare global {
       whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
       whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
-      reviewQueueList:                () => Promise<import('../types').ReviewQueueEntry[]>
-      reviewQueueGet:                 (id: string) => Promise<import('../types').ReviewQueueEntry | null>
-      reviewQueuePublish:             (id: string) => Promise<{ ok: boolean; error?: string }>
-      reviewQueueDiscard:             (id: string) => Promise<boolean>
-      // The three review-queue field pushes. All three answer `false` when the
-      // id has left the queue — treat that as "not saved", never as a no-op.
-      reviewQueueUpdateTrim:          (id: string, trim: { startSec: number; endSec: number }) => Promise<boolean>
-      reviewQueueUpdateMasterPreset:  (id: string, presetId: string) => Promise<boolean>
-      /** PARTIAL patch: an omitted key leaves that jingle alone, `null` clears
-       *  it, a string sets it. Send one key per call. */
-      reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
       recordingPreviewFrame: () => Promise<string | null>
@@ -605,7 +593,6 @@ async function init(): Promise<void> {
   initTrayActions({
     startRecording: () => void openManualModal(),
     stopRecording: () => void doStopRecording(),
-    openReviewQueue: openReviewQueueFromTray,
     // Rust does NOT handle this one (it falls through `emit_action`'s catch-all),
     // and the save folder is a renderer setting anyway.
     openRecordingsFolder: () => {
@@ -625,7 +612,6 @@ async function init(): Promise<void> {
   enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile
-  window.openEditorReviewMode = openEditorReviewMode
 
   // Fetch app version from main (sandbox-safe — no fs/path in preload)
   window.appVersion = await window.api.getAppVersion().catch(() => '—')

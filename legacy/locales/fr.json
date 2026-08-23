@@ -220,52 +220,6 @@
     },
     "movedNamed": "«{name}» est dans la corbeille"
   },
-  "review": {
-    "queueTitle": "Prêts pour relecture et publication",
-    "queueCount": {
-      "one": "{n} épisode",
-      "other": "{n} épisodes"
-    },
-    "needsAttention": "Attention requise",
-    "openReview": "Relire →",
-    "sermonGuess": "Sermon estimé : {min} min",
-    "sermonNotFound": "Sermon non détecté",
-    "bannerDetail": "Nous avons détecté le sermon et proposé un découpage. Vérifiez puis cliquez sur Publier.",
-    "detectedSermon": "Nous avons détecté une prédication de {min} min et suggéré une coupe. Vérifiez et cliquez sur publier.",
-    "noSermonFound": "Aucun bloc de prédication clair trouvé. Vérifiez le fichier avant publication.",
-    "dayNames": [
-      "Dimanche",
-      "Lundi",
-      "Mardi",
-      "Mercredi",
-      "Jeudi",
-      "Vendredi",
-      "Samedi"
-    ],
-    "monthNames": [
-      "janvier",
-      "février",
-      "mars",
-      "avril",
-      "mai",
-      "juin",
-      "juillet",
-      "août",
-      "septembre",
-      "octobre",
-      "novembre",
-      "décembre"
-    ],
-    "ageNow": "À l’instant",
-    "ageHours": "il y a {n}h",
-    "ageDays": {
-      "one": "il y a {n} jour",
-      "other": "il y a {n} jours"
-    },
-    "ageOldest": "il y a plus de 14 jours",
-    "confident": "sûr",
-    "errNotFound": "Cet épisode n'est plus dans la file de relecture — il a peut-être déjà été publié ou écarté."
-  },
   "schedule": {
     "title": "Planning hebdomadaire",
     "subtitle": "Enregistrements fixes qui se répètent automatiquement chaque semaine.",
@@ -766,8 +720,6 @@
     "saveError": "✕ Échec de l’enregistrement",
     "promptTitle": "Voulez-vous éditer l’enregistrement ?",
     "promptOpen": "Ouvrir dans l’éditeur",
-    "reviewEdit": "↻ Modifier les détails",
-    "reviewDiscard": "✗ Ne pas publier cette semaine",
     "normalizePeak": "Normaliser le niveau",
     "normalizeHint": "Ajuste la crête à -1 dBFS pour un mix final sûr.",
     "normalizeApplied": "Normalisé",
@@ -799,7 +751,6 @@
     "closeFile": "Fermer le fichier",
     "emptyTitleDrop": "Déposez un fichier ici — ou cliquez pour ouvrir",
     "recentTitle": "Fichiers récents",
-    "gotoReview": "File de relecture →",
     "analyzeTitle": "Analyser l’enregistrement",
     "analyzeRun": "▶ Analyser l’enregistrement",
     "analyzing": "Analyse en cours…",
@@ -893,10 +844,6 @@
     "videoFormat": "Format vidéo",
     "vocalChain": "Traitement de la voix",
     "exportDoneToast": "Exporté{name}",
-    "gotoReviewCount": {
-      "one": "File de relecture ({n} épisode) →",
-      "other": "File de relecture ({n} épisodes) →"
-    },
     "enhanceNone": "Aucun",
     "vcLight": "Voix — léger",
     "vcPodcast": "Voix podcast (recommandé)",
@@ -1121,10 +1068,6 @@
     "recoverySkipped": "Un enregistrement interrompu n'a pas pu être entièrement récupéré : {file}",
     "deviceMissing": "Le périphérique audio « {device} » n'est pas connecté.",
     "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein.",
-    "reviewOverdue": {
-      "one": "Un épisode attend une relecture depuis {days} jour : {episode}",
-      "other": "Un épisode attend une relecture depuis {days} jours : {episode}"
-    },
     "systemTitle": "Notifications système",
     "emailTitle": "Notifications par e-mail",
     "smtpServer": "SERVICE E-MAIL (SMTP)",
@@ -1437,12 +1380,7 @@
     "pickScreenTitle": "Choisir un écran",
     "deleteTranscriptBody": "L’enregistrement lui-même est conservé. Vous pourrez le transcrire à nouveau plus tard.",
     "discardEditsBody": "Les coupes que vous avez faites seront perdues. Le fichier d’enregistrement lui-même n’est pas touché.",
-    "discardEdits": "Abandonner les modifications",
-    "discardEpisodeTitle": "Abandonner cet épisode ?",
-    "discardEpisodeBody": "L’enregistrement est conservé, mais il ne sera pas publié.",
-    "discardEpisode": "Abandonner",
-    "publishFailedTitle": "Publication impossible",
-    "discardFailedTitle": "Impossible d'écarter l'épisode"
+    "discardEdits": "Abandonner les modifications"
   },
   "toast": {
     "dismiss": "Fermer"

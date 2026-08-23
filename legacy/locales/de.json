@@ -220,52 +220,6 @@
     },
     "movedNamed": "„{name}“ liegt im Papierkorb"
   },
-  "review": {
-    "queueTitle": "Bereit zur Prüfung und Veröffentlichung",
-    "queueCount": {
-      "one": "{n} Episode",
-      "other": "{n} Episoden"
-    },
-    "needsAttention": "Aufmerksamkeit erforderlich",
-    "openReview": "Prüfen →",
-    "sermonGuess": "Vermutete Predigt: {min} Min.",
-    "sermonNotFound": "Predigt nicht erkannt",
-    "bannerDetail": "Wir haben die Predigt erkannt und einen Zuschnitt vorgeschlagen. Bitte prüfen und auf Veröffentlichen klicken.",
-    "detectedSermon": "Wir haben eine {min}-Minuten-Predigt erkannt und einen Schnitt vorgeschlagen. Überprüfen Sie und klicken Sie auf Veröffentlichen.",
-    "noSermonFound": "Kein eindeutiger Predigtblock gefunden. Überprüfen Sie die Datei vor der Veröffentlichung.",
-    "dayNames": [
-      "Sonntag",
-      "Montag",
-      "Dienstag",
-      "Mittwoch",
-      "Donnerstag",
-      "Freitag",
-      "Samstag"
-    ],
-    "monthNames": [
-      "Januar",
-      "Februar",
-      "März",
-      "April",
-      "Mai",
-      "Juni",
-      "Juli",
-      "August",
-      "September",
-      "Oktober",
-      "November",
-      "Dezember"
-    ],
-    "ageNow": "Gerade jetzt",
-    "ageHours": "vor {n}h",
-    "ageDays": {
-      "one": "vor {n} Tag",
-      "other": "vor {n} Tagen"
-    },
-    "ageOldest": "vor über 14 Tagen",
-    "confident": "sicher",
-    "errNotFound": "Diese Folge ist nicht mehr in der Prüfliste — sie wurde möglicherweise bereits veröffentlicht oder verworfen."
-  },
   "schedule": {
     "title": "Wochenplan",
     "subtitle": "Feste Aufnahmen, die sich automatisch jede Woche wiederholen.",
@@ -766,8 +720,6 @@
     "saveError": "✕ Fehler beim Speichern",
     "promptTitle": "Möchten Sie die Aufnahme bearbeiten?",
     "promptOpen": "Im Editor öffnen",
-    "reviewEdit": "↻ Details bearbeiten",
-    "reviewDiscard": "✗ Diese Woche nicht veröffentlichen",
     "normalizePeak": "Pegel normalisieren",
     "normalizeHint": "Setzt den Spitzenpegel auf -1 dBFS für eine sichere Endmischung.",
     "normalizeApplied": "Normalisiert",
@@ -799,7 +751,6 @@
     "closeFile": "Datei schließen",
     "emptyTitleDrop": "Datei hier ablegen — oder klicken zum Öffnen",
     "recentTitle": "Zuletzt verwendete Dateien",
-    "gotoReview": "Prüfwarteschlange →",
     "analyzeTitle": "Aufnahme analysieren",
     "analyzeRun": "▶ Aufnahme analysieren",
     "analyzing": "Wird analysiert…",
@@ -893,10 +844,6 @@
     "videoFormat": "Videoformat",
     "vocalChain": "Stimmbearbeitung",
     "exportDoneToast": "Exportiert{name}",
-    "gotoReviewCount": {
-      "one": "Prüfliste ({n} Folge) →",
-      "other": "Prüfliste ({n} Folgen) →"
-    },
     "enhanceNone": "Keine",
     "vcLight": "Stimme — leicht",
     "vcPodcast": "Podcast-Stimme (empfohlen)",
@@ -1121,10 +1068,6 @@
     "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
     "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
     "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist.",
-    "reviewOverdue": {
-      "one": "Eine Folge wartet seit {days} Tag auf Durchsicht: {episode}",
-      "other": "Eine Folge wartet seit {days} Tagen auf Durchsicht: {episode}"
-    },
     "systemTitle": "Systembenachrichtigungen",
     "emailTitle": "E-Mail-Benachrichtigungen",
     "smtpServer": "E-MAIL-DIENST (SMTP)",
@@ -1437,12 +1380,7 @@
     "pickScreenTitle": "Bildschirm wählen",
     "deleteTranscriptBody": "Die Aufnahme selbst bleibt erhalten. Sie können später erneut transkribieren.",
     "discardEditsBody": "Ihre Schnitte gehen verloren. Die Aufnahmedatei selbst bleibt unberührt.",
-    "discardEdits": "Änderungen verwerfen",
-    "discardEpisodeTitle": "Diese Episode verwerfen?",
-    "discardEpisodeBody": "Die Aufnahme bleibt erhalten, wird aber nicht veröffentlicht.",
-    "discardEpisode": "Verwerfen",
-    "publishFailedTitle": "Veröffentlichung fehlgeschlagen",
-    "discardFailedTitle": "Die Folge konnte nicht verworfen werden"
+    "discardEdits": "Änderungen verwerfen"
   },
   "toast": {
     "dismiss": "Schließen"
