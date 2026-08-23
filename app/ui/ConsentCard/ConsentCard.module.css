@@ -1,0 +1,44 @@
+/*
+ * Gullkanten er canvasens (sett 7.1): kortet er ikke en advarsel og ikke en
+ * feil, det er husets egen stemme som spør om noe. Gull er den ene fargen som
+ * betyr «SundayRec snakker», og den brukes ingen andre steder som tone.
+ */
+.card {
+  display: grid;
+  gap: var(--sp-3);
+  max-width: 640px;
+  padding: 18px var(--sp-5);
+  border-radius: var(--r);
+  border: 1px solid var(--gold-line);
+  background: var(--surface);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.description {
+  margin: 0;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--bad);
+}
+
+/*
+ * «Nei takk» først og som en ekte knapp. Rekkefølgen er ikke smak: et valg der
+ * det ene svaret er en knapp og det andre ser ut som fint trykk er ikke et
+ * fritt valg.
+ */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}

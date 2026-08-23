@@ -38,6 +38,7 @@ import {
 import { Button } from "./Button/Button";
 import { Card } from "./Card/Card";
 import { Chip } from "./Chip/Chip";
+import { ConsentCard } from "./ConsentCard/ConsentCard";
 import { DecisionCard } from "./DecisionCard/DecisionCard";
 import { DialogHost } from "./DialogHost/DialogHost";
 import { EmptyState } from "./EmptyState/EmptyState";
@@ -77,6 +78,18 @@ const LIBRARY: Array<{
     derived: ["probe-title", "probe-description"],
   },
   { name: "Chip", markup: () => render(<Chip testId="probe">x</Chip>) },
+  {
+    name: "ConsentCard",
+    markup: () =>
+      render(
+        <ConsentCard
+          testId="probe"
+          onExplain={() => {}}
+          onAnswered={() => {}}
+        />,
+      ),
+    derived: ["probe-title", "probe-description", "probe-yes", "probe-no"],
+  },
   {
     name: "DecisionCard",
     markup: () =>
@@ -310,7 +323,7 @@ describe("komponentbiblioteket", () => {
   it("dekker hele biblioteket — en komponent uten rad ville sluppet unna", () => {
     // Et tall å måtte oppdatere BEVISST. Legger noen til en komponent uten en
     // rad her, feiler denne i stedet for at dekningen stille blir mindre.
-    expect(LIBRARY.length).toBe(24);
+    expect(LIBRARY.length).toBe(25);
   });
 });
 
@@ -334,6 +347,7 @@ describe("en farlig dialog", () => {
   it("har rød SEKUNDÆR-knapp, aldri rød primær", () => {
     activeDialog.value = {
       id: 1,
+      kind: "confirm",
       spec: { title: "Tømme papirkurven?", danger: true },
     };
     const html = render(<DialogHost />);
@@ -348,7 +362,11 @@ describe("en farlig dialog", () => {
   });
 
   it("en ufarlig dialog har primær bekreft og ingen rød knapp", () => {
-    activeDialog.value = { id: 2, spec: { title: "Fortsette?" } };
+    activeDialog.value = {
+      id: 2,
+      kind: "confirm",
+      spec: { title: "Fortsette?" },
+    };
     const html = render(<DialogHost />);
     activeDialog.value = null;
 
@@ -359,6 +377,25 @@ describe("en farlig dialog", () => {
   it("er ingenting når køen er tom", () => {
     activeDialog.value = null;
     expect(render(<DialogHost />)).toBe("");
+  });
+
+  it("en alert har ÉN knapp, og kan bære en ordrett blokk", () => {
+    // «Vis hva som sendes» er hele telemetri-nyttelasten som JSON. Den bor i
+    // den samme køen og den samme verten som bekreftelsene, fordi verten er
+    // det ene stedet som setter `inert` på resten av appen — en andre
+    // modal-mekanisme ville vært et andre sted det kunne bli glemt.
+    activeDialog.value = {
+      id: 3,
+      kind: "alert",
+      spec: { title: "Hva sendes", preformatted: '{ "a": 1 }' },
+    };
+    const html = render(<DialogHost />);
+    activeDialog.value = null;
+
+    expect(html).toContain('data-dialog-button="ok"');
+    expect(html).not.toContain('data-dialog-button="cancel"');
+    expect(html).toContain('data-testid="dialog-pre"');
+    expect(html).toContain("&quot;a&quot;: 1");
   });
 });
 

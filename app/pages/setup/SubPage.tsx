@@ -5,14 +5,30 @@
  * «Tilbake» er en ekte knapp og ikke bare skinnen: skinnen tar deg til
  * OPPSETT-destinasjonen, men en frivillig som står inne i «Hvilken lyd?» har
  * ikke noe språk for at det er samme sted. Knappen sier det.
+ *
+ * ## Sekvens-modus
+ *
+ * Første gang vises de samme fem skjermene ETTER HVERANDRE, og da eier
+ * `FirstRun` navigasjonen: «Neste», «Tilbake» og nødutgangen står i ÉN foot,
+ * under skjermen, og en «Tilbake» her i tillegg ville vært to knapper som gjør
+ * to forskjellige ting og heter det samme.
+ *
+ * Et modulnivå-signal og ikke en prop, av samme grunn som resten av `app/state`
+ * er signaler: den ene som trenger å vite dette er rammen, og en prop måtte
+ * ellers tres gjennom `SetupPage` og alle fem sidene — fem filer endret for én
+ * boolean som ingen av dem bruker.
  */
 
+import { signal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 
 import { t } from "../../i18n";
 import { navigate } from "../../router/router";
 import { Button } from "../../ui/Button/Button";
 import styles from "./setup.module.css";
+
+/** Står vi inne i første-gangs-sekvensen? `FirstRun` setter og rydder. */
+export const inSequence = signal(false);
 
 export interface SubPageProps {
   /** Én setning: hva skjermen er for. */
@@ -26,13 +42,15 @@ export function SubPage({ lede, children, testId }: SubPageProps) {
     <div data-testid={testId} class={styles.sub}>
       <div class={styles.subHead}>
         <p class={styles.lede}>{lede}</p>
-        <Button
-          variant="ghost"
-          testId="setup-back"
-          onClick={() => navigate("setup")}
-        >
-          {t("app.setup.back")}
-        </Button>
+        {inSequence.value ? null : (
+          <Button
+            variant="ghost"
+            testId="setup-back"
+            onClick={() => navigate("setup")}
+          >
+            {t("app.setup.back")}
+          </Button>
+        )}
       </div>
       {children}
     </div>

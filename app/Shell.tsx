@@ -20,9 +20,19 @@
  *   BIBLIOTEK antall opptak telles på ekte (`recordings_list`). Null →
  *             tomtilstanden. Flere → hvor de ligger. Aldri «ingen opptak» på
  *             en maskin som har tolv.
- *   OPPSETT   ER bygget (P1a): de fem spørsmålene med svaret som står nå, de
- *             fem skjermene «Endre» åpner, og de to tilleggene. Se
- *             `app/pages/setup/`.
+ *   OPPSETT   ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
+ *             nå, de fem skjermene «Endre» åpner, de to tilleggene og
+ *             Avansert. Se `app/pages/setup/`.
+ *
+ * ## Første gang, og samtykkekortet
+ *
+ * `route.firstRun` bytter ut HELE innholdet med sekvensen (`FirstRun`): de
+ * samme fem skjermene, ett spørsmål om gangen. Skinnen står, fordi den er
+ * stedet appen er.
+ *
+ * Samtykkekortet hører til OPPTAK og ikke til sekvensen — canvasens sett 6
+ * flyttet det ut med vilje. Det står her, over plassholderen, så P4 arver det
+ * når den ekte opptakssiden bygges: kortet er ferdig, plassen er kjent.
  *
  * ## Overlays er søsken av `#app`
  *
@@ -31,7 +41,11 @@
  * mens en dialog er åpen, og en dialog inne i `#app` ville slått av seg selv.
  */
 
+import { useEffect, useState } from "preact/hooks";
+
 import { t, tDyn } from "./i18n";
+import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
+import { showTelemetryPreview } from "./pages/setup/advanced/TelemetryRow";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
 import { navigate, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
@@ -41,6 +55,7 @@ import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
 import { Card } from "./ui/Card/Card";
 import { Chip } from "./ui/Chip/Chip";
+import { ConsentCard } from "./ui/ConsentCard/ConsentCard";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
 import { EmptyState } from "./ui/EmptyState/EmptyState";
 import { PageShell } from "./ui/PageShell/PageShell";
@@ -56,8 +71,10 @@ export function Shell({ probe }: ShellProps) {
   const current = route.value;
   const failed = hydrateError.value;
 
+  const firstRun = current.firstRun === true;
+
   return (
-    <PageShell heading={setupHeading(current.tab)}>
+    <PageShell heading={firstRunHeading(firstRun) ?? setupHeading(current.tab)}>
       {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
@@ -73,6 +90,8 @@ export function Shell({ probe }: ShellProps) {
 
       {probe === "setting" ? (
         <SettingProbe />
+      ) : firstRun ? (
+        <FirstRun />
       ) : current.page === "record" ? (
         <RecordPlaceholder />
       ) : current.page === "library" ? (
@@ -99,6 +118,45 @@ export function Overlays() {
 function RecordPlaceholder() {
   const s = settings.value;
   const source = s.deviceName ?? s.deviceId;
+
+  return (
+    <>
+      <Consent />
+      <Source source={source} />
+    </>
+  );
+}
+
+/**
+ * Samtykkekortet, spurt ÉN gang.
+ *
+ * `needsPrompt` er bakendens svar, ikke vårt: den er sann når ingen har svart
+ * ennå, OG igjen den dagen omfanget utvides — også for den som sa nei sist.
+ * Kortet forsvinner først når svaret FAKTISK er lagret (se `ConsentCard`).
+ */
+function Consent() {
+  const [ask, setAsk] = useState(false);
+
+  useEffect(() => {
+    void window.api
+      .telemetryConsentGet()
+      .then((consent) => setAsk(consent?.needsPrompt === true))
+      // En probe vi ikke fikk kjørt er ikke en grunn til å spørre — et kort som
+      // dukker opp fordi IPC-en glapp er et spørsmål brukeren ikke kan svare på.
+      .catch(() => setAsk(false));
+  }, []);
+
+  if (!ask) return null;
+  return (
+    <ConsentCard
+      onExplain={() => void showTelemetryPreview()}
+      onAnswered={() => setAsk(false)}
+    />
+  );
+}
+
+function Source({ source }: { source: string | null }) {
+  const s = settings.value;
 
   if (!source) {
     return (
