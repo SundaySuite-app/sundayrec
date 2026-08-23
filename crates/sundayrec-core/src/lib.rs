@@ -86,3 +86,4 @@ pub mod update;
 pub mod vad;
 pub mod wake;
 pub mod wav;
+pub mod window;

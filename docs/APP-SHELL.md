@@ -1047,23 +1047,79 @@ låste bort.
 Avansert viser den ikke, og bekreftelsen er en designbeslutning i sett 2 — ikke
 en innstilling. Legacy-skallet har fortsatt bryteren sin.
 
-## ⚠️ «Du kan lukke vinduet» er FJERNET — den var usann
+## ✅ «Du kan lukke vinduet» er nå SANN — Rust-endringen er gjort (P3)
 
-Canvasens `ov.hint` lover at opptaket fortsetter i bakgrunnen når vinduet
-lukkes. Det gjør det ikke:
+Setningen var usann, og derfor fjernet: `src-tauri/src/lib.rs` hadde ingen
+`on_window_event`-håndterer i det hele tatt, så siste vindu lukket ⇒
+`RunEvent::ExitRequested` ⇒ `state::<RecorderEngine>().stop()`. En frivillig som
+lukket vinduet midt i prekenen mistet resten av gudstjenesten.
 
-- `src-tauri/src/lib.rs` har ingen `on_window_event`-håndterer, ingen
-  `api.prevent_close()` og ingen `prevent_exit()`.
-- Det finnes ingen `ActivationPolicy::Accessory`, så appen er ikke et
-  menylinje-program som overlever uten vindu.
-- `.run(|app_handle, event| …)` fanger `RunEvent::ExitRequested` og gjør
-  nøyaktig ÉN ting: `state::<RecorderEngine>().stop()` + `VuEngine::stop()`.
+P3 la inn nøkkelen:
 
-Siste vindu lukket ⇒ `ExitRequested` ⇒ opptakeren stoppes. Setningen ville
-altså vært en oppfordring til å avslutte gudstjenestens opptak. Nøkkelen er
-ikke lagt i katalogen, og grunnen står i toppen av `RecordingOverlay.tsx`. Skal
-den bli sann, er det en Rust-endring (`prevent_close` + skjul til tray), og den
-er eierens.
+- `sundayrec_core::window::close_action(RecorderState) -> CloseAction` er
+  beslutningen, ren og uttømmende matchet (ingen `_`-arm, så en ny
+  `RecorderState` TVINGER et valg i stedet for stille å avslutte midt i en
+  gudstjeneste).
+- `src-tauri/src/window.rs` er det tynne skallet: `hide()` FØRST, og
+  `api.prevent_close()` bare hvis skjulingen faktisk lyktes — motsatt rekkefølge
+  kan etterlate et vindu som verken lukkes eller forsvinner.
+- `Preparing` / `Recording` / `Reconnecting` → skjul. `Stopping` → skjul også:
+  den tilstanden sendes FØR `finalize_pending`, så hele concat + leveranse-
+  transkoding + historikkraden skjer inni den, og en 90-minutters gudstjeneste
+  bruker minutter der. Å avslutte akkurat der er det ene øyeblikket som fortsatt
+  kan ødelegge et ellers ferdig opptak.
+- `Idle` / `Stopped` / `Failed` → uendret: lukk betyr avslutt, som før.
+
+Veien tilbake til vinduet: menylinjas «Åpne SundayRec» (fantes fra før,
+`TrayAction::OpenWindow`, oversatt til alle sju språkene i
+`sundayrec_core::tray`), Dock-ikonet på macOS (`RunEvent::Reopen` med
+`has_visible_windows: false`), eller å starte SundayRec på nytt (single-instance
+løfter fram den kjørende). Alle tre går gjennom `window::show_main`.
+
+Ett OS-varsel per skjuling forklarer hva som skjedde («SundayRec tar fortsatt
+opp — vinduet er skjult, ikke lukket. Hent det tilbake fra menylinja.», og en
+egen «lagrer opptaket»-ordlyd under `Stopping`). Det varselet er BEVISST ikke
+styrt av `notifyStart`/`notifyStop`: de bryterne demper «det du ba om skjedde»,
+mens dette er «det du nettopp gjorde gjorde ikke det du trodde, og noe du ikke
+har råd til å miste kjører fortsatt» — samme klasse som feilvarslene, som også
+overser bryterne. Flagget står i `NOTICE_PENDING` og re-armeres av
+`window::show_main`, så to `CloseRequested` for samme klikk gir ett varsel, mens
+skjul → åpne → skjul gir to.
+
+Det finnes fortsatt ingen `ActivationPolicy::Accessory` — Dock-ikonet blir
+stående med vilje, så appen ikke _forsvinner_ for den frivillige.
+
+⚠️ Selve setningen er ENNÅ ikke lagt tilbake på skjermen: `ov.hint` står fortsatt
+ikke i katalogen, og topp-kommentaren i `app/pages/record/RecordingOverlay.tsx`
+påstår fortsatt at den er usann. Det er P4/B sitt bord — P3 er en ren
+`src-tauri`/`crates`-endring og rører ikke `app/`. Fra og med denne endringen er
+det trygt å legge den inn.
+
+⚠️ RESTANSE — Cmd+Q under opptak: en ekte avslutning stopper fortsatt opptaket,
+og `RecorderEngine::stop()` er ikke-blokkerende (den signaliserer supervisoren og
+returnerer, med et frakoblet backstop som avbryter etter
+`STOP_ABORT_BACKSTOP_MS`). Prosessen venter altså ikke på at containeren lukkes;
+et Cmd+Q midt i en gudstjeneste redder seg på gjenopprettingsskanningen ved neste
+oppstart, ikke på en ryddig finalisering. En nativ bekreftelsesdialog i
+`ExitRequested` (`prevent_exit()` + `tauri-plugin-dialog`) ble VURDERT og utelatt
+her: `blocking_*`-dialogene skal ikke kalles fra hovedtråden/kjøresløyfa, og den
+ikke-blokkerende varianten krever at man forhindrer avslutningen, venter på svar
+og deretter selv kaller `app.exit(0)` — en flate der en feilende dialog gjør
+appen umulig å avslutte. Egen runde, eierens valg.
+
+### ⚠️ Rigg-test (GUI-UNVERIFIED)
+
+Ingenting av dette kan verifiseres uten en ekte skrivebordsøkt, og et opptak må
+faktisk gå. Når eier tester på rigg:
+
+1. Start et opptak. Lukk vinduet (rødt kryss / Cmd+W). **Forventet:** vinduet
+   forsvinner, menylinje-ikonet har fortsatt rød prikk, ett OS-varsel dukker
+   opp, og opptaket fortsetter (sjekk filstørrelsen vokse).
+2. Menylinja → «Åpne SundayRec». **Forventet:** vinduet kommer tilbake med
+   opptaket i gang, tidtakeren har telt videre.
+3. macOS: skjul igjen, klikk Dock-ikonet. **Forventet:** vinduet kommer tilbake.
+4. Stopp opptaket, vent til historikkraden er der, lukk vinduet.
+   **Forventet:** appen avslutter, som før.
 
 ## Måleren under et opptak leser opptaket
 

@@ -3,6 +3,22 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Upublisert
+
+### Å lukke vinduet stopper ikke lenger opptaket
+
+Lukket du vinduet mens gudstjenesten ble tatt opp, stoppet opptaket. Nå skjules
+vinduet i stedet: opptaket går videre, SundayRec blir stående i menylinja
+(systemstatusfeltet på Windows), og et varsel forteller deg hvor du finner
+vinduet igjen. Du henter det tilbake fra menylinja, fra Dock-ikonet på macOS,
+eller ved å starte SundayRec på nytt.
+
+Det samme gjelder mens opptaket lagres etter at du har stoppet — akkurat der
+kunne en lukking før ødelegge en ellers ferdig fil.
+
+Er det ingen opptak i gang, avslutter lukkeknappen appen som før. Avslutt-valget
+(Cmd+Q / «Avslutt» i menylinja) stopper fortsatt opptaket med vilje.
+
 ## v0.15.0 — SundayRec gjør fire ting
 
 Tar opp gudstjenesten, lar deg redigere opptaket, mikser/mastrer lyden og

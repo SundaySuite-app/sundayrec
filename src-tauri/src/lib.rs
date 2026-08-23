@@ -109,6 +109,12 @@ pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
 pub mod util;
+// P3 «Frivilligen først» — the main window's close button. Closing the window
+// used to END the service's recording (no `on_window_event` existed, so the last
+// window closing raised `ExitRequested`, whose handler stops the recorder).
+// During a session the close now HIDES the window instead; outside one it quits
+// exactly as before. The decision is the pure `sundayrec_core::window`.
+pub mod window;
 // E9 neural voice-activity backend (Silero VAD over `tract`). DEFAULT-OFF and
 // deliberately CALLER-LESS: no Tauri command, no shipped code path. It is here
 // to be measured before the unified sermon detector is allowed to use it. The
@@ -166,13 +172,10 @@ pub fn run() {
     // root-cause fix for the piled-up instances that crashed Windows Audio. (FIKS 1.)
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-        use tauri::Manager;
         tracing::info!("a second SundayRec launch was blocked — focusing the existing window");
-        if let Some(w) = app.get_webview_window("main") {
-            let _ = w.show();
-            let _ = w.unminimize();
-            let _ = w.set_focus();
-        }
+        // Also THE way back when the window was hidden by a close during a
+        // recording: launching SundayRec again brings it up.
+        window::show_main(app);
     }));
     let builder = builder
         .plugin(tauri_plugin_opener::init())
@@ -230,6 +233,11 @@ pub fn run() {
     let builder = builder.manage(email::AlertGateState::default());
 
     builder
+        // P3 «Frivilligen først»: the close button must not end the service's
+        // recording. `window::on_event` hides the window instead while a capture
+        // is live or finalising, and stands aside otherwise — see
+        // `sundayrec_core::window::close_action` for the (unit-tested) rule.
+        .on_window_event(window::on_event)
         .setup(|app| {
             use tauri::Manager;
 
@@ -570,8 +578,15 @@ pub fn run() {
         // FIKS 2a: on app exit, stop every capture sidecar FIRST so nothing keeps
         // the audio/camera device open (graceful complement to the Job Object).
         // Best-effort — `stop()` is safe to call when idle.
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+        .run(|app_handle, event| match event {
+            // A REAL quit (Cmd+Q, the tray's "Avslutt", the app menu). Unchanged:
+            // the close button no longer arrives here during a session, but an
+            // explicit quit still stops the capture the graceful way — `stop()`
+            // signals the supervisor, which finalises the container and writes
+            // the history row. (A quit mid-service therefore still ENDS the
+            // recording on purpose; the confirmation for it is a restanse, see
+            // docs/APP-SHELL.md.)
+            tauri::RunEvent::ExitRequested { .. } => {
                 use tauri::Manager;
                 app_handle
                     .state::<recorder::engine::RecorderEngine>()
@@ -579,5 +594,14 @@ pub fn run() {
                 app_handle.state::<audio::vu::VuEngine>().stop();
                 tracing::info!("app exit requested — stopped recorder/vu sidecars");
             }
+            // macOS: clicking the Dock icon when nothing is on screen is the
+            // system's own "bring it back" gesture — the natural companion to a
+            // window hidden by a close during a recording.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => window::show_main(app_handle),
+            _ => {}
         });
 }
