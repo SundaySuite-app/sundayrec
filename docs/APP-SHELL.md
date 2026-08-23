@@ -959,8 +959,16 @@ Avansert viser sekundene, og bare dem. Da MÅ sekundene også være det som
 avgjør, ellers står det «15 sekunder» på en skjerm der ingenting blir bufret —
 så `app/state/preroll.ts` utleder `enabled` fra `seconds > 0`. Standarden er 15
 i både Rust og `settings-defaults.ts` (eiervalget «pre-roll på og usynlig»); en
-profil som allerede har et tall beholder sitt. `prerollEnabled` er urørt i basen
-og fortsatt legacy-skallets bryter — de to skallene kjører aldri samtidig.
+profil som allerede har et tall beholder sitt.
+
+**Restansen er lukket:** `prerollEnabled` var «fortsatt legacy-skallets bryter»
+helt til fase B slettet det skallet. Feltet har nå INGEN leser — hverken i Rust
+eller i skallet — og doccen på `Settings::preroll_enabled` navnga likevel
+`preroll-lifecycle.ts` som portvakten sin, altså en fil som ikke finnes.
+Doccen sier nå sannheten og merker feltet utdatert. Feltet BLIR STÅENDE: lagrede
+profiler bærer nøkkelen, og å fjerne den er en migrasjon for én bool ingen leser.
+`preroll_enabled_is_stored_but_never_the_answer` pinner begge halvdelene — at
+sekundene avgjør (begge veier), og at en lagret verdi overlever rundturen.
 
 ## `narrowToStored` — en skjøt som ville avvist HELE lagringen
 

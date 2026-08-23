@@ -358,13 +358,27 @@ pub struct Settings {
     /// gets 15.
     #[serde(default = "default_pre_roll_seconds")]
     pub pre_roll_seconds: i32,
-    /// Advanced opt-in for the ROLLING pre-roll buffer (R4). Distinct from
-    /// `pre_roll_seconds` on purpose and NOT derivable from it: the buffer is a
-    /// continuous background capture on the recording microphone, so a user who
-    /// picked a pre-roll length but never flipped this stays un-armed — deriving
-    /// it from `pre_roll_seconds > 0` would silently start that capture for
-    /// them. The renderer's `preroll-lifecycle.ts` is the gatekeeper that reads
-    /// it. Default false.
+    /// ⚠️ **DEPRECATED — stored, never read.** Kept only so an existing profile
+    /// survives a round-trip through `settings_save` unchanged.
+    ///
+    /// It was the advanced opt-in for the ROLLING pre-roll buffer (R4), and the
+    /// doc here used to name `preroll-lifecycle.ts` as its gatekeeper. That
+    /// renderer is gone: the redesigned Advanced screen shows the SECONDS and
+    /// only the seconds, so the seconds had to become the switch — otherwise a
+    /// screen saying «15 sekunder» would buffer nothing. `app/state/preroll.ts`
+    /// derives `enabled` from `pre_roll_seconds > 0`, and telemetry's
+    /// `WireSettings::preroll_enabled` derives it the same way. Nothing reads
+    /// THIS field, in Rust or in the shell.
+    ///
+    /// The old reasoning — "not derivable, or a user who picked a length but
+    /// never flipped the switch would get a background capture they never asked
+    /// for" — was answered by removing the second control instead: the length
+    /// IS the asking now. See `docs/APP-SHELL.md` («Forhåndsbufferen er ÉN
+    /// kontroll nå»).
+    ///
+    /// Do NOT delete the field. Stored profiles carry `prerollEnabled`, and
+    /// `Settings` deserialises strictly enough that dropping a key nobody reads
+    /// is churn with a migration attached. It costs one bool.
     #[serde(default)]
     pub preroll_enabled: bool,
     // (v0.15: `trimSilence` — a control with no consumer — and `showLiveLevels`
@@ -1330,6 +1344,40 @@ mod tests {
         for key in ["deviceChannels", "prerollEnabled"] {
             assert!(obj.contains_key(key), "missing camelCase key {key}");
         }
+    }
+
+    #[test]
+    fn preroll_enabled_is_stored_but_never_the_answer() {
+        // The doc on the field used to name a reader (`preroll-lifecycle.ts`)
+        // that no longer exists, which is how a dead field keeps looking alive.
+        // The seconds ARE the switch now — in the shell (`app/state/preroll.ts`)
+        // and on the wire — so the stored bool must not be able to change any
+        // answer. Both directions, because "false wins" and "true wins" are two
+        // different ways of re-wiring it by accident.
+        let armed_but_flag_off = Settings {
+            pre_roll_seconds: 15,
+            preroll_enabled: false,
+            ..Default::default()
+        };
+        let unarmed_but_flag_on = Settings {
+            pre_roll_seconds: 0,
+            preroll_enabled: true,
+            ..Default::default()
+        };
+        assert!(
+            crate::telemetry::WireSettings::from_settings(&armed_but_flag_off).preroll_enabled,
+            "15 s with the legacy flag off is pre-roll ON — the seconds decide"
+        );
+        assert!(
+            !crate::telemetry::WireSettings::from_settings(&unarmed_but_flag_on).preroll_enabled,
+            "0 s with the legacy flag on is pre-roll OFF — the seconds decide"
+        );
+
+        // …and it still survives a save/load round-trip, which is the ONLY
+        // reason the field is still here.
+        let json = serde_json::to_string(&unarmed_but_flag_on).unwrap();
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert!(back.preroll_enabled, "a stored profile keeps its own value");
     }
 
     #[test]

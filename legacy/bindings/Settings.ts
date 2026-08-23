@@ -174,13 +174,27 @@ manualMaxMinutes: number,
  */
 preRollSeconds: number, 
 /**
- * Advanced opt-in for the ROLLING pre-roll buffer (R4). Distinct from
- * `pre_roll_seconds` on purpose and NOT derivable from it: the buffer is a
- * continuous background capture on the recording microphone, so a user who
- * picked a pre-roll length but never flipped this stays un-armed — deriving
- * it from `pre_roll_seconds > 0` would silently start that capture for
- * them. The renderer's `preroll-lifecycle.ts` is the gatekeeper that reads
- * it. Default false.
+ * ⚠️ **DEPRECATED — stored, never read.** Kept only so an existing profile
+ * survives a round-trip through `settings_save` unchanged.
+ *
+ * It was the advanced opt-in for the ROLLING pre-roll buffer (R4), and the
+ * doc here used to name `preroll-lifecycle.ts` as its gatekeeper. That
+ * renderer is gone: the redesigned Advanced screen shows the SECONDS and
+ * only the seconds, so the seconds had to become the switch — otherwise a
+ * screen saying «15 sekunder» would buffer nothing. `app/state/preroll.ts`
+ * derives `enabled` from `pre_roll_seconds > 0`, and telemetry's
+ * `WireSettings::preroll_enabled` derives it the same way. Nothing reads
+ * THIS field, in Rust or in the shell.
+ *
+ * The old reasoning — "not derivable, or a user who picked a length but
+ * never flipped the switch would get a background capture they never asked
+ * for" — was answered by removing the second control instead: the length
+ * IS the asking now. See `docs/APP-SHELL.md` («Forhåndsbufferen er ÉN
+ * kontroll nå»).
+ *
+ * Do NOT delete the field. Stored profiles carry `prerollEnabled`, and
+ * `Settings` deserialises strictly enough that dropping a key nobody reads
+ * is churn with a migration attached. It costs one bool.
  */
 prerollEnabled: boolean, 
 /**
