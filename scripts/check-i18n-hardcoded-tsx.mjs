@@ -4,8 +4,8 @@
  *
  * ## Forskjellen fra den gamle skrallen
  *
- * `check-i18n-hardcoded.mjs` er en SKRALLE med baseline 73: `index.html` er en
- * verbatim port av et Electron-skall med gammel gjeld, og den gjelda betales
+ * `check-i18n-hardcoded.mjs` VAR en SKRALLE med baseline 73: `index.html` var en
+ * verbatim port av et Electron-skall med gammel gjeld, og den gjelda ble betalt
  * ned én runde om gangen. `app/` har ingen gjeld. Hver eneste streng en
  * frivillig leser skrives NÅ, av oss, og da er den riktige baselinen 0 og den
  * riktige tiden å innføre den er før den første komponenten finnes. En skralle
@@ -13,7 +13,7 @@
  *
  * ## Hva som telles
  *
- *   1. JSX-tekst som matcher PROSE-regexen — KOPIERT VERBATIM fra
+ *   1. JSX-tekst som matcher PROSE-regexen — ARVET fra
  *      `scripts/check-i18n-hardcoded.mjs` (se PROSE under). Én definisjon av
  *      «prosa» i repoet: to ville vært to steder å drifte fra hverandre, og en
  *      tekst som er prosa i det gamle skallet er prosa i det nye.
@@ -57,9 +57,11 @@ const APP_DIR = path.join(ROOT, "app");
 /**
  * «Minst ett ord på ≥3 bokstaver med minst én liten bokstav.»
  *
- * KOPIERT VERBATIM fra `scripts/check-i18n-hardcoded.mjs` (konstanten PROSE
- * der). Endres den ene, skal den andre endres i samme commit — det er derfor
- * den står ordrett og ikke «omtrent».
+ * ⚠️ Denne regexen var KOPIERT VERBATIM fra `scripts/check-i18n-hardcoded.mjs`,
+ * og den gaten ble slettet i fase B sammen med `index.html`-en den målte. Kopien
+ * er dermed ORIGINALEN nå: det er ikke lenger to steder som kan drive fra
+ * hverandre, det er ett. Endres den, endres definisjonen av «prosa» i dette
+ * repoet.
  */
 const PROSE =
   /[A-ZÆØÅa-zæøåÄÖÜäöüéÉèÈ]*[a-zæøåäöüéè][A-ZÆØÅa-zæøåÄÖÜäöüéÉèÈ]{2,}|[A-ZÆØÅa-zæøåÄÖÜäöüéÉèÈ]{2,}[a-zæøåäöüéè]/;

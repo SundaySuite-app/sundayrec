@@ -93,35 +93,33 @@ jobs:
       - name: App version in sync
         run: npm run version-sync
 
-      # A `data-i18n` fallback in index.html must agree with no.json, or the
-      # first-frame/missing-key text silently describes a UI that no longer
-      # exists (see scripts/check-i18n-fallbacks.mjs). This is in `npm run
-      # check` — mirrored here so a PR can't skip it by never running `check`.
+      # Peker hvert `t/tf/tn/tArr/tDyn`-kall i `app/` på en nøkkel som FINNES,
+      # i den formen kallet forutsetter, i BÅDE no.json og en.json? Alle fire
+      # feilformene (streng lest som gruppe, gruppe lest som streng, array som
+      # streng, tomt tDyn-subtre) er ellers HELT stille.
       #
-      # `app/` skriver ingenting to ganger (ingen data-i18n, ingen
-      # reservetekst i markup), så spørsmålet der er et annet: peker hvert
-      # `t/tf/tn/tArr/tDyn`-kall på en nøkkel som FINNES, i den formen kallet
-      # forutsetter, i BÅDE no.json og en.json? Det er
-      # check-i18n-keys.mjs — den nye skallets utgave av samme gate, kjørt i
-      # samme steg fordi den svarer på samme spørsmål for det andre skallet.
-      - name: i18n fallback keys in sync with no.json
-        run: |
-          npm run i18n-fallbacks
-          npm run i18n-keys
+      # …og motsatt vei: finnes det nøkler ingen leser? Den halvdelen var
+      # informativ mens legacy-skallet eide mesteparten av katalogen. Fase B
+      # slettet skallet, `--unused` ble en FEILENDE gate, og 653 nøkler ble
+      # ryddet ut av alle sju katalogene. «Leser» er BÅDE et kall i `app/` og en
+      # nøkkel navngitt av en delt kjerne under `legacy/renderer/` — de rene
+      # modulene svarer med nøkler, og en prune som bare talte `app/` ville
+      # slettet tekst som faktisk rendres.
+      #
+      # De to gamle HTML-gatene (`check-i18n-fallbacks`, `check-i18n-hardcoded`)
+      # er borte: begge målte `legacy/renderer/index.html`, som ikke finnes.
+      - name: i18n keys exist, in the form the call assumes
+        run: npm run i18n-keys
 
-      # i18n-skralle: antall data-i18n-løse norske prosa-tekstnoder i
-      # index.html kan bare gå NED (baseline i scripts/check-i18n-hardcoded.mjs,
-      # med innebygd selvtest som mutasjonsvern). I `npm run check` og
-      # ci-local.sh også — gate-paritet er lov.
-      #
-      # Samme skralle for `app/`, men med baseline 0 fra dag én: det nye
-      # skallet har ingen gjeld å betale ned, hver streng skrives nå. Den ser
-      # også prosa i objekt-egenskaper (dialogtekstene) og forbyr `data-i18n`,
+      # i18n-hardkodingsgate for `app/`, baseline 0 fra dag én: skallet har
+      # ingen gjeld å betale ned, hver streng skrives nå. Den ser prosa i
+      # JSX-tekst, i JSX-attributter OG i objekt-egenskaper (dialogtekstene er
+      # egenskaper, ikke attributter — en gate som bare så JSX ville bommet på
+      # hver streng en frivillig leser når det gjelder), og forbyr `data-i18n`,
       # som er legacy-skallets mekanisme og stille feil i et reaktivt tre.
-      - name: i18n hardcoded-text ratchet
-        run: |
-          npm run i18n-hardcoded
-          npm run i18n-hardcoded-tsx
+      # Selvtest innebygd som mutasjonsvern.
+      - name: i18n hardcoded-text gate (app/)
+        run: npm run i18n-hardcoded-tsx
 
       # i18n-flertallsgate: hver `tn()`-nøkkel må være en CLDR-flertallsgruppe,
       # hver gruppe må ha nøyaktig kategoriene språket trenger (regnet ut med
