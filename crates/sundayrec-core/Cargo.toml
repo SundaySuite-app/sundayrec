@@ -27,9 +27,9 @@ thiserror = "2"
 # makes ts-rs honour serde attributes (rename_all, etc.). Run the export with
 # `cargo test export_bindings -p sundayrec-core`.
 ts-rs = { version = "12", features = ["serde-compat"] }
-# Civil date/time arithmetic for the scheduler (Fase 5) AND HTTP-date parsing
-# of the cloud `Retry-After` header (Fase 6). `default-features = false` (NO
-# `clock`) keeps this crate PURE — it never reads the wall clock itself; callers
+# Civil date/time arithmetic for the scheduler (Fase 5) and the other
+# clock-free decisions (telemetry, wake, filenames). `default-features = false`
+# (NO `clock`) keeps this crate PURE — it never reads the wall clock itself; callers
 # pass `now: NaiveDateTime` / `now_ms` in (mirrors Electron `scheduler.ts`). The
 # `src-tauri` shell owns `Local::now()`.
 # `alloc` (NOT `clock`) enables the String-returning formatters (e.g.
@@ -40,12 +40,6 @@ chrono = { version = "0.4", default-features = false, features = ["serde", "allo
 # Robust parsing of the OS power-tool text output the wake module (Fase 5.2)
 # consumes — `pmset -g sched`, `powercfg -waketimers`, `pmset -g batt`.
 regex = "1"
-# PKCE for the OAuth flow (Fase 6): the code-challenge is the base64url-encoded
-# SHA-256 of the verifier (RFC 7636). Pure, no I/O — the `src-tauri` shell
-# generates the random verifier; this crate only does the deterministic
-# challenge derivation and the base64url-encoding used across the cloud module.
-sha2 = "0.11"
-base64 = "0.23"
 # Semver precedence for the updater guard (`src/update.rs`). This is the SAME
 # crate, at the same major, that `tauri-plugin-updater` and `tauri-utils` already
 # resolve to (it was in Cargo.lock before this dependency existed), so it adds
@@ -57,16 +51,6 @@ base64 = "0.23"
 # to opt out of — `no_std` here would buy nothing and diverge from the
 # resolution the rest of the graph already uses.
 semver = "1"
-# Canonical cross-app wire contracts (Rust mirror of @sunday/contracts). The
-# StageManifest + MediaHandoff/deep-link shapes this crate produces/parses are
-# CANONICAL there; we converge onto them so they cannot silently drift from the
-# SundayStage producer / SundayEdit parser. Distributed by git tag (same
-# mechanism as `sunday-auth` in src-tauri) so the crate builds standalone — a
-# path dep would break a single-repo checkout. Pure serde, no Tauri/I/O, so it
-# is safe in this GUI-free core. For local platform co-dev, override with a
-# `[patch]` in .cargo/config.toml.
-sunday-contracts = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
-
 [dev-dependencies]
 # Property tests for the parsers most exposed to hostile/malformed input
 # (WAV headers, image headers, deep links, ffmpeg progress/telemetry lines,

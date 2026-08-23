@@ -216,8 +216,10 @@ ffmpeg is found via SUNDAYREC_FFMPEG, then this repo's fetched sidecar, then PAT
         }
         Ok(output
             .stdout
-            .chunks_exact(2)
-            .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0)
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0)
             .collect())
     }
 

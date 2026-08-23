@@ -3,6 +3,32 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Uutgitt — «Frivilligen først» R1: delingsfunksjonene er fjernet
+
+SundayRec gjør fire jobber: ta opp, redigere, mikse/mastre og eksportere. Alt
+som ikke tjener dem er tatt ut av appen — koden ligger i git-historikken om
+noen trenger den igjen:
+
+- **Sky-backup** (Google Drive / Dropbox / OneDrive) og kortet på Hjem.
+- **Podkast-feed (RSS)** og hele Podcast-kortet, inkludert «Forhåndsklargjøring
+  og gjennomgang».
+- **Gjennomgangskøen** — køen på Hjem, påminnelsene, menylinje-varselet og
+  redigeringens «klargjort for publisering»-modus. Redigeringen analyserer nå
+  ALLTID opptaket når du åpner det.
+- **Webhook** til Slack/Discord/Teams.
+- **Sunday-suite-koblingene** (SundaySong, SundayPlan, SundayEdit, SundayStage)
+  og `sundayrec://`-lenkene.
+- **Episodebilde / cover art** (standardbildet og bildet per opptak).
+- **Gmail-innlogging** som e-postvei — e-postvarsler fungerer som før, men
+  bare via SMTP (vertsnavn, brukernavn og app-passord).
+
+Beholdt: «Send e-post ved feil» med én mottaker og SMTP-oppsettet, diagnostikk
+(med samtykke), og det appen lærer av rettelsene dine (visningen kommer i neste
+runde). Gamle innstillinger leses trygt — feltene som hørte til det fjernede
+droppes stille, alt annet beholdes. Nøkler du hadde lagret for Google eller
+SundaySong ligger igjen i maskinens nøkkelring; slett dem der om du vil
+(Nøkkelringtilgang → søk «sundayrec»).
+
 ## v0.14.1-beta.1
 
 ### Polsk grammatikk i «Hva appen har justert»

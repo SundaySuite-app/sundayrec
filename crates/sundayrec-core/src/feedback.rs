@@ -209,7 +209,7 @@ impl FeedbackSegment {
             && (self.end_sec - other.end_sec).abs() <= BOUNDS_MATCH_TOLERANCE_SEC
     }
 
-    /// The shape the attention heuristics in [`crate::prep`] consume. `label`
+    /// The shape the attention heuristics in [`crate::detect`] consume. `label`
     /// and `avg_rms_db` are not carried by this record (a label is text, and the
     /// heuristics read neither), so they are filled with values that cannot
     /// influence any of them.

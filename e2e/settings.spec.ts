@@ -118,7 +118,7 @@ test.describe("settings", () => {
       ["settings:sharing", "#settings-sharing"],
       ["settings:settings-general", "#settings-general"],
       // Retired id from before the 7→5 tab fold; TAB_ALIASES maps it onward.
-      ["settings:integrations", "#settings-general"],
+      ["settings:notifications", "#settings-sharing"],
     ] as const) {
       await boot(page, {
         fixtures: BOOT_FIXTURES,

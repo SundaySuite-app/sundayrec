@@ -125,10 +125,11 @@ function collectSourceFiles() {
 // a file this script does not even scan.
 //
 // That premise used to be stated as fact in a comment above, and it was WRONG:
-// it named `api-shim.ts` as the only importer while `deeplinks.ts` had been
-// calling `deeplink_confirm_captions` directly since the day both landed. The
-// comment was copied into `docs/COMMAND_AUDIT_2026-08.md`, so the audit rested
-// on it too. Nothing noticed, because nothing checked.
+// it named `api-shim.ts` as the only importer while (the since-removed)
+// `deeplinks.ts` had been calling `deeplink_confirm_captions` directly since
+// the day both landed. The comment was copied into
+// `docs/COMMAND_AUDIT_2026-08.md`, so the audit rested on it too. Nothing
+// noticed, because nothing checked.
 //
 // So it is checked now. This is a gate, not a note: if the set changes, the
 // measurement's justification has changed with it, and somebody has to re-read
@@ -137,10 +138,6 @@ function collectSourceFiles() {
 const KNOWN_INVOKE_IMPORTERS = [
   // The shim every page goes through — `call()`/`editorCall()` wrap `invoke`.
   "legacy/renderer/api-shim.ts",
-  // The deep-link confirmation path (E1.1) deliberately bypasses the shim: it
-  // is reached from a native event, not from a page, and its whole point is
-  // that the renderer confirms before anything is written.
-  "legacy/renderer/deeplinks.ts",
 ];
 
 function checkInvokeImporters(files) {

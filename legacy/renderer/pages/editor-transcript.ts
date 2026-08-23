@@ -14,7 +14,7 @@
  */
 
 import { t } from '../i18n'
-import type { TranscriptData, RecordingMetadata } from '../../types'
+import type { TranscriptData } from '../../types'
 import { closeModal, openModal } from '../ui/modal-manager'
 import { alertDialog, confirmDialog } from '../ui/dialog'
 import { toast } from '../ui/toast'
@@ -49,17 +49,6 @@ let onSeekCallback: ((sec: number) => void) | null = null
 
 const $ = (id: string) => document.getElementById(id)
 
-// Extensions that route to the SundayEdit hand-off (video only — SundayEdit is a
-// video-captioning tool). Mirrors the editor's video set, kept local so this
-// panel has no dependency on editor-page internals.
-const SUNDAYEDIT_VIDEO_EXTS = new Set([
-  '.mp4', '.mov', '.m4v', '.avi', '.wmv', '.mkv', '.webm', '.flv', '.ts', '.mts', '.m2ts', '.3gp',
-])
-function isVideoPath(p: string): boolean {
-  const ext = ('.' + (p.split('.').pop()?.toLowerCase() ?? ''))
-  return SUNDAYEDIT_VIDEO_EXTS.has(ext)
-}
-
 export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   onSeekCallback = onSeek
   // R8: wire the AI sermon companion. It reads the current transcript through a
@@ -74,7 +63,6 @@ export function setupTranscriptPanel(onSeek: (sec: number) => void): void {
   $('btn-transcript-export-vtt')?.addEventListener('click', () => { void exportSubtitleFile('vtt') })
   $('btn-transcript-export-txt')?.addEventListener('click', () => { void exportSubtitleFile('txt') })
   $('btn-transcript-delete')?.addEventListener('click', deleteTranscript)
-  $('btn-transcript-sundayedit')?.addEventListener('click', sendToSundayEdit)
 
   // Probe availability once at startup so the button can be disabled with
   // an inline explanation if the binary didn't ship (CI build issue,
@@ -113,55 +101,11 @@ async function checkBinaryAvailabilityOnce(): Promise<void> {
   }
 }
 
-// ── SundayEdit hand-off (Sunday-suite integration) ───────────────────────────
-// Shows the "→ SundayEdit" button only when the integration is enabled AND the
-// open file is a video. Reads the opt-in settings each load so toggling them
-// in Settings reflects on the next file open.
-async function updateSundayEditButton(): Promise<void> {
-  const btn = $('btn-transcript-sundayedit') as HTMLElement | null
-  if (!btn) return
-  let show = false
-  try {
-    if (currentFilePath && isVideoPath(currentFilePath)) {
-      const s = await window.api.getIntegrationSettings()
-      show = !!s.enabled && !!s.sundayedit?.enabled
-    }
-  } catch { show = false }
-  btn.style.display = show ? '' : 'none'
-}
-
-// Sends the open video to SundayEdit, primed with sermon context + the speaker
-// name as a glossary term (improves recognition of the name). Fire-and-forget
-// from the user's perspective; SundayEdit returns captions out-of-band.
-async function sendToSundayEdit(): Promise<void> {
-  if (!currentFilePath) return
-  let context = 'Preken'
-  const glossary: string[] = []
-  try {
-    const meta = await window.api.editorReadMeta?.(currentFilePath) as RecordingMetadata | null
-    if (meta?.speaker) { context = `Preken. Taler: ${meta.speaker}`; glossary.push(meta.speaker) }
-  } catch { /* no metadata — generic context */ }
-
-  const btn = $('btn-transcript-sundayedit') as HTMLButtonElement | null
-  try {
-    const res = await window.api.sundayEditSend({ videoPath: currentFilePath, context, glossary })
-    if (!res.ok && btn) {
-      btn.textContent = res.error === 'sundayedit_not_installed'
-        ? t('integrations.sundayEditMissing', 'SundayEdit ikke funnet')
-        : t('integrations.sundayEditFailed', 'Kunne ikke åpne')
-      setTimeout(() => { btn.textContent = '→ SundayEdit' }, 2500)
-    }
-  } catch {
-    if (btn) { btn.textContent = t('integrations.sundayEditFailed', 'Kunne ikke åpne'); setTimeout(() => { btn.textContent = '→ SundayEdit' }, 2500) }
-  }
-}
-
 /** Called by editor when a file loads — clears state and loads existing sidecar if any. */
 export async function loadTranscriptForFile(filePath: string): Promise<void> {
   currentFilePath = filePath
   currentTranscript = null
   renderPanel()
-  void updateSundayEditButton()
   // Try to load sidecar
   try {
     const sidecar = await window.api.editorReadTranscript?.(filePath) as TranscriptData | null

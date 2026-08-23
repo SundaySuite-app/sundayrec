@@ -2,9 +2,23 @@
 //! the `keyring` crate — NEVER plaintext files. Replaces Electron's
 //! `safeStorage`.
 //!
-//! OAuth tokens (Drive/Gmail) and the SMTP password are written here; Phase 0
-//! established the seam and the resolution precedence so the rest of the app
-//! has one place to reach for a credential.
+//! The SMTP password (and, until R2, the companion LLM key) are written here;
+//! Phase 0 established the seam and the resolution precedence so the rest of
+//! the app has one place to reach for a credential.
+//!
+//! ## Retired slots
+//!
+//! Earlier builds also wrote OAuth refresh tokens for Google Drive
+//! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`),
+//! a SundaySong API key (`integrations.song_api_key`) and RTMP stream keys
+//! (`stream.key`, `stream.key.{destId}`). Those features are gone (cloud
+//! backup, podcast publishing, the Gmail mail transport, the Sunday-suite
+//! integrations, live streaming), so nothing reads or writes the slots any
+//! more — but the
+//! entries may still sit in users' keychains. They are left alone on purpose:
+//! keyring cannot enumerate accounts, and a startup sweep could block launch on
+//! a locked-keychain authorization prompt. The strings above are the contract
+//! for anyone who ever wants to clean them up by hand.
 
 use keyring::Entry;
 
@@ -19,28 +33,14 @@ const SERVICE: &str = "no.sundayrec.app";
 /// treat these strings as a storage contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretProvider {
-    /// Google Drive OAuth refresh token (cloud backup / upload).
-    GoogleDrive,
-    /// YouTube OAuth refresh token (publish / live).
-    YouTube,
-    /// Gmail OAuth refresh token (notification mailer).
-    Gmail,
     /// HISTORICAL — the RTMP stream-key slot from the removed live-streaming
-    /// feature (v0.14). Nothing writes it any more, but the variant stays so
-    /// (a) the account string remains a documented part of the storage
-    /// contract and (b) `all()`-driven sweeps can still DELETE a key an older
-    /// install left in the keychain. Per-destination keys
-    /// (`stream.key.{destId}`) are orphaned by design: their ids lived only in
-    /// the retired `streamDestinations` setting, keyring cannot enumerate
-    /// accounts, and a startup cleanup could block launch on a locked-keychain
-    /// authorization prompt — the keys are inert in the user's own keychain.
+    /// feature (v0.14). Nothing writes it any more; the variant stays as the
+    /// one provider the round-trip test below can safely write and delete
+    /// (see "Retired slots" in the module docs for the others).
     StreamKey,
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
     SmtpPassword,
-    /// SundaySong / SundayPlan API key (bearer). Encrypted in the keychain, never
-    /// in the integration-settings blob — mirrors the Electron `setSongApiKey`.
-    SongApiKey,
     /// Anthropic API key for the OPTIONAL AI sermon-companion summary seam (R8).
     /// Stored in the OS keychain only — NEVER in settings, NEVER in a bundle. When
     /// unset the companion falls back to the fully-local extractive summary.
@@ -51,25 +51,17 @@ impl SecretProvider {
     /// The keychain account string for this provider.
     fn account(self) -> &'static str {
         match self {
-            SecretProvider::GoogleDrive => "oauth.google_drive",
-            SecretProvider::YouTube => "oauth.youtube",
-            SecretProvider::Gmail => "oauth.gmail",
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
-            SecretProvider::SongApiKey => "integrations.song_api_key",
             SecretProvider::CompanionLlmKey => "companion.llm_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 7] {
+    pub fn all() -> [SecretProvider; 3] {
         [
-            SecretProvider::GoogleDrive,
-            SecretProvider::YouTube,
-            SecretProvider::Gmail,
             SecretProvider::StreamKey,
             SecretProvider::SmtpPassword,
-            SecretProvider::SongApiKey,
             SecretProvider::CompanionLlmKey,
         ]
     }
@@ -193,7 +185,7 @@ mod tests {
     // the historical StreamKey slot with a sentinel value it always cleans up —
     // deliberately: it is the ONE provider nothing real writes any more, so the
     // test's delete can never destroy a credential an install depends on
-    // (SmtpPassword/GoogleDrive/… are live slots).
+    // (SmtpPassword/CompanionLlmKey are live slots).
     #[test]
     fn real_keychain_round_trip_or_skip() {
         if !keychain_test_opted_in() {

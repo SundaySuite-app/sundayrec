@@ -64,8 +64,8 @@ use ts_rs::TS;
 
 use crate::ab_eval::MIN_CORPUS_FOR_A_DIRECTION;
 use crate::audio_analysis::SILENCE_DB;
+use crate::detect::SuggestedTrim;
 use crate::feedback::RecordingFeedback;
-use crate::prep::SuggestedTrim;
 
 // ── Whether this is on at all ──────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ impl Default for LocalNudge {
 ///
 /// ## The two offsets are a NEW row, and that needs arguing, not assuming
 ///
-/// [`crate::prep::build_episode_prep`] copies the picked segment's own bounds
+/// The (since-removed) review prep copied the picked segment's own bounds
 /// into `suggested_trim` verbatim. There is no padding constant between "where
 /// segmentation says the speech block is" and "what the app proposes to trim
 /// to" — so the offsets below did not exist before this etappe, and adding a

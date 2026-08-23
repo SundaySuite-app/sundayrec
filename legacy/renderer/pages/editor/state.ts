@@ -125,7 +125,6 @@ export const E = {
 
   // Export state
   exportOutputFolder: '',
-  publishAfterExport: false,  // set by "Eksporter og publiser" button — runs publishing after export completes
 
   // Clipping detection
   clipTimes: [] as number[],

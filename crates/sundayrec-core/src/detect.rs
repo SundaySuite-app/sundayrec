@@ -2,7 +2,7 @@
 //!
 //! Until E9 this crate held two detectors over the same classified segments.
 //! The editor called `audio_analysis::find_sermon_segment` + `detect_segments`;
-//! the review queue called `prep::find_sermon_segment` +
+//! the (since-removed) review queue called `prep::find_sermon_segment` +
 //! `derive_attention_reasons`. They were ports of two different Electron
 //! functions (`editor.ts` `findSermonSegmentLocal` and `prep-episode.ts`
 //! `findSermonSegment`) and they had drifted: the editor's answer dropped
@@ -27,14 +27,26 @@
 //! ## Layering
 //!
 //! [`crate::audio_analysis`] (PCM → features → classified [`AnalysisSegment`]s)
-//! → this module (→ [`Detection`]) → [`crate::prep`] (→ an `EpisodePrep` for the
-//! review queue). Pure and fs-free throughout; the `src-tauri` shell decodes the
-//! media and persists the result.
+//! → this module (→ [`Detection`]) → the editor's sermon proposal. (The second
+//! consumer, the review queue's `prep::build_episode_prep`, was removed with the
+//! sharing cluster; the learning modules that measured its proposals still
+//! speak in [`SuggestedTrim`]s.) Pure and fs-free throughout; the `src-tauri`
+//! shell decodes the media and persists the result.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::audio_analysis::{AnalysisSegment, FrameScorer, ScoringInput};
+
+/// A keep-range (sermon bounds) — the span the detector proposes to trim to,
+/// and the unit the trim-feedback + local-adaptivity modules measure in.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/SuggestedTrim.ts")]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestedTrim {
+    pub start_sec: f64,
+    pub end_sec: f64,
+}
 
 // ── Tuning constants ───────────────────────────────────────────────────────
 //

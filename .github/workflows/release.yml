@@ -53,10 +53,10 @@ jobs:
           # back to shipping whisper-cli as a sidecar (the Electron approach).
           # The leading `--` forwards the rest to cargo (tauri-action runs
           # `tauri build <args>`, and tauri-cli only passes args after `--` on).
-          # `tray` ships the menubar/tray icon (+ sundayrec:// deep-link). It
+          # `tray` ships the menubar/tray icon. It
           # builds on both runners and degrades gracefully (install failure only
           # logs a warning), so it's safe to ship.
-          # `email` ships the SMTP/Gmail alerter — pure-Rust `lettre`, no native
+          # `email` ships the SMTP alerter — pure-Rust `lettre`, no native
           # dep. THESE LISTS ARE EXPLICIT: flipping Cargo.toml's `default` alone
           # never reaches a release, so both platform lines carry `email` too.
           # (`streaming` left both lines in v0.14 — the feature is gone.)

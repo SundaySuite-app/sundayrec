@@ -214,16 +214,11 @@ pub fn check(raw: &str, policy: PathPolicy<'_>) -> AppResult<()> {
 
 /// Containers the recorder writes and the editor opens. Used as the
 /// [`PathPolicy::ReadOnlyMedia`] allowlist wherever a *recording* is handed to
-/// another process (whisper, a sister app's deep link).
+/// another process (whisper).
 pub const MEDIA_EXTENSIONS: &[&str] = &[
     "mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "aiff", "aif", "caf", "mp4", "mov", "mkv",
     "m4v", "webm", "avi",
 ];
-
-/// Subtitle formats [`sundayrec_core::integrations::sundayedit::subtitles_to_transcript`]
-/// can actually parse (SubRip + WebVTT). Anything else is not a caption file, so
-/// the importer must never be pointed at it.
-pub const SUBTITLE_EXTENSIONS: &[&str] = &["srt", "vtt"];
 
 /// The effective recordings root: the configured `save_folder`, or the default
 /// `<Documents>/SundayRec` — via [`crate::save_folder::resolve`], the same
@@ -319,19 +314,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn subtitle_allowlist_is_srt_and_vtt_only() {
-        assert_eq!(SUBTITLE_EXTENSIONS, &["srt", "vtt"]);
-        let dir = std::env::temp_dir().join("sundayrec-path-guard-ext");
-        std::fs::create_dir_all(&dir).unwrap();
-        let json = dir.join("transcript.json");
-        std::fs::write(&json, b"{}").unwrap();
-        assert_validation(checked_media_file(
-            json.to_str().unwrap(),
-            SUBTITLE_EXTENSIONS,
-        ));
-    }
-
     // ── E1.2: root scoping ───────────────────────────────────────────────────
 
     #[test]
@@ -398,7 +380,8 @@ mod tests {
         check(raw, PathPolicy::UserChosenWrite).unwrap();
         check(raw, PathPolicy::ReadOnlyMedia(MEDIA_EXTENSIONS)).unwrap();
         check(raw, PathPolicy::RecordingsRooted(&dir)).unwrap();
-        assert_validation(check(raw, PathPolicy::ReadOnlyMedia(SUBTITLE_EXTENSIONS)));
+        // A narrower allowlist refuses the same file.
+        assert_validation(check(raw, PathPolicy::ReadOnlyMedia(&["wav"])));
         assert_validation(check("relative.mp3", PathPolicy::UserChosenRead));
     }
 

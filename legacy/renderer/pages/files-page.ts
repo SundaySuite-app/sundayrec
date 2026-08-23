@@ -1,8 +1,7 @@
 import { settings, patchSettings, saveSettingsDebounced } from '../state'
-import type { FileFormat, FilenamePattern, PodcastSettings } from '../../types'
+import type { FileFormat, FilenamePattern } from '../../types'
 import { setVal, setRadio, isoDate } from '../helpers'
 import { t, tn } from '../i18n'
-import { errorCode } from '../error-code-core'
 import { getChurchHolidays } from '../../shared/church-calendar'
 import { loadHomeInfoStrip, refreshHomeDiskSpace } from './home'
 import { reconcilePreroll } from '../preroll-lifecycle'
@@ -36,7 +35,7 @@ function currentAutoDeleteDays(): number {
   return +(el?.value ?? '') || 90
 }
 
-/** Every files/podcast control writes the same way. */
+/** Every files control writes the same way. */
 function filesBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
   return {
     apply: () => collectFilesSettings(),
@@ -47,8 +46,9 @@ function filesBinding(extra: Partial<BindSettingOpts> = {}): BindSettingOpts {
 
 export function setupFilesPage(): void {
   // AUTO-APPLY with a visible receipt. Before this the tab had a dirty footer
-  // whose «Lagre» was needed for the podcast fields but NOT for the recorder
-  // ones (those already auto-saved) — and «Avbryt» could not revert either.
+  // whose «Lagre» was needed for the (since-removed) podcast fields but NOT
+  // for the recorder ones (those already auto-saved) — and «Avbryt» could not
+  // revert either.
   document.getElementById('btn-pick-folder')?.addEventListener('click', async () => {
     const folder = await window.api.pickFolder()
     if (!folder) return
@@ -117,128 +117,6 @@ export function setupFilesPage(): void {
       },
     })),
   )
-
-  // ── Podcast (now a section of Deling) ──────────────────────────────────────
-  bindSetting('opt-podcast-enabled', filesBinding({
-    key: 'podcast.enabled',
-    after: (value) => {
-      const cfg = document.getElementById('podcast-config')
-      if (cfg) cfg.style.display = value ? 'flex' : 'none'
-      afterFilesSave()
-    },
-  }))
-  ;[
-    'podcast-title','podcast-author','podcast-description','podcast-language',
-    'podcast-category','podcast-email','podcast-link','podcast-image','podcast-service',
-    'podcast-default-master-preset','opt-podcast-auto-prep',
-  ].forEach(id => bindSetting(id, filesBinding({ key: 'podcast.' + id })))
-
-  // Prep-and-review intro/outro file pickers. The text field is read-only, so
-  // its value only ever changes here — commit explicitly after the picker.
-  const commitJingle = async (inputId: string): Promise<void> => {
-    collectFilesSettings()
-    const ok = await saveSettingsDebounced(120)
-    if (ok) showSavedChip(document.getElementById(inputId)?.closest<HTMLElement>('div') ?? null)
-    resyncBoundSettings()
-  }
-  const jingle = (btnId: string, inputId: string, pick: boolean): void => {
-    document.getElementById(btnId)?.addEventListener('click', async () => {
-      const inp = document.getElementById(inputId) as HTMLInputElement | null
-      if (!inp) return
-      if (pick) {
-        const fp = await window.api.pickAudioFile()
-        if (!fp) return
-        inp.value = fp
-      } else {
-        inp.value = ''
-      }
-      await commitJingle(inputId)
-    })
-  }
-  jingle('btn-podcast-pick-intro',  'podcast-default-intro', true)
-  jingle('btn-podcast-clear-intro', 'podcast-default-intro', false)
-  jingle('btn-podcast-pick-outro',  'podcast-default-outro', true)
-  jingle('btn-podcast-clear-outro', 'podcast-default-outro', false)
-
-  document.getElementById('btn-podcast-copy-url')?.addEventListener('click', () => {
-    const inp = document.getElementById('podcast-feed-url') as HTMLInputElement | null
-    if (inp?.value) {
-      navigator.clipboard.writeText(inp.value).catch(() => {})
-      const status = document.getElementById('podcast-status')
-      if (status) {
-        status.textContent = '✓ Kopiert'
-        setTimeout(() => { if (status) status.textContent = '' }, 2000)
-      }
-    }
-  })
-
-  document.getElementById('btn-podcast-regenerate')?.addEventListener('click', async () => {
-    const btn    = document.getElementById('btn-podcast-regenerate') as HTMLButtonElement | null
-    const status = document.getElementById('podcast-status')
-    if (!btn || !status) return
-    // Flush the latest config first so the feed is generated from what is on
-    // screen (auto-apply may still be inside its debounce window).
-    collectFilesSettings()
-    await window.api.saveSettings(settings)
-    btn.disabled = true
-    status.textContent = 'Genererer…'
-    try {
-      const service = (document.getElementById('podcast-service') as HTMLSelectElement | null)?.value ?? 'google-drive'
-      const result  = await window.api.podcastRegenerate(service)
-      if (result.ok) {
-        const count = result.episodeCount
-        // One sentence per plural form, not a noun glued between a number and
-        // a participle: the word order and the participle's agreement are the
-        // locale's business (Polish uses the impersonal «Opublikowano …»).
-        status.textContent = `✓ ${tn('publish.publishedCount', count, {}, '{n} episoder publisert')}`
-        if (result.feedUrl) {
-          settings.podcast = { ...(settings.podcast ?? {} as PodcastSettings), feedUrl: result.feedUrl }
-          showFeedUrl(result.feedUrl)
-        }
-      } else {
-        // The backend's AppError arrives as «validation: <code>: <detail>» —
-        // branch on the stable leading code (errorCode, R3-C), never on
-        // message prose.
-        const code = errorCode(result.error)
-        const reason = result.error === 'not_connected'    ? t('publish.errConnectFirst',    'koble til skytjenesten først')
-                     : result.error === 'no_save_folder'   ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
-                     : result.error === 'podcast_disabled' ? t('publish.errEnablePodcast',   'aktiver podcast først')
-                     : code === 'feature_disabled'         ? t('publish.unavailableBuild',   'ikke med i denne bygningen av SundayRec')
-                     : code === 'no_config'                ? t('publish.errPickFolderFirst', 'velg lagringsmappe først')
-                     : result.error ?? t('publish.errUnknown', 'ukjent feil')
-        status.textContent = `✕ ${reason}`
-      }
-    } catch (err) {
-      status.textContent = `✕ ${(err as Error).message}`
-    } finally {
-      btn.disabled = false
-    }
-  })
-
-  // Honest gate (UX-natt fase 3): «Generer feed nå» must not offer a write
-  // this build cannot perform. `publish_feed_status` answers at runtime
-  // whether the default-off `publish` cargo feature was compiled in; when it
-  // was not (or the question itself failed), the button is disabled WITH the
-  // reason — not left clickable in front of a guaranteed «✕».
-  void (async () => {
-    const feedStatus = await window.api.podcastFeedStatus()
-    if (feedStatus?.featureBuilt) return
-    const btn      = document.getElementById('btn-podcast-regenerate') as HTMLButtonElement | null
-    const statusEl = document.getElementById('podcast-status')
-    const reason   = t('publish.unavailableBuildLong',
-      'RSS-generering er ikke med i denne bygningen av SundayRec.')
-    if (btn) { btn.disabled = true; btn.title = reason }
-    if (statusEl) statusEl.textContent = reason
-  })()
-}
-
-function showFeedUrl(url: string): void {
-  const row = document.getElementById('podcast-feed-url-row')
-  const inp = document.getElementById('podcast-feed-url') as HTMLInputElement | null
-  if (row && inp) {
-    inp.value = url
-    row.style.display = ''
-  }
 }
 
 export function applyFilesSettingsToUI(): void {
@@ -279,36 +157,6 @@ export function applyFilesSettingsToUI(): void {
   if (prerollSel)    prerollSel.value    = String(settings.preRollSeconds        ?? 0)
   const prerollOnEl = document.getElementById('opt-preroll-enabled') as HTMLInputElement | null
   if (prerollOnEl)   prerollOnEl.checked = settings.prerollEnabled === true
-
-  // Podcast
-  const p = settings.podcast
-  const enabledEl = document.getElementById('opt-podcast-enabled') as HTMLInputElement | null
-  const cfgEl     = document.getElementById('podcast-config')
-  if (enabledEl) enabledEl.checked = !!p?.enabled
-  if (cfgEl)     cfgEl.style.display = p?.enabled ? 'flex' : 'none'
-  setVal('podcast-title',       p?.title       ?? '')
-  setVal('podcast-author',      p?.author      ?? '')
-  setVal('podcast-description', p?.description ?? '')
-  setVal('podcast-email',       p?.email       ?? '')
-  setVal('podcast-link',        p?.link        ?? '')
-  setVal('podcast-image',       p?.imageUrl    ?? '')
-  const langEl = document.getElementById('podcast-language') as HTMLSelectElement | null
-  if (langEl) langEl.value = p?.language ?? 'no'
-  const catEl  = document.getElementById('podcast-category') as HTMLSelectElement | null
-  if (catEl)   catEl.value = p?.category ?? 'Religion & Spirituality'
-  const svcEl  = document.getElementById('podcast-service') as HTMLSelectElement | null
-  if (svcEl)   svcEl.value = p?.service ?? 'google-drive'
-  if (p?.feedUrl) showFeedUrl(p.feedUrl)
-
-  // Prep-and-review extras (v5.0)
-  const autoPrepEl = document.getElementById('opt-podcast-auto-prep') as HTMLInputElement | null
-  if (autoPrepEl) autoPrepEl.checked = (p as { autoPrepEnabled?: boolean } | undefined)?.autoPrepEnabled !== false
-  const presetEl = document.getElementById('podcast-default-master-preset') as HTMLSelectElement | null
-  if (presetEl) presetEl.value = (p as { defaultMasterPreset?: string } | undefined)?.defaultMasterPreset ?? 'speech-clear'
-  const introEl = document.getElementById('podcast-default-intro') as HTMLInputElement | null
-  if (introEl) introEl.value = (p as { defaultIntroPath?: string } | undefined)?.defaultIntroPath ?? ''
-  const outroEl = document.getElementById('podcast-default-outro') as HTMLInputElement | null
-  if (outroEl) outroEl.value = (p as { defaultOutroPath?: string } | undefined)?.defaultOutroPath ?? ''
 
   toggleMp3Quality()
   updateFilenamePreview()
@@ -352,7 +200,7 @@ function afterFilesSave(): void {
 }
 
 /**
- * Read the Opptak tab + the podcast section into `settings`. Persistence
+ * Read the Opptak tab into `settings`. Persistence
  * belongs to `bindSetting`; the confirmation for a short auto-delete retention
  * is a guard on the two controls that can set it (see `autoDeleteGuard`), not a
  * surprise inside the save.
@@ -361,27 +209,6 @@ function collectFilesSettings(): void {
   const autoDelEl   = document.getElementById('opt-auto-delete') as HTMLInputElement | null
   const autoDelDays = document.getElementById('auto-delete-days') as HTMLInputElement | null
   const days = autoDelEl?.checked ? (+(autoDelDays?.value ?? '') || 90) : 0
-
-  const podcastEnabled = !!(document.getElementById('opt-podcast-enabled') as HTMLInputElement | null)?.checked
-  const podcast: PodcastSettings = {
-    enabled:     podcastEnabled,
-    service:     ((document.getElementById('podcast-service') as HTMLSelectElement | null)?.value ?? 'google-drive') as PodcastSettings['service'],
-    title:       (document.getElementById('podcast-title')       as HTMLInputElement | null)?.value.trim() ?? '',
-    author:      (document.getElementById('podcast-author')      as HTMLInputElement | null)?.value.trim() ?? '',
-    description: (document.getElementById('podcast-description') as HTMLTextAreaElement | null)?.value.trim() ?? '',
-    language:    (document.getElementById('podcast-language')    as HTMLSelectElement | null)?.value ?? 'no',
-    category:    (document.getElementById('podcast-category')    as HTMLSelectElement | null)?.value ?? 'Religion & Spirituality',
-    explicit:    false,
-    email:       (document.getElementById('podcast-email')       as HTMLInputElement | null)?.value.trim() || null,
-    link:        (document.getElementById('podcast-link')        as HTMLInputElement | null)?.value.trim() || null,
-    imageUrl:    (document.getElementById('podcast-image')       as HTMLInputElement | null)?.value.trim() || null,
-    feedUrl:     settings.podcast.feedUrl,  // preserve last published URL across saves
-    // Prep-and-review (v5.0) extras
-    autoPrepEnabled:     (document.getElementById('opt-podcast-auto-prep') as HTMLInputElement | null)?.checked !== false,
-    defaultMasterPreset: (document.getElementById('podcast-default-master-preset') as HTMLSelectElement | null)?.value || 'speech-clear',
-    defaultIntroPath:    (document.getElementById('podcast-default-intro') as HTMLInputElement | null)?.value.trim() || null,
-    defaultOutroPath:    (document.getElementById('podcast-default-outro') as HTMLInputElement | null)?.value.trim() || null,
-  }
 
   const protectEl     = document.getElementById('opt-protect')           as HTMLInputElement  | null
   const silenceEl     = document.getElementById('opt-silence')           as HTMLInputElement  | null
@@ -406,6 +233,5 @@ function collectFilesSettings(): void {
     manualMaxMinutes:      parseInt(manualMaxSel?.value  ?? '0')   || 0,
     preRollSeconds:        parseInt(prerollSel?.value    ?? '0')   || 0,
     prerollEnabled:        !!(document.getElementById('opt-preroll-enabled') as HTMLInputElement | null)?.checked,
-    podcast,
   })
 }

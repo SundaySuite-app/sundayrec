@@ -1,5 +1,9 @@
 # Fase 6 — Cloud backup (status)
 
+> **ARKIVERT (R1 «Frivilligen først», 2026-08-23):** cloud backup, the
+> Google OAuth client and the Gmail transport were removed from SundayRec.
+> This document describes code that now lives only in git history.
+
 Google-only cloud backup (Drive backup, YouTube publish, Gmail notifications),
 all sharing one OAuth client via the Desktop loopback flow. Ported from the
 Electron build, split into a pure core and an impure shell.

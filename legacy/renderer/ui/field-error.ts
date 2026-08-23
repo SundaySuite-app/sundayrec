@@ -21,7 +21,7 @@ function errorIdFor(el: HTMLElement): string {
 /** The row the message should sit under — the wrapper when the field is in one. */
 function hostFor(el: HTMLElement): HTMLElement {
   return (
-    el.closest<HTMLElement>('.folder-row, .inline-field-row, .pass-row, .prep-jingle-row') ?? el
+    el.closest<HTMLElement>('.folder-row, .inline-field-row, .pass-row') ?? el
   )
 }
 

@@ -93,7 +93,7 @@ export async function loadHistory(): Promise<void> {
 // cheap, so the row goes and a toast offers «Angre».
 //
 // A history row whose FILE is trashed keeps existing in the database (that is
-// what makes a restore give back the note, the duration and the cloud markers);
+// what makes a restore give back the note and the duration);
 // the shim hides it. A row whose file was already missing has nothing to
 // recover, so those rows are dropped outright — which is also the only way
 // «Slett alle» can actually empty the table.
@@ -359,18 +359,6 @@ export function renderHistoryRows(
           const vidDiv = Object.assign(document.createElement('div'), { className: 'hist-note', textContent: `📹 ${videoEntry.filename}` })
           if (videoEntry.path) vidDiv.title = videoEntry.path
           td.appendChild(vidDiv)
-        }
-        // Cloud upload indicators
-        const cloudNames: Record<string, string> = { 'google-drive': 'GD', 'dropbox': 'DB', 'onedrive': 'OD' }
-        const cloudTitles: Record<string, string> = { 'google-drive': 'Google Drive', 'dropbox': 'Dropbox', 'onedrive': 'OneDrive' }
-        const uploaded = r.cloudUploaded ?? []
-        if (uploaded.length) {
-          const cloudDiv = document.createElement('div')
-          cloudDiv.className = 'hist-note'
-          cloudDiv.style.cssText = 'color:var(--blue,#60a5fa);font-size:11px'
-          cloudDiv.textContent = uploaded.map(s => `☁ ${cloudNames[s] ?? s}`).join(' ')
-          cloudDiv.title = uploaded.map(s => cloudTitles[s] ?? s).join(', ')
-          td.appendChild(cloudDiv)
         }
       }
       tr.appendChild(td)

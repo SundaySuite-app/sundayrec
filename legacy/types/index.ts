@@ -8,7 +8,6 @@
 import type { ChannelMode } from '../bindings/ChannelMode'
 import type { FileFormat } from '../bindings/FileFormat'
 import type { FilenamePattern } from '../bindings/FilenamePattern'
-import type { EpisodePrepStatus } from '../bindings/EpisodePrepStatus'
 import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
 import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
@@ -22,8 +21,6 @@ import type { Settings as SettingsGen } from '../bindings/Settings'
 import type { DeviceChannels } from '../bindings/DeviceChannels'
 import type { ScheduleSlot } from '../bindings/ScheduleSlot'
 import type { SpecialRecording } from '../bindings/SpecialRecording'
-import type { PodcastSettings } from '../bindings/PodcastSettings'
-import type { CloudServicePrefs } from '../bindings/CloudServicePrefs'
 export type {
   ChannelMode,
   FileFormat,
@@ -31,9 +28,6 @@ export type {
   DeviceChannels,
   ScheduleSlot,
   SpecialRecording,
-  PodcastSettings,
-  CloudServicePrefs,
-  EpisodePrepStatus,
   PrepAnalysisSegment,
   EditorSegment,
   ChapterMarker,
@@ -65,67 +59,7 @@ export interface RecordingEntry {
   timestamp?: number
   fileSizeBytes?: number    // actual file size on disk after recording
   durationSec?: number      // recording duration in seconds
-  cloudUploaded?: string[]  // cloud service IDs where this file was uploaded: ['google-drive', 'dropbox', 'onedrive']
-  cloudUrls?: Record<string, string>  // service ID → public/share URL (used by podcast RSS feed)
 }
-
-// PodcastSettings is generated (re-exported above) — the Rust
-// `sundayrec_core::settings::PodcastSettings`, one vocabulary with the store.
-
-// PrepAnalysisSegment + EpisodePrepStatus are generated (re-exported above).
-//
-// EpisodePrep status lifecycle:
-//   analyzing       — background analysis running
-//   ready           — prep complete, all defaults applied, no concerns
-//   needs-attention — prep complete, but the suggested sermon segment is
-//                     low-confidence or absent. Human review required.
-//   published       — user clicked "Godkjenn og publiser" and the upload
-//                     pipeline ran to completion.
-//   discarded       — user clicked "Ikke publiser denne uka".
-export interface EpisodePrep {
-  id:                string                       // uuid
-  recordingPath:     string                       // source file
-  timestamp:         number                       // when recording finished
-  status:            EpisodePrepStatus
-  analysisSegments?: PrepAnalysisSegment[]        // raw segments from audio-analysis.ts
-  /** Sermon-only range derived from segments — the area between startSec and
-   *  endSec is "keep", everything else is intended to be cut. */
-  suggestedTrim?:    { startSec: number; endSec: number }
-  /** 0..1 — how confident we are that suggestedTrim covers the sermon. */
-  sermonConfidence?: number
-  masterPreset:      string                       // default 'speech-clear'
-  introPath?:        string                       // null = no intro for this episode
-  outroPath?:        string                       // null = no outro for this episode
-  /** Norwegian — why this needs human review beyond normal QC. */
-  attentionReasons?: string[]
-  /** Reserved for Phase 2 YouTube auto-publish. Currently unused. */
-  publishYoutube?:   boolean
-  createdAt:         number
-  updatedAt:         number
-  /** Set after a successful publish — guards against double-publishing
-   *  if the user clicks the button twice. */
-  publishedAt?:      number
-  /** History timestamp of the source recording entry (used to mark the
-   *  recording as published when this prep is published). */
-  recordingTimestamp?: number
-}
-
-/**
- * A single entry in the human-review queue. Wraps EpisodePrep with bookkeeping
- * (reminder count, age). Stored in electron-store under key `reviewQueue`.
- */
-export interface ReviewQueueEntry {
-  id:        string
-  prep:      EpisodePrep
-  addedAt:   number
-  /** Reminders sent so far: 0 = none, 1 = 24h sent, 2 = 48h sent, 3 = 7d sent.
-   *  At 4, the entry has been auto-discarded (14d) — but at that point the
-   *  entry is removed from the queue rather than kept around. */
-  reminded:  number
-  /** Days since addedAt — computed on read from getQueue(), not persisted. */
-  ageInDays: number
-}
-
 
 /**
  * The settings model (R4): THE generated binding, one vocabulary end to end —
@@ -134,9 +68,6 @@ export interface ReviewQueueEntry {
  */
 export type Settings = SettingsGen
 
-/** Back-compat alias — the generated `CloudServicePrefs` is the same shape the
- *  old hand-written `CloudServiceSettings` described (tokens live elsewhere). */
-export type CloudServiceSettings = CloudServicePrefs
 
 export interface RecordingOpts extends Partial<Settings> {
   deviceId?: string | null
@@ -208,93 +139,3 @@ export interface TranscriptData {
 
 // SermonHighlight / CompanionChapter / SummarySource / SermonCompanion are
 // generated (re-exported above) — the AI sermon-companion result types.
-
-// NB: distinct from the generated `CloudService` ('google-drive'|'youtube'|
-// 'gmail'), which models OAuth account kinds — this one is the backup targets.
-export type CloudServiceId = 'google-drive' | 'dropbox' | 'onedrive'
-
-// CloudServiceSettings: see the generated `CloudServicePrefs` alias above.
-
-export interface CloudStatus {
-  connected: boolean
-  accountName?: string
-  accountEmail?: string
-  folderId?: string
-  folderName?: string
-  folderPath?: string
-  lastUpload?: number
-  lastUploadOk?: boolean
-  /** True when the saved refresh token has been revoked — user must reconnect. */
-  needsReauth?: boolean
-}
-
-export interface CloudUploadQueueEntry {
-  id:             string         // unique entry id (uuid-ish)
-  service:        CloudServiceId
-  filePath:       string
-  entryTimestamp?: number        // history-entry timestamp to mark as uploaded on success
-  attempts:       number         // total attempts so far
-  nextAttempt:    number         // unix ms — earliest time the worker may retry
-  lastError?:     string         // last error message (for UI)
-  enqueuedAt:     number
-  status:         'pending' | 'uploading' | 'failed' | 'reauth-required'
-}
-
-export interface CloudQueueStatus {
-  entries: Array<{
-    id: string
-    service: CloudServiceId
-    filename: string
-    attempts: number
-    nextAttempt: number
-    lastError?: string
-    status: CloudUploadQueueEntry['status']
-  }>
-}
-
-// ── Sunday-suite integrations ───────────────────────────────────────────────
-// Opt-in connection to the sister apps (Stage, Plan, Song, SundayEdit). Every
-// flag defaults off; when `enabled` is false nothing in src/main/integrations/
-// runs and the renderer hides the whole "Sunday-suite" section. The recording
-// core (recorder.ts / scheduler.ts) never reads these.
-
-/** A song that was used in a service, with the cross-suite identifiers we may
- *  know about. At least one of the IDs (or the title) is always present.
- *  `firstShownSec`/`displayedSec` are offsets into the matched recording. */
-export interface SongUsage {
-  title: string
-  tonoWorkId?: string
-  ccliSongId?: string
-  sundaysongId?: string
-  firstShownSec?: number
-  displayedSec?: number
-}
-
-/** Links one recording to its external service context. Persisted as a
- *  `<recording>.service.json` sidecar next to the audio/video file — mirrors
- *  the `.transcript.json` sidecar convention. */
-export interface ServiceLink {
-  source: 'stage' | 'plan' | 'manual'
-  serviceId?: string
-  churchId?: string
-  serviceDate?: string        // YYYY-MM-DD
-  wasStreamed?: boolean        // SundayRec is the source of truth for this
-  setlist: SongUsage[]
-  linkedAt: number             // unix ms
-}
-
-export interface IntegrationSettings {
-  /** Master opt-in for the entire Sunday-suite area. */
-  enabled: boolean
-  sundayedit?: { enabled: boolean }
-  stage?: { enabled: boolean; manifestFolder?: string }
-  song?: { enabled: boolean; autoSubmitUsage?: boolean }
-  plan?: { enabled: boolean; autoSchedule?: boolean }
-  /** Shared cloud connection used by the Song/Plan flows. API keys are NOT
-   *  stored here — they live encrypted via safeStorage (like stream keys). */
-  connection?: {
-    churchId?: string
-    songApiUrl?: string
-    planApiUrl?: string
-  }
-}

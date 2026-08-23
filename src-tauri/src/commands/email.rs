@@ -1,24 +1,19 @@
 //! Email-alert commands (PU-1 P2b) — the thin IPC layer over `crate::email`.
 //!
 //! `email_status` reports whether this build can send (the `email` cargo
-//! feature) and whether a Gmail refresh token is stored, so the renderer can
-//! render the panel WITHOUT having to provoke a failed send. `email_send_test`
-//! dispatches a localized "email works" test message via the chosen transport.
+//! feature), so the renderer can render the panel WITHOUT having to provoke a
+//! failed send. `email_send_test` dispatches a localized "email works" test
+//! message over SMTP — the one transport.
 //!
-//! The send path (SMTP socket / Gmail POST) is behind the `email` feature, which
+//! The send path (the SMTP socket) is behind the `email` feature, which
 //! is now **in `default` and in both release feature lists** — so a shipped build
 //! can actually send. Only a `--no-default-features` build makes
 //! `email_send_test` return `feature_disabled`, and the panel then shows a calm
 //! "not built into this build" hint. NETWORK-UNVERIFIED against a real provider.
 
-use tauri::State;
+use sundayrec_core::email::EmailStatus;
 
-use sundayrec_core::email::{EmailStatus, EmailTransportKind};
-use sundayrec_core::webhook::{build_webhook_body, WebhookPayload};
-
-use crate::db::Db;
 use crate::error::AppResult;
-use crate::settings;
 
 /// The stable snake code for "no SMTP host configured" — the one the renderer's
 /// `emailErrorText` (general-page.ts) branches on via `errorCode()`. A CODE,
@@ -27,14 +22,12 @@ use crate::settings;
 /// silently broken. Seam-tested on both sides (here + error-code-core.test.ts).
 pub const NO_CONFIG_SMTP_HOST: &str = "no_config_smtp_host";
 
-/// Whether this build can send email + whether Gmail is already connected. Works
-/// in every build: `feature_built` reflects the compile-time `email` feature and
-/// `gmail_connected` reads the keychain for a stored Gmail refresh token.
+/// Whether this build can send email. Works in every build: `feature_built`
+/// reflects the compile-time `email` feature.
 #[tauri::command]
 pub fn email_status() -> EmailStatus {
     EmailStatus {
         feature_built: cfg!(feature = "email"),
-        gmail_connected: crate::secrets::has(crate::secrets::SecretProvider::Gmail),
     }
 }
 
@@ -80,28 +73,24 @@ pub(crate) fn resolve_from_address(
         .map(str::to_string)
 }
 
-/// Send a localized "email works" test message to `recipient` via `transport`.
+/// Send a localized "email works" test message to `recipient` over SMTP.
 ///
-/// For [`EmailTransportKind::Smtp`] only `host` is strictly required: the
-/// password falls back to the keychain ([`resolve_smtp_password`]) and the
-/// `From:` address to the username/recipient ([`resolve_from_address`]), so the
-/// button works from a saved configuration with nothing retyped. A password
-/// typed into the field still wins, and is dropped after the send. For
-/// [`EmailTransportKind::Gmail`] the SMTP fields are ignored and the stored
-/// Gmail token is used. `language` picks the localized subject/body (Norwegian
-/// by default).
+/// Only `host` is strictly required: the password falls back to the keychain
+/// ([`resolve_smtp_password`]) and the `From:` address to the username/
+/// recipient ([`resolve_from_address`]), so the button works from a saved
+/// configuration with nothing retyped. A password typed into the field still
+/// wins, and is dropped after the send. `language` picks the localized
+/// subject/body (Norwegian by default).
 ///
 /// Errors (all `AppError::Validation`, granular code in the message):
-/// `feature_disabled` · `no_config: Google OAuth not configured` ·
-/// [`NO_CONFIG_SMTP_HOST`] · `no_config: smtp from` · `missing_password`.
+/// `feature_disabled` · [`NO_CONFIG_SMTP_HOST`] · `no_config: smtp from` ·
+/// `missing_password`.
 ///
 /// NETWORK-UNVERIFIED against a real provider; a `--no-default-features` build
 /// returns `feature_disabled`.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 #[cfg_attr(not(feature = "email"), allow(unused_variables))]
 pub async fn email_send_test(
-    transport: EmailTransportKind,
     recipient: String,
     language: Option<String>,
     host: Option<String>,
@@ -119,70 +108,32 @@ pub async fn email_send_test(
 
     #[cfg(feature = "email")]
     {
-        use crate::cloud::config::GoogleOAuthConfig;
         use crate::email::Transport;
         use crate::error::AppError;
 
-        let transport = match transport {
-            EmailTransportKind::Gmail => Transport::Gmail {
-                config: GoogleOAuthConfig::resolve().ok_or_else(|| {
-                    AppError::Validation("no_config: Google OAuth not configured".into())
-                })?,
-            },
-            EmailTransportKind::Smtp => {
-                let user = user.filter(|u| !u.trim().is_empty());
-                Transport::Smtp {
-                    host: host.filter(|h| !h.trim().is_empty()).ok_or_else(|| {
-                        AppError::Validation(format!("{NO_CONFIG_SMTP_HOST}: smtp host missing"))
-                    })?,
-                    port: port.unwrap_or(587),
-                    from: resolve_from_address(from.as_deref(), user.as_deref(), &recipient)
-                        .ok_or_else(|| AppError::Validation("no_config: smtp from".into()))?,
-                    // Read the keychain ONLY when the request carries nothing —
-                    // the stored secret never leaves this stack frame.
-                    pass: resolve_smtp_password(
-                        pass,
-                        crate::secrets::get(crate::secrets::SecretProvider::SmtpPassword),
-                    )
-                    .ok_or_else(|| AppError::Validation("missing_password".into()))?,
-                    user,
-                }
-            }
+        let user = user.filter(|u| !u.trim().is_empty());
+        let transport = Transport::Smtp {
+            host: host.filter(|h| !h.trim().is_empty()).ok_or_else(|| {
+                AppError::Validation(format!("{NO_CONFIG_SMTP_HOST}: smtp host missing"))
+            })?,
+            port: port.unwrap_or(587),
+            from: resolve_from_address(from.as_deref(), user.as_deref(), &recipient)
+                .ok_or_else(|| AppError::Validation("no_config: smtp from".into()))?,
+            // Read the keychain ONLY when the request carries nothing —
+            // the stored secret never leaves this stack frame.
+            pass: resolve_smtp_password(
+                pass,
+                crate::secrets::get(crate::secrets::SecretProvider::SmtpPassword),
+            )
+            .ok_or_else(|| AppError::Validation("missing_password".into()))?,
+            user,
         };
         crate::email::send_test(&transport, &recipient, language.as_deref()).await
     }
 }
 
-/// Send a test notification to `url` to verify a webhook before relying on it
-/// during a recording failure. The body shaping (URL validation, Slack/Discord
-/// detection, the structured-vs-chat payload) is the unit-tested
-/// [`sundayrec_core::webhook`]; the church name comes from settings. Returns the
-/// `no_url` error for an invalid URL (matching the Electron handler). The POST
-/// itself is NETWORK-UNVERIFIED (reuses the always-present `reqwest`, no feature).
-#[tauri::command]
-pub async fn email_test_webhook(db: State<'_, Db>, url: String) -> AppResult<bool> {
-    let s = settings::load(&db.pool).await.unwrap_or_default();
-    let ts = chrono::Utc::now().to_rfc3339();
-    let payload = WebhookPayload::test(&s.church_name, &ts);
-    let Some(body) = build_webhook_body(&url, &payload) else {
-        return Err(crate::error::AppError::Validation("no_url".into()));
-    };
-    // NETWORK-UNVERIFIED: a 10 s-bounded POST; any non-success status / transport
-    // error means the webhook isn't reachable (returns Ok(false), not an error,
-    // so the panel shows "didn't work" rather than a stack-trace).
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .body(body)
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await;
-    Ok(matches!(resp, Ok(r) if r.status().is_success()))
-}
-
 /// Wipe the stored SMTP password from the OS keychain (the user disabled email
-/// notifications or switched to Gmail). Mirrors the Electron `clear-smtp-password`
+/// notifications). Mirrors the Electron `clear-smtp-password`
 /// handler. A missing entry is success, not an error.
 #[tauri::command]
 pub fn email_clear_smtp_password() -> AppResult<bool> {

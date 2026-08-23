@@ -64,26 +64,7 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
         updateChannel: "beta",
         reminderMinutes: 15,
         churchName: "Domkirken",
-        webhookOnWarning: true,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
-        podcast: {
-          enabled: true,
-          service: "google-drive",
-          title: "Domkirken taler",
-          description: "",
-          author: "",
-          language: "no",
-          category: "Religion & Spirituality",
-          explicit: false,
-          link: null,
-          imageUrl: null,
-          email: null,
-          feedUrl: null,
-          autoPrepEnabled: true,
-          defaultIntroPath: null,
-          defaultOutroPath: null,
-          defaultMasterPreset: "speech-clear",
-        },
       },
       goto: "settings:general",
     });
@@ -110,13 +91,9 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     expect(payload.updateChannel).toBe("beta");
     expect(payload.reminderMinutes).toBe(15);
     expect(payload.churchName).toBe("Domkirken");
-    expect(payload.webhookOnWarning).toBe(true);
     expect(payload.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });
-    expect((payload.podcast as { title?: unknown })?.title).toBe(
-      "Domkirken taler",
-    );
 
     // The round trip closes: the store now answers what the save sent.
     const stored = await storedSettings(page);

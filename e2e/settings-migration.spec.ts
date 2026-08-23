@@ -59,7 +59,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
       hasLaunched: true,
       churchName: "Domkirken",
       autoDeleteDays: 90,
-      webhookOnWarn: true, // old name
+      webhookOnWarn: true, // retired with the webhook — must be dropped
       videoSeparate: true, // old name
       updateChannel: "beta",
       inputVolume: 80.5, // float — must arrive integer-coerced
@@ -73,7 +73,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     const imported = JSON.parse(
       (await settingsImportPayloads(page))[0],
     ) as Record<string, unknown>;
-    expect(imported.webhookOnWarning).toBe(true);
+    expect(imported).not.toHaveProperty("webhookOnWarning");
     expect(imported).not.toHaveProperty("webhookOnWarn");
     expect(imported.outputMode).toBe("separate");
     expect(imported).not.toHaveProperty("videoSeparate");

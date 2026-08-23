@@ -1531,12 +1531,6 @@ pub async fn cancel_export(engine: &ExportEngine) -> AppResult<bool> {
     }
 }
 
-/// Extract a single video frame at `sec` as a base64 JPEG for the video preview.
-#[cfg(not(feature = "editor"))]
-pub async fn extract_frame(_input_path: &str, _sec: f64) -> AppResult<String> {
-    disabled("extractFrame")
-}
-
 // ── HARDWARE-UNVERIFIED implementations (feature on) ─────────────────────────────
 
 /// Probe a recording: spawn ffprobe with the core's argv, parse its output with
@@ -2040,8 +2034,10 @@ where
         }
         pcm.extend(
             chunk
-                .chunks_exact(2)
-                .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0),
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| i16::from_le_bytes(*b) as f32 / 32768.0),
         );
         if chunk.len() % 2 == 1 {
             carry = Some(chunk[chunk.len() - 1]);
@@ -3153,36 +3149,6 @@ where
     Ok(tail)
 }
 
-/// Extract a single video frame at `sec` seconds, scaled to 480px wide, and
-/// return it as a base64-encoded JPEG (the renderer drops it into
-/// `data:image/jpeg;base64,…`). The argv (`-ss` before `-i`, `scale=480:-2`,
-/// one MJPEG frame to `pipe:1`) is the core's tested
-/// [`frame_extract_args`](sundayrec_core::editor::frame_extract_args) decision;
-/// the seam only spawns ffmpeg, collects stdout, and base64-encodes it.
-/// HARDWARE-UNVERIFIED — needs real video media.
-#[cfg(feature = "editor")]
-pub async fn extract_frame(input_path: &str, sec: f64) -> AppResult<String> {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    use sundayrec_core::editor::frame_extract_args;
-
-    if !std::path::Path::new(input_path).exists() {
-        return Err(AppError::Validation("file_not_found".into()));
-    }
-    let args = frame_extract_args(input_path, sec);
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let child = crate::media::ffmpeg::spawn_ffmpeg(&arg_refs).await?;
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| AppError::Recording(format!("frame extract wait: {e}")))?;
-    if !out.status.success() || out.stdout.is_empty() {
-        return Err(AppError::Recording(
-            "frame extract produced no image (no video stream or seek past end?)".into(),
-        ));
-    }
-    Ok(STANDARD.encode(&out.stdout))
-}
-
 // ── seam helpers (feature on) ────────────────────────────────────────────────────
 
 /// The first video stream's pixel dimensions, or `None` when ffprobe can't say.
@@ -3458,11 +3424,6 @@ mod tests {
         };
         let engine = ExportEngine::new();
         assert!(export(&engine, &req, false, |_, _| {})
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("feature_disabled"));
-        assert!(extract_frame("/x.mp4", 1.0)
             .await
             .unwrap_err()
             .to_string()

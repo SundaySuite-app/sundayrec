@@ -7,17 +7,13 @@
 pub mod account;
 pub mod app;
 pub mod audio;
-pub mod bridge;
 pub mod calendar;
-pub mod cloud;
 pub mod companion;
 pub mod db;
-pub mod deeplink;
 pub mod diagnostics;
 pub mod editor;
 pub mod email;
 pub mod haptics;
-pub mod integrations;
 pub mod legacy_data;
 // E2.3 — reveal the log folder / copy its tail. Neither takes a path: the only
 // directory they can touch is computed in-process (see the module docs).
@@ -28,15 +24,12 @@ pub mod path_guard;
 // land a new path-taking command without classifying it as guarded or exempt.
 // Compiled out of every non-test build by its own inner `#![cfg(test)]`.
 mod path_ratchet;
-pub mod publish;
 pub mod recorder;
-pub mod review;
 pub mod scheduler;
 pub mod settings;
 // E3 — opt-in telemetry: consent, deletion, counters, and the "show me exactly
 // what you would send" preview. None takes a path (see the module docs).
 pub mod telemetry;
-pub mod thumbnail;
 pub mod trash;
 pub mod update;
 pub mod wake;

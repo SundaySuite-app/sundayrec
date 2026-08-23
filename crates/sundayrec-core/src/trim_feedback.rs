@@ -36,7 +36,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::prep::SuggestedTrim;
+use crate::detect::SuggestedTrim;
 
 /// How far the operator moved each boundary of the proposed sermon trim, in
 /// signed seconds. See the module docs for the sign convention.

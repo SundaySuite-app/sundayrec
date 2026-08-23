@@ -70,7 +70,7 @@ export interface BindSettingOpts<T = SettingValue> {
   apply: (value: T, el: HTMLElement) => void
   /**
    * Persist. Defaults to the shared debounced `saveSettings` in state.ts —
-   * override for the surfaces with their own store (Sunday-suite integrations).
+   * override for a surface with its own store (the telemetry consent row).
    */
   persist?: () => Promise<boolean>
   /** Runs after a successful save (refresh Home, re-derive the schedule …). */
@@ -126,8 +126,6 @@ function defaultChipHost(el: HTMLElement): HTMLElement | null {
   const toggleRow = el.closest<HTMLElement>('.toggle-row')
   const title = toggleRow?.querySelector<HTMLElement>('.toggle-title')
   if (title) return title
-  const cloudRow = el.closest<HTMLElement>('.cloud-toggle-row')
-  if (cloudRow) return cloudRow
   // A `.form-label` immediately before the field (or before its wrapper row).
   const wrapper = el.closest<HTMLElement>('.folder-row, .inline-field-row, .pass-row') ?? el
   const prev = wrapper.previousElementSibling as HTMLElement | null

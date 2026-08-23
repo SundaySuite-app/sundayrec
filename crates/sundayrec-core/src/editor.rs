@@ -695,6 +695,19 @@ pub struct Chapter {
     pub title: String,
 }
 
+/// The chapter marker as the renderer's `.meta.json` sidecar stores it — the
+/// wire twin of [`Chapter`] (`time` in whole seconds from the start of the main
+/// content). Exported for the renderer's `RecordingMetadata.chapters`; the
+/// Rust export path reads the sidecar as opaque JSON and never deserialises
+/// this directly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/ChapterMarker.ts")]
+pub struct ChapterMarker {
+    #[ts(type = "number")]
+    pub time: i64,
+    pub title: String,
+}
+
 /// Optional recording metadata for the export — title/speaker/description plus
 /// chapters. Mirrors the `RecordingMetadata` shape the editor consumed.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1157,39 +1170,6 @@ pub fn analysis_decode_args(input_path: &str) -> Vec<String> {
     ]
     .into_iter()
     .map(String::from)
-    .collect()
-}
-
-/// ffmpeg arguments to extract a single video frame at `sec` seconds from
-/// `input_path`, scaled to 480px wide (height auto, even), as one MJPEG image on
-/// stdout (`pipe:1`). The seam reads stdout and base64-encodes it so the editor's
-/// video preview can scrub frames without a `<video>` element. `-ss` is placed
-/// BEFORE `-i` for a fast input seek; `sec` is clamped non-negative + finite.
-/// Mirrors the Electron editor's `editor-extract-frame` ffmpeg invocation.
-pub fn frame_extract_args(input_path: &str, sec: f64) -> Vec<String> {
-    let seek = if sec.is_finite() && sec > 0.0 {
-        sec
-    } else {
-        0.0
-    };
-    [
-        "-nostdin".to_string(),
-        "-hide_banner".to_string(),
-        "-ss".to_string(),
-        format!("{seek}"),
-        "-i".to_string(),
-        input_path.to_string(),
-        "-vf".to_string(),
-        "scale=480:-2".to_string(),
-        "-frames:v".to_string(),
-        "1".to_string(),
-        "-f".to_string(),
-        "image2pipe".to_string(),
-        "-vcodec".to_string(),
-        "mjpeg".to_string(),
-        "pipe:1".to_string(),
-    ]
-    .into_iter()
     .collect()
 }
 
@@ -2695,33 +2675,6 @@ mod tests {
         assert!(joined.contains("-f s16le"));
         // raw stream to stdout
         assert_eq!(args.last().unwrap(), "-");
-    }
-
-    #[test]
-    fn frame_extract_args_seek_scale_single_mjpeg_to_pipe() {
-        let args = frame_extract_args("/rec/a.mp4", 12.5);
-        let joined = args.join(" ");
-        // Fast input seek: `-ss` BEFORE `-i` with the requested second.
-        let ss = args.iter().position(|a| a == "-ss").unwrap();
-        let i = args.iter().position(|a| a == "-i").unwrap();
-        assert!(ss < i, "-ss must precede -i for a fast input seek");
-        assert_eq!(args[ss + 1], "12.5");
-        assert_eq!(args[i + 1], "/rec/a.mp4");
-        // 480px-wide, even-height scale; exactly one frame; MJPEG to stdout.
-        assert!(joined.contains("-vf scale=480:-2"));
-        assert!(joined.contains("-frames:v 1"));
-        assert!(joined.contains("-f image2pipe"));
-        assert!(joined.contains("-vcodec mjpeg"));
-        assert_eq!(args.last().unwrap(), "pipe:1");
-    }
-
-    #[test]
-    fn frame_extract_args_clamps_negative_and_nonfinite_seek_to_zero() {
-        for bad in [-3.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            let args = frame_extract_args("/rec/a.mp4", bad);
-            let ss = args.iter().position(|a| a == "-ss").unwrap();
-            assert_eq!(args[ss + 1], "0", "seek {bad} should clamp to 0");
-        }
     }
 
     // ── peak down-sampling ──────────────────────────────────────────────────────

@@ -22,10 +22,11 @@
 //!
 //! A command is IN SCOPE when at least one parameter name (with any leading `_`
 //! stripped, lowercased) either contains `path` or ends with `folder`, `dir` or
-//! `file`. That deliberately over-matches — `cloud_set_folder` takes a Google
-//! Drive folder id, not a filesystem path, and is EXEMPT for exactly that
-//! reason. A false positive costs one line in a list; a false negative costs a
-//! security hole, which is the whole point of the ratchet.
+//! `file`. That deliberately over-matches — a command whose `folder` is a
+//! remote id rather than a filesystem path (the old `cloud_set_folder` was one)
+//! goes in EXEMPT with the reason. A false positive costs one line in a list; a
+//! false negative costs a security hole, which is the whole point of the
+//! ratchet.
 //!
 //! The parser tolerates what real source contains: doc-comments and `//` lines
 //! between the attribute and the `fn`, other attributes (`#[allow(...)]`),
@@ -52,7 +53,6 @@ const GUARDED: &[&str] = &[
     "editor_diagnose_channels",
     "editor_auto_process",
     "editor_mastering_analyze",
-    "editor_extract_frame",
     "editor_read_sidecar",
     "editor_write_sidecar",
     "editor_delete_sidecar",
@@ -61,37 +61,19 @@ const GUARDED: &[&str] = &[
     "editor_record_companion_suggestion",
     "editor_probe_streams",
     "editor_read_file",
-    // ── Episode images ───────────────────────────────────────────────────────
-    "thumbnail_set_default",
-    "thumbnail_set_episode",
-    "thumbnail_clear_episode",
-    "thumbnail_resolve",
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
     // ── E1.2 ─────────────────────────────────────────────────────────────────
     "whisper_transcribe",
     "whisper_export_transcript",
-    "integrations_get_service_link",
-    "integrations_song_submit_usage",
-    "integrations_sundayedit_send",
-    "integrations_sundayedit_import",
-    "stage_import_apply",
     "settings_export_to_file",
     "settings_import_from_file",
-    "cloud_enqueue_backup",
-    "open_in_sundayedit",
-    "open_in_sundaystudio",
-    "prep_build_episode",
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
 /// acts on. Every entry carries the reason it is safe; an entry without one is a
 /// hole waiting to be found.
-const EXEMPT: &[(&str, &str)] = &[(
-    "cloud_set_folder",
-    "`folder` is a Google Drive folder id + display name (CloudFolder), never a \
-     local path — it is persisted to the settings bag and sent to the Drive API",
-)];
+const EXEMPT: &[(&str, &str)] = &[];
 
 /// One `#[tauri::command]` found in the sources.
 #[derive(Debug)]
@@ -267,7 +249,7 @@ fn the_parser_actually_finds_commands() {
         "editor_peaks",
         "whisper_transcribe",
         "settings_export_to_file",
-        "deeplink_confirm_captions",
+        "editor_read_sidecar",
     ] {
         assert!(
             commands.iter().any(|c| c.name == known),

@@ -1,10 +1,11 @@
 //! Notification ROUTING — pure, GUI-free, network-free.
 //!
-//! SundayRec has three ways to tell somebody that something went wrong:
+//! SundayRec has two ways to tell somebody that something went wrong:
 //!
 //!   1. a native OS notification (the volunteer is at the machine),
-//!   2. an e-mail alert (the volunteer went home; [`crate::email`] renders it),
-//!   3. a chat/generic webhook POST ([`crate::webhook`] shapes the body).
+//!   2. an e-mail alert (the volunteer went home; [`crate::email`] renders it).
+//!
+//! (A third, a chat webhook POST, was removed with the sharing cluster.)
 //!
 //! Until now each *source* of trouble picked its own subset by hand — the
 //! scheduler fired a native notification and nothing else, the recorder's
@@ -24,7 +25,6 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::email::MailLang;
-use crate::webhook::WebhookSeverity;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //   Stable warning codes
@@ -43,11 +43,6 @@ pub mod code {
     /// enough that the rolling buffer is effectively dead — the Home chip
     /// otherwise cannot tell "off" from "broken".
     pub const PREROLL_DEAD: &str = "preroll_dead";
-    /// A queued cloud upload hit its permanent-failure terminus.
-    pub const CLOUD_UPLOAD_FAILED: &str = "cloud_upload_failed";
-    /// The stored cloud refresh token was revoked — the queue is paused until
-    /// the user reconnects.
-    pub const CLOUD_REAUTH_REQUIRED: &str = "cloud_reauth_required";
     /// Crash recovery skipped a session/file instead of salvaging it.
     pub const RECOVERY_SKIPPED: &str = "recovery_skipped";
     /// The audio device named in settings was not among the enumerated inputs
@@ -57,22 +52,10 @@ pub mod code {
     /// — well above the engine's terminal stop threshold, so this is a nudge
     /// while there is still time to act, not the emergency stop.
     pub const DISK_LOW: &str = "disk_low";
-    /// An episode has sat in the review queue for a week. Two more and the
-    /// queue discards it on its own, so this is the last rung that still asks
-    /// rather than acts.
-    pub const REVIEW_OVERDUE: &str = "review_overdue";
 
     /// Every code above, in declaration order. The renderer's key table is
     /// checked against this list.
-    pub const ALL: &[&str] = &[
-        PREROLL_DEAD,
-        CLOUD_UPLOAD_FAILED,
-        CLOUD_REAUTH_REQUIRED,
-        RECOVERY_SKIPPED,
-        DEVICE_MISSING,
-        DISK_LOW,
-        REVIEW_OVERDUE,
-    ];
+    pub const ALL: &[&str] = &[PREROLL_DEAD, RECOVERY_SKIPPED, DEVICE_MISSING, DISK_LOW];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,7 +63,7 @@ pub mod code {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// How loud a [`BackendWarning`] is. Serialised lowercase to match the
-/// renderer's `'warn' | 'error'` union (and [`WebhookSeverity`]).
+/// renderer's `'warn' | 'error'` union.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/lib/bindings/WarnSeverity.ts")]
 #[serde(rename_all = "lowercase")]
@@ -89,17 +72,6 @@ pub enum WarnSeverity {
     Warn,
     /// Something is broken and needs attention.
     Error,
-}
-
-impl WarnSeverity {
-    /// The matching webhook severity (the two unions are deliberately identical
-    /// so a warning can be forwarded without a lossy remap).
-    pub fn to_webhook(self) -> WebhookSeverity {
-        match self {
-            WarnSeverity::Warn => WebhookSeverity::Warn,
-            WarnSeverity::Error => WebhookSeverity::Error,
-        }
-    }
 }
 
 /// A non-fatal observation the backend wants on screen NOW.
@@ -161,7 +133,7 @@ impl BackendWarning {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Which part of the app produced a failure. Carried on the dispatch context so
-/// the webhook body says where to look, and so future routing can differ per
+/// the log says where to look, and so future routing can differ per
 /// source without changing the call sites.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -173,7 +145,7 @@ pub enum FailureSource {
 }
 
 impl FailureSource {
-    /// Stable lowercase label used in the webhook body + logs.
+    /// Stable lowercase label used in logs.
     pub fn as_str(self) -> &'static str {
         match self {
             FailureSource::Recording => "recording",
@@ -193,8 +165,6 @@ pub struct NotifyPlan {
     pub native: bool,
     /// Send the e-mail alert.
     pub email: bool,
-    /// POST the webhook.
-    pub webhook: bool,
 }
 
 /// Everything the failure matrix decides on. All of it is already-gathered fact:
@@ -209,22 +179,12 @@ pub struct FailureRouting<'a> {
     /// `cfg!(feature = "email")` in the RUNNING build. A `--no-default-features`
     /// build has no transport compiled in, and must not pretend otherwise.
     pub email_feature_built: bool,
-    /// The shell could assemble a transport (an SMTP host + a password, or a
-    /// configured Gmail client with a stored refresh token). Without one there
-    /// is nothing to send *with*, however willing the settings are.
+    /// The shell could assemble a transport (an SMTP host + a password). Without
+    /// one there is nothing to send *with*, however willing the settings are.
     pub email_transport_ready: bool,
     /// The [`crate::email::AlertGate`] says this (recipient, error) pair was
     /// already mailed inside the throttle window.
     pub email_throttled: bool,
-    /// `settings.webhook_url` — POSTed on every failure when it passes the
-    /// [`crate::webhook::webhook_gate`]. There is no separate "webhook on error"
-    /// toggle: configuring a webhook at all IS the opt-in
-    /// (`webhook_on_warning` only widens it to warnings — see [`WarningRouting`]).
-    pub webhook_url: &'a str,
-    /// `settings.webhook_allow_local` — the operator confirmed this URL points
-    /// at a device on their own network (E1.4). Without it a loopback/private/
-    /// link-local URL plans as "no webhook" rather than as a silent blind SSRF.
-    pub webhook_allow_local: bool,
 }
 
 /// Decide which channels a FAILURE goes out on.
@@ -233,9 +193,10 @@ pub struct FailureRouting<'a> {
 /// machine is the one person who can still fix Sunday's recording, and no
 /// setting has ever been able to silence that. E-mail needs all five of its
 /// conditions (asked for it, somewhere to send, a build that can send, a
-/// transport to send with, and not already told a minute ago). The webhook
-/// needs a URL that passes the SSRF gate — valid, and either public-over-TLS or
-/// a local address the operator explicitly allowed.
+/// transport to send with, and not already told a minute ago).
+///
+/// A WARNING has no matrix: it always (and only) goes to the renderer's toast
+/// via the `backend://warning` event.
 pub fn plan_failure(r: &FailureRouting) -> NotifyPlan {
     NotifyPlan {
         native: true,
@@ -244,40 +205,7 @@ pub fn plan_failure(r: &FailureRouting) -> NotifyPlan {
             && r.email_feature_built
             && r.email_transport_ready
             && !r.email_throttled,
-        webhook: crate::webhook::may_send_webhook(r.webhook_url, r.webhook_allow_local),
     }
-}
-
-/// Everything the warning matrix decides on.
-#[derive(Debug, Clone, Copy)]
-pub struct WarningRouting<'a> {
-    /// `settings.webhook_on_warning` — forward warnings, not just failures.
-    pub webhook_on_warning: bool,
-    /// `settings.webhook_url`.
-    pub webhook_url: &'a str,
-    /// `settings.webhook_allow_local` — see [`FailureRouting`].
-    pub webhook_allow_local: bool,
-}
-
-/// What a WARNING does. The in-app event is unconditional (it is the whole
-/// point — the renderer's toast); the webhook is opt-in twice over, because a
-/// chat channel that pings on every degraded pre-roll retry gets muted, and a
-/// muted channel is worse than no channel.
-pub fn plan_warning(r: &WarningRouting) -> WarnPlan {
-    WarnPlan {
-        event: true,
-        webhook: r.webhook_on_warning
-            && crate::webhook::may_send_webhook(r.webhook_url, r.webhook_allow_local),
-    }
-}
-
-/// Which channels a warning goes out on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WarnPlan {
-    /// Emit the `backend://warning` event to the renderer.
-    pub event: bool,
-    /// POST the webhook (severity `warn`).
-    pub webhook: bool,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,8 +296,8 @@ pub fn alert_person(responsible: &str, recipient: &str) -> String {
 }
 
 /// The church name for an alert subject/body, falling back to the app name when
-/// the profile was never filled in (mirrors [`crate::webhook::WebhookPayload`]'s
-/// own `untitled` guard, which the Electron build had and the mailer did not).
+/// the profile was never filled in (the Electron build's webhook had this
+/// `untitled` guard and the mailer did not).
 pub fn alert_church(church: &str) -> &str {
     let trimmed = church.trim();
     if trimmed.is_empty() {
@@ -391,8 +319,6 @@ mod tests {
             email_feature_built: true,
             email_transport_ready: true,
             email_throttled: false,
-            webhook_url: "https://hooks.slack.com/services/T/B/X",
-            webhook_allow_local: false,
         }
     }
 
@@ -405,7 +331,6 @@ mod tests {
             NotifyPlan {
                 native: true,
                 email: true,
-                webhook: true
             }
         );
     }
@@ -420,15 +345,12 @@ mod tests {
             email_feature_built: false,
             email_transport_ready: false,
             email_throttled: true,
-            webhook_url: "",
-            webhook_allow_local: false,
         });
         assert_eq!(
             plan,
             NotifyPlan {
                 native: true,
                 email: false,
-                webhook: false
             }
         );
     }
@@ -440,7 +362,7 @@ mod tests {
             ..all_on()
         });
         assert!(!plan.email);
-        assert!(plan.native && plan.webhook);
+        assert!(plan.native);
     }
 
     #[test]
@@ -470,11 +392,11 @@ mod tests {
             ..all_on()
         });
         assert!(!plan.email);
-        assert!(plan.native && plan.webhook);
+        assert!(plan.native);
     }
 
     #[test]
-    fn a_build_without_the_email_feature_degrades_to_the_other_channels() {
+    fn a_build_without_the_email_feature_degrades_to_native() {
         // `--no-default-features`: the transport isn't compiled in. The plan
         // must say so rather than let the shell attempt a send that cannot exist.
         let plan = plan_failure(&FailureRouting {
@@ -482,13 +404,13 @@ mod tests {
             ..all_on()
         });
         assert!(!plan.email);
-        assert!(plan.native && plan.webhook);
+        assert!(plan.native);
     }
 
     #[test]
     fn no_transport_means_no_email_however_willing_the_settings() {
-        // Email switched on, recipient set, feature built — but no SMTP host and
-        // no stored Gmail token. Nothing to send with.
+        // Email switched on, recipient set, feature built — but no SMTP host.
+        // Nothing to send with.
         assert!(
             !plan_failure(&FailureRouting {
                 email_transport_ready: false,
@@ -496,143 +418,6 @@ mod tests {
             })
             .email
         );
-    }
-
-    #[test]
-    fn the_webhook_needs_a_valid_url_not_merely_a_non_empty_one() {
-        for url in ["", "   ", "example.com", "ftp://example.com"] {
-            assert!(
-                !plan_failure(&FailureRouting {
-                    webhook_url: url,
-                    ..all_on()
-                })
-                .webhook,
-                "{url} should not be POSTed to"
-            );
-        }
-        // A plain-http LAN URL was accepted here before E1.4 — that was the
-        // blind SSRF. It now needs the operator's per-URL opt-in, and gets
-        // through the moment they grant it.
-        let lan = FailureRouting {
-            webhook_url: "http://192.168.1.9/hook",
-            ..all_on()
-        };
-        assert!(!plan_failure(&lan).webhook);
-        assert!(
-            plan_failure(&FailureRouting {
-                webhook_allow_local: true,
-                ..lan
-            })
-            .webhook
-        );
-    }
-
-    // ── The warning matrix ───────────────────────────────────────────────────
-
-    #[test]
-    fn a_warning_always_reaches_the_renderer() {
-        let plan = plan_warning(&WarningRouting {
-            webhook_on_warning: false,
-            webhook_url: "",
-            webhook_allow_local: false,
-        });
-        assert!(plan.event, "the toast is the whole point of a warning");
-        assert!(!plan.webhook);
-    }
-
-    #[test]
-    fn warnings_reach_the_webhook_only_when_explicitly_widened() {
-        let url = "https://hooks.slack.com/services/T/B/X";
-        assert!(
-            !plan_warning(&WarningRouting {
-                webhook_on_warning: false,
-                webhook_url: url,
-                webhook_allow_local: false,
-            })
-            .webhook,
-            "a configured webhook alone must not forward warnings"
-        );
-        assert!(
-            plan_warning(&WarningRouting {
-                webhook_on_warning: true,
-                webhook_url: url,
-                webhook_allow_local: false,
-            })
-            .webhook
-        );
-        assert!(
-            !plan_warning(&WarningRouting {
-                webhook_on_warning: true,
-                webhook_url: "nope",
-                webhook_allow_local: false,
-            })
-            .webhook,
-            "the toggle cannot rescue an invalid URL"
-        );
-    }
-
-    // ── E1.4: the SSRF gate reaches the matrix ───────────────────────────────
-
-    #[test]
-    fn a_lan_webhook_plans_as_no_webhook_until_it_is_allowed() {
-        // The routing matrix must agree with what the socket will actually do,
-        // or the plan says "webhook: true" and the send silently drops it.
-        let lan = FailureRouting {
-            webhook_url: "http://192.168.1.50/hook",
-            webhook_allow_local: false,
-            ..all_on()
-        };
-        assert!(!plan_failure(&lan).webhook);
-        assert!(
-            plan_failure(&FailureRouting {
-                webhook_allow_local: true,
-                ..lan
-            })
-            .webhook,
-            "the operator's per-URL opt-in must actually enable it"
-        );
-        // …and the same for warnings.
-        assert!(
-            !plan_warning(&WarningRouting {
-                webhook_on_warning: true,
-                webhook_url: "http://localhost:9000/hook",
-                webhook_allow_local: false,
-            })
-            .webhook
-        );
-    }
-
-    #[test]
-    fn plaintext_to_the_open_internet_never_plans_a_webhook() {
-        assert!(
-            !plan_failure(&FailureRouting {
-                webhook_url: "http://hooks.example.com/x",
-                webhook_allow_local: true,
-                ..all_on()
-            })
-            .webhook,
-            "the LAN opt-in must not smuggle church data over cleartext internet"
-        );
-    }
-
-    #[test]
-    fn a_failure_still_reaches_a_normal_https_webhook() {
-        // The regression that matters most: every ordinary Slack/Discord/Teams
-        // webhook must be completely unaffected by E1.4.
-        for url in [
-            "https://hooks.slack.com/services/T/B/X",
-            "https://discord.com/api/webhooks/1/abc",
-            "https://kirka.example.org/sundayrec-hook",
-        ] {
-            assert!(
-                plan_failure(&FailureRouting {
-                    webhook_url: url,
-                    ..all_on()
-                })
-                .webhook,
-                "{url}"
-            );
-        }
     }
 
     // ── Once-semantics ───────────────────────────────────────────────────────
@@ -731,22 +516,6 @@ mod tests {
     }
 
     #[test]
-    fn an_error_warning_maps_onto_the_error_webhook_severity() {
-        assert_eq!(
-            BackendWarning::error(code::CLOUD_REAUTH_REQUIRED).severity,
-            WarnSeverity::Error
-        );
-        assert_eq!(
-            WarnSeverity::Error.to_webhook(),
-            crate::webhook::WebhookSeverity::Error
-        );
-        assert_eq!(
-            WarnSeverity::Warn.to_webhook(),
-            crate::webhook::WebhookSeverity::Warn
-        );
-    }
-
-    #[test]
     fn every_code_is_snake_case_and_listed_exactly_once() {
         // `code::ALL` is what the renderer's key table is checked against; a code
         // that exists but isn't listed would be a warning nobody can localise.
@@ -758,7 +527,7 @@ mod tests {
                 "{c} is not snake_case"
             );
         }
-        assert_eq!(code::ALL.len(), 7);
+        assert_eq!(code::ALL.len(), 4);
     }
 
     #[test]

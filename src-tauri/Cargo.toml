@@ -13,11 +13,11 @@ edition = "2021"
 name = "sundayrec_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# Optional Electron-parity seams (PU-1/2/3…). Each gates its impure I/O over the
+# Optional Electron-parity seams (PU-1/2/5…). Each gates its impure I/O over the
 # unit-tested `sundayrec-core` decisions. The SHIPPED set (editor/whisper/tray/
-# updater) is in `default` below; the rest stay OFF until their network/GUI path
-# is smoke-tested on a real rig (`--features email` etc.). The headless CI gate
-# builds both `default` and `--no-default-features` so every seam keeps compiling.
+# updater/email) is in `default` below; `asio` and `vad` stay OFF until their
+# hardware path is proven. The headless CI gate builds both `default` and
+# `--no-default-features` so every seam keeps compiling.
 [features]
 # The non-destructive editor (R1), whisper transcription (PU-5) AND the email
 # alerter (PU-1) ship in the default build so the Rediger screen, "transkriber
@@ -31,24 +31,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # (v0.14: the `streaming`, `ndi` and `bridge` features were REMOVED together
 # with the Direkte page and its seams — SundayRec is a recording app.)
 default = ["editor", "whisper", "tray", "updater", "email"]
-# PU-1: SMTP/Gmail error+test alerts. Pulls `lettre` for the SMTP transport (the
-# Gmail-API path reuses the already-present `reqwest`) — ~6 small pure-Rust
-# crates, no native dep. NOW IN `default` AND in both release feature lists
+# PU-1: SMTP error+test alerts. Pulls `lettre` for the SMTP transport — ~6
+# small pure-Rust crates, no native dep. NOW IN `default` AND in both release feature lists
 # (.github/workflows/release.yml): an unattended volunteer operator finding out
 # by email that Sunday's recording died is the single highest-value alert the
 # app has, and it shipped in no release while this stayed default-off.
 email = ["dep:lettre"]
-# PU-2: native menubar tray + `sundayrec://` scheme handler.
-tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
-# PU-3: write/upload the podcast RSS feed. DELIBERATELY an empty feature: it
-# pulls no dependency (the XML shaping is `sundayrec-core::feed`, the planned
-# upload reuses `reqwest` + the cloud worker) — it exists only as the cfg-gate
-# `commands/publish.rs` switches the local feed WRITE on, and as the named
-# switch the Drive-upload half attaches to when the recording→share-URL column
-# lands (docs/NEEDS-RICHARD.md; R4 candidate). Not in `default`: without the
-# upload half the feature is a local file write the UI reports honestly via
-# `publish_feed_status.featureBuilt`.
-publish = []
+# PU-2: native menubar tray.
+tray = ["tauri/tray-icon"]
+# (The `publish` feature — podcast RSS — left with the sharing cluster, as did
+# `streaming`/`ndi`/`bridge` in v0.14. SundayRec is a recording app.)
 # R1: non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/
 # export/frame-extract over the unit-tested
 # `sundayrec-core::{editor,mastering,audio_analysis}` decisions. NO new native dep
@@ -215,10 +207,10 @@ fs4 = "1.1"
 # own `.sundayrec-trash` is manifest/file-shaped and cannot purge a directory.
 trash = "5"
 
-# HTTP client for the cloud upload worker + OAuth token exchange/refresh (Fase
-# 6). rustls (no system OpenSSL). The pure decisions (chunk math, retry
-# classification, token-body shaping) live in `sundayrec-core::cloud`; reqwest is
-# just the wire.
+# HTTP client for the telemetry sender, the Sunday Account (SSO) token
+# exchange, the whisper model download and the optional companion summary.
+# rustls (no system OpenSSL). The pure decisions live in `sundayrec-core`;
+# reqwest is just the wire.
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "charset",
@@ -228,16 +220,13 @@ reqwest = { version = "0.12", default-features = false, features = [
 
 # ── Optional Electron-parity seam deps (feature-gated, see [features]; some ──
 # ── are pulled in by `default` via whisper/tray/updater) ─────────────────────
-# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; the Gmail-API
-# path needs none of this (it reuses `reqwest`), so lettre is pulled only when
-# the `email` feature is on. `optional = true` keeps it out of the default build.
+# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; pulled only
+# when the `email` feature is on (`optional = true`).
 lettre = { version = "0.11", default-features = false, features = [
     "tokio1-rustls-tls",
     "smtp-transport",
     "builder",
 ], optional = true }
-# PU-2 deep-link scheme registration (`sundayrec://…`) for the OAuth/import flow.
-tauri-plugin-deep-link = { version = "2", optional = true }
 # Launch-at-login (OS login item) so scheduled recordings actually fire after a
 # reboot. Always compiled — auto-start is core to the unattended-recorder use case.
 tauri-plugin-autostart = "2"

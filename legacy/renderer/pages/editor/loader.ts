@@ -15,10 +15,8 @@ import { renderMetaPanel, renderChapterList } from './metadata'
 import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 import { loadTranscriptForFile } from '../editor-transcript'
-import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
 
-import { showState, showEditorError, updateHeaderSummary, reviewPrepId } from '../editor-page'
-import { updateStageButton } from './stage-ui'
+import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // ── File loading (probe, waveform, transport, sidecars) ─────────────────────
@@ -468,24 +466,10 @@ export async function loadFile(fp: string): Promise<void> {
   const masterSection = $('editor-master-section')
   if (masterSection) masterSection.style.display = E.isVideoFile ? 'none' : ''
 
-  // Thumbnail panel — show for audio files; embedding only works for MP3 but
-  // the panel still lets the user attach a sidecar image for RSS-feed hosts.
-  const thumbSection = $('editor-thumb-section')
-  if (thumbSection) thumbSection.style.display = E.isVideoFile ? 'none' : ''
-  if (!E.isVideoFile) {
-    const els = panelElementsByPrefix('editor')
-    // The «kommer» gate that stood here through v0.9.0 is gone: `thumbnail_*`
-    // is real (src-tauri/src/commands/thumbnail.rs), so picking an image now
-    // stores one beside the recording instead of opening a picker whose result
-    // went nowhere.
-    if (els) void refreshThumbPanel(els, { kind: 'episode', getRecordingPath: () => E.filePath })
-  }
-
   // Auto-run segment analysis. Runs in the background so the editor is
   // immediately interactive — when analysis completes we surface the
-  // auto-trim suggestion banner so the user can one-click prep a podcast
-  // episode. Skipped if cuts were restored from a draft (they're already
-  // editing) or if the user is in review-mode (handled separately).
+  // auto-trim suggestion banner so the user can one-click trim to the sermon.
+  // Skipped if cuts were restored from a draft (they're already editing).
   //
   // Fired after the peaks + transport are resolved (never off a load-time
   // timer): detection can be another full ffmpeg pass over the recording, and
@@ -494,14 +478,11 @@ export async function loadFile(fp: string): Promise<void> {
   // further to idle time so the FIRST PAINT of the workspace is never competing
   // with a decode; on a reopen the backend answers from its segments cache and
   // this returns almost immediately anyway.
-  if (!E.isVideoFile && E.cuts.length === 0 && !reviewPrepId) {
+  if (!E.isVideoFile && E.cuts.length === 0) {
     whenIdle(() => {
       if (seq === E.loadSeq) void runDetection(true)
     })
   }
-
-  // Update Stage-kapitler button visibility (opt-in, no-op when disabled).
-  void updateStageButton()
 }
 
 /**

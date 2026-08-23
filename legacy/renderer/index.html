@@ -152,20 +152,6 @@
       </div>
     </div>
 
-    <!-- Review queue card — only visible when items are pending review -->
-    <div class="card review-queue-card" id="review-queue-card" style="display:none">
-      <div class="review-queue-header">
-        <h2 class="review-queue-title">
-          <svg viewBox="0 0 20 20" width="18" height="18" fill="currentColor" class="review-queue-icon"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-          <span data-i18n="review.queueTitle">Klare for gjennomgang og publisering</span>
-        </h2>
-        <span class="review-queue-count" id="review-queue-count"></span>
-      </div>
-      <div class="review-queue-list" id="review-queue-list">
-        <!-- Items injected by review-queue-home.ts -->
-      </div>
-    </div>
-
     <!-- Hero: device OK -->
     <div id="hero-ok" class="hero hero-ok">
       <div class="hero-icon"><svg viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg></div>
@@ -371,38 +357,11 @@
       </div>
     </div>
 
-    <!-- ─── Publisering / sky-info strip ──────────────────────────
+    <!-- ─── Publisering-info-strip ────────────────────────────────
          Smart-vis: hvert kort har display:none som default; home.ts
          setter display='' kun når innstillingen faktisk er konfigurert.
-         Holder hjem ryddig for brukere som ikke har satt opp sky/cover. -->
+         Holder hjem ryddig for brukere som ikke har satt opp transkripsjon. -->
     <div id="publish-info-strip" class="info-strip publish-info-strip" style="display:none">
-
-      <!-- Sky-backup-status -->
-      <div class="info-card info-card-publish" id="home-cloud-card" style="display:none">
-        <div class="info-card-icon">
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M5.5 16a4.5 4.5 0 01-.853-8.92A5 5 0 0114 8a4.5 4.5 0 11-1 8.94l-7.5.06z"/></svg>
-        </div>
-        <div class="info-card-body">
-          <div class="info-card-label" data-i18n="home.cloudLabel">SKY-BACKUP</div>
-          <div class="info-card-value" id="home-cloud-services">—</div>
-          <div class="info-card-sub" id="home-cloud-status"></div>
-        </div>
-        <a href="#" class="info-card-action" id="btn-go-cloud" data-i18n="home.changeSettings">Endre</a>
-      </div>
-
-      <!-- Episodebilde / cover art -->
-      <div class="info-card info-card-publish" id="home-thumb-card" style="display:none">
-        <div class="info-card-icon home-thumb-icon-slot">
-          <!-- Replaced with actual <img> by home.ts when thumbnail exists -->
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/></svg>
-        </div>
-        <div class="info-card-body">
-          <div class="info-card-label" data-i18n="home.thumbLabel">EPISODEBILDE</div>
-          <div class="info-card-value" id="home-thumb-name">—</div>
-          <div class="info-card-sub" id="home-thumb-sub"></div>
-        </div>
-        <a href="#" class="info-card-action" id="btn-go-thumb" data-i18n="home.changeSettings">Endre</a>
-      </div>
 
       <!-- Transkripsjon (Whisper) -->
       <div class="info-card info-card-publish" id="home-whisper-card" style="display:none">
@@ -693,8 +652,8 @@
   <section id="page-settings" class="page">
     <!-- Five tabs, not seven. «Publisering» and «Varsler» were two halves of
          one question — who gets the recording afterwards — so they are now
-         sections of Deling; Sunday-suite lives behind an Avansert disclosure at
-         the bottom of System. The fallbacks below match the locale values
+         sections of Deling; the companion key lives behind an Avansert
+         disclosure at the bottom of System. The fallbacks below match the locale values
          exactly (they used to say «Lyd» while no.json said «Lydkilde»). -->
     <div class="inner-tabs" id="settings-tabs">
       <button class="inner-tab active" data-tab="settings-audio" data-i18n="nav.audio">Lyd</button>
@@ -1038,229 +997,12 @@
 
     </div>
 
-    <!-- ── Deling (Publisering + Varsler) ─────────────────────────
-         Both sections keep their ids and their markup verbatim — the page TS
-         (files-page, publish-page, general-page) addresses them by id. -->
+    <!-- ── Deling (Varsler) ───────────────────────────────────────
+         The section keeps its id and its markup verbatim — the page TS
+         (general-page) addresses it by id. (The «Publisering» section that
+         sat above it — cloud backup, podcast, cover art — left in R1 of
+         «Frivilligen først».) -->
     <div id="settings-sharing" class="inner-page">
-
-    <div class="settings-section-head">
-      <h2 data-i18n="nav.publish">Publisering</h2>
-      <p data-i18n="sharing.publishDesc">Sky-backup, podkast og direktesending — hvor opptaket havner etter gudstjenesten.</p>
-    </div>
-    <div id="settings-publish" class="settings-section">
-      <div class="card">
-        <div class="card-title" data-i18n="publish.intro">Del opptakene utenfor kirken</div>
-        <p class="card-desc" data-i18n="publish.introDesc">Her setter du opp automatisk sky-backup og — hvis dere ønsker — en podcast som gjør gudstjenestene tilgjengelige i Spotify og Apple Podcasts. Alt er valgfritt.</p>
-      </div>
-
-      <!-- ── Standard episodebilde (cover art) ──────────────────── -->
-      <div class="card" id="publish-thumb-card">
-        <div class="card-title" data-i18n="thumbnail.default.title">Standard episodebilde</div>
-        <p class="card-desc" data-i18n="thumbnail.default.subtitle">Brukes som cover art for alle prekener med mindre du overstyrer per episode.</p>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="publish-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="publish-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="publish-thumb-info"></div>
-            <div class="thumb-warning" id="publish-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-publish-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-publish-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="publish-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
-      </div>
-      <!-- ── Sky-backup (Google Drive / Dropbox / OneDrive) ──────── -->
-      <div class="card" id="cloud-backup-card">
-        <div class="card-title" data-i18n="publish.title">Sky-backup</div>
-        <p class="card-desc" data-i18n="publish.desc">Last opp opptakene automatisk til Google Drive — som ekstra sikkerhet og for enkel deling.</p>
-
-        <div class="cloud-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:12px">
-
-          <!-- Google Drive -->
-          <div class="cloud-card" id="cloud-card-google-drive">
-            <div class="cloud-card-header">
-              <svg viewBox="0 0 87.3 78" width="24" height="24"><path fill="#0066da" d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3L27.5 53H0c0 1.55.4 3.1 1.2 4.5z"/><path fill="#00ac47" d="M43.65 25L30 1.4C28.65 2.2 27.5 3.3 26.7 4.7L1.2 48.85C.42 50.227.008 51.784 0 53.35h27.5z"/><path fill="#ea4335" d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.5z"/><path fill="#00832d" d="M43.65 25l13.65-23.6C55.95.6 54.4 0 52.85 0H34.45c-1.55 0-3.1.45-4.45 1.4z"/><path fill="#2684fc" d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.55c1.55 0 3.1-.45 4.45-1.2z"/><path fill="#ffba00" d="M73.4 26.5L60.65 4.7c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z"/></svg>
-              <div class="cloud-card-name">Google Drive</div>
-            </div>
-            <div class="cloud-disconnected">
-              <button class="btn-primary" data-cloud-connect="google-drive" data-i18n="publish.connect">Koble til</button>
-            </div>
-            <div class="cloud-connected" style="display:none">
-              <div class="cloud-card-info">
-                <div><span data-i18n="publish.account">Konto</span>: <span class="cloud-account-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.folder">Mappe</span>: <span class="cloud-folder-name cloud-info-value"></span></div>
-                <div><span data-i18n="publish.lastUpload">Siste</span>: <span class="cloud-last-upload cloud-info-value">—</span></div>
-              </div>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-enabled="google-drive">
-                <span data-i18n="publish.enabled">Aktivert</span>
-              </label>
-              <label class="cloud-toggle-row">
-                <input type="checkbox" data-cloud-auto="google-drive">
-                <span data-i18n="publish.autoUpload">Last opp automatisk etter opptak</span>
-              </label>
-              <div class="cloud-actions-row">
-                <button class="btn-secondary btn-sm" data-cloud-pick-folder="google-drive" data-i18n="publish.pickFolder">Velg mappe…</button>
-                <button class="btn-ghost" data-cloud-disconnect="google-drive" data-i18n="publish.disconnect">Koble fra</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Dropbox- og OneDrive-kortene (skjult med display:none siden de
-               kom) ble FJERNET 2026-08: uten DROPBOX_APP_KEY/ONEDRIVE_CLIENT_ID
-               kan ingen build koble til, og et usynlig kort er død DOM, ikke en
-               feature. Backend-koden + testene lever videre; gjenoppbygg
-               kortet etter Google Drive-malen over når app-nøklene finnes
-               (publish-page.ts: VISIBLE_SERVICES må utvides tilsvarende). -->
-
-        </div><!-- /cloud-grid -->
-
-        <!-- Queue-panelet rendres her av publish-page.ts -->
-        <div id="cloud-queue-anchor"></div>
-      </div>
-
-      <!-- ── Podcast RSS-feed (auto-publisering) ─────────────────── -->
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div class="card-title" style="margin:0">Podcast (RSS-feed)</div>
-          <label class="toggle"><input type="checkbox" id="opt-podcast-enabled"><span class="toggle-track"></span></label>
-        </div>
-        <p class="card-desc" data-i18n="publish.podcastIntro">Genererer en RSS-feed automatisk etter hvert opptak. Send feed-URL-en én gang til Spotify for Podcasters og Apple Podcasts Connect — nye gudstjenester dukker opp av seg selv.</p>
-
-        <div id="podcast-config" style="display:none;flex-direction:column;gap:12px;margin-top:8px">
-
-          <div>
-            <label class="form-label">PUBLISER VIA</label>
-            <!-- Kun tjenester som faktisk kan kobles til i denne versjonen
-                 står i listen — ingen «kommer senere»-rader (Dropbox/OneDrive
-                 gjenoppstår her sammen med sky-kortene sine den dagen
-                 app-nøklene finnes). -->
-            <select class="form-input" id="podcast-service" style="max-width:280px">
-              <option value="google-drive">Google Drive</option>
-            </select>
-          </div>
-
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-            <div>
-              <label class="form-label" for="podcast-title">PODKAST-NAVN</label>
-              <input type="text" class="form-input" id="podcast-title" placeholder="Eks: Eksempel kirke">
-            </div>
-            <div>
-              <label class="form-label" for="podcast-author">FORFATTER / KIRKE</label>
-              <input type="text" class="form-input" id="podcast-author" placeholder="Eks: Eksempel menighet">
-            </div>
-          </div>
-
-          <div>
-            <label class="form-label" for="podcast-description">BESKRIVELSE</label>
-            <textarea class="form-input" id="podcast-description" rows="2" data-i18n-placeholder="publish.descPlaceholder" placeholder="Eks: Gudstjenester fra Eksempel kirke, hver søndag kl 11"></textarea>
-          </div>
-
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
-            <div>
-              <label class="form-label" for="podcast-language" data-i18n="publish.language">SPRÅK</label>
-              <select class="form-input" id="podcast-language">
-                <option value="no">Norsk</option>
-                <option value="en">English</option>
-                <option value="de">Deutsch</option>
-                <option value="sv">Svenska</option>
-                <option value="da">Dansk</option>
-                <option value="pl">Polski</option>
-                <option value="fr">Français</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label" for="podcast-category">KATEGORI</label>
-              <select class="form-input" id="podcast-category">
-                <option value="Religion &amp; Spirituality">Religion &amp; Spirituality</option>
-                <option value="Christianity">Christianity</option>
-                <option value="Society &amp; Culture">Society &amp; Culture</option>
-                <option value="Education">Education</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label" for="podcast-email">KONTAKT-E-POST</label>
-              <input type="email" class="form-input" id="podcast-email" placeholder="kontakt@kirke.no">
-            </div>
-          </div>
-
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-            <div>
-              <label class="form-label" for="podcast-link">NETTSIDE (valgfritt)</label>
-              <input type="url" class="form-input" id="podcast-link" placeholder="https://kirke.no">
-            </div>
-            <div>
-              <label class="form-label" for="podcast-image">COVER-BILDE URL (valgfritt)</label>
-              <input type="url" class="form-input" id="podcast-image" placeholder="https://kirke.no/cover.jpg">
-            </div>
-          </div>
-
-          <div id="podcast-feed-url-row" style="display:none;background:#1a2a1f;border:1px solid #2a5a3a;border-radius:6px;padding:10px 12px">
-            <div class="feed-url-label" data-i18n="publish.feedUrlLabel">FEED-URL — send denne til Spotify og Apple Podcasts</div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <input type="text" class="form-input" id="podcast-feed-url" readonly style="flex:1;font-family:monospace;font-size:12px">
-              <button class="btn-secondary btn-sm" id="btn-podcast-copy-url">Kopier</button>
-            </div>
-          </div>
-
-          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-            <button class="btn-primary" id="btn-podcast-regenerate" data-i18n="publish.regenerateFeed">Generer feed nå</button>
-            <span id="podcast-status" style="font-size:12px;color:var(--text3)"></span>
-          </div>
-
-          <!-- ── Prep-and-review (v5.0) ────────────────────────────── -->
-          <div class="prep-review-section">
-            <div class="prep-review-title" data-i18n="prep.sectionTitle">Forhåndsklargjøring og gjennomgang</div>
-            <p class="card-desc prep-review-desc" data-i18n="prep.sectionDesc">Etter hvert opptak blir det automatisk analysert (preken-deteksjon), klargjort med mastering og intro/outro, og lagt i en kø for menneskelig gjennomgang før publisering.</p>
-
-            <div class="toggle-row prep-review-toggle">
-              <div>
-                <div class="toggle-title" data-i18n="prep.enableTitle">Aktiver auto-klargjøring</div>
-                <div class="toggle-desc" data-i18n="prep.enableDesc">Kjør analyse + klargjøring etter hvert opptak</div>
-              </div>
-              <label class="toggle"><input type="checkbox" id="opt-podcast-auto-prep" checked><span class="toggle-track"></span></label>
-            </div>
-
-            <div class="prep-review-grid">
-              <div>
-                <label class="form-label" for="podcast-default-master-preset" data-i18n="prep.masterPreset">MASTERING-PRESETT</label>
-                <select class="form-input" id="podcast-default-master-preset">
-                  <option value="speech-clear" data-i18n="prep.presetSpeechClear">Tale — tydelig (anbefalt)</option>
-                  <option value="speech-natural" data-i18n="prep.presetSpeechNatural">Tale — naturlig</option>
-                  <option value="speech-punchy" data-i18n="prep.presetSpeechPunchy">Tale — kraftig</option>
-                  <option value="music-speech" data-i18n="prep.presetMusicSpeech">Musikk + tale</option>
-                </select>
-              </div>
-              <div>
-                <label class="form-label" for="podcast-default-intro" data-i18n="prep.defaultIntro">STANDARD INTRO-JINGLE</label>
-                <div class="prep-jingle-row">
-                  <input type="text" class="form-input prep-jingle-input" id="podcast-default-intro" readonly placeholder="(ingen)">
-                  <button class="btn-secondary btn-sm" id="btn-podcast-pick-intro" data-i18n="general.pickFile">Velg fil…</button>
-                  <button class="btn-ghost btn-sm" id="btn-podcast-clear-intro" aria-label="Fjern intro">×</button>
-                </div>
-              </div>
-              <div>
-                <label class="form-label" for="podcast-default-outro" data-i18n="prep.defaultOutro">STANDARD OUTRO-JINGLE</label>
-                <div class="prep-jingle-row">
-                  <input type="text" class="form-input prep-jingle-input" id="podcast-default-outro" readonly placeholder="(ingen)">
-                  <button class="btn-secondary btn-sm" id="btn-podcast-pick-outro" data-i18n="general.pickFile">Velg fil…</button>
-                  <button class="btn-ghost btn-sm" id="btn-podcast-clear-outro" aria-label="Fjern outro">×</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p class="prep-howto" data-i18n="prep.howto">
-            Slik kommer du i gang: Last opp 1-3 testopptak til Google Drive, klikk «Generer feed nå», og send URL-en som dukker opp til Spotify for Podcasters og Apple Podcasts Connect. Etter godkjenning (1-2 dager) dukker hvert nytt opptak opp automatisk.
-          </p>
-        </div>
-      </div>
-
-    </div>
 
     <div class="settings-section-head">
       <h2 data-i18n="nav.notifications">Varsler</h2>
@@ -1360,27 +1102,6 @@
           <div class="form-hint" id="email-status-hint" style="margin-top:12px"></div>
           <button type="button" class="btn-secondary" id="btn-test-email" style="margin-top:12px" disabled data-i18n="general.testEmail">Test e-post</button>
         </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title" data-i18n="notify.webhookTitle">Webhook (Slack / Discord / Teams)</div>
-        <div class="card-desc notify-webhook-intro" data-i18n="notify.webhookIntro">
-          Send varsler til en chat-kanal i tillegg til e-post. Lim inn webhook-URL fra Slack, Discord eller Teams.
-        </div>
-        <label class="form-label" data-i18n="general.webhookUrl">WEBHOOK-URL</label>
-        <input type="url" class="form-input" id="webhook-url" placeholder="https://hooks.slack.com/services/..." />
-        <div class="form-hint" data-i18n="notify.webhookHint">Slack: https://hooks.slack.com/... · Discord: https://discord.com/api/webhooks/...</div>
-        <div class="toggle-row mt">
-          <div>
-            <div class="toggle-title" data-i18n="notify.webhookOnWarn">Send også på advarsler</div>
-            <div class="toggle-desc" data-i18n="notify.webhookOnWarnDesc">Som standard sendes kun feilmeldinger. Slå på dette for å få beskjed også ved mindre problemer.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-webhook-on-warn" /><span class="toggle-track"></span></label>
-        </div>
-        <!-- WIRED (Fase 3c): email_test_webhook is real on every build — a
-             plain 10 s POST behind no cargo feature. The stub that always
-             reported failure is gone; the button just needs a URL. -->
-        <button type="button" class="btn-secondary" id="btn-test-webhook" style="margin-top:12px" disabled data-i18n="notify.testWebhook">Test webhook</button>
       </div>
     </div>
 
@@ -1785,111 +1506,26 @@
       </div>
 
 
-      <!-- ── Avansert: Sunday-suite ───────────────────────────────────
-           Was its own tab, which put an opt-in developer integration at the
-           same level as «hvor lagres opptakene». Same markup, same ids, one
-           click further in. -->
+      <!-- ── Avansert ──────────────────────────────────────────────────
+           One click further in than «hvor lagres opptakene»: the optional AI
+           sermon-companion key. (The Sunday-suite integrations that shared
+           this disclosure left in R1 of «Frivilligen først».) -->
       <details class="adv-disclosure" id="settings-advanced">
-        <summary class="adv-disclosure-summary" data-i18n="general.suiteAdvanced">Avansert: Sunday-suite-integrasjoner</summary>
-        <div id="settings-integrations" class="settings-section">
-      <div class="card">
-        <div class="card-title">Sunday-suite</div>
-        <p class="card-desc" data-i18n="integrations.masterDesc">Koble SundayRec til søsterappene i Sunday-suiten. Alt er valgfritt og av som standard — SundayRec fungerer akkurat som før uten dette.</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="integrations.masterToggle">Aktiver Sunday-suite-integrasjoner</div>
-            <div class="toggle-desc" data-i18n="integrations.masterToggleDesc">Hovedbryter. Når den er av kjøres ingen integrasjonskode.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-integrations-enabled" /><span class="toggle-track"></span></label>
-        </div>
-      </div>
-      <div class="card" id="integrations-sundayedit-card">
-        <div class="card-title" data-i18n="integrations.editTitle">SundayEdit — pro-teksting</div>
-        <p class="card-desc" data-i18n="integrations.editDesc">Send et videoopptak til SundayEdit for profesjonell teksting (per-ord-sikkerhet, ordliste, styling). Tekstingen kommer tilbake som transkripsjon på opptaket. Krever at SundayEdit er installert.</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="integrations.editToggle">Vis «Send til SundayEdit» i editoren</div>
-            <div class="toggle-desc" data-i18n="integrations.editToggleDesc">Legger til en knapp på videoopptak i transkripsjons-panelet.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-integrations-sundayedit" /><span class="toggle-track"></span></label>
-        </div>
-      </div>
-      <div class="card" id="integrations-song-card">
-        <div class="card-title" data-i18n="integrations.songTitle">SundaySong — CCLI/TONO-rapportering</div>
-        <p class="card-desc" data-i18n="integrations.songDesc">Send sanglisten (fra Stage-importen) til SundaySong etter publisering. SundaySong bygger automatiske CCLI- og TONO-lisensrapporter for menigheten.</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="integrations.songToggle">Aktiver SundaySong-rapportering</div>
-            <div class="toggle-desc" data-i18n="integrations.songToggleDesc">Legger til «Send til SundaySong»-knapp på opptakets publiseringspanel.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-integrations-song" /><span class="toggle-track"></span></label>
-        </div>
-        <!-- EXPLICIT SAVE: en API-nøkkel er bare riktig når den er komplett. -->
-        <div id="integrations-song-key-row" class="explicit-save-card" style="margin-top:12px">
-          <label class="form-label" data-i18n="integrations.songApiKeyLabel">SUNDAYSONG API-NØKKEL</label>
-          <input type="password" class="form-input" id="integration-song-apikey" data-i18n-placeholder="integrations.apiKeyPlaceholder" placeholder="Lim inn API-nøkkel…" style="max-width:360px" autocomplete="off" />
-          <div class="btn-row explicit-save-row">
-            <button type="button" class="btn-primary btn-sm" id="btn-song-apikey-save" data-i18n="general.save">Lagre</button>
-            <button type="button" class="btn-ghost btn-sm" id="btn-song-apikey-cancel" data-i18n="general.cancel">Avbryt</button>
-          </div>
-          <div class="form-hint" id="integration-song-apikey-status"></div>
-        </div>
-        <div class="form-hint" style="margin-top:8px" data-i18n="integrations.songChurchIdHint">
-          Menighets-ID (church_id) settes i Tilkobling-feltet under.
-        </div>
-      </div>
-      <!-- EXPLICIT SAVE: menighets-ID og API-adresser er bare meningsfulle
-           ferdig skrevet — de auto-lagres derfor ikke. -->
-      <div class="card explicit-save-card" id="integrations-connection-card">
-        <div class="card-title" data-i18n="integrations.connectionTitle">Tilkobling</div>
-        <p class="card-desc" data-i18n="integrations.connectionDesc">Delte felt brukt av Song- og Plan-integrasjonene.</p>
-        <label class="form-label" data-i18n="integrations.churchIdLabel">MENIGHETS-ID (church_id)</label>
-        <input type="text" class="form-input" id="integration-church-id" data-i18n-placeholder="integrations.churchIdPlaceholder" placeholder="UUID fra SundaySong/SundayPlan" style="max-width:420px" />
-        <label class="form-label mt" data-i18n="integrations.songApiUrlLabel">SUNDAYSONG API-URL (valgfri, standard: https://api.sundaysong.com)</label>
-        <input type="text" class="form-input" id="integration-song-api-url" placeholder="https://api.sundaysong.com" style="max-width:420px" />
-        <label class="form-label mt" data-i18n="integrations.planApiUrlLabel">SUNDAYPLAN API-URL (valgfri)</label>
-        <input type="text" class="form-input" id="integration-plan-api-url" placeholder="https://din-menighet.supabase.co" style="max-width:420px" />
-        <div class="btn-row explicit-save-row">
-          <button type="button" class="btn-primary btn-sm" id="btn-integrations-connection-save" data-i18n="integrations.connectionSave">Lagre tilkobling</button>
-          <button type="button" class="btn-ghost btn-sm" id="btn-integrations-connection-cancel" data-i18n="general.cancel">Avbryt</button>
-        </div>
-      </div>
-      <div class="card" id="integrations-plan-card">
-        <div class="card-title" data-i18n="integrations.planTitle">SundayPlan — tjeneste-bevisst opptak</div>
-        <p class="card-desc" data-i18n="integrations.planDesc">Hent kommende tjenester fra Plan: SundayRec planlegger opptak automatisk og fyller inn tittel og taler. Etter publisering rapporteres streaming-status tilbake til Plan. Krever at SundayPlan-backend er oppe (Supabase).</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="integrations.planToggle">Aktiver SundayPlan-synkronisering</div>
-            <div class="toggle-desc" data-i18n="integrations.planToggleDesc">Sjekk Plan for kommende tjenester og skriv tilbake streaming-status.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-integrations-plan" /><span class="toggle-track"></span></label>
-        </div>
-      </div>
-      <div class="card" id="integrations-stage-card">
-        <div class="card-title" data-i18n="integrations.stageTitle">SundayStage — auto-kapitler</div>
-        <p class="card-desc" data-i18n="integrations.stageDesc">Importer Stage sin cue-logg etter gudstjenesten for å sette kapittelmarkører automatisk (sangtitler, preken, skriftlesing) og bygge opp setlisten for lisensiering.</p>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-title" data-i18n="integrations.stageToggle">Vis «Importer Stage-kapitler» i editoren</div>
-            <div class="toggle-desc" data-i18n="integrations.stageToggleDesc">Legger til en knapp i analyse-panelet som lar deg velge Stage-manifestet.</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-integrations-stage" /><span class="toggle-track"></span></label>
-        </div>
-      </div>
-
-      <!-- R8: optional AI sermon-companion summary key. Independent of the master
-           integrations toggle — chapters/highlights always work on-device; this
-           only upgrades the summary/title prose from a language model. The key is
-           stored in the OS keychain only, never in settings or a bundle. -->
-      <div class="card">
+        <summary class="adv-disclosure-summary" data-i18n="general.suiteAdvanced">Avansert</summary>
+        <div id="settings-advanced-body" class="settings-section">
+      <!-- R8: optional AI sermon-companion summary key. Chapters/highlights
+           always work on-device; this only upgrades the summary/title prose
+           from a language model. The key is stored in the OS keychain only,
+           never in settings or a bundle. -->
+      <div class="card" id="companion-key-card">
         <div class="card-title" data-i18n="companion.settingsTitle">Prekenhjelp — AI-oppsummering (valgfritt)</div>
         <p class="card-desc" data-i18n="companion.settingsDesc">Kapitler og sitater lages alltid lokalt på enheten. Vil du ha en finere oppsummering og tittel kan du lime inn en Anthropic API-nøkkel — den lagres kun i nøkkelringen (OS keychain), aldri i innstillinger. Uten nøkkel brukes en lokal oppsummering.</p>
         <div class="form-row">
-          <input type="password" class="form-input" id="integration-companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
+          <input type="password" class="form-input" id="companion-apikey" placeholder="sk-ant-…" style="max-width:360px" autocomplete="off" />
           <button class="btn-ghost btn-sm" id="btn-companion-apikey-save" data-i18n="companion.keySave">Lagre</button>
           <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-companion-apikey-clear" data-i18n="companion.keyClear">Fjern</button>
         </div>
-        <div class="form-hint" id="integration-companion-apikey-status"></div>
+        <div class="form-hint" id="companion-apikey-status"></div>
       </div>
         </div>
       </details>
@@ -2027,9 +1663,6 @@
         <div class="editor-empty-recents-title" data-i18n="editor.recentTitle">Nylig brukte filer</div>
         <div id="editor-empty-recents-list"></div>
       </div>
-      <div class="editor-empty-review" id="editor-empty-review" style="display:none">
-        <a href="#" id="editor-empty-review-link" class="editor-empty-review-link" data-i18n="editor.gotoReview">Gjennomgangs-kø →</a>
-      </div>
     </div>
 
     <!-- Loading state -->
@@ -2045,53 +1678,6 @@
 
     <!-- Workspace -->
     <div id="editor-workspace" style="display:none">
-
-      <!-- Review-mode banner (prep-and-review v5.0) — shown only when entered
-           from the home queue. Tells the user "this is ready, just press publish". -->
-      <div id="editor-review-banner" style="display:none;background:linear-gradient(135deg,rgba(127,196,136,0.15),rgba(122,170,255,0.08));border:1px solid rgba(127,196,136,0.4);border-radius:10px;padding:14px 18px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:12px">
-          <div style="font-size:22px">✨</div>
-          <div style="flex:1">
-            <div style="font-weight:600;font-size:14px;color:#7fc488;margin-bottom:2px">Klargjort for publisering</div>
-            <div class="editor-review-banner-detail-text" id="editor-review-banner-detail" data-i18n="review.bannerDetail">Vi har detektert prekenen og foreslått trim. Gå over og trykk publiser.</div>
-          </div>
-        </div>
-        <!-- Per-episode jingle override -->
-        <div style="margin-top:12px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.08);display:flex;gap:14px;flex-wrap:wrap;font-size:12px;align-items:center">
-          <div>
-            <span style="color:var(--text3);margin-right:6px">Intro:</span>
-            <select id="editor-review-intro-select" class="form-input" style="font-size:12px;padding:4px 8px;min-width:140px">
-              <option value="default">Standard fra innstillinger</option>
-              <option value="none">Ingen</option>
-              <option value="custom">Velg annen…</option>
-            </select>
-            <span id="editor-review-intro-label" style="color:var(--text2);margin-left:6px;font-size:11px"></span>
-          </div>
-          <div>
-            <span style="color:var(--text3);margin-right:6px">Outro:</span>
-            <select id="editor-review-outro-select" class="form-input" style="font-size:12px;padding:4px 8px;min-width:140px">
-              <option value="default">Standard fra innstillinger</option>
-              <option value="none">Ingen</option>
-              <option value="custom">Velg annen…</option>
-            </select>
-            <span id="editor-review-outro-label" style="color:var(--text2);margin-left:6px;font-size:11px"></span>
-          </div>
-        </div>
-        <!-- Attention reasons (if any) -->
-        <div id="editor-review-attention" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,180,107,0.1);border-left:3px solid #ffb46b;border-radius:4px;font-size:12px;color:#ffb46b"></div>
-        <!-- Three big primary action buttons -->
-        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-          <button id="btn-review-publish" class="btn-primary" style="background:#7fc488;color:#0d1a12;font-weight:700;padding:10px 18px;border-radius:8px;border:none;cursor:pointer;font-size:14px;flex:1;min-width:200px">
-            ✓ Godkjenn og publiser
-          </button>
-          <button id="btn-review-edit" class="btn-secondary" data-i18n="editor.reviewEdit">
-            ↻ Endre detaljer
-          </button>
-          <button id="btn-review-discard" class="btn-ghost" data-i18n="editor.reviewDiscard">
-            ✗ Ikke publiser denne uka
-          </button>
-        </div>
-      </div>
 
       <!-- File + transport header -->
       <div class="editor-header editor-header-sticky">
@@ -2433,7 +2019,6 @@
           <button class="btn-ghost btn-sm" id="btn-transcript-export" style="display:none" data-i18n="transcript.export">↧ SRT</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-export-vtt" style="display:none" data-i18n="transcript.exportVtt">↧ VTT</button>
           <button class="btn-ghost btn-sm" id="btn-transcript-export-txt" style="display:none" data-i18n="transcript.exportTxt">↧ Tekst</button>
-          <button class="btn-ghost btn-sm" id="btn-transcript-sundayedit" style="display:none" title="Send til SundayEdit for pro-teksting">→ SundayEdit</button>
           <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-transcript-delete" style="display:none" data-i18n="transcript.delete">Slett</button>
         </div>
         <div id="editor-transcript-body" class="editor-transcript-body">
@@ -2454,30 +2039,6 @@
         <div id="editor-companion-body" class="editor-companion-body"></div>
       </div>
 
-      <!-- Episode-bilde (cover art) — between mastering and save bar -->
-      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
-        <div class="editor-master-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
-          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
-        </div>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="editor-thumb-info"></div>
-            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
-              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
-      </div>
-
       </div><!-- /tabpanel -->
 
 
@@ -2491,7 +2052,6 @@
             <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14"><path fill-rule="evenodd" d="M3 6a1 1 0 000 2h14a1 1 0 100-2H3zm0 5a1 1 0 000 2h14a1 1 0 100-2H3z" clip-rule="evenodd"/></svg>
             <span data-i18n="editor.analyzeTitle">Analyser opptak</span>
           </div>
-          <button class="btn-ghost btn-sm" id="btn-stage-import" style="display:none" title="Importer kapitler fra SundayStage cue-logg">↧ Stage-kapitler</button>
           <button class="btn-primary btn-sm" id="btn-detect-segments" data-i18n="editor.analyzeRun">▶ Analyser opptak</button>
         </div>
         <div class="editor-analyze-body" id="editor-analyze-body">
@@ -2732,17 +2292,8 @@
       <div id="mixer-controls" class="mixer-controls" style="display:none"></div>
     </div>
 
-    <!-- Publishing options -->
-    <div class="export-publish-section">
-      <div class="export-section-label" data-i18n="editor.exportPublish">Publisering</div>
-      <div id="export-publish-options" class="export-publish-options"></div>
-      <a href="#" id="export-publish-configure" class="export-publish-configure" style="display:none" data-i18n="editor.exportPublishConfigure">Konfigurer publisering →</a>
-      <div id="export-publish-progress" class="export-publish-progress" style="display:none"></div>
-    </div>
-
     <div class="btn-row mt">
       <button class="btn-primary" id="btn-export-confirm" data-i18n="editor.exportConfirm">Eksporter</button>
-      <button class="btn-primary" id="btn-export-and-publish" style="display:none" data-i18n="editor.exportAndPublish">Eksporter og publiser</button>
       <button class="btn-ghost" id="btn-export-cancel" data-i18n="editor.cancel">Avbryt</button>
     </div>
   </div>
@@ -2960,17 +2511,6 @@
       <button class="btn-primary" id="btn-note-save" data-i18n="history.noteSave">Lagre notat</button>
       <button class="btn-ghost" id="btn-note-cancel" data-i18n="history.noteCancel">Avbryt</button>
     </div>
-  </div>
-</div>
-
-<!-- Cloud folder picker modal -->
-<div id="cloud-folder-modal" class="modal-backdrop cloud-folder-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cloud-folder-modal-title">
-  <div class="modal modal-sm cloud-folder-modal">
-    <div class="modal-header">
-      <span class="modal-title" id="cloud-folder-modal-title" data-i18n="publish.pickFolder">Velg mappe…</span>
-      <button id="cloud-folder-modal-close" class="modal-close" data-i18n-aria-label="dialog.closeAria" aria-label="Lukk">×</button>
-    </div>
-    <div id="cloud-folder-list" class="cloud-folder-list"></div>
   </div>
 </div>
 

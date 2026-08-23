@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 // ── Baseline ────────────────────────────────────────────────────────────────
 // Oppdateres KUN med --write-baseline (og bare nedover uten --force-up).
-const BASELINE = 117;
+const BASELINE = 87;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HTML_PATH = path.join(

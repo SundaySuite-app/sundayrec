@@ -107,9 +107,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   // Notifications
   notifyStart: true,
   notifyStop: true,
-  webhookUrl: "",
-  webhookOnWarning: false,
-  webhookAllowLocal: false,
 
   // Email alerts
   emailOnError: false,
@@ -123,31 +120,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   editorIntroPath: null,
   editorOutroPath: null,
   editorHwEncode: false,
-
-  // Cloud backup preferences
-  cloudGoogleDrive: null,
-  cloudDropbox: null,
-  cloudOneDrive: null,
-
-  // Podcast
-  podcast: {
-    enabled: false,
-    service: "google-drive",
-    title: "",
-    description: "",
-    author: "",
-    language: "no",
-    category: "Religion & Spirituality",
-    explicit: false,
-    link: null,
-    imageUrl: null,
-    email: null,
-    feedUrl: null,
-    autoPrepEnabled: true,
-    defaultIntroPath: null,
-    defaultOutroPath: null,
-    defaultMasterPreset: "speech-clear",
-  },
 
   // Misc
   autoUpdate: true,

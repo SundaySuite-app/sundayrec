@@ -54,9 +54,10 @@ function resolve(anchor: string): HTMLElement | null {
  * tab is worse than one that fails loudly.
  */
 export const TAB_ALIASES: Record<string, { tab: string; anchor: string }> = {
-  'settings-publish':       { tab: 'settings-sharing', anchor: '#settings-publish' },
+  // The Publisering section itself is gone (R1 «Frivilligen først»); the
+  // retired id still lands on the Deling tab.
+  'settings-publish':       { tab: 'settings-sharing', anchor: '#settings-notifications' },
   'settings-notifications': { tab: 'settings-sharing', anchor: '#settings-notifications' },
-  'settings-integrations':  { tab: 'settings-general', anchor: '#settings-integrations' },
 }
 
 /** Switch the inner tab of a page without going through a synthetic click. */
@@ -92,7 +93,7 @@ export function navigateTo(page: string, opts: NavigateOpts = {}): void {
   requestAnimationFrame(() => {
     const el = resolve(anchor)
     if (!el) return
-    // Something moved behind a disclosure (Sunday-suite) must be OPENED, not
+    // Something behind a disclosure (the Avansert details) must be OPENED, not
     // just scrolled to — otherwise the deep link lands on a closed summary.
     const details = el.closest('details')
     if (details && !details.open) details.open = true

@@ -30,8 +30,8 @@ use tokio::net::TcpListener;
 
 use sunday_auth::{pkce, session, supabase};
 
-use crate::cloud::{http_client, now_ms};
 use crate::error::{AppError, AppResult};
+use crate::util::{http_client, now_ms};
 
 /// How long we wait for the user to finish the browser login before giving up.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(300);

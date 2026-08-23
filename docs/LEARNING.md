@@ -271,8 +271,10 @@ release, and none of them is automatic.
    `learn/e10-tuning-table` is collecting them into one table so that the
    candidate set is a list rather than a grep.
    **Note what is NOT there: there is no padding constant on the trim.**
-   `prep::build_episode_prep` copies the sermon segment's own bounds into
-   `suggested_trim` verbatim. So a systematic `sermon_start`/`earlier` skew is
+   `prep::build_episode_prep` copied the sermon segment's own bounds into
+   `suggested_trim` verbatim (R1 «Frivilligen først» removed the review queue
+   and with it that prep; the rule — no padding — still holds for the editor's
+   own proposal). So a systematic `sermon_start`/`earlier` skew is
    evidence about _segmentation_ — where a speech block is judged to begin — and
    not about a fudge factor somebody can nudge. That is the harder change, and
    pretending otherwise by adding a pad would be tuning the symptom.
@@ -361,7 +363,9 @@ Be concrete about this. Every item below is a real limit, not a caveat.
   into any accuracy number and carries the literal code
   `not_evidence_of_correctness_no_human_looked` in its JSON so the refusal
   survives being copied into a slide. The tool prints `editor.opened` and
-  `review.published` next to the correction count for the same reason.
+  `review.published` next to the correction count for the same reason (the
+  latter stopped being sent in R1 «Frivilligen først» — older clients' rows
+  still carry it).
 - **The aggregate cannot count churches.** A correction row carries no install
   id, by design (migration 0004) — that absence is what earns the aggregate
   indefinite retention. So forty corrections from one congregation and four each

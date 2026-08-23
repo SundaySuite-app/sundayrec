@@ -2,6 +2,6 @@
 
 /**
  * How loud a [`BackendWarning`] is. Serialised lowercase to match the
- * renderer's `'warn' | 'error'` union (and [`WebhookSeverity`]).
+ * renderer's `'warn' | 'error'` union.
  */
 export type WarnSeverity = "warn" | "error";

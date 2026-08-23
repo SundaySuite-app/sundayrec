@@ -20,7 +20,6 @@
 // decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
 pub mod account;
 pub mod audio;
-pub mod cloud;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
 // `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render
@@ -53,17 +52,13 @@ pub mod learning;
 pub mod logfile;
 pub mod media;
 // The notification dispatch seam — ONE place a failure reaches the operator
-// (native + e-mail + webhook) and one place a degradation reaches the screen.
+// (native + e-mail) and one place a degradation reaches the screen.
 // Featureless: the `email` leg compiles out cleanly under
-// `--no-default-features` and the routing matrix degrades to native + webhook.
+// `--no-default-features` and the routing matrix degrades to native only.
 // The matrix itself is the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
 pub mod preflight;
-// PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
-// The XML shaping is `sundayrec_core::feed`; this seam maps history + writes/uploads.
-#[cfg(feature = "publish")]
-pub mod publish;
 pub mod recorder;
 // R3: THE save-folder resolution seam — every "configured folder or the
 // Documents default" question goes through here (7 divergent copies before).
@@ -86,16 +81,15 @@ pub mod soak;
 pub mod telemetry;
 // E2.2 observability — ONE supervisor for every long-lived background task. The
 // scheduler had this pattern inline and was the only task that did; extracting
-// it gave the cloud worker, the review-reminder tick and the trash sweep the
-// same self-healing, and gave every restart a record. Session-scoped tasks
+// it gave the trash sweep the same self-healing, and gave every restart a
+// record. Session-scoped tasks
 // (the recorder supervisor, the low-disk poller) deliberately stay bare — see
 // the module docs for why restarting them would be WRONG.
 pub mod supervise;
 pub mod test_recording;
-// PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
-// `default` and both release builds (install failure only logs a warning). The
-// menu-model + link parse are in `sundayrec_core`; this seam maps them to tauri
-// menu/tray + the scheme handler.
+// PU-2 menubar tray — `tray` feature, in `default` and both release builds
+// (install failure only logs a warning). The menu-model is in
+// `sundayrec_core`; this seam maps it to tauri menu/tray.
 #[cfg(feature = "tray")]
 pub mod tray;
 // Papirkurv — the recoverable delete behind Historikk. Files move to
@@ -103,17 +97,9 @@ pub mod tray;
 // until the entry is purged, which is the only step that loses anything.
 pub mod trash;
 
-/// Push a fresh review-queue count to the menubar tray. A no-op when the `tray`
-/// feature is off, so callers (the review commands) stay `cfg`-free.
-#[cfg(feature = "tray")]
-pub(crate) fn tray_note_review_queue(app: &tauri::AppHandle) {
-    tray::refresh_review_queue(app);
-}
-#[cfg(not(feature = "tray"))]
-pub(crate) fn tray_note_review_queue(_app: &tauri::AppHandle) {}
-
 /// Set the menubar tray's language from a UI language code. No-op without the
-/// `tray` feature — see [`tray_note_review_queue`].
+/// `tray` feature, so the caller (the `tray_set_language` command) stays
+/// `cfg`-free.
 #[cfg(feature = "tray")]
 pub(crate) fn tray_note_language(app: &tauri::AppHandle, code: &str) {
     tray::set_lang(app, sundayrec_core::tray::TrayLang::from_code(Some(code)));
@@ -217,11 +203,6 @@ pub fn run() {
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
-    // PU-2: register the `sundayrec://` deep-link plugin only under `--features
-    // tray` (the scheme handler feeds `tray::dispatch_deep_link`). GUI-UNVERIFIED.
-    #[cfg(feature = "tray")]
-    let builder = builder.plugin(tauri_plugin_deep_link::init());
-
     let builder = builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
@@ -249,22 +230,12 @@ pub fn run() {
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
         .manage(editor::ExportEngine::new())
-        // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
-        // pending consent before the 300 s timeout.
-        .manage(cloud::ConnectGuard::new())
         // Tracks in-flight whisper model downloads so `whisper_cancel_download`
         // can abort one (one entry per active model id).
         .manage(whisper::DownloadGuard::new())
         // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
         // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new())
-        // E1.1: inbound `sundayrec://captions` links that passed validation and
-        // are waiting for the operator to confirm. Nothing is written until a
-        // parked id comes back through `deeplink_confirm_captions`, so a page
-        // that fires the scheme cannot make us touch the disk on its own.
-        // Featureless on purpose: the same IPC surface exists with and without
-        // the `tray` feature (without it nothing ever parks).
-        .manage(commands::deeplink::PendingDeepLinks::new());
+        .manage(whisper::TranscribeGuard::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -315,14 +286,6 @@ pub fn run() {
                         sundayrec_core::telemetry::telemetry_path(&db_path)
                     )
                 })?;
-
-            // Fase 6: drain the durable cloud-upload queue in the background.
-            // Idles cleanly when Google OAuth isn't configured (no spinning).
-            cloud::worker::spawn(
-                app.handle().clone(),
-                pool.clone(),
-                cloud::config::GoogleOAuthConfig::resolve(),
-            );
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
@@ -402,19 +365,10 @@ pub fn run() {
             // Subscribe the notification dispatcher to the recorder's terminal
             // error event. Until now that event reached the tray badge and the
             // renderer and stopped there: an unattended failure produced no
-            // native notification, no e-mail and no webhook, which is precisely
-            // the case those three channels exist for. Observational (`listen`),
+            // native notification and no e-mail, which is precisely the case
+            // those two channels exist for. Observational (`listen`),
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
-
-            // Arm the review-queue reminder tick. The 24 h / 48 h / 7 d / auto-
-            // discard ladder in `sundayrec_core::review_queue` was complete and
-            // tested, and reachable only through a command with no callers —
-            // so an episode nobody reviewed sat in silence until it deleted
-            // itself a fortnight later. Its own small task, deliberately not the
-            // scheduler supervisor: nothing about a reminder belongs inside the
-            // loop that has to fire a recording start on time.
-            notify::reminders::spawn(app.handle().clone());
 
             // Expire the Papirkurv. Without this the trash is a folder that
             // only ever grows — a delete that silently keeps every byte
@@ -483,34 +437,17 @@ pub fn run() {
             // every later rebuild a handle to `set_menu`/`set_icon` through.
             // `wire_state_sources` then subscribes the tray to the recorder's
             // and scheduler's existing events, so the menu tracks reality
-            // instead of freezing at `TrayState::default()`. The deep-link
-            // plugin (`sundayrec://`) is registered for the OAuth/import
-            // hand-off. GUI-UNVERIFIED.
+            // instead of freezing at `TrayState::default()`. GUI-UNVERIFIED.
             #[cfg(feature = "tray")]
             {
                 use sundayrec_core::tray::{TrayLang, TrayState};
-                use tauri_plugin_deep_link::DeepLinkExt;
                 // The UI language lives in the renderer's own settings blob, so
                 // it arrives via `tray_set_language` on boot; Norwegian until then.
                 let lang = TrayLang::from_code(None);
                 match tray::install(app.handle(), &TrayState::default(), lang) {
-                    Ok(()) => {
-                        tray::wire_state_sources(app.handle());
-                        // First paint of the review-queue callout — the scheduler
-                        // event that normally refreshes it may be minutes away.
-                        tray::refresh_review_queue(app.handle());
-                    }
+                    Ok(()) => tray::wire_state_sources(app.handle()),
                     Err(e) => tracing::warn!("tray install failed: {e}"),
                 }
-
-                // Route inbound `sundayrec://…` links through the unit-tested
-                // core parser + the shell dispatcher. GUI-UNVERIFIED.
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
-                    for url in event.urls() {
-                        let _ = tray::dispatch_deep_link(&handle, url.as_str());
-                    }
-                });
             }
 
             tracing::info!("SundayRec backend ready (db at {})", db_path.display());
@@ -570,22 +507,6 @@ pub fn run() {
             commands::trash::trash_restore,
             commands::trash::trash_purge,
             commands::calendar::liturgical_month,
-            commands::cloud::cloud_connection_status,
-            commands::cloud::cloud_is_configured,
-            commands::cloud::cloud_connect,
-            commands::cloud::cloud_cancel_connect,
-            commands::cloud::cloud_list_folders,
-            commands::cloud::cloud_set_folder,
-            commands::cloud::cloud_get_folder,
-            commands::cloud::cloud_process_queue_now,
-            commands::cloud::cloud_queue_status,
-            commands::cloud::cloud_enqueue_backup,
-            commands::cloud::cloud_retry_upload,
-            commands::cloud::cloud_remove_upload,
-            commands::cloud::cloud_clear_failed,
-            commands::cloud::cloud_disconnect,
-            commands::bridge::open_in_sundayedit,
-            commands::bridge::open_in_sundaystudio,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
@@ -621,7 +542,6 @@ pub fn run() {
             commands::editor::editor_mastering_analyze,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
-            commands::editor::editor_extract_frame,
             // P1 parity: sidecar persistence, stream probe, inline guard,
             // temp-file cleanup, and the full mastering preview/apply/cancel flow.
             commands::editor::editor_read_sidecar,
@@ -639,7 +559,6 @@ pub fn run() {
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
             commands::email::email_send_test,
-            commands::email::email_test_webhook,
             commands::email::email_clear_smtp_password,
             commands::email::email_set_smtp_password,
             commands::email::email_has_smtp_password,
@@ -673,46 +592,6 @@ pub fn run() {
             commands::companion::companion_llm_status,
             commands::companion::companion_set_llm_key,
             commands::companion::companion_clear_llm_key,
-            // PU-6 episode prep + review queue + Stage import.
-            commands::review::prep_build_episode,
-            commands::review::review_queue_list,
-            commands::review::review_mark_published,
-            commands::review::review_mark_discarded,
-            commands::review::review_update_trim,
-            commands::review::review_update_master_preset,
-            commands::review::review_update_jingles,
-            commands::review::review_process_reminders,
-            commands::review::stage_import_manifest,
-            commands::review::stage_import_apply,
-            // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
-            // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
-            commands::integrations::integrations_get_settings,
-            commands::integrations::integrations_set_settings,
-            commands::integrations::integrations_get_service_link,
-            commands::integrations::integrations_song_set_apikey,
-            commands::integrations::integrations_song_has_apikey,
-            commands::integrations::integrations_song_submit_usage,
-            commands::integrations::integrations_plan_fetch_services,
-            commands::integrations::integrations_plan_update_service,
-            commands::integrations::integrations_sundayedit_send,
-            commands::integrations::integrations_sundayedit_import,
-            // E1.1 — the ONLY route from an inbound `sundayrec://captions` deep
-            // link to a sidecar write. Rust validated + parked the request; this
-            // is the operator's answer.
-            commands::deeplink::deeplink_confirm_captions,
-            // Episode images (cover art) — default + per-episode override. Pure
-            // header probing in `sundayrec-core::image_probe`; no feature gate,
-            // no ffmpeg. The renderer had these six as stubs since the port.
-            commands::thumbnail::thumbnail_set_default,
-            commands::thumbnail::thumbnail_clear_default,
-            commands::thumbnail::thumbnail_get_default_info,
-            commands::thumbnail::thumbnail_set_episode,
-            commands::thumbnail::thumbnail_clear_episode,
-            commands::thumbnail::thumbnail_resolve,
-            // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
-            commands::publish::publish_feed_status,
-            commands::publish::publish_feed_preview,
-            commands::publish::publish_generate_feed,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

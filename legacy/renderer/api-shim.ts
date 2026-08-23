@@ -78,11 +78,6 @@ const VIDEO_EXT = [
 // already carries `opener:default`; see openPrivacyPolicy below).
 const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/main/PRIVACY.md";
 
-// Cover art: no gif — an animated podcast cover is not something Apple
-// Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
-// regardless (`sundayrec-core::image_probe`), so this only spares the user the
-// round trip of picking one and being told no.
-const COVER_EXT = ["png", "jpg", "jpeg", "webp"];
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
@@ -279,43 +274,16 @@ async function editorCall<T extends object>(
   }
 }
 
-/** The cover-art picker. Cancel → `null`, which the thumbnail panel reads as
- *  "leave the current image alone". */
-async function pickCoverImage(): Promise<string | null> {
-  return pickPath({ name: "Bilde", extensions: COVER_EXT });
-}
-
-/** The three validation codes the thumbnail panel localizes, as the backend
- *  spells them. Anything else is a genuine surprise and is passed through. */
-const THUMBNAIL_ERROR_CODES = ["empty_file", "too_large", "unsupported_format"];
-
-/**
- * A rejected `thumbnail_*` invoke → the `{ error }` member of the panel's
- * union.
- *
- * The commands return `AppError::Validation("<code>")`, which reaches us as
- * `"validation: <code>"`. The panel's `errorLabel()` matches on the BARE code
- * and echoes anything it doesn't recognise verbatim, so handing it the prefixed
- * string would print «validation: too_large» at the user instead of «Filen er
- * for stor (over 20 MB)». R3-C: extracted via `errorCode()` (the leading
- * stable snake code), not an anywhere-in-the-message `includes` scan.
- */
-function thumbnailError(e: unknown): { error: string } {
-  const code = errorCode(e);
-  return { error: THUMBNAIL_ERROR_CODES.includes(code) ? code : ipcErrText(e) };
-}
-
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
-// (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
+// (tray-*, update-*, …) fall through to a no-op subscription.
 //
 // `backend-warning` was the one entry deliberately left OUT by the 2026-08-05
 // channel audit: its consumer in pages/home.ts was live, but no src-tauri
 // emitter existed under any name, and mapping it to the nearest-looking channel
 // would only have manufactured wrong warnings. As of Fase 2 the backend really
-// does emit — `crate::notify::warn` on `backend://warning`, from six sources
-// (pre-roll gave up, cloud upload failed, cloud token revoked, crash recovery
-// skipped a file, the configured device is missing, the disk is filling) — so
-// the channel is mapped for real.
+// does emit — `crate::notify::warn` on `backend://warning`, from four sources
+// (pre-roll gave up, crash recovery skipped a file, the configured device is
+// missing, the disk is filling) — so the channel is mapped for real.
 const EVENT_MAP: Record<string, string> = {
   'backend-warning': 'backend://warning',
   "recording-overlay-start": "recording://started",
@@ -419,7 +387,7 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 // Since Fase 7 it also accepts `?goto=<page>:<tab>` for pages with inner tabs —
 // `?goto=settings:audio`, `?goto=settings:sharing`. The tab may be written bare
 // (`audio`) or fully qualified (`settings-audio`); retired ids from before the
-// 7→5 tab fold (`publish`, `notifications`, `integrations`) still work, because
+// 7→5 tab fold (`publish`, `notifications`) still work, because
 // navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
 
@@ -541,18 +509,6 @@ const platform = navigator.userAgent.toLowerCase().includes("mac")
     ? "win32"
     : "linux";
 
-// Common stub shapes so renderers that read fields/iterate don't throw.
-const okFalse = { connected: false, configured: false };
-// Keys MUST be the renderer's `CloudServiceId` strings ('google-drive' &c.) —
-// publish-page indexes `status['google-drive'].connected` per visible card, so
-// the old camelCase spelling (`googleDrive`) made every refresh throw an
-// unhandled TypeError and left the card frozen in its markup state. Found by
-// the v0.14 no-live-surface e2e's clean-console assertion.
-const cloudStatusStub = {
-  "google-drive": { connected: false },
-  dropbox: { connected: false },
-  onedrive: { connected: false },
-};
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
 type RecordingRow = {
   id: string;
@@ -564,11 +520,6 @@ type RecordingRow = {
   created_at: number;
   note: string | null;
 };
-
-/** The bit of `ReviewQueueEntry` the shim itself needs (picking by id). The
- *  full shape is the renderer's `ReviewQueueEntry` / the ts-rs binding — the
- *  backend already serialises it camelCase, so it passes through untouched. */
-type ReviewQueueEntryLike = { id: string };
 
 // Maps the old renderer's `timestamp` key (created_at) back to the Rust row id,
 // so deleteHistoryEntry(timestamp) can call recordings_delete(id).
@@ -603,8 +554,6 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
     sizeBytes: r.byte_size ?? null,
     fileSizeBytes: r.byte_size ?? null,
     note: r.note ?? undefined,
-    cloudUploaded: [],
-    cloudUrls: {},
   };
 }
 
@@ -664,7 +613,7 @@ const api: Record<string, unknown> = {
   //
   // A trashed recording keeps its history row on purpose (see
   // `src-tauri/src/trash/mod.rs`: the row is what makes a restore give back the
-  // note, duration and cloud markers). Filtering it out HERE — rather than in
+  // note and duration). Filtering it out HERE — rather than in
   // one of the three renderer consumers — is what keeps Historikk, the unified
   // search and the home page's «Siste 5» from disagreeing about whether a
   // recording exists.
@@ -740,8 +689,9 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  // WRITE — bare invoke, rejection travels (R3-B; house rule at the
-  // integrations block below). The old `call(…, true)` turned a FAILED stop
+  // WRITE — bare invoke, rejection travels (R3-B house rule: a write that
+  // fails must REJECT, never answer a fabricated success). The old
+  // `call(…, true)` turned a FAILED stop
   // into `true`: recording.ts then waited politely for a terminal event that
   // was never coming instead of running its own teardown catch.
   stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
@@ -835,33 +785,20 @@ const api: Record<string, unknown> = {
   pickAudioFile: async () =>
     pickPath({ name: "Lyd", extensions: AUDIO_EXT }),
 
-  // ── Email / webhook ─────────────────────────────────────────────────────
+  // ── Email ───────────────────────────────────────────────────────────────
   //
-  // These were `async () => ({ ok: false })` stubs: every click produced a
-  // fabricated "sending failed" no matter what the user had configured. Both
-  // commands exist and are registered (commands/email.rs), so they are wired —
-  // and the panel now asks `emailStatus` FIRST and disables the button when
-  // there is no send path, instead of inventing a failure.
-  //
-  // `email_test_webhook` is real on every build (plain reqwest POST, no cargo
-  // feature); `email_send_test` needs `--features email` and returns a clear
-  // `feature_disabled` error otherwise, which `emailStatus.featureBuilt`
-  // predicts so we never provoke it.
+  // `testEmail` was an `async () => ({ ok: false })` stub: every click produced
+  // a fabricated "sending failed" no matter what the user had configured. The
+  // command exists and is registered (commands/email.rs), so it is wired — and
+  // the panel asks `emailStatus` FIRST and disables the button when there is no
+  // send path, instead of inventing a failure. `email_send_test` needs
+  // `--features email` and returns a clear `feature_disabled` error otherwise,
+  // which `emailStatus.featureBuilt` predicts so we never provoke it.
   emailStatus: async () =>
-    call<{ featureBuilt: boolean; gmailConnected: boolean }>("email_status", undefined, {
+    call<{ featureBuilt: boolean }>("email_status", undefined, {
       featureBuilt: false,
-      gmailConnected: false,
     }),
-  testWebhook: async (url: string) => {
-    try {
-      const ok = await invoke<boolean>("email_test_webhook", { url });
-      return ok ? { ok: true } : { ok: false, error: "unreachable" };
-    } catch (e) {
-      return { ok: false, error: ipcErrText(e) };
-    }
-  },
   testEmail: async (params: {
-    transport: "gmail" | "smtp";
     recipient: string;
     language?: string;
     host?: string;
@@ -872,7 +809,6 @@ const api: Record<string, unknown> = {
   }) => {
     try {
       await invoke("email_send_test", {
-        transport: params.transport === "gmail" ? "Gmail" : "Smtp",
         recipient: params.recipient,
         language: params.language,
         host: params.host,
@@ -1663,104 +1599,7 @@ const api: Record<string, unknown> = {
   masterCancel: async (jobId: string) =>
     invoke("editor_master_cancel", { jobId }).then(() => true),
 
-  // ── Episode image / cover art (thumbnail_*) ─────────────────────────────
-  //
-  // These six were stubs from the port until Fase 6, and the stubs did worse
-  // than nothing: `{ ok: false }` is not a member of the union the panel reads
-  // (`{path,info,dataUrl} | {error}`), so `'error' in result` was false and a
-  // failure rendered as SILENCE — picker opens, file chosen, nothing happens,
-  // nothing said. The three surfaces were gated «Kommer» because of it.
-  //
-  // The PICKER lives here, not in the panel: `thumbnail-panel.ts` calls
-  // `setDefault()` / `setEpisode(rp)` with no path and treats `null` as "user
-  // cancelled, keep what's on screen".
-  thumbnailSetDefault: async (sourcePath?: string) => {
-    const src = sourcePath ?? (await pickCoverImage());
-    if (!src) return null;
-    try {
-      return await invoke("thumbnail_set_default", { sourcePath: src });
-    } catch (e) {
-      return thumbnailError(e);
-    }
-  },
-  thumbnailClearDefault: async () =>
-    call<boolean>("thumbnail_clear_default", undefined, false),
-  thumbnailSetEpisode: async (recordingPath: string, sourcePath?: string) => {
-    const src = sourcePath ?? (await pickCoverImage());
-    if (!src) return null;
-    try {
-      return await invoke("thumbnail_set_episode", {
-        recordingPath,
-        sourcePath: src,
-      });
-    } catch (e) {
-      return thumbnailError(e);
-    }
-  },
-  thumbnailClearEpisode: async (recordingPath: string) =>
-    call<boolean>("thumbnail_clear_episode", { recordingPath }, false),
-  // Both lookups fall back to `null` = "no cover set", which is exactly what
-  // the panel renders as its drop-hint placeholder.
-  thumbnailResolve: async (recordingPath: string) =>
-    call("thumbnail_resolve", { recordingPath }, null),
-  thumbnailGetDefaultInfo: async () =>
-    call("thumbnail_get_default_info", undefined, null),
-
-  // ── Cloud ───────────────────────────────────────────────────────────────
-  cloudConnect: async () => okFalse,
-  cloudCancelConnect: async () => true,
-  cloudDisconnect: async () => true,
-  cloudStatus: async () => cloudStatusStub,
-  cloudUploadFile: async () => ({ ok: false }),
-  cloudListFolders: async () => [],
-  cloudSetFolder: async () => true,
-  // Wired to the REAL predicate (commands/cloud.rs) instead of a hard-coded
-  // `false`. It answers whether this build has a Google OAuth client id at all,
-  // which is what the cloud panel's gate needs to say something true.
-  cloudIsConfigured: async () => call<boolean>("cloud_is_configured", undefined, false),
-  cloudQueueStatus: async () => ({ entries: [] }),
-  cloudQueueRetry: async () => true,
-  cloudQueueRemove: async () => true,
-  cloudQueueFlush: async () => true,
-  // Podcast RSS: `publish_feed_status` answers whether THIS build can write
-  // the feed at all (the default-off `publish` cargo feature) — the Filer-page
-  // gate reads it so the «Generer feed nå» button can say the truth instead of
-  // failing on click. `null` fallback = "could not even ask", which the gate
-  // treats as not-available.
-  podcastFeedStatus: async () =>
-    call<{ featureBuilt: boolean; episodeCount: number } | null>(
-      "publish_feed_status",
-      undefined,
-      null,
-    ),
-  // `publish_generate_feed` writes `podcast.xml` beside the save folder and
-  // returns a FeedPreview; map it onto the old Electron `{ ok, episodeCount,
-  // feedUrl }` the two consumers branch on. This was the stub `{ ok: false }`
-  // — every click ended in «✕ ukjent feil» by construction. On failure the
-  // REAL reason (e.g. `feature_disabled`, `no_config`) is surfaced; the
-  // `service` argument is unused (the Tauri command resolves everything from
-  // settings) but kept for signature parity.
-  podcastRegenerate: async (_service: string) => {
-    try {
-      const r = await invoke<{ episodeCount?: number; feedUrl?: string }>(
-        "publish_generate_feed",
-        undefined,
-      );
-      return {
-        ok: true as const,
-        episodeCount: r?.episodeCount ?? 0,
-        feedUrl: r?.feedUrl,
-      };
-    } catch (e) {
-      return { ok: false as const, episodeCount: 0, error: ipcErrText(e) };
-    }
-  },
   registerTrustedPath: async () => true,
-
-  // (The youtube* stubs died in R4's stub sweep: youtubeStatus answered a
-  // permanent false, which made the editor's whole publish-to-YouTube branch
-  // unreachable by construction — the branch went with the stubs. R3 had
-  // already removed gmail*/youtubeConnect the same way.)
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
   // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this
@@ -1891,190 +1730,6 @@ const api: Record<string, unknown> = {
   whisperCancelTranscribe: async (jobId: string) =>
     call("whisper_cancel_transcribe", { jobId }, false),
 
-  // ── Review queue ────────────────────────────────────────────────────────
-  // `review_queue_list` (commands/review.rs) returns the persisted queue
-  // newest-first with `ageInDays` filled in — already the renderer's
-  // `ReviewQueueEntry` shape (camelCase), so no adaptation is needed. An empty
-  // queue is the normal case: the home card hides itself on `[]`.
-  reviewQueueList: async () =>
-    call<ReviewQueueEntryLike[]>("review_queue_list", undefined, []),
-  // No `review_queue_get` command exists — the queue is a single JSON blob, so
-  // reading one entry means reading the list and picking. Cheap (a handful of
-  // entries) and keeps the backend surface as it is.
-  reviewQueueGet: async (id: string) => {
-    const all = await call<ReviewQueueEntryLike[]>(
-      "review_queue_list",
-      undefined,
-      [],
-    );
-    return all.find((e) => e?.id === id) ?? null;
-  },
-  // `review_mark_published` returns a bool: false = no such id in the queue
-  // (already published, or the queue was cleared). Surface that as a real
-  // reason instead of a silent no-op — the editor shows `error` in a dialog.
-  reviewQueuePublish: async (id: string) => {
-    try {
-      const ok = await invoke<boolean>("review_mark_published", { id });
-      return ok
-        ? { ok: true as const }
-        : { ok: false as const, error: "review_entry_not_found" };
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  reviewQueueDiscard: async (id: string) =>
-    call<boolean>("review_mark_discarded", { id }, false),
-  // The three field pushes back INTO the queue entry. Each returns the
-  // backend's own bool verbatim: `false` = that id is no longer in the queue
-  // (published, discarded, or auto-discarded while the editor sat open), which
-  // the editor turns into a toast instead of a local mutation nobody saved.
-  // These three were `async () => true` — the intro/outro dropdowns reported
-  // success and changed nothing on disk.
-  //
-  // `false` is also the `call` fallback, on purpose: a rejected invoke is not a
-  // silent success either.
-  reviewQueueUpdateTrim: async (
-    id: string,
-    trim: { startSec: number; endSec: number },
-  ) => call<boolean>("review_update_trim", { id, trim }, false),
-  reviewQueueUpdateMasterPreset: async (id: string, presetId: string) =>
-    call<boolean>("review_update_master_preset", { id, presetId }, false),
-  // `jingles` is a PARTIAL patch and the backend reads three states per field:
-  // an omitted key leaves that jingle alone, an explicit `null` clears it, a
-  // string sets it. Send ONE key per call (which is what the two dropdowns do)
-  // and the other jingle is guaranteed untouched. See `JinglesPatch` in
-  // src-tauri/src/commands/review.rs for the contract.
-  reviewQueueUpdateJingles: async (
-    id: string,
-    jingles: { introPath?: string | null; outroPath?: string | null },
-  ) => call<boolean>("review_update_jingles", { id, jingles }, false),
-
-  // ── Integrations (Sunday-suite) ─────────────────────────────────────────
-  //
-  // Wired to the real `integrations_*` commands (commands/integrations.rs).
-  // These eleven were PERMANENT STUBS from the port — not fixture fallbacks,
-  // stubs that ran in the shipped app too: the whole Integrasjoner panel showed
-  // «Lagret ✓» while persisting nothing, and a pasted SundaySong API key never
-  // reached the keychain. Same failure class as the three `review_update_*`
-  // lies Fase 3 fixed; see docs/COMMAND_AUDIT_2026-08.md §4.2.
-  //
-  // Discipline: READS go through `call()` (a broken backend degrades to the
-  // empty state, visibly, via the E2.4 failure ring). WRITES use a bare
-  // `invoke` and LET THE REJECTION TRAVEL — the callers' catch is what keeps
-  // «Lagret ✓» honest, so a fallback here would reintroduce the lie.
-  getIntegrationSettings: async () =>
-    call("integrations_get_settings", undefined, { enabled: false }),
-  setIntegrationSettings: async (patch: unknown) =>
-    invoke("integrations_set_settings", { patch }),
-  getServiceLink: async (recordingPath: string) =>
-    call("integrations_get_service_link", { recordingPath }, null),
-  // The hand-offs return the backend's structured `{ ok, error?, … }` OpResult
-  // verbatim; a rejected invoke becomes the same shape with the REAL reason,
-  // never a bare `{ ok: false }` (which renders as «✕ ukjent feil»).
-  sundayEditSend: async (opts: {
-    videoPath: string;
-    language?: string;
-    context?: string;
-    glossary?: string[];
-  }) => {
-    try {
-      return await invoke("integrations_sundayedit_send", {
-        videoPath: opts.videoPath,
-        language: opts.language ?? null,
-        context: opts.context ?? null,
-        glossary: opts.glossary ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  sundayEditImport: async (
-    recordingPath: string,
-    subtitlePath: string,
-    language?: string,
-  ) => {
-    try {
-      return await invoke("integrations_sundayedit_import", {
-        recordingPath,
-        subtitlePath,
-        language: language ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  // The COMPLETE Stage import (stage_import_apply): manifest JSON → chapters
-  // merged into `.meta.json` + `.service.json` written. The recording's start
-  // time — what the manifest's absolute timestamps are aligned against — comes
-  // from its own history row; a file with no row has no start time to align
-  // to, and saying so beats writing chapters at made-up offsets.
-  stageImport: async (
-    recordingPath: string,
-    manifestJson: string,
-    wasStreamed?: boolean,
-  ) => {
-    try {
-      const rows = await invoke<
-        { file_path?: string; started_at?: number; duration_ms?: number | null }[]
-      >("recordings_list", undefined);
-      const row = rows.find((r) => r?.file_path === recordingPath);
-      if (!row || typeof row.started_at !== "number") {
-        return { ok: false as const, error: "recording_not_in_history" };
-      }
-      return await invoke("stage_import_apply", {
-        recordingPath,
-        manifestJson,
-        recordingStartMs: Math.round(row.started_at),
-        durationSec:
-          typeof row.duration_ms === "number"
-            ? Math.round(row.duration_ms / 1000)
-            : null,
-        wasStreamed: wasStreamed ?? null,
-        serviceDate: null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  // Keychain-only (SecretProvider::SongApiKey → `integrations.song_api_key`),
-  // mirroring the SMTP-password slot. Never localStorage, never the settings
-  // blob. Rejections travel: the panel's catch shows the reason instead of ✓.
-  songSetApiKey: async (key: string) =>
-    invoke("integrations_song_set_apikey", { plaintext: key }),
-  songHasApiKey: async () =>
-    call<boolean>("integrations_song_has_apikey", undefined, false),
-  songSubmitUsage: async (recordingPath: string) => {
-    try {
-      return await invoke("integrations_song_submit_usage", { recordingPath });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  planFetchServices: async (fromIso?: string) => {
-    try {
-      return await invoke("integrations_plan_fetch_services", {
-        fromIso: fromIso ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  planUpdateService: async (
-    serviceId: string,
-    wasStreamed?: boolean,
-    recordingUrl?: string,
-  ) => {
-    try {
-      return await invoke("integrations_plan_update_service", {
-        serviceId,
-        wasStreamed: wasStreamed ?? null,
-        recordingUrl: recordingUrl ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
   notifyWeakSignal: noop,
 
@@ -2130,7 +1785,7 @@ void (async () => {
 // did, Electron's non-standard `File.path` doesn't exist here. Bridge the
 // native stream back into the DOM: re-dispatch synthetic DragEvents at the
 // drop position with File objects carrying a real `path` property, so the
-// editor's load/intro/outro zones and the thumbnail drop work unmodified.
+// editor's load/intro/outro zones work unmodified.
 void (async () => {
   try {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");

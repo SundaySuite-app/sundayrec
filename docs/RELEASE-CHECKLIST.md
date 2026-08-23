@@ -17,7 +17,6 @@ Single, current-state launchpad. The code is gate-green (the full Rust test suit
 | Channel promotion / kill-switch (`scripts/promote-release.mjs`)                        | ✅ wired — needs Keychain item `SundayRec telemetry admin key`                                                  |
 | Worker update-channel admin API (`telemetry.sundaysuite.app/v1/admin/*`)               | ✅ live — brukt til å forfremme v0.11.0-beta.1; `promote-release.mjs` kjører mot den                            |
 | Client update feed points at `updates.sundaysuite.app` (not GitHub `/releases/latest`) | ✅ shipped — `tauri.conf.json`'s endpoint and `sundayrec-core::update::DEFAULT_UPDATE_BASE` both name it        |
-| `sundayrec://` deep-link scheme registered (config + Info.plist)                       | ✅ config done — GUI-UNVERIFIED                                                                                 |
 | ts-rs bindings drift                                                                   | ✅ 0 diff (`npm run bindings`)                                                                                  |
 | macOS signing                                                                          | 🔑 needs `MAC_CERTS` + `MAC_CERTS_PASSWORD` (identity is hardcoded in `release.yml`)                            |
 | macOS notarization                                                                     | 🚫 DISABLED in `release.yml` (env lines commented out — Apple PLA 403). Secrets alone do NOT re-enable it — §2a |
@@ -90,8 +89,6 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 
 ## 4. Optional runtime features (not build blockers)
 
-- [ ] **Google OAuth client (Desktop type)** for cloud backup + Gmail email path
-      → `SUNDAYREC_GOOGLE_CLIENT_ID` (see `GOOGLE-OAUTH-SETUP.md`).
 - [ ] **Anthropic API key** (OS keychain) for the live AI sermon-companion
       summary — the keyless extractive path works without it.
 
@@ -208,9 +205,6 @@ the only action that makes a v0.11.0+ install able to see the release at all.
 
 - [ ] §2–11 smoke test on a real Mac/Windows rig (capture, VU, editor ffmpeg,
       whisper, wake/scheduler).
-- [ ] **Deep-link**: after a signed `tauri build`, open `sundayrec://…` and
-      confirm it routes into the app (the config is in place but GUI-UNVERIFIED;
-      requires the `tray` feature, which release builds include).
 
 ### 6a. Recording/editor health gate (HARD — for any build touching audio)
 

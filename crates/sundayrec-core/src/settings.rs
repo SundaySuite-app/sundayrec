@@ -18,10 +18,10 @@
 //! This is the Fase-1 subset of the Electron `Settings`. Fields that belong to
 //! later phases are deliberately NOT modelled yet and will be added in their
 //! own phase so the model stays honest about what is actually wired:
-//!   - `email*` / webhook / notify* (notifications)        → Fase 6
+//!   - `email*` / notify* (notifications)                  → Fase 6
 //!   - `editorIntroPath` / `editorOutroPath` (editor)      → Fase 4
 //!   - `deviceChannels` (per-device channel maps)          → Fase 2/3
-//!   - `video*`, cloud backup, church profile, integrations → their phases
+//!   - `video*`, church profile                            → their phases
 //!
 //! When those land, add the field here with its serde tag matching the Electron
 //! key and extend [`Settings::validate`] / [`Default`] accordingly.
@@ -190,125 +190,6 @@ pub struct DeviceChannels {
     /// 0-based device channel routed to the RIGHT output. Clamped 0..=31.
     #[serde(default)]
     pub channel_r: i32,
-}
-
-/// Per-cloud-service backup preferences (enable/auto-upload/target folder).
-/// Tokens are NOT here — they belong to the OS keychain when the cloud glue
-/// lands; this is only the panel's configuration state. Mirrors the Electron
-/// `CloudServiceSettings`.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CloudServicePrefs.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct CloudServicePrefs {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub auto_upload: bool,
-    #[serde(default)]
-    pub folder_id: Option<String>,
-    #[serde(default)]
-    pub folder_name: Option<String>,
-    #[serde(default)]
-    pub folder_path: Option<String>,
-}
-
-/// Podcast/RSS channel configuration (R4 — the Electron `podcast` object as a
-/// real settings field). The feed generator (`commands::publish::resolve_channel`)
-/// reads THIS — previously it read ten `app_setting` rows
-/// (`podcastTitle`, …) that no code path ever wrote, so the feed always
-/// rendered the fallbacks whatever the UI said. Defaults for blank/missing
-/// values are applied by the READER (blank title → "SundayRec" etc.), matching
-/// the old renderer's display fallbacks; here blank simply means unset.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PodcastSettings.ts")]
-#[serde(rename_all = "camelCase")]
-pub struct PodcastSettings {
-    /// Master switch for the podcast pipeline (feed + prep-and-review).
-    #[serde(default)]
-    pub enabled: bool,
-    /// Which cloud service hosts the audio + feed:
-    /// `"google-drive"` (default) | `"dropbox"` | `"onedrive"`.
-    #[serde(default = "default_podcast_service")]
-    pub service: String,
-    #[serde(default)]
-    pub title: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub author: String,
-    /// ISO 639-1 feed language. Default `"no"`.
-    #[serde(default = "default_podcast_language")]
-    pub language: String,
-    /// iTunes category. Default `"Religion & Spirituality"`.
-    #[serde(default = "default_podcast_category")]
-    pub category: String,
-    #[serde(default)]
-    pub explicit: bool,
-    /// Church homepage, or `None`.
-    #[serde(default)]
-    pub link: Option<String>,
-    /// Cover art URL (1400–3000 px square), or `None`.
-    #[serde(default)]
-    pub image_url: Option<String>,
-    /// Owner contact email (required by Apple), or `None`.
-    #[serde(default)]
-    pub email: Option<String>,
-    /// Set after the first successful publish — what the user submits to
-    /// Spotify/Apple.
-    #[serde(default)]
-    pub feed_url: Option<String>,
-    /// Auto-run prep + queue the episode for review after each recording.
-    /// Default true (the v5.0 pipeline's own default).
-    #[serde(default = "default_true")]
-    pub auto_prep_enabled: bool,
-    /// Per-church default intro jingle, or `None` (falls back to
-    /// `editor_intro_path`).
-    #[serde(default)]
-    pub default_intro_path: Option<String>,
-    /// Per-church default outro jingle, or `None`.
-    #[serde(default)]
-    pub default_outro_path: Option<String>,
-    /// Master preset for the prep pipeline. Default `"speech-clear"`.
-    #[serde(default = "default_podcast_master_preset")]
-    pub default_master_preset: String,
-}
-
-fn default_podcast_service() -> String {
-    "google-drive".to_string()
-}
-fn default_podcast_language() -> String {
-    "no".to_string()
-}
-fn default_podcast_category() -> String {
-    "Religion & Spirituality".to_string()
-}
-fn default_podcast_master_preset() -> String {
-    "speech-clear".to_string()
-}
-
-impl Default for PodcastSettings {
-    fn default() -> Self {
-        // Must stay in lockstep with the per-field serde defaults above — the
-        // round-trip test `podcast_default_matches_empty_json` enforces it.
-        Self {
-            enabled: false,
-            service: default_podcast_service(),
-            title: String::new(),
-            description: String::new(),
-            author: String::new(),
-            language: default_podcast_language(),
-            category: default_podcast_category(),
-            explicit: false,
-            link: None,
-            image_url: None,
-            email: None,
-            feed_url: None,
-            auto_prep_enabled: true,
-            default_intro_path: None,
-            default_outro_path: None,
-            default_master_preset: default_podcast_master_preset(),
-        }
-    }
 }
 
 /// The complete (Fase-1 subset) settings model.
@@ -600,23 +481,10 @@ pub struct Settings {
     /// Fire a native notification when a recording stops? Default true.
     #[serde(default = "default_true")]
     pub notify_stop: bool,
-    /// Chat webhook URL (Slack/Discord/Teams). Empty = unset.
-    #[serde(default)]
-    pub webhook_url: String,
-    /// Also POST the webhook on warnings (not just errors)? Default false.
-    #[serde(default)]
-    pub webhook_on_warning: bool,
-    /// Per-URL opt-in for a webhook on the LOCAL network (E1.4).
-    ///
-    /// The webhook URL is fully user-controlled and its response is discarded —
-    /// a blind SSRF unless something says no. The default policy blocks
-    /// loopback/private/link-local addresses, but a church legitimately
-    /// webhooks a LAN device (a booth control panel, a Home Assistant box that
-    /// lights the "ON AIR" sign), so the settings UI asks out loud and sets this
-    /// flag for the URL the operator confirmed. Re-typing a different address
-    /// clears it — this is an opt-in for ONE address, not a mode.
-    #[serde(default)]
-    pub webhook_allow_local: bool,
+    // (The chat webhook — `webhookUrl`/`webhookOnWarning`/`webhookAllowLocal` —
+    // was removed with the sharing cluster. Old blobs still carrying the keys
+    // are DROPPED tolerantly on the next load/save, like the stream fields
+    // below; see `legacy_blob_with_removed_sharing_fields_imports_cleanly`.)
 
     // ── Email alerts (R7 — Electron `email*`; the SMTP pass lives in the OS ────
     //    keychain, NEVER here — mirrors `store.ts` `setSmtpPassword`) ───────────
@@ -626,7 +494,8 @@ pub struct Settings {
     /// Recipient address for alert emails. Empty = unset (Electron `''`).
     #[serde(default)]
     pub email_address: String,
-    /// SMTP host (blank = use the Gmail transport instead). Electron `emailSmtp`.
+    /// SMTP host. Blank = no transport at all (the Gmail-OAuth alternative left
+    /// with the cloud-backup OAuth client). Electron `emailSmtp`.
     #[serde(default)]
     pub email_smtp: String,
     /// SMTP port. Valid 1..=65535, default 587. Electron `emailSmtpPort: 587`.
@@ -667,27 +536,14 @@ pub struct Settings {
     #[serde(default)]
     pub editor_hw_encode: bool,
 
-    // (Live streaming was removed in v0.14. Old sqlite blobs may still carry
-    // `streamDestinations`/`streamResolution`/`streamFramerate`/
-    // `streamVideoBitrate`/`streamOverlays` — serde ignores unknown fields, so
-    // they are DROPPED tolerantly on the next load/save. See the test
-    // `legacy_blob_with_stream_fields_imports_cleanly`.)
-
-    // ── Cloud backup preferences (R4 — Electron `cloudGoogleDrive` & co) ─────
-    /// Google Drive backup preferences, or `None` when never configured.
-    #[serde(default, deserialize_with = "lenient")]
-    pub cloud_google_drive: Option<CloudServicePrefs>,
-    /// Dropbox backup preferences.
-    #[serde(default, deserialize_with = "lenient")]
-    pub cloud_dropbox: Option<CloudServicePrefs>,
-    /// OneDrive backup preferences.
-    #[serde(default, deserialize_with = "lenient")]
-    pub cloud_one_drive: Option<CloudServicePrefs>,
-
-    // ── Podcast (R4 — Electron `podcast`) ────────────────────────────────────
-    /// Podcast/RSS channel configuration. See [`PodcastSettings`].
-    #[serde(default, deserialize_with = "lenient")]
-    pub podcast: PodcastSettings,
+    // (Live streaming was removed in v0.14, cloud backup with the sharing
+    // cluster after it. Old sqlite blobs may still carry `streamDestinations`/
+    // `streamResolution`/`streamFramerate`/`streamVideoBitrate`/`streamOverlays`
+    // and `cloudGoogleDrive`/`cloudDropbox`/`cloudOneDrive`/`podcast` — serde
+    // ignores unknown fields, so they are DROPPED tolerantly on the next
+    // load/save. See
+    // the tests `legacy_blob_with_stream_fields_imports_cleanly` and
+    // `legacy_blob_with_removed_sharing_fields_imports_cleanly`.)
 
     // ── Misc ─────────────────────────────────────────────────────────────────
     /// Download and install updates automatically? Default true.
@@ -889,11 +745,6 @@ impl Default for Settings {
 
             notify_start: true,
             notify_stop: true,
-            webhook_url: String::new(),
-            webhook_on_warning: false,
-            // Fails CLOSED: a LAN webhook is unreachable until the operator has
-            // been asked and said yes.
-            webhook_allow_local: false,
 
             email_on_error: false,
             email_address: String::new(),
@@ -905,12 +756,6 @@ impl Default for Settings {
             editor_intro_path: None,
             editor_outro_path: None,
             editor_hw_encode: false,
-
-            cloud_google_drive: None,
-            cloud_dropbox: None,
-            cloud_one_drive: None,
-
-            podcast: PodcastSettings::default(),
 
             auto_update: true,
             update_channel: default_update_channel(),
@@ -1020,16 +865,6 @@ impl Settings {
                 self.input_channel_l = pair.map(|p| p.channel_l);
                 self.input_channel_r = pair.map(|p| p.channel_r);
             }
-        }
-
-        // Podcast (R4): the service tag is a closed set; anything else falls
-        // back to the default host. Blank-vs-default text fields are the
-        // READER's concern (resolve_channel), not clamping's.
-        if !matches!(
-            self.podcast.service.as_str(),
-            "google-drive" | "dropbox" | "onedrive"
-        ) {
-            self.podcast.service = default_podcast_service();
         }
     }
 
@@ -1202,10 +1037,6 @@ mod tests {
         // Notifications (R7)
         assert!(s.notify_start);
         assert!(s.notify_stop);
-        assert_eq!(s.webhook_url, "");
-        assert!(!s.webhook_on_warning);
-        // E1.4: the LAN opt-in must default OFF, or a blind SSRF ships on.
-        assert!(!s.webhook_allow_local);
         // Email (R7)
         assert!(!s.email_on_error);
         assert_eq!(s.email_address, "");
@@ -1758,35 +1589,12 @@ mod tests {
         assert!(s.device_channels.is_empty());
         assert_eq!(s.video_bitrate, 0);
         assert!(!s.preroll_enabled);
-        assert_eq!(s.cloud_google_drive, None);
-        assert_eq!(s.podcast, PodcastSettings::default());
 
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
-        for key in [
-            "deviceChannels",
-            "videoBitrate",
-            "prerollEnabled",
-            "cloudGoogleDrive",
-            "cloudDropbox",
-            "cloudOneDrive",
-            "podcast",
-        ] {
+        for key in ["deviceChannels", "videoBitrate", "prerollEnabled"] {
             assert!(obj.contains_key(key), "missing camelCase key {key}");
         }
-    }
-
-    #[test]
-    fn podcast_default_matches_empty_json() {
-        // The custom Default impl and the per-field serde defaults are two
-        // spellings of one truth; this pins them together.
-        let from_serde: PodcastSettings = serde_json::from_str("{}").unwrap();
-        assert_eq!(from_serde, PodcastSettings::default());
-        assert_eq!(from_serde.service, "google-drive");
-        assert_eq!(from_serde.language, "no");
-        assert_eq!(from_serde.category, "Religion & Spirituality");
-        assert!(from_serde.auto_prep_enabled);
-        assert_eq!(from_serde.default_master_preset, "speech-clear");
     }
 
     #[test]
@@ -1804,19 +1612,6 @@ mod tests {
             device_channels: dc,
             video_bitrate: 8_000,
             preroll_enabled: true,
-            cloud_google_drive: Some(CloudServicePrefs {
-                enabled: true,
-                auto_upload: true,
-                folder_id: Some("f1".into()),
-                folder_name: Some("Opptak".into()),
-                folder_path: None,
-            }),
-            podcast: PodcastSettings {
-                enabled: true,
-                title: "Domkirken".into(),
-                email: Some("post@kirke.no".into()),
-                ..Default::default()
-            },
             ..Default::default()
         }
         .validated();
@@ -1834,9 +1629,7 @@ mod tests {
             r#"{
                 "sampleRate": 44100,
                 "deviceChannels": "not-a-map",
-                "videoBitrate": "high",
-                "cloudGoogleDrive": [1, 2],
-                "podcast": "yes please"
+                "videoBitrate": "high"
             }"#,
         )
         .validated();
@@ -1845,8 +1638,6 @@ mod tests {
         // Every malformed field landed on its (validated) default.
         assert!(s.device_channels.is_empty());
         assert_eq!(s.video_bitrate, 0);
-        assert_eq!(s.cloud_google_drive, None);
-        assert_eq!(s.podcast, PodcastSettings::default());
     }
 
     // Live streaming was removed in v0.14, but installed apps upgraded from
@@ -1883,6 +1674,50 @@ mod tests {
             "streamFramerate",
             "streamVideoBitrate",
             "streamOverlays",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    // The sharing cluster (cloud backup, chat webhook, podcast RSS) was removed in R1 of
+    // «Frivilligen først». Upgraded installs still carry its keys in the sqlite
+    // blob, and an exported profile from an older build carries them too. Same
+    // contract as the stream fields: DROPPED tolerantly, neighbours intact, and
+    // the round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_removed_sharing_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "sampleRate": 48000,
+                "emailAddress": "vakt@kirka.no",
+                "webhookUrl": "https://hooks.slack.com/services/T/B/X",
+                "webhookOnWarning": true,
+                "webhookAllowLocal": true,
+                "cloudGoogleDrive": {"enabled": true, "autoUpload": true,
+                                     "folderId": "f1", "folderName": "Opptak"},
+                "cloudDropbox": null,
+                "cloudOneDrive": {"enabled": false},
+                "podcast": {"enabled": true, "service": "google-drive",
+                            "title": "Domkirken taler", "autoPrepEnabled": true,
+                            "defaultMasterPreset": "speech-clear"}
+            }"#,
+        )
+        .validated();
+        assert_eq!(s.sample_rate, 48_000);
+        assert_eq!(s.email_address, "vakt@kirka.no");
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "webhookUrl",
+            "webhookOnWarning",
+            "webhookAllowLocal",
+            "cloudGoogleDrive",
+            "cloudDropbox",
+            "cloudOneDrive",
+            "podcast",
         ] {
             assert!(
                 !obj.contains_key(gone),
@@ -1980,11 +1815,6 @@ mod tests {
         };
         zero.validate();
         assert_eq!(zero.video_bitrate, 0, "0 = auto passes through");
-
-        let mut podcast_svc = Settings::default();
-        podcast_svc.podcast.service = "megaupload".into();
-        podcast_svc.validate();
-        assert_eq!(podcast_svc.podcast.service, "google-drive");
     }
 
     // ── resolve_save_folder — the canonical rule ─────────────────────────────

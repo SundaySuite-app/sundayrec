@@ -51,16 +51,13 @@ function warning(over: Partial<BackendWarning> = {}): BackendWarning {
 describe('code → locale key', () => {
   it('has a key for every code the Rust side can emit', () => {
     // Mirrors `sundayrec_core::notify::code::ALL`, which is asserted to have
-    // exactly these seven entries. A backend code with no entry here degrades
-    // to the Norwegian `msg` — survivable, but not what we ship.
+    // exactly these entries. A backend code with no entry here degrades to
+    // the Norwegian `msg` — survivable, but not what we ship.
     expect(Object.keys(WARNING_KEYS).sort()).toEqual([
-      'cloud_reauth_required',
-      'cloud_upload_failed',
       'device_missing',
       'disk_low',
       'preroll_dead',
       'recovery_skipped',
-      'review_overdue',
     ])
   })
 
@@ -79,8 +76,9 @@ describe('code → locale key', () => {
 
 describe('severity → toast kind', () => {
   it('routes error to the sticky kind and everything else to warn', () => {
-    // `error` toasts do not auto-dismiss. A revoked cloud token is exactly the
-    // message that must not vanish while the operator looks away.
+    // `error` toasts do not auto-dismiss. A missing mixer before a scheduled
+    // start is exactly the message that must not vanish while the operator
+    // looks away.
     expect(warningToastKind('error')).toBe('error')
     expect(warningToastKind('warn')).toBe('warn')
     // Anything unrecognised is a warning, never silently an error.
@@ -140,12 +138,12 @@ describe('toWarningView', () => {
     // This is the entire reason the payload carries a code at all. The old
     // consumer showed `msg` verbatim, which is always Norwegian.
     const view = toWarningView(
-      warning({ code: 'cloud_reauth_required', msg: 'Skylagringen må kobles til på nytt.' }),
+      warning({ code: 'device_missing', msg: 'Lydenheten er ikke koblet til.', params: { device: 'Qu-5' } }),
       localizer(en as Record<string, unknown>),
       pluralizer(en as Record<string, unknown>, 'en'),
     )
-    expect(view?.text).toContain('Cloud storage')
-    expect(view?.text).not.toContain('Skylagringen')
+    expect(view?.text).toContain('Qu-5')
+    expect(view?.text).not.toContain('Lydenheten')
   })
 
   it('falls back to the backend wording for a code it has never heard of', () => {
@@ -164,19 +162,6 @@ describe('toWarningView', () => {
     expect(toWarningView(warning({ code: 'something_new', msg: null }), t, tn)?.text).toBe(
       'something_new',
     )
-  })
-
-  it('picks the plural form for a count-governed warning', () => {
-    // review_overdue reads «har ventet i {days} dager» — one string per count
-    // before this. Norwegian needs «1 dag»; Polish needs a third form for 2–4.
-    const norsk = (days: string) =>
-      toWarningView(
-        warning({ code: 'review_overdue', msg: null, params: { days, episode: 'Gudstjeneste' } }),
-        t,
-        tn,
-      )?.text
-    expect(norsk('1')).toBe('En episode har ventet i 1 dag på gjennomgang: Gudstjeneste')
-    expect(norsk('5')).toBe('En episode har ventet i 5 dager på gjennomgang: Gudstjeneste')
   })
 
   it('lists every count-governed warning against a real plural group', () => {

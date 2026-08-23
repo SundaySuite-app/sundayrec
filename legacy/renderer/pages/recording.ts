@@ -301,14 +301,6 @@ export function setupRecording(): void {
     // The tray's start/stop no longer arrive on these Electron-era channels —
     // the Rust tray emits ONE `tray://action` event, adapted in tray-actions.ts,
     // which calls openManualModal / doStopRecording directly (both exported).
-    window.api.on('cloud-upload-done', (data) => {
-      const d = data as { service?: string; ok?: boolean; error?: string } | undefined
-      if (!d?.ok) {
-        const names: Record<string, string> = { 'google-drive': 'Google Drive', 'dropbox': 'Dropbox', 'onedrive': 'OneDrive' }
-        const svc = names[d?.service ?? ''] ?? d?.service ?? 'Sky'
-        showGlobalError(`${svc}: ${d?.error ?? t('general.unknownError', 'ukjent feil')}`)
-      }
-    }),
   ]
   window.addEventListener('beforeunload', () => ipcCleanups.forEach(fn => fn?.()))
 }

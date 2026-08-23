@@ -11,7 +11,7 @@ import {
 // honesty about what this build can send, the «Kopier siste logg» path, and
 // the Diagnose modal actually showing the backend's report.
 //
-// The SMTP handshake, the Gmail POST and the real log file stay
+// The SMTP handshake and the real log file stay
 // network/hardware-bound; this tier owns the seam the operator sees — is the
 // card gated for the right reason, does the test send reach `email_send_test`
 // with what was configured, does the log tail reach the clipboard, does the
@@ -27,7 +27,7 @@ test.describe("email card", () => {
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
-        email_status: { featureBuilt: false, gmailConnected: false },
+        email_status: { featureBuilt: false },
       },
       settings: SETTLED_SETTINGS,
       // The e-mail card lives on the Deling tab (#settings-sharing).
@@ -48,13 +48,13 @@ test.describe("email card", () => {
   test("with the feature built but no transport, the block reason is stated", async ({
     page,
   }) => {
-    // The default build CAN send — but not until Gmail or SMTP exists. The
+    // The default build CAN send — but not until SMTP exists. The
     // button must be disabled with the reason said out loud, not as a tooltip
     // on a dead control.
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true, gmailConnected: false },
+        email_status: { featureBuilt: true },
         email_has_smtp_password: false,
       },
       settings: {
@@ -79,7 +79,7 @@ test.describe("email card", () => {
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
-        email_status: { featureBuilt: true, gmailConnected: false },
+        email_status: { featureBuilt: true },
         email_has_smtp_password: true, // keychain says a password is stored
         email_send_test: fn(`(args) => {
           (window.__E2E_MAILS__ ||= []).push(args);
@@ -104,14 +104,13 @@ test.describe("email card", () => {
     await expect(testBtn).toBeEnabled();
     await testBtn.click();
 
-    // The send crossed the invoke boundary with the transport the settings
-    // imply (an SMTP host is configured ⇒ Smtp, not Gmail), the recipient and
-    // the UI language — the exact contract §8 promises.
+    // The send crossed the invoke boundary with the recipient and the UI
+    // language — the exact contract §8 promises. (SMTP is the one transport;
+    // the request no longer names one.)
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_MAILS__))
       .toEqual([
         expect.objectContaining({
-          transport: "Smtp",
           recipient: "post@kirke.no",
           language: "no",
           host: "smtp.kirke.no",

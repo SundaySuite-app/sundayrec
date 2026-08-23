@@ -1,11 +1,9 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
-import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion, EditorSegment } from '../types'
-import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
-import type { ThumbnailView } from '../bindings/ThumbnailView'
+import type { Settings, SermonCompanion, EditorSegment } from '../types'
 import type { TrashEntry } from '../bindings/TrashEntry'
 
-import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome, openReviewQueueFromTray } from './pages/home'
+import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
 import { stopVU, setupClipReset } from './pages/home-vu'
 import { setupAudioPage, applyAudioSettingsToUI, renderDeviceList } from './pages/audio-page'
 import { stopChannelGrid } from './pages/channel-grid'
@@ -18,29 +16,18 @@ import {
   paintActiveUpdateChannel,
 } from './pages/general-page'
 import { setupRecording, openManualModal, doStopRecording } from './pages/recording'
-import { setupEditorPage, openEditorWithFile, openEditorReviewMode, deactivateEditor, reactivateEditor } from './pages/editor-page'
+import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor } from './pages/editor-page'
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
-import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
-import { setupIntegrationsPage } from './pages/integrations-page'
-import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
+import { setupCompanionKeyCard } from './pages/companion-key-card'
+import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
 import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
 import { navigateTo } from './ui/navigate'
 import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
-import { initDeeplinks } from './deeplinks'
-
-// Shared thumbnail IPC result shapes.
-//
-// These were hand-written for a backend that did not exist. It exists now
-// (src-tauri/src/commands/thumbnail.rs), so they are the GENERATED types — a
-// change to the Rust DTO surfaces here as a tsc error instead of as a panel
-// reading a field the backend stopped sending.
-export type ThumbnailInfo = ThumbnailInfoDto
-export type ThumbnailResult = ThumbnailView | { error: string }
 
 /** The pass-1 loudnorm measurement (`EditorLoudness`). All five measured values
  *  ride along so `masterApply` can REUSE the measurement `masterMeasure` just
@@ -54,11 +41,6 @@ export interface LoudnessMeasurementView {
   /** The preset's target, not a measurement — carried for the "x → y LUFS" UI. */
   targetLufs:   number
 }
-/** What `thumbnailResolve` returns — the same view, with `kind` telling the
- *  panel whether it got this episode's own image or the shared default.
- *  `kind` is absent from `thumbnailGetDefaultInfo` (nothing to distinguish). */
-export type ThumbnailResolved = ThumbnailView
-
 // Expose globals that sub-modules need
 declare global {
   interface Window {
@@ -67,7 +49,6 @@ declare global {
     showOnboarding: () => void
     __isRecording: boolean
     openEditorWithFile: (filePath: string, seekToSec?: number) => void
-    openEditorReviewMode?: (prepId: string, filePath: string) => void
     api: {
       getSettings:         () => Promise<Settings>
       saveSettings:        (s: Settings) => Promise<boolean>
@@ -114,7 +95,6 @@ declare global {
       probeDeviceChannels: (deviceName: string) => Promise<number>
       scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
-      testWebhook:         (url: string) => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
@@ -125,11 +105,10 @@ declare global {
       emailSetSmtpPassword: (password?: string) => Promise<boolean>
       /** Whether an SMTP password is stored. The secret never crosses back. */
       emailHasSmtpPassword: () => Promise<boolean>
-      /** Whether this build can send e-mail at all, and whether Gmail is
-       *  connected — read BEFORE offering a «Send test» (see feature-gate). */
+      /** Whether this build can send e-mail at all — read BEFORE offering a
+       *  «Send test» (see feature-gate). */
       emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
       testEmail:           (params: {
-        transport: 'gmail' | 'smtp'
         recipient: string
         language?: string
         host?: string
@@ -245,22 +224,6 @@ declare global {
       startVu:                (deviceName: string | null) => Promise<number>
       stopVu:                 ()                 => Promise<void>
       listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
-      cloudConnect:        (service: string) => Promise<{ ok: boolean; accountName?: string; error?: string }>
-      cloudCancelConnect:  (service: string) => Promise<boolean>
-      cloudDisconnect:     (service: string) => Promise<void>
-      cloudStatus:         ()                => Promise<Record<string, unknown>>
-      cloudIsConfigured:   (service: string) => Promise<boolean>
-      cloudUploadFile:     (service: string, filePath: string, metadata?: unknown) => Promise<{ ok: boolean; error?: string }>
-      cloudListFolders:    (service: string, parentId?: string) => Promise<{ id: string; name: string; path?: string }[]>
-      cloudSetFolder:      (service: string, folderId: string, folderName: string, folderPath?: string) => Promise<void>
-      cloudQueueStatus:    () => Promise<{ entries: { id: string; service: string; filename: string; status: string; attempts: number; nextAttempt: number; lastError?: string }[] }>
-      cloudQueueRetry:     (id: string) => Promise<boolean>
-      cloudQueueRemove:    (id: string) => Promise<boolean>
-      cloudQueueFlush:     () => Promise<boolean>
-      podcastRegenerate:   (service: string) => Promise<{ ok: boolean; feedUrl?: string; episodeCount: number; error?: string }>
-      /** Whether this build can write/upload the RSS feed (the `publish` cargo
-       *  feature) — the Filer-page gate's truth source. `null` = could not ask. */
-      podcastFeedStatus:   () => Promise<{ featureBuilt: boolean; episodeCount: number } | null>
       registerTrustedPath: (filePath: string) => Promise<boolean>
 
       /** Every transcribed recording's sidecar. `basePath` is the recording path
@@ -281,17 +244,6 @@ declare global {
       whisperTranscribe:    (params: { filePath: string; modelId: string; language?: string; translate?: boolean; jobId?: string }) => Promise<{ ok: boolean; transcript?: import('../types').TranscriptData; error?: string }>
       whisperCancelTranscribe: (jobId: string) => Promise<boolean>
 
-      reviewQueueList:                () => Promise<import('../types').ReviewQueueEntry[]>
-      reviewQueueGet:                 (id: string) => Promise<import('../types').ReviewQueueEntry | null>
-      reviewQueuePublish:             (id: string) => Promise<{ ok: boolean; error?: string }>
-      reviewQueueDiscard:             (id: string) => Promise<boolean>
-      // The three review-queue field pushes. All three answer `false` when the
-      // id has left the queue — treat that as "not saved", never as a no-op.
-      reviewQueueUpdateTrim:          (id: string, trim: { startSec: number; endSec: number }) => Promise<boolean>
-      reviewQueueUpdateMasterPreset:  (id: string, presetId: string) => Promise<boolean>
-      /** PARTIAL patch: an omitted key leaves that jingle alone, `null` clears
-       *  it, a string sets it. Send one key per call. */
-      reviewQueueUpdateJingles:       (id: string, jingles: { introPath?: string | null; outroPath?: string | null }) => Promise<boolean>
       listVideoDevices:  () => Promise<{ name: string; index: number }[]>
       getCameraCapabilities: (token: string) => Promise<{ maxWidth: number; maxHeight: number; maxFps: number; supportedResolutions: string[]; supportedFramerates: number[] } | null>
       recordingPreviewFrame: () => Promise<string | null>
@@ -369,29 +321,6 @@ declare global {
        *  adaptivity off. `null` on failure. */
       learningLocalNudgeReset: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
 
-      // Thumbnail (podcast cover art)
-      thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
-      thumbnailClearDefault:   () => Promise<boolean>
-      thumbnailSetEpisode:     (recordingPath: string, sourcePath?: string) => Promise<ThumbnailResult | null>
-      thumbnailClearEpisode:   (recordingPath: string) => Promise<boolean>
-      thumbnailResolve:        (recordingPath: string) => Promise<ThumbnailResolved | null>
-      thumbnailGetDefaultInfo: () => Promise<ThumbnailResolved | null>
-
-      // Sunday-suite integrations (opt-in; inert until enabled)
-      getIntegrationSettings:  () => Promise<IntegrationSettings>
-      setIntegrationSettings:  (patch: Partial<IntegrationSettings>) => Promise<IntegrationSettings>
-      getServiceLink:          (recordingPath: string) => Promise<ServiceLink | null>
-      sundayEditSend:            (opts: { videoPath: string; language?: string; context?: string; glossary?: string[] }) => Promise<{ ok: boolean; error?: string }>
-      sundayEditImport:          (recordingPath: string, subtitlePath: string, language?: string) => Promise<{ ok: boolean; transcriptPath?: string; error?: string }>
-      /** The complete Stage import: manifest JSON (its CONTENT, not a path — the
-       *  webview can read the picked File, it cannot learn its fs path) →
-       *  chapters into `.meta.json` + `.service.json` beside the recording. */
-      stageImport:             (recordingPath: string, manifestJson: string, wasStreamed?: boolean) => Promise<{ ok: boolean; chapterCount?: number; songCount?: number; error?: string }>
-      songSetApiKey:           (key: string) => Promise<void>
-      songHasApiKey:           () => Promise<boolean>
-      songSubmitUsage:         (recordingPath: string) => Promise<{ ok: boolean; submitted?: number; errors?: Array<{ key: string; error: string }>; error?: string; hint?: string }>
-      planFetchServices:       (fromIso?: string) => Promise<{ ok: boolean; services?: unknown[]; error?: string }>
-      planUpdateService:       (serviceId: string, wasStreamed?: boolean, recordingUrl?: string) => Promise<{ ok: boolean; error?: string }>
 
       // R8 AI sermon companion (chapters + highlights + Norwegian summary).
       // companionBuild returns null on any failure; the optional LLM summary is
@@ -422,7 +351,6 @@ async function applyAllSettingsToUI(s: Settings): Promise<void> {
   applyFilesSettingsToUI()
   applyGeneralSettingsToUI()
   applyVideoSettingsToUI()
-  applyPublishSettingsToUI()
   loadVideoInfoStrip()
   renderSlotsList()
   renderPlannedList()
@@ -464,8 +392,8 @@ function showPage(id: string): void {
  * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
  *
  * «Publisering» and «Varsler» answered halves of the same question — who gets
- * the recording afterwards — and are now sections of Deling; «Sunday-suite» is
- * an Avansert disclosure at the bottom of System. Old tab ids still resolve:
+ * the recording afterwards — and are now sections of Deling; the companion key
+ * is an Avansert disclosure at the bottom of System. Old tab ids still resolve:
  * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
  */
 function setupSettingsTabs(): void {
@@ -582,21 +510,12 @@ async function init(): Promise<void> {
   setupVideoPage()
   setupRecording()
   setupEditorPage()
-  setupPublishPage()
-  void setupIntegrationsPage()
+  void setupCompanionKeyCard()
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()
   // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
   setupModalManager()
-
-  // `sundayrec://` hand-offs from SundayEdit. Rust has parsed (and, for
-  // captions, already applied) these since the port; nothing ever listened, so
-  // the window came forward and then appeared to do nothing.
-  initDeeplinks({
-    openInEditor: (path: string) => openEditorWithFile(path),
-    refreshTranscripts: invalidateTranscriptIndex,
-  })
 
   // The menubar tray's one event, routed to the SAME entry points the in-app
   // buttons use — a tray "Start opptak nå" opens the very modal the Home button
@@ -605,7 +524,6 @@ async function init(): Promise<void> {
   initTrayActions({
     startRecording: () => void openManualModal(),
     stopRecording: () => void doStopRecording(),
-    openReviewQueue: openReviewQueueFromTray,
     // Rust does NOT handle this one (it falls through `emit_action`'s catch-all),
     // and the save folder is a renderer setting anyway.
     openRecordingsFolder: () => {
@@ -625,7 +543,6 @@ async function init(): Promise<void> {
   enhanceTimeInputs() // smooth "1430" entry on all native time fields
 
   window.openEditorWithFile = openEditorWithFile
-  window.openEditorReviewMode = openEditorReviewMode
 
   // Fetch app version from main (sandbox-safe — no fs/path in preload)
   window.appVersion = await window.api.getAppVersion().catch(() => '—')

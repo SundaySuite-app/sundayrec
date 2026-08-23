@@ -339,7 +339,7 @@ describe('missed + preflight formatting', () => {
     const out = formatPreflightHeadline(
       [
         { severity: 'warn', category: 'disk', message: 'a' },
-        { severity: 'warn', category: 'cloud', message: 'b' },
+        { severity: 'warn', category: 'wake', message: 'b' },
       ],
       ctx(),
     )!

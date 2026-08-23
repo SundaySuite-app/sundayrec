@@ -21,12 +21,6 @@ import {
   type EmailFacts,
 } from '../ui/feature-gate-core'
 import {
-  hostOf,
-  needsLocalConfirmation,
-  nextAllowLocal,
-  webhookUrlError,
-} from '../ui/webhook-url-core'
-import {
   applyParams,
   buildLearningSummaryView,
   buildLocalNudgeView,
@@ -78,41 +72,6 @@ export function setupGeneralPage(): void {
     // the button up without a tab reload.
     after: () => { void refreshEmailGate() },
   }))
-  // The webhook URL carries an SSRF decision, so it is the one text field whose
-  // save can ask a question. A LAN address (192.168.x, printer.local, a bare
-  // hostname) is refused by the backend unless `webhookAllowLocal` is set, and
-  // that flag is set HERE and only here — after the operator has confirmed, for
-  // this address, that it is a device on their own network. Typing a public URL
-  // clears it again: it is an opt-in for one address, not a mode.
-  bindSetting('webhook-url', generalBinding({
-    key: 'webhookUrl',
-    validate: (value) => {
-      const err = webhookUrlError(String(value ?? ''))
-      return err ? t(err.key, err.fallback) : null
-    },
-    confirmIf: (value) => {
-      const url = String(value ?? '').trim()
-      if (!needsLocalConfirmation(url, !!settings.webhookAllowLocal)) return null
-      return {
-        title: t('notify.webhookLocalTitle', 'Denne adressen er på ditt lokale nett'),
-        message: tf(
-          'notify.webhookLocalBody',
-          { host: hostOf(url) ?? url },
-          'SundayRec sender varsler til {host}, som ligger på ditt eget nettverk og ikke på internett. Tillat det bare hvis du vet hvilket utstyr som svarer der.',
-        ),
-        confirmLabel: t('notify.webhookLocalAllow', 'Ja, tillat lokalt nett'),
-        cancelLabel: t('notify.webhookLocalDeny', 'Avbryt'),
-      }
-    },
-    // Reached only when the guard above was absent or answered yes.
-    apply: (value) => {
-      const url = String(value ?? '').trim()
-      patchSettings({ webhookAllowLocal: nextAllowLocal(url, true) })
-      collectGeneralSettings()
-    },
-  }))
-  bindSetting('opt-webhook-on-warn', generalBinding({ key: 'webhookOnWarning' }))
-
   bindSetting('opt-autostart',       generalBinding({ key: 'launchAtLogin' }))
   bindSetting('opt-ask-open-editor', generalBinding({ key: 'askOpenEditor' }))
   // The only auto-applying control whose effect must not wait for the save to
@@ -148,7 +107,6 @@ export function setupGeneralPage(): void {
 
   setupSmtpCard()
   void refreshEmailGate()
-  setupWebhookTest()
   setupSettingsProfileCard()
   setupTelemetryCard()
   setupLearningSummaryCard()
@@ -201,27 +159,12 @@ export function setupGeneralPage(): void {
     await refreshEmailGate()
   })
 
-  // The Gmail-OAuth card (btn-email-gmail-connect/-disconnect) was REMOVED
-  // from the markup in 2026-08: gmailConnect was a permanent-failure stub with
-  // no `ok` field, so the connect button sat permanently disabled and the
-  // disconnect path could never be reached. The honest gate is no dead button
-  // at all — re-add the card together with the backend if Gmail OAuth is ever
-  // built. (`EmailFacts.gmailConnected` below still reads the REAL
-  // email_status answer, so a future backend lights the send path up without
-  // renderer changes.)
-
   // Note: btn-export / btn-import / btn-restore handlers were removed in v4.31
   // when the System tab was simplified. The corresponding shim methods
   // (exportProfile / importProfile / resetSettings) had zero callers left after
   // that and were deleted from api-shim.ts + the window.api type (2026-08
   // audit) — re-add both the UI and the shim method together if this ever
   // comes back.
-
-  // btn-test-email / btn-test-webhook have no working backend yet (2026-08
-  // audit: testEmail/testWebhook were permanent-failure stubs, so every click
-  // showed a fake "✕ Sending feilet" no matter what the user configured) — both
-  // are disabled in the markup with an honest reason instead of wiring up a
-  // guaranteed failure.
 
   // DELIBERATELY ungated by `autoUpdate`, and PRIVACY.md says so out loud: «Det
   // ene unntaket er om du selv trykker "Se etter oppdateringer nå", for da er
@@ -325,14 +268,13 @@ async function refreshEmailGate(): Promise<void> {
     window.api.emailHasSmtpPassword().catch(() => false),
     // A failed status check is not a send path — fall back to the pessimistic
     // answer rather than to the previous one.
-    window.api.emailStatus().catch(() => ({ featureBuilt: false, gmailConnected: false })),
+    window.api.emailStatus().catch(() => ({ featureBuilt: false })),
   ])
   if (seq !== emailGateSeq) return
 
   paintSmtpPasswordState(stored)
   const facts: EmailFacts = {
     featureBuilt: !!status.featureBuilt,
-    gmailConnected: !!status.gmailConnected,
     smtpConfigured: !!(settings.emailSmtp ?? '').trim() && !!(settings.emailSmtpUser ?? '').trim(),
     // A password typed but not yet saved still authenticates: the backend
     // prefers the request's over the keychain's (`resolve_smtp_password`).
@@ -342,7 +284,7 @@ async function refreshEmailGate(): Promise<void> {
   applyFeatureGate('email-notify-card', {
     status: emailGateStatus(facts),
     chipText: t('gate.chipUnavailable', 'Ikke tilgjengelig'),
-    explanation: t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.'),
+    explanation: t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden inntil videre.'),
   })
 
   // «Send test» is enabled ONLY when a transport exists and we know where to
@@ -386,7 +328,7 @@ function emailErrorText(err: string | undefined): string {
     case 'missing_password':
       return t('notify.errNoPassword', 'Mangler SMTP-passord. Skriv det inn og trykk «Lagre i nøkkelring».')
     case 'feature_disabled':
-      return t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden eller en webhook inntil videre.')
+      return t('notify.gateNoFeature', 'E-postutsending er ikke bygget inn i denne versjonen. Varsler om feilede opptak må hentes fra Hjem-siden inntil videre.')
     case 'no_config_smtp_host':
       return t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com')
     default:
@@ -400,11 +342,9 @@ async function sendTestEmail(): Promise<void> {
   const btn = document.getElementById('btn-test-email') as HTMLButtonElement | null
   const recipient = (document.getElementById('email-address') as HTMLInputElement | null)?.value.trim() ?? ''
   if (!recipient) return
-  const useGmail = !(settings.emailSmtp ?? '').trim()
   if (btn) btn.disabled = true
   try {
     const res = await window.api.testEmail({
-      transport: useGmail ? 'gmail' : 'smtp',
       recipient,
       language: settings.language ?? 'no',
       host: settings.emailSmtp,
@@ -426,42 +366,6 @@ async function sendTestEmail(): Promise<void> {
   } finally {
     if (btn) btn.disabled = false
   }
-}
-
-/**
- * The webhook test is NOT gated: `email_test_webhook` is a real command on
- * every build (a plain 10 s POST, no cargo feature). The night sweep disabled
- * the button along with the e-mail ones because the shim stubbed it; the stub
- * is gone, so the button works — it just needs a URL to aim at.
- */
-function setupWebhookTest(): void {
-  const btn = document.getElementById('btn-test-webhook') as HTMLButtonElement | null
-  const urlEl = document.getElementById('webhook-url') as HTMLInputElement | null
-  if (!btn || !urlEl) return
-
-  const sync = (): void => {
-    const url = urlEl.value.trim()
-    btn.disabled = !/^https:\/\/\S+$/.test(url)
-    btn.title = btn.disabled ? t('notify.gateWebhookNoUrl', 'Lim inn en webhook-URL først.') : ''
-  }
-  urlEl.addEventListener('input', sync)
-  urlEl.addEventListener('change', sync)
-  sync()
-
-  btn.addEventListener('click', async () => {
-    const url = urlEl.value.trim()
-    if (!url) return
-    btn.disabled = true
-    try {
-      const res = await window.api.testWebhook(url)
-      toast(res.ok ? 'success' : 'error',
-        res.ok
-          ? t('notify.testWebhookOk', 'Webhooken svarte — varsler kommer fram.')
-          : t('notify.testWebhookFailed', 'Webhooken svarte ikke. Sjekk adressen.'))
-    } finally {
-      sync()
-    }
-  })
 }
 
 /**
@@ -500,7 +404,7 @@ function setupSmtpCard(): void {
     const hostVal = host.value.trim()
     const userVal = user?.value.trim() ?? ''
     const fromVal = from?.value.trim() ?? ''
-    // An empty card is a valid state: it means "no SMTP, use Gmail".
+    // An empty card is a valid state: it means "no SMTP" (and no alert mail).
     if (hostVal && !/^[\w.-]+\.[a-z]{2,}$/i.test(hostVal)) {
       setFieldError(host, t('notify.errSmtpHost', 'Skriv et servernavn, f.eks. smtp.gmail.com'))
       return
@@ -551,9 +455,9 @@ function setupSmtpCard(): void {
  * `app_setting` bag in src-tauri — see crates/sundayrec-core/telemetry/
  * consent.rs), NOT in the `Settings` blob `bindSetting` normally reads and
  * writes through `collectGeneralSettings()`. So the toggle below uses the
- * same `apply: () => {}` / `persist: async () => …` shape
- * integrations-page.ts already established for exactly this situation (a
- * control whose truth lives outside Settings).
+ * same `apply: () => {}` / `persist: async () => …` shape the (since-removed)
+ * integrations page established for exactly this situation (a control whose
+ * truth lives outside Settings).
  *
  * No `confirmIf` on enabling: the toggle's own description plus the details
  * this card links to (the preview, the privacy notice) already give informed
@@ -1195,8 +1099,6 @@ export function applyGeneralSettingsToUI(): void {
   setVal('email-port',    settings.emailSmtpPort  ?? 587)
   setVal('email-user',    settings.emailSmtpUser  ?? '')
   setVal('email-from',    settings.emailSmtpFrom  ?? '')
-  setVal('webhook-url',   settings.webhookUrl     ?? '')
-  setCheckbox('opt-webhook-on-warn', !!settings.webhookOnWarning)
   // The password never comes back from storage — the field starts empty and the
   // «lagret» state is read from the OS keychain, not from a settings flag. (It
   // used to read `settings.emailSmtpPassSet`, an Electron-era field the Tauri
@@ -1258,8 +1160,6 @@ function collectGeneralSettings(): void {
     reminderMinutes:   parseInt((document.getElementById('opt-reminder-minutes') as HTMLSelectElement | null)?.value ?? '0') || 0,
     emailOnError:      !!(document.getElementById('opt-email-error')  as HTMLInputElement | null)?.checked,
     emailAddress:      (document.getElementById('email-address')     as HTMLInputElement | null)?.value ?? '',
-    webhookUrl:        (document.getElementById('webhook-url')       as HTMLInputElement | null)?.value.trim() || undefined,
-    webhookOnWarning:  !!(document.getElementById('opt-webhook-on-warn') as HTMLInputElement | null)?.checked,
     launchAtLogin:     !!(document.getElementById('opt-autostart')         as HTMLInputElement | null)?.checked,
     autoUpdate:        !!(document.getElementById('opt-auto-update')       as HTMLInputElement | null)?.checked,
     // Anything the select cannot produce is not a channel; the backend applies

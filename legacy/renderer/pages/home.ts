@@ -5,7 +5,6 @@ import { startVU } from './home-vu'
 import { releaseRendererAudioCaptures } from './recording'
 import { errText } from './audio-page'
 import { getAudioDevices, healStoredDeviceId } from '../audio/capture'
-import { refreshReviewQueue, setupReviewQueueListeners } from './review-queue-home'
 import { navigateTo } from '../ui/navigate'
 import { subscribePrerollStatus } from '../preroll-lifecycle'
 import { buildHealthFindings } from '../status/health-findings'
@@ -580,10 +579,6 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
   if (entry.fileSizeBytes != null && entry.fileSizeBytes > 0)
     parts.push(fmtFileSizeBytes(entry.fileSizeBytes))
 
-  const cloudNames: Record<string, string> = { 'google-drive': 'GD', 'dropbox': 'DB', 'onedrive': 'OD' }
-  const uploadedServices = (entry.cloudUploaded ?? []).map(s => cloudNames[s] ?? s)
-  if (uploadedServices.length) parts.push('☁ ' + uploadedServices.join(' ☁ '))
-
   const done = t('history.complete', 'Fullført')
   const msg = parts.length ? `${done} — ${parts.join(' · ')}` : done
 
@@ -970,17 +965,13 @@ export function setupHome(): void {
     navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // Publish-strip cards — all three route to the Publisering SECTION of the
-  // Deling tab (cloud + thumbnail UI lives there; Whisper has no dedicated
-  // settings surface yet, so we land users there and they can browse from
-  // there until we promote Whisper config out of the editor).
-  const goPublish = (anchor?: string) => (e: Event) => {
+  // The transcription card routes to the Deling tab (Whisper has no
+  // dedicated settings surface yet, so we land users there and they can
+  // browse from there until we promote Whisper config out of the editor).
+  document.getElementById('btn-go-whisper')?.addEventListener('click', (e: Event) => {
     e.preventDefault()
-    navigateTo('settings', { tab: 'settings-sharing', anchor: anchor ?? '#settings-publish' })
-  }
-  document.getElementById('btn-go-cloud')?.addEventListener('click',   goPublish('#settings-publish .cloud-grid'))
-  document.getElementById('btn-go-thumb')?.addEventListener('click',   goPublish('#publish-thumb-preview'))
-  document.getElementById('btn-go-whisper')?.addEventListener('click', goPublish())
+    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-notifications' })
+  })
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
     navigateTo('settings', { tab: 'settings-audio' })
   })
@@ -1061,18 +1052,14 @@ function wireHomeIpcListeners(): void {
     if (rec && !rec.splitRestart) showRecordingFinishedSummary(rec)
   }))
 
-  // Wire up the review-queue card — listens to IPC events from main so the card
-  // updates instantly when a new prep lands or the user publishes/discards.
-  setupReviewQueueListeners()
-
   // The pre-roll buffer's own surface on the LYDKILDE card.
   homeIpcUnsubs.push(subscribePrerollStatus(renderPrerollChip))
 
-  // Tray menu hooks used to live here as `tray-open-review-queue` /
-  // `tray-run-preflight` listeners — Electron channel names no Rust code has
-  // ever emitted, so both were unreachable. The Rust tray emits ONE
-  // `tray://action` event; it is adapted in tray-actions.ts, wired once in
-  // main.ts, and calls openReviewQueueFromTray / the preflight button from there.
+  // Tray menu hooks used to live here as `tray-run-preflight` listeners —
+  // Electron channel names no Rust code has ever emitted, so they were
+  // unreachable. The Rust tray emits ONE `tray://action` event; it is adapted
+  // in tray-actions.ts, wired once in main.ts, and calls the preflight button
+  // from there.
 }
 
 /** Render the pre-roll chip on the LYDKILDE card. The rolling buffer holds the
@@ -1089,15 +1076,6 @@ function renderPrerollChip(active: boolean, seconds: number): void {
     text.textContent = tf('home.prerollActive', { n: seconds }, 'Forhåndsbuffer aktiv ({n} s)')
   }
   chip.style.display = ''
-}
-
-/** Bring the review-queue card to the front, freshly loaded — the destination of
- *  the tray's "📬 N episoder klare" row. Exported for tray-actions.ts. */
-export function openReviewQueueFromTray(): void {
-  navigateTo('home', { anchor: '#review-queue-card' })
-  refreshReviewQueue().catch(err =>
-    console.warn('[home] review-queue refresh from tray failed:', err),
-  )
 }
 
 /** The info cards that wait on an async load, so they can show a skeleton
@@ -1139,7 +1117,6 @@ export async function refreshHome(): Promise<void> {
     renderRecentRecordings(),
     checkStatus(),
     loadHomeInfoStrip(),
-    refreshReviewQueue(),
   ])
   // The recorder owns the device during a take (`start_recording` stops the VU
   // engine itself), and the overlay's meter reads `recording://levels`. Asking
@@ -1483,131 +1460,21 @@ export async function loadHomeInfoStrip(): Promise<void> {
   if (fmtEl) fmtEl.textContent = br ? `${fmt} · ${br}` : fmt
   if (fmtSub) fmtSub.textContent = `${ch} · ${srLabel}`
 
-  // Refresh the publish/cloud/transcript strip — each card decides whether
-  // to show itself based on settings + actual disk/network state. Smart
-  // visibility: nothing is rendered when none of the three are configured,
-  // keeping the home page short for fresh users.
+  // Refresh the transcript strip — the card decides whether to show itself
+  // based on actual disk state. Smart visibility: nothing is rendered when it
+  // is not configured, keeping the home page short for fresh users.
   void loadPublishInfoStrip()
 }
 
 /**
- * Loads the bottom info-strip with: sky-backup status, episodebilde
- * (cover art) and transkripsjon (Whisper). Each card individually toggles
- * its own display — the parent strip is hidden when all three are off.
+ * Loads the bottom info-strip with: transkripsjon (Whisper). The card toggles
+ * its own display — the parent strip is hidden when it is off.
  */
 async function loadPublishInfoStrip(): Promise<void> {
   const strip = document.getElementById('publish-info-strip')
   if (!strip) return
-
-  const cloudShown = renderCloudCard()
-  // Both of these ask the backend something, so they run concurrently and the
-  // one synchronous card decides whether the strip appears immediately.
-  const thumbShownPromise = renderThumbCard()
-  const whisperShownPromise = renderWhisperCard()
-
-  // Show the strip as soon as ONE card has decided it has something to render,
-  // so it doesn't flash in on every load once the async answers land.
-  if (cloudShown) {
-    strip.style.display = ''
-  }
-  const [thumbShown, whisperShown] = await Promise.all([
-    thumbShownPromise,
-    whisperShownPromise,
-  ])
-  strip.style.display = (cloudShown || thumbShown || whisperShown) ? '' : 'none'
-}
-
-/** @returns true when the cloud card was rendered visible. */
-function renderCloudCard(): boolean {
-  const card = document.getElementById('home-cloud-card')
-  if (!card) return false
-  const services: Array<{ key: 'cloudGoogleDrive' | 'cloudDropbox' | 'cloudOneDrive'; label: string }> = [
-    { key: 'cloudGoogleDrive', label: 'Drive' },
-    { key: 'cloudDropbox',     label: 'Dropbox' },
-    { key: 'cloudOneDrive',    label: 'OneDrive' },
-  ]
-  const active = services.filter(s => settings[s.key]?.enabled)
-  if (active.length === 0) {
-    card.style.display = 'none'
-    return false
-  }
-  card.style.display = ''
-  const valEl = document.getElementById('home-cloud-services')
-  const subEl = document.getElementById('home-cloud-status')
-  if (valEl) valEl.textContent = active.map(a => a.label).join(' · ')
-
-  // Show queue length if any cloud uploads are pending — this is the most
-  // useful runtime info: "1 venter på opplasting" vs "Alle synkronisert".
-  if (subEl) {
-    subEl.textContent = t('home.cloudActive', 'Aktiv')
-    subEl.style.color = ''
-    void (async () => {
-      try {
-        const q = await window.api.cloudQueueStatus()
-        const pending = q.entries?.filter(e => e.status === 'pending' || e.status === 'retrying').length ?? 0
-        const failed  = q.entries?.filter(e => e.status === 'failed').length ?? 0
-        if (failed > 0)       { subEl.textContent = `${failed} ${t('home.cloudFailed', 'feilet')}`;   subEl.style.color = 'var(--red)' }
-        else if (pending > 0) { subEl.textContent = `${pending} ${t('home.cloudQueued', 'i kø')}`;    subEl.style.color = 'var(--text2)' }
-        else                  { subEl.textContent = t('home.cloudAllSynced', 'Alle synkronisert');   subEl.style.color = 'var(--green)' }
-      } catch {
-        // Queue status unavailable — leave the static "Aktiv" label.
-      }
-    })()
-  }
-  return true
-}
-
-/**
- * The «Standard episodebilde» card.
- *
- * It used to read `settings.defaultThumbnailPath` — a field NOTHING has ever
- * written in the Tauri build — so the card appeared only for users carrying a
- * stale path from the Electron app, showed a file that nothing consumed, and
- * said so («Episodebilde kommer — brukes ikke ennå») with its «Endre» action
- * turned off, because it would have landed on a panel that was itself gated.
- *
- * All three of those are now false. The card asks the backend what the default
- * actually is, shows it, and lets you change it.
- *
- * @returns true when the card was rendered visible.
- */
-async function renderThumbCard(): Promise<boolean> {
-  const card = document.getElementById('home-thumb-card')
-  if (!card) return false
-  const info = await window.api.thumbnailGetDefaultInfo().catch(() => null)
-  if (!info) {
-    card.style.display = 'none'
-    return false
-  }
-  card.style.display = ''
-  const nameEl = document.getElementById('home-thumb-name')
-  const subEl  = document.getElementById('home-thumb-sub')
-  const iconSlot = card.querySelector<HTMLElement>('.home-thumb-icon-slot')
-  if (nameEl) {
-    nameEl.textContent = info.path.split(/[\\/]/).pop() ?? info.path
-  }
-  if (subEl) {
-    subEl.textContent = `${info.info.width}×${info.info.height} px`
-    subEl.style.color = ''
-  }
-  const action = document.getElementById('btn-go-thumb')
-  if (action) {
-    action.removeAttribute('inert')
-    action.classList.remove('gate-off')
-  }
-  // The backend hands back a self-contained data URL, so there is no asset://
-  // scope to satisfy and nothing to fail silently on an external volume. The
-  // error listener stays (an <img> can still reject malformed bytes) and is a
-  // listener rather than an inline onerror, which the strict CSP would block.
-  if (iconSlot) {
-    const img = document.createElement('img')
-    img.className = 'thumb-card-icon thumb-card-icon-home'
-    img.alt = ''
-    img.addEventListener('error', () => { img.style.display = 'none' })
-    img.src = info.dataUrl
-    iconSlot.replaceChildren(img)
-  }
-  return true
+  const whisperShown = await renderWhisperCard()
+  strip.style.display = whisperShown ? '' : 'none'
 }
 
 /** @returns true when the transkripsjon card was rendered visible. */

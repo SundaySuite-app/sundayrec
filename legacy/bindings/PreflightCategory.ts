@@ -2,9 +2,10 @@
 
 /**
  * Which part of the pipeline a finding is about. Serialised lowercase to match
- * the Electron `'cloud' | 'preroll' | 'wake' | 'disk' | 'device'` union
- * (`preflight.ts:21`). `Cloud`/`Preroll`/`Wake` are reserved for their later
- * phases (cloud upload, pre-roll buffer, wake-from-sleep) and are not raised by
- * the F2.2 plumbing yet — they exist so the type already matches Electron.
+ * the Electron `'preroll' | 'wake' | 'disk' | 'device'` union
+ * (`preflight.ts:21`, minus `'cloud'`, which left with cloud backup).
+ * `Preroll`/`Wake` are reserved for their later phases (pre-roll buffer,
+ * wake-from-sleep) and are not raised by the F2.2 plumbing yet — they exist so
+ * the type already matches Electron.
  */
-export type PreflightCategory = "cloud" | "preroll" | "wake" | "disk" | "device";
+export type PreflightCategory = "preroll" | "wake" | "disk" | "device";

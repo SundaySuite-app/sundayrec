@@ -3,16 +3,16 @@
 //! Ports the Electron `cleanupOldRecordings` decision (`src/main/index.ts`):
 //! when the user sets an `autoDeleteDays` retention window, recordings older
 //! than the cutoff that live under the save-folder are deleted **from disk** and
-//! dropped from the history — but only once every cloud service the user is
-//! actively backing up to has confirmed the upload (so we never delete a file
-//! that hasn't reached the cloud yet).
+//! dropped from the history. (Electron also held a file back until every cloud
+//! service had confirmed its upload; cloud backup left with the sharing
+//! cluster, and the Tauri history never persisted per-recording confirmation
+//! anyway, so that guard is gone.)
 //!
 //! The Electron code interleaved the *decision* (which rows are due, the
-//! cloud-completeness guard, the save-dir-prefix guard) with the I/O (`fs.unlink`,
-//! `store.set`). Here we keep ONLY the deterministic decision: given a snapshot
-//! of candidate rows + the current config, return the ids to delete and the
-//! count kept-back awaiting cloud. The `src-tauri` shell does the actual file
-//! unlink + DB delete and feeds the facts back in.
+//! save-dir-prefix guard) with the I/O (`fs.unlink`, `store.set`). Here we keep
+//! ONLY the deterministic decision: given a snapshot of candidate rows + the
+//! current config, return the ids to delete. The `src-tauri` shell does the
+//! actual file unlink + DB delete and feeds the facts back in.
 
 use std::path::{Path, MAIN_SEPARATOR};
 
@@ -28,20 +28,14 @@ pub struct PruneCandidate {
     /// When the recording started, epoch ms. Compared against the cutoff.
     /// `None` rows are never candidates (an undated row can't be "too old").
     pub started_at_ms: Option<i64>,
-    /// The cloud service ids that have confirmed this file is uploaded
-    /// (kebab-case, e.g. `google-drive`). Compared against `expected_cloud`.
-    pub cloud_uploaded: Vec<String>,
 }
 
 /// The retention decision for one prune pass. Mirrors `cleanupOldRecordings`'s
-/// `remaining`/`changed`/`skippedAwaitingCloud` bookkeeping.
+/// `remaining`/`changed` bookkeeping.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PruneDecision {
     /// Ids whose file should be unlinked and history row dropped.
     pub delete_ids: Vec<String>,
-    /// How many rows matched the age/dir gate but were held back because a
-    /// configured cloud service hasn't confirmed the upload yet.
-    pub kept_awaiting_cloud: usize,
 }
 
 /// Decide which recordings to prune. Pure mirror of the Electron loop.
@@ -49,10 +43,7 @@ pub struct PruneDecision {
 /// A row is a deletion candidate when ALL of:
 ///   - it has a `started_at_ms` strictly before `cutoff_ms` (now − days·86 400 000),
 ///   - it has a `file_path` that resolves under `save_dir` (prefix guard, so we
-///     never delete a file the user moved elsewhere),
-///   - every id in `expected_cloud` is present in the row's `cloud_uploaded`
-///     (the "don't delete before it's safe in the cloud" guard). When
-///     `expected_cloud` is empty this guard passes trivially.
+///     never delete a file the user moved elsewhere).
 ///
 /// `days <= 0` disables retention entirely (returns an empty decision), matching
 /// the Electron early-return.
@@ -61,7 +52,6 @@ pub fn decide_prune(
     days: i64,
     cutoff_ms: i64,
     save_dir: &str,
-    expected_cloud: &[String],
 ) -> PruneDecision {
     if days <= 0 || save_dir.is_empty() {
         return PruneDecision::default();
@@ -78,16 +68,6 @@ pub fn decide_prune(
         let under_save_dir = path_under(path, save_dir);
         if !old_enough || !under_save_dir {
             continue;
-        }
-        // Cloud-completeness guard: every configured service must have confirmed.
-        if !expected_cloud.is_empty() {
-            let missing = expected_cloud
-                .iter()
-                .any(|svc| !c.cloud_uploaded.iter().any(|u| u == svc));
-            if missing {
-                decision.kept_awaiting_cloud += 1;
-                continue;
-            }
         }
         decision.delete_ids.push(c.id.clone());
     }
@@ -127,17 +107,11 @@ fn path_under(path: &str, save_dir: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn cand(
-        id: &str,
-        path: Option<&str>,
-        started: Option<i64>,
-        uploaded: &[&str],
-    ) -> PruneCandidate {
+    fn cand(id: &str, path: Option<&str>, started: Option<i64>) -> PruneCandidate {
         PruneCandidate {
             id: id.into(),
             file_path: path.map(Into::into),
             started_at_ms: started,
-            cloud_uploaded: uploaded.iter().map(|s| s.to_string()).collect(),
         }
     }
 
@@ -157,18 +131,15 @@ mod tests {
 
     #[test]
     fn disabled_when_days_zero() {
-        let c = [cand("a", Some(&under("x.mp4")), Some(0), &[])];
-        let d = decide_prune(&c, 0, i64::MAX, SAVE, &[]);
+        let c = [cand("a", Some(&under("x.mp4")), Some(0))];
+        let d = decide_prune(&c, 0, i64::MAX, SAVE);
         assert!(d.delete_ids.is_empty());
-        assert_eq!(d.kept_awaiting_cloud, 0);
     }
 
     #[test]
     fn disabled_when_days_negative() {
-        let c = [cand("a", Some(&under("x.mp4")), Some(0), &[])];
-        assert!(decide_prune(&c, -1, i64::MAX, SAVE, &[])
-            .delete_ids
-            .is_empty());
+        let c = [cand("a", Some(&under("x.mp4")), Some(0))];
+        assert!(decide_prune(&c, -1, i64::MAX, SAVE).delete_ids.is_empty());
     }
 
     #[test]
@@ -178,26 +149,25 @@ mod tests {
         // without the save_dir.is_empty() short-circuit this would delete files
         // wholesale — a data-loss safety guard.
         let c = [
-            cand("old1", Some(&under("a.mp4")), Some(1_000), &[]),
-            cand("old2", Some("/anywhere/else/b.mp4"), Some(1_000), &[]),
+            cand("old1", Some(&under("a.mp4")), Some(1_000)),
+            cand("old2", Some("/anywhere/else/b.mp4"), Some(1_000)),
         ];
-        let d = decide_prune(&c, 30, 2_000, "", &[]);
+        let d = decide_prune(&c, 30, 2_000, "");
         assert!(d.delete_ids.is_empty());
-        assert_eq!(d.kept_awaiting_cloud, 0);
     }
 
     #[test]
     fn deletes_old_file_under_save_dir() {
-        let c = [cand("old", Some(&under("a.mp4")), Some(1_000), &[])];
+        let c = [cand("old", Some(&under("a.mp4")), Some(1_000))];
         // cutoff after the start → old enough
-        let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert_eq!(d.delete_ids, vec!["old".to_string()]);
     }
 
     #[test]
     fn keeps_recent_file() {
-        let c = [cand("new", Some(&under("a.mp4")), Some(5_000), &[])];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
+        let c = [cand("new", Some(&under("a.mp4")), Some(5_000))];
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert!(d.delete_ids.is_empty());
     }
 
@@ -208,65 +178,36 @@ mod tests {
         } else {
             "/other/a.mp4"
         };
-        let c = [cand("ext", Some(outside), Some(1_000), &[])];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
+        let c = [cand("ext", Some(outside), Some(1_000))];
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert!(d.delete_ids.is_empty());
     }
 
     #[test]
     fn never_deletes_the_save_dir_itself() {
-        let c = [cand("dir", Some(SAVE), Some(1_000), &[])];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
+        let c = [cand("dir", Some(SAVE), Some(1_000))];
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert!(d.delete_ids.is_empty());
     }
 
     #[test]
     fn skips_pathless_or_dateless_rows() {
         let c = [
-            cand("nopath", None, Some(1_000), &[]),
-            cand("nodate", Some(&under("a.mp4")), None, &[]),
-            cand("emptypath", Some(""), Some(1_000), &[]),
+            cand("nopath", None, Some(1_000)),
+            cand("nodate", Some(&under("a.mp4")), None),
+            cand("emptypath", Some(""), Some(1_000)),
         ];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &[]);
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert!(d.delete_ids.is_empty());
     }
 
     #[test]
-    fn holds_back_when_cloud_upload_incomplete() {
-        let c = [cand("a", Some(&under("a.mp4")), Some(1_000), &["youtube"])];
-        // expects google-drive; only youtube uploaded → held back
-        let d = decide_prune(&c, 30, 2_000, SAVE, &["google-drive".into()]);
-        assert!(d.delete_ids.is_empty());
-        assert_eq!(d.kept_awaiting_cloud, 1);
-    }
-
-    #[test]
-    fn deletes_when_all_expected_cloud_done() {
-        let c = [cand(
-            "a",
-            Some(&under("a.mp4")),
-            Some(1_000),
-            &["google-drive", "youtube"],
-        )];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &["google-drive".into()]);
-        assert_eq!(d.delete_ids, vec!["a".to_string()]);
-        assert_eq!(d.kept_awaiting_cloud, 0);
-    }
-
-    #[test]
-    fn mixed_batch_reports_both_buckets() {
+    fn mixed_batch_deletes_only_the_old_ones() {
         let c = [
-            cand("del", Some(&under("a.mp4")), Some(1_000), &["google-drive"]),
-            cand("wait", Some(&under("b.mp4")), Some(1_000), &[]),
-            cand(
-                "recent",
-                Some(&under("c.mp4")),
-                Some(9_000),
-                &["google-drive"],
-            ),
+            cand("del", Some(&under("a.mp4")), Some(1_000)),
+            cand("recent", Some(&under("c.mp4")), Some(9_000)),
         ];
-        let d = decide_prune(&c, 30, 2_000, SAVE, &["google-drive".into()]);
+        let d = decide_prune(&c, 30, 2_000, SAVE);
         assert_eq!(d.delete_ids, vec!["del".to_string()]);
-        assert_eq!(d.kept_awaiting_cloud, 1);
     }
 }

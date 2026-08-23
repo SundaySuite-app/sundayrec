@@ -3,9 +3,9 @@
  *
  * The Rust tray emits ONE event, `tray://action`, whose payload is a stable
  * action-id string (`src-tauri/src/tray/mod.rs` `action_id`). The renderer used
- * to listen for four Electron-era channel names instead — `tray-start-recording`,
- * `tray-stop-recording`, `tray-open-review-queue`, `tray-run-preflight` — none of
- * which any Rust code has ever emitted. Four dead listeners, four dead menu items.
+ * to listen for Electron-era channel names instead — `tray-start-recording`,
+ * `tray-stop-recording`, `tray-run-preflight` — none of which any Rust code has
+ * ever emitted. Dead listeners, dead menu items.
  *
  * This module is the missing adapter, and it is deliberately split in two:
  *
@@ -30,7 +30,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 export type TrayActionId =
   | 'start-recording'
   | 'stop-recording'
-  | 'open-review-queue'
   | 'open-recordings-folder'
   | 'run-preflight'
   | 'run-diagnostics'
@@ -40,7 +39,6 @@ export type TrayActionId =
 export interface TrayActionHandlers {
   startRecording?: () => void
   stopRecording?: () => void
-  openReviewQueue?: () => void
   openRecordingsFolder?: () => void
   runPreflight?: () => void
   runDiagnostics?: () => void
@@ -51,7 +49,6 @@ export interface TrayActionHandlers {
 const ROUTES: Record<TrayActionId, keyof TrayActionHandlers> = {
   'start-recording': 'startRecording',
   'stop-recording': 'stopRecording',
-  'open-review-queue': 'openReviewQueue',
   'open-recordings-folder': 'openRecordingsFolder',
   'run-preflight': 'runPreflight',
   'run-diagnostics': 'runDiagnostics',

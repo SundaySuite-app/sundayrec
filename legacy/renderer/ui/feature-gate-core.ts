@@ -1,11 +1,11 @@
 /**
  * feature-gate-core — deciding what a section is allowed to claim.
  *
- * SundayRec ships several panels whose backend is not in this build: cloud
- * backup needs an OAuth client id that is not compiled in, and e-mail sending
- * is behind a default-off cargo feature. Until tonight those panels looked
- * exactly like working ones — a «Koble til» button that fails, a «Send test»
- * that reports a failure it invented.
+ * SundayRec can ship a panel whose backend is not in this build: e-mail
+ * sending is behind a cargo feature (in `default`, but a `--no-default-features`
+ * build has none). Until tonight such a panel looked exactly like a working
+ * one — a «Send test» that reports a failure it invented. (The cloud-backup
+ * card was the other consumer of this mechanism until it was removed.)
  *
  * A volunteer cannot tell "you configured this wrong" from "this does not exist
  * yet", and will spend a Saturday evening trying. So each such section states
@@ -84,19 +84,10 @@ export function mapGate(input: GateInput): GateView {
   }
 }
 
-/** `cloud_is_configured` → status. There is nothing to configure in the UI when
- *  the build has no OAuth client id, so an unconfigured build is 'unavailable'
- *  to the operator and 'unconfigured' only to whoever builds it. */
-export function cloudGateStatus(isConfigured: boolean): GateStatus {
-  return isConfigured ? 'ok' : 'unconfigured'
-}
-
 /** What `email_status` + the keychain mean for the panel. */
 export interface EmailFacts {
   /** Compiled with `--features email` (in `default` since v0.10). */
   featureBuilt: boolean
-  /** A Gmail refresh token is in the keychain. */
-  gmailConnected: boolean
   /** The user has filled in SMTP host + user. */
   smtpConfigured: boolean
   /** An SMTP password is available: stored in the OS keychain, or typed into
@@ -125,10 +116,9 @@ export function emailGateStatus(facts: EmailFacts): GateStatus {
 }
 
 /** Whether a message could actually leave the machine: a build that can send,
- *  plus either Gmail or a COMPLETE SMTP set (host + user + a password). */
+ *  plus a COMPLETE SMTP set (host + user + a password). */
 export function hasEmailTransport(facts: EmailFacts): boolean {
   if (!facts.featureBuilt) return false
-  if (facts.gmailConnected) return true
   return facts.smtpConfigured && facts.smtpPasswordAvailable
 }
 

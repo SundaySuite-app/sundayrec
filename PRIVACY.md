@@ -38,11 +38,10 @@ samtykket:
   Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
   ikke utledet fra kontoen din, og de to møtes aldri.
 
-At appen ellers sender ting over nett, gjør den selvsagt. Du kan laste opp et
-opptak til skylagring, sende et varsel til en webhook, sende e-post, laste ned
-en transkripsjonsmodell eller strømme direkte. Alt dette går dit **du** har
-bestemt, når du har bedt om det, og aldri innom oss. Denne erklæringen handler
-ikke om dem.
+At appen ellers sender ting over nett, gjør den selvsagt. Du kan få e-post
+når et opptak feiler, eller laste ned en transkripsjonsmodell. Alt dette går
+dit **du** har bestemt, når du har bedt om det, og aldri innom oss. Denne
+erklæringen handler ikke om dem.
 
 ---
 
@@ -290,8 +289,8 @@ og etter det står bare dagstall igjen.
 
 Lyd. Transkripsjoner. Prekentekst. Navn. E-postadresse. Kirke- eller
 menighetsnavn. Navnet du har gitt et opptak. Navnet på mikseren eller lydkortet
-ditt. Mappen du lagrer i. Webhook-adresser og e-postoppsett. Navnene på de
-planlagte opptakene dine, og klokkeslettene de er satt opp til.
+ditt. Mappen du lagrer i. E-postoppsett. Navnene på de planlagte opptakene
+dine, og klokkeslettene de er satt opp til.
 
 For alt dette er det ikke bare filtrert bort i etterkant — dataformatet har rett
 og slett ingen plass å legge det i. Hvert felt som forlater maskinen er enten et

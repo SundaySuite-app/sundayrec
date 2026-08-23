@@ -34,7 +34,6 @@ export interface RecordingEntry {
   note?: string
   fileSizeBytes?: number
   durationSec?: number
-  cloudUploaded?: string[]
 }
 
 /** One rendered row: the primary recording plus the video file of the same
