@@ -65,8 +65,8 @@ use sundayrec_core::wake::{
     classify_win_error, compare_expected_to_observed, decide_reschedule, key_of,
     parse_mac_sleep_config, parse_pmset_batt, parse_pmset_sched, parse_pmset_standby,
     parse_powercfg_waketimers, parse_win_wake_timers, parse_wmic_battery_status, wake_points,
-    SleepConfig, VerifiedWake, WakeErrorReason, WakePlatform, WakeRescheduleAction, WinErrorKind,
-    WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
+    SleepConfig, VerifiedWake, WakeErrorReason, WakeIdleReason, WakePlatform, WakeRescheduleAction,
+    WinErrorKind, WAKE_LEAD_MINUTES, WAKE_MATCH_TOLERANCE_MS,
 };
 
 use crate::util::lock_recover;
@@ -91,6 +91,16 @@ pub struct WakeResult {
     /// Why it failed: `disabled | cancelled | permission | unsupported | error`.
     pub reason: Option<String>,
     pub message: Option<String>,
+    /// Why a SUCCESSFUL reschedule armed nothing (`ok: true, count: 0`).
+    ///
+    /// The engine never sets this — it does not know about the level-1 switch,
+    /// only about the points it was handed. `commands::wake::wake_reschedule`
+    /// fills it in, because "nothing to arm" and "why nothing to arm" are the
+    /// difference between a button that looks broken and one that explains
+    /// itself. `#[serde(default)]` so an older stored/queued payload still
+    /// deserialises.
+    #[serde(default)]
+    pub idle_reason: Option<WakeIdleReason>,
 }
 
 impl WakeResult {
@@ -101,6 +111,7 @@ impl WakeResult {
             next_wake,
             reason: None,
             message: None,
+            idle_reason: None,
         }
     }
     fn fail(reason: WakeErrorReason, message: Option<String>) -> Self {
@@ -110,6 +121,7 @@ impl WakeResult {
             next_wake: None,
             reason: Some(reason.as_str().to_string()),
             message,
+            idle_reason: None,
         }
     }
 }

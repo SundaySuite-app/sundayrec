@@ -226,7 +226,16 @@ autoRecordEnabled: boolean,
  * [`crate::schedule`] for the decision logic.
  *
  * ⚠️ Read them through [`Settings::active_slots`], never directly: that is
- * the one place `auto_record_enabled` is honoured.
+ * the one place `auto_record_enabled` is honoured. The claim was false for
+ * a while — both wake commands read this field raw, so a machine with «Ta
+ * opp automatisk» OFF still woke at 10:50 on a Sunday for a recording the
+ * scheduler would refuse to make, and `wake_verify` then reported the
+ * wakes it had itself cancelled as missing.
+ *
+ * The ONE deliberate raw reader is [`crate::telemetry::WireSettings`]'s
+ * `slot_count`, which reports what is CONFIGURED and carries
+ * `auto_record_enabled` beside it (see that field's doc). Anything else
+ * that reads `slots` directly is a bug in waiting.
  */
 slots: Array<ScheduleSlot>, 
 /**

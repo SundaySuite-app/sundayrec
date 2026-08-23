@@ -285,6 +285,153 @@ impl WakeErrorReason {
             WakeErrorReason::Error => "error",
         }
     }
+
+    /// The inverse of [`Self::as_str`] — the wire string back to the enum, so
+    /// code that has to reason about a `WakeResult.reason` does it in types
+    /// instead of by comparing string literals.
+    ///
+    /// `None` for anything unrecognised, which callers must treat as "a real
+    /// failure": an unknown reason is the one that has never been triaged.
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Some(match s {
+            "disabled" => WakeErrorReason::Disabled,
+            "cancelled" => WakeErrorReason::Cancelled,
+            "permission" => WakeErrorReason::Permission,
+            "unsupported" => WakeErrorReason::Unsupported,
+            "error" => WakeErrorReason::Error,
+            _ => return None,
+        })
+    }
+
+    /// Whether this failure is a *state of the machine* rather than a defect:
+    /// the user turned wake off, dismissed the prompt, or the OS wants an
+    /// elevation this call was never allowed to ask for.
+    ///
+    /// It does NOT mean harmless — a `Permission` here is a machine that will
+    /// sleep through the service. It means "expected from an unprivileged,
+    /// non-interactive attempt", i.e. not worth one log line per supervisor
+    /// pass. [`should_log_background_wake`] decides how often it IS worth one.
+    pub fn is_expected(self) -> bool {
+        matches!(
+            self,
+            WakeErrorReason::Disabled | WakeErrorReason::Cancelled | WakeErrorReason::Permission
+        )
+    }
+}
+
+/// What the supervisor does with one background wake-reschedule outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeLogAction {
+    /// Nothing happened worth saying (the reschedule succeeded).
+    Silent,
+    /// A real — or unclassified — failure. Logged every time, and it never eats
+    /// the once-per-launch budget the expected failures share.
+    Report,
+    /// The first expected failure this launch: log it, and spend the budget.
+    ReportOnce,
+    /// An expected failure that has already been reported: count it, say
+    /// nothing.
+    Suppress,
+}
+
+impl WakeLogAction {
+    /// Whether the supervisor writes a log line.
+    pub fn logs(self) -> bool {
+        matches!(self, Self::Report | Self::ReportOnce)
+    }
+
+    /// Whether this outcome spends from the once-per-launch budget.
+    ///
+    /// Only the expected failures do. A `Report` that counted would silence the
+    /// NEXT `permission` — the very failure the budget exists to make visible
+    /// once.
+    pub fn counts(self) -> bool {
+        matches!(self, Self::ReportOnce | Self::Suppress)
+    }
+}
+
+/// Whether the scheduler's *background* (unprivileged, non-interactive) wake
+/// reschedule should write a log line for this outcome.
+///
+/// ## The hole this closes
+///
+/// The supervisor logged every failure EXCEPT `permission`/`disabled`/
+/// `cancelled` — and `permission` is the one that matters most: a Mac that needs
+/// root to write a power event never gets asked from the supervisor (the
+/// interactive `wake_reschedule` is the only path that may prompt), so the wake
+/// is silently never armed and the machine sleeps through the service. Filtered
+/// to nothing, that failure existed in no log at all, and the first evidence was
+/// a missing recording.
+///
+/// ## …without turning the log into a metronome
+///
+/// The supervisor re-runs on every settings change and every timer, so logging
+/// each expected failure would bury the interesting lines. `quiet_reports_so_far`
+/// is how many expected failures this process has already reported: the first
+/// one is written, the rest are counted and silent. Once per launch is enough
+/// for a support log — it answers "was the wake ever armed?" — and it re-arms
+/// on the next start, which is also when the user's answer to it can change.
+pub fn background_wake_log_action(
+    ok: bool,
+    reason: Option<&str>,
+    quiet_reports_so_far: u32,
+) -> WakeLogAction {
+    if ok {
+        return WakeLogAction::Silent;
+    }
+    match reason.and_then(WakeErrorReason::from_wire) {
+        // Expected from an unprivileged pass: once per process.
+        Some(r) if r.is_expected() => {
+            if quiet_reports_so_far == 0 {
+                WakeLogAction::ReportOnce
+            } else {
+                WakeLogAction::Suppress
+            }
+        }
+        // A real failure — or one nobody has classified. Always.
+        _ => WakeLogAction::Report,
+    }
+}
+
+/// Why a *successful* wake reschedule armed nothing at all.
+///
+/// `ok: true, count: 0` is the same answer for "the schedule is empty", "the
+/// weekly plan is switched off" and "everything upcoming is already past the
+/// lead" — and a volunteer who just pressed «Registrer vekkinger» deserves to
+/// know which. Carried alongside the count so the UI can say it; `None`
+/// whenever something was actually armed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "WakeIdleReason.ts")]
+#[serde(rename_all = "camelCase")]
+pub enum WakeIdleReason {
+    /// «Ta opp automatisk» is off, so the weekly slots plan nothing —
+    /// [`crate::settings::Settings::active_slots`] answers with an empty slice
+    /// and there is nothing to wake FOR. Arming wakes anyway would be the
+    /// machine waking at 10:50 on a Sunday for a recording it will refuse to
+    /// make.
+    AutoRecordOff,
+    /// The plan is armed, but nothing falls inside the horizon (no slots, no
+    /// specials, or everything upcoming is already inside the wake lead).
+    NothingUpcoming,
+}
+
+/// Which [`WakeIdleReason`], if any, explains an empty wake set.
+///
+/// `auto_record_enabled` is the level-1 switch; `upcoming_count` is how many
+/// starts the horizon produced from [`crate::settings::Settings::active_slots`]
+/// + specials. The switch is checked only when the set is empty, because a
+/// disarmed weekly plan with a dated special still has something to wake for.
+pub fn wake_idle_reason(
+    auto_record_enabled: bool,
+    upcoming_count: usize,
+) -> Option<WakeIdleReason> {
+    if upcoming_count > 0 {
+        None
+    } else if !auto_record_enabled {
+        Some(WakeIdleReason::AutoRecordOff)
+    } else {
+        Some(WakeIdleReason::NothingUpcoming)
+    }
 }
 
 /// How a Windows `powercfg` failure should be classified. Port of `classifyWinError`.
@@ -1043,5 +1190,115 @@ Timer set by [SYSTEM\\TaskScheduler] expires at 5:30:00 PM on 5/31/2026.
         assert_eq!(parse_pmset_standby(" standby              1"), Some(true));
         assert_eq!(parse_pmset_standby(" standby              0"), Some(false));
         assert_eq!(parse_pmset_standby("no standby line"), None);
+    }
+
+    // ── The background reschedule's log gate ────────────────────────────────
+
+    #[test]
+    fn a_permission_failure_is_reported_once_instead_of_never() {
+        // THE regression: the supervisor filtered `permission` (and its two
+        // siblings) to silence, so the one failure that means "this machine will
+        // sleep through the service" appeared in no log at all. First one is
+        // written; the rest are counted.
+        assert_eq!(
+            background_wake_log_action(false, Some("permission"), 0),
+            WakeLogAction::ReportOnce
+        );
+        for seen in [1, 99] {
+            assert_eq!(
+                background_wake_log_action(false, Some("permission"), seen),
+                WakeLogAction::Suppress,
+                "{seen} reports in"
+            );
+        }
+    }
+
+    #[test]
+    fn the_expected_failures_share_the_one_report_between_them() {
+        // One line per launch, not one per reason: the second expected failure
+        // of any kind is still a repeat of "the unprivileged pass cannot arm
+        // wakes on this machine".
+        for reason in ["permission", "disabled", "cancelled"] {
+            assert!(
+                background_wake_log_action(false, Some(reason), 0).logs(),
+                "{reason}"
+            );
+            assert!(
+                !background_wake_log_action(false, Some(reason), 1).logs(),
+                "{reason}"
+            );
+            // …and both spend from the same budget, which is what makes them
+            // share it.
+            assert!(background_wake_log_action(false, Some(reason), 0).counts());
+            assert!(background_wake_log_action(false, Some(reason), 1).counts());
+        }
+    }
+
+    #[test]
+    fn a_real_failure_is_never_quietened_and_never_spends_the_budget() {
+        // `unsupported`/`error` — and anything nobody has classified, which is
+        // the reason most likely to be new — are logged every time. And they
+        // must NOT count: a burst of them would otherwise silence the next
+        // `permission`, which is the one failure the budget exists to show.
+        for reason in [Some("unsupported"), Some("error"), Some("banana"), None] {
+            let action = background_wake_log_action(false, reason, 5);
+            assert_eq!(action, WakeLogAction::Report, "{reason:?}");
+            assert!(action.logs(), "{reason:?} must always be logged");
+            assert!(!action.counts(), "{reason:?} must not spend the budget");
+        }
+    }
+
+    #[test]
+    fn success_says_nothing() {
+        assert_eq!(
+            background_wake_log_action(true, None, 0),
+            WakeLogAction::Silent
+        );
+        // Even a "reason" carried along with an ok result cannot make it noisy.
+        assert_eq!(
+            background_wake_log_action(true, Some("error"), 0),
+            WakeLogAction::Silent
+        );
+        assert!(!WakeLogAction::Silent.logs() && !WakeLogAction::Silent.counts());
+    }
+
+    #[test]
+    fn every_reason_survives_the_round_trip_through_the_wire() {
+        // `from_wire` is what lets the supervisor reason in types instead of in
+        // string literals; a variant it cannot parse would be treated as a real
+        // failure and log on every pass.
+        for r in [
+            WakeErrorReason::Disabled,
+            WakeErrorReason::Cancelled,
+            WakeErrorReason::Permission,
+            WakeErrorReason::Unsupported,
+            WakeErrorReason::Error,
+        ] {
+            assert_eq!(WakeErrorReason::from_wire(r.as_str()), Some(r), "{r:?}");
+        }
+        assert_eq!(WakeErrorReason::from_wire("nonsense"), None);
+    }
+
+    // ── Why a successful reschedule armed nothing ───────────────────────────
+
+    #[test]
+    fn an_empty_wake_set_says_whether_the_plan_is_switched_off() {
+        // «Registrer vekkinger» answering `ok: true, count: 0` is not an answer.
+        assert_eq!(
+            wake_idle_reason(false, 0),
+            Some(WakeIdleReason::AutoRecordOff)
+        );
+        assert_eq!(
+            wake_idle_reason(true, 0),
+            Some(WakeIdleReason::NothingUpcoming)
+        );
+    }
+
+    #[test]
+    fn a_wake_set_with_something_in_it_needs_no_excuse() {
+        // Specials are not gated by the level-1 switch, so "switched off" with
+        // an upcoming concert is a perfectly ordinary armed set.
+        assert_eq!(wake_idle_reason(true, 3), None);
+        assert_eq!(wake_idle_reason(false, 1), None);
     }
 }

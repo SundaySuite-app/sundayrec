@@ -979,7 +979,17 @@ pub struct WireSettings {
     pub auto_update: bool,
     pub launch_at_login: bool,
     pub wake_from_sleep: bool,
-    /// How many weekly slots are configured — not what they are called.
+    /// How many weekly slots are CONFIGURED — not what they are called, and
+    /// deliberately not how many are active.
+    ///
+    /// ⚠️ The one place in the codebase that reads `Settings::slots` raw rather
+    /// than through [`crate::settings::Settings::active_slots`], and it is a
+    /// choice, not an oversight: `auto_record_enabled` travels on this same
+    /// payload, so "3 slots, switch off" and "0 slots" stay distinguishable on
+    /// the receiving end. Gating the count here would fold the two into one
+    /// number and lose exactly the difference worth reporting. Every OTHER
+    /// reader — the scheduler and both wake commands — must go through
+    /// `active_slots`.
     pub slot_count: u32,
     /// How many one-off special recordings are configured.
     pub special_count: u32,
@@ -1020,6 +1030,9 @@ impl WireSettings {
             auto_update: s.auto_update,
             launch_at_login: s.launch_at_login,
             wake_from_sleep: s.wake_from_sleep,
+            // Raw `slots`, on purpose — see the field's doc. `auto_record_enabled`
+            // rides along, so the receiver can tell "configured but disarmed"
+            // from "never set up".
             slot_count: s.slots.len() as u32,
             special_count: s.special_recordings.len() as u32,
         }

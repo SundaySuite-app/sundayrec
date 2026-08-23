@@ -41,6 +41,7 @@
 //! - **Wake-from-sleep.** Actually waking the machine (pmset / SetWaitableTimer) is
 //!   Fase 5.2; this slice schedules and fires while the app is running/awake.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
@@ -57,6 +58,7 @@ use sundayrec_core::schedule::{
     ScheduledEventKind, TriggerKind, MISSED_WINDOW_MS,
 };
 use sundayrec_core::settings::Settings;
+use sundayrec_core::wake::background_wake_log_action;
 
 use crate::db::Db;
 use crate::error::AppResult;
@@ -79,6 +81,17 @@ const WAKE_HORIZON_DAYS: i64 = 14;
 /// a timer that fired a few ms early can't re-select the same event and
 /// double-fire it. Harmless at the scheduler's minute granularity.
 const FIRE_GUARD: StdDuration = StdDuration::from_secs(1);
+
+/// How many EXPECTED background wake failures (needs-admin / disabled / the
+/// prompt dismissed) this process has already reported.
+///
+/// The supervisor re-runs on every settings change and every timer, so the
+/// choice is between one log line per pass and none at all — and "none at all"
+/// is what shipped: `permission`, the failure that means this machine will sleep
+/// through the service, was filtered to silence. One report per launch, the rest
+/// counted. It re-arms on the next start, which is also the next time the
+/// answer can have changed.
+static QUIET_WAKE_REPORTS: AtomicU32 = AtomicU32::new(0);
 
 /// Emitted whenever the next scheduled start changes — payload is an ISO-like
 /// local string (`YYYY-MM-DDTHH:MM:SS`) or `null`. Drives the tray tooltip / UI.
@@ -234,20 +247,34 @@ async fn supervisor(
                 let upcoming =
                     upcoming_dates(settings.active_slots(), &kept, now, WAKE_HORIZON_DAYS);
                 let res = wake.reschedule(&upcoming, now, true, false).await;
-                // Best-effort from the supervisor (non-admin, no prompt), but a
-                // failure that ISN'T just "needs admin"/"disabled" is worth a
-                // breadcrumb — a silently un-scheduled wake means a missed record.
-                if !res.ok
-                    && !matches!(
-                        res.reason.as_deref(),
-                        Some("permission") | Some("disabled") | Some("cancelled")
-                    )
-                {
+                // Best-effort from the supervisor (non-admin, no prompt) — but
+                // "best-effort" used to mean `permission`/`disabled`/`cancelled`
+                // were filtered to SILENCE, and `permission` is the failure that
+                // matters most: this pass may not prompt, the interactive
+                // `wake_reschedule` is the only path that can, and if nobody
+                // presses it the machine sleeps through the service. Filtered to
+                // nothing, the first evidence was a missing recording.
+                //
+                // The supervisor re-runs on every settings change and every
+                // timer, so the expected failures are reported ONCE per launch
+                // and counted after that (`should_log_background_wake`); the
+                // count itself goes into the one line, so a later reader can see
+                // how long it has been true.
+                let quiet_so_far = QUIET_WAKE_REPORTS.load(Ordering::Relaxed);
+                let action =
+                    background_wake_log_action(res.ok, res.reason.as_deref(), quiet_so_far);
+                if action.logs() {
                     tracing::warn!(
-                        "scheduler: background wake reschedule failed: {:?} {:?}",
-                        res.reason,
-                        res.message
+                        reason = ?res.reason,
+                        message = ?res.message,
+                        "scheduler: background wake reschedule failed — the machine may not \
+                         wake for the next recording. An admin-capable retry is the «Registrer \
+                         vekkinger» button (`wake_reschedule`); further notices of this kind \
+                         are counted, not logged, until the next launch"
                     );
+                }
+                if action.counts() {
+                    QUIET_WAKE_REPORTS.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
