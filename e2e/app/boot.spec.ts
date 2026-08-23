@@ -98,7 +98,13 @@ test.describe("app shell foundation", () => {
       settings: SETTLED_SETTINGS,
       goto: "settings:audio",
     });
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    // P1a: destinasjonen er fortsatt OPPSETT (skinnen sier det), men SKJERMEN
+    // er spørsmålet — og `<h1>` er det fokus lander på ved hvert rutebytte.
+    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
+    await expect(page.getByTestId("nav-setup")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     // Ruten som ATTRIBUTT: S1a viste den som synlig tekst fordi det ikke fantes
     // noe annet å se. Nå står den der bare e2e ser den.
     await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "sound");
@@ -108,15 +114,22 @@ test.describe("app shell foundation", () => {
     // `settings:notifications` was retired in the 7→5 fold; legacy maps it
     // onward and so must we. A deep link that silently opens the wrong screen
     // is worse than one that fails loudly.
+    //
+    // P1a rettet målet: etter #139 inneholder den gamle Deling-fanen BARE
+    // «Varsler», altså spørsmål 5. Plassholderen `advanced`/`sharing` som S1a
+    // satte pekte på en fane ingen bygger.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings:notifications",
     });
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
-    const main = page.getByTestId("main");
-    await expect(main).toHaveAttribute("data-tab", "advanced");
-    await expect(main).toHaveAttribute("data-anchor", "sharing");
+    await expect(page.getByTestId("app-heading")).toHaveText(
+      "Hvem får beskjed hvis noe går galt?",
+    );
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-tab",
+      "notify",
+    );
   });
 
   test("the seeded language decides what the volunteer reads", async ({

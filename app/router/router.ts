@@ -80,28 +80,44 @@ export interface TabTarget {
  *
  * Nøklene er de fullt kvalifiserte id-ene `parseGoto` produserer
  * (`settings:audio` → `settings-audio`), pluss de to SIDENE som har en
- * selvsagt fane i den nye arkitekturen (`editor`, `schedule`) — de kommer inn
+ * selvsagt plass i den nye arkitekturen (`editor`, `schedule`) — de kommer inn
  * uten fane og ville ellers landet på siden sin standardfane og mistet
  * poenget med lenken.
  *
- * De to nederste er PENSJONERTE id-er fra før legacy foldet sju faner til fem;
- * `legacy/renderer/ui/navigate.ts` sender dem videre til `settings-sharing`, og
- * her går de samme vei videre.
+ * ## Navnene er ekte nå (P1a)
+ *
+ * S1a satte plassholdere her fordi informasjonsarkitekturen ennå ikke fantes.
+ * Nå gjør den det, og hver rad peker på en skjerm som er bygget:
+ *
+ *   `settings-audio`         → spørsmål 1, «Hvilken lyd?»
+ *   `settings-files`         → spørsmål 2, «Hvor skal opptakene?» (`folder`,
+ *                              ikke `files`: fanen het etter datatypen, siden
+ *                              heter etter spørsmålet)
+ *   `settings-sharing`       → spørsmål 5. Etter #139 inneholder den gamle
+ *   `settings-publish`         Deling-fanen BARE seksjonen «Varsler» — fanenavnet
+ *   `settings-notifications`   og innholdet henger ikke lenger sammen, og de
+ *                              tre gamle id-ene beskriver alle det samme nå.
+ *   `settings-video`         → tillegget «Ta med kamera», som bor på NIVÅ 1.
+ *                              Ingen fane, men et anker: lenken skal lande på
+ *                              kortet, ikke bare på siden.
+ *   `schedule`               → tillegget «Ta opp automatisk», samme sted.
+ *
+ * ⚠️ `settings-general` peker på `advanced`, en fane P1b bygger. Fram til da
+ * rendrer `SetupPage` nivå 1 for den — den gamle System-fanens innhold (språk
+ * og kirkeprofil er spørsmål 4 nå; oppdateringer, logg og telemetri er
+ * Avansert) er ikke borte, det er delt. `data-tab` står på `<main>` uansett,
+ * så dyplenken er intakt den dagen siden finnes.
  */
 export const TAB_ALIASES: Record<string, TabTarget> = {
   "settings-audio": { page: "setup", tab: "sound" },
-  "settings-video": { page: "setup", tab: "addons", anchor: "camera" },
-  "settings-files": { page: "setup", tab: "files" },
-  "settings-sharing": { page: "setup", tab: "advanced", anchor: "sharing" },
+  "settings-video": { page: "setup", anchor: "camera" },
+  "settings-files": { page: "setup", tab: "folder" },
+  "settings-sharing": { page: "setup", tab: "notify" },
   "settings-general": { page: "setup", tab: "advanced" },
-  "settings-publish": { page: "setup", tab: "advanced", anchor: "sharing" },
-  "settings-notifications": {
-    page: "setup",
-    tab: "advanced",
-    anchor: "sharing",
-  },
+  "settings-publish": { page: "setup", tab: "notify" },
+  "settings-notifications": { page: "setup", tab: "notify" },
   editor: { page: "library", tab: "edit" },
-  schedule: { page: "setup", tab: "schedule" },
+  schedule: { page: "setup", anchor: "auto" },
 };
 
 /** Samme form som legacy `navigateTo`s opsjoner, så et kallsted kan flyttes
@@ -156,9 +172,15 @@ export function navigate(page: string, opts: NavigateOpts = {}): void {
  * funksjon før et spec får lov til å gjøre noe, api-shimmens `?goto=`-blokk
  * poller på den, og tray/dyplenker går gjennom den. Skallet er ikke oppe før
  * den finnes.
+ *
+ * `nav` kan overstyres av verten. Den ENE grunnen står i `app/main.tsx`:
+ * shimmens `?goto=`-blokk navigerer på nytt 150 ms etter modullast, og den
+ * gjentakelsen skal slippes hvis noe allerede har navigert i mellomtiden.
  */
-export function installGlobalNavigation(): void {
-  window.showPage = (id: string) => navigate(id);
+export function installGlobalNavigation(
+  nav: (id: string) => void = (id) => navigate(id),
+): void {
+  window.showPage = nav;
 }
 
 // ── Tray ────────────────────────────────────────────────────────────────────
