@@ -1073,20 +1073,6 @@
     "testEmailSent": "Test-E-Mail an {to} gesendet",
     "testEmailFailed": "Die Test-E-Mail kam nicht durch: {err}"
   },
-  "prep": {
-    "sectionTitle": "Vorbereitung und Überprüfung",
-    "sectionDesc": "Nach jeder Aufnahme wird sie automatisch analysiert (Predigterkennung), mit Mastering und Intro/Outro vorbereitet und für die menschliche Überprüfung vor der Veröffentlichung in eine Warteschlange gestellt.",
-    "enableTitle": "Auto-Vorbereitung aktivieren",
-    "enableDesc": "Analyse + Vorbereitung nach jeder Aufnahme ausführen",
-    "masterPreset": "MASTERING-VOREINSTELLUNG",
-    "presetSpeechClear": "Sprache — klar (empfohlen)",
-    "presetSpeechNatural": "Sprache — natürlich",
-    "presetSpeechPunchy": "Sprache — kraftvoll",
-    "presetMusicSpeech": "Musik + Sprache",
-    "defaultIntro": "STANDARD-INTRO-JINGLE",
-    "defaultOutro": "STANDARD-OUTRO-JINGLE",
-    "howto": "Erste Schritte: Laden Sie 1-3 Testaufnahmen zu Google Drive hoch, klicken Sie auf „Feed jetzt generieren\", und senden Sie die URL an Spotify for Podcasters und Apple Podcasts Connect. Nach Genehmigung (1-2 Tage) erscheint jede neue Aufnahme automatisch."
-  },
   "tooltip": {
     "close": "Schließen",
     "toggleVideo": "Video ein-/ausschalten",
@@ -1107,25 +1093,6 @@
     "fitAll": "Gesamte Datei anzeigen",
     "kbdHints": "Tastenkürzel anzeigen",
     "timelineLayers": "Was die Zeitleiste zeigt"
-  },
-  "publish": {
-    "descPlaceholder": "z. B. Gottesdienste der Beispiel-Kirche, jeden Sonntag um 11",
-    "language": "SPRACHE",
-    "regenerateFeed": "Feed jetzt generieren",
-    "podcastIntro": "Generiert nach jeder Aufnahme automatisch einen RSS-Feed. Senden Sie die Feed-URL einmal an Spotify for Podcasters und Apple Podcasts Connect — neue Gottesdienste erscheinen automatisch.",
-    "feedUrlLabel": "FEED-URL — diese an Spotify und Apple Podcasts senden",
-    "publishedCount": {
-      "one": "{n} Episode veröffentlicht",
-      "other": "{n} Episoden veröffentlicht"
-    },
-    "errConnectFirst": "zuerst mit Cloud-Dienst verbinden",
-    "errPickFolderFirst": "zuerst Speicherordner wählen",
-    "errEnablePodcast": "zuerst Podcast aktivieren",
-    "errUnknown": "unbekannter Fehler",
-    "intro": "Aufnahmen außerhalb der Kirche teilen",
-    "introDesc": "Hier richten Sie ein automatisches Cloud-Backup ein und — wenn gewünscht — einen Podcast, der die Gottesdienste auf Spotify und Apple Podcasts verfügbar macht. Alles ist optional.",
-    "unavailableBuild": "in diesem Build von SundayRec nicht enthalten",
-    "unavailableBuildLong": "Die RSS-Generierung ist in diesem Build von SundayRec nicht enthalten."
   },
   "integrations": {
     "sundayEditFailed": "Konnte nicht geöffnet werden",
@@ -1338,7 +1305,7 @@
     "cancel": "Jetzt nicht"
   },
   "sharing": {
-    "publishDesc": "Cloud-Backup, Podcast und Livestream — wohin die Aufnahme nach dem Gottesdienst geht.",
+    "publishDesc": "Was den Export aus der Kirche hinaus begleitet.",
     "notifyDesc": "Wer benachrichtigt wird, wenn eine Aufnahme startet, endet oder fehlschlägt."
   },
   "gate": {

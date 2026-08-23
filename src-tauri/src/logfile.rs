@@ -342,7 +342,6 @@ pub fn log_startup_banner() {
         ("email", cfg!(feature = "email")),
         ("tray", cfg!(feature = "tray")),
         ("updater", cfg!(feature = "updater")),
-        ("publish", cfg!(feature = "publish")),
         ("asio", cfg!(feature = "asio")),
     ]
     .iter()

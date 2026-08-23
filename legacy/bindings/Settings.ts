@@ -3,7 +3,6 @@ import type { ChannelMode } from "./ChannelMode";
 import type { DeviceChannels } from "./DeviceChannels";
 import type { FileFormat } from "./FileFormat";
 import type { FilenamePattern } from "./FilenamePattern";
-import type { PodcastSettings } from "./PodcastSettings";
 import type { SampleRate } from "./SampleRate";
 import type { ScheduleSlot } from "./ScheduleSlot";
 import type { SpecialRecording } from "./SpecialRecording";
@@ -397,10 +396,6 @@ editorOutroPath: string | null,
  * unavailable — only faster.
  */
 editorHwEncode: boolean, 
-/**
- * Podcast/RSS channel configuration. See [`PodcastSettings`].
- */
-podcast: PodcastSettings, 
 /**
  * Download and install updates automatically? Default true.
  */

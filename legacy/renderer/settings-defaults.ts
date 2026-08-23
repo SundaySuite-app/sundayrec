@@ -121,26 +121,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   editorOutroPath: null,
   editorHwEncode: false,
 
-  // Podcast
-  podcast: {
-    enabled: false,
-    service: "google-drive",
-    title: "",
-    description: "",
-    author: "",
-    language: "no",
-    category: "Religion & Spirituality",
-    explicit: false,
-    link: null,
-    imageUrl: null,
-    email: null,
-    feedUrl: null,
-    autoPrepEnabled: true,
-    defaultIntroPath: null,
-    defaultOutroPath: null,
-    defaultMasterPreset: "speech-clear",
-  },
-
   // Misc
   autoUpdate: true,
   updateChannel: "stable",

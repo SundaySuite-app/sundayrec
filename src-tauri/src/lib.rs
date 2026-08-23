@@ -59,10 +59,6 @@ pub mod media;
 pub mod notify;
 pub mod platform;
 pub mod preflight;
-// PU-3 podcast RSS publish — default-off `publish` feature (NETWORK-UNVERIFIED).
-// The XML shaping is `sundayrec_core::feed`; this seam maps history + writes/uploads.
-#[cfg(feature = "publish")]
-pub mod publish;
 pub mod recorder;
 // R3: THE save-folder resolution seam — every "configured folder or the
 // Documents default" question goes through here (7 divergent copies before).
@@ -649,10 +645,6 @@ pub fn run() {
             commands::thumbnail::thumbnail_set_episode,
             commands::thumbnail::thumbnail_clear_episode,
             commands::thumbnail::thumbnail_resolve,
-            // PU-3 podcast RSS publish (feed shaping pure; write/upload gated by `publish`).
-            commands::publish::publish_feed_status,
-            commands::publish::publish_feed_preview,
-            commands::publish::publish_generate_feed,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

@@ -27,7 +27,6 @@ pub mod path_guard;
 // land a new path-taking command without classifying it as guarded or exempt.
 // Compiled out of every non-test build by its own inner `#![cfg(test)]`.
 mod path_ratchet;
-pub mod publish;
 pub mod recorder;
 pub mod scheduler;
 pub mod settings;

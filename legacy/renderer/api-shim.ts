@@ -1672,39 +1672,6 @@ const api: Record<string, unknown> = {
   thumbnailGetDefaultInfo: async () =>
     call("thumbnail_get_default_info", undefined, null),
 
-  // Podcast RSS: `publish_feed_status` answers whether THIS build can write
-  // the feed at all (the default-off `publish` cargo feature) — the Filer-page
-  // gate reads it so the «Generer feed nå» button can say the truth instead of
-  // failing on click. `null` fallback = "could not even ask", which the gate
-  // treats as not-available.
-  podcastFeedStatus: async () =>
-    call<{ featureBuilt: boolean; episodeCount: number } | null>(
-      "publish_feed_status",
-      undefined,
-      null,
-    ),
-  // `publish_generate_feed` writes `podcast.xml` beside the save folder and
-  // returns a FeedPreview; map it onto the old Electron `{ ok, episodeCount,
-  // feedUrl }` the two consumers branch on. This was the stub `{ ok: false }`
-  // — every click ended in «✕ ukjent feil» by construction. On failure the
-  // REAL reason (e.g. `feature_disabled`, `no_config`) is surfaced; the
-  // `service` argument is unused (the Tauri command resolves everything from
-  // settings) but kept for signature parity.
-  podcastRegenerate: async (_service: string) => {
-    try {
-      const r = await invoke<{ episodeCount?: number; feedUrl?: string }>(
-        "publish_generate_feed",
-        undefined,
-      );
-      return {
-        ok: true as const,
-        episodeCount: r?.episodeCount ?? 0,
-        feedUrl: r?.feedUrl,
-      };
-    } catch (e) {
-      return { ok: false as const, episodeCount: 0, error: ipcErrText(e) };
-    }
-  },
   registerTrustedPath: async () => true,
 
   // ── Transcripts / whisper ───────────────────────────────────────────────

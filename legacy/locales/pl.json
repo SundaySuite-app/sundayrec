@@ -1137,20 +1137,6 @@
     "testEmailSent": "Testowy e-mail wysłany do {to}",
     "testEmailFailed": "Testowy e-mail nie dotarł: {err}"
   },
-  "prep": {
-    "sectionTitle": "Przygotowanie i przegląd",
-    "sectionDesc": "Po każdym nagraniu jest ono automatycznie analizowane (wykrywanie kazania), przygotowywane z masteringiem i intro/outro oraz dodawane do kolejki do ręcznego przeglądu przed publikacją.",
-    "enableTitle": "Włącz auto-przygotowanie",
-    "enableDesc": "Uruchom analizę + przygotowanie po każdym nagraniu",
-    "masterPreset": "PRESET MASTERINGU",
-    "presetSpeechClear": "Mowa — wyraźna (zalecane)",
-    "presetSpeechNatural": "Mowa — naturalna",
-    "presetSpeechPunchy": "Mowa — energiczna",
-    "presetMusicSpeech": "Muzyka + mowa",
-    "defaultIntro": "DOMYŚLNY JINGIEL INTRO",
-    "defaultOutro": "DOMYŚLNY JINGIEL OUTRO",
-    "howto": "Jak zacząć: Prześlij 1-3 nagrania testowe na Google Drive, kliknij „Wygeneruj feed teraz\" i wyślij wynikowy URL do Spotify for Podcasters i Apple Podcasts Connect. Po zatwierdzeniu (1-2 dni) każde nowe nagranie pojawia się automatycznie."
-  },
   "tooltip": {
     "close": "Zamknij",
     "toggleVideo": "Włącz/wyłącz wideo",
@@ -1171,27 +1157,6 @@
     "fitAll": "Pokaż cały plik",
     "kbdHints": "Pokaż skróty klawiszowe",
     "timelineLayers": "Co pokazuje oś czasu"
-  },
-  "publish": {
-    "descPlaceholder": "Np. Nabożeństwa z Kościoła Przykładowego, w każdą niedzielę o 11",
-    "language": "JĘZYK",
-    "regenerateFeed": "Wygeneruj feed teraz",
-    "podcastIntro": "Automatycznie generuje feed RSS po każdym nagraniu. Wyślij URL feeda raz do Spotify for Podcasters i Apple Podcasts Connect — nowe nabożeństwa pojawią się same.",
-    "feedUrlLabel": "URL FEEDA — wyślij go do Spotify i Apple Podcasts",
-    "publishedCount": {
-      "one": "Opublikowano {n} odcinek",
-      "few": "Opublikowano {n} odcinki",
-      "many": "Opublikowano {n} odcinków",
-      "other": "Opublikowano {n} odcinków"
-    },
-    "errConnectFirst": "najpierw połącz z usługą chmurową",
-    "errPickFolderFirst": "najpierw wybierz folder zapisu",
-    "errEnablePodcast": "najpierw włącz podcast",
-    "errUnknown": "nieznany błąd",
-    "intro": "Udostępniaj nagrania poza kościołem",
-    "introDesc": "Tutaj skonfigurujesz automatyczną kopię zapasową w chmurze oraz — jeśli chcecie — podcast udostępniający nabożeństwa w Spotify i Apple Podcasts. Wszystko jest opcjonalne.",
-    "unavailableBuild": "niedostępne w tej kompilacji SundayRec",
-    "unavailableBuildLong": "Generowanie RSS jest niedostępne w tej kompilacji SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Nie udało się otworzyć",
@@ -1410,7 +1375,7 @@
     "cancel": "Nie teraz"
   },
   "sharing": {
-    "publishDesc": "Kopia w chmurze, podcast i transmisja na żywo — dokąd trafia nagranie po nabożeństwie.",
+    "publishDesc": "To, co opuszcza kościół razem z eksportem.",
     "notifyDesc": "Kto dostaje powiadomienie, gdy nagranie się zaczyna, kończy lub nie powiedzie."
   },
   "gate": {

@@ -241,10 +241,6 @@ declare global {
       startVu:                (deviceName: string | null) => Promise<number>
       stopVu:                 ()                 => Promise<void>
       listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
-      podcastRegenerate:   (service: string) => Promise<{ ok: boolean; feedUrl?: string; episodeCount: number; error?: string }>
-      /** Whether this build can write/upload the RSS feed (the `publish` cargo
-       *  feature) — the Filer-page gate's truth source. `null` = could not ask. */
-      podcastFeedStatus:   () => Promise<{ featureBuilt: boolean; episodeCount: number } | null>
       registerTrustedPath: (filePath: string) => Promise<boolean>
 
       /** Every transcribed recording's sidecar. `basePath` is the recording path

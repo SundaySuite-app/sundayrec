@@ -1073,20 +1073,6 @@
     "testEmailSent": "E-mail de test envoyé à {to}",
     "testEmailFailed": "L’e-mail de test n’est pas passé : {err}"
   },
-  "prep": {
-    "sectionTitle": "Préparation et révision",
-    "sectionDesc": "Après chaque enregistrement, il est automatiquement analysé (détection de prédication), préparé avec mastering et intro/outro, et mis en file d’attente pour révision humaine avant publication.",
-    "enableTitle": "Activer la préparation automatique",
-    "enableDesc": "Exécuter l’analyse + la préparation après chaque enregistrement",
-    "masterPreset": "PRÉRÉGLAGE DE MASTERING",
-    "presetSpeechClear": "Parole — clair (recommandé)",
-    "presetSpeechNatural": "Parole — naturel",
-    "presetSpeechPunchy": "Parole — percutant",
-    "presetMusicSpeech": "Musique + parole",
-    "defaultIntro": "JINGLE D’INTRO PAR DÉFAUT",
-    "defaultOutro": "JINGLE D’OUTRO PAR DÉFAUT",
-    "howto": "Pour commencer : Téléversez 1-3 enregistrements de test sur Google Drive, cliquez sur « Générer le flux maintenant », et envoyez l’URL obtenue à Spotify for Podcasters et Apple Podcasts Connect. Après approbation (1-2 jours), chaque nouvel enregistrement apparaît automatiquement."
-  },
   "tooltip": {
     "close": "Fermer",
     "toggleVideo": "Activer/désactiver la vidéo",
@@ -1107,25 +1093,6 @@
     "fitAll": "Afficher tout le fichier",
     "kbdHints": "Afficher les raccourcis clavier",
     "timelineLayers": "Ce que la timeline affiche"
-  },
-  "publish": {
-    "descPlaceholder": "Ex : Services de l’Église Exemple, chaque dimanche à 11h",
-    "language": "LANGUE",
-    "regenerateFeed": "Générer le flux maintenant",
-    "podcastIntro": "Génère automatiquement un flux RSS après chaque enregistrement. Envoyez l’URL du flux une fois à Spotify for Podcasters et Apple Podcasts Connect — les nouveaux services apparaissent automatiquement.",
-    "feedUrlLabel": "URL DU FLUX — envoyez-la à Spotify et Apple Podcasts",
-    "publishedCount": {
-      "one": "{n} épisode publié",
-      "other": "{n} épisodes publiés"
-    },
-    "errConnectFirst": "connectez d’abord le service cloud",
-    "errPickFolderFirst": "choisissez d’abord un dossier d’enregistrement",
-    "errEnablePodcast": "activez d’abord le podcast",
-    "errUnknown": "erreur inconnue",
-    "intro": "Partagez les enregistrements au-delà de l’église",
-    "introDesc": "Configurez ici la sauvegarde cloud automatique et — si vous le souhaitez — un podcast qui rend les cultes disponibles sur Spotify et Apple Podcasts. Tout est facultatif.",
-    "unavailableBuild": "absent de cette version de SundayRec",
-    "unavailableBuildLong": "La génération RSS est absente de cette version de SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Impossible d’ouvrir",
@@ -1338,7 +1305,7 @@
     "cancel": "Pas maintenant"
   },
   "sharing": {
-    "publishDesc": "Sauvegarde cloud, podcast et diffusion en direct — où va l’enregistrement après le culte.",
+    "publishDesc": "Ce qui accompagne l’export hors de l’église.",
     "notifyDesc": "Qui est prévenu quand un enregistrement démarre, s’arrête ou échoue."
   },
   "gate": {

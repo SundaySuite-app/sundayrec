@@ -124,29 +124,6 @@ function sanitizeDeviceChannels(v: unknown): Dict | undefined {
   return out;
 }
 
-function sanitizePodcast(v: unknown): Dict | undefined {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-  const o = v as Dict;
-  return {
-    enabled: o.enabled === true,
-    service: oneOf(o.service, ["google-drive", "dropbox", "onedrive"]) ?? "google-drive",
-    title: str(o.title) ?? "",
-    description: str(o.description) ?? "",
-    author: str(o.author) ?? "",
-    language: str(o.language) ?? "no",
-    category: str(o.category) ?? "Religion & Spirituality",
-    explicit: o.explicit === true,
-    link: str(o.link) ?? null,
-    imageUrl: str(o.imageUrl) ?? null,
-    email: str(o.email) ?? null,
-    feedUrl: str(o.feedUrl) ?? null,
-    autoPrepEnabled: o.autoPrepEnabled !== false,
-    defaultIntroPath: str(o.defaultIntroPath) ?? null,
-    defaultOutroPath: str(o.defaultOutroPath) ?? null,
-    defaultMasterPreset: str(o.defaultMasterPreset) ?? "speech-clear",
-  };
-}
-
 /**
  * Translate a raw pre-R4 localStorage blob into unified-vocabulary settings
  * JSON, ready for `settings_import` (whose merge-over-defaults + `validate`
@@ -277,11 +254,8 @@ export function mapLegacyBlob(raw: string): Dict | null {
   // Live streaming (removed in v0.14) and cloud backup (removed with the
   // sharing cluster): old blobs may still carry streamDestinations/
   // streamResolution/streamFramerate/streamVideoBitrate/streamOverlays and
-  // cloudGoogleDrive/cloudDropbox/cloudOneDrive — the whitelist mapper simply
-  // never copies them, so a legacy config imports cleanly without them.
-
-  // Podcast
-  put("podcast", sanitizePodcast(s.podcast));
+  // cloudGoogleDrive/cloudDropbox/cloudOneDrive/podcast — the whitelist mapper
+  // simply never copies them, so a legacy config imports cleanly without them.
 
   // Misc
   put("autoUpdate", bool(s.autoUpdate));

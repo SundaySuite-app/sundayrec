@@ -21,7 +21,6 @@ import type { Settings as SettingsGen } from '../bindings/Settings'
 import type { DeviceChannels } from '../bindings/DeviceChannels'
 import type { ScheduleSlot } from '../bindings/ScheduleSlot'
 import type { SpecialRecording } from '../bindings/SpecialRecording'
-import type { PodcastSettings } from '../bindings/PodcastSettings'
 export type {
   ChannelMode,
   FileFormat,
@@ -29,7 +28,6 @@ export type {
   DeviceChannels,
   ScheduleSlot,
   SpecialRecording,
-  PodcastSettings,
   PrepAnalysisSegment,
   EditorSegment,
   ChapterMarker,
@@ -62,9 +60,6 @@ export interface RecordingEntry {
   fileSizeBytes?: number    // actual file size on disk after recording
   durationSec?: number      // recording duration in seconds
 }
-
-// PodcastSettings is generated (re-exported above) — the Rust
-// `sundayrec_core::settings::PodcastSettings`, one vocabulary with the store.
 
 /**
  * The settings model (R4): THE generated binding, one vocabulary end to end —

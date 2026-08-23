@@ -1073,20 +1073,6 @@
     "testEmailSent": "Test-e-post sendt til {to}",
     "testEmailFailed": "Test-e-posten gikk ikke gjennom: {err}"
   },
-  "prep": {
-    "sectionTitle": "Forhåndsklargjøring og gjennomgang",
-    "sectionDesc": "Etter hvert opptak blir det automatisk analysert (preken-deteksjon), klargjort med mastering og intro/outro, og lagt i en kø for menneskelig gjennomgang før publisering.",
-    "enableTitle": "Aktiver auto-klargjøring",
-    "enableDesc": "Kjør analyse + klargjøring etter hvert opptak",
-    "masterPreset": "MASTERING-PRESETT",
-    "presetSpeechClear": "Tale — tydelig (anbefalt)",
-    "presetSpeechNatural": "Tale — naturlig",
-    "presetSpeechPunchy": "Tale — kraftig",
-    "presetMusicSpeech": "Musikk + tale",
-    "defaultIntro": "STANDARD INTRO-JINGLE",
-    "defaultOutro": "STANDARD OUTRO-JINGLE",
-    "howto": "Slik kommer du i gang: Last opp 1-3 testopptak til Google Drive, klikk «Generer feed nå», og send URL-en som dukker opp til Spotify for Podcasters og Apple Podcasts Connect. Etter godkjenning (1-2 dager) dukker hvert nytt opptak opp automatisk."
-  },
   "tooltip": {
     "close": "Lukk",
     "toggleVideo": "Slå video på/av",
@@ -1107,25 +1093,6 @@
     "fitAll": "Vis hele filen",
     "kbdHints": "Vis hurtigtaster",
     "timelineLayers": "Hva vises på tidslinjen"
-  },
-  "publish": {
-    "descPlaceholder": "Eks: Gudstjenester fra Eksempel kirke, hver søndag kl 11",
-    "language": "SPRÅK",
-    "regenerateFeed": "Generer feed nå",
-    "podcastIntro": "Genererer en RSS-feed automatisk etter hvert opptak. Send feed-URL-en én gang til Spotify for Podcasters og Apple Podcasts Connect — nye gudstjenester dukker opp av seg selv.",
-    "feedUrlLabel": "FEED-URL — send denne til Spotify og Apple Podcasts",
-    "publishedCount": {
-      "one": "{n} episode publisert",
-      "other": "{n} episoder publisert"
-    },
-    "errConnectFirst": "koble til skytjenesten først",
-    "errPickFolderFirst": "velg lagringsmappe først",
-    "errEnablePodcast": "aktiver podcast først",
-    "errUnknown": "ukjent feil",
-    "intro": "Del opptakene utenfor kirken",
-    "introDesc": "Her setter du opp automatisk sky-backup og — hvis dere ønsker — en podcast som gjør gudstjenestene tilgjengelige i Spotify og Apple Podcasts. Alt er valgfritt.",
-    "unavailableBuild": "ikke med i denne bygningen av SundayRec",
-    "unavailableBuildLong": "RSS-generering er ikke med i denne bygningen av SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Kunne ikke åpne",
@@ -1338,7 +1305,7 @@
     "cancel": "Ikke nå"
   },
   "sharing": {
-    "publishDesc": "Sky-backup, podkast og direktesending — hvor opptaket havner etter gudstjenesten.",
+    "publishDesc": "Det som følger eksporten ut av kirken.",
     "notifyDesc": "Hvem får beskjed når et opptak starter, stopper eller feiler."
   },
   "gate": {

@@ -1073,20 +1073,6 @@
     "testEmailSent": "Test e-mail sent to {to}",
     "testEmailFailed": "The test e-mail did not go through: {err}"
   },
-  "prep": {
-    "sectionTitle": "Auto-prep and review",
-    "sectionDesc": "After each recording it is automatically analysed (sermon detection), prepped with mastering and intro/outro, and queued for human review before publishing.",
-    "enableTitle": "Enable auto-prep",
-    "enableDesc": "Run analysis + prep after each recording",
-    "masterPreset": "MASTERING PRESET",
-    "presetSpeechClear": "Speech — clear (recommended)",
-    "presetSpeechNatural": "Speech — natural",
-    "presetSpeechPunchy": "Speech — punchy",
-    "presetMusicSpeech": "Music + speech",
-    "defaultIntro": "DEFAULT INTRO JINGLE",
-    "defaultOutro": "DEFAULT OUTRO JINGLE",
-    "howto": "Getting started: Upload 1-3 test recordings to Google Drive, click \"Generate feed now\", and send the resulting URL to Spotify for Podcasters and Apple Podcasts Connect. After approval (1-2 days), every new recording appears automatically."
-  },
   "tooltip": {
     "close": "Close",
     "toggleVideo": "Toggle video",
@@ -1107,25 +1093,6 @@
     "fitAll": "Show entire file",
     "kbdHints": "Show keyboard shortcuts",
     "timelineLayers": "What the timeline shows"
-  },
-  "publish": {
-    "descPlaceholder": "E.g. Services from Example Church, every Sunday at 11",
-    "language": "LANGUAGE",
-    "regenerateFeed": "Generate feed now",
-    "podcastIntro": "Automatically generates an RSS feed after each recording. Send the feed URL once to Spotify for Podcasters and Apple Podcasts Connect — new services appear by themselves.",
-    "feedUrlLabel": "FEED URL — send this to Spotify and Apple Podcasts",
-    "publishedCount": {
-      "one": "{n} episode published",
-      "other": "{n} episodes published"
-    },
-    "errConnectFirst": "connect to the cloud service first",
-    "errPickFolderFirst": "choose a save folder first",
-    "errEnablePodcast": "enable podcast first",
-    "errUnknown": "unknown error",
-    "intro": "Share recordings beyond the church",
-    "introDesc": "Here you set up automatic cloud backup and — if you wish — a podcast that makes the services available on Spotify and Apple Podcasts. Everything is optional.",
-    "unavailableBuild": "not included in this build of SundayRec",
-    "unavailableBuildLong": "RSS generation is not included in this build of SundayRec."
   },
   "integrations": {
     "sundayEditFailed": "Could not open",
@@ -1338,7 +1305,7 @@
     "cancel": "Not now"
   },
   "sharing": {
-    "publishDesc": "Cloud backup, podcast and live streaming — where the recording goes after the service.",
+    "publishDesc": "What leaves the church together with the export.",
     "notifyDesc": "Who is told when a recording starts, stops or fails."
   },
   "gate": {
