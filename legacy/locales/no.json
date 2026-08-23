@@ -1,4 +1,11 @@
 {
+  "app": {
+    "page": {
+      "record": "Ta opp",
+      "library": "Opptakene",
+      "setup": "Oppsett"
+    }
+  },
   "nav": {
     "home": "Hjem",
     "schedule": "Tidsplan",

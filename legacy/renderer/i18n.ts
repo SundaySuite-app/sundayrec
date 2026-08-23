@@ -24,13 +24,23 @@ export let T: LocaleData = LOCALE_MAP['no']
 export let currentLang = 'no'
 
 /**
- * Activate a locale, lazy-loading it on first use. Async now (was sync) because
- * the non-default locales are fetched on demand. Always resolves — an unknown
- * language or a failed import falls back to the eagerly-bundled `no`. Callers at
- * startup should await this before building localized UI; the language-switch
- * caller can fire-and-forget (applyTranslations re-applies when it resolves).
+ * Load a locale's CATALOGUE and make it active — the half of `loadLocale` that
+ * is about DATA rather than about the DOM.
+ *
+ * ADDITIVE, for «Frivilligen først»'s second shell (`app/`). That shell has no
+ * `data-i18n` nodes at all: `app/i18n/index.ts` wraps `t`/`tf`/`tn`/`tArr` in a
+ * `locale` signal, so a language switch re-renders the components that read
+ * them. Calling `loadLocale` there would run `applyTranslations()` over a DOM
+ * that has nothing to translate — harmless in a browser, but it TOUCHES
+ * `document`, which puts the app shell's i18n outside the node-env unit gate
+ * for no gain. Splitting the data half out lets `app/` await the catalogue and
+ * then flip its signal, so a render can never happen with the new language and
+ * the old catalogue.
+ *
+ * `loadLocale` keeps its exact previous behaviour: this, then the data-i18n
+ * pass, then the tray push, in that order.
  */
-export async function loadLocale(lang: string): Promise<void> {
+export async function loadLocaleCatalogue(lang: string): Promise<void> {
   if (!LOCALE_MAP[lang]) {
     const loader = LAZY_LOADERS[lang]
     if (loader) {
@@ -43,6 +53,17 @@ export async function loadLocale(lang: string): Promise<void> {
   }
   T = LOCALE_MAP[lang] ?? LOCALE_MAP['no']
   currentLang = LOCALE_MAP[lang] ? lang : 'no'
+}
+
+/**
+ * Activate a locale, lazy-loading it on first use. Async now (was sync) because
+ * the non-default locales are fetched on demand. Always resolves — an unknown
+ * language or a failed import falls back to the eagerly-bundled `no`. Callers at
+ * startup should await this before building localized UI; the language-switch
+ * caller can fire-and-forget (applyTranslations re-applies when it resolves).
+ */
+export async function loadLocale(lang: string): Promise<void> {
+  await loadLocaleCatalogue(lang)
   applyTranslations()
   // The menubar tray renders its own labels in Rust and cannot read the UI
   // language: it lives in this renderer's settings blob, which the backend's

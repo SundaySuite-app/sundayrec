@@ -80,6 +80,38 @@ export function requiredCategories(locale: string): Set<string> {
   return cats
 }
 
+/**
+ * ## Pauset paritet — «Frivilligen først» (S1a, 2026-08)
+ *
+ * Redesignet river og bygger UI-teksten i `app/` om igjen, skjerm for skjerm,
+ * gjennom seks faser. Å oversette hver nye nøkkel til sju språk mens teksten
+ * fortsatt flytter seg er å oversette det samme fire ganger — og en oversetter
+ * som får det samme til gjennomsyn fire ganger slutter å lese nøye.
+ *
+ * Så: `app/` er norsk + engelsk (`ACTIVE_LOCALES` i `app/i18n/index.ts`) fram
+ * til fase B, og de fem andre språkene er PAUSET for de nøklene redesignet
+ * legger til — og BARE for dem.
+ *
+ * Det er hele poenget med `PAUSED_KEYS`. Den er en eksplisitt, innsjekket
+ * liste: en nøkkel som fantes FØR redesignet har nøyaktig de kravene den
+ * alltid har hatt, og en glemt oversettelse av gammel tekst er fortsatt en
+ * feilende test. Bare det som står i lista slipper unna, og bare i de fem
+ * pausete språkene — «ingen EKSTRA nøkler» gjelder fortsatt overalt, så et
+ * språk kan aldri få tekst no.json ikke har.
+ *
+ * Fase B tømmer lista. Den går derfor bare én vei som skrallen: å legge noe
+ * til her er en beslutning noen må skrive ned, ikke noe som siger inn.
+ */
+export const PAUSED_LOCALES = ['sv', 'da', 'de', 'fr', 'pl']
+
+/** Nøkler `app/` har lagt til under redesignet. Tømmes i fase B. */
+export const PAUSED_KEYS = new Set([
+  // S1a: skallets sidenavn — også `tDyn('app.page', route.page)`-subtreet.
+  'app.page.record',
+  'app.page.library',
+  'app.page.setup',
+])
+
 const reference = flattenKeys(no as Tree).sort()
 const referenceGroups = pluralGroupKeys(no as Tree).sort()
 
@@ -96,12 +128,38 @@ describe('locale key parity with no.json', () => {
   for (const [lang, tree] of locales) {
     it(`${lang}.json has exactly the no.json key set`, () => {
       const keys = new Set(flattenKeys(tree))
-      const missing = reference.filter(k => !keys.has(k))
+      const paused = PAUSED_LOCALES.includes(lang)
+      // A paused language may lag ONLY on the redesign's own new keys; every
+      // key that existed before is still required, in every language.
+      const missing = reference
+        .filter(k => !keys.has(k))
+        .filter(k => !(paused && PAUSED_KEYS.has(k)))
+      // «Extra» is never paused: a language must never carry text no.json
+      // does not have — that is how a string ends up impossible to review.
       const extra = [...keys].filter(k => !reference.includes(k)).sort()
       expect(missing, `keys missing from ${lang}.json`).toEqual([])
       expect(extra, `keys in ${lang}.json that no.json lacks`).toEqual([])
     })
   }
+
+  it('every paused key really is missing from at least one paused locale', () => {
+    // A guard on the pause: once a key HAS been translated everywhere, its
+    // entry here is dead weight that quietly excuses the next key someone
+    // adds next to it. Fase B empties the list; this keeps it shrinking.
+    const stale = [...PAUSED_KEYS].filter(key =>
+      locales
+        .filter(([lang]) => PAUSED_LOCALES.includes(lang))
+        .every(([, tree]) => lookup(tree, key) !== undefined),
+    )
+    expect(stale, 'PAUSED_KEYS entries that are no longer missing anywhere').toEqual([])
+  })
+
+  it('no.json actually has every paused key', () => {
+    // The pause excuses the OTHER languages, never Norwegian: a key nobody
+    // has written at all would otherwise pass silently.
+    const missingFromNo = [...PAUSED_KEYS].filter(k => !reference.includes(k))
+    expect(missingFromNo, 'PAUSED_KEYS entries missing from no.json').toEqual([])
+  })
 })
 
 describe('plural groups carry exactly the forms their language needs', () => {
@@ -117,6 +175,9 @@ describe('plural groups carry exactly the forms their language needs', () => {
     it(`${lang}.json`, () => {
       const want = [...requiredCategories(tag)].sort()
       for (const key of referenceGroups) {
+        // Same pause as the key-set test above: a plural group added for the
+        // redesign is not yet expected in the five paused languages.
+        if (PAUSED_LOCALES.includes(lang) && PAUSED_KEYS.has(key)) continue
         const node = lookup(tree, key)
         expect(isPluralGroup(node), `${lang}.json: ${key} must be a plural group`).toBe(true)
         expect(
