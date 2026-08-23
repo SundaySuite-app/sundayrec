@@ -1,4 +1,11 @@
 {
+  "app": {
+    "page": {
+      "record": "Record",
+      "library": "Recordings",
+      "setup": "Setup"
+    }
+  },
   "nav": {
     "home": "Home",
     "schedule": "Schedule",
