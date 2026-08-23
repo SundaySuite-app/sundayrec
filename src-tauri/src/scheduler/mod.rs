@@ -218,7 +218,10 @@ async fn supervisor(
         }
 
         // Cache + broadcast the next start.
-        let nxt = next_recording(&settings.slots, &kept, now);
+        // `active_slots()` and not `slots`: the level-1 switch «Ta opp
+        // automatisk» is a flag now, not an empty list. See
+        // `Settings::active_slots`.
+        let nxt = next_recording(settings.active_slots(), &kept, now);
         *lock_recover(&next_cache) = nxt;
         let _ = app.emit(NEXT_EVENT, nxt.map(fmt_dt));
 
@@ -228,7 +231,8 @@ async fn supervisor(
         // may prompt for admin) goes through the `wake_reschedule` command.
         if settings.wake_from_sleep {
             if let Some(wake) = app.try_state::<crate::wake::WakeEngine>() {
-                let upcoming = upcoming_dates(&settings.slots, &kept, now, WAKE_HORIZON_DAYS);
+                let upcoming =
+                    upcoming_dates(settings.active_slots(), &kept, now, WAKE_HORIZON_DAYS);
                 let res = wake.reschedule(&upcoming, now, true, false).await;
                 // Best-effort from the supervisor (non-admin, no prompt), but a
                 // failure that ISN'T just "needs admin"/"disabled" is worth a
@@ -249,7 +253,7 @@ async fn supervisor(
         }
 
         let events = upcoming_events(
-            &settings.slots,
+            settings.active_slots(),
             &kept,
             now,
             settings.reminder_minutes,
@@ -337,10 +341,12 @@ async fn fire(
                 return;
             }
             let (custom_name, slot_max) = match ev.source {
+                // `active_slots()` — the SAME slice `upcoming_events` indexed,
+                // so `Slot(i)` keeps meaning what it meant when it was made.
                 TriggerKind::Slot(i) => (
                     None,
                     settings
-                        .slots
+                        .active_slots()
                         .get(i)
                         .and_then(|s| s.max)
                         .unwrap_or(0)
@@ -520,7 +526,7 @@ pub async fn check_missed(
         app.state::<RecorderEngine>().current_state(),
         sundayrec_core::recorder::RecorderState::Idle
     );
-    let triggers = active_within(&settings.slots, specials, now, MISSED_WINDOW_MS);
+    let triggers = active_within(settings.active_slots(), specials, now, MISSED_WINDOW_MS);
     let mut triggered_keys = std::collections::HashSet::new();
     for t in &triggers {
         triggered_keys.insert(t.key.clone());
@@ -531,7 +537,7 @@ pub async fn check_missed(
             TriggerKind::Slot(i) => (
                 None,
                 settings
-                    .slots
+                    .active_slots()
                     .get(i)
                     .and_then(|s| s.max)
                     .unwrap_or(0)
@@ -574,7 +580,13 @@ pub async fn check_missed(
 
     // History start times → local naive, for the dedup window.
     let history = recording_history_local(pool).await;
-    let missed = missed_recordings(&settings.slots, specials, now, &history, &triggered_keys);
+    let missed = missed_recordings(
+        settings.active_slots(),
+        specials,
+        now,
+        &history,
+        &triggered_keys,
+    );
     let out: Vec<MissedRecordingInfo> = missed
         .into_iter()
         .map(|m| MissedRecordingInfo {
@@ -622,9 +634,10 @@ pub struct ScheduleStatus {
 pub async fn status(pool: &SqlitePool) -> AppResult<ScheduleStatus> {
     let settings = settings::load(pool).await.unwrap_or_default();
     let now = Local::now().naive_local();
-    let next = next_recording(&settings.slots, &settings.special_recordings, now).map(fmt_dt);
+    let next =
+        next_recording(settings.active_slots(), &settings.special_recordings, now).map(fmt_dt);
     let upcoming = upcoming_dates(
-        &settings.slots,
+        settings.active_slots(),
         &settings.special_recordings,
         now,
         UPCOMING_DAYS,
@@ -939,6 +952,82 @@ mod tests {
         assert_eq!(fmt_dt(start.at), "2026-06-07T11:00:00");
         // The reminder precedes the start.
         assert!(reminder.at < start.at);
+    }
+
+    // ── «Ta opp automatisk» as a FLAG (P1b) ────────────────────────────────
+    //
+    // Before `auto_record_enabled` the only spelling of "off" was an empty
+    // `slots` list, so the UI's switch had to delete the time. These three pin
+    // the flag at exactly the composition `status()`, the supervisor and
+    // `check_missed` use — `settings.active_slots()` in, the core decision out.
+
+    #[test]
+    fn auto_record_off_removes_the_weekly_plan_from_the_next_start() {
+        // The scheduler_status journey: a stored Sunday slot, the switch off.
+        // `status()` computes exactly this, so `next` comes back null.
+        let now = dt("2026-06-03 09:00");
+        let mut settings = Settings {
+            slots: vec![sunday_slot()],
+            ..Settings::default()
+        };
+
+        // On (the default) → unchanged behaviour.
+        assert!(settings.auto_record_enabled, "a fresh profile is armed");
+        let on = next_recording(settings.active_slots(), &settings.special_recordings, now);
+        assert_eq!(fmt_dt(on.expect("armed → a next start")), "2026-06-07T11:00:00");
+
+        // Off → nothing planned, and the TIME IS STILL THERE.
+        settings.auto_record_enabled = false;
+        assert!(
+            next_recording(settings.active_slots(), &settings.special_recordings, now).is_none(),
+            "disarmed → no next start"
+        );
+        assert_eq!(settings.slots.len(), 1, "the switch must not delete the plan");
+    }
+
+    #[test]
+    fn auto_record_off_also_silences_the_late_start_and_the_missed_report() {
+        // The half a `next == null` assertion alone would miss: the machine must
+        // not late-start a slot it has been told not to plan, and must not report
+        // it as missed either — "you missed a recording you switched off" is a
+        // warning that teaches people to ignore warnings.
+        let now = dt("2026-06-07 11:03");
+        let mut settings = Settings {
+            slots: vec![sunday_slot()],
+            ..Settings::default()
+        };
+        assert_eq!(
+            active_within(settings.active_slots(), &[], now, MISSED_WINDOW_MS).len(),
+            1,
+            "armed → inside the window"
+        );
+
+        settings.auto_record_enabled = false;
+        assert!(active_within(settings.active_slots(), &[], now, MISSED_WINDOW_MS).is_empty());
+        assert!(missed_recordings(
+            settings.active_slots(),
+            &[],
+            dt("2026-06-07 11:30"),
+            &[],
+            &HashSet::new()
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn auto_record_off_does_not_cancel_a_dated_special() {
+        // A special is a date somebody entered by hand for one concert. The
+        // level-1 switch is about the WEEKLY plan; cancelling the concert too
+        // would be the switch deleting something it never showed.
+        let now = dt("2026-06-03 09:00");
+        let settings = Settings {
+            auto_record_enabled: false,
+            slots: vec![sunday_slot()],
+            special_recordings: vec![special("2026-06-05", "19:00", "21:00", "Konsert")],
+            ..Settings::default()
+        };
+        let next = next_recording(settings.active_slots(), &settings.special_recordings, now);
+        assert_eq!(fmt_dt(next.expect("the special still stands")), "2026-06-05T19:00:00");
     }
 
     #[test]

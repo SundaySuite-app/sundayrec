@@ -345,8 +345,18 @@ pub struct Settings {
     /// Auto-stop manual recordings after N minutes. Valid 0..=1440, 0 = off.
     #[serde(default)]
     pub manual_max_minutes: i32,
-    /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
-    #[serde(default)]
+    /// Pre-roll buffer in seconds. Valid 0..=60, 0 = off. Default **15** (P1b).
+    ///
+    /// This is the ONE control the redesigned Advanced screen shows for
+    /// pre-roll, and 0 on it means off. It defaults to 15 because the owner's
+    /// choice for «Frivilligen først» is «pre-roll on and invisible»: the
+    /// twelve seconds between «the service started» and «somebody pressed
+    /// Start» are the ones nobody can record twice.
+    ///
+    /// A profile written before this change carries its own value (usually 0)
+    /// and keeps it — only a profile with no key at all, i.e. a fresh install,
+    /// gets 15.
+    #[serde(default = "default_pre_roll_seconds")]
     pub pre_roll_seconds: i32,
     /// Advanced opt-in for the ROLLING pre-roll buffer (R4). Distinct from
     /// `pre_roll_seconds` on purpose and NOT derivable from it: the buffer is a
@@ -377,9 +387,31 @@ pub struct Settings {
     pub protect_recording: bool,
 
     // ── Schedule (Fase 5) ─────────────────────────────────────────────────────
+    /// Is the weekly plan ARMED? Default `true`.
+    ///
+    /// P1b. Before this field an empty `slots` list was the only spelling of
+    /// "automatic recording is off", so the UI's off-switch had to DELETE the
+    /// time — a switch that throws away data it does not show. The flag
+    /// separates "armed" from "configured": turning it off keeps the times and
+    /// stops the planning.
+    ///
+    /// `default = true` and not `false` is the half that matters for existing
+    /// installs: a profile written before this field has no key for serde to
+    /// read, and `false` would silently disarm every church that already had a
+    /// Sunday slot — the exact failure this app exists to prevent. A fresh
+    /// profile has no slots anyway, so `true` there arms nothing.
+    ///
+    /// Only WEEKLY slots are gated. `special_recordings` are dated one-offs
+    /// somebody entered by hand for a specific concert; the level-1 switch is
+    /// about the recurring plan and never silently cancels those.
+    #[serde(default = "default_true")]
+    pub auto_record_enabled: bool,
     /// Weekly recurring recording windows. Empty by default. The scheduler
     /// engine turns these into start/stop/reminder/preflight timers; see
     /// [`crate::schedule`] for the decision logic.
+    ///
+    /// ⚠️ Read them through [`Settings::active_slots`], never directly: that is
+    /// the one place `auto_record_enabled` is honoured.
     #[serde(default)]
     pub slots: Vec<ScheduleSlot>,
     /// One-off dated recordings (concerts, special services). Empty by default.
@@ -510,6 +542,13 @@ fn default_silence_threshold() -> i32 {
 fn default_silence_timeout_minutes() -> i32 {
     5
 }
+/// See [`Settings::pre_roll_seconds`] — 15 s, the middle of the 0/15/30 the UI
+/// offers, and the length that covers a late Start without holding a minute of
+/// audio nobody asked for.
+fn default_pre_roll_seconds() -> i32 {
+    15
+}
+
 fn default_true() -> bool {
     true
 }
@@ -555,7 +594,7 @@ impl Default for Settings {
             silence_timeout_minutes: default_silence_timeout_minutes(),
             split_minutes: 0,
             manual_max_minutes: 0,
-            pre_roll_seconds: 0,
+            pre_roll_seconds: default_pre_roll_seconds(),
             preroll_enabled: false,
             reminder_minutes: 0,
 
@@ -563,6 +602,7 @@ impl Default for Settings {
             wake_from_sleep: true,
             protect_recording: true,
 
+            auto_record_enabled: true,
             slots: Vec::new(),
             special_recordings: Vec::new(),
 
@@ -648,6 +688,29 @@ impl Settings {
     pub fn validated(mut self) -> Self {
         self.validate();
         self
+    }
+
+    /// The weekly slots the scheduler is allowed to plan on — **the only way
+    /// slots should ever be read** outside this module.
+    ///
+    /// `auto_record_enabled == false` answers with an empty slice instead of
+    /// the stored list. One function and not a check at each call site: the
+    /// scheduler reads slots in six places (next start, wake horizon, reminder
+    /// events, the late-start window, the missed-check and the status command),
+    /// and a flag honoured in five of six is a machine that wakes at 10:50 on a
+    /// Sunday for a recording it will then refuse to make.
+    ///
+    /// Indices stay meaningful: a `TriggerKind::Slot(i)` produced from this
+    /// slice must be resolved against this slice too — which is automatic,
+    /// because "all of them" and "none of them" are the only two answers.
+    ///
+    /// Specials are deliberately NOT gated; see [`Settings::auto_record_enabled`].
+    pub fn active_slots(&self) -> &[ScheduleSlot] {
+        if self.auto_record_enabled {
+            &self.slots
+        } else {
+            &[]
+        }
     }
 
     /// The lossy-codec bitrate in kbps, parsed from the Electron-heritage
@@ -777,7 +840,9 @@ mod tests {
         assert_eq!(s.silence_timeout_minutes, 5);
         assert_eq!(s.split_minutes, 0);
         assert_eq!(s.manual_max_minutes, 0);
-        assert_eq!(s.pre_roll_seconds, 0);
+        // P1b: pre-roll is ON and invisible — 15 s is the default for a fresh
+        // profile. (Electron's 0 lives on in every profile already written.)
+        assert_eq!(s.pre_roll_seconds, 15);
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
@@ -1053,8 +1118,51 @@ mod tests {
         assert!(obj.contains_key("updateChannel"));
         assert!(obj.contains_key("askOpenEditor"));
         // Schedule keys must match the Electron `Settings` interface.
+        assert!(obj.contains_key("autoRecordEnabled"));
         assert!(obj.contains_key("slots"));
         assert!(obj.contains_key("specialRecordings"));
+    }
+
+    // ── `auto_record_enabled` (P1b) ─────────────────────────────────────────
+
+    #[test]
+    fn auto_record_enabled_defaults_on_and_survives_an_older_profile() {
+        assert!(Settings::default().auto_record_enabled);
+
+        // A profile written before the field existed: the key is simply absent.
+        // `false` here would disarm every church that already had a Sunday slot
+        // — the failure this app exists to prevent — so the serde default is
+        // `true`, and the stored slots keep planning exactly as they did.
+        let older = Settings::from_json_merged(
+            r#"{"slots":[{"days":[6],"start":"11:00","stop":"12:30","max":null}]}"#,
+        );
+        assert!(older.auto_record_enabled, "an older profile stays armed");
+        assert_eq!(older.active_slots().len(), 1);
+
+        // An explicit `false` round-trips (it is a real answer, not an absence).
+        let off = Settings::from_json_merged(r#"{"autoRecordEnabled":false}"#);
+        assert!(!off.auto_record_enabled);
+    }
+
+    #[test]
+    fn active_slots_is_the_one_place_the_flag_is_honoured() {
+        let mut s = Settings {
+            slots: vec![ScheduleSlot {
+                days: vec![6],
+                start: "11:00".into(),
+                stop: "12:30".into(),
+                max: None,
+            }],
+            ..Settings::default()
+        };
+        assert_eq!(s.active_slots().len(), 1);
+
+        s.auto_record_enabled = false;
+        assert!(s.active_slots().is_empty(), "disarmed → nothing to plan");
+        // …and the times are still in the store. That is the whole point of the
+        // field: the switch parks the plan, it does not delete it.
+        assert_eq!(s.slots.len(), 1);
+        assert_eq!(s.slots[0].start, "11:00");
     }
 
     #[test]

@@ -61,7 +61,9 @@ export const SETTINGS_DEFAULTS: Settings = {
   silenceTimeoutMinutes: 5,
   splitMinutes: 0,
   manualMaxMinutes: 0,
-  preRollSeconds: 0,
+  // 15, not 0 (P1b): «pre-roll on and invisible» is the owner's choice, and
+  // this file is the renderer-side spelling of `Settings::default()`.
+  preRollSeconds: 15,
   prerollEnabled: false,
   reminderMinutes: 0,
 
@@ -71,6 +73,10 @@ export const SETTINGS_DEFAULTS: Settings = {
   protectRecording: true,
 
   // Schedule
+  // `true` mirrors the Rust `default = "default_true"`: the flag separates
+  // «armed» from «configured», and an older profile without the key keeps
+  // planning its stored slots.
+  autoRecordEnabled: true,
   slots: [],
   specialRecordings: [],
 
