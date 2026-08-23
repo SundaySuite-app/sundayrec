@@ -82,6 +82,30 @@ appens egen avslutningsvei og drepte prosessen uten å stoppe opptaket i det hel
 tatt. Menylinja øverst på skjermen er bygget om for å lukke det hullet — den ser
 lik ut som før.
 
+### Oppdateringens «Start på nytt» venter også på opptaket ditt
+
+Vernet over dekket Cmd+Q og «Avslutt» — men ikke oppdateringen. Trykket du
+«Start på nytt og installer» mens gudstjenesten ble tatt opp, stoppet SundayRec
+opptaket og byttet ut seg selv med én gang, midt i lagringen. Fila kunne gå tapt
+på nøyaktig samme måte som før.
+
+Nå stopper omstarten opptaket ryddig og BLIR STÅENDE til fila er ferdig skrevet
+— historikkraden og leveransefila skal finnes — før den nye versjonen starter.
+Er du alt i gang med å avslutte, står omstarten over: oppdateringen ligger klar
+på disken og tas i bruk neste gang du starter appen.
+
+### Vekking fra dvale respekterer «Ta opp automatisk»
+
+Slo du av «Ta opp automatisk» men beholdt søndagstidene, vekket maskinen seg
+likevel 10:50 på søndag for et opptak appen så nekter å ta. Og
+vekkingskontrollen meldte de avbestilte vekkingene som «mangler», altså at noe
+var galt med maskinen. Begge deler er rettet: bryteren av betyr ingen vekking,
+og ingen forventning om en.
+
+Slår vekkingen feil i bakgrunnen — typisk fordi macOS krever administrator for å
+skrive en strømhendelse — står det nå i loggen én gang per oppstart, i stedet
+for ingen steder.
+
 ## v0.15.1-beta.1
 
 Beta-ringens oppfriskning etter v0.15.0 — samme app, pluss tre endringer i
