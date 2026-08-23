@@ -71,57 +71,6 @@ pub async fn transcripts_list(db: State<'_, Db>) -> AppResult<Vec<TranscriptSide
     Ok(out)
 }
 
-/// «Hva har appen lagt merke til» (E8.T) — fold every recording's
-/// `<stem>.feedback.json` into the counts + trim-direction verdict the
-/// System-tab transparency card shows. Same shape as [`transcripts_list`]:
-/// walk the history, read each sidecar, skip what is not there.
-///
-/// Deliberately NOT called automatically when the settings tab opens — the
-/// renderer only invokes this from an explicit "vis hva appen har lagt merke
-/// til" button, and never while a recording is in progress. A history of a
-/// few dozen small JSON sidecars is cheap on its own, but "cheap" and "safe to
-/// run unprompted during a live service" are different bars, and this stays
-/// on the READ side of the second one on purpose.
-#[tauri::command]
-pub async fn learning_feedback_summary(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::learning_summary::LearningSummary> {
-    let rows = store::list_recordings(&db.pool).await?;
-    let files: Vec<sundayrec_core::feedback::RecordingFeedback> = rows
-        .iter()
-        .map(|r| crate::editor::read_feedback_for_summary(&r.file_path))
-        .collect();
-    Ok(sundayrec_core::learning_summary::summarize_feedback(&files))
-}
-
-/// What this install has adjusted about itself, for the same System-tab card
-/// (E10).
-///
-/// Recomputes rather than reading a cache, and walks the same sidecars
-/// [`learning_feedback_summary`] does — see [`crate::learning::refresh_nudge`]
-/// for why a cheap cached read would show the wrong answer on the one day the
-/// card matters most. The renderer applies the same "not while recording"
-/// refusal as the summary card, for the same reason.
-///
-/// Returns the shipped zeroes whenever adaptivity is off, so the card describes
-/// what will HAPPEN rather than what happens to be stored.
-#[tauri::command]
-pub async fn learning_local_nudge(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::local_adaptivity::LocalNudge> {
-    Ok(crate::learning::refresh_nudge(&db).await)
-}
-
-/// Put the detector back to the shipped constants, now — the card's «Nullstill»
-/// button. Zeroes the learned nudge AND turns adaptivity off; see
-/// [`crate::learning::reset_nudge`] for why neither half alone is a reset.
-#[tauri::command]
-pub async fn learning_local_nudge_reset(
-    db: State<'_, Db>,
-) -> AppResult<sundayrec_core::local_adaptivity::LocalNudge> {
-    Ok(crate::learning::reset_nudge(&db).await)
-}
-
 /// Delete one recording-history row by id.
 #[tauri::command]
 pub async fn recordings_delete(db: State<'_, Db>, id: String) -> AppResult<()> {

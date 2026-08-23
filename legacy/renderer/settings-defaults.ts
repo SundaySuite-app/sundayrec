@@ -125,5 +125,4 @@ export const SETTINGS_DEFAULTS: Settings = {
   autoUpdate: true,
   updateChannel: "stable",
   askOpenEditor: true,
-  localAdaptivity: false,
 };

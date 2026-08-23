@@ -301,27 +301,6 @@ declare global {
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>
 
-      // ── Learning-feedback transparency (E8.T) ────────────────────────────
-      /** Fold every recording's `<stem>.feedback.json` into the counts + the
-       *  trim-direction verdict the System-tab card shows. `null` ONLY on a
-       *  real IPC failure — a summary of all zeros IS the legitimate empty
-       *  state, so callers must never let a failed round-trip collapse into
-       *  that same shape (see `learning-summary-core.ts`'s empty-state
-       *  handling for why the distinction matters). */
-      learningFeedbackSummary: () => Promise<import('../bindings/LearningSummary').LearningSummary | null>
-
-      // ── What the app has adjusted about itself (E10) ─────────────────────
-      /** The two clamped boundary offsets this install has learned, or the
-       *  shipped zeroes when adaptivity is off. `null` ONLY on a real IPC
-       *  failure — same rule as above, and for the same reason: "nothing
-       *  adjusted" is a legitimate answer that must not be reachable by a
-       *  failed read. */
-      learningLocalNudge: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
-      /** Back to the shipped detector, now: zeroes the offsets and turns
-       *  adaptivity off. `null` on failure. */
-      learningLocalNudgeReset: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
-
-
       // R8 AI sermon companion (chapters + highlights + Norwegian summary).
       // companionBuild returns null on any failure; the optional LLM summary is
       // keychain-only (companionSetLlmKey) and degrades to a local extractive

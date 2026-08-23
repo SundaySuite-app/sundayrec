@@ -143,7 +143,9 @@ describe("mapLegacyBlob", () => {
     expect(out.autoDeleteDays).toBe(90);
     expect(out.autoUpdate).toBe(false);
     expect(out.reminderMinutes).toBe(15);
-    expect(out.localAdaptivity).toBe(true);
+    // v0.15: the learning cards left, and the setting with them — an old blob
+    // still carries it, the mapper never copies it.
+    expect(out).not.toHaveProperty("localAdaptivity");
     expect(out.saveFolder).toBe("/Volumes/Rig/Opptak");
     expect(out.filenamePattern).toBe("church");
     expect(out.churchName).toBe("Domkirken");

@@ -1092,55 +1092,6 @@ const api: Record<string, unknown> = {
     }
   },
 
-  // ── Learning-feedback transparency (E8.T) ─────────────────────────────────
-  // `learning_feedback_summary` (commands/db.rs) walks the recording history
-  // and folds every `<stem>.feedback.json` sidecar it finds into counts + a
-  // trim-direction verdict — never audio, transcript text, suggestion text,
-  // a recording name, a path, or a clock time (see LearningSummary's own doc
-  // comment). `null` ONLY on a genuine IPC failure: unlike `call()`'s usual
-  // zero-value fallback, a summary of all zeros is itself a real answer ("no
-  // corrections yet"), so this must never be confused with "the read failed".
-  learningFeedbackSummary: async () => {
-    try {
-      return await invoke<import("../bindings/LearningSummary").LearningSummary>(
-        "learning_feedback_summary",
-      );
-    } catch (e) {
-      console.warn("[api-shim] learning_feedback_summary failed", e);
-      return null;
-    }
-  },
-
-  // ── What the app has adjusted about itself (E10) ──────────────────────────
-  // `learning_local_nudge` reads one `app_setting` row and returns two clamped
-  // offsets plus their evidence counts — the same privacy shape as
-  // LearningSummary above, and no history walk. `null` ONLY on a genuine IPC
-  // failure, for the same reason: an all-zero nudge is a real answer ("the app
-  // has adjusted nothing"), and a failed round-trip must never be shown as one.
-  learningLocalNudge: async () => {
-    try {
-      return await invoke<import("../bindings/LocalNudge").LocalNudge>("learning_local_nudge");
-    } catch (e) {
-      console.warn("[api-shim] learning_local_nudge failed", e);
-      return null;
-    }
-  },
-
-  // Zeroes the learned offsets AND turns adaptivity off — see
-  // `learning::reset_nudge` for why neither half alone is a reset. `null` on
-  // failure so the card can say "that did not work" instead of showing the
-  // shipped state it did not actually return to.
-  learningLocalNudgeReset: async () => {
-    try {
-      return await invoke<import("../bindings/LocalNudge").LocalNudge>(
-        "learning_local_nudge_reset",
-      );
-    } catch (e) {
-      console.warn("[api-shim] learning_local_nudge_reset failed", e);
-      return null;
-    }
-  },
-
   // ── Health probes ───────────────────────────────────────────────────────
   // Two commands that existed since the port and were never called from
   // anywhere. `media_permissions` is the one that matters: a denied microphone

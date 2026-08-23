@@ -867,18 +867,6 @@ fn read_feedback(media_path: &str) -> Result<sundayrec_core::feedback::Recording
     }
 }
 
-/// Read one recording's feedback file for the transparency summary (E8.T),
-/// treating "corrupt" the same as "missing" rather than as an error.
-///
-/// [`read_feedback`]'s `Err(())` exists to stop a WRITE from clobbering a file
-/// it cannot parse — there is nothing to clobber here. A summary is read-only
-/// and best-effort by nature: one unreadable sidecar among a whole history
-/// must shrink the count by one recording's worth of corrections, not fail
-/// the whole screen the operator opened to see what the app has noticed.
-pub fn read_feedback_for_summary(media_path: &str) -> sundayrec_core::feedback::RecordingFeedback {
-    read_feedback(media_path).unwrap_or_default()
-}
-
 /// Which block of `segments` the human's stored correction means, or `None`.
 ///
 /// This is what makes a correction outlive the editor window: on reopen the
@@ -951,9 +939,13 @@ pub fn record_sermon_pick(media_path: &str, request: &EditorSermonPickRequest) -
 /// `Some` carries the pure layer's verdict, including the two that write nothing
 /// (the operator published the proposal untouched, or moved the boundaries back
 /// onto it). `None` means we could not persist: an unreadable or newer-schema
-/// file we refuse to overwrite, or a failed write. The caller
-/// ([`crate::learning::record_trim_deltas`]) turns that into a log line — never
-/// into anything the operator sees.
+/// file we refuse to overwrite, or a failed write.
+///
+/// DORMANT since v0.15 (R1 removed its only caller, the review queue's
+/// `review_update_trim` → `learning::record_trim_deltas`). Kept, with its
+/// tests, because the trim-correction signal is part of the consented
+/// telemetry contract and the editor is the obvious next writer; see
+/// `docs/LEARNING.md`.
 pub fn record_trim_adjustment(
     media_path: &str,
     deltas: sundayrec_core::trim_feedback::TrimDeltas,

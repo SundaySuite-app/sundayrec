@@ -411,8 +411,9 @@ impl ScorerSelection {
 }
 
 /// How far a pick's boundaries sit from the human's, in seconds. Absolute
-/// values: a report of how WRONG, not of which way — the direction is
-/// [`crate::learning_summary`]'s question and is answered there.
+/// values: a report of how WRONG, not of which way — the direction is the
+/// banded corrections' question ([`crate::telemetry::corrections`]) and is
+/// answered there.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BoundaryError {
     pub start_sec: f64,

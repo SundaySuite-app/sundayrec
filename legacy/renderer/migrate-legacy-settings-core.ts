@@ -260,7 +260,8 @@ export function mapLegacyBlob(raw: string): Dict | null {
   // Misc
   put("autoUpdate", bool(s.autoUpdate));
   put("updateChannel", oneOf(s.updateChannel, ["stable", "beta"]));
-  put("localAdaptivity", bool(s.localAdaptivity));
+  // `localAdaptivity` (removed in v0.15 with the learning cards) is likewise
+  // never copied.
 
   return out;
 }
