@@ -676,7 +676,14 @@ function Done() {
  * stopper søndagen, så det som stoppet forrige søndag.
  */
 function RecordBanners() {
-  const list = banners.value;
+  // BARE opptakssidens egne to. Køen er delt, og P3 la til `update`, som ikke
+  // hører til noen side og derfor rendres av skallet — over hvilken side som
+  // enn står. Et filter og ikke en else-gren: en tredje nøkkel som havnet her
+  // ville blitt malt som et kvalitetsbanner uten at noe sa fra.
+  const list = banners.value.filter(
+    (entry) =>
+      entry.key === "recording-error" || entry.key === "recording-quality",
+  );
   const state = nextRecording.value;
   const room = currentRoomMinutes();
   const lowDisk = room !== null && room < LOW_DISK_MINUTES;

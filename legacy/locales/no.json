@@ -273,6 +273,8 @@
         "diagDeleteFailed": "Kunne ikke slette dataene. Prøv igjen.",
         "update": "Oppdateringer",
         "updateDesc": "Stabil anbefales. Beta får nye ting først.",
+        "autoUpdate": "Oppdater automatisk",
+        "autoUpdateDesc": "Sjekker hver time om det finnes en nyere versjon. Ingenting lastes ned før du sier ja.",
         "updateStable": "Stabil",
         "updateBeta": "Beta",
         "updateBetaTitle": "Bytte til beta-oppdateringer?",

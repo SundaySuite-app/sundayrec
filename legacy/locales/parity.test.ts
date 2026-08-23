@@ -472,6 +472,8 @@ export const PAUSED_KEYS = new Set([
   'app.library.deleteSoon',
   'app.library.deleteTomorrow',
   'app.library.deleteInDays',
+  'app.setup.advanced.autoUpdate',
+  'app.setup.advanced.autoUpdateDesc',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

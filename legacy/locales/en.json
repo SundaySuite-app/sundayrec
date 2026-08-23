@@ -273,6 +273,8 @@
         "diagDeleteFailed": "Could not delete the data. Try again.",
         "update": "Updates",
         "updateDesc": "Stable is recommended. Beta gets new things first.",
+        "autoUpdate": "Update automatically",
+        "autoUpdateDesc": "Checks every hour whether a newer version exists. Nothing is downloaded until you say yes.",
         "updateStable": "Stable",
         "updateBeta": "Beta",
         "updateBetaTitle": "Switch to beta updates?",

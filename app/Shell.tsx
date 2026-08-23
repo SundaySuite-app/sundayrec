@@ -40,6 +40,15 @@
  * ligge OVER skinnen, og det skal ikke rives ned av et rutebytte — et opptak
  * som går er ikke en side man er på.
  *
+ * ## Oppdateringsbanneret hører til skallet
+ *
+ * En ny versjon er ikke en side man er på, så stripa står over den siden man
+ * ER på — samme sted som `hydrate-error`, rett under overskriften. Tilstanden
+ * bor i den delte bannerkøen (`state/banners.ts`) og fylles av
+ * `state/auto-update.ts`; her er bare flaten. Aldri en egen toast: canvasens
+ * sett 7 har ÉN toast-form, og «det finnes en oppdatering» er ikke en
+ * kvittering som skal forsvinne av seg selv.
+ *
  * ## Menylinjens «Åpne opptaksmappen»
  *
  * Den ene tray-handlingen som ikke hører til noen side: den åpner en mappe i
@@ -50,7 +59,7 @@
 
 import { useEffect } from "preact/hooks";
 
-import { tDyn } from "./i18n";
+import { locale, t, tDyn, tf } from "./i18n";
 import {
   libraryHeading,
   LibraryPage,
@@ -63,8 +72,10 @@ import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
 import { consumePendingAction, pendingAction, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
+import { banners, dismissBanner } from "./state/banners";
 import { hydrateError, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
+import { Button } from "./ui/Button/Button";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
 import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
@@ -102,6 +113,8 @@ export function Shell({ probe }: ShellProps) {
           testId="hydrate-error"
         />
       ) : null}
+
+      <UpdateBanner />
 
       {probe === "setting" ? (
         <SettingProbe />
@@ -151,4 +164,57 @@ function useTrayFolder(): void {
     const folder = (settings.peek().saveFolder ?? "").trim();
     if (folder) void window.api.openFolder(folder);
   }, [armed]);
+}
+
+// ── Oppdateringsbanneret ────────────────────────────────────────────────────
+
+/**
+ * «Versjon X er klar» — over den siden som står, uansett hvilken.
+ *
+ * Tre tilstander, og de bærer de SAMME katalognøklene som raden under
+ * Avansert. Ikke kopierte setninger: kopier driver fra hverandre, og to steder
+ * som sier hver sin ting om den samme nedlastingen er nøyaktig skjøten dette
+ * skallet er skrevet for å unngå. Fasen bak dem er også den samme — én lytter,
+ * i `state/auto-update.ts`.
+ *
+ * `warn` og ikke `bad`: en oppdatering som venter er ikke noe som er galt.
+ * `bad` er `role="alert"` og avbryter en skjermleser midt i noe annet, og det
+ * har den ikke fortjent.
+ */
+function UpdateBanner() {
+  const entry = banners.value.find((b) => b.key === "update");
+  if (entry?.key !== "update") return null;
+
+  const install = (
+    <Button
+      variant="secondary"
+      testId="banner-update-install"
+      onClick={() => void window.api.installUpdate()}
+    >
+      {entry.state === "ready"
+        ? t("app.setup.advanced.updateRestart")
+        : t("app.setup.advanced.updateDownload")}
+    </Button>
+  );
+
+  return (
+    <Banner
+      tone="warn"
+      testId="banner-update"
+      title={
+        entry.state === "available"
+          ? tf("app.setup.advanced.updateAvailable", { v: entry.version })
+          : entry.state === "downloading"
+            ? tf("app.setup.advanced.updateDownloading", {
+                pct: entry.percent.toLocaleString(locale.value),
+              })
+            : tf("app.setup.advanced.updateReady", { v: entry.version })
+      }
+      // Ingen knapp mens den laster ned: det er ingenting å be om, og en
+      // knapp som bare kan trykkes forgjeves er en knapp som lærer folk at
+      // knappene her ikke betyr noe.
+      actions={entry.state === "downloading" ? undefined : install}
+      onDismiss={() => dismissBanner("update")}
+    />
+  );
 }
