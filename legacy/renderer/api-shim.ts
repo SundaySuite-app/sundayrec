@@ -1361,51 +1361,12 @@ const api: Record<string, unknown> = {
   // indices in a stored record mean nothing once detection has run again.
   editorSermonPick: async (fp: string, segments: unknown) =>
     call<number | null>("editor_sermon_pick", { mediaPath: fp, segments }, null),
-  // E8 — what became of one AI-companion suggestion, into the same sidecar.
-  // Three scalars from closed vocabularies rather than the tracker's event
-  // object, so there is no argument the suggested text, the user's rewrite or
-  // the transcript could ride along in; the app version is stamped in the
-  // backend, never sent from here.
-  editorRecordCompanionSuggestion: async (
-    fp: string,
-    kind: string,
-    outcome: string,
-    editedAfterAccept: boolean,
-  ) =>
-    call(
-      "editor_record_companion_suggestion",
-      { mediaPath: fp, kind, outcome, editedAfterAccept },
-      false,
-    ),
   // Topic chapters from the transcript (Bible refs + enumeration points). Pure
   // offline detection in Rust; returns [{ time, title }] on the original
   // recording timeline. Empty array on any failure (no transcript = no chapters).
   editorDetectChapters: async (lines: unknown, lang?: string) =>
     call("editor_detect_chapters", { lines: lines ?? [], lang: lang ?? null }, []),
 
-  // R8 AI sermon companion — chapters + highlights + Norwegian summary from a
-  // finished transcript. Deterministic detectors run on-device; the summary
-  // uses the OPTIONAL Anthropic seam when a key is configured, else a local
-  // extractive fallback (summarySource tells which). Returns null on any failure
-  // so the panel shows a calm "ikke tilgjengelig" state rather than throwing.
-  companionBuild: async (transcript: unknown, useLlm?: boolean) =>
-    call(
-      "companion_build",
-      { transcript, useLlm: useLlm ?? null },
-      null,
-    ),
-  // Whether the OPTIONAL LLM summary is wired (keychain or ANTHROPIC_API_KEY).
-  companionLlmConfigured: async () =>
-    call("companion_llm_configured", undefined, false),
-  // Save/clear the Anthropic key in the OS keychain (never settings/bundle).
-  // Bare `invoke`, not `call()`: these back a «✓ lagret»-style receipt, and the
-  // old `call(…, false).then(() => true)` turned a FAILED keychain write into
-  // `true` — the panel then showed ✓ over a key that was never stored. The
-  // rejection must travel so the panel's catch can show the real reason.
-  companionSetLlmKey: async (key: string) =>
-    invoke("companion_set_llm_key", { key }).then(() => true),
-  companionClearLlmKey: async () =>
-    invoke("companion_clear_llm_key", undefined).then(() => true),
   // editor_load_recording → EditorMediaInfo { durationSec, hasVideo, hasAudio, … }.
   // An ffprobe-only probe: it gives the audio loader the authoritative duration
   // WITHOUT reading a byte of media, which is what lets the editor paint a

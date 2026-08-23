@@ -1,6 +1,6 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
-import type { Settings, SermonCompanion, EditorSegment } from '../types'
+import type { Settings, EditorSegment } from '../types'
 import type { TrashEntry } from '../bindings/TrashEntry'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
@@ -20,7 +20,6 @@ import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
-import { setupCompanionKeyCard } from './pages/companion-key-card'
 import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
@@ -198,15 +197,6 @@ declare global {
       editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
-      /** Record what became of one companion suggestion (E8). Categories only —
-       *  the generated bindings are the vocabulary, so a kind or an outcome the
-       *  backend does not know fails to compile here rather than at runtime. */
-      editorRecordCompanionSuggestion: (
-        filePath: string,
-        kind: import('../bindings/CompanionSuggestionKind').CompanionSuggestionKind,
-        outcome: import('../bindings/CompanionSuggestionOutcome').CompanionSuggestionOutcome,
-        editedAfterAccept: boolean,
-      ) => Promise<boolean>
       editorDetectChapters:   (lines: { start: number; text: string }[], lang?: string) => Promise<{ time: number; title: string }[]>
       editorProbePeak:       (filePath: string) => Promise<number | null>
       editorDiagnoseChannels: (filePath: string) => Promise<{ code: string; imbalanceDb: number; peakLeftDb: number; peakRightDb: number | null; recommended: { mode: string; leftDb: number; rightDb: number } } | null>
@@ -301,14 +291,6 @@ declare global {
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>
 
-      // R8 AI sermon companion (chapters + highlights + Norwegian summary).
-      // companionBuild returns null on any failure; the optional LLM summary is
-      // keychain-only (companionSetLlmKey) and degrades to a local extractive
-      // summary when no key is configured.
-      companionBuild:          (transcript: unknown, useLlm?: boolean) => Promise<SermonCompanion | null>
-      companionLlmConfigured:  () => Promise<boolean>
-      companionSetLlmKey:      (key: string) => Promise<boolean>
-      companionClearLlmKey:    () => Promise<boolean>
     }
     appVersion?: string
   }
@@ -371,9 +353,8 @@ function showPage(id: string): void {
  * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
  *
  * «Publisering» and «Varsler» answered halves of the same question — who gets
- * the recording afterwards — and are now sections of Deling; the companion key
- * is an Avansert disclosure at the bottom of System. Old tab ids still resolve:
- * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
+ * the recording afterwards — and are now sections of Deling. Old tab ids still
+ * resolve: `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
  */
 function setupSettingsTabs(): void {
   document.querySelectorAll<HTMLElement>('#settings-tabs .inner-tab').forEach(btn => {
@@ -489,7 +470,6 @@ async function init(): Promise<void> {
   setupVideoPage()
   setupRecording()
   setupEditorPage()
-  void setupCompanionKeyCard()
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()

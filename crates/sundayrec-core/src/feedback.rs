@@ -1,24 +1,27 @@
 //! What the human told us we got wrong — pure, fs-free (E8).
 //!
-//! Three times per service the app makes a guess and a person quietly fixes it,
-//! and all three fixes used to live exactly as long as the window they were made
-//! in: which block is the sermon (`setSermonSegment` flipped two objects in
-//! memory and redrew), where the sermon starts and stops (review's trim, thrown
-//! away at publish), and whether the AI companion's title/summary/chapters were
-//! any use (computed to pick a toast's wording, discarded when the toast faded).
-//! They are the most valuable signals the app produces — a person telling us,
-//! for free, that we were wrong AND what the right answer was.
+//! Twice per service the app makes a guess and a person quietly fixes it, and
+//! both fixes used to live exactly as long as the window they were made in:
+//! which block is the sermon (`setSermonSegment` flipped two objects in memory
+//! and redrew), and where the sermon starts and stops (review's trim, thrown
+//! away at publish). They are the most valuable signals the app produces — a
+//! person telling us, for free, that we were wrong AND what the right answer was.
 //!
-//! This module owns the RECORD of all three: what to store, when a change counts
+//! (Until v0.15 a third record — whether the AI companion's title/summary/
+//! chapters were any use — lived here too. The companion left with the content
+//! cluster; a `companionSuggestions` array in a file already on disk is ignored
+//! on read, exactly as any unknown key is, and is not written back.)
+//!
+//! This module owns the RECORD of both: what to store, when a change counts
 //! as a correction at all, what a later change replaces, and how to find a
 //! corrected block again in a freshly analysed segment list. It decides nothing
 //! about detection — nothing here is read by any detector, in this etappe or by
 //! accident. The `src-tauri` seam does the file I/O (`<stem>.feedback.json`,
 //! [`crate::editor::Sidecar`]).
 //!
-//! ## One file, four collections
+//! ## One file, three collections
 //!
-//! Three of them are the human's, above. The fourth
+//! Two of them are the human's, above. The third
 //! ([`ShadowObservation`], E9) is not — it records two of the app's own
 //! detectors disagreeing with each other, and it lives here because it is per
 //! recording, bounded, bound by the same privacy rule and carried by the same
@@ -42,7 +45,7 @@
 //! enum, or a code from a closed vocabulary. There is no free-text field, no
 //! path field, and no name field for anything to leak into — see the doc comment
 //! on [`SermonPickCorrection`] for the rule that must survive, and note that it
-//! binds the two newer records exactly as it binds that one.
+//! binds the newer records exactly as it binds that one.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -118,18 +121,6 @@ pub const MAX_TRIM_ADJUSTMENTS: usize = 20;
 /// thresholds; past that the oldest describe settings nobody runs any more, so
 /// the oldest go.
 pub const MAX_SHADOW_OBSERVATIONS: usize = 20;
-
-/// How many companion-suggestion outcomes one recording may accumulate.
-///
-/// Unlike the two records above, these APPEND (see
-/// [`record_companion_suggestion`]) and therefore actually reach their bound.
-/// Each companion build offers three things and yields at most three events, so
-/// this is twenty rebuilds — well past a working session, in which a person
-/// builds once, maybe again with the language model, and moves on. Past that
-/// the events stop being twenty opinions and start being one habit, so the
-/// oldest go: the newest describe the suggestions actually on screen, and the
-/// companion that produced them.
-pub const MAX_COMPANION_SUGGESTION_EVENTS: usize = 60;
 
 /// What a block was classified as. A closed vocabulary: the detector's `kind`
 /// string is mapped INTO this, and anything unrecognised becomes
@@ -307,9 +298,8 @@ pub struct TrimAdjustment {
 /// The A/B harness needs these locally anyway, which is where they are. If
 /// central aggregation is ever wanted it is a new consent decision in a later
 /// stage, not a quiet addition to an existing payload: see
-/// `crate::telemetry::corrections::banded_corrections` and
-/// `crate::telemetry::companion::companion_outcomes` for the two projections
-/// that read this file, neither of which reads this collection.
+/// `crate::telemetry::corrections::banded_corrections` for the projection
+/// that reads this file, which does not read this collection.
 ///
 /// ## Privacy — the same rule as [`SermonPickCorrection`], inherited whole
 ///
@@ -335,76 +325,13 @@ pub struct ShadowObservation {
     pub app_version: String,
 }
 
-/// Which of the companion's suggestions an outcome is about. A closed
-/// vocabulary, mirroring the renderer's `CompanionSuggestionKind`
-/// (`legacy/renderer/pages/editor/companion-feedback.ts`) — `highlights` is
-/// absent from both for the same reason: the panel only lets you SEEK to a
-/// highlight, so there is no accept/reject decision to observe.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/CompanionSuggestionKind.ts"
-)]
-#[serde(rename_all = "lowercase")]
-pub enum CompanionSuggestionKind {
-    Title,
-    Description,
-    Chapters,
-}
-
-/// What became of one suggestion.
-///
-/// `Rejected` has no producer today — the panel has a "use it" button per kind
-/// and no dismiss gesture, so a suggestion nobody uses is `LeftAlone`. It is in
-/// the vocabulary because a redesigned panel that grows an explicit dismiss must
-/// not need a schema bump, and because the two are genuinely different: one is a
-/// decision, the other is silence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/CompanionSuggestionOutcome.ts"
-)]
-#[serde(rename_all = "snake_case")]
-pub enum CompanionSuggestionOutcome {
-    Accepted,
-    Rejected,
-    LeftAlone,
-}
-
-/// One companion suggestion's fate, as stored.
-///
-/// Categories and outcomes only. The suggested title, the summary, the chapter
-/// titles, the user's rewrite and the transcript they were derived from are all
-/// absent by SHAPE — there is no field on this type any of them could occupy,
-/// which is the same guarantee the renderer's event type makes and the reason
-/// neither of them carries a free-text field "for debugging".
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/CompanionSuggestionRecord.ts"
-)]
-#[serde(rename_all = "camelCase")]
-pub struct CompanionSuggestionRecord {
-    pub kind: CompanionSuggestionKind,
-    pub outcome: CompanionSuggestionOutcome,
-    /// Only ever `true` alongside [`CompanionSuggestionOutcome::Accepted`]: the
-    /// user took the suggestion as a starting point and rewrote it, which is the
-    /// more interesting of the two accepted cases.
-    pub edited_after_accept: bool,
-    /// The app version that produced the suggestion. Without it an outcome
-    /// cannot be attributed to the companion that earned it, and a corpus that
-    /// cannot separate versions cannot tell whether a change to the companion
-    /// helped.
-    pub app_version: String,
-}
-
 /// The `<stem>.feedback.json` file: everything the human has told us about ONE
 /// recording.
 ///
 /// Named for the file, not for its first collection: it started life holding
-/// sermon picks and now holds three unrelated families of correction, and a
-/// reader who takes "sermon" in the type name at face value will look for the
-/// companion events somewhere else.
+/// sermon picks and now holds unrelated families of record, and a reader who
+/// takes "sermon" in the type name at face value will look for the trim
+/// adjustments somewhere else.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/lib/bindings/RecordingFeedback.ts")]
 #[serde(rename_all = "camelCase")]
@@ -418,14 +345,10 @@ pub struct RecordingFeedback {
     /// version; see [`record_trim_adjustment`].
     #[serde(default)]
     pub trim_adjustments: Vec<TrimAdjustment>,
-    /// Oldest first, bounded by [`MAX_COMPANION_SUGGESTION_EVENTS`]. Genuinely
-    /// append-only; see [`record_companion_suggestion`].
-    #[serde(default)]
-    pub companion_suggestions: Vec<CompanionSuggestionRecord>,
     /// Oldest first, bounded by [`MAX_SHADOW_OBSERVATIONS`]. One record per
     /// (app version, settings) baseline; see [`record_shadow_observation`]. The
     /// one collection here that is not a human's work — read its type's doc
-    /// comment before treating it like the other three.
+    /// comment before treating it like the other two.
     #[serde(default)]
     pub shadow_observations: Vec<ShadowObservation>,
 }
@@ -436,7 +359,6 @@ impl Default for RecordingFeedback {
             schema: FEEDBACK_SCHEMA,
             sermon_picks: Vec::new(),
             trim_adjustments: Vec::new(),
-            companion_suggestions: Vec::new(),
             shadow_observations: Vec::new(),
         }
     }
@@ -453,7 +375,6 @@ impl RecordingFeedback {
     pub fn is_empty(&self) -> bool {
         self.sermon_picks.is_empty()
             && self.trim_adjustments.is_empty()
-            && self.companion_suggestions.is_empty()
             && self.shadow_observations.is_empty()
     }
 }
@@ -729,54 +650,11 @@ pub fn record_trim_adjustment(
     TrimOutcome::Recorded
 }
 
-/// Append one companion-suggestion outcome to a recording's feedback file.
-///
-/// ## Why this one APPENDS, where the other two replace
-///
-/// A sermon pick and a trim adjustment are answers to a question the app asked
-/// once: there is one detector proposal per recording, so a second answer
-/// supersedes the first. The companion asks again every time it is rebuilt —
-/// each build produces DIFFERENT text (offline extractive vs a language model,
-/// or a new transcript), so "I ignored the title" about build one and "I kept
-/// the title" about build two are two true statements about two different
-/// suggestions, and collapsing them would erase the more informative one.
-///
-/// That is also why the tracker on the renderer side emits exactly one event per
-/// kind per build and never revises one — it is an append-only log by
-/// construction, and this function must not turn it into something else.
-///
-/// The pressure the other two records get from replacement, this one gets from
-/// [`MAX_COMPANION_SUGGESTION_EVENTS`]: someone who rebuilds the companion
-/// twenty times has stopped producing twenty opinions, so the oldest events
-/// fall off rather than accumulating into a vote.
-pub fn record_companion_suggestion(
-    file: &mut RecordingFeedback,
-    kind: CompanionSuggestionKind,
-    outcome: CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-    app_version: &str,
-) {
-    file.companion_suggestions.push(CompanionSuggestionRecord {
-        kind,
-        outcome,
-        // A rewrite is only meaningful as a refinement of an acceptance, and the
-        // renderer can only observe one after telling us the suggestion landed.
-        // Normalised here rather than trusted, so no caller can produce the
-        // uninterpretable "left alone, then edited".
-        edited_after_accept: edited_after_accept
-            && matches!(outcome, CompanionSuggestionOutcome::Accepted),
-        app_version: app_version.to_string(),
-    });
-    while file.companion_suggestions.len() > MAX_COMPANION_SUGGESTION_EVENTS {
-        file.companion_suggestions.remove(0);
-    }
-}
-
 /// Fold one shadow-mode observation into a recording's feedback file.
 ///
 /// ## Why an AGREEMENT is stored too
 ///
-/// The three human records deliberately store nothing when the person agreed
+/// The two human records deliberately store nothing when the person agreed
 /// with us: a confirmation is cheap and plentiful, and keeping them would bury
 /// the corrections under a pile of records all pointing at what the detector
 /// already does. This one is the opposite case, and the difference is the
@@ -1163,7 +1041,7 @@ mod tests {
         let mut before = RecordingFeedback::default();
         record_sermon_pick(&mut before, correction(Some(1), 3));
         // Exactly what phase A serialises: no `trimAdjustments`, no
-        // `companionSuggestions` — not empty ones, ABSENT ones.
+        // `shadowObservations` — not empty ones, ABSENT ones.
         let json = serde_json::json!({
             "schema": FEEDBACK_SCHEMA,
             "sermonPicks": serde_json::to_value(&before.sermon_picks).unwrap(),
@@ -1173,7 +1051,6 @@ mod tests {
         let after: RecordingFeedback = serde_json::from_value(json).unwrap();
         assert_eq!(after.sermon_picks, before.sermon_picks);
         assert!(after.trim_adjustments.is_empty());
-        assert!(after.companion_suggestions.is_empty());
         assert!(after.shadow_observations.is_empty());
 
         // And the read → modify → write cycle the seam performs must carry the
@@ -1191,13 +1068,6 @@ mod tests {
         let mut file = RecordingFeedback::default();
         record_sermon_pick(&mut file, correction(Some(1), 3));
         record_trim_adjustment(&mut file, deltas(30.0, -50.0), "0.10.0");
-        record_companion_suggestion(
-            &mut file,
-            CompanionSuggestionKind::Title,
-            CompanionSuggestionOutcome::Accepted,
-            true,
-            "0.10.0",
-        );
         record_shadow_observation(
             &mut file,
             observation(360.0, ShadowSettings::default(), "0.10.0"),
@@ -1205,6 +1075,30 @@ mod tests {
         let back: RecordingFeedback =
             serde_json::from_str(&serde_json::to_string(&file).unwrap()).unwrap();
         assert_eq!(back, file);
+    }
+
+    /// v0.15 retired the companion collection. A file a pre-v0.15 build wrote
+    /// with `companionSuggestions` in it must still load WHOLE — the seam
+    /// refuses to write a file it could not read, so a reader that choked here
+    /// would strand the sermon picks and trim adjustments beside it.
+    #[test]
+    fn a_file_carrying_the_retired_companion_collection_still_loads_whole() {
+        let mut before = RecordingFeedback::default();
+        record_sermon_pick(&mut before, correction(Some(1), 3));
+        record_trim_adjustment(&mut before, deltas(30.0, 0.0), "0.10.0");
+        let mut json = serde_json::to_value(&before).unwrap();
+        json["companionSuggestions"] = serde_json::json!([{
+            "kind": "title",
+            "outcome": "accepted",
+            "editedAfterAccept": true,
+            "appVersion": "0.14.0"
+        }]);
+
+        let after: RecordingFeedback = serde_json::from_value(json).unwrap();
+        assert_eq!(after, before, "the human's records came through untouched");
+        // And it is NOT written back: the collection has no reader any more.
+        let written = serde_json::to_value(&after).unwrap();
+        assert!(written.get("companionSuggestions").is_none());
     }
 
     // ── Trim adjustments ───────────────────────────────────────────────────────
@@ -1312,90 +1206,6 @@ mod tests {
             json["deltas"],
             serde_json::json!({ "startDeltaSec": 30.0, "endDeltaSec": -50.0 })
         );
-    }
-
-    // ── Companion suggestions ──────────────────────────────────────────────────
-
-    fn companion(file: &mut RecordingFeedback, outcome: CompanionSuggestionOutcome, edited: bool) {
-        record_companion_suggestion(
-            file,
-            CompanionSuggestionKind::Title,
-            outcome,
-            edited,
-            "0.10.0",
-        );
-    }
-
-    #[test]
-    fn every_build_appends_its_own_outcome() {
-        let mut file = RecordingFeedback::default();
-        companion(&mut file, CompanionSuggestionOutcome::LeftAlone, false);
-        companion(&mut file, CompanionSuggestionOutcome::Accepted, false);
-        // Two builds, two different suggested titles, two true statements.
-        assert_eq!(file.companion_suggestions.len(), 2);
-        assert_eq!(
-            file.companion_suggestions[0].outcome,
-            CompanionSuggestionOutcome::LeftAlone
-        );
-        assert_eq!(
-            file.companion_suggestions[1].outcome,
-            CompanionSuggestionOutcome::Accepted
-        );
-    }
-
-    #[test]
-    fn an_edit_flag_only_survives_alongside_an_acceptance() {
-        let mut file = RecordingFeedback::default();
-        companion(&mut file, CompanionSuggestionOutcome::Accepted, true);
-        companion(&mut file, CompanionSuggestionOutcome::LeftAlone, true);
-        assert!(file.companion_suggestions[0].edited_after_accept);
-        assert!(
-            !file.companion_suggestions[1].edited_after_accept,
-            "\"left alone, then rewritten\" describes nothing that can happen"
-        );
-    }
-
-    #[test]
-    fn the_companion_list_is_bounded_and_drops_the_oldest() {
-        let mut file = RecordingFeedback::default();
-        for _ in 0..MAX_COMPANION_SUGGESTION_EVENTS {
-            companion(&mut file, CompanionSuggestionOutcome::LeftAlone, false);
-        }
-        companion(&mut file, CompanionSuggestionOutcome::Accepted, false);
-        assert_eq!(
-            file.companion_suggestions.len(),
-            MAX_COMPANION_SUGGESTION_EVENTS
-        );
-        assert_eq!(
-            file.companion_suggestions.last().unwrap().outcome,
-            CompanionSuggestionOutcome::Accepted,
-            "the newest decision is the one that must survive the cap"
-        );
-    }
-
-    #[test]
-    fn the_companion_record_is_categories_and_a_version_and_nothing_else() {
-        let mut file = RecordingFeedback::default();
-        record_companion_suggestion(
-            &mut file,
-            CompanionSuggestionKind::Chapters,
-            CompanionSuggestionOutcome::LeftAlone,
-            false,
-            "0.10.0",
-        );
-        let json = serde_json::to_value(&file.companion_suggestions[0]).unwrap();
-        let obj = json.as_object().unwrap();
-        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
-        keys.sort_unstable();
-        assert_eq!(
-            keys,
-            vec!["appVersion", "editedAfterAccept", "kind", "outcome"],
-            "a field appeared on the companion record — the suggested text, the \
-             user's rewrite and the transcript must have nowhere to go"
-        );
-        // The wire vocabulary the renderer's tracker emits, verbatim.
-        assert_eq!(obj["kind"], "chapters");
-        assert_eq!(obj["outcome"], "left_alone");
     }
 
     // ── Shadow observations ────────────────────────────────────────────────────
@@ -1566,11 +1376,10 @@ mod tests {
     }
 
     /// The override the brief is explicit about: these records stay on the
-    /// machine. Both telemetry projections of this file must be blind to them,
+    /// machine. The telemetry projection of this file must be blind to them,
     /// so a shadow-only change reports nothing anywhere.
     #[test]
-    fn a_shadow_observation_reaches_neither_telemetry_projection() {
-        use crate::telemetry::companion::companion_outcomes;
+    fn a_shadow_observation_reaches_no_telemetry_projection() {
         use crate::telemetry::corrections::banded_corrections;
 
         let mut before = RecordingFeedback::default();
@@ -1587,11 +1396,6 @@ mod tests {
             banded_corrections(&before),
             banded_corrections(&after),
             "a detector disagreement is not one of the three consented categories"
-        );
-        assert_eq!(
-            companion_outcomes(&before),
-            companion_outcomes(&after),
-            "nor is it a companion outcome"
         );
     }
 

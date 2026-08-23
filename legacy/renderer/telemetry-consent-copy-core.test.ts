@@ -31,9 +31,10 @@ describe('consent prompt copy', () => {
     expect(d, 'must say the scope was widened').toMatch(/utvidet/)
     expect(d, 'must name the addition concretely').toMatch(/30–60 sekunder/)
     // v2 widened twice before shipping — the banded corrections and then the
-    // companion outcomes — and the card has to name BOTH. Someone re-reading a
-    // prompt that mentions one of two additions has been under-told.
-    expect(d, 'must name the companion addition too').toMatch(/kapittelmerker/)
+    // companion outcomes. The companion left in v0.15 and its outcomes with
+    // it, so the card names ONE addition now; naming data that is not
+    // collected would be the over-telling twin of under-telling.
+    expect(d, 'must not name the retired companion addition').not.toMatch(/kapittelmerker/)
     expect(d, 'must say the suggestion text itself is not sent').toMatch(
       /[Ss]elve teksten sendes aldri/,
     )

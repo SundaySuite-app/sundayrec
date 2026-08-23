@@ -8,7 +8,6 @@ pub mod account;
 pub mod app;
 pub mod audio;
 pub mod calendar;
-pub mod companion;
 pub mod db;
 pub mod diagnostics;
 pub mod editor;

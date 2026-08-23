@@ -38,10 +38,9 @@ samtykket:
   Innloggingen er ikke koblet til diagnostikken: installasjons-ID-en under er
   ikke utledet fra kontoen din, og de to møtes aldri.
 
-At appen ellers sender ting over nett, gjør den selvsagt. Du kan få e-post
-når et opptak feiler, eller laste ned en transkripsjonsmodell. Alt dette går
-dit **du** har bestemt, når du har bedt om det, og aldri innom oss. Denne
-erklæringen handler ikke om dem.
+At appen ellers sender ting over nett, gjør den selvsagt: du kan få e-post
+når et opptak feiler. Det går dit **du** har bestemt, når du har bedt om det,
+og aldri innom oss. Denne erklæringen handler ikke om det.
 
 ---
 
@@ -192,29 +191,12 @@ Grunnen til at vi ber om dette: den automatiske prekengjenkjenningen skal bli
 bedre for alle som bruker den, og et menneske som retter opp en dårlig gjetning
 er det eneste signalet som forteller den hva som var galt.
 
-### Hvilke automatiske forslag du tar i bruk
-
-Når appen foreslår en tittel, et sammendrag eller kapittelmerker, sendes hvilken
-av de tre det gjaldt, og om du beholdt resultatet slik det ble foreslått eller
-skrev det om etterpå.
-
-Selve forslaget sendes aldri. Det du eventuelt skrev i stedet, sendes aldri.
-Heller ikke transkripsjonen eller prekenen forslaget ble laget fra.
-
-Dette er ikke noe vi filtrerer bort i etterkant: dataformatet har ingen plass
-til tekst overhodet — bare til hvilken av de tre typene det var, og hva som
-skjedde med den.
-
-Grunnen til at vi spør om dette også: appen skal kunne lære hvilke typer
-forslag som faktisk er verdt å tilby, i stedet for at vi gjetter.
-
 ### Funksjonsbruk
 
 Navngitte tellere for hvilke funksjoner som brukes, fra en fast, forhåndsdefinert
-liste — for eksempel «eksport til MP3» eller «transkripsjon startet».
+liste — for eksempel «eksport til MP3» eller «opptak startet».
 
-Kun **antall** ganger. Aldri hva som ble eksportert, transkribert eller
-publisert.
+Kun **antall** ganger. Aldri hva som ble eksportert eller tatt opp.
 
 ### Resultatet av en diagnose du selv har kjørt
 
@@ -354,7 +336,7 @@ ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
 **Så snart maskinen har nett:** SundayRec ber serveren slette alt som ligger der
 under den gamle ID-en. Alle enkeltrapporter fjernes — krasjrapporter,
 kvalitetsdata, diagnosefunn, planlagte opptak som ikke startet, korrigeringer,
-forslagsbruk, bruksmål, alt. Også den tekniske raden som teller hvor mange
+bruksmål, alt. Også den tekniske raden som teller hvor mange
 rapporter ID-en har sendt, blir borte.
 
 Er maskinen offline når du trykker, sendes forespørselen neste gang den er på
@@ -398,6 +380,12 @@ aldri til et «ja» på veien.
 
 Omfanget denne erklæringen beskriver, er **versjon 2**.
 
+Omfanget kan også bli **mindre** uten at vi spør på nytt — et samtykke til mer
+dekker mindre. Det har skjedd én gang: fram til v0.15 kunne appen også
+rapportere hvilke typer automatiske forslag (tittel, sammendrag, kapittelmerker)
+du tok i bruk. Den funksjonen finnes ikke lenger i SundayRec, og feltet sendes
+ikke. Har du sagt ja før, gjelder svaret ditt fortsatt — for det som er igjen.
+
 ---
 
-_Sist oppdatert: 2026-08-08._
+_Sist oppdatert: 2026-08-23._

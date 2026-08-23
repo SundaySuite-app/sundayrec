@@ -141,23 +141,25 @@ test.describe("telemetry preview", () => {
     await expect(page.locator("#telemetry-preview-body")).toHaveText("");
   });
 
-  test("a payload carrying corrections + companion outcomes shows them, not «ingenting å sende»", async ({
+  test("a payload carrying corrections shows them, not «ingenting å sende»", async ({
     page,
   }) => {
-    // SMOKE-TEST §12.8/§12.9: when correction/companion signals exist and
-    // diagnostics is on, «vis hva som sendes» must list them — and the caption
-    // must NOT claim there is nothing to send while they are on screen.
+    // SMOKE-TEST §12.8: when correction signals exist and diagnostics is on,
+    // «vis hva som sendes» must list them — and the caption must NOT claim
+    // there is nothing to send while they are on screen. (§12.9, the companion
+    // outcomes, left the wire in v0.15.)
     const RICH = JSON.stringify(
       {
         installId: "a1b2c3d4-0000-0000-0000-000000000000",
         app: { version: "0.10.0", os: "macos", arch: "aarch64" },
         counters: [],
         corrections: [
-          { signal: "sermon_pick", direction: "other_block", band: "small" },
-        ],
-        companionOutcomes: [
-          { field: "title", outcome: "accepted_edited", count: 1 },
-          { field: "chapters", outcome: "left_alone", count: 1 },
+          {
+            signal: "sermon_start",
+            direction: "earlier",
+            band: "30_60s",
+            count: 1,
+          },
         ],
         crashes: [],
       },
@@ -176,8 +178,7 @@ test.describe("telemetry preview", () => {
 
     const body = page.locator("#telemetry-preview-body");
     await expect(body).toContainText("corrections");
-    await expect(body).toContainText("companionOutcomes");
-    await expect(body).toContainText("accepted_edited");
+    await expect(body).toContainText("30_60s");
     const hint = page.locator("#telemetry-preview-hint");
     await expect(hint).not.toContainText("Ingenting å sende akkurat nå.");
     await expect(hint).toHaveText(

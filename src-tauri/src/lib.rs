@@ -541,7 +541,6 @@ pub fn run() {
             commands::editor::editor_delete_sidecar,
             commands::editor::editor_record_sermon_pick,
             commands::editor::editor_sermon_pick,
-            commands::editor::editor_record_companion_suggestion,
             commands::editor::editor_probe_streams,
             commands::editor::editor_read_file,
             commands::editor::editor_cleanup_temp_files,
@@ -575,15 +574,6 @@ pub fn run() {
             commands::whisper::whisper_transcribe,
             commands::whisper::whisper_cancel_transcribe,
             commands::whisper::whisper_export_transcript,
-            // R8 AI sermon companion — chapters/highlights/summary from a
-            // transcript. Pure detectors in sundayrec-core; the OPTIONAL Anthropic
-            // summary seam is NETWORK-UNVERIFIED and falls back to a fully-local
-            // extractive summary when no key is configured.
-            commands::companion::companion_build,
-            commands::companion::companion_llm_configured,
-            commands::companion::companion_llm_status,
-            commands::companion::companion_set_llm_key,
-            commands::companion::companion_clear_llm_key,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

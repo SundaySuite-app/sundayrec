@@ -382,7 +382,7 @@ pub fn editor_read_sidecar(
 /// a record this build cannot parse, and the atomic temp-and-rename that keeps a
 /// crash mid-write from truncating it. [`editor_delete_sidecar`] would skip
 /// `RecordingFeedback::is_empty` and remove the whole record — a person's
-/// corrections, the trim adjustments and the companion outcomes together.
+/// corrections and the trim adjustments together.
 ///
 /// The typed commands below are the only way in. This turns an intent that was
 /// only ever written down into one the wiring enforces.
@@ -445,33 +445,6 @@ pub fn editor_sermon_pick(
 ) -> AppResult<Option<u32>> {
     super::path_guard::checked_path(&media_path)?;
     Ok(editor::sermon_pick_index(&media_path, &segments))
-}
-
-/// Record what became of one of the AI companion's suggestions (E8), into the
-/// recording's `<stem>.feedback.json`. Returns whether it persisted.
-///
-/// The parameters ARE the privacy boundary: a kind, an outcome and a bool, all
-/// from closed vocabularies. There is no parameter the suggested title, the
-/// summary, the user's rewrite or the transcript could travel in, which is why
-/// this takes three scalars instead of the renderer's event object — and the app
-/// version is stamped here rather than sent, so the renderer cannot claim one.
-///
-/// **Path policy: `UserChosenWrite`** — same guard as the sibling sidecar
-/// commands; the target is a file next to a recording the user opened.
-#[tauri::command]
-pub fn editor_record_companion_suggestion(
-    media_path: String,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> AppResult<bool> {
-    super::path_guard::checked_path(&media_path)?;
-    Ok(editor::record_companion_suggestion(
-        &media_path,
-        kind,
-        outcome,
-        edited_after_accept,
-    ))
 }
 
 /// Probe just has_video/has_audio for the editor's audio-vs-video layout.

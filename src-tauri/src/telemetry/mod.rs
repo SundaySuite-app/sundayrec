@@ -59,7 +59,6 @@ use sundayrec_core::telemetry::{TelemetryPayload, TelemetryPreview, TELEMETRY_SC
 use crate::db::store;
 use crate::error::AppResult;
 
-pub mod companion;
 pub mod config;
 pub mod corrections;
 pub mod counters;
@@ -167,11 +166,10 @@ pub async fn on_consent_revoked(pool: &SqlitePool) -> AppResult<()> {
     // because two mirrors of one fact are two things that can disagree, and the
     // way they would disagree is "still counting after a revoke".
     counters::set_active(false);
-    // `set_active(false)` drops the counter map itself; the correction and
-    // companion maps are separate `OnceLock`s and have to be told too. A revoke
-    // must not leave counts in RAM waiting for a change of mind.
+    // `set_active(false)` drops the counter map itself; the correction map is
+    // a separate `OnceLock` and has to be told too. A revoke must not leave
+    // counts in RAM waiting for a change of mind.
     corrections::clear();
-    companion::clear();
     // Reset the watermarks so a later re-grant starts from ITS own "now" rather
     // than sweeping up everything that happened while telemetry was off.
     purge_collected(pool, payload::Watermarks::default()).await
@@ -192,7 +190,6 @@ async fn purge_collected(pool: &SqlitePool, reset_to: payload::Watermarks) -> Ap
     payload::set_watermarks(pool, reset_to).await?;
     counters::purge(pool).await?;
     corrections::purge(pool).await?;
-    companion::purge(pool).await?;
     if dropped > 0 {
         tracing::info!("telemetry: purged {dropped} queued report(s)");
     }
@@ -254,7 +251,6 @@ pub async fn drain_in(
         // fails, must leave the counts where they are.
         counters: counters::snapshot(),
         corrections: corrections::snapshot(),
-        companion_outcomes: companion::snapshot(),
     };
     let (built, next) = payload::build(pool, &ctx, since, install_id.as_deref()).await?;
 
@@ -270,15 +266,12 @@ pub async fn drain_in(
     counters::persist(pool).await?;
     corrections::consume(&ctx.corrections);
     corrections::persist(pool).await?;
-    companion::consume(&ctx.companion_outcomes);
-    companion::persist(pool).await?;
     if queued {
         tracing::info!(
             crashes = built.crashes.len(),
             quality = built.quality.len(),
             findings = built.findings.len(),
             corrections = built.corrections.len(),
-            companion_outcomes = built.companion_outcomes.len(),
             "telemetry: queued one report (nothing is sent — no endpoint in this build)"
         );
     }
@@ -360,7 +353,6 @@ pub async fn preview_payload_in(
         consent_version: CONSENT_VERSION,
         counters: counters::snapshot(),
         corrections: corrections::snapshot(),
-        companion_outcomes: companion::snapshot(),
     };
     // `install_id_if_any`, never `ensure_install_id`: a user who has not opted in
     // must be able to read this page without it minting an identifier for them.
@@ -405,9 +397,6 @@ pub async fn startup(app: &AppHandle, pool: &SqlitePool) {
     }
     if let Err(e) = corrections::load(pool).await {
         tracing::warn!("telemetry: could not restore banded corrections: {e}");
-    }
-    if let Err(e) = companion::load(pool).await {
-        tracing::warn!("telemetry: could not restore companion outcomes: {e}");
     }
     // A force-quit mid-send strands a row in `sending` forever otherwise.
     match queue_store::reset_stale_sending(pool).await {
@@ -456,9 +445,6 @@ pub fn spawn_periodic_drain(app: AppHandle) {
                         }
                         if let Err(e) = corrections::persist(&db.pool).await {
                             tracing::warn!("telemetry: could not persist banded corrections: {e}");
-                        }
-                        if let Err(e) = companion::persist(&db.pool).await {
-                            tracing::warn!("telemetry: could not persist companion outcomes: {e}");
                         }
                     }
                 }

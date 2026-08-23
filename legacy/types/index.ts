@@ -12,10 +12,6 @@ import type { PrepAnalysisSegment } from '../bindings/PrepAnalysisSegment'
 import type { EditorSegment } from '../bindings/EditorSegment'
 import type { ChapterMarker } from '../bindings/ChapterMarker'
 import type { TranscriptSegment } from '../bindings/TranscriptSegment'
-import type { SermonHighlight } from '../bindings/SermonHighlight'
-import type { CompanionChapter } from '../bindings/CompanionChapter'
-import type { SummarySource } from '../bindings/SummarySource'
-import type { SermonCompanion } from '../bindings/SermonCompanion'
 import type { UpdateChannel } from '../bindings/UpdateChannel'
 import type { Settings as SettingsGen } from '../bindings/Settings'
 import type { DeviceChannels } from '../bindings/DeviceChannels'
@@ -32,10 +28,6 @@ export type {
   EditorSegment,
   ChapterMarker,
   TranscriptSegment,
-  SermonHighlight,
-  CompanionChapter,
-  SummarySource,
-  SermonCompanion,
   UpdateChannel,
 }
 // ────────────────────────────────────────────────────────────────────────────
@@ -137,5 +129,3 @@ export interface TranscriptData {
   segments:  TranscriptSegment[]
 }
 
-// SermonHighlight / CompanionChapter / SummarySource / SermonCompanion are
-// generated (re-exported above) — the AI sermon-companion result types.

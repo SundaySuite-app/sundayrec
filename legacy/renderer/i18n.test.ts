@@ -190,7 +190,10 @@ describe('every plural group renders in every language, at every boundary', () =
   }
   const keys = groupKeys(no as Tree)
 
-  it('finds the groups at all', () => expect(keys.length).toBeGreaterThan(20))
+  // A floor, not a count: the walker must have found the catalogue. (It was
+  // 20 after v0.15 removed the 11 learning-card groups and the companion's —
+  // a lower floor still catches a walker that found nothing.)
+  it('finds the groups at all', () => expect(keys.length).toBeGreaterThan(10))
 
   for (const lang of Object.keys(TREES)) {
     it(lang, () => {

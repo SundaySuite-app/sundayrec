@@ -753,9 +753,8 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 // correction", "what does it replace", "which block does it mean now" lives in
 // `sundayrec_core::feedback`; what is left here is a read, a fold, and a write.
 //
-// Three callers now share that read-modify-write: the sermon dropdown, review's
-// publish, and the AI companion panel. They are independent — a companion batch
-// finalises three events at once while a publish is in flight — and a
+// More than one caller shares that read-modify-write (the sermon dropdown, the
+// dormant trim seam, the shadow observer). They are independent, and a
 // read-modify-write of one file from two places at once loses whichever write
 // lands first. `FEEDBACK_LOCK` serialises them. It is deliberately ONE lock for
 // all recordings rather than one per path: these writes are a few hundred bytes
@@ -765,14 +764,13 @@ pub fn delete_sidecar(media_path: &str, sidecar: EditorSidecar) -> bool {
 /// Serialises the read-modify-write of any `<stem>.feedback.json`. See above.
 static FEEDBACK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Tell the telemetry accumulators what a successful fold changed, as the file's
-/// PROJECTIONS before and after.
+/// Tell the telemetry accumulator what a successful fold changed, as the file's
+/// PROJECTION before and after.
 ///
-/// Called by all three seams and folding BOTH projections at every one — so a
-/// signal added to either projection later is reported from every seam at once
-/// rather than from the ones somebody remembered. The two read disjoint
-/// collections of the same file (`banded_corrections` the picks and trims,
-/// `companion_outcomes` the suggestions), so a record cannot be counted twice.
+/// Called by every correction seam — so a signal added to the projection later
+/// is reported from every seam at once rather than from the ones somebody
+/// remembered. (Until v0.15 a second, disjoint projection — the companion's
+/// suggestion outcomes — was folded here too.)
 ///
 /// Projections, not the event: a correction REPLACES the previous answer to the
 /// same baseline, so someone cycling through four blocks has made one decision,
@@ -784,7 +782,6 @@ fn observe_feedback_change(
     after: &sundayrec_core::feedback::RecordingFeedback,
 ) {
     crate::telemetry::corrections::observe_files(before, after);
-    crate::telemetry::companion::observe_files(before, after);
 }
 
 /// Take [`FEEDBACK_LOCK`], recovering a poisoned lock rather than propagating.
@@ -967,37 +964,6 @@ pub fn record_trim_adjustment(
     Some(outcome)
 }
 
-/// Append one companion-suggestion outcome to the recording's feedback file.
-/// Returns whether it persisted; `false` is an unreadable file we left alone or
-/// a failed write, and never reaches the panel.
-pub fn record_companion_suggestion(
-    media_path: &str,
-    kind: sundayrec_core::feedback::CompanionSuggestionKind,
-    outcome: sundayrec_core::feedback::CompanionSuggestionOutcome,
-    edited_after_accept: bool,
-) -> bool {
-    let _guard = feedback_lock();
-    let Ok(mut file) = read_feedback(media_path) else {
-        return false;
-    };
-    let before = file.clone();
-    sundayrec_core::feedback::record_companion_suggestion(
-        &mut file,
-        kind,
-        outcome,
-        edited_after_accept,
-        env!("CARGO_PKG_VERSION"),
-    );
-    // Only after the write, exactly as the two correction seams do: an outcome
-    // that did not reach the disk must not be counted as something the person
-    // told us, or the telemetry would report what the app itself has lost.
-    let written = write_feedback(media_path, &file);
-    if written {
-        observe_feedback_change(&before, &file);
-    }
-    written
-}
-
 /// Fold one shadow-mode observation into the recording's feedback file.
 ///
 /// Returns whether it persisted; `false` is an unreadable or newer-schema file
@@ -1006,7 +972,7 @@ pub fn record_companion_suggestion(
 /// become something the operator sees.
 ///
 /// **`observe_feedback_change` is deliberately NOT called here**, and that is
-/// the one line of this function that matters. The other three seams report
+/// the one line of this function that matters. The other seams report
 /// their change to the telemetry accumulators; this one must not, because a
 /// disagreement between two detectors is outside the three categories the
 /// consent text covers (crash reports, quality data, feature-usage counters).
@@ -3563,10 +3529,9 @@ mod tests {
     /// [`tmp_media`] for a test that WRITES a feedback record, plus the telemetry
     /// modules' process-wide test lock.
     ///
-    /// Every write here goes through `observe_feedback_change`, which feeds two
-    /// process-global accumulators. Those are shared mutable state, and the tests
-    /// that assert on them (`telemetry::corrections`, `telemetry::companion`)
-    /// take this same lock — so a feedback test running beside one of them would
+    /// Every write here goes through `observe_feedback_change`, which feeds a
+    /// process-global accumulator. That is shared mutable state, and the tests
+    /// that assert on it (`telemetry::corrections`) take this same lock — so a feedback test running beside one of them would
     /// otherwise add counts to a map another test is measuring. The lock also
     /// leaves consent OFF for the duration, which makes both seams inert and
     /// keeps THESE tests about the file rather than about telemetry.
@@ -3706,14 +3671,14 @@ mod tests {
     }
 
     /// Rewrite the sidecar as the build that only knew about sermon picks left
-    /// it: the two later collections ABSENT, not empty.
+    /// it: the later collections ABSENT, not empty.
     fn strip_to_phase_a_shape(media: &str) {
         let path = feedback_path(media);
         let mut json: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let obj = json.as_object_mut().unwrap();
         obj.remove("trimAdjustments");
-        obj.remove("companionSuggestions");
+        obj.remove("shadowObservations");
         std::fs::write(&path, serde_json::to_string_pretty(&json).unwrap()).unwrap();
     }
 
@@ -3752,12 +3717,6 @@ mod tests {
         strip_to_phase_a_shape(&media);
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_some());
-        assert!(record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
 
         let file = stored(&media);
         assert_eq!(
@@ -3767,7 +3726,6 @@ mod tests {
         );
         assert_eq!(file.sermon_picks[0].chosen.index, 3);
         assert_eq!(file.trim_adjustments.len(), 1);
-        assert_eq!(file.companion_suggestions.len(), 1);
         // And the reopen path still answers with the human's block.
         assert_eq!(sermon_pick_index(&media, &feedback_segments()), Some(3));
     }
@@ -3809,39 +3767,15 @@ mod tests {
         std::fs::write(&path, r#"{"schema":99,"sermonPicks":[{"whatever":1}]}"#).unwrap();
 
         assert!(record_trim_adjustment(&media, deltas(30.0, 0.0)).is_none());
-        assert!(!record_companion_suggestion(
-            &media,
-            sundayrec_core::feedback::CompanionSuggestionKind::Title,
-            sundayrec_core::feedback::CompanionSuggestionOutcome::Accepted,
-            false,
-        ));
         assert!(std::fs::read_to_string(&path).unwrap().contains("99"));
-    }
-
-    #[test]
-    fn a_companion_batch_appends_each_kind_and_writes_down_no_text() {
-        use sundayrec_core::feedback::{CompanionSuggestionKind as K, CompanionSuggestionOutcome};
-        let (_dir, media, _telemetry) = feedback_media();
-        for kind in [K::Title, K::Description, K::Chapters] {
-            assert!(record_companion_suggestion(
-                &media,
-                kind,
-                CompanionSuggestionOutcome::LeftAlone,
-                false,
-            ));
-        }
-        assert_eq!(stored(&media).companion_suggestions.len(), 3);
-
-        let raw = std::fs::read_to_string(feedback_path(&media)).unwrap();
-        assert!(!raw.contains("service"), "the recording's name leaked");
-        assert!(!raw.contains(std::path::MAIN_SEPARATOR), "a path leaked");
     }
 
     /// Every writer of `<stem>.feedback.json` must take [`FEEDBACK_LOCK`].
     ///
-    /// These four seams are genuinely concurrent in the app: shadow mode writes
+    /// These seams are genuinely concurrent in the app: shadow mode writes
     /// from a DETACHED task that is still running minutes after the editor
-    /// opened, while the companion panel finalises a batch and review publishes.
+    /// opened, while the sermon dropdown (and, once it has a writer again, the
+    /// trim seam) fold their own records.
     /// A read-modify-write of one file from two places at once loses whichever
     /// write lands first, and it loses it in the quietest possible way — the
     /// second writer's record is simply not in the file, and every function
@@ -3851,25 +3785,19 @@ mod tests {
     /// writer that forgets the guard fails here instead of in someone's service.
     #[test]
     fn concurrent_writers_do_not_lose_each_others_records() {
-        use sundayrec_core::feedback::{
-            build_shadow_observation, CompanionSuggestionKind as K, CompanionSuggestionOutcome,
-        };
+        use sundayrec_core::feedback::build_shadow_observation;
         let (_dir, media, _telemetry) = feedback_media();
 
         const ROUNDS: usize = 12;
         std::thread::scope(|s| {
-            // The companion panel, appending.
+            // The sermon dropdown, flipping between two blocks.
             s.spawn(|| {
-                for _ in 0..ROUNDS {
-                    assert!(record_companion_suggestion(
-                        &media,
-                        K::Title,
-                        CompanionSuggestionOutcome::Accepted,
-                        false,
-                    ));
+                for i in 0..ROUNDS {
+                    let chosen = if i % 2 == 0 { 3 } else { 2 };
+                    assert!(record_sermon_pick(&media, &pick_request(Some(1), chosen)));
                 }
             });
-            // Review's publish, replacing its one record over and over.
+            // The trim seam, replacing its one record over and over.
             s.spawn(|| {
                 for i in 0..ROUNDS {
                     assert!(record_trim_adjustment(&media, deltas(i as f64 + 1.0, 0.0)).is_some());
@@ -3890,9 +3818,14 @@ mod tests {
 
         let file = stored(&media);
         assert_eq!(
-            file.companion_suggestions.len(),
-            ROUNDS,
-            "an append-only record was lost to a concurrent writer"
+            file.sermon_picks.len(),
+            1,
+            "one detector baseline, one correction — the settled one"
+        );
+        assert_eq!(
+            file.sermon_picks[0].chosen.index,
+            2,
+            "the last pick (ROUNDS is even, so the final chosen block is 2) must be the one on file"
         );
         assert_eq!(
             file.trim_adjustments.len(),
