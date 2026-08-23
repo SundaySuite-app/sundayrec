@@ -13,9 +13,14 @@ import {
 } from "./index";
 
 describe("app i18n", () => {
-  it("starts on the catalogue the legacy shell bundles eagerly", () => {
+  // The probe key is one the SHELL renders — the rail's first destination.
+  // It was `nav.home` until fase B, which was legacy copy nothing painted any
+  // more; the prune that removed 653 such keys took it, and this test went red
+  // for the right reason. A probe that outlives the string it probes is a test
+  // measuring the catalogue instead of the app.
+  it("starts on the catalogue the shell bundles eagerly", () => {
     expect(locale.value).toBe("no");
-    expect(t("nav.home")).toBe("Hjem");
+    expect(t("app.page.record")).toBe("Opptak");
   });
 
   it("offers only the two languages the redesign keeps translated", () => {
@@ -28,17 +33,17 @@ describe("app i18n", () => {
     // still re-runs when it changes. This is what a component gets for free.
     const seen: string[] = [];
     const dispose = effect(() => {
-      seen.push(t("nav.home"));
+      seen.push(t("app.page.record"));
     });
-    expect(seen).toEqual(["Hjem"]);
+    expect(seen).toEqual(["Opptak"]);
 
     await setLocale("en");
 
     expect(locale.value).toBe("en");
-    expect(t("nav.home")).toBe("Home");
+    expect(t("app.page.record")).toBe("Record");
     expect(seen, "the effect did not re-run on the language change").toEqual([
-      "Hjem",
-      "Home",
+      "Opptak",
+      "Record",
     ]);
     dispose();
   });
@@ -51,9 +56,9 @@ describe("app i18n", () => {
     const mismatches: string[] = [];
     const dispose = effect(() => {
       const lang = locale.value;
-      const home = t("nav.home");
-      const expected = lang === "en" ? "Home" : "Hjem";
-      if (home !== expected) mismatches.push(`${lang} → ${home}`);
+      const heading = t("app.page.record");
+      const expected = lang === "en" ? "Record" : "Opptak";
+      if (heading !== expected) mismatches.push(`${lang} → ${heading}`);
     });
     await setLocale("no");
     await setLocale("en");
@@ -65,7 +70,7 @@ describe("app i18n", () => {
   it("falls back to Norwegian for an unknown language, and says so", async () => {
     await setLocale("kv" as never);
     expect(locale.value).toBe("no");
-    expect(t("nav.home")).toBe("Hjem");
+    expect(t("app.page.record")).toBe("Opptak");
   });
 
   it("tf interpolates and tn picks the count-aware form", async () => {

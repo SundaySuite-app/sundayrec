@@ -108,8 +108,10 @@ jobs:
       #
       # De to gamle HTML-gatene (`check-i18n-fallbacks`, `check-i18n-hardcoded`)
       # er borte: begge målte `legacy/renderer/index.html`, som ikke finnes.
-      - name: i18n keys exist, in the form the call assumes
-        run: npm run i18n-keys
+      - name: i18n keys exist, and nothing dead is left behind
+        run: |
+          npm run i18n-keys
+          npm run i18n-keys:unused
 
       # i18n-hardkodingsgate for `app/`, baseline 0 fra dag én: skallet har
       # ingen gjeld å betale ned, hver streng skrives nå. Den ser prosa i

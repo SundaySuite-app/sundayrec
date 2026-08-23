@@ -29,6 +29,7 @@ step "frontend — vitest";              npm run test
 
 step "app version in sync";            npm run version-sync
 step "i18n nøkler finnes (app/)";      npm run i18n-keys
+step "i18n ingen døde nøkler";         npm run i18n-keys:unused
 step "i18n hardkoding 0 (app/)";       npm run i18n-hardcoded-tsx
 step "i18n flertallsgrupper";          npm run i18n-plurals
 step "farger kun via tokens (app/)"; npm run css-tokens
