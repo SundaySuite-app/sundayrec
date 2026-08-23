@@ -500,7 +500,7 @@ async fn run_scheduled_preflight(app: &AppHandle, pool: &SqlitePool, settings: &
 
 /// A missed scheduled recording, surfaced to the UI.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/MissedRecordingInfo.ts")]
+#[ts(export, export_to = "MissedRecordingInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct MissedRecordingInfo {
     /// ISO-like local start time the recording was supposed to begin.
@@ -623,7 +623,7 @@ async fn recording_history_local(pool: &SqlitePool) -> Vec<NaiveDateTime> {
 /// The scheduler snapshot the UI renders: the next start and the next 14 days
 /// of starts (ISO-like local strings).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/ScheduleStatus.ts")]
+#[ts(export, export_to = "ScheduleStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleStatus {
     pub next: Option<String>,

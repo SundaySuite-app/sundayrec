@@ -81,7 +81,7 @@ use win_timer::{plan_wake_timers, WaitableTimers};
 
 /// The outcome of an OS wake-scheduling attempt. Mirrors the Electron `WakeResult`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeResult.ts")]
+#[ts(export, export_to = "WakeResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeResult {
     pub ok: bool,
@@ -116,7 +116,7 @@ impl WakeResult {
 
 /// One OS-observed wake, for the verification panel.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/ObservedWake.ts")]
+#[ts(export, export_to = "ObservedWake.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ObservedWake {
     pub scheduled_at: String,
@@ -131,7 +131,7 @@ pub struct ObservedWake {
 /// embed produces a broken relative import path; commands returning core types
 /// separately are the codebase convention).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeStatus.ts")]
+#[ts(export, export_to = "WakeStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeStatus {
     pub expected_wakes: Vec<String>,
@@ -143,7 +143,7 @@ pub struct WakeStatus {
 
 /// Result of a "fix sleep settings" action.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/WakeFixResult.ts")]
+#[ts(export, export_to = "WakeFixResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFixResult {
     pub ok: bool,
@@ -369,7 +369,7 @@ fn schedule_windows(
 /// `testWake`'s return: on success a `jobId` the renderer can cancel, plus the
 /// scheduled wall-clock time the resume handler will compare against.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/TestWakeResult.ts")]
+#[ts(export, export_to = "TestWakeResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TestWakeResult {
     pub ok: bool,

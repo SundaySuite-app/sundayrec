@@ -28,7 +28,7 @@ use crate::selftest::RecordingTelemetry;
 /// keys) are intentionally absent — see the module docs: the report cannot leak
 /// what the type cannot hold.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SettingsSummary.ts")]
+#[ts(export, export_to = "SettingsSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsSummary {
     pub language: Option<String>,
@@ -90,7 +90,7 @@ fn serde_plain_tag<T: Serialize>(v: &T) -> String {
 /// Everything the `src-tauri` layer gathered, ready to be formatted. No secrets
 /// can appear here (see [`SettingsSummary`] / module docs).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticsInput.ts")]
+#[ts(export, export_to = "DiagnosticsInput.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticsInput {
     /// App semver (e.g. `"0.1.0"`).
@@ -178,7 +178,7 @@ pub struct DiagnosticsInput {
 /// What the crash ring holds — count + newest, not the records themselves. The
 /// report is a page a person reads, not a stack-trace archive.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashSummary.ts")]
+#[ts(export, export_to = "CrashSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CrashSummary {
     pub count: usize,
@@ -191,7 +191,7 @@ pub struct CrashSummary {
 
 /// Supervised long-lived tasks that died and were restarted (E2.2).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/TaskRestartSummary.ts")]
+#[ts(export, export_to = "TaskRestartSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TaskRestartSummary {
     pub count: usize,
@@ -204,7 +204,7 @@ pub struct TaskRestartSummary {
 
 /// The rotating file log's state (E2.3).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/LogFileInfo.ts")]
+#[ts(export, export_to = "LogFileInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct LogFileInfo {
     /// Absolute path to the live log file.
@@ -222,7 +222,7 @@ pub struct LogFileInfo {
 /// the recorder on a classified failure). Lets the diagnose tool explain what
 /// stopped the previous recording even though it can't see in-process events.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/LastErrorInfo.ts")]
+#[ts(export, export_to = "LastErrorInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct LastErrorInfo {
     pub code: String,
@@ -232,7 +232,7 @@ pub struct LastErrorInfo {
 
 /// Severity of a [`DiagnosticFinding`], driving the UI badge + the support triage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticSeverity.ts")]
+#[ts(export, export_to = "DiagnosticSeverity.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum DiagnosticSeverity {
     /// Healthy — informational confirmation.
@@ -251,7 +251,7 @@ pub enum DiagnosticSeverity {
 /// asked for. `detail` carries the specifics (device name, free GB, …) and `hint`
 /// the concrete next step.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/DiagnosticFinding.ts")]
+#[ts(export, export_to = "DiagnosticFinding.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticFinding {
     pub code: String,

@@ -94,7 +94,7 @@ pub async fn delete_setting(pool: &SqlitePool, key: &str) -> AppResult<()> {
 /// One recording-history row. `id`/`created_at` are assigned by
 /// [`insert_recording`] when omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingRow.ts")]
+#[ts(export, export_to = "RecordingRow.ts")]
 pub struct RecordingRow {
     pub id: String,
     pub file_path: String,

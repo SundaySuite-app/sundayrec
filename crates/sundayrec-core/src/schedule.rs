@@ -119,7 +119,7 @@ pub fn scheduled_max_minutes(slot_max: u32) -> u32 {
 /// A weekly recurring recording window. Mirrors the Electron `ScheduleSlot`
 /// (`types/index.ts:18`): `{ days: number[]; start: string; stop: string; max?: number }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ScheduleSlot.ts")]
+#[ts(export, export_to = "ScheduleSlot.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleSlot {
     /// Active weekdays, 0 = Monday … 6 = Sunday.
@@ -139,7 +139,7 @@ pub struct ScheduleSlot {
 /// A one-off dated recording. Mirrors the Electron `SpecialRecording`
 /// (`types/index.ts:25`): `{ id?; date; name; start; stop; deviceId? }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SpecialRecording.ts")]
+#[ts(export, export_to = "SpecialRecording.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SpecialRecording {
     /// Stable id (UI-generated), optional for older stored entries.

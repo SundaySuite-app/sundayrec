@@ -128,7 +128,7 @@ pub const MAX_SHADOW_OBSERVATIONS: usize = 20;
 /// rule the export counter follows — an unrecognised tag must never leak the
 /// string).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FeedbackSegmentKind.ts")]
+#[ts(export, export_to = "FeedbackSegmentKind.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FeedbackSegmentKind {
     Silence,
@@ -174,7 +174,7 @@ impl FeedbackSegmentKind {
 /// own: re-analysing a recording renumbers everything. The OFFSETS are the
 /// durable identity, which is why every consumer here matches on them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FeedbackSegment.ts")]
+#[ts(export, export_to = "FeedbackSegment.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackSegment {
     /// Position in the segment list at the time of the correction.
@@ -229,10 +229,7 @@ impl FeedbackSegment {
 /// identify WHO. Anyone extending this type inherits the rule, and cannot
 /// violate it without first deleting this paragraph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../src/lib/bindings/SermonPickCorrection.ts"
-)]
+#[ts(export, export_to = "SermonPickCorrection.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SermonPickCorrection {
     /// The block the detector picked. `None` when it found no sermon at all —
@@ -264,7 +261,7 @@ pub struct SermonPickCorrection {
 /// whole: two signed durations and a version string, no time of day, no name,
 /// no path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TrimAdjustment.ts")]
+#[ts(export, export_to = "TrimAdjustment.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TrimAdjustment {
     /// How far each boundary moved. Carried as the whole
@@ -310,7 +307,7 @@ pub struct TrimAdjustment {
 /// [`ShadowComparison`] any of the forbidden things could occupy, and anyone
 /// extending either inherits the rule.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ShadowObservation.ts")]
+#[ts(export, export_to = "ShadowObservation.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct ShadowObservation {
     /// How far apart the two pipelines ended up. Carried as the whole
@@ -333,7 +330,7 @@ pub struct ShadowObservation {
 /// takes "sermon" in the type name at face value will look for the trim
 /// adjustments somewhere else.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/RecordingFeedback.ts")]
+#[ts(export, export_to = "RecordingFeedback.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingFeedback {
     pub schema: u32,

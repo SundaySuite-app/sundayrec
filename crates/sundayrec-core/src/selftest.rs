@@ -208,7 +208,7 @@ pub const FAIL_XRUNS: u64 = 5;
 
 /// The facts the impure shell feeds in after running the capture + analysis.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestFacts.ts")]
+#[ts(export, export_to = "SelfTestFacts.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SelfTestFacts {
     /// The `-t N` duration we asked ffmpeg to capture.
@@ -234,7 +234,7 @@ pub struct SelfTestFacts {
 
 /// Pass/Warn/Fail.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestVerdict.ts")]
+#[ts(export, export_to = "SelfTestVerdict.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum SelfTestVerdict {
     Pass,
@@ -245,7 +245,7 @@ pub enum SelfTestVerdict {
 /// The self-test result: a verdict, the human reasons, and the flat numbers the
 /// diagnose report + the user paste verbatim.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/SelfTestReport.ts")]
+#[ts(export, export_to = "SelfTestReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SelfTestReport {
     /// `true` unless the verdict is `Fail` — i.e. capture works (possibly with a
@@ -424,7 +424,7 @@ pub fn selftest_verdict(f: &SelfTestFacts) -> SelfTestReport {
 ///   `measured_sec`** are summed by the engine per segment / per deliverable and
 ///   are likewise correct.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../../src/lib/bindings/RecordingTelemetry.ts")]
+#[ts(export, export_to = "RecordingTelemetry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingTelemetry {
     /// Frames ffmpeg DISCARDED across the whole session (an avfoundation/USB

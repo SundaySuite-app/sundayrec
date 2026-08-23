@@ -156,7 +156,7 @@ pub const NIL_INSTALL_ID: &str = "00000000-0000-0000-0000-000000000000";
 /// with no compile-time guarantee about its contents, so it is mapped here
 /// rather than forwarded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryOs.ts")]
+#[ts(export, export_to = "TelemetryOs.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryOs {
     Macos,
@@ -184,7 +184,7 @@ impl TelemetryOs {
 
 /// The CPU architecture, as a CLOSED set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryArch.ts")]
+#[ts(export, export_to = "TelemetryArch.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum TelemetryArch {
     #[serde(rename = "x86_64")]
@@ -212,7 +212,7 @@ impl TelemetryArch {
 /// What kind of crash-adjacent event a [`CrashReport`] describes. Mirrors the
 /// `src-tauri` crash ring's `kind` field, as a closed set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashKind.ts")]
+#[ts(export, export_to = "CrashKind.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum CrashKind {
     /// The process panic hook fired.
@@ -246,7 +246,7 @@ impl CrashKind {
 /// [`derive_reason_codes`] is a faithful re-reading of that function's decisions
 /// from the numbers it recorded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/QualityReason.ts")]
+#[ts(export, export_to = "QualityReason.ts")]
 #[serde(rename_all = "kebab-case")]
 pub enum QualityReason {
     /// The delivered file is below the "did anything land" size floor.
@@ -280,7 +280,7 @@ pub enum QualityReason {
 /// The wire strings are dotted namespaces (`area.thing.variant`) so the endpoint
 /// can aggregate by prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CounterName.ts")]
+#[ts(export, export_to = "CounterName.ts")]
 pub enum CounterName {
     // ── Recording ────────────────────────────────────────────────────────────
     /// A recording the operator started by hand.
@@ -796,7 +796,7 @@ pub fn telemetry_path(path: &std::path::Path) -> String {
 
 /// One crash-ring record, projected onto the wire.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CrashReport.ts")]
+#[ts(export, export_to = "CrashReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CrashReport {
     /// Which of the ring's three kinds this is.
@@ -826,7 +826,7 @@ pub struct CrashReport {
 /// engineer needs from a recording is whether the audio arrived, and these are
 /// the numbers that answer it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/QualityReport.ts")]
+#[ts(export, export_to = "QualityReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct QualityReport {
     /// Unix ms (UTC) the session ended.
@@ -877,7 +877,7 @@ pub struct QualityReport {
 /// to count how often each situation occurs across installs, which is the only
 /// question aggregate telemetry can honestly answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FindingReport.ts")]
+#[ts(export, export_to = "FindingReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct FindingReport {
     pub code: String,
@@ -890,7 +890,7 @@ pub struct FindingReport {
 /// "Gudstjeneste Nordstrand") and `scheduled_at` (a local ISO string carrying the
 /// congregation's service time) are both absent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureReport.ts")]
+#[ts(export, export_to = "WakeFailureReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFailureReport {
     pub kind: WakeFailureKind,
@@ -906,7 +906,7 @@ pub struct WakeFailureReport {
 
 /// One named counter and its value since the last successful send.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CounterReport.ts")]
+#[ts(export, export_to = "CounterReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CounterReport {
     pub name: CounterName,
@@ -935,7 +935,7 @@ pub struct CounterReport {
 /// free text — the `Church` variant says "this install names files after its
 /// congregation", never what that congregation is called.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WireSettings.ts")]
+#[ts(export, export_to = "WireSettings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WireSettings {
     pub channels: ChannelMode,
@@ -1038,7 +1038,7 @@ impl Default for WireSettings {
 /// calls (no backtraces, reason codes not sentences), and the controller /
 /// retention / anonymity terms this contract is one half of.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryPayload.ts")]
+#[ts(export, export_to = "TelemetryPayload.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryPayload {
     /// [`TELEMETRY_SCHEMA`] at build time.
@@ -1156,7 +1156,7 @@ impl TelemetryPayload {
 ///     the question is actually asking. An empty shell would be technically
 ///     accurate and tell them nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryPreview.ts")]
+#[ts(export, export_to = "TelemetryPreview.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryPreview {
     /// The payload, pretty-printed. The REAL one — not a mock, not a sample.

@@ -13,7 +13,7 @@ use crate::error::AppResult;
 /// One liturgical day in a month: its ISO date (`YYYY-MM-DD`) and the Norwegian
 /// feast name from [`sundayrec_core::church_calendar::liturgical_day_name`].
 #[derive(Debug, Clone, Serialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/LiturgicalDay.ts")]
+#[ts(export, export_to = "LiturgicalDay.ts")]
 pub struct LiturgicalDay {
     /// ISO date, `YYYY-MM-DD`.
     pub date: String,

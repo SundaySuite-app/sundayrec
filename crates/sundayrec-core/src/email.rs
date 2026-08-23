@@ -31,7 +31,7 @@ use ts_rs::TS;
 /// this build compiled the `email` feature in at all. Filled by the
 /// `src-tauri` shell from the cargo feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/EmailStatus.ts")]
+#[ts(export, export_to = "EmailStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EmailStatus {
     /// True when the binary was built with `--features email` (the send path is

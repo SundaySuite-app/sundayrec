@@ -160,7 +160,7 @@ pub fn ffmpeg_version() -> AppResult<String> {
 /// Result of probing the bundled ffmpeg — surfaced in the diagnostics UI so the
 /// user (and we, during development) can confirm the sidecar resolved.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/FfmpegHealth.ts")]
+#[ts(export, export_to = "FfmpegHealth.ts")]
 pub struct FfmpegHealth {
     /// Whether `ffmpeg -version` ran successfully.
     pub available: bool,

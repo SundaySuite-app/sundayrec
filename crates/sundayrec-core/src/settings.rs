@@ -37,7 +37,7 @@ use crate::schedule::{ScheduleSlot, SpecialRecording};
 /// (`'stereo' | 'monoL' | 'monoR' | 'monoMix'`, see `types/index.ts:1`), so the
 /// tags are camelCase — NOT snake_case — to match stored/exported settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ChannelMode.ts")]
+#[ts(export, export_to = "ChannelMode.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum ChannelMode {
     /// Both channels, stereo.
@@ -56,7 +56,7 @@ pub enum ChannelMode {
 /// audio). The explicit rates force that rate via `-ar`. Serialised camelCase
 /// (`"auto" | "r44100" | "r48000" | "r96000"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SampleRate.ts")]
+#[ts(export, export_to = "SampleRate.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum SampleRate {
     /// Capture at the device's native rate (omit `-ar`).
@@ -72,7 +72,7 @@ pub enum SampleRate {
 /// Output audio container/codec. Serialised lowercase to match the Electron
 /// union (`'mp3' | 'wav' | 'flac' | 'aac'`, see `types/index.ts:2`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FileFormat.ts")]
+#[ts(export, export_to = "FileFormat.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FileFormat {
     Mp3,
@@ -85,7 +85,7 @@ pub enum FileFormat {
 /// Electron union (`'date' | 'church' | 'plain' | 'datetime'`,
 /// see `types/index.ts:3`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FilenamePattern.ts")]
+#[ts(export, export_to = "FilenamePattern.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum FilenamePattern {
     /// Date only (the Electron default).
@@ -103,7 +103,7 @@ pub enum FilenamePattern {
 /// (`/v1/update/{channel}`, see [`crate::update::channel_feed_url`]), so a
 /// renamed variant is a renamed live URL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/UpdateChannel.ts")]
+#[ts(export, export_to = "UpdateChannel.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum UpdateChannel {
     /// Versions that have already been through a real Sunday somewhere. Where
@@ -181,7 +181,7 @@ where
 /// the recorder reads are DERIVED from this map in [`Settings::validate`].
 /// Serialised camelCase to match the Electron `DeviceChannels`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/DeviceChannels.ts")]
+#[ts(export, export_to = "DeviceChannels.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceChannels {
     /// 0-based device channel routed to the LEFT output. Clamped 0..=31.
@@ -199,7 +199,7 @@ pub struct DeviceChannels {
 /// `store.get(key, default)` semantics, see [`Settings::from_json_merged`].
 /// Numeric ranges are enforced separately by [`Settings::validate`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/Settings.ts")]
+#[ts(export, export_to = "Settings.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     // ── System ──────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ use ts_rs::TS;
 /// How serious a finding is. Serialised lowercase to match the Electron
 /// `'warn' | 'error'` union (`preflight.ts:21`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PreflightSeverity.ts")]
+#[ts(export, export_to = "PreflightSeverity.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum PreflightSeverity {
     /// The recording can still proceed, but something is off.
@@ -36,7 +36,7 @@ pub enum PreflightSeverity {
 /// wake-from-sleep) and are not raised by the F2.2 plumbing yet — they exist so
 /// the type already matches Electron.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PreflightCategory.ts")]
+#[ts(export, export_to = "PreflightCategory.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum PreflightCategory {
     /// Pre-roll buffer readiness (Fase 5).
@@ -52,7 +52,7 @@ pub enum PreflightCategory {
 /// A single thing the preflight check found. Mirrors the Electron
 /// `PreflightFinding` interface field-for-field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PreflightFinding.ts")]
+#[ts(export, export_to = "PreflightFinding.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PreflightFinding {
     pub severity: PreflightSeverity,

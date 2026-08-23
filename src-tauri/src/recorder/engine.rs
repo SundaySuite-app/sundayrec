@@ -144,7 +144,7 @@ pub const QUALITY_EVENT: &str = "recording://quality";
 /// Payload for [`FINISHED_EVENT`] — where the finished recording landed, so the
 /// UI's "open in editor" action can load it straight into the editor.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingFinished.ts")]
+#[ts(export, export_to = "RecordingFinished.ts")]
 pub struct RecordingFinished {
     /// Absolute path to the finished recording file.
     pub file_path: String,
@@ -154,7 +154,7 @@ pub struct RecordingFinished {
 
 /// Options for [`RecorderEngine::start`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingOpts.ts")]
+#[ts(export, export_to = "RecordingOpts.ts")]
 pub struct RecordingOpts {
     /// Stored microphone/mixer name to fuzzy-match against the enumerated audio
     /// devices. Empty → first/default device.
@@ -219,7 +219,7 @@ pub struct RecordingOpts {
 
 /// A progress heartbeat sent to the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingProgress.ts")]
+#[ts(export, export_to = "RecordingProgress.ts")]
 pub struct RecordingProgress {
     /// Total bytes ffmpeg has written to the current segment so far.
     #[ts(type = "number")]
@@ -233,7 +233,7 @@ pub struct RecordingProgress {
 /// Field names mirror [`RecordingProgress`] (no serde rename) → the generated TS
 /// binding is `peak_db_left` / `peak_db_right`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingLevels.ts")]
+#[ts(export, export_to = "RecordingLevels.ts")]
 pub struct RecordingLevels {
     /// Peak level (dBFS) of the left / only channel.
     pub peak_db_left: f64,
@@ -252,7 +252,7 @@ impl From<ChannelLevels> for RecordingLevels {
 
 /// A classified recorder error / silence / reconnect notice sent to the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecordingEvent.ts")]
+#[ts(export, export_to = "RecordingEvent.ts")]
 pub struct RecordingEvent {
     /// Stable code the UI localises (snake_case, e.g. `device_disconnected`,
     /// `stuck_recording`, `silence_detected`).
@@ -264,7 +264,7 @@ pub struct RecordingEvent {
 /// The `recording://state` payload — the current [`RecorderState`] plus the
 /// reconnect attempt count so the UI can show "reconnecting (3/20)".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/RecorderStatePayload.ts")]
+#[ts(export, export_to = "RecorderStatePayload.ts")]
 pub struct RecorderStatePayload {
     /// The lifecycle state.
     pub state: RecorderState,

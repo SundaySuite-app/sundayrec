@@ -93,7 +93,7 @@ pub async fn list_video_devices() -> AppResult<Vec<FfmpegDevice>> {
 /// What a camera can actually capture, for gating the resolution/fps UI to modes
 /// the device advertises (mirror of [`sundayrec_core::capture::CameraCapabilities`]).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS, PartialEq, Eq)]
-#[ts(export, export_to = "../../src/lib/bindings/CameraCapabilities.ts")]
+#[ts(export, export_to = "CameraCapabilities.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CameraCapabilities {
     pub max_width: u32,

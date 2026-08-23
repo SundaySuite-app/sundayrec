@@ -51,7 +51,7 @@ use crate::reconnect::{reconnect_delay, reconnect_verdict, ReconnectVerdict};
 ///
 /// Serialised `snake_case` to match the renderer's localisation switch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/RecorderState.ts")]
+#[ts(export, export_to = "RecorderState.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum RecorderState {
     /// Nothing running. The initial and terminal-after-stop neutral state is

@@ -41,7 +41,7 @@ use crate::audio_analysis::{AnalysisSegment, FrameScorer, ScoringInput};
 /// A keep-range (sermon bounds) — the span the detector proposes to trim to,
 /// and the unit the trim-feedback + local-adaptivity modules measure in.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SuggestedTrim.ts")]
+#[ts(export, export_to = "SuggestedTrim.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SuggestedTrim {
     pub start_sec: f64,
@@ -75,7 +75,7 @@ use crate::tuning::{
 /// The kind of an analysis segment. Serialised lowercase to match the Electron
 /// `SegmentType` strings (`'silence' | 'speech' | 'music' | 'mixed' | 'unknown'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SegmentType.ts")]
+#[ts(export, export_to = "SegmentType.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum SegmentType {
     Silence,
@@ -96,7 +96,7 @@ pub enum SegmentType {
 /// camelCase on the wire, mirroring the renderer type, which is itself the mirror
 /// of `audio-analysis.ts` `AnalysisSegment`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/PrepAnalysisSegment.ts")]
+#[ts(export, export_to = "PrepAnalysisSegment.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PrepAnalysisSegment {
     pub start_sec: f64,

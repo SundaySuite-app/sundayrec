@@ -21,7 +21,7 @@ use ts_rs::TS;
 
 /// The two events we extract from ffmpeg's `silencedetect` stderr output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SilenceEvent.ts")]
+#[ts(export, export_to = "SilenceEvent.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum SilenceEvent {
     /// A `silence_start` marker — a silent stretch has begun.
@@ -49,7 +49,7 @@ impl SilenceEvent {
 /// timer or cancelling a non-existent one is never emitted — the watcher
 /// tracks that itself, so the host can act on these naively.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SilenceAction.ts")]
+#[ts(export, export_to = "SilenceAction.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum SilenceAction {
     /// Start the stop-on-silence timer (fires `onStopSilence` after the

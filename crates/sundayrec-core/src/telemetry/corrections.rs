@@ -100,7 +100,7 @@ pub const CORRECTION_BAND_EDGES_SEC: [f64; 4] = [15.0, 30.0, 60.0, 120.0];
 /// correction says the block was right and the boundaries were not. Averaging
 /// them together would produce a number that describes neither failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionSignal.ts")]
+#[ts(export, export_to = "CorrectionSignal.ts")]
 pub enum CorrectionSignal {
     /// The review trim's start boundary, dragged away from where the analysis
     /// proposed it.
@@ -154,7 +154,7 @@ impl CorrectionSignal {
 /// invisible: the counts stay plausible, the tests stay green, and the tuning
 /// stage learns the opposite of what happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionDirection.ts")]
+#[ts(export, export_to = "CorrectionDirection.ts")]
 #[serde(rename_all = "lowercase")]
 pub enum CorrectionDirection {
     /// Moved toward the start of the recording. For a start boundary this means
@@ -192,7 +192,7 @@ impl CorrectionDirection {
 /// [`CORRECTION_BAND_EDGES_SEC`] for the boundaries and the module docs for why
 /// they are these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionBand.ts")]
+#[ts(export, export_to = "CorrectionBand.ts")]
 pub enum CorrectionBand {
     /// A nudge. Everything from the point a drag stops being round-trip noise
     /// ([`UNCHANGED_TOLERANCE_SEC`]) up to 15 s.
@@ -299,7 +299,7 @@ impl CorrectionKey {
 /// Three closed enums and a count. There is no field here for a duration, a
 /// timestamp, a name or a path — see the module docs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/CorrectionReport.ts")]
+#[ts(export, export_to = "CorrectionReport.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct CorrectionReport {
     pub signal: CorrectionSignal,

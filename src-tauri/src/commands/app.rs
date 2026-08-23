@@ -10,7 +10,7 @@ use crate::error::AppResult;
 /// Identity of the running backend — surfaced on the home screen so the user
 /// (and we, during development) can confirm the IPC bridge is live.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/AppInfo.ts")]
+#[ts(export, export_to = "AppInfo.ts")]
 pub struct AppInfo {
     /// Product name.
     pub name: String,

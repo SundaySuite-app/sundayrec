@@ -484,7 +484,7 @@ pub fn recording_cancel_autostop(engine: State<'_, RecorderEngine>) -> AppResult
 /// `fs4` cross-platform probe (already a dep, used by preflight) instead of
 /// shelling out to `df`/`powershell`. Fully testable — no device, no ffmpeg.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../src/lib/bindings/DiskSpace.ts")]
+#[ts(export, export_to = "DiskSpace.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct DiskSpace {
     /// Free space in bytes, or `null` when unavailable.

@@ -701,7 +701,7 @@ pub struct Chapter {
 /// Rust export path reads the sidecar as opaque JSON and never deserialises
 /// this directly.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ChapterMarker.ts")]
+#[ts(export, export_to = "ChapterMarker.ts")]
 pub struct ChapterMarker {
     #[ts(type = "number")]
     pub time: i64,

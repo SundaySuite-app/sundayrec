@@ -36,7 +36,7 @@ use ts_rs::TS;
 /// unit-tested without spawning ffmpeg.
 // mirrors src/main/ipc/audio-devices.ts diagnose-audio
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS, Default)]
-#[ts(export, export_to = "../../../src/lib/bindings/AudioDiagnostics.ts")]
+#[ts(export, export_to = "AudioDiagnostics.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct AudioDiagnostics {
     /// DirectShow (Windows) / avfoundation (macOS) audio-input device names.

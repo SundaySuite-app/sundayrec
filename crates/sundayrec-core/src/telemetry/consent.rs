@@ -100,7 +100,7 @@ impl ConsentRecord {
 
 /// The three states the UI has to tell apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/ConsentStatus.ts")]
+#[ts(export, export_to = "ConsentStatus.ts")]
 #[serde(rename_all = "kebab-case")]
 pub enum ConsentStatus {
     /// No answer has ever been recorded. NOT the same as "no" — see the module
@@ -119,7 +119,7 @@ pub enum ConsentStatus {
 /// derived questions callers actually ask, computed here so no caller has to
 /// re-implement the "a stale grant is not a grant" rule and get it subtly wrong.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/TelemetryConsent.ts")]
+#[ts(export, export_to = "TelemetryConsent.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryConsent {
     pub status: ConsentStatus,

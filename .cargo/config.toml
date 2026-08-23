@@ -11,3 +11,32 @@
 [env]
 MACOSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }
 CMAKE_OSX_DEPLOYMENT_TARGET = { value = "10.15", force = true }
+
+# ── ts-rs: ONE export directory, whoever is compiling ────────────────────────
+#
+# ts-rs resolves `#[ts(export_to = …)]` as
+# `current_dir().join(TS_RS_EXPORT_DIR).join(export_to)` (ts-rs 12.0.1,
+# `src/export.rs::export_into` + `src/export/path.rs::absolute`), and the
+# default export dir is the RELATIVE `./bindings`. The current dir of a
+# `cargo test` binary is its own package root, so a relative `export_to` meant
+# a different anchor per package — and a THIRD one for the same type depending
+# on which package exported it.
+#
+# That third case was a real bug: ts-rs exports a type's dependencies too
+# (`export_all_into`), so `cargo test -p sundayrec export_bindings` wrote the
+# `sundayrec-core` types it references (ChannelMode, RecorderState, …) with
+# core's `../../../…` prefix but src-tauri's current dir — landing them in
+# `<repo>/../src/lib/bindings`, i.e. OUTSIDE the checkout, where no gate,
+# no `clean-bindings.mjs` and no `.gitignore` could see them. A stale
+# `ImageFormat.ts` had been rotting there since 10 Aug.
+#
+# An ABSOLUTE base kills the whole class: `relative = true` makes cargo resolve
+# the value against the directory holding this `.cargo/` (the repo root), and
+# every `export_to` is now a bare file name, so the export lands in the same
+# directory no matter which package's test wrote it or where cargo was invoked.
+# `force = true` for the same reason as above — the generated set must be a pure
+# function of the source, not of the shell that happened to run the test.
+#
+# Keep in step with `scripts/clean-bindings.mjs` and `scripts/sync-bindings.mjs`
+# (both anchored at `<repo>/src/lib/bindings`), and with `.gitignore`.
+TS_RS_EXPORT_DIR = { value = "src/lib/bindings", force = true, relative = true }

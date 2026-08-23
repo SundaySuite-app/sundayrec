@@ -61,7 +61,7 @@ use sundayrec_core::detect::Detection;
 /// What a load-probe resolved about a recording, for the editor's first paint.
 /// The renderer-facing mirror of [`sundayrec_core::editor::ProbeResult`].
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMediaInfo.ts")]
+#[ts(export, export_to = "EditorMediaInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMediaInfo {
     pub duration_sec: f64,
@@ -79,7 +79,7 @@ pub struct EditorMediaInfo {
 /// renderer's `<audio>.duration` can lie on VBR) and only falls back to
 /// `peaks.len() / 100` when the probe came up empty.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorPeaks.ts")]
+#[ts(export, export_to = "EditorPeaks.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorPeaks {
     /// Max-abs amplitude per bucket, 0..1, at 100 buckets per second
@@ -94,7 +94,7 @@ pub struct EditorPeaks {
 /// `SegmentType` lowercase strings (or `"sermon"` for the promoted block), the
 /// same shape `detectSegments` returned to the Electron renderer.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorSegment.ts")]
+#[ts(export, export_to = "EditorSegment.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorSegment {
     pub start: f64,
@@ -134,7 +134,7 @@ pub struct EditorSegment {
 /// The measured loudness the mastering UI shows before/after a preset, mirroring
 /// the pass-1 `loudnorm` JSON the Electron mastering flow surfaced.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorLoudness.ts")]
+#[ts(export, export_to = "EditorLoudness.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorLoudness {
     /// Measured integrated loudness (LUFS).
@@ -171,7 +171,7 @@ impl EditorLoudness {
 /// A cut region (seconds) the renderer marked to remove. Mirrors the Electron
 /// `CutRegion`; converted to [`sundayrec_core::editor::CutRegion`] in the seam.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorCutRegion.ts")]
+#[ts(export, export_to = "EditorCutRegion.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorCutRegion {
     pub start: f64,
@@ -183,7 +183,7 @@ pub struct EditorCutRegion {
 /// subset of the Electron `EditorExportParams` the editor UI sent (mp4 video
 /// re-encode aside).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportRequest.ts")]
+#[ts(export, export_to = "EditorExportRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportRequest {
     pub input_path: String,
@@ -242,7 +242,7 @@ pub struct EditorExportRequest {
 /// `none|swapLr|duplicateLeft|duplicateRight|monoMix|gainDb`; `leftDb`/`rightDb`
 /// are only read for `gainDb`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChannelRepair.ts")]
+#[ts(export, export_to = "EditorChannelRepair.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorChannelRepair {
     pub mode: String,
@@ -275,7 +275,7 @@ impl EditorChannelRepair {
 
 /// One parametric EQ band (mirror of [`sundayrec_core::processing::EqBand`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorEqBand.ts")]
+#[ts(export, export_to = "EditorEqBand.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorEqBand {
     pub freq_hz: u32,
@@ -288,7 +288,7 @@ pub struct EditorEqBand {
 /// toggleable; `serde(default)` lets the renderer send a partial object. When an
 /// export carries this it overrides any `vocalChainPreset`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorProcessing.ts")]
+#[ts(export, export_to = "EditorProcessing.ts")]
 #[serde(rename_all = "camelCase", default)]
 pub struct EditorProcessing {
     pub channel_repair: Option<EditorChannelRepair>,
@@ -415,7 +415,7 @@ impl EditorProcessing {
 /// [`sundayrec_core::processing::ChannelDiagnosis`] plus the measured peaks and a
 /// ready-to-apply [`EditorChannelRepair`]).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorChannelDiagnosis.ts")]
+#[ts(export, export_to = "EditorChannelDiagnosis.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorChannelDiagnosis {
     /// `balanced|imbalance|dead_left|dead_right|both_dead|mono`.
@@ -432,7 +432,7 @@ pub struct EditorChannelDiagnosis {
 /// vocal-chain + mastering presets to apply for the best out-of-the-box result.
 /// The renderer applies these to its export settings in a single click.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorAutoProcess.ts")]
+#[ts(export, export_to = "EditorAutoProcess.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorAutoProcess {
     /// The channel-balance analysis + recommended repair.
@@ -453,7 +453,7 @@ pub struct EditorAutoProcess {
 /// [`sundayrec_core::mastering::MasterPreset`]). The renderer renders `label`/
 /// `description` and applies by `id`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMasterPreset.ts")]
+#[ts(export, export_to = "EditorMasterPreset.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreset {
     pub id: String,
@@ -484,7 +484,7 @@ pub fn master_presets() -> Vec<EditorMasterPreset> {
 
 /// The outcome of an export: where the file landed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportResult.ts")]
+#[ts(export, export_to = "EditorExportResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportResult {
     pub output_path: String,
@@ -493,7 +493,7 @@ pub struct EditorExportResult {
 /// Which sidecar a read/write/delete targets, mirroring the Electron suffixes.
 /// Maps 1:1 to [`sundayrec_core::editor::Sidecar`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq, Eq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorSidecar.ts")]
+#[ts(export, export_to = "EditorSidecar.ts")]
 #[serde(rename_all = "camelCase")]
 pub enum EditorSidecar {
     Meta,
@@ -528,7 +528,7 @@ impl From<EditorSidecar> for sundayrec_core::editor::Sidecar {
 /// has_audio so the renderer can choose the audio-only vs video editor layout.
 /// Mirrors the Electron `editor-probe-streams` `MediaStreamInfo`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorStreamInfo.ts")]
+#[ts(export, export_to = "EditorStreamInfo.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorStreamInfo {
     pub has_video: bool,
@@ -539,7 +539,7 @@ pub struct EditorStreamInfo {
 /// bytes inline, or it is over the 100 MB limit and the renderer must stream it
 /// via the peaks-extract path. Mirrors the `{ tooLarge, size }` shape.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorFileRead.ts")]
+#[ts(export, export_to = "EditorFileRead.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorFileRead {
     /// Over the inline limit — the renderer should stream instead.
@@ -758,10 +758,7 @@ fn feedback_lock() -> std::sync::MutexGuard<'static, ()> {
 /// interpretable against the alternatives that existed, and the attention
 /// heuristics read the music/silence blocks the picker never offers.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorSermonPickRequest.ts"
-)]
+#[ts(export, export_to = "EditorSermonPickRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorSermonPickRequest {
     /// The segments as the UI had them WHEN THE CHOICE WAS MADE — i.e. before
@@ -1052,10 +1049,7 @@ pub fn cleanup_temp_files(folders: &[String]) -> usize {
 /// of `inputPath` through the preset's single-pass chain to a temp mp3 the
 /// renderer can `<audio>`-play A/B against the original. Mirrors `master-preview`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterPreviewRequest.ts"
-)]
+#[ts(export, export_to = "EditorMasterPreviewRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewRequest {
     pub input_path: String,
@@ -1066,10 +1060,7 @@ pub struct EditorMasterPreviewRequest {
 
 /// Where the rendered preview mp3 landed (a temp file the renderer plays).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterPreviewResult.ts"
-)]
+#[ts(export, export_to = "EditorMasterPreviewResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterPreviewResult {
     pub preview_path: String,
@@ -1085,10 +1076,7 @@ pub struct EditorMasterPreviewResult {
 /// full-length ffmpeg read of a 90-minute service for a byte-identical answer.
 /// Optional for back-compat — absent means "measure it yourself".
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterApplyRequest.ts"
-)]
+#[ts(export, export_to = "EditorMasterApplyRequest.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterApplyRequest {
     pub input_path: String,
@@ -1108,10 +1096,7 @@ pub struct EditorMasterApplyRequest {
 
 /// Where the mastered file landed.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(
-    export,
-    export_to = "../../src/lib/bindings/EditorMasterApplyResult.ts"
-)]
+#[ts(export, export_to = "EditorMasterApplyResult.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterApplyResult {
     pub output_path: String,
@@ -1120,7 +1105,7 @@ pub struct EditorMasterApplyResult {
 /// A mastering-apply progress tick, emitted on the `editor-master-progress`
 /// event. Mirrors the Electron `master-progress` `{ currentSec, totalSec }`.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorMasterProgress.ts")]
+#[ts(export, export_to = "EditorMasterProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorMasterProgress {
     pub job_id: String,
@@ -1168,7 +1153,7 @@ impl MasterEngine {
 /// is a stable CODE the renderer localises — `measuring` (mastering pass 1,
 /// which reports no percentage of its own) or `encoding` (the render).
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorExportProgress.ts")]
+#[ts(export, export_to = "EditorExportProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorExportProgress {
     pub pct: f32,
@@ -1190,7 +1175,7 @@ pub struct EditorExportProgress {
 /// `phase` field would be inventing a distinction the UI does not draw: each of
 /// these is a single pass, named by the surface that started it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq)]
-#[ts(export, export_to = "../../src/lib/bindings/EditorDecodeProgress.ts")]
+#[ts(export, export_to = "EditorDecodeProgress.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EditorDecodeProgress {
     pub fraction: f32,

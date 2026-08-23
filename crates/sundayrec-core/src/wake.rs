@@ -46,7 +46,7 @@ pub const BLOCKER_SOON_MS: i64 = 30 * 60_000;
 /// The host class for wake purposes. Serialised to the EXACT Electron
 /// `WakePlatform` strings (`'mac-arm' | 'mac-intel' | 'win' | 'linux' | 'other'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakePlatform.ts")]
+#[ts(export, export_to = "WakePlatform.ts")]
 #[serde(rename_all = "kebab-case")]
 pub enum WakePlatform {
     MacArm,
@@ -60,7 +60,7 @@ pub enum WakePlatform {
 /// Mirrors the Electron `WakeCapabilities`. The `knownIssues`/`recommendations`
 /// are user-facing Norwegian, ported verbatim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeCapabilities.ts")]
+#[ts(export, export_to = "WakeCapabilities.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeCapabilities {
     pub platform: WakePlatform,
@@ -348,7 +348,7 @@ pub const WAKE_FAILURE_MAX: usize = 20;
 /// The kind of wake outcome a [`WakeFailureEntry`] records. Serialised to the
 /// EXACT Electron strings (`'missed' | 'test_ok' | 'test_fail'`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureKind.ts")]
+#[ts(export, export_to = "WakeFailureKind.ts")]
 #[serde(rename_all = "snake_case")]
 pub enum WakeFailureKind {
     /// A scheduled recording's wake never produced a run.
@@ -362,7 +362,7 @@ pub enum WakeFailureKind {
 /// One wake-failure or test-wake outcome. Mirrors the renderer
 /// `WakeFailureEntry` (camelCase) field-for-field so saved rows carry across.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/WakeFailureEntry.ts")]
+#[ts(export, export_to = "WakeFailureEntry.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct WakeFailureEntry {
     /// Unix ms when the outcome was recorded.
@@ -595,7 +595,7 @@ pub fn compare_expected_to_observed(
 /// the Electron `SleepConfig`; every probe is optional so a partial read still
 /// renders. `wakeTimersEnabled` is Windows-only; the mac fields are macOS-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/SleepConfig.ts")]
+#[ts(export, export_to = "SleepConfig.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct SleepConfig {
     // mac

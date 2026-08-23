@@ -33,7 +33,7 @@ use ts_rs::TS;
 /// (`"avfoundation"` / `"dshow"`) and the optional avfoundation `index` are
 /// carried so the caller can build input args without a second lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/FfmpegDevice.ts")]
+#[ts(export, export_to = "FfmpegDevice.ts")]
 pub struct FfmpegDevice {
     /// Human-readable device name as ffmpeg reports it.
     pub name: String,

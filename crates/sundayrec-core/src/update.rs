@@ -63,7 +63,7 @@ pub fn channel_feed_url(base: &str, channel: UpdateChannel) -> String {
 /// pre-check resting state (the renderer shows the "click to check" hint);
 /// every other variant maps to an `update.<key>` i18n string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/UpdateStatus.ts")]
+#[ts(export, export_to = "UpdateStatus.ts")]
 #[serde(tag = "phase", rename_all = "camelCase")]
 pub enum UpdateStatus {
     /// No check has run yet (or the last one was cleared). Renderer shows the
