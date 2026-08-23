@@ -1,27 +1,25 @@
 /**
  * Tillegg — «Ta opp automatisk».
  *
- * ÉN ukentlig tid: dag, klokkeslett, varighet. Kalender, spesialopptak og
- * vekke-diagnostikk er Avansert (P1b) — de hører til den som allerede har
- * svart ja på dette spørsmålet.
+ * ÉN ukentlig tid: dag, klokkeslett, varighet. Flere tider, spesialopptak og
+ * vekkingen er Avansert — de hører til den som allerede har svart ja på dette
+ * spørsmålet. Lenken nederst på nivå 1 går dit.
  *
- * ## ⚠️ Av/på sletter tiden, og det er en eiersak
+ * ## Av/på sletter INGENTING lenger
  *
- * `Settings` har ingen `enabled`-flagg, verken på en slot eller på planen —
- * bakenden kjenner bare `slots: ScheduleSlot[]`, og en tom liste ER «av». Så
- * det er det bryteren skriver. Konsekvensen: slår du av, er tidspunktet borte
- * fra basen.
+ * P1a skrev dette ned som en eiersak: `Settings` hadde ikke noe sted å huske
+ * «armert», så en tom `slots`-liste var den eneste måten å stave «av» på — og
+ * bryteren måtte slette tidspunktet for å slå seg av. En bryter som kaster data
+ * den ikke viser.
  *
- * Skjermen demper det den kan uten å lyve om det:
+ * Eieren svarte, og P1b la til nøkkelen: `autoRecordEnabled`, med ÉN leser i
+ * bakenden (`Settings::active_slots`). «Av» skriver nå bare flagget; tiden blir
+ * stående i basen og kommer tilbake nøyaktig som den var — også etter en
+ * omstart, som en økt-hukommelse aldri kunne love.
  *
- *   • den siste planen huskes i ØKTEN (`remembered` under), så av-og-på-igjen
- *     før du lukker appen gir deg tiden tilbake,
- *   • har profilen FLERE tidspunkter, spør bryteren først og sier hvor mange
- *     som forsvinner — de er ikke synlige på denne skjermen, og en skjerm skal
- *     ikke slette data den ikke viser uten å nevne det.
- *
- * Å gjøre det ordentlig krever en ny nøkkel i Rust. Den legges ikke til fordi
- * en bryter gjerne vil oppføre seg penere — det er eierens valg.
+ * `default = true` i Rust, så en profil skrevet før feltet fantes fortsetter å
+ * ta opp. Det motsatte ville stille avvæpnet hver menighet som allerede hadde
+ * en søndagstid.
  *
  * ## «Start automatisk med maskinen» bor HER
  *
@@ -40,12 +38,12 @@
  * Skjer i `window.api.saveSettings` etter hver skrivning, som for alt annet.
  */
 
-import { signal } from "@preact/signals";
 import { useEffect, useState } from "preact/hooks";
 
 import type { ScheduleSlot } from "@lib/../bindings/ScheduleSlot";
 
 import { t, tDyn, tf } from "../../i18n";
+import { navigate } from "../../router/router";
 import { useDraftForm } from "../../settings/use-draft-form";
 import {
   patchSettings,
@@ -56,7 +54,6 @@ import {
 import { BoundToggle } from "../../ui/Bound/Bound";
 import { Button } from "../../ui/Button/Button";
 import { Card } from "../../ui/Card/Card";
-import { confirmDialog } from "../../ui/dialog";
 import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
@@ -64,6 +61,7 @@ import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
 import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import {
+  autoRecordOn,
   DEFAULT_PLAN,
   DURATION_CHOICES,
   planFromSlots,
@@ -73,21 +71,11 @@ import {
 } from "./schedule-core";
 import styles from "./setup.module.css";
 
-/**
- * Planen som sto her sist den ble slått av — for DENNE økten.
- *
- * Et modulnivå-signal og ikke en innstilling: det er ikke noe vi lover å huske
- * over en omstart, og en nøkkel i Rust for å kunne love det er en beslutning
- * eieren tar (se toppen av fila). Å huske det i økten koster ingenting og gjør
- * det vanligste feiltrykket ufarlig.
- */
-const remembered = signal<WeeklyPlan | null>(null);
-
 export function AutoRecordCard() {
   const s = settings.value;
   const slots = s.slots ?? [];
   const plan = planFromSlots(slots);
-  const on = plan !== null;
+  const on = autoRecordOn(s);
   const [receipt, setReceipt] = useState<ReceiptState>("idle");
   const [busy, setBusy] = useState(false);
 
@@ -95,11 +83,16 @@ export function AutoRecordCard() {
     void syncLaunchAtLoginFromOs();
   }, []);
 
-  async function write(nextSlots: ScheduleSlot[]): Promise<boolean> {
-    patchSettings({ slots: nextSlots });
+  /** Skriv, og rull tilbake HELE endringen hvis basen sa nei. */
+  async function write(patch: {
+    autoRecordEnabled?: boolean;
+    slots?: ScheduleSlot[];
+  }): Promise<boolean> {
+    const before = { autoRecordEnabled: s.autoRecordEnabled, slots };
+    patchSettings(patch);
     const ok = await saveSettingsDebounced(120);
     if (!ok) {
-      patchSettings({ slots });
+      patchSettings(before);
       toast("error", t("general.saveFailed"));
     }
     return ok;
@@ -110,30 +103,16 @@ export function AutoRecordCard() {
     setBusy(true);
     setReceipt("saving");
     try {
-      if (next) {
-        const restored = remembered.peek() ?? DEFAULT_PLAN;
-        setReceipt(
-          (await write(slotsFromPlan(restored, slots))) ? "saved" : "failed",
-        );
-        return;
-      }
-      // Av. Flere tidspunkter enn det ene nivå 1 viser ⇒ spør først, med
-      // antallet i spørsmålet.
-      if (slots.length > 1) {
-        const ok = await confirmDialog({
-          title: t("app.setup.auto.offTitle"),
-          message: tf("app.setup.auto.offBody", { n: slots.length }),
-          confirmLabel: t("app.setup.auto.offConfirm"),
-          cancelLabel: t("app.setup.cancel"),
-          danger: true,
-        });
-        if (!ok) {
-          setReceipt("idle");
-          return;
-        }
-      }
-      if (plan) remembered.value = plan;
-      setReceipt((await write([])) ? "saved" : "failed");
+      // PÅ: arm flagget, og gi profilen en tid hvis den ikke har noen. En
+      // profil som HAR tider beholder dem nøyaktig som de sto.
+      // AV: bare flagget. Ingen dialog, fordi ingenting forsvinner.
+      const ok = next
+        ? await write({
+            autoRecordEnabled: true,
+            slots: slots.length ? slots : slotsFromPlan(DEFAULT_PLAN, slots),
+          })
+        : await write({ autoRecordEnabled: false });
+      setReceipt(ok ? "saved" : "failed");
     } finally {
       setBusy(false);
     }
@@ -154,7 +133,7 @@ export function AutoRecordCard() {
             {t("app.setup.auto.title")}
           </div>
           <div data-testid="setup-auto-summary" class={styles.addonSummary}>
-            {plan
+            {on && plan
               ? tf("app.setup.auto.summary", {
                   day: tDyn("app.setup.days", String(plan.day)),
                   start: plan.start,
@@ -166,7 +145,7 @@ export function AutoRecordCard() {
         <Receipt state={receipt} testId="setup-auto-receipt" />
       </div>
 
-      {plan ? (
+      {on && plan ? (
         <div class={styles.addonBody}>
           <PlanEditor plan={plan} slots={slots} />
           {slots.length > 1 ? (
@@ -180,6 +159,17 @@ export function AutoRecordCard() {
             description={t("app.setup.auto.launchDesc")}
             testId="auto-launch"
           />
+          <div class={styles.footer}>
+            <Button
+              variant="ghost"
+              testId="setup-auto-advanced"
+              onClick={() =>
+                navigate("setup", { tab: "advanced", anchor: "schedule" })
+              }
+            >
+              {t("app.setup.advanced.schedTitle")}
+            </Button>
+          </div>
         </div>
       ) : null}
     </Card>

@@ -54,6 +54,7 @@ import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
 import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import { notifyGateStatus } from "./decisions-core";
+import { autoRecordOn } from "./schedule-core";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
@@ -101,7 +102,9 @@ export function NotifyPage() {
   });
 
   const reminder = useSetting("reminderMinutes", { kind: "select" });
-  const autoOn = (s.slots ?? []).length > 0;
+  // Flagget OG en tid — en påminnelse før et opptak som ikke er armert er en
+  // beskjed om noe som ikke skal skje.
+  const autoOn = autoRecordOn(s);
 
   return (
     <SubPage lede={t("app.setup.notify.lede")} testId="setup-notify">

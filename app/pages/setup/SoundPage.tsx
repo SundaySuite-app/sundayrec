@@ -238,6 +238,20 @@ export function SoundPage() {
       </Card>
 
       <div class={styles.footer}>
+        {/*
+          «Avansert lyd» — opptaksmotoren og forhåndsbufferen. P1a lot den være
+          ute fordi Avansert ikke fantes; nå gjør den det, og lenken lander på
+          raden den handler om i stedet for på toppen av en lang liste.
+        */}
+        <Button
+          variant="ghost"
+          testId="sound-advanced"
+          onClick={() =>
+            navigate("setup", { tab: "advanced", anchor: "engine" })
+          }
+        >
+          {t("app.setup.advanced.soundLink")}
+        </Button>
         <Receipt state={receipt} testId="sound-receipt" />
         <Button
           variant="primary"
