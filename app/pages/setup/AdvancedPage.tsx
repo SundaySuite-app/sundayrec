@@ -8,10 +8,18 @@
  *
  * ## Hva som IKKE er her, og hvorfor
  *
- * - **«Spør om redigering etter opptak», «Beskytt opptak», «Oppdater
- *   automatisk», «Start med maskinen»** — de fire uten bakendleser (ATLAS
- *   §2.6). «Start med maskinen» bor på nivå 1 inne i «Ta opp automatisk», der
- *   den betyr noe; de tre andre er ute.
+ * - **«Spør om redigering etter opptak», «Beskytt opptak», «Start med
+ *   maskinen»** — tre av de fire uten bakendleser (ATLAS §2.6). «Start med
+ *   maskinen» bor på nivå 1 inne i «Ta opp automatisk», der den betyr noe; de
+ *   to andre er ute.
+ *
+ *   ⚠️ Den fjerde, **«Oppdater automatisk»**, kom TILBAKE i P3 — sammen med
+ *   timeren som gjør den til noe. Den har ingen leser i Rust fordi det er
+ *   renderen som eier den timesvise sjekken, og PRIVACY.md lover at den kan
+ *   slås av: «Slår du den av, tar appen ikke kontakt med serveren — verken ved
+ *   oppstart eller den vanlige sjekken hver time.» En bryter uten timer og en
+ *   timer uten bryter er begge et brutt løfte, så de hører sammen. Se
+ *   `app/state/auto-update.ts`.
  * - **`prerollEnabled`** — også uten bakendleser. Sekundene ER bryteren nå (se
  *   `app/state/preroll.ts`), så to kontroller for én ting er blitt én.
  * - **`silenceThreshold` (dBFS)** — Rust leser den, men −50 dBFS er ikke et
@@ -116,11 +124,32 @@ export function AdvancedPage() {
           testId="adv-maxlen"
         />
         <SplitRows />
-        <AutoDeleteRows />
+        {/*
+          Bibliotekets bunnlinje lenker hit («Slettes automatisk etter 90 dager
+          · Endre»), og `AdvancedPage` ruller til `route.anchor`. Ankeret er en
+          bar `id` og ikke et `Card`-anker, fordi radene deler kort med resten
+          av opptaksinnstillingene — et andre kort bare for å ha et anker ville
+          delt en liste canvasen viser som én.
+        */}
+        <div id="autodelete">
+          <AutoDeleteRows />
+        </div>
       </Card>
 
       <Card testId="advanced-system">
         <TelemetryRow />
+        {/*
+          Bryteren FØR raden den styrer: «Oppdater automatisk» av betyr at
+          ingenting under skjer av seg selv, og rekkefølgen skal lese slik.
+          Den manuelle knappen i raden under er med vilje ugatet — PRIVACY.md
+          har den som sitt ene unntak, fordi et trykk der er eieren som spør.
+        */}
+        <BoundToggle
+          setting="autoUpdate"
+          label={t("app.setup.advanced.autoUpdate")}
+          description={t("app.setup.advanced.autoUpdateDesc")}
+          testId="adv-auto-update"
+        />
         <UpdateRow />
         <LogRow />
         <ProfileRow />

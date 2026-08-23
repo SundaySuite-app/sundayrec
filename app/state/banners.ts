@@ -32,7 +32,7 @@ import { signal } from "@preact/signals";
 
 /** Nøklene. Lukket liste: et nytt banner er en beslutning, ikke noe som siger
  *  inn i en tilfeldig handler. */
-export type BannerKey = "recording-error" | "recording-quality";
+export type BannerKey = "recording-error" | "recording-quality" | "update";
 
 export type BannerData =
   /**
@@ -56,6 +56,27 @@ export type BannerData =
       measuredSec: number;
       expectedSec: number;
       reasons: readonly string[];
+    }
+  /**
+   * En nyere versjon finnes (P3). NØKLET er hele poenget her: den samme
+   * oppdateringen går gjennom «tilgjengelig» → «laster ned 40 %» → «klar», og
+   * det er ÉN beskjed som endrer seg, ikke tre som stables.
+   *
+   * De tre andre fasene (`checking`, `upToDate`, `failed`) reiser ikke noe
+   * banner i det hele tatt — se `state/auto-update.ts`.
+   *
+   * Køen er delt, men flatene er ikke: de to opptaksbannerne over rendres av
+   * OPPTAK, dette ene av skallet — fordi en oppdatering ikke hører til noen
+   * side.
+   */
+  | {
+      key: "update";
+      state: "available" | "downloading" | "ready";
+      /** Versjonen, når den er kjent. Tom under nedlasting — shimmen sender
+       *  bare prosenten der. */
+      version: string;
+      /** 0–100. Meningsløs utenfor `downloading`. */
+      percent: number;
     };
 
 /** Bannerne som står nå, eldst først. */

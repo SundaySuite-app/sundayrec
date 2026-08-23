@@ -16,9 +16,8 @@
  *
  *   OPPTAK    ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
  *             stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
- *   BIBLIOTEK antall opptak telles på ekte (`recordings_list`). Null →
- *             tomtilstanden. Flere → hvor de ligger. Aldri «ingen opptak» på
- *             en maskin som har tolv.
+ *   BIBLIOTEK ER bygget (P3): lista, søket, slett-med-angre og papirkurven.
+ *             Se `app/pages/library/`.
  *   OPPSETT   ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
  *             nå, de fem skjermene «Endre» åpner, de to tilleggene og
  *             Avansert. Se `app/pages/setup/`.
@@ -41,6 +40,15 @@
  * ligge OVER skinnen, og det skal ikke rives ned av et rutebytte — et opptak
  * som går er ikke en side man er på.
  *
+ * ## Oppdateringsbanneret hører til skallet
+ *
+ * En ny versjon er ikke en side man er på, så stripa står over den siden man
+ * ER på — samme sted som `hydrate-error`, rett under overskriften. Tilstanden
+ * bor i den delte bannerkøen (`state/banners.ts`) og fylles av
+ * `state/auto-update.ts`; her er bare flaten. Aldri en egen toast: canvasens
+ * sett 7 har ÉN toast-form, og «det finnes en oppdatering» er ikke en
+ * kvittering som skal forsvinne av seg selv.
+ *
  * ## Menylinjens «Åpne opptaksmappen»
  *
  * Den ene tray-handlingen som ikke hører til noen side: den åpner en mappe i
@@ -51,26 +59,24 @@
 
 import { useEffect } from "preact/hooks";
 
-import { t, tDyn } from "./i18n";
+import { locale, t, tDyn, tf } from "./i18n";
+import {
+  libraryHeading,
+  LibraryPage,
+  TRASH_TAB,
+} from "./pages/library/LibraryPage";
+import { TrashPage } from "./pages/library/TrashPage";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
-import {
-  consumePendingAction,
-  navigate,
-  pendingAction,
-  route,
-} from "./router/router";
+import { consumePendingAction, pendingAction, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
-import { recordingCount } from "./state/recordings";
+import { banners, dismissBanner } from "./state/banners";
 import { hydrateError, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
-import { Card } from "./ui/Card/Card";
-import { Chip } from "./ui/Chip/Chip";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
-import { EmptyState } from "./ui/EmptyState/EmptyState";
 import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
 
@@ -87,7 +93,14 @@ export function Shell({ probe }: ShellProps) {
   const firstRun = current.firstRun === true;
 
   return (
-    <PageShell heading={firstRunHeading(firstRun) ?? setupHeading(current.tab)}>
+    <PageShell
+      heading={
+        firstRunHeading(firstRun) ??
+        (current.page === "library"
+          ? libraryHeading(current.tab)
+          : setupHeading(current.tab))
+      }
+    >
       {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
@@ -101,6 +114,8 @@ export function Shell({ probe }: ShellProps) {
         />
       ) : null}
 
+      <UpdateBanner />
+
       {probe === "setting" ? (
         <SettingProbe />
       ) : firstRun ? (
@@ -108,7 +123,11 @@ export function Shell({ probe }: ShellProps) {
       ) : current.page === "record" ? (
         <RecordPage />
       ) : current.page === "library" ? (
-        <LibraryPlaceholder />
+        current.tab === TRASH_TAB ? (
+          <TrashPage />
+        ) : (
+          <LibraryPage />
+        )
       ) : (
         <SetupPage />
       )}
@@ -147,39 +166,55 @@ function useTrayFolder(): void {
   }, [armed]);
 }
 
-// ── BIBLIOTEK ───────────────────────────────────────────────────────────────
+// ── Oppdateringsbanneret ────────────────────────────────────────────────────
 
-function LibraryPlaceholder() {
-  const count = recordingCount.value;
+/**
+ * «Versjon X er klar» — over den siden som står, uansett hvilken.
+ *
+ * Tre tilstander, og de bærer de SAMME katalognøklene som raden under
+ * Avansert. Ikke kopierte setninger: kopier driver fra hverandre, og to steder
+ * som sier hver sin ting om den samme nedlastingen er nøyaktig skjøten dette
+ * skallet er skrevet for å unngå. Fasen bak dem er også den samme — én lytter,
+ * i `state/auto-update.ts`.
+ *
+ * `warn` og ikke `bad`: en oppdatering som venter er ikke noe som er galt.
+ * `bad` er `role="alert"` og avbryter en skjermleser midt i noe annet, og det
+ * har den ikke fortjent.
+ */
+function UpdateBanner() {
+  const entry = banners.value.find((b) => b.key === "update");
+  if (entry?.key !== "update") return null;
 
-  // Ikke lest ennå: ingen påstand i noen retning.
-  if (count === null) return null;
-
-  if (count === 0) {
-    return (
-      <EmptyState
-        testId="library-empty"
-        title={t("app.library.empty")}
-        description={t("app.library.emptyDesc")}
-        action={
-          <Button
-            variant="primary"
-            testId="library-go-record"
-            onClick={() => navigate("record")}
-          >
-            {t("app.library.goRecord")}
-          </Button>
-        }
-      />
-    );
-  }
+  const install = (
+    <Button
+      variant="secondary"
+      testId="banner-update-install"
+      onClick={() => void window.api.installUpdate()}
+    >
+      {entry.state === "ready"
+        ? t("app.setup.advanced.updateRestart")
+        : t("app.setup.advanced.updateDownload")}
+    </Button>
+  );
 
   return (
-    <Card
-      testId="library-stored"
-      title={t("app.library.stored")}
-      description={settings.value.saveFolder ?? undefined}
-      actions={<Chip tone="neutral">{count}</Chip>}
+    <Banner
+      tone="warn"
+      testId="banner-update"
+      title={
+        entry.state === "available"
+          ? tf("app.setup.advanced.updateAvailable", { v: entry.version })
+          : entry.state === "downloading"
+            ? tf("app.setup.advanced.updateDownloading", {
+                pct: entry.percent.toLocaleString(locale.value),
+              })
+            : tf("app.setup.advanced.updateReady", { v: entry.version })
+      }
+      // Ingen knapp mens den laster ned: det er ingenting å be om, og en
+      // knapp som bare kan trykkes forgjeves er en knapp som lærer folk at
+      // knappene her ikke betyr noe.
+      actions={entry.state === "downloading" ? undefined : install}
+      onDismiss={() => dismissBanner("update")}
     />
   );
 }

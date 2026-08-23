@@ -133,7 +133,6 @@ export const PAUSED_KEYS = new Set([
   'app.library.empty',
   'app.library.emptyDesc',
   'app.library.goRecord',
-  'app.library.stored',
   'app.record.noSource',
   'app.record.noSourceDesc',
   'app.record.chooseSound',
@@ -446,6 +445,35 @@ export const PAUSED_KEYS = new Set([
   'app.banner.missedDesc',
   'app.banner.missedWhy',
   'app.banner.missedHelp',
+  // P3: Bibliotek, papirkurven og «Oppdater automatisk».
+  //
+  // Nesten alt papirkurven sier er GJENBRUKT fra `trash.*`, som finnes i alle
+  // sju språk fra før — «Papirkurven er tom», «Slett for godt», «i går», og
+  // hver eneste tellende form. Det som står her er bare det som er NYTT tekst
+  // i redesignet. `app.library.stored` er borte: kortet som viste den var
+  // S1bs plassholder, og siden rendrer den ikke lenger.
+  'app.library.count',
+  'app.library.search',
+  'app.library.noHits',
+  'app.library.noHitsDesc',
+  'app.library.video',
+  'app.library.underMinute',
+  'app.library.delete',
+  'app.library.movedToTrash',
+  'app.library.autoDeleteOff',
+  'app.library.autoDeleteDay',
+  'app.library.autoDeleteDays',
+  'app.library.trashCount',
+  'app.library.trashLede',
+  'app.library.trashEmptyDesc',
+  'app.library.back',
+  'app.library.restore',
+  'app.library.deleteNow',
+  'app.library.deleteSoon',
+  'app.library.deleteTomorrow',
+  'app.library.deleteInDays',
+  'app.setup.advanced.autoUpdate',
+  'app.setup.advanced.autoUpdateDesc',
 ])
 
 const reference = flattenKeys(no as Tree).sort()

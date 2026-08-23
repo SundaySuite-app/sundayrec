@@ -17,6 +17,14 @@
  *
  * Ingen i18n her: kjernen svarer med en NØKKEL og innsettingene, kallstedet
  * oversetter. (Samme regel som `decisions-core.ts`.)
+ *
+ * ## Hvorfor den bor i `state/` (P3)
+ *
+ * Den hadde ett kallsted i P1b — raden under Avansert — og lå ved siden av
+ * den. Nå har den to: `state/auto-update.ts` eier abonnementet og den timesvise
+ * sjekken, og raden LESER fasen derfra i stedet for å abonnere selv. Kjernen
+ * hører derfor hjemme sammen med butikken, ved siden av `status-line.ts` og
+ * `disk.ts`, som er de andre rene avgjørelsene skallets tilstand hviler på.
  */
 
 /** Hvor i løpet vi er. `idle` er «ingen har spurt ennå». */

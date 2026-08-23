@@ -19,7 +19,10 @@
  *      kontrakten `e2e/harness.ts` venter på før et spec får gjøre noe som
  *      helst, og den api-shimmens egen `?goto=`-blokk poller på.
  *   5. `hydrateSettings` før `setLocale`, fordi språket ER en innstilling.
- *   6. Butikkene etter innstillingene, fordi de avleder fra dem.
+ *   6. Butikkene etter innstillingene, fordi de avleder fra dem — og
+ *      `initAutoUpdate` er den ene der rekkefølgen er et LØFTE og ikke bare
+ *      ryddighet: en oppdateringssjekk armet før den lagrede `autoUpdate` er
+ *      lest, kontakter serveren for en eier som har sagt nei.
  *   7. `?goto=` etter alt det — en dyplenke skal lande på en app som er ferdig
  *      å våkne, ikke midt i det.
  *   8. Onboarding-porten sist, og BARE når det ikke var en dyplenke.
@@ -54,6 +57,7 @@ import {
 } from "./router/router";
 import { Shell, Overlays } from "./Shell";
 import { loadAppVersion } from "./state/app-info";
+import { initAutoUpdate } from "./state/auto-update";
 import { initDisk } from "./state/disk";
 import { installErrorHandlers } from "./state/global-error";
 import { initNextRecording } from "./state/next-recording";
@@ -140,6 +144,12 @@ async function boot(): Promise<void> {
   initNextRecording();
   initPreroll();
   initDisk();
+  // ETTER innstillingene, og det er hele poenget: gaten «Oppdater automatisk»
+  // må leses fra det som faktisk står lagret. Revisjonsfunn #11 var nøyaktig
+  // det motsatte — planen ble armet før den lagrede blobben hadde landet, så
+  // `undefined !== false` kontaktet serveren på hver oppstart uansett hva
+  // eieren hadde valgt. PRIVACY.md er kontrakten; se `state/auto-update.ts`.
+  initAutoUpdate();
   // Begge er engangslesninger skinnen og Bibliotek viser: versjonen nederst i
   // skinnen, og om biblioteket faktisk er tomt. Ingen `await` — en side som
   // venter på et tall den kan vise «ikke lest ennå» for, venter uten grunn.

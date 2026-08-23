@@ -1,7 +1,7 @@
 /**
  * «Oppdateringer» — kanalen, sjekken, og den ene knappen som gjør noe.
  *
- * Tilstandene bor i `update-core.ts`, som en TOTAL funksjon fra fase til
+ * Tilstandene bor i `app/state/update-core.ts`, som en TOTAL funksjon fra fase til
  * visning. Grunnen står der: legacy maler den samme raden fra sju uavhengige
  * lyttere som hver skriver tre steder, og feilen som fantes i to utgivelser var
  * en knapp fra én fase som ble stående inn i en annen — «Start på nytt og
@@ -15,30 +15,32 @@
  * `e2e/auto-update.spec.ts` hviler på nøyaktig de sju. En andre poller her ville
  * vært to maskiner som er nesten enige om samme løp.
  *
- * `window.api.on(...)` er derfor riktig sted — og en abonnering er ikke en
- * kommando, så den er ikke noe rekkeviddegaten har en mening om (samme regel som
- * `scheduler://`-eventene i `app/state/next-recording.ts`).
+ * ## Hvorfor raden ikke abonnerer selv lenger (P3)
+ *
+ * P1b lot komponenten holde fasen i en `useState` og abonnere i en `useEffect`.
+ * Det var riktig så lenge raden var den ENESTE som brydde seg. P3 la til den
+ * timesvise sjekken og et banner over hele skallet, og da ville to lyttere på
+ * de samme sju kanalene betydd to tilstander som kan bli uenige om den samme
+ * nedlastingen — skjøtefeilen `reference-seam-bugs` handler om, og den ene
+ * P2 skrev ned for `recording://state`. Så: ÉN lytter, i
+ * `app/state/auto-update.ts`, og raden leser signalet.
+ *
+ * Fasen overlever dermed også at man forlater Avansert: en nedlasting som
+ * fortsetter mens man ser på OPPTAK er en nedlasting raden fortsatt kan gjøre
+ * rede for når man kommer tilbake.
  */
-
-import { useEffect, useState } from "preact/hooks";
 
 import { t, tf } from "../../../i18n";
 import { useSetting } from "../../../settings/use-setting";
+import { updatePhase } from "../../../state/auto-update";
+import { updateView, type UpdateView } from "../../../state/update-core";
 import { Button } from "../../../ui/Button/Button";
 import { Chip } from "../../../ui/Chip/Chip";
 import { Select } from "../../../ui/Select/Select";
 import { SettingRow } from "../../../ui/SettingRow/SettingRow";
-import {
-  phaseFromEvent,
-  UPDATE_CHANNELS,
-  updateView,
-  type UpdatePhase,
-  type UpdateView,
-} from "./update-core";
 
 export function UpdateRow() {
-  const [phase, setPhase] = useState<UpdatePhase>({ kind: "idle" });
-  const view = updateView(phase);
+  const view = updateView(updatePhase.value);
 
   const channel = useSetting("updateChannel", {
     kind: "select",
@@ -54,18 +56,6 @@ export function UpdateRow() {
           }
         : null,
   });
-
-  useEffect(() => {
-    const offs = UPDATE_CHANNELS.map((name) =>
-      window.api.on(name, (payload: unknown) => {
-        const next = phaseFromEvent(name, payload);
-        if (next) setPhase(next);
-      }),
-    );
-    return () => {
-      for (const off of offs) off?.();
-    };
-  }, []);
 
   const message = view.message;
   const failed =
