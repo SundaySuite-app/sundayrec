@@ -8,6 +8,36 @@ the bridge from "compiles + unit-tests pass" to "validated on a real rig".
 > Legend: **[HW]** = HARDWARE-UNVERIFIED in code — never run against a device in
 > the gate, only here. **[NET]** = needs network + a Google OAuth client.
 
+## The navigation this runbook walks
+
+Fase B of «Frivilligen først» replaced the shipped shell. The old five pages
+with their eight tabs are gone; there are **three destinations** on the rail —
+**Opptak · Bibliotek · Oppsett** — plus **Rediger**, which is not a destination
+at all but a screen a recording opens into. Every step below has been re-walked
+against the shell that actually ships; this table is the translation for
+anybody holding an older report.
+
+| where it used to be                              | where it is now                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------- |
+| Hjem                                             | **Opptak**                                                        |
+| Historikk (+ the search box, the chips)          | **Bibliotek** (search kept; the chips are gone)                   |
+| Innstillinger → Lyd (the 32-tile channel grid)   | **Oppsett › «Hvilken lyd?»** — device, channel pair, hearing test |
+| Innstillinger → Filer                            | **Oppsett › «Hvor skal opptakene?»** + «Hvilken kvalitet?»        |
+| Innstillinger → Generelt (Menighet)              | **Oppsett › «Hvilken kirke?»**                                    |
+| Innstillinger → Deling / Varsler                 | **Oppsett › «Hvem får beskjed hvis noe går galt?»**               |
+| Innstillinger → Video                            | **Oppsett › Tillegg › «Ta med kamera»**                           |
+| Tidsplan (month calendar + day detail)           | **Oppsett › «Ta opp automatisk»**, and Avansert for the rest      |
+| Innstillinger → System (log, profile, telemetry) | **Oppsett › Avansert**                                            |
+| Oppdateringer / Oppdateringskanal                | **Oppsett › Avansert › Oppdateringer**                            |
+| E-postserver (SMTP), inside the alerts card      | **Oppsett › Avansert › «E-postserver (SMTP)»**                    |
+| Rediger, three tabs (Klipp / Lyd / Innhold)      | **Rediger**, three STEPS (Klipp → Lyd → Eksporter)                |
+| The export MODAL                                 | the **Eksporter** step — there is no modal                        |
+| «Nåværende versjon» in Generelt                  | the version line at the foot of the rail                          |
+
+Surfaces that were removed rather than moved are listed at the bottom of this
+file under **«Flater som ikke finnes lenger»** — read that before reporting a
+missing screen as a bug.
+
 ---
 
 ## 0. Prerequisites
@@ -51,8 +81,9 @@ the app at capture time with no error — that is the symptom to watch for.
 
 ```bash
 npm run check          # prettier + eslint + tsc + rustfmt + clippy + cargo test
+npx playwright test    # the browser tier — every screen, driven the way a volunteer would
 cargo build            # debug build of the Tauri binary
-npm run build          # tsc + vite frontend build
+npm run build          # tsc + vite → dist/ (the shell a release bundles)
 ```
 
 All four must be green before a smoke test is meaningful. As of this runbook the
@@ -90,9 +121,18 @@ npm run tauri dev
 ```
 
 `predev` fetches ffmpeg if needed; vite serves on the fixed port **1420**
-(`strictPort`); Tauri opens the window titled "SundayRec". The header should read
-"backend OK" with the version/platform — that proves the Rust ↔ React bridge and
-that `setup()` opened the database without panicking.
+(`strictPort`); Tauri opens the window titled "SundayRec".
+
+**What proves the bridge is up.** The rail paints **Opptak · Bibliotek ·
+Oppsett** with the church name at the top and the version at the foot, and the
+status line under it says one of five things — «Alt er klart» (green), «Lyden er
+ikke koblet til» / «Lite plass igjen» (amber), «Neste opptak …» (grey) or «Tar
+opp» (red). A status line at all means `settings_get` answered and the database
+opened without panicking; the old header's literal "backend OK" is gone, because
+a line that only ever says one thing is not a status. If `settings_get` actually
+FAILED, the shell says so out loud rather than rendering factory defaults as if
+they were yours — that is `hydrateError`, and it is the one case where a
+factory-fresh screen would otherwise be indistinguishable from a broken store.
 
 **Where logs go:** the backend uses `tracing` to **stderr** of the terminal
 running `tauri dev`. Bump verbosity with the env filter:
@@ -105,12 +145,14 @@ RUST_LOG=sundayrec=debug npm run tauri dev # just our crates
 Expect at boot: `SundayRec backend ready (db at …/sundayrec.sqlite)` and no
 repeated background-task log spam.
 
-**First run:** a fresh install (no `onboardingDone`) boots into the wizard; a
-settled install goes straight to Hjem. The wizard's consent step (E3.6) asks
-the telemetry question with the «Aldri»-list on display, records the answer —
-yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal
-(«Alt er klart!» either way), and cannot trap the operator if the backend
-rejects the answer. The renderer half of all of that is pinned in the browser
+**First run:** a fresh install (no `onboardingDone`) boots into the first-run
+sequence; a settled install goes straight to **Opptak**. First run is no longer
+a wizard with screens of its own — it is the five real Oppsett screens shown in
+order, with a progress line and «Fortsett uten lyd» as the emergency exit, so
+nothing a volunteer learns there has to be unlearned afterwards. The consent
+question (E3.6) asks with the «Aldri»-list on display, records the answer —
+yes _or_ no — through `telemetry_consent_set`, treats a decline as fully equal,
+and cannot trap the operator if the backend rejects the answer. The renderer half of all of that is pinned in the browser
 tier; only the native window/DB boot itself stays a rig observation:
 
 - VERIFIED-BY: e2e/onboarding.spec.ts::first run shows the wizard; a settled install does not
@@ -121,39 +163,63 @@ tier; only the native window/DB boot itself stays a rig observation:
 
 ---
 
-## 3. Channel grid → live meters move → two-tap L/R [HW]
+## 3. «Hvilken lyd?» → the meter moves → the channel pair [HW]
 
-Since **v0.7.0** the dropdown device picker + "Test lyd" button are gone — the
-audio settings surface is a **channel grid** with a live meter per channel.
+Fase B folded the 32-tile channel grid into ONE screen with three things on it:
+which device, which channel pair, and a hearing test that answers the only
+question a volunteer actually has — _do we hear it?_
 
-1. Open **Innstillinger → Lyd**.
-   - **Expected:** the channel grid appears — one tile per input channel of the
-     device, each with its own **live meter** (driven by the `vu://levels`
-     events).
+1. Open **Oppsett → «Hvilken lyd?»**.
+   - **Expected:** the devices are listed as cards — «Maskinens egen mikrofon»
+     (marked "Kun for test, eller hvis dere ikke har mikser"), «USB / Ekstern»,
+     and any mixer as «Miksebord · N kanaler». A device the machine no longer
+     has says «Finner ikke {name}» in amber, not «Tilkoblet ✓».
 2. Speak / tap the mic (or send signal on a mixer channel).
-   - **Expected:** the channels **with signal light up** — their meters move in
-     real time. Dead-flat meters on every channel while you speak = the OS
-     denied mic access (see §0) or the wrong device is active.
-3. Assign channels with **two taps**: first tap sets **L**, second tap sets
-   **R**.
-   - **Expected:** the choice is saved immediately with a «Lagret ✓»
-     confirmation (there is no separate save footer), and the channel status
-     shows on the home card.
+   - **Expected:** the meter moves and the WORD under it changes — «Vi hører
+     ingenting» → «Vi hører lyd» → «For høyt». The word is read from PEAK, not
+     RMS, so "too loud" is about the peaks. A dead-flat meter while you speak =
+     the OS denied mic access (see §0) or the wrong device is active.
+3. On a multi-channel device, pick the **channel pair** («Hvilke kanaler?» —
+   the ones with signal light up), then press **«Bruk denne»**.
+   - **Expected:** device, name, channel count and pair land in ONE save with
+     ONE «Lagret ✓». They are four keys that must arrive together, so this is a
+     deliberate button rather than an auto-apply: `useSetting` owns one key and
+     has one receipt, and four keys landing separately is how half a device
+     choice gets stored. Pressing it with nothing changed says «Ingenting er
+     endret.» instead of a false receipt.
+   - **Expected:** the status line and the question agree. «Alt er klart» while
+     question 1 sits amber saying «Finner ikke Behringer X32» is the seam P1a
+     closed — if you ever see the two disagree, that is a bug worth the report.
+4. With no device at all: **«Finner ingen lydenheter»** and a **«Søk igjen»**
+   button — not an empty list that looks like a still-loading one.
 
 ---
 
-## 4. Camera preview [HW]
+## 4. Camera — the file, not a picture [HW]
 
-The shipped renderer polls `recording_preview_frame` **during recording only** —
-there is no idle device-select preview surface. Verify the preview as part of a
-video recording:
+⚠️ **There is no live camera picture anywhere in the shell.** The old renderer
+polled `recording_preview_frame` during a recording and painted the frames into
+a video strip; fase B shipped the overlay without it, so the only thing on
+screen while a camera recording runs is the chip that names the camera. The
+backend command is still registered, still working and unreached — see «Flater
+som ikke finnes lenger». What a rig verifies is therefore the FILE, not the
+preview.
 
-1. Start a recording with a camera selected (§5 with video).
-   - **Expected:** the preview area shows live video (ffmpeg MJPEG → base64
-     frames, polled via `recording_preview_frame`) within a second or two of
-     the recording starting.
-2. No preview + the app still alive = check camera permission (§0). App vanishes
-   = permission string missing/denied and the OS killed it.
+1. Turn the camera on under **Oppsett → Tillegg → «Ta med kamera»** and pick the
+   camera.
+   - **Expected:** the card states what that camera can deliver («Kameraet
+     leverer maks 1080p · 30 bilder i sekundet»), or says plainly that it could
+     not read that rather than promising a resolution it has not checked.
+2. Start a recording (§5 with video) and let it run ~30 s.
+   - **Expected:** the overlay carries a **«Kamera <name>»** chip — that is the
+     app's whole claim about video while recording, and it is a claim about the
+     SETTING, not about frames arriving.
+3. Stop, and open the file.
+   - **Expected:** the mp4 has a video stream with picture in it. This is the
+     only place a broken camera is now caught, which is why it is a step and
+     not a footnote.
+4. App still alive but no video in the file = check camera permission (§0). App
+   vanishes = permission string missing/denied and the OS killed it.
 
 ---
 
@@ -164,27 +230,49 @@ buffer → own WAV writer) — ffmpeg is not in the audio capture path. ffmpeg
 still captures **video** sessions and serves the `classic_ffmpeg_audio` escape
 hatch.
 
-1. Start a recording with mic (+ camera if testing A/V).
-   - **Expected:** status flips to recording; with `RUST_LOG=debug` the
-     progress you see comes from the **native writer's byte counter** (not
+1. On **Opptak**, press **«Start opptak»** (there is no modal any more — the
+   source, the camera and the filename were all decided in Oppsett, so start is
+   one button).
+   - **Expected:** the overlay comes up and the status line turns red («Tar
+     opp» — red never means anything else in this app); with `RUST_LOG=debug`
+     the progress you see comes from the **native writer's byte counter** (not
      ffmpeg `size=` lines — those only appear in video /
      `classic_ffmpeg_audio` sessions).
-   - The renderer half of the start seam (modal → `plan_recording_opts` +
-     `start_recording` → overlay), and the refusal path where the engine says
-     no and the operator gets the localized reason with the modal still open:
+   - **Also expected, before you press it:** with no source chosen the button
+     is off AND says why («Start er sperret til lyden er valgt…») — it is
+     `aria-disabled`, so a keyboard user can still reach it to hear the reason.
+     A grey button with no explanation is the failure this replaced.
+   - The start seam (`plan_recording_opts` + `start_recording`, once each), and
+     the refusal path where the engine says no and the operator gets the
+     localized reason on a screen that stays put:
    - VERIFIED-BY: e2e/recorder.spec.ts::manual start flips the app into the recording overlay
    - VERIFIED-BY: e2e/recorder.spec.ts::a start the engine refuses keeps the modal open and says why
 2. Let it run ~30 seconds, talking so the silence-watcher does **not** fire.
 3. Stop the recording.
+   - **Expected:** the confirmation is the way round it should be — **«Fortsett
+     å ta opp» is the primary button and the Enter choice**, «Stopp» is the
+     secondary. A dialog whose default answer ends the service recording is the
+     one this replaced.
    - **Expected:** a graceful stop — the engine raises the stop flag and does a
      **bounded join** of the capture/writer threads (no process kill). ffmpeg
      only appears at stop if a **delivery encode** (e.g. WAV → FLAC/AAC) runs.
-     A **new history row** appears with a plausible **duration (~30 s)** and
-     **file size (> 0)**.
-   - The renderer half of the stop seam (confirm guard → `stop_recording` once
-     → an explicit finalizing overlay that waits for a terminal engine event):
+     The finalizing overlay stays up and says the file is safe meanwhile; then
+     a **«Opptaket er lagret»** card stays on screen (it does not fade like the
+     old toast did), and a **new row** appears in **Bibliotek** with a plausible
+     **duration (~30 s)** and **file size (> 0)**.
+   - The stop seam (confirm guard → `stop_recording` once → an explicit
+     finalizing overlay that waits for a terminal engine event):
    - VERIFIED-BY: e2e/recorder.spec.ts::stop is guarded by a confirm and then holds a finalizing overlay
-4. Confirm the file exists on disk at the path shown.
+4. Confirm the file exists on disk at the path shown — **«Vis i Finder»** on
+   the receipt card is the shortest way, and it says so honestly («Fant ikke
+   fila på disken.») if the file is not where the row claims.
+
+**Also worth doing once, because it is the promise the window makes:** start a
+recording and then close the window with the red button. The recording must
+keep running (the app lives on in the tray) — that sentence was untrue until
+P3 made it true in Rust. Then press ⌘Q while recording: it must ask ONE more
+time, and on «Stopp» it waits until the file is safely written before the
+process exits.
 
 > [HW] Reconnect/split/preroll fusion paths are wired but unproven on a device
 > (preroll still runs via ffmpeg). A basic single-segment 30 s capture is the
@@ -206,17 +294,26 @@ key "recording mode lags" signal — how often the live-levels IPC channel was
 `last-recording.json` + a rolling `recording-telemetry-history.json` and
 surfaces in the diagnose report.
 
+⚠️ **There is no Diagnose screen any more.** The modal this section used to
+open (`Innstillinger → Lyd → Diagnose`) had no place in the three-destination
+navigation and was not rebuilt — see «Flater som ikke finnes lenger» at the
+bottom of this file. **The measurement is untouched**: the backend still writes
+every number below on every recording, and `build_audio_diagnostics` still
+composes the report. What is missing is a screen that shows it, so this section
+is read **off disk** until one exists.
+
 **Read the numbers after a normal recording:**
 
 1. Record a service (or ~15 s of speech) normally, then stop.
-2. Open **Innstillinger → Lyd → Diagnose** (the audio diagnose), copy the report.
-   - **Expected:** a **"Siste opptak (teknisk)"** section with `Dropp`, `xruns`,
-     `IPC-overbelastning (tapte nivå-oppdateringer)` and `Avsluttet rent`, plus a
-     newest-first **Trend** across recent recordings.
-   - The report content (section + SR-CAPTURE-01 rule) and the modal actually
-     showing the backend's markdown + audio rows:
+2. Read `<app-data>/last-recording.json` (and the rolling
+   `<app-data>/recording-telemetry-history.json` for the trend) — the same JSON
+   the report is composed from. `<app-data>` is resolved in §13's table.
+   - **Expected:** the fields behind the report's **"Siste opptak (teknisk)"**
+     section — `Dropp`, `xruns`, `IPC-overbelastning (tapte nivå-oppdateringer)`
+     and `Avsluttet rent` — with the newest recording first in the history file.
+   - The report content and the SR-CAPTURE-01 rule are still gated in Rust; only
+     the surface that displayed them is gone:
    - VERIFIED-BY: crates/sundayrec-core/src/diagnostics.rs::degraded_last_recording_warns_and_renders_section
-   - VERIFIED-BY: e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report
    - **Healthy target:** `IPC-overbelastning 0` + clean exit, and per session
      type: **native audio** → `ring_overrun_samples 0` + the frame-count
      cross-check verdict exact; **video / ffmpeg** → `Dropp 0`, `xruns 0`.
@@ -225,7 +322,7 @@ surfaces in the diagnose report.
 **Prove the telemetry has teeth (it must DETECT a bad recording):**
 
 3. Start a CPU hog (e.g. `yes > /dev/null &` ×4, or a heavy export), record ~15 s,
-   stop, re-open Diagnose.
+   stop, re-read the file.
    - **Expected:** the numbers rise — `IPC-overbelastning` and/or `Dropp`/`xruns`
      go up, and SR-CAPTURE-01 appears. If they DON'T move under deliberate stress,
      the instrumentation is wrong — report that.
@@ -249,17 +346,35 @@ surfaces in the diagnose report.
 
 ---
 
-## 6. Add a note → reveal in folder [HW]
+## 6. The library row → reveal in folder [HW]
 
-1. On the new history row, add a note and save.
-   - **Expected:** the note persists (it round-trips through `recording_update_note`
-     into SQLite; relaunching the app shows it again).
-   - The renderer half (note modal → `recording_update_note` with the text →
-     the row wears the note); the SQLite relaunch round-trip stays a rig check:
-   - VERIFIED-BY: e2e/history.spec.ts::a note reaches the backend and shows on the row
-2. Use "reveal in folder" / open.
+⚠️ **Notes can no longer be EDITED** — an owner decision in P3. A note that is
+already in the database is still shown on its row; there is no modal to write a
+new one, and nothing calls `recording_update_note`. See «Flater som ikke finnes
+lenger».
+
+1. Open **Bibliotek**. The new recording is the top row.
+   - **Expected:** the row is titled by WHEN, not by filename — «Søndag 16.
+     august 2026 · 11:00» — with the filename underneath. A camera session
+     writes two files (`{stem}.mp4` and the `{stem}.wav` sidecar) and must show
+     as **ONE** row with a «Video» chip, not two.
+   - **Expected:** a recording under half a minute reads «Under 1 min», never
+     «0 min». A recording whose duration the database does not know reads «—»
+     and claims nothing. Those are two different facts and the row must not
+     spell them the same way.
+   - **Expected:** an existing note (written by an older build) still shows on
+     its row.
+2. Use **«Vis i Finder»** on the row.
    - **Expected:** the OS file manager opens at the recording (via the `opener`
      plugin — capability `opener:allow-open-path` is granted).
+3. Press **«Slett»** on a row.
+   - **Expected:** no question — the row moves to the trash and a toast offers
+     **«Angre»**. Delete is undoable, so asking first would be a question with
+     no stakes. The **Papirkurv** entry is always visible (it says «Papirkurven
+     er tom» when it is), because a link that hides itself when empty is a link
+     nobody learns exists. Inside it, «Legg tilbake» restores and «Slett nå» is
+     the one genuinely dangerous button — and there **CANCEL is the Enter
+     choice** and the confirm is a red SECONDARY.
 
 ---
 
@@ -270,19 +385,19 @@ gate-tested (`history-core`); what a rig confirms is that the search box
 wiring behaves on real data. (The transcript half of this section — hits
 inside sermon text — left with whisper in R2 «Frivilligen først».)
 
-1. Record two or three sessions (repeat §5) so History has several rows.
-2. In **History**, type into the search box.
+1. Record two or three sessions (repeat §5) so **Bibliotek** has several rows.
+2. Type into the search box («Søk etter dato eller navn»).
    - **Expected:** the list filters live by filename, date, or note text
-     (case-insensitive); the stats line ("N opptak · Xt Ym totalt · sist …")
-     describes the **filtered view** — the same rows as the table (a deliberate
-     departure from the Electron `home.ts` behaviour: `runSearch` renders and
-     counts one set, so the two can never disagree). A query that matches
-     nothing shows a no-hits message (`search.noHits`), distinct from the
-     genuinely-empty state.
+     (case-insensitive); the count line above it describes the **filtered
+     view** — the same rows as the list, so the two can never disagree. A query
+     that matches nothing says «Ingen treff for «…»» with the explanation of
+     where it looked, which is a different sentence from the
+     never-recorded-anything empty state.
    - VERIFIED-BY: e2e/history.spec.ts::the search box filters live, and a miss says so in its own words
-3. The chips: **Lyd** / **Video** narrow the list; a chip that matches nothing
-   says so in its own words, not the never-recorded-anything words.
-   - VERIFIED-BY: e2e/history.spec.ts::a filter that matches nothing says so in its own words
+
+⚠️ **The Lyd / Video filter chips are gone.** «Video» survives as a FACT on the
+row (it says a session has a camera file), never as a filter. Sortable columns
+went with them. See «Flater som ikke finnes lenger».
 
 ---
 
@@ -308,10 +423,19 @@ npm run tauri dev   # drive the "E-postvarsler" disclosure
 # SMTP needs a host/port/credentials.
 ```
 
-The **E-postvarsler** panel (R5) drives this. It reads `email_status` up-front
-(works in every build) to show whether this binary has the `email` feature,
-takes the SMTP host·port·user·pass·from, and fires `email_send_test` with the
-chosen language.
+Two screens drive this since fase B, and the split is deliberate. **Oppsett →
+«Hvem får beskjed hvis noe går galt?»** is the volunteer's half: one toggle, one
+address, one **«Send en test»**. **Oppsett → Avansert → «E-postserver (SMTP)»**
+is the technical half: host · port · user · from, and the password (which goes
+to the OS keychain, never into the settings bag).
+
+The toggle on the volunteer screen sits behind a **Gate** that says «Krever en
+e-postserver (SMTP). Sett opp under Avansert.» when no transport is configured —
+because the canvas's «E-posten sendes via SundaySuite» is not true: there is no
+such relay, and without the congregation's own SMTP server nothing arrives no
+matter what is in the address field. `email_status` is read up-front (works in
+every build) to show whether this binary has the `email` feature at all, and
+`email_send_test` carries the recipient and the chosen language.
 In the **default build** `email_status` reports the feature present and
 `email_send_test` really sends — a `feature_disabled` here means something is
 wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
@@ -325,8 +449,12 @@ language on the request):
 - VERIFIED-BY: e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated
 - VERIFIED-BY: e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport
 
-1. **SMTP test message.** Configure an SMTP host (587 STARTTLS or 465 implicit
-   TLS), save the password to the keychain, and send a test.
+1. **SMTP test message.** Under **Avansert → «E-postserver (SMTP)»** configure a
+   host (587 STARTTLS or 465 implicit TLS) and save the password to the
+   keychain; then under **«Hvem får beskjed hvis noe går galt?»** enter the
+   address, save it, and press **«Send en test»**. (Pressing test before saving
+   an address says so — «Skriv inn en adresse og trykk Lagre først.» — rather
+   than sending to nobody.)
    - **Expected:** `lettre` connects + delivers a "✓ SundayRec — e-post
      fungerer" message; HTML + plaintext parts both present in the received
      mail.
@@ -361,13 +489,34 @@ model and wires `on_menu_event` → `handle_menu_event`). The menu
 npm run tauri dev   # tray is on by default — nothing to add
 ```
 
+In the new shell a tray action is a **signal**, not a synthesised click: the
+router sets `pendingAction`, navigates to where the action belongs, and the
+screen picks it up when it is ready. The old hooks clicked a button that had to
+exist, on a page that had to be showing, in a DOM that had to be finished —
+three assumptions that have each failed separately.
+
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
    - **Expected:** the menu shows status → open → start/stop → folder → check
      system → diagnostics → quit, in the UI language.
 2. Click **Stopp opptak** while recording.
-   - **Expected:** the recording stops (the `RecorderEngine::stop()` path) and a
-     new history row appears, even with the window unfocused.
+   - **Expected:** the recording stops (the `RecorderEngine::stop()` path), the
+     overlay comes down and a new row appears in **Bibliotek**, even with the
+     window unfocused.
 3. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
+4. Click **Start opptak** from the tray with no source chosen.
+   - **Expected:** it navigates to **Opptak** and does NOTHING else — the card
+     above the button says why. Starting from the menubar on a source nobody
+     chose would be the same lie, just in a different place.
+5. Click **Åpne opptaksmappen**.
+   - **Expected:** the folder opens AND the app lands on **Bibliotek**, so you
+     also see the recordings you just asked to see.
+6. Click **Sjekk systemet**.
+   - **Expected:** it opens **Oppsett → «Hvilken lyd?»**, which is where every
+     answer a preflight would give you now lives.
+
+⚠️ **Diagnostikk** in the tray navigates to **Oppsett** and stops there: the
+screen it used to open does not exist. Not a regression introduced by the tray —
+see «Flater som ikke finnes lenger».
 
 > [GUI] The `tauri::tray` item install and the menu paint need a real desktop
 > session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
@@ -434,24 +583,56 @@ shell and fake timers:
 
 What is left for the rig:
 
+The weekly time lives on **Oppsett → «Ta opp automatisk»** (one day, one start,
+one duration). **Oppsett → Avansert → «Flere tider og spesialopptak»** holds the
+rest: extra fixed times, and single-date specials (a concert, a Christmas Eve).
+
+⚠️ **The month calendar, the day detail and the wake-diagnostics card are gone**
+— the same information is two lists and one sentence now. The wake sentence is
+on Avansert next to the toggle: «Denne maskinen kan vekkes fra dvale.» /
+«… kan ikke vekkes — la den stå på.» / «… spør om administratorpassord første
+gang.» / «Vi vet ikke ennå …».
+
+⚠️ Turning **«Ta opp automatisk»** off no longer deletes the time. `Settings`
+grew a real `auto_record_enabled` flag in P1b (read in ONE place,
+`active_slots()`, so a flag honoured in five of six readers cannot wake the
+machine at 10:50 for a recording it then refuses to make). Specials are NOT
+gated by it — they are dates somebody entered for one concert.
+
 1. Add a slot a couple of minutes ahead; leave the app running.
-   - **Expected:** at the slot time the recorder starts unattended; the tray /
-     UI "next recording" updates; a reminder notification fires `reminder_minutes`
-     before.
-2. **macOS:** enable wake-from-sleep, reschedule (accept the admin prompt), sleep
-   the Mac just before a slot.
-   - **Expected:** the Status panel lists the wake (read via IOKit); the machine
-     wakes and records. Cross-check with `pmset -g sched` — and note that on
-     Apple Silicon the two can legitimately disagree; the panel is deliberately
-     pessimistic, so "missing" there means "click Planlegg again", not "broken".
-3. **Windows:** enable wake-from-sleep, reschedule (no prompt should appear),
+   - **Expected:** at the slot time the recorder starts unattended; the tray and
+     the status line's «Neste opptak …» update; a reminder notification fires
+     `reminder_minutes` before (that reminder is configured on **Oppsett →
+     «Hvem får beskjed…» → «Påminnelse før automatisk opptak»**, and it is gated
+     off with a stated reason until «Ta opp automatisk» is on).
+2. **Also verify the flag round-trips:** turn «Ta opp automatisk» off, relaunch,
+   turn it back on.
+   - **Expected:** the time is still there. A profile written before the flag
+     existed defaults to ON (`serde(default = "default_true")`) — `false` would
+     have silently disarmed every congregation that already had a Sunday time.
+3. **macOS:** enable wake-from-sleep under Avansert, then sleep the Mac just
+   before a slot.
+   - ⚠️ **There is no «Planlegg» button and no admin prompt.** The scheduler
+     arms the OS wake ITSELF whenever `wakeFromSleep` is on, unelevated and
+     non-interactive (`scheduler/mod.rs`). The INTERACTIVE path — the one
+     `wake_reschedule` triggers, which escalates a failed unelevated
+     `pmset schedule wake` to a single `osascript … with administrator
+privileges` prompt — has no caller in the new shell, so a Mac that needs
+     root to write a power event will not be asked for it.
+     That is the most consequential gap this switch leaves open: on such a Mac
+     the app records fine while AWAKE and does not wake from sleep. It is
+     written up as the first item under «Etter byttet» in `docs/APP-SHELL.md`.
+   - **Expected on a Mac that does not need the prompt:** the machine wakes and
+     records. Cross-check with `pmset -g sched` — and note that on Apple Silicon
+     the IOKit read and `pmset` can legitimately disagree.
+4. **Windows:** enable wake-from-sleep, reschedule (no prompt should appear),
    confirm `powercfg -waketimers` lists a timer set by `[PROCESS] …SundayRec.exe`,
    then sleep the machine just before a slot.
    - **Expected:** the machine resumes and records. If it does not, check
      "Tillat vekketimere" in the power options first — an armed timer with that
      setting off fires without waking anything, and nothing in the arming call
      reports it.
-4. **Windows, the honest limit:** quit SundayRec entirely, then sleep the machine.
+5. **Windows, the honest limit:** quit SundayRec entirely, then sleep the machine.
    - **Expected:** it does **not** wake. This is by design, not a bug — verify it
      so nobody later "fixes" it back into a scheduled task.
 
@@ -471,6 +652,13 @@ peaks (8 kHz mono decode **streamed on a pipe** → core down-sample, cached in 
 classifier, cached the same way), mastering analyze (pass-1 loudnorm measure),
 and export (core cut-plan + processing + mastering → mp3/aac/wav/flac/mp4/mov).
 NO new native dep — ffmpeg is a sidecar and the PCM is folded into peaks by hand.
+
+**The shape of the screen changed in P4.** 47 controls in three tabs plus 25 in
+an export modal became **three steps** — **Klipp → Lyd → Eksporter** — with one
+question each. There is no export modal, no «Normaliser» toggle, no mastering
+apply panel and no intro/outro jingle rows; each of those is listed under
+«Flater som ikke finnes lenger» with what replaced it. The BACKEND is unchanged:
+the same `editor_*` commands over the same ffmpeg sidecar.
 
 Three things the editor overhaul settled, and what you are checking here:
 
@@ -496,13 +684,24 @@ and in a plain `npm run tauri dev`; the `feature_disabled` response and the calm
 npm run tauri dev   # drive the Redigering disclosure — editor is on by default
 ```
 
-1. Record (or import) a short service so it shows in History, open the
-   **Redigering** disclosure, and pick the recording (or use **Åpne lydfil…**
-   to pick any audio/video file via the native dialog).
+1. Record (or import) a short service so it shows in **Bibliotek**, then open
+   it in **Rediger** — from the row, from the «Opptaket er lagret» receipt's
+   «Åpne i Rediger», or by dragging a file onto the empty editor («Dra et
+   opptak hit»). The drop zone is ONE element that is ALWAYS there: Tauri
+   catches OS drags itself, so an overlay that only appears on `dragenter` is
+   not there to be hit when the event arrives.
+   - **Expected:** step 1 is **«Klipp»**, and it opens on the only question a
+     volunteer has — _is this the sermon?_ The suggestion card is already there
+     («Vi tror prekenen er her — fra … til … »), so keeping just the sermon is
+     ONE click, not two through a tab.
    - **Expected:** the duration paints almost immediately (ffprobe reads
-     container headers only), then the waveform. Press play: it must sound like
+     container headers only), then the waveform. The loading line says which
+     phase it is in («Leter etter prekenen …»). Press play: it must sound like
      the file, not like a telephone — that is the `asset://` transport on the
      original. No quality notice for a normal wav/flac/mp3/m4a.
+   - **Expected:** the clock reads `h:mm:ss` the whole way. A service of 1 h
+     2 min must not jump from «59:59» to «1:00:00» — the digits are
+     tabular and the format does not change width mid-playback.
      1b. **Reopen the same file.** — **Expected:** the waveform is back in a blink
      and no "Analyserer bølgeform…" line appears (the peaks sidecar answered).
      `ls` next to the recording shows `<stem>.peaks.json`. Delete it and reopen to
@@ -511,42 +710,66 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - **Expected:** a "Klargjør avspilling…" line, then playback works and a
      notice says it is going through a temporary file at full quality, and that
      export still uses the original.
-2. Click **Finn segmenter** and **Mål lydstyrke**.
-   - **Expected:** segments list with one **Preken** (sermon) block highlighted
-     gold; a loudness reading like `-23.4 LUFS → -16`.
-3. Mark a cut or two — **click-and-drag on the waveform** («Klikk og dra for å
-   markere et kutt»), or let **Marker preken automatisk** place them. (The old
-   «Legg til kutt» button and its start/end seconds inputs were removed in the
-   v0.9 editor overhaul — drag is the cut gesture now.) Remove one with **✕**.
-   - **Expected:** red cut bands overlay the waveform at the marked spots
-     (the canvas paint itself is still // GUI-UNVERIFIED); region rows show
-     `m:ss–m:ss`; removed rows disappear.
+2. Adjust the gold sermon window by **dragging its handles**, and — if the
+   detector picked the wrong block — choose the right one from the block
+   dropdown.
+   - **Expected:** the handles are real focusable controls
+     (`role="slider"`, «Der prekenen begynner» / «Der prekenen slutter»), so
+     arrow keys move them. A volunteer who does not use a mouse must still be
+     able to say where the sermon starts; a drawn rectangle cannot be focused,
+     read aloud or nudged.
+   - **Expected:** the correction is remembered («Vi husker det til neste
+     gang») — see step 8.
+3. Press **«Behold bare prekenen»** — or open **«Klipp manuelt»** and mark cuts
+   by dragging on the waveform. Remove one with **✕**.
+   - **Expected:** the cut list shows each kept region as `{name} · {span}`, and
+     the result line reads «Resultat: … (av …)». Red cut bands overlay the
+     waveform (the canvas paint itself is still // GUI-UNVERIFIED); removed rows
+     disappear. Undo/redo say so honestly when there is nothing to undo.
    - VERIFIED-BY: e2e/editor.spec.ts::a cut row shows its range and the ✕ really removes it
-4. Open **Eksporter** WITHOUT picking a destination, choose a format + a
-   mastering target (**Ingen / Tale — naturlig −19 / Tale — tydelig −16 /
-   Tale — kraftig −14 / Musikk + tale −16** — the preset list was renamed from
-   the old Podkast/Strømming set), and export.
-   - **Expected:** the destination pill reads "Samme mappe" and a
+4. Press **«Neste: Lyd»** — step 2. Choose **«Automatisk lydforbedring»**:
+   **Tale** (the recommended default), **Tale og musikk**, or **Ingen**.
+   - **Expected:** three cards with a REASON each («For preken og liturgi.
+     Anbefalt.» / «Når lovsang skal være med.» / «Eksporter lyden slik den ble
+     tatt opp.»), not five presets named after loudness targets. The three
+     words map to real numbers in `sound-profiles.ts`; the mapping table is in
+     `docs/APP-SHELL.md` §P4b.
+   - Press **«Lytt»** and A/B **Før** / **Etter**.
+   - **Expected:** a 20-second sample taken **from the sermon** (not from the
+     first 20 seconds of the file, which is often an empty room) renders and
+     plays. It is a real render through the real chain — and it writes to a
+     temp file, never next to the original.
+   - **«Avansert: åpne mikseren»** opens the full chain (low cut, denoise,
+     dereverb, gate, compressor, de-esser, limiter, output level, three EQ
+     bands).
+   - **Expected:** the mixer says it **REPLACES** the profile («Mikseren
+     erstatter «Tale». Ingen mastring legges oppå — du styrer hele kjeden.»).
+     A mixer that layered on top of a preset would be two things fighting over
+     the same gain.
+5. Press **«Neste: Eksporter»** — step 3. Pick a **format** and leave the
+   destination alone, then export.
+   - **Expected:** the destination reads **«Samme mappe som opptaket»** and a
      `*_redigert.<fmt>` file lands next to the source (no "path must be
-     absolute"). The progress bar moves for real — with a mastering target it
-     reads `Måler lydstyrke` up to ~50 % and then `Koder`. On playback the
-     marked regions are gone and the loudness is on target.
-   - With a mastering target the level row must say **"Volum styres av
-     mastring"** rather than promising a normalize gain the export skips.
-   - The modal's two honesty claims (default destination pill «Samme mappe» +
-     the mastering-owns-the-volume level row):
-   - VERIFIED-BY: e2e/editor.spec.ts::the export modal is honest about destination and level
-     4b. **Cancel a long export** mid-render. — **Expected:** it stops within a
-     second or two and the result row says "Eksport avbrutt" — not a frozen bar.
-     4c. **Video file:** open an mp4, keep "Behold video", export.
-   - **Expected:** the mp4 out has both streams and honours the cuts. The
-     intro/outro rows are greyed with "Jingler støttes ikke for video ennå" —
-     jingles are audio-only, and the export no longer pretends otherwise.
+     absolute"). Each format states its trade-off («Liten fil. Passer for nett
+     og deling.» / «Samme kvalitet som opptaket, mindre fil.» / «Ukomprimert.
+     Størst fil.») and the size estimate «ca. N MB» is computed **from the
+     file**, not from the settings. The progress bar moves for real. On playback
+     the marked regions are gone and the level is on target.
+   - **Expected:** when it is done, the receipt offers three ways on — «Vis i
+     Finder», «Eksporter i annet format», «Til biblioteket».
+   - The destination half of the old modal's honesty claim:
+   - VERIFIED-BY: e2e/editor.spec.ts::eksportsteget er ærlig om hvor filen havner
+     5b. **Cancel a long export** mid-render. — **Expected:** it stops within a
+     second or two and says «Eksporten stoppet. Prøv igjen.» — not a frozen bar.
+     5c. **Video file:** open an mp4 and leave **«Ta med video (MP4)»** on.
+   - **Expected:** the mp4 out has both streams and honours the cuts, and the
+     format row states the consequence rather than letting you pick an
+     impossible one: «Formatet er MP4 så lenge videoen er med.»
    - On macOS the export tries VideoToolbox first, automatically (R2 removed
      the «Maskinvare-koding» toggle — it guarded nothing). If VideoToolbox
      refuses, the log shows a warning and the export completes in software
      anyway — a failed hardware render must never cost the user the export.
-5. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
+6. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
    editor (or reselect another recording) then reselect the same recording.
    - **Expected:** the cut rows are back — restored **silently** from the
      cuts-draft sidecar the autosave writes every 2 s (with a 7-day freshness
@@ -555,22 +778,13 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      editor/loader.ts). After a successful **Eksporter** the draft is deleted,
      so a later reopen restores nothing.
    - VERIFIED-BY: e2e/editor.spec.ts::unsaved cuts from a previous session come back on reopen
-6. **P1 mastering A/B preview:** with a mastering target chosen, click
-   **Forhåndsvis mastering (15 s)**.
-   - **Expected:** an `<audio>` control appears playing a temp
-     `sundayrec-master-preview-*.mp3` of the first 15 s through the preset chain
-     — A/B it against the original before committing to the full export.
-7. **P1 mastering apply + cancel:** start a master, watch the
-   `editor-master-progress` ticks, and abort mid-render with **Avbryt**.
-   - **Expected:** progress advances, and a cancel kills the ffmpeg child and
-     returns `true` only while the job is live (`false` afterwards — the pure
-     `JobRegistry` bookkeeping). A duplicate job id is rejected up front.
-   - The panel measures loudness first and then hands that measurement to the
-     apply, so an Apply on a long service starts encoding straight away instead
-     of reading the whole file a second time. Time it: the gap between the
-     "Original: −23.4 LUFS → −16 LUFS" line and the first progress tick should
-     be short even on a 90-minute recording.
-8. **E8 sermon-pick correction survives a reopen:** on a recording where the
+     ⚠️ **The standalone mastering panel is gone** (the old steps 6 and 7 — the
+     `_mastert` file, «Forhåndsvis mastering (15 s)», the apply-with-progress and its
+     Avbryt). `editor_master_apply` is no longer reached from anywhere; the preview
+     mechanism survives as step 2's **«Lytt»**, which renders a 20-second sample
+     through the same chain. See «Flater som ikke finnes lenger».
+
+7. **E8 sermon-pick correction survives a reopen:** on a recording where the
    auto-pick is wrong, choose the right block in the sermon dropdown, close the
    editor, and reopen the same recording.
    - **Expected:** once the analysis card finishes, **your** block is the starred
@@ -584,16 +798,16 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - The restore rides on detection, so it happens when detection does: video
      files and a restored cuts-draft do not auto-analyse, and there the
      correction comes back when you press **Analyser opptak**.
-9. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
+8. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
    «Frivilligen først»): the AI companion and its `companionSuggestions` /
    `companionOutcomes` left the app 2026-08-23. What remains of this step:
    - (The `trimAdjustments` signal was only ever written by the review queue's
      publish step — gone in R1 — so nothing writes it; existing sidecars keep
      theirs. `docs/LEARNING.md` §Status says what is live, dormant and gone.)
-   - With diagnostics ON, **Innstillinger → System → vis hva som sendes** should
-     list `corrections` (a signal, a direction and a coarse band) with a count
-     after step 8 — and the caption must NOT say «ingenting å sende akkurat
-     nå» while it is on screen. With diagnostics OFF, do the same edit and
+   - With diagnostics ON, **Oppsett → Avansert → «Del anonym diagnostikk» →
+     «Hva sendes»** should list `corrections` (a signal, a direction and a
+     coarse band) with a count after step 7 — and the caption must NOT say
+     «Ingenting å sende akkurat nå.» while it is on screen. With diagnostics OFF, do the same edit and
      confirm the collection stays empty: nothing is accumulated for someone who
      has not opted in, not even in memory.
    - The preview surface's half of this (the collection rendered, the caption
@@ -636,6 +850,12 @@ Targets the "editor is unstable" reports. Run this stress loop after the fixes:
    - **Expected:** the new file loads cleanly — no wrong audio/video-layout from
      the previous file, no extra AudioContext piling up (the loader seq-guards),
      no stale clip-warning badge.
+     3b. **Leave step 1 while playing** (press «Neste: Lyd»), then come back.
+   - **Expected:** playback STOPS on leaving — the same rule as leaving the
+     page — the canvas is torn down and rebuilt, and the peaks are still in
+     memory so the return draws without decoding anything again. A waveform that
+     "freezes" after a step change is a canvas that remounted and left a draw
+     loop painting into an element nobody sees.
 4. **Undo mid-drag:** drag a cut handle and press Cmd/Ctrl+Z mid-drag.
    - **Expected:** the undo is ignored until the drag ends (no cut-history
      corruption); cuts stay consistent.
@@ -678,10 +898,11 @@ npm run tauri dev
   process itself does **not** crash — `crash::watch_handle` catches the panic
   at the `JoinHandle` boundary — but it is persisted exactly as a real one
   would be.
-  - **Expected:** the terminal logs a `PANIC: …` line; a new
-    `crash-<millis>-<seq>.json` appears in `<app-data>/crashes/`; opening
-    **Lyd → Diagnose** shows finding **SR-CRASH-01** ("Appen har krasjet")
-    with the count and the newest message.
+  - **Expected:** the terminal logs a `PANIC: …` line and a new
+    `crash-<millis>-<seq>.json` appears in `<app-data>/crashes/`.
+  - ⚠️ The finding **SR-CRASH-01** ("Appen har krasjet") is still RAISED by
+    `sundayrec-core::diagnostics`, but there is no screen that shows findings —
+    read the crash file instead. See «Flater som ikke finnes lenger».
 
 ### Where the files land
 
@@ -695,12 +916,24 @@ npm run tauri dev
 `<app-data>` is the platform app-data dir Tauri resolves (macOS:
 `~/Library/Application Support/…`; Windows: `%APPDATA%\…`).
 
-### «Vis logg» / «Kopier siste logg» (System-fanen → Hjelp og opplæring)
+### «Vis» / «Kopier» (Oppsett → Avansert → «Logg»)
 
-- **Vis logg** reveals the live log file in Finder/Explorer (`logs_reveal` →
+### Steinberg ASIO attribution [Windows only]
+
+- [ ] In a **Windows** build, **Oppsett → Avansert**, at the bottom: a
+      «Lyd-teknologi» card carrying the ASIO trademark notice verbatim.
+- **Why it is a checklist item and not a detail:** the ASIO SDK is free to use
+  and licensed against attribution, and `release.yml` builds Windows with
+  `--features …,asio,…` — so that build owes the notice. The card lived in the
+  old shell's `index.html` and vanished with it in fase B; nothing failed,
+  because a missing trademark notice looks exactly like nothing. It is rebuilt,
+  and `app/pages/setup/advanced/AsioAttribution.test.tsx` pins the wording — but
+  that a real Windows build actually SHOWS it is a rig observation.
+
+- **Vis** reveals the live log file in Finder/Explorer (`logs_reveal` →
   `tauri_plugin_opener::reveal_item_in_dir`), falling back to opening the
   folder itself before the first line has been written.
-- **Kopier siste logg** pulls the tail of the live file (`logs_tail`, capped
+- **Kopier** pulls the tail of the live file (`logs_tail`, capped
   server-side at 512 KB regardless of what the UI asks for) and copies it to
   the clipboard, with a toast confirming the copy (or that the log is still
   empty).
@@ -711,30 +944,16 @@ npm run tauri dev
   thread before a line ever reaches disk — confirm none show up if you have
   any of those configured.
 
-### Capture-probe expectations in Diagnose
+### ⚠️ Capture probe — backend only, no surface
 
-**Lyd → Diagnose** now runs a real ~2 s capture (and, with video on, grabs one
-real camera frame) through the SAME backend a recording uses, then reports
-`captureOk` / `videoOk` instead of the old permanent "ikke testet".
-
-1. With nothing else using the mic, click **Diagnose**.
-   - **Expected:** the probe runs and reports true/false. A `false` raises
-     **SR-CAPTURE-02** ("Testopptaket fikk ingen lyd") — critical, and
-     distinct from SR-CAPTURE-01 (a recording that happened but stuttered).
-     With video on, a failed frame grab raises **SR-VIDEO-02** ("Kameraet ga
-     ingen bilde").
-2. **Refusal path 1 — during a recording.** Start a recording, then open
-   Diagnose.
-   - **Expected:** the probe does **not** run — the report's
-     `capture_probe_skipped` reads "et opptak pågår — lydprøven ville tatt
-     enheten"; nothing contends with the live take.
-3. **Refusal path 2 — while the VU meter holds the input.** Open
-   **Innstillinger → Lyd** (the channel grid opens the VU stream) and click
-   **Diagnose** without stopping it.
-   - **Expected:** the probe again does not run — `capture_probe_skipped`
-     reads "nivåmåleren bruker mikrofonen — stopp den og kjør Diagnose
-     igjen". Leave the Lyd tab (which stops the meter) and run Diagnose again
-     to see the probe actually execute.
+`run_diagnostics` still runs a real ~2 s capture (and, with video on, grabs one
+real camera frame) through the SAME backend a recording uses, and still refuses
+politely while a recording is running or while the VU meter holds the input
+(`capture_probe_skipped`). **Nothing in the shell calls it.** The command is
+registered, tested in Rust and unreachable from the UI, so these three paths
+cannot be exercised by hand at all until a screen exists. They are listed under
+«Flater som ikke finnes lenger» with the rest, and the Rust tests are what keeps
+them honest meanwhile.
 
 > [HW] The panic/crash-ring plumbing and the finding rules are unit-tested in
 > `sundayrec-core::diagnostics` + `src-tauri/src/crash.rs`; only the
@@ -770,19 +989,24 @@ present in every release build and in a plain `npm run tauri dev`.
 npm run tauri dev   # drive the Oppdateringer disclosure — updater is on by default
 ```
 
-**«Oppdater automatisk»** (Generelt) is the privacy gate PRIVACY.md promises:
+**«Oppdater automatisk»** (Oppsett → Avansert → «Oppdateringer») is the privacy
+gate PRIVACY.md promises:
 off = the app never contacts the update server on its own (no startup check,
 no hourly repeat — not even in the window where the settings blob is still
 loading, the #11 race fixed in PR #101); on = one immediate check plus exactly
 one hourly schedule; flipping it mid-session arms/cancels the schedule without
-firing extra checks. All four renderer paths are pinned in the browser tier:
+firing extra checks. The toggle and the timer live together on purpose — P1b
+shipped without the timer, which meant **the shell did not check for updates by
+itself at all**, and that is the same road the beta ring's kill-switch travels.
+All four renderer paths are pinned in the browser tier:
 
 - VERIFIED-BY: e2e/auto-update.spec.ts::off at startup: zero update_check even while settings load slowly (the #11 race)
 - VERIFIED-BY: e2e/auto-update.spec.ts::on at startup: one immediate check, and the hourly repeat is scheduled
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling off while running stops the schedule and further checks
 - VERIFIED-BY: e2e/auto-update.spec.ts::toggling back on re-arms: an immediate check and a fresh schedule
 
-**«Oppdateringskanal»** must reach the STORE with its value — the backend
+**«Oppdateringer: Stabil / Beta»** (same card) must reach the STORE with its
+value — the backend
 (`update/mod.rs::current_channel`) reads sqlite, and the v0.11.1-beta.2 rig bug
 #113 was precisely this select saying «Lagret ✓» while the machine silently
 stayed on the stable feed. R4 removed the curated bridge that dropped it: the
@@ -792,7 +1016,8 @@ store:
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching to beta reaches the store, not just the select
 - VERIFIED-BY: e2e/update-channel.spec.ts::switching back to stable syncs too, and asks no question
 
-1. Open the **Oppdateringer** disclosure and click **Se etter oppdateringer nå**.
+1. Open **Oppsett → Avansert → «Oppdateringer»** and click **«Se etter
+   oppdateringer nå»**.
    - **Expected in a default build:** a real check, not an error. Under
      `--no-default-features` the `update_check` command rejects with
      `feature_disabled`, and the panel has **no dedicated gate hint** for it —
@@ -801,7 +1026,7 @@ store:
      bygget inn»-message that has never existed in this renderer). Seeing
      that error text in a default build with network is a BUG.
    - VERIFIED-BY: e2e/auto-update.spec.ts::a feature_disabled check surfaces as the ordinary error text
-2. (dev build) **Se etter oppdateringer nå**.
+2. (dev build) **«Se etter oppdateringer nå»**.
    - **Expected:** the status reports **Du er oppdatert** — a dev build
      short-circuits the check (the `should_check` guard, unit-tested in
      `sundayrec-core::update`), so no error from a missing feed. The renderer
@@ -809,10 +1034,18 @@ store:
      stale install button — is browser-tier pinned:
    - VERIFIED-BY: e2e/auto-update.spec.ts::an upToDate answer paints «Du er oppdatert» and retires stale buttons
 3. (**release** build pointed at a real signed feed) check
-   → **Last ned** → **↺ Start på nytt og installer**.
-   - **Expected:** the panel walks `available` → `downloading {pct}` →
+   → **«Last ned og installer»** → **«Start på nytt og installer»**.
+   - **Expected:** it walks `available` → `downloading {pct}` →
      `readyToInstall`; the relaunch applies the staged update. Needs the signed
      release + pubkey (NEEDS-RICHARD). // NETWORK/GUI-UNVERIFIED.
+   - **Expected:** the announcement is ONE banner over whatever page you are on,
+     keyed `update`, so «tilgjengelig» → «laster ned 40 %» → «klar» rewrites the
+     same strip instead of stacking three. It is `warn`, not `bad`: an update
+     waiting is not something that is wrong, and `bad` is `role="alert"`, which
+     interrupts a screen reader mid-sentence.
+   - **Expected:** if the relaunch does not happen, it says so («Omstarten
+     skjedde ikke. Avslutt appen og åpne den på nytt …») rather than sitting on
+     «Starter på nytt …» forever.
 
 ### Settings completeness (no feature)
 
@@ -824,10 +1057,17 @@ OS keychain via the `email` seam, never in the settings bag) plus the editor
 intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
 1..=65535) in `sundayrec-core::settings`.
 
-1. Open **Generelt**, scroll to the **Menighet** / **Varsler** / **E-postvarsler**
-   sections.
+1. Walk **Oppsett → «Hvilken kirke?»** (name + language), **«Hvem får beskjed
+   hvis noe går galt?»** (the OS toggle, the address) and **Avansert →
+   «E-postserver (SMTP)»** (host · port · user · from).
    - **Expected:** every field round-trips through `settings_save` (debounced)
      into SQLite and survives a relaunch; the port clamps to 1..=65535.
+   - **Expected:** a save that FAILS rolls the control back to what is actually
+     stored and toasts about it. The old shell left the new value standing, so
+     the screen claimed one thing while sqlite held another and the change
+     "disappeared" at the next launch. The two exceptions are deliberate: the
+     alert address and the weekly time are explicit-save fields, and there a
+     failed write does NOT throw away what you typed.
    - The church-profile round-trip (debounced save → storage → reload) and the
      port clamp:
    - VERIFIED-BY: e2e/settings.spec.ts::the church profile fields round-trip into storage and survive a reload
@@ -850,10 +1090,13 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
    `videoResolution`/`videoFramerate`/`videoContainer`/`videoCodec`/
    `videoEncoder`, `editorHwEncode`).
    - **Expected:** the import succeeds, every neighbour keeps its value, and a
-     fresh export no longer carries any of them. The Video tab shows camera
-     on/off, the camera pick and «Behold separat lydfil» — nothing else — and
-     the System tab has no «Hva appen har lagt merke til» / «Hva appen har
-     justert» cards.
+     fresh export no longer carries any of them. **Oppsett → Tillegg → «Ta med
+     kamera»** shows the on/off, the camera pick and «Behold separat lydfil» —
+     nothing else — and Avansert has no «Hva appen har lagt merke til» / «Hva
+     appen har justert» cards.
+   - Import/export themselves are on **Avansert → «Innstillingsprofil»**, and
+     the import asks first («Dette erstatter innstillingene på denne maskinen
+     …») because it is the one settings action that is not undoable.
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
    - VERIFIED-BY: legacy/renderer/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
 
@@ -872,15 +1115,15 @@ decision gate, not a code test.
 **Before the service**
 
 1. Confirm the machine is actually running the **promoted** tag, not whatever
-   it happened to have installed. **Innstillinger → Generelt → Nåværende
-   versjon** must read exactly the tag `node scripts/promote-release.mjs beta
+   it happened to have installed. The **version line at the foot of the rail**
+   must read exactly the tag `node scripts/promote-release.mjs beta
 vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
    - **Expected:** version matches. If it's a build behind, either the update
      hasn't reached this machine yet (propagation — up to an hour for an
-     already-running app, immediate on relaunch or a manual **Se etter
-     oppdateringer nå**; see `ROLLBACK.md`) or **«Oppdater automatisk»** is
-     off (§R7 above) — resolve which before treating today as a beta-ring
-     result.
+     already-running app, immediate on relaunch or a manual **«Se etter
+     oppdateringer nå»** under Avansert; see `ROLLBACK.md`) or **«Oppdater
+     automatisk»** is off (§R7 above) — resolve which before treating today as
+     a beta-ring result.
 2. If the release touched `recorder/`, `capture.rs`, the editor, the meter
    loop, or boot ordering, this Sunday IS the §6a health gate
    (`RELEASE-CHECKLIST.md`) — a beta-ring release is not exempt from it.
@@ -899,8 +1142,8 @@ vX.Y.Z-beta.N` promoted (`RELEASE-CHECKLIST.md` §5d/§5e).
 
 **After the service**
 
-5. Open **Innstillinger → Lyd → Diagnose** (§5b) and read "Siste opptak
-   (teknisk)".
+5. Read `<app-data>/last-recording.json` (§5b — the Diagnose screen it used to
+   be read from no longer exists).
    - **Expected:** `Dropp` / `xruns` / `IPC-overbelastning` at their healthy
      targets (≈0), clean exit, no `SR-CAPTURE-01`. Paste these numbers into
      the beta-ring report — the same numbers §6a asks for in the release
@@ -943,21 +1186,84 @@ Mirrors `src/main/ipc/audio-devices.ts`. Both reuse the existing
 `ffmpeg -list_devices` enumeration; the diagnostics shaping
 (`build_audio_diagnostics`) is pure + tested.
 
-1. Open **Generelt** → the camera dropdown / device probe.
-   - **Expected:** `list_video_devices` returns the connected cameras and
-     `diagnose_audio` returns the audio-input names (WASAPI loopback is not
-     ported → `wasapi` empty, `wasapiAvailable` false). A missing ffmpeg / no
-     devices yields empty lists, not an error. // HARDWARE-UNVERIFIED.
+1. Open **Oppsett → Tillegg → «Ta med kamera»** → the camera picker.
+   - **Expected:** `list_video_devices` returns the connected cameras, and the
+     card states what the chosen one can actually deliver («Kameraet leverer
+     maks 1080p · 30 bilder i sekundet»), or says plainly that it could not read
+     that. No camera at all reads «Finner ikke noe kamera», with the advice to
+     connect one or turn the option off. A missing ffmpeg / no devices yields
+     empty lists, not an error. // HARDWARE-UNVERIFIED.
+   - ⚠️ `diagnose_audio` (the audio-input name list, WASAPI loopback not ported)
+     is no longer reached from any screen — see «Flater som ikke finnes
+     lenger».
 
 ## What "passed" means
 
 A green smoke test = §2–§6 all behave as the **Expected** lines say on a real
-Mac with a real mic/camera, with no panic in the `tauri dev` stderr. §7 is a
-bonus that needs a Google client. Record any deviation (which step, the stderr
-log, the OS permission state) when reporting back.
+Mac with a real mic/camera, with no panic in the `tauri dev` stderr. Record any
+deviation (which step, the stderr log, the OS permission state) when reporting
+back.
+
+**One thing to watch for that is specific to the new shell.** WKWebView's UA
+string here carries **no `Safari` token**. Any library that branches on the UA
+sees "unknown engine" and takes its slowest path — that is the exact fact behind
+SundayEdit's 42× regression, invisible in Chromium. Nothing ships that branches
+on it today, but if a screen feels slow in the real window and fast in the
+browser tier, that is the first thing to suspect.
 
 For any build that touches **recording, capture, the editor, the meter loop, or
 boot ordering**, also run **§5b** (recording-health telemetry) and **§12b**
 (editor stability loop) and paste the diagnose "Siste opptak" numbers into the
 release notes — that is the standing gate that stops unverified audio/editor
 fixes from shipping (see `RELEASE-CHECKLIST.md`).
+
+---
+
+## Flater som ikke finnes lenger
+
+Fase B deleted the shipped shell and replaced it with «Frivilligen først»'s. Not
+everything the old one had was rebuilt. This list is what a tester will look for
+and not find, so that «I could not find the Diagnose screen» is answered here
+instead of filed as a bug — and so that nothing on it can quietly be forgotten.
+Every entry names what still works underneath, because in most cases the
+BACKEND is untouched and only the surface is gone.
+
+The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet».
+
+| gone                                                        | what is left, and where                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).                                                                                                                                |
+| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                                                                                                                                                   |
+| **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                                                                         |
+| **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                                                                            |
+| **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                                                                                                                                            |
+| **The export MODAL**                                        | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                                                                                                                                        |
+| **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                                                                             |
+| **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                                                                          |
+| **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                                                                         |
+| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».                                                                                                                              |
+| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                                                                                                                                                  |
+| **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                                                                                                                                                   |
+| **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                                                                         |
+| **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                                                                          |
+| **The live camera picture** (`recording_preview_frame`)     | a chip naming the camera. Nothing shows frames arriving, so a dead camera is only caught by opening the file (§4).                                                                                                                                                                          |
+| **«+30 min» / «Avbryt auto-stopp»** on the overlay          | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service.                                                      |
+| **The stereo / mono / «Miks L+R» channel-mode picker**      | the mode is DERIVED now: a 1-channel device gets `monoL`, everything else `stereo`, and the volunteer picks a channel PAIR instead. `monoMix` and `monoR` are unreachable, and re-picking a device overwrites a stored `monoMix`. A P1a fold, not a fase-B loss — but nothing else says so. |
+| **The editor's keyboard-shortcut legend**                   | the shortcuts the legend described are not all rebuilt; the sermon handles are focusable `role="slider"` controls and answer arrow keys, which is the one that mattered.                                                                                                                    |
+
+### Claims this runbook used to point at a test for, and no longer can
+
+These four VERIFIED-BY pointers were removed rather than moved. Each described a
+screen that is gone, so a pointer at the replacement would have claimed coverage
+of something nobody built.
+
+- `e2e/system-support.spec.ts::the Diagnose modal shows the audio rows and the full backend report`
+- `e2e/history.spec.ts::a note reaches the backend and shows on the row`
+- `e2e/history.spec.ts::a filter that matches nothing says so in its own words`
+- `e2e/editor.spec.ts::the export modal is honest about destination and level`
+
+⚠️ Three of those four would have kept passing the `smoke-verified` gate, because
+the new specs quote the old titles VERBATIM in comments explaining why they were
+not carried over — and the gate matched anywhere in the file. It matches inside a
+`test(…)` / `it(…)` / `describe(…)` title now, which is what a VERIFIED-BY
+pointer always meant.

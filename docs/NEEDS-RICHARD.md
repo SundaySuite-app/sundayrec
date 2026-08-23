@@ -83,7 +83,8 @@ subset.
   forever.
 - **✅ The keychain write path exists.** `email_set_smtp_password` /
   `email_has_smtp_password` / `email_clear_smtp_password` are wired to the
-  **Innstillinger → Varsler** card. The SMTP password is still intentionally NOT
+  **Oppsett → Avansert → «E-postserver (SMTP)»** card. The SMTP password is
+  still intentionally NOT
   in the settings bag — it lives in the OS keychain, and a stored password takes
   precedence over anything typed into the field. `email_smtp_from` lets the
   From: address differ from the account.

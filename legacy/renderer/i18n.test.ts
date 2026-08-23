@@ -127,23 +127,27 @@ describe('selectPluralForm — fallback chain', () => {
   })
 })
 
-describe('the Polish repair — trash.moved across the category boundaries', () => {
-  // Before: ONE string, «{n} nagrań jest w koszu», for every count. Right for
-  // 5+, wrong for 1 and wrong for 2–4 and 22–24.
+// The repair this pins is the same one it always pinned: before it, ONE Polish
+// string served every count, so 1 and 2–4 and 22–24 all read the wrong noun
+// form. The KEY moved in fase B — `trash.moved` was legacy copy nothing paints
+// any more and the catalogue prune took it — so the demonstration now runs on
+// a group the shell actually renders (`missed.banner`, the missed-recording
+// banner on OPPTAK). Same four Polish categories, same boundaries.
+describe('the Polish repair — missed.banner across the category boundaries', () => {
   const cases: Array<[number, string]> = [
-    [0, '0 nagrań jest w koszu'],
-    [1, '1 nagranie jest w koszu'],
-    [2, '2 nagrania są w koszu'],
-    [3, '3 nagrania są w koszu'],
-    [4, '4 nagrania są w koszu'],
-    [5, '5 nagrań jest w koszu'],
-    [21, '21 nagrań jest w koszu'],
-    [22, '22 nagrania są w koszu'],
-    [24, '24 nagrania są w koszu'],
-    [25, '25 nagrań jest w koszu'],
+    [0, '0 zaplanowanych nagrań nie zostało wykonanych'],
+    [1, '1 zaplanowane nagranie nie zostało wykonane'],
+    [2, '2 zaplanowane nagrania nie zostały wykonane'],
+    [3, '3 zaplanowane nagrania nie zostały wykonane'],
+    [4, '4 zaplanowane nagrania nie zostały wykonane'],
+    [5, '5 zaplanowanych nagrań nie zostało wykonanych'],
+    [21, '21 zaplanowanych nagrań nie zostało wykonanych'],
+    [22, '22 zaplanowane nagrania nie zostały wykonane'],
+    [24, '24 zaplanowane nagrania nie zostały wykonane'],
+    [25, '25 zaplanowanych nagrań nie zostało wykonanych'],
   ]
   for (const [n, want] of cases) {
-    it(`n=${n}`, () => expect(render('pl', 'trash.moved', n)).toBe(want))
+    it(`n=${n}`, () => expect(render('pl', 'missed.banner', n)).toBe(want))
   }
 })
 
@@ -190,10 +194,11 @@ describe('every plural group renders in every language, at every boundary', () =
   }
   const keys = groupKeys(no as Tree)
 
-  // A floor, not a count: the walker must have found the catalogue. (It was
-  // 20 after v0.15 removed the 11 learning-card groups and the companion's —
-  // a lower floor still catches a walker that found nothing.)
-  it('finds the groups at all', () => expect(keys.length).toBeGreaterThan(10))
+  // A floor, not a count: the walker must have found the catalogue. It was 20
+  // before fase B pruned the 653 keys nothing read any more; 7 groups are left,
+  // so the floor moved with them. A floor still catches a walker that found
+  // nothing, which is the failure this guards — a green sweep over zero keys.
+  it('finds the groups at all', () => expect(keys.length).toBeGreaterThan(5))
 
   for (const lang of Object.keys(TREES)) {
     it(lang, () => {
@@ -223,14 +228,17 @@ describe('tf / tn against the live catalogue (default locale: no)', () => {
   })
 
   it('tn binds {n} to the count without being asked', () => {
-    expect(tn('trash.daysLeft', 1)).toBe('1 dag igjen')
-    expect(tn('trash.daysLeft', 9)).toBe('9 dager igjen')
+    expect(tn('trash.daysAgo', 1)).toBe('1 dag siden')
+    expect(tn('trash.daysAgo', 9)).toBe('9 dager siden')
   })
 
   it('tn takes extra params, and lets them override n', () => {
-    expect(tn('trash.clearHistoryBody', 30, { d: 30 })).toContain('30 dager')
-    // The form follows `count` (singular); an explicit `n` still wins the slot.
-    expect(tn('trash.daysLeft', 1, { n: 4 })).toBe('4 dag igjen')
+    // A param the form does not name is merged and simply unused — it must not
+    // throw, and it must not leak into the text.
+    expect(tn('trash.related', 3, { name: 'x' })).toBe('+ 3 tilhørende filer')
+    // The FORM follows `count` (singular here); an explicit `n` still wins the
+    // slot. That split is the whole point of taking both.
+    expect(tn('trash.daysAgo', 1, { n: 4 })).toBe('4 dag siden')
   })
 
   it('tn falls back to the literal for an unknown key', () => {
@@ -238,7 +246,7 @@ describe('tf / tn against the live catalogue (default locale: no)', () => {
   })
 
   it('t refuses to stringify a plural group', () => {
-    // Before the guard, `t('trash.moved')` rendered "[object Object]".
-    expect(t('trash.moved', 'reserve')).toBe('reserve')
+    // Before the guard, `t()` on a group rendered "[object Object]" in the UI.
+    expect(t('trash.daysAgo', 'reserve')).toBe('reserve')
   })
 })

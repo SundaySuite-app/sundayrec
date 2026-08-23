@@ -4,7 +4,7 @@
  * ## Feilen dette pinner
  *
  * `listen` fra `@tauri-apps/api/event` går rett på `__TAURI_INTERNALS__`. Uten
- * den — altså i en vanlig nettleser, som er nøyaktig det `npm run dev:app` og
+ * den — altså i en vanlig nettleser, som er nøyaktig det `npm run dev` og
  * hele nettleser-nivået er — avviser hvert eneste abonnement. Fram til nå
  * hadde `.then()` ingen `.catch`, så hver av dem ble en UHÅNDTERT
  * promise-avvisning: fire røde linjer på oppstart, i en konsoll folk skal lese

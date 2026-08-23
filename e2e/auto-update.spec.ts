@@ -1,36 +1,21 @@
 import { test, expect, type Page } from "@playwright/test";
-import {
-  boot,
-  BOOT_FIXTURES,
-  flipToggle,
-  SETTLED_SETTINGS,
-  fn,
-} from "./harness";
+import { boot, BOOT_FIXTURES, SETTLED_SETTINGS, fn } from "./harness";
 import { AUTO_UPDATE_INTERVAL_MS } from "../legacy/renderer/pages/auto-update-schedule-core";
 
-// «Oppdater automatisk» — the end-to-end proof of the DOM wiring around
-// auto-update-schedule-core.ts, which the unit tier cannot see.
+// `e2e/auto-update.spec.ts`, re-pointed at the new shell. Every test TITLE here
+// is byte-identical to the legacy file's — `docs/SMOKE-TEST.md` points at all
+// six by `path::title`.
 //
-// This is audit bug #11's seam (fixed in PR #101): the pure gate
-// (`autoUpdateEnabled`) and the plan (`planAutoUpdateSchedule`) were each
-// correct, but the WIRING evaluated the gate in `setupGeneralPage()` — before
-// `loadSettings()` had resolved — so it read `undefined !== false` and armed the
-// schedule on every launch regardless of what the operator chose. PRIVACY.md's
-// promise is the thing under test: «Slår du den av, tar appen ikke kontakt med
-// serveren — verken ved oppstart eller den vanlige sjekken hver time.»
+// P1b could only bring the second describe: `app/` had no hourly schedule and
+// no «Oppdater automatisk» control, so the four tests in the first one had
+// nothing to observe. That was written down as a REAL gap rather than a testing
+// detail — a shell that never checks is also a shell the beta ring's
+// kill-switch cannot reach. P3 built the missing half
+// (`app/state/auto-update.ts` + the row on Avansert), so the four are back,
+// against the same observable and the same timer registry.
 //
-// The observable is the `update_check` invoke itself, spied through the E5.1
-// fixture seam: every renderer path to the update server funnels through
-// `window.api.checkForUpdates()` → `invoke("update_check")` (api-shim.ts), and a
-// fixture FUNCTION runs on each invoke — so counting fixture hits counts
-// attempted server contacts, at the exact boundary where they would leave the
-// app.
-//
-// The hourly repeat is asserted on the PLAN, not the clock: `applyAutoUpdateSchedule`
-// (general-page.ts) arms one `setInterval(…, AUTO_UPDATE_INTERVAL_MS)`, so the
-// spec wraps set/clearInterval before boot and asserts that an interval with the
-// production period was scheduled (or cancelled) — nobody waits an hour, and the
-// production interval semantics stay untouched.
+// The manual button is deliberately ungated by any auto-update preference (a
+// manual press is the operator asking) — PRIVACY.md's one stated exception.
 
 /** The `update_check` spy: a fixture function so every hit is counted at the
  *  invoke boundary. Answers `upToDate` so the UI settles quietly. */
@@ -51,7 +36,8 @@ async function updateCheckCalls(page: Page): Promise<number> {
 
 /** Wrap set/clearInterval BEFORE any renderer module runs, so the spec can
  *  assert "an hourly check is (or is no longer) scheduled" without waiting for
- *  it to fire. Records every scheduled {id, delay} and every cleared id. */
+ *  it to fire. Records every scheduled {id, delay} and every cleared id.
+ *  Verbatim from the legacy spec — it is the same seam. */
 async function spyIntervals(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const w = window as unknown as {
@@ -82,8 +68,8 @@ async function spyIntervals(page: Page): Promise<void> {
 }
 
 /** The intervals armed with the production auto-update period. Everything else
- *  the renderer schedules (status polls, VU feeds) uses much shorter delays, so
- *  the period is the discriminator. */
+ *  the renderer schedules uses much shorter delays, so the period is the
+ *  discriminator. */
 async function armedUpdateIntervals(
   page: Page,
   periodMs: number,
@@ -103,13 +89,16 @@ async function armedUpdateIntervals(
 }
 
 /** Park `window.api.getSettings` on a promise the test releases by calling
- *  `window.__releaseSettings()` — the #11 race window (setupGeneralPage done,
- *  persisted settings not yet arrived), held open for as long as the assertion
- *  needs instead of for however long localStorage happened to take.
+ *  `window.__releaseSettings()` — the #11 race window, held open for as long as
+ *  the assertion needs.
+ *
+ *  In the new shell that window is a different shape and a stronger one:
+ *  `app/main.tsx` AWAITS `hydrateSettings()` before it arms anything, so while
+ *  the read is parked nothing downstream has run at all. `window.showPage` is
+ *  installed before `boot()`, so the harness still gets its signal.
  *
  *  `window.api` does not exist yet when init scripts run, so this hooks the
- *  assignment itself: api-shim's `window.api = api` lands in the setter, which
- *  wraps `getSettings` and stores the rest untouched. */
+ *  assignment itself. */
 async function delaySettingsLoad(page: Page): Promise<void> {
   await page.addInitScript(() => {
     let realApi: { getSettings: () => Promise<unknown> } | undefined;
@@ -130,6 +119,11 @@ async function delaySettingsLoad(page: Page): Promise<void> {
   });
 }
 
+/** The toggle on Avansert — `#opt-auto-update`'s replacement. */
+function toggle(page: Page) {
+  return page.getByTestId("adv-auto-update-control-input");
+}
+
 test.describe("auto-update toggle", () => {
   test("off at startup: zero update_check even while settings load slowly (the #11 race)", async ({
     page,
@@ -139,20 +133,20 @@ test.describe("auto-update toggle", () => {
     await boot(page, {
       fixtures: FIXTURES,
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
+      goto: "settings:general",
     });
 
-    // The renderer is now parked exactly where #11 lived: setupGeneralPage has
-    // run (boot waited for `window.showPage`, set in the same init), but the
-    // persisted blob has NOT arrived — getSettings is suspended until released.
+    // Parked exactly where #11 lived: the shell has rendered and installed
+    // `window.showPage` (which `boot` waited for), but the persisted blob has
+    // NOT arrived — getSettings is suspended until released.
     await page.waitForFunction(
       () =>
         typeof (window as unknown as { __releaseSettings?: unknown })
           .__releaseSettings === "function",
     );
 
-    // In this window `settings.autoUpdate` is still undefined. The pre-#101
-    // code armed the schedule here and fired a check on every launch; the fix
-    // must hold the gate shut until the operator's answer is readable.
+    // The pre-#101 code armed the schedule here and fired a check on every
+    // launch; the gate must stay shut until the operator's answer is readable.
     expect(await updateCheckCalls(page)).toBe(0);
     expect(
       (await armedUpdateIntervals(page, AUTO_UPDATE_INTERVAL_MS)).armed,
@@ -164,18 +158,7 @@ test.describe("auto-update toggle", () => {
         window as unknown as { __releaseSettings: () => void }
       ).__releaseSettings(),
     );
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            (
-              document.getElementById(
-                "opt-auto-update",
-              ) as HTMLInputElement | null
-            )?.checked,
-        ),
-      )
-      .toBe(false);
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "false");
 
     // …and the answer «av» must still mean no contact: no check, no schedule.
     expect(await updateCheckCalls(page)).toBe(0);
@@ -197,8 +180,9 @@ test.describe("auto-update toggle", () => {
     // mid-session switch-on — see auto-update-schedule-core.ts).
     await expect.poll(() => updateCheckCalls(page)).toBe(1);
     const { armed } = await armedUpdateIntervals(page, AUTO_UPDATE_INTERVAL_MS);
-    // Exactly one: a re-apply must never stack a second timer (that would be
-    // twice the traffic PRIVACY.md told the operator about).
+    // Exactly one: the effect re-runs on every settings write, and a re-apply
+    // must never stack a second timer (that would be twice the traffic
+    // PRIVACY.md told the operator about).
     expect(armed).toHaveLength(1);
   });
 
@@ -214,10 +198,10 @@ test.describe("auto-update toggle", () => {
 
     // Running: the startup check fired and the repeat is armed.
     await expect.poll(() => updateCheckCalls(page)).toBe(1);
-    await expect(page.locator("#opt-auto-update")).toBeChecked();
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "true");
 
-    await flipToggle(page, "opt-auto-update");
-    await expect(page.locator("#opt-auto-update")).not.toBeChecked();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "false");
 
     // The armed interval is cancelled — asserted on the timer registry, not by
     // waiting an hour to see nothing happen.
@@ -245,11 +229,11 @@ test.describe("auto-update toggle", () => {
     });
 
     // Off: the boot armed nothing.
-    await expect(page.locator("#opt-auto-update")).not.toBeChecked();
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "false");
     expect(await updateCheckCalls(page)).toBe(0);
 
-    await flipToggle(page, "opt-auto-update");
-    await expect(page.locator("#opt-auto-update")).toBeChecked();
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveAttribute("aria-checked", "true");
 
     // Switch-on takes the same path as startup: check now, then hourly.
     await expect.poll(() => updateCheckCalls(page)).toBe(1);
@@ -262,10 +246,47 @@ test.describe("auto-update toggle", () => {
   });
 });
 
-// «Se etter oppdateringer nå» — how the manual check RENDERS its two headless
-// answers (SMOKE-TEST §R7 steps 1–2). The button is deliberately ungated by
-// «Oppdater automatisk» (a manual press is the operator asking), so both boots
-// keep the toggle off and drive the button itself.
+test.describe("oppdateringsbanneret", () => {
+  test("en tilgjengelig versjon blir et gult banner over den siden man er på", async ({
+    page,
+  }) => {
+    // Ingen egen oppdateringstoast (canvas sett 7): «det finnes en
+    // oppdatering» er ikke en kvittering som skal forsvinne av seg selv. Og
+    // ikke `bad`/`role=alert` — en oppdatering som venter er ikke noe som er
+    // galt.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        update_check: { phase: "available", version: "0.16.0" },
+      },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: true },
+      goto: "home",
+    });
+
+    const banner = page.getByTestId("banner-update");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("0.16.0");
+    await expect(banner).toHaveAttribute("data-tone", "warn");
+    await expect(page.getByTestId("banner-update-install")).toBeVisible();
+    await expect(page.getByTestId("toast-host")).toHaveCount(0);
+
+    // Den følger med til de andre destinasjonene: en oppdatering hører ikke
+    // til noen side.
+    await page.getByTestId("nav-library").click();
+    await expect(page.getByTestId("banner-update")).toBeVisible();
+  });
+
+  test("en oppdatert app reiser ingen stripe", async ({ page }) => {
+    await boot(page, {
+      fixtures: { ...BOOT_FIXTURES, update_check: { phase: "upToDate" } },
+      settings: { ...SETTLED_SETTINGS, autoUpdate: true },
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-start")).toBeVisible();
+    await expect(page.getByTestId("banner-update")).toHaveCount(0);
+  });
+});
+
 test.describe("manual check answers", () => {
   test("an upToDate answer paints «Du er oppdatert» and retires stale buttons", async ({
     page,
@@ -278,21 +299,21 @@ test.describe("manual check answers", () => {
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
       goto: "settings:general",
     });
-    await page.locator("#btn-check-updates").click();
-    await expect(page.locator("#update-status-text")).toHaveText(
+    await page.getByTestId("adv-update-check").click();
+    await expect(page.getByTestId("adv-update-state")).toHaveText(
       "Du er oppdatert",
     );
-    // update-not-available also retires any stale install/restart button.
-    await expect(page.locator("#btn-restart-install")).toBeHidden();
+    // update-not-available also retires any stale install/restart button — the
+    // regression `update-core.ts`'s table exists for.
+    await expect(page.getByTestId("adv-update-install")).toHaveCount(0);
   });
 
   test("a feature_disabled check surfaces as the ordinary error text", async ({
     page,
   }) => {
     // The `--no-default-features` build's answer: `update_check` REJECTS with
-    // feature_disabled. The panel has no dedicated gate hint — the rejection
-    // rides the ordinary update-error path (SMOKE-TEST §R7 step 1; the runbook
-    // used to promise a calm «ikke bygget inn»-message that never existed).
+    // feature_disabled. The row has no dedicated gate hint — the rejection
+    // rides the ordinary update-error path (SMOKE-TEST §R7 step 1).
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
@@ -303,9 +324,9 @@ test.describe("manual check answers", () => {
       settings: { ...SETTLED_SETTINGS, autoUpdate: false },
       goto: "settings:general",
     });
-    await page.locator("#btn-check-updates").click();
-    await expect(page.locator("#update-status-text")).toHaveText(
-      "Kunne ikke sjekke for oppdateringer",
+    await page.getByTestId("adv-update-check").click();
+    await expect(page.getByTestId("adv-update-error")).toHaveText(
+      "Kunne ikke sjekke etter oppdateringer",
     );
   });
 });

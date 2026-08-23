@@ -49,10 +49,21 @@ export.
   C/C++ toolchain dependency** (whisper-rs/libwhisper was the only one): a
   stock Rust toolchain plus the ffmpeg sidecar builds everything except the
   Windows `asio` feature (Steinberg SDK, see `docs/BUILD_ASIO.md`).
-- **`legacy/`** — the shipping frontend: the ported Electron vanilla-TS
-  renderer (`legacy/renderer` is the Vite root), its `types`/`shared`/`locales`
-  trees, and `legacy/bindings/` — the committed ts-rs TypeScript bindings
-  generated from the Rust types (`npm run bindings`; CI fails if they drift).
+- **`app/`** — the shipping frontend: «Frivilligen først»'s Preact shell, and
+  the Vite root. Three destinations — **Opptak · Bibliotek · Oppsett** — plus
+  **Rediger**, which a recording opens into. Signals at module scope for state,
+  CSS Modules over one token file for every colour, JSX from the compiler (no
+  Babel plugin), and one door into Tauri: `window.api`. Its own header,
+  [`docs/APP-SHELL.md`](docs/APP-SHELL.md), is the long version — the contracts,
+  the gates, and what is still owed.
+- **`legacy/`** — what the old shell left behind. Since fase B that is the
+  shared INVENTORY the app reaches through the `@lib/*` alias — the IPC shim,
+  the locale loader and the pure `*-core` decision modules — plus the
+  `types`/`shared`/`locales` trees and `legacy/bindings/`, the committed ts-rs
+  TypeScript bindings generated from the Rust types (`npm run bindings`; CI
+  fails if they drift). The Electron vanilla-TS renderer that used to live here
+  is gone: `index.html`, `main.ts`, every page and every DOM module. The
+  directory keeps its name until PR B moves the inventory under `app/lib/`.
 - **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), hardware
   smoke tests (`SMOKE-TEST.md`), the account/key checklist
   (`NEEDS-RICHARD.md`), and an improvement-backlog snapshot from 2026-07-07
@@ -69,10 +80,10 @@ phase history.
 npm install                          # toolchain + Tauri JS plugins
 npm run ffmpeg                       # fetch ffmpeg/ffprobe sidecars (checksum-verified)
 
-# Frontend
-npm run dev                          # vite dev server (renderer only)
-npm run tauri dev                    # full app
-npm run build                        # tsc + vite production build
+# Frontend — the app shell in app/, on :1420
+npm run dev                          # vite dev server (frontend only)
+npm run tauri dev                    # full app, in a real WKWebView
+npm run build                        # tsc + vite → dist/ (what a release bundles)
 
 # Rust
 cargo check --workspace              # type-check everything
@@ -95,22 +106,26 @@ bash scripts/ci-local.sh             # closer CI mirror incl. bindings drift + b
 
 ### The browser tier
 
-`npm run check` is node-env-only by design, which left every DOM shell in the
-renderer untestable. `e2e/` closes that: the renderer already boots in a plain
-browser (`api-shim.ts` falls back on every rejected `invoke`), `?goto=<page>`
+`npm run check` is node-env-only by design, which leaves every rendered screen
+untestable. `e2e/` closes that: the shell boots in a plain browser
+(`api-shim.ts` falls back on every rejected `invoke`), `?goto=<page>`
 deep-links into any screen, and the E5.1 fixture seam
 (`window.__SUNDAYREC_FIXTURES__`, keyed by Tauri command name) lets a spec drive
 it with populated state instead of empty ones. No Tauri, no ffmpeg, no device —
 Playwright starts the Vite server itself, so `npm run e2e` is the whole command.
 
-The spec files under `e2e/` are the inventory — one file per surface, each
-with a header saying exactly what it pins and why (onboarding/consent, the
-recorder seam, the editor, Historikk, settings and the renderer→sqlite
-settings seam, auto-update, the update channel, system support, telemetry
-preview). `npx playwright test --list` gives the current count; an
-enumerated prose copy here rotted twice, so there isn't one any more. No
-`test.fail()` remains in `e2e/`, and `docs/SMOKE-TEST.md`'s `VERIFIED-BY:`
-pointers into these specs are gate-checked (`npm run smoke-verified`).
+The spec files under `e2e/` are the inventory — one file per surface, each with
+a header saying exactly what it pins and why (boot and the shell, the three
+destinations, first run and consent, the recorder seam, the library and the
+trash, the editor's three steps, settings and the shell→sqlite settings seam,
+auto-update, the update channel, system support, telemetry preview).
+`npx playwright test --list` gives the current count; an enumerated prose copy
+here rotted twice, so there isn't one any more. ONE project since fase B: there
+were two while both shells existed, and the app copies carried byte-identical
+test titles so the `VERIFIED-BY:` pointers in `docs/SMOKE-TEST.md` could move by
+changing nothing at all. Those pointers are gate-checked
+(`npm run smoke-verified`), and the gate now requires them to resolve to a real
+`test(…)` title rather than to the name appearing anywhere in the file.
 
 Deliberately not wired into `npm run check`: it needs a browser binary
 (`npm run e2e:install`, ~95 MB) that the local gate should not require, and it

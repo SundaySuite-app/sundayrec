@@ -61,6 +61,7 @@ import { SettingRow, type RowIds } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
 import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
+import { AsioAttribution } from "./advanced/AsioAttribution";
 import { LogRow, ProfileRow } from "./advanced/MaintenanceRows";
 import { currentOs } from "./advanced/platform-core";
 import { ScheduleCard } from "./advanced/ScheduleCard";
@@ -157,6 +158,7 @@ export function AdvancedPage() {
 
       <SmtpCard />
       <ScheduleCard />
+      <AsioAttribution />
     </SubPage>
   );
 }

@@ -2,33 +2,26 @@ import { test, expect } from "@playwright/test";
 import {
   boot,
   BOOT_FIXTURES,
-  flipToggle,
   SETTLED_SETTINGS,
   settingsSavePayloads,
   storedSettings,
 } from "./harness";
 
-// The renderer↔sqlite settings seam, after R4's unification.
+// `e2e/settings-seam.spec.ts`, re-pekt på det nye skallet — og dette er den
+// ene fila der påstandene er kopiert ORDRETT, assertion for assertion.
 //
-// The seam this spec used to guard is DEAD: settings lived in localStorage,
-// the backend read sqlite, and a curated `settings_save` subset bridged them —
-// any key missing from the subset was actively re-defaulted by serde on every
-// save (#113 updateChannel, #115 autoDeleteDays, and seven siblings). The
-// instance-level pins this file carried (key X rides the curated sync) are
-// meaningless now, because there IS no curated sync.
+// Grunnen: dette er ikke en UI-test. Det er R4-invarianten, og den gjelder
+// SØMMEN mellom renderer og sqlite — som er nøyaktig den ene tingen de to
+// skallene deler. `payloadFor` i `app/state/settings-save-core.ts` og
+// `collectSettings` i legacy skriver til den samme kommandoen med den samme
+// kontrakten, og hvis bare det ene skallet blir sjekket, er halve invarianten
+// udekket den dagen det andre er det som sendes ut.
 //
-// What replaces them is the CLASS-level invariant the unification promises:
-//
-//   1. Boot READS — it never writes. The old module-load "sync" pushed a
-//      settings_save on every boot; a boot-time write is exactly where a stale
-//      copy overwrites the store, so zero saves at boot is a property.
-//   2. A save carries the FULL object in one vocabulary: the field you changed
-//      AND every field you didn't, with the values the store handed out. A
-//      field written is a field read back — nothing curated, nothing for
-//      serde to re-default.
-//   3. The round trip closes at the storage layer: what `settings_save`
-//      persisted is what the next `settings_get` answers (here: the harness's
-//      fake sqlite row, which `page.reload()` proves in settings.spec.ts).
+// Så: samme titler, samme seedede felter, samme `expect(payload.X)`-linjer.
+// Det ENESTE som er byttet er hvilken kontroll som utløser lagringen — legacy
+// vipper `opt-ask-open-editor` (en Avansert-innstilling P1b bygger), her er det
+// «Ta med kamera» (`videoEnabled`) på nivå 1. `askOpenEditor` er derfor med
+// videre som et URØRT felt, med den samme assertionen på den samme verdien.
 
 test.describe("settings seam — the full object crosses, boot only reads", () => {
   test("boot performs no settings_save at all", async ({ page }) => {
@@ -38,7 +31,9 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
       goto: "settings:general",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    await expect(page.locator("#page-settings")).toBeVisible();
+    // (`settings:general` lands on Avansert since P1b; before that it fell
+    // through to level 1 and this waited on `setup-lede`.)
+    await expect(page.getByTestId("setup-advanced")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 
@@ -50,12 +45,14 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     // re-defaulted by the very save this test triggers — value transport for
     // fields the journey never touched is the property.
     await boot(page, {
-      // `launchAtLogin` is OS-truth since R3: the checkbox (and thus the next
-      // collect) mirrors `get_launch_at_login`, not the stored flag — so the
+      // `launchAtLogin` is OS-truth since R3: the toggle (and thus the next
+      // save) mirrors `get_launch_at_login`, not the stored flag — so the
       // OS fixture must agree with the seed for the value to survive a save.
       fixtures: { ...BOOT_FIXTURES, get_launch_at_login: true },
       settings: {
         ...SETTLED_SETTINGS,
+        videoEnabled: false,
+        askOpenEditor: false,
         autoDeleteDays: 90,
         silenceThreshold: -40,
         splitMinutes: 45,
@@ -71,12 +68,14 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
         autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
-      goto: "settings:general",
+      goto: "settings",
     });
 
-    // The one change: flip «spør om å åpne redigering» (seeded default true).
-    await flipToggle(page, "opt-ask-open-editor");
-    await expect(page.locator(".setting-saved-chip").first()).toBeVisible();
+    // The one change: slå på «Ta med kamera» (seeded av).
+    await page.getByTestId("setup-camera-toggle").click();
+    await expect(page.getByTestId("setup-camera-receipt")).toHaveText(
+      "Lagret ✓",
+    );
 
     await expect
       .poll(() => settingsSavePayloads(page).then((p) => p.length))
@@ -85,9 +84,10 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     const payload = saves[saves.length - 1];
 
     // The changed field crossed…
-    expect(payload.askOpenEditor).toBe(false);
+    expect(payload.videoEnabled).toBe(true);
     // …and every seeded, UNTOUCHED field crossed WITH ITS VALUE — the exact
     // thing the curated bridge silently dropped, one key at a time.
+    expect(payload.askOpenEditor).toBe(false);
     expect(payload.autoDeleteDays).toBe(90);
     expect(payload.silenceThreshold).toBe(-40);
     expect(payload.splitMinutes).toBe(45);
@@ -103,6 +103,7 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
 
     // The round trip closes: the store now answers what the save sent.
     const stored = await storedSettings(page);
+    expect(stored.videoEnabled).toBe(true);
     expect(stored.askOpenEditor).toBe(false);
     expect(stored.autoDeleteDays).toBe(90);
     expect(stored.updateChannel).toBe("beta");

@@ -13,9 +13,18 @@ Ingenting her er et forslag. Det er en beskrivelse — inndata til Fase D, der h
 UI-et tegnes på nytt for en frivillig som aldri har sett appen.
 
 Bildene ligger i [`atlas/`](atlas/INDEX.md); scene-id-er i teksten under viser dit.
-**63 scener × 2 språk = 181 PNG-er, 8,8 MB**, tatt av `npm run atlas` og
-regenererbare når som helst. Konsollvakten under fotograferingen står i
+**63 scener × 2 språk = 181 PNG-er, 8,8 MB**, tatt av `npm run atlas`.
+Konsollvakten under fotograferingen står i
 [`atlas/CONSOLE-FINDINGS.md`](atlas/CONSOLE-FINDINGS.md).
+
+> ⚠️ **Fotografen finnes ikke lenger, og bildene er derfor ikke regenererbare.**
+> `e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas` ble slettet i
+> fase B sammen med skallet de fotograferte: de drev Vite-serveren fra
+> `playwright.config.ts` og klikket seg gjennom legacy-selektorer, så etter
+> byttet ville kommandoen startet det NYE skallet og feilet hver eneste scene.
+> Denne fila og PNG-ene består som Fase A-fasit — en beskrivelse av appen slik
+> den VAR, som er nøyaktig det de ble laget for å være. Å fotografere det nye
+> skallet er en ny scenetabell, ikke en re-peking av denne.
 
 ---
 

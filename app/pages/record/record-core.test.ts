@@ -3,7 +3,7 @@
  *
  * Den ene raden som betyr mest er `deviceId: null` med et `deviceName` som
  * står igjen fra en migrering: den ser besvart ut og er det ikke. Fjern
- * sperren i `sourceState`, og både den raden og `e2e/app/record.spec.ts` sin
+ * sperren i `sourceState`, og både den raden og `e2e/record.spec.ts` sin
  * mutasjonsprøve blir røde.
  */
 

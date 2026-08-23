@@ -7,22 +7,41 @@ import {
   type Fixtures,
 } from "./harness";
 
-// The recorder journey (SMOKE-TEST §5): start from the home button, land in the
-// recording overlay, and stop GRACEFULLY — plus the refusal path where the
-// engine says no and the operator must be told why in their own words.
+// The recorder journey (SMOKE-TEST §5) — the NEW shell's half of it.
 //
-// The capture engine itself is native Rust and stays hardware-bound; what this
-// tier owns is the renderer's half of the seam: `btn-start-recording` →
-// `plan_recording_opts` + `start_recording`, the overlay lifecycle, and
-// `stop_recording`'s finalizing state. The overlay deliberately does NOT close
-// on stop — it waits for a terminal engine event (`recording://finished` et
-// al.), which never arrives in a browser, and that is exactly what lets this
-// suite assert the finalizing state is sticky rather than a same-tick teardown.
+// A copy of `e2e/recorder.spec.ts` with every test TITLE unchanged, because
+// `docs/SMOKE-TEST.md` points at these by name: the day legacy is deleted the
+// pointer moves by swapping the path and nothing else. The legacy file stands
+// untouched and green.
+//
+// What is deliberately different, and why:
+//
+//   - There is no `#modal-manual`. The owner's decision (canvas set 2) is ONE
+//     big Start button: source and camera are Setup decisions, and the file
+//     name follows the pattern the profile already has. So «the modal» in the
+//     second title is now the record PAGE — it is what stays put and shows the
+//     reason when the engine refuses.
+//   - The DOM is testids, not ids. The `__E2E_CALLS__` counters are verbatim:
+//     they are the seam, and the seam did not move — `startRecordingNow` still
+//     means `plan_recording_opts` then `start_recording`, once each.
+//   - Start is BLOCKED until a source is chosen, so these settings choose one.
+//     That is the behaviour change the whole set is about; `record.spec.ts`
+//     owns proving it.
 
 /** Spies wired at the invoke boundary, same pattern as auto-update.spec.ts. */
 const RECORDER_FIXTURES: Fixtures = {
   ...BOOT_FIXTURES,
   list_video_devices: [],
+  list_audio_devices: [
+    {
+      id: "x32",
+      name: "Behringer X32",
+      backend: "coreaudio",
+      inputChannels: 2,
+      sampleRates: [48000],
+      isDefault: true,
+    },
+  ],
   plan_recording_opts: fn(`() => {
     (window.__E2E_CALLS__ ||= {}).plan_recording_opts =
       ((window.__E2E_CALLS__.plan_recording_opts || 0) + 1);
@@ -40,10 +59,15 @@ const RECORDER_FIXTURES: Fixtures = {
   }`),
 };
 
+/** A profile where question 1 is answered — otherwise Start is blocked. */
+const CHOSEN = {
+  ...SETTLED_SETTINGS,
+  deviceId: "x32",
+  deviceName: "Behringer X32",
+};
+
 async function startFromHome(page: Page): Promise<void> {
-  await page.locator("#btn-start-recording").click();
-  await expect(page.locator("#modal-manual")).toBeVisible();
-  await page.locator("#btn-manual-start").click();
+  await page.getByTestId("record-start").click();
 }
 
 test.describe("recorder", () => {
@@ -52,17 +76,15 @@ test.describe("recorder", () => {
   }) => {
     await boot(page, {
       fixtures: RECORDER_FIXTURES,
-      settings: SETTLED_SETTINGS,
+      settings: CHOSEN,
       goto: "home",
     });
 
     await startFromHome(page);
 
-    // The modal gave way to the overlay — the app IS recording as far as the
-    // operator can tell, and the start went through the one real start path
-    // (plan + start, once each).
-    await expect(page.locator("#modal-manual")).toBeHidden();
-    await expect(page.locator("#recording-overlay")).toBeVisible();
+    // The app IS recording as far as the operator can tell, and the start went
+    // through the one real start path (plan + start, once each).
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_CALLS__))
       .toEqual(
@@ -83,19 +105,19 @@ test.describe("recorder", () => {
         ...RECORDER_FIXTURES,
         start_recording: fn(`() => { throw new Error("no_save_folder"); }`),
       },
-      settings: SETTLED_SETTINGS,
+      settings: CHOSEN,
       goto: "home",
     });
 
     await startFromHome(page);
 
     // No overlay — the recording did not start and nothing may pretend it did.
-    await expect(page.locator("#recording-overlay")).toBeHidden();
-    // The modal stays open so the message has somewhere to be seen…
-    await expect(page.locator("#modal-manual")).toBeVisible();
+    await expect(page.getByTestId("recording-overlay")).toBeHidden();
+    // The page stays where it was, with the button still there to press again.
+    await expect(page.getByTestId("record-start")).toBeVisible();
     // …and the message is the LOCALIZED reason, not a raw code or
     // "[object Object]" (the historical failure mode of this exact path).
-    const toast = page.locator(".ui-toast");
+    const toast = page.getByTestId("toast-host");
     await expect(toast).toBeVisible();
     await expect(toast).toContainText("Lagringsmappen er ikke valgt");
   });
@@ -103,23 +125,22 @@ test.describe("recorder", () => {
   test("stop is guarded by a confirm and then holds a finalizing overlay", async ({
     page,
   }) => {
-    // Two claims in one journey. First: with the default settings a stop press
-    // must NOT stop — `protectRecording` interposes a confirm dialog, because
-    // the one unrecoverable mistake on a Sunday is ending the take at minute
-    // 12. Second: a confirmed stop ASKS the engine to finalize and keeps the
-    // overlay up in an explicit finalizing state until a terminal engine event
-    // arrives — it never tears down in the same tick as the click.
+    // Two claims in one journey. First: a stop press must NOT stop — a confirm
+    // is interposed, because the one unrecoverable mistake on a Sunday is
+    // ending the take at minute 12. Second: a confirmed stop ASKS the engine to
+    // finalize and keeps the overlay up in an explicit finalizing state until a
+    // terminal engine event arrives — it never tears down in the same tick as
+    // the click.
     await boot(page, {
       fixtures: RECORDER_FIXTURES,
-      settings: SETTLED_SETTINGS, // protectRecording defaults ON
+      settings: CHOSEN,
       goto: "home",
     });
     await startFromHome(page);
-    await expect(page.locator("#recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
 
-    await page.locator("#btn-stop-overlay").click();
-    const confirm = page.locator("#modal-confirm-stop");
-    await expect(confirm).toBeVisible();
+    await page.getByTestId("overlay-stop").click();
+    await expect(page.getByTestId("dialog")).toBeVisible();
     // Nothing was stopped by the question itself.
     expect(
       await page.evaluate(
@@ -127,7 +148,11 @@ test.describe("recorder", () => {
       ),
     ).toBe(0);
 
-    await page.locator("#btn-confirm-stop").click();
+    // ⚠️ The confirm is INVERTED on purpose: «Fortsett å ta opp» is the
+    // primary/Enter choice, so stopping is the cancel path. See the head of
+    // `app/pages/record/RecordingOverlay.tsx`.
+    await expect(page.getByTestId("dialog-ok")).toHaveText("Fortsett å ta opp");
+    await page.getByTestId("dialog-cancel").click();
 
     // The graceful-stop request went out exactly once…
     await expect
@@ -139,12 +164,13 @@ test.describe("recorder", () => {
     // disabled with the finalizing label, and the "being written to disk"
     // hint visible. (No terminal event ever arrives in the browser tier, so
     // this state must hold rather than flash.)
-    await expect(page.locator("#recording-overlay")).toHaveClass(
-      /is-finalizing/,
+    await expect(page.getByTestId("recording-overlay")).toHaveAttribute(
+      "data-finalizing",
+      "true",
     );
-    const stopBtn = page.locator("#btn-stop-overlay");
-    await expect(stopBtn).toBeDisabled();
-    await expect(stopBtn).toHaveText("Fullfører opptak …");
-    await expect(page.locator("#rec-finalizing-hint")).toBeVisible();
+    const stopBtn = page.getByTestId("overlay-stop");
+    await expect(stopBtn).toHaveAttribute("aria-disabled", "true");
+    await expect(stopBtn).toContainText("Fullfører opptak …");
+    await expect(page.getByTestId("overlay-finalizing-hint")).toBeVisible();
   });
 });

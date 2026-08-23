@@ -19,7 +19,7 @@ macOS er upåvirket — der brukes Core Audio (via ffmpeg), som allerede fungere
    bruker den. Last ned og installer ASIO-driveren for lydkortet ditt fra
    produsenten. (Har du ikke en dedikert driver, fungerer **ASIO4ALL** som en
    generisk ASIO-driver oppå Windows-lyden.)
-2. **Velg lydkortet i SundayRec.** Gå til **Innstillinger → Lyd**. ASIO-enheter
+2. **Velg lydkortet i SundayRec.** Gå til **Oppsett → «Hvilken lyd?»**. ASIO-enheter
    vises øverst med et **«ASIO»-merke**. Velg kortet ditt.
 3. **Velg kanaler.** Har kortet mer enn 2 kanaler, dukker det opp en
    **kanalvelger** (Venstre / Høyre). Velg hvilke inn-kanaler opptaket skal bruke.
@@ -35,10 +35,11 @@ med en tydelig melding.
 
 ## Hvis noe oppfører seg rart: «Klassisk lyd-motor»
 
-Under **Innstillinger → Lyd → Lyd-motor (avansert)** finnes en bryter **«Klassisk
-lyd-motor (DirectShow)»** (kun synlig på Windows, av som standard). Slå den på for
-å tvinge den gamle DirectShow-veien hvis den moderne motoren oppfører seg dårlig på
-en bestemt maskin. De fleste skal la den stå av.
+Under **Oppsett → Avansert → «Opptaksmotor»** finnes tre valg: **Innebygd**
+(standard), **Klassisk (ffmpeg)** og **Klassisk (DirectShow)** — det siste kun
+på Windows. Velg DirectShow for å tvinge den gamle veien hvis den moderne
+motoren oppfører seg dårlig på en bestemt maskin. De fleste skal la den stå på
+Innebygd.
 
 ## macOS
 
@@ -63,8 +64,8 @@ Bygg-oppsett for ASIO: se [`BUILD_ASIO.md`](./BUILD_ASIO.md).
 | **cpal**     | Lyd-I/O på tvers av plattform          | Apache-2.0 / MIT                                  |
 | **ringbuf**  | Lock-free buffer (callback → ffmpeg)   | MIT / Apache-2.0                                  |
 
-**Steinberg-attribusjon** (vises i Windows-bygget under Innstillinger → Generelt →
-«Lyd-teknologi», og gjengitt her som lisenskrav):
+**Steinberg-attribusjon** (vises i Windows-bygget nederst under Oppsett →
+Avansert, som «Lyd-teknologi», og gjengitt her som lisenskrav):
 
 > ASIO Driver Interface Technology by Steinberg Media Technologies GmbH. ASIO is a
 > trademark and software of Steinberg Media Technologies GmbH.

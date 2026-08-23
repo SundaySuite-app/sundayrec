@@ -18,10 +18,16 @@ const repoRoot = path.resolve(__dirname, '..')
 // build`), not a second source of truth — it is not checked here, and nothing
 // else in the repo drift-checks it either.
 
-// BOTH shells carry the tag. `app/index.html` is «Frivilligen først»'s Preact
-// shell; it is the whole point of the S0 spike that it runs under the SAME
-// policy the shipped WKWebView enforces, and the only way that claim stays true
-// is if a drift in either file fails here.
+// ONE shell carries the tag since fase B: `app/index.html`, «Frivilligen
+// først»'s Preact shell, is the shipped frontend, and the old renderer's
+// `legacy/renderer/index.html` was deleted with the rest of its DOM. It is the
+// whole point of the S0 spike that the shell runs under the SAME policy the
+// shipped WKWebView enforces, and the only way that claim stays true is if a
+// drift in either file fails here.
+//
+// The loop and the covers-every-shell test are KEPT rather than flattened to a
+// single assertion: what they guard against is a SECOND index.html arriving
+// with no policy check at all, which looks exactly like green.
 
 describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => {
   function normalizeCsp(csp: string): string {
@@ -39,10 +45,9 @@ describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => 
   }
 
   /** Every index.html that declares the policy for itself. Prettier formats
-   *  `app/` (legacy is ignored), so the attribute may sit on its own line —
-   *  hence `[\s\S]` in the tag match and the whitespace normalisation below. */
+   *  `app/`, so the attribute may sit on its own line — hence `[\s\S]` in the
+   *  tag match and the whitespace normalisation below. */
   const SHELLS: Array<[string, string[]]> = [
-    ['legacy renderer', ['legacy', 'renderer', 'index.html']],
     ['app shell (Preact)', ['app', 'index.html']],
   ]
 
@@ -69,7 +74,7 @@ describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => 
     // The failure this catches is a third shell (or a rename) landing with no
     // policy check at all, which looks exactly like green.
     const covered = SHELLS.map(([, s]) => s.join('/')).sort()
-    expect(covered).toEqual(['app/index.html', 'legacy/renderer/index.html'])
+    expect(covered).toEqual(['app/index.html'])
   })
 })
 

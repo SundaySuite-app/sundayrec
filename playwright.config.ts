@@ -4,38 +4,33 @@ import { defineConfig, devices } from "@playwright/test";
 //
 // ## Why this exists
 //
-// The unit gate is node-env-only on purpose (see vitest.config.ts), which left
-// ~23 000 lines of renderer — every DOM shell — with no test and no way to get
-// one. The way in is that the renderer already boots in a plain browser:
-// `api-shim.ts` catches every rejected `invoke` and returns the caller's
-// fallback, so outside Tauri the UI renders complete empty states. E5.1 added
-// the fixture seam so those states can be POPULATED, and `?goto=<page>[:<tab>]`
-// deep-links straight into any screen. Between them, a real journey test costs a
-// browser and nothing else — no Tauri, no ffmpeg, no device.
+// The unit gate is node-env-only on purpose (see vitest.config.ts), which leaves
+// every screen — the whole rendered shell — with no test and no way to get one.
+// The way in is that the shell already boots in a plain browser: `api-shim.ts`
+// catches every rejected `invoke` and returns the caller's fallback, so outside
+// Tauri the UI renders complete empty states. E5.1 added the fixture seam so
+// those states can be POPULATED, and `?goto=<page>[:<tab>]` deep-links straight
+// into any screen. Between them, a real journey test costs a browser and nothing
+// else — no Tauri, no ffmpeg, no device.
 //
 // ## What this tier is and is not
 //
 // It is not a second unit gate. These are UI journeys: boot the app, drive it
-// the way an operator would, assert what they would see. So the timeouts are
-// generous (the renderer boots, then `?goto=` POLLS for `window.showPage` every
+// the way a volunteer would, assert what they would see. So the timeouts are
+// generous (the shell boots, then `?goto=` POLLS for `window.showPage` every
 // 50 ms), and every assertion is web-first (`expect(locator).toBeVisible()`) —
 // never a fixed sleep, which is the one thing guaranteed to be both slow and
 // flaky.
+//
+// ## One project since fase B
+//
+// It was two — `chromium` for the shipped legacy shell on :1420 and `app` for
+// the parallel Preact shell on :1430 — for as long as both shells existed. Fase
+// B deleted the old one, and with it the 13 legacy specs whose `app/` copies had
+// been carrying byte-identical test titles for exactly this day. What is left is
+// one shell, one server, one project, and one place a spec can live.
 export default defineConfig({
   testDir: "./e2e",
-
-  // `e2e/atlas/` is the ATLAS tier — a photographer for the «Frivilligen først»
-  // redesign, run by `npm run atlas` through `playwright.atlas.config.ts`. It
-  // takes ~140 screenshots and asserts almost nothing, so it must never run as
-  // part of this gate (nor on CI). Keep this in step with that config's
-  // `testDir`.
-  //
-  // A REGEX, not the glob `**/atlas/**`: Playwright matches these against the
-  // ABSOLUTE path, so the glob also excludes the whole suite whenever any
-  // ancestor directory happens to be called `atlas` (a git worktree named after
-  // this branch does exactly that, and the symptom is «No tests found» for the
-  // browser tier). Anchoring on `e2e/atlas/` can only match the real thing.
-  testIgnore: [/e2e[\\/]atlas[\\/]/],
 
   // A journey is boot + navigate + a few interactions. 45 s is roomy for that
   // and still short enough that a hang fails rather than stalls the run. It was
@@ -44,7 +39,7 @@ export default defineConfig({
   // margin, it is a coin waiting to flip on a slow CI runner.
   timeout: 45_000,
   // Web-first assertions retry until this. The long pole is the first paint
-  // after `?goto=`, which waits on the renderer's own 150 ms + 50 ms poll.
+  // after `?goto=`, which waits on the shell's own boot.
   expect: { timeout: 10_000 },
 
   fullyParallel: true,
@@ -63,59 +58,28 @@ export default defineConfig({
     video: "off",
   },
 
-  // Two projects, one engine. The shipped renderer only ever runs in one engine
-  // (WKWebView on macOS, WebView2 on Windows) and neither is
-  // Chromium-in-Playwright anyway, so a cross-browser matrix would triple the
-  // runtime to test engines nobody ships. Chromium is the closest available
-  // stand-in and the fastest.
-  //
-  // `chromium` is the shipped legacy shell on :1420. `app` is «Frivilligen
-  // først»'s new Preact shell on :1430 — a different server, a different bundle
-  // and a different spec directory, so the two can never accidentally assert
-  // against each other. Today it holds one boot spec; S1 fills it in.
+  // One engine. The shipped shell only ever runs in one (WKWebView on macOS,
+  // WebView2 on Windows) and neither is Chromium-in-Playwright anyway, so a
+  // cross-browser matrix would multiply the runtime to test engines nobody
+  // ships. Chromium is the closest available stand-in and the fastest.
   projects: [
     {
       name: "chromium",
-      // BOTH exclusions have to live here. A project-level `testIgnore`
-      // REPLACES the top-level one rather than adding to it, so listing the
-      // atlas only at the top of this file would silently let it back in the
-      // moment a project set its own — which is exactly what happened when the
-      // `app` project arrived.
-      testIgnore: [/app\//, /e2e[\\/]atlas[\\/]/],
       use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "app",
-      testMatch: /app\/.*\.spec\.ts/,
-      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:1430" },
     },
   ],
 
   // Playwright starts Vite itself, so `npx playwright test` is the whole
   // command — no "remember to run the dev server first". Reuses a server you
   // already have running locally; on CI always starts a clean one.
-  //
-  // One server per shell. They are separate Vite roots on separate ports, so
-  // starting both is the only way a single `npm run e2e` can cover both — and
-  // the app one is a few hundred milliseconds, because `app/` is 36 modules.
-  webServer: [
-    {
-      command: "npm run dev",
-      url: "http://localhost:1420",
-      reuseExistingServer: !process.env.CI,
-      // `predev` fetches the ffmpeg sidecars on a cold checkout, which dominates
-      // this on the first run.
-      timeout: 180_000,
-      stdout: "ignore",
-      stderr: "pipe",
-    },
-    {
-      command: "npm run dev:app",
-      url: "http://localhost:1430",
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
-      stdout: "ignore",
-      stderr: "pipe",
-    },
-  ],
+  webServer: {
+    command: "npm run dev",
+    url: "http://localhost:1420",
+    reuseExistingServer: !process.env.CI,
+    // `predev` fetches the ffmpeg sidecars on a cold checkout, which dominates
+    // this on the first run.
+    timeout: 180_000,
+    stdout: "ignore",
+    stderr: "pipe",
+  },
 });

@@ -3,15 +3,25 @@ import {
   boot,
   BOOT_FIXTURES,
   fn,
-  flipToggle,
   SETTLED_SETTINGS,
   type Fixtures,
 } from "./harness";
 
-// «Vis hva som sendes» (E3.5/E3.7) — the surface that makes the telemetry
-// promise checkable by the person it is about.
+// `e2e/telemetry-preview.spec.ts`, re-pointed at the new shell. Every test
+// TITLE is byte-identical to the legacy file's — `docs/SMOKE-TEST.md` points at
+// them by `path::title`.
 //
-// Note the command is `telemetry_preview_payload`, not `telemetry_preview`.
+// Two things moved, and both are deliberate:
+//
+//   • The preview is the shared DIALOG (`alertDialog` → `DialogHost`) rather
+//     than a modal of its own. The host is the one place that sets `inert` on
+//     the rest of the app, and a second modal mechanism would be a second place
+//     to forget it. So: `dialog-title` / `dialog-message` / `dialog-pre` instead
+//     of `#telemetry-preview-modal`.
+//   • The dialog opens AFTER the payload arrives, so there is no «…» to hang
+//     on. The failure case therefore shows the sentence and no `<pre>` at all.
+//
+// The command is still `telemetry_preview_payload`, not `telemetry_preview`.
 
 const PAYLOAD = JSON.stringify(
   {
@@ -41,7 +51,7 @@ const TELEMETRY_FIXTURES: Fixtures = {
   },
 };
 
-async function openSystemTab(
+async function openAdvanced(
   page: import("@playwright/test").Page,
   fixtures: Fixtures = TELEMETRY_FIXTURES,
 ) {
@@ -50,29 +60,27 @@ async function openSystemTab(
     settings: SETTLED_SETTINGS,
     goto: "settings:general",
   });
-  await expect(page.locator("#telemetry-card")).toBeVisible();
+  await expect(page.getByTestId("adv-diag")).toBeVisible();
 }
 
 test.describe("telemetry preview", () => {
   test("«Vis hva som sendes» renders the payload JSON", async ({ page }) => {
-    await openSystemTab(page);
+    await openAdvanced(page);
 
-    const button = page.locator("#btn-telemetry-preview");
-    await expect(button).toHaveText("Vis hva som sendes");
+    const button = page.getByTestId("adv-diag-preview");
+    await expect(button).toHaveText("Vis");
     await button.click();
 
-    const modal = page.locator("#telemetry-preview-modal");
-    await expect(modal).toBeVisible();
-    await expect(modal.locator(".modal-title")).toHaveText("Hva sendes");
+    await expect(page.getByTestId("dialog")).toBeVisible();
+    await expect(page.getByTestId("dialog-title")).toHaveText("Hva sendes");
 
-    // The JSON itself — the whole point. It arrives after the modal opens (the
-    // body reads "…" for one turn), so this has to be a web-first assertion.
-    const body = page.locator("#telemetry-preview-body");
+    // The JSON itself — the whole point.
+    const body = page.getByTestId("dialog-pre");
     await expect(body).toHaveText(PAYLOAD);
     await expect(body).toContainText("recording_started_manual");
 
     // With consent ON, the honest claim is the strong one.
-    await expect(page.locator("#telemetry-preview-hint")).toHaveText(
+    await expect(page.getByTestId("dialog-message")).toHaveText(
       "Dette er nøyaktig det som sendes neste gang.",
     );
   });
@@ -82,7 +90,7 @@ test.describe("telemetry preview", () => {
   }) => {
     // This is the load-bearing distinction: the same button, shown to someone
     // who declined, must not imply their data is going anywhere.
-    await openSystemTab(page, {
+    await openAdvanced(page, {
       ...TELEMETRY_FIXTURES,
       telemetry_consent_get: {
         status: "denied",
@@ -99,19 +107,19 @@ test.describe("telemetry preview", () => {
       },
     });
 
-    await page.locator("#btn-telemetry-preview").click();
-    const hint = page.locator("#telemetry-preview-hint");
+    await page.getByTestId("adv-diag-preview").click();
+    const hint = page.getByTestId("dialog-message");
     await expect(hint).toContainText("Diagnostikk er av");
     await expect(hint).toContainText("ingenting sendes");
     // …and it still shows the shape, so "what would you send?" is answerable
     // without granting first.
-    await expect(page.locator("#telemetry-preview-body")).toHaveText(PAYLOAD);
+    await expect(page.getByTestId("dialog-pre")).toHaveText(PAYLOAD);
   });
 
   test("an empty queue is called out rather than shown as a blank box", async ({
     page,
   }) => {
-    await openSystemTab(page, {
+    await openAdvanced(page, {
       ...TELEMETRY_FIXTURES,
       telemetry_preview_payload: {
         json: "{}",
@@ -119,8 +127,8 @@ test.describe("telemetry preview", () => {
         isEmpty: true,
       },
     });
-    await page.locator("#btn-telemetry-preview").click();
-    await expect(page.locator("#telemetry-preview-hint")).toContainText(
+    await page.getByTestId("adv-diag-preview").click();
+    await expect(page.getByTestId("dialog-message")).toContainText(
       "Ingenting å sende akkurat nå.",
     );
   });
@@ -129,16 +137,18 @@ test.describe("telemetry preview", () => {
     page,
   }) => {
     // `telemetry_preview_payload` is a direct invoke with a `null` fallback, so
-    // a dead backend must produce a sentence, not a modal stuck on the ellipsis.
-    await openSystemTab(page, {
+    // a dead backend must produce a sentence. In the new shell it cannot hang
+    // on an ellipsis at all — the dialog opens with the answer, so a failure
+    // opens with the failure and carries NO `<pre>`.
+    await openAdvanced(page, {
       ...TELEMETRY_FIXTURES,
       telemetry_preview_payload: fn(`() => { throw new Error("no db") }`),
     });
-    await page.locator("#btn-telemetry-preview").click();
-    await expect(page.locator("#telemetry-preview-hint")).toHaveText(
+    await page.getByTestId("adv-diag-preview").click();
+    await expect(page.getByTestId("dialog-message")).toHaveText(
       "Kunne ikke hente forhåndsvisningen.",
     );
-    await expect(page.locator("#telemetry-preview-body")).toHaveText("");
+    await expect(page.getByTestId("dialog-pre")).toHaveCount(0);
   });
 
   test("a payload carrying corrections shows them, not «ingenting å sende»", async ({
@@ -146,8 +156,7 @@ test.describe("telemetry preview", () => {
   }) => {
     // SMOKE-TEST §12.8: when correction signals exist and diagnostics is on,
     // «vis hva som sendes» must list them — and the caption must NOT claim
-    // there is nothing to send while they are on screen. (§12.9, the companion
-    // outcomes, left the wire in v0.15.)
+    // there is nothing to send while they are on screen.
     const RICH = JSON.stringify(
       {
         installId: "a1b2c3d4-0000-0000-0000-000000000000",
@@ -166,7 +175,7 @@ test.describe("telemetry preview", () => {
       null,
       2,
     );
-    await openSystemTab(page, {
+    await openAdvanced(page, {
       ...TELEMETRY_FIXTURES,
       telemetry_preview_payload: {
         json: RICH,
@@ -174,12 +183,12 @@ test.describe("telemetry preview", () => {
         isEmpty: false,
       },
     });
-    await page.locator("#btn-telemetry-preview").click();
+    await page.getByTestId("adv-diag-preview").click();
 
-    const body = page.locator("#telemetry-preview-body");
+    const body = page.getByTestId("dialog-pre");
     await expect(body).toContainText("corrections");
     await expect(body).toContainText("30_60s");
-    const hint = page.locator("#telemetry-preview-hint");
+    const hint = page.getByTestId("dialog-message");
     await expect(hint).not.toContainText("Ingenting å sende akkurat nå.");
     await expect(hint).toHaveText(
       "Dette er nøyaktig det som sendes neste gang.",
@@ -193,11 +202,20 @@ test.describe("telemetry preview", () => {
     // explicit yes. The card must appear when the backend says the install is
     // due to be asked — and «Nei takk» must write `granted: false` to the
     // backend (not merely hide the card), so the question is never re-asked.
+    //
+    // In the new shell the card lives on OPPTAK (canvas set 7.1), not inside
+    // the first-run sequence: a privacy question wedged between «test the
+    // sound» and «all done» reads as one more step to get past.
     await boot(page, {
       fixtures: {
         ...BOOT_FIXTURES,
         telemetry_consent_get: {
-          status: "neverAsked",
+          // ⚠️ «never-asked», med bindestrek. `ConsentStatus` er
+          // `#[serde(rename_all = "kebab-case")]` i Rust, så det er den ENESTE
+          // formen bakenden noen gang sender. Legacy-spec-ene fikstureres med
+          // «neverAsked», som ingenting i prod produserer — den formen ville
+          // fått samtykkekortet til å tro at dette er et GJENTATT spørsmål.
+          status: "never-asked",
           version: 0,
           decidedAt: null,
           currentVersion: 2,
@@ -217,10 +235,10 @@ test.describe("telemetry preview", () => {
       goto: "home",
     });
 
-    const card = page.locator("#telemetry-consent-toast");
+    const card = page.getByTestId("consent-card");
     await expect(card).toBeVisible();
 
-    await page.locator("#telemetry-consent-toast-no").click();
+    await page.getByTestId("consent-card-no").click();
     await expect(card).toBeHidden();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_CONSENT__))
@@ -230,7 +248,7 @@ test.describe("telemetry preview", () => {
   test("the consent toggle reflects the backend and writes back to it", async ({
     page,
   }) => {
-    await openSystemTab(page, {
+    await openAdvanced(page, {
       ...TELEMETRY_FIXTURES,
       telemetry_consent_set: fn(`(args) => {
         (window.__E2E_CONSENT__ ||= []).push(args.granted);
@@ -242,17 +260,16 @@ test.describe("telemetry preview", () => {
       }`),
     });
 
-    // The card is driven by `telemetry_consent_get`, not by local settings —
-    // a toggle that showed the renderer's own idea of consent would be a lie
-    // the moment the two diverged.
-    await expect(page.locator("#opt-telemetry-consent")).toBeChecked();
+    // The row is driven by `telemetry_consent_get`, not by local settings — a
+    // toggle that showed the renderer's own idea of consent would be a lie the
+    // moment the two diverged.
+    const toggle = page.getByTestId("adv-diag-control-input");
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
 
-    await flipToggle(page, "opt-telemetry-consent");
+    await toggle.click();
     await expect
       .poll(() => page.evaluate(() => (window as any).__E2E_CONSENT__))
       .toEqual([false]);
-    await expect(
-      page.locator("#telemetry-card .setting-saved-chip"),
-    ).toHaveText("Lagret ✓");
+    await expect(page.getByTestId("adv-diag-receipt")).toHaveText("Lagret ✓");
   });
 });

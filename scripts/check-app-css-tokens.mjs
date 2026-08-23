@@ -4,8 +4,9 @@
  *
  * ## Hvorfor
  *
- * `legacy/renderer/styles.css` har en pen `:root`-blokk med 52 variabler — og
- * over tusen hardkodede farger under den. Hver enkelt var rimelig der og da
+ * `legacy/renderer/styles.css` HADDE en pen `:root`-blokk med 52 variabler — og
+ * over tusen hardkodede farger under den. (Fila er slettet i fase B; grunnen
+ * denne gaten finnes for, er ikke.) Hver enkelt var rimelig der og da
  * («nesten den blå, bare litt mørkere»), og til sammen gjør de at eieren ikke
  * kan justere paletten ett sted, fordi de fleste fargene ikke bor der. Det er
  * ikke en stilfeil, det er en eierskapsfeil: fargen ligger i komponenten som

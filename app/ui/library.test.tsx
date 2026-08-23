@@ -19,7 +19,7 @@
  *
  * Node-miljø, `preact-render-to-string`, ingen jsdom: alt her er markup.
  * Oppførsel som trenger en ekte DOM (fokus, Escape, `inert` i praksis) bevises
- * i `e2e/app/`.
+ * i `e2e/`.
  */
 
 import { render } from "preact-render-to-string";

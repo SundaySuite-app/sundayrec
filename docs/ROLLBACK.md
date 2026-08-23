@@ -69,8 +69,9 @@ the pipeline will tell you which one you picked.
   removing the GitHub asset does not reach back and un-run an installer that
   already ran.
 - **Propagation is not instant, but it is fast.** A running app re-checks for
-  updates about once an hour (`legacy/renderer/pages/general-page.ts`'s
-  startup-plus-hourly check), and the update feed itself is cached for 60
+  updates about once an hour (`app/state/auto-update.ts`'s startup-plus-hourly
+  check, over `@lib/pages/auto-update-schedule-core`), and the feed itself is
+  cached for 60
   seconds. So pausing a channel reaches an already-running installation
   within the hour, and a freshly-launched or manually-checked one
   immediately.

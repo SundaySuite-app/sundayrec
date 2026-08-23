@@ -1,5 +1,5 @@
 /**
- * Audio input-device enumeration (renderer-side).
+ * Audio input helpers the shell shares with the backend's enumeration.
  *
  * ## The blink-open that had to go
  *
@@ -15,63 +15,28 @@
  * recorder opened it — the 2026-07-31 Qu-5 incident, where a 32-channel mixer
  * stayed pinned to the 2-channel format gUM had negotiated.
  *
- * The list now comes from the backend (`list_audio_devices` → cpal, plus ASIO
- * on Windows), which is the same enumeration the recorder itself resolves
- * against. No permission prompt, no stream, real labels, and — for free — the
- * real channel count per device.
+ * The list comes from the backend (`list_audio_devices` -> cpal, plus ASIO on
+ * Windows), which is the same enumeration the recorder itself resolves against.
+ * No permission prompt, no stream, real labels, and - for free - the real
+ * channel count per device. The renderer holds no microphone at all.
  *
- * Recording and metering were already backend-owned (src-tauri/src/recorder,
- * audio/vu-feed.ts). With this, the renderer holds no microphone at all.
- */
-
-import type { AudioBackendKind } from '../../bindings/AudioBackendKind'
-import { patchSettings, settings } from '../state'
-
-/**
- * One selectable audio input.
+ * ## What fase B removed from this file, and what went with it
  *
- * `deviceId`/`label` keep the `MediaDeviceInfo` field NAMES the call sites were
- * written against, but the VALUES are now the backend's: `deviceId` is the
- * device name the recorder addresses (not a Web Audio hash), and `label` is
- * that same human-readable name. That makes `deviceId` and `settings.deviceName`
- * finally speak the same language — the Web Audio hash never matched anything
- * the backend knew, which is why every call site had to fuzzy-match by label.
- */
-export interface AudioInputDevice {
-  deviceId: string
-  label: string
-  /** Which OS backend reaches it — drives the picker badge. */
-  backend: AudioBackendKind
-  /** Real input-channel count (a Qu-5's 32, not getUserMedia's 2). 0 = unknown. */
-  channels: number
-  /** The host's default input. Replaces the old `deviceId === 'default'` entry. */
-  isDefault: boolean
-}
-
-/**
- * The host's input devices, for pickers and status checks.
+ * `getAudioDevices()` itself is gone: `app/state/devices.ts` reads
+ * `list_audio_devices` and shapes it for the screens, and two shapers over one
+ * list is the seam class this whole redesign exists to stop making.
  *
- * ASIO entries are deliberately EXCLUDED: audio-page renders those from
- * `listAsioDrivers()` under `asio::`-prefixed ids (a different id space, since
- * an ASIO card and its WASAPI stereo-pair shadow are the same hardware), and
- * listing them twice would give the user two cards for one interface.
+ * ⚠️ `healStoredDeviceId()` is gone too, and that one was BEHAVIOUR, not a
+ * duplicate. It re-pointed a stored `deviceId` that no longer resolved by
+ * matching on the stored NAME - which mattered twice: Windows reassigns device
+ * ids after a reboot or a driver update, and ids written by a pre-backend build
+ * are Web Audio hashes. The channel-grid L/R picks are keyed BY id, so without
+ * the heal a Qu-5 rig silently reverts to channels 1/2 and nobody finds out
+ * until the recording is of the wrong source. The new shell never called it
+ * (and could not have: it read a module-scope `settings` mirror the shell does
+ * not populate). Rebuilding it over `app/state/settings.ts` is a named restanse
+ * - see docs/APP-SHELL.md, "Etter byttet".
  */
-export async function getAudioDevices(): Promise<AudioInputDevice[]> {
-  try {
-    const list = await window.api.listAudioDevices()
-    return list
-      .filter(d => d.backend !== 'asio')
-      .map(d => ({
-        deviceId: d.id,
-        label: d.name,
-        backend: d.backend,
-        channels: d.inputChannels,
-        isDefault: d.isDefault,
-      }))
-  } catch {
-    return []
-  }
-}
 
 /**
  * Is this the machine's own microphone rather than a mixer / interface?
@@ -84,37 +49,4 @@ export async function getAudioDevices(): Promise<AudioInputDevice[]> {
  */
 export function isBuiltInDevice(label: string): boolean {
   return /built-?in|innebygd|internal|default|standard|macbook|imac|mac ?(mini|studio|pro)|microphone array|mikrofonrekke/i.test(label)
-}
-
-/**
- * Re-point a stored device id that no longer resolves.
- *
- * Two things make this necessary, and it has to handle both:
- *  - Windows reassigns device ids after a reboot or a driver update, which is
- *    what this heal was originally written for (it lived inline in home.ts).
- *  - The id space itself changed when enumeration moved to the backend: a
- *    settings file written by an older build holds a Web Audio hash. The saved
- *    `deviceName` still matches, so the heal migrates it on first launch.
- *
- * The channel grid's L/R picks are keyed by device id, so they MUST travel with
- * the id — otherwise a Qu-5 rig silently reverts to channels 1/2 after an
- * update, and nobody finds out until the recording is of the wrong source.
- *
- * Returns whether anything was changed (the caller persists + re-renders).
- */
-export function healStoredDeviceId(devices: readonly AudioInputDevice[]): boolean {
-  const storedId = settings.deviceId
-  const storedName = settings.deviceName
-  if (!storedId || !storedName) return false
-  if (devices.some(d => d.deviceId === storedId)) return false
-  const byLabel = devices.find(d => d.label.toLowerCase() === storedName.toLowerCase())
-  if (!byLabel || byLabel.deviceId === storedId) return false
-
-  const patch: Parameters<typeof patchSettings>[0] = { deviceId: byLabel.deviceId }
-  const stored = settings.deviceChannels?.[storedId]
-  if (stored) {
-    patch.deviceChannels = { ...(settings.deviceChannels ?? {}), [byLabel.deviceId]: stored }
-  }
-  patchSettings(patch)
-  return true
 }

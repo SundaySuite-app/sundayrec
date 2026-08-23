@@ -20,7 +20,7 @@
  *
  * Kontrollene er ikke lenger håndlagde `<button>`-er: raden er en ekte
  * `SettingRow` og bryteren en ekte `Toggle`. Testid-ene er de samme, så
- * `e2e/app/settings-revert.spec.ts` gjelder uendret — men nå driver den
+ * `e2e/settings-revert.spec.ts` gjelder uendret — men nå driver den
  * biblioteket i stedet for en stedfortreder for det.
  */
 

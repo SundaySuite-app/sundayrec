@@ -5,9 +5,10 @@
  *
  * ## Hvorfor en ny gate og ikke den gamle
  *
- * `check-i18n-fallbacks.mjs` holder `data-i18n`-reservetekstene i
- * `legacy/renderer/index.html` i takt med no.json. Det er en gate om HTML som
- * skrives to ganger. `app/` skriver ingenting to ganger: det finnes ingen
+ * `check-i18n-fallbacks.mjs` HOLDT `data-i18n`-reservetekstene i
+ * `legacy/renderer/index.html` i takt med no.json — en gate om HTML som skrives
+ * to ganger. Både gaten og fila er slettet i fase B, og det er denne gaten som
+ * dekker skallet nå. `app/` skriver ingenting to ganger: det finnes ingen
  * `data-i18n`, ingen reservetekst i markup, og ingen fallback-argument (ESLint
  * forbyr det, denne gaten måler det). Spørsmålet flytter seg dermed fra «er de
  * to skrivemåtene enige?» til «peker kallet på noe som faktisk finnes, og som
@@ -32,18 +33,38 @@
  * som oppdages av en bruker i stedet for av CI — og engelsk er språket
  * halve verden av frivillige leser appen på.
  *
- * ## `--unused`
+ * ## `--unused` — FEILENDE siden fase B
  *
- * INFORMATIVT nå (avslutter alltid 0): lister nøkler i no.json som ingen
- * app-fil bruker. Det er en stor liste så lenge `legacy/renderer` eier
- * mesteparten av katalogen. I FASE B — når legacy-skallet er borte og `app/`
- * er den eneste leseren — blir dette en FEILENDE sjekk, og lista er da
- * ryddelista for katalogen.
+ * Lister nøkler i no.json ingen leser. Den var informativ mens
+ * `legacy/renderer` eide mesteparten av katalogen; nå er skallet borte, og en
+ * nøkkel ingen leser er en setning ingen ser — som likevel må oversettes til
+ * sju språk, holdes i paritet og leses på nytt hver gang noen rydder.
+ *
+ * ⚠️ «Ingen leser» er IKKE det samme som «ingen `t()` i `app/`». De rene
+ * modulene under `@lib/*` svarer med NØKLER — `status/next-recording-core`
+ * returnerer `home.readyTitle`, `ui/progress-core` returnerer `progress.eta*`,
+ * `status/health-findings` returnerer `health.micDenied` — og siden kaller så
+ * `t(k)` med en variabel, som AST-vandringen ser som «dynamisk» og ikke kan
+ * slå opp. En prune som bare talte `app/` ville derfor slettet nøkler som
+ * FAKTISK rendres, og feilen ville vært tom tekst på en flate ingen test
+ * åpner.
+ *
+ * Derfor to kilder til «brukt»:
+ *   1. AST-vandringen over `app/**` (nøyaktig, ser formen kallet forutsetter),
+ *   2. et STRENGLITERAL-søk over inventarets kildefiler under
+ *      `legacy/renderer/**` — samme metode som
+ *      `scripts/check-command-reachability.mjs` bruker og begrunner, og av
+ *      samme grunn: det er bredere enn nødvendig, og det er den riktige
+ *      retningen å ta feil i for en gate som SLETTER.
+ *
+ * `*.test.ts` teller IKKE som leser. En test som pinner katalogen er ikke en
+ * flate en frivillig ser, og «behold strengen, en test nevner den» er hvordan
+ * en katalog aldri blir mindre.
  *
  * Bruk:
  *   node scripts/check-i18n-keys.mjs            # gate (baseline 0)
  *   node scripts/check-i18n-keys.mjs --list     # vis alle kall gaten fant
- *   node scripts/check-i18n-keys.mjs --unused   # informativ ubrukt-liste
+ *   node scripts/check-i18n-keys.mjs --unused   # gate: 0 ubrukte nøkler
  *
  * Mutasjonsvern: skriptet kjører først seg selv mot en innebygd TSX-fixtur med
  * fasit — én kjent feil per feilklasse. Sløyfer noen ut en klasse, feiler
@@ -65,6 +86,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const LOCALE_DIR = path.join(ROOT, "legacy", "locales");
 const APP_DIR = path.join(ROOT, "app");
+/** Den delte kjernen `app/` når gjennom `@lib/*`. Se `--unused` over. */
+const LIB_DIR = path.join(ROOT, "legacy", "renderer");
 
 /**
  * Språkene `app/` er oversatt til NÅ. Speiler `ACTIVE_LOCALES` i
@@ -85,6 +108,41 @@ export function isPluralGroup(v) {
     keys.every((k) => CLDR.has(k)) &&
     typeof v.other === "string"
   );
+}
+
+/**
+ * Nøkler en DELT KJERNE navngir som en strengliteral.
+ *
+ * De rene modulene svarer med en nøkkel og lar siden oversette; AST-vandringen
+ * over `app/` ser da bare `t(«dynamisk»)`. Metoden er den samme som
+ * `check-command-reachability.mjs`: strip kommentarer, og spør så om nøkkelen
+ * står som en literal noe sted i kilden. Bredere enn et kallsted — og det er
+ * den riktige retningen for en gate hvis handling er å SLETTE.
+ *
+ * `*.test.ts` er utelatt med vilje: en test er ingen flate.
+ */
+function keysNamedInSharedCore(allKeys) {
+  const files = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (/\.tsx?$/.test(ent.name) && !/\.test\.tsx?$/.test(ent.name))
+        files.push(p);
+    }
+  };
+  walk(LIB_DIR);
+  const source = files
+    .map((f) => fs.readFileSync(f, "utf8"))
+    .join("\n")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const literals = new Set(
+    [...source.matchAll(/["'`]([A-Za-z][A-Za-z0-9_.]*)["'`]/g)].map(
+      (m) => m[1],
+    ),
+  );
+  return new Set(allKeys.filter((k) => literals.has(k)));
 }
 
 const lookup = (tree, key) =>
@@ -356,15 +414,28 @@ function main() {
   }
 
   if (args.includes("--unused")) {
-    const unused = flattenKeys(trees.no)
+    const all = flattenKeys(trees.no);
+    const named = keysNamedInSharedCore(all);
+    const unused = all
       .filter((k) => !used.has(k))
+      .filter((k) => !named.has(k))
       .filter((k) => !usedPrefixes.some((p) => k.startsWith(p)))
       .sort();
-    for (const k of unused) console.log(k);
+    if (unused.length) {
+      console.error("i18n-ryddegate FEILET — nøkler ingen leser:\n");
+      for (const k of unused) console.error("  ✗ " + k);
+      console.error(
+        `\n${unused.length} nøkkel/nøkler i legacy/locales/*.json som verken ` +
+          "et `t/tf/tn/tArr/tDyn`-kall i app/ eller en delt kjerne under " +
+          "legacy/renderer/ nevner.\nSlett dem i ALLE sju katalogene " +
+          "(parity.test.ts krever «ingen ekstra nøkler» overalt), og ta dem ut " +
+          "av PAUSED_KEYS hvis de står der.",
+      );
+      process.exit(1);
+    }
     console.log(
-      `\n${unused.length} nøkler i no.json som ingen fil i app/ bruker.\n` +
-        "INFORMATIVT så lenge legacy/renderer eier mesteparten av katalogen. " +
-        "I fase B — når app/ er eneste leser — blir dette en FEILENDE sjekk.",
+      `✓ i18n-ryddegate: ingen ubrukte nøkler — ${all.length} nøkler i ` +
+        `no.json, alle lest fra app/ eller navngitt av en delt kjerne.`,
     );
     return;
   }
