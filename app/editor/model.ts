@@ -57,8 +57,24 @@ export interface Range {
 /** Hvor langt åpningen av en fil er kommet. */
 export type LoadState = "idle" | "loading" | "ready" | "error";
 
-/** Stegene i Rediger. Bare `cut` er bygget i P4a; P4b legger til de to andre. */
-export type Step = "cut";
+/** De tre stegene i Rediger, i rekkefølge. Canvasens sett 4. */
+export type Step = "cut" | "sound" | "export";
+
+/**
+ * Det `editor_load_recording` vet om fila, utover varigheten.
+ *
+ * Ett signal og ingen `E`-tvilling: dette er FAKTA om fila, satt én gang ved
+ * åpning og aldri endret mens den er åpen, og ingenting inne i tegneløkka
+ * leser dem. Paret `E`+speil finnes fordi løkka ikke tåler et sporet
+ * signaloppslag seksti ganger i sekundet; det problemet har ikke disse.
+ */
+export interface MediaInfo {
+  hasVideo: boolean;
+  /** Kanaler i kildefila, eller `null` når ffprobe ikke sa det. */
+  channels: number | null;
+  /** Samplingsrate i kildefila, eller `null`. */
+  sampleRate: number | null;
+}
 
 /**
  * Hva avspillingen kan si om seg selv.
@@ -171,7 +187,9 @@ export const loadProgress = signal<number | null>(null);
 /** Feilteksten når `loadState` er `error`. En nøkkel, ikke prosa. */
 export const loadError = signal<string | null>(null);
 export const playbackSource = signal<PlaybackSource>("original");
-/** Steget som vises. P4b legger til `sound` og `export`. */
+/** Hva fila er, utover lengden. `null` før den er lest. */
+export const mediaInfo = signal<MediaInfo | null>(null);
+/** Steget som vises. */
 export const activeStep = signal<Step>("cut");
 /** Er kuttverktøyene avslørt? «Klipp manuelt» slår dem på. */
 export const manualMode = signal(false);
@@ -273,6 +291,7 @@ export function resetFileState(): void {
   playheadSec.value = 0;
   playing.value = false;
   playbackSource.value = "original";
+  mediaInfo.value = null;
   manualMode.value = false;
   analyzing.value = false;
   activeStep.value = "cut";

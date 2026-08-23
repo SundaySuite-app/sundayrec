@@ -55,11 +55,83 @@ export function editorFixtures(over: Fixtures = {}): Fixtures {
     }`),
     editor_read_sidecar: null,
     editor_write_sidecar: true,
-    editor_delete_sidecar: true,
+    editor_delete_sidecar: fn(`(args) => {
+      (window.__E2E_DELETED_SIDECARS__ ||= []).push(args.sidecar);
+      return true;
+    }`),
     editor_master_presets: [],
     editor_probe_peak: -3,
     editor_detect_chapters: [],
     editor_cleanup_temp_files: 0,
+    // The channel analysis behind the sound step's profiles. Balanced by
+    // default — a fixture that "found" a dead channel in every spec would put a
+    // repair into every export payload and hide the ones that mean something.
+    editor_auto_process: AUTO_PROCESS,
+    editor_master_preview: fn(`(args) => {
+      (window.__E2E_PREVIEWS__ ||= []).push(args.request);
+      return { previewPath: "/tmp/sundayrec-master-preview-e2e.mp3" };
+    }`),
+    editor_export: EXPORT_OK,
+    editor_cancel_export: fn(`() => {
+      (window.__E2E_CANCELS__ ||= []).push(1);
+      window.__E2E_FINISH_EXPORT__?.("recording error: cancelled");
+      return true;
+    }`),
     ...over,
   };
 }
+
+/** Where a fixtured export lands. The backend picks the name; this is its
+ *  answer, and the receipt shows THIS — never the renderer's prediction. */
+export const EXPORTED =
+  "/Users/test/Opptak/2026-08-02 Gudstjeneste_redigert.mp3";
+
+/** An export that finishes at once. */
+export const EXPORT_OK = fn(`(args) => {
+  (window.__E2E_EXPORTS__ ||= []).push(args.request);
+  return { outputPath: ${JSON.stringify(EXPORTED)} };
+}`);
+
+/**
+ * An export that HANGS until the spec says otherwise.
+ *
+ * `window.__E2E_FINISH_EXPORT__(err?)` settles it — the cancel fixture calls it
+ * with the backend's own `cancelled` code, which is what a real
+ * `editor_cancel_export` causes: the render's ffmpeg is killed and the export
+ * rejects. Without a held export there is nothing to cancel, and a "cancel"
+ * test would only prove that a button can be clicked.
+ */
+export const EXPORT_HELD = fn(`(args) => {
+  (window.__E2E_EXPORTS__ ||= []).push(args.request);
+  return new Promise((resolve, reject) => {
+    window.__E2E_FINISH_EXPORT__ = (err) =>
+      err ? reject(new Error(err)) : resolve({ outputPath: ${JSON.stringify(EXPORTED)} });
+  });
+}`);
+
+/** The channel diagnosis `editor_auto_process` answers with. `balanced` +
+ *  `mode: "none"` = nothing to repair, which is the ordinary recording. */
+export const AUTO_PROCESS = {
+  diagnosis: {
+    code: "balanced",
+    imbalanceDb: 0.2,
+    peakLeftDb: -3.1,
+    peakRightDb: -3.3,
+    recommended: { mode: "none", leftDb: 0, rightDb: 0 },
+  },
+  vocalChainPreset: "voice-podcast",
+  masterPreset: "",
+  summary: "Automatisk lydforbedring: kanalbalanse OK, podkast-stemme.",
+};
+
+/** A recording whose left channel is dead — the one case where the repair
+ *  MUST ride along, or the export is half silent. */
+export const AUTO_PROCESS_DEAD_LEFT = {
+  ...AUTO_PROCESS,
+  diagnosis: {
+    ...AUTO_PROCESS.diagnosis,
+    code: "dead_left",
+    peakLeftDb: -70,
+    recommended: { mode: "duplicateRight", leftDb: 0, rightDb: 0 },
+  },
+};

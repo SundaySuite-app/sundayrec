@@ -311,3 +311,129 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ── Stegene 2 og 3 ────────────────────────────────────────────────────── */
+
+/*
+ * Ett steg er en kolonne med samme avstand mellom alt. Canvasens 4.2 og 4.3
+ * har ingen bølgeform å gi plass til, så innholdet står øverst og «neste»
+ * nederst — `margin-top: auto` på siste raden, slik artboardet gjør det.
+ */
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  flex: 1;
+  min-height: 0;
+}
+
+.nextRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: var(--sp-2);
+}
+
+/* Tittel + forklaring til venstre, kontrollen til høyre. Formen SettingRow
+   har, uten lagringsmodellen: her lagres ingenting før eksporten. */
+.autoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.autoGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.autoTitle {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Lytt: Før | Etter ─────────────────────────────────────────────────── */
+
+.listenRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.seg {
+  display: flex;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+}
+
+.segButton {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-base);
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+
+.segButton:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.segOn {
+  background: var(--gold);
+  color: var(--on-gold);
+  font-weight: 600;
+}
+
+/* ── Mikseren ──────────────────────────────────────────────────────────── */
+
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+
+/* Dempet, ikke borte: kontrollene beskriver kjeden også når den ikke er i
+   bruk, og en skjerm som skifter høyde når man trykker på en bryter er en
+   skjerm man mister plassen sin i. */
+.stagesOff {
+  opacity: 0.55;
+}
+
+.stageTitle {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-left: var(--sp-3);
+}
+
+.sliderRow > span:first-child {
+  min-width: 110px;
+}
+
+/* ── Eksportlinja ──────────────────────────────────────────────────────── */
+
+.exportBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: auto;
+  padding-top: var(--sp-2);
+  flex-wrap: wrap;
+}

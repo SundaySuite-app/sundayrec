@@ -1874,3 +1874,216 @@ ikke et plaster.
 EKTE opptak — altså med `editor_peaks` og `editor_segments` fra den virkelige
 bakenden, og med `asset://`-avspilling som faktisk kan gå. Kommandoen er
 `npm run tauri:app`, og den krever at SundayRec ikke allerede kjører.
+
+---
+
+# P4b — Rediger, stegene «Lyd» og «Eksporter»
+
+P4a bygde steg 1 og lot stegstripa stå med ett steg i. P4b bygger de to andre,
+og med dem blir eiervalget fra canvasens sett 4 til kode: **mix/master finnes
+ÉN gang.**
+
+|                      | før (`legacy/renderer/pages/editor*`)                                | nå (`app/editor/`)                              |
+| -------------------- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| Mix/master-innganger | **fem** (ATLAS §3c), tre flater, to ulike utfall                     | ÉN: steget «Lyd»                                |
+| Valget               | 4 stemmekjeder × 5 mastring-nivåer × 5 kanalmoduser                  | tre ord: Tale · Tale og musikk · Ingen          |
+| Resultatfil          | `<navn>_mastert.<ext>` ved siden av originalen, **utenom** eksporten | finnes ikke — behandlingen ligger i eksporten   |
+| Eksportvalg          | 10 rader, 23 alternativer, 9 klikk (ATLAS §3d)                       | format + hvor, 2 klikk                          |
+| Bitrate/bitdybde     | to velgere i modalen                                                 | følger Oppsett; ingen UI                        |
+| Mikserens etiketter  | 23 norske strenger, **uten i18n i det hele tatt**                    | `app.editor.mx.*`, no + en                      |
+| Etter eksport        | en linje nederst i en arbeidsflate flere skjermer høy + en toast     | kvitteringskort, samme form som etter et opptak |
+
+## Mappingtabellen — de tre ordene, og tallene under dem
+
+`app/editor/sound-profiles.ts`, ren og node-testet. **Eieren kan overprøve
+tallene ved å endre to konstanter.**
+
+| Ordet              | `masterPreset` | LUFS / LRA / TP    | kjeden foran loudnorm                                             | `channelRepair` |
+| ------------------ | -------------- | ------------------ | ----------------------------------------------------------------- | --------------- |
+| **Tale** (std.)    | `speech-clear` | −16 / 8 / −1 dBTP  | `highpass=80`, −1,5 dB @200, +2 dB @3k, −2 dB @7k, komp −18/2,5:1 | ja              |
+| **Tale og musikk** | `music-speech` | −16 / 11 / −1 dBTP | `highpass=50`, komp −22/2:1                                       | ja              |
+| **Ingen**          | —              | —                  | —                                                                 | nei             |
+
+Tallene er kjernens (`crates/sundayrec-core/src/mastering.rs`), ikke våre:
+profilen velger et preset, den definerer ikke et. `sound-profiles.test.ts`
+leser preset-id-ene UT AV Rust-fila (`app/editor/test-support/rust-presets.ts`)
+og feiler hvis noen bytter navn på én av sidene — ingen binding dekker det, for
+ts-rs eksporterer structen, ikke id-ene.
+
+### Hvorfor IKKE `auto_process`-stemmekjeden + et preset
+
+Det var den nærliggende mappingen, og bakenden advarer mot den med ord:
+
+> It deliberately does NOT recommend a mastering preset. Stacking one on top of
+> the vocal chain ran the material through two highpasses, two compressors and
+> two EQ curves — the classic over-processed «one-click» result (pumping, thin
+> low end).
+> — `src-tauri/src/editor/mod.rs`, `auto_process`
+
+Og et mastring-preset **er** en stemmekjede: `speech-clear` er høypass + tre
+EQ-bånd + kompressor, og så loudnorm. Én kjede dekker begge halvdelene av
+løftet «jevner ut nivået og gjør talen tydeligere» — utgivelsesnivået er
+loudnorms, tydeligheten er EQ-ens. `vocalChainPreset` sendes derfor **aldri**
+fra dette skallet, og en spec går rød hvis den dukker opp.
+
+Det ene `auto_process` fortsatt brukes til er **kanalreparasjonen**. Den er
+ikke en farge: en stille venstrekanal eksporteres halvstum, og det er den
+vanligste ekte katastrofen i et menighetsopptak. Legacy hadde en femvalgs
+velger for den; her ser analysen det, sier det i én setning (legacys egne
+`editor.chan*`, som finnes i alle sju språk) og legger reparasjonen i
+nyttelasten. «Ingen» får den ikke — «eksporter lyden slik den ble tatt opp» er
+et løfte.
+
+Analysen (`editor_auto_process`, én full `astats`-passering) startes når
+lyd-steget åpnes, ikke ved filåpning: der konkurrerer topputtrekket og
+segmentanalysen allerede om den samme fila. Den er memoisert per fil, og
+**`runExport` venter på den** — en frivillig som går rett fra Klipp til
+Eksporter skal få den samme reparasjonen som en som stoppet innom.
+
+## Mikseren ERSTATTER profilen
+
+Alle tjue kontrollene er portet: sju trinn, tretten glidere, tre EQ-bånd og
+sluttnivå, med de samme feltene, områdene og trinnene som legacys `mixer.ts`.
+Startverdiene **importeres derfra** (`defaultProcessing`) i stedet for å
+skrives på nytt — det ene stedet `VocalChain::default()` er speilet i
+TypeScript skal fortsette å være ett sted. (Rollup rister `renderMixer`,
+`VOCAL_PRESETS` og legacys `E` ut igjen; verifisert i `dist-app`.)
+
+Regelen som ikke er legacys: er mikseren PÅ, sendes `processing` og **ingen**
+`masterPreset`. Legacy lot begge stå i den samme nyttelasten, og det er det
+doble høypasset i en annen forkledning. Den som har åpnet bordet har tatt over,
+og panelet sier det: «Mikseren erstatter «Tale». Ingen mastring legges oppå.»
+
+## Før/etter-lytting er EKTE — og skriver aldri ved siden av originalen
+
+«Etter» er `editor_master_preview` med **det samme presettet eksporten kommer
+til å bruke**, over 20 sekunder fra midten av prekenvinduet. Bakenden rendrer
+til `std::env::temp_dir()` — aldri ved siden av opptaket. `_mastert`-veien
+(`editor_master_apply`) brukes ikke av dette skallet i det hele tatt.
+
+«Før» er originalen fra det samme sekundet, stoppet av en timer etter tjue
+(det finnes ingen «spill fra … til …» på et medieelement). Lyttingen har sitt
+EGET `<audio>`: transporten i steg 1 eier `E.playerEl` og skriver `playheadSec`
+på tegne-kadensen, og å låne det ville flyttet spillehodet i bølgeformen.
+
+⚠️ **Restanse:** utsnittet blir liggende i OS-ens temp-mappe. Kjernen HAR
+predikatet som kjenner dem igjen (`mastering::is_preview_temp_name`,
+`sundayrec-master-preview-*.mp3`) men **ingen sveip i `src-tauri` kaller det** —
+en gjeld fra mastring-panelet, ikke en P4b innfører. ~800 kB per profil per
+opptak. Det ryddes ikke herfra: `editor_cleanup_temp_files` ville sett riktig ut
+og gjort noe helt annet (den sletter `.__editor_tmp`/`.__editor_bak` ved siden
+av OPPTAKET).
+
+## Det som bevisst IKKE finnes
+
+- **«Normaliser lydnivå»-bryteren.** Den lovet −1 dBFS og ble uansett overstyrt:
+  bakenden hopper over `volume=`-filteret så snart et preset er aktivt, fordi
+  loudnorm setter nivået. En bryter som bare virker når en annen bryter er av er
+  ikke en bryter. `gainDb` sendes derfor aldri.
+- **`<navn>_mastert.<ext>`.** To filer i mappen, og den ene er ikke den man
+  deler.
+- **Nivå-raden i eksporten** («Volum styres av mastring» / «Normalisert
+  +3,2 dB»). Den fantes fordi to ting kunne love hver sin ting om volumet; nå
+  er det én.
+- **Bitrate-, bitdybde- og kodek-velgere.** Bitrate følger `settings.bitrate`
+  (det `QualityPage` skriver: 256 for «God»). WAV er 16 bit. Video er H.264 i
+  mp4 — ett format, fordi MOV og MKV er valg ingen frivillig har en mening om.
+- **Innhold-fanen** (tittel/taler/beskrivelse) — eiervalg, kommer med
+  publisering. `metadata` sendes ikke, så FFMETADATA-taggene står tomme.
+- **AAC** som eksportformat. Bakenden støtter det; tre kort er et valg, fire er
+  en meny.
+- **Intro/outro-jinglene.** Ikke bygget i noe steg ennå (P4a sa det samme).
+
+## Filnavnet er bakendens, og canvasens «– preken» ble ikke bygget
+
+`editor::export` skriver `<navn>_redigert.<ext>` og lar `collision_free_path`
+legge på `_2`, `_3` … Canvasens `2026-08-23 Gudstjeneste – preken.mp3` ville
+krevd en Rust-endring, og den ville dessuten vært en PÅSTAND om innholdet:
+`_redigert` er sant også for den som trykket «Behold alt».
+
+Linja over knappen er derfor en **forutsigelse** (`predictedOutputName`), og
+kvitteringen viser stien bakenden faktisk svarte med. Den er fasiten; vi kan
+ikke vite om det lå en fil med det navnet der fra før.
+
+## Størrelsesanslaget regnes av FILA, ikke av innstillingene
+
+`ca. 27 MB` finnes ikke i legacy — det er nytt her. Formelen er diskanslagets
+(`bytes = kbps · 125 · sekunder`, `app/state/disk.ts`), men kilobitene leses av
+kilden: WAV av opptakets egen `sampleRate`/`channels` fra `editor_load_recording`,
+ikke av opptaksinnstillingens. Et 96 kHz-opptak anslått med innstillingens
+48 kHz ville bommet med det dobbelte.
+
+**Ingen anslag for video.** En omkoding av bildet har en bitrate vi ikke kan
+regne ut på forhånd, og et tall vi ikke kan regne ut skal vi ikke vise.
+
+## `hasVideo` kostet ingen ny kommando
+
+«Ta med video (MP4)» vises bare når kilden har bilde, og svaret lå allerede i
+`editor_load_recording` (`EditorMediaInfo.hasVideo`) — den samme ffprobe-en som
+gir varigheten. `editor_probe_streams` ville vært en ny prosess for et svar vi
+holdt i hånda. ⚠️ **Bildet vises fortsatt ikke** mens man klipper (P4as
+forbehold står): tidslinja, kuttene og eksporten er lydens uansett, men den som
+redigerer en mp4 ser bare bølgeformen. Med bryteren PÅ er containeren mp4, og
+da står de tre lydformatene dempet MED grunnen i stedet for å forsvinne.
+
+## Stegstripa: fri navigasjon, og haken betyr «du har svart»
+
+Alle tre er klikkbare hele tiden — et opptak man bare vil ha ut i mp3 skal ikke
+måtte gjennom to skjermer.
+
+| Steg      | ✓ når                                                                                    |
+| --------- | ---------------------------------------------------------------------------------------- |
+| Klipp     | spørsmålet er besvart: kutt finnes, eller «Behold bare prekenen» / «Behold alt» er brukt |
+| Lyd       | brukeren har VÆRT der                                                                    |
+| Eksporter | en eksport har lyktes i denne økta                                                       |
+
+Lyd-haken venter på et besøk og ikke på en verdi, fordi «Tale» er standarden:
+en hake fra første sekund ville påstått at noen bestemte seg, og det er nettopp
+forskjellen på en standardverdi og et valg. `ed.next` («Neste: Lyd» / «Neste:
+Eksporter») står nederst på steg 1 og 2; steg 3 har ingen, for kvitteringen har
+sine egne tre veier ut.
+
+Bare steg 1 har bølgeform og transport — canvasens 4.2 og 4.3 har ingen av
+delene. Å forlate steget river lerretet ned (`WaveformHost` rydder etter seg) og
+**stopper avspillingen**, av samme grunn som å forlate SIDEN gjør det. Toppene
+blir liggende i `E`, så en retur tegner opp igjen uten å laste noe.
+
+## e2e
+
+`e2e/app/editor.spec.ts` er 28 tester nå. **Ni** titler er ordrett legacys —
+den nye er «the three tabs switch, and switching does not redo the work», som
+ble usann da stripa hadde ett steg og sann igjen nå. Den beskytter det samme
+den alltid gjorde: `editor_peaks` og `editor_segments` er kallene som ikke skal
+gjentas, og testen sammenligner `__E2E_CALLS__` før og etter en runde gjennom
+alle tre.
+
+**To av legacys titler har fortsatt ingen kopi:**
+
+| legacy-tittel                                            | hvorfor ikke                                                                                                                                                                                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| «the chosen tab is remembered across a reopen»           | oppførselen er BORTE, med vilje: hver åpning begynner på steg 1, fordi «er dette prekenen?» er spørsmålet et opptak åpner med. En kopi ville testet noe vi ikke gjør.                                                           |
+| «the export modal is honest about destination and level» | halve tittelen er ikke lenger sann — NIVÅ-raden fantes fordi normaliseringen og mastringen kunne love hver sin ting, og normaliseringen er borte. Destinasjons-halvdelen lever i «eksportsteget er ærlig om hvor filen havner». |
+
+Nye specs med nyttelast-assertions på `editor_export`-argumentene: profilene
+(`speech-clear` / `music-speech` / ingenting), mikseren som overstyrer, den
+stille kanalen som repareres, video-bryteren, avbrytingen, kvitteringen.
+Fiksturene ligger i `e2e/app/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
+`AUTO_PROCESS`, `AUTO_PROCESS_DEAD_LEFT`) og leses av begge skallene, som før.
+
+**Mutasjonsprøven:** endres `SPEECH_MASTER_PRESET` i `sound-profiles.ts`, går
+`sound-profiles.test.ts` (tabellen) og e2e-en ««Tale» er standarden …»
+(nyttelasten) røde.
+
+## P-restanser
+
+1. **Preview-temp-sveipen** finnes ikke i `src-tauri` (over). Rust-endring.
+2. **Videobildet** vises ikke mens man klipper. Eierbeslutning.
+3. **Intro/outro-jingler** er ikke bygget i noen av stegene.
+4. **`editor.errInvalidFormat`** sier fortsatt «Velg et annet format i
+   eksportvinduet» — vinduet finnes ikke. Uoppnåelig herfra (mp3/flac/wav/mp4
+   er alle støttet), men teksten er stale i sju språk.
+5. **`export-core.ts`s feilkodetabell SPEILER** legacys `EXPORT_ERROR_CODES`.
+   Legacys `describeExportError` bor i en modul som drar med seg
+   modal-manager, toast, mikser og legacys `E`; fase B slår dem sammen.
+6. **`app.editor.mx.*`** er første store prosamengde i skallet (23 etiketter ×
+   2 språk). De fem pausete språkene får dem i fase B.
