@@ -1,7 +1,16 @@
 import { effect } from "@preact/signals";
 import { describe, expect, it } from "vitest";
 
-import { ACTIVE_LOCALES, locale, setLocale, t, tDyn, tf, tn } from "./index";
+import {
+  ACTIVE_LOCALES,
+  locale,
+  resolveStartupLocale,
+  setLocale,
+  t,
+  tDyn,
+  tf,
+  tn,
+} from "./index";
 
 describe("app i18n", () => {
   it("starts on the catalogue the legacy shell bundles eagerly", () => {
@@ -81,5 +90,21 @@ describe("app i18n", () => {
     // because it looks like "that one is just empty".
     expect(() => tDyn("app.page", "nowhere")).toThrow(/finnes ikke/);
     expect(() => tDyn("app.nothing", "record")).toThrow(/finnes ikke/);
+  });
+
+  it.each([
+    ["nothing stored", null, "no"],
+    ["norsk", "no", "no"],
+    ["engelsk", "en", "en"],
+    // Paused languages pick the NEAREST active one rather than rendering the
+    // redesigned strings as empty text.
+    ["svensk", "sv", "no"],
+    ["dansk", "da", "no"],
+    ["tysk", "de", "en"],
+    ["fransk", "fr", "en"],
+    ["polsk", "pl", "en"],
+    ["noe helt annet", "kv", "en"],
+  ])("startup locale for %s", (_name, stored, expected) => {
+    expect(resolveStartupLocale(stored)).toBe(expected);
   });
 });

@@ -57,10 +57,17 @@ export const settings = signal<Settings>({ ...SETTINGS_DEFAULTS });
 export const hydrated = signal(false);
 
 /**
- * Nøkkelen til feilmeldingen når lesningen mislyktes, ellers `null`.
- * En nøkkel og ikke en ferdig streng, så banneret oversettes med språket.
+ * Hvorfor lesningen mislyktes, som en katalognøkkel UNDER `error.` — ellers
+ * `null`.
+ *
+ * En nøkkel og ikke en ferdig streng, så banneret oversettes med språket som
+ * gjelder når det vises. Og et SUFFIKS og ikke en hel nøkkel, fordi flaten da
+ * skriver `tDyn("error", hydrateError.value)`: prefikset er en literal som
+ * `check-i18n-keys.mjs` slår opp og krever finnes i både no.json og en.json.
+ * En variabel med hele nøkkelen i ville vært usynlig for gaten.
  */
-export const hydrateError = signal<string | null>(null);
+export type HydrateErrorKey = "settingsLoadFailed";
+export const hydrateError = signal<HydrateErrorKey | null>(null);
 
 /** Feilringen shimmen fyller. Tom liste når det ikke finnes noen shim (test). */
 function ipcFailedFor(cmd: string): boolean {
@@ -82,12 +89,12 @@ export async function hydrateSettings(): Promise<void> {
     // kaster ikke, den logger og faller tilbake. Feilringen er det eneste
     // stedet forskjellen finnes.
     hydrateError.value = ipcFailedFor("settings_get")
-      ? "error.settingsLoadFailed"
+      ? "settingsLoadFailed"
       : null;
   } catch (err) {
     console.warn("[settings] hydrate failed", err);
     settings.value = { ...SETTINGS_DEFAULTS };
-    hydrateError.value = "error.settingsLoadFailed";
+    hydrateError.value = "settingsLoadFailed";
   } finally {
     hydrated.value = true;
   }

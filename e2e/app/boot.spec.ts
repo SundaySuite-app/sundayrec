@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { boot, BOOT_FIXTURES, fn, SETTLED_SETTINGS } from "../harness";
+
 // The S0 spike's standing proof: the new Preact shell BOOTS, under the same
 // Content-Security-Policy the shipped WKWebView enforces.
 //
@@ -40,11 +42,28 @@ test.describe("app shell boot", () => {
       });
     });
 
-    await page.goto("/");
+    // Through the harness, not a bare `page.goto`. S0's version was a bare
+    // goto, which worked while `app/` subscribed to nothing. It does now — and
+    // `window.api.on` reaches `__TAURI_INTERNALS__` DIRECTLY (api-shim, the
+    // `listen` branch), which outside Tauri does not exist. Supplying that
+    // runtime is precisely what `e2e/harness.ts` is for; see its comment on
+    // "the non-IPC half of the Tauri runtime". Fixtures still answer no
+    // command that this test asserts on.
+    //
+    // ⚠️ Consequence worth knowing: a plain `npm run dev:app` in a browser
+    // (no harness) logs four unhandled rejections from that same api-shim
+    // branch, because `on()` attaches no `.catch`. It is a legacy shim
+    // question, not an app/ one, and it does not exist under Tauri.
+    await boot(page, { fixtures: BOOT_FIXTURES, settings: {} });
 
-    // `nav.home` in legacy/locales/no.json. An empty heading is what a broken
-    // `@lib` alias looks like — `t()` would return its empty fallback.
-    await expect(page.getByTestId("app-heading")).toHaveText("Hjem");
+    // `app.page.setup` in legacy/locales/no.json, looked up through `tDyn`.
+    // An empty heading is what a broken `@lib` alias looks like — `t()` would
+    // return its empty fallback.
+    //
+    // OPPSETT and not TA OPP because nothing is seeded here: `onboardingDone`
+    // is false, so the first-run gate sends a never-configured app to setup,
+    // which is exactly what it should do.
+    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
 
     const violations = await page.evaluate(
       () => (window as any).__cspViolations as string[],
@@ -65,5 +84,97 @@ test.describe("app shell boot", () => {
       .getAttribute("content");
     expect(csp).toContain("script-src 'self'");
     expect(csp).not.toContain("unsafe-eval");
+  });
+});
+
+// ── S1a: the foundation, seen from a browser ────────────────────────────────
+//
+// Everything below drives the pieces S1a exists to build — the router's alias
+// table, the reactive locale, the onboarding gate — through the SAME fixture
+// seam the legacy shell's specs use. That the harness works unchanged against
+// a different shell on a different port is itself the point: one seam, two
+// shells.
+test.describe("app shell foundation", () => {
+  test("?goto=settings:audio lands on OPPSETT / sound", async ({ page }) => {
+    // The alias table, end to end: `parseGoto` qualifies the bare tab id,
+    // `resolveRoute` translates the retired settings-* namespace into the new
+    // one, and the shell paints it. Ten e2e specs and every screenshot pass
+    // write this URL.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:audio",
+    });
+    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    await expect(page.getByTestId("app-tab")).toHaveText("sound");
+  });
+
+  test("a retired tab id still lands somewhere real", async ({ page }) => {
+    // `settings:notifications` was retired in the 7→5 fold; legacy maps it
+    // onward and so must we. A deep link that silently opens the wrong screen
+    // is worse than one that fails loudly.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: SETTLED_SETTINGS,
+      goto: "settings:notifications",
+    });
+    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    await expect(page.getByTestId("app-tab")).toHaveText("advanced");
+    await expect(page.getByTestId("app-anchor")).toHaveText("sharing");
+  });
+
+  test("the seeded language decides what the volunteer reads", async ({
+    page,
+  }) => {
+    // The locale comes out of settings, and settings come through the fixture
+    // seam — so this also proves hydrateSettings ran BEFORE setLocale. A shell
+    // that painted first and translated afterwards would flash Norwegian.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { ...SETTLED_SETTINGS, language: "en" },
+      goto: "home",
+    });
+    await expect(page.getByTestId("app-heading")).toHaveText("Record");
+    // …and nothing claims the settings could not be read.
+    await expect(page.getByTestId("hydrate-error")).toHaveCount(0);
+  });
+
+  test("first run opens OPPSETT, and only when there was no deep link", async ({
+    page,
+  }) => {
+    // `?goto=` forces onboardingDone true inside the shim, so a deep-linked
+    // boot must never be hijacked by the gate — that is why this boots WITHOUT
+    // one, exactly like e2e/onboarding.spec.ts does for the legacy shell.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { onboardingDone: false },
+    });
+    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    await expect(page.getByTestId("app-first-run")).toBeVisible();
+  });
+
+  test("a settings read that failed is never shown as a fresh install", async ({
+    page,
+  }) => {
+    // api-shim answers a failed `settings_get` with SETTINGS_DEFAULTS so the
+    // UI still renders — which makes a broken store look EXACTLY like a
+    // factory-fresh app, and a volunteer whose settings "disappeared" has no
+    // way to tell. The shell asks the IPC failure ring afterwards and says so.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        settings_get: fn("() => { throw new Error('database is locked') }"),
+      },
+    });
+    await expect(page.getByTestId("hydrate-error")).toBeVisible();
+    await expect(page.getByTestId("hydrate-error")).toHaveText(
+      /Kunne ikke lese innstillingene/,
+    );
+  });
+
+  test("a settled app opens on TA OPP", async ({ page }) => {
+    await boot(page, { fixtures: BOOT_FIXTURES, settings: SETTLED_SETTINGS });
+    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
+    await expect(page.getByTestId("app-first-run")).toHaveCount(0);
   });
 });

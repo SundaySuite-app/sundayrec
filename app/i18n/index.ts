@@ -56,6 +56,28 @@ export type Locale = "no" | "en" | "sv" | "da" | "de" | "fr" | "pl";
 export const ACTIVE_LOCALES: readonly Locale[] = ["no", "en"];
 
 /**
+ * Hvilket språk skallet skal starte på, gitt det som står lagret.
+ *
+ * Legacy gjør `settings.language ?? 'no'` og er ferdig. Det kan ikke `app/`
+ * gjøre så lenge de fem andre språkene er PAUSET: en bruker som satte tysk i
+ * det gamle skallet ville fått et nytt skall der de redesignede tekstene er
+ * TOMME — `t()` svarer med tom streng for en nøkkel som ikke finnes, så
+ * skjermen ville sett halvferdig ut uten å si hvorfor.
+ *
+ * Så vi velger et aktivt språk i stedet, og velger det nærmeste:
+ * svensk og dansk går til norsk (nabospråk, og det er den nordiske
+ * menighetsvirkeligheten), resten går til engelsk. Ingenting skrives til
+ * innstillingene — det lagrede valget står, og fase B tar det i bruk igjen.
+ */
+export function resolveStartupLocale(stored: string | null): Locale {
+  if (!stored) return "no";
+  if ((ACTIVE_LOCALES as readonly string[]).includes(stored)) {
+    return stored as Locale;
+  }
+  return stored === "sv" || stored === "da" ? "no" : "en";
+}
+
+/**
  * Språket som gjelder nå. Les det i en komponent for å abonnere på bytte;
  * skriv det aldri direkte — `setLocale` er den ene veien, fordi katalogen må
  * være lastet først.
