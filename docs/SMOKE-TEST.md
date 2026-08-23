@@ -195,19 +195,31 @@ question a volunteer actually has — _do we hear it?_
 
 ---
 
-## 4. Camera preview [HW]
+## 4. Camera — the file, not a picture [HW]
 
-The shipped renderer polls `recording_preview_frame` **during recording only** —
-there is no idle device-select preview surface. Verify the preview as part of a
-video recording:
+⚠️ **There is no live camera picture anywhere in the shell.** The old renderer
+polled `recording_preview_frame` during a recording and painted the frames into
+a video strip; fase B shipped the overlay without it, so the only thing on
+screen while a camera recording runs is the chip that names the camera. The
+backend command is still registered, still working and unreached — see «Flater
+som ikke finnes lenger». What a rig verifies is therefore the FILE, not the
+preview.
 
-1. Turn the camera on under **Oppsett → Tillegg → «Ta med kamera»**, pick the
-   camera, then start a recording (§5 with video).
-   - **Expected:** the preview area shows live video (ffmpeg MJPEG → base64
-     frames, polled via `recording_preview_frame`) within a second or two of
-     the recording starting.
-2. No preview + the app still alive = check camera permission (§0). App vanishes
-   = permission string missing/denied and the OS killed it.
+1. Turn the camera on under **Oppsett → Tillegg → «Ta med kamera»** and pick the
+   camera.
+   - **Expected:** the card states what that camera can deliver («Kameraet
+     leverer maks 1080p · 30 bilder i sekundet»), or says plainly that it could
+     not read that rather than promising a resolution it has not checked.
+2. Start a recording (§5 with video) and let it run ~30 s.
+   - **Expected:** the overlay carries a **«Kamera <name>»** chip — that is the
+     app's whole claim about video while recording, and it is a claim about the
+     SETTING, not about frames arriving.
+3. Stop, and open the file.
+   - **Expected:** the mp4 has a video stream with picture in it. This is the
+     only place a broken camera is now caught, which is why it is a step and
+     not a footnote.
+4. App still alive but no video in the file = check camera permission (§0). App
+   vanishes = permission string missing/denied and the OS killed it.
 
 ---
 
@@ -1206,22 +1218,24 @@ BACKEND is untouched and only the surface is gone.
 
 The standing list of what is owed lives in `docs/APP-SHELL.md` §«Etter byttet».
 
-| gone                                                        | what is left, and where                                                                                                                                             |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).        |
-| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                           |
-| **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                 |
-| **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                    |
-| **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                    |
-| **The export MODAL**                                        | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                |
-| **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).     |
-| **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                  |
-| **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                 |
-| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».      |
-| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                          |
-| **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                           |
-| **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open. |
-| **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.  |
+| gone                                                        | what is left, and where                                                                                                                                                                                                                |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The Diagnose modal** (Innstillinger → Lyd)                | `run_diagnostics` / `diagnose_audio` still run and are Rust-tested; nothing calls them. The recording numbers are in `<app-data>/last-recording.json` (§5b).                                                                           |
+| **The capture/video probe's three paths**                   | still in the backend, refusals and all — unreachable by hand until a screen exists (§13).                                                                                                                                              |
+| **Editing a recording's note**                              | owner decision (P3). An existing note still SHOWS on its row; `recording_update_note` is unreached.                                                                                                                                    |
+| **The Lyd / Video filter chips, sortable columns**          | search is kept and does the same job; «Video» survives as a fact on the row, not a filter (§6b).                                                                                                                                       |
+| **The month calendar + day detail + wake-diagnostics card** | two lists and one sentence on Avansert — «Flere tider og spesialopptak» and the wake line (§11).                                                                                                                                       |
+| **The export MODAL**                                        | the **Eksporter** step. Its destination honesty is re-pinned; the LEVEL row went with normalisation.                                                                                                                                   |
+| **The «Normaliser» toggle**                                 | removed with the mastering targets. Level is decided by the profile (Tale / Tale og musikk / Ingen) or by the mixer — never by two things at once (§12 step 4).                                                                        |
+| **The mastering apply panel** (`_mastert`)                  | `editor_master_apply` is unreached. The preview survives as step 2's «Lytt» (§12).                                                                                                                                                     |
+| **Intro/outro jingle rows**                                 | not built in any step. A P-restanse, not a removal on purpose — see APP-SHELL §P4b.                                                                                                                                                    |
+| **The editor's three TABS**                                 | three STEPS with the same names for two of them; the chosen step is NOT remembered across a reopen, deliberately — every open starts at «is this the sermon?».                                                                         |
+| **`#modal-manual`** (source/camera/filename)                | those are Oppsett's answers now; start is one button (§5).                                                                                                                                                                             |
+| **The «backend OK» header**                                 | the status line, which says one of five true things (§2).                                                                                                                                                                              |
+| **The wake ADMIN prompt** (`wake_reschedule`)               | the scheduler arms wakes itself, unelevated. A Mac that needs root to write a power event is never asked (§11). The most consequential gap this switch leaves open.                                                                    |
+| **`healStoredDeviceId`**                                    | nothing re-points a stored device id after a Windows reboot or driver update — and the channel pair is keyed BY id, so a rig can revert to channels 1/2 unnoticed.                                                                     |
+| **The live camera picture** (`recording_preview_frame`)     | a chip naming the camera. Nothing shows frames arriving, so a dead camera is only caught by opening the file (§4).                                                                                                                     |
+| **«+30 min» / «Avbryt auto-stopp»** on the overlay          | the overlay still SAYS «Stopper av seg selv om …», but the deadline can no longer be pushed out. `manualMaxMinutes` defaults to 0 (no limit), so this only bites a rig that opted into the safety net — and then it bites mid-service. |
 
 ### Claims this runbook used to point at a test for, and no longer can
 
