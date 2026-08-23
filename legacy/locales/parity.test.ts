@@ -385,6 +385,7 @@ export const PAUSED_KEYS = new Set([
   'app.setup.advanced.specialPast',
   'app.setup.advanced.wake',
   'app.setup.advanced.wakeDesc',
+  'app.setup.advanced.audioTech',
   'app.setup.advanced.wakeWord.can',
   'app.setup.advanced.wakeWord.cannot',
   'app.setup.advanced.wakeWord.needsAdmin',

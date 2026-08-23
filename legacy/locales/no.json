@@ -357,7 +357,8 @@
           "cannot": "Denne maskinen kan ikke vekkes fra dvale — la den stå på.",
           "needsAdmin": "Denne maskinen kan vekkes, men spør om administratorpassord første gang.",
           "unknown": "Vi vet ikke ennå om denne maskinen kan vekkes."
-        }
+        },
+        "audioTech": "Lyd-teknologi"
       }
     },
     "language": {

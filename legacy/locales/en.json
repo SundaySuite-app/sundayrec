@@ -357,7 +357,8 @@
           "cannot": "This machine cannot be woken from sleep — leave it switched on.",
           "needsAdmin": "This machine can be woken, but asks for an administrator password the first time.",
           "unknown": "We do not know yet whether this machine can be woken."
-        }
+        },
+        "audioTech": "Audio technology"
       }
     },
     "language": {

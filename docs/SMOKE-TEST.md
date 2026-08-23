@@ -918,6 +918,18 @@ npm run tauri dev
 
 ### «Vis» / «Kopier» (Oppsett → Avansert → «Logg»)
 
+### Steinberg ASIO attribution [Windows only]
+
+- [ ] In a **Windows** build, **Oppsett → Avansert**, at the bottom: a
+      «Lyd-teknologi» card carrying the ASIO trademark notice verbatim.
+- **Why it is a checklist item and not a detail:** the ASIO SDK is free to use
+  and licensed against attribution, and `release.yml` builds Windows with
+  `--features …,asio,…` — so that build owes the notice. The card lived in the
+  old shell's `index.html` and vanished with it in fase B; nothing failed,
+  because a missing trademark notice looks exactly like nothing. It is rebuilt,
+  and `app/pages/setup/advanced/AsioAttribution.test.tsx` pins the wording — but
+  that a real Windows build actually SHOWS it is a rig observation.
+
 - **Vis** reveals the live log file in Finder/Explorer (`logs_reveal` →
   `tauri_plugin_opener::reveal_item_in_dir`), falling back to opening the
   folder itself before the first line has been written.
