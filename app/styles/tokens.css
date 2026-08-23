@@ -137,6 +137,12 @@
   /* ── Lag — legacy-skalaen, uendret ────────────────────────────────────── */
   --z-page: 1;
   --z-header: 50;
+  /*
+   * Opptaksoverlegget. UNDER `--z-modal` med vilje: stopp-bekreftelsen er en
+   * dialog, og en bekreftelse som havnet bak flaten den handler om ville vært
+   * en app der «Stoppe opptaket?» ikke går an å svare på.
+   */
+  --z-recording: 200;
   --z-modal: 300;
   --z-overlay: 350;
   --z-toast: 400;

@@ -44,7 +44,17 @@
     "record": {
       "noSource": "Du har ikke valgt hvor lyden kommer fra",
       "noSourceDesc": "Velg miksebordet — eller maskinens egen mikrofon hvis det er det dere bruker.",
-      "chooseSound": "Velg lyd"
+      "chooseSound": "Velg lyd",
+      "sub": "Trykk Start når gudstjenesten begynner.",
+      "listening": "Lytter",
+      "soundFrom": "Lyd fra",
+      "start": "Start opptak",
+      "whyBlocked": "Start er sperret til lyden er valgt. Vi tar aldri opp fra en kilde ingen har valgt.",
+      "canStart": "Du kan starte likevel — opptaket blir stille til mikseren er tilbake.",
+      "useBuiltIn": "Bruk maskinens mikrofon",
+      "nextAuto": "Neste automatiske opptak",
+      "autoQuestion": "Skal SundayRec ta opp hver søndag av seg selv?",
+      "last": "Siste opptak"
     },
     "setup": {
       "lede": "Fem spørsmål. Svar én gang, så er dere klare hver søndag.",
@@ -354,6 +364,41 @@
       "no": "Nei takk",
       "yes": "Ja, del anonymt",
       "what": "Hva sendes?"
+    },
+    "overlay": {
+      "stop": "Stopp opptaket",
+      "stopQuestion": "Stoppe opptaket?",
+      "stopQuestionDesc": "{elapsed} er tatt opp. Stopper du nå, lagres det du har.",
+      "keep": "Fortsett å ta opp",
+      "stopYes": "Stopp",
+      "room": "Plass til",
+      "camera": "Kamera",
+      "reconnect": "Lyden fra {name} forsvant — prøver å koble til igjen",
+      "reconnectAnon": "Lyden forsvant — prøver å koble til igjen",
+      "autoStop": "Stopper av seg selv om {left}",
+      "finalizingHint": "Opptaket skrives til disk. Det tar noen sekunder, og fila er trygg imens."
+    },
+    "done": {
+      "title": "Opptaket er lagret",
+      "show": "Vis i Finder",
+      "ok": "Ferdig",
+      "revealFailed": "Fant ikke fila på disken."
+    },
+    "span": {
+      "hours": "{h} t",
+      "hoursMinutes": "{h} t {m} min",
+      "minutes": "{m} min"
+    },
+    "banner": {
+      "errorTitle": "Opptaket ble avbrutt kl. {time}",
+      "errorShow": "Vis opptaket",
+      "diskTitle": "Plass til {room}",
+      "diskDesc": "Opptaket stopper når disken er full. Frigjør plass før søndag.",
+      "diskFree": "Frigjør plass",
+      "missedTitle": "{when} ble ikke tatt opp",
+      "missedDesc": "Maskinen var av. Automatisk opptak krever at den står på eller i dvale.",
+      "missedWhy": "Hva kan jeg gjøre?",
+      "missedHelp": "La maskinen stå på, eller la den sove — SundayRec vekker den selv ti minutter før opptaket. Er den slått helt av, er det ingenting som kan starte den. Sjekk også at «Start automatisk med maskinen» er på under Oppsett, så appen er i gang igjen etter en omstart."
     }
   },
   "nav": {

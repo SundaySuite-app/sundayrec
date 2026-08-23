@@ -44,7 +44,17 @@
     "record": {
       "noSource": "You haven't chosen where the sound comes from",
       "noSourceDesc": "Choose the mixer — or the computer's own microphone if that's what you use.",
-      "chooseSound": "Choose sound"
+      "chooseSound": "Choose sound",
+      "sub": "Press Start when the service begins.",
+      "listening": "Listening",
+      "soundFrom": "Sound from",
+      "start": "Start recording",
+      "whyBlocked": "Start is blocked until sound is chosen. We never record from a source nobody picked.",
+      "canStart": "You can start anyway — the recording stays silent until the mixer is back.",
+      "useBuiltIn": "Use the computer’s microphone",
+      "nextAuto": "Next automatic recording",
+      "autoQuestion": "Should SundayRec record every Sunday by itself?",
+      "last": "Last recording"
     },
     "setup": {
       "lede": "Five questions. Answer once, and you're ready every Sunday.",
@@ -354,6 +364,41 @@
       "no": "No thanks",
       "yes": "Yes, share anonymously",
       "what": "What is sent?"
+    },
+    "overlay": {
+      "stop": "Stop recording",
+      "stopQuestion": "Stop the recording?",
+      "stopQuestionDesc": "{elapsed} recorded so far. If you stop now, what you have is saved.",
+      "keep": "Keep recording",
+      "stopYes": "Stop",
+      "room": "Room for",
+      "camera": "Camera",
+      "reconnect": "Sound from {name} disappeared — trying to reconnect",
+      "reconnectAnon": "The sound disappeared — trying to reconnect",
+      "autoStop": "Stops by itself in {left}",
+      "finalizingHint": "The recording is being written to disk. It takes a few seconds, and the file is safe meanwhile."
+    },
+    "done": {
+      "title": "Recording saved",
+      "show": "Show in Finder",
+      "ok": "Done",
+      "revealFailed": "Couldn’t find the file on disk."
+    },
+    "span": {
+      "hours": "{h} h",
+      "hoursMinutes": "{h} h {m} min",
+      "minutes": "{m} min"
+    },
+    "banner": {
+      "errorTitle": "The recording was interrupted at {time}",
+      "errorShow": "Show recording",
+      "diskTitle": "Room for {room}",
+      "diskDesc": "The recording stops when the disk is full. Free up space before Sunday.",
+      "diskFree": "Free up space",
+      "missedTitle": "{when} was not recorded",
+      "missedDesc": "The computer was off. Automatic recording needs it on or asleep.",
+      "missedWhy": "What can I do?",
+      "missedHelp": "Leave the computer on, or let it sleep — SundayRec wakes it ten minutes before the recording. If it is switched off completely, nothing can start it. Also check that “Start automatically with the computer” is on under Setup, so the app is running again after a restart."
     }
   },
   "nav": {
