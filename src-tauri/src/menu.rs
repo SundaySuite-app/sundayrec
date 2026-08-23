@@ -31,10 +31,13 @@
 //! a webview loses Cmd+C on macOS — and Window/Help keep the ids
 //! ([`WINDOW_SUBMENU_ID`]/[`HELP_SUBMENU_ID`]) tauri looks for.
 //!
-//! Nothing here exists off macOS: Windows and Linux get no default menu from
-//! tauri, so there is no Cmd+Q to intercept and adding a menubar would be a
+//! Nothing here is INSTALLED off macOS: Windows and Linux get no default menu
+//! from tauri, so there is no Cmd+Q to intercept and adding a menubar would be a
 //! visible regression. Their quits arrive as `ExitRequested` (last window
-//! destroyed) or through the tray, both already covered.
+//! destroyed) or through the tray, both already covered. The module itself
+//! compiles everywhere on purpose — every predefined item used here exists on
+//! every platform, and CI's Rust lanes are Linux and Windows, so a
+//! `#[cfg(target_os = "macos")]` module would be code no gate ever reads.
 //!
 //! ## ⚠️ What is still NOT interceptable
 //!

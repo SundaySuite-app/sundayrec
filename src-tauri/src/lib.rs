@@ -113,7 +113,8 @@ pub mod util;
 // all: tauri's default menu wires Quit to AppKit's `terminate:`, which never
 // raises `RunEvent::ExitRequested`, so a Cmd+Q mid-service killed the process
 // without even stopping the capture. See the module docs for the full trail.
-#[cfg(target_os = "macos")]
+// Compiled on every platform (so the Linux and Windows CI lanes clippy it too)
+// but INSTALLED only on macOS — see the `.menu(...)` call in `run`.
 pub mod menu;
 // P3 «Frivilligen først» — the main window's close button. Closing the window
 // used to END the service's recording (no `on_window_event` existed, so the last
