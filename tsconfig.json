@@ -13,9 +13,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
-    "baseUrl": ".",
     "paths": {
-      "@lib/*": ["legacy/renderer/*"]
+      "@lib/*": ["./legacy/renderer/*"]
     }
   },
   "include": ["legacy", "app", "e2e", "playwright.config.ts"],
