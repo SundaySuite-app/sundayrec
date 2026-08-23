@@ -301,5 +301,11 @@
     "etaMinutes": "noch ca. {n} Min.",
     "etaHours": "noch ca. {h} Std.",
     "etaHoursMinutes": "noch ca. {h} Std. {m} Min."
+  },
+  "notify": {
+    "prerollDead": "Der Vorlaufpuffer funktioniert nicht — Ton von vor dem Drücken der Aufnahmetaste wird nicht gesichert.",
+    "recoverySkipped": "Eine unterbrochene Aufnahme konnte nicht vollständig wiederhergestellt werden: {file}",
+    "deviceMissing": "Das Audiogerät „{device}“ ist nicht angeschlossen.",
+    "diskLow": "Der Speicherplatz wird knapp — {freeGb} GB frei. Die Aufnahme stoppt von selbst, wenn die Festplatte voll ist."
   }
 }

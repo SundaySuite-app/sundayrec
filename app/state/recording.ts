@@ -142,6 +142,18 @@ export function clearSilence(): void {
   if (silenceDetail.peek() !== null) silenceDetail.value = null;
 }
 
+/**
+ * Legg gjenkoblingsstripa bort.
+ *
+ * Den tredje veien ned, ved siden av tilstandsemitten og nivåene: den som
+ * sitter ved maskinen kan HØRE at lyden er tilbake før noen av dem sier det.
+ * En stripe uten kryss er en stripe man til slutt slutter å lese — og da
+ * betyr den ingenting neste gang den har rett.
+ */
+export function dismissReconnecting(): void {
+  if (reconnecting.peek()) reconnecting.value = false;
+}
+
 /** Gå inn i «fullfører»: overlegget står, klokken stopper, stopp-knappen er av. */
 export function enterFinalizing(): void {
   if (finalizing.peek()) return;
@@ -202,6 +214,13 @@ export function initRecording(): () => void {
       }
       const st = payload?.state ?? null;
       if (st) recorderState.value = st;
+      // ⚠️ Gjenkoblingsstripa ryddes HER, fordi tilstanden er det ene stedet
+      // som VET. Motoren har en egen `reconnecting`-tilstand i sitt eget
+      // vokabular (`RecorderState`), så «recording» betyr beviselig at den er
+      // koblet til igjen — og da er stripa historie, uansett om
+      // `recording://reconnected` kom eller ikke. Se `recording-warning` under
+      // for hvorfor det «eller ikke» er det som gjorde stripa permanent.
+      if (st) reconnecting.value = st === "reconnecting";
       const live = liveFromRecordingState(st ?? undefined);
       if (live === null) return;
       if (live) {
@@ -241,6 +260,19 @@ export function initRecording(): () => void {
     }),
     window.api.on("recording-warning", () => {
       // Ikke-terminal: gjenkoblingspolicyen prøver på nytt. Økta lever.
+      //
+      // ⚠️ Dette flagget hadde ingen vei ned. `recording://warning` er
+      // bakendens KLASSIFISERTE ikke-terminale feil, og bare NOEN av dem er en
+      // frakobling som ender i et `recording://reconnected`. Et hikst som ikke
+      // gjorde det etterlot «Kobler til igjen …» stående over et opptak som
+      // gikk helt fint — resten av gudstjenesten, og inn i den neste, for
+      // ingenting ryddet flagget uten det eventet.
+      //
+      // Tre veier ned nå, alle uavhengige av `reconnected`:
+      //   • en tilstandsemit som sier noe annet enn «reconnecting» (over) —
+      //     motoren har «reconnecting» i sitt EGET vokabular, så «recording»
+      //     er dens egen kvittering på at den er tilbake,
+      //   • og et kryss, fordi den som hører at lyden er tilbake har rett.
       reconnecting.value = true;
     }),
     window.api.on("recording-reconnecting", () => {
@@ -277,6 +309,14 @@ export function initRecording(): () => void {
     // (`audio/level-words.ts`). Regelen bor HER og ikke i overlegget, fordi
     // flagget har én eier; et overlegg som ryddet opp i noe andre også skriver
     // er den skjøten dette skallet er skrevet for å unngå.
+    //
+    // ⚠️ NIVÅENE RYDDER IKKE GJENKOBLINGSSTRIPA. Det ville vært den nærliggende
+    // tredje veien ned, og den er feil: måleren sier at det kommer TALL, ikke
+    // at enheten som falt ut er tilbake — en motor som har byttet til en
+    // reservekilde eller som strømmer stillhet mens den prøver igjen, måler
+    // også. De to varslene er med vilje uavhengige (`e2e/record.spec.ts`,
+    // «gjenkobling og stillhet er TO varsler»), og gjenkoblingen har sine egne
+    // to veier ned: motorens tilstand, og krysset.
     window.api.on("recording-levels", (data: unknown) => {
       if (!silenceActive.peek()) return;
       const d = data as

@@ -301,5 +301,11 @@
     "etaMinutes": "environ {n} min restantes",
     "etaHours": "environ {h} h restantes",
     "etaHoursMinutes": "environ {h} h {m} min restantes"
+  },
+  "notify": {
+    "prerollDead": "La mémoire tampon ne fonctionne pas — le son capté avant que vous appuyiez sur enregistrer n'est pas conservé.",
+    "recoverySkipped": "Un enregistrement interrompu n'a pas pu être entièrement récupéré : {file}",
+    "deviceMissing": "Le périphérique audio « {device} » n'est pas connecté.",
+    "diskLow": "L'espace disque commence à manquer — {freeGb} Go libres. L'enregistrement s'arrêtera de lui-même si le disque est plein."
   }
 }

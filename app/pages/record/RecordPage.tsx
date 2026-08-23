@@ -59,6 +59,7 @@ import {
 } from "../../router/router";
 import { showTelemetryPreview } from "../setup/advanced/TelemetryRow";
 import { banners, dismissBanner } from "../../state/banners";
+import { interpolate, WARNING_SUFFIXES } from "../../state/backend-warning";
 import {
   audioDevices,
   loadAudioDevices,
@@ -694,13 +695,20 @@ function Done() {
  * stopper søndagen, så det som stoppet forrige søndag.
  */
 function RecordBanners() {
-  // BARE opptakssidens egne to. Køen er delt, og P3 la til `update`, som ikke
+  // BARE opptakssidens egne. Køen er delt, og P3 la til `update`, som ikke
   // hører til noen side og derfor rendres av skallet — over hvilken side som
-  // enn står. Et filter og ikke en else-gren: en tredje nøkkel som havnet her
-  // ville blitt malt som et kvalitetsbanner uten at noe sa fra.
+  // enn står. Et filter og ikke en else-gren: en nøkkel som havnet her uten å
+  // være ventet ville blitt malt som et kvalitetsbanner uten at noe sa fra.
   const list = banners.value.filter(
     (entry) =>
       entry.key === "recording-error" || entry.key === "recording-quality",
+  );
+  // Bakendens egne advarsler (`backend://warning`) — se
+  // `state/backend-warning.ts`, som eier både kanalen og dedupliseringen mot
+  // stripene under. De rendres HER og ikke i skallet fordi alle fire handler om
+  // opptaket: forhåndsbufferen, gjenopprettingen, lydenheten, disken.
+  const warnings = banners.value.filter((entry) =>
+    entry.key.startsWith("backend-"),
   );
   const state = nextRecording.value;
   const room = currentRoomMinutes();
@@ -755,6 +763,23 @@ function RecordBanners() {
                 {t("recording.qualityAction")}
               </Button>
             }
+          />
+        ),
+      )}
+
+      {warnings.map((entry) =>
+        entry.key === "recording-error" ||
+        entry.key === "recording-quality" ||
+        entry.key === "update" ? null : (
+          <Banner
+            key={entry.key}
+            // Bakendens egen alvorlighetsgrad, ikke vår gjetning. `error` er
+            // `role="alert"`: en mikser som ikke er i huset en halvtime før et
+            // planlagt opptak SKAL avbryte det skjermleseren holder på med.
+            tone={entry.severity === "error" ? "bad" : "warn"}
+            testId={`banner-${entry.key}`}
+            title={warningText(entry.code, entry.msg, entry.params)}
+            onDismiss={() => dismissBanner(entry.key)}
           />
         ),
       )}
@@ -836,6 +861,32 @@ function preflightHeadline(findings: readonly PreflightFinding[]): string {
   return errors > 0
     ? tn("status.preflightErrors", errors)
     : tn("status.preflightWarns", findings.length);
+}
+
+/**
+ * Setningen for én bakende-advarsel.
+ *
+ * Rekkefølgen er legacys, og den er hele designet:
+ *
+ *   1. `code` → en `notify.*`-nøkkel → setningen på brukerens språk,
+ *   2. ellers `msg`, motorens egen (norske) ordlyd,
+ *   3. ellers den bare koden.
+ *
+ * Steg 2 er det som gjør det trygt for bakenden å lære en ny advarsel før
+ * denne katalogen gjør det: brukeren får en SANN setning på feil språk i
+ * stedet for stillhet. Stillhet er nøyaktig det denne kanalen produserte i
+ * månedsvis. `tDyn` kaster i DEV på en ukjent nøkkel, så oppslaget gjøres bare
+ * for koder tabellen faktisk kjenner — en ny kode skal falle til steg 2, ikke
+ * ta ned siden.
+ */
+function warningText(
+  code: string,
+  msg: string | null,
+  params: Readonly<Record<string, string>>,
+): string {
+  const suffix = WARNING_SUFFIXES[code];
+  const template = suffix ? tDyn("notify", suffix) : (msg ?? code);
+  return interpolate(template, { ...params });
 }
 
 /** «11:42» — klokkeslettet i en feilmelding er halve informasjonen. */

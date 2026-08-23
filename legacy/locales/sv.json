@@ -301,5 +301,11 @@
     "etaMinutes": "ca {n} min kvar",
     "etaHours": "ca {h} tim kvar",
     "etaHoursMinutes": "ca {h} tim {m} min kvar"
+  },
+  "notify": {
+    "prerollDead": "Förbufferten fungerar inte — ljud från innan du trycker på inspelning sparas inte.",
+    "recoverySkipped": "En avbruten inspelning kunde inte återställas helt: {file}",
+    "deviceMissing": "Ljudenheten ”{device}” är inte ansluten.",
+    "diskLow": "Det börjar bli ont om diskutrymme — {freeGb} GB ledigt. Inspelningen stoppar av sig själv om disken blir full."
   }
 }

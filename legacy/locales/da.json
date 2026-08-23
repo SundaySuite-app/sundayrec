@@ -301,5 +301,11 @@
     "etaMinutes": "ca. {n} min tilbage",
     "etaHours": "ca. {h} t tilbage",
     "etaHoursMinutes": "ca. {h} t {m} min tilbage"
+  },
+  "notify": {
+    "prerollDead": "Forbufferen virker ikke — lyd fra før du trykker optag bliver ikke gemt.",
+    "recoverySkipped": "En afbrudt optagelse kunne ikke gendannes helt: {file}",
+    "deviceMissing": "Lydenheden “{device}” er ikke tilsluttet.",
+    "diskLow": "Der begynder at være lidt plads tilbage på disken — {freeGb} GB ledig. Optagelsen stopper af sig selv, hvis disken bliver fuld."
   }
 }

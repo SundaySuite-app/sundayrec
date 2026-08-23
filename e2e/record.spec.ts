@@ -445,3 +445,120 @@ test.describe("bannerne på opptakssiden", () => {
     );
   });
 });
+
+test.describe("bakendens egne advarsler (backend://warning)", () => {
+  // ⚠️ Kanalen var kartlagt i shimmen og emittert fra fire steder i Rust, og
+  // hadde INGEN lytter i skallet. «Mikseren er ikke tilkoblet», en halvtime før
+  // et planlagt opptak, gikk rett i gulvet. Reglene er node-testet
+  // (`app/state/backend-warning.test.ts`); det denne legger til er SKJØTEN —
+  // at et event fra motoren faktisk blir en stripe på skjermen, og at den
+  // står på brukerens språk og ikke på motorens.
+
+  test("hver av de fire kodene blir sin egen stripe, på katalogens språk", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    expect(
+      await emit(page, "backend-warning", {
+        code: "preroll_dead",
+        msg: "irrelevant — koden er kjent",
+        severity: "warn",
+        params: {},
+      }),
+    ).toBeGreaterThan(0);
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toContainText(
+      "Forhåndsbufferen virker ikke",
+    );
+
+    await emit(page, "backend-warning", {
+      code: "recovery_skipped",
+      msg: null,
+      severity: "warn",
+      params: { file: "2026-08-16.flac" },
+    });
+    const recovery = page.getByTestId("banner-backend-recovery-skipped");
+    // Innsettingen skjer i SIDEN, av `params` — køen bærer fakta, ikke setninger.
+    await expect(recovery).toContainText("2026-08-16.flac");
+
+    await emit(page, "backend-warning", {
+      code: "disk_low",
+      msg: null,
+      severity: "warn",
+      params: { freeBytes: "3221225472" },
+    });
+    // 3 221 225 472 B = 3,0 GiB — regnet ut her, ikke gjettet av bakenden.
+    await expect(page.getByTestId("banner-backend-disk-low")).toContainText(
+      "3.0 GB",
+    );
+
+    // …og enheten, som er `error` i Rust og derfor `role="alert"`.
+    await emit(page, "backend-warning", {
+      code: "device_missing",
+      msg: null,
+      severity: "error",
+      params: { device: "Behringer X32" },
+    });
+    const device = page.getByTestId("banner-backend-device-missing");
+    await expect(device).toContainText("Behringer X32");
+    await expect(device).toHaveAttribute("data-tone", "bad");
+
+    // Fire koder, fire stripper — ingen som erstattet en annen.
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toBeVisible();
+    await expect(recovery).toBeVisible();
+
+    await page.getByTestId("banner-backend-device-missing-dismiss").click();
+    await expect(device).toHaveCount(0);
+  });
+
+  test("PREROLL_DEAD slukker «Lytter»-brikka — den sto over en død buffer", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, preroll_start: true },
+      settings: { ...CHOSEN, preRollSeconds: 15 },
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-listening")).toHaveText("Lytter");
+
+    await emit(page, "backend-warning", {
+      code: "preroll_dead",
+      msg: null,
+      severity: "warn",
+      params: {},
+    });
+
+    await expect(page.getByTestId("record-listening")).toHaveCount(0);
+    await expect(page.getByTestId("banner-backend-preroll-dead")).toBeVisible();
+  });
+
+  test("DEVICE_MISSING sier det ikke to ganger når «Finner ikke …» alt står", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      // Enheten er valgt, men bare den innebygde finnes — opptakssiden viser
+      // sitt eget «Finner ikke Behringer X32».
+      fixtures: { ...FIXTURES, list_audio_devices: [BUILT_IN] },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await expect(page.getByTestId("record-source-missing")).toBeVisible();
+
+    await emit(page, "backend-warning", {
+      code: "device_missing",
+      msg: null,
+      severity: "error",
+      params: { device: "Behringer X32" },
+    });
+
+    // Ett faktum, én flate. MUTASJONSPRØVEN: ta `deduped`-grenen ut av
+    // `planWarning`, og denne linja blir rød.
+    await expect(page.getByTestId("banner-backend-device-missing")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("record-source-missing")).toBeVisible();
+  });
+});

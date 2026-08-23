@@ -52,6 +52,7 @@ import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { currentRoomMinutes } from "../../state/disk";
 import {
   clearSilence,
+  dismissReconnecting,
   finalizing,
   isRecording,
   reconnecting,
@@ -125,6 +126,9 @@ function Overlay() {
                 ? tf("app.overlay.reconnect", { name: device })
                 : t("app.overlay.reconnectAnon")
             }
+            // Se `dismissReconnecting` i state/recording.ts: stripa hadde ingen
+            // vei ned uten et `recording://reconnected` som ikke alltid kommer.
+            onDismiss={dismissReconnecting}
           />
         ) : null}
         {silenceActive.value ? (

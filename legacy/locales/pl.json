@@ -315,5 +315,11 @@
     "etaMinutes": "ok. {n} min pozostało",
     "etaHours": "ok. {h} godz. pozostało",
     "etaHoursMinutes": "ok. {h} godz. {m} min pozostało"
+  },
+  "notify": {
+    "prerollDead": "Bufor wstępny nie działa — dźwięk sprzed naciśnięcia nagrywania nie jest zachowywany.",
+    "recoverySkipped": "Przerwane nagranie nie zostało w pełni odzyskane: {file}",
+    "deviceMissing": "Urządzenie audio „{device}” nie jest podłączone.",
+    "diskLow": "Kończy się miejsce na dysku — {freeGb} GB wolne. Nagrywanie zatrzyma się samo, jeśli dysk się zapełni."
   }
 }

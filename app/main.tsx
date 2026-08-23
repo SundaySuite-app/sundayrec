@@ -59,6 +59,7 @@ import {
 import { Shell, Overlays } from "./Shell";
 import { loadAppVersion } from "./state/app-info";
 import { initAutoUpdate } from "./state/auto-update";
+import { initBackendWarnings } from "./state/backend-warning";
 import { initDisk } from "./state/disk";
 import { installErrorHandlers } from "./state/global-error";
 import { initNextRecording } from "./state/next-recording";
@@ -150,6 +151,12 @@ async function boot(): Promise<void> {
   initNextRecording();
   initPreroll();
   initDisk();
+  // ETTER de tre over, og det er ikke tilfeldig: `backend://warning` sin
+  // dedupliseringsregel leser disken og enhetslisten for å avgjøre om skallet
+  // allerede sier det samme, og den skriver til pre-rollens brikke når
+  // bufferen er død. En lytter som ble installert foran butikkene sine ville
+  // vært den samme skjøten som feilen den lukker.
+  initBackendWarnings();
   // ETTER innstillingene, og det er hele poenget: gaten «Oppdater automatisk»
   // må leses fra det som faktisk står lagret. Revisjonsfunn #11 var nøyaktig
   // det motsatte — planen ble armet før den lagrede blobben hadde landet, så
