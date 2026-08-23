@@ -22,7 +22,7 @@
 
 import { signal } from "@preact/signals";
 
-import type { TaggedAudioInput } from "@lib/../bindings/TaggedAudioInput";
+import type { TaggedAudioInput } from "@legacy/bindings/TaggedAudioInput";
 
 /** Én valgbar lydinngang, slik siden trenger den. */
 export interface AudioDeviceOption {

@@ -12,7 +12,7 @@
  * Så: `E` er PORTET, ikke oversatt. Samme objekt, samme felter, samme
  * betydning — bare uten de feltene P4a ikke bygger (mikser, mastring, video,
  * jingler, metadata). Hvert felt som ER her betyr nøyaktig det det betyr i
- * `legacy/renderer/pages/editor/state.ts`.
+ * `@lib/pages/editor/state`.
  *
  * ## Speilene, og regelen som holder dem sanne
  *
@@ -40,7 +40,7 @@
  */
 
 import { computed, signal } from "@preact/signals";
-import type { EditorSegment } from "@lib/../bindings/EditorSegment";
+import type { EditorSegment } from "@legacy/bindings/EditorSegment";
 import type { Cut } from "@lib/pages/editor/state";
 
 export type { Cut };

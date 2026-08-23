@@ -1,4 +1,4 @@
-import type { EditorSegment, RecordingMetadata } from '../../../types'
+import type { EditorSegment, RecordingMetadata } from '../../../../legacy/types'
 import { peekSharedAudioCtx } from './audio-ctx'
 
 // ── Shared types ────────────────────────────────────────────────────────────

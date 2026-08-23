@@ -17,8 +17,8 @@
 // `.d.ts`, not a module: this is ambient, and every file in the program sees it
 // without importing anything.
 
-import type { Settings, EditorSegment } from "../types";
-import type { TrashEntry } from "../bindings/TrashEntry";
+import type { Settings, EditorSegment } from "../../legacy/types";
+import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
 
 declare global {
   interface Window {
@@ -30,13 +30,15 @@ declare global {
      * ⚠️ `window.loadSettings`, `window.showOnboarding` and `window.__isRecording`
      * are deliberately NOT recreated by `app/` — each was a second place that
      * believed it knew a current value. `__isRecording` is still declared
-     * because `audio/vu-feed.ts` READS it: the read is a guard against starting
-     * `start_vu` while a recording owns the device, and with nobody writing the
-     * flag the guard is inert. That is safe here and only here, because the
-     * shell guards the same thing by MOUNTING — no meter in the tree, no
-     * `start_vu` — which is written down at the call site in
+     * because `app/lib/audio/vu-feed.ts` READS it: the read is a guard against
+     * starting `start_vu` while a recording owns the device, and with nobody
+     * writing the flag the guard is inert. That is safe here and only here,
+     * because the shell guards the same thing by MOUNTING — no meter in the
+     * tree, no `start_vu` — which is written down at the call site in
      * `app/pages/record/RecordPage.tsx`. Rebuilding the flag would be a second
      * writer on one truth, which is the failure class this shell exists to end.
+     * Collapsing the two into an argument is the standing restanse; see «Etter
+     * byttet» in `docs/APP-SHELL.md`.
      */
     showPage: (id: string) => void;
     /** Set to true while a recording owns the device. Nothing writes it — see above. */
@@ -93,7 +95,7 @@ declare global {
       emailHasSmtpPassword: () => Promise<boolean>
       /** Whether this build can send e-mail at all — read BEFORE offering a
        *  «Send test» (see feature-gate). */
-      emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
+      emailStatus:         () => Promise<import('../../legacy/bindings/EmailStatus').EmailStatus>
       testEmail:           (params: {
         recipient: string
         language?: string
@@ -110,8 +112,8 @@ declare global {
       traySetLanguage?:    (code: string) => Promise<void>
       /** macOS camera + microphone authorization (AVFoundation), for preflight. */
       mediaPermissions?:   () => Promise<{
-        camera: import('../bindings/AuthStatus').AuthStatus
-        microphone: import('../bindings/AuthStatus').AuthStatus
+        camera: import('../../legacy/bindings/AuthStatus').AuthStatus
+        microphone: import('../../legacy/bindings/AuthStatus').AuthStatus
       }>
       /** Whether the bundled ffmpeg sidecar resolved, and where. */
       ffmpegHealth?:       () => Promise<{ available: boolean; version: string | null; path: string }>
@@ -139,7 +141,7 @@ declare global {
       editorDetectSegments:   (filePath: string, force?: boolean) => Promise<EditorSegment[]>
       /** Persist a sermon-pick correction (E8). Resolves to whether it was
        *  recorded — re-picking the detector's own block is not a correction. */
-      editorRecordSermonPick: (filePath: string, request: import('../bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
+      editorRecordSermonPick: (filePath: string, request: import('../../legacy/bindings/EditorSermonPickRequest').EditorSermonPickRequest) => Promise<boolean>
       /** Index into `segments` of the block the human corrected us to, or null. */
       editorSermonPick:       (filePath: string, segments: EditorSegment[]) => Promise<number | null>
       editorAutoProcess:      (filePath: string) => Promise<{ diagnosis: { code: string; recommended: { mode: string; leftDb: number; rightDb: number } }; vocalChainPreset: string; masterPreset: string; summary: string } | null>
@@ -148,7 +150,7 @@ declare global {
       editorDeleteCutsDraft:  (filePath: string) => Promise<void>
       /** The backend-tagged input list — the renderer's ONLY audio-device
        *  enumeration since the getUserMedia label blink-open was removed. */
-      listAudioDevices:       ()                 => Promise<import('../bindings/TaggedAudioInput').TaggedAudioInput[]>
+      listAudioDevices:       ()                 => Promise<import('../../legacy/bindings/TaggedAudioInput').TaggedAudioInput[]>
       startVu:                (deviceName: string | null) => Promise<number>
       stopVu:                 ()                 => Promise<void>
       registerTrustedPath: (filePath: string) => Promise<boolean>
@@ -179,18 +181,18 @@ declare global {
       /** The current consent state — status/never-asked-granted-denied, the
        *  derived needsPrompt/active — see crates/sundayrec-core/telemetry/
        *  consent.rs for the state machine this mirrors. */
-      telemetryConsentGet: () => Promise<import('../bindings/TelemetryConsent').TelemetryConsent>
+      telemetryConsentGet: () => Promise<import('../../legacy/bindings/TelemetryConsent').TelemetryConsent>
       /** Record the user's answer. Resolves `null` ONLY on a real IPC
        *  failure — callers must never treat `null` as "recorded", since the
        *  whole point of asking once is that a lost answer must be asked
        *  again. */
-      telemetryConsentSet: (granted: boolean) => Promise<import('../bindings/TelemetryConsent').TelemetryConsent | null>
+      telemetryConsentSet: (granted: boolean) => Promise<import('../../legacy/bindings/TelemetryConsent').TelemetryConsent | null>
       // ── Telemetry (E3.7) — the settings-panel surface ────────────────────
       /** The real next payload as pretty JSON, honestly labelled — see
        *  TelemetryPreview's own doc comment for why the two consent states
        *  answer differently. `null` only on a genuine IPC failure; never
        *  fabricated. */
-      telemetryPreviewPayload: () => Promise<import('../bindings/TelemetryPreview').TelemetryPreview | null>
+      telemetryPreviewPayload: () => Promise<import('../../legacy/bindings/TelemetryPreview').TelemetryPreview | null>
       /** "Slett mine data", the local half: retires the install id. Resolves
        *  `false` only on a real failure. */
       telemetryRegenerateInstallId: () => Promise<boolean>

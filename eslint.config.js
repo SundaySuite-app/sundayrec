@@ -24,16 +24,16 @@ export default tseslint.config(
     ],
   },
 
-  // What is LEFT of the ported legacy Electron renderer (vanilla TS, browser
-  // runtime). Fase B deleted the shell — index.html, main.ts, every page and
-  // every DOM module — and kept only the INVENTORY the new shell reaches
-  // through `@lib/*`: the IPC shim, the locale loader and the pure `*-core`
-  // modules. That is 40 source files and their tests, down from 132.
+  // What is left under `legacy/` after PR B carried the inventory to
+  // `app/lib/`: the seven locale catalogues and their parity test, `types/`
+  // and `shared/`. Still the old app's house style, still linted loosely for
+  // the same reason — it is a verbatim port, not code written to this repo's
+  // rules.
   //
-  // The loosened rules stay for the same reason they were loosened: these files
-  // are still a verbatim port, not code written to this repo's house style, and
-  // PR B moves them under `app/lib/` unchanged. Tightening them here would mean
-  // a rewrite diff on top of a move diff on top of a delete diff.
+  // The block is NOT merged into the `app/lib/**` one below even though the
+  // rules are the same set: they are the same rules for two different reasons
+  // (a port that moved, and data/types that stayed), and the day one of the two
+  // is finally tightened the other must not silently come along.
   {
     files: ["legacy/**/*.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
@@ -70,7 +70,7 @@ export default tseslint.config(
                 "../../../app/**",
               ],
               message:
-                "The legacy renderer must not import from app/. The new shell depends on the old one, never the other way round — otherwise legacy/ can no longer be removed in one piece.",
+                "legacy/ must not import from app/. The shell depends on what is left here, never the other way round — otherwise legacy/ can no longer be removed in one piece.",
             },
           ],
         },
@@ -78,16 +78,23 @@ export default tseslint.config(
     },
   },
 
-  // ── The new Preact shell (app/) ────────────────────────────────────────────
+  // ── The Preact shell (app/, minus the inventory) ───────────────────────────
   //
-  // The opposite policy to the legacy block above. legacy/ is a verbatim port of
-  // a shipped app and is linted loosely on purpose; `app/` is being written now,
-  // by us, for volunteers who have never seen the app — so every rule the port
-  // had to be excused from is an ERROR here, and the two i18n mistakes that made
-  // the old renderer hard to translate are lint failures rather than review
-  // comments.
+  // The opposite policy to the two port blocks. The port is a verbatim copy of
+  // a shipped app and is linted loosely on purpose; the shell is being written
+  // now, by us, for volunteers who have never seen the app — so every rule the
+  // port had to be excused from is an ERROR here, and the two i18n mistakes
+  // that made the old renderer hard to translate are lint failures rather than
+  // review comments.
+  //
+  // `app/lib/**` is EXCLUDED by name rather than by rule-override, because the
+  // exclusion is the whole point and must be visible: PR B moved the port
+  // INSIDE `app/`, and a glob that says `app/**` while a later block quietly
+  // takes half of it back is how a reader ends up believing the strict rules
+  // cover files they do not.
   {
     files: ["app/**/*.{ts,tsx}"],
+    ignores: ["app/lib/**"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,
@@ -126,7 +133,34 @@ export default tseslint.config(
                 "@/**",
               ],
               message:
-                "Reach the legacy renderer through the `@lib/*` alias only. One spelling means the shared surface is greppable, and the day legacy/ moves there is one path to change.",
+                "Reach `legacy/` through the `@legacy/*` alias only (the ts-rs bindings, the locale catalogues, `types`/`shared`). One spelling means the dependency is greppable, and the day something moves there is one path to change.",
+            },
+            {
+              // The form PR B had to repair in 24 files: reaching OUT of one
+              // alias with `..` to land in a directory that only happened to be
+              // its neighbour. It resolves, it typechecks, and it silently
+              // depends on where `@lib` points rather than on what is being
+              // imported — so the day `@lib` moved, all 24 broke at once.
+              group: ["@lib/../*", "@lib/../**"],
+              message:
+                "Don't walk out of `@lib` with `..` — say what you mean: `@legacy/bindings/X`, `@legacy/types`, `@legacy/locales/no.json`. An alias reached relative to another alias breaks the day either one moves.",
+            },
+            {
+              // `app/lib` is the ported inventory. Reaching it by relative path
+              // is the same surface under a second spelling — and a grep for
+              // "what does the shell take from the port" then misses half.
+              group: [
+                "./lib/*",
+                "./lib/**",
+                "../lib/*",
+                "../lib/**",
+                "../../lib/*",
+                "../../lib/**",
+                "../../../lib/*",
+                "../../../lib/**",
+              ],
+              message:
+                "Reach the ported inventory through the `@lib/*` alias only — never by relative path into `app/lib/`.",
             },
           ],
         },
@@ -172,6 +206,86 @@ export default tseslint.config(
       ],
     },
   },
+
+  // ── The ported inventory, now inside the shell (app/lib/) ──────────────────
+  //
+  // ARVET INVENTAR. These 76 files are the old Electron renderer's IPC shim,
+  // locale loader and pure `*-core` modules, moved here VERBATIM by fase B's
+  // PR B. They carry the loosened rules the `legacy/**` block gave them, under
+  // their own name, because the alternative reads as a promotion that never
+  // happened: a file that sits under `app/` while `any` is still an error
+  // everywhere else in `app/` invites the reader to assume it has been through
+  // the same review the shell has. It has not.
+  //
+  // STRAMMES FIL FOR FIL VED BERØRING. When one of these is opened for a real
+  // reason, it leaves this block and `.prettierignore`'s `app/lib` line in the
+  // same PR as the change that made you open it: format it, kill the `any`s,
+  // move it under the strict block. That is a diff a reviewer can read. All 76
+  // at once is not, which is why it is not being done here.
+  //
+  // Two rules are NOT loosened, because they are about the shape of the tree
+  // rather than the style of a port: the one-way dependency (below), and the
+  // `app/**` CSP/i18n gates, which do not apply to files that render nothing.
+  {
+    files: ["app/lib/**/*.{ts,tsx}"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: globals.browser,
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      // Stylistic rules we don't enforce on the verbatim port.
+      "no-empty": "off",
+      "no-useless-assignment": "off",
+      "prefer-const": "off",
+    },
+  },
+
+  // ── The one-way rule: `app/lib/` never imports the shell ───────────────────
+  //
+  // The inventory is what the shell BUILDS ON. The moment a `*-core` module
+  // reaches back into `app/pages/…` or `app/state/…`, the dependency is a
+  // cycle: the pure modules stop being testable without the shell, and the
+  // per-file tightening described above stops being possible one file at a
+  // time. Before PR B this was a single glob (`../app/**`, from outside);
+  // inside `app/` there is no `app/` segment left to match on, so it is
+  // expressed as "no relative import may escape `app/lib/`".
+  //
+  // Which prefix escapes depends on how deep the file sits, and the SAME
+  // prefix is legitimate one level down (`../audio/smoothing` from
+  // `app/lib/ui/` is inventory-internal; from `app/lib/` it would be
+  // `app/audio/`). So the rule is written per depth — 1, 2 and 3 are every
+  // depth the inventory has (`app/lib/pages/editor/` is the deepest).
+  //
+  // `[A-Za-z]` is what keeps `../../legacy/bindings/X` legal at depth 1: a
+  // segment starting with a letter is a sibling INSIDE `app/`, while `..` is
+  // the way out of `app/` altogether, which is where the bindings live.
+  ...[1, 2, 3].map((depth) => {
+    const up = "../".repeat(depth);
+    return {
+      files: [`app/lib/${"*/".repeat(depth - 1)}*.{ts,tsx}`],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: [`${up}[A-Za-z]*`, `${up}[A-Za-z]*/**`],
+                message:
+                  "The ported inventory (app/lib/) must not import from the shell around it. The shell depends on the inventory, never the other way round — otherwise the pure modules stop being pure and the file-by-file tightening stops being possible. Reach `legacy/` with one more `../` (it is outside `app/`), and take a value the shell owns as an ARGUMENT instead.",
+              },
+            ],
+          },
+        ],
+      },
+    };
+  }),
 
   // The Playwright browser tier (E5.2). Node runtime for the spec bodies, but
   // `page.evaluate`/`addInitScript` callbacks run IN the page, so both globals

@@ -18,8 +18,8 @@
  * IPC and no DOM.
  */
 
-import type { AuthStatus } from '../../bindings/AuthStatus'
-import type { PreflightFinding } from '../../bindings/PreflightFinding'
+import type { AuthStatus } from '../../../legacy/bindings/AuthStatus'
+import type { PreflightFinding } from '../../../legacy/bindings/PreflightFinding'
 
 /** What the two commands answer with (the fields we care about). */
 export interface HealthInputs {

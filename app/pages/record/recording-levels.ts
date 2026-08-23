@@ -28,7 +28,7 @@
  */
 
 import { VU_FLOOR_DB } from "@lib/audio/vu-feed-core";
-import type { RecordingLevels } from "@lib/../bindings/RecordingLevels";
+import type { RecordingLevels } from "@legacy/bindings/RecordingLevels";
 
 import type { VuSource } from "../../ui/VuMeter/VuMeter";
 

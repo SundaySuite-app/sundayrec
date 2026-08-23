@@ -73,16 +73,22 @@ function registeredCommands() {
   return [...unique].sort();
 }
 
-// ── 2. Renderer source: legacy/ + src/, minus generated/locale/test files ───
+// ── 2. Frontend source: app/ + legacy/ + src/, minus generated/locale/test ──
 // (docs/COMMAND_AUDIT_2026-08.md §7, step 2 — src/ is entirely `src/lib/bindings`
 // today, which step 3 below excludes anyway, so this reduces in practice to
-// legacy/renderer + legacy/shared + legacy/types.)
+// `app/` (the shell AND `app/lib/`, where the shim now lives) plus
+// legacy/shared + legacy/types.)
 
-// `app` joins the roots the day it is created: «Frivilligen først»'s Preact
-// shell is where the call sites are MOVING TO, so a measurement that only
+// `app` joined the roots the day it was created: «Frivilligen først»'s Preact
+// shell is where the call sites were MOVING TO, so a measurement that only
 // looked at `legacy/` would report a command as newly unreachable the moment
 // its last legacy caller was replaced by an app one — a false alarm — and would
 // miss a genuinely dark command whose only caller lived in the new tree.
+//
+// `legacy` stays a root after PR B carried the inventory into `app/lib/`. What
+// is left there is `shared/` and `types/` — no call sites today, but a root
+// dropped because it is currently empty of them is a root that is not watched
+// when it stops being empty.
 const SEARCH_ROOTS = ["legacy", "src", "app"];
 const EXCLUDE_DIR_NAMES = new Set(["bindings", "locales", "node_modules"]);
 const INCLUDE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
@@ -142,21 +148,31 @@ function collectSourceFiles() {
 // longer holds.
 const KNOWN_INVOKE_IMPORTERS = [
   // The shim every page goes through — `call()`/`editorCall()` wrap `invoke`.
-  "legacy/renderer/api-shim.ts",
+  // It moved from `legacy/renderer/` to `app/lib/` in fase B's PR B; it is the
+  // same file and the same single door.
+  "app/lib/api-shim.ts",
 ];
 
-// …and the list itself may never grow an `app/` entry. The set-equality check
-// below already fails on a new importer, but its remedy is "add the file to
-// KNOWN_INVOKE_IMPORTERS" — which for the new shell would be the wrong remedy
-// dressed as the right one. `app/**` reaches the backend through `window.api`
+// …and the list itself may never grow an entry from the SHELL. The set-equality
+// check below already fails on a new importer, but its remedy is "add the file
+// to KNOWN_INVOKE_IMPORTERS" — which for the shell would be the wrong remedy
+// dressed as the right one. The shell reaches the backend through `window.api`
 // (installed by `@lib/api-shim`) and through nothing else; ESLint's
 // no-restricted-imports says the same thing at the call site, and this says it
 // where the exemption would have to be written.
+//
+// «The shell» is `app/` MINUS `app/lib/`, since PR B moved the ported inventory
+// — the shim included — inside `app/`. The exclusion is one prefix and not a
+// hole: `app/lib/` is covered by the set-equality check below, which is the
+// stricter of the two (it fails on ANY change to the set, in either direction),
+// and by ESLint's `app/lib/**` block. What is given up here is only the
+// friendlier error message, for exactly one file.
 const APP_PREFIX = "app/";
+const LIB_PREFIX = "app/lib/";
+const isShellFile = (f) =>
+  f.startsWith(APP_PREFIX) && !f.startsWith(LIB_PREFIX);
 function checkNoAppExemptions() {
-  const smuggled = KNOWN_INVOKE_IMPORTERS.filter((f) =>
-    f.startsWith(APP_PREFIX),
-  );
+  const smuggled = KNOWN_INVOKE_IMPORTERS.filter(isShellFile);
   if (smuggled.length === 0) return true;
   console.error(
     "✗ an app/ file was added to KNOWN_INVOKE_IMPORTERS: " +
@@ -176,14 +192,16 @@ function checkInvokeImporters(files) {
     .filter((f) => readFileSync(f, "utf8").includes("@tauri-apps/api/core"))
     .map((f) => relative(root, f))
     .sort();
-  const fromApp = found.filter((f) => f.startsWith(APP_PREFIX));
-  if (fromApp.length) {
+  const fromShell = found.filter(isShellFile);
+  if (fromShell.length) {
     console.error(
-      `✗ ${fromApp.length} file(s) under app/ import @tauri-apps/api/core directly: ` +
-        fromApp.join(", "),
+      `✗ ${fromShell.length} shell file(s) under app/ import @tauri-apps/api/core directly: ` +
+        fromShell.join(", "),
     );
     console.error(
-      "  app/ talks to the backend through `window.api` only (see @lib/api-shim).",
+      "  The shell talks to the backend through `window.api` only (see @lib/api-shim).\n" +
+        "  `app/lib/` is the ported inventory, not the shell — the shim itself lives\n" +
+        "  there, and the set-equality check below is what holds it to exactly one file.",
     );
     return false;
   }

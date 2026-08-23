@@ -39,15 +39,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const LOCALE_DIR = path.join(ROOT, "legacy", "locales");
 /**
- * Every tree that renders UI text. BOTH shells: the legacy renderer and
- * «Frivilligen først»'s Preact shell in `app/`. A gate that only watched the
- * old shell would go quietly vacuous exactly as the new one grew — the new
- * shell is where the count-aware strings are being WRITTEN now.
+ * Every tree that renders UI text. That is `app/` — the shell AND `app/lib/`,
+ * the ported inventory fase B PR B moved in under it, whose `*-core` modules
+ * still name count-aware keys.
+ *
+ * Unlike the two AST gates, this one is NOT narrowed to exclude the inventory:
+ * it asks a question that is true of a key no matter who reads it (a `tn()` key
+ * must be a plural group; a plural group must not be read with `t()`), and it
+ * has always covered the port. Narrowing it would drop coverage the move did
+ * not touch.
  */
-const SOURCE_DIRS = [
-  path.join(ROOT, "legacy", "renderer"),
-  path.join(ROOT, "app"),
-];
+const SOURCE_DIRS = [path.join(ROOT, "app")];
 const LANGS = ["no", "en", "sv", "da", "de", "fr", "pl"];
 /** BCP-47 for plural data — mirrors i18n.ts `localeTag()`. */
 const TAG = (lang) => (lang === "no" ? "nb-NO" : lang);

@@ -7,7 +7,7 @@
 // else, so a stub object is enough. The module holds singleton state, so every
 // test re-imports it through vi.resetModules().
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { VuLevels } from '../../bindings/VuLevels'
+import type { VuLevels } from '../../../legacy/bindings/VuLevels'
 import type { VuFeedState, VuFeedSubscriber } from './vu-feed'
 
 interface Harness {

@@ -24,7 +24,7 @@
  * ## Alt er portet, ingenting er kuttet
  *
  * Sju trinn, tretten glidere, tre EQ-bånd og sluttgain — de samme feltene,
- * områdene og trinnene som `legacy/renderer/pages/editor/mixer.ts`, som selv
+ * områdene og trinnene som `@lib/pages/editor/mixer`, som selv
  * speiler `EditorProcessing` i Rust. Startverdiene importeres DERFRA
  * (`defaultProcessing`) i stedet for å skrives på nytt: det ene stedet
  * `VocalChain::default()` finnes i TypeScript skal fortsette å være ett sted.

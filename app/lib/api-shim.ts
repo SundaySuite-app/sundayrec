@@ -33,8 +33,8 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
-import type { TrashEntry } from "../bindings/TrashEntry";
-import type { Settings } from "../bindings/Settings";
+import type { TrashEntry } from "../../legacy/bindings/TrashEntry";
+import type { Settings } from "../../legacy/bindings/Settings";
 import { SETTINGS_DEFAULTS } from "./settings-defaults";
 import { migrateLegacySettingsOnce } from "./migrate-legacy-settings";
 import {
@@ -765,7 +765,7 @@ const api: Record<string, unknown> = {
     }
   },
   prerollStatus: async () =>
-    call<import("../bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
+    call<import("../../legacy/bindings/PrerollStatus").PrerollStatus>("preroll_status", undefined, {
       active: false,
       engine: "native",
       channels: 0,
@@ -978,7 +978,7 @@ const api: Record<string, unknown> = {
   // identify a person, a church or a recording. The rest of the surface
   // (preview payload, queue status, delete-my-data) is wired in E3.7.
   telemetryConsentGet: async () =>
-    call<import("../bindings/TelemetryConsent").TelemetryConsent>(
+    call<import("../../legacy/bindings/TelemetryConsent").TelemetryConsent>(
       "telemetry_consent_get",
       undefined,
       // The same "absent means no" default the backend's own state machine
@@ -995,7 +995,7 @@ const api: Record<string, unknown> = {
   // user their choice was saved when it was not.
   telemetryConsentSet: async (granted: boolean) => {
     try {
-      return await invoke<import("../bindings/TelemetryConsent").TelemetryConsent>(
+      return await invoke<import("../../legacy/bindings/TelemetryConsent").TelemetryConsent>(
         "telemetry_consent_set",
         { granted },
       );
@@ -1013,7 +1013,7 @@ const api: Record<string, unknown> = {
   // which is worse than showing nothing.
   telemetryPreviewPayload: async () => {
     try {
-      return await invoke<import("../bindings/TelemetryPreview").TelemetryPreview>(
+      return await invoke<import("../../legacy/bindings/TelemetryPreview").TelemetryPreview>(
         "telemetry_preview_payload",
       );
     } catch (e) {
@@ -1040,13 +1040,13 @@ const api: Record<string, unknown> = {
   // error", so the user was told the device was MISSING when macOS was simply
   // refusing it. AVFoundation knew all along.
   mediaPermissions: async () =>
-    call<import("../bindings/MediaPermissions").MediaPermissions>(
+    call<import("../../legacy/bindings/MediaPermissions").MediaPermissions>(
       "media_permissions",
       undefined,
       { camera: "unknown", microphone: "unknown" },
     ),
   ffmpegHealth: async () =>
-    call<import("../bindings/FfmpegHealth").FfmpegHealth>("ffmpeg_health", undefined, {
+    call<import("../../legacy/bindings/FfmpegHealth").FfmpegHealth>("ffmpeg_health", undefined, {
       available: true, // unknown ⇒ don't manufacture an alarm
       version: null,
       path: "",
@@ -1074,7 +1074,7 @@ const api: Record<string, unknown> = {
   // getUserMedia grant to reveal labels, and that blink-open made the webview a
   // microphone owner every time a picker rendered (audio/capture.ts).
   listAudioDevices: async () =>
-    call<import("../bindings/TaggedAudioInput").TaggedAudioInput[]>(
+    call<import("../../legacy/bindings/TaggedAudioInput").TaggedAudioInput[]>(
       "list_audio_devices",
       undefined,
       [],

@@ -3,7 +3,7 @@
  * unit-tested in channel-grid-logic.test.ts.
  */
 
-import type { ChannelMode } from '../../types'
+import type { ChannelMode } from '../../../legacy/types'
 
 /** Which slot a tap fills next. `armed` is the slot the NEXT tap assigns. */
 export interface Assignment {

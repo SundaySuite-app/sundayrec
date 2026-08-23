@@ -9,7 +9,7 @@
  * field the history row and the trash entry share.
  */
 
-import type { TrashEntry } from '../../bindings/TrashEntry'
+import type { TrashEntry } from '../../../legacy/bindings/TrashEntry'
 
 export type { TrashEntry }
 

@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { SETTINGS_DEFAULTS } from "../legacy/renderer/settings-defaults";
+import { SETTINGS_DEFAULTS } from "../app/lib/settings-defaults";
 
 // The one way a spec boots the app.
 //
@@ -7,7 +7,7 @@ import { SETTINGS_DEFAULTS } from "../legacy/renderer/settings-defaults";
 // goes in one `addInitScript`: `window.__SUNDAYREC_FIXTURES__` — the E5.1
 // seam. Outside Tauri fixtures are honoured unconditionally (there is no
 // backend to shadow), so no query param is needed here; see
-// legacy/renderer/fixtures-core.ts.
+// app/lib/fixtures-core.ts.
 //
 // SETTINGS are fixtures like everything else since R4 (`settings_get` /
 // `settings_save` invokes — the localStorage store is dead). The harness

@@ -10,12 +10,12 @@ const host = process.env.TAURI_DEV_HOST;
 // Until then this file carried two roots selected by `--mode app`, because the
 // old Electron renderer (`legacy/renderer/`) was still the one every release
 // was cut from and the new shell was built BESIDE it. Fase B ended the parallel
-// period: `legacy/renderer/index.html`, `main.ts` and every DOM module under it
-// are gone, and the only thing left in that directory is the shared inventory
-// the new shell reaches through `@lib/*` — the IPC shim, the locale loader and
-// the pure `*-core` modules. There is no second root left to select, so there
-// is no mode branch: `npm run dev` and `npm run build` are the app shell, and
-// `dist/` is what `tauri.conf.json`'s `frontendDist: "../dist"` bundles.
+// period: PR A deleted `legacy/renderer/index.html`, `main.ts` and every DOM
+// module under it, and PR B moved what was left — the shared inventory the
+// shell reaches through `@lib/*` — to `app/lib/`. There is no second root left
+// to select, so there is no mode branch: `npm run dev` and `npm run build` are
+// the app shell, and `dist/` is what `tauri.conf.json`'s
+// `frontendDist: "../dist"` bundles.
 //
 // The port is 1420 for the same reason it always was: `tauri.conf.json`'s
 // `devUrl` says so, `playwright.config.ts` says so, and the dev-CSP's
@@ -44,12 +44,24 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./legacy"),
+      // What is still under `legacy/`: the ts-rs `bindings/`, the seven locale
+      // catalogues, `types/` and `shared/`. Generated or data, not shell code.
+      //
+      // It was spelled `@` until PR B, and nothing used it: the shell reached
+      // the bindings as `@lib/../bindings/X`, walking OUT of the inventory
+      // through its own alias. That worked only because `@lib` happened to be
+      // `legacy/renderer`, i.e. a sibling of `bindings/` — so the move broke
+      // all 24 of those imports at once, which is exactly what an alias
+      // relative to another alias buys you. `@legacy/*` names the dependency
+      // instead of tunnelling through a neighbour, and it is greppable: `app/`
+      // → `legacy/` is now one string.
+      "@legacy": path.resolve(__dirname, "./legacy"),
       // The shell's way into the shared inventory: the IPC shim, the locale
-      // catalogues and the pure `*-core` modules. PR B moves those files under
-      // `app/lib/`; until then the alias is what keeps every import site
-      // spelled once, so that move is a one-line change here.
-      "@lib": path.resolve(__dirname, "./legacy/renderer"),
+      // loader and the pure `*-core` modules. They lived under
+      // `legacy/renderer/` until PR B; because every import site was spelled
+      // `@lib/*` and nothing else, moving them was exactly this one line —
+      // which is what the alias was put here to buy.
+      "@lib": path.resolve(__dirname, "./app/lib"),
     },
   },
 

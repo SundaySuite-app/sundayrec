@@ -17,7 +17,7 @@
  * weighted in the copy exactly as they are in the CSS.
  */
 
-import type { ConsentStatus } from '../bindings/ConsentStatus'
+import type { ConsentStatus } from '../../legacy/bindings/ConsentStatus'
 
 export interface PromptCopy {
   titleKey: string

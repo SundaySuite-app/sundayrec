@@ -12,7 +12,7 @@ import {
 // The one thing `app/` does that the shipped shell does not: a settings change
 // that FAILS TO SAVE is rolled back.
 //
-// `legacy/renderer/ui/bind-setting.ts` leaves the value standing after a
+// The old renderer's `ui/bind-setting.ts` left the value standing after a
 // rejected `settings_save` — it toasts and moves on. The screen then claims one
 // thing and sqlite says another, and the change "disappears" at the next
 // launch. A volunteer who sees that has no way to know which of the two is
@@ -35,7 +35,7 @@ test.describe("a settings change that cannot be saved", () => {
       fixtures: {
         ...BOOT_FIXTURES,
         // A fixture that throws propagates exactly like a rejected invoke —
-        // see legacy/renderer/fixtures-core.ts.
+        // see app/lib/fixtures-core.ts.
         settings_save: fn("() => { throw new Error('sqlite is read-only') }"),
       },
       settings: { ...SETTLED_SETTINGS, autoUpdate: true },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RecordingEntry } from "@lib/../types";
+import type { RecordingEntry } from "@legacy/types";
 import { spanOfSeconds } from "../record/record-core";
 import {
   autoDeleteLine,

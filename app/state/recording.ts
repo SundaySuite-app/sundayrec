@@ -39,7 +39,7 @@
 
 import { signal } from "@preact/signals";
 import { liveFromRecordingState } from "@lib/preroll-lifecycle-core";
-import type { RecorderState } from "@lib/../bindings/RecorderState";
+import type { RecorderState } from "@legacy/bindings/RecorderState";
 
 import { levelWordFor } from "../audio/level-words";
 import { raiseBanner } from "./banners";

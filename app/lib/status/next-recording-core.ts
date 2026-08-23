@@ -24,8 +24,8 @@
  * and assert on structure instead of on Norwegian.
  */
 
-import type { MissedRecordingInfo } from '../../bindings/MissedRecordingInfo'
-import type { PreflightFinding } from '../../bindings/PreflightFinding'
+import type { MissedRecordingInfo } from '../../../legacy/bindings/MissedRecordingInfo'
+import type { PreflightFinding } from '../../../legacy/bindings/PreflightFinding'
 
 /** i18n lookup, injected so the formatters stay pure. */
 export type Translate = (key: string, fallback?: string) => string

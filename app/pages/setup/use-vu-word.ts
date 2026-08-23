@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 
 import { acquireVuFeed } from "@lib/audio/vu-feed";
 import { pickLR } from "@lib/audio/vu-feed-core";
-import type { VuLevels } from "@lib/../bindings/VuLevels";
+import type { VuLevels } from "@legacy/bindings/VuLevels";
 
 import { levelWordFor, type LevelWord } from "../../audio/level-words";
 

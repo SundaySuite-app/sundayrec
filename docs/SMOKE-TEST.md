@@ -1098,7 +1098,7 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
      the import asks first («Dette erstatter innstillingene på denne maskinen
      …») because it is the one settings action that is not undoable.
    - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
-   - VERIFIED-BY: legacy/renderer/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
+   - VERIFIED-BY: app/lib/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
 
 ---
 

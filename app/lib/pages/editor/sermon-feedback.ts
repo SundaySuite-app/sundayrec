@@ -1,6 +1,6 @@
 import type { Suggestion } from './state'
 import { sermonCandidates } from './sermon-candidates'
-import type { EditorSermonPickRequest } from '../../../bindings/EditorSermonPickRequest'
+import type { EditorSermonPickRequest } from '../../../../legacy/bindings/EditorSermonPickRequest'
 
 // The renderer's half of E8: turn "the human just corrected the sermon pick"
 // into the record the backend stores. Pure — no DOM, no shared state — because

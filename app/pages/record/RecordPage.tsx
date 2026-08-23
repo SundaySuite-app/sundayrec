@@ -42,13 +42,13 @@
 
 import { useEffect, useState } from "preact/hooks";
 
-import type { TelemetryConsent } from "@lib/../bindings/TelemetryConsent";
+import type { TelemetryConsent } from "@legacy/bindings/TelemetryConsent";
 import {
   formatWakeHint,
   intlParts,
   parseLocalIso,
 } from "@lib/status/next-recording-core";
-import type { PreflightFinding } from "@lib/../bindings/PreflightFinding";
+import type { PreflightFinding } from "@legacy/bindings/PreflightFinding";
 
 import { openInEditor } from "../../editor/entry";
 import { locale, t, tDyn, tf, tn } from "../../i18n";

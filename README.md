@@ -56,14 +56,20 @@ export.
   Babel plugin), and one door into Tauri: `window.api`. Its own header,
   [`docs/APP-SHELL.md`](docs/APP-SHELL.md), is the long version — the contracts,
   the gates, and what is still owed.
-- **`legacy/`** — what the old shell left behind. Since fase B that is the
-  shared INVENTORY the app reaches through the `@lib/*` alias — the IPC shim,
-  the locale loader and the pure `*-core` decision modules — plus the
-  `types`/`shared`/`locales` trees and `legacy/bindings/`, the committed ts-rs
-  TypeScript bindings generated from the Rust types (`npm run bindings`; CI
-  fails if they drift). The Electron vanilla-TS renderer that used to live here
-  is gone: `index.html`, `main.ts`, every page and every DOM module. The
-  directory keeps its name until PR B moves the inventory under `app/lib/`.
+- **`app/lib/`** — the shared INVENTORY the shell reaches through the `@lib/*`
+  alias, and the only part of the old Electron renderer that survived fase B:
+  the IPC shim (`api-shim.ts`, the one file in the repo that imports Tauri's
+  `invoke`), the locale loader, and the pure `*-core` decision modules the
+  screens are assembled from. It is a **verbatim port** and is treated as one —
+  its own ESLint block, left out of `prettier`, tightened file by file as each
+  is opened for a real reason. It never imports the shell around it; the shell
+  never reaches it by relative path.
+- **`legacy/`** — what is left when the inventory moved out: `legacy/bindings/`,
+  the committed ts-rs TypeScript bindings generated from the Rust types
+  (`npm run bindings`; CI fails if they drift), the seven locale catalogues in
+  `legacy/locales/`, and the `types`/`shared` trees. `app/` reaches all of it
+  through the `@legacy/*` alias. Generated code and data, in other words — the
+  Electron vanilla-TS renderer that used to live here is gone entirely.
 - **`docs/`** — living docs: migration plan (`MIGRATION-TAURI2.md`), hardware
   smoke tests (`SMOKE-TEST.md`), the account/key checklist
   (`NEEDS-RICHARD.md`), and an improvement-backlog snapshot from 2026-07-07

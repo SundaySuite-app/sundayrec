@@ -20,7 +20,7 @@
 // NOT a source of truth for the app: the store is sqlite, read via
 // `settings_get`, which answers with real (validated) values.
 
-import type { Settings } from "../bindings/Settings";
+import type { Settings } from "../../legacy/bindings/Settings";
 
 export const SETTINGS_DEFAULTS: Settings = {
   // System

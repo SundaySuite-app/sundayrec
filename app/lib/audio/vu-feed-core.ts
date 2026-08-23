@@ -9,7 +9,7 @@
  * stereo meter draws is the interesting decision, and it lives here.
  */
 
-import type { ChannelMode } from '../../types'
+import type { ChannelMode } from '../../../legacy/types'
 
 /** The dBFS floor every meter in the app shares (audio/vu.ts, channel-grid). */
 export const VU_FLOOR_DB = -60

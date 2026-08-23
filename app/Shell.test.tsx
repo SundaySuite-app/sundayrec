@@ -1,7 +1,7 @@
 import { render } from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 
-import type { RecordingEntry } from "@lib/../types";
+import type { RecordingEntry } from "@legacy/types";
 
 import { Overlays, Shell } from "./Shell";
 import { navigate, route } from "./router/router";

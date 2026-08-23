@@ -101,10 +101,10 @@ jobs:
       # …og motsatt vei: finnes det nøkler ingen leser? Den halvdelen var
       # informativ mens legacy-skallet eide mesteparten av katalogen. Fase B
       # slettet skallet, `--unused` ble en FEILENDE gate, og 653 nøkler ble
-      # ryddet ut av alle sju katalogene. «Leser» er BÅDE et kall i `app/` og en
-      # nøkkel navngitt av en delt kjerne under `legacy/renderer/` — de rene
-      # modulene svarer med nøkler, og en prune som bare talte `app/` ville
-      # slettet tekst som faktisk rendres.
+      # ryddet ut av alle sju katalogene. «Leser» er BÅDE et `t()`-kall i
+      # SKALLET og en nøkkel navngitt av en delt kjerne under `app/lib/` — de
+      # rene modulene svarer med nøkler, og en prune som bare talte kallene
+      # ville slettet tekst som faktisk rendres.
       #
       # De to gamle HTML-gatene (`check-i18n-fallbacks`, `check-i18n-hardcoded`)
       # er borte: begge målte `legacy/renderer/index.html`, som ikke finnes.

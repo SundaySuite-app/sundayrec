@@ -14,7 +14,8 @@
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "paths": {
-      "@lib/*": ["./legacy/renderer/*"]
+      "@lib/*": ["./app/lib/*"],
+      "@legacy/*": ["./legacy/*"]
     }
   },
   "include": ["legacy", "app", "e2e", "playwright.config.ts"],

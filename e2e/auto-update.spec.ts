@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { boot, BOOT_FIXTURES, SETTLED_SETTINGS, fn } from "./harness";
-import { AUTO_UPDATE_INTERVAL_MS } from "../legacy/renderer/pages/auto-update-schedule-core";
+import { AUTO_UPDATE_INTERVAL_MS } from "../app/lib/pages/auto-update-schedule-core";
 
 // `e2e/auto-update.spec.ts`, re-pointed at the new shell. Every test TITLE here
 // is byte-identical to the legacy file's — `docs/SMOKE-TEST.md` points at all

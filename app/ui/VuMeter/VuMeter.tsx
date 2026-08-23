@@ -57,7 +57,7 @@ import {
 } from "@lib/audio/vu-feed";
 import { createLevelSmoother } from "@lib/audio/smoothing";
 import { pickLR, VU_FLOOR_DB } from "@lib/audio/vu-feed-core";
-import type { VuLevels } from "@lib/../bindings/VuLevels";
+import type { VuLevels } from "@legacy/bindings/VuLevels";
 
 import {
   levelFraction,

@@ -21,7 +21,7 @@
  * en kveldsgudstjeneste 23:30 + 90 min er 01:00, ikke et negativt tall.
  */
 
-import type { ScheduleSlot } from "@lib/../bindings/ScheduleSlot";
+import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
 import type { Settings } from "../../state/settings";
 
