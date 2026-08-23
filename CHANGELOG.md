@@ -3,12 +3,40 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
-## Upublisert (v0.15) — «Frivilligen først» R2: innholdsfunksjonene er fjernet
+## v0.15.0 — SundayRec gjør fire ting
 
-SundayRec gjør fire ting nå — og bare dem: tar opp gudstjenesten, lar deg
-redigere opptaket, mikser/mastrer lyden og eksporterer fila. Runde to tar ut
-alt som handlet om INNHOLDET i prekenen heller enn opptaket av den. Koden
-ligger i git-historikken om noen trenger den igjen:
+Tar opp gudstjenesten, lar deg redigere opptaket, mikser/mastrer lyden og
+eksporterer fila. Denne utgivelsen tar ut alt som ikke tjener de fire — både
+fra skjermen og fra koden (som ligger i git-historikken om noen trenger den
+igjen). Det er første steg i en større ombygging for frivillige som aldri har
+sett appen før; selve det nye utseendet kommer i senere utgivelser. Appen ser
+altså ut som før, men har færre knapper, færre innstillinger og trenger ikke
+lenger en C/C++-kompilator for å bygges.
+
+Gamle innstillinger og eksporterte profiler leses trygt — feltene som hørte til
+det fjernede droppes stille, alt annet beholdes.
+
+### Delingsfunksjonene er ute
+
+- **Sky-backup** (Google Drive / Dropbox / OneDrive) og kortet på Hjem.
+- **Podkast-feed (RSS)** og hele Podcast-kortet, inkludert «Forhåndsklargjøring
+  og gjennomgang».
+- **Gjennomgangskøen** — køen på Hjem, påminnelsene, menylinje-varselet og
+  redigeringens «klargjort for publisering»-modus. Redigeringen analyserer nå
+  ALLTID opptaket når du åpner det.
+- **Webhook** til Slack/Discord/Teams.
+- **Sunday-suite-koblingene** (SundaySong, SundayPlan, SundayEdit, SundayStage)
+  og `sundayrec://`-lenkene.
+- **Episodebilde / cover art** (standardbildet og bildet per opptak).
+- **Gmail-innlogging** som e-postvei — e-postvarsler fungerer som før, men
+  bare via SMTP (vertsnavn, brukernavn og app-passord).
+
+Beholdt: «Send e-post ved feil» med én mottaker og SMTP-oppsettet, og
+diagnostikk (med samtykke). Nøkler du hadde lagret for Google eller SundaySong
+ligger igjen i maskinens nøkkelring; slett dem der om du vil
+(Nøkkelringtilgang → søk «sundayrec»).
+
+### Innholdsfunksjonene er ute
 
 - **Transkribering** (whisper) — «Transkriber»-knappen, modellnedlastingen,
   SRT/VTT/TXT-eksporten, søket i preken-tekst under Historikk og kortet på
@@ -37,45 +65,14 @@ ligger i git-historikken om noen trenger den igjen:
   og faller tilbake til programvare om den feiler — bryteren er borte.
 - **Døde innstillinger** (felter ingenting leste: inngangsvolum, EQ,
   kompressor, limiter, «trim stillhet», «minimer til menylinje» m.fl.) er
-  tatt ut av modellen. Gamle innstillinger og eksporterte profiler leses
-  trygt — de feltene droppes stille, alt annet beholdes.
+  tatt ut av modellen.
 
-## Uutgitt — «Frivilligen først» R1: delingsfunksjonene er fjernet
+### Polsk grammatikk (fra v0.14.1-beta.1)
 
-SundayRec gjør fire jobber: ta opp, redigere, mikse/mastre og eksportere. Alt
-som ikke tjener dem er tatt ut av appen — koden ligger i git-historikken om
-noen trenger den igjen:
-
-- **Sky-backup** (Google Drive / Dropbox / OneDrive) og kortet på Hjem.
-- **Podkast-feed (RSS)** og hele Podcast-kortet, inkludert «Forhåndsklargjøring
-  og gjennomgang».
-- **Gjennomgangskøen** — køen på Hjem, påminnelsene, menylinje-varselet og
-  redigeringens «klargjort for publisering»-modus. Redigeringen analyserer nå
-  ALLTID opptaket når du åpner det.
-- **Webhook** til Slack/Discord/Teams.
-- **Sunday-suite-koblingene** (SundaySong, SundayPlan, SundayEdit, SundayStage)
-  og `sundayrec://`-lenkene.
-- **Episodebilde / cover art** (standardbildet og bildet per opptak).
-- **Gmail-innlogging** som e-postvei — e-postvarsler fungerer som før, men
-  bare via SMTP (vertsnavn, brukernavn og app-passord).
-
-Beholdt: «Send e-post ved feil» med én mottaker og SMTP-oppsettet, diagnostikk
-(med samtykke), og det appen lærer av rettelsene dine (visningen ble tatt ut i
-R2 over). Gamle innstillinger leses trygt — feltene som hørte til det fjernede
-droppes stille, alt annet beholdes. Nøkler du hadde lagret for Google eller
-SundaySong ligger igjen i maskinens nøkkelring; slett dem der om du vil
-(Nøkkelringtilgang → søk «sundayrec»).
-
-## v0.14.1-beta.1
-
-### Polsk grammatikk i «Hva appen har justert»
-
-Setningene som forteller hva appen har flyttet på, teller to ting samtidig —
-sekunder og rettelser. På polsk har begge tre former («1 sekundę / 2 sekundy /
-5 sekund», «1 poprawka / 2 poprawki / 5 poprawek»), og appen kunne bare velge
-én av dem for hele setningen. Dermed sto det alltid feil ord om minst det ene
-tallet. Nå bøyes hvert tall for seg — også i ventetilstanden og i forklaringen
-under bryteren.
+Beta-ringen fikk v0.14.1-beta.1 den 10. august: setninger som teller to ting
+samtidig bøyde bare det ene tallet på polsk. Flaten den fiksa («Hva appen har
+justert») er tatt ut over, men bøyingsmotoren består og brukes av de rundt
+førti andre setningene som teller noe.
 
 ## v0.14.0 — slankere, og stødigere der det gjelder
 
