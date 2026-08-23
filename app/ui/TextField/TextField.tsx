@@ -23,7 +23,13 @@ export interface TextFieldProps {
   onCommit?: () => void;
   /** MÅ komme fra katalogen — gaten sjekker `placeholder` som prosa. */
   placeholder?: string;
-  type?: "text" | "email" | "number";
+  /**
+   * `password` (P1b) er SMTP-passordet, og bare det. Feltet leses aldri
+   * tilbake: hemmeligheten bor i OS-nøkkelringen og krysser aldri inn i
+   * webviewet igjen, så verdien her er alltid enten tom eller noe brukeren
+   * nettopp skrev.
+   */
+  type?: "text" | "email" | "number" | "password";
   inputMode?: JSX.HTMLAttributes<HTMLInputElement>["inputMode"];
   disabled?: boolean;
   /** Rød kant. Teksten står i SettingRows feillinje. */

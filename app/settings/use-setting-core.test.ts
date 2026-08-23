@@ -2,6 +2,7 @@ import { SAVED_CHIP_MS, SAVE_COALESCE_MS } from "@lib/ui/bind-setting-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  narrowToStored,
   runCommit,
   type CommitDeps,
   type CommitOutcome,
@@ -233,4 +234,32 @@ describe("the timings come from bind-setting-core, not from a second copy", () =
     expect(SAVE_COALESCE_MS).toBeGreaterThan(0);
     expect(SAVED_CHIP_MS).toBeGreaterThan(SAVE_COALESCE_MS);
   });
+});
+
+describe("narrowToStored", () => {
+  // A `<select>` always hands back a string. Half the settings behind one are
+  // `i32` in Rust, and `Settings` deserialises strictly: `"30"` where serde
+  // wants a number rejects the WHOLE save — the screen would say «Lagret ✓»
+  // for a write that never landed, taking everything else in the same burst
+  // with it.
+  it.each([
+    ["a number key takes the parsed value", 0, "30", 30],
+    ["…including a negative one", -50, "-60", -60],
+    ["…and zero, which is not «empty»", 15, "0", 0],
+    ["a string key keeps the string", "256", "320", "320"],
+    ["a boolean key is untouched", true, false, false],
+    ["a number that is not a number stays for validate to reject", 0, "x", "x"],
+    ["an empty field stays empty — that is «cleared», not 0", 0, "", ""],
+    ["a number in, a number out", 0, 42, 42],
+  ] as Array<[string, unknown, unknown, unknown]>)(
+    "%s",
+    (_name, previous, next, expected) => {
+      expect(
+        narrowToStored(
+          previous as Parameters<typeof narrowToStored>[0],
+          next as Parameters<typeof narrowToStored>[1],
+        ),
+      ).toBe(expected);
+    },
+  );
 });
