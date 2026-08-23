@@ -2,18 +2,13 @@
 
 /**
  * The outcome of one auto-delete prune pass. Mirrors the Electron
- * `cleanupOldRecordings` bookkeeping (`deleted` + `skippedAwaitingCloud`).
+ * `cleanupOldRecordings` bookkeeping (`deleted`).
  */
 export type PruneSummary = { 
 /**
  * Recordings whose file was deleted and history row dropped.
  */
 deleted: number, 
-/**
- * Rows held back this pass because a configured cloud service hasn't
- * confirmed the upload yet (only counted when cloud auto-backup is on).
- */
-keptAwaitingCloud: number, 
 /**
  * Whether retention is disabled (`autoDeleteDays <= 0`) — the UI shows a
  * hint rather than "0 deleted".

@@ -1198,7 +1198,7 @@ mod tests {
         input.task_restarts = Some(TaskRestartSummary {
             count: 11,
             newest: Some("2026-08-06T10:30:00+02:00".into()),
-            tasks: vec!["cloud::worker".into(), "scheduler::supervisor".into()],
+            tasks: vec!["trash::sweep".into(), "scheduler::supervisor".into()],
         });
         let e = detect_issues(&input)
             .into_iter()

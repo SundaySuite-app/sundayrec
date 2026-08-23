@@ -20,7 +20,6 @@
 // decisions live in `sunday_auth::{pkce,supabase,session}`. NETWORK-UNVERIFIED.
 pub mod account;
 pub mod audio;
-pub mod cloud;
 pub mod commands;
 // E2.1 observability — the panic hook + the bounded crash ring under
 // `<app-data>/crashes/`. Featureless and dependency-free: a panic used to render
@@ -53,9 +52,9 @@ pub mod learning;
 pub mod logfile;
 pub mod media;
 // The notification dispatch seam — ONE place a failure reaches the operator
-// (native + e-mail + webhook) and one place a degradation reaches the screen.
+// (native + e-mail) and one place a degradation reaches the screen.
 // Featureless: the `email` leg compiles out cleanly under
-// `--no-default-features` and the routing matrix degrades to native + webhook.
+// `--no-default-features` and the routing matrix degrades to native only.
 // The matrix itself is the unit-tested `sundayrec_core::notify`.
 pub mod notify;
 pub mod platform;
@@ -86,8 +85,8 @@ pub mod soak;
 pub mod telemetry;
 // E2.2 observability — ONE supervisor for every long-lived background task. The
 // scheduler had this pattern inline and was the only task that did; extracting
-// it gave the cloud worker, the review-reminder tick and the trash sweep the
-// same self-healing, and gave every restart a record. Session-scoped tasks
+// it gave the trash sweep the same self-healing, and gave every restart a
+// record. Session-scoped tasks
 // (the recorder supervisor, the low-disk poller) deliberately stay bare — see
 // the module docs for why restarting them would be WRONG.
 pub mod supervise;
@@ -241,9 +240,6 @@ pub fn run() {
         // `editor_cancel_export` can kill it. Compiles in every build; only the
         // spawn that fills it is feature-gated.
         .manage(editor::ExportEngine::new())
-        // Tracks in-flight OAuth connects so `cloud_cancel_connect` can abort a
-        // pending consent before the 300 s timeout.
-        .manage(cloud::ConnectGuard::new())
         // Tracks in-flight whisper model downloads so `whisper_cancel_download`
         // can abort one (one entry per active model id).
         .manage(whisper::DownloadGuard::new())
@@ -307,14 +303,6 @@ pub fn run() {
                         sundayrec_core::telemetry::telemetry_path(&db_path)
                     )
                 })?;
-
-            // Fase 6: drain the durable cloud-upload queue in the background.
-            // Idles cleanly when Google OAuth isn't configured (no spinning).
-            cloud::worker::spawn(
-                app.handle().clone(),
-                pool.clone(),
-                cloud::config::GoogleOAuthConfig::resolve(),
-            );
 
             // Orphan hygiene (unix; Windows is covered by the Job Object above).
             // Runs HERE — after the single-instance gate (a duplicate launch
@@ -394,8 +382,8 @@ pub fn run() {
             // Subscribe the notification dispatcher to the recorder's terminal
             // error event. Until now that event reached the tray badge and the
             // renderer and stopped there: an unattended failure produced no
-            // native notification, no e-mail and no webhook, which is precisely
-            // the case those three channels exist for. Observational (`listen`),
+            // native notification and no e-mail, which is precisely the case
+            // those two channels exist for. Observational (`listen`),
             // so no recorder code is touched — see `notify::wire_failure_sources`.
             notify::wire_failure_sources(app.handle());
 
@@ -548,20 +536,6 @@ pub fn run() {
             commands::trash::trash_restore,
             commands::trash::trash_purge,
             commands::calendar::liturgical_month,
-            commands::cloud::cloud_connection_status,
-            commands::cloud::cloud_is_configured,
-            commands::cloud::cloud_connect,
-            commands::cloud::cloud_cancel_connect,
-            commands::cloud::cloud_list_folders,
-            commands::cloud::cloud_set_folder,
-            commands::cloud::cloud_get_folder,
-            commands::cloud::cloud_process_queue_now,
-            commands::cloud::cloud_queue_status,
-            commands::cloud::cloud_enqueue_backup,
-            commands::cloud::cloud_retry_upload,
-            commands::cloud::cloud_remove_upload,
-            commands::cloud::cloud_clear_failed,
-            commands::cloud::cloud_disconnect,
             commands::bridge::open_in_sundayedit,
             commands::bridge::open_in_sundaystudio,
             commands::settings::settings_get,
@@ -617,7 +591,6 @@ pub fn run() {
             // PU-1 email alerts (status + keychain pure; send gated by `email`).
             commands::email::email_status,
             commands::email::email_send_test,
-            commands::email::email_test_webhook,
             commands::email::email_clear_smtp_password,
             commands::email::email_set_smtp_password,
             commands::email::email_has_smtp_password,

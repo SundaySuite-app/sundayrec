@@ -3,10 +3,9 @@
  *
  * The `backend-warning` channel had a live consumer in pages/home.ts and, until
  * Fase 2 of "make it real", no emitter anywhere in src-tauri. Now that the
- * backend actually speaks on it (pre-roll gave up, a cloud upload failed for
- * good, a token was revoked, crash recovery skipped a file, the configured
- * mixer is not plugged in, the disk is filling), the renderer has to turn a
- * machine code into a sentence in the user's language.
+ * backend actually speaks on it (pre-roll gave up, crash recovery skipped a
+ * file, the configured mixer is not plugged in, the disk is filling), the
+ * renderer has to turn a machine code into a sentence in the user's language.
  *
  * The ordering is deliberate and is the whole design:
  *
@@ -40,8 +39,6 @@ export type TranslateCount = (key: string, count: number, fallback: string) => s
  */
 export const WARNING_KEYS: Record<string, string> = {
   preroll_dead: 'notify.prerollDead',
-  cloud_upload_failed: 'notify.cloudUploadFailed',
-  cloud_reauth_required: 'notify.cloudReauthRequired',
   recovery_skipped: 'notify.recoverySkipped',
   device_missing: 'notify.deviceMissing',
   disk_low: 'notify.diskLow',
@@ -66,8 +63,9 @@ export interface WarningView {
 
 /**
  * Toast kind for a warning severity. `error` is sticky in the toast service —
- * which is right here: a revoked cloud token or a failed backup is precisely
- * the message that must not vanish while the operator looks away.
+ * which is right here: a mixer that is not plugged in before a scheduled
+ * start is precisely the message that must not vanish while the operator
+ * looks away.
  */
 export function warningToastKind(severity: unknown): ToastKind {
   return severity === 'error' ? 'error' : 'warn'

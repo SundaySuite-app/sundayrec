@@ -8,10 +8,9 @@
 //! written there because a silently-dead scheduler misses every future
 //! recording — which for a church recorder is the worst possible failure.
 //!
-//! But it is not the only task with that property. A dead cloud worker means
-//! the backups quietly stop; a dead review-reminder tick means an episode
-//! nobody looked at deletes itself a fortnight later, in silence; a dead trash
-//! sweep means "delete" becomes a leak with a nice name. Each of those was a
+//! But it is not the only task with that property. A dead trash sweep means
+//! "delete" becomes a leak with a nice name (and the since-removed cloud
+//! worker and review-reminder tick had the same shape). Each of those was a
 //! bare `spawn` whose `JoinHandle` was dropped on the floor — a panic inside
 //! them left no log line, no record, and no replacement.
 //!
@@ -146,8 +145,8 @@ where
         let started = tokio::time::Instant::now();
         // `tokio::spawn`, not `tauri::async_runtime::spawn`: we are already
         // INSIDE a runtime task here (the outer spawn entered it), so the
-        // "must be called from the context of a Tokio runtime" panic that
-        // `cloud::worker` documents cannot apply — and tokio's `JoinError`
+        // "must be called from the context of a Tokio runtime" panic cannot
+        // apply — and tokio's `JoinError`
         // tells us directly whether the task PANICKED or merely returned.
         let handle = tokio::spawn(factory());
         let outcome = handle.await;

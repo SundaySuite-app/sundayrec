@@ -33,10 +33,10 @@ test.describe("appen uten Direkte", () => {
     await expect(page.locator('.nav-link[data-page="live"]')).toHaveCount(0);
     await expect(page.locator("#page-live")).toHaveCount(0);
 
-    // 2. Deling-fanen rendrer, med sky-backup og podkast — men UTEN
+    // 2. Deling-fanen rendrer, med e-postvarsler — men UTEN
     //    stream-destinasjons-kortet og kvalitetsvelgeren.
     await expect(page.locator("#settings-sharing")).toBeVisible();
-    await expect(page.locator("#cloud-card-google-drive")).toBeVisible();
+    await expect(page.locator("#email-notify-card")).toBeVisible();
     await expect(page.locator("#stream-destinations-card")).toHaveCount(0);
     await expect(page.locator("#stream-destinations-list")).toHaveCount(0);
     await expect(page.locator('input[name="stream-resolution"]')).toHaveCount(

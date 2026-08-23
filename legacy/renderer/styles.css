@@ -283,9 +283,9 @@ body.platform-win32 ::-webkit-scrollbar-thumb { border-radius: 4px; }
 .setup-hint-link:hover { opacity: 1; text-decoration: underline; }
 
 /* ── Shared keyframes ─────────────────────────────────────────── */
-/* Referenced by .global-error-banner, .cloud-connected and .schedule-howto —
-   all three animated with a name that was never defined, so they simply
-   appeared with no transition at all. */
+/* Referenced by .global-error-banner and .schedule-howto — both animated with
+   a name that was never defined, so they simply appeared with no transition at
+   all. */
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -1097,19 +1097,6 @@ select.form-input {
 }
 .modal.modal-sm { width: 360px; }
 
-/* Cloud-folder picker modal — list-style folder picker. Opens FROM a settings
-   page, sometimes with another modal already up, so it sits just above its
-   siblings — but still below the live-recording overlay. */
-.cloud-folder-backdrop { z-index: calc(var(--z-modal) + 5); }
-.cloud-folder-modal { display: flex; flex-direction: column; gap: 12px; max-height: 70vh; }
-.cloud-folder-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; max-height: 50vh; }
-.cloud-folder-item {
-  display: block; width: 100%; text-align: left;
-  padding: 10px 12px; background: transparent;
-  border: 1px solid transparent; border-radius: 6px;
-  color: var(--text); cursor: pointer; font-size: 14px;
-}
-.cloud-folder-item:hover { background: var(--surface2); border-color: var(--border); }
 .modal h2 { font-size: 17px; font-weight: 700; letter-spacing: -.3px; margin-bottom: 6px; }
 .modal p  { font-size: 13px; color: var(--text2); margin-bottom: 16px; line-height: 1.6; }
 .manual-section-divider {
@@ -1992,57 +1979,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
    the markup they styled. */
 .transcribe-progress-modal h2 { margin: 0 0 14px; font-size: 16px; }
 
-/* Cloud-upload-queue panel — pending uploads list under Settings → Filer */
-.cloud-queue-panel {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--surface2);
-  border-radius: 8px;
-}
-.cloud-queue-title { margin: 0 0 8px 0; font-size: 14px; }
-.cloud-queue-list  { display: flex; flex-direction: column; gap: 6px; }
-.cloud-queue-row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px;
-  background: var(--surface);
-  border-radius: 6px;
-  font-size: 12px;
-}
-.cloud-queue-badge {
-  padding: 2px 6px; border-radius: 4px;
-  font-size: 10px; text-transform: uppercase;
-}
-.cloud-queue-badge-uploading       { background: #1f5b3a; color: #d0ffd0; }
-.cloud-queue-badge-failed          { background: #5b1f1f; color: #ffd0d0; }
-.cloud-queue-badge-reauth-required { background: #5b3f1f; color: #ffe0c0; }
-.cloud-queue-badge-pending,
-.cloud-queue-badge-queued          { background: #3a3f4a; color: #ccc; }
-.cloud-queue-meta  { flex: 1; display: flex; flex-direction: column; }
-.cloud-queue-line1 { font-weight: 500; }
-.cloud-queue-line2 { color: var(--text3); font-size: 11px; }
-.cloud-folder-loading { padding: 16px; color: var(--text3); }
-
-/* Cloud reauth-banner — shown when OAuth refresh-token expired */
-.cloud-reauth-banner {
-  background: #5b1f1f; color: #ffd0d0;
-  padding: 10px 12px; border-radius: 8px; margin: 8px 0;
-  display: flex; gap: 8px; align-items: center; justify-content: space-between;
-}
-.cloud-reauth-btn {
-  background: #fff; color: #1a1a1a; border: none;
-  padding: 6px 12px; border-radius: 6px;
-  cursor: pointer; font-weight: 600;
-}
-.cloud-reauth-btn:disabled { opacity: .6; cursor: not-allowed; }
-.cloud-not-configured-notice {
-  background: #4a3a1f; color: #ffe6a8;
-  padding: 8px 12px; border-radius: 8px; margin: 8px 0;
-  font-size: 12px;
-}
-
-/* Notify tab — webhook intro card-desc with restrained color */
-.notify-webhook-intro { font-size: 13px; color: var(--text3); margin-bottom: 12px; }
-
 /* Prep-and-review section in Publish tab */
 .prep-review-section {
   border-top: 1px solid rgba(255,255,255,.06);
@@ -2750,78 +2686,6 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 /* (@keyframes spin lives once, next to .editor-loading-spin.) */
 /* Real percentage + ETA for the analysis pass, under the spinner line. */
 .editor-analyze-progress { max-width: 320px; padding: 0 12px 10px; }
-
-/* ── Publish (cloud) settings page ───────────────────────────── */
-.cloud-card {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
-  transition: border-color .15s, transform .15s;
-}
-.cloud-card:hover { border-color: rgba(122,170,255,.35) !important; }
-.cloud-card .cloud-connected { animation: fadeIn .2s ease; display: flex; flex-direction: column; gap: 8px; }
-.cloud-card-info { font-size: 12px; color: var(--text3); line-height: 1.6; }
-.cloud-info-value { color: var(--text); font-weight: 500; }
-.cloud-actions-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.cloud-card .cloud-disconnected button { width: 100%; justify-content: center; padding: 10px 14px; font-weight: 600; }
-/* Inline-Avbryt under "Kobler til…" — overrides the .cloud-disconnected
-   button rule above so it doesn't render as a full-width white block. */
-.cloud-card-cancel {
-  width: auto !important;
-  align-self: center;
-  margin-top: 8px;
-  padding: 6px 18px !important;
-  font-weight: 500 !important;
-  font-size: 12px !important;
-  background: transparent !important;
-  color: var(--text3) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--rsm) !important;
-}
-.cloud-card-cancel:hover {
-  color: var(--text2) !important;
-  border-color: var(--border2) !important;
-  background: var(--surface2) !important;
-}
-.cloud-not-configured { font-size: 12px; line-height: 1.4; }
-.cloud-grid { gap: 10px !important; }
-.cloud-account-name, .cloud-folder-name { word-break: break-word; }
-.cloud-error { font-size: 12px; color: var(--red); padding: 6px 10px; background: rgba(239,68,68,.08); border-radius: 6px; margin-top: 6px; }
-.cloud-card-header {
-  display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
-}
-.cloud-card-icon { width: 32px; height: 32px; flex-shrink: 0; }
-.cloud-card-name { font-weight: 700; font-size: 15px; flex: 1; }
-.cloud-folder-name  { flex: 1; font-weight: 600; }
-.cloud-last-upload { font-size: 12px; color: var(--text2); }
-.cloud-toggle-row {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 13px; margin-bottom: 6px;
-}
-.cloud-error {
-  margin-top: 6px; font-size: 12px; color: var(--red);
-  background: rgba(239,68,68,.08); border-radius: 6px; padding: 6px 10px;
-}
-
-/* ── Cloud folder picker modal list ──────────────────────────── */
-.cloud-folder-list {
-  max-height: 320px; overflow-y: auto;
-  border: 1px solid var(--border); border-radius: 8px;
-  margin-top: 10px; background: var(--surface2);
-}
-.cloud-folder-item {
-  display: block; width: 100%; text-align: left;
-  padding: 9px 14px; background: none; border: none;
-  border-bottom: 1px solid var(--border); cursor: pointer;
-  font-size: 13px; color: var(--text1); transition: background .12s;
-}
-.cloud-folder-item:last-child { border-bottom: none; }
-.cloud-folder-item:hover { background: var(--surface3); }
 
 /* ── Editor: export progress bar ─────────────────────────────── */
 .editor-export-progress-row {
@@ -3741,34 +3605,10 @@ button > svg:first-child { flex-shrink: 0; }
 .editor-canvas-wrap.is-dropzone-outro::after { right: 0; }
 .editor-canvas-wrap { position: relative; }
 
-/* Publishing options in export modal */
+/* Sections of the export modal (the enhancement block wears this). */
 .export-publish-section {
   margin-top: 12px; padding-top: 12px;
   border-top: 1px solid var(--border);
-}
-.export-publish-options {
-  display: flex; flex-direction: column; gap: 6px;
-  font-size: 13px; color: var(--text1);
-}
-.export-publish-option {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 0; user-select: none;
-}
-.export-publish-option input { margin: 0; }
-.export-publish-configure {
-  display: inline-block; color: var(--accent); font-size: 12px;
-  text-decoration: none; margin-top: 4px;
-}
-.export-publish-configure:hover { text-decoration: underline; }
-.export-publish-progress {
-  margin-top: 8px; padding: 8px 10px; border-radius: 6px;
-  background: var(--surface2); font-size: 12px; color: var(--text2);
-}
-.export-publish-progress.is-error {
-  background: rgba(239,68,68,.1); color: #fca5a5;
-}
-.export-publish-progress.is-success {
-  background: rgba(34,197,94,.1); color: #86efac;
 }
 
 /* ── Episode thumbnail / cover art ─────────────────────────────────────── */
@@ -4002,8 +3842,7 @@ body.recording-active .status-dot.recording {
 .btn-video-toggle,
 .btn-normalize,
 .btn-icon-refresh,
-.btn-editor-tool,
-.cloud-reauth-btn {
+.btn-editor-tool {
   background: var(--surface2);
   color: var(--text2);
   border: 1px solid var(--border2);
@@ -4014,8 +3853,7 @@ body.recording-active .status-dot.recording {
 .btn-video-toggle:hover,
 .btn-normalize:hover,
 .btn-icon-refresh:hover,
-.btn-editor-tool:hover,
-.cloud-reauth-btn:hover:not(:disabled) {
+.btn-editor-tool:hover {
   background: var(--surface3);
   color: var(--text);
   border-color: var(--accent-border);

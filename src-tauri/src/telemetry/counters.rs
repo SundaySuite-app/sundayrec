@@ -288,7 +288,7 @@ mod tests {
         assert!(snapshot().is_empty());
         // An unknown counter in the consumed list is a no-op.
         consume(&[CounterReport {
-            name: CounterName::CloudUploadOk,
+            name: CounterName::UpdateInstalled,
             value: 5,
         }]);
         assert!(snapshot().is_empty());

@@ -579,10 +579,6 @@ function showRecordingFinishedSummary(entry: RecordingEntry): void {
   if (entry.fileSizeBytes != null && entry.fileSizeBytes > 0)
     parts.push(fmtFileSizeBytes(entry.fileSizeBytes))
 
-  const cloudNames: Record<string, string> = { 'google-drive': 'GD', 'dropbox': 'DB', 'onedrive': 'OD' }
-  const uploadedServices = (entry.cloudUploaded ?? []).map(s => cloudNames[s] ?? s)
-  if (uploadedServices.length) parts.push('☁ ' + uploadedServices.join(' ☁ '))
-
   const done = t('history.complete', 'Fullført')
   const msg = parts.length ? `${done} — ${parts.join(' · ')}` : done
 
@@ -969,15 +965,14 @@ export function setupHome(): void {
     navigateTo('settings', { tab: 'settings-files', anchor: '#settings-files .card' })
   })
 
-  // Publish-strip cards — all three route to the Publisering SECTION of the
-  // Deling tab (cloud + thumbnail UI lives there; Whisper has no dedicated
+  // Publish-strip cards — both route to the Publisering SECTION of the
+  // Deling tab (the thumbnail UI lives there; Whisper has no dedicated
   // settings surface yet, so we land users there and they can browse from
   // there until we promote Whisper config out of the editor).
   const goPublish = (anchor?: string) => (e: Event) => {
     e.preventDefault()
     navigateTo('settings', { tab: 'settings-sharing', anchor: anchor ?? '#settings-publish' })
   }
-  document.getElementById('btn-go-cloud')?.addEventListener('click',   goPublish('#settings-publish .cloud-grid'))
   document.getElementById('btn-go-thumb')?.addEventListener('click',   goPublish('#publish-thumb-preview'))
   document.getElementById('btn-go-whisper')?.addEventListener('click', goPublish())
   document.getElementById('btn-how-to-fix')?.addEventListener('click', () => {
@@ -1468,78 +1463,28 @@ export async function loadHomeInfoStrip(): Promise<void> {
   if (fmtEl) fmtEl.textContent = br ? `${fmt} · ${br}` : fmt
   if (fmtSub) fmtSub.textContent = `${ch} · ${srLabel}`
 
-  // Refresh the publish/cloud/transcript strip — each card decides whether
-  // to show itself based on settings + actual disk/network state. Smart
-  // visibility: nothing is rendered when none of the three are configured,
-  // keeping the home page short for fresh users.
+  // Refresh the publish/transcript strip — each card decides whether to show
+  // itself based on settings + actual disk state. Smart visibility: nothing is
+  // rendered when neither is configured, keeping the home page short for
+  // fresh users.
   void loadPublishInfoStrip()
 }
 
 /**
- * Loads the bottom info-strip with: sky-backup status, episodebilde
- * (cover art) and transkripsjon (Whisper). Each card individually toggles
- * its own display — the parent strip is hidden when all three are off.
+ * Loads the bottom info-strip with: episodebilde (cover art) and
+ * transkripsjon (Whisper). Each card individually toggles its own display —
+ * the parent strip is hidden when both are off.
  */
 async function loadPublishInfoStrip(): Promise<void> {
   const strip = document.getElementById('publish-info-strip')
   if (!strip) return
 
-  const cloudShown = renderCloudCard()
-  // Both of these ask the backend something, so they run concurrently and the
-  // one synchronous card decides whether the strip appears immediately.
-  const thumbShownPromise = renderThumbCard()
-  const whisperShownPromise = renderWhisperCard()
-
-  // Show the strip as soon as ONE card has decided it has something to render,
-  // so it doesn't flash in on every load once the async answers land.
-  if (cloudShown) {
-    strip.style.display = ''
-  }
+  // Both of these ask the backend something, so they run concurrently.
   const [thumbShown, whisperShown] = await Promise.all([
-    thumbShownPromise,
-    whisperShownPromise,
+    renderThumbCard(),
+    renderWhisperCard(),
   ])
-  strip.style.display = (cloudShown || thumbShown || whisperShown) ? '' : 'none'
-}
-
-/** @returns true when the cloud card was rendered visible. */
-function renderCloudCard(): boolean {
-  const card = document.getElementById('home-cloud-card')
-  if (!card) return false
-  const services: Array<{ key: 'cloudGoogleDrive' | 'cloudDropbox' | 'cloudOneDrive'; label: string }> = [
-    { key: 'cloudGoogleDrive', label: 'Drive' },
-    { key: 'cloudDropbox',     label: 'Dropbox' },
-    { key: 'cloudOneDrive',    label: 'OneDrive' },
-  ]
-  const active = services.filter(s => settings[s.key]?.enabled)
-  if (active.length === 0) {
-    card.style.display = 'none'
-    return false
-  }
-  card.style.display = ''
-  const valEl = document.getElementById('home-cloud-services')
-  const subEl = document.getElementById('home-cloud-status')
-  if (valEl) valEl.textContent = active.map(a => a.label).join(' · ')
-
-  // Show queue length if any cloud uploads are pending — this is the most
-  // useful runtime info: "1 venter på opplasting" vs "Alle synkronisert".
-  if (subEl) {
-    subEl.textContent = t('home.cloudActive', 'Aktiv')
-    subEl.style.color = ''
-    void (async () => {
-      try {
-        const q = await window.api.cloudQueueStatus()
-        const pending = q.entries?.filter(e => e.status === 'pending' || e.status === 'retrying').length ?? 0
-        const failed  = q.entries?.filter(e => e.status === 'failed').length ?? 0
-        if (failed > 0)       { subEl.textContent = `${failed} ${t('home.cloudFailed', 'feilet')}`;   subEl.style.color = 'var(--red)' }
-        else if (pending > 0) { subEl.textContent = `${pending} ${t('home.cloudQueued', 'i kø')}`;    subEl.style.color = 'var(--text2)' }
-        else                  { subEl.textContent = t('home.cloudAllSynced', 'Alle synkronisert');   subEl.style.color = 'var(--green)' }
-      } catch {
-        // Queue status unavailable — leave the static "Aktiv" label.
-      }
-    })()
-  }
-  return true
+  strip.style.display = (thumbShown || whisperShown) ? '' : 'none'
 }
 
 /**

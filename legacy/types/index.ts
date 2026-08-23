@@ -22,7 +22,6 @@ import type { DeviceChannels } from '../bindings/DeviceChannels'
 import type { ScheduleSlot } from '../bindings/ScheduleSlot'
 import type { SpecialRecording } from '../bindings/SpecialRecording'
 import type { PodcastSettings } from '../bindings/PodcastSettings'
-import type { CloudServicePrefs } from '../bindings/CloudServicePrefs'
 export type {
   ChannelMode,
   FileFormat,
@@ -31,7 +30,6 @@ export type {
   ScheduleSlot,
   SpecialRecording,
   PodcastSettings,
-  CloudServicePrefs,
   PrepAnalysisSegment,
   EditorSegment,
   ChapterMarker,
@@ -63,8 +61,6 @@ export interface RecordingEntry {
   timestamp?: number
   fileSizeBytes?: number    // actual file size on disk after recording
   durationSec?: number      // recording duration in seconds
-  cloudUploaded?: string[]  // cloud service IDs where this file was uploaded: ['google-drive', 'dropbox', 'onedrive']
-  cloudUrls?: Record<string, string>  // service ID → public/share URL (used by podcast RSS feed)
 }
 
 // PodcastSettings is generated (re-exported above) — the Rust
@@ -77,9 +73,6 @@ export interface RecordingEntry {
  */
 export type Settings = SettingsGen
 
-/** Back-compat alias — the generated `CloudServicePrefs` is the same shape the
- *  old hand-written `CloudServiceSettings` described (tokens live elsewhere). */
-export type CloudServiceSettings = CloudServicePrefs
 
 export interface RecordingOpts extends Partial<Settings> {
   deviceId?: string | null
@@ -151,49 +144,6 @@ export interface TranscriptData {
 
 // SermonHighlight / CompanionChapter / SummarySource / SermonCompanion are
 // generated (re-exported above) — the AI sermon-companion result types.
-
-// NB: distinct from the generated `CloudService` ('google-drive'|'youtube'|
-// 'gmail'), which models OAuth account kinds — this one is the backup targets.
-export type CloudServiceId = 'google-drive' | 'dropbox' | 'onedrive'
-
-// CloudServiceSettings: see the generated `CloudServicePrefs` alias above.
-
-export interface CloudStatus {
-  connected: boolean
-  accountName?: string
-  accountEmail?: string
-  folderId?: string
-  folderName?: string
-  folderPath?: string
-  lastUpload?: number
-  lastUploadOk?: boolean
-  /** True when the saved refresh token has been revoked — user must reconnect. */
-  needsReauth?: boolean
-}
-
-export interface CloudUploadQueueEntry {
-  id:             string         // unique entry id (uuid-ish)
-  service:        CloudServiceId
-  filePath:       string
-  entryTimestamp?: number        // history-entry timestamp to mark as uploaded on success
-  attempts:       number         // total attempts so far
-  nextAttempt:    number         // unix ms — earliest time the worker may retry
-  lastError?:     string         // last error message (for UI)
-  enqueuedAt:     number
-  status:         'pending' | 'uploading' | 'failed' | 'reauth-required'
-}
-
-export interface CloudQueueStatus {
-  entries: Array<{
-    id: string
-    service: CloudServiceId
-    filename: string
-    attempts: number
-    nextAttempt: number
-    lastError?: string
-    status: CloudUploadQueueEntry['status']
-  }>
-}
 
 // ── Sunday-suite integrations ───────────────────────────────────────────────
 // Opt-in connection to the sister apps (Stage, Plan, Song, SundayEdit). Every

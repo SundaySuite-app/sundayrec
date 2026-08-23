@@ -146,16 +146,13 @@ pub async fn recording_update_note(
 }
 
 /// The outcome of one auto-delete prune pass. Mirrors the Electron
-/// `cleanupOldRecordings` bookkeeping (`deleted` + `skippedAwaitingCloud`).
+/// `cleanupOldRecordings` bookkeeping (`deleted`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/lib/bindings/PruneSummary.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct PruneSummary {
     /// Recordings whose file was deleted and history row dropped.
     pub deleted: usize,
-    /// Rows held back this pass because a configured cloud service hasn't
-    /// confirmed the upload yet (only counted when cloud auto-backup is on).
-    pub kept_awaiting_cloud: usize,
     /// Whether retention is disabled (`autoDeleteDays <= 0`) — the UI shows a
     /// hint rather than "0 deleted".
     pub disabled: bool,
@@ -167,10 +164,6 @@ pub struct PruneSummary {
 /// [`decide_prune`] decision over the current history, then unlinks the chosen
 /// files and drops their rows. Returns a [`PruneSummary`]. Disabled (no-op) when
 /// `autoDeleteDays <= 0`, matching the Electron early-return.
-///
-/// The Tauri history doesn't yet persist per-recording cloud-upload confirmation,
-/// so `expected_cloud` is empty here (the cloud-completeness guard is exercised
-/// in the core unit tests); when that column lands the wiring is a one-line map.
 #[tauri::command]
 pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<PruneSummary> {
     let s = settings::load(&db.pool).await.unwrap_or_default();
@@ -179,7 +172,6 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
     if days <= 0 {
         return Ok(PruneSummary {
             deleted: 0,
-            kept_awaiting_cloud: 0,
             disabled: true,
         });
     }
@@ -200,11 +192,10 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
             id: r.id.clone(),
             file_path: Some(r.file_path.clone()),
             started_at_ms: Some(r.started_at as i64),
-            cloud_uploaded: Vec::new(),
         })
         .collect();
 
-    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir, &[]);
+    let decision = decide_prune(&candidates, days, cutoff_ms, &save_dir);
 
     let mut deleted = 0usize;
     for id in &decision.delete_ids {
@@ -223,7 +214,6 @@ pub async fn recordings_prune(app: AppHandle, db: State<'_, Db>) -> AppResult<Pr
 
     Ok(PruneSummary {
         deleted,
-        kept_awaiting_cloud: decision.kept_awaiting_cloud,
         disabled: false,
     })
 }

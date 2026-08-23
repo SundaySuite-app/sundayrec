@@ -50,7 +50,7 @@ use reqwest::StatusCode;
 
 use super::config::TelemetryEndpoint;
 use super::sender::{SendFailure, SendFuture, TelemetrySender};
-use crate::cloud::http_client;
+use crate::util::http_client;
 
 /// The header the endpoint reads the write key from.
 pub const WRITE_KEY_HEADER: &str = "x-sundayrec-key";

@@ -22,10 +22,11 @@
 //!
 //! A command is IN SCOPE when at least one parameter name (with any leading `_`
 //! stripped, lowercased) either contains `path` or ends with `folder`, `dir` or
-//! `file`. That deliberately over-matches — `cloud_set_folder` takes a Google
-//! Drive folder id, not a filesystem path, and is EXEMPT for exactly that
-//! reason. A false positive costs one line in a list; a false negative costs a
-//! security hole, which is the whole point of the ratchet.
+//! `file`. That deliberately over-matches — a command whose `folder` is a
+//! remote id rather than a filesystem path (the old `cloud_set_folder` was one)
+//! goes in EXEMPT with the reason. A false positive costs one line in a list; a
+//! false negative costs a security hole, which is the whole point of the
+//! ratchet.
 //!
 //! The parser tolerates what real source contains: doc-comments and `//` lines
 //! between the attribute and the `fn`, other attributes (`#[allow(...)]`),
@@ -77,7 +78,6 @@ const GUARDED: &[&str] = &[
     "integrations_sundayedit_import",
     "settings_export_to_file",
     "settings_import_from_file",
-    "cloud_enqueue_backup",
     "open_in_sundayedit",
     "open_in_sundaystudio",
 ];
@@ -85,11 +85,7 @@ const GUARDED: &[&str] = &[
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
 /// acts on. Every entry carries the reason it is safe; an entry without one is a
 /// hole waiting to be found.
-const EXEMPT: &[(&str, &str)] = &[(
-    "cloud_set_folder",
-    "`folder` is a Google Drive folder id + display name (CloudFolder), never a \
-     local path — it is persisted to the settings bag and sent to the Drive API",
-)];
+const EXEMPT: &[(&str, &str)] = &[];
 
 /// One `#[tauri::command]` found in the sources.
 #[derive(Debug)]

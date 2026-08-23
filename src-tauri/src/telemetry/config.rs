@@ -1,6 +1,6 @@
 //! Where the telemetry endpoint lives, and the key used to write to it.
 //!
-//! Same mechanism as [`crate::cloud::config::GoogleOAuthConfig`]: a runtime env
+//! Same mechanism as the old cloud `GoogleOAuthConfig` used: a runtime env
 //! var for dev and CI, falling back to an `option_env!` baked in at release
 //! build time. `None` means "telemetry has no endpoint in this build", and the
 //! sender is simply never constructed — reports keep queueing locally and

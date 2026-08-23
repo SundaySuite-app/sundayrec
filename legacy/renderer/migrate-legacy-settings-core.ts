@@ -17,7 +17,6 @@
  *
  * Vocabulary translations (old TS name → unified name), applied HERE only —
  * no living compat code elsewhere:
- *   - `webhookOnWarn`              → `webhookOnWarning`
  *   - `videoSeparate: boolean`     → `outputMode: "separate" | "combined"`
  *   - `videoKeepAudio` (abs.=true) → `keepSeparateAudio`
  *   - `format` (was overloaded)    → also seeds `separateAudioFormat`, because
@@ -27,7 +26,7 @@
  * Dropped on the floor, with their real homes:
  *   - `recordingHistory` → the `recording` table (already authoritative)
  *   - `wakeFailureHistory` → the wake engine's own store
- *   - `reviewQueue` → the backend review-queue store
+ *   - `reviewQueue` → dropped (the review queue was removed)
  *   - `activeRecovery` → the recovery dir
  *   - `nextExpectedRecordingISO` → dead (no Tauri reader; the scheduler owns
  *     missed-recording detection)
@@ -123,18 +122,6 @@ function sanitizeDeviceChannels(v: unknown): Dict | undefined {
     if (l !== undefined && r !== undefined) out[id] = { channelL: l, channelR: r };
   }
   return out;
-}
-
-function sanitizeCloudPrefs(v: unknown): Dict | undefined {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-  const o = v as Dict;
-  return {
-    enabled: o.enabled === true,
-    autoUpload: o.autoUpload === true,
-    folderId: str(o.folderId) ?? null,
-    folderName: str(o.folderName) ?? null,
-    folderPath: str(o.folderPath) ?? null,
-  };
 }
 
 function sanitizePodcast(v: unknown): Dict | undefined {
@@ -269,10 +256,9 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("responsiblePerson", str(s.responsiblePerson));
   put("notifyStart", bool(s.notifyStart));
   put("notifyStop", bool(s.notifyStop));
-  put("webhookUrl", str(s.webhookUrl));
-  // Rename: webhookOnWarn → webhookOnWarning.
-  put("webhookOnWarning", bool(s.webhookOnWarn));
-  put("webhookAllowLocal", bool(s.webhookAllowLocal));
+  // (webhookUrl / webhookOnWarn / webhookAllowLocal: the chat webhook was
+  // removed with the sharing cluster — the whitelist mapper never copies
+  // them, so an old blob imports cleanly without them.)
 
   // Email (never the password — keychain only).
   put("emailOnError", bool(s.emailOnError));
@@ -288,15 +274,11 @@ export function mapLegacyBlob(raw: string): Dict | null {
   put("editorOutroPath", strOrNull(s.editorOutroPath));
   put("editorHwEncode", bool(s.editorHwEncode));
 
-  // Live streaming (removed in v0.14): old blobs may still carry
-  // streamDestinations/streamResolution/streamFramerate/streamVideoBitrate/
-  // streamOverlays — the whitelist mapper simply never copies them, so a
-  // legacy config with stream fields imports cleanly without them.
-
-  // Cloud backup preferences
-  put("cloudGoogleDrive", sanitizeCloudPrefs(s.cloudGoogleDrive));
-  put("cloudDropbox", sanitizeCloudPrefs(s.cloudDropbox));
-  put("cloudOneDrive", sanitizeCloudPrefs(s.cloudOneDrive));
+  // Live streaming (removed in v0.14) and cloud backup (removed with the
+  // sharing cluster): old blobs may still carry streamDestinations/
+  // streamResolution/streamFramerate/streamVideoBitrate/streamOverlays and
+  // cloudGoogleDrive/cloudDropbox/cloudOneDrive — the whitelist mapper simply
+  // never copies them, so a legacy config imports cleanly without them.
 
   // Podcast
   put("podcast", sanitizePodcast(s.podcast));

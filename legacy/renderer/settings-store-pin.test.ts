@@ -89,9 +89,9 @@ describe("settings store pin — sqlite is the ONE store", () => {
     // The retired settings-field names, as bare quoted strings. R4's promise is
     // "no living compat code elsewhere" — the rename table exists in ONE place
     // (mapLegacyBlob), so a stale `'videoSeparate'` in a page is either dead
-    // metadata or a bug about to happen. i18n keys like `'notify.webhookOnWarn'`
-    // are a different namespace and do not match these bare-string patterns.
-    const OLD_NAMES = ["webhookOnWarn", "videoSeparate", "videoKeepAudio"];
+    // metadata or a bug about to happen. (The chat webhook's `webhookOnWarn`
+    // left the vocabulary entirely with the sharing cluster.)
+    const OLD_NAMES = ["videoSeparate", "videoKeepAudio"];
     const patterns = OLD_NAMES.flatMap((n) => [`'${n}'`, `"${n}"`, `\`${n}\``]);
     const offenders = rendererSources()
       .filter((p) => !ALLOWLIST.has(relative(RENDERER_ROOT, p)))
@@ -103,7 +103,7 @@ describe("settings store pin — sqlite is the ONE store", () => {
     expect(
       offenders,
       "these files use a retired settings-field name — the unified vocabulary is " +
-        "webhookOnWarning / outputMode / keepSeparateAudio; renames live only in mapLegacyBlob",
+        "outputMode / keepSeparateAudio; renames live only in mapLegacyBlob",
     ).toEqual([]);
   });
 

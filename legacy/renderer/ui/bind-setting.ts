@@ -126,8 +126,6 @@ function defaultChipHost(el: HTMLElement): HTMLElement | null {
   const toggleRow = el.closest<HTMLElement>('.toggle-row')
   const title = toggleRow?.querySelector<HTMLElement>('.toggle-title')
   if (title) return title
-  const cloudRow = el.closest<HTMLElement>('.cloud-toggle-row')
-  if (cloudRow) return cloudRow
   // A `.form-label` immediately before the field (or before its wrapper row).
   const wrapper = el.closest<HTMLElement>('.folder-row, .inline-field-row, .pass-row') ?? el
   const prev = wrapper.previousElementSibling as HTMLElement | null

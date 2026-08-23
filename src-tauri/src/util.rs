@@ -62,6 +62,35 @@ pub fn detect_platform() -> Platform {
     }
 }
 
+/// A `reqwest` client with bounded connect + per-request timeouts. A bare
+/// `Client::new()` has NO timeout, so a half-open TCP connection or a server that
+/// accepts the request then never responds (a token refresh, a telemetry POST)
+/// would hang the calling task forever — wedging a background worker or blocking
+/// a UI command. The connect timeout fails fast on a dead host; the request
+/// timeout caps a stalled response. (Lived in the cloud-backup module until that
+/// feature was removed; the Sunday Account + telemetry paths still need it.)
+pub(crate) fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        // A builder failure (no TLS backend) is a build/config error, not a
+        // runtime input — fall back to the default client rather than panicking.
+        .unwrap_or_else(|e| {
+            tracing::warn!("http client builder failed ({e}); using default");
+            reqwest::Client::new()
+        })
+}
+
+/// Unix milliseconds as i64 — the timestamp convention every shell-side clock
+/// read shares (alert throttle, account session freshness).
+pub fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Lock a [`Mutex`], recovering its inner value if a previous holder panicked
 /// rather than propagating the poison.
 ///

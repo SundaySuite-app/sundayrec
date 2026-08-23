@@ -10,13 +10,13 @@
 //!     the renderer, and nothing else — the "send me an e-mail when the
 //!     recording fails" setting had **no caller at all**, in any build;
 //!   - the scheduler's three start failures fired a native notification only,
-//!     so an operator who had gone home learned nothing;
-//!   - the webhook existed solely as a "send test" button.
+//!     so an operator who had gone home learned nothing.
 //!
 //! Everything now goes through [`dispatch_failure`] (terminal failures →
-//! native + e-mail + webhook) or [`warn`] (degradations → an in-app toast +
-//! optionally the webhook). Which channels actually fire is the unit-tested
-//! [`sundayrec_core::notify`] matrix, not an `if` written at the call site.
+//! native + e-mail) or [`warn`] (degradations → an in-app toast). Which channels
+//! actually fire is the unit-tested [`sundayrec_core::notify`] matrix, not an
+//! `if` written at the call site. (A third leg, a chat webhook, lived here
+//! until the sharing cluster was removed — it is in git if it is ever wanted.)
 //!
 //! ## Featureless on purpose
 //!
@@ -24,7 +24,7 @@
 //! in both release feature lists) gates only the send itself: with
 //! `--no-default-features` the routing still runs, the matrix is told the
 //! feature is absent, and the e-mail leg is planned `false` — a clean
-//! degradation to native + webhook rather than a compile error or a silent lie.
+//! degradation to native only rather than a compile error or a silent lie.
 //!
 //! ## Observational, never invasive
 //!
@@ -35,18 +35,15 @@
 //!
 //! ## ⚠️ NETWORK-UNVERIFIED
 //!
-//! The webhook POST and (behind the feature) the SMTP/Gmail send do real I/O.
-//! The decisions above them are pure and tested; the wire is provable only
-//! against a real server — see docs/SMOKE-TEST.md.
+//! Behind the feature, the SMTP send does real I/O. The decisions above it are
+//! pure and tested; the wire is provable only against a real server — see
+//! docs/SMOKE-TEST.md.
 
 use chrono::{DateTime, Local};
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
-use sundayrec_core::notify::{
-    plan_failure, plan_warning, BackendWarning, FailureRouting, FailureSource, WarningRouting,
-};
+use sundayrec_core::notify::{plan_failure, BackendWarning, FailureRouting, FailureSource};
 use sundayrec_core::settings::Settings;
-use sundayrec_core::webhook::{build_webhook_body, WebhookPayload, WebhookSeverity};
 
 use crate::db::Db;
 
@@ -59,17 +56,12 @@ pub use sundayrec_core::notify::code;
 /// (`recording://…`, `scheduler://…`, `tray://…`).
 pub const WARNING_EVENT: &str = "backend://warning";
 
-/// How long a webhook POST may take before we stop waiting. An unreachable chat
-/// server must not hold a failure path open — the alert has already gone out
-/// natively by the time this runs.
-const WEBHOOK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-
 /// Everything [`dispatch_failure`] needs to know about a failure.
 #[derive(Debug, Clone)]
 pub struct FailureCtx {
     /// Stable machine code (the recorder's `RecordingEvent::code`, or one of the
-    /// scheduler's). Used as the webhook `category` so an operator scanning a
-    /// chat channel can tell a device drop-out from a disk stop at a glance.
+    /// scheduler's). Logged with the dispatch so a device drop-out can be told
+    /// from a disk stop at a glance.
     pub code: String,
     /// The human sentence. This is ALSO the native notification body and the
     /// e-mail's error line, which is why the scheduler's existing wording is
@@ -77,8 +69,7 @@ pub struct FailureCtx {
     pub message: String,
     /// Which half of the app failed.
     pub source: FailureSource,
-    /// When it happened (local time) — the e-mail's human date and the
-    /// webhook's timestamp.
+    /// When it happened (local time) — the e-mail's human date.
     pub occurred_at: DateTime<Local>,
 }
 
@@ -154,9 +145,8 @@ pub fn wire_failure_sources(app: &AppHandle) {
 ///
 /// Always fires the native notification; adds the e-mail alert when the settings
 /// ask for one AND this build can send AND a transport exists AND the throttle
-/// gate hasn't already sent this exact alert in the last ten minutes; adds a
-/// webhook POST when a valid URL is configured. The channel choice itself is
-/// [`sundayrec_core::notify::plan_failure`].
+/// gate hasn't already sent this exact alert in the last ten minutes. The
+/// channel choice itself is [`sundayrec_core::notify::plan_failure`].
 ///
 /// Never returns an error: an alert path that can itself fail loudly is a second
 /// failure on top of the first. Every leg logs and moves on.
@@ -187,37 +177,17 @@ pub async fn dispatch_failure(app: &AppHandle, ctx: FailureCtx) {
         email_feature_built: cfg!(feature = "email"),
         email_transport_ready: transport_ready,
         email_throttled: throttled,
-        webhook_url: &settings.webhook_url,
-        webhook_allow_local: settings.webhook_allow_local,
     });
 
     tracing::info!(
         code = %ctx.code,
         source = %ctx.source.as_str(),
         email = plan.email,
-        webhook = plan.webhook,
         "notify: dispatching failure"
     );
 
     if plan.email {
         send_failure_email(app, &settings, &recipient, &ctx).await;
-    }
-
-    if plan.webhook {
-        let payload = WebhookPayload {
-            app: "SundayRec".into(),
-            church: settings.church_name.clone(),
-            severity: WebhookSeverity::Error,
-            category: ctx.code.clone(),
-            message: ctx.message.clone(),
-            timestamp: ctx.occurred_at.to_rfc3339(),
-        };
-        post_webhook(
-            &settings.webhook_url,
-            settings.webhook_allow_local,
-            &payload,
-        )
-        .await;
     }
 }
 
@@ -236,7 +206,7 @@ fn email_throttled(app: &AppHandle, recipient: &str, error_message: &str) -> boo
             return false;
         };
         matches!(
-            gate.decide(recipient, error_message, crate::cloud::now_ms()),
+            gate.decide(recipient, error_message, crate::util::now_ms()),
             AlertDecision::Throttled
         )
     }
@@ -248,8 +218,7 @@ fn email_throttled(app: &AppHandle, recipient: &str, error_message: &str) -> boo
 
 /// Whether a mail transport could be assembled from the saved configuration:
 /// an SMTP host WITH a password (typed once into the keychain) and a resolvable
-/// `From:`, or a configured Google OAuth client WITH a stored Gmail refresh
-/// token. Without one there is nothing to send *with*, however willing the
+/// `From:`. Without one there is nothing to send *with*, however willing the
 /// settings are — and reporting that up front keeps the matrix honest instead of
 /// making the failure surface as a cryptic transport error.
 #[cfg_attr(not(feature = "email"), allow(unused_variables))]
@@ -271,9 +240,7 @@ fn email_transport_ready(settings: &Settings, recipient: &str) -> bool {
 /// precedence ([`crate::commands::email::resolve_from_address`]) — so "Send
 /// test" working is a real prediction that the 3 a.m. alert will work too.
 ///
-/// SMTP wins when a host is configured (the settings doc's rule: "blank = use
-/// the Gmail transport instead"); Gmail requires BOTH a resolvable OAuth client
-/// and a stored refresh token.
+/// A blank SMTP host means no transport at all.
 #[cfg(feature = "email")]
 fn build_transport(settings: &Settings, recipient: &str) -> Option<crate::email::Transport> {
     use crate::commands::email::{resolve_from_address, resolve_smtp_password};
@@ -281,27 +248,21 @@ fn build_transport(settings: &Settings, recipient: &str) -> Option<crate::email:
     use crate::secrets::SecretProvider;
 
     let host = settings.email_smtp.trim();
-    if !host.is_empty() {
-        let user = Some(settings.email_smtp_user.clone()).filter(|u| !u.trim().is_empty());
-        // No request-side password: nobody is at the keyboard. The keychain is
-        // the only source, which is exactly why P1 added the write path.
-        let pass = resolve_smtp_password(None, crate::secrets::get(SecretProvider::SmtpPassword))?;
-        let from =
-            resolve_from_address(Some(&settings.email_smtp_from), user.as_deref(), recipient)?;
-        return Some(Transport::Smtp {
-            host: host.to_string(),
-            port: settings.email_smtp_port.clamp(1, 65_535) as u16,
-            user,
-            pass,
-            from,
-        });
-    }
-
-    let config = crate::cloud::config::GoogleOAuthConfig::resolve()?;
-    if !crate::secrets::has(SecretProvider::Gmail) {
+    if host.is_empty() {
         return None;
     }
-    Some(Transport::Gmail { config })
+    let user = Some(settings.email_smtp_user.clone()).filter(|u| !u.trim().is_empty());
+    // No request-side password: nobody is at the keyboard. The keychain is
+    // the only source, which is exactly why P1 added the write path.
+    let pass = resolve_smtp_password(None, crate::secrets::get(SecretProvider::SmtpPassword))?;
+    let from = resolve_from_address(Some(&settings.email_smtp_from), user.as_deref(), recipient)?;
+    Some(Transport::Smtp {
+        host: host.to_string(),
+        port: settings.email_smtp_port.clamp(1, 65_535) as u16,
+        user,
+        pass,
+        from,
+    })
 }
 
 /// Send the failure alert. Compiled out (a no-op) without the `email` feature —
@@ -359,190 +320,17 @@ async fn send_failure_email(
 //   Warnings
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Raise a live backend warning: emit it to the renderer (which localises on
-/// [`BackendWarning::code`] and toasts it) and, when the user widened the
-/// webhook to warnings, POST it too.
+/// Raise a live backend warning: log it and emit it to the renderer (which
+/// localises on [`BackendWarning::code`] and toasts it).
 ///
 /// Synchronous by design so it can be called from anywhere — including the
-/// `&mut`-heavy back-off branches of the pre-roll loop and the cloud worker.
-/// The event goes out immediately; the settings read + POST run in a detached
-/// task, because a warning must never make the thing it is warning about slower.
+/// `&mut`-heavy back-off branches of the pre-roll loop. The event goes out
+/// immediately, because a warning must never make the thing it is warning
+/// about slower.
 pub fn warn(app: &AppHandle, w: BackendWarning) {
-    emit_warning_event(app, &w);
-
-    let Some(db) = app.try_state::<Db>() else {
-        return; // pre-setup: the event above is all we can do
-    };
-    let pool = db.pool.clone();
-    tauri::async_runtime::spawn(async move {
-        let settings = crate::settings::load(&pool).await.unwrap_or_default();
-        let plan = plan_warning(&WarningRouting {
-            webhook_on_warning: settings.webhook_on_warning,
-            webhook_url: &settings.webhook_url,
-            webhook_allow_local: settings.webhook_allow_local,
-        });
-        if !plan.webhook {
-            return;
-        }
-        let payload = WebhookPayload {
-            app: "SundayRec".into(),
-            church: settings.church_name.clone(),
-            severity: w.severity.to_webhook(),
-            category: w.code.clone(),
-            message: w
-                .msg
-                .clone()
-                .unwrap_or_else(|| format!("SundayRec: {}", w.code)),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        };
-        post_webhook(
-            &settings.webhook_url,
-            settings.webhook_allow_local,
-            &payload,
-        )
-        .await;
-    });
-}
-
-/// The renderer half of [`warn`], on its own: log it and put it on the wire.
-///
-/// Extracted (not changed — `warn` calls this and behaves exactly as before) for
-/// the one caller that must NOT take the webhook half with it: a day-7 review
-/// reminder POSTs the webhook from its own rung, and routing the toast through
-/// `warn` as well would deliver the same message to the same chat channel twice
-/// whenever `webhook_on_warning` happens to be on.
-pub(crate) fn emit_warning_event(app: &AppHandle, w: &BackendWarning) {
     tracing::warn!(code = %w.code, msg = ?w.msg, "notify: backend warning");
-    if let Err(e) = app.emit(WARNING_EVENT, w) {
+    if let Err(e) = app.emit(WARNING_EVENT, &w) {
         tracing::warn!("notify: could not emit {WARNING_EVENT}: {e}");
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   The webhook side effect
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// How long the pre-flight DNS lookup may take. Short: it is a local resolver
-/// call, and a webhook that cannot be resolved in a second is not going to be
-/// POSTed successfully inside the 10 s budget either.
-const WEBHOOK_RESOLVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
-
-/// Cap on how much of the webhook's RESPONSE we read. The body is discarded
-/// either way (nothing in SundayRec looks at it), so reading a gigabyte from a
-/// hostile or broken endpoint would be pure loss. 8 KB is plenty to have
-/// something quotable in the log if a 4xx ever needs debugging.
-const WEBHOOK_MAX_RESPONSE_BYTES: usize = 8 * 1024;
-
-/// Resolve `url`'s host and verify EVERY address it answers with is routable.
-///
-/// This is the second half of the E1.4 SSRF policy: the core gate judged the
-/// NAME (see `sundayrec_core::webhook::webhook_gate`), which cannot see where a
-/// name actually points. `hooks.evil.test` can resolve to `192.168.1.1`, and a
-/// DNS-rebinding host can answer "public" once and "private" a minute later —
-/// so this runs on EVERY send, not once at save time. At webhook cadence (a
-/// failure, not a frame) a resolver call costs nothing.
-///
-/// Fails CLOSED: a host that will not resolve is refused rather than handed to
-/// the HTTP client to resolve again on its own.
-async fn resolved_host_is_permitted(url: &str, allow_local: bool) -> Result<(), String> {
-    use sundayrec_core::webhook::{classify_ip, host_of};
-
-    let Some(host) = host_of(url) else {
-        return Err("no host in webhook URL".into());
-    };
-    if allow_local {
-        // The operator has said, for this address, "yes, that is my network".
-        // Re-checking would only re-derive a permission already granted.
-        return Ok(());
-    }
-    // A literal IP has no DNS step; the core gate already classified it exactly.
-    if host.parse::<std::net::IpAddr>().is_ok() {
-        return Ok(());
-    }
-    // Port 80 is arbitrary — `lookup_host` needs one and we only read addresses.
-    let lookup = tokio::time::timeout(
-        WEBHOOK_RESOLVE_TIMEOUT,
-        tokio::net::lookup_host((host.as_str(), 80u16)),
-    )
-    .await;
-    let addrs = match lookup {
-        Ok(Ok(iter)) => iter.collect::<Vec<_>>(),
-        Ok(Err(e)) => return Err(format!("cannot resolve {host}: {e}")),
-        Err(_) => return Err(format!("timed out resolving {host}")),
-    };
-    if addrs.is_empty() {
-        return Err(format!("{host} resolved to no addresses"));
-    }
-    // ALL of them must be public: a host that answers with one public and one
-    // private address is exactly the rebinding shape.
-    for addr in &addrs {
-        let class = classify_ip(addr.ip());
-        if class.is_local() {
-            return Err(format!(
-                "{host} resolves to a {} address ({}) — turn on «tillat lokalt nett» for this URL if that is intended",
-                class.as_str(),
-                addr.ip()
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// POST `payload` to `url`. The body shaping (URL validation, Slack/Discord
-/// detection, structured-vs-chat choice) and the SSRF classification are the
-/// unit-tested [`sundayrec_core::webhook`]; this is only the socket. Bounded,
-/// and never propagates: a webhook that is down is not a reason for a failure
-/// alert to become two failures. NETWORK-UNVERIFIED.
-///
-/// `allow_local` is `settings.webhook_allow_local` — the operator's explicit,
-/// per-URL confirmation that this address is a device on their own network.
-async fn post_webhook(url: &str, allow_local: bool, payload: &WebhookPayload) {
-    use sundayrec_core::webhook::webhook_gate;
-
-    // Belt: the routing matrix already consulted this gate, but the socket must
-    // not depend on a caller having done so.
-    if let Err(block) = webhook_gate(url, allow_local) {
-        tracing::warn!(reason = block.code(), "notify: webhook refused before send");
-        return;
-    }
-    // Braces: the name passed, but where does it POINT, right now?
-    if let Err(why) = resolved_host_is_permitted(url, allow_local).await {
-        tracing::warn!("notify: webhook refused after DNS: {why}");
-        return;
-    }
-    let Some(body) = build_webhook_body(url, payload) else {
-        return; // invalid URL — the gate already filtered these, belt and braces
-    };
-    let result = reqwest::Client::new()
-        .post(url)
-        .header("Content-Type", "application/json")
-        .body(body)
-        .timeout(WEBHOOK_TIMEOUT)
-        .send()
-        .await;
-    match result {
-        Ok(r) if r.status().is_success() => {
-            drain_bounded(r).await;
-            tracing::info!("notify: webhook delivered");
-        }
-        Ok(r) => {
-            let status = r.status();
-            drain_bounded(r).await;
-            tracing::warn!("notify: webhook returned {status}");
-        }
-        Err(e) => tracing::warn!("notify: webhook POST failed: {e}"),
-    }
-}
-
-/// Read at most [`WEBHOOK_MAX_RESPONSE_BYTES`] of the response and drop it. The
-/// connection is then closed rather than left for the endpoint to keep feeding.
-async fn drain_bounded(mut response: reqwest::Response) {
-    let mut read = 0usize;
-    while read < WEBHOOK_MAX_RESPONSE_BYTES {
-        match response.chunk().await {
-            Ok(Some(chunk)) => read += chunk.len(),
-            _ => break,
-        }
     }
 }
 
@@ -601,73 +389,10 @@ mod tests {
         assert_eq!(ERROR_EVENT, "recording://error");
     }
 
-    #[test]
-    fn the_webhook_timeout_is_bounded_and_short() {
-        // The alert has already gone out natively by the time this runs; a hung
-        // chat server must not keep the failure path open behind it.
-        assert!(WEBHOOK_TIMEOUT <= std::time::Duration::from_secs(15));
-        // E1.4: the DNS pre-check must be a small slice of that budget, and the
-        // discarded response body must be capped — nothing reads it.
-        assert!(WEBHOOK_RESOLVE_TIMEOUT < WEBHOOK_TIMEOUT);
-        const _: () = assert!(WEBHOOK_MAX_RESPONSE_BYTES <= 64 * 1024);
-    }
-
-    // ── E1.4: the resolved-IP half of the SSRF policy ────────────────────────
-
-    #[tokio::test]
-    async fn an_unresolvable_host_fails_closed() {
-        // `.invalid` is reserved by RFC 2606 and can never resolve. A host we
-        // cannot classify must be REFUSED, not handed to reqwest to resolve
-        // again on its own — that is what "fail closed" means here.
-        let err = resolved_host_is_permitted("https://nope.invalid/hook", false)
-            .await
-            .expect_err("an unresolvable host must be refused");
-        assert!(err.contains("nope.invalid"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn a_literal_private_ip_needs_no_dns_and_is_left_to_the_name_gate() {
-        // A literal has nothing to resolve; the core gate already classified it
-        // exactly, so this half must not double-refuse (or the error message
-        // would name DNS for a problem that has nothing to do with DNS).
-        resolved_host_is_permitted("http://192.168.1.5/hook", true)
-            .await
-            .expect("an allowed literal passes the DNS half");
-        // And the name gate is what refuses it without the opt-in.
-        assert!(sundayrec_core::webhook::webhook_gate("http://192.168.1.5/hook", false).is_err());
-    }
-
-    #[tokio::test]
-    async fn localhost_resolves_to_loopback_and_is_refused() {
-        // The one hostname every machine can resolve, and it must not pass.
-        let err = resolved_host_is_permitted("http://localhost:9000/hook", false)
-            .await
-            .expect_err("localhost must be refused without the opt-in");
-        assert!(err.contains("loopback"), "{err}");
-    }
-
-    #[tokio::test]
-    async fn the_opt_in_short_circuits_the_dns_half() {
-        // Once the operator has granted this address, re-deriving the same
-        // permission from DNS would only add a failure mode.
-        resolved_host_is_permitted("http://localhost:9000/hook", true)
-            .await
-            .expect("an allowed LAN host is permitted");
-    }
-
-    #[test]
-    fn a_url_with_no_host_is_refused_before_dns() {
-        // `host_of` returning None must not silently mean "nothing to check".
-        let err = tauri::async_runtime::block_on(resolved_host_is_permitted("https://", false))
-            .expect_err("a hostless URL must be refused");
-        assert!(err.contains("no host"), "{err}");
-    }
-
     /// A default (never-configured) settings row must never report a ready
     /// transport — in EITHER build. Without the feature the answer is a constant
     /// `false` (the degradation path); with it, the SMTP branch bails on the
-    /// blank host before it can reach the keychain, and the Gmail branch needs a
-    /// resolvable OAuth client, which a test binary has no reason to carry.
+    /// blank host before it can reach the keychain.
     ///
     /// Deliberately does not assert the positive case: a `true` needs a real
     /// keychain entry, and an unauthorised keychain read BLOCKS on an OS prompt
@@ -685,8 +410,6 @@ mod tests {
             email_feature_built: cfg!(feature = "email"),
             email_transport_ready: email_transport_ready(&settings, "vakt@kirka.no"),
             email_throttled: false,
-            webhook_url: "",
-            webhook_allow_local: false,
         });
         assert!(!plan.email);
         assert!(plan.native, "the native leg survives every degradation");

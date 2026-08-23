@@ -306,16 +306,15 @@ function thumbnailError(e: unknown): { error: string } {
 }
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
-// (tray-*, update-*, cloud-upload-*, …) fall through to a no-op subscription.
+// (tray-*, update-*, …) fall through to a no-op subscription.
 //
 // `backend-warning` was the one entry deliberately left OUT by the 2026-08-05
 // channel audit: its consumer in pages/home.ts was live, but no src-tauri
 // emitter existed under any name, and mapping it to the nearest-looking channel
 // would only have manufactured wrong warnings. As of Fase 2 the backend really
-// does emit — `crate::notify::warn` on `backend://warning`, from six sources
-// (pre-roll gave up, cloud upload failed, cloud token revoked, crash recovery
-// skipped a file, the configured device is missing, the disk is filling) — so
-// the channel is mapped for real.
+// does emit — `crate::notify::warn` on `backend://warning`, from four sources
+// (pre-roll gave up, crash recovery skipped a file, the configured device is
+// missing, the disk is filling) — so the channel is mapped for real.
 const EVENT_MAP: Record<string, string> = {
   'backend-warning': 'backend://warning',
   "recording-overlay-start": "recording://started",
@@ -541,18 +540,6 @@ const platform = navigator.userAgent.toLowerCase().includes("mac")
     ? "win32"
     : "linux";
 
-// Common stub shapes so renderers that read fields/iterate don't throw.
-const okFalse = { connected: false, configured: false };
-// Keys MUST be the renderer's `CloudServiceId` strings ('google-drive' &c.) —
-// publish-page indexes `status['google-drive'].connected` per visible card, so
-// the old camelCase spelling (`googleDrive`) made every refresh throw an
-// unhandled TypeError and left the card frozen in its markup state. Found by
-// the v0.14 no-live-surface e2e's clean-console assertion.
-const cloudStatusStub = {
-  "google-drive": { connected: false },
-  dropbox: { connected: false },
-  onedrive: { connected: false },
-};
 // ── History adapter: Rust RecordingRow → the old renderer's RecordingEntry ───
 type RecordingRow = {
   id: string;
@@ -598,8 +585,6 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
     sizeBytes: r.byte_size ?? null,
     fileSizeBytes: r.byte_size ?? null,
     note: r.note ?? undefined,
-    cloudUploaded: [],
-    cloudUrls: {},
   };
 }
 
@@ -659,7 +644,7 @@ const api: Record<string, unknown> = {
   //
   // A trashed recording keeps its history row on purpose (see
   // `src-tauri/src/trash/mod.rs`: the row is what makes a restore give back the
-  // note, duration and cloud markers). Filtering it out HERE — rather than in
+  // note and duration). Filtering it out HERE — rather than in
   // one of the three renderer consumers — is what keeps Historikk, the unified
   // search and the home page's «Siste 5» from disagreeing about whether a
   // recording exists.
@@ -830,33 +815,20 @@ const api: Record<string, unknown> = {
   pickAudioFile: async () =>
     pickPath({ name: "Lyd", extensions: AUDIO_EXT }),
 
-  // ── Email / webhook ─────────────────────────────────────────────────────
+  // ── Email ───────────────────────────────────────────────────────────────
   //
-  // These were `async () => ({ ok: false })` stubs: every click produced a
-  // fabricated "sending failed" no matter what the user had configured. Both
-  // commands exist and are registered (commands/email.rs), so they are wired —
-  // and the panel now asks `emailStatus` FIRST and disables the button when
-  // there is no send path, instead of inventing a failure.
-  //
-  // `email_test_webhook` is real on every build (plain reqwest POST, no cargo
-  // feature); `email_send_test` needs `--features email` and returns a clear
-  // `feature_disabled` error otherwise, which `emailStatus.featureBuilt`
-  // predicts so we never provoke it.
+  // `testEmail` was an `async () => ({ ok: false })` stub: every click produced
+  // a fabricated "sending failed" no matter what the user had configured. The
+  // command exists and is registered (commands/email.rs), so it is wired — and
+  // the panel asks `emailStatus` FIRST and disables the button when there is no
+  // send path, instead of inventing a failure. `email_send_test` needs
+  // `--features email` and returns a clear `feature_disabled` error otherwise,
+  // which `emailStatus.featureBuilt` predicts so we never provoke it.
   emailStatus: async () =>
-    call<{ featureBuilt: boolean; gmailConnected: boolean }>("email_status", undefined, {
+    call<{ featureBuilt: boolean }>("email_status", undefined, {
       featureBuilt: false,
-      gmailConnected: false,
     }),
-  testWebhook: async (url: string) => {
-    try {
-      const ok = await invoke<boolean>("email_test_webhook", { url });
-      return ok ? { ok: true } : { ok: false, error: "unreachable" };
-    } catch (e) {
-      return { ok: false, error: ipcErrText(e) };
-    }
-  },
   testEmail: async (params: {
-    transport: "gmail" | "smtp";
     recipient: string;
     language?: string;
     host?: string;
@@ -867,7 +839,6 @@ const api: Record<string, unknown> = {
   }) => {
     try {
       await invoke("email_send_test", {
-        transport: params.transport === "gmail" ? "Gmail" : "Smtp",
         recipient: params.recipient,
         language: params.language,
         host: params.host,
@@ -1701,22 +1672,6 @@ const api: Record<string, unknown> = {
   thumbnailGetDefaultInfo: async () =>
     call("thumbnail_get_default_info", undefined, null),
 
-  // ── Cloud ───────────────────────────────────────────────────────────────
-  cloudConnect: async () => okFalse,
-  cloudCancelConnect: async () => true,
-  cloudDisconnect: async () => true,
-  cloudStatus: async () => cloudStatusStub,
-  cloudUploadFile: async () => ({ ok: false }),
-  cloudListFolders: async () => [],
-  cloudSetFolder: async () => true,
-  // Wired to the REAL predicate (commands/cloud.rs) instead of a hard-coded
-  // `false`. It answers whether this build has a Google OAuth client id at all,
-  // which is what the cloud panel's gate needs to say something true.
-  cloudIsConfigured: async () => call<boolean>("cloud_is_configured", undefined, false),
-  cloudQueueStatus: async () => ({ entries: [] }),
-  cloudQueueRetry: async () => true,
-  cloudQueueRemove: async () => true,
-  cloudQueueFlush: async () => true,
   // Podcast RSS: `publish_feed_status` answers whether THIS build can write
   // the feed at all (the default-off `publish` cargo feature) — the Filer-page
   // gate reads it so the «Generer feed nå» button can say the truth instead of
@@ -1751,11 +1706,6 @@ const api: Record<string, unknown> = {
     }
   },
   registerTrustedPath: async () => true,
-
-  // (The youtube* stubs died in R4's stub sweep: youtubeStatus answered a
-  // permanent false, which made the editor's whole publish-to-YouTube branch
-  // unreachable by construction — the branch went with the stubs. R3 had
-  // already removed gmail*/youtubeConnect the same way.)
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
   // The whole «Søk i prekener» full-text index (search-page.ts) is fed by this

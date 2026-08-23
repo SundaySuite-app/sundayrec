@@ -330,9 +330,6 @@ pub enum CounterName {
     /// The AI sermon companion built chapters/highlights/summary.
     #[serde(rename = "companion.build")]
     CompanionBuild,
-    /// A podcast RSS feed was generated.
-    #[serde(rename = "publish.feed.generated")]
-    PublishFeedGenerated,
 
     // ── Files ────────────────────────────────────────────────────────────────
     /// A recording was moved to the trash.
@@ -353,9 +350,6 @@ pub enum CounterName {
     /// An update was downloaded and installed.
     #[serde(rename = "update.installed")]
     UpdateInstalled,
-    /// A cloud backup upload succeeded.
-    #[serde(rename = "cloud.upload.ok")]
-    CloudUploadOk,
 }
 
 /// Every [`CounterName`], in wire order. The single source of truth for the
@@ -376,12 +370,10 @@ pub const ALL_COUNTERS: &[CounterName] = &[
     CounterName::EditorChaptersDetected,
     CounterName::TranscribeRun,
     CounterName::CompanionBuild,
-    CounterName::PublishFeedGenerated,
     CounterName::TrashMoved,
     CounterName::TrashRestored,
     CounterName::DiagnoseRun,
     CounterName::UpdateInstalled,
-    CounterName::CloudUploadOk,
 ];
 
 impl CounterName {
@@ -407,12 +399,10 @@ impl CounterName {
             Self::EditorChaptersDetected => "editor.chapters.detected",
             Self::TranscribeRun => "transcribe.run",
             Self::CompanionBuild => "companion.build",
-            Self::PublishFeedGenerated => "publish.feed.generated",
             Self::TrashMoved => "trash.moved",
             Self::TrashRestored => "trash.restored",
             Self::DiagnoseRun => "diagnose.run",
             Self::UpdateInstalled => "update.installed",
-            Self::CloudUploadOk => "cloud.upload.ok",
         }
     }
 
@@ -952,7 +942,7 @@ pub struct CounterReport {
 ///   - `saveFolder` / `editorIntroPath` / `editorOutroPath` — filesystem paths.
 ///   - `churchName` / `responsiblePerson` — the two fields that would deanonymise
 ///     an install outright.
-///   - `emailAddress` / `emailSmtp*` / `webhookUrl` — addresses and endpoints.
+///   - `emailAddress` / `emailSmtp*` — addresses and endpoints.
 ///   - `slots` / `specialRecordings` — user-authored labels and a congregation's
 ///     weekly rhythm. Only their COUNTS travel.
 ///
@@ -1722,7 +1712,6 @@ mod tests {
             church_name: "Nordstrand menighet".into(),
             responsible_person: "Kari Nordmann".into(),
             email_address: "kari@menighet.no".into(),
-            webhook_url: "https://hooks.slack.com/services/T00/B00/XXXXSECRET".into(),
             editor_intro_path: Some("/Users/kari/intro.wav".into()),
             ..Default::default()
         });
@@ -1767,7 +1756,6 @@ mod tests {
             "Qu-5",
             "Opptak",
             "/Users/",
-            "hooks.slack.com",
             "sbp_abc123",
             "gudstjeneste.wav",
             "intro.wav",
@@ -2344,9 +2332,12 @@ mod tests {
             ALL_COUNTERS.len(),
             "duplicate counter wire name"
         );
+        // R1 of «Frivilligen først» retired the review/publish/cloud counters
+        // with their features (the Worker treats names as opaque strings, so a
+        // sender that stops sending one costs nothing); the floor follows.
         assert!(
-            ALL_COUNTERS.len() >= 20,
-            "the seam coverage target is ~20 counters, found {}",
+            ALL_COUNTERS.len() >= 18,
+            "the seam coverage target is ~18 counters, found {}",
             ALL_COUNTERS.len()
         );
         // Every name is a dotted, lowercase namespace — the endpoint aggregates

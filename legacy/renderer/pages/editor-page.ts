@@ -3,7 +3,6 @@ import { settings, patchSettings } from '../state'
 import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingEntry, RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
-import { navigateTo } from '../ui/navigate'
 import { confirmDialog } from '../ui/dialog'
 import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
@@ -79,16 +78,7 @@ export function setupEditorPage(): void {
 
   $('btn-editor-save')?.addEventListener('click',    () => openExportModal())
   $('btn-export-cancel')?.addEventListener('click',  () => closeExportModal())
-  $('btn-export-confirm')?.addEventListener('click', () => { E.publishAfterExport = false; runExport() })
-  $('btn-export-and-publish')?.addEventListener('click', () => { E.publishAfterExport = true; runExport() })
-  $('export-publish-configure')?.addEventListener('click', (e) => {
-    e.preventDefault()
-    closeExportModal()
-    // Publisering is a SECTION of the Deling tab since Fase 3 — navigateTo
-    // hands the tab switch to the page's own handler, so its side effects
-    // still run, and the anchor lands on the section rather than the tab top.
-    navigateTo('settings', { tab: 'settings-sharing', anchor: '#settings-publish' })
-  })
+  $('btn-export-confirm')?.addEventListener('click', () => runExport())
 
   // Audio format picker pills. Scoped to #export-fmt-section so it doesn't fight
   // with the video format/codec and export-type pills (which share the

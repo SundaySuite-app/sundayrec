@@ -1,23 +1,22 @@
 //! Email alert decisions — pure, GUI-free, network-free (PU-1 P2a).
 //!
 //! Ported from the Electron `src/main/mailer.ts` (the behavioural spec). That
-//! file interleaved the *content* (7-language localized subject/body templates,
-//! the RFC 2822 MIME assembly, base64url + RFC 2047 subject encoding) with the
-//! actual sending (`nodemailer` SMTP transport, a `fetch` to the Gmail API). We
-//! keep ONLY the deterministic decisions here:
+//! file interleaved the *content* (7-language localized subject/body templates)
+//! with the actual sending (`nodemailer` SMTP transport). We keep ONLY the
+//! deterministic decisions here:
 //!   - which localized template strings to use ([`MailLang`], [`error_strings`])
 //!   - rendering an error/test email to plaintext + HTML ([`render_error`],
 //!     [`render_test`])
 //!   - the recipient/throttle/dedup gate ([`AlertGate`]) — Electron sent on
 //!     every failure; this adds a small de-dup so a flapping recorder can't spam
 //!     the responsible person
-//!   - assembling the raw RFC 2822 message Gmail's API wants ([`build_mime`],
-//!     [`encode_subject_rfc2047`]) and base64url-encoding it ([`base64url`])
 //!
-//! The `src-tauri` shell (behind the default-off `email` feature) owns the
-//! impure half: the SMTP socket and the Gmail `reqwest` POST. It calls these
-//! functions to decide *whether* to send and *what* to send, then performs the
-//! single side effect.
+//! (The Gmail-API raw-message assembly that sat beside these left with the
+//! cloud-backup OAuth client; SMTP is the one transport.)
+//!
+//! The `src-tauri` shell (behind the `email` feature, in `default`) owns the
+//! impure half: the SMTP socket. It calls these functions to decide *whether*
+//! to send and *what* to send, then performs the single side effect.
 
 use std::collections::HashMap;
 
@@ -28,33 +27,17 @@ use ts_rs::TS;
 //   UI-facing DTOs (the renderer's email panel)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Which transport the renderer asked the shell to use for a test send. Mirrors
-/// `mailer.ts`'s "prefer Gmail OAuth, else SMTP" choice as an explicit pick the
-/// user makes in the panel. Serialised lowercase on the wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export, export_to = "../../../src/lib/bindings/EmailTransportKind.ts")]
-#[serde(rename_all = "lowercase")]
-pub enum EmailTransportKind {
-    /// Send via the connected Gmail account (no SMTP config needed).
-    Gmail,
-    /// Send via a user-supplied SMTP server.
-    Smtp,
-}
-
 /// What the email panel needs to render itself without a failed send: whether
-/// this build compiled the `email` feature in at all, and whether a Gmail
-/// refresh token is already stored (so the panel can offer the no-config path).
-/// Filled by the `src-tauri` shell from the cargo feature + the keychain.
+/// this build compiled the `email` feature in at all. Filled by the
+/// `src-tauri` shell from the cargo feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../../src/lib/bindings/EmailStatus.ts")]
 #[serde(rename_all = "camelCase")]
 pub struct EmailStatus {
     /// True when the binary was built with `--features email` (the send path is
-    /// present). The default build is `false` → the panel shows a calm hint.
+    /// present). A `--no-default-features` build is `false` → the panel shows a
+    /// calm hint.
     pub feature_built: bool,
-    /// True when a Gmail OAuth refresh token is stored, so the Gmail transport
-    /// is usable without any SMTP fields.
-    pub gmail_connected: bool,
 }
 
 /// The seven UI languages SundayRec ships, matching `mailer.ts` `MAIL_STRINGS`.
@@ -229,7 +212,7 @@ pub fn test_strings(lang: MailLang) -> TestStrings {
 }
 
 /// A rendered email: localized subject + plaintext + HTML bodies, ready for the
-/// shell to wrap in SMTP or a Gmail raw message.
+/// shell to wrap in an SMTP message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedEmail {
     pub subject: String,
@@ -407,137 +390,17 @@ impl AlertGate {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//   RFC 2822 message assembly (for the Gmail API raw-message path)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Encode a Subject header that may contain non-ASCII (emoji, æøå). Pure-ASCII
-/// passes through; otherwise RFC 2047 B-encoding wraps it `=?UTF-8?B?…?=`.
-/// Ports `mailer.ts` `encodeRfc2047Subject`.
-pub fn encode_subject_rfc2047(subject: &str) -> String {
-    if subject.is_ascii() {
-        return subject.to_string();
-    }
-    format!("=?UTF-8?B?{}?=", base64_standard(subject.as_bytes()))
-}
-
-/// Build the raw RFC 2822 message Gmail's `messages.send` accepts. When `html`
-/// is non-empty a `multipart/alternative` body is emitted (plain + HTML);
-/// otherwise a single `text/plain` part. `boundary_seed` lets the caller pass a
-/// deterministic boundary (the shell uses a timestamp, as Electron did) so this
-/// stays pure/testable. Ports `mailer.ts` `sendViaGmail`'s MIME assembly.
-pub fn build_mime(
-    from: &str,
-    to: &str,
-    subject: &str,
-    text: &str,
-    html: &str,
-    boundary_seed: &str,
-) -> String {
-    let subj = encode_subject_rfc2047(subject);
-    if !html.is_empty() {
-        let boundary = format!("sundayrec-{boundary_seed}");
-        [
-            format!("From: {from}").as_str(),
-            format!("To: {to}").as_str(),
-            format!("Subject: {subj}").as_str(),
-            "MIME-Version: 1.0",
-            format!("Content-Type: multipart/alternative; boundary=\"{boundary}\"").as_str(),
-            "",
-            format!("--{boundary}").as_str(),
-            "Content-Type: text/plain; charset=\"UTF-8\"",
-            "Content-Transfer-Encoding: 8bit",
-            "",
-            text,
-            "",
-            format!("--{boundary}").as_str(),
-            "Content-Type: text/html; charset=\"UTF-8\"",
-            "Content-Transfer-Encoding: 8bit",
-            "",
-            html,
-            "",
-            format!("--{boundary}--").as_str(),
-            "",
-        ]
-        .join("\r\n")
-    } else {
-        [
-            format!("From: {from}").as_str(),
-            format!("To: {to}").as_str(),
-            format!("Subject: {subj}").as_str(),
-            "MIME-Version: 1.0",
-            "Content-Type: text/plain; charset=\"UTF-8\"",
-            "Content-Transfer-Encoding: 8bit",
-            "",
-            text,
-            "",
-        ]
-        .join("\r\n")
-    }
-}
-
-/// base64url per the Gmail API spec: standard base64, then `+`→`-`, `/`→`_`,
-/// trailing `=` stripped. Ports the `.replace(...)` chain in `sendViaGmail`.
-pub fn base64url(bytes: &[u8]) -> String {
-    base64_standard(bytes)
-        .replace('+', "-")
-        .replace('/', "_")
-        .trim_end_matches('=')
-        .to_string()
-}
-
-/// Standard RFC 4648 base64 (with padding). Tiny self-contained encoder so the
-/// core stays dependency-light (the cloud module already pulls `base64`, but
-/// keeping email free-standing avoids a cross-module coupling for one call).
-fn base64_standard(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        let n = (b0 << 16) | (b1 << 8) | b2;
-        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
-        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
-        out.push(if chunk.len() > 1 {
-            ALPHABET[((n >> 6) & 0x3f) as usize] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            ALPHABET[(n & 0x3f) as usize] as char
-        } else {
-            '='
-        });
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn transport_kind_serialises_lowercase() {
-        assert_eq!(
-            serde_json::to_string(&EmailTransportKind::Gmail).unwrap(),
-            "\"gmail\""
-        );
-        assert_eq!(
-            serde_json::to_string(&EmailTransportKind::Smtp).unwrap(),
-            "\"smtp\""
-        );
-    }
-
-    #[test]
     fn email_status_serialises_camel_case() {
         let s = EmailStatus {
             feature_built: false,
-            gmail_connected: true,
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"featureBuilt\":false"));
-        assert!(json.contains("\"gmailConnected\":true"));
     }
 
     #[test]
@@ -681,64 +544,5 @@ mod tests {
                 recipient: "a@b.no".into()
             }
         );
-    }
-
-    #[test]
-    fn base64_standard_matches_known_vectors() {
-        assert_eq!(base64_standard(b""), "");
-        assert_eq!(base64_standard(b"f"), "Zg==");
-        assert_eq!(base64_standard(b"fo"), "Zm8=");
-        assert_eq!(base64_standard(b"foo"), "Zm9v");
-        assert_eq!(base64_standard(b"foob"), "Zm9vYg==");
-        assert_eq!(base64_standard(b"foobar"), "Zm9vYmFy");
-    }
-
-    #[test]
-    fn base64url_is_url_safe_and_unpadded() {
-        // Bytes that force `+` and `/` in standard base64 (0xfb 0xff 0xbf).
-        let raw = [0xfbu8, 0xff, 0xbf];
-        assert_eq!(base64_standard(&raw), "+/+/");
-        assert_eq!(base64url(&raw), "-_-_");
-        // Padding stripped.
-        assert_eq!(base64url(b"f"), "Zg");
-    }
-
-    #[test]
-    fn rfc2047_subject_passes_ascii_through_and_b_encodes_unicode() {
-        assert_eq!(encode_subject_rfc2047("Plain ASCII"), "Plain ASCII");
-        let enc = encode_subject_rfc2047("⚠️ Opptaksfeil");
-        assert!(enc.starts_with("=?UTF-8?B?"));
-        assert!(enc.ends_with("?="));
-    }
-
-    #[test]
-    fn build_mime_plain_when_no_html() {
-        let m = build_mime("\"SundayRec\" <me>", "a@b.no", "Hi", "body text", "", "abc");
-        assert!(m.contains("From: \"SundayRec\" <me>"));
-        assert!(m.contains("To: a@b.no"));
-        assert!(m.contains("Subject: Hi"));
-        assert!(m.contains("Content-Type: text/plain; charset=\"UTF-8\""));
-        assert!(m.contains("body text"));
-        // Single part — no multipart boundary.
-        assert!(!m.contains("multipart/alternative"));
-        // CRLF line endings (RFC 2822).
-        assert!(m.contains("\r\n"));
-    }
-
-    #[test]
-    fn build_mime_multipart_when_html_present() {
-        let m = build_mime("me", "to", "Subj", "plain", "<p>rich</p>", "seed42");
-        assert!(m.contains("multipart/alternative; boundary=\"sundayrec-seed42\""));
-        assert!(m.contains("--sundayrec-seed42"));
-        assert!(m.contains("--sundayrec-seed42--"));
-        assert!(m.contains("text/plain"));
-        assert!(m.contains("text/html"));
-        assert!(m.contains("<p>rich</p>"));
-    }
-
-    #[test]
-    fn build_mime_b_encodes_a_unicode_subject() {
-        let m = build_mime("me", "to", "⚠️ Feil", "x", "", "s");
-        assert!(m.contains("Subject: =?UTF-8?B?"));
     }
 }

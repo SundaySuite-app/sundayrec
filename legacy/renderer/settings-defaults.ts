@@ -107,9 +107,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   // Notifications
   notifyStart: true,
   notifyStop: true,
-  webhookUrl: "",
-  webhookOnWarning: false,
-  webhookAllowLocal: false,
 
   // Email alerts
   emailOnError: false,
@@ -123,11 +120,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   editorIntroPath: null,
   editorOutroPath: null,
   editorHwEncode: false,
-
-  // Cloud backup preferences
-  cloudGoogleDrive: null,
-  cloudDropbox: null,
-  cloudOneDrive: null,
 
   // Podcast
   podcast: {

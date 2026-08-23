@@ -64,7 +64,6 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
         updateChannel: "beta",
         reminderMinutes: 15,
         churchName: "Domkirken",
-        webhookOnWarning: true,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
         podcast: {
           enabled: true,
@@ -110,7 +109,6 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     expect(payload.updateChannel).toBe("beta");
     expect(payload.reminderMinutes).toBe(15);
     expect(payload.churchName).toBe("Domkirken");
-    expect(payload.webhookOnWarning).toBe(true);
     expect(payload.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });

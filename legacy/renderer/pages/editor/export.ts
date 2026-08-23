@@ -14,7 +14,7 @@ import {
 import { toast } from '../../ui/toast'
 import { attachProgress } from '../../ui/progress'
 
-// ── Export + publish flow ───────────────────────────────────────────────────
+// ── Export flow ─────────────────────────────────────────────────────────────
 
 export function openExportModal(): void {
   if (!E.filePath) return
@@ -50,9 +50,6 @@ export function openExportModal(): void {
   }
   // Audio-enhancement section (channel repair + vocal chain + one-click auto)
   setupEnhanceSection()
-
-  // Render publishing section
-  void renderPublishOptions()
 
   openModal('editor-export-modal')
 }
@@ -268,159 +265,6 @@ function setupEnhanceSection(): void {
   })
 }
 
-// Publishing options state (mirrored from DOM into module on toggle)
-export interface PublishState {
-  gdrive:   boolean
-  dropbox:  boolean
-  onedrive: boolean
-  podcast:  boolean
-}
-const publishSelections: PublishState = { gdrive: false, dropbox: false, onedrive: false, podcast: false }
-let configuredCache: { gdrive: boolean; dropbox: boolean; onedrive: boolean } =
-  { gdrive: false, dropbox: false, onedrive: false }
-
-/**
- * Build the publishing checkbox list in the export modal. Each service is
- * shown ONLY if `cloudIsConfigured(...)` returns true (user has connected it).
- * Podcast appears when settings.podcast.enabled is true. If nothing is
- * configured, we show a single "Konfigurer publisering →" link to the
- * publish settings page.
- *
- * YouTube left in R4's stub sweep: the row was gated on
- * `youtubeStatus().connected`, and `youtubeStatus` is a permanent stub
- * answering false (no Rust command backs any of the youtube* surface), so
- * the row, the upload task behind it and the progress listener were
- * unreachable by construction — dead weight wearing a feature's name. The
- * 2026-08 audit had already removed the «→ Koble til YouTube» affordance for
- * the same reason (a permanent-failure `youtubeConnect` stub); this removes
- * the rest. When a real backend lands, the surface comes back WITH it.
- */
-export async function renderPublishOptions(): Promise<void> {
-  const wrap     = $('export-publish-options')
-  const configL  = $('export-publish-configure')
-  const andBtn   = $('btn-export-and-publish')
-  const progress = $('export-publish-progress')
-  if (!wrap || !configL || !andBtn) return
-
-  wrap.innerHTML = ''
-  if (progress) { progress.style.display = 'none'; progress.textContent = '' }
-
-  // Refresh service configuration (cheap IPC) — these aren't expected to
-  // change mid-session but the user could have configured one in another
-  // window so we read fresh each open.
-  try {
-    configuredCache.gdrive   = await window.api.cloudIsConfigured('google-drive') as boolean
-    configuredCache.dropbox  = await window.api.cloudIsConfigured('dropbox') as boolean
-    configuredCache.onedrive = await window.api.cloudIsConfigured('onedrive') as boolean
-  } catch { /* leave defaults — falsy */ }
-
-  const podcastEnabled = settings.podcast?.enabled === true
-
-  const haveAny = configuredCache.gdrive || configuredCache.dropbox || configuredCache.onedrive || podcastEnabled
-  configL.style.display = haveAny ? 'none' : ''
-  // The "Eksporter og publiser" button is only meaningful if at least one
-  // service is configured.
-  ;(andBtn as HTMLElement).style.display = haveAny ? '' : 'none'
-
-  function addRow(key: keyof PublishState, label: string, enabled: boolean): void {
-    const row = document.createElement('label')
-    row.className = 'export-publish-option'
-    const chk = document.createElement('input')
-    chk.type = 'checkbox'
-    chk.disabled = !enabled
-    chk.checked = false
-    chk.addEventListener('change', () => { publishSelections[key] = chk.checked })
-    const span = document.createElement('span')
-    span.textContent = label
-    row.appendChild(chk)
-    row.appendChild(span)
-    wrap!.appendChild(row)
-  }
-
-  // Reset selections each time we open
-  publishSelections.gdrive   = false
-  publishSelections.dropbox  = false
-  publishSelections.onedrive = false
-  publishSelections.podcast  = false
-
-  if (configuredCache.gdrive)   addRow('gdrive',   t('editor.exportPublishGdrive',   'Last opp til Google Drive'), true)
-  if (configuredCache.dropbox)  addRow('dropbox',  t('editor.exportPublishDropbox',  'Last opp til Dropbox'),       true)
-  if (configuredCache.onedrive) addRow('onedrive', t('editor.exportPublishOnedrive', 'Last opp til OneDrive'),      true)
-  if (podcastEnabled)           addRow('podcast',  t('editor.exportPublishPodcast',  'Oppdater podcast RSS-feed'),  true)
-}
-
-/**
- * Run the selected publishing actions for a freshly-exported file. Surfaces
- * progress in the export modal (which is still up — we don't close it
- * until publishing completes). Idempotent on its own — the underlying
- * cloud queue dedupes by file path + service.
- */
-export async function runPublishingForExport(outputPath: string): Promise<void> {
-  const progress = $('export-publish-progress')
-  if (progress) { progress.style.display = ''; progress.classList.remove('is-error', 'is-success'); progress.textContent = '' }
-
-  const tasks: { label: string; run: () => Promise<{ ok: boolean; error?: string; url?: string }> }[] = []
-  if (publishSelections.gdrive) {
-    tasks.push({ label: 'Google Drive', run: () => window.api.cloudUploadFile('google-drive', outputPath) as Promise<{ ok: boolean; error?: string }> })
-  }
-  if (publishSelections.dropbox) {
-    tasks.push({ label: 'Dropbox', run: () => window.api.cloudUploadFile('dropbox', outputPath) as Promise<{ ok: boolean; error?: string }> })
-  }
-  if (publishSelections.onedrive) {
-    tasks.push({ label: 'OneDrive', run: () => window.api.cloudUploadFile('onedrive', outputPath) as Promise<{ ok: boolean; error?: string }> })
-  }
-
-  let allOk = true
-  const messages: string[] = []
-  for (const task of tasks) {
-    if (progress) progress.textContent = `${t('editor.publishUploading', 'Laster opp til')} ${task.label}…`
-    try {
-      const r = await task.run()
-      if (r && r.ok === false) {
-        allOk = false
-        messages.push(`${task.label}: ${r.error ?? 'feil'}`)
-      } else if (r && r.url) {
-        messages.push(`${task.label}: ✓ (${r.url})`)
-      } else {
-        messages.push(`${task.label}: ✓`)
-      }
-    } catch (err) {
-      allOk = false
-      messages.push(`${task.label}: ${(err as Error).message}`)
-    }
-  }
-
-  // Podcast RSS regen runs last (after any uploads complete, since RSS may
-  // reference the just-uploaded cloud URLs).
-  if (publishSelections.podcast) {
-    if (progress) progress.textContent = t('editor.publishRssUpdating', 'Oppdaterer RSS-feed…')
-    const service = settings.podcast?.service ?? 'google-drive'
-    try {
-      const r = await window.api.podcastRegenerate(service) as { ok: boolean; error?: string }
-      if (r && r.ok === false) {
-        allOk = false
-        // «feature_disabled» is the default build telling the truth — say it
-        // in the operator's language rather than echoing the raw code.
-        const reason = (r.error ?? '').includes('feature_disabled')
-          ? t('publish.unavailableBuild', 'ikke med i denne bygningen av SundayRec')
-          : r.error ?? 'feil'
-        messages.push(`RSS: ${reason}`)
-      } else {
-        messages.push(`RSS: ✓`)
-      }
-    } catch (err) {
-      allOk = false
-      messages.push(`RSS: ${(err as Error).message}`)
-    }
-  }
-
-  if (progress) {
-    progress.classList.toggle('is-success', allOk)
-    progress.classList.toggle('is-error', !allOk)
-    progress.textContent = (allOk ? `${t('editor.publishDone', '✓ Publisering ferdig')} — ` : `${t('editor.publishFailed', '✕ Publisering feilet')} — `) + messages.join(' · ')
-  }
-}
-
 export function closeExportModal(): void {
   closeModal('editor-export-modal')
 }
@@ -577,11 +421,6 @@ export async function runExport(): Promise<void> {
     row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     clearEditorDraft()  // export succeeded — drop the autosave sidecar
     clearDirty()
-    // Run publishing if user picked "Eksporter og publiser"
-    if (E.publishAfterExport && result.outputPath) {
-      await runPublishingForExport(result.outputPath)
-    }
-    E.publishAfterExport = false
   } else {
     if (text) text.textContent = describeExportError(result.error)
     if (row) row.removeAttribute('data-ok')
@@ -594,7 +433,7 @@ export async function runExport(): Promise<void> {
 // Every entry here is grep-verified against a real emitter in the Rust seam.
 // Three used to be listed that NOTHING emits — `force_wav_replace_unsafe` and
 // `invalid_cut_regions` died with the Electron save/replace layer, and
-// `invalid_path` only ever came from the cloud-integrations commands — so their
+// `invalid_path` only ever came from the (since-removed) cloud commands — so their
 // friendly messages were unreachable while two codes the export DOES produce
 // fell through to the raw "✕ Feil: validation: invalid_format: xyz".
 const EXPORT_ERROR_CODES = [

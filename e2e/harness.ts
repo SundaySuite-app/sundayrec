@@ -265,7 +265,7 @@ export const BOOT_FIXTURES: Fixtures = {
   list_audio_devices: [],
   whisper_list_models: [],
   thumbnail_get_default_info: null,
-  email_status: { featureBuilt: false, gmailConnected: false },
+  email_status: { featureBuilt: false },
   email_has_smtp_password: false,
   get_launch_at_login: false,
   // `needsPrompt: false` matters: a `true` here floats the one-time consent card

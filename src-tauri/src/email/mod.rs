@@ -1,42 +1,33 @@
 //! Email-alert plumbing (PU-1 P2b) — **NETWORK-UNVERIFIED**, `email` feature (IN `default`).
 //!
 //! The impure half of the error/test mailer. Every *decision* — the localized
-//! templates, the throttle/dedup gate, the RFC 2822 message + base64url
-//! assembly — lives in the unit-tested [`sundayrec_core::email`]. This module
-//! only performs the single side effect each path needs:
-//!   - the Gmail-API send (a `reqwest` POST of the base64url raw message), reusing
-//!     the cloud OAuth refresh-token machinery exactly like `oauth_flow.rs` does,
-//!   - the SMTP send (a `lettre` async transport).
+//! templates, the throttle/dedup gate — lives in the unit-tested
+//! [`sundayrec_core::email`]. This module only performs the single side effect:
+//! the SMTP send (a `lettre` async transport).
 //!
-//! Mirrors the Electron `src/main/mailer.ts` `sendError`/`sendTest` two-path
-//! design (prefer Gmail OAuth when connected, fall back to SMTP). Whether to
-//! send at all is the core [`AlertGate`]'s call; the shell holds one gate in
-//! managed state and records a successful dispatch.
+//! SMTP is the ONE transport. (The Gmail-API path that used to sit beside it
+//! rode on the cloud-backup OAuth machinery, which was removed together with
+//! cloud backup; the minimal «send meg e-post når opptaket feiler» path stays.)
+//! Whether to send at all is the core [`AlertGate`]'s call; the shell holds one
+//! gate in managed state and records a successful dispatch.
 //!
 //! ## ⚠️ NETWORK-UNVERIFIED
 //!
-//! The Gmail POST and the SMTP handshake are wired + compile under
-//! `--features email` (now part of `default` AND of both release feature lists),
-//! but the wire behaviour against a real provider (a real token, a reachable
-//! SMTP server, deliverability) is only provable on a real account + network —
-//! see docs/SMOKE-TEST.md. A `--no-default-features` build excludes this module
-//! entirely and the commands return `feature_disabled`.
+//! The SMTP handshake is wired + compiles under `--features email` (part of
+//! `default` AND of both release feature lists), but the wire behaviour against
+//! a real provider (a reachable SMTP server, deliverability) is only provable on
+//! a real account + network — see docs/SMOKE-TEST.md. A `--no-default-features`
+//! build excludes this module entirely and the commands return
+//! `feature_disabled`.
 
 use std::sync::Mutex;
 
-use sundayrec_core::cloud::{oauth, CloudService, GOOGLE_TOKEN_URL};
 use sundayrec_core::email::{
-    base64url, build_mime, render_error, render_test, AlertDecision, AlertGate, MailLang,
-    RenderedEmail,
+    render_error, render_test, AlertDecision, AlertGate, MailLang, RenderedEmail,
 };
 
-use crate::cloud::config::GoogleOAuthConfig;
-use crate::cloud::{now_ms, secret_provider_for};
 use crate::error::{AppError, AppResult};
-use crate::util::lock_recover;
-
-/// Gmail `messages.send` endpoint (base64url raw message in the JSON body).
-const GMAIL_SEND_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
+use crate::util::{lock_recover, now_ms};
 
 /// Opt-in that lets [`send_via_smtp`] speak **plaintext** instead of TLS, so the
 /// integration test below can point it at a `127.0.0.1` socket. See
@@ -55,12 +46,9 @@ fn plaintext_test_transport() -> bool {
     cfg!(debug_assertions) && std::env::var(PLAINTEXT_TEST_ENV).is_ok_and(|v| v == "1")
 }
 
-/// Which transport to use for a send. Mirrors `mailer.ts`'s "prefer Gmail OAuth
-/// when connected, else SMTP" choice — the caller resolves it from settings +
-/// the keychain.
+/// The transport for a send — the caller resolves it from settings + the
+/// keychain. One variant: SMTP is the only way out.
 pub enum Transport {
-    /// Send via the Gmail API using the stored Gmail OAuth refresh token.
-    Gmail { config: GoogleOAuthConfig },
     /// Send via an SMTP server. `pass` is the app-password / SMTP secret.
     Smtp {
         host: String,
@@ -121,28 +109,6 @@ pub async fn send_error_alert(
     Ok(true)
 }
 
-/// Send a message the caller has already rendered — the review-reminder path
-/// ([`sundayrec_core::email::render_reminder`]).
-///
-/// Ungated on purpose, and the reason matters: the [`AlertGate`] exists to stop
-/// a *flapping* recorder from mailing the same error forty times, which is a
-/// hazard a reminder does not have. The review queue's own `reminded` counter is
-/// the throttle — it is bumped and PERSISTED before this is ever called, so each
-/// rung mails exactly once even if the app restarts mid-send. Putting the gate
-/// in front of this as well would silently swallow two different episodes'
-/// reminders that happen to fall in the same ten minutes.
-pub async fn send_rendered(
-    transport: &Transport,
-    recipient: &str,
-    rendered: &RenderedEmail,
-) -> AppResult<()> {
-    let recipient = recipient.trim();
-    if recipient.is_empty() {
-        return Err(AppError::Validation("no_config".into()));
-    }
-    dispatch(transport, recipient, rendered).await
-}
-
 /// Send a localized "email works" test message to `recipient`. Ungated (the user
 /// explicitly asked to test). Errors if `recipient` is blank.
 pub async fn send_test(
@@ -165,7 +131,6 @@ async fn dispatch(
     rendered: &RenderedEmail,
 ) -> AppResult<()> {
     match transport {
-        Transport::Gmail { config } => send_via_gmail(config, recipient, rendered).await,
         Transport::Smtp {
             host,
             port,
@@ -185,85 +150,6 @@ async fn dispatch(
             .await
         }
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//   Gmail API path (reuses the cloud OAuth refresh machinery)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Send via the Gmail API. Mints a fresh access token from the stored Gmail
-/// refresh token (same flow as the cloud worker), assembles the raw RFC 2822
-/// message via the core, base64url-encodes it, and POSTs it.
-async fn send_via_gmail(
-    config: &GoogleOAuthConfig,
-    recipient: &str,
-    rendered: &RenderedEmail,
-) -> AppResult<()> {
-    let token = gmail_access_token(config).await?;
-    // The Gmail account address would normally come from the stored identity;
-    // `me` is Gmail's documented alias for the authenticated user as sender.
-    let from = "\"SundayRec\" <me>";
-    let seed = now_ms().to_string();
-    let mime = build_mime(
-        from,
-        recipient,
-        &rendered.subject,
-        &rendered.text,
-        &rendered.html,
-        &seed,
-    );
-    let raw = base64url(mime.as_bytes());
-
-    // Bounded client: a hung Gmail endpoint must not block the error-alert path.
-    let client = crate::cloud::http_client();
-    let resp = client
-        .post(GMAIL_SEND_URL)
-        .bearer_auth(&token)
-        .json(&serde_json::json!({ "raw": raw }))
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(format!("gmail send request: {e}")))?;
-    let status = resp.status();
-    if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(AppError::Internal(format!(
-            "gmail send failed: {status} {}",
-            text.chars().take(200).collect::<String>()
-        )));
-    }
-    Ok(())
-}
-
-/// Exchange the stored Gmail refresh token for an access token. Same shape as
-/// `cloud::worker::access_token` (kept local so the email feature is
-/// self-contained and doesn't widen the worker's visibility).
-async fn gmail_access_token(config: &GoogleOAuthConfig) -> AppResult<String> {
-    let refresh = crate::secrets::get(secret_provider_for(CloudService::Gmail))
-        .filter(|r| !r.trim().is_empty())
-        .ok_or_else(|| AppError::Internal("gmail-not-authenticated".into()))?;
-    let body =
-        oauth::build_refresh_body(&config.client_id, config.client_secret.as_deref(), &refresh);
-    let client = crate::cloud::http_client();
-    let resp = client
-        .post(GOOGLE_TOKEN_URL)
-        .header("content-type", "application/x-www-form-urlencoded")
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| AppError::Internal(format!("gmail token request: {e}")))?;
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
-    if !status.is_success() {
-        // Cap what we surface: an error page can be arbitrarily large, and the
-        // raw body has no business in logs beyond a diagnostic snippet.
-        let snippet: String = text.chars().take(300).collect();
-        return Err(AppError::Internal(format!(
-            "gmail token refresh {status}: {snippet}"
-        )));
-    }
-    oauth::parse_token_response(&text, now_ms())
-        .map(|t| t.access_token)
-        .map_err(|e| AppError::Internal(format!("gmail token parse: {e:?}")))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

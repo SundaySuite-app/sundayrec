@@ -78,9 +78,9 @@ const REALISTIC_BLOB = {
   editorHwEncode: true,
   churchName: "Domkirken",
   responsiblePerson: "Kari Nordmann",
-  webhookUrl: "https://hooks.example.no/x",
-  webhookOnWarn: true, // → webhookOnWarning
-  webhookAllowLocal: false,
+  webhookUrl: "https://hooks.example.no/x", // webhook removed — dropped
+  webhookOnWarn: true, // dropped
+  webhookAllowLocal: false, // dropped
   videoEnabled: true,
   videoDeviceName: "FaceTime HD",
   videoDeviceIndex: 0,
@@ -104,7 +104,7 @@ const REALISTIC_BLOB = {
   streamFramerate: 25,
   streamVideoBitrate: 4500,
   streamOverlays: [{ id: "o1", type: "image", source: "/logo.png", position: "br" }],
-  cloudGoogleDrive: { enabled: true, autoUpload: false, folderName: "Opptak" },
+  cloudGoogleDrive: { enabled: true, autoUpload: false, folderName: "Opptak" }, // cloud removed — dropped
   podcast: {
     enabled: true,
     service: "google-drive",
@@ -130,9 +130,7 @@ describe("mapLegacyBlob", () => {
     const out = mapLegacyBlob(JSON.stringify(REALISTIC_BLOB))!;
     expect(out).not.toBeNull();
 
-    // The four renames — the mutation-test surface.
-    expect(out.webhookOnWarning).toBe(true);
-    expect(out).not.toHaveProperty("webhookOnWarn");
+    // The three renames — the mutation-test surface.
     expect(out.outputMode).toBe("separate");
     expect(out).not.toHaveProperty("videoSeparate");
     expect(out.keepSeparateAudio).toBe(false);
@@ -155,7 +153,6 @@ describe("mapLegacyBlob", () => {
     expect(out.preRollSeconds).toBe(30);
     expect(out.deviceChannels).toEqual({ "qu5-usb": { channelL: 16, channelR: 17 } });
     expect(out.slots).toEqual([{ days: [6], start: "10:30", stop: "12:30", max: 150 }]);
-    expect(out.cloudGoogleDrive).toMatchObject({ enabled: true, autoUpload: false });
     expect(out.podcast).toMatchObject({
       enabled: true,
       title: "Domkirken taler",
@@ -186,11 +183,12 @@ describe("mapLegacyBlob", () => {
     }
   });
 
-  // Live streaming was removed in v0.14. Old blobs still carry its fields —
-  // they must be DROPPED tolerantly (imports cleanly without them), never fail
-  // the migration or leak into the unified store where the Rust merge would
+  // Live streaming was removed in v0.14, cloud backup + the chat webhook with
+  // the sharing cluster after it. Old blobs still carry their fields — they
+  // must be DROPPED tolerantly (imports cleanly without them), never fail the
+  // migration or leak into the unified store where the Rust merge would
   // choke on unknown keys' shapes.
-  it("drops the retired stream fields tolerantly — the rest imports cleanly", () => {
+  it("drops the retired stream/cloud/webhook fields tolerantly — the rest imports cleanly", () => {
     const out = mapLegacyBlob(JSON.stringify(REALISTIC_BLOB))!;
     expect(out).not.toBeNull();
     for (const gone of [
@@ -199,6 +197,11 @@ describe("mapLegacyBlob", () => {
       "streamFramerate",
       "streamVideoBitrate",
       "streamOverlays",
+      "cloudGoogleDrive",
+      "webhookUrl",
+      "webhookOnWarn",
+      "webhookOnWarning",
+      "webhookAllowLocal",
     ]) {
       expect(out, `${gone} must not migrate`).not.toHaveProperty(gone);
     }

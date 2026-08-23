@@ -16,7 +16,7 @@
 //!   - [`filename`]     — output-filename construction (sanitise + pattern) (Fase 5)
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
 //!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
-//!   - [`email`]         — error/test alert templates (7-lang) + throttle/dedup gate + RFC 2822/base64url assembly (PU-1)
+//!   - [`email`]         — error/test alert templates (7-lang) + throttle/dedup gate (PU-1)
 //!   - [`feed`]          — podcast RSS 2.0 + iTunes XML builder (PU-3)
 //!   - [`tray`]          — tray menu-model (localized items/actions) + inbound deep-link dispatch sits in [`link`] (PU-2)
 //!   - [`mjpeg`]        — MJPEG stdout reassembly (SOI/EOI frame splitter + JPEG dims)
@@ -38,7 +38,6 @@
 //!   - [`mastering`]    — EBU R128 loudness (integrated/range/true-peak) + normalise-gain decisions (PU-7)
 //!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
-//!   - [`cloud`]        — Google cloud-backup backbone: OAuth/PKCE, retry mat, upload-queue, Drive resumable bits (Fase 6)
 //!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
 //!   - [`integrations`] — Sunday-suite hand-offs: Stage manifest→chapters/setlist + the live cue-bridge consumer (PU-6 + Bridge #2)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
@@ -57,7 +56,6 @@ pub mod audio_analysis;
 pub mod capture;
 pub mod chapters;
 pub mod church_calendar;
-pub mod cloud;
 pub mod companion;
 pub mod detect;
 pub mod device_enum;
@@ -104,5 +102,4 @@ pub mod update;
 pub mod vad;
 pub mod wake;
 pub mod wav;
-pub mod webhook;
 pub mod whisper;

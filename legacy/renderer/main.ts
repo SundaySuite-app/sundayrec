@@ -22,7 +22,6 @@ import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
-import { setupPublishPage, applyPublishSettingsToUI } from './pages/publish-page'
 import { setupIntegrationsPage } from './pages/integrations-page'
 import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
@@ -113,7 +112,6 @@ declare global {
       probeDeviceChannels: (deviceName: string) => Promise<number>
       scanDeviceChannels:  (deviceName: string, secs: number) => Promise<{ channel: number; peakDb: number }[]>
       runPreflight:        () => Promise<{ findings: { severity: 'warn' | 'error'; category: string; message: string }[] }>
-      testWebhook:         (url: string) => Promise<{ ok: boolean; error?: string }>
       pickFolder:          () => Promise<string | null>
       openFolder:          (p: string) => Promise<void>
       revealFile:          (p: string) => Promise<void>
@@ -124,11 +122,10 @@ declare global {
       emailSetSmtpPassword: (password?: string) => Promise<boolean>
       /** Whether an SMTP password is stored. The secret never crosses back. */
       emailHasSmtpPassword: () => Promise<boolean>
-      /** Whether this build can send e-mail at all, and whether Gmail is
-       *  connected — read BEFORE offering a «Send test» (see feature-gate). */
+      /** Whether this build can send e-mail at all — read BEFORE offering a
+       *  «Send test» (see feature-gate). */
       emailStatus:         () => Promise<import('../bindings/EmailStatus').EmailStatus>
       testEmail:           (params: {
-        transport: 'gmail' | 'smtp'
         recipient: string
         language?: string
         host?: string
@@ -244,18 +241,6 @@ declare global {
       startVu:                (deviceName: string | null) => Promise<number>
       stopVu:                 ()                 => Promise<void>
       listInputDevices:       ()                 => Promise<import('../bindings/AudioDeviceList').AudioDeviceList>
-      cloudConnect:        (service: string) => Promise<{ ok: boolean; accountName?: string; error?: string }>
-      cloudCancelConnect:  (service: string) => Promise<boolean>
-      cloudDisconnect:     (service: string) => Promise<void>
-      cloudStatus:         ()                => Promise<Record<string, unknown>>
-      cloudIsConfigured:   (service: string) => Promise<boolean>
-      cloudUploadFile:     (service: string, filePath: string, metadata?: unknown) => Promise<{ ok: boolean; error?: string }>
-      cloudListFolders:    (service: string, parentId?: string) => Promise<{ id: string; name: string; path?: string }[]>
-      cloudSetFolder:      (service: string, folderId: string, folderName: string, folderPath?: string) => Promise<void>
-      cloudQueueStatus:    () => Promise<{ entries: { id: string; service: string; filename: string; status: string; attempts: number; nextAttempt: number; lastError?: string }[] }>
-      cloudQueueRetry:     (id: string) => Promise<boolean>
-      cloudQueueRemove:    (id: string) => Promise<boolean>
-      cloudQueueFlush:     () => Promise<boolean>
       podcastRegenerate:   (service: string) => Promise<{ ok: boolean; feedUrl?: string; episodeCount: number; error?: string }>
       /** Whether this build can write/upload the RSS feed (the `publish` cargo
        *  feature) — the Filer-page gate's truth source. `null` = could not ask. */
@@ -410,7 +395,6 @@ async function applyAllSettingsToUI(s: Settings): Promise<void> {
   applyFilesSettingsToUI()
   applyGeneralSettingsToUI()
   applyVideoSettingsToUI()
-  applyPublishSettingsToUI()
   loadVideoInfoStrip()
   renderSlotsList()
   renderPlannedList()
@@ -570,7 +554,6 @@ async function init(): Promise<void> {
   setupVideoPage()
   setupRecording()
   setupEditorPage()
-  setupPublishPage()
   void setupIntegrationsPage()
   setupSearchPage()
   setupClipReset()

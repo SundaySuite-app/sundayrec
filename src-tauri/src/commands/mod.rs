@@ -9,7 +9,6 @@ pub mod app;
 pub mod audio;
 pub mod bridge;
 pub mod calendar;
-pub mod cloud;
 pub mod companion;
 pub mod db;
 pub mod deeplink;

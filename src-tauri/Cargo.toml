@@ -31,9 +31,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # (v0.14: the `streaming`, `ndi` and `bridge` features were REMOVED together
 # with the Direkte page and its seams — SundayRec is a recording app.)
 default = ["editor", "whisper", "tray", "updater", "email"]
-# PU-1: SMTP/Gmail error+test alerts. Pulls `lettre` for the SMTP transport (the
-# Gmail-API path reuses the already-present `reqwest`) — ~6 small pure-Rust
-# crates, no native dep. NOW IN `default` AND in both release feature lists
+# PU-1: SMTP error+test alerts. Pulls `lettre` for the SMTP transport — ~6
+# small pure-Rust crates, no native dep. NOW IN `default` AND in both release feature lists
 # (.github/workflows/release.yml): an unattended volunteer operator finding out
 # by email that Sunday's recording died is the single highest-value alert the
 # app has, and it shipped in no release while this stayed default-off.
@@ -215,10 +214,10 @@ fs4 = "1.1"
 # own `.sundayrec-trash` is manifest/file-shaped and cannot purge a directory.
 trash = "5"
 
-# HTTP client for the cloud upload worker + OAuth token exchange/refresh (Fase
-# 6). rustls (no system OpenSSL). The pure decisions (chunk math, retry
-# classification, token-body shaping) live in `sundayrec-core::cloud`; reqwest is
-# just the wire.
+# HTTP client for the telemetry sender, the Sunday Account (SSO) token
+# exchange, the whisper model download and the optional companion summary.
+# rustls (no system OpenSSL). The pure decisions live in `sundayrec-core`;
+# reqwest is just the wire.
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "charset",
@@ -228,9 +227,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 
 # ── Optional Electron-parity seam deps (feature-gated, see [features]; some ──
 # ── are pulled in by `default` via whisper/tray/updater) ─────────────────────
-# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; the Gmail-API
-# path needs none of this (it reuses `reqwest`), so lettre is pulled only when
-# the `email` feature is on. `optional = true` keeps it out of the default build.
+# PU-1 SMTP transport. rustls (no system OpenSSL), tokio runtime; pulled only
+# when the `email` feature is on (`optional = true`).
 lettre = { version = "0.11", default-features = false, features = [
     "tokio1-rustls-tls",
     "smtp-transport",

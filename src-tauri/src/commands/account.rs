@@ -77,7 +77,7 @@ pub async fn sunday_whoami_song(church_id: String) -> AppResult<String> {
         crate::util::url_encode(&church_id)
     );
 
-    let client = crate::cloud::http_client();
+    let client = crate::util::http_client();
     let resp = client
         .get(&url)
         .header("authorization", format!("Bearer {token}"))
