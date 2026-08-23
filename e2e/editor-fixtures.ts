@@ -1,5 +1,5 @@
-import { BOOT_FIXTURES, fn, VOID, type Fixtures } from "../harness";
-import type { EditorSegment } from "../../legacy/bindings/EditorSegment";
+import { BOOT_FIXTURES, fn, VOID, type Fixtures } from "./harness";
+import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 
 // The editor's fixtured recording — ONE recipe, read by both shells.
 //

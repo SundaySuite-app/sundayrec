@@ -7,7 +7,7 @@ import {
   recordingRow,
   SETTLED_SETTINGS,
   type Fixtures,
-} from "../harness";
+} from "./harness";
 
 // BIBLIOTEK — jobb nr. 2, sett utenfra. Nytt i P3, uten en legacy-motpart.
 //

@@ -16,7 +16,8 @@ legacy
 src/lib/bindings
 
 # The atlas (Fase A, «Frivilligen først»): PNGs plus two markdown reports that
-# `npm run atlas` REGENERATES on every run (e2e/atlas/report.ts). Format-gating
-# generated output would mean every photo session leaves the tree dirty.
-# docs/design/ATLAS.md is hand-written and stays covered.
+# `npm run atlas` wrote. The photographer itself was deleted in fase B with the
+# shell it photographed; these files stay as the historical record and are
+# generated output, so they are not format-gated. docs/design/ATLAS.md is
+# hand-written and stays covered.
 docs/design/atlas

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { boot, BOOT_FIXTURES, fn, SETTLED_SETTINGS } from "../harness";
+import { boot, BOOT_FIXTURES, fn, SETTLED_SETTINGS } from "./harness";
 
 // The S0 spike's standing proof: the new Preact shell BOOTS, under the same
 // Content-Security-Policy the shipped WKWebView enforces.

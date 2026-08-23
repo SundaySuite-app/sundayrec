@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { boot, BOOT_FIXTURES, storedSettings } from "../harness";
+import { boot, BOOT_FIXTURES, storedSettings } from "./harness";
 
 // Første gang — the sequence, the gate, and the checklist that is allowed to be
 // yellow.

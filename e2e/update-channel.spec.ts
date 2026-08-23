@@ -7,18 +7,19 @@ import {
   storedSettings,
 } from "./harness";
 
-// «Oppdateringskanal» — the beta opt-in must reach the STORE, because the
-// backend is the only reader that matters: `update/mod.rs::current_channel`
-// reads `settings.update_channel` from sqlite, never from renderer memory.
+// `e2e/update-channel.spec.ts`, re-pointed at the new shell.
 //
-// History: this spec was born pinning #113 (rig-observed on v0.11.1-beta.2) —
-// the curated `settings_save` bridge did not include `updateChannel`, so
-// picking Beta wrote localStorage, the chip said «Lagret ✓», and sqlite kept
-// stable forever. R4 removed the bridge outright: the renderer saves the FULL
-// object through `settings_save`, so there is no curated subset left to drop a
-// key from. What this spec still owes the owner is the journey end-to-end:
-// pick Beta → answer the guard → the save's payload carries the channel → the
-// STORE (the thing the updater reads) now says beta.
+// Every test TITLE is byte-identical to the legacy file's, because
+// `docs/SMOKE-TEST.md` points at them by `path::title`: the day legacy is
+// deleted the pointer moves by changing the path and nothing else. The legacy
+// file stays where it is and stays green.
+//
+// What changed is the DOM only — `#opt-update-channel` is
+// `adv-update-channel-control-input` in `app/pages/setup/advanced/UpdateRow.tsx`,
+// and the dialog is the shared `DialogHost`. The assertion that matters is
+// unchanged: the beta opt-in must reach the STORE, because the backend is the
+// only reader that counts (`update/mod.rs::current_channel` reads
+// `settings.update_channel` from sqlite, never from renderer memory).
 
 test.describe("update channel", () => {
   test("switching to beta reaches the store, not just the select", async ({
@@ -31,12 +32,12 @@ test.describe("update channel", () => {
     });
 
     // The owner's exact journey: pick Beta …
-    await page.selectOption("#opt-update-channel", "beta");
+    await page
+      .getByTestId("adv-update-channel-control-input")
+      .selectOption("beta");
 
     // … answer the guard's «Ja, bruk beta» …
-    const confirmBtn = page.locator(
-      '.ui-dialog button[data-dialog-button="ok"]',
-    );
+    const confirmBtn = page.getByTestId("dialog-ok");
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toHaveText("Ja, bruk beta");
     await confirmBtn.click();
@@ -63,12 +64,13 @@ test.describe("update channel", () => {
       settings: { ...SETTLED_SETTINGS, updateChannel: "beta" },
       goto: "settings:general",
     });
-    await expect(page.locator("#opt-update-channel")).toHaveValue("beta");
+    const select = page.getByTestId("adv-update-channel-control-input");
+    await expect(select).toHaveValue("beta");
 
-    await page.selectOption("#opt-update-channel", "stable");
+    await select.selectOption("stable");
 
-    // Moving back to the safe channel is guard-free by design (general-page.ts).
-    await expect(page.locator(".ui-dialog")).toHaveCount(0);
+    // Moving back to the safe channel is guard-free by design.
+    await expect(page.getByTestId("dialog")).toHaveCount(0);
 
     await expect
       .poll(async () => (await storedSettings(page)).updateChannel)

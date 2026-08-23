@@ -17,12 +17,6 @@
       "@lib/*": ["./legacy/renderer/*"]
     }
   },
-  "include": [
-    "legacy",
-    "app",
-    "e2e",
-    "playwright.config.ts",
-    "playwright.atlas.config.ts"
-  ],
+  "include": ["legacy", "app", "e2e", "playwright.config.ts"],
   "exclude": ["node_modules", "dist", "src-tauri"]
 }

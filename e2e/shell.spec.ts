@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "../harness";
+import { boot, BOOT_FIXTURES, SETTLED_SETTINGS } from "./harness";
 
 // Skinnen, sett fra utsiden.
 //

@@ -6,7 +6,7 @@ import {
   fn,
   SETTLED_SETTINGS,
   storedSettings,
-} from "../harness";
+} from "./harness";
 
 // OPPSETT, drevet gjennom den ekte kjeden.
 //

@@ -32,12 +32,18 @@ export interface BootOptions {
   /** Seeded settings, merged over the shim's defaults by `loadSettings`. */
   settings?: Record<string, unknown>;
   /**
-   * `?goto=<page>[:<tab>]`. Pages: `home`, `schedule`, `settings`,
-   * `search` (that is Historikk — there is no `history` page), `editor`.
+   * `?goto=<page>[:<tab>]`, in the OLD shell's vocabulary — `home`, `schedule`,
+   * `settings`, `search` (that is the library; there never was a `history`
+   * page), `editor`, and the `settings:<tab>` forms. Those ids are still the
+   * ones written here because they are still the ones out in the world (the
+   * tray, deep links, this suite); `PAGE_ALIASES` / `TAB_ALIASES` in
+   * `app/router/router.ts` translate every one of them to a destination in the
+   * new three-place navigation, and `app/router/router.test.ts` has a row per
+   * form that appears in this repo.
    *
-   * ⚠️ `?goto=` also forces `onboardingDone` true so screenshots
-   * skip first-run. Any spec that wants the onboarding wizard must boot WITHOUT
-   * it (see onboarding.spec.ts).
+   * ⚠️ `?goto=` also forces `onboardingDone` true so a deep-linked boot skips
+   * first-run. Any spec that wants the first-run sequence must boot WITHOUT it
+   * (see onboarding.spec.ts, first-run.spec.ts).
    */
   goto?: string;
 }
@@ -239,10 +245,9 @@ export async function boot(page: Page, opts: BootOptions = {}): Promise<void> {
 /**
  * A settings object that suppresses first-run.
  *
- * `checkAndShowOnboarding` gates on `onboardingDone` alone, so this is what
- * every spec except the onboarding one wants. (`?goto=` sets it too, but being
- * explicit means a spec that later drops `?goto=` does not silently gain a
- * wizard.)
+ * The first-run gate reads `onboardingDone` alone, so this is what every spec
+ * except the first-run ones wants. (`?goto=` sets it too, but being explicit
+ * means a spec that later drops `?goto=` does not silently gain a wizard.)
  */
 export const SETTLED_SETTINGS = { onboardingDone: true };
 
@@ -327,21 +332,6 @@ export async function settingsImportPayloads(page: Page): Promise<string[]> {
       (window as unknown as { __settingsImports?: string[] })
         .__settingsImports ?? [],
   );
-}
-
-/**
- * Flip a settings toggle the way a person does.
- *
- * The `<input type="checkbox">` itself is `opacity: 0; width: 0; height: 0` (see
- * `.toggle input` in styles.css) — the visible control is the `.toggle-track`
- * sibling. So `input.check()` fails on visibility, and `{ force: true }` would
- * pass while testing something no user can do. Click the track.
- *
- * Assertions still target the input: `toBeChecked()` does not require visibility
- * and the input is the actual state.
- */
-export async function flipToggle(page: Page, id: string): Promise<void> {
-  await page.locator(`label.toggle:has(#${id}) .toggle-track`).click();
 }
 
 /** One `recordings_list` row. NOTE: this command answers in snake_case. */

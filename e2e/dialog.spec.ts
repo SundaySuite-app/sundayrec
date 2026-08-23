@@ -6,7 +6,7 @@ import {
   fn,
   SETTLED_SETTINGS,
   storedSettings,
-} from "../harness";
+} from "./harness";
 
 // Dialogen og toasten, drevet gjennom den EKTE kjeden.
 //

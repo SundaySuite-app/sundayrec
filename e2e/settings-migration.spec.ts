@@ -6,15 +6,21 @@ import {
   storedSettings,
 } from "./harness";
 
-// The one-shot localStorage → sqlite migration, driven end-to-end through the
-// real boot path: api-shim's module-load `migrateLegacySettingsOnce` reads the
-// legacy blob, maps it (migrate-legacy-settings-core, unit-tested field by
-// field), pushes it through `settings_import` (the harness store emulates the
-// backend's merge-over-defaults), removes the key, sets the flag — and the UI
-// that then renders is reading the MIGRATED values via `settings_get`.
+// `e2e/settings-migration.spec.ts`, re-pekt på det nye skallet.
 //
-// The fresh-profile smoke lives here too: no blob, empty store → the app boots
-// to defaults with no migration traffic and no banner.
+// Selve migreringen er api-shimmens (`migrateLegacySettingsOnce` på modullast),
+// altså delt av begge skall — men den halvdelen spec-et faktisk måler er at
+// UI-ET SOM RENDRES leser de MIGRERTE verdiene. Den halvdelen er per skall, og
+// den er verdt å ha begge steder: en migrering som lander i sqlite og et skall
+// som viser noe annet er nøyaktig skjøtefeilen ingen dekning fanger.
+//
+// ## Hva som er byttet
+//
+// Bare DOM-en. Legacy leser `#church-name`s verdi og `#opt-update-channel`s
+// valgte alternativ. Her leses kirkenavnet av kortet som SVARER på spørsmål 4
+// — som er en sterkere påstand: verdien er ikke bare i et felt, den er det
+// skjermen sier. `updateChannel` har ingen flate i P1a (den er Avansert, altså
+// P1b), så den sjekkes på lagringslaget i stedet for å bli droppet.
 
 const LEGACY_KEY = "sundayrec.settings";
 const FLAG_KEY = "sundayrec.settings.migratedToSqlite.v1";
@@ -65,7 +71,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
       updateChannel: "beta",
       reminderMinutes: 15.4, // float — must arrive integer-coerced
     });
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     // Exactly one import, in the UNIFIED vocabulary.
     await expect
@@ -92,8 +98,10 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     const stored = await storedSettings(page);
     expect(stored.churchName).toBe("Domkirken");
     expect(stored.autoDeleteDays).toBe(90);
-    await expect(page.locator("#church-name")).toHaveValue("Domkirken");
-    await expect(page.locator("#opt-update-channel")).toHaveValue("beta");
+    expect(stored.updateChannel).toBe("beta");
+    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+      "Domkirken",
+    );
 
     // A reload migrates NOTHING further — one shot means one shot.
     await page.reload();
@@ -104,7 +112,9 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     );
     expect(await settingsImportPayloads(page)).toHaveLength(0); // fresh page = fresh spy
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
-    await expect(page.locator("#church-name")).toHaveValue("Domkirken");
+    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+      "Domkirken",
+    );
   });
 
   test("a corrupt blob yields defaults without crashing, and is not retried", async ({
@@ -123,26 +133,29 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
         sentinel: `__mig_corrupt_${Date.now()}`,
       },
     );
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     // Nothing imported; the unreadable blob is removed rather than retried
     // forever; the app is on defaults and fully alive.
     expect(await settingsImportPayloads(page)).toHaveLength(0);
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
-    await expect(page.locator("#page-settings")).toBeVisible();
-    await expect(page.locator("#opt-update-channel")).toHaveValue("stable");
+    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    expect((await storedSettings(page)).updateChannel).toBe("stable");
   });
 
   test("fresh profile: no blob, empty store → defaults, no migration traffic", async ({
     page,
   }) => {
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
     expect(await settingsImportPayloads(page)).toHaveLength(0);
     expect((await legacyState(page)).blob).toBeNull();
     // Defaults on screen: stable channel, auto-update on, no church name.
-    await expect(page.locator("#opt-update-channel")).toHaveValue("stable");
-    await expect(page.locator("#opt-auto-update")).toBeChecked();
-    await expect(page.locator("#church-name")).toHaveValue("");
+    const stored = await storedSettings(page);
+    expect(stored.updateChannel).toBe("stable");
+    expect(stored.autoUpdate).toBe(true);
+    await expect(page.getByTestId("setup-row-church-answer")).toHaveText(
+      "Ikke satt opp",
+    );
   });
 
   test("a partial blob migrates what it has — the rest is defaults", async ({
@@ -152,7 +165,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
       onboardingDone: true,
       reminderMinutes: 15,
     });
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     await expect
       .poll(() => settingsImportPayloads(page).then((p) => p.length))

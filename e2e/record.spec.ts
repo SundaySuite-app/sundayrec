@@ -8,7 +8,7 @@ import {
   SETTLED_SETTINGS,
   storedSettings,
   type Fixtures,
-} from "../harness";
+} from "./harness";
 import { emit, emitEvent, spyEvents } from "./events";
 
 // OPPTAK — jobb nr. 1, sett utenfra.

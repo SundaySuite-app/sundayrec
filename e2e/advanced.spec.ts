@@ -7,7 +7,7 @@ import {
   SETTLED_SETTINGS,
   settingsSavePayloads,
   storedSettings,
-} from "../harness";
+} from "./harness";
 
 // Avansert — the rows P1b added, and the two seams they close.
 //

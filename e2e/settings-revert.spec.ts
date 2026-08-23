@@ -7,7 +7,7 @@ import {
   SETTLED_SETTINGS,
   settingsSavePayloads,
   storedSettings,
-} from "../harness";
+} from "./harness";
 
 // The one thing `app/` does that the shipped shell does not: a settings change
 // that FAILS TO SAVE is rolled back.
