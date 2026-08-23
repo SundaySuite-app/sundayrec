@@ -35,11 +35,17 @@ describe("Shell", () => {
   });
 
   it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {
+    // P1a: kameraet er et TILLEGG på nivå 1, ikke en egen fane. Lenken bærer
+    // derfor bare ankeret — og ankeret er kortet den skal lande på.
     navigate("settings", { tab: "settings-video" });
     const html = render(<Shell />);
-    expect(html).toContain('data-tab="addons"');
     expect(html).toContain('data-anchor="camera"');
+    expect(html).not.toContain("data-tab=");
     expect(route.value.page).toBe("setup");
+
+    // En fane som FINNES bærer den som et attributt og ingenting annet.
+    navigate("settings", { tab: "settings-audio" });
+    expect(render(<Shell />)).toContain('data-tab="sound"');
   });
 
   it("OPPTAK sier fra når ingen lydkilde er valgt — og peker på OPPSETT", () => {
@@ -84,6 +90,7 @@ describe("Shell", () => {
   it("OPPSETT viser de fem spørsmålene, med svaret som gjelder nå", () => {
     navigate("setup");
     patchSettings({
+      deviceId: "x32",
       deviceName: "Behringer X32",
       saveFolder: "/Users/x/SundayRec",
       format: "mp3",
@@ -92,17 +99,33 @@ describe("Shell", () => {
       emailAddress: "",
     });
     const html = render(<Shell />);
-    for (const id of ["sound", "folder", "quality", "church", "alerts"]) {
+    for (const id of ["sound", "folder", "quality", "church", "notify"]) {
       expect(html).toContain(`data-testid="setup-row-${id}"`);
     }
+    // Enhetslisten er ikke lest i en node-render, så spørsmål 1 påstår
+    // INGENTING — verken at enheten finnes eller at den er borte. Det er hele
+    // poenget med den tredje tilstanden.
+    expect(html).toMatch(
+      /data-testid="setup-row-sound"[^>]*data-status="unknown"/,
+    );
     // Besvart ⇒ nøytral; ubesvart ⇒ gul. Den gule raden er hele grunnen til at
     // noen oppdager den tomme innstillingen før en søndag.
-    expect(html).toMatch(
-      /data-tone="neutral"[^>]*data-testid="setup-row-sound"/,
-    );
-    expect(html).toMatch(/data-tone="warn"[^>]*data-testid="setup-row-church"/);
+    expect(html).toMatch(/data-testid="setup-row-church"[^>]*data-tone="warn"/);
     expect(html).toContain("Ingen ennå");
-    patchSettings({ deviceName: null, saveFolder: null });
+    // Og de to tilleggene, som utvider seg når de slås på.
+    expect(html).toContain('data-testid="setup-camera"');
+    expect(html).toContain('data-testid="setup-auto"');
+    patchSettings({ deviceId: null, deviceName: null, saveFolder: null });
+  });
+
+  it("OPPSETT/lyd er en EGEN skjerm, med spørsmålet som overskrift", () => {
+    // Skinnen står fortsatt på OPPSETT, men `<h1>` er spørsmålet: siden
+    // handler om «Hvilken lyd?», og fokus flyttes hit ved hvert rutebytte.
+    navigate("settings", { tab: "settings-audio" });
+    const html = render(<Shell />);
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Hvilken lyd\?</);
+    expect(html).toContain('data-testid="setup-back"');
+    navigate("setup");
   });
 
   it("sier fra når innstillingene ikke kunne leses", () => {

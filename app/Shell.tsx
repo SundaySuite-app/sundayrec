@@ -20,9 +20,9 @@
  *   BIBLIOTEK antall opptak telles på ekte (`recordings_list`). Null →
  *             tomtilstanden. Flere → hvor de ligger. Aldri «ingen opptak» på
  *             en maskin som har tolv.
- *   OPPSETT   de fem spørsmålene med SVARET som står nå. «Ikke satt opp» der
- *             det ikke er svart. Ingen «Endre»-knapp, fordi skjermene den
- *             skulle åpne ikke finnes ennå.
+ *   OPPSETT   ER bygget (P1a): de fem spørsmålene med svaret som står nå, de
+ *             fem skjermene «Endre» åpner, og de to tilleggene. Se
+ *             `app/pages/setup/`.
  *
  * ## Overlays er søsken av `#app`
  *
@@ -32,6 +32,7 @@
  */
 
 import { t, tDyn } from "./i18n";
+import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
 import { navigate, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { recordingCount } from "./state/recordings";
@@ -56,7 +57,7 @@ export function Shell({ probe }: ShellProps) {
   const failed = hydrateError.value;
 
   return (
-    <PageShell>
+    <PageShell heading={setupHeading(current.tab)}>
       {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
@@ -77,7 +78,7 @@ export function Shell({ probe }: ShellProps) {
       ) : current.page === "library" ? (
         <LibraryPlaceholder />
       ) : (
-        <SetupPlaceholder />
+        <SetupPage />
       )}
     </PageShell>
   );
@@ -162,64 +163,5 @@ function LibraryPlaceholder() {
       description={settings.value.saveFolder ?? undefined}
       actions={<Chip tone="neutral">{count}</Chip>}
     />
-  );
-}
-
-// ── OPPSETT ─────────────────────────────────────────────────────────────────
-
-/**
- * De fem spørsmålene, med svaret som gjelder nå.
- *
- * `null` som svar betyr «ikke satt opp», og raden blir gul. Det er ikke pynt:
- * spørsmål 5 (hvem får beskjed) er den vanligste tomme innstillingen i
- * eierens egen profil, og en gul rad er hele grunnen til at man oppdager det
- * før en søndag i stedet for etterpå.
- */
-function SetupPlaceholder() {
-  const s = settings.value;
-  const format = (s.format ?? "mp3").toLowerCase();
-  const quality =
-    format === "flac" || format === "wav" || format === "mp3" ? format : null;
-
-  const rows: Array<{ id: string; question: string; answer: string | null }> = [
-    {
-      id: "sound",
-      question: t("app.setup.q1"),
-      answer: s.deviceName ?? s.deviceId,
-    },
-    { id: "folder", question: t("app.setup.q2"), answer: s.saveFolder },
-    {
-      id: "quality",
-      question: t("app.setup.q3"),
-      answer: quality ? tDyn("app.setup.quality", quality) : null,
-    },
-    { id: "church", question: t("app.setup.q4"), answer: s.churchName || null },
-    {
-      id: "alerts",
-      question: t("app.setup.q5"),
-      // Adressen teller bare når varslingen faktisk er PÅ. En lagret adresse
-      // med bryteren av betyr at ingen får beskjed.
-      answer: s.emailOnError && s.emailAddress ? s.emailAddress : null,
-    },
-  ];
-
-  return (
-    <>
-      <p data-testid="setup-lede">{t("app.setup.lede")}</p>
-      {rows.map((row) => (
-        <Card
-          key={row.id}
-          testId={`setup-row-${row.id}`}
-          tone={row.answer ? "neutral" : "warn"}
-          title={row.question}
-          description={
-            row.answer ??
-            (row.id === "alerts"
-              ? t("app.setup.nobodyYet")
-              : t("app.setup.notSetUp"))
-          }
-        />
-      ))}
-    </>
   );
 }
