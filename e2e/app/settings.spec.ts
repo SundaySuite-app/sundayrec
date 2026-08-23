@@ -78,13 +78,13 @@ test.describe("settings", () => {
     // gjennom den samme etterslepende lagringen som alt annet og komme tilbake
     // etter en full nedrivning, ikke bare bli stående i feltet.
     //
-    // `?goto=settings:general` er den gamle System-fanen. Den lander på nivå 1
-    // nå (Avansert er P1b), så reisen går gjennom kortets egen «Sett opp» —
-    // som er akkurat den veien en frivillig faktisk tar.
+    // Reisen går gjennom kirkekortets egen «Sett opp» på nivå 1 — akkurat den
+    // veien en frivillig faktisk tar. (`?goto=settings:general` lander på
+    // Avansert siden P1b, så den kan ikke lenger brukes som inngang hit.)
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
-      goto: "settings:general",
+      goto: "settings",
     });
 
     await page.getByTestId("setup-row-church-action").click();
@@ -165,16 +165,14 @@ test.describe("settings", () => {
       await expect(page.getByTestId(testId)).toBeVisible();
     }
 
-    // ⚠️ `settings:general` peker på `advanced`, som P1b bygger. Fram til da
-    // lander den på nivå 1 — siden Avansert nås FRA — og `data-tab` står
-    // likevel på <main>, så lenken ikke er tapt. Det er dokumentert oppførsel,
-    // ikke en tilfeldighet, så den er en rad her.
+    // `settings:general` er den gamle System-fanen, og den peker på Avansert —
+    // som P1b bygget. Den siste raden i tabellen, nå med en ekte skjerm bak seg.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: SETTLED_SETTINGS,
       goto: "settings:general",
     });
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    await expect(page.getByTestId("setup-advanced")).toBeVisible();
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-tab",
       "advanced",

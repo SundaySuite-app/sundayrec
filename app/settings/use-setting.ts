@@ -42,6 +42,7 @@ import {
 import { confirmDialog } from "../ui/dialog";
 import { toast as showToast } from "../ui/toast";
 import {
+  narrowToStored,
   runCommit,
   type GuardDescriptor,
   type Receipt,
@@ -172,7 +173,11 @@ export function useSetting<K extends ScalarSettingKey>(
       await runCommit<Settings[K]>({
         previous,
         next: draftRef.current,
-        coerce: o.coerce ?? ((raw) => raw as Settings[K]),
+        // Standarden smalner mot den LAGREDE typen — se `narrowToStored`. Et
+        // `<select>` leverer alltid en streng, og «30» der Rust venter `i32`
+        // avviser hele lagringen.
+        coerce:
+          o.coerce ?? ((raw) => narrowToStored(previous, raw) as Settings[K]),
         validate: o.validate,
         confirmIf: o.confirmIf,
         confirm:

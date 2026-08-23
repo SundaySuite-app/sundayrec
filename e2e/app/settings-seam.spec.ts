@@ -31,7 +31,9 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
       goto: "settings:general",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    // (`settings:general` lands on Avansert since P1b; before that it fell
+    // through to level 1 and this waited on `setup-lede`.)
+    await expect(page.getByTestId("setup-advanced")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 
@@ -59,6 +61,11 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
         updateChannel: "beta",
         reminderMinutes: 15,
         churchName: "Domkirken",
+        // P1b's new key. Legacy has NO control for it, which is exactly why it
+        // belongs here: the shell saves the whole stored object, so a field it
+        // never renders must still survive the round trip. A key that only the
+        // OTHER shell writes is the easiest kind to lose.
+        autoRecordEnabled: false,
         deviceChannels: { "qu5-usb": { channelL: 16, channelR: 17 } },
       },
       goto: "settings",
@@ -89,6 +96,7 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     expect(payload.updateChannel).toBe("beta");
     expect(payload.reminderMinutes).toBe(15);
     expect(payload.churchName).toBe("Domkirken");
+    expect(payload.autoRecordEnabled).toBe(false);
     expect(payload.deviceChannels).toEqual({
       "qu5-usb": { channelL: 16, channelR: 17 },
     });
@@ -99,5 +107,6 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     expect(stored.askOpenEditor).toBe(false);
     expect(stored.autoDeleteDays).toBe(90);
     expect(stored.updateChannel).toBe("beta");
+    expect(stored.autoRecordEnabled).toBe(false);
   });
 });

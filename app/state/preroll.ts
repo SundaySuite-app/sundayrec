@@ -42,13 +42,31 @@ export const prerollSeconds = computed(
   () => settings.value.preRollSeconds ?? 0,
 );
 
-/** Betingelsene, lest ut av signalene. Eksportert fordi den er hele inngangen
- *  til `decidePreroll` og derfor det man vil se på når noe er rart. */
+/**
+ * Betingelsene, lest ut av signalene. Eksportert fordi den er hele inngangen
+ * til `decidePreroll` og derfor det man vil se på når noe er rart.
+ *
+ * ## ⚠️ `enabled` kommer fra SEKUNDENE, ikke fra `prerollEnabled`
+ *
+ * Dette er den ene forskjellen fra legacy her, og den lukker en skjøt atlaset
+ * navnga (§2.6, funn 3). Legacy har TO brytere for én ting: `prerollEnabled`
+ * (som ingenting i Rust leser) og `preRollSeconds` (som bakenden porter
+ * bufferen på, og som telemetrien UTLEDER `preroll_enabled` fra). Tre steder,
+ * to sannheter — en profil med «30 sekunder» og bryteren av rapporterte
+ * «pre-roll på» og bufret ingenting.
+ *
+ * Avansert viser ÉN kontroll, sekundene, der 0 betyr av. Da må sekundene også
+ * være det som avgjør, ellers står det «15 sekunder» på en skjerm der
+ * ingenting blir bufret — nøyaktig den formen for løgn denne omskrivingen
+ * finnes for. `prerollEnabled` er urørt i basen og fortsatt legacy-skallets
+ * bryter; ingen av skallene kjører samtidig.
+ */
 export function currentConditions(): PrerollConditions {
   const s = settings.value;
+  const seconds = s.preRollSeconds ?? 0;
   return {
-    enabled: s.prerollEnabled === true,
-    seconds: s.preRollSeconds ?? 0,
+    enabled: seconds > 0,
+    seconds,
     deviceKnown: !!(s.deviceName ?? s.deviceId),
     isRecording: isRecording.value,
   };

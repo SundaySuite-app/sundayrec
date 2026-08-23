@@ -160,7 +160,17 @@ splitMinutes: number,
  */
 manualMaxMinutes: number, 
 /**
- * Pre-roll buffer in seconds. Valid 0..=60, 0 = off.
+ * Pre-roll buffer in seconds. Valid 0..=60, 0 = off. Default **15** (P1b).
+ *
+ * This is the ONE control the redesigned Advanced screen shows for
+ * pre-roll, and 0 on it means off. It defaults to 15 because the owner's
+ * choice for «Frivilligen først» is «pre-roll on and invisible»: the
+ * twelve seconds between «the service started» and «somebody pressed
+ * Start» are the ones nobody can record twice.
+ *
+ * A profile written before this change carries its own value (usually 0)
+ * and keeps it — only a profile with no key at all, i.e. a fresh install,
+ * gets 15.
  */
 preRollSeconds: number, 
 /**
@@ -191,9 +201,32 @@ wakeFromSleep: boolean,
  */
 protectRecording: boolean, 
 /**
+ * Is the weekly plan ARMED? Default `true`.
+ *
+ * P1b. Before this field an empty `slots` list was the only spelling of
+ * "automatic recording is off", so the UI's off-switch had to DELETE the
+ * time — a switch that throws away data it does not show. The flag
+ * separates "armed" from "configured": turning it off keeps the times and
+ * stops the planning.
+ *
+ * `default = true` and not `false` is the half that matters for existing
+ * installs: a profile written before this field has no key for serde to
+ * read, and `false` would silently disarm every church that already had a
+ * Sunday slot — the exact failure this app exists to prevent. A fresh
+ * profile has no slots anyway, so `true` there arms nothing.
+ *
+ * Only WEEKLY slots are gated. `special_recordings` are dated one-offs
+ * somebody entered by hand for a specific concert; the level-1 switch is
+ * about the recurring plan and never silently cancels those.
+ */
+autoRecordEnabled: boolean, 
+/**
  * Weekly recurring recording windows. Empty by default. The scheduler
  * engine turns these into start/stop/reminder/preflight timers; see
  * [`crate::schedule`] for the decision logic.
+ *
+ * ⚠️ Read them through [`Settings::active_slots`], never directly: that is
+ * the one place `auto_record_enabled` is honoured.
  */
 slots: Array<ScheduleSlot>, 
 /**

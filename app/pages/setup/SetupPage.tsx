@@ -34,6 +34,7 @@ import { route } from "../../router/router";
 import { loadAudioDevices } from "../../state/devices";
 import { refreshDiskSpace } from "../../state/disk";
 import { refreshEmailFacts } from "../../state/email";
+import { AdvancedPage } from "./AdvancedPage";
 import { ChurchPage } from "./ChurchPage";
 import { FolderPage } from "./FolderPage";
 import { Level1 } from "./Level1";
@@ -43,6 +44,9 @@ import { SoundPage } from "./SoundPage";
 
 /** De fem undersidene. Navnene er `route.tab`-verdier. */
 export type SetupTab = "sound" | "folder" | "quality" | "church" | "notify";
+
+/** Den sjette skjermen — ikke et spørsmål, og derfor ikke en `SetupTab`. */
+export const ADVANCED_TAB = "advanced";
 
 export function isSetupTab(tab: string | undefined): tab is SetupTab {
   return (
@@ -63,6 +67,8 @@ export function isSetupTab(tab: string | undefined): tab is SetupTab {
  * det gjelder. Fem literaler er fem ting gaten kan sjekke hver for seg.
  */
 export function setupHeading(tab: string | undefined): string | undefined {
+  const advanced = advancedHeading(tab);
+  if (advanced) return advanced;
   if (!isSetupTab(tab)) return undefined;
   switch (tab) {
     case "sound":
@@ -76,6 +82,13 @@ export function setupHeading(tab: string | undefined): string | undefined {
     case "notify":
       return t("app.setup.q5");
   }
+}
+
+/** Overskriften for Avansert. Egen literal, ikke en sjette gren i tabellen
+ *  over: den er ikke et spørsmål, og et `tDyn` over de seks ville pekt på et
+ *  subtre som er mye større enn dem. */
+export function advancedHeading(tab: string | undefined): string | undefined {
+  return tab === ADVANCED_TAB ? t("app.setup.advanced.title") : undefined;
 }
 
 export function SetupPage() {
@@ -101,6 +114,8 @@ export function SetupPage() {
       return <ChurchPage />;
     case "notify":
       return <NotifyPage />;
+    case ADVANCED_TAB:
+      return <AdvancedPage />;
     default:
       return <Level1 />;
   }

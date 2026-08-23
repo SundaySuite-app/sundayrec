@@ -38,11 +38,16 @@
 
 import { useEffect, useRef } from "preact/hooks";
 
-import { buildConfirm, nextFocusIndex } from "@lib/ui/dialog-core";
+import { buildAlert, buildConfirm, nextFocusIndex } from "@lib/ui/dialog-core";
 
 import { t } from "../../i18n";
 import { Button, type ButtonVariant } from "../Button/Button";
-import { activeDialog, resolveDialog } from "../dialog";
+import {
+  activeDialog,
+  resolveDialog,
+  type AlertOpts,
+  type ConfirmOpts,
+} from "../dialog";
 import styles from "./DialogHost.module.css";
 
 const FOCUSABLE =
@@ -107,11 +112,16 @@ export function DialogHost() {
 
   if (!pending) return null;
 
-  const spec = buildConfirm({
-    ...pending.spec,
-    confirmLabel: pending.spec.confirmLabel ?? t("app.dialog.confirm"),
-    cancelLabel: pending.spec.cancelLabel ?? t("app.dialog.cancel"),
-  });
+  const alert = pending.kind === "alert" ? (pending.spec as AlertOpts) : null;
+  const spec = alert
+    ? buildAlert({ ...alert, okLabel: alert.okLabel ?? t("app.dialog.close") })
+    : buildConfirm({
+        ...(pending.spec as ConfirmOpts),
+        confirmLabel:
+          (pending.spec as ConfirmOpts).confirmLabel ?? t("app.dialog.confirm"),
+        cancelLabel:
+          (pending.spec as ConfirmOpts).cancelLabel ?? t("app.dialog.cancel"),
+      });
   const cancelId = spec.buttons.find((b) => b.isCancel)?.id ?? "cancel";
   defaultId.current = spec.buttons.find((b) => b.isDefault)?.id ?? "ok";
 
@@ -170,6 +180,16 @@ export function DialogHost() {
           <p data-testid="dialog-message" class={styles.message}>
             {spec.message}
           </p>
+        ) : null}
+        {/*
+          Ordrett, i sin egen rullende blokk. `textContent` og ikke markup: det
+          er data fra bakenden, og en `<pre>` er den ene formen som ikke gjør
+          om på den.
+        */}
+        {alert?.preformatted !== undefined ? (
+          <pre data-testid="dialog-pre" class={styles.pre}>
+            {alert.preformatted}
+          </pre>
         ) : null}
         <div class={styles.actions}>
           {spec.buttons.map((button) => (

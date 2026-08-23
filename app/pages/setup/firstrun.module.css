@@ -1,0 +1,66 @@
+/* Første gang — linjalen, skjermen og foten. */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.stepLabel {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Linjalen. En `<ol>` fordi det ER en ordnet liste — og prikkene er
+   dekorative, så tilstanden bor i attributtet og ikke i en tekst ingen ser. */
+.dots {
+  display: flex;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--line-2);
+}
+
+.dot[data-state="active"] {
+  background: var(--gold);
+  /* Bredere, ikke bare lysere: den som ikke skiller gull fra grått skal
+     fortsatt se hvor hun står. */
+  width: 22px;
+}
+
+.dot[data-state="done"] {
+  background: var(--good);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+
+/* «Neste åpnes når vi hører lyd» — under knappen den handler om. */
+.gate {
+  margin: 0;
+  text-align: right;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}

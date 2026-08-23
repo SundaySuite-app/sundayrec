@@ -855,3 +855,130 @@ sjekket.
 Kontrollene er byttet der legacy driver noe P1b eier: `opt-ask-open-editor` ble
 «Ta med kamera» (`videoEnabled`), og `askOpenEditor` er med videre som et
 URØRT felt med den samme assertionen på den samme verdien.
+
+---
+
+# P1b — Avansert, første gang, og nøkkelen eieren sa ja til
+
+P1a foldet 65 kontroller til fem spørsmål. P1b bygger det SJETTE stedet — det
+alt som ikke er et spørsmål bor — og den ene skjermen som kommer før alle de
+andre.
+
+|                      | før (`legacy/renderer`)                                  | nå (`app/`)                                       |
+| -------------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| Avansert             | spredt over Lyd, Filer, Deling og System                 | én liste, ett ord per rad (`AdvancedPage.tsx`)    |
+| E-postserver (SMTP)  | `<details>` inne i kortet gaten selv slo av              | eget kort på Avansert — gaten på 5.3 åpner det    |
+| Tidsplan, avansert   | månedskalender + dagsdetalj + vekke-diagnosekort (23 kt) | to lister og én setning (`advanced/ScheduleCard`) |
+| Første gang          | 521 linjer veiviser med sine egne skjermer               | de fem ekte skjermene i sekvens (`FirstRun.tsx`)  |
+| Diagnostikk-samtykke | steg 5 av 6 i veiviseren                                 | ett kort på OPPTAK (`ui/ConsentCard`)             |
+
+## `autoRecordEnabled` — P1as eierspørsmål, besvart
+
+`Settings` hadde ingen `enabled`-nøkkel, verken på en slot eller på planen, så
+«av» kunne bare staves `slots: []` — og bryteren på nivå 1 måtte SLETTE
+tidspunktet for å slå seg av. P1a dempet det (økt-hukommelse, et spørsmål med
+antallet i) og skrev ned at å fikse det ordentlig er eierens valg.
+
+Eieren sa ja. Feltet er `auto_record_enabled: bool`, og det leses ÉTT sted:
+
+```rust
+pub fn active_slots(&self) -> &[ScheduleSlot] {
+    if self.auto_record_enabled { &self.slots } else { &[] }
+}
+```
+
+Scheduleren leser slots seks steder (neste start, vekke-horisonten,
+påminnelses-eventene, sen-start-vinduet, tapt-sjekken og status-kommandoen). Et
+flagg som ble hedret i fem av seks er en maskin som våkner 10:50 på en søndag
+for et opptak den så nekter å gjøre — derfor én funksjon, ikke seks sjekker.
+
+To valg det er verdt å kunne begrunne igjen:
+
+- **`#[serde(default = "default_true")]`.** En profil skrevet før feltet fantes
+  har ingen nøkkel å lese, og `false` ville stille avvæpnet hver menighet som
+  allerede hadde en søndagstid. En fersk profil har ingen slots uansett.
+- **Spesialopptak gates IKKE.** De er datoer noen skrev inn for én konsert.
+  Nivå 1-bryteren handler om den UKENTLIGE planen, og en bryter som avlyste
+  konserten ville slettet noe den aldri viste.
+
+Ikke i telemetriens `WireSettings`: Workeren krever hvert felt den kjenner, og
+et nytt felt der er en skjøt som brekker på serversiden først.
+
+## Forhåndsbufferen er ÉN kontroll nå
+
+Atlaset §2.6 fant tre steder som var uenige om det samme: `prerollEnabled` (som
+ingen i Rust leser), `preRollSeconds` (som bakenden porter bufferen på), og
+telemetrien, som UTLEDER `preroll_enabled` fra tallet. En profil med «30
+sekunder» og bryteren av rapporterte «pre-roll på» og bufret ingenting.
+
+Avansert viser sekundene, og bare dem. Da MÅ sekundene også være det som
+avgjør, ellers står det «15 sekunder» på en skjerm der ingenting blir bufret —
+så `app/state/preroll.ts` utleder `enabled` fra `seconds > 0`. Standarden er 15
+i både Rust og `settings-defaults.ts` (eiervalget «pre-roll på og usynlig»); en
+profil som allerede har et tall beholder sitt. `prerollEnabled` er urørt i basen
+og fortsatt legacy-skallets bryter — de to skallene kjører aldri samtidig.
+
+## `narrowToStored` — en skjøt som ville avvist HELE lagringen
+
+Et `<select>` leverer alltid en streng. Fem av innstillingene bak en select er
+`i32` i Rust, og `Settings` deserialiseres strengt: `"30"` der serde venter et
+tall avviser hele `settings_save`, ikke bare det ene feltet — skjermen ville
+sagt «Lagret ✓» for en skrivning som aldri landet, og tatt med seg alt annet i
+samme byge.
+
+P1a løste det ett kallsted om gangen (`reminder.set(Number(next))`). Nå gjør
+`useSetting` det selv, ut fra typen på den LAGREDE verdien: `bitrate` er
+strengen `"256"` i Rust og skal bli en streng, så det er ikke «ser det ut som et
+tall?» som avgjør. Tabelltestet i `use-setting-core.test.ts`.
+
+## Det P1b IKKE tok med
+
+- **«Oppdater automatisk» og den timesvise sjekken.** `autoUpdate` er en av de
+  fire uten bakendleser (ATLAS §2.6); timeren bor i `general-page.ts`, og
+  canvasens sett 5.4 lar raden være ute. Konsekvensen er reell og må tas før
+  skallet byttes: **det nye skallet sjekker ikke etter oppdateringer av seg
+  selv**, og det er den samme veien beta-ringens kill-switch når folk. Én fil
+  (`app/state/auto-update.ts` over `auto-update-schedule-core`) pluss én rad
+  hvis eieren vil ha bryteren tilbake. PRIVACY.md lover at den KAN slås av, så
+  timeren og bryteren hører sammen.
+- **Diagnose-modalen** (`btn-audio-diagnose` → `run_diagnostics`). Ingen plass i
+  den nye informasjonsarkitekturen ennå; legacy-specen dekker den fortsatt.
+- **Mikser og lydbehandling.** Canvasen tegner raden med en «Åpne»-knapp;
+  mikseren bygges i P4, så knappen ville ikke åpnet noe.
+- **`silenceThreshold` (dBFS).** Rust leser den, men −50 dBFS er ikke et tall en
+  frivillig kan ha en mening om, og feil verdi stopper opptaket midt i
+  gudstjenesten. Standarden står.
+- **Månedskalenderen, kirkeårets helligdager og vekke-diagnostikken** — se
+  toppen av `advanced/ScheduleCard.tsx` for hva som ble en liste i stedet.
+- **Flere DAGER per fast tid.** `ScheduleSlot.days` er en liste; her er én rad
+  én dag, og en profil som allerede har flere vises med den første og røres ikke.
+
+## Dialogkøen fikk en andre form
+
+`alertDialog(opts)` — én knapp, og en `preformatted`-blokk. «Vis hva som
+sendes» er hele telemetri-nyttelasten som JSON, og den bor i den SAMME køen og
+den samme verten som bekreftelsene. Grunnen er `inert`: verten er det ene stedet
+som slår av resten av appen, og en andre modal-mekanisme ville vært et andre
+sted det kunne bli glemt.
+
+## e2e: fire re-pekte, to nye
+
+`e2e/app/{update-channel,telemetry-preview,system-support,auto-update,onboarding}.spec.ts`
+er kopier med **hver test-tittel uendret**, fordi `docs/SMOKE-TEST.md` peker på
+dem som `sti::tittel`. To describes fulgte ikke med, og begge står forklart i
+fila si: `system-support`s «diagnose» (skjermen finnes ikke) og `auto-update`s
+«auto-update toggle» (mekanismen finnes ikke — se over). Legacy-filene er urørte
+og grønne.
+
+Nye: `e2e/app/advanced.spec.ts` (flagget beholder tiden, SMTP åpner gaten,
+opptaksradene skriver riktige typer) og `e2e/app/first-run.spec.ts` (porten,
+nødutgangen, den gule raden).
+
+⚠️ **En fikstur som lyver om bakenden.** `ConsentStatus` er
+`#[serde(rename_all = "kebab-case")]` i Rust, altså `"never-asked"` — men
+`e2e/{onboarding,telemetry-preview}.spec.ts` fikstureres med `"neverAsked"`,
+en form ingenting i prod produserer. Bare `promptCopyFor` forgrener seg på
+literalen, så konsekvensen er at legacy-specen viser oppstartskortets
+GJENTATT-tekst til en fersk installasjon. App-kopiene er rettet, med grunnen
+ved siden av; legacy-filene er urørt fordi de skal stå som de er til de
+slettes.

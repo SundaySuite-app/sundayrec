@@ -14,6 +14,26 @@
 
 import { signal } from "@preact/signals";
 
+/**
+ * Den andre formen: én knapp, og en tekst som er FOR LANG til en `message`.
+ *
+ * «Vis hva som sendes» er hele telemetri-nyttelasten som JSON. Legacy viser den
+ * i sin egen modal med sin egen åpne/lukk-kode; her er den samme køen og den
+ * samme verten, med ett felt til. Grunnen er `inert`: verten er det ene stedet
+ * som slår av resten av appen, og en andre modal-mekanisme ville betydd et
+ * andre sted den kunne bli glemt.
+ */
+export interface AlertOpts {
+  title: string;
+  /** Én setning over blokken. */
+  message?: string;
+  /** Ordrett tekst i en `<pre>` — JSON, en logg, en sti. Aldri prosa. */
+  preformatted?: string;
+  okLabel?: string;
+  /** `error` gir den røde aksenten, uten en farlig knapp. */
+  tone?: "info" | "error";
+}
+
 export interface ConfirmOpts {
   title: string;
   message?: string;
@@ -26,7 +46,9 @@ export interface ConfirmOpts {
 
 export interface PendingDialog {
   id: number;
-  spec: ConfirmOpts;
+  /** Hvilken av de to formene `spec` er. Verten bygger deretter. */
+  kind: "confirm" | "alert";
+  spec: ConfirmOpts | AlertOpts;
 }
 
 /** Dialogen som skal vises nå, eller `null`. Køen bak den er privat: en flate
@@ -42,13 +64,28 @@ let nextId = 1;
 
 function publish(): void {
   const head = queue[0];
-  activeDialog.value = head ? { id: head.id, spec: head.spec } : null;
+  activeDialog.value = head
+    ? { id: head.id, kind: head.kind, spec: head.spec }
+    : null;
 }
 
 /** Spør. Løses med `true` for bekreft, `false` for avbryt. */
 export function confirmDialog(opts: ConfirmOpts): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    queue.push({ id: nextId++, spec: opts, settle: resolve });
+    queue.push({ id: nextId++, kind: "confirm", spec: opts, settle: resolve });
+    publish();
+  });
+}
+
+/** Vis noe, med én knapp. Løses når den lukkes. */
+export function alertDialog(opts: AlertOpts): Promise<void> {
+  return new Promise<void>((resolve) => {
+    queue.push({
+      id: nextId++,
+      kind: "alert",
+      spec: opts,
+      settle: () => resolve(),
+    });
     publish();
   });
 }

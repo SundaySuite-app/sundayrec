@@ -71,7 +71,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
       updateChannel: "beta",
       reminderMinutes: 15.4, // float — must arrive integer-coerced
     });
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     // Exactly one import, in the UNIFIED vocabulary.
     await expect
@@ -133,7 +133,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
         sentinel: `__mig_corrupt_${Date.now()}`,
       },
     );
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     // Nothing imported; the unreadable blob is removed rather than retried
     // forever; the app is on defaults and fully alive.
@@ -146,7 +146,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
   test("fresh profile: no blob, empty store → defaults, no migration traffic", async ({
     page,
   }) => {
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
     expect(await settingsImportPayloads(page)).toHaveLength(0);
     expect((await legacyState(page)).blob).toBeNull();
     // Defaults on screen: stable channel, auto-update on, no church name.
@@ -165,7 +165,7 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
       onboardingDone: true,
       reminderMinutes: 15,
     });
-    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
+    await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings" });
 
     await expect
       .poll(() => settingsImportPayloads(page).then((p) => p.length))

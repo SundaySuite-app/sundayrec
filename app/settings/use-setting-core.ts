@@ -37,6 +37,39 @@
 
 import { isRealChange, type SettingValue } from "@lib/ui/bind-setting-core";
 
+/**
+ * Verdien en kontroll leverer, smalnet til den TYPEN som allerede står lagret.
+ *
+ * ## Hvorfor dette er nødvendig
+ *
+ * Et `<select>` leverer alltid en STRENG. Halvparten av innstillingene bak en
+ * select er tall i Rust (`preRollSeconds`, `splitMinutes`, `manualMaxMinutes`,
+ * `silenceTimeoutMinutes`, `reminderMinutes`), og `Settings` er en ts-rs-type
+ * som deserialiseres strengt: `"30"` der serde venter `i32` avviser HELE
+ * lagringen, ikke bare det ene feltet. Skjermen ville sagt «Lagret ✓» på en
+ * skrivning som aldri landet, og alt annet brukeren endret i samme byge ville
+ * fulgt med i fallet.
+ *
+ * P1a løste det ett kallsted om gangen (`reminder.set(Number(next))`), som er
+ * nøyaktig formen på en skjøtefeil: to steder som må huske det samme.
+ * `previous` — den lagrede verdien — er fasiten, og den er alltid tilgjengelig.
+ *
+ * `bitrate` er strengen `"256"` i Rust og skal BLI en streng; det er derfor
+ * typen til den lagrede verdien og ikke «ser det ut som et tall?» som avgjør.
+ */
+export function narrowToStored(
+  previous: SettingValue,
+  next: SettingValue,
+): SettingValue {
+  if (typeof previous !== "number" || typeof next !== "string") return next;
+  const trimmed = next.trim();
+  if (trimmed === "") return next;
+  const parsed = Number(trimmed);
+  // Ikke et tall ⇒ la den stå som den er, så `validate` kan avvise den med en
+  // setning i stedet for at en `NaN` sniker seg inn i basen.
+  return Number.isFinite(parsed) ? parsed : next;
+}
+
 /** Kvitteringen brukeren ser ved siden av kontrollen. */
 export type Receipt = "idle" | "saving" | "saved" | "failed";
 

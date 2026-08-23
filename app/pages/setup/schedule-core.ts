@@ -3,18 +3,15 @@
  *
  * ## Hva modellen faktisk er
  *
- * Bakenden kjenner `ScheduleSlot { days[], start, stop, max }` og ingenting
- * annet: det finnes ingen `enabled`-flagg noe sted i `Settings`. Så av/på KAN
- * bare være «finnes det en slot?», og det er nøyaktig det denne fila sier ut
- * mot lagringen. ⚠️ Konsekvensen er at «av» faktisk sletter tidspunktet, ikke
- * bare parkerer det — se `docs/APP-SHELL.md` og rapporten fra P1a; å fikse det
- * ordentlig krever en ny nøkkel i Rust, og en nøkkel legges ikke til fordi en
- * bryter gjerne vil oppføre seg penere.
+ * Bakenden kjenner `ScheduleSlot { days[], start, stop, max }` — OG, siden
+ * P1b, `autoRecordEnabled`. Før det flagget fantes var «finnes det en slot?»
+ * den eneste måten å stave «av» på, så bryteren måtte SLETTE tidspunktet for å
+ * slå seg av: en bryter som kaster data den ikke viser. P1a skrev det ned som
+ * en eiersak; eieren svarte, og nøkkelen finnes nå
+ * (`Settings::auto_record_enabled`, lest ett sted — `Settings::active_slots`).
  *
- * Skjermen demper det den kan uten å lyve: den som slår av og på igjen i samme
- * økt får tiden sin tilbake (`SetupPage` husker den siste planen i en signal),
- * og en profil med FLERE tidspunkter mister dem ikke stille — bryteren spør
- * først, med antallet i spørsmålet.
+ * Så: `autoRecordOn` er flagget OG en tid. «Av» rører ikke tidene, og «på
+ * igjen» henter dem tilbake fra basen og ikke fra en økt-hukommelse.
  *
  * ## Varighet, ikke stopptidspunkt
  *
@@ -25,6 +22,21 @@
  */
 
 import type { ScheduleSlot } from "@lib/../bindings/ScheduleSlot";
+
+import type { Settings } from "../../state/settings";
+
+/**
+ * Er automatisk opptak PÅ akkurat nå?
+ *
+ * To ting, ikke én: flagget må stå, og det må finnes en tid å planlegge. Et
+ * armert flagg uten en eneste slot er ikke «på» — det er en bryter som lover
+ * et opptak ingen har bedt om, og bakenden ville hatt ingenting å gjøre.
+ */
+export function autoRecordOn(settings: Settings): boolean {
+  return (
+    settings.autoRecordEnabled !== false && (settings.slots ?? []).length > 0
+  );
+}
 
 /** Ukedag: 0 = mandag … 6 = søndag. Samme tall som `ScheduleSlot.days`. */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;

@@ -53,10 +53,12 @@ test.describe("app shell boot", () => {
     // An empty heading is what a broken `@lib` alias looks like — `t()` would
     // return its empty fallback.
     //
-    // OPPSETT and not TA OPP because nothing is seeded here: `onboardingDone`
-    // is false, so the first-run gate sends a never-configured app to setup,
-    // which is exactly what it should do.
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    // «Hvilken lyd?» and not TA OPP because nothing is seeded here:
+    // `onboardingDone` is false, so the first-run gate sends a
+    // never-configured app into the sequence — and the sequence's first screen
+    // is question 1, whose heading is the question (P1b). Before P1b it stopped
+    // at level 1 and read «Oppsett».
+    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
 
     const violations = await page.evaluate(
       () => (window as any).__cspViolations as string[],
@@ -158,7 +160,14 @@ test.describe("app shell foundation", () => {
       fixtures: BOOT_FIXTURES,
       settings: { onboardingDone: false },
     });
-    await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
+    // P1b: the route is still OPPSETT — `data-first-run` is what changes the
+    // screen — but the heading is the first QUESTION, because that is what the
+    // sequence shows. The rail stays on OPPSETT the whole way.
+    await expect(page.getByTestId("app-heading")).toHaveText("Hvilken lyd?");
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "setup",
+    );
     await expect(page.getByTestId("main")).toHaveAttribute(
       "data-first-run",
       "true",

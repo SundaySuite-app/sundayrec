@@ -36,3 +36,23 @@
   gap: 10px;
   margin-top: var(--sp-5);
 }
+
+/*
+ * Ordrett blokk (telemetri-nyttelasten, en logg). Ruller i seg selv — en
+ * dialog som vokser til utenfor skjermen har ingen knapper å trykke på.
+ */
+.pre {
+  margin: 0;
+  max-height: 46vh;
+  overflow: auto;
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
