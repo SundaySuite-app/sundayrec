@@ -8,8 +8,12 @@
     "ffmpeg": "node scripts/fetch-ffmpeg.mjs",
     "predev": "node scripts/fetch-ffmpeg.mjs",
     "dev": "vite",
+    "dev:app": "vite --mode app",
     "pretauri": "node scripts/fetch-ffmpeg.mjs",
     "build": "tsc && vite build",
+    "build:app": "tsc && vite build --mode app",
+    "pretauri:app": "node scripts/fetch-ffmpeg.mjs",
+    "tauri:app": "tauri dev --config src-tauri/tauri.app-shell.conf.json",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint .",
@@ -48,9 +52,11 @@
     "*.{ts,tsx}": "eslint --fix"
   },
   "dependencies": {
+    "@preact/signals": "^2.11.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "preact": "^10.29.8"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
@@ -64,6 +70,7 @@
     "globals": "^17.7.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "preact-render-to-string": "^6.7.0",
     "prettier": "^3.9.5",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.64.0",

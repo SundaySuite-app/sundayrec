@@ -50,23 +50,54 @@ export default defineConfig({
     video: "off",
   },
 
-  // One project. The shipped renderer only ever runs in one engine (WKWebView on
-  // macOS, WebView2 on Windows) and neither is Chromium-in-Playwright anyway, so
-  // a cross-browser matrix would triple the runtime to test engines nobody
-  // ships. Chromium is the closest available stand-in and the fastest.
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Two projects, one engine. The shipped renderer only ever runs in one engine
+  // (WKWebView on macOS, WebView2 on Windows) and neither is
+  // Chromium-in-Playwright anyway, so a cross-browser matrix would triple the
+  // runtime to test engines nobody ships. Chromium is the closest available
+  // stand-in and the fastest.
+  //
+  // `chromium` is the shipped legacy shell on :1420. `app` is «Frivilligen
+  // først»'s new Preact shell on :1430 — a different server, a different bundle
+  // and a different spec directory, so the two can never accidentally assert
+  // against each other. Today it holds one boot spec; S1 fills it in.
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: /app\//,
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "app",
+      testMatch: /app\/.*\.spec\.ts/,
+      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:1430" },
+    },
+  ],
 
   // Playwright starts Vite itself, so `npx playwright test` is the whole
   // command — no "remember to run the dev server first". Reuses a server you
   // already have running locally; on CI always starts a clean one.
-  webServer: {
-    command: "npm run dev",
-    url: "http://localhost:1420",
-    reuseExistingServer: !process.env.CI,
-    // `predev` fetches the ffmpeg sidecars on a cold checkout, which dominates
-    // this on the first run.
-    timeout: 180_000,
-    stdout: "ignore",
-    stderr: "pipe",
-  },
+  //
+  // One server per shell. They are separate Vite roots on separate ports, so
+  // starting both is the only way a single `npm run e2e` can cover both — and
+  // the app one is a few hundred milliseconds, because `app/` is 36 modules.
+  webServer: [
+    {
+      command: "npm run dev",
+      url: "http://localhost:1420",
+      reuseExistingServer: !process.env.CI,
+      // `predev` fetches the ffmpeg sidecars on a cold checkout, which dominates
+      // this on the first run.
+      timeout: 180_000,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+    {
+      command: "npm run dev:app",
+      url: "http://localhost:1430",
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      stdout: "ignore",
+      stderr: "pipe",
+    },
+  ],
 });

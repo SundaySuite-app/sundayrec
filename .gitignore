@@ -14,6 +14,9 @@ lerna-debug.log*
 
 node_modules
 dist
+# The new Preact shell's bundle (npm run build:app). Separate from dist/ so it
+# can never overwrite the artifact a release is cut from.
+dist-app
 dist-ssr
 *.local
 
