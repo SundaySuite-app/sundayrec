@@ -53,12 +53,41 @@ import { scheduleDraw } from "./waveform";
 const DUCK_FRAMES = 3;
 
 /**
+ * Hvor lenge play venter på at elementet blir klart før det gir opp.
+ *
+ * ## ⚠️ Spillehodet som frøs
+ *
+ * `startPlay` satte `isPlaying`/`playing` FØR den ventet på `canplay`, og hvis
+ * det eventet aldri kom, kom heller ingenting annet: `el.play()` ble aldri
+ * kalt, `currentSec()` svarte `playStartSec` så lenge `mainPlayPending` sto,
+ * og `animate()` gikk i ring på en rAF som malte det samme tallet for alltid.
+ * Skjermen viste «pause»-knappen over en teller som ikke beveget seg, og det
+ * er en tilstand ingenting i appen kunne komme ut av uten et nytt klikk.
+ *
+ * Ti sekunder er lenge nok til at en 90-minutters FLAC på en treg disk rekker
+ * å melde metadata, og kort nok til at ingen står og lurer. Den ekte
+ * bakstopperen er lasteren, som setter `playbackSource = "none"` når den vet
+ * at fila ikke lar seg spille; dette er beltet under den, for det den ikke
+ * kan vite på forhånd.
+ */
+export const PLAY_READY_TIMEOUT_MS = 10_000;
+
+/**
  * Hvert start/stopp øker denne. Regionoverganger er asynkrone (`canplay`,
  * `ended`), og en callback fra en AVLØST avspilling må ikke gjøre noe — å
  * trykke stopp og så play innenfor samme sekund lot ellers den gamle
  * `canplay`-en starte elementet på nytt oppå den nye.
  */
 let playGen = 0;
+
+/** Vakten under `canplay`. Se `PLAY_READY_TIMEOUT_MS`. */
+let readyTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearReadyTimer(): void {
+  if (!readyTimer) return;
+  clearTimeout(readyTimer);
+  readyTimer = null;
+}
 
 let persistentPlayerEl: HTMLAudioElement | null = null;
 
@@ -171,6 +200,7 @@ export function startPlay(): void {
   playing.value = true;
 
   const start = (): void => {
+    clearReadyTimer();
     if (gen !== playGen || !E.isPlaying) return;
     E.mainPlayPending = false;
     seekEl(el, E.playStartSec);
@@ -182,8 +212,27 @@ export function startPlay(): void {
     stopPlay();
   });
 
-  if (el.readyState >= 1) start();
-  else el.addEventListener("canplay", start, { once: true });
+  if (el.readyState >= 1) {
+    start();
+  } else {
+    el.addEventListener("canplay", start, { once: true });
+    // Vakten. Uten den er «`canplay` kom aldri» et frosset spillehode uten
+    // utgang; med den blir det den setningen skjermen allerede har for
+    // nøyaktig dette (`editor.qualityFallback`, gjennom `playbackSource`), og
+    // en play-knapp som er av med en grunn i stedet for på med en løgn.
+    readyTimer = setTimeout(() => {
+      readyTimer = null;
+      if (gen !== playGen || !E.isPlaying || !E.mainPlayPending) return;
+      console.warn(
+        "[editor] `canplay` kom aldri innen",
+        PLAY_READY_TIMEOUT_MS,
+        "ms — avspilling gis opp",
+      );
+      el.removeEventListener("canplay", start);
+      stopPlay();
+      setPlaybackSource("none");
+    }, PLAY_READY_TIMEOUT_MS);
+  }
 
   resetDrawGate();
   animate();
@@ -191,6 +240,7 @@ export function startPlay(): void {
 
 export function stopPlay(): void {
   playGen++;
+  clearReadyTimer();
   detachEnded();
   cancelDuck();
   const wasPlaying = E.isPlaying;
