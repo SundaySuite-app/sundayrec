@@ -156,6 +156,14 @@ export const PAUSED_KEYS = new Set([
   'app.setup.addons',
   'app.language.no',
   'app.language.en',
+  // De fem PAUSETE språkene har navn i valgboksen selv om katalogene deres
+  // ikke er tatt i bruk ennå: `tDyn('app.language', code)` kaster i DEV på en
+  // suffiks-bom, og en profil satt til «de» skal kunne se hva den står på.
+  'app.language.sv',
+  'app.language.da',
+  'app.language.de',
+  'app.language.fr',
+  'app.language.pl',
   'app.setup.sound.lede',
   'app.setup.sound.deviceWithPair',
   'app.setup.sound.gone',
@@ -390,6 +398,19 @@ export const PAUSED_KEYS = new Set([
   'app.setup.advanced.wakeWord.cannot',
   'app.setup.advanced.wakeWord.needsAdmin',
   'app.setup.advanced.wakeWord.unknown',
+  // «Aktiver vekking» — handlingen som gjør `wake_reschedule` synlig, og de
+  // sju svarene den kan gi.
+  'app.setup.advanced.wakeArm',
+  'app.setup.advanced.wakeArmWord.idle',
+  'app.setup.advanced.wakeArmWord.ok',
+  'app.setup.advanced.wakeArmWord.needsAdmin',
+  'app.setup.advanced.wakeArmWord.disabled',
+  'app.setup.advanced.wakeArmWord.unsupported',
+  'app.setup.advanced.wakeArmWord.cancelled',
+  'app.setup.advanced.wakeArmWord.failed',
+  // Vekke-ærligheten på TA OPP: helten sier «Maskinen vekkes automatisk kl.»
+  // bare når `wake_verify` har BEKREFTET en armering — ellers denne.
+  'home.wakesNotArmed',
   'app.first.step',
   'app.first.next',
   'app.first.back',

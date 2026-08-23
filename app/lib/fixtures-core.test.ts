@@ -38,7 +38,10 @@ describe("fixturesHonored — when an override is allowed at all", () => {
 
   it("a shipped in-Tauri build cannot be driven by a page, whatever it asks for", () => {
     // The guarantee E5.1 owes the shipped app: devBuild is the literal `false`
-    // Vite inlines in a production build, so this branch is dead code there.
+    // Vite inlines in a production build, so in a shipped bundle this branch
+    // can only ever answer `false`. (The function itself still ships — it is
+    // the CONDITION that is nailed shut, not the code. Which is exactly why
+    // this row exists.)
     const shipped = gate({ inTauri: true, devBuild: false, requested: true });
     expect(fixturesHonored(shipped)).toBe(false);
     expect(fixtureWins(shipped, true)).toBe(false);

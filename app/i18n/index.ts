@@ -45,6 +45,26 @@ import {
 export type Locale = "no" | "en" | "sv" | "da" | "de" | "fr" | "pl";
 
 /**
+ * De samme sju, som en LISTE.
+ *
+ * Typen alene kan ikke gås gjennom av en test, og noen ting må gjelde for alle
+ * sju og ikke bare for de aktive — navnet på språket, for eksempel. Uten det
+ * hadde `app.language`-subtreet bare de to aktive kodene i katalogen, og
+ * `tDyn('app.language', 'de')` ville kastet i DEV og rendret en TOM etikett i
+ * prod den dagen et pauset språk ble tatt i bruk. En tabelltest over denne
+ * lista er det som fanger hullet før brukeren gjør det.
+ */
+export const ALL_LOCALES: readonly Locale[] = [
+  "no",
+  "en",
+  "sv",
+  "da",
+  "de",
+  "fr",
+  "pl",
+];
+
+/**
  * Språkene `app/` faktisk tilbyr i språkvelgeren gjennom redesignet.
  *
  * De fem andre er PAUSET, ikke fjernet: katalogene ligger der, legacy-skallet

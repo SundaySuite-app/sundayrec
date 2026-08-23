@@ -218,7 +218,7 @@
           "dshow": "Klassisk (DirectShow)"
         },
         "preroll": "Forhåndsbuffer",
-        "prerollDesc": "Lyd som tas med fra før du trykket Start.",
+        "prerollDesc": "Lyd som tas med fra før du trykket Start. Bufferen holder mikrofonen åpen i bakgrunnen så lenge appen er klar til opptak.",
         "prerollChoice": {
           "0": "Av",
           "15": "15 sekunder",
@@ -358,12 +358,27 @@
           "needsAdmin": "Denne maskinen kan vekkes, men spør om administratorpassord første gang.",
           "unknown": "Vi vet ikke ennå om denne maskinen kan vekkes."
         },
+        "wakeArm": "Aktiver vekking",
+        "wakeArmWord": {
+          "idle": "Registrer vekkingen i operativsystemet nå. Kan kreve administratorpassord.",
+          "ok": "Vekkingen er registrert i operativsystemet.",
+          "needsAdmin": "Trenger et administratorpassord — prøv igjen og svar på spørsmålet.",
+          "disabled": "Slå på «Vekk maskinen fra dvale» først.",
+          "unsupported": "Denne maskinen kan ikke vekkes av appen.",
+          "cancelled": "Du avbrøt — ingenting er registrert.",
+          "failed": "Vekkingen ble ikke registrert."
+        },
         "audioTech": "Lyd-teknologi"
       }
     },
     "language": {
       "no": "Norsk",
-      "en": "Engelsk"
+      "en": "Engelsk",
+      "sv": "Svensk",
+      "da": "Dansk",
+      "de": "Tysk",
+      "fr": "Fransk",
+      "pl": "Polsk"
     },
     "first": {
       "step": "Steg {n} av {total}",
@@ -543,7 +558,8 @@
     "readyNoSchedule": "Klar — sett opp en tidsplan for å starte automatisk",
     "wakesBefore": "Maskinen vekkes automatisk kl. {time}",
     "nextShort": "neste",
-    "wakesLead": "({min} min før)"
+    "wakesLead": "({min} min før)",
+    "wakesNotArmed": "Maskinen må være på eller i dvale når opptaket starter — vi har ikke fått bekreftet noen vekking."
   },
   "history": {
     "deleteFailed": "Kunne ikke slette"

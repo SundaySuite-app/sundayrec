@@ -45,10 +45,17 @@
 //     `?fixtures=1`. Both, deliberately. The query param is the ergonomic switch
 //     (manual QA of a rare state — a full disk, a failing device — against the
 //     real app); the dev-build flag is the guarantee, because Vite replaces
-//     `import.meta.env.DEV` with the literal `false` in a production build and
-//     the whole branch is dead-code-eliminated out of the shipped bundle. A
-//     shipped SundayRec therefore CANNOT be driven by fixtures, whatever a page
-//     puts on `window`.
+//     `import.meta.env.DEV` with the literal `false` in a production build, so
+//     `FIXTURE_GATE.devBuild` is `false` in the shipped bundle and this
+//     function's in-Tauri branch can only ever answer `false` there.
+//
+//     Note what that is and is not: the CODE below still ships — it is a plain
+//     exported function, not something a bundler can prove unreachable — the
+//     CONDITION is what is nailed shut. `fixturesHonored` is honest about which
+//     one it is because "the branch is eliminated" and "the branch always
+//     answers false" fail differently the day someone passes a hand-built gate.
+//     Either way a shipped SundayRec CANNOT be driven by fixtures, whatever a
+//     page puts on `window`.
 //
 // ## Simulating failures
 //

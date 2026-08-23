@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACTIVE_LOCALES,
+  ALL_LOCALES,
   locale,
   resolveStartupLocale,
   setLocale,
@@ -96,6 +97,40 @@ describe("app i18n", () => {
     expect(() => tDyn("app.page", "nowhere")).toThrow(/finnes ikke/);
     expect(() => tDyn("app.nothing", "record")).toThrow(/finnes ikke/);
   });
+
+  // `app.language.<code>` hadde bare de to AKTIVE kodene. Språkvelgeren viser
+  // bare aktive språk i dag, så hullet var latent — men `tDyn` KASTER i DEV på
+  // en suffiks-bom og rendrer en tom etikett i prod, så den dagen et pauset
+  // språk tas i bruk (eller en flate viser navnet på det som står lagret) er
+  // det en tom eller krasjende valgboks. Alle sju har et navn nå, i begge
+  // katalogene.
+  it.each([...ALL_LOCALES])(
+    "språkvelgeren har et navn for «%s» — også de fem pausete",
+    async (code) => {
+      for (const shown of ACTIVE_LOCALES) {
+        await setLocale(shown);
+        expect(tDyn("app.language", code)).not.toBe("");
+      }
+      await setLocale("no");
+    },
+  );
+
+  // Forhåndsbufferen står PÅ som standard (15 s), og det betyr at mikrofonen
+  // holdes åpen i bakgrunnen på en fersk installasjon. Eiervalget «pre-roll på
+  // og usynlig» står — men da må TEKSTEN si hva det innebærer, ellers er det
+  // appen som holder mikrofonen åpen uten at noen sa fra. Rust-doccen advarte
+  // ordrett; katalogen sa ingenting.
+  it.each([
+    ["no", /mikrofonen åpen/i],
+    ["en", /microphone open/i],
+  ] as Array<[(typeof ACTIVE_LOCALES)[number], RegExp]>)(
+    "forhåndsbufferen sier at den holder mikrofonen åpen (%s)",
+    async (lang, needle) => {
+      await setLocale(lang);
+      expect(t("app.setup.advanced.prerollDesc")).toMatch(needle);
+      await setLocale("no");
+    },
+  );
 
   it.each([
     ["nothing stored", null, "no"],

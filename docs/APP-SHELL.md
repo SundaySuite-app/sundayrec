@@ -2290,34 +2290,44 @@ PR B flyttet inventaret som ble igjen til `app/lib/`. Dette er den samlede
 restanselista — alt som er kjent åpent, ett sted, så ingen av delene
 finnes bare i en commit-melding.
 
-## 1. ⚠️ Vekking fra dvale spør aldri om administratorpassord
+## 1. ✅ LUKKET — Vekking fra dvale spurte aldri om administratorpassord
 
-Den mest konsekvensrike enden. Scheduleren armer OS-vekkinger selv når
+_(Var: den mest konsekvensrike enden. Scheduleren armer OS-vekkinger selv når
 `wakeFromSleep` står på — uprivilegert og ikke-interaktivt
 (`scheduler/mod.rs`). Den INTERAKTIVE veien, kommandoen `wake_reschedule`, som
 eskalerer en feilet uprivilegert `pmset schedule wake` til ÉN
-`osascript … with administrator privileges`, har ingen kallsted i skallet.
+`osascript … with administrator privileges`, hadde ingen kallsted i skallet: på
+en Mac som trenger root ble brukeren aldri spurt, vekkingen aldri armet, og
+maskinen sov gjennom gudstjenesten.)_
 
-Konsekvens: på en Mac som trenger root for å skrive en strømhendelse blir
-brukeren aldri spurt, vekkingen blir aldri armet, og maskinen sover gjennom
-gudstjenesten. Den tar opp helt fint mens den er VÅKEN.
+Lukket i gjennomgangsrunden, i to halvdeler:
 
-Hullet er P1bs (`advanced/ScheduleCard.tsx` bygde bryteren uten knappen), ikke
-byttets — men byttet er det som sender det ut. Å lukke det er en knapp, to
-nøkler og en test, og teksten er et eierspørsmål: canvasens sett 5 har ingen
-slik rad.
+- **Døra.** `wakeReschedule` og `wakeVerifyScheduled` er tilbake i
+  `app/lib/api-shim.ts` (rekkevidde-baselinen oppdatert: begge gikk fra
+  unåbar til nåbar), og «Aktiver vekking» er en rad i Avansert
+  (`advanced/ScheduleCard.tsx`). Svaret vises som en setning — «trenger
+  administratorpassord» er noe man skal kunne lese om igjen mens man leter
+  etter passordet — over `wakeArmWord` i `advanced/specials-core.ts`.
+- **Ærligheten.** Helten på TA OPP lovte «Maskinen vekkes automatisk kl.
+  10:50» av den LAGREDE innstillingen alene, altså av en intensjon.
+  `formatWakeHint` krever nå at `wake_verify` har bekreftet en armering
+  (`WakeInfo.armed`); ellers står den ærlige varianten
+  (`home.wakesNotArmed`).
 
-## 2. ⚠️ `healStoredDeviceId` finnes ikke lenger
+## 2. ✅ LUKKET — `healStoredDeviceId` er tilbake
 
-Den re-pekte en lagret `deviceId` som ikke lenger fantes, ved å matche på lagret
-NAVN. Windows omfordeler enhets-id-er etter omstart eller driveroppdatering, og
-L/R-kanalvalget er nøklet PÅ id-en — uten helingen faller en Qu-5-rigg stille
-tilbake til kanal 1/2, og ingen oppdager det før opptaket er av feil kilde.
+_(Var: den re-pekte en lagret `deviceId` som ikke lenger fantes, ved å matche på
+lagret NAVN. Windows omfordeler enhets-id-er etter omstart eller
+driveroppdatering, og L/R-kanalvalget er nøklet PÅ id-en — uten helingen faller
+en Qu-5-rigg stille tilbake til kanal 1/2, og ingen oppdager det før opptaket er
+av feil kilde.)_
 
-Skallet kalte den aldri, og kunne ikke: den leste `state.ts`' modulspeil av
-innstillingene, som skallet ikke fyller. Slettet i fase B sammen med `state.ts`
-(et ANDRE settings-speil ved siden av `app/state/settings.ts`). Å bygge den opp
-igjen over signalet er lite arbeid; å oppdage at den mangler er ikke.
+Gjenoppbygget over signalet: `planDeviceHeal` i `app/state/devices.ts` (ren,
+tabelltestet) + det ene kallstedet i `loadAudioDevices`. To ting er STRENGERE
+enn legacy-utgaven — den heler bare på NØYAKTIG ÉTT navnetreff (to identiske
+kort er ikke en heling, det er en gjetning), og kanalparet FLYTTES til den nye
+id-en i stedet for å kopieres. Skrivningen går gjennom den vanlige lagringen,
+ikke utenom.
 
 ## 3. Flater som ikke ble bygget, og kommandoene bak dem
 
