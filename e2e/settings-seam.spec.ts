@@ -57,10 +57,10 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
       settings: {
         ...SETTLED_SETTINGS,
         autoDeleteDays: 90,
-        inputVolume: 80,
-        trimSilence: true,
+        silenceThreshold: -40,
+        splitMinutes: 45,
         launchAtLogin: true,
-        showLiveLevels: false,
+        protectRecording: false,
         updateChannel: "beta",
         reminderMinutes: 15,
         churchName: "Domkirken",
@@ -84,10 +84,10 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
     // …and every seeded, UNTOUCHED field crossed WITH ITS VALUE — the exact
     // thing the curated bridge silently dropped, one key at a time.
     expect(payload.autoDeleteDays).toBe(90);
-    expect(payload.inputVolume).toBe(80);
-    expect(payload.trimSilence).toBe(true);
+    expect(payload.silenceThreshold).toBe(-40);
+    expect(payload.splitMinutes).toBe(45);
     expect(payload.launchAtLogin).toBe(true);
-    expect(payload.showLiveLevels).toBe(false);
+    expect(payload.protectRecording).toBe(false);
     expect(payload.updateChannel).toBe("beta");
     expect(payload.reminderMinutes).toBe(15);
     expect(payload.churchName).toBe("Domkirken");

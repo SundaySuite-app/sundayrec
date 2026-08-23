@@ -34,12 +34,10 @@ pub struct SettingsSummary {
     pub language: Option<String>,
     pub device_name: Option<String>,
     pub channels: String,
-    pub sample_rate: i32,
     /// The sample-rate MODE that actually drives capture: `"auto"` (native, no
     /// `-ar`) or a forced `"r44100"/"r48000"/"r96000"`. A forced rate that
     /// doesn't match the device resamples and can cause stutter.
     pub sample_rate_mode: String,
-    pub input_volume: i32,
     pub format: String,
     pub bitrate: String,
     pub filename_pattern: String,
@@ -48,7 +46,6 @@ pub struct SettingsSummary {
     pub stop_on_silence: bool,
     pub silence_threshold: i32,
     pub split_minutes: i32,
-    pub trim_silence: bool,
     pub auto_delete_days: i32,
     pub save_folder: Option<String>,
 }
@@ -64,9 +61,7 @@ impl SettingsSummary {
             language: s.language.clone(),
             device_name: s.device_name.clone(),
             channels: serde_plain_tag(&s.channels),
-            sample_rate: s.sample_rate,
             sample_rate_mode: serde_plain_tag(&s.sample_rate_mode),
-            input_volume: s.input_volume,
             format: serde_plain_tag(&s.format),
             bitrate: s.bitrate.clone(),
             filename_pattern: serde_plain_tag(&s.filename_pattern),
@@ -75,7 +70,6 @@ impl SettingsSummary {
             stop_on_silence: s.stop_on_silence,
             silence_threshold: s.silence_threshold,
             split_minutes: s.split_minutes,
-            trim_silence: s.trim_silence,
             auto_delete_days: s.auto_delete_days,
             save_folder: s.save_folder.clone(),
         }
@@ -1034,7 +1028,7 @@ mod tests {
         }
         // It does carry the safe fields.
         assert!(json.contains("Soundcraft USB"));
-        assert!(json.contains("sampleRate"));
+        assert!(json.contains("sampleRateMode"));
     }
 
     #[test]

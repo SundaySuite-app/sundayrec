@@ -100,7 +100,9 @@
     "vuScaleQuiet": "Stille",
     "vuScaleMax": "Maks",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat lydfil",
+    "videoOnlyMp4": "Kun MP4"
   },
   "update": {
     "checking": "Søger efter opdateringer…",
@@ -488,8 +490,6 @@
     "format": "Format & Kvalitet",
     "autoDelete": "Slet automatisk efter 90 dage",
     "autoDeleteDesc": "Frigør diskplads automatisk ved at slette gamle optagelser",
-    "trimSilence": "Klip stilhed væk",
-    "trimSilenceDesc": "Beskærer automatisk stille sekunder i starten og slutningen af optagelsen",
     "confirmAutoDeleteShort": {
       "one": "Optagelser ældre end {n} dag slettes automatisk og kan ikke gendannes.",
       "other": "Optagelser ældre end {n} dage slettes automatisk og kan ikke gendannes."
@@ -830,8 +830,6 @@
     "cancelAutostop": "Annullér autostop"
   },
   "video": {
-    "minBitrateWarn": "Mindste bitrate er 500 kbps",
-    "maxBitrateWarn": "Største bitrate er 50.000 kbps",
     "title": "Videooptagelse",
     "enableTitle": "Aktivér videooptagelse",
     "enableDesc": "Optager video udover lyd ved hver optagelse",
@@ -840,40 +838,13 @@
     "cameraSearchPrompt": "Klik på Opdater for at søge efter kameraer",
     "refresh": "Opdater",
     "cameraHint": "USB-webkameraer og HDMI-optagelseskort understøttes på macOS og Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "OPLØSNING",
-    "recommended": "Anbefales",
-    "framerate": "BILLEDFREKVENS",
-    "fps30Recommended": "30 fps (Anbefales)",
-    "bitrate": "BITHASTIGHED",
-    "bitrateAuto": "Automatisk (anbefales — baseret på opløsning)",
-    "bitrateCustom": "Brugerdefineret",
-    "outputFormat": "Outputformat",
-    "outputFormatDesc": "Vælg om lyd og video skal kombineres i én fil eller gemmes separat.",
-    "combinedName": "Kombineret MP4",
-    "combinedDesc": "Lyd + video i én fil — klar til YouTube",
-    "separateName": "Separate filer",
-    "separateDesc": "Lyd og video gemmes hver for sig",
-    "splitWarning": "Filopdeling er aktiv — video gemmes altid som separat fil uanset valget ovenfor. Deaktiver automatisk opdeling i planlægningsindstillinger for at kombinere lyd og video i én MP4.",
-    "splitHint": "Ved automatisk filopdeling bruges altid separate filer.",
     "keepAudioTitle": "Behold separat lydfil",
     "keepAudioDesc": "Gemmer også den højkvalitets lydfil ved siden af den kombinerede MP4",
-    "hwEncode": "Hardwarekodning (VideoToolbox)",
-    "hwEncodeDesc": "Bruger hardwarekodning (VideoToolbox) til hurtigere videoeksport på Mac. Falder automatisk tilbage til software, hvis det fejler.",
     "cameraDelivers": "Kameraet leverer maks.",
-    "codec": "VIDEOCODEC",
-    "codecH264": "H.264 (universel)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENCODER",
-    "encoderHardware": "Hardware – VideoToolbox (let & jævn, anbefales)",
-    "encoderHint": "Hardware (VideoToolbox, kun Mac): lavt CPU-forbrug → jævn live-forhåndsvisning, mindre varme/batteri og realtids-4K/H.265. Meget god kvalitet ved tilstrækkelig bitrate — anbefales til de fleste. Software (x264/x265): lidt bedre kvalitet pr. filstørrelse, men bruger meget CPU og kan gøre forhåndsvisning og målere hakkende under optagelse — vælg den, når kvalitet pr. byte betyder allermest, og maskinen ikke laver andet samtidig.",
-    "encoderSoftware": "Software – x264/x265 (maks. kvalitet pr. byte)",
-    "probeFailed": "Kunne ikke læse kameraets opløsninger — begrænset til 1080p for at undgå opskalering. 4K kræver et kamera, der leverer ægte 4K.",
-    "resNative": "kameraets maks.",
-    "resNotSupported": "understøttes ikke",
-    "resUnsupportedShort": "Den valgte opløsning understøttes ikke — sat til kameraets maks.",
-    "guardDevice": "Skifte kamera"
+    "probeFailed": "Kunne ikke læse kameraets opløsninger — optagelsen bruger det, kameraet faktisk leverer, op til 1080p.",
+    "guardDevice": "Skifte kamera",
+    "outputTitle": "Filerne",
+    "outputDesc": "Videooptagelser gemmes som MP4 (1080p, 30 billeder/s, H.264) — eller så højt som kameraet leverer. Lydfilen ved siden af følger det lydformat, du har valgt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",

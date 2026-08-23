@@ -100,7 +100,9 @@
     "vuScaleQuiet": "Stille",
     "vuScaleMax": "Maks",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat lydfil",
+    "videoOnlyMp4": "Kun MP4"
   },
   "update": {
     "checking": "Sjekker etter oppdateringer…",
@@ -488,8 +490,6 @@
     "format": "Format & Kvalitet",
     "autoDelete": "Slett automatisk etter 90 dager",
     "autoDeleteDesc": "Frigjør diskplass automatisk ved å slette gamle opptak",
-    "trimSilence": "Trim stillhet",
-    "trimSilenceDesc": "Kutter automatisk stille sekunder i starten og slutten av opptaket",
     "confirmAutoDeleteShort": {
       "one": "Opptak eldre enn {n} dag slettes automatisk og kan ikke gjenopprettes.",
       "other": "Opptak eldre enn {n} dager slettes automatisk og kan ikke gjenopprettes."
@@ -830,8 +830,6 @@
     "cancelAutostop": "Avbryt auto-stopp"
   },
   "video": {
-    "minBitrateWarn": "Minste bitrate er 500 kbps",
-    "maxBitrateWarn": "Største bitrate er 50 000 kbps",
     "title": "Videoopptak",
     "enableTitle": "Aktiver videoopptak",
     "enableDesc": "Tar opp video i tillegg til lyd ved hvert opptak",
@@ -840,40 +838,13 @@
     "cameraSearchPrompt": "Trykk Oppdater for å søke etter kameraer",
     "refresh": "Oppdater",
     "cameraHint": "USB-webkamera og HDMI-opptakskort støttes på macOS og Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "OPPLØSNING",
-    "recommended": "Anbefalt",
-    "framerate": "BILDERATE",
-    "fps30Recommended": "30 fps (Anbefalt)",
-    "bitrate": "BITHASTIGHET",
-    "bitrateAuto": "Automatisk (anbefalt — basert på oppløsning)",
-    "bitrateCustom": "Egendefinert",
-    "outputFormat": "Utdataformat",
-    "outputFormatDesc": "Velg om lyd og video skal kombineres til én fil eller lagres separat.",
-    "combinedName": "Kombinert MP4",
-    "combinedDesc": "Lyd + video i én fil — klar for YouTube",
-    "separateName": "Separate filer",
-    "separateDesc": "Lyd og video lagres hver for seg",
-    "splitWarning": "Delt opptak er aktivt — video lagres alltid som separat fil uavhengig av valget over. Deaktiver automatisk oppdeling i planleggingsinnstillingene for å kombinere lyd og video til én MP4.",
-    "splitHint": "Ved automatisk oppdeling av filer brukes alltid separate filer.",
     "keepAudioTitle": "Behold separat lydfil",
     "keepAudioDesc": "Lagrer også den høykvalitets lydfilen ved siden av den kombinerte MP4",
-    "hwEncode": "Maskinvare-koding (VideoToolbox)",
-    "hwEncodeDesc": "Bruker maskinvare-koding (VideoToolbox) for raskere video-eksport på Mac. Faller automatisk tilbake til programvare hvis det feiler.",
     "cameraDelivers": "Kameraet leverer maks",
-    "codec": "VIDEO-KODEK",
-    "codecH264": "H.264 (universell)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENKODER",
-    "encoderHardware": "Hardware – VideoToolbox (lett & jevn, anbefalt)",
-    "encoderHint": "Hardware (VideoToolbox, kun Mac): lav CPU-bruk → jevn live-forhåndsvisning, mindre varme/batteri, og sann-tids 4K/H.265. Svært god kvalitet ved tilstrekkelig bitrate — anbefalt for de fleste. Software (x264/x265): litt bedre kvalitet pr. filstørrelse, men bruker mye CPU og kan gjøre forhåndsvisning og målere hakkete under opptak — velg den når kvalitet pr. byte betyr aller mest og maskinen ikke gjør annet samtidig.",
-    "encoderSoftware": "Software – x264/x265 (maks kvalitet pr. byte)",
-    "probeFailed": "Kunne ikke lese kameraets oppløsninger — begrenset til 1080p for å unngå oppskalering. 4K krever et kamera som leverer ekte 4K.",
-    "resNative": "kameraets maks",
-    "resNotSupported": "ikke støttet",
-    "resUnsupportedShort": "Valgt oppløsning støttes ikke — satt til kameraets maks.",
-    "guardDevice": "Bytte kamera"
+    "probeFailed": "Kunne ikke lese kameraets oppløsninger — opptaket bruker det kameraet faktisk leverer, opptil 1080p.",
+    "guardDevice": "Bytte kamera",
+    "outputTitle": "Filene",
+    "outputDesc": "Videoopptak lagres som MP4 (1080p, 30 bilder/s, H.264) — eller så høyt som kameraet leverer. Lydfilen ved siden av følger lydformatet du har valgt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Velkommen til SundayRec",

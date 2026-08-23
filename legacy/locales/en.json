@@ -100,7 +100,9 @@
     "vuScaleQuiet": "Quiet",
     "vuScaleMax": "Max",
     "cameraLabel": "CAMERA",
-    "videoQualityLabel": "VIDEO QUALITY"
+    "videoQualityLabel": "VIDEO QUALITY",
+    "videoWithSeparateAudio": "+ separate audio file",
+    "videoOnlyMp4": "MP4 only"
   },
   "update": {
     "checking": "Checking for updates…",
@@ -488,8 +490,6 @@
     "format": "Format & Quality",
     "autoDelete": "Delete automatically after 90 days",
     "autoDeleteDesc": "Frees up disk space automatically by removing old recordings",
-    "trimSilence": "Trim silence",
-    "trimSilenceDesc": "Automatically trims silent seconds at the start and end of the recording",
     "confirmAutoDeleteShort": {
       "one": "Recordings older than {n} day are deleted automatically and cannot be recovered.",
       "other": "Recordings older than {n} days are deleted automatically and cannot be recovered."
@@ -830,8 +830,6 @@
     "cancelAutostop": "Cancel auto-stop"
   },
   "video": {
-    "minBitrateWarn": "Minimum bitrate is 500 kbps",
-    "maxBitrateWarn": "Maximum bitrate is 50,000 kbps",
     "title": "Video recording",
     "enableTitle": "Enable video recording",
     "enableDesc": "Captures video alongside audio for every recording",
@@ -840,40 +838,13 @@
     "cameraSearchPrompt": "Click Refresh to search for cameras",
     "refresh": "Refresh",
     "cameraHint": "USB webcams and HDMI capture cards are supported on macOS and Windows.",
-    "qualityTitle": "Quality",
-    "resolution": "RESOLUTION",
-    "recommended": "Recommended",
-    "framerate": "FRAME RATE",
-    "fps30Recommended": "30 fps (Recommended)",
-    "bitrate": "BITRATE",
-    "bitrateAuto": "Automatic (recommended — based on resolution)",
-    "bitrateCustom": "Custom",
-    "outputFormat": "Output format",
-    "outputFormatDesc": "Choose whether audio and video are combined in one file or saved separately.",
-    "combinedName": "Combined MP4",
-    "combinedDesc": "Audio + video in one file — ready for YouTube",
-    "separateName": "Separate files",
-    "separateDesc": "Audio and video are saved separately",
-    "splitWarning": "File splitting is active — video is always saved as a separate file regardless of the choice above. Disable automatic splitting in schedule settings to combine audio and video into one MP4.",
-    "splitHint": "When automatic file splitting is enabled, separate files are always used.",
     "keepAudioTitle": "Keep separate audio file",
     "keepAudioDesc": "Also saves the high-quality audio file alongside the combined MP4",
-    "hwEncode": "Hardware encoding (VideoToolbox)",
-    "hwEncodeDesc": "Uses hardware encoding (VideoToolbox) for faster video export on Mac. Falls back to software automatically if it fails.",
     "cameraDelivers": "The camera delivers at most",
-    "codec": "VIDEO CODEC",
-    "codecH264": "H.264 (universal)",
-    "codecH265": "H.265 / HEVC (smaller file)",
-    "container": "FORMAT",
-    "encoder": "ENCODER",
-    "encoderHardware": "Hardware – VideoToolbox (light & smooth, recommended)",
-    "encoderHint": "Hardware (VideoToolbox, Mac only): low CPU use → smooth live preview, less heat/battery, and real-time 4K/H.265. Very good quality at sufficient bitrate — recommended for most. Software (x264/x265): slightly better quality per file size, but uses a lot of CPU and can make the preview and meters choppy during recording — choose it when quality per byte matters most and the machine isn’t doing anything else.",
-    "encoderSoftware": "Software – x264/x265 (max quality per byte)",
-    "probeFailed": "Could not read the camera’s resolutions — limited to 1080p to avoid upscaling. 4K requires a camera that delivers true 4K.",
-    "resNative": "the camera’s max",
-    "resNotSupported": "not supported",
-    "resUnsupportedShort": "Selected resolution is not supported — set to the camera’s max.",
-    "guardDevice": "Change camera"
+    "probeFailed": "Could not read the camera's resolutions — the recording uses what the camera actually delivers, up to 1080p.",
+    "guardDevice": "Change camera",
+    "outputTitle": "The files",
+    "outputDesc": "Video recordings are saved as MP4 (1080p, 30 fps, H.264) — or as high as the camera delivers. The audio file beside it follows the audio format you chose under Files."
   },
   "onboarding": {
     "welcomeTitle": "Welcome to SundayRec",

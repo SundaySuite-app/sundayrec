@@ -206,9 +206,6 @@ pub struct Settings {
     /// UI language code (e.g. `"no"`, `"en"`), or `None` to follow the OS.
     #[serde(default = "default_language")]
     pub language: Option<String>,
-    /// Has the app ever been launched? Gates first-run behaviour.
-    #[serde(default)]
-    pub has_launched: bool,
     /// Has the user completed onboarding?
     #[serde(default)]
     pub onboarding_done: bool,
@@ -242,43 +239,15 @@ pub struct Settings {
     /// it succeeds. dshow cameras are addressed by name, so this stays `None`.
     #[serde(default)]
     pub video_device_index: Option<i32>,
-    /// Capture resolution tag: `"480p"` | `"720p"` | `"1080p"` | `"2160p"` (4K).
-    /// Default `"720p"`.
-    #[serde(default = "default_video_resolution")]
-    pub video_resolution: String,
-    /// Capture frame rate (fps). Valid 1..=120, default 30.
-    #[serde(default = "default_video_framerate")]
-    pub video_framerate: i32,
-    /// Recording video container: `"mp4"` (default) | `"mov"`. Both are
-    /// QuickTime/ISO containers that take H.264/H.265 + AAC and `+faststart`.
-    #[serde(default = "default_video_container")]
-    pub video_container: String,
-    /// Recording video codec: `"h264"` (default, universal) | `"h265"` (HEVC,
-    /// ~half the size; for live 4K a hardware encoder is recommended).
-    #[serde(default = "default_video_codec")]
-    pub video_codec: String,
-    /// Recording video encoder backend: `"hardware"` (default — VideoToolbox on
-    /// macOS — realtime + low CPU, so the live preview/meters stay snappy and live
-    /// 4K H.265 is feasible) | `"software"` (libx264/5 — max compression
-    /// efficiency, but pegs the CPU and makes the live monitoring lag). Ignored
-    /// off macOS (always falls back to software).
-    #[serde(default = "default_video_encoder")]
-    pub video_encoder: String,
+    // (v0.15 — «lyd + video, ett valg»: `videoResolution`, `videoFramerate`,
+    // `videoContainer`, `videoCodec` and `videoEncoder` left the settings. They
+    // are the constants in `crate::capture` now — 1080p / 30 fps / mp4 / H.264 /
+    // hardware-where-available — with the argument for each beside it.)
     /// Mirror the camera horizontally (preview + recording). Default false.
     /// Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
+    /// Kept: it is a per-machine preference the Home preview toggle persists.
     #[serde(default)]
     pub video_flip: bool,
-    /// Recording video bitrate in kbps; 0 = auto from resolution (the default).
-    /// Non-zero values clamp to 500..=50000 in `validate()`. NOTE: today only
-    /// the UI reads this (the bitrate control + Home's info strip) — the
-    /// capture pipeline does not consume it yet; it is persisted so the
-    /// operator's choice survives until it does.
-    #[serde(default, deserialize_with = "lenient")]
-    pub video_bitrate: i32,
-    /// Output muxing: `"combined"` (one A/V file) | `"separate"` (split files).
-    /// Default `"combined"`.
-    #[serde(default = "default_output_mode")]
-    pub output_mode: String,
     /// Also keep the standalone high-quality audio file next to a combined MP4?
     /// Default TRUE (R4): the renderer's default has always been «behold også
     /// ren lydfil», and the api-shim bridge synced that `true` into sqlite on
@@ -309,14 +278,11 @@ pub struct Settings {
     /// only if the native buffer misbehaves on a specific rig.
     #[serde(default)]
     pub classic_ffmpeg_preroll: bool,
-    /// Container/codec for the standalone audio file extracted alongside a video
-    /// recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
-    /// safe choice for a "keep the clean audio" sidecar).
-    #[serde(default = "default_separate_audio_format")]
-    pub separate_audio_format: FileFormat,
-    /// Use a single ffmpeg process for A/V to eliminate sync drift? Default true.
-    #[serde(default = "default_true")]
-    pub av_sync: bool,
+    // (v0.15: `separateAudioFormat` left — the separate audio sidecar now
+    // follows `format`, the one audio-format choice the app has; `avSync`,
+    // `videoBitrate` and `outputMode` left as dead fields with no reader. Old
+    // blobs carrying them are dropped tolerantly like every retired key; see
+    // `legacy_blob_with_v015_dead_fields_imports_cleanly`.)
 
     // ── Audio processing ───────────────────────────────────────────────────────
     /// Input channel layout.
@@ -332,52 +298,19 @@ pub struct Settings {
     /// See [`Settings::input_channel_l`].
     #[serde(default)]
     pub input_channel_r: Option<i32>,
-    /// Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
-    /// back-compat with exported/old profiles; the RECORDER no longer reads it —
-    /// it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
-    #[serde(default = "default_sample_rate")]
-    pub sample_rate: i32,
+    // (v0.15: the legacy numeric `sampleRate` field left. Nothing read it since
+    // `sample_rate_mode` arrived; an old profile still carrying it imports
+    // cleanly — serde ignores the key — see
+    // `legacy_blob_with_v015_dead_fields_imports_cleanly`.)
     /// How the capture sample rate is chosen. `Auto` (default) captures at the
     /// device's native rate (no resample → no choppiness); the explicit variants
     /// force a rate. This is what the recorder actually consults.
     #[serde(default = "default_sample_rate_mode")]
     pub sample_rate_mode: SampleRate,
-    /// Input gain as a percentage. Valid 0..=200, default 100.
-    #[serde(default = "default_input_volume")]
-    pub input_volume: i32,
-    /// Is the equalizer enabled?
-    #[serde(default)]
-    pub eq_enabled: bool,
-    /// Bass EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_bass: i32,
-    /// Mid EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_mid: i32,
-    /// Treble EQ gain in dB. Valid -24..=24, default 0.
-    #[serde(default)]
-    pub eq_treble: i32,
-    /// Is the compressor enabled?
-    #[serde(default)]
-    pub comp_enabled: bool,
-    /// Compressor threshold in dBFS. Valid -60..=0, default -24.
-    #[serde(default = "default_comp_threshold")]
-    pub comp_threshold: f64,
-    /// Compressor ratio. Valid 1..=100, default 4.
-    #[serde(default = "default_comp_ratio")]
-    pub comp_ratio: f64,
-    /// Compressor attack in ms. Valid 0.1..=2000, default 10.
-    #[serde(default = "default_comp_attack")]
-    pub comp_attack: f64,
-    /// Compressor release in ms. Valid 1..=9000, default 200.
-    #[serde(default = "default_comp_release")]
-    pub comp_release: f64,
-    /// Is the limiter enabled? Default true.
-    #[serde(default = "default_true")]
-    pub limiter_enabled: bool,
-    /// Limiter ceiling in dBFS. Valid -10..=0, default -1.
-    #[serde(default = "default_limiter_ceiling")]
-    pub limiter_ceiling: f64,
+    // (v0.15: `inputVolume`, the EQ trio, the compressor quartet and the limiter
+    // pair left. They were the Electron capture-chain knobs; the Tauri recorder
+    // has recorded RAW since v4.31 — dynamics/EQ live in the editor — and no
+    // UI or reader ever consulted them here.)
 
     // ── Output ─────────────────────────────────────────────────────────────────
     /// Output file format. Default mp3.
@@ -409,9 +342,6 @@ pub struct Settings {
     /// Auto-split interval in minutes. Valid 0..=480, 0 = off.
     #[serde(default)]
     pub split_minutes: i32,
-    /// Run ffmpeg `silenceremove` on the output (trim leading/trailing silence)?
-    #[serde(default)]
-    pub trim_silence: bool,
     /// Auto-stop manual recordings after N minutes. Valid 0..=1440, 0 = off.
     #[serde(default)]
     pub manual_max_minutes: i32,
@@ -427,12 +357,9 @@ pub struct Settings {
     /// it. Default false.
     #[serde(default)]
     pub preroll_enabled: bool,
-    /// Show the live L/R level meters during recording? Default true. When off,
-    /// the recorder drops the `astats` levels filter from its ffmpeg chain — the
-    /// meter's per-frame stderr can starve capture on a loaded machine, so turning
-    /// the meters off trades the display for maximum capture stability.
-    #[serde(default = "default_true")]
-    pub show_live_levels: bool,
+    // (v0.15: `trimSilence` — a control with no consumer — and `showLiveLevels`
+    // — a reader with no control — left. The meters are always on: the
+    // recorder's `live_levels` is hardcoded `true` where the opts are built.)
     /// Reminder notification N minutes before a scheduled recording.
     /// Valid 0..=60, 0 = off.
     #[serde(default)]
@@ -442,9 +369,6 @@ pub struct Settings {
     /// Launch the app at OS login?
     #[serde(default)]
     pub launch_at_login: bool,
-    /// Minimise to the system tray instead of quitting? Default true.
-    #[serde(default = "default_true")]
-    pub minimize_to_tray: bool,
     /// Wake the machine from sleep for scheduled recordings? Default true.
     #[serde(default = "default_true")]
     pub wake_from_sleep: bool,
@@ -526,15 +450,9 @@ pub struct Settings {
     /// Path to an outro clip appended on export, or `None`.
     #[serde(default)]
     pub editor_outro_path: Option<String>,
-    /// Use the Apple **VideoToolbox** hardware encoder for the editor's VIDEO
-    /// export? Default `false` — software x264/x265 is the quality-per-bit
-    /// reference and works on every machine, so hardware stays opt-in. macOS
-    /// only: on Windows/Linux the flag is ignored (VideoToolbox does not exist
-    /// there), and even on macOS a hardware render that fails is retried once
-    /// with the software args, so the toggle can never make an export
-    /// unavailable — only faster.
-    #[serde(default)]
-    pub editor_hw_encode: bool,
+    // (`editorHwEncode` left in v0.15: the editor's video export tries the
+    // hardware encoder first wherever the platform has one and falls back to
+    // software on a failed render — a toggle for that guarded nothing.)
 
     // (Live streaming was removed in v0.14, cloud backup with the sharing
     // cluster after it. Old sqlite blobs may still carry `streamDestinations`/
@@ -571,29 +489,8 @@ fn default_language() -> Option<String> {
 fn default_channels() -> ChannelMode {
     ChannelMode::Stereo
 }
-fn default_sample_rate() -> i32 {
-    48_000
-}
 fn default_sample_rate_mode() -> SampleRate {
     SampleRate::Auto
-}
-fn default_input_volume() -> i32 {
-    100
-}
-fn default_comp_threshold() -> f64 {
-    -24.0
-}
-fn default_comp_ratio() -> f64 {
-    4.0
-}
-fn default_comp_attack() -> f64 {
-    10.0
-}
-fn default_comp_release() -> f64 {
-    200.0
-}
-fn default_limiter_ceiling() -> f64 {
-    -1.0
 }
 fn default_format() -> FileFormat {
     FileFormat::Mp3
@@ -619,34 +516,6 @@ fn default_true() -> bool {
 fn default_smtp_port() -> i32 {
     587
 }
-fn default_video_resolution() -> String {
-    // 1080p is the modern default for an uploaded church service — looks much
-    // better than 720p, storage is ample, and the (now-default) hardware encoder
-    // keeps it light. Gating still caps it to the camera's native max.
-    "1080p".to_string()
-}
-fn default_video_framerate() -> i32 {
-    30
-}
-fn default_video_container() -> String {
-    "mp4".to_string()
-}
-fn default_video_codec() -> String {
-    "h264".to_string()
-}
-fn default_video_encoder() -> String {
-    // Hardware (VideoToolbox) by default on a Mac-first app: it offloads the encode
-    // to the media engine, freeing the CPU so the live preview + VU meters stay
-    // snappy during recording (software libx264 pegged the CPU → laggy monitoring).
-    // Gated to macOS at capture time; non-mac silently uses software.
-    "hardware".to_string()
-}
-fn default_output_mode() -> String {
-    "combined".to_string()
-}
-fn default_separate_audio_format() -> FileFormat {
-    FileFormat::Wav
-}
 fn default_update_channel() -> UpdateChannel {
     UpdateChannel::Stable
 }
@@ -655,7 +524,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: default_language(),
-            has_launched: false,
             onboarding_done: false,
 
             device_id: None,
@@ -665,38 +533,16 @@ impl Default for Settings {
             video_enabled: false,
             video_device_name: None,
             video_device_index: None,
-            video_resolution: default_video_resolution(),
-            video_framerate: default_video_framerate(),
-            video_container: default_video_container(),
-            video_codec: default_video_codec(),
-            video_encoder: default_video_encoder(),
             video_flip: false,
-            video_bitrate: 0,
-            output_mode: default_output_mode(),
             keep_separate_audio: true,
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             classic_ffmpeg_preroll: false,
-            separate_audio_format: default_separate_audio_format(),
-            av_sync: true,
 
             channels: default_channels(),
             input_channel_l: None,
             input_channel_r: None,
-            sample_rate: default_sample_rate(),
             sample_rate_mode: default_sample_rate_mode(),
-            input_volume: default_input_volume(),
-            eq_enabled: false,
-            eq_bass: 0,
-            eq_mid: 0,
-            eq_treble: 0,
-            comp_enabled: false,
-            comp_threshold: default_comp_threshold(),
-            comp_ratio: default_comp_ratio(),
-            comp_attack: default_comp_attack(),
-            comp_release: default_comp_release(),
-            limiter_enabled: true,
-            limiter_ceiling: default_limiter_ceiling(),
 
             format: default_format(),
             bitrate: default_bitrate(),
@@ -708,15 +554,12 @@ impl Default for Settings {
             silence_threshold: default_silence_threshold(),
             silence_timeout_minutes: default_silence_timeout_minutes(),
             split_minutes: 0,
-            trim_silence: false,
             manual_max_minutes: 0,
             pre_roll_seconds: 0,
             preroll_enabled: false,
-            show_live_levels: true,
             reminder_minutes: 0,
 
             launch_at_login: false,
-            minimize_to_tray: true,
             wake_from_sleep: true,
             protect_recording: true,
 
@@ -738,7 +581,6 @@ impl Default for Settings {
 
             editor_intro_path: None,
             editor_outro_path: None,
-            editor_hw_encode: false,
 
             auto_update: true,
             update_channel: default_update_channel(),
@@ -747,20 +589,8 @@ impl Default for Settings {
     }
 }
 
-/// Clamp a float to `[min, max]`, substituting `def` when it is not finite
-/// (NaN / ±∞). Direct port of the Electron `clampNum` (`store.ts:261`):
-/// `isNaN(n) || !isFinite(n) ? def : Math.max(min, Math.min(max, n))`.
-fn clamp_f64(v: f64, min: f64, max: f64, def: f64) -> f64 {
-    if v.is_finite() {
-        v.clamp(min, max)
-    } else {
-        def
-    }
-}
-
-/// Clamp an integer to `[min, max]`. Integers are always finite, so there is no
-/// default-fallback branch — the Electron `clampNum` only fell back for the
-/// float fields where NaN was reachable.
+/// Clamp an integer to `[min, max]`. (The float twin, `clamp_f64`, left in
+/// v0.15 with the compressor/limiter fields — the only non-integer settings.)
 fn clamp_i32(v: i32, min: i32, max: i32) -> i32 {
     v.clamp(min, max)
 }
@@ -773,41 +603,11 @@ impl Settings {
     /// This is idempotent: validating an already-valid `Settings` is a no-op.
     pub fn validate(&mut self) {
         // Audio processing
-        self.sample_rate = clamp_i32(self.sample_rate, 8_000, 192_000);
-        self.input_volume = clamp_i32(self.input_volume, 0, 200);
-        self.eq_bass = clamp_i32(self.eq_bass, -24, 24);
-        self.eq_mid = clamp_i32(self.eq_mid, -24, 24);
-        self.eq_treble = clamp_i32(self.eq_treble, -24, 24);
         self.input_channel_l = self.input_channel_l.map(|c| clamp_i32(c, 0, 31));
         self.input_channel_r = self.input_channel_r.map(|c| clamp_i32(c, 0, 31));
-        self.comp_threshold = clamp_f64(self.comp_threshold, -60.0, 0.0, -24.0);
-        self.comp_ratio = clamp_f64(self.comp_ratio, 1.0, 100.0, 4.0);
-        self.comp_attack = clamp_f64(self.comp_attack, 0.1, 2000.0, 10.0);
-        self.comp_release = clamp_f64(self.comp_release, 1.0, 9000.0, 200.0);
-        self.limiter_ceiling = clamp_f64(self.limiter_ceiling, -10.0, 0.0, -1.0);
 
         // Output
         self.auto_delete_days = clamp_i32(self.auto_delete_days, 0, 3650);
-
-        // Video capture
-        self.video_framerate = clamp_i32(self.video_framerate, 1, 120);
-        // Normalise resolution/container/codec tags to the known set; anything
-        // else falls back to a safe default rather than producing bad ffmpeg args.
-        if !matches!(
-            self.video_resolution.as_str(),
-            "480p" | "720p" | "1080p" | "2160p"
-        ) {
-            self.video_resolution = default_video_resolution();
-        }
-        if !matches!(self.video_container.as_str(), "mp4" | "mov") {
-            self.video_container = default_video_container();
-        }
-        if !matches!(self.video_codec.as_str(), "h264" | "h265") {
-            self.video_codec = default_video_codec();
-        }
-        if !matches!(self.video_encoder.as_str(), "software" | "hardware") {
-            self.video_encoder = default_video_encoder();
-        }
 
         // Recording behaviour
         self.silence_threshold = clamp_i32(self.silence_threshold, -90, 0);
@@ -821,12 +621,6 @@ impl Settings {
         // a valid TCP port (Electron left it un-clamped, but a 0/negative port
         // would be a hard ffmpeg/lettre error — clamp defensively).
         self.email_smtp_port = clamp_i32(self.email_smtp_port, 1, 65_535);
-
-        // Recording video bitrate (R4): 0 = auto stays 0; anything else clamps
-        // to the Electron-documented 500..=50000 kbps range.
-        if self.video_bitrate != 0 {
-            self.video_bitrate = clamp_i32(self.video_bitrate, 500, 50_000);
-        }
 
         // Per-device channel map (R4): clamp every stored pair to real channel
         // indices, then DERIVE the flat recorder fields from the map. The map is
@@ -873,8 +667,8 @@ impl Settings {
     /// The capture sample rate the recorder should use, derived from
     /// [`Settings::sample_rate_mode`]. `Auto` → `None` (omit `-ar`, capture at the
     /// device's native rate → no resample → no choppiness); the explicit variants
-    /// → `Some(hz)`. This is the recorder's source of truth, NOT the legacy
-    /// `sample_rate: i32` field (kept only for back-compat).
+    /// → `Some(hz)`. This is the recorder's source of truth (the legacy numeric
+    /// `sampleRate` field left in v0.15).
     pub fn resolved_sample_rate(&self) -> Option<u32> {
         match self.sample_rate_mode {
             SampleRate::Auto => None,
@@ -957,7 +751,6 @@ mod tests {
         let s = Settings::default();
         // System
         assert_eq!(s.language, None);
-        assert!(!s.has_launched);
         assert!(!s.onboarding_done);
         // Audio device
         assert_eq!(s.device_id, None);
@@ -966,29 +759,12 @@ mod tests {
         assert!(!s.video_enabled);
         assert_eq!(s.video_device_name, None);
         assert_eq!(s.video_device_index, None);
-        assert_eq!(s.video_resolution, "1080p");
-        assert_eq!(s.video_framerate, 30);
-        assert_eq!(s.output_mode, "combined");
+        assert!(!s.video_flip);
         // R4: true — the deployed (bridge-synced) renderer default, see the field doc.
         assert!(s.keep_separate_audio);
-        assert_eq!(s.separate_audio_format, FileFormat::Wav);
-        assert!(s.av_sync);
         // Audio processing
-        assert!(!s.eq_enabled);
         assert_eq!(s.channels, ChannelMode::Stereo);
-        assert_eq!(s.sample_rate, 48_000);
         assert_eq!(s.sample_rate_mode, SampleRate::Auto);
-        assert_eq!(s.input_volume, 100);
-        assert_eq!(s.eq_bass, 0);
-        assert_eq!(s.eq_mid, 0);
-        assert_eq!(s.eq_treble, 0);
-        assert!(!s.comp_enabled);
-        assert_eq!(s.comp_threshold, -24.0);
-        assert_eq!(s.comp_ratio, 4.0);
-        assert_eq!(s.comp_attack, 10.0);
-        assert_eq!(s.comp_release, 200.0);
-        assert!(s.limiter_enabled);
-        assert_eq!(s.limiter_ceiling, -1.0);
         // Output
         assert_eq!(s.format, FileFormat::Mp3);
         assert_eq!(s.bitrate, "256");
@@ -1000,14 +776,11 @@ mod tests {
         assert_eq!(s.silence_threshold, -50);
         assert_eq!(s.silence_timeout_minutes, 5);
         assert_eq!(s.split_minutes, 0);
-        assert!(!s.trim_silence);
         assert_eq!(s.manual_max_minutes, 0);
         assert_eq!(s.pre_roll_seconds, 0);
-        assert!(s.show_live_levels);
         assert_eq!(s.reminder_minutes, 0);
         // System behaviour
         assert!(!s.launch_at_login);
-        assert!(s.minimize_to_tray);
         assert!(s.wake_from_sleep);
         assert!(s.protect_recording);
         // Schedule (Fase 5)
@@ -1028,9 +801,6 @@ mod tests {
         // Editor intro/outro (R7)
         assert_eq!(s.editor_intro_path, None);
         assert_eq!(s.editor_outro_path, None);
-        // Hardware video encode is OPT-IN: software x264/x265 is the default
-        // everywhere, so a fresh install exports video identically on every mac.
-        assert!(!s.editor_hw_encode);
         // Misc
         assert!(s.auto_update);
         assert!(s.ask_open_editor);
@@ -1066,23 +836,6 @@ mod tests {
         // Untouched field keeps its default.
         assert_eq!(s.email_smtp_port, 587);
         assert!(s.notify_start);
-    }
-
-    #[test]
-    fn validate_clamps_sample_rate() {
-        let mut over = Settings {
-            sample_rate: 999_999,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.sample_rate, 192_000);
-
-        let mut under = Settings {
-            sample_rate: 1,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.sample_rate, 8_000);
     }
 
     #[test]
@@ -1148,23 +901,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_clamps_input_volume() {
-        let mut over = Settings {
-            input_volume: 5_000,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.input_volume, 200);
-
-        let mut under = Settings {
-            input_volume: -10,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.input_volume, 0);
-    }
-
-    #[test]
     fn validate_clamps_input_channels() {
         let mut s = Settings {
             input_channel_l: Some(99),
@@ -1180,69 +916,6 @@ mod tests {
         none.validate();
         assert_eq!(none.input_channel_l, None);
         assert_eq!(none.input_channel_r, None);
-    }
-
-    #[test]
-    fn validate_clamps_eq_bands() {
-        let mut s = Settings {
-            eq_bass: 100,
-            eq_mid: -100,
-            eq_treble: 50,
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.eq_bass, 24);
-        assert_eq!(s.eq_mid, -24);
-        assert_eq!(s.eq_treble, 24);
-    }
-
-    #[test]
-    fn validate_clamps_compressor_fields_and_nan_falls_back() {
-        let mut s = Settings {
-            comp_threshold: -200.0,
-            comp_ratio: 0.0,
-            comp_attack: 9_999.0,
-            comp_release: 0.0,
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.comp_threshold, -60.0);
-        assert_eq!(s.comp_ratio, 1.0);
-        assert_eq!(s.comp_attack, 2000.0);
-        assert_eq!(s.comp_release, 1.0);
-
-        // NaN → per-field default (mirrors clampNum's isNaN branch).
-        let mut nan = Settings {
-            comp_threshold: f64::NAN,
-            comp_ratio: f64::INFINITY,
-            comp_attack: f64::NEG_INFINITY,
-            comp_release: f64::NAN,
-            limiter_ceiling: f64::NAN,
-            ..Default::default()
-        };
-        nan.validate();
-        assert_eq!(nan.comp_threshold, -24.0);
-        assert_eq!(nan.comp_ratio, 4.0);
-        assert_eq!(nan.comp_attack, 10.0);
-        assert_eq!(nan.comp_release, 200.0);
-        assert_eq!(nan.limiter_ceiling, -1.0);
-    }
-
-    #[test]
-    fn validate_clamps_limiter_ceiling() {
-        let mut over = Settings {
-            limiter_ceiling: 5.0,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.limiter_ceiling, 0.0);
-
-        let mut under = Settings {
-            limiter_ceiling: -50.0,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.limiter_ceiling, -10.0);
     }
 
     #[test]
@@ -1280,41 +953,6 @@ mod tests {
         assert_eq!(s.manual_max_minutes, 1440);
         assert_eq!(s.pre_roll_seconds, 60);
         assert_eq!(s.reminder_minutes, 60);
-    }
-
-    #[test]
-    fn validate_clamps_video_framerate() {
-        let mut over = Settings {
-            video_framerate: 9_999,
-            ..Default::default()
-        };
-        over.validate();
-        assert_eq!(over.video_framerate, 120);
-
-        let mut under = Settings {
-            video_framerate: 0,
-            ..Default::default()
-        };
-        under.validate();
-        assert_eq!(under.video_framerate, 1);
-    }
-
-    #[test]
-    fn validate_normalizes_unknown_video_tags() {
-        // An older/garbage store may carry video tags outside the known set; they
-        // must be coerced back to the defaults rather than produce bad ffmpeg args.
-        let mut s = Settings {
-            video_resolution: "999p".into(),
-            video_container: "mkv".into(),
-            video_codec: "av1".into(),
-            video_encoder: "quantum".into(),
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.video_resolution, default_video_resolution());
-        assert_eq!(s.video_container, default_video_container());
-        assert_eq!(s.video_codec, default_video_codec());
-        assert_eq!(s.video_encoder, default_video_encoder());
     }
 
     #[test]
@@ -1400,15 +1038,14 @@ mod tests {
         // so an exported profile interoperates with the old build.
         let json = serde_json::to_value(Settings::default()).unwrap();
         let obj = json.as_object().unwrap();
-        assert!(obj.contains_key("hasLaunched"));
+        assert!(obj.contains_key("onboardingDone"));
         assert!(obj.contains_key("deviceName"));
         assert!(obj.contains_key("videoEnabled"));
         assert!(obj.contains_key("videoDeviceName"));
         assert!(obj.contains_key("videoDeviceIndex"));
-        assert!(obj.contains_key("sampleRate"));
+        assert!(obj.contains_key("keepSeparateAudio"));
         assert!(obj.contains_key("sampleRateMode"));
-        assert!(obj.contains_key("showLiveLevels"));
-        assert!(obj.contains_key("inputVolume"));
+        assert!(obj.contains_key("inputChannelL"));
         assert!(obj.contains_key("filenamePattern"));
         assert!(obj.contains_key("stopOnSilence"));
         assert!(obj.contains_key("silenceTimeoutMinutes"));
@@ -1480,16 +1117,16 @@ mod tests {
         // The regression this guards: without the lenient deserializer the whole
         // blob would fail and `from_json_merged` would reset EVERY setting.
         let s = Settings::from_json_merged(
-            r#"{ "updateChannel": "canary", "sampleRate": 44100, "format": "flac" }"#,
+            r#"{ "updateChannel": "canary", "silenceThreshold": -40, "format": "flac" }"#,
         );
         assert_eq!(s.update_channel, UpdateChannel::Stable);
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.format, FileFormat::Flac);
 
         // Same for a value that is not even a string.
-        let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "sampleRate": 44100 }"#);
+        let s = Settings::from_json_merged(r#"{ "updateChannel": 3, "silenceThreshold": -40 }"#);
         assert_eq!(s.update_channel, UpdateChannel::Stable);
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
     }
 
     #[test]
@@ -1531,14 +1168,14 @@ mod tests {
         // Only two fields present + one unknown field — the rest must default,
         // the unknown must be ignored.
         let s = Settings::from_json_merged(
-            r#"{ "sampleRate": 44100, "format": "wav", "someFutureField": true }"#,
+            r#"{ "silenceThreshold": -40, "format": "wav", "someFutureField": true }"#,
         );
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.format, FileFormat::Wav);
         // Untouched fields kept their defaults.
-        assert_eq!(s.input_volume, 100);
+        assert_eq!(s.silence_timeout_minutes, 5);
         assert_eq!(s.channels, ChannelMode::Stereo);
-        assert!(s.minimize_to_tray);
+        assert!(s.wake_from_sleep);
     }
 
     #[test]
@@ -1547,8 +1184,8 @@ mod tests {
             language: Some("en".to_string()),
             device_name: Some("Soundcraft USB".to_string()),
             channels: ChannelMode::MonoMix,
-            sample_rate: 44_100,
-            input_volume: 150,
+            sample_rate_mode: SampleRate::R44100,
+            silence_threshold: -40,
             format: FileFormat::Flac,
             filename_pattern: FilenamePattern::Datetime,
             stop_on_silence: true,
@@ -1569,12 +1206,11 @@ mod tests {
     fn r4_fields_default_and_serialise_camel_case() {
         let s = Settings::default();
         assert!(s.device_channels.is_empty());
-        assert_eq!(s.video_bitrate, 0);
         assert!(!s.preroll_enabled);
 
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
-        for key in ["deviceChannels", "videoBitrate", "prerollEnabled"] {
+        for key in ["deviceChannels", "prerollEnabled"] {
             assert!(obj.contains_key(key), "missing camelCase key {key}");
         }
     }
@@ -1592,7 +1228,6 @@ mod tests {
         let original = Settings {
             device_id: Some("dev-1".to_string()),
             device_channels: dc,
-            video_bitrate: 8_000,
             preroll_enabled: true,
             ..Default::default()
         }
@@ -1609,17 +1244,15 @@ mod tests {
         // the rest of the blob (the from_json_merged full-defaults trapdoor).
         let s = Settings::from_json_merged(
             r#"{
-                "sampleRate": 44100,
-                "deviceChannels": "not-a-map",
-                "videoBitrate": "high"
+                "silenceThreshold": -40,
+                "deviceChannels": "not-a-map"
             }"#,
         )
         .validated();
         // The neighbour survived — the whole point.
-        assert_eq!(s.sample_rate, 44_100);
-        // Every malformed field landed on its (validated) default.
+        assert_eq!(s.silence_threshold, -40);
+        // The malformed field landed on its (validated) default.
         assert!(s.device_channels.is_empty());
-        assert_eq!(s.video_bitrate, 0);
     }
 
     // Live streaming was removed in v0.14, but installed apps upgraded from
@@ -1630,7 +1263,7 @@ mod tests {
     fn legacy_blob_with_stream_fields_imports_cleanly() {
         let s = Settings::from_json_merged(
             r#"{
-                "sampleRate": 44100,
+                "silenceThreshold": -40,
                 "churchName": "Domkirken",
                 "streamDestinations": [
                     {"id": "yt", "name": "YouTube",
@@ -1645,7 +1278,7 @@ mod tests {
         )
         .validated();
         // The neighbours survived — dropping stream fields costs nothing else.
-        assert_eq!(s.sample_rate, 44_100);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.church_name, "Domkirken");
         // And the round-trip writes a blob WITHOUT the retired fields.
         let json = serde_json::to_value(&s).unwrap();
@@ -1673,7 +1306,7 @@ mod tests {
     fn legacy_blob_with_removed_sharing_fields_imports_cleanly() {
         let s = Settings::from_json_merged(
             r#"{
-                "sampleRate": 48000,
+                "silenceThreshold": -40,
                 "emailAddress": "vakt@kirka.no",
                 "webhookUrl": "https://hooks.slack.com/services/T/B/X",
                 "webhookOnWarning": true,
@@ -1688,7 +1321,7 @@ mod tests {
             }"#,
         )
         .validated();
-        assert_eq!(s.sample_rate, 48_000);
+        assert_eq!(s.silence_threshold, -40);
         assert_eq!(s.email_address, "vakt@kirka.no");
         let json = serde_json::to_value(&s).unwrap();
         let obj = json.as_object().unwrap();
@@ -1700,6 +1333,87 @@ mod tests {
             "cloudDropbox",
             "cloudOneDrive",
             "podcast",
+        ] {
+            assert!(
+                !obj.contains_key(gone),
+                "{gone} must not survive the round-trip"
+            );
+        }
+    }
+
+    // v0.15 («Frivilligen først» R2) removed the dead settings fields — the
+    // Electron capture-chain knobs nothing read, the legacy numeric sampleRate,
+    // and the controls without consumers. Every upgraded install and every
+    // exported profile still carries them. Same contract as the two tests
+    // above: DROPPED tolerantly, neighbours intact (including the owner's
+    // imported `separateAudioFormat: "flac"` — the value itself is gone, the
+    // `format` beside it survives and is what the sidecar follows now), and
+    // the round-trip writes a blob without them.
+    #[test]
+    fn legacy_blob_with_v015_dead_fields_imports_cleanly() {
+        let s = Settings::from_json_merged(
+            r#"{
+                "hasLaunched": true,
+                "sampleRate": 44100,
+                "sampleRateMode": "r44100",
+                "inputVolume": 150,
+                "eqEnabled": true, "eqBass": 3, "eqMid": -2, "eqTreble": 1,
+                "compEnabled": true, "compThreshold": -18.0, "compRatio": 3.0,
+                "compAttack": 5.0, "compRelease": 100.0,
+                "limiterEnabled": false, "limiterCeiling": -0.5,
+                "avSync": false,
+                "minimizeToTray": false,
+                "videoBitrate": 8000,
+                "outputMode": "separate",
+                "trimSilence": true,
+                "showLiveLevels": false,
+                "separateAudioFormat": "flac",
+                "format": "flac",
+                "localAdaptivity": true,
+                "videoResolution": "2160p",
+                "videoFramerate": 60,
+                "videoContainer": "mov",
+                "videoCodec": "h265",
+                "videoEncoder": "software",
+                "editorHwEncode": true,
+                "churchName": "Domkirken"
+            }"#,
+        )
+        .validated();
+        assert_eq!(s.sample_rate_mode, SampleRate::R44100);
+        assert_eq!(s.format, FileFormat::Flac);
+        assert_eq!(s.church_name, "Domkirken");
+        let json = serde_json::to_value(&s).unwrap();
+        let obj = json.as_object().unwrap();
+        for gone in [
+            "hasLaunched",
+            "sampleRate",
+            "inputVolume",
+            "eqEnabled",
+            "eqBass",
+            "eqMid",
+            "eqTreble",
+            "compEnabled",
+            "compThreshold",
+            "compRatio",
+            "compAttack",
+            "compRelease",
+            "limiterEnabled",
+            "limiterCeiling",
+            "avSync",
+            "minimizeToTray",
+            "videoBitrate",
+            "outputMode",
+            "trimSilence",
+            "showLiveLevels",
+            "separateAudioFormat",
+            "localAdaptivity",
+            "videoResolution",
+            "videoFramerate",
+            "videoContainer",
+            "videoCodec",
+            "videoEncoder",
+            "editorHwEncode",
         ] {
             assert!(
                 !obj.contains_key(gone),
@@ -1772,31 +1486,6 @@ mod tests {
         s.validate();
         assert_eq!(s.input_channel_l, Some(2));
         assert_eq!(s.input_channel_r, Some(3));
-    }
-
-    #[test]
-    fn validate_clamps_and_normalises_r4_video_fields() {
-        let mut s = Settings {
-            video_bitrate: 100, // non-zero → clamps up to 500
-            ..Default::default()
-        };
-        s.validate();
-        assert_eq!(s.video_bitrate, 500);
-
-        // Negative means "clamp up", same rule.
-        let mut auto = Settings {
-            video_bitrate: -5,
-            ..Default::default()
-        };
-        auto.validate();
-        assert_eq!(auto.video_bitrate, 500);
-
-        let mut zero = Settings {
-            video_bitrate: 0,
-            ..Default::default()
-        };
-        zero.validate();
-        assert_eq!(zero.video_bitrate, 0, "0 = auto passes through");
     }
 
     // ── resolve_save_folder — the canonical rule ─────────────────────────────

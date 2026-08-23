@@ -467,20 +467,16 @@ pub(crate) fn build_opts(
     // is actually configured. When video is on the main file MUST be a video
     // container (mp4) — an audio container like .wav can't hold a video stream, so
     // ffmpeg would drop the camera and silently record audio-only (the ".wav
-    // instead of .mp4 / no video" bug). The chosen audio `format` /
-    // `separate_audio_format` then only governs the SEPARATE audio sidecar;
-    // audio-only recordings still use it.
+    // instead of .mp4 / no video" bug). The chosen audio `format` then only
+    // governs the SEPARATE audio sidecar; audio-only recordings still use it.
     let camera_configured =
         settings.video_device_name.is_some() || settings.video_device_index.is_some();
     let video_on = video_override.unwrap_or(settings.video_enabled) && camera_configured;
-    // Video recordings use the configured container (mp4 default, or mov); audio
-    // recordings use the chosen audio format. `validate()` has already normalised
-    // `video_container` to mp4/mov, so this is always a safe extension.
+    // Video recordings use THE container (mp4 — v0.15 made it a constant, see
+    // `sundayrec_core::capture::RECORDING_VIDEO_CONTAINER`); audio recordings
+    // use the chosen audio format.
     let main_ext = if video_on {
-        match settings.video_container.as_str() {
-            "mov" => "mov",
-            _ => "mp4",
-        }
+        sundayrec_core::capture::RECORDING_VIDEO_CONTAINER
     } else {
         format_ext(settings.format)
     };
@@ -512,7 +508,6 @@ pub(crate) fn build_opts(
         stop_on_silence: settings.stop_on_silence,
         silence_threshold_db: Some(settings.silence_threshold),
         silence_timeout_minutes: settings.silence_timeout_minutes.max(1) as u32,
-        framerate: settings.video_framerate.clamp(1, 120) as u32,
         channel_mode: settings.channels,
         input_channel_l: settings.input_channel_l,
         input_channel_r: settings.input_channel_r,
@@ -528,19 +523,19 @@ pub(crate) fn build_opts(
         // the shared device and drop samples → choppy capture; ffmpeg's own astats
         // reads the already-captured signal, so the mic is opened exactly once. The
         // engine reader drains stderr, so the astats lines don't back-pressure the
-        // capture. Honour the user's `show_live_levels` setting so the meters (and
-        // their ~141 lines/s astats stderr) can be turned OFF for maximum stability
-        // on a struggling machine — previously hardcoded `true`, leaving the setting
-        // dead.
-        live_levels: settings.show_live_levels,
+        // capture. Always on (v0.15): the `showLiveLevels` setting had a reader
+        // but no control, so nobody could turn the meters off — the constant
+        // says so honestly. The engine's `live_levels` switch itself stays: the
+        // test recording and the soak turn it off on purpose.
+        live_levels: true,
         keep_separate_audio: settings.keep_separate_audio,
-        separate_audio_format: format_ext(settings.separate_audio_format).to_string(),
-        // The probe targets this resolution so 1080p actually records 1080p.
-        video_resolution: settings.video_resolution.clone(),
-        // H.264 (default) or H.265/HEVC for the recording.
-        video_codec: settings.video_codec.clone(),
-        // software (libx264/5) or hardware (VideoToolbox, mac) encoder backend.
-        video_encoder: settings.video_encoder.clone(),
+        // The separate audio sidecar follows the ONE audio format the app lets
+        // the operator choose (v0.15: `separateAudioFormat` left — it had no
+        // control, and the only non-default value in the field came from the
+        // legacy import seeding it from this same `format`).
+        separate_audio_format: format_ext(settings.format).to_string(),
+        // (Resolution / frame rate / codec / encoder: the recording constants in
+        // `sundayrec_core::capture`, read by the engine — v0.15.)
         // Windows: force legacy DirectShow audio instead of cpal (WASAPI/ASIO).
         classic_directshow: settings.classic_directshow,
         // Escape hatch: force legacy ffmpeg audio capture instead of the native

@@ -25,7 +25,6 @@ import type { Settings } from "../bindings/Settings";
 export const SETTINGS_DEFAULTS: Settings = {
   // System
   language: null,
-  hasLaunched: false,
   onboardingDone: false,
 
   // Audio device
@@ -37,39 +36,17 @@ export const SETTINGS_DEFAULTS: Settings = {
   videoEnabled: false,
   videoDeviceName: null,
   videoDeviceIndex: null,
-  videoResolution: "1080p",
-  videoFramerate: 30,
-  videoContainer: "mp4",
-  videoCodec: "h264",
-  videoEncoder: "hardware",
   videoFlip: false,
-  videoBitrate: 0,
-  outputMode: "combined",
   keepSeparateAudio: true,
   classicDirectshow: false,
   classicFfmpegAudio: false,
   classicFfmpegPreroll: false,
-  separateAudioFormat: "wav",
-  avSync: true,
 
   // Audio processing
   channels: "stereo",
   inputChannelL: null,
   inputChannelR: null,
-  sampleRate: 48000,
   sampleRateMode: "auto",
-  inputVolume: 100,
-  eqEnabled: false,
-  eqBass: 0,
-  eqMid: 0,
-  eqTreble: 0,
-  compEnabled: false,
-  compThreshold: -24,
-  compRatio: 4,
-  compAttack: 10,
-  compRelease: 200,
-  limiterEnabled: true,
-  limiterCeiling: -1,
 
   // Output
   format: "mp3",
@@ -83,16 +60,13 @@ export const SETTINGS_DEFAULTS: Settings = {
   silenceThreshold: -50,
   silenceTimeoutMinutes: 5,
   splitMinutes: 0,
-  trimSilence: false,
   manualMaxMinutes: 0,
   preRollSeconds: 0,
   prerollEnabled: false,
-  showLiveLevels: true,
   reminderMinutes: 0,
 
   // System behaviour
   launchAtLogin: false,
-  minimizeToTray: true,
   wakeFromSleep: true,
   protectRecording: true,
 
@@ -119,7 +93,6 @@ export const SETTINGS_DEFAULTS: Settings = {
   // Editor
   editorIntroPath: null,
   editorOutroPath: null,
-  editorHwEncode: false,
 
   // Misc
   autoUpdate: true,

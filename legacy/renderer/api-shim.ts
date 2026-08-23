@@ -442,7 +442,7 @@ async function loadSettingsFromBackend(): Promise<Settings> {
   }
   if (VERIFY_GOTO) {
     // Skip onboarding during verify screenshots (session-only, never saved).
-    s = { ...s, hasLaunched: true, onboardingDone: true };
+    s = { ...s, onboardingDone: true };
   }
   return s;
 }

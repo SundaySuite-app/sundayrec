@@ -100,7 +100,9 @@
     "vuScaleQuiet": "Tyst",
     "vuScaleMax": "Max",
     "cameraLabel": "KAMERA",
-    "videoQualityLabel": "VIDEOKVALITET"
+    "videoQualityLabel": "VIDEOKVALITET",
+    "videoWithSeparateAudio": "+ separat ljudfil",
+    "videoOnlyMp4": "Endast MP4"
   },
   "update": {
     "checking": "Söker efter uppdateringar…",
@@ -488,8 +490,6 @@
     "format": "Format & kvalitet",
     "autoDelete": "Radera automatiskt efter 90 dagar",
     "autoDeleteDesc": "Frigör diskutrymme automatiskt genom att radera gamla inspelningar",
-    "trimSilence": "Klipp bort tystnad",
-    "trimSilenceDesc": "Klipper automatiskt bort tysta sekunder i början och slutet av inspelningen",
     "confirmAutoDeleteShort": {
       "one": "Inspelningar äldre än {n} dag tas bort automatiskt och kan inte återställas.",
       "other": "Inspelningar äldre än {n} dagar tas bort automatiskt och kan inte återställas."
@@ -830,8 +830,6 @@
     "cancelAutostop": "Avbryt autostopp"
   },
   "video": {
-    "minBitrateWarn": "Minsta bithastighet är 500 kbps",
-    "maxBitrateWarn": "Högsta bithastighet är 50 000 kbps",
     "title": "Videoinspelning",
     "enableTitle": "Aktivera videoinspelning",
     "enableDesc": "Spelar in video utöver ljud vid varje inspelning",
@@ -840,40 +838,13 @@
     "cameraSearchPrompt": "Klicka på Uppdatera för att söka efter kameror",
     "refresh": "Uppdatera",
     "cameraHint": "USB-webbkameror och HDMI-fångstkort stöds på macOS och Windows.",
-    "qualityTitle": "Kvalitet",
-    "resolution": "UPPLÖSNING",
-    "recommended": "Rekommenderas",
-    "framerate": "BILDFREKVENS",
-    "fps30Recommended": "30 fps (Rekommenderas)",
-    "bitrate": "BITHASTIGHET",
-    "bitrateAuto": "Automatisk (rekommenderas — baserat på upplösning)",
-    "bitrateCustom": "Anpassad",
-    "outputFormat": "Utdataformat",
-    "outputFormatDesc": "Välj om ljud och video ska kombineras i en fil eller sparas separat.",
-    "combinedName": "Kombinerad MP4",
-    "combinedDesc": "Ljud + video i en fil — redo för YouTube",
-    "separateName": "Separata filer",
-    "separateDesc": "Ljud och video sparas var för sig",
-    "splitWarning": "Filuppdelning är aktiv — video sparas alltid som en separat fil oavsett valet ovan. Inaktivera automatisk uppdelning i schemainställningar för att kombinera ljud och video i en MP4.",
-    "splitHint": "Vid automatisk filuppdelning används alltid separata filer.",
     "keepAudioTitle": "Behåll separat ljudfil",
     "keepAudioDesc": "Sparar också den högkvalitativa ljudfilen vid sidan av den kombinerade MP4-filen",
-    "hwEncode": "Hårdvarukodning (VideoToolbox)",
-    "hwEncodeDesc": "Använder hårdvarukodning (VideoToolbox) för snabbare videoexport på Mac. Faller automatiskt tillbaka till mjukvara om det misslyckas.",
     "cameraDelivers": "Kameran levererar max",
-    "codec": "VIDEOKODEK",
-    "codecH264": "H.264 (universell)",
-    "codecH265": "H.265 / HEVC (mindre fil)",
-    "container": "FORMAT",
-    "encoder": "ENKODER",
-    "encoderHardware": "Hårdvara – VideoToolbox (lätt & jämn, rekommenderas)",
-    "encoderHint": "Hårdvara (VideoToolbox, endast Mac): låg CPU-användning → jämn liveförhandsvisning, mindre värme/batteri och realtids-4K/H.265. Mycket god kvalitet vid tillräcklig bitrate — rekommenderas för de flesta. Mjukvara (x264/x265): något bättre kvalitet per filstorlek, men använder mycket CPU och kan göra förhandsvisning och mätare hackiga under inspelning — välj den när kvalitet per byte betyder allra mest och datorn inte gör något annat samtidigt.",
-    "encoderSoftware": "Mjukvara – x264/x265 (maximal kvalitet per byte)",
-    "probeFailed": "Kunde inte läsa kamerans upplösningar — begränsat till 1080p för att undvika uppskalning. 4K kräver en kamera som levererar äkta 4K.",
-    "resNative": "kamerans max",
-    "resNotSupported": "stöds inte",
-    "resUnsupportedShort": "Vald upplösning stöds inte — satt till kamerans max.",
-    "guardDevice": "Byta kamera"
+    "probeFailed": "Kunde inte läsa kamerans upplösningar — inspelningen använder det kameran faktiskt levererar, upp till 1080p.",
+    "guardDevice": "Byta kamera",
+    "outputTitle": "Filerna",
+    "outputDesc": "Videoinspelningar sparas som MP4 (1080p, 30 bilder/s, H.264) — eller så högt som kameran levererar. Ljudfilen bredvid följer ljudformatet du valt under Filer."
   },
   "onboarding": {
     "welcomeTitle": "Välkommen till SundayRec",

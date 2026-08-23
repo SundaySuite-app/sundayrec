@@ -169,8 +169,9 @@ pub struct RecordingOpts {
     pub silence_threshold_db: Option<i32>,
     /// Minutes of continuous silence before stop-on-silence fires (1–120).
     pub silence_timeout_minutes: u32,
-    /// Capture framerate.
-    pub framerate: u32,
+    // (v0.15: `framerate`, `video_resolution`, `video_codec` and `video_encoder`
+    // left these opts with the Video tab's knobs — they are the constants in
+    // `sundayrec_core::capture` now, read where the capture args are built.)
     /// Output channel layout / downmix mode (stereo, mono-L, mono-R, mono-mix).
     pub channel_mode: ChannelMode,
     /// Explicit 0-based device input channel → LEFT output (multi-channel mixers).
@@ -199,20 +200,6 @@ pub struct RecordingOpts {
     /// chosen from `Settings::separate_audio_format`. Drives the extract codec via
     /// the shared `audio_encode_args` seam.
     pub separate_audio_format: String,
-    /// Capture resolution tag (`"480p"`/`"720p"`/`"1080p"`/`"2160p"`) from
-    /// settings — the camera-mode probe TARGET, so a 1080p setting records 1080p
-    /// (when the camera advertises it). Empty → 720p. Serialized (it roundtrips
-    /// through the planner).
-    #[serde(default)]
-    pub video_resolution: String,
-    /// Recording video codec tag (`"h264"`/`"h265"`) from settings. Empty/unknown
-    /// → H.264. Drives the `-c:v` choice in the capture args.
-    #[serde(default)]
-    pub video_codec: String,
-    /// Recording video encoder backend (`"software"`/`"hardware"`) from settings.
-    /// `"hardware"` → VideoToolbox on macOS (realtime 4K); ignored off macOS.
-    #[serde(default)]
-    pub video_encoder: String,
     /// Windows escape hatch: force the legacy ffmpeg DirectShow audio path instead
     /// of the modern cpal (WASAPI/ASIO) capture. Default `false`. No effect on macOS.
     #[serde(default)]
@@ -314,7 +301,7 @@ pub fn build_record_args(
     let capture = CaptureOpts {
         stop_on_silence: opts.stop_on_silence,
         silence_threshold_db: opts.silence_threshold_db,
-        framerate: opts.framerate,
+        framerate: sundayrec_core::capture::RECORDING_FRAMERATE,
         channel_mode: opts.channel_mode,
         input_channel_l: opts.input_channel_l,
         input_channel_r: opts.input_channel_r,
@@ -327,11 +314,10 @@ pub fn build_record_args(
         // The probed camera mode (resolved in `start`); pins a size/rate the
         // device actually advertises so avfoundation opens the camera.
         video_input: opts.video_input,
-        video_codec: match opts.video_codec.as_str() {
-            "h265" | "hevc" => sundayrec_core::editor::VideoCodec::H265,
-            _ => sundayrec_core::editor::VideoCodec::H264,
-        },
-        hw_accel: opts.video_encoder == "hardware",
+        // v0.15: codec + encoder are constants (H.264; VideoToolbox where the
+        // platform has it — the builder gates `hw_accel` to macOS itself).
+        video_codec: sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+        hw_accel: sundayrec_core::capture::RECORDING_HW_ACCEL,
     };
     build_unified_capture_args(
         platform,
@@ -616,16 +602,22 @@ impl RecorderEngine {
         let mut opts = opts;
         if let Some(v) = &video {
             let modes = crate::media::camera::probe_camera_modes(&device_token(v), platform).await;
-            let (target_w, target_h) =
-                sundayrec_core::capture::resolution_dims(&opts.video_resolution);
-            match resolve_camera_mode(&modes, target_w, target_h, opts.framerate.max(1)) {
+            let (target_w, target_h) = sundayrec_core::capture::resolution_dims(
+                sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
+            );
+            match resolve_camera_mode(
+                &modes,
+                target_w,
+                target_h,
+                sundayrec_core::capture::RECORDING_FRAMERATE,
+            ) {
                 Some(m) => {
                     tracing::info!(
                         width = m.width,
                         height = m.height,
                         input_fps = m.input_fps,
-                        target_fps = opts.framerate,
-                        target_res = %opts.video_resolution,
+                        target_fps = sundayrec_core::capture::RECORDING_FRAMERATE,
+                        target_res = sundayrec_core::capture::RECORDING_VIDEO_RESOLUTION,
                         "recorder: resolved camera capture mode from probe"
                     );
                     opts.video_input = Some(m);
@@ -1162,7 +1154,14 @@ async fn run_session(
             },
             // HEVC into mp4/mov must be tagged hvc1 at the remux (Apple players
             // reject hev1); the tag is NOT applied to the mkv capture itself.
-            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+            // v0.15: the recording codec is the constant H.264, so this is never
+            // set — kept as an expression of the constant rather than a bare
+            // `false` so the day the codec changes, the remux follows.
+            hvc1_tag: !audio_only
+                && matches!(
+                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                    sundayrec_core::editor::VideoCodec::H265
+                ),
         });
         let mut session = RecordingSession::new(session_output, start_ms);
         // The OS device-list-change signal. Grabbed once per session (it installs
@@ -3005,7 +3004,14 @@ async fn finalize_one(
             } else {
                 DeliveryMode::RemuxCopy
             },
-            hvc1_tag: !audio_only && matches!(opts.video_codec.as_str(), "h265" | "hevc"),
+            // v0.15: the recording codec is the constant H.264, so this is never
+            // set — kept as an expression of the constant rather than a bare
+            // `false` so the day the codec changes, the remux follows.
+            hvc1_tag: !audio_only
+                && matches!(
+                    sundayrec_core::capture::RECORDING_VIDEO_CODEC,
+                    sundayrec_core::editor::VideoCodec::H265
+                ),
         }
     };
 
@@ -3362,7 +3368,6 @@ mod tests {
             stop_on_silence: false,
             silence_threshold_db: None,
             silence_timeout_minutes: 5,
-            framerate: 30,
             channel_mode: ChannelMode::Stereo,
             input_channel_l: None,
             input_channel_r: None,
@@ -3373,9 +3378,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: false,
             separate_audio_format: "wav".into(),
-            video_resolution: "720p".into(),
-            video_codec: "h264".into(),
-            video_encoder: "software".into(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,
@@ -3943,7 +3945,6 @@ mod tests {
             stop_on_silence: true,
             silence_threshold_db: Some(-50),
             silence_timeout_minutes: 7,
-            framerate: 25,
             channel_mode: ChannelMode::MonoL,
             input_channel_l: None,
             input_channel_r: None,
@@ -3954,9 +3955,6 @@ mod tests {
             live_levels: true,
             keep_separate_audio: true,
             separate_audio_format: "wav".into(),
-            video_resolution: "1080p".into(),
-            video_codec: "h264".into(),
-            video_encoder: "software".into(),
             classic_directshow: false,
             classic_ffmpeg_audio: false,
             video_input: None,

@@ -946,15 +946,26 @@ pub struct WireSettings {
     pub format: FileFormat,
     pub bitrate_kbps: u32,
     pub filename_pattern: FilenamePattern,
+    /// WIRE-FROZEN since v0.15: the `inputVolume` setting left the app (the
+    /// recorder records raw), but the Worker's `parseSettings` lists every
+    /// settings key as REQUIRED — a missing one is `missing_field` → 400 → the
+    /// payload is dropped from the outbox without retry. So the key stays and
+    /// carries the constant the reader used to default to (100 %). Remove it
+    /// here only AFTER `sunday-telemetry/src/schema.ts` makes it optional; the
+    /// Worker ships first (its own rule 2).
     pub input_volume: i32,
     pub video_enabled: bool,
     pub stop_on_silence: bool,
     pub silence_threshold: i32,
     pub split_minutes: i32,
     pub auto_delete_days: i32,
+    /// WIRE-FROZEN since v0.15 (see `input_volume`): the control left, the
+    /// recorder never trimmed silence, so the constant is `false`.
     pub trim_silence: bool,
     /// Whether a pre-roll buffer is armed at all (not how long it is).
     pub preroll_enabled: bool,
+    /// WIRE-FROZEN since v0.15 (see `input_volume`): the meters are always on
+    /// now, so the constant is `true`.
     pub show_live_levels: bool,
     /// The escape hatch back to ffmpeg audio capture. Whether anyone still needs
     /// it decides when the legacy path can be deleted.
@@ -974,6 +985,15 @@ pub struct WireSettings {
     pub special_count: u32,
 }
 
+/// The three WIRE-FROZEN settings values (see the field docs on
+/// [`WireSettings`]): the settings left the app in v0.15, the keys the Worker
+/// requires did not. These are the values every install reported before the
+/// fields were removed, i.e. the defaults — so the aggregate's distribution
+/// for them simply stops moving rather than shifting.
+pub const WIRE_INPUT_VOLUME: i32 = 100;
+pub const WIRE_TRIM_SILENCE: bool = false;
+pub const WIRE_SHOW_LIVE_LEVELS: bool = true;
+
 impl WireSettings {
     /// Project the full [`Settings`] down to the wire-safe subset. The single,
     /// explicit allow-list: a field added to `Settings` is absent here until
@@ -986,15 +1006,15 @@ impl WireSettings {
             format: s.format,
             bitrate_kbps: s.bitrate_kbps(),
             filename_pattern: s.filename_pattern,
-            input_volume: s.input_volume,
+            input_volume: WIRE_INPUT_VOLUME,
             video_enabled: s.video_enabled,
             stop_on_silence: s.stop_on_silence,
             silence_threshold: s.silence_threshold,
             split_minutes: s.split_minutes,
             auto_delete_days: s.auto_delete_days,
-            trim_silence: s.trim_silence,
+            trim_silence: WIRE_TRIM_SILENCE,
             preroll_enabled: s.pre_roll_seconds > 0,
-            show_live_levels: s.show_live_levels,
+            show_live_levels: WIRE_SHOW_LIVE_LEVELS,
             classic_ffmpeg_audio: s.classic_ffmpeg_audio,
             classic_directshow: s.classic_directshow,
             auto_update: s.auto_update,

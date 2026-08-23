@@ -89,7 +89,6 @@ export function setupFilesPage(): void {
     key: 'autoDeleteDays',
     confirmIf: (value) => autoDeleteGuard(typeof value === 'number' ? value : 0),
   }))
-  bindSetting('opt-trim-silence', filesBinding({ key: 'trimSilence' }))
 
   // Opptaksoppførsel — the silence toggle reveals its threshold/timeout config.
   bindSetting('opt-silence', filesBinding({
@@ -133,8 +132,6 @@ export function applyFilesSettingsToUI(): void {
     if (daysEl) daysEl.value = String(settings.autoDeleteDays || 90)
     if (rowEl)  rowEl.style.display = settings.autoDeleteDays ? 'block' : 'none'
   }
-  const trimEl = document.getElementById('opt-trim-silence') as HTMLInputElement | null
-  if (trimEl) trimEl.checked = !!settings.trimSilence
 
   // Opptaksoppførsel (moved here from Schedule → Avanserte valg)
   const protectEl     = document.getElementById('opt-protect')           as HTMLInputElement  | null
@@ -224,7 +221,6 @@ function collectFilesSettings(): void {
     format:          ((document.querySelector('input[name="format"]:checked')  as HTMLInputElement | null)?.value ?? 'mp3') as FileFormat,
     bitrate:         (document.querySelector('input[name="bitrate"]:checked') as HTMLInputElement | null)?.value ?? '256',
     autoDeleteDays:  days,
-    trimSilence:     !!(document.getElementById('opt-trim-silence') as HTMLInputElement | null)?.checked,
     protectRecording:      protectEl?.checked ?? true,
     stopOnSilence:         silenceEl?.checked ?? false,
     silenceThreshold:      parseInt(silThreshSel?.value  ?? '-50') || -50,

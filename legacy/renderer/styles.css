@@ -418,27 +418,6 @@ select:focus:not(:focus-visible) {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   user-select: none;
 }
-/* A capture mode the selected camera doesn't advertise — dimmed + unclickable. */
-.option-card.is-disabled {
-  opacity: .4; cursor: not-allowed; pointer-events: none;
-}
-/* Per-card capability badge: "kameraets maks" (native) or "ikke støttet". */
-.option-card-cap-badge {
-  margin-top: 4px; font-size: 10px; line-height: 1.2; letter-spacing: .02em;
-  text-transform: uppercase; padding: 1px 6px; border-radius: 999px;
-}
-.option-card-cap-badge.cap-native {
-  color: var(--gold, #ebb84b);
-  background: color-mix(in srgb, var(--gold, #ebb84b) 14%, transparent);
-}
-/* Was `var(--text-3, #8899bb)` — a token that never existed. Its hardcoded
-   fallback #8899bb IS --text2, so binding to --text2 keeps the rendering
-   identical; --text3 would have darkened it below the contrast floor. */
-.option-card-cap-badge.cap-unsupported {
-  color: var(--text2);
-  background: rgba(255, 255, 255, .05);
-}
-
 /* Live camera-feed resolution overlay (bottom-left of the preview) — shows what
    the camera ACTUALLY delivers, so it's clear when it differs from the recording
    resolution setting. */
@@ -1812,7 +1791,7 @@ body.platform-darwin .recording-overlay { padding-top: 36px; }
 .inline-field-label { font-size: 13px; color: var(--text2); }
 .inline-field-input { max-width: 80px; }
 
-/* Video tab — bitrate radio rows + keep-audio row */
+/* Video tab — keep-audio row (and the editor export modal's radio rows) */
 .video-bitrate-radio {
   display: flex; align-items: center; gap: 8px; font-size: 13px;
 }

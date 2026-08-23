@@ -1411,12 +1411,20 @@ pub async fn mastering_analyze(_input_path: &str, _preset_id: &str) -> AppResult
     disabled("masteringAnalyze")
 }
 
+/// What the export command passes for `hw_first` (v0.15): always try the
+/// hardware encoder where the platform has one. A toggle for this was a setting
+/// nobody could reason about ("is my Mac's VideoToolbox good?") guarding a
+/// path that can only make an export faster — a failed hardware render is
+/// retried once in software. The parameter itself stays so the real-ffmpeg
+/// smoke tests can pin the software path on any machine.
+pub const HW_ENCODE_FIRST: bool = true;
+
 /// Render the cut-plan (+ optional mastering gain) to the requested format.
 #[cfg(not(feature = "editor"))]
 pub async fn export<F>(
     _engine: &ExportEngine,
     _req: &EditorExportRequest,
-    _hw_encode: bool,
+    _hw_first: bool,
     _on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -2464,16 +2472,16 @@ where
 /// Tauri event. The in-flight child is parked in `engine` so
 /// [`cancel_export`] can kill it. HARDWARE-UNVERIFIED.
 ///
-/// `hw_encode` is the user's `editor_hw_encode` setting: on a VIDEO export on
-/// macOS it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a
-/// hardware render that fails is retried once in software (see
+/// `hw_first` ([`HW_ENCODE_FIRST`] in production): on a VIDEO export on macOS
+/// it swaps x264/x265 for VideoToolbox. It is a pure speed-up — a hardware
+/// render that fails is retried once in software (see
 /// [`should_retry_with_software`](sundayrec_core::editor::should_retry_with_software)),
-/// so the toggle can never cost the user their export.
+/// so it can never cost the user their export.
 #[cfg(feature = "editor")]
 pub async fn export<F>(
     engine: &ExportEngine,
     req: &EditorExportRequest,
-    hw_encode: bool,
+    hw_first: bool,
     on_progress: F,
 ) -> AppResult<EditorExportResult>
 where
@@ -2735,12 +2743,12 @@ where
         Some("h265") | Some("hevc") => sundayrec_core::editor::VideoCodec::H265,
         _ => sundayrec_core::editor::VideoCodec::H264,
     };
-    // Hardware (VideoToolbox) video encode is an opt-in macOS speed-up. It has no
-    // CRF, so it needs a target bitrate, which depends on the source resolution —
+    // Hardware (VideoToolbox) video encode is a macOS speed-up. It has no CRF,
+    // so it needs a target bitrate, which depends on the source resolution —
     // probed ONLY when the hardware path is actually taken. An unreadable size
     // falls back to the 1080p rung rather than to a nonsense `0k`.
     bail_if_cancelled(engine)?;
-    let want_hw = is_video && hw_encode && cfg!(target_os = "macos");
+    let want_hw = is_video && hw_first && cfg!(target_os = "macos");
     let hw_bitrate_kbps = if want_hw {
         let (w, h) = probe_video_size(&req.input_path)
             .await

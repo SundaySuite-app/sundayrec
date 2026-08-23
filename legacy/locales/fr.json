@@ -100,7 +100,9 @@
     "vuScaleQuiet": "Silence",
     "vuScaleMax": "Max",
     "cameraLabel": "CAMÉRA",
-    "videoQualityLabel": "QUALITÉ VIDÉO"
+    "videoQualityLabel": "QUALITÉ VIDÉO",
+    "videoWithSeparateAudio": "+ fichier audio séparé",
+    "videoOnlyMp4": "MP4 uniquement"
   },
   "update": {
     "checking": "Recherche de mises à jour…",
@@ -488,8 +490,6 @@
     "format": "Format et qualité",
     "autoDelete": "Supprimer automatiquement après 90 jours",
     "autoDeleteDesc": "Libère automatiquement de l’espace disque en supprimant les anciens enregistrements",
-    "trimSilence": "Couper les silences",
-    "trimSilenceDesc": "Coupe automatiquement les secondes silencieuses au début et à la fin de l’enregistrement",
     "confirmAutoDeleteShort": {
       "one": "Les enregistrements de plus de {n} jour sont supprimés automatiquement et ne peuvent pas être récupérés.",
       "other": "Les enregistrements de plus de {n} jours sont supprimés automatiquement et ne peuvent pas être récupérés."
@@ -830,8 +830,6 @@
     "cancelAutostop": "Annuler l'arrêt auto"
   },
   "video": {
-    "minBitrateWarn": "Le débit minimal est de 500 kbps",
-    "maxBitrateWarn": "Le débit maximal est de 50 000 kbps",
     "title": "Enregistrement vidéo",
     "enableTitle": "Activer l’enregistrement vidéo",
     "enableDesc": "Capture la vidéo en plus de l’audio à chaque enregistrement",
@@ -840,40 +838,13 @@
     "cameraSearchPrompt": "Cliquez sur Actualiser pour rechercher des caméras",
     "refresh": "Actualiser",
     "cameraHint": "Les webcams USB et les cartes de capture HDMI sont prises en charge sur macOS et Windows.",
-    "qualityTitle": "Qualité",
-    "resolution": "RÉSOLUTION",
-    "recommended": "Recommandé",
-    "framerate": "FRÉQUENCE",
-    "fps30Recommended": "30 fps (Recommandé)",
-    "bitrate": "DÉBIT BINAIRE",
-    "bitrateAuto": "Automatique (recommandé — basé sur la résolution)",
-    "bitrateCustom": "Personnalisé",
-    "outputFormat": "Format de sortie",
-    "outputFormatDesc": "Choisissez si l’audio et la vidéo sont combinés dans un fichier ou enregistrés séparément.",
-    "combinedName": "MP4 combiné",
-    "combinedDesc": "Audio + vidéo dans un fichier — prêt pour YouTube",
-    "separateName": "Fichiers séparés",
-    "separateDesc": "L’audio et la vidéo sont enregistrés séparément",
-    "splitWarning": "Le découpage de fichier est actif — la vidéo est toujours enregistrée comme fichier séparé indépendamment du choix ci-dessus. Désactivez le découpage automatique dans les paramètres de planification pour combiner audio et vidéo en un MP4.",
-    "splitHint": "Avec le découpage automatique de fichiers, des fichiers séparés sont toujours utilisés.",
     "keepAudioTitle": "Conserver le fichier audio séparé",
     "keepAudioDesc": "Enregistre également le fichier audio haute qualité à côté du MP4 combiné",
-    "hwEncode": "Encodage matériel (VideoToolbox)",
-    "hwEncodeDesc": "Utilise l'encodage matériel (VideoToolbox) pour un export vidéo plus rapide sur Mac. Bascule automatiquement vers le logiciel en cas d'échec.",
     "cameraDelivers": "La caméra fournit au maximum",
-    "codec": "CODEC VIDÉO",
-    "codecH264": "H.264 (universel)",
-    "codecH265": "H.265 / HEVC (fichier plus petit)",
-    "container": "FORMAT",
-    "encoder": "ENCODEUR",
-    "encoderHardware": "Matériel – VideoToolbox (léger & fluide, recommandé)",
-    "encoderHint": "Matériel (VideoToolbox, Mac uniquement) : faible usage CPU → aperçu en direct fluide, moins de chaleur/batterie et 4K/H.265 en temps réel. Très bonne qualité avec un débit suffisant — recommandé pour la plupart. Logiciel (x264/x265) : qualité légèrement meilleure par taille de fichier, mais utilise beaucoup de CPU et peut rendre l’aperçu et les vumètres saccadés pendant l’enregistrement — choisissez-le quand la qualité par octet compte avant tout et que la machine ne fait rien d’autre en même temps.",
-    "encoderSoftware": "Logiciel – x264/x265 (qualité max par octet)",
-    "probeFailed": "Impossible de lire les résolutions de la caméra — limité à 1080p pour éviter la mise à l’échelle. La 4K nécessite une caméra qui fournit de la vraie 4K.",
-    "resNative": "maximum de la caméra",
-    "resNotSupported": "non pris en charge",
-    "resUnsupportedShort": "La résolution choisie n’est pas prise en charge — réglée sur le maximum de la caméra.",
-    "guardDevice": "Changer de caméra"
+    "probeFailed": "Impossible de lire les résolutions de la caméra — l'enregistrement utilise ce que la caméra fournit réellement, jusqu'à 1080p.",
+    "guardDevice": "Changer de caméra",
+    "outputTitle": "Les fichiers",
+    "outputDesc": "Les enregistrements vidéo sont sauvegardés en MP4 (1080p, 30 i/s, H.264) — ou à la résolution maximale de la caméra. Le fichier audio à côté suit le format audio choisi sous Fichiers."
   },
   "onboarding": {
     "welcomeTitle": "Bienvenue dans SundayRec",

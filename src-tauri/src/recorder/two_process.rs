@@ -148,11 +148,10 @@ pub async fn run_two_process_session(
         sundayrec_core::settings::ChannelMode::Stereo => 2,
         _ => 1,
     };
-    let hw_accel = opts.video_encoder == "hardware";
-    let video_codec = match opts.video_codec.as_str() {
-        "h265" | "hevc" => sundayrec_core::editor::VideoCodec::H265,
-        _ => sundayrec_core::editor::VideoCodec::H264,
-    };
+    // v0.15: codec + encoder are the recording constants (see
+    // `sundayrec_core::capture`), no longer per-install settings.
+    let hw_accel = sundayrec_core::capture::RECORDING_HW_ACCEL;
+    let video_codec = sundayrec_core::capture::RECORDING_VIDEO_CODEC;
     // The camera INPUT mode resolved by the engine's probe — pins a size/rate the
     // device advertises so avfoundation opens the camera. Falls back to a safe
     // 720p@30 (NOT the user's possibly-unsupported target) if the probe found
@@ -167,7 +166,7 @@ pub async fn run_two_process_session(
         &device_token(&video),
         &video_temp,
         mode,
-        opts.framerate,
+        sundayrec_core::capture::RECORDING_FRAMERATE,
         hw_accel,
         video_codec,
     );

@@ -56,13 +56,14 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
   }) => {
     await seedLegacyBlob(page, {
       onboardingDone: true,
-      hasLaunched: true,
+      hasLaunched: true, // dead since v0.15 — must be dropped
       churchName: "Domkirken",
       autoDeleteDays: 90,
       webhookOnWarn: true, // retired with the webhook — must be dropped
-      videoSeparate: true, // old name
+      videoSeparate: true, // old name, and its target left in v0.15 — dropped
+      videoKeepAudio: false, // old name → keepSeparateAudio
       updateChannel: "beta",
-      inputVolume: 80.5, // float — must arrive integer-coerced
+      reminderMinutes: 15.4, // float — must arrive integer-coerced
     });
     await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });
 
@@ -75,10 +76,13 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
     ) as Record<string, unknown>;
     expect(imported).not.toHaveProperty("webhookOnWarning");
     expect(imported).not.toHaveProperty("webhookOnWarn");
-    expect(imported.outputMode).toBe("separate");
+    expect(imported).not.toHaveProperty("hasLaunched");
+    expect(imported).not.toHaveProperty("outputMode");
     expect(imported).not.toHaveProperty("videoSeparate");
+    expect(imported.keepSeparateAudio).toBe(false);
+    expect(imported).not.toHaveProperty("videoKeepAudio");
     expect(imported.updateChannel).toBe("beta");
-    expect(imported.inputVolume).toBe(81);
+    expect(imported.reminderMinutes).toBe(15);
 
     // The legacy key is gone; the flag is set.
     expect(await legacyState(page)).toEqual({ blob: null, flag: "1" });
@@ -146,7 +150,6 @@ test.describe("settings migration — localStorage → sqlite, once", () => {
   }) => {
     await seedLegacyBlob(page, {
       onboardingDone: true,
-      hasLaunched: true,
       reminderMinutes: 15,
     });
     await boot(page, { fixtures: BOOT_FIXTURES, goto: "settings:general" });

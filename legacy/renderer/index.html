@@ -872,13 +872,6 @@
           <input type="number" class="form-input inline-field-input" id="auto-delete-days" value="90" min="1" max="3650" />
           <span class="inline-field-label" data-i18n="files.days">dager</span>
         </div>
-        <div class="toggle-row mt">
-          <div>
-            <div class="toggle-title" data-i18n="files.trimSilence">Trim stillhet</div>
-            <div class="toggle-desc" data-i18n="files.trimSilenceDesc">Kutter automatisk stille sekunder i starten og slutten av opptaket</div>
-          </div>
-          <label class="toggle"><input type="checkbox" id="opt-trim-silence" /><span class="toggle-track"></span></label>
-        </div>
       </div>
 
       <!-- ── Opptaksoppførsel (recording behaviour) ─────────────────── -->
@@ -1109,138 +1102,19 @@
             <button class="btn-secondary" id="btn-video-refresh-devices" data-i18n="video.refresh">Oppdater</button>
           </div>
           <p class="form-hint" data-i18n="video.cameraHint">USB-webkamera og HDMI-opptakskort støttes på macOS og Windows.</p>
+          <div id="video-camera-info" class="form-hint" style="display:none;margin-top:4px"></div>
         </div>
 
         <div class="card">
-          <div class="card-title" data-i18n="video.qualityTitle">Kvalitet</div>
-          <label class="form-label" data-i18n="video.resolution">OPPLØSNING</label>
-          <!-- Ingen statiske «~X GB/t»-estimater: tallene forutsatte H.264 med
-               auto-bitrate og ingenting oppdaterte dem når kodek (H.265) eller
-               egendefinert bitrate endret regnestykket. -->
-          <div class="option-cards" style="grid-template-columns:1fr 1fr 1fr 1fr">
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="480p" />
-              <div class="option-card-name">480p</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="720p" />
-              <div class="option-card-name">720p</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="1080p" checked />
-              <div class="option-card-name">1080p</div>
-              <div class="option-card-badge" data-i18n="video.recommended">Anbefalt</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-resolution" value="2160p" />
-              <div class="option-card-name">4K</div>
-            </label>
-          </div>
-          <div id="video-res-warning" class="form-hint" style="display:none;color:var(--warning,#d08700);margin-top:4px"></div>
-
-          <label class="form-label mt" data-i18n="video.framerate">BILDERATE</label>
-          <select class="form-input" id="video-fps-select" style="max-width:200px">
-            <option value="24">24 fps</option>
-            <option value="25">25 fps</option>
-            <option value="30" selected data-i18n="video.fps30Recommended">30 fps (Anbefalt)</option>
-            <option value="50">50 fps</option>
-            <option value="60">60 fps</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.container">FORMAT</label>
-          <select class="form-input" id="video-container-select" style="max-width:200px">
-            <option value="mp4" selected>MP4</option>
-            <option value="mov">MOV (QuickTime)</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.codec">VIDEO-KODEK</label>
-          <select class="form-input" id="video-codec-select" style="max-width:280px">
-            <option value="h264" selected data-i18n="video.codecH264">H.264 (universell)</option>
-            <option value="h265" data-i18n="video.codecH265">H.265 / HEVC (mindre fil)</option>
-          </select>
-
-          <label class="form-label mt" data-i18n="video.encoder">ENKODER</label>
-          <select class="form-input" id="video-encoder-select" style="max-width:420px">
-            <option value="hardware" selected data-i18n="video.encoderHardware">Hardware – VideoToolbox (lett &amp; jevn, anbefalt)</option>
-            <option value="software" data-i18n="video.encoderSoftware">Software – x264/x265 (maks kvalitet pr. byte)</option>
-          </select>
-          <div class="form-hint" data-i18n="video.encoderHint">Hardware (VideoToolbox, kun Mac): lav CPU-bruk → jevn live-forhåndsvisning, mindre varme/batteri, og sann-tids 4K/H.265. Svært god kvalitet ved tilstrekkelig bitrate — anbefalt for de fleste. Software (x264/x265): litt bedre kvalitet pr. filstørrelse, men bruker mye CPU og kan gjøre forhåndsvisning og målere hakkete under opptak — velg den når kvalitet pr. byte betyr aller mest og maskinen ikke gjør annet samtidig.</div>
-
-          <label class="form-label mt" data-i18n="video.bitrate">BITHASTIGHET</label>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            <label class="video-bitrate-radio">
-              <input type="radio" name="video-bitrate" id="opt-video-bitrate-auto" checked />
-              <span data-i18n="video.bitrateAuto">Automatisk (anbefalt — basert på oppløsning)</span>
-            </label>
-            <label class="video-bitrate-radio">
-              <input type="radio" name="video-bitrate" id="opt-video-bitrate-custom" />
-              <span data-i18n="video.bitrateCustom">Egendefinert</span>
-            </label>
-          </div>
-          <div id="video-bitrate-custom-row" class="inline-field-row" style="display:none">
-            <input type="number" class="form-input inline-field-input" id="video-bitrate-value" value="4000" min="500" max="50000" />
-            <span class="inline-field-label">kbps</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-title" data-i18n="video.outputFormat">Utdataformat</div>
-          <p class="card-desc" data-i18n="video.outputFormatDesc">Velg om lyd og video skal kombineres til én fil eller lagres separat.</p>
-          <div class="option-cards" style="grid-template-columns:1fr 1fr">
-            <label class="option-card">
-              <input type="radio" name="video-mode" value="combined" checked />
-              <svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <rect x="2" y="4" width="28" height="12" rx="2"/>
-                <path d="M10 10h12"/>
-                <path d="M8 7l2 3-2 3"/>
-              </svg>
-              <div class="option-card-name" data-i18n="video.combinedName">Kombinert MP4</div>
-              <div class="option-card-desc" data-i18n="video.combinedDesc">Lyd + video i én fil — klar for YouTube</div>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="video-mode" value="separate" />
-              <svg viewBox="0 0 32 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                <rect x="1" y="3" width="13" height="14" rx="2"/>
-                <rect x="18" y="3" width="13" height="14" rx="2"/>
-                <path d="M5 10h5M22 8v4"/>
-              </svg>
-              <div class="option-card-name" data-i18n="video.separateName">Separate filer</div>
-              <div class="option-card-desc" data-i18n="video.separateDesc">Lyd og video lagres hver for seg</div>
-            </label>
-          </div>
-          <div id="video-split-warning" class="notice-warn" style="display:none" data-i18n="video.splitWarning">
-            Delt opptak er aktivt — video lagres alltid som separat fil uavhengig av valget over. Deaktiver automatisk oppdeling i planleggingsinnstillingene for å kombinere lyd og video til én MP4.
-          </div>
-          <p class="form-hint" id="video-split-hint" data-i18n="video.splitHint">Ved automatisk oppdeling av filer brukes alltid separate filer.</p>
-
-          <!-- Keep audio toggle — only visible when "combined" mode is selected -->
-          <div id="video-keep-audio-row" class="toggle-row video-keep-audio-row">
+          <div class="card-title" data-i18n="video.outputTitle">Filene</div>
+          <p class="card-desc" data-i18n="video.outputDesc">Videoopptak lagres som MP4 (1080p, 30 bilder/s, H.264) — eller så høyt som kameraet leverer. Lydfilen ved siden av følger lydformatet du har valgt under Filer.</p>
+          <div class="toggle-row video-keep-audio-row">
             <div class="video-keep-audio-text">
               <div class="toggle-title" data-i18n="video.keepAudioTitle">Behold separat lydfil</div>
               <div class="toggle-desc" data-i18n="video.keepAudioDesc">Lagrer også den høykvalitets lydfilen ved siden av den kombinerte MP4</div>
             </div>
             <label class="toggle"><input type="checkbox" id="opt-video-keep-audio" checked /><span class="toggle-track"></span></label>
           </div>
-
-          <!-- Hardware video encode (VideoToolbox) — opt-in, macOS only. Applies
-               to the EDITOR's video export, not to recording (recording has its
-               own encoder picker above). A hardware render that fails is retried
-               once in software, so this can only make an export faster. -->
-          <div class="toggle-row">
-            <div>
-              <div class="toggle-title" data-i18n="video.hwEncode">Maskinvare-koding (VideoToolbox)</div>
-              <div class="toggle-desc" data-i18n="video.hwEncodeDesc">Bruker maskinvare-koding (VideoToolbox) for raskere video-eksport på Mac. Faller automatisk tilbake til programvare hvis det feiler.</div>
-            </div>
-            <label class="toggle"><input type="checkbox" id="opt-editor-hw-encode" /><span class="toggle-track"></span></label>
-          </div>
-
-          <!-- Unified-recorder toggle — default ON since v4.51. Single
-               ffmpeg opens both camera and microphone in one process so
-               A/V sync is frame-accurate from the first frame. Power
-               users can opt out if they hit an unusual edge case. -->
-          <!-- Perfekt A/V-synk er ALLTID på (unified recorder): én ffmpeg-prosess
-               for lyd + bilde. Valget er fjernet — det skal alltid være perfekt
-               sync. `useUnifiedRecorder` tvinges til true i video-page.ts. -->
         </div>
       </div>
 

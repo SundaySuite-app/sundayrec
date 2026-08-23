@@ -22,10 +22,6 @@ export type Settings = {
  */
 language: string | null, 
 /**
- * Has the app ever been launched? Gates first-run behaviour.
- */
-hasLaunched: boolean, 
-/**
  * Has the user completed onboarding?
  */
 onboardingDone: boolean, 
@@ -62,50 +58,11 @@ videoDeviceName: string | null,
  */
 videoDeviceIndex: number | null, 
 /**
- * Capture resolution tag: `"480p"` | `"720p"` | `"1080p"` | `"2160p"` (4K).
- * Default `"720p"`.
- */
-videoResolution: string, 
-/**
- * Capture frame rate (fps). Valid 1..=120, default 30.
- */
-videoFramerate: number, 
-/**
- * Recording video container: `"mp4"` (default) | `"mov"`. Both are
- * QuickTime/ISO containers that take H.264/H.265 + AAC and `+faststart`.
- */
-videoContainer: string, 
-/**
- * Recording video codec: `"h264"` (default, universal) | `"h265"` (HEVC,
- * ~half the size; for live 4K a hardware encoder is recommended).
- */
-videoCodec: string, 
-/**
- * Recording video encoder backend: `"hardware"` (default — VideoToolbox on
- * macOS — realtime + low CPU, so the live preview/meters stay snappy and live
- * 4K H.265 is feasible) | `"software"` (libx264/5 — max compression
- * efficiency, but pegs the CPU and makes the live monitoring lag). Ignored
- * off macOS (always falls back to software).
- */
-videoEncoder: string, 
-/**
  * Mirror the camera horizontally (preview + recording). Default false.
  * Electron `videoFlip` — handy for front-facing / mirrored stage cameras.
+ * Kept: it is a per-machine preference the Home preview toggle persists.
  */
 videoFlip: boolean, 
-/**
- * Recording video bitrate in kbps; 0 = auto from resolution (the default).
- * Non-zero values clamp to 500..=50000 in `validate()`. NOTE: today only
- * the UI reads this (the bitrate control + Home's info strip) — the
- * capture pipeline does not consume it yet; it is persisted so the
- * operator's choice survives until it does.
- */
-videoBitrate: number, 
-/**
- * Output muxing: `"combined"` (one A/V file) | `"separate"` (split files).
- * Default `"combined"`.
- */
-outputMode: string, 
 /**
  * Also keep the standalone high-quality audio file next to a combined MP4?
  * Default TRUE (R4): the renderer's default has always been «behold også
@@ -141,16 +98,6 @@ classicFfmpegAudio: boolean,
  */
 classicFfmpegPreroll: boolean, 
 /**
- * Container/codec for the standalone audio file extracted alongside a video
- * recording when `keep_separate_audio` is on. Default `Wav` (lossless, the
- * safe choice for a "keep the clean audio" sidecar).
- */
-separateAudioFormat: FileFormat, 
-/**
- * Use a single ffmpeg process for A/V to eliminate sync drift? Default true.
- */
-avSync: boolean, 
-/**
  * Input channel layout.
  */
 channels: ChannelMode, 
@@ -167,65 +114,11 @@ inputChannelL: number | null,
  */
 inputChannelR: number | null, 
 /**
- * Sample rate in Hz. Valid 8000..=192000, default 48000. KEPT for
- * back-compat with exported/old profiles; the RECORDER no longer reads it —
- * it uses [`Settings::resolved_sample_rate`] (driven by `sample_rate_mode`).
- */
-sampleRate: number, 
-/**
  * How the capture sample rate is chosen. `Auto` (default) captures at the
  * device's native rate (no resample → no choppiness); the explicit variants
  * force a rate. This is what the recorder actually consults.
  */
 sampleRateMode: SampleRate, 
-/**
- * Input gain as a percentage. Valid 0..=200, default 100.
- */
-inputVolume: number, 
-/**
- * Is the equalizer enabled?
- */
-eqEnabled: boolean, 
-/**
- * Bass EQ gain in dB. Valid -24..=24, default 0.
- */
-eqBass: number, 
-/**
- * Mid EQ gain in dB. Valid -24..=24, default 0.
- */
-eqMid: number, 
-/**
- * Treble EQ gain in dB. Valid -24..=24, default 0.
- */
-eqTreble: number, 
-/**
- * Is the compressor enabled?
- */
-compEnabled: boolean, 
-/**
- * Compressor threshold in dBFS. Valid -60..=0, default -24.
- */
-compThreshold: number, 
-/**
- * Compressor ratio. Valid 1..=100, default 4.
- */
-compRatio: number, 
-/**
- * Compressor attack in ms. Valid 0.1..=2000, default 10.
- */
-compAttack: number, 
-/**
- * Compressor release in ms. Valid 1..=9000, default 200.
- */
-compRelease: number, 
-/**
- * Is the limiter enabled? Default true.
- */
-limiterEnabled: boolean, 
-/**
- * Limiter ceiling in dBFS. Valid -10..=0, default -1.
- */
-limiterCeiling: number, 
 /**
  * Output file format. Default mp3.
  */
@@ -263,10 +156,6 @@ silenceTimeoutMinutes: number,
  */
 splitMinutes: number, 
 /**
- * Run ffmpeg `silenceremove` on the output (trim leading/trailing silence)?
- */
-trimSilence: boolean, 
-/**
  * Auto-stop manual recordings after N minutes. Valid 0..=1440, 0 = off.
  */
 manualMaxMinutes: number, 
@@ -285,13 +174,6 @@ preRollSeconds: number,
  */
 prerollEnabled: boolean, 
 /**
- * Show the live L/R level meters during recording? Default true. When off,
- * the recorder drops the `astats` levels filter from its ffmpeg chain — the
- * meter's per-frame stderr can starve capture on a loaded machine, so turning
- * the meters off trades the display for maximum capture stability.
- */
-showLiveLevels: boolean, 
-/**
  * Reminder notification N minutes before a scheduled recording.
  * Valid 0..=60, 0 = off.
  */
@@ -300,10 +182,6 @@ reminderMinutes: number,
  * Launch the app at OS login?
  */
 launchAtLogin: boolean, 
-/**
- * Minimise to the system tray instead of quitting? Default true.
- */
-minimizeToTray: boolean, 
 /**
  * Wake the machine from sleep for scheduled recordings? Default true.
  */
@@ -386,16 +264,6 @@ editorIntroPath: string | null,
  * Path to an outro clip appended on export, or `None`.
  */
 editorOutroPath: string | null, 
-/**
- * Use the Apple **VideoToolbox** hardware encoder for the editor's VIDEO
- * export? Default `false` — software x264/x265 is the quality-per-bit
- * reference and works on every machine, so hardware stays opt-in. macOS
- * only: on Windows/Linux the flag is ignored (VideoToolbox does not exist
- * there), and even on macOS a hardware render that fails is retried once
- * with the software args, so the toggle can never make an export
- * unavailable — only faster.
- */
-editorHwEncode: boolean, 
 /**
  * Download and install updates automatically? Default true.
  */

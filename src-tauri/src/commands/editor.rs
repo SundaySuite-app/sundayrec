@@ -308,28 +308,28 @@ fn export_counter_for_format(format: &str) -> sundayrec_core::telemetry::Counter
 #[tauri::command]
 pub async fn editor_export(
     app: tauri::AppHandle,
-    db: State<'_, crate::db::Db>,
     engine: State<'_, ExportEngine>,
     request: EditorExportRequest,
 ) -> AppResult<EditorExportResult> {
     check_export_paths(&request)?;
-    // Hardware video encode is a per-install preference, not part of the export
-    // request: the renderer never has to know whether this machine has
-    // VideoToolbox. A settings read that fails is simply "off" (the default).
-    let hw_encode = crate::settings::load(&db.pool)
-        .await
-        .map(|s| s.editor_hw_encode)
-        .unwrap_or(false);
     crate::telemetry::counters::count(export_counter_for_format(&request.format));
-    editor::export(&engine, &request, hw_encode, move |pct, phase| {
-        let _ = app.emit(
-            "editor://export-progress",
-            EditorExportProgress {
-                pct,
-                phase: phase.to_string(),
-            },
-        );
-    })
+    // v0.15: hardware video encode is automatic — hardware first where the
+    // platform has it, software on a failed render (the `editorHwEncode`
+    // setting and its Video-tab toggle left). See `editor::HW_ENCODE_FIRST`.
+    editor::export(
+        &engine,
+        &request,
+        editor::HW_ENCODE_FIRST,
+        move |pct, phase| {
+            let _ = app.emit(
+                "editor://export-progress",
+                EditorExportProgress {
+                    pct,
+                    phase: phase.to_string(),
+                },
+            );
+        },
+    )
     .await
 }
 

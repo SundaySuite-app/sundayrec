@@ -29,7 +29,7 @@ const REALISTIC_BLOB = {
   channels: "stereo",
   sampleRate: 48000,
   sampleRateMode: "auto",
-  inputVolume: 80.5, // float — serde would reject an i32; the mapper rounds
+  inputVolume: 80.5, // float (the mapper used to round it; dead since v0.15)
   eqBass: 0,
   eqMid: 0,
   eqTreble: 0,
@@ -53,7 +53,7 @@ const REALISTIC_BLOB = {
   silenceThreshold: -50,
   silenceTimeoutMinutes: 5,
   splitMinutes: 0,
-  reminderMinutes: 15,
+  reminderMinutes: 15.4, // float — serde would reject an i32; the mapper rounds
   manualMaxMinutes: 0,
   preRollSeconds: 30,
   prerollEnabled: true,
@@ -130,22 +130,20 @@ describe("mapLegacyBlob", () => {
     const out = mapLegacyBlob(JSON.stringify(REALISTIC_BLOB))!;
     expect(out).not.toBeNull();
 
-    // The three renames — the mutation-test surface.
-    expect(out.outputMode).toBe("separate");
-    expect(out).not.toHaveProperty("videoSeparate");
+    // The rename — the mutation-test surface. (`videoSeparate` → `outputMode`
+    // and `format` → `separateAudioFormat` were renames until v0.15; both
+    // targets are dead fields now and must NOT be produced.)
     expect(out.keepSeparateAudio).toBe(false);
     expect(out).not.toHaveProperty("videoKeepAudio");
-    expect(out.separateAudioFormat).toBe("flac"); // seeded from the overloaded `format`
-    expect(out.format).toBe("flac");
+    expect(out).not.toHaveProperty("videoSeparate");
+    expect(out).not.toHaveProperty("outputMode");
+    expect(out).not.toHaveProperty("separateAudioFormat");
+    expect(out.format).toBe("flac"); // …and the sidecar follows THIS in the backend
 
     // Values with backend readers survive verbatim.
     expect(out.updateChannel).toBe("beta");
     expect(out.autoDeleteDays).toBe(90);
     expect(out.autoUpdate).toBe(false);
-    expect(out.reminderMinutes).toBe(15);
-    // v0.15: the learning cards left, and the setting with them — an old blob
-    // still carries it, the mapper never copies it.
-    expect(out).not.toHaveProperty("localAdaptivity");
     expect(out.saveFolder).toBe("/Volumes/Rig/Opptak");
     expect(out.filenamePattern).toBe("church");
     expect(out.churchName).toBe("Domkirken");
@@ -156,8 +154,58 @@ describe("mapLegacyBlob", () => {
     expect(out.deviceChannels).toEqual({ "qu5-usb": { channelL: 16, channelR: 17 } });
     expect(out.slots).toEqual([{ days: [6], start: "10:30", stop: "12:30", max: 150 }]);
 
-    // Floats are rounded, not forwarded (a raw 80.5 fails the WHOLE Rust merge).
-    expect(out.inputVolume).toBe(81);
+    // Floats are rounded, not forwarded (a raw 15.4 fails the WHOLE Rust merge).
+    expect(out.reminderMinutes).toBe(15);
+  });
+
+  // v0.15 («Frivilligen først» R2) removed the dead settings fields. An old
+  // blob carries every one of them; the mapper must copy NONE — a key the Rust
+  // struct no longer has would be dropped by serde anyway, but the whitelist
+  // is the contract, and the neighbours must cross intact.
+  it("drops the v0.15 dead settings fields tolerantly — the rest imports cleanly", () => {
+    const out = mapLegacyBlob(
+      JSON.stringify({
+        ...REALISTIC_BLOB,
+        avSync: false,
+        minimizeToTray: false,
+        videoBitrate: 8000,
+        trimSilence: true,
+        showLiveLevels: false,
+        separateAudioFormat: "wav",
+        localAdaptivity: true,
+      }),
+    )!;
+    for (const gone of [
+      "hasLaunched",
+      "sampleRate",
+      "inputVolume",
+      "eqEnabled",
+      "eqBass",
+      "eqMid",
+      "eqTreble",
+      "compEnabled",
+      "compThreshold",
+      "compRatio",
+      "compAttack",
+      "compRelease",
+      "limiterEnabled",
+      "limiterCeiling",
+      "avSync",
+      "minimizeToTray",
+      "videoBitrate",
+      "outputMode",
+      "videoSeparate",
+      "trimSilence",
+      "showLiveLevels",
+      "separateAudioFormat",
+      "localAdaptivity",
+    ]) {
+      expect(out, `${gone} must not migrate`).not.toHaveProperty(gone);
+    }
+    expect(out.format).toBe("flac");
+    expect(out.sampleRateMode).toBe("auto");
+    expect(out.churchName).toBe("Domkirken");
+    expect(out.keepSeparateAudio).toBe(false);
   });
 
   it("never lets a secret cross, and drops the shadow fields", () => {
