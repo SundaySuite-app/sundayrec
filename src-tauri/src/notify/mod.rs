@@ -89,7 +89,12 @@ impl FailureCtx {
 /// person standing at the machine is the only one who can still save the
 /// service. Previously private to the scheduler — the recorder had no way to
 /// reach it at all.
-pub fn native(app: &AppHandle, title: &str, body: &str) {
+///
+/// Generic over the runtime because the tray and the quit path are too: the
+/// tray's «Avslutt» and the app menu's Quit both reach the notification through
+/// `crate::window`, and a concrete `AppHandle` there would force the runtime
+/// parameter out of those call sites for no gain.
+pub fn native<R: tauri::Runtime>(app: &AppHandle<R>, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
         tracing::warn!("notify: native notification failed: {e}");

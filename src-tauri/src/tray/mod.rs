@@ -115,7 +115,9 @@ pub fn build_menu<R: Runtime>(
 ///   - **stop** (`StopRecording`) → call the recorder engine's `stop()` directly
 ///     (the same path as the `stop_recording` command), so a tray "Stopp opptak"
 ///     works even with no window focused;
-///   - **quit** → exit.
+///   - **quit** → ask [`crate::window::request_quit`], and exit only if nothing
+///     is being recorded (a live capture is refused once, then stopped and
+///     waited for).
 ///
 /// Everything else (start — which needs the renderer's device/settings context,
 /// preflight, diagnostics) is emitted as [`TRAY_ACTION_EVENT`] for
@@ -136,7 +138,17 @@ pub fn emit_action<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
             // Still surface the event so the renderer can refresh its UI state.
             let _ = app.emit(TRAY_ACTION_EVENT, action_id(action));
         }
-        TrayAction::Quit => app.exit(0),
+        // P3b: the same seam Cmd+Q and the app menu use. During a live capture
+        // the first «Avslutt» is refused with a notification and the second one
+        // (inside `QUIT_CONFIRM_WINDOW_MS`) stops the recording and WAITS for
+        // the file; with nothing running this is `app.exit(0)`, exactly as
+        // before. `request_quit` returning `Handled` means the app must stay
+        // alive — it has already taken over.
+        TrayAction::Quit => {
+            if crate::window::request_quit(app) == crate::window::QuitVerdict::Proceed {
+                app.exit(0);
+            }
+        }
         TrayAction::None => {}
         other => {
             let _ = app.emit(TRAY_ACTION_EVENT, action_id(other));

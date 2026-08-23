@@ -1095,17 +1095,149 @@ påstår fortsatt at den er usann. Det er P4/B sitt bord — P3 er en ren
 `src-tauri`/`crates`-endring og rører ikke `app/`. Fra og med denne endringen er
 det trygt å legge den inn.
 
-⚠️ RESTANSE — Cmd+Q under opptak: en ekte avslutning stopper fortsatt opptaket,
-og `RecorderEngine::stop()` er ikke-blokkerende (den signaliserer supervisoren og
-returnerer, med et frakoblet backstop som avbryter etter
-`STOP_ABORT_BACKSTOP_MS`). Prosessen venter altså ikke på at containeren lukkes;
-et Cmd+Q midt i en gudstjeneste redder seg på gjenopprettingsskanningen ved neste
-oppstart, ikke på en ryddig finalisering. En nativ bekreftelsesdialog i
-`ExitRequested` (`prevent_exit()` + `tauri-plugin-dialog`) ble VURDERT og utelatt
-her: `blocking_*`-dialogene skal ikke kalles fra hovedtråden/kjøresløyfa, og den
-ikke-blokkerende varianten krever at man forhindrer avslutningen, venter på svar
-og deretter selv kaller `app.exit(0)` — en flate der en feilende dialog gjør
-appen umulig å avslutte. Egen runde, eierens valg.
+## ✅ RESTANSEN ER LUKKET — Cmd+Q under opptak spør nå én gang til (P3b)
+
+Restansen sa: «en ekte avslutning stopper fortsatt opptaket, og
+`RecorderEngine::stop()` er ikke-blokkerende — prosessen venter ikke på at
+containeren lukkes». Begge deler er nå håndtert, og underveis dukket det opp en
+tredje ting som var verre enn restansen selv.
+
+### Beslutningen er ren, som lukkingen
+
+`sundayrec_core::window::quit_action(RecorderState, prior_refusal_age_ms) ->
+QuitAction`, uttømmende matchet (ingen `_`-arm):
+
+| Tilstand                               | Ingen fersk nekt | Nekt < 300 ms siden | Nekt 0,3–10 s siden |
+| -------------------------------------- | ---------------- | ------------------- | ------------------- |
+| `Preparing`/`Recording`/`Reconnecting` | `Refuse`         | `Refuse`            | `StopThenWait`      |
+| `Stopping`                             | `WaitOnly`       | `WaitOnly`          | `WaitOnly`          |
+| `Idle`/`Stopped`/`Failed`              | `ExitNow`        | `ExitNow`           | `ExitNow`           |
+
+- **`Refuse`** — første trykk avslutter ikke. Et OS-varsel sier «SundayRec tar
+  opp — trykk Avslutt igjen innen 10 sekunder for å stoppe opptaket og
+  avslutte», og tidspunktet huskes.
+- **`StopThenWait`** — andre trykk innen `QUIT_CONFIRM_WINDOW_MS` (10 000 ms) er
+  bekreftelsen: `stop()` kalles, og så VENTER prosessen på at fila lander.
+- **⚠️ `QUIT_REPEAT_FLOOR_MS` (300 ms)** er den andre kanten av det samme
+  vinduet, og den er ikke pynt: et Cmd+Q som HOLDES nede auto-repeterer, og
+  repetisjonene kommer millisekunder fra hverandre — uten et gulv ville «nekt
+  første trykk» blitt «nekt, og bekreft med én gang», altså nøyaktig det regelen
+  finnes for å hindre, nådd ved å lene seg på en tast. (Samme klasse som at en
+  plattform kan levere én menyaktivering to ganger — grunnen til at
+  `NOTICE_PENDING` finnes på lukke-siden.) Et trykk under gulvet nekter på nytt
+  OG flytter tidsstempelet, så et holdt Cmd+Q skyver bekreftelsen foran seg for
+  alltid; varselet fyres ikke på nytt for en repetisjon.
+- **`WaitOnly`** — under `Stopping` kreves ingen dobbeltbekreftelse. Den
+  frivillige har alt bedt om stoppen; det eneste som mangler er tålmodigheten.
+- **`ExitNow`** — uten opptak avslutter Cmd+Q som før, på første trykk.
+
+Ti sekunder er hele designet: langt nok til at man rekker å lese varselet og
+handle, kort nok til at neste Cmd+Q — minutter senere, av en helt annen grunn —
+blir nektet på nytt i stedet for å avslutte en gudstjeneste på et tastetrykk
+ingen husker. Tallet i teksten fylles fra konstanten (`{seconds}`), så regelen og
+forklaringen ikke kan gli fra hverandre; alle sju språk har egen ordlyd, og
+`the_refusal_wording_is_pinned_to_ten_seconds` sier fra hvis noen retuner vinduet
+uten å se på tekstene (polsk «10 sekund» er genitiv flertall — 2–4 s ville krevd
+«sekundy»).
+
+Dialogen som ble vurdert og forkastet i forrige runde ble forkastet igjen, og av
+samme grunn: `blocking_*`-dialogene skal ikke kalles fra kjøresløyfa, og den
+ikke-blokkerende varianten gjør en feilende dialog om til en app som ikke kan
+avsluttes. En nekt + et varsel degraderer motsatt vei — verste fall ser den
+frivillige ikke varselet og trykker igjen, som er nøyaktig det de ville.
+
+### Ventingen har et tak, og det er utledet
+
+`QuitAction::StopThenWait`/`WaitOnly` spawner én oppgave som poller
+`current_state` hvert 250. ms i en `tokio::select!` mot et tak. **Begge armer
+ender i `app.exit(0)`** — en app som ikke kan dø er verre enn en finalisering
+ingen venter på lenger.
+
+Taket er `RecorderTimeouts::QUIT_WAIT_CAP_MS` = `STOP_ABORT_BACKSTOP_MS + 30 s`
+(20,5 min), utledet og ikke valgt: ventingen MÅ overleve supervisorens eget
+siste-utvei-avbrudd, ellers gir avslutningen opp mens finalize-kjeden fortsatt
+kjører lovlig og den frivillige mister akkurat fila de ventet på. Normalt varer
+ventingen sekunder — taket er en sperre, ikke en tidsplan.
+
+**Et nytt Avslutt-trykk mens ventingen pågår avslutter umiddelbart**
+(`WAITING`-flagget kortslutter beslutningen). Vente-varselet sier det: «Lagrer
+opptaket — SundayRec avslutter når fila er trygg. Ett trykk til avslutter med én
+gang.»
+
+### ⚠️ Den skarpe kanten: `app.exit(0)` kommer TILBAKE hit
+
+`RunEvent::ExitRequested` fyres også av vår egen `app.exit(0)` — fra ventingen,
+fra menylinja og fra `update::relaunch`. Forskjellen er `code`:
+
+- `code: None` ⇒ mennesket ba om det (siste vindu lukket, vindusbehandlerens
+  avslutt),
+- `code: Some(_)` ⇒ programmatisk `AppHandle::exit`/`restart`.
+
+Verifisert i kilden, ikke fra hukommelsen: tauri 2.11.5 `src/app.rs` dokumenterer
+`RunEvent::ExitRequested`s `code` som «`None` when the exit is requested by user
+interaction, `Some` when requested programmatically via `AppHandle::exit` og
+`restart`», og `tauri-runtime-wry` 2.11.4 reiser `code: None` fra
+siste-vindu-destruert-stien (`lib.rs`, `TaoWindowEvent::Destroyed`) mens
+`Message::RequestExit(code)` bærer `Some(code)`. `RESTART_EXIT_CODE` (`i32::MAX`)
+ignorerer dessuten `prevent_exit()` helt.
+
+Skallet slipper derfor **hver `code.is_some()` rett gjennom** til dagens
+opprydding (`RecorderEngine::stop()` + `VuEngine::stop()`, uendret). Å kjøre
+beslutningen på vår egen avslutning ville nektet vår egen avslutning.
+
+### ⚠️⚠️ Det som var verre enn restansen: Cmd+Q nådde aldri `ExitRequested` på macOS
+
+Restansen antok at Cmd+Q gikk gjennom `ExitRequested` og bare manglet en
+bekreftelse. Det gjorde den ikke.
+
+Tauri installerer `Menu::default` på macOS når appen ikke setter sin egen meny
+(`AppBuilder::build`: `if self.menu.is_none() && self.enable_macos_default_menu`).
+Den menyens Avslutt er `PredefinedMenuItem::quit`, og muda kobler en predefinert
+Quit til AppKit-selektoren `terminate:`
+(`muda/src/platform_impl/macos/mod.rs`, `PredefinedMenuItemType::selector`).
+`terminate:` spør delegatens `applicationShouldTerminate:` — som tao **ikke**
+implementerer (`tao/src/platform_impl/macos/app_delegate.rs` registrerer
+`applicationWillTerminate:` og ingen `ShouldTerminate`) — så svaret er
+standardens `NSTerminateNow`, og når `applicationWillTerminate:` når tao er
+prosessen alt på vei ut: `AppState::exit()` reiser `LoopDestroyed`, ikke
+`ExitRequested`.
+
+Konsekvens: på macOS ga Cmd+Q / app-menyens Avslutt **ingen `ExitRequested` i det
+hele tatt**. De kunne ikke forhindres — og de nådde ikke engang håndtereren som
+stopper opptaket. Prosessen forsvant midt i gudstjenesten, og opptakets eneste
+redning var gjenopprettingsskanningen ved neste oppstart. Enhver
+`prevent_exit()`-basert bekreftelse ville vært død kode.
+
+`src-tauri/src/menu.rs` bygger derfor `Menu::default` **punkt for punkt** på nytt
+fra tauri 2.11-kilden, med ÉN endring: App-undermenyens Avslutt er et eget
+`MenuItem` (`sundayrec:quit`) med samme etikett («Quit SundayRec») og samme
+`Cmd+Q`-akselerator, og menyhendelsen går til `window::request_quit`.
+Undo/Redo/Cut/Copy/Paste/Select All beholder sine predefinerte selektorer — en
+håndskrevet Edit-meny er nøyaktig slik en Tauri-app mister Cmd+C på macOS — og
+Window/Help beholder id-ene tauri leter etter (`WINDOW_SUBMENU_ID`,
+`HELP_SUBMENU_ID`). Menyen ser identisk ut; bare ledningen er ny.
+
+Modulen er `#[cfg(target_os = "macos")]`: Windows og Linux får ingen standardmeny
+fra tauri, så det finnes ingen Cmd+Q å fange, og å legge til en menylinje ville
+vært en synlig regresjon. Deres avslutninger kommer som `ExitRequested` (siste
+vindu destruert) eller via systemstatusfeltet — begge dekket.
+
+⚠️ **Fortsatt ikke fangbart:** alt som sender `terminate:` utenom menyen — Dock-
+ikonets «Avslutt», Force Quit, og utlogging/omstart/avstenging. De er akkurat som
+før; gjenopprettingsskanningen er sikkerhetsnettet. Å tette det hullet krever
+`applicationShouldTerminate:`, altså en endring i tao/tauri, ikke i appen.
+
+### Tre dører, én beslutning
+
+`window::request_quit` er den ene inngangen, kalt fra:
+
+1. `lib.rs` `RunEvent::ExitRequested` med `code: None`,
+2. `tray::emit_action` `TrayAction::Quit` (var `app.exit(0)` rett ut),
+3. `menu::handle_event` (macOS Cmd+Q / app-menyen).
+
+`Proceed` betyr «gjør det du ellers ville gjort» (stå til side i `ExitRequested`,
+`app.exit(0)` i meny/systemstatusfelt); `Handled` betyr «appen skal leve — jeg
+har tatt over».
 
 ### ⚠️ Rigg-test (GUI-UNVERIFIED)
 
@@ -1120,6 +1252,22 @@ faktisk gå. Når eier tester på rigg:
 3. macOS: skjul igjen, klikk Dock-ikonet. **Forventet:** vinduet kommer tilbake.
 4. Stopp opptaket, vent til historikkraden er der, lukk vinduet.
    **Forventet:** appen avslutter, som før.
+5. **Cmd+Q under opptak (P3b).** Start et opptak, trykk Cmd+Q ÉN gang.
+   **Forventet:** appen lever, opptaket går videre, og et varsel sier «trykk
+   Avslutt igjen innen 10 sekunder». Vent 15 s og trykk Cmd+Q igjen:
+   **forventet** nekt på nytt (vinduet var utløpt), ikke avslutning.
+   Så: **hold Cmd+Q nede i fem sekunder.** **Forventet:** appen lever fortsatt,
+   og det kom ikke ett varsel per repetisjon (gulvet på 300 ms).
+6. **Bekreftelsen.** Trykk Cmd+Q to ganger innen 10 s. **Forventet:** varselet
+   «Lagrer opptaket», appen blir stående mens fila skrives, og forsvinner først
+   når finaliseringen er ferdig. Sjekk etterpå at historikkraden OG
+   leveransefila finnes — dette er hele poenget.
+7. **Overstyringen.** Gjenta punkt 6, men trykk Cmd+Q en tredje gang mens
+   «Lagrer opptaket» står. **Forventet:** appen avslutter umiddelbart.
+8. **Menylinja + menyen ellers.** Samme to-trinns-oppførsel fra
+   systemstatusfeltets «Avslutt». Og bekreft at macOS-menyen fortsatt er hel:
+   Cmd+C / Cmd+V i et tekstfelt, Cmd+W, fullskjerm, og «Om SundayRec».
+9. **Uten opptak.** Cmd+Q og «Avslutt» avslutter på første trykk, som før.
 
 ## Måleren under et opptak leser opptaket
 
