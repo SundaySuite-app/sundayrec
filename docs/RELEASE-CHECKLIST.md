@@ -89,8 +89,8 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 
 ## 4. Optional runtime features (not build blockers)
 
-- [ ] **Anthropic API key** (OS keychain) for the live AI sermon-companion
-      summary — the keyless extractive path works without it.
+- (none since R2 «Frivilligen først» — the AI companion and its Anthropic
+  key left the app.)
 
 ## 5. Cut the release — two rings, beta first
 
@@ -204,7 +204,7 @@ the only action that makes a v0.11.0+ install able to see the release at all.
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
 - [ ] §2–11 smoke test on a real Mac/Windows rig (capture, VU, editor ffmpeg,
-      whisper, wake/scheduler).
+      wake/scheduler).
 
 ### 6a. Recording/editor health gate (HARD — for any build touching audio)
 

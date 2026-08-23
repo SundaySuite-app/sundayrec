@@ -19,6 +19,18 @@
 >   (§4.10), og `email_test_webhook`. E-post-stien (`email_status`,
 >   `email_send_test`, nøkkelring-trioen) BESTÅR — minimal, SMTP-only. Dagens
 >   tall: 130 registrert / 115 nådd / 15 unådd (se baselinen).
+>
+> **Etterskrift (R2 «Frivilligen først», 2026-08-23):** innholds-klyngen tok
+> 19 kommandoer til: `whisper_*` (8 — transkripsjon, og med den eneste
+> C/C++-avhengigheten i bygget) + `transcripts_list`, `companion_*` (5, §4.9
+> — anbefalingen «fjern `companion_llm_status`» falt sammen med hele
+> Prekenhjelpen) + `editor_record_companion_suggestion`,
+> `editor_detect_chapters`, og `learning_feedback_summary` /
+> `learning_local_nudge` / `learning_local_nudge_reset` (visningskortene + den
+> lokale justeringen, som mistet sin eneste skriver alt i R1). Ingen nye
+> kommandoer. `scheduler::build_opts` er flyttet til `recorder::opts` (ingen
+> IPC-endring — `plan_recording_opts` heter det samme). Dagens tall: 111
+> registrert / 97 nådd / 14 unådd (se baselinen).
 
 **Hva dette er:** en fullstendig gjennomgang av hver eneste Tauri-kommando appen
 registrerer, og svaret på ett spørsmål per kommando: _kan brukergrensesnittet i

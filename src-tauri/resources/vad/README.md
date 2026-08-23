@@ -20,9 +20,10 @@ the only one of the three that works. Do not "simplify" the filename.
 
 ## Why it is vendored rather than downloaded
 
-The whisper models in this app are fetched at run time with a pinned SHA, and the
-E9 plan originally copied that. Whisper's models are 148 MB – 1.5 GB, so keeping
-them out of the installer is worth a download path. This one is 2.8 MB.
+The whisper models this app used to ship (transcription left in v0.15) were
+fetched at run time with a pinned SHA, and the E9 plan originally copied that.
+Whisper's models were 148 MB – 1.5 GB, so keeping them out of the installer
+was worth a download path. This one is 2.8 MB.
 Downloading it would buy a download UI, progress reporting, failure states, a
 cache location and a "model missing" branch in the analysis path — five new ways
 for analysis to fail — in exchange for 2.8 MB. Vendored, it is simply always

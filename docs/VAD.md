@@ -23,9 +23,9 @@ alone would not settle it — a feature can reach a release without being in
 `default` — so the second half matters more:
 
 - `.github/workflows/release.yml` builds with **explicit** feature lists, one per
-  platform (`--no-default-features --features editor,tray,updater,whisper,email,streaming`
-  on macOS, `editor,tray,asio,updater,email,streaming` on Windows). Neither names
-  `vad`.
+  platform (`--no-default-features --features editor,tray,updater,email` on
+  macOS, `editor,tray,asio,updater,email` on Windows — `streaming` left in
+  v0.14, `whisper` in v0.15). Neither names `vad`.
 - The repo has **no `--all-features` anywhere** — not in a workflow, not in
   `package.json`. There is no path by which the feature turns itself on.
 

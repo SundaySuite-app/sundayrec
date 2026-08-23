@@ -60,14 +60,14 @@ gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest*
 frontend suite (pure logic like the editor cut-history state machine; grows as
 more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
 in isolation — `cargo build -p sundayrec --features <flag>` for
-`email`/`tray`/`editor`/`updater` (the
-`whisper` C++ build is the one exception, verified by inspection).
+`email`/`tray`/`editor`/`updater`. (Since R2 «Frivilligen først» the
+workspace has no C/C++ toolchain dependency: `whisper` is gone.)
 
 ⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
-sets `default = ["editor", "whisper", "tray", "updater", "email"]`,
-so **all five are ON in a plain `npm run tauri dev` / `cargo build` and in every
+sets `default = ["editor", "tray", "updater", "email"]`,
+so **all four are ON in a plain `npm run tauri dev` / `cargo build` and in every
 release**. The `--features <flag>` lines below them are redundant, not
-prerequisites, and a `feature_disabled` response from any of those five is a BUG
+prerequisites, and a `feature_disabled` response from any of those four is a BUG
 to report — not the expected result. Only `asio`/`vad` are genuinely
 default-off and need an explicit `--features`. To exercise a disabled path
 deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
@@ -75,7 +75,11 @@ deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
 gone from this runbook. R1 «Frivilligen først» 2026-08-23: cloud backup (§7),
 podcast RSS + `publish` (§10), the live cue bridge (§10c), the review queue
 (§PU-6) and the Sunday-suite integrations (§P2b) followed; §8 e-post is
-SMTP-only and §9's deep links are gone.)
+SMTP-only and §9's deep links are gone. R2 «Frivilligen først» 2026-08-23:
+whisper transcription (§10b), the AI companion + chapters (§12 step 9 and the
+chapter half of the editor), the learning cards (§R7 settings completeness, step 2)
+and the Video tab's quality knobs (§12 step 4c) followed; §6b is a metadata
+search only.)
 
 ---
 
@@ -259,11 +263,12 @@ surfaces in the diagnose report.
 
 ---
 
-## 6b. History search + transcript search [HW]
+## 6b. History search [HW]
 
 The filter/grouping/stats math and the substring search are pure and
-gate-tested (`historyFilter` / `searchIndex`); what a rig confirms is that the
-search box wiring and the IPC sidecar-load behave on real data.
+gate-tested (`history-core`); what a rig confirms is that the search box
+wiring behaves on real data. (The transcript half of this section — hits
+inside sermon text — left with whisper in R2 «Frivilligen først».)
 
 1. Record two or three sessions (repeat §5) so History has several rows.
 2. In **History**, type into the search box.
@@ -275,12 +280,9 @@ search box wiring and the IPC sidecar-load behave on real data.
      nothing shows a no-hits message (`search.noHits`), distinct from the
      genuinely-empty state.
    - VERIFIED-BY: e2e/history.spec.ts::the search box filters live, and a miss says so in its own words
-3. If you also ran §10b (Whisper), open the transcript search surface and search
-   for a word you spoke.
-   - **Expected:** hits group by recording, newest-first, each with a ~60-char
-     before/match/after context window; clicking a hit seeks the editor to that
-     segment's start time. (The index build + sidecar load is the only
-     GUI-deferred part — `searchIndex` itself is gate-tested.)
+3. The chips: **Lyd** / **Video** narrow the list; a chip that matches nothing
+   says so in its own words, not the never-recorded-anything words.
+   - VERIFIED-BY: e2e/history.spec.ts::a filter that matches nothing says so in its own words
 
 ---
 
@@ -380,66 +382,13 @@ The RSS feed, the `publish` feature and the Podcast card left the app
 
 ---
 
-## 10b. Whisper transcription [HW] — `whisper` (IN DEFAULT)
+## 10b. ~~Whisper transcription~~ — REMOVED (R2 «Frivilligen først»)
 
-The model registry (id/url/size/SHA/quality), the whisper-cli/whisper-rs argv +
-thread heuristic, the ffmpeg 16 kHz-mono convert argv, the progress/exit parse,
-the JSON-sidecar → `TranscriptData` normalise, and the long-recording
-chunk-plan + segment-merge are all unit-tested in `sundayrec-core::whisper`. The
-model download (SHA-verified), the ffmpeg conversion, and the actual inference
-are **HARDWARE-UNVERIFIED**. `whisper` is in the **`default` feature set**, so
-every ordinary build pulls `whisper-rs` and compiles libwhisper from C/C++
-source — that needs CMake + a C/C++ toolchain, and it is why a first build is
-slow (~16 s on Apple silicon, cached after).
-
-```bash
-cargo build -p sundayrec   # default already includes whisper; CMake builds libwhisper
-```
-
-1. `whisper_list_models` / `whisper_model_status` / `whisper_delete_model` /
-   `whisper_cancel_download` work in **any** build (the registry, on-disk size
-   check, fs delete, and the cancel signal are pure/fs). Download a model into
-   the app-data `whisper-models/` dir with `whisper_download_model`.
-   - **Expected:** `whisper://model-progress` events stream `{ id,
-bytesDownloaded, bytesTotal, fraction }` (the shaping is the unit-tested
-     `download_progress`); a second download for the same id while one is in
-     flight returns `already_downloading`; `whisper_cancel_download` aborts the
-     stream and removes the `.partial`; on completion the SHA-256 is verified
-     against the registry (`verify_model_hash`) before the `.bin` is promoted.
-     // NETWORK-UNVERIFIED (the HTTPS stream + write are wired but unproven).
-2. Run `whisper_transcribe` on a short recording (the default build can).
-   - **Expected:** ffmpeg converts to 16 kHz mono, whisper-rs runs, and a
-     `TranscriptData` (seconds-based segments) comes back. A `feature_disabled`
-     validation error here is a BUG in a default build — it should only ever
-     appear under `--no-default-features`.
-
-The **Transkribering** panel (R5) drives this: pick a recording (from history) +
-a model + a language, **Transkriber**, then the segments render and **SRT** /
-**VTT** / **TXT** buttons save the transcript via `whisper_export_transcript`
-(native save dialog). The model registry + the export render work in **every**
-build; only `whisper_transcribe` needs the feature — which the default build
-has. There is **no calm gate hint** on this panel: in a
-`--no-default-features` build a transcribe attempt surfaces the
-`feature_disabled` rejection through the ordinary error dialog
-(«Transkribering feilet» with the real reason) — this runbook used to promise
-a calm «ikke bygd inn»-hint that has never existed here. The renderer half is
-browser-tier pinned:
-
-- VERIFIED-BY: e2e/editor.spec.ts::a feature_disabled transcribe surfaces its reason in the error dialog
-
-```bash
-npm run tauri dev   # drive the Transkribering disclosure
-```
-
-3. (any build) **Export.** After a transcript exists, click SRT/VTT/TXT.
-   - **Expected:** a file appears at the chosen path. SRT uses `HH:MM:SS,mmm`
-     numbered cues; VTT has a `WEBVTT` header + `.` ms separator; TXT is one
-     segment per line. The rendering is the pure
-     `sundayrec-core::whisper::export_transcript` (unit-tested).
-
-> [HW] The C/C++ build, the model download, and inference are unproven in the
-> gate — only the `sundayrec-core::whisper` decisions are unit-tested. The
-> export render + the file write are pure/GUI-UNVERIFIED (no feature needed).
+Transcription (the `whisper` feature, whisper-rs/libwhisper — the build's only
+C/C++ dependency — the model download, the Transkribering panel, SRT/VTT/TXT
+export and the transcript search) left the app 2026-08-23. Transcripts are
+better served by tools built for them; the section number stays so
+cross-references still resolve.
 
 ---
 
@@ -593,8 +542,8 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - **Expected:** the mp4 out has both streams and honours the cuts. The
      intro/outro rows are greyed with "Jingler støttes ikke for video ennå" —
      jingles are audio-only, and the export no longer pretends otherwise.
-   - Settings → Video → **Maskinvare-koding (VideoToolbox)** is off by default.
-     Turn it on (macOS) and re-export: same file, faster. If VideoToolbox
+   - On macOS the export tries VideoToolbox first, automatically (R2 removed
+     the «Maskinvare-koding» toggle — it guarded nothing). If VideoToolbox
      refuses, the log shows a warning and the export completes in software
      anyway — a failed hardware render must never cost the user the export.
 5. **P1 reopen-ability (cuts-draft sidecar):** with cuts marked, close the
@@ -635,31 +584,22 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
    - The restore rides on detection, so it happens when detection does: video
      files and a restored cuts-draft do not auto-analyse, and there the
      correction comes back when you press **Analyser opptak**.
-9. **E8 the companion signal reaches the same file:** build the AI companion on
-   a transcribed recording, press **→ Bruk i metadata**, type one character
-   into the title field, and switch to another recording.
-   - **Expected:** the same `<base>.feedback.json` now also holds
-     `companionSuggestions` entries (`title` accepted with
-     `editedAfterAccept: true`, the ones you never touched `left_alone`). Still
-     no path, filename, suggestion text or clock time anywhere in the file.
-   - (The third signal, `trimAdjustments`, was only ever written by the review
-     queue's publish step — with the queue gone in R1 «Frivilligen først»
-     nothing writes it any more; existing sidecars keep theirs. R2 decides the
-     learning loop's fate.)
-   - The companion events belong to the recording the panel was showing, not the
-     one you switched to — check that the second recording's sidecar did not
-     appear when you switched away from the first.
+9. ~~**E8 the companion signal reaches the same file**~~ — REMOVED (R2
+   «Frivilligen først»): the AI companion and its `companionSuggestions` /
+   `companionOutcomes` left the app 2026-08-23. What remains of this step:
+   - (The `trimAdjustments` signal was only ever written by the review queue's
+     publish step — gone in R1 — so nothing writes it; existing sidecars keep
+     theirs. `docs/LEARNING.md` §Status says what is live, dormant and gone.)
    - With diagnostics ON, **Innstillinger → System → vis hva som sendes** should
-     now list both `corrections` (a signal, a direction and a coarse band) and
-     `companionOutcomes` (`title` / `accepted_edited`, `chapters` /
-     `left_alone`) with counts — and the caption must NOT say «ingenting å sende
-     akkurat nå» while they are on screen. With diagnostics OFF, do the same
-     edits and confirm both collections stay empty: nothing is accumulated for
-     someone who has not opted in, not even in memory.
-   - The preview surface's half of this (both collections rendered, the caption
-     honest while they are on screen) — the accumulation gating stays
+     list `corrections` (a signal, a direction and a coarse band) with a count
+     after step 8 — and the caption must NOT say «ingenting å sende akkurat
+     nå» while it is on screen. With diagnostics OFF, do the same edit and
+     confirm the collection stays empty: nothing is accumulated for someone who
+     has not opted in, not even in memory.
+   - The preview surface's half of this (the collection rendered, the caption
+     honest while it is on screen) — the accumulation gating stays
      backend-verified:
-   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying corrections + companion outcomes shows them, not «ingenting å sende»
+   - VERIFIED-BY: e2e/telemetry-preview.spec.ts::a payload carrying corrections shows them, not «ingenting å sende»
    - The consent question itself (the one-time card, and a decline recorded as
      a real answer so nothing is ever collected without an explicit yes):
    - VERIFIED-BY: e2e/telemetry-preview.spec.ts::the one-time consent card asks, and a decline is recorded as a real answer
@@ -902,6 +842,20 @@ intro/outro paths. All carry defaults + validation (`email_smtp_port` clamped
      removed):
    - VERIFIED-BY: e2e/settings-migration.spec.ts::an old blob is imported once, translated, and the key removed
    - VERIFIED-BY: e2e/settings-migration.spec.ts::a corrupt blob yields defaults without crashing, and is not retried
+2. **R2 «Frivilligen først» — the dead fields are really gone, tolerantly.**
+   Import a pre-v0.15 profile (one exported by v0.14 carries `hasLaunched`,
+   `sampleRate`, `inputVolume`, the EQ/compressor/limiter fields, `avSync`,
+   `minimizeToTray`, `videoBitrate`, `outputMode`, `trimSilence`,
+   `showLiveLevels`, `separateAudioFormat`, `localAdaptivity`,
+   `videoResolution`/`videoFramerate`/`videoContainer`/`videoCodec`/
+   `videoEncoder`, `editorHwEncode`).
+   - **Expected:** the import succeeds, every neighbour keeps its value, and a
+     fresh export no longer carries any of them. The Video tab shows camera
+     on/off, the camera pick and «Behold separat lydfil» — nothing else — and
+     the System tab has no «Hva appen har lagt merke til» / «Hva appen har
+     justert» cards.
+   - VERIFIED-BY: crates/sundayrec-core/src/settings.rs::legacy_blob_with_v015_dead_fields_imports_cleanly
+   - VERIFIED-BY: legacy/renderer/migrate-legacy-settings-core.test.ts::drops the v0.15 dead settings fields tolerantly — the rest imports cleanly
 
 ---
 
