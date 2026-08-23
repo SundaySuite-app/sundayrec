@@ -59,11 +59,13 @@ pub const AUTO_PURGE_DAYS: i64 = 30;
 /// Every suffix the app appends to a recording's stem, so a trashed recording
 /// takes its companions with it.
 ///
-/// Kept in sync with the three places that build them: the editor's `Sidecar`
-/// enum (`sundayrec_core::editor`), `service_link_path`
-/// (`sundayrec_core::integrations`) and the per-episode cover
-/// (`commands::thumbnail`, whose `EPISODE_SUFFIX` + `COVER_EXTENSIONS` produce
-/// the last three).
+/// Kept in sync with the places that build them: the editor's `Sidecar` enum
+/// (`sundayrec_core::editor`) and the per-episode cover (`commands::thumbnail`,
+/// whose `EPISODE_SUFFIX` + `COVER_EXTENSIONS` produce the last three).
+/// `.service.json` is HISTORICAL — the Sunday-suite integrations that wrote it
+/// are gone, but recordings made before that still have one beside them, and a
+/// companion file that stays behind when its recording is trashed is a leak;
+/// so the suffix stays on the list.
 ///
 /// "Kept in sync" was a promise, not a mechanism — a new `Sidecar` arm that
 /// nobody thought to add here does not fail to compile, it just quietly stops

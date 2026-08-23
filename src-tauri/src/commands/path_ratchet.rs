@@ -72,14 +72,8 @@ const GUARDED: &[&str] = &[
     // ── E1.2 ─────────────────────────────────────────────────────────────────
     "whisper_transcribe",
     "whisper_export_transcript",
-    "integrations_get_service_link",
-    "integrations_song_submit_usage",
-    "integrations_sundayedit_send",
-    "integrations_sundayedit_import",
     "settings_export_to_file",
     "settings_import_from_file",
-    "open_in_sundayedit",
-    "open_in_sundaystudio",
 ];
 
 /// Commands whose path-shaped parameter is NOT a filesystem path the process
@@ -261,7 +255,7 @@ fn the_parser_actually_finds_commands() {
         "editor_peaks",
         "whisper_transcribe",
         "settings_export_to_file",
-        "deeplink_confirm_captions",
+        "editor_read_sidecar",
     ] {
         assert!(
             commands.iter().any(|c| c.name == known),

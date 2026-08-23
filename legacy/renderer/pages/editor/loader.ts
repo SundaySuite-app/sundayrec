@@ -18,7 +18,6 @@ import { loadTranscriptForFile } from '../editor-transcript'
 import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
 
 import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
-import { updateStageButton } from './stage-ui'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
 
 // ── File loading (probe, waveform, transport, sidecars) ─────────────────────
@@ -498,9 +497,6 @@ export async function loadFile(fp: string): Promise<void> {
       if (seq === E.loadSeq) void runDetection(true)
     })
   }
-
-  // Update Stage-kapitler button visibility (opt-in, no-op when disabled).
-  void updateStageButton()
 }
 
 /**

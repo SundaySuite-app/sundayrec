@@ -418,7 +418,7 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 // Since Fase 7 it also accepts `?goto=<page>:<tab>` for pages with inner tabs —
 // `?goto=settings:audio`, `?goto=settings:sharing`. The tab may be written bare
 // (`audio`) or fully qualified (`settings-audio`); retired ids from before the
-// 7→5 tab fold (`publish`, `notifications`, `integrations`) still work, because
+// 7→5 tab fold (`publish`, `notifications`) still work, because
 // navigateTo runs them through TAB_ALIASES.
 const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
 
@@ -720,8 +720,9 @@ const api: Record<string, unknown> = {
       return { ok: false, error: ipcErrText(e) };
     }
   },
-  // WRITE — bare invoke, rejection travels (R3-B; house rule at the
-  // integrations block below). The old `call(…, true)` turned a FAILED stop
+  // WRITE — bare invoke, rejection travels (R3-B house rule: a write that
+  // fails must REJECT, never answer a fabricated success). The old
+  // `call(…, true)` turned a FAILED stop
   // into `true`: recording.ts then waited politely for a terminal event that
   // was never coming instead of running its own teardown catch.
   stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
@@ -1802,132 +1803,6 @@ const api: Record<string, unknown> = {
   },
   whisperCancelTranscribe: async (jobId: string) =>
     call("whisper_cancel_transcribe", { jobId }, false),
-
-  // ── Integrations (Sunday-suite) ─────────────────────────────────────────
-  //
-  // Wired to the real `integrations_*` commands (commands/integrations.rs).
-  // These eleven were PERMANENT STUBS from the port — not fixture fallbacks,
-  // stubs that ran in the shipped app too: the whole Integrasjoner panel showed
-  // «Lagret ✓» while persisting nothing, and a pasted SundaySong API key never
-  // reached the keychain. Same failure class as the three `review_update_*`
-  // lies Fase 3 fixed; see docs/COMMAND_AUDIT_2026-08.md §4.2.
-  //
-  // Discipline: READS go through `call()` (a broken backend degrades to the
-  // empty state, visibly, via the E2.4 failure ring). WRITES use a bare
-  // `invoke` and LET THE REJECTION TRAVEL — the callers' catch is what keeps
-  // «Lagret ✓» honest, so a fallback here would reintroduce the lie.
-  getIntegrationSettings: async () =>
-    call("integrations_get_settings", undefined, { enabled: false }),
-  setIntegrationSettings: async (patch: unknown) =>
-    invoke("integrations_set_settings", { patch }),
-  getServiceLink: async (recordingPath: string) =>
-    call("integrations_get_service_link", { recordingPath }, null),
-  // The hand-offs return the backend's structured `{ ok, error?, … }` OpResult
-  // verbatim; a rejected invoke becomes the same shape with the REAL reason,
-  // never a bare `{ ok: false }` (which renders as «✕ ukjent feil»).
-  sundayEditSend: async (opts: {
-    videoPath: string;
-    language?: string;
-    context?: string;
-    glossary?: string[];
-  }) => {
-    try {
-      return await invoke("integrations_sundayedit_send", {
-        videoPath: opts.videoPath,
-        language: opts.language ?? null,
-        context: opts.context ?? null,
-        glossary: opts.glossary ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  sundayEditImport: async (
-    recordingPath: string,
-    subtitlePath: string,
-    language?: string,
-  ) => {
-    try {
-      return await invoke("integrations_sundayedit_import", {
-        recordingPath,
-        subtitlePath,
-        language: language ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  // The COMPLETE Stage import (stage_import_apply): manifest JSON → chapters
-  // merged into `.meta.json` + `.service.json` written. The recording's start
-  // time — what the manifest's absolute timestamps are aligned against — comes
-  // from its own history row; a file with no row has no start time to align
-  // to, and saying so beats writing chapters at made-up offsets.
-  stageImport: async (
-    recordingPath: string,
-    manifestJson: string,
-    wasStreamed?: boolean,
-  ) => {
-    try {
-      const rows = await invoke<
-        { file_path?: string; started_at?: number; duration_ms?: number | null }[]
-      >("recordings_list", undefined);
-      const row = rows.find((r) => r?.file_path === recordingPath);
-      if (!row || typeof row.started_at !== "number") {
-        return { ok: false as const, error: "recording_not_in_history" };
-      }
-      return await invoke("stage_import_apply", {
-        recordingPath,
-        manifestJson,
-        recordingStartMs: Math.round(row.started_at),
-        durationSec:
-          typeof row.duration_ms === "number"
-            ? Math.round(row.duration_ms / 1000)
-            : null,
-        wasStreamed: wasStreamed ?? null,
-        serviceDate: null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  // Keychain-only (SecretProvider::SongApiKey → `integrations.song_api_key`),
-  // mirroring the SMTP-password slot. Never localStorage, never the settings
-  // blob. Rejections travel: the panel's catch shows the reason instead of ✓.
-  songSetApiKey: async (key: string) =>
-    invoke("integrations_song_set_apikey", { plaintext: key }),
-  songHasApiKey: async () =>
-    call<boolean>("integrations_song_has_apikey", undefined, false),
-  songSubmitUsage: async (recordingPath: string) => {
-    try {
-      return await invoke("integrations_song_submit_usage", { recordingPath });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  planFetchServices: async (fromIso?: string) => {
-    try {
-      return await invoke("integrations_plan_fetch_services", {
-        fromIso: fromIso ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
-  planUpdateService: async (
-    serviceId: string,
-    wasStreamed?: boolean,
-    recordingUrl?: string,
-  ) => {
-    try {
-      return await invoke("integrations_plan_update_service", {
-        serviceId,
-        wasStreamed: wasStreamed ?? null,
-        recordingUrl: recordingUrl ?? null,
-      });
-    } catch (e) {
-      return { ok: false as const, error: ipcErrText(e) };
-    }
-  },
 
   // ── Fire-and-forget (Electron ipcRenderer.send) ─────────────────────────
   notifyWeakSignal: noop,

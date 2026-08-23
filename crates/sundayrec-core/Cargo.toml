@@ -51,16 +51,6 @@ regex = "1"
 # to opt out of — `no_std` here would buy nothing and diverge from the
 # resolution the rest of the graph already uses.
 semver = "1"
-# Canonical cross-app wire contracts (Rust mirror of @sunday/contracts). The
-# StageManifest + MediaHandoff/deep-link shapes this crate produces/parses are
-# CANONICAL there; we converge onto them so they cannot silently drift from the
-# SundayStage producer / SundayEdit parser. Distributed by git tag (same
-# mechanism as `sunday-auth` in src-tauri) so the crate builds standalone — a
-# path dep would break a single-repo checkout. Pure serde, no Tauri/I/O, so it
-# is safe in this GUI-free core. For local platform co-dev, override with a
-# `[patch]` in .cargo/config.toml.
-sunday-contracts = { git = "https://github.com/richardfossland/sunday-platform.git", tag = "v0.4.1" }
-
 [dev-dependencies]
 # Property tests for the parsers most exposed to hostile/malformed input
 # (WAV headers, image headers, deep links, ffmpeg progress/telemetry lines,

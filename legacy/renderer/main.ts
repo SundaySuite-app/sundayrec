@@ -1,6 +1,6 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
-import type { Settings, IntegrationSettings, ServiceLink, SermonCompanion, EditorSegment } from '../types'
+import type { Settings, SermonCompanion, EditorSegment } from '../types'
 import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
 import type { ThumbnailView } from '../bindings/ThumbnailView'
 import type { TrashEntry } from '../bindings/TrashEntry'
@@ -22,15 +22,14 @@ import { setupEditorPage, openEditorWithFile, deactivateEditor, reactivateEditor
 import { checkAndShowOnboarding, showOnboarding } from './pages/onboarding'
 import { initTelemetryConsentPrompt } from './telemetry-consent-prompt'
 import { setupVideoPage, applyVideoSettingsToUI, refreshVideoDevices } from './pages/video-page'
-import { setupIntegrationsPage } from './pages/integrations-page'
-import { setupSearchPage, activateSearchPage, invalidateTranscriptIndex } from './pages/search-page'
+import { setupCompanionKeyCard } from './pages/companion-key-card'
+import { setupSearchPage, activateSearchPage } from './pages/search-page'
 import { enhanceTimeInputs } from './time-input'
 import { setupModalManager } from './ui/modal-manager'
 import { applyInnerTabTransition, applyPageTransition, markPageEntered } from './ui/motion'
 import { navigateTo } from './ui/navigate'
 import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
-import { initDeeplinks } from './deeplinks'
 
 // Shared thumbnail IPC result shapes.
 //
@@ -346,22 +345,6 @@ declare global {
       thumbnailResolve:        (recordingPath: string) => Promise<ThumbnailResolved | null>
       thumbnailGetDefaultInfo: () => Promise<ThumbnailResolved | null>
 
-      // Sunday-suite integrations (opt-in; inert until enabled)
-      getIntegrationSettings:  () => Promise<IntegrationSettings>
-      setIntegrationSettings:  (patch: Partial<IntegrationSettings>) => Promise<IntegrationSettings>
-      getServiceLink:          (recordingPath: string) => Promise<ServiceLink | null>
-      sundayEditSend:            (opts: { videoPath: string; language?: string; context?: string; glossary?: string[] }) => Promise<{ ok: boolean; error?: string }>
-      sundayEditImport:          (recordingPath: string, subtitlePath: string, language?: string) => Promise<{ ok: boolean; transcriptPath?: string; error?: string }>
-      /** The complete Stage import: manifest JSON (its CONTENT, not a path — the
-       *  webview can read the picked File, it cannot learn its fs path) →
-       *  chapters into `.meta.json` + `.service.json` beside the recording. */
-      stageImport:             (recordingPath: string, manifestJson: string, wasStreamed?: boolean) => Promise<{ ok: boolean; chapterCount?: number; songCount?: number; error?: string }>
-      songSetApiKey:           (key: string) => Promise<void>
-      songHasApiKey:           () => Promise<boolean>
-      songSubmitUsage:         (recordingPath: string) => Promise<{ ok: boolean; submitted?: number; errors?: Array<{ key: string; error: string }>; error?: string; hint?: string }>
-      planFetchServices:       (fromIso?: string) => Promise<{ ok: boolean; services?: unknown[]; error?: string }>
-      planUpdateService:       (serviceId: string, wasStreamed?: boolean, recordingUrl?: string) => Promise<{ ok: boolean; error?: string }>
-
       // R8 AI sermon companion (chapters + highlights + Norwegian summary).
       // companionBuild returns null on any failure; the optional LLM summary is
       // keychain-only (companionSetLlmKey) and degrades to a local extractive
@@ -432,8 +415,8 @@ function showPage(id: string): void {
  * Five tabs since Fase 3: Lyd · Video · Opptak · Deling · System.
  *
  * «Publisering» and «Varsler» answered halves of the same question — who gets
- * the recording afterwards — and are now sections of Deling; «Sunday-suite» is
- * an Avansert disclosure at the bottom of System. Old tab ids still resolve:
+ * the recording afterwards — and are now sections of Deling; the companion key
+ * is an Avansert disclosure at the bottom of System. Old tab ids still resolve:
  * `navigate.ts` maps them to {tab, anchor}, so deep links keep landing.
  */
 function setupSettingsTabs(): void {
@@ -550,20 +533,12 @@ async function init(): Promise<void> {
   setupVideoPage()
   setupRecording()
   setupEditorPage()
-  void setupIntegrationsPage()
+  void setupCompanionKeyCard()
   setupSearchPage()
   setupClipReset()
   setupSettingsTabs()
   // Escape, backdrop-click, focus trap and `inert` for every .modal-backdrop.
   setupModalManager()
-
-  // `sundayrec://` hand-offs from SundayEdit. Rust has parsed (and, for
-  // captions, already applied) these since the port; nothing ever listened, so
-  // the window came forward and then appeared to do nothing.
-  initDeeplinks({
-    openInEditor: (path: string) => openEditorWithFile(path),
-    refreshTranscripts: invalidateTranscriptIndex,
-  })
 
   // The menubar tray's one event, routed to the SAME entry points the in-app
   // buttons use — a tray "Start opptak nå" opens the very modal the Home button

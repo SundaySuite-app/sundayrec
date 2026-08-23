@@ -32,7 +32,7 @@
  *     missed-recording detection)
  *   - `useUnifiedRecorder` → dead (hard-coded true since the A/V-sync choice
  *     was removed)
- *   - `integrations` → the backend integrations store (`integrations_*`)
+ *   - `integrations` → dropped (the Sunday-suite integrations were removed)
  *   - `emailSmtpPass`/`emailSmtpPassEnc`/`emailSmtpPassSet` → the OS keychain;
  *     secrets never enter the settings store (E1.6's purge, subsumed)
  *

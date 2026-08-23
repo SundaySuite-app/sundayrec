@@ -17,7 +17,7 @@
 //!   - [`device_match`] — 5-strategy fuzzy device matching (the device-name moat)
 //!   - [`device_enum`]  — pure ffmpeg `-list_devices` stderr parsers (audio + video)
 //!   - [`email`]         — error/test alert templates (7-lang) + throttle/dedup gate (PU-1)
-//!   - [`tray`]          — tray menu-model (localized items/actions) + inbound deep-link dispatch sits in [`link`] (PU-2)
+//!   - [`tray`]          — tray menu-model (localized items/actions) (PU-2)
 //!   - [`mjpeg`]        — MJPEG stdout reassembly (SOI/EOI frame splitter + JPEG dims)
 //!   - [`preroll`]      — pre-roll rolling-capture / harvest-trim decision mat (Fase 3.2)
 //!   - [`progress`]     — ffmpeg `size=`-progress parsing + one-shot startup resolution
@@ -38,7 +38,6 @@
 //!   - [`audio_analysis`] — peaks/waveform, spectrum (FFT), frame classification (PU-7)
 //!   - [`detect`] — the ONE sermon detector over those segments (E9)
 //!   - [`whisper`]      — whisper.cpp transcription decisions: model registry, argv/thread heuristic, progress/exit parse, JSON-sidecar normalise, chunk/merge, language map (PU-5)
-//!   - [`integrations`] — Sunday-suite hand-offs: Stage manifest→chapters/setlist + the live cue-bridge consumer (PU-6 + Bridge #2)
 //!   - [`image_probe`]  — PNG/JPEG/WebP header parsing (format + pixel size) for the episode-image panels (Fase 6)
 //!   - [`redact`]       — scrubbing text that leaves the process: user paths out of crash records, credentials out of log lines (E2)
 //!   - [`feedback`]     — the record of a human correcting us: the sermon auto-pick, the proposed trim, and the AI companion's suggestions — what to store, what counts as a correction, and what a later one replaces (E8)
@@ -68,10 +67,8 @@ pub mod ffmpeg;
 pub mod filename;
 pub mod history;
 pub mod image_probe;
-pub mod integrations;
 pub mod learning_summary;
 pub mod levels;
-pub mod link;
 pub mod local_adaptivity;
 pub mod mastering;
 pub mod mjpeg;

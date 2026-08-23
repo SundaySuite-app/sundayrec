@@ -87,10 +87,9 @@ pub mod telemetry;
 // the module docs for why restarting them would be WRONG.
 pub mod supervise;
 pub mod test_recording;
-// PU-2 menubar tray + `sundayrec://` deep-link handling — `tray` feature, in
-// `default` and both release builds (install failure only logs a warning). The
-// menu-model + link parse are in `sundayrec_core`; this seam maps them to tauri
-// menu/tray + the scheme handler.
+// PU-2 menubar tray — `tray` feature, in `default` and both release builds
+// (install failure only logs a warning). The menu-model is in
+// `sundayrec_core`; this seam maps it to tauri menu/tray.
 #[cfg(feature = "tray")]
 pub mod tray;
 // Papirkurv — the recoverable delete behind Historikk. Files move to
@@ -204,11 +203,6 @@ pub fn run() {
     #[cfg(feature = "updater")]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
-    // PU-2: register the `sundayrec://` deep-link plugin only under `--features
-    // tray` (the scheme handler feeds `tray::dispatch_deep_link`). GUI-UNVERIFIED.
-    #[cfg(feature = "tray")]
-    let builder = builder.plugin(tauri_plugin_deep_link::init());
-
     let builder = builder
         // The VU engine holds at most one running cpal session; commands reach
         // it through managed state.
@@ -241,14 +235,7 @@ pub fn run() {
         .manage(whisper::DownloadGuard::new())
         // Tracks in-flight transcriptions so `whisper_cancel_transcribe` can
         // abort one (one entry per active job id).
-        .manage(whisper::TranscribeGuard::new())
-        // E1.1: inbound `sundayrec://captions` links that passed validation and
-        // are waiting for the operator to confirm. Nothing is written until a
-        // parked id comes back through `deeplink_confirm_captions`, so a page
-        // that fires the scheme cannot make us touch the disk on its own.
-        // Featureless on purpose: the same IPC surface exists with and without
-        // the `tray` feature (without it nothing ever parks).
-        .manage(commands::deeplink::PendingDeepLinks::new());
+        .manage(whisper::TranscribeGuard::new());
 
     // PU-1: ONE alert throttle window for the whole process lifetime. The gate
     // (10 min per recipient+error pair) is what stops a flapping device from
@@ -450,13 +437,10 @@ pub fn run() {
             // every later rebuild a handle to `set_menu`/`set_icon` through.
             // `wire_state_sources` then subscribes the tray to the recorder's
             // and scheduler's existing events, so the menu tracks reality
-            // instead of freezing at `TrayState::default()`. The deep-link
-            // plugin (`sundayrec://`) is registered for the OAuth/import
-            // hand-off. GUI-UNVERIFIED.
+            // instead of freezing at `TrayState::default()`. GUI-UNVERIFIED.
             #[cfg(feature = "tray")]
             {
                 use sundayrec_core::tray::{TrayLang, TrayState};
-                use tauri_plugin_deep_link::DeepLinkExt;
                 // The UI language lives in the renderer's own settings blob, so
                 // it arrives via `tray_set_language` on boot; Norwegian until then.
                 let lang = TrayLang::from_code(None);
@@ -464,15 +448,6 @@ pub fn run() {
                     Ok(()) => tray::wire_state_sources(app.handle()),
                     Err(e) => tracing::warn!("tray install failed: {e}"),
                 }
-
-                // Route inbound `sundayrec://…` links through the unit-tested
-                // core parser + the shell dispatcher. GUI-UNVERIFIED.
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
-                    for url in event.urls() {
-                        let _ = tray::dispatch_deep_link(&handle, url.as_str());
-                    }
-                });
             }
 
             tracing::info!("SundayRec backend ready (db at {})", db_path.display());
@@ -532,8 +507,6 @@ pub fn run() {
             commands::trash::trash_restore,
             commands::trash::trash_purge,
             commands::calendar::liturgical_month,
-            commands::bridge::open_in_sundayedit,
-            commands::bridge::open_in_sundaystudio,
             commands::settings::settings_get,
             commands::settings::settings_save,
             commands::settings::settings_reset,
@@ -620,22 +593,6 @@ pub fn run() {
             commands::companion::companion_llm_status,
             commands::companion::companion_set_llm_key,
             commands::companion::companion_clear_llm_key,
-            // P2b Sunday-suite integrations — typed settings + Song/Plan/SundayEdit
-            // hand-offs (pure mappers in sundayrec-core; HTTP NETWORK-UNVERIFIED).
-            commands::integrations::integrations_get_settings,
-            commands::integrations::integrations_set_settings,
-            commands::integrations::integrations_get_service_link,
-            commands::integrations::integrations_song_set_apikey,
-            commands::integrations::integrations_song_has_apikey,
-            commands::integrations::integrations_song_submit_usage,
-            commands::integrations::integrations_plan_fetch_services,
-            commands::integrations::integrations_plan_update_service,
-            commands::integrations::integrations_sundayedit_send,
-            commands::integrations::integrations_sundayedit_import,
-            // E1.1 — the ONLY route from an inbound `sundayrec://captions` deep
-            // link to a sidecar write. Rust validated + parked the request; this
-            // is the operator's answer.
-            commands::deeplink::deeplink_confirm_captions,
             // Episode images (cover art) — default + per-episode override. Pure
             // header probing in `sundayrec-core::image_probe`; no feature gate,
             // no ffmpeg. The renderer had these six as stubs since the port.

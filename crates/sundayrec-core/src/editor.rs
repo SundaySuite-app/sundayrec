@@ -695,6 +695,19 @@ pub struct Chapter {
     pub title: String,
 }
 
+/// The chapter marker as the renderer's `.meta.json` sidecar stores it — the
+/// wire twin of [`Chapter`] (`time` in whole seconds from the start of the main
+/// content). Exported for the renderer's `RecordingMetadata.chapters`; the
+/// Rust export path reads the sidecar as opaque JSON and never deserialises
+/// this directly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../../src/lib/bindings/ChapterMarker.ts")]
+pub struct ChapterMarker {
+    #[ts(type = "number")]
+    pub time: i64,
+    pub title: String,
+}
+
 /// Optional recording metadata for the export — title/speaker/description plus
 /// chapters. Mirrors the `RecordingMetadata` shape the editor consumed.
 #[derive(Debug, Clone, Default, PartialEq)]

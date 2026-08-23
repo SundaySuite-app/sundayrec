@@ -1,13 +1,14 @@
-//! Menubar tray + deep-link plumbing (PU-2 P2b) — **GUI-UNVERIFIED**, default-off `tray` feature.
+//! Menubar tray (PU-2 P2b) — **GUI-UNVERIFIED**, `tray` feature (in `default`).
 //!
 //! The impure half of the tray. The *model* — which localized items, their
-//! actions, the tooltip, the icon — is the unit-tested [`sundayrec_core::tray`];
-//! the inbound `sundayrec://` parse/dispatch is the unit-tested
-//! [`sundayrec_core::link::parse_deep_link`]. This module is only the glue:
+//! actions, the tooltip, the icon — is the unit-tested [`sundayrec_core::tray`].
+//! This module is only the glue:
 //!   - turn a [`TrayItem`] list into a `tauri::menu::Menu` ([`build_menu`]),
 //!   - wire each [`TrayAction`] to an app event the renderer/commands handle
-//!     ([`emit_action`]),
-//!   - route an inbound deep link to the right side effect ([`dispatch_deep_link`]).
+//!     ([`emit_action`]).
+//!
+//! (The `sundayrec://` deep-link dispatch that used to live here left with the
+//! Sunday-suite integrations.)
 //!
 //! ## Keeping the menu alive
 //!
@@ -28,17 +29,16 @@
 //!
 //! ## ⚠️ GUI-UNVERIFIED
 //!
-//! The `TrayIconBuilder`, the menu rendering, the runtime-painted status badge
-//! and the OS scheme delivery (`tauri-plugin-deep-link`) need a real desktop
-//! session to verify — wired + compiling under `--features tray`, never run
-//! headless. The badge compositing itself is pure + unit-tested in core.
+//! The `TrayIconBuilder`, the menu rendering and the runtime-painted status
+//! badge need a real desktop session to verify — wired + compiling under
+//! `--features tray`, never run headless. The badge compositing itself is pure
+//! + unit-tested in core.
 
 use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Listener, Manager, Runtime};
 
-use sundayrec_core::link::{parse_deep_link, DeepLinkAction};
 use sundayrec_core::tray::{
     badge_rgb, build_menu as build_model, icon_for, tooltip, with_status_badge, TrayAction,
     TrayItem, TrayLang, TrayState,
@@ -48,12 +48,6 @@ use sundayrec_core::tray::{
 /// payload is the action's stable string id (see [`action_id`]). Mirrors the
 /// `tray-…` IPC sends in the Electron `tray.ts` click handlers.
 pub const TRAY_ACTION_EVENT: &str = "tray://action";
-/// The event emitted when an inbound deep link is an import hand-off.
-pub const DEEP_LINK_IMPORT_EVENT: &str = "deeplink://import";
-/// The event emitted after a captions hand-back (`sundayrec://captions`) has
-/// been applied — the renderer can toast + refresh transcript search. The
-/// payload is `{ ok, recording, transcriptPath?, error? }`.
-pub const DEEP_LINK_CAPTIONS_EVENT: &str = "deeplink://captions";
 
 /// The stable string id for a [`TrayAction`], used as the menu-item id and the
 /// emitted event payload so the shell can route a click without re-deriving it.
@@ -157,68 +151,6 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, menu_id: &str) {
     if let Some(action) = action_from_id(menu_id) {
         emit_action(app, action);
     }
-}
-
-/// Route an inbound `sundayrec://…` deep link. Returns the parsed action so the
-/// caller can log it; performs the side effect (show window + emit) for the ones
-/// the backend owns. The OAuth-callback branch is surfaced for the cloud flow to
-/// validate via its existing core path (no replay state lives here). GUI-UNVERIFIED.
-///
-/// ## Admission control (E1.1)
-///
-/// A deep link is NOT a user action — any web page that can trigger a
-/// custom-scheme navigation reaches this function. Both arms therefore hand
-/// their paths to [`crate::commands::deeplink`] first:
-///   - **import** is validated (absolute, `..`-free, an existing media file,
-///     nothing protected) and then, and only then, offered to the renderer. It
-///     writes nothing, so validation is the whole gate.
-///   - **captions** used to `fs::write` a `<recording>.transcript.json` for
-///     whatever path the URL named. It is now VALIDATED (the recording must
-///     resolve inside the configured save folder), PARKED under a single-use id,
-///     and only written after the renderer confirms via
-///     `deeplink_confirm_captions`. Nothing here touches the filesystem.
-pub fn dispatch_deep_link<R: Runtime>(app: &AppHandle<R>, url: &str) -> Option<DeepLinkAction> {
-    use crate::commands::deeplink;
-
-    let action = parse_deep_link(url)?;
-    match &action {
-        DeepLinkAction::Import { path, return_to } => {
-            // Bring the window forward and hand the import to the renderer —
-            // but only once the path has passed the media guard.
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-            let payload = match deeplink::validate_import_request(path) {
-                Ok(path) => serde_json::json!({ "path": path, "returnTo": return_to }),
-                Err(reject) => {
-                    tracing::warn!(code = reject.code(), "deeplink: refused an import hand-off");
-                    serde_json::json!({ "error": reject.code() })
-                }
-            };
-            let _ = app.emit(DEEP_LINK_IMPORT_EVENT, payload);
-        }
-        DeepLinkAction::Captions { path, recording } => {
-            // SundayEdit finished captioning and handed the SRT back. Resolving
-            // the save folder is an async settings read, so the validate/park/
-            // emit runs on the runtime; this handler stays non-blocking and the
-            // OS scheme callback returns immediately.
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-            let handle = app.clone();
-            let (path, recording) = (path.clone(), recording.clone());
-            tauri::async_runtime::spawn(async move {
-                deeplink::offer_captions(&handle, DEEP_LINK_CAPTIONS_EVENT, recording, path).await;
-            });
-        }
-        DeepLinkAction::OAuthCallback { .. } | DeepLinkAction::Unknown { .. } => {
-            // OAuth-via-scheme is delivered to the cloud flow elsewhere; Unknown
-            // is just logged by the caller.
-        }
-    }
-    Some(action)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -70,7 +70,7 @@ export interface BindSettingOpts<T = SettingValue> {
   apply: (value: T, el: HTMLElement) => void
   /**
    * Persist. Defaults to the shared debounced `saveSettings` in state.ts —
-   * override for the surfaces with their own store (Sunday-suite integrations).
+   * override for a surface with its own store (the telemetry consent row).
    */
   persist?: () => Promise<boolean>
   /** Runs after a successful save (refresh Home, re-derive the schedule …). */

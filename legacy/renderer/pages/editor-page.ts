@@ -18,7 +18,6 @@ import { fitAll, zoomBy } from './editor/viewport'
 import { onCanvasDown, onCanvasMove, onCanvasUp, onCanvasLeave, onCanvasContextMenu, onCanvasWheel, setupMinimapInteraction, snapOutOfCut } from './editor/canvas-input'
 import { openExportModal, closeExportModal, runExport, updateExportFormatUI } from './editor/export'
 import { setupMasteringPanel } from './editor/mastering'
-import { setupStageUi } from './editor/stage-ui'
 import { setupEditorTabs, flagEditorTab } from './editor/tabs'
 import { setupViewMenu } from './editor/view-menu'
 import { pickAndLoad, loadFile, reloadIntroOutro, teardownPlayback, updateVideoIntroOutroDisplay, updateEditorIntroOutroDisplay } from './editor/loader'
@@ -314,8 +313,6 @@ export function setupEditorPage(): void {
   // Mastering wiring
   setupMasteringPanel()
 
-  // Stage integration button (opt-in; hidden until enabled in settings)
-  setupStageUi()
 
   // Canvas interactions
   E.canvas?.addEventListener('mousedown',   onCanvasDown)

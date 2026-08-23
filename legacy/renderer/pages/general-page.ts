@@ -455,9 +455,9 @@ function setupSmtpCard(): void {
  * `app_setting` bag in src-tauri — see crates/sundayrec-core/telemetry/
  * consent.rs), NOT in the `Settings` blob `bindSetting` normally reads and
  * writes through `collectGeneralSettings()`. So the toggle below uses the
- * same `apply: () => {}` / `persist: async () => …` shape
- * integrations-page.ts already established for exactly this situation (a
- * control whose truth lives outside Settings).
+ * same `apply: () => {}` / `persist: async () => …` shape the (since-removed)
+ * integrations page established for exactly this situation (a control whose
+ * truth lives outside Settings).
  *
  * No `confirmIf` on enabling: the toggle's own description plus the details
  * this card links to (the preview, the privacy notice) already give informed

@@ -37,8 +37,8 @@ default = ["editor", "whisper", "tray", "updater", "email"]
 # by email that Sunday's recording died is the single highest-value alert the
 # app has, and it shipped in no release while this stayed default-off.
 email = ["dep:lettre"]
-# PU-2: native menubar tray + `sundayrec://` scheme handler.
-tray = ["tauri/tray-icon", "dep:tauri-plugin-deep-link"]
+# PU-2: native menubar tray.
+tray = ["tauri/tray-icon"]
 # (The `publish` feature — podcast RSS — left with the sharing cluster, as did
 # `streaming`/`ndi`/`bridge` in v0.14. SundayRec is a recording app.)
 # R1: non-destructive editor — ffmpeg-driven load/peaks/segments/mastering/
@@ -227,8 +227,6 @@ lettre = { version = "0.11", default-features = false, features = [
     "smtp-transport",
     "builder",
 ], optional = true }
-# PU-2 deep-link scheme registration (`sundayrec://…`) for the OAuth/import flow.
-tauri-plugin-deep-link = { version = "2", optional = true }
 # Launch-at-login (OS login item) so scheduled recordings actually fire after a
 # reboot. Always compiled — auto-start is core to the unattended-recorder use case.
 tauri-plugin-autostart = "2"

@@ -9,10 +9,12 @@
 //! ## Retired slots
 //!
 //! Earlier builds also wrote OAuth refresh tokens for Google Drive
-//! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`)
-//! and RTMP stream keys (`stream.key`, `stream.key.{destId}`). Those features
-//! are gone (cloud backup, podcast publishing, the Gmail mail transport, live
-//! streaming), so nothing reads or writes the slots any more — but the
+//! (`oauth.google_drive`), YouTube (`oauth.youtube`) and Gmail (`oauth.gmail`),
+//! a SundaySong API key (`integrations.song_api_key`) and RTMP stream keys
+//! (`stream.key`, `stream.key.{destId}`). Those features are gone (cloud
+//! backup, podcast publishing, the Gmail mail transport, the Sunday-suite
+//! integrations, live streaming), so nothing reads or writes the slots any
+//! more — but the
 //! entries may still sit in users' keychains. They are left alone on purpose:
 //! keyring cannot enumerate accounts, and a startup sweep could block launch on
 //! a locked-keychain authorization prompt. The strings above are the contract
@@ -39,9 +41,6 @@ pub enum SecretProvider {
     /// SMTP password for the email-alert mailer (never persisted in settings;
     /// mirrors the Electron `emailSmtpPassEnc` keychain slot).
     SmtpPassword,
-    /// SundaySong / SundayPlan API key (bearer). Encrypted in the keychain, never
-    /// in the integration-settings blob — mirrors the Electron `setSongApiKey`.
-    SongApiKey,
     /// Anthropic API key for the OPTIONAL AI sermon-companion summary seam (R8).
     /// Stored in the OS keychain only — NEVER in settings, NEVER in a bundle. When
     /// unset the companion falls back to the fully-local extractive summary.
@@ -54,17 +53,15 @@ impl SecretProvider {
         match self {
             SecretProvider::StreamKey => "stream.key",
             SecretProvider::SmtpPassword => "email.smtp_password",
-            SecretProvider::SongApiKey => "integrations.song_api_key",
             SecretProvider::CompanionLlmKey => "companion.llm_api_key",
         }
     }
 
     /// All providers — handy for a "disconnect everything" sweep.
-    pub fn all() -> [SecretProvider; 4] {
+    pub fn all() -> [SecretProvider; 3] {
         [
             SecretProvider::StreamKey,
             SecretProvider::SmtpPassword,
-            SecretProvider::SongApiKey,
             SecretProvider::CompanionLlmKey,
         ]
     }
