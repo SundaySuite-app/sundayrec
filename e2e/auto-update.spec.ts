@@ -268,7 +268,14 @@ test.describe("oppdateringsbanneret", () => {
     await expect(banner).toContainText("0.16.0");
     await expect(banner).toHaveAttribute("data-tone", "warn");
     await expect(page.getByTestId("banner-update-install")).toBeVisible();
-    await expect(page.getByTestId("toast-host")).toHaveCount(0);
+    // …og INGEN toast om det samme. Verten selv står alltid (den er en
+    // aria-live-region, og en region som opprettes sammen med sin første
+    // melding blir aldri annonsert — se ToastHost.tsx), så påstanden er at den
+    // er TOM: en oppdatering er ett budskap, ikke to.
+    await expect(page.getByTestId("toast-host")).toHaveAttribute(
+      "data-empty",
+      "true",
+    );
 
     // Den følger med til de andre destinasjonene: en oppdatering hører ikke
     // til noen side.

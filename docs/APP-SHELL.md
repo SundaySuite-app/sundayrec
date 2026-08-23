@@ -2343,6 +2343,26 @@ som ikke finnes lenger». De som er mer enn opprydding:
 Rust-kommandoene er IKKE slettet. Det er en egen opprydding med sin egen
 vurdering per kommando.
 
+### ⚠️ Baselinen ble REGENERERT i #156, og det var med vilje
+
+`scripts/command-reachability-baseline.json` ble skrevet på nytt i byttets egen
+PR. Det er verdt å si høyt, fordi det er det ene grepet som gjør en gate stille:
+de 35 kommandonavnene over gikk fra «nåbar» til «unåbar» i samme commit som
+baselinen lærte at de var unåbare, så gaten hadde ingenting å klage på.
+
+Regenereringen er riktig — en dør som lukkes med begrunnelse ER en klassifisert
+beslutning, og det er nettopp det baselinen er til for å bære — men den er ikke
+en fribillett. To ting følger av den:
+
+1. **Gaten sier nå tallet.** Suksesslinja i
+   `check-command-reachability.mjs` skriver hvor mange kommandoer som fortsatt
+   står i unreachable-baselinen. «Ingen regresjoner» er en påstand om
+   BEVEGELSE, og uten tallet ved siden av leses den som «alt er koblet opp».
+2. **Restansen er denne lista, ikke baselinen.** Baselinen husker at noen sa ja
+   en gang; §3 her sier hva de sa ja TIL. En kommando som forsvinner ut av
+   baselinen fordi den ble koblet opp igjen (som «+ 15 min» /
+   «Avbryt auto-stopp» ble) skal strykes her samtidig.
+
 ## 4. Atlas-fotografen er borte
 
 `e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas` fotograferte

@@ -462,6 +462,22 @@ if (removed.length > 0) {
 
 if (!failed && premiseHolds) {
   console.log("\n✓ no reachability regressions, no unclassified new commands");
+  // …and the half of the truth the tick does not carry. "No regressions" is a
+  // statement about MOVEMENT, and it reads to a hurried eye like "everything is
+  // wired". It is not: a standing backlog of commands has no UI path at all,
+  // and they pass this gate every single run precisely because somebody once
+  // said "yes, unreachable for now" by putting them in the baseline. That
+  // decision is a year old in places. Printing the number keeps it from
+  // becoming invisible.
+  const stillDark = [...baselineUnreachableSet].filter((n) =>
+    unreachable.includes(n),
+  );
+  console.log(
+    `  ${stillDark.length} command(s) remain in the unreachable baseline — ` +
+      "classified, not wired. See docs/APP-SHELL.md §Etter byttet for which\n" +
+      "  doors fase B closed on purpose, and docs/COMMAND_AUDIT_2026-08.md §4 " +
+      "for the older keep/wire/cut backlog.",
+  );
 }
 
 process.exit(failed || !premiseHolds ? 1 : 0);

@@ -24,6 +24,21 @@
  * Verten er søsken av `#app`, ikke inne i det, så en toast overlever at
  * DialogHost slår av appen bak seg. Det er med vilje: en «Kunne ikke lagre»
  * som kom akkurat idet en dialog åpnet seg skal fortsatt kunne leses.
+ *
+ * ## ⚠️ Regionen STÅR, også når køen er tom
+ *
+ * Verten returnerte `null` på tom kø. Det ser ut som en gratis opprydding og er
+ * det motsatte: en `aria-live`-region må finnes i treet FØR innholdet settes
+ * inn i den, ellers har skjermleseren ingen region å observere endringen i. En
+ * region som opprettes i samme oppdatering som sin egen første melding blir
+ * ikke annonsert — i praksis er hver første toast stum, og etter at køen har
+ * tømt seg er neste første toast stum igjen. Det er nøyaktig den brukeren dette
+ * skallet er skrevet for: en frivillig som har blikket på miksepulten og hører
+ * appen i stedet for å se den.
+ *
+ * Så roten rendres alltid. Tom er den et `div` uten barn — `:empty` i CSS-en
+ * gjør den upåtakelig (ingen boks, ingen pekerflate), og `aria-live="polite"`
+ * på en tom region annonserer ingenting av seg selv.
  */
 
 import { dismissToast, toasts } from "../toast";
@@ -33,13 +48,13 @@ import styles from "./ToastHost.module.css";
 
 export function ToastHost() {
   const queue = toasts.value;
-  if (queue.length === 0) return null;
 
   return (
     <div
       aria-live="polite"
       aria-atomic="false"
       data-testid="toast-host"
+      data-empty={queue.length === 0 ? "true" : undefined}
       class={styles.stack}
     >
       {queue.map((item) => (
