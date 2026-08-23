@@ -124,12 +124,10 @@ pub fn build_menu<R: Runtime>(
 /// `webContents.send(...)` for the rest.
 pub fn emit_action<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
     match action {
-        TrayAction::OpenWindow | TrayAction::ShowOnError => {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-        }
+        // THE way back from a window hidden by a close during a recording (P3
+        // «Frivilligen først»). Goes through `window::show_main` so the hide
+        // notice re-arms and the un-minimise is not forgotten here.
+        TrayAction::OpenWindow | TrayAction::ShowOnError => crate::window::show_main(app),
         TrayAction::StopRecording => {
             // Wire straight to the recorder command's effect — `RecorderEngine`
             // is managed state, and `stop()` is safe when nothing is running.
