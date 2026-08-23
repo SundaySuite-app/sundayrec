@@ -61,6 +61,23 @@ export function cancelDraftSave(): void {
   draftSaver.cancel();
 }
 
+/**
+ * Slett kutt-utkastets sidevogn. Kalles når en eksport lyktes.
+ *
+ * Utkastet finnes for å overleve en krasj midt i en redigering. Etter en
+ * vellykket eksport er redigeringen ute av huset, og et utkast som blir
+ * liggende ville lagt de samme kuttene tilbake ved neste åpning — som om
+ * eksporten ikke hadde skjedd. Legacys `clearEditorDraft`, med det samme
+ * paret: avbryt en ventende skriving FØR sletting, ellers skriver timeren
+ * utkastet tilbake to sekunder senere.
+ */
+export function clearDraft(): void {
+  draftSaver.cancel();
+  if (E.filePath) {
+    void window.api.editorDeleteCutsDraft(E.filePath).catch(() => {});
+  }
+}
+
 function scheduleDraftSave(): void {
   if (!E.filePath) return;
   // Øyeblikksbilde: den levende lista endres videre (håndtaksdrag redigerer

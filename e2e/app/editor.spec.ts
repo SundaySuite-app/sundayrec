@@ -8,7 +8,14 @@ import {
   type Fixtures,
 } from "../harness";
 import type { EditorSegment } from "../../legacy/bindings/EditorSegment";
-import { DURATION, editorFixtures, FILE } from "./editor-fixtures";
+import {
+  AUTO_PROCESS_DEAD_LEFT,
+  DURATION,
+  editorFixtures,
+  EXPORT_HELD,
+  EXPORTED,
+  FILE,
+} from "./editor-fixtures";
 import { emit, spyEvents } from "./events";
 
 /**
@@ -25,22 +32,30 @@ const RECORD_PICKS: Fixtures = {
   }`),
 };
 
-// REDIGER, steg 1 «Klipp» — sett utenfra.
+// REDIGER — alle tre stegene, sett utenfra.
 //
-// De åtte første titlene er ORDRETT legacys (`e2e/editor.spec.ts`), fordi de
-// beskriver den samme oppførselen på en ny flate: åpningen, forslaget,
-// korreksjonen, kuttlista og de to regresjonene. `docs/SMOKE-TEST.md` peker på
-// to av dem som `sti::tittel`, så titlene er ikke våre å pusse på.
+// NI titler er ORDRETT legacys (`e2e/editor.spec.ts`), fordi de beskriver den
+// samme oppførselen på en ny flate: åpningen, forslaget, korreksjonen,
+// kuttlista, de to regresjonene — og, siden P4b, «the three tabs switch, and
+// switching does not redo the work», som ble sann igjen i det stegstripa fikk
+// alle tre. `docs/SMOKE-TEST.md` peker på to av dem som `sti::tittel`, så
+// titlene er ikke våre å pusse på.
 //
-// Tre av legacys titler er IKKE med, og det er ikke forglemmelse:
+// To av legacys titler har fortsatt ingen kopi her, og det er ikke
+// forglemmelse:
 //
-//   «the three tabs switch, and switching does not redo the work» — det finnes
-//   ikke tre faner. Stegstripa har ett steg i P4a, og Lyd/Eksporter er P4b.
-//   «the chosen tab is remembered across a reopen» — samme grunn.
-//   «the export modal is honest about destination and level» — eksporten er P4b.
+//   «the chosen tab is remembered across a reopen» — det gjør den ikke lenger,
+//   med vilje. Legacy husket fanen i innstillingene; her begynner hver åpning
+//   på steg 1, fordi «er dette prekenen?» er spørsmålet et opptak åpner med.
+//   «the export modal is honest about destination and level» — modalen finnes
+//   ikke, og halve tittelen er ikke lenger sann: NIVÅ-raden («Volum styres av
+//   mastring») fantes fordi normaliseringen og mastringen kunne love hver sin
+//   ting, og normaliseringen er borte. DESTINASJONS-halvdelen lever videre i
+//   «eksportsteget er ærlig om hvor filen havner».
 //
-// De fire siste er nye: ett-klikks-anvendelsen med angre, de to inngangene
-// (biblioteksraden og kvitteringen) og lukkingen med ulagrede kutt.
+// Resten er nye: P4as fire (ett-klikks-anvendelsen, de to inngangene,
+// lukkingen) og P4bs egne — mappingen fra de tre ordene til nyttelasten,
+// mikseren som overstyrer, video-bryteren, avbrytingen og kvitteringen.
 
 /** Åpne editoren med den fikstureide innspillingen. */
 async function openEditor(page: Page, over: Fixtures = {}) {
@@ -415,4 +430,439 @@ test.describe("editor", () => {
       `(av ${Math.round(DURATION / 60)} min 0 s)`,
     );
   });
+
+  // ── P4b: stegene «Lyd» og «Eksporter» ──────────────────────────────────────
+
+  test("the three tabs switch, and switching does not redo the work", async ({
+    page,
+  }) => {
+    // ORDRETT legacys tittel. Den ble usann da stegstripa hadde ett steg, og
+    // sann igjen nå — og det den beskytter er det samme: dekodingen og
+    // analysen er de dyre tingene på denne skjermen, og et steg som kjørte en
+    // av dem på nytt gjør et blikk om til en venting. På en 90-minutters FLAC
+    // er det forskjellen på brukbar og ikke.
+    await openEditor(page);
+    await waitForSuggestion(page);
+
+    const before = await page.evaluate(
+      () =>
+        (window as unknown as { __E2E_CALLS__: Record<string, number> })
+          .__E2E_CALLS__,
+    );
+    expect(before.editor_peaks).toBeGreaterThan(0);
+    expect(before.editor_segments).toBeGreaterThan(0);
+
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-sound")).toBeVisible();
+    await expect(page.getByTestId("editor-canvas")).toHaveCount(0);
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await expect(page.getByTestId("editor-export")).toBeVisible();
+
+    await page.getByTestId("editor-steps-row-cut").click();
+    // Bølgeformen kommer tilbake — og den tegnes fra toppene som allerede lå i
+    // modellen, ikke fra en ny dekoding.
+    await expect(page.getByTestId("editor-canvas")).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { __E2E_CALLS__: Record<string, number> })
+            .__E2E_CALLS__,
+      ),
+    ).toEqual(before);
+  });
+
+  test("«Tale» er standarden, og den sender tale-presettet med eksporten", async ({
+    page,
+  }) => {
+    // MUTASJONSPRØVEN for `sound-profiles.ts`: bytt `SPEECH_MASTER_PRESET` og
+    // denne går rød på `masterPreset`.
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-sound").click();
+
+    await expect(page.getByTestId("editor-auto-toggle")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
+      "data-profile",
+      "speech",
+    );
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+
+    expect(await exportPayloads(page)).toHaveLength(1);
+    expect((await exportPayloads(page))[0]).toMatchObject({
+      masterPreset: "speech-clear",
+      format: "mp3",
+      // «» = «Samme mappe som opptaket», som bakenden løser opp til kildens
+      // egen mappe. ALLTID en streng — aldri undefined, aldri en `mode`.
+      outputFolder: "",
+      bitrate: 256,
+    });
+    // Ingen stemmekjede, og ingen mikser: profilen er ETT preset. To kjeder
+    // over det samme materialet er det dobbelte høypasset bakenden advarer mot.
+    expect((await exportPayloads(page))[0].vocalChainPreset).toBeNull();
+    expect((await exportPayloads(page))[0].processing).toBeNull();
+  });
+
+  test("«Tale og musikk» bytter presettet, «Ingen» sender ingen behandling", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-sound").click();
+
+    await page.getByTestId("editor-profile-row-mixed").click();
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    expect((await exportPayloads(page))[0]).toMatchObject({
+      masterPreset: "music-speech",
+    });
+
+    // Tilbake til valgene, bytt til «Ingen», eksporter igjen.
+    await page.getByTestId("editor-exported-again").click();
+    await page.getByTestId("editor-steps-row-sound").click();
+    await page.getByTestId("editor-auto-toggle").click();
+    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
+      "data-profile",
+      "none",
+    );
+    // Bryteren AV er det samme som «Ingen» — ett felt, to måter å si det på.
+    await expect(page.getByTestId("editor-listen")).toHaveCount(0);
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    const last = (await exportPayloads(page))[1];
+    expect(last.masterPreset).toBeNull();
+    expect(last.vocalChainPreset).toBeNull();
+    expect(last.processing).toBeNull();
+    expect(last.channelRepair).toBeNull();
+  });
+
+  test("bryteren husker hvilket kort som var valgt", async ({ page }) => {
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-sound").click();
+    await page.getByTestId("editor-profile-row-mixed").click();
+
+    await page.getByTestId("editor-auto-toggle").click();
+    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
+      "data-profile",
+      "none",
+    );
+    await page.getByTestId("editor-auto-toggle").click();
+    // Ikke «Tale»: «av, så på» skal ikke flytte noen bort fra valget sitt.
+    await expect(page.getByTestId("editor-sound")).toHaveAttribute(
+      "data-profile",
+      "mixed",
+    );
+  });
+
+  test("mikseren overstyrer profilen — én kjede, ikke to", async ({ page }) => {
+    // Legacy lot `processing` OG `masterPreset` stå i den samme nyttelasten, og
+    // resultatet var to høypass, to kompressorer og to EQ-kurver over det samme
+    // materialet. Går denne rød fordi `masterPreset` er tilbake, er det
+    // nøyaktig den feilen som er tilbake.
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-sound").click();
+    await page.getByTestId("editor-mixer-open").click();
+    await page.getByTestId("editor-mixer-toggle").click();
+
+    // Alle tjue kontrollene er der, og de er ekte — en slår av høypasset.
+    await page.getByTestId("editor-mx-hpf-on").click();
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+
+    const sent = (await exportPayloads(page))[0];
+    expect(sent.masterPreset).toBeNull();
+    expect(sent.processing).toMatchObject({
+      highpassEnabled: false,
+      // Resten av kjeden er `VocalChain::default()`, importert fra legacys
+      // mikser — det ene stedet de tallene finnes i TypeScript.
+      compEnabled: true,
+      compThresholdDb: -18,
+    });
+  });
+
+  test("en stille kanal repareres uten å bli et spørsmål", async ({ page }) => {
+    // Den vanligste ekte katastrofen i et menighetsopptak. Legacy hadde en
+    // femvalgs «Kanalreparasjon»-velger for den; her ser analysen det, sier det
+    // i én setning, og reparasjonen blir med på eksporten.
+    await openEditor(page, { editor_auto_process: AUTO_PROCESS_DEAD_LEFT });
+    await page.getByTestId("editor-steps-row-sound").click();
+    await expect(page.getByTestId("editor-channel-note")).toContainText(
+      "Venstre kanal er stille",
+    );
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    expect((await exportPayloads(page))[0].channelRepair).toMatchObject({
+      mode: "duplicateRight",
+    });
+  });
+
+  test("«Etter» ber om en ekte gjengivelse av de samme tjue sekundene", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-steps-row-sound").click();
+
+    // Prekenen er SEGMENTS[3], 210–420 → midten er 315, og utsnittet begynner
+    // 20 sekunder bredt rundt den: 305 = 0:05:05.
+    await expect(page.getByTestId("editor-listen-at")).toContainText("0:05:05");
+
+    await page.getByTestId("editor-listen-play").click();
+    await expect
+      .poll(() => previewRequests(page).then((r) => r.length))
+      .toBeGreaterThan(0);
+    expect((await previewRequests(page))[0]).toMatchObject({
+      inputPath: FILE,
+      // Det SAMME presettet eksporten kommer til å bruke — ellers er «Etter»
+      // en lyd fila aldri får.
+      presetId: "speech-clear",
+      startSec: 305,
+      durationSec: 20,
+    });
+
+    // «Før» spør ikke bakenden om noe: det er originalen, fra det samme
+    // sekundet. I en ren nettleser er `asset://` død — atlasets eget forbehold
+    // — så knappen står SPERRET med grunn i stedet for å ikke gjøre noe, og
+    // ingen ny gjengivelse bestilles.
+    await page.getByTestId("editor-listen-before").click();
+    await expect(page.getByTestId("editor-listen-play")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(await previewRequests(page)).toHaveLength(1);
+  });
+
+  test("eksportsteget er ærlig om hvor filen havner", async ({ page }) => {
+    // Legacys «the export modal is honest about destination and level», minus
+    // nivå-halvdelen: normaliseringen som kunne love noe annet enn mastringen
+    // finnes ikke lenger, så det er ingen to løfter å holde fra hverandre.
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-export").click();
+
+    const same = page.getByTestId("editor-dest-row-same");
+    await expect(same).toHaveAttribute("data-selected", "true");
+    await expect(same).toContainText("Samme mappe som opptaket");
+    // …og den NAVNGIR mappen, i stedet for å be brukeren stole på ordet.
+    await expect(same).toContainText("Opptak");
+
+    // Navnet er bakendens form (`<navn>_redigert.<ext>`), ikke et løfte om
+    // innholdet, og anslaget er regnet av det som faktisk blir igjen.
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "2026-08-02 Gudstjeneste_redigert.mp3",
+    );
+    await expect(page.getByTestId("editor-export-preview")).toContainText("MB");
+
+    await page.getByTestId("editor-format-row-flac").click();
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "_redigert.flac",
+    );
+  });
+
+  test("«Ta med video» finnes bare når opptaket har video", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await page.getByTestId("editor-steps-row-export").click();
+    await expect(page.getByTestId("editor-video-card")).toHaveCount(0);
+    await expect(page.getByTestId("editor-format")).toBeVisible();
+
+    // Det SAMME opptaket, men bakenden sier at det har et videospor.
+    await openEditor(page, {
+      editor_load_recording: {
+        durationSec: DURATION,
+        hasVideo: true,
+        hasAudio: true,
+        channels: 2,
+        sampleFmt: "s16",
+        sampleRate: 48_000,
+      },
+    });
+    await page.getByTestId("editor-steps-row-export").click();
+    await expect(page.getByTestId("editor-video-card")).toBeVisible();
+
+    // Uten bryteren er eksporten fortsatt lyd — det er hva de fleste vil ha
+    // med en gudstjeneste-mp4.
+    await expect(page.getByTestId("editor-format-locked")).toHaveCount(0);
+    await page.getByTestId("editor-video-toggle").click();
+    // Med bryteren PÅ er containeren mp4, og da er de tre lydformatene ikke et
+    // valg lenger. De står dempet med grunnen i stedet for å forsvinne.
+    await expect(page.getByTestId("editor-format-locked")).toBeVisible();
+    await expect(page.getByTestId("editor-export-preview")).toContainText(
+      "_redigert.mp4",
+    );
+
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    expect((await exportPayloads(page))[0]).toMatchObject({
+      format: "mp4",
+      videoCodec: "h264",
+    });
+  });
+
+  test("en avbrutt eksport rydder etter seg", async ({ page }) => {
+    // Fremdriften er bakendens egen hendelse, så spionen må stå FØR oppstarten.
+    await spyEvents(page);
+    await openEditor(page, { editor_export: EXPORT_HELD });
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+
+    // Fremdriften står, og den er UBESTEMT til bakenden har et ekte tall:
+    // mastringens måle-passering melder 0 %, og en bar som står på null i to
+    // minutter leses som hengt.
+    await expect(page.getByTestId("editor-exporting")).toBeVisible();
+    await emit(page, "editor-export-progress", { pct: 0, phase: "measuring" });
+    await expect(page.getByTestId("editor-export-progress")).toContainText(
+      "Måler lydstyrke",
+    );
+    await emit(page, "editor-export-progress", { pct: 40, phase: "encoding" });
+    await expect(page.getByTestId("editor-export-progress-percent")).toHaveText(
+      "40%",
+    );
+
+    await page.getByTestId("editor-export-cancel").click();
+
+    // Bakenden fikk beskjeden, kjøringen er over, og skjermen sier hvorfor —
+    // rolig, ikke rødt: brukeren ba om det.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __E2E_CANCELS__?: unknown[] })
+              .__E2E_CANCELS__?.length ?? 0,
+        ),
+      )
+      .toBe(1);
+    await expect(page.getByTestId("editor-exporting")).toHaveCount(0);
+    await expect(page.getByTestId("editor-export-error")).toContainText(
+      "Eksport avbrutt",
+    );
+    // Ingen kvittering for en fil som ikke ble skrevet …
+    await expect(page.getByTestId("editor-exported")).toHaveCount(0);
+    // … og kutt-utkastet står fortsatt. Det slettes bare når en eksport
+    // LYKKES; en avbrutt kjøring som kastet det ville tatt med seg
+    // redigeringen brukeren nettopp gjorde.
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { __E2E_DELETED_SIDECARS__?: string[] })
+            .__E2E_DELETED_SIDECARS__ ?? [],
+      ),
+    ).not.toContain("cutsDraft");
+    // Valgene står, så «prøv igjen» er ett klikk.
+    await expect(page.getByTestId("editor-export-go")).toBeVisible();
+  });
+
+  test("kvitteringen viser bakendens filnavn, og «i annet format» tar deg tilbake", async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+
+    const receipt = page.getByTestId("editor-exported");
+    await expect(receipt).toBeVisible();
+    // Bakendens sti, ikke renderer-ens forutsigelse: den ENE som vet om det lå
+    // en fil med det navnet der fra før.
+    await expect(page.getByTestId("editor-exported-file")).toHaveText(
+      EXPORTED.split("/").pop() as string,
+    );
+    // Varighet · størrelse · mappe — samme kvitteringsform som etter et opptak.
+    await expect(receipt).toContainText("3 min 30 s");
+    await expect(receipt).toContainText("Opptak");
+    // Stegstripa har haken sin nå.
+    await expect(page.getByTestId("editor-steps-row-export")).toHaveClass(
+      /done/,
+    );
+    // Utkastet er ryddet: redigeringen er ute av huset.
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { __E2E_DELETED_SIDECARS__?: string[] })
+            .__E2E_DELETED_SIDECARS__ ?? [],
+      ),
+    ).toContain("cutsDraft");
+
+    await page.getByTestId("editor-exported-again").click();
+    // Tilbake til valgene, MED dem stående — å eksportere det samme i FLAC
+    // etterpå skal ikke bety å svare på de samme to spørsmålene igjen.
+    await expect(page.getByTestId("editor-export")).toBeVisible();
+    await expect(page.getByTestId("editor-format-row-mp3")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
+
+  test("«Til biblioteket» lukker opptaket uten å spørre", async ({ page }) => {
+    // Etter en vellykket eksport er det ingenting ulagret igjen å spørre om —
+    // og en bekreftelsesdialog der ville vært appen som ikke stoler på sin egen
+    // kvittering.
+    await openEditor(page);
+    await waitForSuggestion(page);
+    await page.getByTestId("editor-keep-sermon").click();
+    await expect(page.getByTestId("editor-dirty")).toBeVisible();
+
+    await page.getByTestId("editor-steps-row-export").click();
+    await page.getByTestId("editor-export-go").click();
+    await expect(page.getByTestId("editor-exported")).toBeVisible();
+    await page.getByTestId("editor-exported-library").click();
+
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-page",
+      "library",
+    );
+    await expect(page.locator("[data-dialog-button]")).toHaveCount(0);
+  });
+
+  test("stegene har en vei videre som ikke er stripa", async ({ page }) => {
+    await openEditor(page);
+    await page.getByTestId("editor-next").click();
+    await expect(page.getByTestId("editor-sound")).toBeVisible();
+    await page.getByTestId("editor-next").click();
+    await expect(page.getByTestId("editor-export")).toBeVisible();
+    // Siste steget har ingen: kvitteringen har sine egne tre veier ut.
+    await expect(page.getByTestId("editor-next")).toHaveCount(0);
+  });
 });
+
+/** Nyttelastene `editor_export` faktisk fikk — det bakenden ville sett. */
+async function exportPayloads(
+  page: Page,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __E2E_EXPORTS__?: Array<Record<string, unknown>>;
+        }
+      ).__E2E_EXPORTS__ ?? [],
+  );
+}
+
+/** Forespørslene `editor_master_preview` fikk. */
+async function previewRequests(
+  page: Page,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __E2E_PREVIEWS__?: Array<Record<string, unknown>>;
+        }
+      ).__E2E_PREVIEWS__ ?? [],
+  );
+}

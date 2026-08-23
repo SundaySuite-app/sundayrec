@@ -6,19 +6,32 @@
  * *er dette prekenen?* Svaret er ett klikk, og alt annet er tilgjengelig for
  * den som vil ha det.
  *
- * ## Stegstripa viser bare steget som finnes
+ * ## Stegstripa har alle tre nå
  *
- * Canvasen har tre steg — 1 Klipp · 2 Lyd · 3 Eksporter — og P4a bygger det
- * første. De to andre står IKKE i stripa, hverken som knapper eller som
- * dempede plassholdere: husregelen fra S1b er at ingenting sier «kommer
- * senere» og at ingen knapp finnes uten å gjøre noe. En dempet «2 Lyd» ville
- * vært begge deler på én gang.
+ * P4a bygde den med ett steg i, fordi husregelen fra S1b er at ingenting sier
+ * «kommer senere» og at ingen knapp finnes uten å gjøre noe — en dempet
+ * «2 Lyd» ville vært begge deler på én gang. P4b bygger de to andre, og da er
+ * det en tabellrad hver og ingenting annet.
  *
- * Alternativet — å droppe stripa helt til alle tre finnes — ville skjult
- * FORMEN, og formen er halve poenget: en frivillig skal se at dette er en vei
- * med et endepunkt. Så stripa står, med ett steg i, og P4b legger til to.
- * `Tabs` er allerede bygget for dette (`TabItem.done`, «editorens steg»), så
- * det er en tabellrad å legge til og ingenting annet.
+ * Navigasjonen er FRI: alle tre er klikkbare hele tiden. Et opptak man bare
+ * vil ha ut i mp3 skal ikke måtte gjennom to skjermer for å komme dit, og en
+ * som har eksportert skal kunne gå tilbake og klippe litt til.
+ *
+ * ## Haken betyr «du har svart», ikke «det er en verdi her»
+ *
+ *   **Klipp** ✓ når spørsmålet er besvart: kutt finnes, eller «Behold bare
+ *   prekenen» / «Behold alt» er brukt.
+ *   **Lyd** ✓ når brukeren har VÆRT der. «Tale» er standarden, og en hake fra
+ *   første sekund ville påstått at noen bestemte seg — det er nettopp forskjellen
+ *   mellom en standardverdi og et valg.
+ *   **Eksporter** ✓ når en eksport har lyktes i denne økta.
+ *
+ * ## Bare steg 1 har bølgeform og transport
+ *
+ * Canvasens 4.2 og 4.3 har ingen av delene, og det er riktig: de svarer på
+ * andre spørsmål. Å forlate steget river derfor lerretet ned — `WaveformHost`
+ * rydder etter seg (`cancelDraw`, `ResizeObserver`), toppene blir liggende i
+ * `E`, og en retur tegner dem opp igjen uten å laste noe på nytt.
  *
  * ## Forslagskortet vises bare når det finnes et forslag
  *
@@ -71,6 +84,8 @@ import {
   suggestionIsWorthOffering,
   timecode,
 } from "./editor-core";
+import { exportDone } from "./export";
+import { ExportStep } from "./ExportStep";
 import { closeFile, openFile, pickAndOpen } from "./loader";
 import {
   activeStep,
@@ -93,9 +108,12 @@ import {
   segments,
   startedAtMs,
   suggestion,
+  type Step,
 } from "./model";
 import { stopPlay, togglePlay } from "./playback";
 import { candidatesFor, chooseSermon } from "./sermon";
+import { soundProfile, soundVisited } from "./sound";
+import { SoundStep } from "./SoundStep";
 import { spanLabel } from "./span";
 import { WaveformHost } from "./WaveformHost";
 import styles from "./editor.module.css";
@@ -348,6 +366,7 @@ function LoadFailed() {
 
 function Workspace() {
   const step = activeStep.value;
+  const cutAnswered = applied.value || dismissed.value || cuts.value.length > 0;
 
   return (
     <>
@@ -356,9 +375,49 @@ function Workspace() {
         label={t("editor.tabsAria")}
         testId="editor-steps"
         value={step}
-        onChange={(id) => (activeStep.value = id as typeof step)}
-        items={[{ id: "cut", label: t("app.editor.stepCut"), step: "1" }]}
+        onChange={(id) => (activeStep.value = id as Step)}
+        items={[
+          {
+            id: "cut",
+            label: t("app.editor.stepCut"),
+            step: "1",
+            done: cutAnswered,
+          },
+          {
+            id: "sound",
+            label: t("app.editor.stepSound"),
+            step: "2",
+            done: soundVisited.value,
+          },
+          {
+            id: "export",
+            label: t("app.editor.stepExport"),
+            step: "3",
+            done: exportDone.value,
+          },
+        ]}
       />
+      {step === "cut" ? (
+        <CutStep />
+      ) : step === "sound" ? (
+        <SoundStep />
+      ) : (
+        <ExportStep />
+      )}
+      <NextStep step={step} />
+    </>
+  );
+}
+
+/** Steg 1 — canvasens 4.1, uendret fra P4a. */
+function CutStep() {
+  // Å gå til et annet STEG stopper avspillingen, av nøyaktig samme grunn som å
+  // gå til en annen SIDE gjør det: lyd som går videre på en skjerm ingen ser
+  // er den ene formen for feil som ikke ser ut som en feil.
+  useEffect(() => stopPlay, []);
+
+  return (
+    <>
       <PlaybackNotice />
       <SuggestionCard />
       <WaveformHost />
@@ -366,6 +425,33 @@ function Workspace() {
       <ManualTools />
       <SermonPicker />
     </>
+  );
+}
+
+/**
+ * «Neste: Lyd» / «Neste: Eksporter».
+ *
+ * Canvasen tegner den nederst på 4.2; den står på 4.1 av samme grunn. Stripa
+ * øverst er navigasjon for den som vet hvor hun skal — knappen nederst er veien
+ * VIDERE for den som følger den, og den skal være der man er ferdig med å lese.
+ * Siste steget har ingen: kvitteringen har sine egne tre veier ut.
+ */
+function NextStep({ step }: { step: Step }) {
+  if (step === "export") return null;
+  const next: Step = step === "cut" ? "sound" : "export";
+  return (
+    <div class={styles.nextRow}>
+      <Button
+        variant="primary"
+        size="lg"
+        testId="editor-next"
+        onClick={() => (activeStep.value = next)}
+      >
+        {next === "sound"
+          ? t("app.editor.nextSound")
+          : t("app.editor.nextExport")}
+      </Button>
+    </div>
   );
 }
 
@@ -383,6 +469,7 @@ function Head() {
     <div class={styles.head}>
       <p data-testid="editor-sub" class={styles.sub}>
         <span>{sub}</span>
+        <Summary />
         {dirty.value ? (
           <span
             data-testid="editor-dirty"
@@ -407,6 +494,33 @@ function Head() {
         {t("app.editor.close")}
       </Button>
     </div>
+  );
+}
+
+/**
+ * Resultatet, på de stegene som ikke har en resultatlinje av seg selv.
+ *
+ * Steg 1 har den i transportlinja, ved siden av bølgeformen den beskriver.
+ * Steg 2 og 3 har ingen bølgeform, og «hva er det egentlig jeg eksporterer»
+ * er det eneste tallet som betyr noe der. Canvasens 4.3 legger til profilen:
+ * «Resultat: 28 min 10 s · Tale».
+ */
+function Summary() {
+  const step = activeStep.value;
+  if (step === "cut") return null;
+  const total = duration.value;
+  const kept = keptSeconds(cuts.value, total);
+  const result = tf("app.editor.result", {
+    kept: spanLabel(exactSpan(kept)),
+    total: spanLabel(exactSpan(total)),
+  });
+  return (
+    <span data-testid="editor-summary">
+      {DOT}
+      {step === "export"
+        ? `${result}${DOT}${tDyn("app.editor.profile", soundProfile.value)}`
+        : result}
+    </span>
   );
 }
 

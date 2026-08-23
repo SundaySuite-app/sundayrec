@@ -42,10 +42,13 @@ import {
   loadPhase,
   loadProgress,
   loadState,
+  mediaInfo,
   resetFileState,
   startedAtMs,
   duration as durationSignal,
 } from "./model";
+import { resetExport } from "./export";
+import { resetSound } from "./sound";
 import {
   ensurePlayerEl,
   seekTo,
@@ -74,10 +77,12 @@ const DRAFT_MAX_AGE_MS = 7 * 86_400_000;
  * har. Her spilles lydsporet av gjennom det samme `<audio>`-elementet som alt
  * annet, og både WKWebView (CoreMedia) og Chromium gjør det uten videre.
  *
- * ⚠️ Bildet vises ikke i P4a. Klippingen er den samme — tidslinja, kuttene og
- * eksporten er lydens uansett — men den som redigerer en videofil ser bare
- * bølgeformen. Det er en beslutning P4b/eieren skal ta stilling til, ikke noe
- * som er bestemt her.
+ * ⚠️ Bildet vises fortsatt ikke mens man klipper. Klippingen er den samme —
+ * tidslinja, kuttene og eksporten er lydens uansett — men den som redigerer en
+ * videofil ser bare bølgeformen. P4b bygde den andre halvdelen av spørsmålet:
+ * «Ta med video (MP4)» i steg 3 BEVARER bildet i eksporten (`hasVideo`
+ * nedenfor er det som lar bryteren finnes). Å VISE det mens man klipper er
+ * fortsatt en eierbeslutning.
  */
 const VIDEO_ELEMENT_EXTS = new Set([".mp4", ".m4v", ".mov"]);
 
@@ -112,6 +117,8 @@ export interface OpenContext {
 export function closeFile(): void {
   cancelDraftSave();
   teardownPlayback();
+  resetSound();
+  resetExport();
   resetFileState();
   resetHistoryMirror();
   loadState.value = "idle";
@@ -134,6 +141,8 @@ export async function openFile(
   // NYE filas sidevogn, rett før dens egen gjenoppretting leste den.
   cancelDraftSave();
   teardownPlayback();
+  resetSound();
+  resetExport();
   resetFileState();
   resetHistoryMirror();
 
@@ -150,12 +159,24 @@ export async function openFile(
 
   const ext = extensionOf(path);
 
-  // 1. Varigheten.
+  // 1. Varigheten — og de tre andre tingene den samme probingen allerede vet.
+  //
+  // `hasVideo` styrer «Ta med video (MP4)» i steg 3, og `channels`/`sampleRate`
+  // er det størrelsesanslaget regner med. Alle tre kom gratis med denne
+  // ffprobe-en fra før; et eget `editor_probe_streams` ville vært en ny
+  // prosess for et svar vi allerede holder i hånda.
   let seconds = 0;
   try {
     const info = await window.api.editorLoadRecording(path);
     if (info && Number.isFinite(info.durationSec) && info.durationSec > 0) {
       seconds = info.durationSec;
+    }
+    if (info) {
+      mediaInfo.value = {
+        hasVideo: info.hasVideo === true,
+        channels: info.channels ?? null,
+        sampleRate: info.sampleRate ?? null,
+      };
     }
   } catch {
     seconds = 0;
