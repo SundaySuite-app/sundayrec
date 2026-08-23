@@ -27,19 +27,13 @@
  * `answered`. Fasiten står fast: bare `done` teller som besvart.
  */
 
+import type { EmailFacts, GateStatus } from "@lib/ui/feature-gate-core";
+
 import type { LevelWord } from "../../audio/level-words";
 import type { Settings } from "../../state/settings";
 
 /** De fem spørsmålene, i rekkefølgen de stilles. */
 export type DecisionId = "sound" | "folder" | "quality" | "church" | "notify";
-
-export const DECISION_IDS: readonly DecisionId[] = [
-  "sound",
-  "folder",
-  "quality",
-  "church",
-  "notify",
-];
 
 /** `done` = svart og i orden · `todo` = må gjøres · `unknown` = ikke målt ennå. */
 export type DecisionStatus = "done" | "todo" | "unknown";
@@ -206,6 +200,20 @@ export function decideSound(facts: DecisionFacts): Decision {
 }
 
 /**
+ * Kanalparene en enhet med `count` kanaler tilbyr: 1–2, 3–4, … Verdien er den
+ * 0-indekserte VENSTRE kanalen, som er slik `deviceChannels` lagrer den.
+ *
+ * Par og ikke enkeltkanaler, fordi lyd kommer i par ut av et miksebord — og
+ * den som velger «15» og «16» hver for seg kan velge «15» og «3». En odde
+ * siste kanal faller ut med vilje: den har ingen partner å være høyre til.
+ */
+export function channelPairs(count: number): number[] {
+  const pairs: number[] = [];
+  for (let i = 0; i + 1 < count; i += 2) pairs.push(i);
+  return pairs;
+}
+
+/**
  * 2 — Hvor skal opptakene?
  *
  * En mappe uten et svar fra `get_disk_space` er ikke bevis for at det er plass.
@@ -326,6 +334,28 @@ export function decideNotify(facts: DecisionFacts): Decision {
     );
   }
   return decision("notify", "todo", { key: "nobody" }, { key: "nobodyDesc" });
+}
+
+/**
+ * Hva e-postbryteren på spørsmål 5 har lov til å gjøre.
+ *
+ * TRE utfall, ikke to. `emailGateStatus` i `@lib/ui/feature-gate-core` svarer
+ * bare på det første — og skriver ned hvorfor: den brukes på et kort som HAR
+ * SMTP-feltene i seg, og en gate som slår av sine egne oppsettsfelter kan aldri
+ * konfigureres. Her bor SMTP-feltene under Avansert, på en annen skjerm, så
+ * mellomtilstanden er både trygg og den mest nyttige: «det finnes en sendevei i
+ * denne utgaven, men ingen server er satt opp — og her er hvor du gjør det».
+ *
+ * `null` (ikke lest ennå) er `ok`: en bryter som er inert i det halvsekundet
+ * det tar å spørre bakenden er en bryter som ikke tar imot det første klikket.
+ */
+export function notifyGateStatus(facts: EmailFacts | null): GateStatus {
+  if (facts === null) return "ok";
+  if (!facts.featureBuilt) return "unavailable";
+  if (!facts.smtpConfigured || !facts.smtpPasswordAvailable) {
+    return "unconfigured";
+  }
+  return "ok";
 }
 
 /** Alle fem, i rekkefølge. Nummeret på kortet er indeksen + 1. */

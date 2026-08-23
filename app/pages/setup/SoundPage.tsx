@@ -72,7 +72,7 @@ import { Receipt } from "../../ui/Receipt/Receipt";
 import { VuMeter } from "../../ui/VuMeter/VuMeter";
 import { toast } from "../../ui/toast";
 import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
-import { channelPairFor } from "./decisions-core";
+import { channelPairFor, channelPairs } from "./decisions-core";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
@@ -82,13 +82,6 @@ import { SubPage } from "./SubPage";
  * ligge i katalogen og be om å bli oversatt.
  */
 const ASIO = "ASIO";
-
-/** Par 1–2, 3–4 … for en enhet med `count` kanaler. 0-indeksert venstre. */
-export function channelPairs(count: number): number[] {
-  const pairs: number[] = [];
-  for (let i = 0; i + 1 < count; i += 2) pairs.push(i);
-  return pairs;
-}
 
 export function SoundPage() {
   const s = settings.value;

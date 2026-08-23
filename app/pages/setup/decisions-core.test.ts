@@ -9,8 +9,10 @@ import {
   decideNotify,
   decideQuality,
   decideSound,
+  channelPairs,
   decisionsFor,
   needsSetUp,
+  notifyGateStatus,
   qualityIdFor,
   type DecisionFacts,
   type DecisionStatus,
@@ -389,6 +391,58 @@ describe("needsSetUp — «Sett opp» eller «Endre»", () => {
 
   it("kvalitet er alltid noe man endrer", () => {
     expect(needsSetUp(decideQuality(facts()))).toBe(false);
+  });
+});
+
+describe("notifyGateStatus", () => {
+  const built = {
+    featureBuilt: true,
+    smtpConfigured: true,
+    smtpPasswordAvailable: true,
+  };
+
+  it("ikke lest ennå ⇒ åpen — en bryter som er inert i et halvsekund tar ikke imot det første klikket", () => {
+    expect(notifyGateStatus(null)).toBe("ok");
+  });
+
+  it("uten e-postfeaturen ⇒ «finnes ikke i denne utgaven»", () => {
+    // Det er ikke noe brukeren kan gjøre noe med, og å la henne prøve er å be
+    // om en lørdagskveld.
+    expect(notifyGateStatus({ ...built, featureBuilt: false })).toBe(
+      "unavailable",
+    );
+  });
+
+  it("uten SMTP-vert ⇒ «ikke satt opp», som er noe man KAN gjøre noe med", () => {
+    expect(notifyGateStatus({ ...built, smtpConfigured: false })).toBe(
+      "unconfigured",
+    );
+  });
+
+  it("uten passord ⇒ også «ikke satt opp» — vert og brukernavn alene sender ingenting", () => {
+    expect(notifyGateStatus({ ...built, smtpPasswordAvailable: false })).toBe(
+      "unconfigured",
+    );
+  });
+
+  it("alt på plass ⇒ åpen, og uten banner", () => {
+    expect(notifyGateStatus(built)).toBe("ok");
+  });
+});
+
+describe("channelPairs", () => {
+  it("gir venstre kanal i hvert par, 0-indeksert", () => {
+    expect(channelPairs(8)).toEqual([0, 2, 4, 6]);
+  });
+
+  it("lar en odde siste kanal falle ut — den har ingen partner", () => {
+    expect(channelPairs(5)).toEqual([0, 2]);
+  });
+
+  it("en stereo- eller monoenhet har ingen par å velge mellom", () => {
+    expect(channelPairs(2)).toEqual([0]);
+    expect(channelPairs(1)).toEqual([]);
+    expect(channelPairs(0)).toEqual([]);
   });
 });
 

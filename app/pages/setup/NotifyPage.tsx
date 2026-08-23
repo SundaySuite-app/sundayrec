@@ -53,6 +53,7 @@ import { TextField } from "../../ui/TextField/TextField";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
 import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
+import { notifyGateStatus } from "./decisions-core";
 import styles from "./setup.module.css";
 import { SubPage } from "./SubPage";
 
@@ -61,30 +62,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Minuttene «påminnelse før opptak» tilbyr. 0 = av. */
 const REMINDER_CHOICES = [0, 5, 10, 15, 30, 60];
-
-/**
- * Hva e-postbryteren har lov til å gjøre.
- *
- * Tre utfall, ikke to: en build UTEN e-postfeaturen kan aldri sende (og det er
- * ikke noe brukeren kan gjøre noe med), en build med featuren men uten SMTP
- * kan settes opp under Avansert, og resten er i orden. `emailGateStatus` i
- * `feature-gate-core` svarer bare på det første spørsmålet, fordi den brukes
- * på et kort som HAR SMTP-feltene i seg.
- */
-export function notifyGateStatus(
-  facts: {
-    featureBuilt: boolean;
-    smtpConfigured: boolean;
-    smtpPasswordAvailable: boolean;
-  } | null,
-): GateStatus {
-  if (facts === null) return "ok";
-  if (!facts.featureBuilt) return "unavailable";
-  if (!facts.smtpConfigured || !facts.smtpPasswordAvailable) {
-    return "unconfigured";
-  }
-  return "ok";
-}
 
 export function NotifyPage() {
   const s = settings.value;
