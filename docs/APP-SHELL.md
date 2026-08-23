@@ -982,3 +982,288 @@ literalen, så konsekvensen er at legacy-specen viser oppstartskortets
 GJENTATT-tekst til en fersk installasjon. App-kopiene er rettet, med grunnen
 ved siden av; legacy-filene er urørt fordi de skal stå som de er til de
 slettes.
+
+---
+
+# P2 — Opptak, jobben appen finnes for
+
+P1 bygde stedet man svarer på spørsmål. P2 bygger stedet man tar opp en
+gudstjeneste, og de tre flatene rundt det. Alt ligger i `app/pages/record/`.
+
+|                    | før (`legacy/renderer`)                                         | nå (`app/pages/record`)                           |
+| ------------------ | --------------------------------------------------------------- | ------------------------------------------------- |
+| Start              | «Start opptak» → `#modal-manual` (kilde, kamera, filnavn) → ny  | ÉN knapp, sperret til en kilde er valgt           |
+| Hjem-flaten        | hero, VU, tre infokort, videostripe, «Siste opptak» (21 kt)     | kilde · hørsel · Start · to kort                  |
+| Opptaksoverlegget  | `#recording-overlay`, alltid i DOM-en, vist/skjult              | en montering i `#overlays`, bare mens det tas opp |
+| Stopp-bekreftelsen | `#modal-confirm-stop`, «Avbryt» primær                          | dialogkøen, «Fortsett å ta opp» primær            |
+| Kvitteringen       | `#editor-prompt-toast` — «vil du redigere?», forsvinner         | et kort som blir stående (`record-done`)          |
+| Feil               | `#global-error-banner` (overskrives av neste feil av alle slag) | nøklede bannere i `state/banners.ts`              |
+
+## Regelen hele settet hviler på
+
+**Start er sperret til en lydkilde er valgt eksplisitt** — også når valget er
+maskinens egen mikrofon. Det er den største adferdsendringen i hele programmet,
+og grunnen står i atlaset §3a: en fersk installasjon tar i dag opp på
+laptop-mikrofonen uten å si fra, fordi `deviceId: null` betyr «systemets
+standardinngang» for opptakeren og «Innebygd mikrofon · Tilkoblet ✓» for
+skjermen.
+
+`record-core.ts` er tabellen, og den har tre tilstander:
+
+| `kind`           | når                                  | Start   | kortet                             |
+| ---------------- | ------------------------------------ | ------- | ---------------------------------- |
+| `no-source`      | `deviceId` tom                       | SPERRET | «Du har ikke valgt hvor lyden …»   |
+| `source-missing` | valgt, men ikke i enhetslisten       | tillatt | «Finner ikke {navn}» + nødutgangen |
+| `ready`          | valgt og til stede — eller ikke lest | tillatt | «Lyd fra {navn} · kanal N–M»       |
+
+Den fjerde raden finnes ikke med vilje: `devices === null` er «ikke sett etter
+ennå» og faller tilbake på `ready`. Regelen «ikke funnet ⇒ borte» ville gjort
+hver kaldstart til et gult «Finner ikke Behringer X32» som blir borte igjen
+etter 100 ms — samme lærdom som `decisions-core`s `unknown`.
+
+Knappen bærer grunnen sin (`disabledReason`), og det er `aria-disabled`, ikke
+`disabled`: et ekte `disabled` tar knappen ut av tabrekkefølgen, og da kan en
+tastaturbruker ikke engang komme fram til den for å HØRE hvorfor.
+`e2e/app/record.spec.ts` klikker den med `force` — Playwright REGNER
+`aria-disabled` som av, en ekte mus gjør ikke det — og krever at
+`__E2E_CALLS__` er tomt etterpå. Fjern `canStart: false` i kjernen, og både
+tabellen og det specet blir rødt.
+
+## Bekreftelsen er snudd, og det er ikke en feil
+
+Eiervalget (canvas sett 2): primærknappen er «Fortsett å ta opp». `buildConfirm`
+gir BEKREFT-knappen primærplassen og Enter når dialogen ikke er `danger` — så
+«fortsett» ER bekreftelsen her, og «stopp» går den veien som ellers heter
+avbryt. `confirmAndStop()` (i `stop.ts`, egen fil fordi BÅDE overleggets knapp
+og menylinjens «Stopp opptak» skal gjennom det samme spørsmålet) stopper altså
+når svaret er `false`.
+
+Alternativet var `danger: true`, som gir avbryt Enter-plassen — men det maler
+også stopp-knappen RØD, og rødt betyr én ting i denne appen: at det tas opp. En
+rød stoppknapp midt i et rødt overlegg er nøyaktig den fargekollisjonen sett 0
+låste bort.
+
+`protectRecording` leses IKKE. Den har null Rust-lesere (ATLAS §2.6), det nye
+Avansert viser den ikke, og bekreftelsen er en designbeslutning i sett 2 — ikke
+en innstilling. Legacy-skallet har fortsatt bryteren sin.
+
+## ⚠️ «Du kan lukke vinduet» er FJERNET — den var usann
+
+Canvasens `ov.hint` lover at opptaket fortsetter i bakgrunnen når vinduet
+lukkes. Det gjør det ikke:
+
+- `src-tauri/src/lib.rs` har ingen `on_window_event`-håndterer, ingen
+  `api.prevent_close()` og ingen `prevent_exit()`.
+- Det finnes ingen `ActivationPolicy::Accessory`, så appen er ikke et
+  menylinje-program som overlever uten vindu.
+- `.run(|app_handle, event| …)` fanger `RunEvent::ExitRequested` og gjør
+  nøyaktig ÉN ting: `state::<RecorderEngine>().stop()` + `VuEngine::stop()`.
+
+Siste vindu lukket ⇒ `ExitRequested` ⇒ opptakeren stoppes. Setningen ville
+altså vært en oppfordring til å avslutte gudstjenestens opptak. Nøkkelen er
+ikke lagt i katalogen, og grunnen står i toppen av `RecordingOverlay.tsx`. Skal
+den bli sann, er det en Rust-endring (`prevent_close` + skjul til tray), og den
+er eierens.
+
+## Måleren under et opptak leser opptaket
+
+`start_recording` stopper VU-strømmen selv, og opptaksmotoren eier enheten.
+Overlegget leser derfor motorens EGEN `recording://levels`
+(`recording-levels.ts`), akkurat som legacy-overlegget gjør: mikrofonen åpnes
+NØYAKTIG én gang.
+
+`VuMeter` fikk to nye innganger for å slippe en andre canvas-implementasjon:
+
+- `source` — en alternativ pakkekilde med samme kontrakt som `acquireVuFeed`
+  (abonner, få en avslutter). `mono` i pakken tegner ÉN stolpe; en andre stolpe
+  som viser den samme kanalen én gang til er en påstand om en høyrekanal som
+  ikke finnes.
+- `off` — ingen strøm i det hele tatt. For 2.2: å måle «systemets
+  standardinngang» når ingen kilde er valgt ville vært å åpne nøyaktig den
+  mikrofonen dette settet finnes for å slutte å ta opp fra uten å spørre.
+
+⚠️ `@lib/audio/vu-feed` avstår fra `start_vu` ved å lese
+`window.__isRecording`, og `app/` gjenskaper ikke den globalen. Her er det
+derfor MONTERINGEN som er vakten: `RecordPage` gir måleren `off` når et opptak
+går eller er i ferd med å starte, og overlegget har sin egen kilde. Ingen måler
+i treet, ingen `start_vu`.
+
+## Ett ordforråd for nivå
+
+Canvasen skriver «Alt ser bra ut» / «Lyden er borte!» i akkurat den slissen der
+2.1 skriver «Vi hører lyd». Måleren har allerede ordet (`app.vu.*`,
+`audio/level-words.ts`), og to setninger om det samme ved siden av hverandre kan
+bli uenige — de blir det den dagen tersklene flyttes ett sted. Så måleren
+beholder sitt ord også i overlegget. Motorens EGET stillhetsvarsel
+(`recording://silence`, som fyrer før auto-stoppen) er noe annet enn «måleren
+ser lavt nivå», og får sitt eget banner.
+
+## Én økt, ett sett lyttere
+
+Alt overlegget tegner — klokken, størrelsen, auto-stoppen, gjenkoblingen,
+stillheten — kommer fra de samme eventene som `isRecording`, så de bor i den
+samme modulen (`state/recording.ts`) med ETT `initRecording()`. To lyttere på
+`recording://state` som kan bli uenige om hvilken økt som går er skjøtefeilen
+`reference-seam-bugs` handler om, i den ene flaten der den koster en
+gudstjeneste.
+
+Start og stopp markeres også LOKALT (`markSessionStarted`, `enterFinalizing`),
+akkurat som legacy viser overlegget rett etter `res.ok`: `recording://started`
+bærer ingen opts, og i nettleser-nivået kommer det aldri. Et overlegg som venter
+på et event som ikke kommer er en app som påstår at ingenting skjer mens motoren
+tar opp.
+
+## Skjøten mot statuslinjen, andre halvdel
+
+P1a lukket «skinnen sa Alt er klart mens spørsmål 1 sto gult» ved å la
+`soundChosen` bety valgt OG til stede. Der sto det at «TA OPP leser ikke
+enhetslisten, så der er svaret det samme som før». Nå gjør den det — den MÅ, for
+å kunne si «Finner ikke Behringer X32» — så begge sider av skjøten leser den
+samme lista. Konsekvensen er synlig i e2e: et spec som seeder `deviceId` uten å
+seede `list_audio_devices` får nå (med rette) «Lyden er ikke koblet til», og
+`e2e/app/shell.spec.ts` har derfor `CHOSEN_FIXTURES`.
+
+## Den stille forhåndssjekken
+
+`scheduler://preflight` fyrer 30 minutter FØR et planlagt opptak — for sent for
+den som åpner appen fem minutter før gudstjenesten, og aldri for den som tar opp
+manuelt. `state/preflight.ts` kjører derfor den samme sjekken én gang per
+oppstart, med `buildHealthFindings` GJENBRUKT fra
+`@lib/status/health-findings` (ikke portet: ordlyden og «denied er blokkert,
+notDetermined er det ikke» er tabelltestet der). Funnene legges foran
+`run_preflight` sine, fordi en tillatelse OS-et nekter slår en nesten full disk.
+
+⚠️ `run_preflight` svarer med `Vec<PreflightFinding>` DIREKTE; det er shimmen
+som pakker det i `{ findings }`. En fikstur som pakker det selv gir
+`{findings:{findings:[…]}}` og et banner som aldri kommer.
+
+## Det P2 IKKE tok med, og hvorfor
+
+- **«Åpne i Rediger»** på kvitteringen og på «Siste opptak». Redigeringsflaten
+  er P4. En knapp til en side som ikke finnes lærer en frivillig at knappene i
+  denne appen ikke er til å stole på. «Vis i Finder» står der i stedet, og den
+  gjør noe i dag.
+- **Brikkene «Redigert» og «Eksportert»** (canvas 2.1). `recordings_list` bærer
+  ingen slik status — raden er `id, file_path, device_name, started_at,
+duration_ms, byte_size, created_at, note` og ikke noe mer. Et merke som gjettes
+  er verre enn ingen merke.
+- **«Sist sett i går 19:42»** i «Finner ikke {navn}» (canvas 2.3). Ingenting
+  lagrer når en enhet sist ble sett. Setningen ville vært oppdiktet.
+- **`askOpenEditor`.** Ingen Rust-leser (ATLAS §2.6), så kvitteringen vises
+  uansett hva den står på.
+- **«+30 min» og «Avbryt auto-stopp»** i overlegget. Kommandoene finnes
+  (`recording_extend_autostop` / `recording_cancel_autostop`), men canvasens 2.4
+  har dem ikke, og en nedtelling med to knapper er en beslutning eieren ikke er
+  spurt om. Fristen VISES (`app.overlay.autoStop`), lest fra motorens egen
+  `scheduled_stop_ms`.
+- **Bølgeformen** i overlegget (legacy `RecordingWaveform`). Canvasens 2.4 har
+  stolper og en klokke; en rullende bølgeform er en andre canvas med sin egen
+  rAF-løkke over et opptak som går.
+- **`run-diagnostics` fra menylinjen.** Ruteren armer den mot OPPSETT, og ingen
+  skjerm plukker den opp ennå — diagnose-modalen er fortsatt legacy-skallets
+  (samme forbehold som P1b skrev ned).
+
+## Menylinjen
+
+`pendingAction` er et signal, ikke et syntetisk klikk. `RecordPage` plukker opp
+de tre som hører hjemme der (`start-recording`, `stop-recording`,
+`run-preflight`), og `Shell` plukker opp den ene som ikke hører til noen side
+(`open-recordings-folder` → `window.api.openFolder`). En handling ingen flate
+kjenner blir stående i signalet i stedet for å bli spist.
+
+⚠️ `start-recording` fra menylinjen starter bare når en kilde ER valgt.
+Ruteren navigerer til OPPTAK uansett, og kortet der sier hvorfor ingenting
+skjedde — å starte på en kilde ingen har valgt fra menylinjen ville vært den
+samme løgnen, bare et annet sted.
+
+## To typer i `legacy/renderer/main.ts` som løy
+
+`openFolder` og `revealFile` er annotert `Promise<void>` mens shimmen har svart
+`Promise<boolean>` hele tiden (den fanger og returnerer `false`). Rettet til
+`boolean`, så «Vis i Finder» kan si fra når fila ikke ble funnet i stedet for
+stille ikke å gjøre noe. Type-only; ingen oppførsel er endret.
+
+## e2e
+
+`e2e/app/{recorder,no-live-surface}.spec.ts` er kopier med **hver test-tittel
+uendret**, fordi `docs/SMOKE-TEST.md` peker på dem som `sti::tittel`.
+`__E2E_CALLS__`-tellerne er ordrette: sømmen flyttet seg ikke —
+`startRecordingNow` betyr fortsatt `plan_recording_opts` og så
+`start_recording`, én gang hver. Legacy-filene står urørt og grønne.
+
+«the modal» i den andre tittelen er nå opptakssiden selv: `#modal-manual` er
+borte (eiervalg), og det som «blir stående og sier hvorfor» er siden med
+knappen på.
+
+Ny: `e2e/app/record.spec.ts` (de tre kilde-tilstandene inkl. mutasjonsprøven,
+overlegget løftet av et emittert `recording://state`, den snudde bekreftelsen,
+kvitteringen, og de fire bannerne).
+
+`e2e/app/events.ts` er verktøyet som gjør det mulig: to veier inn, fordi appen
+har to slags abonnement. `__emit(kanal, …)` treffer `window.api.on`-kanalene
+(de gamle Electron-navnene shimmen kartlegger), `__emitEvent(navn, …)` treffer
+bakendens EGNE eventnavn, som `status/next-recording.ts` abonnerer på direkte.
+Begge installeres ved å avlytte TILDELINGEN av `window.api` og
+`window.__TAURI_INTERNALS__` — de finnes ikke ennå når et init-skript kjører.
+⚠️ `__emit` hopper over api-shimmens `EVENT_ADAPTERS`; send formen handleren
+leser.
+
+## Stillheten rydder etter seg selv
+
+Motoren fyrer ingen «stillheten er over»-hendelse, så NIVÅENE er fasiten:
+`state/recording.ts` lytter på `recording://levels` og tømmer varselet når
+`levelWordFor` ikke lenger sier «vi hører ingenting» — de samme tersklene
+måleren bruker. Regelen bor der flagget bor, ikke i overlegget: to skrivere på
+ett flagg er den skjøten dette skallet er skrevet for å unngå. Et varsel som
+overlever sin egen årsak er et varsel folk lærer seg å overse.
+
+Gjenkoblingen og stillheten er TO bannere. Legacy skrev begge inn i det samme
+`#rec-reconnect`-elementet, så den som fyrte sist visket ut den andre — en
+enhet som falt ut og kom tilbake stille viste bare én av de to tingene som var
+galt med opptaket.
+
+## Bevist i en ekte WKWebView
+
+Samme metode som S1b (skjermbilder er upålitelige under TCC på denne maskinen):
+en midlertidig Vite-plugin, aldri innsjekket, serverer en MODUL — `script-src
+'self'` forbyr en inline en — som leser DOM-tilstand og POSTer svaret tilbake
+til dev-serveren. Kjørt på eierens EGEN profil, uten å røre Start:
+
+```jsonc
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 …",
+  "hasSafariToken": false, // uendret fra S1b — se der
+  "heading": "Opptak",
+  "sourceCard": true,
+  "sourceValue": "MacBook Pro-mikrofon", // eierens FAKTISKE valg, ikke en påstand
+  "startPresent": true,
+  "startEnabled": true,
+  "startLabel": "Start opptak",
+  "vuFeed": "live",
+  "vuWordText": "Vi hører lyd",
+  "vuWordChanged": true, // ordet fulgte rommet gjennom prøven
+  "vuCanvasSized": "1716x72", // ResizeObserver + DPR 2
+  "statusText": "Alt er klart", // og den er ENIG med kilde-kortet
+  "banners": [],
+  "overlayPresent": false,
+  "overlaysRootIsSibling": true,
+  "cameraCard": "FaceTime HD-kamera",
+  "cspViolations": [],
+  "errors": [],
+  "rejections": [],
+  "consoleErrors": [],
+}
+```
+
+To ting proben fant som ingen test ville ha funnet:
+
+1. **`lastRecording: "Lørdag 8. august · 0 min"`.** `rowToEntry` gjør en ukjent
+   `duration_ms` til `durationSec: 0`, så 0 er tvetydig — enten et opptak uten
+   lyd, eller en rad som aldri fikk en varighet. «0 min» er en påstand vi ikke
+   kan stå for. Kortet og kvitteringen behandler nå 0 som UKJENT og sier
+   ingenting om varighet i stedet.
+2. **«Lytter»-brikka står ikke** på eierens maskin. Den er ærlig:
+   `preroll_start` svarer `false` når bakendens egen kopi sier av, og eierens
+   profil har `preRollSeconds` på 0 (Avansert viser «Av»). Brikka er derfor
+   ikke sett live — den er bevist i Playwright i stedet, med begge svar fra
+   `preroll_start`.
