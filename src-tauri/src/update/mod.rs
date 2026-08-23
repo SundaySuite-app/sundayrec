@@ -378,6 +378,18 @@ fn relaunch_log<R: tauri::Runtime>(app: &tauri::AppHandle<R>, msg: &str) {
 /// main thread skips the event outright. So there is no "ask, then reconsider":
 /// asking IS the restart. Everything that must happen before the process is
 /// replaced happens here, before [`relaunch_now`] is called at all.
+///
+/// ## One documented interaction
+///
+/// While this wait runs, `crate::window`'s `WAITING` flag is set, so a Cmd+Q
+/// lands on `request_quit`'s "already waiting → the volunteer is insisting"
+/// branch and exits at once, giving up the finalisation. That is two deliberate
+/// actions (restart, then quit) where the quit path alone would want three —
+/// and still strictly better than what this function used to do, which was to
+/// destroy the same file on the FIRST action with no wait at all. Left as is
+/// rather than given its own confirmation state: that branch would be shell
+/// state no test can reach, in the one area that has kept its rules pure
+/// precisely because the shell cannot be tested.
 #[cfg(feature = "updater")]
 pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
     use sundayrec_core::window::relaunch_plan;
