@@ -24,5 +24,5 @@
     "playwright.config.ts",
     "playwright.atlas.config.ts"
   ],
-  "exclude": ["node_modules", "dist", "dist-app", "src-tauri"]
+  "exclude": ["node_modules", "dist", "src-tauri"]
 }

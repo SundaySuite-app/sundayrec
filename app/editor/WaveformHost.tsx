@@ -21,7 +21,7 @@
  * ⚠️ Ingen UA-forgrening noe sted her. WKWebView-en denne appen kjører i sender
  * en UA UTEN «Safari»-token, og det er nøyaktig faktumet bak SundayEdits 42×
  * regresjon: et bibliotek som sniffer etter Safari ser «ukjent motor» og tar
- * sin tregeste sti. Ytelsen her måles i `npm run tauri:app`, ikke i Chromium.
+ * sin tregeste sti. Ytelsen her måles i `npm run tauri dev`, ikke i Chromium.
  *
  * ## Gullvinduet er DOM, ikke piksler
  *

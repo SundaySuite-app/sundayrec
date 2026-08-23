@@ -1,6 +1,5 @@
 # Build output & deps
 dist
-dist-app
 node_modules
 src-tauri/target
 src-tauri/gen

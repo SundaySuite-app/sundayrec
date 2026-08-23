@@ -13,7 +13,6 @@ export default tseslint.config(
       // Generated ts-rs bindings (synced by scripts/sync-bindings.mjs) — not
       // hand-written code, so not linted.
       "legacy/bindings/**",
-      "dist-app",
       "coverage",
       "node_modules",
       // Agent worktrees live inside the repo and are gitignored, so CI never
