@@ -16,14 +16,23 @@
 // `migrateLegacySettingsOnce` reads/removes it via that constant). A future
 // release deletes the migration and shrinks the allowlist to nothing.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(HERE, "..", "..");
 const RENDERER_ROOT = HERE;
+/**
+ * «Frivilligen først»'s Preact shell. It is covered from the day it exists, not
+ * added later: the pin is a CLASS-level promise ("no renderer code may touch
+ * the old key again"), and a class-level promise that quietly excludes the tree
+ * where all the new code is being written is not one.
+ */
+const APP_ROOT = join(REPO_ROOT, "app");
+const SOURCE_ROOTS = [RENDERER_ROOT, APP_ROOT];
 
 /** The retired key, assembled so THIS file doesn't trip its own guard. */
 const LEGACY_KEY = ["sundayrec", "settings"].join(".");
@@ -41,7 +50,7 @@ function codeOf(path: string): string {
     .replace(/ \/\/[^"'`\n]*$/gm, "");
 }
 
-/** Every .ts source under legacy/renderer (tests excluded — they assert ON
+/** Every .ts/.tsx source under either shell (tests excluded — they assert ON
  *  the key; the guard is about production code). */
 function rendererSources(): string[] {
   const out: string[] = [];
@@ -49,22 +58,37 @@ function rendererSources(): string[] {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) walk(p);
-      else if (p.endsWith(".ts") && !p.endsWith(".test.ts")) out.push(p);
+      else if (/\.tsx?$/.test(p) && !/\.test\.tsx?$/.test(p)) out.push(p);
     }
   };
-  walk(RENDERER_ROOT);
+  for (const root of SOURCE_ROOTS) if (existsSync(root)) walk(root);
   return out;
 }
 
+/** Repo-relative, so an offender in either shell is named unambiguously. */
+const rel = (p: string): string => relative(REPO_ROOT, p);
+
 /** Files allowed to name the legacy key: the migration, and nothing else. */
-const ALLOWLIST = new Set(["migrate-legacy-settings-core.ts"]);
+const ALLOWLIST = new Set([
+  "legacy/renderer/migrate-legacy-settings-core.ts",
+]);
 
 describe("settings store pin — sqlite is the ONE store", () => {
+  it("covers BOTH shells — a pin that scans an empty set proves nothing", () => {
+    // The one way this whole file could go silently vacuous: the app tree stops
+    // being walked (renamed, moved, filter tightened) and every assertion below
+    // starts passing for the wrong reason.
+    const scanned = rendererSources().map(rel);
+    expect(scanned.some((p) => p.startsWith("legacy/renderer/"))).toBe(true);
+    expect(scanned.some((p) => p.startsWith("app/"))).toBe(true);
+    expect(scanned.some((p) => p.endsWith(".tsx"))).toBe(true);
+  });
+
   it("no renderer source names the legacy localStorage key (migration excepted)", () => {
     const offenders = rendererSources()
-      .filter((p) => !ALLOWLIST.has(relative(RENDERER_ROOT, p)))
+      .filter((p) => !ALLOWLIST.has(rel(p)))
       .filter((p) => codeOf(p).includes(LEGACY_KEY))
-      .map((p) => relative(RENDERER_ROOT, p));
+      .map(rel);
     expect(
       offenders,
       `these files reference "${LEGACY_KEY}" — the localStorage settings store is dead; ` +
@@ -94,12 +118,12 @@ describe("settings store pin — sqlite is the ONE store", () => {
     const OLD_NAMES = ["videoSeparate", "videoKeepAudio"];
     const patterns = OLD_NAMES.flatMap((n) => [`'${n}'`, `"${n}"`, `\`${n}\``]);
     const offenders = rendererSources()
-      .filter((p) => !ALLOWLIST.has(relative(RENDERER_ROOT, p)))
+      .filter((p) => !ALLOWLIST.has(rel(p)))
       .filter((p) => {
         const code = codeOf(p);
         return patterns.some((pat) => code.includes(pat));
       })
-      .map((p) => relative(RENDERER_ROOT, p));
+      .map(rel);
     expect(
       offenders,
       "these files use a retired settings-field name — the unified vocabulary is " +

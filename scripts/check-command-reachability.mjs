@@ -78,7 +78,12 @@ function registeredCommands() {
 // today, which step 3 below excludes anyway, so this reduces in practice to
 // legacy/renderer + legacy/shared + legacy/types.)
 
-const SEARCH_ROOTS = ["legacy", "src"];
+// `app` joins the roots the day it is created: «Frivilligen først»'s Preact
+// shell is where the call sites are MOVING TO, so a measurement that only
+// looked at `legacy/` would report a command as newly unreachable the moment
+// its last legacy caller was replaced by an app one — a false alarm — and would
+// miss a genuinely dark command whose only caller lived in the new tree.
+const SEARCH_ROOTS = ["legacy", "src", "app"];
 const EXCLUDE_DIR_NAMES = new Set(["bindings", "locales", "node_modules"]);
 const INCLUDE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
 
@@ -140,11 +145,48 @@ const KNOWN_INVOKE_IMPORTERS = [
   "legacy/renderer/api-shim.ts",
 ];
 
+// …and the list itself may never grow an `app/` entry. The set-equality check
+// below already fails on a new importer, but its remedy is "add the file to
+// KNOWN_INVOKE_IMPORTERS" — which for the new shell would be the wrong remedy
+// dressed as the right one. `app/**` reaches the backend through `window.api`
+// (installed by `@lib/api-shim`) and through nothing else; ESLint's
+// no-restricted-imports says the same thing at the call site, and this says it
+// where the exemption would have to be written.
+const APP_PREFIX = "app/";
+function checkNoAppExemptions() {
+  const smuggled = KNOWN_INVOKE_IMPORTERS.filter((f) =>
+    f.startsWith(APP_PREFIX),
+  );
+  if (smuggled.length === 0) return true;
+  console.error(
+    "✗ an app/ file was added to KNOWN_INVOKE_IMPORTERS: " +
+      smuggled.join(", "),
+  );
+  console.error(
+    "  The new shell has ONE door into the backend — `window.api`, installed by\n" +
+      "  @lib/api-shim. A second door is invisible to the fixture seam, to the IPC\n" +
+      "  failure ring, and to this measurement. Route the call through the shim\n" +
+      "  instead of exempting the file.",
+  );
+  return false;
+}
+
 function checkInvokeImporters(files) {
   const found = files
     .filter((f) => readFileSync(f, "utf8").includes("@tauri-apps/api/core"))
     .map((f) => relative(root, f))
     .sort();
+  const fromApp = found.filter((f) => f.startsWith(APP_PREFIX));
+  if (fromApp.length) {
+    console.error(
+      `✗ ${fromApp.length} file(s) under app/ import @tauri-apps/api/core directly: ` +
+        fromApp.join(", "),
+    );
+    console.error(
+      "  app/ talks to the backend through `window.api` only (see @lib/api-shim).",
+    );
+    return false;
+  }
   const expected = [...KNOWN_INVOKE_IMPORTERS].sort();
   const added = found.filter((f) => !expected.includes(f));
   const gone = expected.filter((f) => !found.includes(f));
@@ -248,7 +290,7 @@ function isReachable(name, source) {
 
 const commands = registeredCommands();
 const files = collectSourceFiles();
-const premiseHolds = checkInvokeImporters(files);
+const premiseHolds = checkNoAppExemptions() && checkInvokeImporters(files);
 const combined = files
   .map((f) => stripComments(readFileSync(f, "utf8")))
   .join("\n");

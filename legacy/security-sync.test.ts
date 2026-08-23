@@ -18,33 +18,58 @@ const repoRoot = path.resolve(__dirname, '..')
 // build`), not a second source of truth — it is not checked here, and nothing
 // else in the repo drift-checks it either.
 
-describe('CSP duplication (tauri.conf.json vs legacy/renderer/index.html)', () => {
+// BOTH shells carry the tag. `app/index.html` is «Frivilligen først»'s Preact
+// shell; it is the whole point of the S0 spike that it runs under the SAME
+// policy the shipped WKWebView enforces, and the only way that claim stays true
+// is if a drift in either file fails here.
+
+describe('CSP duplication (tauri.conf.json vs each shell\'s index.html)', () => {
   function normalizeCsp(csp: string): string {
     return csp.trim().replace(/\s+/g, ' ')
   }
 
-  it('the <meta> CSP in index.html matches app.security.csp in tauri.conf.json', () => {
+  function confCsp(): string {
     const confPath = path.join(repoRoot, 'src-tauri', 'tauri.conf.json')
     const conf = JSON.parse(readFileSync(confPath, 'utf8')) as {
       app?: { security?: { csp?: string } }
     }
-    const confCsp = conf.app?.security?.csp
-    expect(confCsp, `app.security.csp missing from ${confPath}`).toBeTypeOf('string')
+    const csp = conf.app?.security?.csp
+    expect(csp, `app.security.csp missing from ${confPath}`).toBeTypeOf('string')
+    return csp as string
+  }
 
-    const htmlPath = path.join(repoRoot, 'legacy', 'renderer', 'index.html')
-    const html = readFileSync(htmlPath, 'utf8')
-    const match = html.match(
-      /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/,
-    )
-    expect(match, `no <meta http-equiv="Content-Security-Policy"> tag found in ${htmlPath}`).not.toBeNull()
-    const htmlCsp = match![1]
+  /** Every index.html that declares the policy for itself. Prettier formats
+   *  `app/` (legacy is ignored), so the attribute may sit on its own line —
+   *  hence `[\s\S]` in the tag match and the whitespace normalisation below. */
+  const SHELLS: Array<[string, string[]]> = [
+    ['legacy renderer', ['legacy', 'renderer', 'index.html']],
+    ['app shell (Preact)', ['app', 'index.html']],
+  ]
 
-    expect(
-      normalizeCsp(htmlCsp),
-      `legacy/renderer/index.html's CSP <meta> tag has drifted from tauri.conf.json's ` +
-        `app.security.csp — update legacy/renderer/index.html to match (or vice versa) ` +
-        `so the two stay identical`,
-    ).toBe(normalizeCsp(confCsp as string))
+  for (const [name, segments] of SHELLS) {
+    const relPath = segments.join('/')
+    it(`the <meta> CSP in ${relPath} matches app.security.csp in tauri.conf.json`, () => {
+      const htmlPath = path.join(repoRoot, ...segments)
+      const html = readFileSync(htmlPath, 'utf8')
+      const match = html.match(
+        /<meta[\s\S]*?http-equiv="Content-Security-Policy"[\s\S]*?content="([^"]+)"/,
+      )
+      expect(match, `no <meta http-equiv="Content-Security-Policy"> tag found in ${htmlPath}`).not.toBeNull()
+
+      expect(
+        normalizeCsp(match![1]),
+        `${relPath}'s CSP <meta> tag (the ${name}) has drifted from ` +
+          `tauri.conf.json's app.security.csp — update ${relPath} to match (or ` +
+          `vice versa) so the two stay identical`,
+      ).toBe(normalizeCsp(confCsp()))
+    })
+  }
+
+  it('covers every shell that exists — a new index.html must be added here', () => {
+    // The failure this catches is a third shell (or a rename) landing with no
+    // policy check at all, which looks exactly like green.
+    const covered = SHELLS.map(([, s]) => s.join('/')).sort()
+    expect(covered).toEqual(['app/index.html', 'legacy/renderer/index.html'])
   })
 })
 

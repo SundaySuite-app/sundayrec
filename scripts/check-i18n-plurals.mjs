@@ -38,7 +38,16 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const LOCALE_DIR = path.join(ROOT, "legacy", "locales");
-const RENDERER_DIR = path.join(ROOT, "legacy", "renderer");
+/**
+ * Every tree that renders UI text. BOTH shells: the legacy renderer and
+ * «Frivilligen først»'s Preact shell in `app/`. A gate that only watched the
+ * old shell would go quietly vacuous exactly as the new one grew — the new
+ * shell is where the count-aware strings are being WRITTEN now.
+ */
+const SOURCE_DIRS = [
+  path.join(ROOT, "legacy", "renderer"),
+  path.join(ROOT, "app"),
+];
 const LANGS = ["no", "en", "sv", "da", "de", "fr", "pl"];
 /** BCP-47 for plural data — mirrors i18n.ts `localeTag()`. */
 const TAG = (lang) => (lang === "no" ? "nb-NO" : lang);
@@ -78,26 +87,63 @@ const lookup = (tree, key) =>
 
 // ── Kildeskanning ───────────────────────────────────────────────────────────
 
-/** `tn('a.b'` and `ctx.tn('a.b'` — the count-aware call sites. */
-const TN_RE = /(?:^|[^A-Za-z0-9_$.])(?:[A-Za-z0-9_$]+\.)?tn\(\s*'([^']+)'/g;
-/** `t('a.b'` and `ctx.t('a.b'` — but NOT `tn(`, `tf(`, `tArr(`. */
-const T_RE = /(?:^|[^A-Za-z0-9_$.])(?:[A-Za-z0-9_$]+\.)?t\(\s*'([^']+)'/g;
+/**
+ * A quoted key literal, in all three spellings the codebase uses. The legacy
+ * renderer is a verbatim Electron port written with single quotes; `api-shim.ts`
+ * and everything prettier has touched use double quotes; and a backtick with no
+ * interpolation is the same constant written a third way.
+ *
+ * Until now this matcher saw ONLY single quotes, so every double-quoted call
+ * site was invisible to the gate — which is not a smaller gate, it is a gate
+ * with a hole in the shape of a whole file's house style.
+ *
+ * Backticks are captured too, but a template that INTERPOLATES is dropped
+ * below: `t(\`x.${y}\`)` has no statically knowable key, so there is nothing to
+ * check and pretending otherwise would produce false failures.
+ */
+const QUOTED = String.raw`(?:'([^'\n]+)'|"([^"\n]+)"|\`([^\`\n]+)\`)`;
+const CALL_PREFIX = String.raw`(?:^|[^A-Za-z0-9_$.])(?:[A-Za-z0-9_$]+\.)?`;
+
+/** `tn('a.b'` / `tn("a.b"` / `` tn(`a.b` `` (and `ctx.`-qualified) — the
+ *  count-aware call sites. */
+const TN_RE = new RegExp(CALL_PREFIX + String.raw`tn\(\s*` + QUOTED, "g");
+/** The same for `t(` — but NOT `tn(`, `tf(`, `tArr(`. */
+const T_RE = new RegExp(CALL_PREFIX + String.raw`t\(\s*` + QUOTED, "g");
+
+/** Which files carry UI text: TS and TSX, minus their tests (a test asserts ON
+ *  keys and would report its own fixtures as call sites). */
+export function isScannableFile(name) {
+  if (/\.test\.tsx?$/.test(name)) return false;
+  return /\.tsx?$/.test(name);
+}
 
 function sourceFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) return sourceFiles(p);
-    return e.isFile() && p.endsWith(".ts") && !p.endsWith(".test.ts")
-      ? [p]
-      : [];
+    return e.isFile() && isScannableFile(e.name) ? [p] : [];
   });
+}
+
+/** The key out of whichever quote style matched, or `null` for a template with
+ *  interpolation in it. */
+function keyOf(m) {
+  const key = m[1] ?? m[2] ?? m[3];
+  return key.includes("${") ? null : key;
 }
 
 export function scanKeys(source) {
   const tn = new Set();
   const t = new Set();
-  for (const m of source.matchAll(TN_RE)) tn.add(m[1]);
-  for (const m of source.matchAll(T_RE)) t.add(m[1]);
+  for (const m of source.matchAll(TN_RE)) {
+    const key = keyOf(m);
+    if (key) tn.add(key);
+  }
+  for (const m of source.matchAll(T_RE)) {
+    const key = keyOf(m);
+    if (key) t.add(key);
+  }
   return { tn, t };
 }
 
@@ -144,6 +190,32 @@ function selfTest() {
     pluralGroupKeys({ a: { b: { one: "x", other: "y" } }, c: "z" }).join() ===
       "a.b",
     "nested group discovery",
+  );
+
+  // The quote styles the matcher was blind to until S0. A regression here is
+  // exactly the silent kind: the gate keeps printing OK while it stops looking
+  // at half the tree.
+  const quoted = scanKeys(
+    'tn("q.tn", 1); t("q.t"); tn(`b.tn`, 2); t(`b.t`); ctx.t("q.ctx");',
+  );
+  say(quoted.tn.has("q.tn"), "double-quoted tn scan");
+  say(quoted.t.has("q.t") && quoted.t.has("q.ctx"), "double-quoted t scan");
+  say(quoted.tn.has("b.tn"), "backtick tn scan");
+  say(quoted.t.has("b.t"), "backtick t scan");
+
+  const interpolated = scanKeys("t(`x.${which}`); tn(`y.${which}`, 1)");
+  say(
+    interpolated.t.size === 0 && interpolated.tn.size === 0,
+    "a template with interpolation has no statically knowable key and must be skipped",
+  );
+
+  say(
+    isScannableFile("home.ts") &&
+      isScannableFile("App.tsx") &&
+      !isScannableFile("App.test.tsx") &&
+      !isScannableFile("home.test.ts") &&
+      !isScannableFile("no.json"),
+    "file filter covers .ts AND .tsx, excludes tests",
   );
 
   if (problems.length) {
@@ -196,7 +268,7 @@ function main() {
   }
 
   // 2. Hver `tn('…')` peker på en gruppe; ingen gruppe leses med `t('…')`.
-  const files = sourceFiles(RENDERER_DIR);
+  const files = SOURCE_DIRS.flatMap(sourceFiles);
   const groupSet = new Set(groups);
   for (const file of files) {
     const rel = path.relative(ROOT, file);
@@ -225,7 +297,9 @@ function main() {
   }
 
   console.log(
-    `i18n-flertallsgate OK — ${groups.length} grupper × ${LANGS.length} språk, kategorier fra Intl.PluralRules.`,
+    `i18n-flertallsgate OK — ${groups.length} grupper × ${LANGS.length} språk, ` +
+      `kategorier fra Intl.PluralRules; ${files.length} kildefiler skannet i ` +
+      `${SOURCE_DIRS.map((d) => path.relative(ROOT, d)).join(" + ")}.`,
   );
 }
 
