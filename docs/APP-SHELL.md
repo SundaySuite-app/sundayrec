@@ -635,3 +635,49 @@ Two shapes are worth knowing:
   `tDyn("app.vu", word)`, `tDyn("app.page", page)`,
   `tDyn("app.setup.quality", format)`. A `Record<Word, "app.vu.x">` lookup table
   is exactly the shape `check-i18n-keys.mjs` cannot see into.
+
+## Proven in a real WKWebView
+
+Chromium is not the engine this app ships in, and SundayEdit's E5 measured a 42×
+regression in the real WKWebView that was invisible in Chromium. So S1b was run
+once through `npm run tauri:app` and asked what it could actually see.
+
+`screencapture` is unreliable under TCC on this machine, so the evidence is a
+**probe** instead of a screenshot: a temporary Vite plugin (never committed)
+serves a module — `script-src 'self'` forbids an inline one — that collects DOM
+state, computed styles, CSP violations and errors, clicks through the three
+destinations, and POSTs the result back to the dev server (`connect-src 'self'`
+allows same-origin). What came back:
+
+```jsonc
+{
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+  "hasSafariToken": false, // ⚠️ see below
+  "railPresent": true,
+  "railHasDragRegion": true,
+  "navButtons": ["Opptak", "Bibliotek", "Oppsett"],
+  "heading": "Opptak",
+  "church": "Ikke satt opp ennå", // warn colour — churchName is empty
+  "statusText": "Alt er klart",
+  "statusKind": "ready",
+  "statusDotTone": "good",
+  "overlaysRootIsSibling": true, // #overlays is NOT inside #app
+  "goldToken": "#ebb84b",
+  "bodyBg": "rgb(14, 19, 33)", // --bg  #0E1321
+  "railBg": "rgb(21, 27, 43)", // --surface #151B2B
+  "cssModulesApplied": true,
+  "vuCanvasSized": "1716x72", // ResizeObserver + DPR 2 → 858×36 CSS px
+  "destinations": ["library=Bibliotek", "setup=Oppsett", "record=Opptak"],
+  "cspViolations": [],
+  "errors": [],
+  "rejections": [],
+  "consoleErrors": [],
+}
+```
+
+⚠️ **`hasSafariToken: false`.** The UA string this WKWebView sends carries no
+`Safari` token. That is the exact fact behind SundayEdit's 42× PixiJS
+regression — libraries that sniff for Safari to pick a code path see "unknown
+engine" here and take their slowest one. Nothing in S1b depends on it, but any
+future dependency that branches on the UA must be measured **in this engine**,
+not in `npm run dev:app`.
