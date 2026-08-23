@@ -681,3 +681,177 @@ regression — libraries that sniff for Safari to pick a code path see "unknown
 engine" here and take their slowest one. Nothing in S1b depends on it, but any
 future dependency that branches on the UA must be measured **in this engine**,
 not in `npm run dev:app`.
+
+---
+
+# P1a — Oppsett, den første ekte siden
+
+S1b bygde delene; P1a er det første stedet de settes sammen til noe en
+frivillig kan bruke. **65 kontroller i fem faner er foldet til fem spørsmål**,
+med en skjerm bak hvert av dem, og to tillegg som utvider siden når de slås på.
+Alt ligger i `app/pages/setup/`.
+
+|                        | før (`legacy/renderer`)                          | nå (`app/pages/setup`)                  |
+| ---------------------- | ------------------------------------------------ | --------------------------------------- |
+| «Hvilken lyd?»         | enhetsliste + 32-ruters rutenett + måler på Hjem | én skjerm: enhet, kanalpar, hørselstest |
+| «Hvor skal opptakene?» | Filer-fanen, 15 kontroller                       | sti + plass i TIMER + «Velg mappe …»    |
+| «Hvilken kvalitet?»    | 4 formater × 3 bitrater, ingen forklaring        | tre kort med en begrunnelse hver        |
+| «Hvilken kirke?»       | System-fanen, mellom logg og telemetri           | navn + språk, og ingenting annet        |
+| «Hvem får beskjed?»    | Deling-fanen, 16 kontroller                      | ett varsel, én adresse, én test         |
+
+## Fem spørsmål, én tabell — `decisions-core.ts`
+
+Om et spørsmål er besvart, hva svaret ER og hvorfor det ikke holder, avgjøres i
+en REN fil med en test per rad. Ingen i18n, ingen DOM: kjernen svarer med DATA
+(`{ key: "deviceMissing", name }`), og siden oversetter.
+
+Grunnen står i atlaset. Dagens enhetskort maler **«Innebygd mikrofon ·
+Tilkoblet ✓» når `deviceId` er `null`** — altså «alt er i orden» om en
+innstilling ingen har satt. En slik regel kan ikke bo i en `&&` inne i en
+JSX-linje; der leses den aldri to ganger.
+
+**Tre tilstander, ikke to.** `done` og `todo` er canvasens. Den tredje,
+`unknown`, finnes fordi enhetslisten og ledig diskplass leses ASYNKRONT etter
+første maling: regelen «ikke funnet ⇒ todo» ville gjort hver kaldstart til et
+gult kort som blir nøytralt etter 100 ms, og et gult kort som forsvinner av seg
+selv er nettopp det som lærer folk å ignorere gult. `unknown` er nøytralt, sier
+ingenting, og er ALDRI `answered`.
+
+**`needsSetUp` er ikke `answered`.** Knappen sier «Sett opp» bare når det ikke
+STÅR et svar. En mappe som er valgt, men der disken ikke har rukket å svare, er
+noe man endrer.
+
+## Skjøten som ble lukket: statuslinjen og spørsmål 1
+
+`statusLine`s `nosound` spurte bare om det sto noe i `deviceName`. Skinnen kunne
+derfor si «Alt er klart» på nøyaktig den samme skjermen der spørsmål 1 sto gult
+og sa «Finner ikke Behringer X32» — to sanne halvdeler som er uenige i skjøten,
+side om side, synlig i ett blikk.
+
+Den PURE `statusLine` er urørt; det er INPUTEN som er rettet, gjennom
+`soundChosen(settings, devices)` i `app/state/devices.ts`: valgt betyr valgt OG
+til stede. `devices === null` (ikke lest ennå) faller tilbake på det lagrede —
+TA OPP leser ikke enhetslisten, så der er svaret det samme som før.
+
+## Overskriften bytter, destinasjonen gjør det ikke
+
+`PageShell` tar nå imot en `heading`. Skinnen står på OPPSETT hele veien, men
+`<h1>` blir spørsmålet: skjermen HANDLER om «Hvilken lyd?», og siden fokus
+flyttes til `<h1>` ved hvert rutebytte er det også det første en
+skjermleserbruker hører. Fokuseffekten ser nå på `route.tab` i tillegg til
+`route.page`, fordi de fem spørsmålene er egne skjermer.
+
+## `TAB_ALIASES` har ekte navn nå
+
+S1a satte plassholdere fordi informasjonsarkitekturen ikke fantes. Hver rad
+peker på en skjerm som er bygget:
+
+| gammel id                                                          | nytt mål                 |
+| ------------------------------------------------------------------ | ------------------------ |
+| `settings-audio`                                                   | `sound` — spørsmål 1     |
+| `settings-files`                                                   | `folder` — spørsmål 2    |
+| `settings-sharing` · `settings-publish` · `settings-notifications` | `notify` — spørsmål 5    |
+| `settings-video`                                                   | anker `camera` på nivå 1 |
+| `schedule`                                                         | anker `auto` på nivå 1   |
+| `settings-general`                                                 | `advanced` ⚠️ (P1b)      |
+
+De tre gamle delings-id-ene lander samme sted fordi de BESKRIVER samme sted:
+etter #139 inneholder den gamle Deling-fanen bare seksjonen «Varsler».
+
+⚠️ `advanced` er den ENESTE raden som peker på noe som ikke finnes ennå.
+`SetupPage` rendrer nivå 1 for den — siden Avansert nås FRA — og `data-tab`
+står likevel på `<main>`, så dyplenken er intakt den dagen P1b bygger den.
+`app/router/router.test.ts` har en vakt som slipper `advanced` og `edit` og
+ingenting annet, så en sjette plassholder ikke kan sige inn ubemerket.
+
+## Shimmens `?goto=`-gjentakelse er ikke idempotent
+
+api-shimmens egen `?goto=`-blokk navigerer PÅ NYTT 150 ms etter modullast.
+Det var dokumentert som «en idempotent gjentakelse», og det er det — helt til
+noe navigerer i mellomtiden. Da river gjentakelsen skjermen tilbake til
+dyplenken, og brukeren står et sted hun ikke valgte. (Et menneske rekker det
+sjelden; et e2e-spec rekker det hver gang, og det var slik det ble funnet.)
+
+`app/main.tsx` gir derfor shimmen — og `window.showPage`, som shimmen bruker
+når dyplenken ikke har en fane — en `navigate` som slipper ÉN gjentakelse av
+den dyplenken som allerede har landet, og ingenting annet. En engangsbillett og
+ikke en tidsgrense: shimmen gjentar nøyaktig én gang, så det er den samme
+grensen uten å gjette et tall. `installGlobalNavigation(nav?)` tar imot
+overstyringen. Legacy er urørt.
+
+## Tre steder auto-anvend IKKE er svaret
+
+`useSetting` eier én nøkkel og har én kvittering. Disse tre skriver FLERE
+nøkler som må lande sammen, og gjør det med én eksplisitt handling og én
+lagring — akkurat som legacy `selectDevice` gjør:
+
+- **enhetsvalget** (`deviceId` + `deviceName` + `deviceChannels[id]` +
+  `channels`) — «Bruk denne», med `recordingImminentGuard` bare ved BYTTE,
+- **kameravalget** (`videoDeviceName` + `videoDeviceIndex`),
+- **OS-varselet** (`notifyStart` + `notifyStop` bak ÉN bryter).
+
+`useDraftForm` er de to stedene et halvskrevet felt er aktivt skadelig:
+varsel-adressen og den ukentlige tiden.
+
+⚠️ `scheduler_reschedule` kalles ALDRI fra en side: `window.api.saveSettings`
+gjør det selv etter hver skrivning. Det samme gjelder OS-innloggingselementet
+(`syncLaunchAtLogin`).
+
+## ⚠️ «Ta opp automatisk» av/på sletter tiden — en eiersak
+
+`Settings` har ingen `enabled`-flagg, verken på en slot eller på planen:
+bakenden kjenner bare `slots: ScheduleSlot[]`, og en tom liste ER «av». Så det
+er det bryteren skriver, og «av» fjerner tidspunktet fra basen.
+
+Skjermen demper det den kan uten å lyve: den siste planen huskes i ØKTEN, og en
+profil med FLERE tidspunkter får et spørsmål med antallet i seg før de
+forsvinner. Å løse det ordentlig krever en ny nøkkel i Rust, og det er eierens
+valg — ikke noe en skjerm legger til fordi en bryter gjerne vil oppføre seg
+penere.
+
+## To usanne setninger fra canvasen som ikke ble med
+
+- **«E-posten sendes via SundaySuite.»** Det finnes ikke noe slikt relé.
+  Sendingen går gjennom menighetens EGEN SMTP-server, og uten en slik server
+  kommer ingenting fram uansett hva som står i adressefeltet. Bryteren står
+  derfor bak en `Gate` som sier det, og gaten er trygg her fordi SMTP-feltene
+  bor under Avansert — `feature-gate-core` advarer mot det motsatte.
+- **«Varsel på maskinen … Alltid på.»** Ved siden av en bryter som kan slås av.
+  Teksten sier nå hva bryteren gjør.
+
+Kirkekortet arvet heller ikke atlasets tredje døde påstand: `churchName` brukes
+IKKE i filnavn, og podkast-RSS ble fjernet i #139.
+
+## «Avansert» finnes ikke ennå, og det står det ingenting om
+
+Canvasen har en «Avansert»-lenke nederst på nivå 1. Den er IKKE med: skjermen
+den skulle åpne bygges i P1b, og en lenke til en tom side — eller til en tekst
+som sier «kommer senere» — lærer en frivillig at lenkene i denne appen ikke er
+til å stole på. Den legges til sammen med siden den åpner. Av samme grunn er
+«Avansert lyd» borte fra spørsmål 1.
+
+## Ingen nye `tn()`-nøkler
+
+`check-i18n-plurals.mjs` krever hver flertallsgruppe i **alle sju** språk med
+riktige CLDR-kategorier, og har INGEN unntak for de pausede fem — i motsetning
+til `parity.test.ts`. En ny `tn()`-nøkkel ville altså krevd polske og franske
+flertallsformer midt i en pause som finnes for å slippe akkurat det. Så: `tf()`
+med en formulering som er riktig for tallområdet den faktisk viser
+(«Miksebord · {n} kanaler» vises bare for n ≥ 3).
+
+## e2e: de fire re-pekte, med byte-identiske titler
+
+`e2e/app/{settings,settings-seam,settings-migration,i18n-live-surfaces}.spec.ts`
+er kopier av legacy-versjonene med **hver test-tittel uendret**, fordi
+`docs/SMOKE-TEST.md` peker på dem ved navn: den dagen legacy slettes skal
+pekeren flytte seg ved å bytte filbanen og ingenting annet. Legacy-filene står
+urørt og grønne.
+
+`settings-seam` er den ene fila der også assertionene er ordrette. Den tester
+ikke UI, den tester R4-invarianten på SØMMEN — den ene tingen begge skallene
+deler — og halve invarianten ville vært udekket hvis bare det ene skallet ble
+sjekket.
+
+Kontrollene er byttet der legacy driver noe P1b eier: `opt-ask-open-editor` ble
+«Ta med kamera» (`videoEnabled`), og `askOpenEditor` er med videre som et
+URØRT felt med den samme assertionen på den samme verdien.
