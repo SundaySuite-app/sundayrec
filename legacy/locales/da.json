@@ -1197,9 +1197,6 @@
     "autoDeleteConfirm": "Ja, slet automatisk",
     "wakeTestTitle": "Test opvågning fra dvale?",
     "wakeTestConfirm": "Start testen",
-    "noScreensTitle": "Fandt ingen skærme",
-    "noScreensBody": "Tjek at appen har tilladelse til skærmoptagelse i systemindstillingerne.",
-    "pickScreenTitle": "Vælg skærm",
     "deleteTranscriptBody": "Selve optagelsen beholdes. Du kan transskribere igen senere.",
     "discardEditsBody": "De klip, du har lavet, går tabt. Selve optagelsesfilen røres ikke.",
     "discardEdits": "Kassér ændringerne"

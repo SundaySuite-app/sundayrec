@@ -4,10 +4,12 @@ The pure decision logic for these features is ported into `sundayrec-core` and
 fully unit-tested; the impure seams sit behind cargo features. **Five of them
 are in `default`** — `editor`, `whisper`, `tray`, `updater` and `email` — so
 the Rediger-screen, transcription, the tray, auto-update and
-failure e-mail all ship in a normal build. The remaining
-**default-off** feature is `publish`; scheduler/wake are
-always compiled. (v0.14: `streaming`, `ndi` and `bridge` were REMOVED together
-with the Direkte page — their sections below are kept only as struck history.) The items below need a real account / desktop session / device
+failure e-mail all ship in a normal build. Scheduler/wake are always
+compiled. (v0.14: `streaming`, `ndi` and `bridge` were REMOVED together with
+the Direkte page; R1 «Frivilligen først» 2026-08-23 removed the sharing
+cluster — cloud backup, podcast RSS + `publish`, the chat webhook, the Gmail
+transport, the Sunday-suite integrations + `sundayrec://`, cover art and the
+review queue. Their sections below are kept only as struck history.) The items below need a real account / desktop session / device
 / signing identity that the headless gate cannot provide. None block the default
 build or the gate. The consolidated "what only Richard can provide" checklist is
 at the bottom of this file.
@@ -24,7 +26,7 @@ at the bottom of this file.
 A precise, up-to-date list of the account/key/identity work standing between the
 code-complete state and a **signed, auto-updating, public release**. See
 `docs/archive/RELEASE-AUDIT-2026-06-01.md` for the pipeline audit and
-`docs/DISTRIBUTION.md` / `docs/GOOGLE-OAUTH-SETUP.md` for the step-by-step.
+`docs/DISTRIBUTION.md` for the step-by-step.
 Status updated 2026-08: releases are **signed + auto-updating in prod**; the
 only remaining release blocker is **notarization** (item 3).
 
@@ -62,12 +64,10 @@ only remaining release blocker is **notarization** (item 3).
    releases since v0.4.x** — the `latest.json` feed is verified in prod (v0.8.0
    current). See `docs/RELEASE-CHECKLIST.md`.
 
-5. **Google OAuth console client (Desktop app type).** Cloud connect/upload +
-   the cloud-Gmail email path need a Google OAuth client of type **Desktop app**
-   (a binary `client_id` is NOT the `.env` one — confirm the console client type
-   and the redirect). Provide `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) per
-   `docs/GOOGLE-OAUTH-SETUP.md`. Not a build blocker, but blocks the cloud/email
-   features at runtime.
+5. ~~**Google OAuth console client (Desktop app type).**~~ **GONE in R1
+   «Frivilligen først»** — cloud backup and the Gmail transport that needed
+   `SUNDAYREC_GOOGLE_CLIENT_ID` were removed; e-mail is SMTP-only and needs no
+   Google client. (`docs/archive/GOOGLE-OAUTH-SETUP.md` stays as history.)
 
 The per-feature seam detail follows below; this checklist is the release-gating
 subset.
@@ -84,35 +84,29 @@ subset.
   in the settings bag — it lives in the OS keychain, and a stored password takes
   precedence over anything typed into the field. `email_smtp_from` lets the
   From: address differ from the account.
-- **A Gmail OAuth connection or SMTP credentials.** The Gmail path reuses the
-  cloud OAuth refresh token (connect Gmail first, which still needs the OAuth
-  client id — item 5 above); the SMTP path needs a host, port, user, and
-  app-password and works today.
+- **SMTP credentials.** SMTP is the one transport (the Gmail-API path left
+  with cloud backup in R1): a host, port, user and app-password.
 - **👤 Deliverability check (rig).** Confirm a real "✓ email works" message
   arrives from **Test e-post**, that a killed recording produces a failure
   e-mail, and that the throttle suppresses a 2nd identical alert within 10 min
   (smoke §8).
 
-## PU-2 — Tray + deep links (`--features tray`)
+## PU-2 — Tray (`--features tray`) — deep links REMOVED in R1
 
-- **A desktop session.** The native menubar/tray item and the `sundayrec://`
-  scheme registration (`tauri-plugin-deep-link`) need a real GUI to verify.
-  **(R7 update)** the tray is now actually **installed** in `setup()` under
-  `--features tray`: `tray::install` builds the `TrayIcon` from the unit-tested
-  core menu model, wires `on_menu_event` → `handle_menu_event` (Stop calls
-  `RecorderEngine::stop()` directly; start/preflight/diagnostics/review emit
-  `tray://action`; show/quit are in-process), and registers the deep-link plugin
-  routing inbound URLs through `dispatch_deep_link`. Build proven with
-  `cargo build -p sundayrec --features tray` + clippy `-D warnings`.
+- **A desktop session.** The native menubar/tray item needs a real GUI to
+  verify. **(R7 update)** the tray is now actually **installed** in `setup()`
+  under `--features tray`: `tray::install` builds the `TrayIcon` from the
+  unit-tested core menu model and wires `on_menu_event` → `handle_menu_event`
+  (Stop calls `RecorderEngine::stop()` directly; start/preflight/diagnostics
+  emit `tray://action`; show/quit are in-process). Build proven with
+  `cargo build -p sundayrec --features tray` + clippy `-D warnings`. (The
+  `sundayrec://` scheme, `tauri-plugin-deep-link` and `dispatch_deep_link`
+  left with the Sunday-suite integrations in R1.)
 - **Tray icon assets.** The Electron app shipped `tray-idle/recording/error`
   PNGs (+ macOS `Template` + Windows dark variants) under `assets/`. **(R7)** the
   shell currently reuses the app's **default window icon** for the tray; the
   per-state idle/recording/error assets still need bundling + a swap on
   `TrayState` change (`sundayrec_core::tray::icon_for` already picks the base).
-- **Scheme registration in `tauri.conf.json`** (`plugins.deep-link.desktop.schemes
-= ["sundayrec"]`) + the macOS `Info.plist` `CFBundleURLTypes` entry are still
-  needed for the OS to _deliver_ `sundayrec://` URLs to the running app (the
-  `on_open_url` listener is wired; the scheme must be registered with the OS).
 
 ## R7 — Auto-update (`--features updater`) — ✅ DONE, proven in prod
 
@@ -135,14 +129,10 @@ subset.
   real installs update from it. A dev build still short-circuits the check by
   design.
 
-## PU-3 — Podcast RSS publish (`--features publish`)
+## ~~PU-3 — Podcast RSS publish (`--features publish`)~~ — **FJERNET R1 2026-08-23**
 
-- **A connected Drive + a public-share capable account.** The orchestration
-  (write `podcast.xml`, upload via the existing resumable worker, create a
-  public share URL, cache the feed URL) needs a real Drive connection and
-  network. Only the XML builder (`sundayrec_core::feed`) is tested.
-- A `publish` seam module + the share-URL helper on the Drive worker are the
-  remaining glue (the Electron `createPublicShareUrl` / `uploadFile` path).
+The feed builder, the `publish` seam/feature and the Podcast card left with
+the sharing cluster. Git history is the feature flag.
 
 ## PU-4 — OS wake-timers + scheduled launch (no feature flag)
 
@@ -188,22 +178,14 @@ subset.
   in-process binding) could be offered as an alternative — the argv builder
   already matches the Electron `whisper-cli` invocation.
 
-## PU-6 — Episode prep + review queue + Stage import (no feature flag)
+## ~~PU-6 — Episode prep + review queue + Stage import~~ — **FJERNET R1 2026-08-23**
 
-- **The audio-analysis stack.** `prep_build_episode` assembles an `EpisodePrep`
-  from analysis segments it is GIVEN — the ffmpeg/FFT `audio-analysis.ts` that
-  produces those segments is NOT ported yet, so the caller (or a later analysis
-  seam) must supply them. The sermon-detection + attention-reason + status
-  decisions ARE the unit-tested core.
-- **Reminder dispatch.** `review_process_reminders` returns the actions the
-  scheduler should fire (notify/email/webhook/auto-discard) as a decision; the
-  actual notification dispatch + the auto-discard history note should be wired to
-  the existing PU-1 email seam + the scheduler's native notifications. The queue
-  is persisted as a JSON blob under the `reviewQueue` settings key (mirrors the
-  Electron `electron-store` shape) so no schema migration is needed.
-- **Sidecar writes.** `stage_import_manifest` returns the mapped chapters +
-  `ServiceLink`; writing them into the recording's `.meta.json` + `.service.json`
-  sidecars (the Electron `applyStageManifest` fs step) is the remaining glue.
+The prep pipeline, the review queue + reminder ladder, the tray callout and
+the Stage manifest import left with the sharing cluster. One consequence for
+the owner: `learning::record_trim_deltas` / `current_tuning` (the E8/E10
+trim-correction loop and the local nudge) were only ever driven from the
+review path and now have no caller — left untouched for R2's learning
+decision.
 
 ## R1 — Non-destructive editor (`--features editor`)
 
@@ -405,8 +387,6 @@ None of it blocks the default build or the gate.
 - **Whisper** (`whisper`, in `default`, smoke §10b): a C/C++ toolchain + CMake,
   a downloaded model (download + SHA-256 verify are wired, with a real
   percentage), and a real recording.
-- **Cloud upload** (smoke §7): a connected Google Drive + network — the resumable
-  worker (PUTs, keychain token read, chunk math) is NETWORK-UNVERIFIED.
 - **OS wake-timers** (smoke §11): a real box for the `pmset` admin prompt, the
   Windows `SetWaitableTimer` resume, and a true sleep/wake cycle. The argument
   shaping, quoting and escalation ladders are unit-tested; the resume is not and
@@ -419,10 +399,6 @@ None of it blocks the default build or the gate.
 
 ### Keys & secrets
 
-- **Google OAuth client** (Drive/YouTube/Gmail + cloud-Gmail email path):
-  `SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional secret) — see
-  docs/GOOGLE-OAUTH-SETUP.md. A binary `client_id` is NOT the same as the `.env`
-  one; confirm the console client is a **Desktop app** type.
 - **SMTP credentials** (`--features email`, SMTP path): host/port/user +
   app-password. The password is stored in the OS keychain, never the settings
   bag; the host/port/user now have a UI (R7).
@@ -503,3 +479,5 @@ kuraterte subsettet i `syncBackendRecordingSettings` er utvidet deretter.
 `integrations_*`-kommandoene til ekte kall med ærlige kvitteringer (pinnet i
 `e2e/integrations.spec.ts`); se `docs/COMMAND_AUDIT_2026-08.md` §4.2, som nå
 er merket løst. HTTP-sidene forblir nettverks-uverifiserte til riggtest.
+**(R1 «Frivilligen først» 2026-08-23: hele avsnittet over er historikk —
+cloud, webhook og integrasjonene er FJERNET; bare e-post-stien består.)**

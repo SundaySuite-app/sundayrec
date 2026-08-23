@@ -114,7 +114,9 @@ const DIRECTION_MEANING = {
 // The counters that say how much OPPORTUNITY there was to correct anything.
 // Zero corrections against a zero here is not evidence about the detector; zero
 // corrections against a large one is weak evidence, and the difference is the
-// whole reason both numbers are printed.
+// whole reason both numbers are printed. (`review.published` stopped being
+// SENT in R1 «Frivilligen først» — the review queue is gone — but aggregates
+// from older clients still carry it, so it is still read.)
 const EXPOSURE_COUNTERS = ["editor.opened", "review.published"];
 
 // ── The evidence bar, read from the harness rather than restated ─────────────

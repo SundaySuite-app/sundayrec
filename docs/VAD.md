@@ -243,8 +243,10 @@ same pick:
 | `trim_adjustments` | "right block, wrong edges"                   | **two deltas** | `Detection::sermon` (the strict pick) |
 
 A trim adjustment stores only the deltas — **the proposal it was measured against
-is not stored with it.** Review's `suggested_trim` is built from the strict pick
-in `prep::build_episode_prep`, so recovering what the human actually meant means
+is not stored with it.** Review's `suggested_trim` was built from the strict
+pick in `prep::build_episode_prep` (gone with the review queue in R1
+«Frivilligen først»; `Detection::sermon` is the same pick), so recovering what
+the human actually meant means
 re-deriving that proposal by running the heuristic again. That is valid, because
 the detector is deterministic and the recording has not changed — but only as
 long as the detector's boundary rule has not changed since the delta was

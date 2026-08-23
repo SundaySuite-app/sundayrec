@@ -16,21 +16,24 @@ on the same foundation as the rest of the Sunday suite (Tauri 2 + Rust).
 
 Scheduled + manual audio/video recording (crash-safe MKV capture with remux at
 finalize, reconnect/split/pre-roll), an editor (cut plan, mastering presets,
-chapters, export), whisper transcription,
-cloud backup + podcast publishing, OS wake-from-sleep scheduling, and a
-menubar/tray. Most of that is in the **default** build; only the subsystems
-that need an absent SDK or an owner decision are behind default-off cargo
-features (see Architecture below). SundayRec is deliberately a RECORDING app:
-live streaming (the old Direkte page, RTMP/NDI/overlays) was removed in v0.14 —
-churches that stream have OBS and friends; this app's job is the take that
-survives the Sunday.
+chapters, export), whisper transcription, an e-mail alert when a take fails,
+OS wake-from-sleep scheduling, and a menubar/tray. Most of that is in the
+**default** build; only the subsystems that need an absent SDK or an owner
+decision are behind default-off cargo features (see Architecture below).
+SundayRec is deliberately a RECORDING app: live streaming (the old Direkte
+page, RTMP/NDI/overlays) was removed in v0.14, and the sharing cluster (cloud
+backup, podcast RSS, chat webhook, Sunday-suite hand-offs, cover art, the
+review queue) in R1 of «Frivilligen først» — churches that stream have OBS and
+friends, and the file on disk is the hand-off; this app's job is the take that
+survives the Sunday, and the four jobs around it: record · edit · mix/master ·
+export.
 
 ## Architecture
 
 - **`crates/sundayrec-core`** — the pure domain core: GUI-free, Tauri-free,
   fs/network-free, clock injected by the caller. Every recorder/editor/
-  whisper/publish _decision_ lives here and is unit-tested
-  (~1420 tests as of v0.12.0; the `src-tauri` shell carries a further ~730).
+  whisper _decision_ lives here and is unit-tested
+  (~1250 tests as of R1; the `src-tauri` shell carries a further ~740).
   Ported knowledge from the Electron app (hardened ffmpeg
   arguments, device parsers, error classification, silence/watchdog logic) —
   rebuilt cleanly, not copied.
@@ -39,7 +42,7 @@ survives the Sunday.
   are annotated `HARDWARE/NETWORK/GUI-UNVERIFIED` and covered by
   `docs/SMOKE-TEST.md`. Subsystems are cargo features; `default` is
   `editor`, `whisper`, `tray`, `updater`, `email`. Default-OFF and
-  opt-in: `publish`, `asio`, `vad`. `src-tauri/Cargo.toml`'s
+  opt-in: `asio`, `vad`. `src-tauri/Cargo.toml`'s
   `[features]` block is the authority — it explains why each one sits where it
   does.
 - **`legacy/`** — the shipping frontend: the ported Electron vanilla-TS
@@ -99,8 +102,8 @@ Playwright starts the Vite server itself, so `npm run e2e` is the whole command.
 The spec files under `e2e/` are the inventory — one file per surface, each
 with a header saying exactly what it pins and why (onboarding/consent, the
 recorder seam, the editor, Historikk, settings and the renderer→sqlite
-settings seam, auto-update, the update channel, integrations, system support,
-telemetry preview). `npx playwright test --list` gives the current count; an
+settings seam, auto-update, the update channel, system support, telemetry
+preview). `npx playwright test --list` gives the current count; an
 enumerated prose copy here rotted twice, so there isn't one any more. No
 `test.fail()` remains in `e2e/`, and `docs/SMOKE-TEST.md`'s `VERIFIED-BY:`
 pointers into these specs are gate-checked (`npm run smoke-verified`).

@@ -1197,9 +1197,6 @@
     "autoDeleteConfirm": "Ja, ta bort automatiskt",
     "wakeTestTitle": "Testa väckning ur viloläge?",
     "wakeTestConfirm": "Starta testet",
-    "noScreensTitle": "Hittade inga skärmar",
-    "noScreensBody": "Kontrollera att appen har behörighet till skärminspelning i systeminställningarna.",
-    "pickScreenTitle": "Välj skärm",
     "deleteTranscriptBody": "Själva inspelningen behålls. Du kan transkribera på nytt senare.",
     "discardEditsBody": "Klippen du har gjort går förlorade. Själva inspelningsfilen rörs inte.",
     "discardEdits": "Förkasta ändringarna"

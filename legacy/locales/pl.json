@@ -1263,9 +1263,6 @@
     "autoDeleteConfirm": "Tak, usuwaj automatycznie",
     "wakeTestTitle": "Przetestować wybudzanie z uśpienia?",
     "wakeTestConfirm": "Rozpocznij test",
-    "noScreensTitle": "Nie znaleziono ekranów",
-    "noScreensBody": "Sprawdź, czy aplikacja ma uprawnienie do nagrywania ekranu w ustawieniach systemu.",
-    "pickScreenTitle": "Wybierz ekran",
     "deleteTranscriptBody": "Samo nagranie zostaje. Możesz je transkrybować ponownie później.",
     "discardEditsBody": "Wykonane cięcia zostaną utracone. Sam plik nagrania pozostanie nienaruszony.",
     "discardEdits": "Odrzuć zmiany"

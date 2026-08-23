@@ -1197,9 +1197,6 @@
     "autoDeleteConfirm": "Yes, delete automatically",
     "wakeTestTitle": "Test waking from sleep?",
     "wakeTestConfirm": "Start the test",
-    "noScreensTitle": "No screens found",
-    "noScreensBody": "Check that the app has screen-recording permission in your system settings.",
-    "pickScreenTitle": "Choose a screen",
     "deleteTranscriptBody": "The recording itself is kept. You can transcribe it again later.",
     "discardEditsBody": "The cuts you have made will be lost. The recording file itself is untouched.",
     "discardEdits": "Discard the changes"

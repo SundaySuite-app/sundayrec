@@ -1197,9 +1197,6 @@
     "autoDeleteConfirm": "Oui, supprimer automatiquement",
     "wakeTestTitle": "Tester le réveil depuis la veille ?",
     "wakeTestConfirm": "Lancer le test",
-    "noScreensTitle": "Aucun écran trouvé",
-    "noScreensBody": "Vérifiez que l’application a l’autorisation d’enregistrement d’écran dans les réglages du système.",
-    "pickScreenTitle": "Choisir un écran",
     "deleteTranscriptBody": "L’enregistrement lui-même est conservé. Vous pourrez le transcrire à nouveau plus tard.",
     "discardEditsBody": "Les coupes que vous avez faites seront perdues. Le fichier d’enregistrement lui-même n’est pas touché.",
     "discardEdits": "Abandonner les modifications"

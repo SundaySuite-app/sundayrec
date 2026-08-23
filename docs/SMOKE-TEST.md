@@ -60,7 +60,7 @@ gate is green: the full Rust test suite (`cargo test --workspace`) + a **vitest*
 frontend suite (pure logic like the editor cut-history state machine; grows as
 more pure logic is extracted) + clippy `-D warnings`. Every feature also compiles
 in isolation — `cargo build -p sundayrec --features <flag>` for
-`email`/`tray`/`publish`/`editor`/`updater` (the
+`email`/`tray`/`editor`/`updater` (the
 `whisper` C++ build is the one exception, verified by inspection).
 
 ⚠️ **Which of these are actually in the shipping build.** `src-tauri/Cargo.toml`
@@ -68,11 +68,14 @@ sets `default = ["editor", "whisper", "tray", "updater", "email"]`,
 so **all five are ON in a plain `npm run tauri dev` / `cargo build` and in every
 release**. The `--features <flag>` lines below them are redundant, not
 prerequisites, and a `feature_disabled` response from any of those five is a BUG
-to report — not the expected result. Only `publish` (plus
-`asio`/`vad`) is genuinely default-off and needs an explicit `--features`; those
-sections say so and are correct. To exercise a disabled path deliberately, build
-with `--no-default-features`. (v0.14: `streaming`/`ndi`/`bridge` were removed
-with the Direkte page — their old §R3/§R3b sections are gone from this runbook.)
+to report — not the expected result. Only `asio`/`vad` are genuinely
+default-off and need an explicit `--features`. To exercise a disabled path
+deliberately, build with `--no-default-features`. (v0.14: `streaming`/`ndi`/
+`bridge` were removed with the Direkte page — their old §R3/§R3b sections are
+gone from this runbook. R1 «Frivilligen først» 2026-08-23: cloud backup (§7),
+podcast RSS + `publish` (§10), the live cue bridge (§10c), the review queue
+(§PU-6) and the Sunday-suite integrations (§P2b) followed; §8 e-post is
+SMTP-only and §9's deep links are gone.)
 
 ---
 
@@ -95,10 +98,8 @@ RUST_LOG=debug npm run tauri dev          # everything
 RUST_LOG=sundayrec=debug npm run tauri dev # just our crates
 ```
 
-Expect at boot: `SundayRec backend ready (db at …/sundayrec.sqlite)` and (with no
-Google client configured) `cloud upload worker idle: Google OAuth client not
-configured`. The cloud worker idling cleanly with no config is itself a thing to
-verify here — there should be **no** repeated cloud log spam.
+Expect at boot: `SundayRec backend ready (db at …/sundayrec.sqlite)` and no
+repeated background-task log spam.
 
 **First run:** a fresh install (no `onboardingDone`) boots into the wizard; a
 settled install goes straight to Hjem. The wizard's consent step (E3.6) asks
@@ -283,33 +284,11 @@ search box wiring and the IPC sidecar-load behave on real data.
 
 ---
 
-## 7. (Optional) Cloud connect + upload [HW][NET]
+## 7. ~~Cloud connect + upload~~ — REMOVED (R1 «Frivilligen først»)
 
-Requires a Google Desktop OAuth client — see
-[`docs/GOOGLE-OAUTH-SETUP.md`](GOOGLE-OAUTH-SETUP.md) to create one and set
-`SUNDAYREC_GOOGLE_CLIENT_ID` (+ optional `SUNDAYREC_GOOGLE_CLIENT_SECRET`) before
-launching:
-
-```bash
-export SUNDAYREC_GOOGLE_CLIENT_ID="…apps.googleusercontent.com"
-export SUNDAYREC_GOOGLE_CLIENT_SECRET="…"   # optional for Desktop clients
-npm run tauri dev
-```
-
-1. Trigger **cloud connect** (Drive).
-   - **Expected:** the system browser opens Google's consent screen; after you
-     approve, the loopback redirect (`http://127.0.0.1:<ephemeral-port>`)
-     completes and the service shows as connected. A "client not configured"
-     error here means the env var didn't reach the process.
-2. **Enqueue a backup** of the recording from §5, then watch the upload.
-   - **Expected:** the queue entry transitions through uploading → done; the file
-     appears in Google Drive (`drive.file` scope = only files this app created).
-   - With `RUST_LOG=sundayrec=debug` the worker logs each resumable chunk.
-
-> [NET] The whole cloud worker (`reqwest` PUTs, keychain token read, chunk reads)
-> is NETWORK-UNVERIFIED — only the decision logic (queue ordering, chunk math,
-> token/error classification) is unit-tested. This step is the first real
-> exercise of the wire path.
+Cloud backup (Drive/Dropbox/OneDrive) left the app 2026-08-23. The file on
+disk is the hand-off; the section number stays so cross-references still
+resolve.
 
 ---
 
@@ -317,73 +296,64 @@ npm run tauri dev
 
 The error/test mailer is in the **`default` feature set**, so the shipping build
 and a plain `npm run tauri dev` both have it and pull the SMTP dep (`lettre`).
-The localized templates (7 langs), the throttle/dedup gate, and the RFC
-2822/base64url message assembly are unit-tested in `sundayrec-core::email`; the
-**send** is NETWORK-UNVERIFIED. Nothing extra to build — just run the app:
+The localized templates (7 langs) and the throttle/dedup gate are unit-tested
+in `sundayrec-core::email`; the **send** is NETWORK-UNVERIFIED. SMTP is the ONE
+transport (the Gmail-API path left with cloud backup in R1 «Frivilligen
+først»). Nothing extra to build — just run the app:
 
 ```bash
 npm run tauri dev   # drive the "E-postvarsler" disclosure
-# Gmail path reuses the cloud OAuth token (connect Gmail first, §7-style);
-# SMTP path needs a host/port/credentials.
+# SMTP needs a host/port/credentials.
 ```
 
 The **E-postvarsler** panel (R5) drives this. It reads `email_status` up-front
-(works in every build) to show whether this binary has the `email` feature and
-whether Gmail is already connected, picks the transport (Gmail no-config / SMTP
-host·port·user·pass·from), and fires `email_send_test` with the chosen language.
+(works in every build) to show whether this binary has the `email` feature,
+takes the SMTP host·port·user·pass·from, and fires `email_send_test` with the
+chosen language.
 In the **default build** `email_status` reports the feature present and
 `email_send_test` really sends — a `feature_disabled` here means something is
 wrong, not that the build is normal. (The "ikke bygd inn" hint only appears in a
 `--no-default-features` build.) The SMTP password is never persisted — it travels
 with the request and is dropped.
 
-The card's gate + block-reason logic and the send dispatch (transport picked
-from the configured settings, recipient + language on the request):
+The card's gate + block-reason logic and the send dispatch (recipient +
+language on the request):
 
 - VERIFIED-BY: e2e/system-support.spec.ts::a build without the email feature gates the card and says so
 - VERIFIED-BY: e2e/system-support.spec.ts::with the feature built but no transport, the block reason is stated
 - VERIFIED-BY: e2e/system-support.spec.ts::«Test e-post» sends through the configured SMTP transport
 
-1. **Test message** via the Gmail path. ⚠️ Currently unreachable from the UI:
-   `btn-email-gmail-connect` is disabled in the markup («Google-innlogging er
-   ikke tilgjengelig i denne versjonen» — the Gmail OAuth path needs a
-   `cloud_connect` client id this build does not ship). The Gmail transport in
-   `email_send_test` still exists for an install with a Gmail token; until the
-   connect button is live, test the SMTP path below instead.
-   - **Expected (once connectable):** a "✓ SundayRec — email works" message
-     arrives; the raw message was base64url-encoded and POSTed to
-     `gmail.googleapis.com`.
+1. **SMTP test message.** Configure an SMTP host (587 STARTTLS or 465 implicit
+   TLS), save the password to the keychain, and send a test.
+   - **Expected:** `lettre` connects + delivers a "✓ SundayRec — e-post
+     fungerer" message; HTML + plaintext parts both present in the received
+     mail.
 2. **Error alert throttle.** Trigger two identical recording errors within
    10 minutes.
    - **Expected:** only the first mails; the second is suppressed by the core
      `AlertGate` (10-min window per `(recipient, message)`).
-3. **SMTP fallback.** Configure an SMTP host (587 STARTTLS or 465 implicit TLS)
-   and send a test.
-   - **Expected:** `lettre` connects + delivers; HTML + plaintext parts both
-     present in the received mail.
 
-> [NET] The Gmail POST + the SMTP handshake are compiled into every default
-> build but never run against a real account/server in the gate — se markøren
-> i §8-innledningen («the **send** is …»).
+> [NET] The SMTP handshake is compiled into every default build but never run
+> against a real server in the gate — se markøren i §8-innledningen («the
+> **send** is …»).
 
 ---
 
-## 9. Menubar tray + deep links [GUI] — `tray` (IN DEFAULT)
+## 9. Menubar tray [GUI] — `tray` (IN DEFAULT)
 
-The tray menu-model (localized items, actions, tooltip, icon precedence) and the
-inbound `sundayrec://` deep-link parser are unit-tested in
-`sundayrec-core::{tray, link}`; the native menubar item + scheme registration
-are **GUI-UNVERIFIED**. `tray` is in the **`default` feature set**, so it is
+The tray menu-model (localized items, actions, tooltip, icon precedence) is
+unit-tested in `sundayrec-core::tray`; the native menubar item is
+**GUI-UNVERIFIED**. (The `sundayrec://` deep-link scheme left with the
+Sunday-suite integrations in R1 «Frivilligen først».) `tray` is in the **`default` feature set**, so it is
 present in every release build and in a plain `npm run tauri dev`.
 
 As of **R7** the tray is actually **installed** in `setup()` whenever the
 feature is on (`tray::install` builds the `TrayIcon` from the core menu
-model, wires `on_menu_event` → `handle_menu_event`, and registers the
-`tauri-plugin-deep-link` scheme handler that routes inbound URLs through
-`tray::dispatch_deep_link`). The menu **start/stop/show** actions are wired to
-the backend: **Stop** calls `RecorderEngine::stop()` directly; **start** /
-preflight / diagnostics / review-queue emit `tray://action` for the renderer to
-turn into the matching `invoke(...)`; **show**/**quit** are handled in-process.
+model and wires `on_menu_event` → `handle_menu_event`). The menu
+**start/stop/show** actions are wired to the backend: **Stop** calls
+`RecorderEngine::stop()` directly; **start** / preflight / diagnostics emit
+`tray://action` for the renderer to turn into the matching `invoke(...)`;
+**show**/**quit** are handled in-process.
 
 ```bash
 npm run tauri dev   # tray is on by default — nothing to add
@@ -391,65 +361,22 @@ npm run tauri dev   # tray is on by default — nothing to add
 
 1. Launch; confirm a SundayRec item appears in the macOS menubar / Windows tray.
    - **Expected:** the menu shows status → open → start/stop → folder → check
-     system → diagnostics → quit, in the UI language. A review-queue callout
-     appears only when episodes await review.
+     system → diagnostics → quit, in the UI language.
 2. Click **Stopp opptak** while recording.
    - **Expected:** the recording stops (the `RecorderEngine::stop()` path) and a
      new history row appears, even with the window unfocused.
 3. While recording, the menu swaps "Start" → "Stop" and the icon turns red.
-4. Open a `sundayrec://import?path=…` URL from the OS.
-   - **Expected:** the running instance receives it (`on_open_url`) and
-     `dispatch_deep_link` brings the window forward + emits `deeplink://import`.
 
-> [GUI] The `tauri::tray` item install, the menu paint, and the
-> `tauri-plugin-deep-link` scheme delivery need a real desktop session — se
-> markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
+> [GUI] The `tauri::tray` item install and the menu paint need a real desktop
+> session — se markøren i §9-innledningen. The dedicated tray icon assets aren't bundled yet
 > (the app's default window icon is reused) — see docs/NEEDS-RICHARD.md PU-2.
 
 ---
 
-## 10. (Optional) Podcast RSS publish [NET] — `--features publish`
+## 10. ~~Podcast RSS publish~~ — REMOVED (R1 «Frivilligen først»)
 
-The RSS 2.0 + iTunes XML builder is unit-tested in `sundayrec-core::feed`; the
-write-to-disk + upload-to-Drive + share orchestration is NETWORK-UNVERIFIED
-behind the default-off `publish` feature.
-
-```bash
-cargo build -p sundayrec --features publish
-```
-
-1. After a cloud upload (§7), enable podcast publishing.
-   - **Expected:** a `podcast.xml` is written next to the save folder, uploaded
-     to Drive, made public, and the feed URL is cached for the UI to show
-     ("submit this URL to Spotify/Apple").
-
-The actual podcast surface is the **Opptak/Filer** tab's podcast card. Since
-PR #114 (2026-08-09) its **Generer feed nå** (`btn-podcast-regenerate`,
-files-page.ts) is real: `window.api.podcastRegenerate(service)` invokes
-`publish_generate_feed` — the old permanent stub (`async () => ({ ok: false })`,
-every click ending in «✕ ukjent feil») is gone, and a failure now names its
-actual reason. The card is also honestly gated: on panel load
-`podcastFeedStatus` → `publish_feed_status` asks whether the default-off
-`publish` feature was compiled in, and a build without it disables the button
-with «RSS-generering er ikke med i denne bygningen av SundayRec.» instead of
-offering a doomed click. (There is still no **Forhåndsvis feed** control —
-`publish_feed_preview` remains reachable from no UI path, see
-`scripts/command-reachability-baseline.json`.) The XML shaping itself stays
-unit-tested in `sundayrec-core::feed`.
-
-2. (`--features publish` build) Open the podcast card, click **Generer feed
-   nå**.
-   - **Expected:** the status walks «Genererer…» → «✓ N episoder publisert»
-     and the feed URL row appears; a failure states its reason (e.g. «velg
-     lagringsmappe først», «koble til skytjenesten først») — never «ukjent
-     feil» for a known code. In a **default** build the button must be
-     disabled by the feature gate; a clickable button that then fails is the
-     bug to report now.
-
-> [NET] File/HTTP publish never runs in the gate — only the XML shaping is
-> tested (se markøren i §10-innledningen); the per-recording share URLs aren't
-> persisted yet so the preview uses the local file path as a placeholder
-> `audio_url` (see `commands::publish` + NEEDS-RICHARD).
+The RSS feed, the `publish` feature and the Podcast card left the app
+2026-08-23.
 
 ---
 
@@ -516,46 +443,10 @@ npm run tauri dev   # drive the Transkribering disclosure
 
 ---
 
-## 10c. (Optional) Live cue bridge [INFRA] — `--features bridge`
+## 10c. ~~Live cue bridge~~ — REMOVED (v0.14 feature, core consumer gone in R1)
 
-Bridge Integration #2: SundayRec SUBSCRIBES to SundayStage's Supabase Realtime
-cue channel `church:{churchId}:service:{serviceId}` and folds each inbound
-`LiveEvent` (cue.advanced / now_playing / service.live / service.ended) into
-chapter markers + live/ended state. The channel-name derivation, the `LiveEvent`
-shape, the monotonic-`seq` gap/replay handling, and the event→chapter fold are
-unit-tested in `sundayrec-core::integrations::live_bridge`. The renderer can
-exercise the mapping with **no feature** via `live_bridge_map_event` (folds one
-raw `LiveEvent` JSON → a chapter). The native WebSocket subscribe is
-**INFRA-UNVERIFIED** behind the default-off `bridge` feature.
-
-```bash
-cargo build -p sundayrec --features bridge
-```
-
-1. `live_bridge_channel("ch1","svc1")` → `church:ch1:service:svc1`;
-   `live_bridge_map_event` returns `chapter_added`/`went_live`/`ended`/`cue_only`
-   for the matching event types — works in any build.
-2. With the feature ON + SundayStage publishing on a live Supabase project, the
-   native `bridge_live::subscribe` connects (Phoenix `phx_join`) and folds
-   broadcasts; chapters accrue on the running recording.
-   - **Expected:** with `RUST_LOG=sundayrec=debug`, each folded event logs its
-     effect + seq; a `feature_disabled` error means the build lacks `--features
-bridge`.
-
-⚠️ **The UI this section used to describe does not exist.** (2026-08-08
-burndown.) Today's **Sunday-suite/Avansert** panel (integrations-page.ts) has
-opt-in toggles, a churchId + two API-URL fields and API-key rows — no serviceId
-field, no **Vis kanalnavn** button, no native-bridge banner, and it never calls
-`live_bridge_channel` / `live_bridge_status`: all three `live_bridge_*`
-commands are registered but reachable from no UI path
-(`scripts/command-reachability-baseline.json`). The channel-name derivation and
-the event fold stay unit-tested in
-`sundayrec-core::integrations::live_bridge`; exercising the commands
-themselves is an IPC-harness job, not a rig step, until a UI exists.
-
-> [INFRA] The Realtime handshake + broadcast decode need a live Supabase project
->
-> - the Stage app publishing — never run in the gate. Only the core fold is tested.
+`core/integrations/live_bridge.rs` left with the Sunday-suite integrations
+2026-08-23.
 
 ---
 
@@ -742,22 +633,19 @@ npm run tauri dev   # drive the Redigering disclosure — editor is on by defaul
      correction), and cycling through three options before settling leaves ONE
      record — the block you settled on.
    - The restore rides on detection, so it happens when detection does: video
-     files, review-mode and a restored cuts-draft do not auto-analyse, and there
-     the correction comes back when you press **Analyser opptak**.
-9. **E8 the other two signals reach the same file:** on a queued episode, open
-   review, drag the sermon start a good ten seconds off where it was proposed,
-   and publish. Then build the AI companion on a transcribed recording, press
-   **→ Bruk i metadata**, type one character into the title field, and switch to
-   another recording.
-   - **Expected:** the same `<base>.feedback.json` now also holds a
-     `trimAdjustments` entry (two signed durations plus an app version — a
-     positive `startDeltaSec` means you pushed the start LATER) and
+     files and a restored cuts-draft do not auto-analyse, and there the
+     correction comes back when you press **Analyser opptak**.
+9. **E8 the companion signal reaches the same file:** build the AI companion on
+   a transcribed recording, press **→ Bruk i metadata**, type one character
+   into the title field, and switch to another recording.
+   - **Expected:** the same `<base>.feedback.json` now also holds
      `companionSuggestions` entries (`title` accepted with
      `editedAfterAccept: true`, the ones you never touched `left_alone`). Still
      no path, filename, suggestion text or clock time anywhere in the file.
-   - Publish the same episode again with the boundaries back where the analysis
-     proposed them: the `trimAdjustments` entry DISAPPEARS (you took the
-     correction back), while a sermon-pick correction in the same file stays.
+   - (The third signal, `trimAdjustments`, was only ever written by the review
+     queue's publish step — with the queue gone in R1 «Frivilligen først»
+     nothing writes it any more; existing sidecars keep theirs. R2 decides the
+     learning loop's fate.)
    - The companion events belong to the recording the panel was showing, not the
      one you switched to — check that the second recording's sidecar did not
      appear when you switched away from the first.
@@ -917,26 +805,11 @@ real camera frame) through the SAME backend a recording uses, then reports
 
 ---
 
-## §PU-6 — Episode prep + human-review queue (no feature)
+## §PU-6 — ~~Episode prep + human-review queue~~ — REMOVED (R1 «Frivilligen først»)
 
-The prep/review decisions (which recordings need attention + why, the
-sermon-detection summary, the reminder sweep cadence) are unit-tested in
-`sundayrec-core::{prep, review_queue}`; the queue is persisted in SQLite. No
-feature flag — this was part of PU-6. The **Gjennomgang** panel (R6) drives it.
-
-1. After a recording (§5) is queued for review, open the **Gjennomgang**
-   disclosure.
-   - **Expected:** the recording appears with its detected sermon block + the
-     "attention" reasons (e.g. short duration, silence flagged).
-2. Click **Godkjenn** (approve) or **Forkast** (discard) on a row.
-   - **Expected:** the row leaves the queue (`review_mark_published` /
-     `review_mark_discarded`); relaunching the app keeps the change.
-3. Run the reminder sweep (`review_process_reminders`).
-   - **Expected:** entries past their reminder window surface a notification.
-
-> The core decisions are unit-tested in Rust; the panel data-flow + IPC are
-> browser-tier testable (the e2e/ harness exists since E5.2) but have no spec
-> covering them yet; the on-screen render is // GUI-UNVERIFIED.
+The review queue, the reminder ladder, the tray callout and the editor's
+review mode left the app 2026-08-23. The editor ALWAYS auto-detects the sermon
+on open now (§12 step 8).
 
 ---
 
@@ -1105,66 +978,10 @@ earlier phases hadn't reached. Pure decisions live in `sundayrec-core` (unit-
 tested); the I/O seams are annotated and, where they touch new hardware/network,
 gated behind a default-off feature.
 
-### Sunday-suite integrations (no feature) — 11 handlers
+### ~~Sunday-suite integrations~~ — REMOVED (R1 «Frivilligen først»)
 
-Mirrors `src/main/ipc/integrations.ts`. Typed opt-in settings + the Song/Plan/
-SundayEdit hand-offs. The mappers (settings shallow-merge, usage-payload shaping +
-idempotency key, plan metadata/schedule, sundayedit deep link + SRT/VTT parse,
-sidecar paths) are unit-tested in `sundayrec-core::integrations`; the HTTP
-submissions + the `sundayedit://` launch reuse the always-present `reqwest`/opener
-(no new dep, no feature) and are **NETWORK-UNVERIFIED**.
-
-⚠️ **Seam gap found in the 2026-08-08 burndown — CLOSED by PR #114
-(2026-08-09):** the Sunday-suite panel's `window.api` methods were permanent
-stubs in api-shim.ts, so the toggles showed «Lagret ✓» while persisting
-nothing and a pasted API key never reached the keychain. The stubs are now
-wired to the real `integrations_*` commands (all of them left the
-`unreachable` set in `scripts/command-reachability-baseline.json`), and the
-panel's receipts are honest: «Lagret ✓» appears only after the IPC answered, a
-failed save shows its reason instead of the chip, and the key field's ✓ waits
-for the keychain write. The renderer half of that seam is pinned in
-`e2e/integrations.spec.ts`; the steps below exercise the backend half.
-
-- VERIFIED-BY: e2e/integrations.spec.ts::the panel renders the STORED settings and a toggle's receipt follows a real persist
-- VERIFIED-BY: e2e/integrations.spec.ts::a failed integrations save says so — and never shows «Lagret ✓»
-- VERIFIED-BY: e2e/integrations.spec.ts::the Song API key ✓ appears only after the keychain write happened
-- VERIFIED-BY: e2e/integrations.spec.ts::a failed keychain write shows its reason instead of the ✓
-
-1. `integrations_get_settings` / `integrations_set_settings` round-trip the
-   opt-in blob under the `integrations` kv key.
-   - **Expected:** a partial patch (e.g. `{ enabled: true }`) merges shallowly —
-     it never clobbers a stored `connection` it didn't send (`merge_patch_json`).
-2. `integrations_song_set_apikey` / `integrations_song_has_apikey` use the
-   keychain (`integrations.song_api_key` slot), never the settings blob.
-3. With `song.enabled` + a `.service.json` sidecar present,
-   `integrations_song_submit_usage` POSTs one payload per song to
-   `<songApiUrl>/v1/usage/log` (409 = duplicate counts as submitted).
-   - **Expected:** `disabled` when the song flow is off; `no_service_link` /
-     `no_songs` with a hint when the sidecar/setlist is missing. The guard
-     decision is the pure `song_usage_gate`, tested; only the POST itself
-     stays network-bound (se markøren i innledningen).
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_disabled_when_song_flow_off
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_no_service_link_without_sidecar
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_no_songs_without_church_or_setlist
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::song_usage_gate_ready_yields_one_payload_per_song
-4. `integrations_plan_fetch_services` reads `<planApiUrl>/rest/v1/service`,
-   enriching each with `meta` (title/speaker) + `schedule` (local 2-h window);
-   `integrations_plan_update_service` PATCHes `was_streamed_flag`/`recording_url`.
-   - **Expected:** `plan_not_ready` until `plan.enabled` + a `planApiUrl` are set;
-     `no_church_id` without one. The guard decision is the pure
-     `plan_fetch_gate`, tested; only the HTTP fetch itself stays network-bound
-     (se markøren i innledningen).
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::plan_fetch_gate_not_ready_until_enabled_and_url
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::plan_fetch_gate_no_church_id_without_one
-5. `integrations_sundayedit_send` opens `sundayedit://import?…`; `..._import` parses a
-   SundayEdit SRT/VTT into the recording's `.transcript.json`.
-   - **Expected:** `sundayedit_not_installed` when no scheme handler (that
-     half needs the peer app — se markøren i innledningen);
-     `no_captions_parsed` when the subtitle file yields no segments — the
-     import parse is a plain function and is pinned:
-   - VERIFIED-BY: src-tauri/src/commands/integrations.rs::sundayedit_import_reports_no_captions_parsed_for_an_empty_vtt
-
-(SundayStage manifest import is `stage_import_manifest`, covered by §PU-6.)
+The Song/Plan/SundayEdit/Stage hand-offs, the integrations panel and the
+`sundayrec://` scheme left the app 2026-08-23.
 
 ### Audio diagnostics (no feature) — `list_video_devices` + `diagnose_audio`
 

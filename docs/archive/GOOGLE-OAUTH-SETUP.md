@@ -1,5 +1,9 @@
 # Google OAuth Setup (Desktop client) — Cloud Connect
 
+> **ARKIVERT (R1 «Frivilligen først», 2026-08-23):** cloud backup, the
+> Google OAuth client and the Gmail transport were removed from SundayRec.
+> This document describes code that now lives only in git history.
+
 SundayRec backs up recordings to **Google Drive** and (later) publishes to
 **YouTube** / sends mail via **Gmail**, all through a **single Google OAuth
 client** using the **Desktop / installed-app loopback** flow with PKCE. This doc

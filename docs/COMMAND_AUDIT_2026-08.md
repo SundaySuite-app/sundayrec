@@ -3,10 +3,22 @@
 > **Etterskrift (v0.14):** Direkte-fjerningen tok 16 av kommandoene i denne
 > revisjonen ut av registeret: `stream_*` (6), `ndi_*` (5, §4.5 —
 > eierbeslutningen falt på _fjern_), `live_bridge_*` (3, §4.6) og
-> `start_preview`/`stop_preview`. (`open_in_sundayedit`/`open_in_sundaystudio`
-> i `commands/bridge.rs` er en annen bro og består.) Tallene og tabellene under er ØYEBLIKKSBILDET
+> `start_preview`/`stop_preview`. Tallene og tabellene under er ØYEBLIKKSBILDET
 > fra august og oppdateres ikke; `scripts/check-command-reachability.mjs` +
 > baselinen er den levende sannheten.
+>
+> **Etterskrift (R1 «Frivilligen først», 2026-08-23):** delings-klyngen tok
+> ytterligere 48 kommandoer ut av registeret — alt som ikke tjener de fire
+> kjernejobbene (ta opp · rediger · miks/master · eksporter). Git-historikken
+> er feature-flagget. Borte: `cloud_*` (14, §4.1), `integrations_*` (10, §4.2)
+>
+> - `deeplink_confirm_captions` + `open_in_sundayedit`/`open_in_sundaystudio`
+>   (§4.10 — samme overleveringsidé, aldri nådd fra UI), `publish_*` (3, §4.6),
+>   `review_*` (7) + `prep_build_episode` + `stage_import_manifest`/
+>   `stage_import_apply` (§4.8), `thumbnail_*` (6) + `editor_extract_frame`
+>   (§4.10), og `email_test_webhook`. E-post-stien (`email_status`,
+>   `email_send_test`, nøkkelring-trioen) BESTÅR — minimal, SMTP-only. Dagens
+>   tall: 130 registrert / 115 nådd / 15 unådd (se baselinen).
 
 **Hva dette er:** en fullstendig gjennomgang av hver eneste Tauri-kommando appen
 registrerer, og svaret på ett spørsmål per kommando: _kan brukergrensesnittet i
@@ -141,21 +153,21 @@ arbeid.
 
 ### 4.1 Sky-lagring — 13 kommandoer · anbefaling: **BEHOLD** · 👤
 
-| Kommando                  | Anbefaling | Begrunnelse                                                                                                                                                                            |
-| ------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cloud_connection_status` | behold     | Hele området venter på én ting: en Google OAuth-klient-ID av typen «Desktop app» (`SUNDAYREC_GOOGLE_CLIENT_ID`, se `docs/GOOGLE-OAUTH-SETUP.md` og punkt 5 i `docs/NEEDS-RICHARD.md`). |
-| `cloud_connect`           | behold     | Uten ID-en kan ikke innloggingsvinduet åpnes i det hele tatt.                                                                                                                          |
-| `cloud_cancel_connect`    | behold     | Følger `cloud_connect`.                                                                                                                                                                |
-| `cloud_list_folders`      | behold     | Følger innloggingen.                                                                                                                                                                   |
-| `cloud_set_folder`        | behold     | Følger innloggingen.                                                                                                                                                                   |
-| `cloud_get_folder`        | behold     | Følger innloggingen.                                                                                                                                                                   |
-| `cloud_process_queue_now` | behold     | Køen kjører i backend når kontoen finnes.                                                                                                                                              |
-| `cloud_queue_status`      | behold     | Statuskortet er allerede tegnet, men gatet.                                                                                                                                            |
-| `cloud_enqueue_backup`    | behold     | Følger køen.                                                                                                                                                                           |
-| `cloud_retry_upload`      | behold     | Følger køen.                                                                                                                                                                           |
-| `cloud_remove_upload`     | behold     | Følger køen.                                                                                                                                                                           |
-| `cloud_clear_failed`      | behold     | Følger køen.                                                                                                                                                                           |
-| `cloud_disconnect`        | behold     | Følger innloggingen.                                                                                                                                                                   |
+| Kommando                  | Anbefaling | Begrunnelse                                                                                                                                                                                    |
+| ------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cloud_connection_status` | behold     | Hele området venter på én ting: en Google OAuth-klient-ID av typen «Desktop app» (`SUNDAYREC_GOOGLE_CLIENT_ID`, se `docs/archive/GOOGLE-OAUTH-SETUP.md` og punkt 5 i `docs/NEEDS-RICHARD.md`). |
+| `cloud_connect`           | behold     | Uten ID-en kan ikke innloggingsvinduet åpnes i det hele tatt.                                                                                                                                  |
+| `cloud_cancel_connect`    | behold     | Følger `cloud_connect`.                                                                                                                                                                        |
+| `cloud_list_folders`      | behold     | Følger innloggingen.                                                                                                                                                                           |
+| `cloud_set_folder`        | behold     | Følger innloggingen.                                                                                                                                                                           |
+| `cloud_get_folder`        | behold     | Følger innloggingen.                                                                                                                                                                           |
+| `cloud_process_queue_now` | behold     | Køen kjører i backend når kontoen finnes.                                                                                                                                                      |
+| `cloud_queue_status`      | behold     | Statuskortet er allerede tegnet, men gatet.                                                                                                                                                    |
+| `cloud_enqueue_backup`    | behold     | Følger køen.                                                                                                                                                                                   |
+| `cloud_retry_upload`      | behold     | Følger køen.                                                                                                                                                                                   |
+| `cloud_remove_upload`     | behold     | Følger køen.                                                                                                                                                                                   |
+| `cloud_clear_failed`      | behold     | Følger køen.                                                                                                                                                                                   |
+| `cloud_disconnect`        | behold     | Følger innloggingen.                                                                                                                                                                           |
 
 `cloud_is_configured` **er** koblet opp, og det er nettopp det som gjør dagens
 tilstand ærlig: Deling-siden spør backend om nøkkelen finnes, og skriver «Ikke
@@ -172,11 +184,12 @@ det er 13 kommandoer og et helt UI som vedlikeholdes uten å brukes.
 > ekte `invoke`-kall for alle ti kommandoene under: panelet lagrer nå gjennom
 > `integrations_get/set_settings`, API-nøkkelen når nøkkelringen, og
 > kvitteringene er ærlige («Lagret ✓» først etter at IPC-en svarte; en feilet
-> lagring viser grunnen). Renderer-halvdelen er pinnet i
+> lagring viser grunnen). Renderer-halvdelen ble pinnet i
 > `e2e/integrations.spec.ts`, og alle ti forlot `unreachable`-settet i
 > `scripts/command-reachability-baseline.json`. Tabellen under står som
 > beslutningsgrunnlaget slik det så ut FØR #114 — les «Anbefaling» som
-> historikk, ikke som gjenstående arbeid.
+> historikk, ikke som gjenstående arbeid. **(R1 2026-08-23: hele gruppa — og
+> spec-en — er fjernet; se etterskriftet øverst.)**
 
 | Kommando                           | Anbefaling | Begrunnelse                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

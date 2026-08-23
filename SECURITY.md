@@ -45,14 +45,14 @@ often started once and left unattended for the length of a service. The
 operator is not a security professional, and the machine is not IT-managed.
 Trust boundaries the app has to defend at:
 
-- **`sundayrec://` deep links** — inbound custom-scheme URLs from other apps
-  or a web page, which can be triggered without the operator's intent.
 - **Media files and their sidecars** — recordings, intro/outro clips,
-  subtitle files, transcripts — paths and content that ultimately come from
-  outside the process (a picked file, an imported recording, another Sunday
-  app).
-- **User-configured URLs** — webhook, SMTP, and integration API endpoints the
-  operator types in, which can point anywhere, including the local network.
+  transcripts — paths and content that ultimately come from outside the
+  process (a picked file, an imported recording).
+- **User-configured endpoints** — the SMTP host the operator types in, which
+  can point anywhere, including the local network.
+- (The `sundayrec://` deep-link scheme, the chat webhook and the integration
+  API endpoints were removed in R1 of «Frivilligen først» — fewer boundaries
+  to defend.)
 - **The update feed** — a **first-party Cloudflare Worker** at
   `https://updates.sundaysuite.app/v1/update/{stable|beta}`, which the
   auto-updater polls, plus the signed artifact it downloads and installs.
@@ -127,9 +127,10 @@ So a future auditor doesn't have to re-derive these from scratch:
   Windows Steinberg ASIO SDK download is SHA-256-pinned as a hard-fail
   (E1.5) — the SDK is a fixed 2019 artifact, so an unexpected hash means the
   download was tampered with or moved.
-- **PKCE + loopback for OAuth.** Google (Drive/YouTube/Gmail) OAuth uses the
+- **PKCE + loopback for OAuth.** The Sunday Account (SSO) login uses the
   PKCE flow with a loopback redirect, avoiding a stored client secret in the
-  desktop binary.
+  desktop binary. (The Google Drive/YouTube/Gmail OAuth client that followed
+  the same pattern left with cloud backup in R1 of «Frivilligen først».)
 - **Updater signature verification.** Tauri's built-in updater verifies a
   minisign signature (`plugins.updater.pubkey` in `tauri.conf.json`) on every
   downloaded update before installing it.
