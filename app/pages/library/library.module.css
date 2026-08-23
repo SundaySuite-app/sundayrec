@@ -1,0 +1,134 @@
+/*
+ * BIBLIOTEK — én liste, og de to setningene under den.
+ *
+ * Radene er ikke en tabell. En tabell trenger kolonneoverskrifter for å bety
+ * noe, og de fem overskriftene legacy har (Tidspunkt · Varighet · Filnavn ·
+ * Status · handlinger) er nettopp den strukturen canvasens sett 3 folder bort:
+ * datoen ER tittelen, og resten er fakta under den.
+ */
+
+.page {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+  /* Bunnlinja skal ligge nederst også når lista er kort. */
+  min-height: 100%;
+  grid-template-rows: auto 1fr auto;
+}
+
+/* Tellelinja til venstre, søkefeltet til høyre. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin: calc(-1 * var(--sp-2)) 0 0;
+}
+
+.sub {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.search {
+  flex: 0 1 280px;
+}
+
+/* Skjult for øyet, lest av skjermleseren — søkefeltet har ingen synlig
+   etikett, og et felt uten navn er et felt ingen får vite hva gjør. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.list {
+  display: grid;
+  gap: var(--sp-2);
+  align-content: start;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--fs-val);
+  overflow-wrap: anywhere;
+}
+
+/* Varighet og brikker på samme linje under tittelen. */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.muted {
+  margin-top: var(--sp-1);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+/* Bunnlinja: automatisk sletting til venstre, papirkurven til høyre. */
+.foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+}
+
+.footNote {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+/* Papirkurven: overskriftsraden med veien tilbake. */
+.trashHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin: calc(-1 * var(--sp-2)) 0 0;
+}
+
+.trashFoot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line);
+}

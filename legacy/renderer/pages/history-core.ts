@@ -37,10 +37,15 @@ export interface RecordingEntry {
 }
 
 /** One rendered row: the primary recording plus the video file of the same
- *  session, when there is one. */
-export interface PairedRecording {
-  r: RecordingEntry
-  videoEntry: RecordingEntry | null
+ *  session, when there is one.
+ *
+ *  Generic over the row so a caller with a WIDER entry type gets it back
+ *  (P3: `app/pages/library` needs `startedAt`, which the shim adds on top of
+ *  this module's structural minimum). Type-only; the default keeps every
+ *  existing call site reading exactly as before. */
+export interface PairedRecording<T extends RecordingEntry = RecordingEntry> {
+  r: T
+  videoEntry: T | null
 }
 
 export type HistorySortKey = 'time' | 'duration'
@@ -103,7 +108,7 @@ function durationOf(r: RecordingEntry): number {
  * nothing to match them on, and guessing from a shared minute would merge two
  * genuinely different recordings.
  */
-export function pairRecordings(rows: RecordingEntry[]): PairedRecording[] {
+export function pairRecordings<T extends RecordingEntry>(rows: T[]): PairedRecording<T>[] {
   const groups = new Map<string, number[]>()
   rows.forEach((r, i) => {
     const key = r.path ? `p:${baseNoExt(r.path)}` : `i:${i}`
@@ -125,7 +130,7 @@ export function pairRecordings(rows: RecordingEntry[]): PairedRecording[] {
     folded.add(Math.max(audio, video))
   }
 
-  const out: PairedRecording[] = []
+  const out: PairedRecording<T>[] = []
   rows.forEach((r, i) => {
     if (folded.has(i)) return
     const p = pairAt.get(i)

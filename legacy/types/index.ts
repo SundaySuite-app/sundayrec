@@ -49,6 +49,17 @@ export interface RecordingEntry {
   timestamp?: number
   fileSizeBytes?: number    // actual file size on disk after recording
   durationSec?: number      // recording duration in seconds
+  /**
+   * When the recording BEGAN, epoch ms — `recording.started_at` straight from
+   * the row (P3).
+   *
+   * `timestamp` is `created_at ?? started_at`, i.e. when the row was WRITTEN,
+   * which for a finished service is when it ENDED. Dating a row by that is off
+   * by the whole length of the recording: the 11:00 service reads «12:05». The
+   * old table only ever showed a date, so the hour never mattered; Bibliotek
+   * puts the clock in the title, so it does.
+   */
+  startedAt?: number
 }
 
 /**

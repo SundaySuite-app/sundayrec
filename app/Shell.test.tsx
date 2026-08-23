@@ -7,6 +7,7 @@ import { Overlays, Shell } from "./Shell";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
 import { recordings } from "./state/recordings";
+import { trashEntries } from "./state/trash";
 import { patchSettings } from "./state/settings";
 
 // Fortsatt det ene stedet i enhetsgaten som beviser (a) at `.tsx` kompilerer
@@ -100,9 +101,11 @@ describe("Shell", () => {
     navigate("library");
     recordings.value = null;
     const html = render(<Shell />);
-    // Verken «ingen opptak» eller et antall: vi vet ikke ennå.
+    // Verken «ingen opptak» eller en liste: vi vet ikke ennå. Papirkurv-lenken
+    // står likevel — den er den ene tingen som ALLTID skal ha en dør.
     expect(html).not.toContain('data-testid="library-empty"');
-    expect(html).not.toContain('data-testid="library-stored"');
+    expect(html).not.toContain('data-testid="library-row"');
+    expect(html).toContain('data-testid="library-trash-open"');
   });
 
   it("BIBLIOTEK viser tomtilstanden bare når det FAKTISK er tomt", () => {
@@ -110,11 +113,40 @@ describe("Shell", () => {
     recordings.value = [];
     expect(render(<Shell />)).toContain('data-testid="library-empty"');
 
-    recordings.value = [row(), row(), row()];
+    recordings.value = [
+      row({ path: "/a.mp3", filename: "a.mp3" }),
+      row({ path: "/b.mp3", filename: "b.mp3" }),
+      row({ path: "/c.mp3", filename: "c.mp3" }),
+    ];
     const withRows = render(<Shell />);
-    expect(withRows).toContain('data-testid="library-stored"');
+    expect(withRows).toContain('data-testid="library-row"');
+    expect(withRows).toContain("Opptak: 3");
     expect(withRows).not.toContain('data-testid="library-empty"');
     recordings.value = null;
+  });
+
+  it("BIBLIOTEK har en papirkurv-inngang også når kurven er tom", () => {
+    // Atlaset §5, funn 9: legacy skjuler «Papirkurv»-lenken når `trash_list`
+    // er tom, så en frivillig som slettet noe i går og leter etter det i dag
+    // finner ingen dør hvis sveipen har vært innom i mellomtiden.
+    navigate("library");
+    recordings.value = [];
+    trashEntries.value = [];
+    const html = render(<Shell />);
+    expect(html).toContain('data-testid="library-trash-open"');
+    expect(html).toContain("Papirkurven er tom");
+    trashEntries.value = null;
+    recordings.value = null;
+  });
+
+  it("PAPIRKURVEN er en fane inne i BIBLIOTEK, ikke et fjerde sted", () => {
+    navigate("library", { tab: "trash" });
+    const html = render(<Shell />);
+    // Skinnen står på BIBLIOTEK hele veien; det er overskriften som bytter.
+    expect(html).toMatch(/data-testid="nav-library"[^>]*aria-current="page"/);
+    expect(html).toContain('data-testid="trash-back"');
+    expect(html).toMatch(/data-testid="app-heading"[^>]*>Papirkurv</);
+    navigate("library");
   });
 
   it("OPPSETT viser de fem spørsmålene, med svaret som gjelder nå", () => {

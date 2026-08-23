@@ -579,6 +579,13 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
   if (r.id) historyIdByTs.set(ts, r.id);
   return {
     timestamp: ts,
+    // `started_at` UNTOUCHED alongside `timestamp`, which is `created_at ??
+    // started_at` — the moment the ROW was written, i.e. when a finished
+    // service ENDED. The old table only showed a date, so the difference never
+    // showed; the new Bibliotek puts the clock in the row's title, where an
+    // hour's drift is the difference between «11:00» and «12:05». Additive:
+    // every existing consumer reads the fields it always did.
+    startedAt: r.started_at,
     date: new Date(ts).toISOString(),
     startTime: "",
     path,

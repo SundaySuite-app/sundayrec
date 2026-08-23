@@ -16,9 +16,8 @@
  *
  *   OPPTAK    ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
  *             stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
- *   BIBLIOTEK antall opptak telles på ekte (`recordings_list`). Null →
- *             tomtilstanden. Flere → hvor de ligger. Aldri «ingen opptak» på
- *             en maskin som har tolv.
+ *   BIBLIOTEK ER bygget (P3): lista, søket, slett-med-angre og papirkurven.
+ *             Se `app/pages/library/`.
  *   OPPSETT   ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
  *             nå, de fem skjermene «Endre» åpner, de to tilleggene og
  *             Avansert. Se `app/pages/setup/`.
@@ -51,26 +50,22 @@
 
 import { useEffect } from "preact/hooks";
 
-import { t, tDyn } from "./i18n";
+import { tDyn } from "./i18n";
+import {
+  libraryHeading,
+  LibraryPage,
+  TRASH_TAB,
+} from "./pages/library/LibraryPage";
+import { TrashPage } from "./pages/library/TrashPage";
 import { RecordPage } from "./pages/record/RecordPage";
 import { RecordingOverlay } from "./pages/record/RecordingOverlay";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
-import {
-  consumePendingAction,
-  navigate,
-  pendingAction,
-  route,
-} from "./router/router";
+import { consumePendingAction, pendingAction, route } from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
-import { recordingCount } from "./state/recordings";
 import { hydrateError, settings } from "./state/settings";
 import { Banner } from "./ui/Banner/Banner";
-import { Button } from "./ui/Button/Button";
-import { Card } from "./ui/Card/Card";
-import { Chip } from "./ui/Chip/Chip";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
-import { EmptyState } from "./ui/EmptyState/EmptyState";
 import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
 
@@ -87,7 +82,14 @@ export function Shell({ probe }: ShellProps) {
   const firstRun = current.firstRun === true;
 
   return (
-    <PageShell heading={firstRunHeading(firstRun) ?? setupHeading(current.tab)}>
+    <PageShell
+      heading={
+        firstRunHeading(firstRun) ??
+        (current.page === "library"
+          ? libraryHeading(current.tab)
+          : setupHeading(current.tab))
+      }
+    >
       {/*
         Aldri stille defaults: når `settings_get` feilet svarer api-shimmen med
         SETTINGS_DEFAULTS, og en ødelagt base ser da nøyaktig ut som en
@@ -108,7 +110,11 @@ export function Shell({ probe }: ShellProps) {
       ) : current.page === "record" ? (
         <RecordPage />
       ) : current.page === "library" ? (
-        <LibraryPlaceholder />
+        current.tab === TRASH_TAB ? (
+          <TrashPage />
+        ) : (
+          <LibraryPage />
+        )
       ) : (
         <SetupPage />
       )}
@@ -145,41 +151,4 @@ function useTrayFolder(): void {
     const folder = (settings.peek().saveFolder ?? "").trim();
     if (folder) void window.api.openFolder(folder);
   }, [armed]);
-}
-
-// ── BIBLIOTEK ───────────────────────────────────────────────────────────────
-
-function LibraryPlaceholder() {
-  const count = recordingCount.value;
-
-  // Ikke lest ennå: ingen påstand i noen retning.
-  if (count === null) return null;
-
-  if (count === 0) {
-    return (
-      <EmptyState
-        testId="library-empty"
-        title={t("app.library.empty")}
-        description={t("app.library.emptyDesc")}
-        action={
-          <Button
-            variant="primary"
-            testId="library-go-record"
-            onClick={() => navigate("record")}
-          >
-            {t("app.library.goRecord")}
-          </Button>
-        }
-      />
-    );
-  }
-
-  return (
-    <Card
-      testId="library-stored"
-      title={t("app.library.stored")}
-      description={settings.value.saveFolder ?? undefined}
-      actions={<Chip tone="neutral">{count}</Chip>}
-    />
-  );
 }
