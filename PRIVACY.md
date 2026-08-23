@@ -24,7 +24,7 @@ Resten av dokumentet forklarer detaljene, og hvorfor du kan etterprøve dem.
 ## Hva denne erklæringen gjelder — og hva den ikke gjelder
 
 Den gjelder **kun** den valgfrie diagnostikk- og bruksstatistikk-funksjonen,
-som du finner under **Innstillinger → System**.
+som du finner under **Oppsett → Avansert → «Del anonym diagnostikk»**.
 
 Resten av SundayRec sender aldri noe **til Sunday Suite** av seg selv, uansett
 hva du svarer her. Det finnes to unntak, og ingen av dem styres av dette
@@ -79,8 +79,8 @@ nettverksloggingen er slått av for hele tjeneren, og den loggingen tjeneren
 selv gjør, godtar kun et fast sett med felt som ikke identifiserer noen. En
 IP-adresse har ingen plass å havne i.
 
-**Du kan slå det av.** Under **Innstillinger → System** finnes «Oppdater
-automatisk». Slår du den av, tar appen ikke kontakt med serveren — verken ved
+**Du kan slå det av.** Under **Oppsett → Avansert → «Oppdateringer»** finnes
+«Oppdater automatisk». Slår du den av, tar appen ikke kontakt med serveren — verken ved
 oppstart eller den vanlige sjekken hver time. Det ene unntaket er om du selv
 trykker «Se etter oppdateringer nå», for da er det du som har bedt om det.
 
@@ -308,8 +308,8 @@ Du blir spurt — første gang i oppstartsveilederen for nye installasjoner, ell
 i et engangsspørsmål for installasjoner som allerede er satt opp.
 
 Du kan når som helst trekke samtykket tilbake, eller gi det på nytt, under
-**Innstillinger → System**. Å svare nei endrer ingenting i hvordan SundayRec
-fungerer.
+**Oppsett → Avansert → «Del anonym diagnostikk»**. Å svare nei endrer ingenting
+i hvordan SundayRec fungerer.
 
 ---
 
@@ -327,7 +327,7 @@ IP-adresser lagres aldri, verken midlertidig eller permanent.
 
 ## Slette dine data
 
-Under **Innstillinger → System → «Slett mine data»** skjer to ting.
+Under **Oppsett → Avansert → «Slett mine data»** skjer to ting.
 
 **Umiddelbart, lokalt på din maskin:** installasjons-ID-en din byttes ut med en
 ny og urelatert, og rapporter som ventet på å bli sendt, tømmes. Fra det
@@ -353,8 +353,8 @@ slette. Det er også nettopp derfor de kan beholdes.
 
 ## «Vis hva som sendes»
 
-Under **Innstillinger → System** kan du når som helst åpne en forhåndsvisning
-av nøyaktig den datapakken SundayRec ville sendt neste gang.
+Under **Oppsett → Avansert → «Hva sendes»** kan du når som helst åpne en
+forhåndsvisning av nøyaktig den datapakken SundayRec ville sendt neste gang.
 
 Dette er ikke et eksempel eller en illustrasjon. Det er de faktiske dataene,
 slik de faktisk ville blitt sendt.

@@ -28,8 +28,8 @@ branch and no backporting of fixes to older versions. Please update before
 reporting an issue that may already be fixed.
 
 SundayRec auto-updates from one of two rings — `stable` and `beta` — chosen per
-install under **Innstillinger → System**. Every install is on `stable` unless
-somebody deliberately moved it. The feed URL is built at run time from that
+install under **Oppsett → Avansert → «Oppdateringer»**. Every install is on
+`stable` unless somebody deliberately moved it. The feed URL is built at run time from that
 setting (`channel_feed_url` in `crates/sundayrec-core/src/update.rs`), not from
 `tauri.conf.json`; the `plugins.updater` block there names the stable feed only
 as a fallback for a build that somehow bypasses that path.
