@@ -31,7 +31,9 @@ test.describe("settings seam — the full object crosses, boot only reads", () =
       goto: "settings:general",
     });
     // Give the module-load path room to misbehave before asserting silence.
-    await expect(page.getByTestId("setup-lede")).toBeVisible();
+    // (`settings:general` lands on Avansert since P1b; before that it fell
+    // through to level 1 and this waited on `setup-lede`.)
+    await expect(page.getByTestId("setup-advanced")).toBeVisible();
     expect(await settingsSavePayloads(page)).toEqual([]);
   });
 

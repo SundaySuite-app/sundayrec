@@ -310,15 +310,20 @@ test.describe("«Ta opp automatisk»", () => {
     await expect(page.getByTestId("auto-launch")).toBeVisible();
   });
 
-  test("å slå av flere tidspunkter spør først, med antallet i spørsmålet", async ({
+  test("å slå av beholder ALLE tidspunktene — det er et flagg, ikke en sletting", async ({
     page,
   }) => {
-    // ⚠️ «Av» er `slots: []` — det finnes ingen enabled-nøkkel i Settings. Da
-    // skal skjermen i det minste si hva som forsvinner.
+    // P1a stilte eierspørsmålet: «av» var `slots: []`, fordi `Settings` ikke
+    // hadde noe sted å huske «armert» — så bryteren måtte slette tiden for å
+    // slå seg av, og skjermen kunne bare si hva som forsvant. Eieren svarte, og
+    // P1b la til `autoRecordEnabled` med ÉN leser i Rust
+    // (`Settings::active_slots`). Nå spør bryteren ikke om noe, fordi
+    // ingenting forsvinner.
     await boot(page, {
       fixtures: BOOT_FIXTURES,
       settings: {
         ...SETTLED_SETTINGS,
+        autoRecordEnabled: true,
         slots: [
           { days: [6], start: "11:00", stop: "12:30", max: null },
           { days: [2], start: "19:00", stop: "20:30", max: null },
@@ -328,13 +333,15 @@ test.describe("«Ta opp automatisk»", () => {
     });
 
     await page.getByTestId("setup-auto-toggle").click();
-    const dialog = page.getByTestId("dialog");
-    await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText("2 faste tidspunkter blir borte.");
+    await expect(page.getByTestId("dialog")).toHaveCount(0);
+    await expect(page.getByTestId("setup-auto-toggle")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
 
-    // Avbryt ⇒ ingenting skjer.
-    await page.getByTestId("dialog-cancel").click();
-    await expect(dialog).toHaveCount(0);
+    await expect
+      .poll(async () => (await storedSettings(page)).autoRecordEnabled)
+      .toBe(false);
     expect((await storedSettings(page)).slots).toHaveLength(2);
   });
 });
