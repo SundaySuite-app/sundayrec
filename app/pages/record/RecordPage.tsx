@@ -50,6 +50,7 @@ import {
 } from "@lib/status/next-recording-core";
 import type { PreflightFinding } from "@lib/../bindings/PreflightFinding";
 
+import { openInEditor } from "../../editor/entry";
 import { locale, t, tDyn, tf, tn } from "../../i18n";
 import {
   consumePendingAction,
@@ -613,8 +614,13 @@ async function reveal(path: string | null): Promise<void> {
  * vet hva som faktisk ble skrevet, og det er forskjellen datatapsalarmen
  * finnes for.
  *
- * ⚠️ «Åpne i Rediger» kommer i P4. `askOpenEditor` har ingen leser i Rust
- * (ATLAS §2.6), så kortet vises uansett hva den innstillingen sier.
+ * «Åpne i Rediger» er med fra P4a: flaten finnes, og den er det man som oftest
+ * vil gjøre med et opptak som nettopp ble ferdig. Den er PRIMÆR og «Vis i
+ * Finder» sekundær — Finder er der man går når man skal gjøre noe utenfor
+ * appen, og redigering er inne i den.
+ *
+ * ⚠️ `askOpenEditor` har fortsatt ingen leser i Rust (ATLAS §2.6), så kortet
+ * vises uansett hva den innstillingen sier.
  */
 function Done() {
   const finished = finishedRecording.value;
@@ -650,6 +656,18 @@ function Done() {
       <div class={styles.row}>
         <Button
           variant="primary"
+          testId="record-done-edit"
+          onClick={() =>
+            openInEditor(
+              finished.path,
+              row?.startedAt ?? row?.timestamp ?? null,
+            )
+          }
+        >
+          {t("editor.promptOpen")}
+        </Button>
+        <Button
+          variant="secondary"
           testId="record-done-reveal"
           onClick={() => void reveal(finished.path)}
         >

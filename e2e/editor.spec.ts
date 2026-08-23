@@ -1,13 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
-import {
-  boot,
-  BOOT_FIXTURES,
-  fn,
-  SETTLED_SETTINGS,
-  VOID,
-  type Fixtures,
-} from "./harness";
+import { boot, fn, SETTLED_SETTINGS, type Fixtures } from "./harness";
 import type { EditorSegment } from "../legacy/bindings/EditorSegment";
+import { editorFixtures, FILE } from "./app/editor-fixtures";
 
 // The editor: open a fixtured recording, move between the three workspace tabs,
 // and correct the sermon pick.
@@ -16,62 +10,10 @@ import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 // history table's edit icon uses. The button and the drop zone both go through
 // the NATIVE file dialog (`@tauri-apps/plugin-dialog`), which no fixture can
 // stand in for, and drag-drop needs `File.path`, which browsers do not provide.
-
-const FILE = "/Users/test/Opptak/2026-08-02 Gudstjeneste.mp3";
-const DURATION = 600;
-
-/**
- * A recording whose timeline has THREE plausible sermon candidates, all ≥ 60 s
- * and already in time order — which is what makes the picker offer a real
- * choice.
- *
- * Typed as the GENERATED `EditorSegment` binding on purpose: these fixtures
- * stand in for what `editor_segments` puts on the wire, so a Rust-side field
- * rename must fail `npm run typecheck` here rather than quietly making the whole
- * sermon-detection UI inert (which is exactly what a `kind` / `type` split did
- * to every shipped build until this was fixed).
- */
-const SEGMENTS: EditorSegment[] = [
-  { start: 0, end: 30, duration: 30, label: "Stillhet", type: "silence" },
-  { start: 30, end: 180, duration: 150, label: "Tale", type: "speech" },
-  { start: 180, end: 210, duration: 30, label: "Musikk", type: "music" },
-  { start: 210, end: 420, duration: 210, label: "Preken", type: "sermon" },
-  { start: 420, end: 600, duration: 180, label: "Tale", type: "speech" },
-];
-
-function editorFixtures(over: Fixtures = {}): Fixtures {
-  return {
-    ...BOOT_FIXTURES,
-    editor_probe_streams: { hasVideo: false, hasAudio: true },
-    editor_load_recording: {
-      durationSec: DURATION,
-      hasVideo: false,
-      hasAudio: true,
-      channels: 2,
-      sampleFmt: "s16",
-      sampleRate: 48_000,
-    },
-    editor_allow_asset_path: VOID,
-    // ~100 buckets/sec. Generated in the page rather than shipped as a 60 000
-    // element literal across the init-script boundary.
-    editor_peaks: fn(`() => {
-      (window.__E2E_CALLS__ ||= {}).editor_peaks = ((window.__E2E_CALLS__.editor_peaks || 0) + 1);
-      return { peaks: Array.from({ length: ${DURATION} * 100 }, (_, i) => Math.abs(Math.sin(i / 137))), sampleRate: 8000 };
-    }`),
-    editor_segments: fn(`() => {
-      (window.__E2E_CALLS__ ||= {}).editor_segments = ((window.__E2E_CALLS__.editor_segments || 0) + 1);
-      return ${JSON.stringify(SEGMENTS)};
-    }`),
-    editor_read_sidecar: null,
-    editor_write_sidecar: true,
-    editor_delete_sidecar: true,
-    editor_master_presets: [],
-    editor_probe_peak: -3,
-    editor_detect_chapters: [],
-    editor_cleanup_temp_files: 0,
-    ...over,
-  };
-}
+//
+// The FIXTURE RECIPE itself moved to `e2e/app/editor-fixtures.ts` in P4a, so the
+// new shell's editor spec is fed exactly the same wire shape. Nothing about
+// this file's behaviour changed with it.
 
 async function openEditor(page: Page, over: Fixtures = {}) {
   await boot(page, {

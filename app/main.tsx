@@ -48,6 +48,7 @@ import { setShimNotifier } from "@lib/api-shim";
 import { parseGoto } from "@lib/goto-core";
 import { render } from "preact";
 
+import { installEditorEntry } from "./editor/entry";
 import { resolveStartupLocale, setLocale, t } from "./i18n";
 import {
   installGlobalNavigation,
@@ -130,6 +131,11 @@ render(<Overlays />, overlayHost);
 installGlobalNavigation((id) => navigateFromShim(id));
 installTrayNavigation();
 installErrorHandlers();
+// `window.openEditorWithFile` — samme kontrakt som legacy-skallet, og
+// `e2e/editor.spec.ts` + atlas-scenene åpner editoren gjennom den. Her, ved
+// siden av `showPage`, fordi den hører til samme klasse: noe UTENFOR treet
+// hviler på at den finnes.
+installEditorEntry();
 
 void boot();
 

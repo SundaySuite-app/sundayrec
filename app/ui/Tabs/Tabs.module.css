@@ -37,3 +37,15 @@
 .on.done {
   color: var(--gold);
 }
+
+/* Sirkelen med stegnummeret. Canvasens `.steps .k`. */
+.k {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-sm);
+  border: 1px solid currentColor;
+  flex: none;
+}

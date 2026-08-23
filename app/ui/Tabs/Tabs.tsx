@@ -25,6 +25,17 @@ export interface TabItem {
   label: string;
   /** Tilstandsmerke: fanen er unnagjort (editorens steg). */
   done?: boolean;
+  /**
+   * Tegnet i sirkelen foran etiketten — «1», «2», «✓».
+   *
+   * Finnes for editorens STEG (canvasens `.steps .k`), der rekkefølgen er en
+   * del av det man leser: «1 Klipp» sier at det er noe etter. En vanlig
+   * fanestripe utelater den, og da tegnes ingen sirkel.
+   *
+   * `aria-hidden` på sirkelen: nummeret er posisjon, ikke navn, og
+   * `role="tab"` forteller allerede «1 av 3».
+   */
+  step?: string;
 }
 
 export interface TabsProps {
@@ -96,6 +107,11 @@ export function Tabs({ items, value, onChange, label, testId }: TabsProps) {
             }`}
             onClick={() => onChange(item.id)}
           >
+            {item.step ? (
+              <span aria-hidden="true" class={styles.k}>
+                {item.step}
+              </span>
+            ) : null}
             {item.label}
           </button>
         );

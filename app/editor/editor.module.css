@@ -1,0 +1,313 @@
+/*
+ * Rediger — canvasens sett 4, artboard 4.1.
+ *
+ * Ingen fargeliteraler: `app/styles/tokens.css` er ordboka, og
+ * `scripts/check-app-css-tokens.mjs` avviser alt annet. Gullvinduet, de to
+ * håndtakene og linjalen er derfor de samme tokens som resten av appen — en
+ * eier som endrer `--gold` endrer også prekenvinduet.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 0;
+  flex: 1;
+}
+
+/* ── Topplinja ─────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.sub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  margin: 0;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex: none;
+}
+
+/* ── Bølgeformen ───────────────────────────────────────────────────────── */
+
+.wave {
+  position: relative;
+  min-height: 190px;
+  flex: 1;
+  border-radius: var(--r);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0 0 34px 0;
+  width: 100%;
+  height: calc(100% - 34px);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.minimap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 34px;
+  border-top: 1px solid var(--line);
+  touch-action: none;
+  cursor: pointer;
+}
+
+.keep {
+  position: absolute;
+  top: 0;
+  bottom: 34px;
+  background: var(--gold-soft);
+  border-left: 2px solid var(--gold);
+  border-right: 2px solid var(--gold);
+  pointer-events: none;
+}
+
+.keepLabel {
+  position: absolute;
+  top: 26px;
+  left: 10px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 36px;
+  margin: -18px 0 0 -7px;
+  padding: 0;
+  border-radius: 7px;
+  background: var(--gold);
+  border: 2px solid var(--bg);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ── Transportlinja ────────────────────────────────────────────────────── */
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.time {
+  font-size: var(--fs-val);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.total {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.result {
+  margin-left: auto;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+}
+
+.play {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: var(--on-gold);
+  cursor: pointer;
+}
+
+.play svg {
+  width: 20px;
+  height: 20px;
+}
+
+.play[aria-disabled="true"] {
+  background: var(--raised);
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* ── Kuttverktøyene ────────────────────────────────────────────────────── */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.hint {
+  color: var(--ink-3);
+  font-size: var(--fs-base);
+  margin: 0;
+}
+
+.cutList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cutRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.cutRange {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cutSpan {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  margin-right: auto;
+}
+
+/* ── Tomtilstanden ─────────────────────────────────────────────────────── */
+
+.drop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  flex: 1;
+}
+
+.dropzone {
+  border: 2px dashed var(--line-2);
+  border-radius: var(--r-lg);
+  transition: border-color 120ms ease;
+}
+
+.dropzoneOver {
+  border-color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.recentGrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.recentName {
+  color: var(--ink-2);
+  font-size: var(--fs-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.label {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.value {
+  font-size: var(--fs-val);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Lastingen ─────────────────────────────────────────────────────────── */
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-7) 0;
+}
+
+.loadingText {
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  margin: 0;
+}
+
+/* ── «Er ikke dette prekenen?» ─────────────────────────────────────────── */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

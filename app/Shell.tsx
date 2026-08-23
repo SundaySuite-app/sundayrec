@@ -17,7 +17,10 @@
  *   OPPTAK    ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
  *             stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
  *   BIBLIOTEK ER bygget (P3): lista, søket, slett-med-angre og papirkurven.
- *             Se `app/pages/library/`.
+ *             Se `app/pages/library/`. Fanen `edit` er REDIGER (P4a): steg 1,
+ *             «Klipp». Den bor under BIBLIOTEK fordi å finne opptaket igjen og
+ *             å redigere det er samme sted i den nye arkitekturen — se
+ *             `app/editor/entry.ts`.
  *   OPPSETT   ER bygget (P1a + P1b): de fem spørsmålene med svaret som står
  *             nå, de fem skjermene «Endre» åpner, de to tilleggene og
  *             Avansert. Se `app/pages/setup/`.
@@ -59,6 +62,8 @@
 
 import { useEffect } from "preact/hooks";
 
+import { EditorPage, editorHeading } from "./editor/EditorPage";
+import { EDIT_TAB } from "./editor/entry";
 import { locale, t, tDyn, tf } from "./i18n";
 import {
   libraryHeading,
@@ -97,7 +102,9 @@ export function Shell({ probe }: ShellProps) {
       heading={
         firstRunHeading(firstRun) ??
         (current.page === "library"
-          ? libraryHeading(current.tab)
+          ? current.tab === EDIT_TAB
+            ? editorHeading()
+            : libraryHeading(current.tab)
           : setupHeading(current.tab))
       }
     >
@@ -125,6 +132,8 @@ export function Shell({ probe }: ShellProps) {
       ) : current.page === "library" ? (
         current.tab === TRASH_TAB ? (
           <TrashPage />
+        ) : current.tab === EDIT_TAB ? (
+          <EditorPage />
         ) : (
           <LibraryPage />
         )
