@@ -418,9 +418,9 @@ pub enum WakeIdleReason {
 /// Which [`WakeIdleReason`], if any, explains an empty wake set.
 ///
 /// `auto_record_enabled` is the level-1 switch; `upcoming_count` is how many
-/// starts the horizon produced from [`crate::settings::Settings::active_slots`]
-/// + specials. The switch is checked only when the set is empty, because a
-/// disarmed weekly plan with a dated special still has something to wake for.
+/// starts the horizon produced from the active slots plus the specials. The
+/// switch is checked only when the set is empty, because a disarmed weekly plan
+/// with a dated special still has something to wake for.
 pub fn wake_idle_reason(
     auto_record_enabled: bool,
     upcoming_count: usize,
