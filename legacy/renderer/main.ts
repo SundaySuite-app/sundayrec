@@ -1,8 +1,6 @@
 import { loadLocale, setApplyHook, t } from './i18n'
 import { settings, updateSettings } from './state'
 import type { Settings, SermonCompanion, EditorSegment } from '../types'
-import type { ThumbnailInfo as ThumbnailInfoDto } from '../bindings/ThumbnailInfo'
-import type { ThumbnailView } from '../bindings/ThumbnailView'
 import type { TrashEntry } from '../bindings/TrashEntry'
 
 import { setupHome, refreshHome, stopVideoPreview, loadVideoInfoStrip, deactivateHome } from './pages/home'
@@ -31,15 +29,6 @@ import { navigateTo } from './ui/navigate'
 import { initTrayActions } from './tray-actions'
 import { initPrerollLifecycle } from './preroll-lifecycle'
 
-// Shared thumbnail IPC result shapes.
-//
-// These were hand-written for a backend that did not exist. It exists now
-// (src-tauri/src/commands/thumbnail.rs), so they are the GENERATED types — a
-// change to the Rust DTO surfaces here as a tsc error instead of as a panel
-// reading a field the backend stopped sending.
-export type ThumbnailInfo = ThumbnailInfoDto
-export type ThumbnailResult = ThumbnailView | { error: string }
-
 /** The pass-1 loudnorm measurement (`EditorLoudness`). All five measured values
  *  ride along so `masterApply` can REUSE the measurement `masterMeasure` just
  *  made instead of the backend reading the whole recording a second time. */
@@ -52,11 +41,6 @@ export interface LoudnessMeasurementView {
   /** The preset's target, not a measurement — carried for the "x → y LUFS" UI. */
   targetLufs:   number
 }
-/** What `thumbnailResolve` returns — the same view, with `kind` telling the
- *  panel whether it got this episode's own image or the shared default.
- *  `kind` is absent from `thumbnailGetDefaultInfo` (nothing to distinguish). */
-export type ThumbnailResolved = ThumbnailView
-
 // Expose globals that sub-modules need
 declare global {
   interface Window {
@@ -337,13 +321,6 @@ declare global {
        *  adaptivity off. `null` on failure. */
       learningLocalNudgeReset: () => Promise<import('../bindings/LocalNudge').LocalNudge | null>
 
-      // Thumbnail (podcast cover art)
-      thumbnailSetDefault:     (sourcePath?: string) => Promise<ThumbnailResult | null>
-      thumbnailClearDefault:   () => Promise<boolean>
-      thumbnailSetEpisode:     (recordingPath: string, sourcePath?: string) => Promise<ThumbnailResult | null>
-      thumbnailClearEpisode:   (recordingPath: string) => Promise<boolean>
-      thumbnailResolve:        (recordingPath: string) => Promise<ThumbnailResolved | null>
-      thumbnailGetDefaultInfo: () => Promise<ThumbnailResolved | null>
 
       // R8 AI sermon companion (chapters + highlights + Norwegian summary).
       // companionBuild returns null on any failure; the optional LLM summary is

@@ -542,7 +542,6 @@ pub fn run() {
             commands::editor::editor_mastering_analyze,
             commands::editor::editor_export,
             commands::editor::editor_cancel_export,
-            commands::editor::editor_extract_frame,
             // P1 parity: sidecar persistence, stream probe, inline guard,
             // temp-file cleanup, and the full mastering preview/apply/cancel flow.
             commands::editor::editor_read_sidecar,
@@ -593,15 +592,6 @@ pub fn run() {
             commands::companion::companion_llm_status,
             commands::companion::companion_set_llm_key,
             commands::companion::companion_clear_llm_key,
-            // Episode images (cover art) — default + per-episode override. Pure
-            // header probing in `sundayrec-core::image_probe`; no feature gate,
-            // no ffmpeg. The renderer had these six as stubs since the port.
-            commands::thumbnail::thumbnail_set_default,
-            commands::thumbnail::thumbnail_clear_default,
-            commands::thumbnail::thumbnail_get_default_info,
-            commands::thumbnail::thumbnail_set_episode,
-            commands::thumbnail::thumbnail_clear_episode,
-            commands::thumbnail::thumbnail_resolve,
             // E3 opt-in telemetry. Consent defaults to OFF and nothing is
             // collected, queued or sent without it; these are the only routes in.
             commands::telemetry::telemetry_consent_get,

@@ -97,11 +97,10 @@ export function applyFeatureGate(
 }
 
 // `applyComingSoonGate` lived here — the «Kommer» chip, worn by the three
-// thumbnail panels and by nothing else. All three had the same cause (no Rust
-// side at all) and all three lost it in Fase 6, so the helper had no callers
-// left and its documentation described a state of affairs that had stopped
-// being true. Keeping it would have been an invitation to reach for a chip
-// instead of writing the missing half; the locale keys went with it.
+// (since-removed) thumbnail panels and by nothing else. All three had the same
+// cause (no Rust side at all) and all three lost it in Fase 6, so the helper
+// had no callers left. Keeping it would have been an invitation to reach for a
+// chip instead of writing the missing half; the locale keys went with it.
 
 /** Convenience for the common "no backend in this build" case. */
 export function unavailableGate(

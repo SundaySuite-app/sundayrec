@@ -53,7 +53,6 @@ const GUARDED: &[&str] = &[
     "editor_diagnose_channels",
     "editor_auto_process",
     "editor_mastering_analyze",
-    "editor_extract_frame",
     "editor_read_sidecar",
     "editor_write_sidecar",
     "editor_delete_sidecar",
@@ -62,11 +61,6 @@ const GUARDED: &[&str] = &[
     "editor_record_companion_suggestion",
     "editor_probe_streams",
     "editor_read_file",
-    // ── Episode images ───────────────────────────────────────────────────────
-    "thumbnail_set_default",
-    "thumbnail_set_episode",
-    "thumbnail_clear_episode",
-    "thumbnail_resolve",
     // ── Papirkurv ────────────────────────────────────────────────────────────
     "trash_move",
     // ── E1.2 ─────────────────────────────────────────────────────────────────

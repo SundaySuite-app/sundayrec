@@ -360,22 +360,8 @@
     <!-- ─── Publisering-info-strip ────────────────────────────────
          Smart-vis: hvert kort har display:none som default; home.ts
          setter display='' kun når innstillingen faktisk er konfigurert.
-         Holder hjem ryddig for brukere som ikke har satt opp cover. -->
+         Holder hjem ryddig for brukere som ikke har satt opp transkripsjon. -->
     <div id="publish-info-strip" class="info-strip publish-info-strip" style="display:none">
-
-      <!-- Episodebilde / cover art -->
-      <div class="info-card info-card-publish" id="home-thumb-card" style="display:none">
-        <div class="info-card-icon home-thumb-icon-slot">
-          <!-- Replaced with actual <img> by home.ts when thumbnail exists -->
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/></svg>
-        </div>
-        <div class="info-card-body">
-          <div class="info-card-label" data-i18n="home.thumbLabel">EPISODEBILDE</div>
-          <div class="info-card-value" id="home-thumb-name">—</div>
-          <div class="info-card-sub" id="home-thumb-sub"></div>
-        </div>
-        <a href="#" class="info-card-action" id="btn-go-thumb" data-i18n="home.changeSettings">Endre</a>
-      </div>
 
       <!-- Transkripsjon (Whisper) -->
       <div class="info-card info-card-publish" id="home-whisper-card" style="display:none">
@@ -1011,37 +997,12 @@
 
     </div>
 
-    <!-- ── Deling (Publisering + Varsler) ─────────────────────────
-         Both sections keep their ids and their markup verbatim — the page TS
-         (general-page, thumbnail-panel) addresses them by id. -->
+    <!-- ── Deling (Varsler) ───────────────────────────────────────
+         The section keeps its id and its markup verbatim — the page TS
+         (general-page) addresses it by id. (The «Publisering» section that
+         sat above it — cloud backup, podcast, cover art — left in R1 of
+         «Frivilligen først».) -->
     <div id="settings-sharing" class="inner-page">
-
-    <div class="settings-section-head">
-      <h2 data-i18n="nav.publish">Publisering</h2>
-      <p data-i18n="sharing.publishDesc">Det som følger eksporten ut av kirken.</p>
-    </div>
-    <div id="settings-publish" class="settings-section">
-      <!-- ── Standard episodebilde (cover art) ──────────────────── -->
-      <div class="card" id="publish-thumb-card">
-        <div class="card-title" data-i18n="thumbnail.default.title">Standard episodebilde</div>
-        <p class="card-desc" data-i18n="thumbnail.default.subtitle">Brukes som cover art for alle prekener med mindre du overstyrer per episode.</p>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="publish-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="publish-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="publish-thumb-info"></div>
-            <div class="thumb-warning" id="publish-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-publish-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-publish-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="publish-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
-      </div>
-    </div>
 
     <div class="settings-section-head">
       <h2 data-i18n="nav.notifications">Varsler</h2>
@@ -2076,30 +2037,6 @@
           <span id="editor-companion-header-controls" class="editor-companion-header-controls"></span>
         </div>
         <div id="editor-companion-body" class="editor-companion-body"></div>
-      </div>
-
-      <!-- Episode-bilde (cover art) — between mastering and save bar -->
-      <div id="editor-thumb-section" class="editor-thumb-section" style="display:none">
-        <div class="editor-master-header">
-          <svg viewBox="0 0 20 20" fill="currentColor" width="14" height="14" style="opacity:.7"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l3-4 2 3 3-5 4 6z"/></svg>
-          <span class="editor-master-title" data-i18n="thumbnail.section.title">Episodebilde</span>
-        </div>
-        <div class="thumb-panel">
-          <div class="thumb-preview" id="editor-thumb-preview" data-i18n-title="thumbnail.dropHint" title="Slipp et bilde her, eller klikk for å velge">
-            <span class="thumb-placeholder" data-i18n="thumbnail.dropHint">Slipp et bilde her, eller klikk for å velge</span>
-          </div>
-          <div class="thumb-side">
-            <div class="thumb-using" id="editor-thumb-using" data-i18n="thumbnail.using.none">Ingen cover art valgt</div>
-            <div class="thumb-info" id="editor-thumb-info"></div>
-            <div class="thumb-warning" id="editor-thumb-warning" style="display:none"></div>
-            <div class="thumb-button-row">
-              <button class="btn-secondary btn-sm" id="btn-editor-thumb-pick" data-i18n="thumbnail.pick">Velg bilde</button>
-              <button class="btn-ghost btn-sm" id="btn-editor-thumb-reset" data-i18n="thumbnail.resetToDefault" style="display:none">Tilbakestill til standard</button>
-              <button class="btn-ghost btn-ghost-danger btn-sm" id="btn-editor-thumb-clear" data-i18n="thumbnail.clear" style="display:none">Fjern</button>
-            </div>
-          </div>
-        </div>
-        <input type="file" id="editor-thumb-file-input" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" style="display:none">
       </div>
 
       </div><!-- /tabpanel -->

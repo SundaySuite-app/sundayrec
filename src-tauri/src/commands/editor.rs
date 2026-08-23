@@ -357,14 +357,6 @@ pub async fn editor_cancel_export(engine: State<'_, ExportEngine>) -> AppResult<
     editor::cancel_export(&engine).await
 }
 
-/// Extract a single video frame at `sec` seconds as a base64 JPEG (480px wide)
-/// for the editor's video-preview scrubber. HARDWARE-UNVERIFIED.
-#[tauri::command]
-pub async fn editor_extract_frame(input_path: String, sec: f64) -> AppResult<String> {
-    super::path_guard::checked_input_file(&input_path)?;
-    editor::extract_frame(&input_path, sec).await
-}
-
 // ── P1 parity: sidecars, probe, file guard, cleanup, mastering flow ──────────────
 
 /// Read a per-recording sidecar JSON (.meta / .cuts-draft / .transcript), or

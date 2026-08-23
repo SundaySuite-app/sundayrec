@@ -7,7 +7,6 @@
     "editor": "Rediger",
     "search": "Historikk",
     "notifications": "Varsler",
-    "publish": "Publisering",
     "settings": "Innstillinger",
     "system": "System",
     "video": "Video",
@@ -74,7 +73,6 @@
     "signalLoud": "Høyt",
     "signalGood": "Bra",
     "signalWeak": "Svakt",
-    "thumbLabel": "EPISODEBILDE",
     "whisperLabel": "TRANSKRIPSJON",
     "seeAll": "Se alle →",
     "sourceChannels": "Kanal {l}/{r}",
@@ -1185,37 +1183,6 @@
     "noRecordingsTitle": "Ingen opptak ennå",
     "noRecordingsDesc": "Når du har tatt opp en gudstjeneste, dukker den opp her. Transkriber et opptak i Rediger for å kunne søke i selve preken-teksten."
   },
-  "thumbnail": {
-    "section": {
-      "title": "Episodebilde"
-    },
-    "default": {
-      "title": "Standard episodebilde",
-      "subtitle": "Brukes som cover art for alle prekener med mindre du overstyrer per episode."
-    },
-    "pick": "Velg bilde",
-    "replace": "Bytt bilde",
-    "clear": "Fjern",
-    "resetToDefault": "Tilbakestill til standard",
-    "dropHint": "Slipp et bilde her, eller klikk for å velge",
-    "using": {
-      "default": "Bruker standardbilde",
-      "override": "Egendefinert for denne episoden",
-      "none": "Ingen cover art valgt"
-    },
-    "warning": {
-      "tooSmall": "Anbefalt størrelse er minst 1400×1400 piksler",
-      "notSquare": "Cover art bør være kvadratisk (1:1)",
-      "tooLarge": "Filstørrelse over 5 MB kan gjøre opptak/last opp tregt"
-    },
-    "error": {
-      "unsupported": "Ikke-støttet bildeformat. Bruk JPG, PNG eller WebP.",
-      "tooLarge": "Filen er for stor (over 20 MB)"
-    },
-    "info": {
-      "size": "{w}×{h} px · {size}"
-    }
-  },
   "dialog": {
     "ok": "OK",
     "cancel": "Avbryt",
@@ -1262,7 +1229,6 @@
     "cancel": "Ikke nå"
   },
   "sharing": {
-    "publishDesc": "Det som følger eksporten ut av kirken.",
     "notifyDesc": "Hvem får beskjed når et opptak starter, stopper eller feiler."
   },
   "gate": {

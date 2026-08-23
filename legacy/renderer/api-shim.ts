@@ -78,11 +78,6 @@ const VIDEO_EXT = [
 // already carries `opener:default`; see openPrivacyPolicy below).
 const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/main/PRIVACY.md";
 
-// Cover art: no gif — an animated podcast cover is not something Apple
-// Podcasts, Spotify or any RSS consumer accepts. The backend refuses GIF bytes
-// regardless (`sundayrec-core::image_probe`), so this only spares the user the
-// round trip of picking one and being told no.
-const COVER_EXT = ["png", "jpg", "jpeg", "webp"];
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
@@ -277,32 +272,6 @@ async function editorCall<T extends object>(
   } catch (e) {
     return { ok: false, error: ipcErrText(e) };
   }
-}
-
-/** The cover-art picker. Cancel → `null`, which the thumbnail panel reads as
- *  "leave the current image alone". */
-async function pickCoverImage(): Promise<string | null> {
-  return pickPath({ name: "Bilde", extensions: COVER_EXT });
-}
-
-/** The three validation codes the thumbnail panel localizes, as the backend
- *  spells them. Anything else is a genuine surprise and is passed through. */
-const THUMBNAIL_ERROR_CODES = ["empty_file", "too_large", "unsupported_format"];
-
-/**
- * A rejected `thumbnail_*` invoke → the `{ error }` member of the panel's
- * union.
- *
- * The commands return `AppError::Validation("<code>")`, which reaches us as
- * `"validation: <code>"`. The panel's `errorLabel()` matches on the BARE code
- * and echoes anything it doesn't recognise verbatim, so handing it the prefixed
- * string would print «validation: too_large» at the user instead of «Filen er
- * for stor (over 20 MB)». R3-C: extracted via `errorCode()` (the leading
- * stable snake code), not an anywhere-in-the-message `includes` scan.
- */
-function thumbnailError(e: unknown): { error: string } {
-  const code = errorCode(e);
-  return { error: THUMBNAIL_ERROR_CODES.includes(code) ? code : ipcErrText(e) };
 }
 
 // Old Electron `on(channel)` → Tauri event name. Channels with no Rust emitter
@@ -1630,49 +1599,6 @@ const api: Record<string, unknown> = {
   masterCancel: async (jobId: string) =>
     invoke("editor_master_cancel", { jobId }).then(() => true),
 
-  // ── Episode image / cover art (thumbnail_*) ─────────────────────────────
-  //
-  // These six were stubs from the port until Fase 6, and the stubs did worse
-  // than nothing: `{ ok: false }` is not a member of the union the panel reads
-  // (`{path,info,dataUrl} | {error}`), so `'error' in result` was false and a
-  // failure rendered as SILENCE — picker opens, file chosen, nothing happens,
-  // nothing said. The three surfaces were gated «Kommer» because of it.
-  //
-  // The PICKER lives here, not in the panel: `thumbnail-panel.ts` calls
-  // `setDefault()` / `setEpisode(rp)` with no path and treats `null` as "user
-  // cancelled, keep what's on screen".
-  thumbnailSetDefault: async (sourcePath?: string) => {
-    const src = sourcePath ?? (await pickCoverImage());
-    if (!src) return null;
-    try {
-      return await invoke("thumbnail_set_default", { sourcePath: src });
-    } catch (e) {
-      return thumbnailError(e);
-    }
-  },
-  thumbnailClearDefault: async () =>
-    call<boolean>("thumbnail_clear_default", undefined, false),
-  thumbnailSetEpisode: async (recordingPath: string, sourcePath?: string) => {
-    const src = sourcePath ?? (await pickCoverImage());
-    if (!src) return null;
-    try {
-      return await invoke("thumbnail_set_episode", {
-        recordingPath,
-        sourcePath: src,
-      });
-    } catch (e) {
-      return thumbnailError(e);
-    }
-  },
-  thumbnailClearEpisode: async (recordingPath: string) =>
-    call<boolean>("thumbnail_clear_episode", { recordingPath }, false),
-  // Both lookups fall back to `null` = "no cover set", which is exactly what
-  // the panel renders as its drop-hint placeholder.
-  thumbnailResolve: async (recordingPath: string) =>
-    call("thumbnail_resolve", { recordingPath }, null),
-  thumbnailGetDefaultInfo: async () =>
-    call("thumbnail_get_default_info", undefined, null),
-
   registerTrustedPath: async () => true,
 
   // ── Transcripts / whisper ───────────────────────────────────────────────
@@ -1859,7 +1785,7 @@ void (async () => {
 // did, Electron's non-standard `File.path` doesn't exist here. Bridge the
 // native stream back into the DOM: re-dispatch synthetic DragEvents at the
 // drop position with File objects carrying a real `path` property, so the
-// editor's load/intro/outro zones and the thumbnail drop work unmodified.
+// editor's load/intro/outro zones work unmodified.
 void (async () => {
   try {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");

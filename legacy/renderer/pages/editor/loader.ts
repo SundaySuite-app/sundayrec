@@ -15,7 +15,6 @@ import { renderMetaPanel, renderChapterList } from './metadata'
 import { renderCutList, updateRemainingDisplay, cancelDraftSave } from './cuts'
 import { drawWaveform, drawMinimap, updateMinimapViewport, syncCanvasSize } from './waveform'
 import { loadTranscriptForFile } from '../editor-transcript'
-import { panelElementsByPrefix, refresh as refreshThumbPanel } from '../thumbnail-panel'
 
 import { showState, showEditorError, updateHeaderSummary } from '../editor-page'
 import { attachProgress, type ProgressHandle } from '../../ui/progress'
@@ -466,19 +465,6 @@ export async function loadFile(fp: string): Promise<void> {
   // touch the video stream and would just re-encode the audio track).
   const masterSection = $('editor-master-section')
   if (masterSection) masterSection.style.display = E.isVideoFile ? 'none' : ''
-
-  // Thumbnail panel — show for audio files; embedding only works for MP3 but
-  // the panel still lets the user attach a sidecar image for RSS-feed hosts.
-  const thumbSection = $('editor-thumb-section')
-  if (thumbSection) thumbSection.style.display = E.isVideoFile ? 'none' : ''
-  if (!E.isVideoFile) {
-    const els = panelElementsByPrefix('editor')
-    // The «kommer» gate that stood here through v0.9.0 is gone: `thumbnail_*`
-    // is real (src-tauri/src/commands/thumbnail.rs), so picking an image now
-    // stores one beside the recording instead of opening a picker whose result
-    // went nowhere.
-    if (els) void refreshThumbPanel(els, { kind: 'episode', getRecordingPath: () => E.filePath })
-  }
 
   // Auto-run segment analysis. Runs in the background so the editor is
   // immediately interactive — when analysis completes we surface the

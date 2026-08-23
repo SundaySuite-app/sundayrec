@@ -7,7 +7,6 @@
     "editor": "Rediger",
     "search": "Historik",
     "notifications": "Notifikationer",
-    "publish": "Udgivelse",
     "settings": "Indstillinger",
     "system": "System",
     "video": "Video",
@@ -74,7 +73,6 @@
     "signalLoud": "Højt",
     "signalGood": "Godt",
     "signalWeak": "Svagt",
-    "thumbLabel": "EPISODEBILLEDE",
     "whisperLabel": "TRANSSKRIPTION",
     "seeAll": "Se alle →",
     "sourceChannels": "Kanal {l}/{r}",
@@ -1185,37 +1183,6 @@
     "noRecordingsTitle": "Ingen optagelser endnu",
     "noRecordingsDesc": "Når du har optaget en gudstjeneste, vises den her. Transskriber en optagelse i Rediger for at søge i selve prædikenteksten."
   },
-  "thumbnail": {
-    "section": {
-      "title": "Episodebillede"
-    },
-    "default": {
-      "title": "Standard episodebillede",
-      "subtitle": "Bruges som omslag for alle prædikener, medmindre du tilsidesætter pr. episode."
-    },
-    "pick": "Vælg billede",
-    "replace": "Skift billede",
-    "clear": "Fjern",
-    "resetToDefault": "Nulstil til standard",
-    "dropHint": "Slip et billede her, eller klik for at vælge",
-    "using": {
-      "default": "Bruger standardbillede",
-      "override": "Tilpasset til denne episode",
-      "none": "Intet omslag valgt"
-    },
-    "warning": {
-      "tooSmall": "Anbefalet størrelse er mindst 1400×1400 pixels",
-      "notSquare": "Omslag bør være kvadratisk (1:1)",
-      "tooLarge": "Filer over 5 MB kan gøre optagelse/upload langsom"
-    },
-    "error": {
-      "unsupported": "Billedformat understøttes ikke. Brug JPG, PNG eller WebP.",
-      "tooLarge": "Filen er for stor (over 20 MB)"
-    },
-    "info": {
-      "size": "{w}×{h} px · {size}"
-    }
-  },
   "dialog": {
     "ok": "OK",
     "cancel": "Annullér",
@@ -1262,7 +1229,6 @@
     "cancel": "Ikke nu"
   },
   "sharing": {
-    "publishDesc": "Det, der følger med eksporten ud af kirken.",
     "notifyDesc": "Hvem der får besked, når en optagelse starter, stopper eller fejler."
   },
   "gate": {

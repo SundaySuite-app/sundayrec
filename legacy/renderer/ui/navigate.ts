@@ -54,7 +54,9 @@ function resolve(anchor: string): HTMLElement | null {
  * tab is worse than one that fails loudly.
  */
 export const TAB_ALIASES: Record<string, { tab: string; anchor: string }> = {
-  'settings-publish':       { tab: 'settings-sharing', anchor: '#settings-publish' },
+  // The Publisering section itself is gone (R1 «Frivilligen først»); the
+  // retired id still lands on the Deling tab.
+  'settings-publish':       { tab: 'settings-sharing', anchor: '#settings-notifications' },
   'settings-notifications': { tab: 'settings-sharing', anchor: '#settings-notifications' },
 }
 

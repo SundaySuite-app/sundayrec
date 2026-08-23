@@ -4,7 +4,6 @@ import { escHtml as escapeHtml } from '../helpers'
 import type { RecordingEntry, RecordingMetadata } from '../../types'
 import { setupTranscriptPanel, clearTranscript } from './editor-transcript'
 import { confirmDialog } from '../ui/dialog'
-import { setupThumbPanel, panelElementsByPrefix } from './thumbnail-panel'
 import { E, $, markDirty, clearDirty, setOnDirtyChange } from './editor/state'
 import { formatDuration } from './editor/format'
 import { computePeakGain, setNormalizeUI } from './editor/peaks'
@@ -352,13 +351,6 @@ export function setupEditorPage(): void {
 
   showState('empty')
   updateEditorIntroOutroDisplay()
-
-  // Wire the per-episode thumbnail panel. Hidden until a file is loaded
-  // (see loadFile completion). Reads window state via getRecordingPath().
-  const thumbEls = panelElementsByPrefix('editor')
-  if (thumbEls) {
-    setupThumbPanel(thumbEls, { kind: 'episode', getRecordingPath: () => E.filePath })
-  }
 }
 
 let resizeObserver: ResizeObserver | null = null
