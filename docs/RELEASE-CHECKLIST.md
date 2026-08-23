@@ -92,6 +92,37 @@ The keypair already exists (key-id `4f08a2f48edd9a17`, backup
 - (none since R2 «Frivilligen først» — the AI companion and its Anthropic
   key left the app.)
 
+## ⚠️ 4b. The next stable ships the NEW SHELL
+
+Read this before §5, because it changes what "a normal release" means once.
+
+Fase B of «Frivilligen først» made `app/` the shipped frontend. `npm run build`
+now builds that shell into `dist/`, and `dist/` is what `tauri.conf.json`'s
+`frontendDist` bundles — so **every tag cut from `main` after that merge ships
+the redesign**, with no flag, no opt-in and no way to fall back except reverting
+the merge. The old Electron-port renderer is deleted, not disabled.
+
+What that means for the ring:
+
+- [ ] The **beta ring is not optional** for the first tag that carries it. The
+      direct-to-stable override in §5 exists for changes whose blast radius is
+      known; this one replaces every screen a volunteer touches.
+- [ ] §6a applies **by definition**: the shell owns the meter loop, the
+      recording overlay and boot ordering. The first real Sunday on it IS the
+      health gate.
+- [ ] Read `docs/SMOKE-TEST.md` **from the top**, not from memory. The
+      navigation is three destinations now, and the runbook's own translation
+      table is at the top of that file. Its «Flater som ikke finnes lenger»
+      section is what stops a missing screen being filed as a regression.
+- [ ] Know the open ends before the Sunday, not after — `docs/APP-SHELL.md`
+      §«Etter byttet» lists them. The one that can cost a recording: on a Mac
+      that needs an administrator prompt to write a power event, wake-from-sleep
+      is never armed, because the interactive path has no caller. A rig that
+      relies on waking from sleep must be checked awake first.
+- [ ] `ROLLBACK.md` in advance, as always — and note that rolling the CLIENT
+      back to a pre-fase-B build is a rollback of the whole UI, which is a
+      different conversation with a congregation than a bug fix.
+
 ## 5. Cut the release — two rings, beta first
 
 Since Etappe 7, "published on GitHub" and "reaches installed clients" are two
@@ -204,7 +235,8 @@ the only action that makes a v0.11.0+ install able to see the release at all.
 ## 6. Rig sign-off before publishing (needs hardware — `SMOKE-TEST.md`)
 
 - [ ] §2–11 smoke test on a real Mac/Windows rig (capture, VU, editor ffmpeg,
-      wake/scheduler).
+      wake/scheduler) — re-read, not remembered: fase B rewrote the navigation
+      in every one of those sections.
 
 ### 6a. Recording/editor health gate (HARD — for any build touching audio)
 
@@ -213,8 +245,10 @@ see audio stutter, recording-mode lag, or editor instability. So for any build
 that changed **`recorder/`, `capture.rs`, the editor, the meter loop, or boot
 ordering**, this is a publish blocker:
 
-- [ ] Run **§5b** (record normally → Diagnose → "Siste opptak" numbers). Paste
-      `Dropp / xruns / IPC-overbelastning` + the Trend into the release notes.
+- [ ] Run **§5b** (record normally, then read `<app-data>/last-recording.json`
+      — the Diagnose screen it used to be read from does not exist in the new
+      shell). Paste `Dropp / xruns / IPC-overbelastning` + the trend from
+      `recording-telemetry-history.json` into the release notes.
       Healthy = all ≈ 0, clean exit, no `SR-CAPTURE-01`.
 - [ ] Confirm the telemetry **detects** a deliberately-stressed capture (§5b
       step 3) — if the numbers don't move under a CPU hog, the gate is blind.

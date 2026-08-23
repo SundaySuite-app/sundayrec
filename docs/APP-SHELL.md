@@ -1,37 +1,33 @@
-# `app/` — the new shell
+# `app/` — the shell
 
-Started in S0 of «Frivilligen først». Short on purpose; S1 fills it in.
+> **⚠️ THE PARALLEL PERIOD IS OVER.** Fase B made `app/` the shipped frontend
+> and deleted `legacy/renderer/`'s shell. Everything below from «S1a» down was
+> written while there were two, and is kept as the record of WHY each contract
+> is shaped the way it is — the reasoning is still load-bearing even where the
+> tense has moved on. What changed at the switch is written here, at the top,
+> and the standing list of what is still owed is the last section of this file,
+> **«Etter byttet»**.
 
 ## What it is
 
-A **second** frontend, in `app/`, built **beside** the shipped one rather than
-inside it. The shipped shell is still `legacy/renderer/` — the verbatim port of
-the old Electron renderer — and every release is still cut from it. Nothing in
-`app/` can affect a release until somebody deliberately points Tauri at it.
+**The** frontend. Vite's root is `app`, the dev server is :1420, `npm run build`
+writes `dist/`, and `dist/` is what `tauri.conf.json`'s `frontendDist` bundles.
+There is one shell, one Playwright project, one place a screen can live.
 
-The two shells share exactly one thing: the **IPC layer and everything pure
-underneath it**, reached through the `@lib/*` alias (`@lib/api-shim`,
-`@lib/i18n`, the `*-core.ts` modules). They share no DOM, no stylesheet and no
-bundle.
+It was a SECOND frontend for the length of S0–P4, built beside the shipped one
+rather than inside it, so that nothing here could affect a release until
+somebody deliberately pointed Tauri at it. That is what fase B did — by moving
+the root and the port rather than by adding a switch, so there is still no
+runtime branch anywhere and never was.
 
-The dependency runs **one way**. `app/` may import from `legacy/` through
-`@lib/*`; `legacy/` may never import from `app/` (ESLint enforces it). That is
-what keeps `legacy/` something that can eventually be deleted in one piece.
+What survives of `legacy/` is the **inventory**: the IPC layer and everything
+pure underneath it, reached through the `@lib/*` alias (`@lib/api-shim`,
+`@lib/i18n`, the `*-core.ts` modules). 40 source files, down from 132. The
+directory keeps its name until PR B moves them under `app/lib/`; the alias is
+what makes that a one-line change.
 
-## Why `--mode app` and not a second config
-
-One `vite.config.ts`, one branch, decided by the command you type:
-
-|                    | default                        | `--mode app` |
-| ------------------ | ------------------------------ | ------------ |
-| root               | `legacy/renderer`              | `app`        |
-| dev port           | 1420                           | 1430         |
-| build output       | `dist/` (what a release ships) | `dist-app/`  |
-| Playwright project | `chromium`                     | `app`        |
-
-There is **no runtime branch** anywhere — no `if (newShell)` in shipped code,
-no double bundle. A second config file would have been a second place for the
-alias, the CSP assumptions and the build settings to drift apart.
+The dependency still runs **one way**. `app/` may import from `legacy/` through
+`@lib/*`; `legacy/` may never import from `app/` (ESLint enforces it).
 
 ## Why **not** `@preact/preset-vite`
 
@@ -44,8 +40,8 @@ is a Babel plugin, and it is unverified on that stack. So JSX is the
 "jsxImportSource": "preact"
 ```
 
-`vite.config.ts` carries `plugins: []` in both modes. `npm run build:app` and
-`app/App.test.tsx` are what prove the transform actually resolves.
+`vite.config.ts` carries `plugins: []`. `npm run build` and the component tests
+are what prove the transform actually resolves.
 
 ## The rule
 
@@ -70,12 +66,15 @@ Norwegian), and prose written straight into JSX is an error.
 
 `app/index.html` carries a `<meta http-equiv="Content-Security-Policy">` that
 is **byte-identical** to `app.security.csp` in `src-tauri/tauri.conf.json`.
-`legacy/security-sync.test.ts` fails CI if either shell's tag drifts from it.
+`legacy/security-sync.test.ts` fails CI if the tag drifts from it — and its
+covers-every-shell assertion is kept rather than flattened, because what it
+guards against is a SECOND `index.html` arriving with no policy check at all,
+which looks exactly like green.
 
-That is what makes `vite --mode app` in a plain browser enforce the same policy
-the shipped WKWebView does — including `script-src 'self'`, which forbids
-dynamic code evaluation. CI builds `dist-app` and greps it for exactly that;
-`e2e/app/boot.spec.ts` asserts zero `securitypolicyviolation` events at runtime
+That is what makes `npm run dev` in a plain browser enforce the same policy the
+shipped WKWebView does — including `script-src 'self'`, which forbids dynamic
+code evaluation. CI builds `dist` and greps it for exactly that;
+`e2e/boot.spec.ts` asserts zero `securitypolicyviolation` events at runtime
 **and** that the policy is present, so "no violations" can never quietly mean
 "no policy".
 
@@ -85,29 +84,32 @@ else.
 ## The three commands
 
 ```sh
-npm run dev:app     # vite --mode app        → http://localhost:1430
-npm run build:app   # tsc && vite build      → dist-app/
-npm run tauri:app   # the shell in a REAL WKWebView window
+npm run dev        # vite                → http://localhost:1420
+npm run build      # tsc && vite build   → dist/  (what a release bundles)
+npm run tauri dev  # the shell in a REAL WKWebView window
 ```
 
-`tauri:app` is `tauri dev --config src-tauri/tauri.app-shell.conf.json`. That
-overlay is three lines — `beforeDevCommand: npm run dev:app` and
-`devUrl: http://localhost:1430` — merged over the real `tauri.conf.json` by
-Tauri 2's `--config`. The main config is untouched, so `npm run tauri dev` and
-every release path still get the legacy shell.
+There were three parallel ones (`dev:app` / `build:app` / `tauri:app`, on 1430,
+into `dist/`, through the overlay config
+`src-tauri/tauri.app-shell.conf.json`) for as long as both shells existed. Fase
+B deleted all four: with one shell there is nothing to select between, and a
+second spelling of "run the app" is a second place for the alias, the CSP
+assumptions and the build settings to drift apart.
 
-Running the new shell in WKWebView is not optional diligence. Chromium is a
+Running the shell in WKWebView is not optional diligence. Chromium is a
 different engine with a different UA string, and SundayEdit's E5 measured a 42×
 regression in the real WKWebView that was invisible in Chromium. Anything that
-looks right in `npm run dev:app` is unproven until `npm run tauri:app` shows it.
+looks right in `npm run dev` is unproven until `npm run tauri dev` shows it.
 
 ## Tests
 
 - `app/**/*.test.{ts,tsx}` run in the ordinary `npm run test` (vitest, **node
   env**). A component that needs a DOM should be reduced to a pure core the way
-  the legacy renderer's `*-core.ts` modules are, rather than dragging jsdom in.
-- `e2e/app/*.spec.ts` run in Playwright's `app` project against :1430, started
-  by `npm run e2e` alongside the legacy one.
+  the shared `*-core.ts` modules are, rather than dragging jsdom in.
+- `e2e/*.spec.ts` run in Playwright's one `chromium` project against :1420,
+  started by `npm run e2e`. They lived under `e2e/app/`, in a second project on
+  :1430, until fase B; the move needed no path change in `docs/SMOKE-TEST.md`,
+  because every copied test kept its title byte-identical for exactly that day.
 
 ---
 
@@ -176,7 +178,12 @@ in `legacy/locales/parity.test.ts` excuse them **only** for keys the redesign
 adds, and only for missing ones — "no extra keys" still holds everywhere, and
 every key that existed before is still required in all seven. Translating the
 same screen four times while it is still moving is how a translator learns to
-stop reading carefully. Fase B empties the list.
+stop reading carefully.
+
+✅ **Fase B did half of it, and the useful half first.** 653 keys nothing reads
+were deleted from all seven catalogues before any translating starts — the five
+paused languages went from 895 keys to 244. `PAUSED_KEYS` is 442 (the `app.*`
+surface). The translation round itself comes after PR B.
 
 A stored language outside `ACTIVE_LOCALES` picks the nearest active one
 (`resolveStartupLocale`: sv/da → no, everything else → en) instead of rendering
@@ -196,7 +203,10 @@ assumes: a string for `t`/`tf`, a CLDR plural group for `tn`, an array for
 `tArr`, a non-empty object subtree for `tDyn`. All four failure modes are silent
 today — empty text, the singular form for every count, an empty list, a key that
 misses. `--unused` lists catalogue keys no `app/` file reads; informative now,
-**failing in fase B**, when `app/` is the only reader left.
+**failing since fase B**, when `app/` became the only reader left — and it
+counts a key named by a shared `@lib/*` core as read, because those modules
+answer with keys and the page then calls `t(k)` with a variable the AST walk
+cannot resolve.
 
 **`check-i18n-hardcoded-tsx.mjs`** — baseline **0 from day one**, because
 `app/` has no debt to pay down. The PROSE regex is copied **verbatim** from
@@ -257,7 +267,7 @@ for **old Electron channel names**, and these three never had one. The rule
 reachability gate live. An event subscription is not a command.
 
 ⚠️ `window.api.on` reaches `__TAURI_INTERNALS__` directly and attaches no
-`.catch`, so in a **plain browser with no harness** (`npm run dev:app`) each
+`.catch`, so in a **plain browser with no harness** (`npm run dev`) each
 subscription logs an unhandled rejection. It does not happen under Tauri, and
 `e2e/harness.ts` supplies that runtime — which is why the boot spec goes through
 the harness. Worth fixing in the shim one day; it is a legacy question.
@@ -287,7 +297,7 @@ Two deliberate differences from `legacy/renderer/ui/bind-setting.ts`:
   fails. The screen then claims one thing and sqlite says another, and the
   change "disappears" at the next launch. `app/` rolls back to what is actually
   stored and toasts `general.saveFailed`. Pinned end to end by
-  `e2e/app/settings-revert.spec.ts`.
+  `e2e/settings-revert.spec.ts`.
 - **No `resyncBoundSettings`.** The baseline is always `settings.value[key]` —
   the stored value itself. There is nothing to re-sync, and therefore nothing to
   forget.
@@ -334,7 +344,7 @@ route.
 - `app/Shell.tsx` renders the route as a heading and nothing else. `PageShell`,
   the component library and the real screens are S1b's.
 - `app/dev/setting-probe.tsx` and the `?probe=` branch exist only so
-  `e2e/app/settings-revert.spec.ts` can drive `useSetting` through the real
+  `e2e/settings-revert.spec.ts` can drive `useSetting` through the real
   seam. They are deleted the moment a real `SettingRow` exists.
 - The toast and dialog **hosts** are not mounted yet.
 - The tab names in `TAB_ALIASES` (`sound`, `addons`, `files`, `advanced`,
@@ -597,7 +607,7 @@ is meant to read; it is now something only e2e sees.
 
 `window.api.on()` in `legacy/renderer/api-shim.ts` attached no `.catch` to
 `listen(...)`, and `listen` reaches `__TAURI_INTERNALS__` directly. Outside
-Tauri — a plain `npm run dev:app`, or any page without the e2e harness — every
+Tauri — a plain `npm run dev`, or any page without the e2e harness — every
 subscription rejected, so each one became an **unhandled promise rejection**:
 four red lines on boot in a console people are supposed to read for real
 problems, and (because `app/state/global-error.ts` listens for
@@ -611,7 +621,7 @@ call. The warning is once per **channel**, not per call.
 
 Pinned two ways: `legacy/renderer/api-shim-listen.test.ts` (node, with the
 internals deliberately absent) and a bare-`page.goto` case in
-`e2e/app/boot.spec.ts` — S0's boot spec had to go through the harness for
+`e2e/boot.spec.ts` — S0's boot spec had to go through the harness for
 exactly this reason, and no longer does.
 
 ## i18n
@@ -619,7 +629,8 @@ exactly this reason, and no longer does.
 All new keys live under **`app.*`** in `legacy/locales/{no,en}.json` — 38 keys,
 only the ones actually rendered today. They are listed in `PAUSED_KEYS`
 (`legacy/locales/parity.test.ts`) so the five paused languages are excused until
-fase B, and both gates stay at their baselines (`check-i18n-keys` green,
+fase B's translation round, and both gates stay at their baselines
+(`check-i18n-keys` green,
 `check-i18n-hardcoded-tsx` at 0).
 
 `app.page.*` changed value: the destinations are **Opptak · Bibliotek ·
@@ -640,7 +651,7 @@ Two shapes are worth knowing:
 
 Chromium is not the engine this app ships in, and SundayEdit's E5 measured a 42×
 regression in the real WKWebView that was invisible in Chromium. So S1b was run
-once through `npm run tauri:app` and asked what it could actually see.
+once through `npm run tauri dev` and asked what it could actually see.
 
 `screencapture` is unreliable under TCC on this machine, so the evidence is a
 **probe** instead of a screenshot: a temporary Vite plugin (never committed)
@@ -680,7 +691,7 @@ allows same-origin). What came back:
 regression — libraries that sniff for Safari to pick a code path see "unknown
 engine" here and take their slowest one. Nothing in S1b depends on it, but any
 future dependency that branches on the UA must be measured **in this engine**,
-not in `npm run dev:app`.
+not in `npm run dev`.
 
 ---
 
@@ -841,7 +852,7 @@ med en formulering som er riktig for tallområdet den faktisk viser
 
 ## e2e: de fire re-pekte, med byte-identiske titler
 
-`e2e/app/{settings,settings-seam,settings-migration,i18n-live-surfaces}.spec.ts`
+`e2e/{settings,settings-seam,settings-migration,i18n-live-surfaces}.spec.ts`
 er kopier av legacy-versjonene med **hver test-tittel uendret**, fordi
 `docs/SMOKE-TEST.md` peker på dem ved navn: den dagen legacy slettes skal
 pekeren flytte seg ved å bytte filbanen og ingenting annet. Legacy-filene står
@@ -963,15 +974,15 @@ sted det kunne bli glemt.
 
 ## e2e: fire re-pekte, to nye
 
-`e2e/app/{update-channel,telemetry-preview,system-support,auto-update,onboarding}.spec.ts`
+`e2e/{update-channel,telemetry-preview,system-support,auto-update,onboarding}.spec.ts`
 er kopier med **hver test-tittel uendret**, fordi `docs/SMOKE-TEST.md` peker på
 dem som `sti::tittel`. To describes fulgte ikke med, og begge står forklart i
 fila si: `system-support`s «diagnose» (skjermen finnes ikke) og `auto-update`s
 «auto-update toggle» (mekanismen finnes ikke — se over). Legacy-filene er urørte
 og grønne.
 
-Nye: `e2e/app/advanced.spec.ts` (flagget beholder tiden, SMTP åpner gaten,
-opptaksradene skriver riktige typer) og `e2e/app/first-run.spec.ts` (porten,
+Nye: `e2e/advanced.spec.ts` (flagget beholder tiden, SMTP åpner gaten,
+opptaksradene skriver riktige typer) og `e2e/first-run.spec.ts` (porten,
 nødutgangen, den gule raden).
 
 ⚠️ **En fikstur som lyver om bakenden.** `ConsentStatus` er
@@ -1024,7 +1035,7 @@ etter 100 ms — samme lærdom som `decisions-core`s `unknown`.
 Knappen bærer grunnen sin (`disabledReason`), og det er `aria-disabled`, ikke
 `disabled`: et ekte `disabled` tar knappen ut av tabrekkefølgen, og da kan en
 tastaturbruker ikke engang komme fram til den for å HØRE hvorfor.
-`e2e/app/record.spec.ts` klikker den med `force` — Playwright REGNER
+`e2e/record.spec.ts` klikker den med `force` — Playwright REGNER
 `aria-disabled` som av, en ekte mus gjør ikke det — og krever at
 `__E2E_CALLS__` er tomt etterpå. Fjern `canStart: false` i kjernen, og både
 tabellen og det specet blir rødt.
@@ -1325,7 +1336,7 @@ enhetslisten, så der er svaret det samme som før». Nå gjør den det — den 
 å kunne si «Finner ikke Behringer X32» — så begge sider av skjøten leser den
 samme lista. Konsekvensen er synlig i e2e: et spec som seeder `deviceId` uten å
 seede `list_audio_devices` får nå (med rette) «Lyden er ikke koblet til», og
-`e2e/app/shell.spec.ts` har derfor `CHOSEN_FIXTURES`.
+`e2e/shell.spec.ts` har derfor `CHOSEN_FIXTURES`.
 
 ## Den stille forhåndssjekken
 
@@ -1389,7 +1400,7 @@ stille ikke å gjøre noe. Type-only; ingen oppførsel er endret.
 
 ## e2e
 
-`e2e/app/{recorder,no-live-surface}.spec.ts` er kopier med **hver test-tittel
+`e2e/{recorder,no-live-surface}.spec.ts` er kopier med **hver test-tittel
 uendret**, fordi `docs/SMOKE-TEST.md` peker på dem som `sti::tittel`.
 `__E2E_CALLS__`-tellerne er ordrette: sømmen flyttet seg ikke —
 `startRecordingNow` betyr fortsatt `plan_recording_opts` og så
@@ -1399,11 +1410,11 @@ uendret**, fordi `docs/SMOKE-TEST.md` peker på dem som `sti::tittel`.
 borte (eiervalg), og det som «blir stående og sier hvorfor» er siden med
 knappen på.
 
-Ny: `e2e/app/record.spec.ts` (de tre kilde-tilstandene inkl. mutasjonsprøven,
+Ny: `e2e/record.spec.ts` (de tre kilde-tilstandene inkl. mutasjonsprøven,
 overlegget løftet av et emittert `recording://state`, den snudde bekreftelsen,
 kvitteringen, og de fire bannerne).
 
-`e2e/app/events.ts` er verktøyet som gjør det mulig: to veier inn, fordi appen
+`e2e/events.ts` er verktøyet som gjør det mulig: to veier inn, fordi appen
 har to slags abonnement. `__emit(kanal, …)` treffer `window.api.on`-kanalene
 (de gamle Electron-navnene shimmen kartlegger), `__emitEvent(navn, …)` treffer
 bakendens EGNE eventnavn, som `status/next-recording.ts` abonnerer på direkte.
@@ -1542,7 +1553,7 @@ derfor ikke engang fotograferbar i atlaset.
 
 Bunnlinja i Bibliotek har nå tre former: «Papirkurv» (ikke lest ennå — et tall
 vi ikke har er ikke null), «Papirkurven er tom», og «Papirkurv (N)». Alle tre
-er en knapp som går samme sted. `e2e/app/library.spec.ts` har mutasjonsprøven.
+er en knapp som går samme sted. `e2e/library.spec.ts` har mutasjonsprøven.
 
 De 30 dagene er ekte: `AUTO_PURGE_DAYS = 30` i `src-tauri/src/trash/mod.rs`, og
 `trash::sweep::spawn` armes fra `setup` — første tikk etter 90 sekunder, så hver 12. time — og sletter det som er eldre sammen med historikkradene.
@@ -1637,7 +1648,7 @@ et kvalitetsbanner.
 
 ## e2e
 
-`e2e/app/history.spec.ts` er `e2e/history.spec.ts` re-pekt, med hver TITTEL
+`e2e/history.spec.ts` er `e2e/history.spec.ts` re-pekt, med hver TITTEL
 uendret. Fire av legacys ni fulgte ikke med, og hver av dem er en skjerm som
 ikke finnes lenger — sorterbare kolonner, filterbrikkene, den chip-filtrerte
 tomtilstanden og notat-modalen. Alle fire står forklart i fila, og legacy-filen
@@ -1650,12 +1661,12 @@ modellere invarianten lesningen hviler på — et flyttet opptak ligger i
 papirkurven. Nærmere appen, og den eneste måten «raden forsvant» kan bety det
 den skal.
 
-`e2e/app/library.spec.ts` er ny: tellelinja, datoen fra `startedAt`, «—» for en
+`e2e/library.spec.ts` er ny: tellelinja, datoen fra `startedAt`, «—» for en
 ukjent varighet, Video-brikka på en foldet økt, papirkurv-inngangen ved tom kurv
 (med mutasjonsprøven), «Legg tilbake», og begge de farlige dialogene med rød
 sekundær og AVBRYT på Enter.
 
-`e2e/app/auto-update.spec.ts` fikk «auto-update toggle»-describen TILBAKE — de
+`e2e/auto-update.spec.ts` fikk «auto-update toggle»-describen TILBAKE — de
 fire titlene byte-identiske, `spyIntervals`/`armedUpdateIntervals`/
 `delaySettingsLoad` ordrett fra legacy-specen, fordi det er den samme sømmen:
 `update_check`-invoken telt på fikstur-grensen, og timerregisteret i stedet for
@@ -1931,7 +1942,7 @@ samme hele veien.
 
 ## e2e
 
-`e2e/app/editor.spec.ts`, 15 tester. Åtte titler er ORDRETT legacys, fordi de
+`e2e/editor.spec.ts`, 15 tester. Åtte titler er ORDRETT legacys, fordi de
 beskriver den samme oppførselen på en ny flate — og `docs/SMOKE-TEST.md` peker
 på to av dem som `sti::tittel`.
 
@@ -1940,7 +1951,7 @@ switch, and switching does not redo the work» og «the chosen tab is remembered
 across a reopen» beskriver tre faner som ikke finnes (stegstripa har ett steg),
 og «the export modal is honest about destination and level» er P4b.
 
-`editorFixtures` bor nå i `e2e/app/editor-fixtures.ts` og leses av BEGGE
+`editorFixtures` bor nå i `e2e/editor-fixtures.ts` og leses av BEGGE
 skallenes spec. En andre kopi ville vært en andre ting å drifte fra hverandre:
 poenget med fiksturene er at de står for det bakenden legger på ledningen, så de
 to skallene må fôres med den samme ledningen. `e2e/editor.spec.ts` er ellers
@@ -1956,7 +1967,7 @@ i, og SundayEdits E5 målte en 42× regresjon i den ekte WKWebView-en som var
 usynlig i Chromium.
 
 ⚠️ **Metoden måtte endres, og det er verdt å vite hvorfor.** De tidligere
-probene kjørte `npm run tauri:app` mot eierens egen profil. Det går ikke lenger:
+probene kjørte `npm run tauri dev` mot eierens egen profil. Det går ikke lenger:
 eierens installerte SundayRec kjørte, og **enkeltinstans-vakta** (FIKS 1,
 `tauri_plugin_single_instance` som FØRSTE plugin i `src-tauri/src/lib.rs`)
 blokkerer en andre oppstart — `a second SundayRec launch was blocked — focusing
@@ -1965,7 +1976,7 @@ beslutning en agent tar mens eieren er borte: SundayRec er opptaksappen, og en
 avsluttet app er et opptak som ikke starter.
 
 Så proben kjørte i en **ekte WKWebView uten Tauri**: en liten Swift-vert
-(aldri innsjekket) laster `npm run dev:app` og injiserer fikstursømmen som et
+(aldri innsjekket) laster `npm run dev` og injiserer fikstursømmen som et
 `WKUserScript` ved `documentStart` — nøyaktig den samme sømmen `e2e/harness.ts`
 bruker. Det gir den ekte motoren, den ekte CSP-en og den ekte tegningen, med et
 fikstureid opptak i stedet for eierens. Eierens app, database og
@@ -2018,10 +2029,10 @@ ikke et plaster.
    annen setning enn den samme raden i Bibliotek. Den bruker nå
    `spanText(spanOfSeconds(…))`, som er bibliotekets egen.
 
-👤 **Gjenstår for eieren:** den samme runden gjennom `npm run tauri:app` mot et
+👤 **Gjenstår for eieren:** den samme runden gjennom `npm run tauri dev` mot et
 EKTE opptak — altså med `editor_peaks` og `editor_segments` fra den virkelige
 bakenden, og med `asset://`-avspilling som faktisk kan gå. Kommandoen er
-`npm run tauri:app`, og den krever at SundayRec ikke allerede kjører.
+`npm run tauri dev`, og den krever at SundayRec ikke allerede kjører.
 
 ---
 
@@ -2095,7 +2106,7 @@ sluttnivå, med de samme feltene, områdene og trinnene som legacys `mixer.ts`.
 Startverdiene **importeres derfra** (`defaultProcessing`) i stedet for å
 skrives på nytt — det ene stedet `VocalChain::default()` er speilet i
 TypeScript skal fortsette å være ett sted. (Rollup rister `renderMixer`,
-`VOCAL_PRESETS` og legacys `E` ut igjen; verifisert i `dist-app`.)
+`VOCAL_PRESETS` og legacys `E` ut igjen; verifisert i `dist`.)
 
 Regelen som ikke er legacys: er mikseren PÅ, sendes `processing` og **ingen**
 `masterPreset`. Legacy lot begge stå i den samme nyttelasten, og det er det
@@ -2198,7 +2209,7 @@ blir liggende i `E`, så en retur tegner opp igjen uten å laste noe.
 
 ## e2e
 
-`e2e/app/editor.spec.ts` er 28 tester nå. **Ni** titler er ordrett legacys —
+`e2e/editor.spec.ts` er 28 tester nå. **Ni** titler er ordrett legacys —
 den nye er «the three tabs switch, and switching does not redo the work», som
 ble usann da stripa hadde ett steg og sann igjen nå. Den beskytter det samme
 den alltid gjorde: `editor_peaks` og `editor_segments` er kallene som ikke skal
@@ -2215,7 +2226,7 @@ alle tre.
 Nye specs med nyttelast-assertions på `editor_export`-argumentene: profilene
 (`speech-clear` / `music-speech` / ingenting), mikseren som overstyrer, den
 stille kanalen som repareres, video-bryteren, avbrytingen, kvitteringen.
-Fiksturene ligger i `e2e/app/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
+Fiksturene ligger i `e2e/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
 `AUTO_PROCESS`, `AUTO_PROCESS_DEAD_LEFT`) og leses av begge skallene, som før.
 
 **Mutasjonsprøven:** endres `SPEECH_MASTER_PRESET` i `sound-profiles.ts`, går
@@ -2231,7 +2242,106 @@ Fiksturene ligger i `e2e/app/editor-fixtures.ts` (`EXPORT_OK`, `EXPORT_HELD`,
    eksportvinduet» — vinduet finnes ikke. Uoppnåelig herfra (mp3/flac/wav/mp4
    er alle støttet), men teksten er stale i sju språk.
 5. **`export-core.ts`s feilkodetabell SPEILER** legacys `EXPORT_ERROR_CODES`.
-   Legacys `describeExportError` bor i en modul som drar med seg
-   modal-manager, toast, mikser og legacys `E`; fase B slår dem sammen.
+   ✅ Delvis lukket i fase B: modulen som holdt `describeExportError` er
+   slettet, så tabellen i `export-core.ts` er den ENESTE nå. Det er ikke en
+   sammenslåing, det er at den andre halvdelen forsvant — men speilet er borte.
 6. **`app.editor.mx.*`** er første store prosamengde i skallet (23 etiketter ×
-   2 språk). De fem pausete språkene får dem i fase B.
+   2 språk). De fem pausete språkene får dem i oversettelsesrunden etter PR B.
+
+---
+
+# Etter byttet
+
+Fase B, PR A gjorde `app/` til skallet og slettet `legacy/renderer/`s. Dette er
+den samlede restanselista — alt som er kjent åpent, ett sted, så ingen av delene
+finnes bare i en commit-melding.
+
+## 1. ⚠️ Vekking fra dvale spør aldri om administratorpassord
+
+Den mest konsekvensrike enden. Scheduleren armer OS-vekkinger selv når
+`wakeFromSleep` står på — uprivilegert og ikke-interaktivt
+(`scheduler/mod.rs`). Den INTERAKTIVE veien, kommandoen `wake_reschedule`, som
+eskalerer en feilet uprivilegert `pmset schedule wake` til ÉN
+`osascript … with administrator privileges`, har ingen kallsted i skallet.
+
+Konsekvens: på en Mac som trenger root for å skrive en strømhendelse blir
+brukeren aldri spurt, vekkingen blir aldri armet, og maskinen sover gjennom
+gudstjenesten. Den tar opp helt fint mens den er VÅKEN.
+
+Hullet er P1bs (`advanced/ScheduleCard.tsx` bygde bryteren uten knappen), ikke
+byttets — men byttet er det som sender det ut. Å lukke det er en knapp, to
+nøkler og en test, og teksten er et eierspørsmål: canvasens sett 5 har ingen
+slik rad.
+
+## 2. ⚠️ `healStoredDeviceId` finnes ikke lenger
+
+Den re-pekte en lagret `deviceId` som ikke lenger fantes, ved å matche på lagret
+NAVN. Windows omfordeler enhets-id-er etter omstart eller driveroppdatering, og
+L/R-kanalvalget er nøklet PÅ id-en — uten helingen faller en Qu-5-rigg stille
+tilbake til kanal 1/2, og ingen oppdager det før opptaket er av feil kilde.
+
+Skallet kalte den aldri, og kunne ikke: den leste `state.ts`' modulspeil av
+innstillingene, som skallet ikke fyller. Slettet i fase B sammen med `state.ts`
+(et ANDRE settings-speil ved siden av `app/state/settings.ts`). Å bygge den opp
+igjen over signalet er lite arbeid; å oppdage at den mangler er ikke.
+
+## 3. Flater som ikke ble bygget, og kommandoene bak dem
+
+35 Rust-kommandoer gikk fra nåbar til unåbar ved byttet. Alle er bevisste, alle
+er listet med grunn i baseline-committen og i `docs/SMOKE-TEST.md` under «Flater
+som ikke finnes lenger». De som er mer enn opprydding:
+
+- **Diagnose-skjermen.** `run_diagnostics` + `diagnose_audio` + capture-proben
+  virker fortsatt og er Rust-testet; ingenting åpner dem. Opptakstallene ligger
+  i `<app-data>/last-recording.json`, og §5b i røykboken leses derfra nå.
+  Tray-menyens «Diagnostikk» navigerer til OPPSETT og stopper der.
+- **Kamerabildet.** `recording_preview_frame` er unåbar. Overlegget har en
+  brikke som NAVNGIR kameraet; ingenting viser at det kommer bilder, så et dødt
+  kamera oppdages først når fila åpnes.
+- **«+30 min» / «Avbryt auto-stopp».** Overlegget sier fortsatt «Stopper av seg
+  selv om …», men fristen kan ikke skyves. `manualMaxMinutes` er 0 som standard,
+  så det rammer bare en rigg som har slått på sikkerhetsnettet — og da rammer
+  det midt i gudstjenesten.
+- **Notat-redigering** (`recording_update_note`) — eiervalg, P3.
+- **Mastringspanelet** (`editor_master_apply` m.fl.) — erstattet av tre ord og
+  mikseren.
+
+Rust-kommandoene er IKKE slettet. Det er en egen opprydding med sin egen
+vurdering per kommando.
+
+## 4. Atlas-fotografen er borte
+
+`e2e/atlas/**`, `playwright.atlas.config.ts` og `npm run atlas` fotograferte
+legacy-skallet med legacy-selektorer. Etter flippen ville kommandoen startet det
+NYE skallet og feilet hver eneste scene, så den er slettet. Bildene består:
+`docs/design/atlas/` (183 filer) og `docs/design/ATLAS.md` er Fase A-fasiten.
+Å fotografere det nye skallet er en ny scenetabell — verdt å gjøre, ikke en
+re-peking.
+
+## 5. Fem språk venter
+
+`ACTIVE_LOCALES` er fortsatt `["no", "en"]`. `PAUSED_KEYS` i
+`legacy/locales/parity.test.ts` unnskylder 442 nøkler i sv/da/de/fr/pl. Fase B
+ryddet 653 DØDE nøkler ut av alle sju katalogene først, nettopp så
+oversettelsesrunden ikke går på tekst ingen ser: sv/da/de/fr/pl gikk fra 895 til
+244 nøkler, no/en fra 1339 til 686. Oversettelsesrunden kommer etter PR B.
+
+## 6. PR B: flytt inventaret
+
+`legacy/renderer/` er 40 kildefiler og deres tester nå. PR B flytter dem til
+`app/lib/`, `@lib`-aliaset peker på den nye stien, og `legacy/` blir
+`bindings` + `locales` + `types` + `shared`. Mekanisk, og lettere å lese som sin
+egen commit enn blandet inn i en sletting på 24 000 linjer.
+
+Det som følger med den flyttingen:
+
+- **`.prettierignore`s `legacy`-linje.** Inventaret er fortsatt uformatert fordi
+  det er en verbatim port; etter flyttingen er spørsmålet om det skal formateres
+  som resten av `app/`.
+- **ESLints legacy-blokk.** Den løsner `any` og `no-unused-vars` for en port.
+  Etter flyttingen bør de 40 filene enten holdes til `app/`-reglene eller ha en
+  egen, navngitt blokk.
+- **`window.__isRecording`.** `audio/vu-feed.ts` LESER den som en vakt mot
+  `start_vu` under et opptak. Ingen skriver den, så vakten er inert — trygt i
+  dag fordi skallet vokter det samme ved MONTERING (se `RecordPage.tsx`), men
+  det er to steder som må være enige, og det er verdt å samle når filen flytter.

@@ -5,6 +5,61 @@ dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sunday
 
 ## Upublisert
 
+### SundayRec har fått nytt utseende — tre steder: Opptak · Bibliotek · Oppsett
+
+Dette er den største endringen appen har hatt. Alt SundayRec gjør, gjør den
+fortsatt; det er _å finne fram_ som er nytt.
+
+Før var det fem sider, åtte faner og 65 innstillinger, tegnet for noen som
+allerede visste hvordan appen virket. Nå er det **tre steder**, og de heter det
+de er:
+
+- **Opptak** — der du tar opp. Én knapp. Over den står det hva lyden kommer fra
+  og om vi faktisk hører den; under står det hva som skjer videre.
+- **Bibliotek** — der opptakene ligger. Hver rad heter når den ble tatt opp
+  («Søndag 16. august 2026 · 11:00»), ikke hva fila heter. Sletter du noe, får
+  du «Angre», og det du sletter havner i en papirkurv som alltid er der.
+- **Oppsett** — fem spørsmål, ikke 65 brytere: _Hvilken lyd? Hvor skal
+  opptakene? Hvilken kvalitet? Hvilken kirke? Hvem får beskjed hvis noe går
+  galt?_ Svar én gang, så er dere klare hver søndag. Alt de fleste aldri trenger
+  å røre er samlet under **Avansert**, med en trygg standard.
+
+Og **Rediger**, som ikke er et sted man går, men noe et opptak åpner seg i: tre
+steg — **Klipp → Lyd → Eksporter**. Steg 1 åpner med det eneste spørsmålet man
+har: _er dette prekenen?_ Forslaget står der allerede, og «Behold bare prekenen»
+er ett klikk.
+
+**Det som er annerledes, og hvorfor:**
+
+- **Ingen knapp lyver.** En knapp som er av, sier hvorfor den er av. «Start
+  opptak» var grå fordi ingen lydkilde var valgt, og det sto ingen steder.
+- **Ingenting sier «alt er i orden» når det ikke er det.** Enhetskortet malte
+  «Tilkoblet ✓» for en innstilling ingen hadde satt. Nå står det gult og sier
+  hva som mangler.
+- **Ingen knapp gjør ingenting.** Finnes ikke skjermen ennå, finnes ikke
+  knappen heller. En død knapp lærer bort at knappene i denne appen ikke er til
+  å stole på, og den lærdommen overlever knappen.
+- **Farlige spørsmål er snudd riktig vei.** «Stoppe opptaket?» har «Fortsett å
+  ta opp» som standardvalg. Det er trykk-Enter-svaret, og det skal aldri være
+  det som avslutter gudstjenesteopptaket.
+- **Tall er ærlige.** Et opptak på 20 sekunder står som «Under 1 min», ikke
+  «0 min». Et opptak der lengden ikke er kjent står som «—», og sier ingenting.
+- **Alt kan leses.** Håndtakene som viser hvor prekenen begynner og slutter er
+  ekte knapper som kan flyttes med piltastene, ikke firkanter tegnet på et
+  lerret. Farger, kontrast og bevegelse følger det maskinen er stilt inn på.
+
+**Dette er borte, og det er med vilje:** notatet på et opptak vises, men kan
+ikke lenger redigeres · filterbrikkene i historikken (søket gjør jobben) ·
+månedskalenderen (faste tider og spesialopptak er to lister under Avansert) ·
+eksportvinduet (eksport er et steg) · Diagnose-skjermen · det levende
+kamerabildet under opptak. Det som ikke ble bygget på nytt, er skrevet ned —
+ikke glemt.
+
+**Språk:** appen er på norsk og engelsk. Svensk, dansk, tysk, fransk og polsk
+kommer tilbake i en egen oversettelsesrunde — vi ryddet først bort 653
+tekststrenger som ikke lenger vises noe sted, så oversetterne slipper å bruke
+tid på skjermer som ikke finnes.
+
 ### Avslutt midt i et opptak spør nå én gang til, og venter til fila er trygg
 
 Trykket du Cmd+Q eller «Avslutt» mens gudstjenesten ble tatt opp, avsluttet
