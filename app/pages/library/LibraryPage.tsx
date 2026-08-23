@@ -31,12 +31,14 @@
  * legacy gjør det, og toasten kommer da uten «Angre» i stedet for å tilby en
  * knapp som ikke kunne gjort noe.
  *
- * ## «Rediger» finnes ikke ennå
+ * ## «Rediger» er primærknappen (P4a)
  *
- * Canvasens 3.1 har «Rediger» som radens primærknapp. Redigeringsflaten er P4.
- * En knapp til en side som ikke finnes lærer en frivillig at knappene i denne
- * appen ikke er til å stole på, så «Vis i Finder» står der i stedet — den gjør
- * noe, i dag. Samme regel som P2 fulgte på kvitteringen.
+ * Canvasens 3.1 har «Rediger» som radens primærknapp, og fra P4a finnes flaten
+ * den åpner: `app/editor/`, steg 1 «Klipp». «Vis i Finder» er sekundær nå — den
+ * gjør fortsatt noe, den er bare ikke det man kom hit for.
+ *
+ * Raden sender med DATOEN sin. Editoren kan ikke lese den ut av fila, og den er
+ * overskriften der akkurat som her.
  *
  * ## Filnavnet står under datoen
  *
@@ -50,6 +52,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import type { TrashEntry } from "@lib/pages/trash-core";
 
+import { openInEditor } from "../../editor/entry";
 import { locale, t, tf } from "../../i18n";
 import { navigate } from "../../router/router";
 import { loadRecordingCount, recordings } from "../../state/recordings";
@@ -287,6 +290,22 @@ function Row({
         ) : null}
       </div>
       <div class={styles.acts}>
+        {/*
+          «Rediger» er radens PRIMÆRKNAPP (canvas 3.1). P3 satte «Vis i Finder»
+          her fordi redigeringsflaten ikke fantes ennå og en knapp til en side
+          som ikke finnes lærer en frivillig at knappene ikke er til å stole
+          på. Nå finnes den, så knappen er byttet og «Vis i Finder» er
+          sekundær — den gjør fortsatt noe, den er bare ikke det man kom for.
+        */}
+        <Button
+          variant="primary"
+          disabled={row.path === null}
+          disabledReason={t("app.done.revealFailed")}
+          testId="library-row-edit"
+          onClick={() => openInEditor(row.path as string, row.atMs)}
+        >
+          {t("nav.editor")}
+        </Button>
         {/*
           Én «Vis i Finder» også for en økt med kamera: de to filene ligger side
           om side i samme mappe, så Finder viser begge. Legacy hadde en egen
