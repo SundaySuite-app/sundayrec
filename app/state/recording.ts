@@ -292,8 +292,23 @@ export function initRecording(): () => void {
     }),
     window.api.on("recording-quality", (data: unknown) => {
       const r = data as
-        | { expectedSec?: number; measuredSec?: number; reasons?: string[] }
+        | {
+            expectedSec?: number;
+            measuredSec?: number;
+            reasons?: string[];
+            reasonCodes?: string[];
+            reason_codes?: string[];
+          }
         | undefined;
+      // ⚠️ FELTET, ikke innholdet, er testen. Motoren la `reasonCodes` til
+      // additivt, så en eldre bakende sender bare prosaen — og BARE den skal
+      // få prosaen vist. Begge skrivemåter leses: DTO-en er camelCase i dag,
+      // og en `serde`-omdøping en gang i framtiden skal ikke stille slå av
+      // oversettelsen igjen.
+      const rawCodes = r?.reasonCodes ?? r?.reason_codes;
+      const reasonCodes = Array.isArray(rawCodes)
+        ? rawCodes.filter((x) => typeof x === "string" && x.length > 0)
+        : null;
       raiseBanner({
         key: "recording-quality",
         measuredSec: Math.round(r?.measuredSec ?? 0),
@@ -301,6 +316,7 @@ export function initRecording(): () => void {
         reasons: (r?.reasons ?? []).filter(
           (x) => typeof x === "string" && x.length > 0,
         ),
+        reasonCodes,
       });
     }),
     // Stillheten er over når det kommer lyd igjen. Motoren fyrer ingen

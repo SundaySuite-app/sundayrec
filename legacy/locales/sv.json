@@ -252,7 +252,16 @@
     "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver.",
     "autostopIn": "Autostopp om",
     "extend30": "+ 30 min",
-    "cancelAutostop": "Avbryt autostopp"
+    "cancelAutostop": "Avbryt autostopp",
+    "qrNoAudio": "Inget ljud fångades — filen är för liten för att innehålla något.",
+    "qrSilent": "Inspelningen är tyst — ingen signal. Kontrollera enhet och gain.",
+    "qrGapFail": "Delar av ljudet saknas eller är tyst — hackningar eller bortfall.",
+    "qrDropsFail": "Många bortfall från ljudenheten.",
+    "qrSampleRate": "Samplingsfrekvensen tvingades bort från enhetens egen — omvandlingen kan ge bortfall.",
+    "qrGapWarn": "En liten lucka eller tystnad i inspelningen.",
+    "qrLowSignal": "Svag signal — överväg att höja gain.",
+    "qrDropsWarn": "Några enstaka bortfall från ljudenheten.",
+    "qrClean": "Jämn inspelning, inga bortfall."
   },
   "video": {
     "guardDevice": "Byta kamera"

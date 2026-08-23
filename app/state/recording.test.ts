@@ -26,7 +26,7 @@ import {
   scheduledStopMs,
   silenceActive,
 } from "./recording";
-import { clearBanners } from "./banners";
+import { banners, clearBanners } from "./banners";
 
 interface Harness {
   emit: (channel: string, payload?: unknown) => void;
@@ -137,6 +137,67 @@ describe("gjenkoblingsstripa", () => {
     h.emit("recording-overlay-stop", { state: "stopped" });
     expect(isRecording.value).toBe(false);
     expect(reconnecting.value).toBe(false);
+    h.off();
+  });
+});
+
+// ── Kvalitetsalarmens årsaker: kode eller prosa ─────────────────────────────
+
+describe("kvalitetsalarmen skiller «ingen koder» fra «koder finnes ikke»", () => {
+  function qualityBanner() {
+    const b = banners.value.find((x) => x.key === "recording-quality");
+    if (!b || b.key !== "recording-quality") throw new Error("intet banner");
+    return b;
+  }
+
+  // MUTASJONSPRØVEN: bytt `Array.isArray(rawCodes) ? … : null` mot
+  // `rawCodes ?? []`, og den første blir rød — en eldre motor ville da fått
+  // sin norske prosa skjult i stedet for vist.
+  it("en ELDRE motor uten feltet gir `null`, og prosaen får stå", () => {
+    const h = withFakeApi();
+    h.emit("recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: ["3.42s manglende/stille lyd — hakking/dropp"],
+    });
+    expect(qualityBanner().reasonCodes).toBeNull();
+    expect(qualityBanner().reasons).toHaveLength(1);
+    h.off();
+  });
+
+  it("en motor MED feltet gir kodene, og prosaen blir bare reserve", () => {
+    const h = withFakeApi();
+    h.emit("recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: ["3.42s manglende/stille lyd — hakking/dropp"],
+      reasonCodes: ["gap_fail"],
+    });
+    expect(qualityBanner().reasonCodes).toEqual(["gap_fail"]);
+    h.off();
+  });
+
+  it("leser også snake_case, så en serde-omdøping ikke slår oversettelsen av", () => {
+    const h = withFakeApi();
+    h.emit("recording-quality", {
+      measuredSec: 1,
+      expectedSec: 2,
+      reasons: [],
+      reason_codes: ["low_signal"],
+    });
+    expect(qualityBanner().reasonCodes).toEqual(["low_signal"]);
+    h.off();
+  });
+
+  it("et TOMT kodefelt er ikke det samme som et manglende", () => {
+    const h = withFakeApi();
+    h.emit("recording-quality", {
+      measuredSec: 1,
+      expectedSec: 2,
+      reasons: ["noe"],
+      reasonCodes: [],
+    });
+    expect(qualityBanner().reasonCodes).toEqual([]);
     h.off();
   });
 });

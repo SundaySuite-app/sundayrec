@@ -252,7 +252,16 @@
     "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal.",
     "autostopIn": "Autostop om",
     "extend30": "+ 30 min",
-    "cancelAutostop": "Annullér autostop"
+    "cancelAutostop": "Annullér autostop",
+    "qrNoAudio": "Der blev ikke optaget lyd — filen er for lille til at indeholde noget.",
+    "qrSilent": "Optagelsen er stille — intet signal. Tjek enhed og gain.",
+    "qrGapFail": "Dele af lyden mangler eller er stille — hakken eller udfald.",
+    "qrDropsFail": "Mange udfald fra lydenheden.",
+    "qrSampleRate": "Samplingsraten blev tvunget væk fra enhedens egen — omregningen kan give udfald.",
+    "qrGapWarn": "Et lille hul eller en stilhed i optagelsen.",
+    "qrLowSignal": "Svagt signal — overvej at hæve gain.",
+    "qrDropsWarn": "Nogle få udfald fra lydenheden.",
+    "qrClean": "Jævn optagelse, ingen udfald."
   },
   "video": {
     "guardDevice": "Skifte kamera"

@@ -252,7 +252,16 @@
     "autostopFailed": "Automatischer Stopp konnte nicht geändert werden. Die Aufnahme läuft weiter — bei Bedarf manuell stoppen.",
     "autostopIn": "Auto-Stopp in",
     "extend30": "+ 30 Min.",
-    "cancelAutostop": "Auto-Stopp abbrechen"
+    "cancelAutostop": "Auto-Stopp abbrechen",
+    "qrNoAudio": "Es wurde kein Ton aufgezeichnet — die Datei ist zu klein, um etwas zu enthalten.",
+    "qrSilent": "Die Aufnahme ist still — kein Signal. Gerät und Gain prüfen.",
+    "qrGapFail": "Teile des Tons fehlen oder sind still — Stottern oder Aussetzer.",
+    "qrDropsFail": "Viele Aussetzer vom Audiogerät.",
+    "qrSampleRate": "Die Abtastrate wurde von der geräteeigenen weggezwungen — die Umrechnung kann Aussetzer verursachen.",
+    "qrGapWarn": "Eine kleine Lücke oder Stille in der Aufnahme.",
+    "qrLowSignal": "Schwaches Signal — Gain erhöhen.",
+    "qrDropsWarn": "Einige wenige Aussetzer vom Audiogerät.",
+    "qrClean": "Gleichmäßige Aufnahme, keine Aussetzer."
   },
   "video": {
     "guardDevice": "Kamera wechseln"

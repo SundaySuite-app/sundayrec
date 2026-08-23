@@ -252,7 +252,16 @@
     "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire.",
     "autostopIn": "Arrêt auto dans",
     "extend30": "+ 30 min",
-    "cancelAutostop": "Annuler l'arrêt auto"
+    "cancelAutostop": "Annuler l'arrêt auto",
+    "qrNoAudio": "Aucun son n'a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
+    "qrSilent": "L'enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",
+    "qrGapFail": "Des parties du son manquent ou sont silencieuses — saccades ou coupures.",
+    "qrDropsFail": "De nombreuses coupures du périphérique audio.",
+    "qrSampleRate": "La fréquence d'échantillonnage a été forcée hors de celle du périphérique — la conversion peut provoquer des coupures.",
+    "qrGapWarn": "Un petit trou ou un silence dans l'enregistrement.",
+    "qrLowSignal": "Signal faible — envisagez d'augmenter le gain.",
+    "qrDropsWarn": "Quelques coupures du périphérique audio.",
+    "qrClean": "Enregistrement régulier, aucune coupure."
   },
   "video": {
     "guardDevice": "Changer de caméra"

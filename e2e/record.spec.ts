@@ -562,3 +562,73 @@ test.describe("bakendens egne advarsler (backend://warning)", () => {
     await expect(page.getByTestId("record-source-missing")).toBeVisible();
   });
 });
+
+test.describe("kvalitetsalarmens årsaker", () => {
+  // ⚠️ Årsakslinja var motorens HARDKODEDE NORSKE prosa fra
+  // `sundayrec_core::selftest` («3.42s manglende/stille lyd — hakking/dropp»),
+  // satt sammen med `format!` og sendt rett i et banner. En engelsk bruker fikk
+  // norsk teknisk sjargong i det ene varselet som betyr «ikke stol på dette
+  // opptaket». Motoren sender nå kodene ved siden av prosaen.
+
+  test("koder fra motoren blir katalogens setninger, ikke motorens", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: [
+        "3.42s manglende/stille lyd — hakking/dropp",
+        "Svakt signal — vurder å øke gain",
+      ],
+      reasonCodes: ["gap_fail", "low_signal"],
+    });
+
+    const banner = page.getByTestId("banner-recording-quality");
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText("3120 av 5400 sekunder");
+    await expect(banner).toContainText(
+      "Deler av lyden mangler eller er stille",
+    );
+    await expect(banner).toContainText("Svakt signal");
+    // …og INGEN av motorens egne setninger. MUTASJONSPRØVEN: fjern
+    // `reasonCodes`-grenen i `qualityReasonText`, og denne linja blir rød.
+    await expect(banner).not.toContainText("hakking/dropp");
+  });
+
+  test("en ELDRE motor uten feltet får prosaen sin vist — sant slår tomt", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 3120,
+      expectedSec: 5400,
+      reasons: ["3.42s manglende/stille lyd — hakking/dropp"],
+    });
+
+    const banner = page.getByTestId("banner-recording-quality");
+    await expect(banner).toContainText("hakking/dropp");
+  });
+
+  test("en kode katalogen ikke kjenner faller på motorens egen linje", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, { fixtures: FIXTURES, settings: CHOSEN, goto: "home" });
+
+    await emit(page, "recording-quality", {
+      measuredSec: 10,
+      expectedSec: 20,
+      reasons: ["Kosmisk stråling traff disken"],
+      reasonCodes: ["cosmic_rays"],
+    });
+
+    await expect(page.getByTestId("banner-recording-quality")).toContainText(
+      "Kosmisk stråling",
+    );
+  });
+});

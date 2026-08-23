@@ -773,7 +773,16 @@
     "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to.",
     "autostopIn": "Auto-stop in",
     "extend30": "+ 30 min",
-    "cancelAutostop": "Cancel auto-stop"
+    "cancelAutostop": "Cancel auto-stop",
+    "qrNoAudio": "No audio was captured — the file is too small to hold anything.",
+    "qrSilent": "The recording is silent — no signal. Check the device and the gain.",
+    "qrGapFail": "Parts of the audio are missing or silent — stuttering or dropouts.",
+    "qrDropsFail": "Many dropouts from the audio device.",
+    "qrSampleRate": "The sample rate was forced away from the device's own — the conversion can cause dropouts.",
+    "qrGapWarn": "A small gap or silence in the recording.",
+    "qrLowSignal": "Weak signal — consider raising the gain.",
+    "qrDropsWarn": "A few dropouts from the audio device.",
+    "qrClean": "Steady recording, no dropouts."
   },
   "video": {
     "guardDevice": "Change camera"

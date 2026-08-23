@@ -7,6 +7,8 @@
  * mutasjonsprøve blir røde.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SETTINGS_DEFAULTS } from "@lib/settings-defaults";
 
@@ -19,6 +21,7 @@ import {
   formatClock,
   nativeErrorSuffix,
   nativeErrorSuffixFromText,
+  qualityReasonSuffix,
   sourceState,
   spanOfMinutes,
   spanOfSeconds,
@@ -274,5 +277,48 @@ describe("nativeErrorSuffix", () => {
       "errorDiskFull",
     );
     expect(nativeErrorSuffixFromText("")).toBe("errorUnknown");
+  });
+});
+
+describe("qualityReasonSuffix", () => {
+  it("hver kode peker på en nøkkel som FINNES i både no og en", () => {
+    // Katalogene er sannheten her; tabellen er bare navnene. En rad som pekte
+    // på en nøkkel ingen hadde skrevet ville gitt tom tekst i banneret som
+    // sier «ikke stol på dette opptaket».
+    const codes = [
+      "no_audio_captured",
+      "silent_take",
+      "gap_fail",
+      "drops_fail",
+      "forced_sample_rate",
+      "gap_warn",
+      "low_signal",
+      "drops_warn",
+      "clean",
+    ];
+    for (const lang of ["no", "en"]) {
+      const cat = JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, `../../../legacy/locales/${lang}.json`),
+          "utf8",
+        ),
+      ) as { recording: Record<string, string> };
+      for (const code of codes) {
+        const suffix = qualityReasonSuffix(code);
+        expect(suffix, code).not.toBeNull();
+        expect(
+          typeof cat.recording[suffix as string] === "string" &&
+            cat.recording[suffix as string].length > 0,
+          `${lang}.json mangler recording.${suffix}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("en UKJENT kode gir `null`, ikke en generisk setning", () => {
+    // `null` er hele kontrakten mot siden: da vises motorens EGEN prosalinje
+    // på samme indeks. Å bytte en sann setning mot en generisk «ukjent årsak»
+    // ville vært å handle informasjon for språk.
+    expect(qualityReasonSuffix("cosmic_rays")).toBeNull();
   });
 });

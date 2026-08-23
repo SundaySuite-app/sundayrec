@@ -106,6 +106,7 @@ import {
   formatBytes,
   nativeErrorSuffix,
   nativeErrorSuffixFromText,
+  qualityReasonSuffix,
   sourceState,
   spanOfMinutes,
   spanOfSeconds,
@@ -746,13 +747,7 @@ function RecordBanners() {
               m: entry.measuredSec,
               e: entry.expectedSec,
             })}
-            detail={
-              entry.reasons.length
-                ? tf("recording.qualityReasons", {
-                    r: entry.reasons.join(", "),
-                  })
-                : undefined
-            }
+            detail={qualityReasonText(entry.reasonCodes, entry.reasons)}
             onDismiss={() => dismissBanner("recording-quality")}
             actions={
               <Button
@@ -861,6 +856,42 @@ function preflightHeadline(findings: readonly PreflightFinding[]): string {
   return errors > 0
     ? tn("status.preflightErrors", errors)
     : tn("status.preflightWarns", findings.length);
+}
+
+/**
+ * Årsakslinja under kvalitetsalarmen.
+ *
+ * ## ⚠️ Den var motorens hardkodede NORSKE prosa
+ *
+ * `sundayrec_core::selftest` setter sammen setninger som «3.42s manglende/
+ * stille lyd — hakking/dropp» med `format!`, og de gikk rett inn i banneret.
+ * En engelsk bruker fikk altså norsk teknisk sjargong i det ene varselet som
+ * betyr «ikke stol på dette opptaket».
+ *
+ * Motoren sender nå kodene ved siden av prosaen. Regelen er én linje:
+ *
+ *   • `reasonCodes === null` — FELTET mangler, altså en eldre bakende. Da er
+ *     prosaen alt som finnes, og en sann setning på feil språk slår en tom
+ *     linje. (Samme avveining som `backend://warning`s ukjente koder.)
+ *   • ellers oversettes hver kode; en kode katalogen ikke kjenner faller
+ *     tilbake på motorens prosalinje på SAMME indeks, ikke på en generisk
+ *     «ukjent årsak» — den ville byttet informasjon mot språk.
+ */
+function qualityReasonText(
+  codes: readonly string[] | null,
+  reasons: readonly string[],
+): string | undefined {
+  if (codes === null) {
+    return reasons.length
+      ? tf("recording.qualityReasons", { r: reasons.join(", ") })
+      : undefined;
+  }
+  if (codes.length === 0) return undefined;
+  const parts = codes.map((code, i) => {
+    const suffix = qualityReasonSuffix(code);
+    return suffix ? tDyn("recording", suffix) : (reasons[i] ?? code);
+  });
+  return tf("recording.qualityReasons", { r: parts.join(", ") });
 }
 
 /**

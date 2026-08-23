@@ -306,3 +306,49 @@ export function nativeErrorSuffixFromText(text: string | null): string {
   console.warn("[record] ukjent feiltekst fra motoren:", text);
   return "errorUnknown";
 }
+
+// ── Kvalitetsalarmens årsaker ───────────────────────────────────────────────
+
+/**
+ * Motorens kvalitetskode → et suffiks under `recording.*`.
+ *
+ * ## ⚠️ Hvorfor tabellen finnes
+ *
+ * `recording://quality` bar bare `reasons`: HARDKODET NORSK PROSA fra
+ * `sundayrec_core::selftest` («3.42s manglende/stille lyd — hakking/dropp»),
+ * satt sammen med `format!` og sendt rett i et banner. En engelsk bruker fikk
+ * norsk teknisk sjargong i det ene varselet som betyr at opptaket ikke er til
+ * å stole på. Motoren sender nå KODER ved siden av prosaen, og de oversettes
+ * her.
+ *
+ * Navnene speiler betingelsene i `selftest_verdict` i deklarasjonsrekkefølge.
+ * Treffer en kode ikke tabellen, faller siden tilbake til motorens egen
+ * prosalinje på samme indeks — altså nøyaktig dagens oppførsel, ikke stillhet.
+ * Det er også hva som skjer for en eldre motor som ikke sender koder i det
+ * hele tatt.
+ */
+const QUALITY_REASONS: Record<string, string> = {
+  no_audio_captured: "qrNoAudio",
+  silent_take: "qrSilent",
+  gap_fail: "qrGapFail",
+  drops_fail: "qrDropsFail",
+  forced_sample_rate: "qrSampleRate",
+  gap_warn: "qrGapWarn",
+  low_signal: "qrLowSignal",
+  drops_warn: "qrDropsWarn",
+  clean: "qrClean",
+};
+
+/**
+ * Suffikset for én kvalitetskode, eller `null` når koden er ukjent her.
+ *
+ * `null` og ikke et «errorUnknown»: en ukjent kode har en SANN setning ved
+ * siden av seg (motorens egen prosa), og den er bedre enn en generisk. Se
+ * `qualityReasonText` i `RecordPage.tsx`.
+ */
+export function qualityReasonSuffix(code: string): string | null {
+  const hit = QUALITY_REASONS[code];
+  if (hit) return hit;
+  console.warn("[record] ukjent kvalitetskode fra motoren:", code);
+  return null;
+}

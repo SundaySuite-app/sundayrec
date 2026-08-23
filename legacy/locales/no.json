@@ -773,7 +773,16 @@
     "autostopFailed": "Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.",
     "autostopIn": "Auto-stopp om",
     "extend30": "+ 30 min",
-    "cancelAutostop": "Avbryt auto-stopp"
+    "cancelAutostop": "Avbryt auto-stopp",
+    "qrNoAudio": "Ingen lyd ble fanget — fila er for liten til å inneholde noe.",
+    "qrSilent": "Opptaket er stille — ingen signal. Sjekk enhet og gain.",
+    "qrGapFail": "Deler av lyden mangler eller er stille — hakking eller dropp.",
+    "qrDropsFail": "Mange dropp fra lydenheten.",
+    "qrSampleRate": "Samplingsraten ble tvunget bort fra enhetens egen — omregningen kan gi dropp.",
+    "qrGapWarn": "Et lite hull eller en stillhet i opptaket.",
+    "qrLowSignal": "Svakt signal — vurder å øke gain.",
+    "qrDropsWarn": "Noen få dropp fra lydenheten.",
+    "qrClean": "Jevnt opptak, ingen dropp."
   },
   "video": {
     "guardDevice": "Bytte kamera"

@@ -73,7 +73,21 @@ export type BannerData =
       key: "recording-quality";
       measuredSec: number;
       expectedSec: number;
+      /**
+       * Motorens egen PROSA, hardkodet norsk fra `sundayrec_core::selftest`.
+       * Diagnostikk og reserve — aldri UI-tekst når `reasonCodes` finnes.
+       */
       reasons: readonly string[];
+      /**
+       * De samme årsakene som STABILE KODER, parallelt med `reasons`.
+       *
+       * `null` betyr «motoren sendte ikke feltet» — en eldre bakende — og BARE
+       * da leses prosaen over som tekst. Skillet er hele grunnen til at feltet
+       * er nullbart i stedet for en tom liste: «ingen koder» og «koder finnes
+       * ikke i denne versjonen» er to forskjellige svar, og bare det andre er
+       * en grunn til å vise norsk til en engelsk bruker.
+       */
+      reasonCodes: readonly string[] | null;
     }
   /**
    * En nyere versjon finnes (P3). NØKLET er hele poenget her: den samme
