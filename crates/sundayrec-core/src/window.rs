@@ -27,6 +27,31 @@
 //!   `state_is_live` draws the same line, for the same reason.)
 //! * Everything else (`Idle`/`Stopped`/`Failed`) → **exit**, byte-for-byte the
 //!   behaviour that shipped before: close means quit.
+//!
+//! ## …and the quit that used to walk straight past it
+//!
+//! Closing the window was only half the door. Cmd+Q, the app menu's Quit and the
+//! tray's «Avslutt» are `ExitRequested`, not `CloseRequested`, so they never
+//! reached [`close_action`] at all — a single keystroke mid-sermon called
+//! `RecorderEngine::stop()` and let the process die on top of it. `stop()` does
+//! not block: it signals the supervisor and returns, so the recording's rescue
+//! depended on the next launch's recovery scan rather than on a finalised file.
+//!
+//! [`quit_action`] closes that half:
+//!
+//! * live (`Preparing`/`Recording`/`Reconnecting`) → **refuse** the first press,
+//!   say so, and remember when. A second press between [`QUIT_REPEAT_FLOOR_MS`]
+//!   and [`QUIT_CONFIRM_WINDOW_MS`] later means it: stop, then **wait** for the
+//!   file. (Sooner than the floor is a key repeat, not an answer.)
+//! * `Stopping` → **wait**, with no second press demanded — the volunteer asked
+//!   for the stop already.
+//! * `Idle`/`Stopped`/`Failed` → **quit now**, exactly as before.
+//!
+//! A native confirmation dialog was considered and rejected (see
+//! `docs/APP-SHELL.md`): the blocking dialogs must not be called from the run
+//! loop, and the non-blocking one turns a failed dialog into an app that cannot
+//! be quit. A refusal + a notification degrades the other way — worst case the
+//! volunteer sees no notice and presses again, which is the outcome they wanted.
 
 use crate::recorder::RecorderState;
 use crate::tray::TrayLang;
@@ -135,6 +160,220 @@ fn spot_noun(spot: TraySpot, lang: TrayLang) -> &'static str {
         (TraySpot::SystemTray, TrayLang::Pl) => "zasobnika systemowego",
         (TraySpot::SystemTray, TrayLang::Fr) => "la zone de notification",
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//   Quit (Cmd+Q, the app menu, the tray's «Avslutt»)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// How long the first, refused quit stays "fresh": press Quit again inside this
+/// window and the second press is taken as the confirmation, stops the capture
+/// and quits.
+///
+/// Ten seconds is the whole design. Long enough that a volunteer who read the
+/// notification can act on it without hurrying, short enough that the *next*
+/// Cmd+Q — minutes later, for an unrelated reason — is refused again rather than
+/// silently ending a service because of a keypress nobody remembers. It is also
+/// why the confirmation needs no dialog: a dialog that fails to appear leaves an
+/// app that cannot be quit at all (the reason `docs/APP-SHELL.md` recorded this
+/// as a restanse instead of shipping `tauri-plugin-dialog` inside the run loop),
+/// while a refusal that fails to notify still leaves an app that quits on the
+/// second press.
+///
+/// ⚠️ The refusal text spells this number out in seconds ({seconds} → 10). Polish
+/// takes the genitive plural ("10 sekund") for 10; a value of 2–4 s would need
+/// "sekundy" instead, so `the_refusal_wording_is_pinned_to_ten_seconds` fails if
+/// anyone retunes this without revisiting the wording.
+pub const QUIT_CONFIRM_WINDOW_MS: u64 = 10_000;
+
+/// The other edge of the same window: a press this soon after the last one is
+/// not a second decision.
+///
+/// Two ways one keystroke can arrive as two. A held Cmd+Q auto-repeats — macOS's
+/// fastest repeat *rate* is a few tens of milliseconds once the initial delay
+/// (≥120 ms) has passed — and a platform can deliver one menu activation twice
+/// (the reason `NOTICE_PENDING` exists on the close side). Without a floor,
+/// either turns "refuse the first press" into "refuse, then instantly confirm",
+/// which is the exact outcome this whole rule exists to prevent, reached by
+/// leaning on a key.
+///
+/// 300 ms sits above the repeat rate and below a deliberate double-tap. It
+/// degrades safely in the one case it gets wrong: an unusually fast intentional
+/// double-press is refused again, and the volunteer presses once more.
+pub const QUIT_REPEAT_FLOOR_MS: u64 = 300;
+
+/// What the shell should do with a *user-initiated* quit request (Cmd+Q, the app
+/// menu's Quit, the tray's «Avslutt»). A programmatic `app.exit(code)` is NOT
+/// this — see the shell for why that distinction is load-bearing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitAction {
+    /// A capture is live and no fresh refusal stands: refuse this quit, tell the
+    /// volunteer, and remember when. The recording is untouched.
+    Refuse,
+    /// The volunteer confirmed (a second press inside
+    /// [`QUIT_CONFIRM_WINDOW_MS`]): stop the capture, then wait for the file to
+    /// land before the process dies.
+    StopThenWait,
+    /// Nothing to stop — the stop is already in flight — but the file is still
+    /// being written: wait for it, then quit. No second press is demanded here;
+    /// the volunteer already asked for the stop, and asking twice for something
+    /// they did not request is just noise.
+    WaitOnly,
+    /// Nothing is running: quit immediately, byte-for-byte as before.
+    ExitNow,
+}
+
+/// THE quit decision. Pure, exhaustively matched (no `_` arm), so a new
+/// [`RecorderState`] forces a choice here rather than defaulting into "kill the
+/// service".
+///
+/// `prior_refusal_age_ms` is how long ago this process last refused a quit, or
+/// `None` when it never has. The shell measures it; the policy lives here.
+pub fn quit_action(state: RecorderState, prior_refusal_age_ms: Option<u64>) -> QuitAction {
+    match state {
+        // Live capture. The first press is a question, the second is an answer.
+        RecorderState::Preparing | RecorderState::Recording | RecorderState::Reconnecting => {
+            match prior_refusal_age_ms {
+                // Too soon to be a decision — a key repeat or a doubled event.
+                // Refusing again (and, in the shell, re-stamping) means a held
+                // Cmd+Q can never confirm itself, however long it is held.
+                Some(age) if age < QUIT_REPEAT_FLOOR_MS => QuitAction::Refuse,
+                Some(age) if age < QUIT_CONFIRM_WINDOW_MS => QuitAction::StopThenWait,
+                _ => QuitAction::Refuse,
+            }
+        }
+        // `Stopping` is emitted BEFORE `finalize_pending`, so concat + the
+        // delivery transcode + the history row all happen inside it — minutes,
+        // for a 60–90 minute service. Quitting here is the one moment that can
+        // still destroy an otherwise-complete recording, so the quit is honoured
+        // but the process waits for the file.
+        RecorderState::Stopping => QuitAction::WaitOnly,
+        RecorderState::Idle | RecorderState::Stopped | RecorderState::Failed => QuitAction::ExitNow,
+    }
+}
+
+/// Which of the two quit notifications to fire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitNotice {
+    /// [`QuitAction::Refuse`] — "I did not quit, and here is how to insist."
+    Refused,
+    /// [`QuitAction::StopThenWait`] / [`QuitAction::WaitOnly`] — "I am quitting,
+    /// but not until the file is safe."
+    Waiting,
+}
+
+/// One observation during the bounded wait for the finalisation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitWait {
+    /// The file is not safe yet and the cap has not been reached.
+    KeepWaiting,
+    /// The recorder reached rest — the file is written, quit now.
+    Settled,
+    /// The cap ran out first. Quit anyway: an app that cannot be quit is worse
+    /// than a finalisation nobody is waiting for any more.
+    Capped,
+}
+
+/// Pure: what one poll of the recorder's state means for a quit that is waiting
+/// for the file, given how long it has been waiting and the cap it may not
+/// exceed.
+///
+/// `Settled` is checked FIRST, so a file that lands in the same tick the cap
+/// expires is reported as saved rather than as a timeout — the honest reading,
+/// and the one the log line has to get right for the next bug report.
+pub fn wait_outcome(state: RecorderState, elapsed_ms: u64, cap_ms: u64) -> QuitWait {
+    let settled = match state {
+        // Terminal: the supervisor is done, the history row is written.
+        RecorderState::Stopped | RecorderState::Failed => true,
+        // Unreachable in practice (nothing transitions back to `Idle`), but a
+        // never-started engine has nothing to wait for either — and the
+        // alternative reading would hang the quit for the whole cap.
+        RecorderState::Idle => true,
+        RecorderState::Preparing
+        | RecorderState::Recording
+        | RecorderState::Reconnecting
+        | RecorderState::Stopping => false,
+    };
+    if settled {
+        QuitWait::Settled
+    } else if elapsed_ms >= cap_ms {
+        QuitWait::Capped
+    } else {
+        QuitWait::KeepWaiting
+    }
+}
+
+/// The localised `(title, body)` of the OS notification a quit fires.
+///
+/// Same channel and the same deliberate exemption as [`hidden_notice`]: neither
+/// notice is gated by the `notifyStart`/`notifyStop` comfort toggles, because
+/// both say "what you just did did not do what you expected, and something you
+/// cannot afford to lose is at stake".
+pub fn quit_notice(notice: QuitNotice, lang: TrayLang) -> (String, String) {
+    let (title, body) = match (notice, lang) {
+        (QuitNotice::Refused, TrayLang::No) => (
+            "SundayRec tar opp",
+            "Trykk Avslutt igjen innen {seconds} sekunder for å stoppe opptaket og avslutte.",
+        ),
+        (QuitNotice::Refused, TrayLang::En) => (
+            "SundayRec is recording",
+            "Press Quit again within {seconds} seconds to stop the recording and quit.",
+        ),
+        (QuitNotice::Refused, TrayLang::De) => (
+            "SundayRec nimmt auf",
+            "Drücke innerhalb von {seconds} Sekunden erneut auf Beenden, um die Aufnahme zu stoppen und das Programm zu schließen.",
+        ),
+        (QuitNotice::Refused, TrayLang::Sv) => (
+            "SundayRec spelar in",
+            "Tryck Avsluta igen inom {seconds} sekunder för att stoppa inspelningen och avsluta.",
+        ),
+        (QuitNotice::Refused, TrayLang::Da) => (
+            "SundayRec optager",
+            "Tryk Afslut igen inden for {seconds} sekunder for at stoppe optagelsen og afslutte.",
+        ),
+        (QuitNotice::Refused, TrayLang::Pl) => (
+            "SundayRec nagrywa",
+            "Naciśnij Zakończ ponownie w ciągu {seconds} sekund, aby zatrzymać nagrywanie i zamknąć aplikację.",
+        ),
+        (QuitNotice::Refused, TrayLang::Fr) => (
+            "SundayRec enregistre",
+            "Appuyez de nouveau sur Quitter dans les {seconds} secondes pour arrêter l'enregistrement et quitter.",
+        ),
+        (QuitNotice::Waiting, TrayLang::No) => (
+            "Lagrer opptaket",
+            "SundayRec avslutter når fila er trygg. Ett trykk til avslutter med én gang.",
+        ),
+        (QuitNotice::Waiting, TrayLang::En) => (
+            "Saving the recording",
+            "SundayRec quits once the file is safe. One more press quits immediately.",
+        ),
+        (QuitNotice::Waiting, TrayLang::De) => (
+            "Aufnahme wird gespeichert",
+            "SundayRec beendet sich, sobald die Datei sicher ist. Noch einmal drücken beendet sofort.",
+        ),
+        (QuitNotice::Waiting, TrayLang::Sv) => (
+            "Sparar inspelningen",
+            "SundayRec avslutas när filen är trygg. Ett tryck till avslutar direkt.",
+        ),
+        (QuitNotice::Waiting, TrayLang::Da) => (
+            "Gemmer optagelsen",
+            "SundayRec afslutter, når filen er sikker. Endnu et tryk afslutter med det samme.",
+        ),
+        (QuitNotice::Waiting, TrayLang::Pl) => (
+            "Zapisywanie nagrania",
+            "SundayRec zamknie się, gdy plik będzie bezpieczny. Kolejne naciśnięcie zamyka natychmiast.",
+        ),
+        (QuitNotice::Waiting, TrayLang::Fr) => (
+            "Sauvegarde de l'enregistrement",
+            "SundayRec se ferme une fois le fichier en sécurité. Une pression de plus quitte immédiatement.",
+        ),
+    };
+    (
+        title.to_string(),
+        // The number in the text IS the constant — a hard-coded "10" is exactly
+        // how a retuned window and its own explanation drift apart.
+        body.replace("{seconds}", &(QUIT_CONFIRM_WINDOW_MS / 1000).to_string()),
+    )
 }
 
 #[cfg(test)]
@@ -263,5 +502,335 @@ mod tests {
         assert!(win.contains("systemstatusfeltet"), "{win}");
         let (_, mac_en) = hidden_notice(HideReason::Recording, TrayLang::En, TraySpot::Menubar);
         assert!(mac_en.contains("menu bar"), "{mac_en}");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //   Quit
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Every state, both with and without a fresh refusal standing. This IS the
+    /// table from the design — written out so a future edit has to change the
+    /// table, not just the code.
+    #[test]
+    fn the_quit_table_is_exactly_the_policy() {
+        use QuitAction::*;
+        use RecorderState::*;
+        //  state         no prior      stale (11 s)  fresh (1 s)
+        // (the fourth column, "too soon to be a decision", is asserted below)
+        let table = [
+            (Idle, ExitNow, ExitNow, ExitNow),
+            (Preparing, Refuse, Refuse, StopThenWait),
+            (Recording, Refuse, Refuse, StopThenWait),
+            (Reconnecting, Refuse, Refuse, StopThenWait),
+            (Stopping, WaitOnly, WaitOnly, WaitOnly),
+            (Stopped, ExitNow, ExitNow, ExitNow),
+            (Failed, ExitNow, ExitNow, ExitNow),
+        ];
+        for (state, none, stale, fresh) in table {
+            assert_eq!(quit_action(state, None), none, "{state:?} / no prior press");
+            assert_eq!(
+                quit_action(state, Some(11_000)),
+                stale,
+                "{state:?} / an 11 s old refusal is NOT a confirmation"
+            );
+            assert_eq!(
+                quit_action(state, Some(1_000)),
+                fresh,
+                "{state:?} / a 1 s old refusal IS the confirmation"
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_quit_during_a_live_capture_is_always_refused() {
+        // THE regression this exists for: one keystroke must never end a
+        // service. Removing the `Refuse` arm turns this red.
+        for state in [
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+        ] {
+            assert_eq!(
+                quit_action(state, None),
+                QuitAction::Refuse,
+                "{state:?}: the first press must ask, not act"
+            );
+        }
+    }
+
+    #[test]
+    fn a_held_cmd_q_can_never_confirm_itself() {
+        // The failure this closes: press-and-hold auto-repeats, the repeats
+        // arrive milliseconds apart, and press #2 lands inside the confirmation
+        // window — so leaning on the key would stop the service. Below the floor
+        // every press is a refusal, forever.
+        for age in [0, 1, 15, 120, QUIT_REPEAT_FLOOR_MS - 1] {
+            assert_eq!(
+                quit_action(RecorderState::Recording, Some(age)),
+                QuitAction::Refuse,
+                "{age} ms after the last press is a repeat, not an answer"
+            );
+        }
+        // …and the floor is the exact edge: one millisecond later IS an answer.
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(QUIT_REPEAT_FLOOR_MS)),
+            QuitAction::StopThenWait
+        );
+        // The two edges must not cross, or there is no window left at all.
+        const _: () = assert!(QUIT_REPEAT_FLOOR_MS < QUIT_CONFIRM_WINDOW_MS);
+    }
+
+    #[test]
+    fn the_confirmation_window_is_exact_at_its_edge() {
+        // 9 999 ms still counts, 10 000 does not, 10 001 certainly does not.
+        // Setting QUIT_CONFIRM_WINDOW_MS to 0 (or to `<=`) turns this red.
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(QUIT_CONFIRM_WINDOW_MS - 1)),
+            QuitAction::StopThenWait
+        );
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(QUIT_CONFIRM_WINDOW_MS)),
+            QuitAction::Refuse
+        );
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(QUIT_CONFIRM_WINDOW_MS + 1)),
+            QuitAction::Refuse
+        );
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(9_999)),
+            QuitAction::StopThenWait
+        );
+        assert_eq!(
+            quit_action(RecorderState::Recording, Some(10_001)),
+            QuitAction::Refuse
+        );
+    }
+
+    #[test]
+    fn finalising_never_demands_a_second_press() {
+        // The volunteer already asked for the stop. Asking them to confirm
+        // something they did not request is noise — but the file still has to
+        // land before the process dies.
+        for age in [None, Some(0), Some(1_000), Some(u64::MAX)] {
+            assert_eq!(
+                quit_action(RecorderState::Stopping, age),
+                QuitAction::WaitOnly,
+                "age {age:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn quitting_without_a_recording_is_untouched() {
+        // No behaviour change for the volunteer who is done: Cmd+Q still quits
+        // on the first press, whatever the refusal history says.
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            for age in [None, Some(0), Some(500), Some(60_000)] {
+                assert_eq!(
+                    quit_action(state, age),
+                    QuitAction::ExitNow,
+                    "{state:?} / {age:?} must quit as it always did"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_recorder_state_is_decided_exactly_once_by_the_quit_rule() {
+        // Same tripwire as `close_action`'s: `quit_action` matches exhaustively
+        // with no `_` arm, so a new state cannot silently land on "quit mid
+        // service". The counts are what breaks if someone adds one.
+        let all = [
+            RecorderState::Idle,
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ];
+        let refused = all
+            .iter()
+            .filter(|s| quit_action(**s, None) == QuitAction::Refuse)
+            .count();
+        let waits = all
+            .iter()
+            .filter(|s| quit_action(**s, None) == QuitAction::WaitOnly)
+            .count();
+        let exits = all
+            .iter()
+            .filter(|s| quit_action(**s, None) == QuitAction::ExitNow)
+            .count();
+        assert_eq!((refused, waits, exits), (3, 1, 3));
+        assert_eq!(refused + waits + exits, all.len());
+    }
+
+    #[test]
+    fn the_close_rule_and_the_quit_rule_draw_the_same_line() {
+        // Two policies, one truth: every state the close button protects is a
+        // state the quit must not walk straight through. If these ever disagree,
+        // one of the two doors loses a service.
+        for state in [
+            RecorderState::Idle,
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+            RecorderState::Stopped,
+            RecorderState::Failed,
+        ] {
+            let close_protects = close_action(state) != CloseAction::Exit;
+            let quit_protects = quit_action(state, None) != QuitAction::ExitNow;
+            assert_eq!(close_protects, quit_protects, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn the_quit_notices_are_localised_in_all_seven_languages() {
+        let langs = [
+            TrayLang::No,
+            TrayLang::En,
+            TrayLang::De,
+            TrayLang::Sv,
+            TrayLang::Da,
+            TrayLang::Pl,
+            TrayLang::Fr,
+        ];
+        for notice in [QuitNotice::Refused, QuitNotice::Waiting] {
+            let mut titles = Vec::new();
+            for lang in langs {
+                let (title, body) = quit_notice(notice, lang);
+                assert!(!title.is_empty(), "{notice:?}/{lang:?} title");
+                assert!(body.len() > 20, "{notice:?}/{lang:?} body looks truncated");
+                // A literal "{seconds}" on screen is the classic template leak.
+                assert!(
+                    !body.contains("{seconds}"),
+                    "{notice:?}/{lang:?} left the slot in"
+                );
+                titles.push(title);
+            }
+            // Seven distinct titles: a copy-paste that leaves two languages
+            // sharing the Norwegian string is what this catches.
+            titles.sort();
+            titles.dedup();
+            assert_eq!(titles.len(), 7, "{notice:?}");
+        }
+    }
+
+    #[test]
+    fn the_refusal_says_how_long_the_volunteer_has_and_the_wait_does_not() {
+        // The refusal has to name the window — "press again" without "within
+        // ten seconds" is an instruction the volunteer cannot follow.
+        for lang in [
+            TrayLang::No,
+            TrayLang::En,
+            TrayLang::De,
+            TrayLang::Sv,
+            TrayLang::Da,
+            TrayLang::Pl,
+            TrayLang::Fr,
+        ] {
+            let (_, refused) = quit_notice(QuitNotice::Refused, lang);
+            assert!(refused.contains("10"), "{lang:?}: {refused}");
+            let (_, waiting) = quit_notice(QuitNotice::Waiting, lang);
+            assert!(
+                !waiting.contains("10"),
+                "{lang:?}: the wait has no deadline to offer: {waiting}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_refusal_wording_is_pinned_to_ten_seconds() {
+        // The seconds slot is filled from the constant, so the number can never
+        // contradict the rule — but the surrounding grammar is not translated
+        // per value: Polish "10 sekund" is the genitive plural, and 2–4 s would
+        // need "sekundy". Retuning the window means revisiting the seven texts.
+        assert_eq!(QUIT_CONFIRM_WINDOW_MS, 10_000);
+        assert_eq!(
+            QUIT_CONFIRM_WINDOW_MS % 1000,
+            0,
+            "a fractional second has no wording"
+        );
+        let (_, pl) = quit_notice(QuitNotice::Refused, TrayLang::Pl);
+        assert!(pl.contains("10 sekund"), "{pl}");
+        let (_, no) = quit_notice(QuitNotice::Refused, TrayLang::No);
+        assert!(no.contains("10 sekunder"), "{no}");
+    }
+
+    #[test]
+    fn the_refusal_and_the_wait_never_say_the_same_thing() {
+        // "I did not quit" and "I am quitting" are opposite messages; a shared
+        // string would be the cruellest possible bug here.
+        for lang in [
+            TrayLang::No,
+            TrayLang::En,
+            TrayLang::De,
+            TrayLang::Sv,
+            TrayLang::Da,
+            TrayLang::Pl,
+            TrayLang::Fr,
+        ] {
+            assert_ne!(
+                quit_notice(QuitNotice::Refused, lang),
+                quit_notice(QuitNotice::Waiting, lang),
+                "{lang:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wait_ends_when_the_recorder_reaches_rest() {
+        for state in [
+            RecorderState::Stopped,
+            RecorderState::Failed,
+            RecorderState::Idle,
+        ] {
+            assert_eq!(
+                wait_outcome(state, 0, 1_000),
+                QuitWait::Settled,
+                "{state:?} has nothing left to write"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wait_keeps_waiting_while_the_file_is_still_being_written() {
+        for state in [
+            RecorderState::Preparing,
+            RecorderState::Recording,
+            RecorderState::Reconnecting,
+            RecorderState::Stopping,
+        ] {
+            assert_eq!(
+                wait_outcome(state, 0, 1_000),
+                QuitWait::KeepWaiting,
+                "{state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wait_is_capped_so_the_app_can_always_die() {
+        // The cap is the promise that a wedged finalise cannot produce an app
+        // nobody can quit.
+        assert_eq!(
+            wait_outcome(RecorderState::Stopping, 1_000, 1_000),
+            QuitWait::Capped
+        );
+        assert_eq!(
+            wait_outcome(RecorderState::Stopping, 999, 1_000),
+            QuitWait::KeepWaiting
+        );
+        // …and a file that lands in the very tick the cap expires is reported as
+        // saved, not as a timeout.
+        assert_eq!(
+            wait_outcome(RecorderState::Stopped, u64::MAX, 1_000),
+            QuitWait::Settled
+        );
     }
 }

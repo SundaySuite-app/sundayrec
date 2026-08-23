@@ -109,6 +109,12 @@ pub(crate) fn tray_note_language(_app: &tauri::AppHandle, _code: &str) {}
 // `update_download_install` return `feature_disabled` when the feature is off.
 pub mod update;
 pub mod util;
+// P3b — the macOS application menu. It exists ONLY so Cmd+Q is interceptable at
+// all: tauri's default menu wires Quit to AppKit's `terminate:`, which never
+// raises `RunEvent::ExitRequested`, so a Cmd+Q mid-service killed the process
+// without even stopping the capture. See the module docs for the full trail.
+#[cfg(target_os = "macos")]
+pub mod menu;
 // P3 «Frivilligen først» — the main window's close button. Closing the window
 // used to END the service's recording (no `on_window_event` existed, so the last
 // window closing raised `ExitRequested`, whose handler stops the recorder).
@@ -231,6 +237,14 @@ pub fn run() {
     // is — a `--no-default-features` build has no gate and plans no e-mail leg.
     #[cfg(feature = "email")]
     let builder = builder.manage(email::AlertGateState::default());
+
+    // P3b: replace tauri's default macOS menu with the same menu, one item
+    // rewired — Quit. Off macOS tauri installs no menu at all, and adding one
+    // would be a visible regression, so this is macOS-only by construction.
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle_event(app, event.id.as_ref()));
 
     builder
         // P3 «Frivilligen først»: the close button must not end the service's
@@ -579,20 +593,42 @@ pub fn run() {
         // the audio/camera device open (graceful complement to the Job Object).
         // Best-effort — `stop()` is safe to call when idle.
         .run(|app_handle, event| match event {
-            // A REAL quit (Cmd+Q, the tray's "Avslutt", the app menu). Unchanged:
-            // the close button no longer arrives here during a session, but an
-            // explicit quit still stops the capture the graceful way — `stop()`
-            // signals the supervisor, which finalises the container and writes
-            // the history row. (A quit mid-service therefore still ENDS the
-            // recording on purpose; the confirmation for it is a restanse, see
-            // docs/APP-SHELL.md.)
-            tauri::RunEvent::ExitRequested { .. } => {
+            // Every way out of the app lands here.
+            //
+            // ⚠️ THE distinction this arm is built on: `code` is `None` only for
+            // a quit the PERSON asked for (the last window closing, and — on
+            // Windows/Linux — the window manager's quit), and `Some(code)` for
+            // every programmatic `AppHandle::exit`/`restart`, including our own
+            // (`window::request_quit`'s wait, the tray, `update::relaunch`).
+            // Verified in the tauri 2.11.5 source rather than from memory:
+            // `RunEvent::ExitRequested`'s `code` is documented "`None` when the
+            // exit is requested by user interaction, `Some` when requested
+            // programmatically" (tauri/src/app.rs), and tauri-runtime-wry raises
+            // `code: None` from the last-window-destroyed path while
+            // `Message::RequestExit` carries `Some(code)`.
+            //
+            // Running the quit policy on a programmatic exit would refuse our
+            // OWN exit and leave an app that cannot die, so `code.is_some()`
+            // goes straight to the cleanup that has always been here.
+            tauri::RunEvent::ExitRequested { code, api, .. } => {
                 use tauri::Manager;
-                app_handle
-                    .state::<recorder::engine::RecorderEngine>()
-                    .stop();
-                app_handle.state::<audio::vu::VuEngine>().stop();
-                tracing::info!("app exit requested — stopped recorder/vu sidecars");
+                if code.is_none()
+                    && window::request_quit(app_handle) == window::QuitVerdict::Handled
+                {
+                    // Refused (first press mid-service) or accepted-and-waiting.
+                    // Either way the process must stay alive; the wait's own
+                    // `app.exit(0)` comes back through here as `Some(0)`.
+                    api.prevent_exit();
+                } else {
+                    // FIKS 2a: stop every capture sidecar FIRST so nothing keeps
+                    // the audio/camera device open (graceful complement to the
+                    // Job Object). Best-effort — `stop()` is safe when idle.
+                    app_handle
+                        .state::<recorder::engine::RecorderEngine>()
+                        .stop();
+                    app_handle.state::<audio::vu::VuEngine>().stop();
+                    tracing::info!("app exit requested — stopped recorder/vu sidecars");
+                }
             }
             // macOS: clicking the Dock icon when nothing is on screen is the
             // system's own "bring it back" gesture — the natural companion to a

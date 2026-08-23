@@ -3,6 +3,30 @@
 Merkbare endringer for deg som bruker SundayRec. Eldre utgivelser enn v0.9.0 er
 dokumentert i [utgivelsene på GitHub](https://github.com/SundaySuite-app/sundayrec/releases).
 
+## Upublisert
+
+### Avslutt midt i et opptak spør nå én gang til, og venter til fila er trygg
+
+Trykket du Cmd+Q eller «Avslutt» mens gudstjenesten ble tatt opp, avsluttet
+SundayRec på flekken. Nå gjør den ikke det: første trykk avslutter ingenting, og
+et varsel forteller at det tas opp og at du kan trykke Avslutt igjen innen ti
+sekunder hvis du virkelig mener det.
+
+Gjør du det, stoppes opptaket ryddig — og appen blir stående til fila er ferdig
+skrevet, i stedet for å forsvinne midt i lagringen. Har du alt trykket Stopp og
+opptaket lagres, spør ikke appen på nytt; den venter til fila er trygg og
+avslutter så av seg selv. Må du ut med én gang uansett, avslutter et nytt trykk
+umiddelbart.
+
+Uten opptak avslutter Avslutt på første trykk, akkurat som før. (Dette erstatter
+setningen under v0.15.1-beta.1 om at Avslutt-valget «stopper fortsatt opptaket
+med vilje».)
+
+På macOS var Avslutt dessuten helt uavskjærbart før nå: valget gikk utenom
+appens egen avslutningsvei og drepte prosessen uten å stoppe opptaket i det hele
+tatt. Menylinja øverst på skjermen er bygget om for å lukke det hullet — den ser
+lik ut som før.
+
 ## v0.15.1-beta.1
 
 Beta-ringens oppfriskning etter v0.15.0 — samme app, pluss tre endringer i

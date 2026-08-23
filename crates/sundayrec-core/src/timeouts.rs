@@ -56,6 +56,22 @@ impl RecorderTimeouts {
     /// one of those steps is itself hung and doomed, which is exactly when a
     /// hard abort is the right answer. That is the point: abort only a TRUE hang.
     pub const STOP_ABORT_BACKSTOP_MS: u64 = 20 * 60_000;
+
+    /// How long a *quit* may wait for the finalisation before the process dies
+    /// anyway (`sundayrec_core::window::quit_action` →
+    /// `QuitAction::StopThenWait`/`WaitOnly`).
+    ///
+    /// Deliberately DERIVED from [`Self::STOP_ABORT_BACKSTOP_MS`] rather than
+    /// picked: the wait must outlive the supervisor's own last-resort abort, or
+    /// the quit gives up while the finalise chain is still legitimately running
+    /// and the volunteer loses exactly the file they waited for. The extra 30 s
+    /// is the margin for the abort itself to unwind and the state to reach
+    /// `Stopped`/`Failed`.
+    ///
+    /// It is a *cap*, not a schedule: the normal quit ends the moment the
+    /// recorder reaches rest, typically in seconds. The cap only exists so a
+    /// wedged finalise cannot produce an app nobody can quit.
+    pub const QUIT_WAIT_CAP_MS: u64 = Self::STOP_ABORT_BACKSTOP_MS + 30_000;
 }
 
 #[cfg(test)]
@@ -68,6 +84,16 @@ mod tests {
         assert_eq!(RecorderTimeouts::STUCK_POLL_MS, 15_000);
         assert_eq!(RecorderTimeouts::SILENCE_WARN_MS, 60_000);
         assert_eq!(RecorderTimeouts::STOP_FINALIZE_MS, 120_000);
+    }
+
+    #[test]
+    fn the_quit_wait_outlives_the_supervisors_own_abort() {
+        // A quit that gave up FIRST would kill the process mid-finalise — the
+        // exact loss the wait exists to prevent. It must outlast the backstop
+        // that aborts the supervisor, with room for that abort to unwind.
+        const _: () =
+            assert!(RecorderTimeouts::QUIT_WAIT_CAP_MS > RecorderTimeouts::STOP_ABORT_BACKSTOP_MS);
+        assert_eq!(RecorderTimeouts::QUIT_WAIT_CAP_MS, 1_230_000);
     }
 
     #[test]
