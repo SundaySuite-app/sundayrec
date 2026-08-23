@@ -38,6 +38,7 @@ import {
 import { Button } from "./Button/Button";
 import { Card } from "./Card/Card";
 import { Chip } from "./Chip/Chip";
+import { DecisionCard } from "./DecisionCard/DecisionCard";
 import { DialogHost } from "./DialogHost/DialogHost";
 import { EmptyState } from "./EmptyState/EmptyState";
 import { Gate } from "./Gate/Gate";
@@ -76,6 +77,29 @@ const LIBRARY: Array<{
     derived: ["probe-title", "probe-description"],
   },
   { name: "Chip", markup: () => render(<Chip testId="probe">x</Chip>) },
+  {
+    name: "DecisionCard",
+    markup: () =>
+      render(
+        <DecisionCard
+          testId="probe"
+          number={1}
+          question="Q"
+          answer="A"
+          detail="D"
+          status="todo"
+          actionLabel="Sett opp"
+          onAction={() => {}}
+        />,
+      ),
+    derived: [
+      "probe-number",
+      "probe-question",
+      "probe-answer",
+      "probe-detail",
+      "probe-action",
+    ],
+  },
   {
     name: "StatusDot",
     markup: () => render(<StatusDot testId="probe" tone="good" />),
@@ -286,7 +310,7 @@ describe("komponentbiblioteket", () => {
   it("dekker hele biblioteket — en komponent uten rad ville sluppet unna", () => {
     // Et tall å måtte oppdatere BEVISST. Legger noen til en komponent uten en
     // rad her, feiler denne i stedet for at dekningen stille blir mindre.
-    expect(LIBRARY.length).toBe(23);
+    expect(LIBRARY.length).toBe(24);
   });
 });
 

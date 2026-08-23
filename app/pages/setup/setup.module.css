@@ -1,0 +1,149 @@
+/* Fellesflatene for OPPSETT — nivå 1 og de fem undersidene. */
+
+.page,
+.sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--ink-2);
+}
+
+.subHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.sectionLabel {
+  margin: var(--sp-4) 0 0;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Tilleggene: to like brede kort ved siden av hverandre når det er plass. */
+.addons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--sp-2);
+  align-items: start;
+}
+
+/* Toppen av et tilleggskort: bryteren, navnet og sammendraget. */
+.addonHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.addonTitle {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.addonSummary {
+  margin-top: 2px;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Radene et påslått tillegg folder ut. */
+.addonBody {
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+  padding-top: var(--sp-2);
+}
+
+/* En rad med knapper nederst på en underside. */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+
+/* Kanalparene: «de som har lyd nå, lyser». */
+.pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.pair {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  padding: 5px 11px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-2);
+  background: var(--raised);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.pair:hover {
+  border-color: var(--gold-line);
+}
+
+/* Signal NÅ. Grønt, ikke gull: gull er valget, grønt er «her er det lyd». */
+.pairLive {
+  border-color: var(--good-line);
+  color: var(--ink);
+}
+
+.pairOn,
+.pairOn:hover {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.hint {
+  font-size: var(--fs-base);
+  color: var(--ink-3);
+}
+
+/* Mappevisningen: stien er data, ikke prosa — den skal kunne leses tegn for
+   tegn, og den skal aldri sprenge kortet. */
+.path {
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+/* Klokkeslettfeltet. Nettleserens egen tidsvelger, i husets flate. */
+.time {
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  padding: 7px var(--sp-3);
+}
+
+.time:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}

@@ -39,6 +39,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { locale, t, tDyn, tf } from "../../i18n";
 import { navigate, route, type Page } from "../../router/router";
 import { appVersion } from "../../state/app-info";
+import { audioDevices, soundChosen } from "../../state/devices";
 import { currentRoomMinutes } from "../../state/disk";
 import { nextRecording } from "../../state/next-recording";
 import { isRecording } from "../../state/recording";
@@ -83,25 +84,39 @@ const ICONS: Record<Page, ComponentChildren> = {
 
 export interface PageShellProps {
   children: ComponentChildren;
+  /**
+   * Overskriften, når siden handler om noe smalere enn destinasjonen.
+   *
+   * OPPSETT er tre skjermer dypt: destinasjonen heter «Oppsett», men den
+   * skjermen man står PÅ heter «Hvilken lyd?». En `<h1>` som sa «Oppsett» på
+   * alle seks ville vært det ene ordet som aldri hjelper — og siden fokus
+   * flyttes hit ved hvert rutebytte, er det også det første en
+   * skjermleserbruker hører. Utelatt = destinasjonens eget navn.
+   */
+  heading?: string;
 }
 
-export function PageShell({ children }: PageShellProps) {
+export function PageShell({ children, heading }: PageShellProps) {
   const current = route.value;
   const s = settings.value;
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    // Ny side: øverst, og fokus på overskriften. Se toppen av fila.
+    // Ny side ELLER ny fane: øverst, og fokus på overskriften. Fanen teller
+    // med fordi de fem oppsett-spørsmålene er egne skjermer — å åpne «Hvilken
+    // lyd?» uten at fokus flyttet seg ville latt en tastaturbruker stå igjen
+    // på knappen på en side som ikke finnes lenger.
     mainRef.current?.scrollTo?.({ top: 0 });
     headingRef.current?.focus();
-  }, [current.page]);
+  }, [current.page, current.tab]);
 
   const church = (s.churchName ?? "").trim();
   const next = nextRecording.value.next;
   const status = statusLine({
     isRecording: isRecording.value,
-    soundChosen: !!(s.deviceName ?? s.deviceId),
+    // «Valgt» betyr valgt OG til stede — se `soundChosen` i state/devices.ts.
+    soundChosen: soundChosen(s, audioDevices.value),
     roomMinutes: currentRoomMinutes(),
     nextAtMs: next?.atMs ?? null,
   });
@@ -191,7 +206,7 @@ export function PageShell({ children }: PageShellProps) {
           data-testid="app-heading"
           class={styles.h1}
         >
-          {tDyn("app.page", current.page)}
+          {heading ?? tDyn("app.page", current.page)}
         </h1>
         {children}
       </main>

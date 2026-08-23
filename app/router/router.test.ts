@@ -28,30 +28,27 @@ describe("every ?goto= form that exists in this repo", () => {
     ["?goto=home", { page: "record" }],
     ["?goto=search", { page: "library" }],
     ["?goto=editor", { page: "library", tab: "edit" }],
-    ["?goto=schedule", { page: "setup", tab: "schedule" }],
+    // Tidsplanen er tillegget «Ta opp automatisk» på NIVÅ 1 nå — et anker, ikke
+    // en fane. Kalenderen og spesialopptakene er Avansert (P1b).
+    ["?goto=schedule", { page: "setup", anchor: "auto", highlight: false }],
     ["?goto=settings", { page: "setup" }],
     ["?goto=settings:audio", { page: "setup", tab: "sound" }],
+    // Kameraet er også et tillegg på nivå 1.
     [
       "?goto=settings:video",
-      { page: "setup", tab: "addons", anchor: "camera", highlight: false },
+      { page: "setup", anchor: "camera", highlight: false },
     ],
-    ["?goto=settings:files", { page: "setup", tab: "files" }],
-    [
-      "?goto=settings:sharing",
-      { page: "setup", tab: "advanced", anchor: "sharing", highlight: false },
-    ],
+    ["?goto=settings:files", { page: "setup", tab: "folder" }],
+    // Etter #139 inneholder Deling-fanen BARE «Varsler» — altså spørsmål 5.
+    ["?goto=settings:sharing", { page: "setup", tab: "notify" }],
+    // ⚠️ `advanced` bygges i P1b. Fram til da rendrer SetupPage nivå 1 for den;
+    // `data-tab` står likevel på <main>, så lenken er ikke tapt.
     ["?goto=settings:general", { page: "setup", tab: "advanced" }],
     // The already-qualified spelling means the same thing as the bare one.
     ["?goto=settings:settings-general", { page: "setup", tab: "advanced" }],
     // Retired before the 7→5 tab fold; legacy maps them onward, so do we.
-    [
-      "?goto=settings:notifications",
-      { page: "setup", tab: "advanced", anchor: "sharing", highlight: false },
-    ],
-    [
-      "?goto=settings:publish",
-      { page: "setup", tab: "advanced", anchor: "sharing", highlight: false },
-    ],
+    ["?goto=settings:notifications", { page: "setup", tab: "notify" }],
+    ["?goto=settings:publish", { page: "setup", tab: "notify" }],
     // Percent-encoded, which is how e2e/harness.ts actually writes it.
     ["?goto=settings%3Aaudio", { page: "setup", tab: "sound" }],
   ] as Array<[string, Route]>)("%s", (search, expected) => {
@@ -91,7 +88,6 @@ describe("resolveRoute", () => {
       resolveRoute("settings", { tab: "settings-video", anchor: "flip" }),
     ).toEqual({
       page: "setup",
-      tab: "addons",
       anchor: "flip",
       highlight: true,
     });
@@ -124,6 +120,21 @@ describe("resolveRoute", () => {
       "settings-notifications",
     ]) {
       expect(TAB_ALIASES[tab], `${tab} has nowhere to go`).toBeDefined();
+    }
+  });
+
+  it("peker bare på faner som FINNES i det nye skallet", () => {
+    // Vakten på tabellen etter P1a: de fem spørsmålene er bygget, `advanced`
+    // er P1b sin og er den ENESTE som får peke på noe som ikke finnes ennå.
+    // En sjette plassholder skal ikke kunne sige inn ubemerket.
+    const built = new Set(["sound", "folder", "quality", "church", "notify"]);
+    const notBuiltYet = new Set(["advanced", "edit"]);
+    for (const [id, target] of Object.entries(TAB_ALIASES)) {
+      if (!target.tab) continue;
+      expect(
+        built.has(target.tab) || notBuiltYet.has(target.tab),
+        `«${id}» peker på fanen «${target.tab}», som ingen side rendrer`,
+      ).toBe(true);
     }
   });
 });

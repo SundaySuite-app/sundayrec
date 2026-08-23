@@ -38,7 +38,11 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { acquireVuFeed, type VuFeedState } from "@lib/audio/vu-feed";
+import {
+  acquireVuFeed,
+  type VuFeedState,
+  type VuPick,
+} from "@lib/audio/vu-feed";
 import { createLevelSmoother } from "@lib/audio/smoothing";
 import { pickLR, VU_FLOOR_DB } from "@lib/audio/vu-feed-core";
 import type { VuLevels } from "@lib/../bindings/VuLevels";
@@ -62,6 +66,9 @@ const UNIT_DBFS = "dBFS";
 /** Fargebåndets grenser, som andel av stolpens fulle bredde. */
 const AMBER_AT = 0.72;
 const RED_AT = 0.9;
+/** Kanal 1 og 2 i stereo — det stolpene viser når ingen sa noe annet. */
+const DEFAULT_PICK: VuPick = { mode: "stereo", chL: 0, chR: 1 };
+
 /** To stolper (venstre og høyre) med litt luft mellom. */
 const BAR_H = 14;
 const BAR_GAP = 8;
@@ -69,6 +76,15 @@ const BAR_GAP = 8;
 export interface VuMeterProps {
   /** Enheten som skal måles. `undefined` = «hva som enn kjører». */
   deviceName?: string | null;
+  /**
+   * Hvilke av enhetens native kanaler de to stolpene viser. Utelatt = kanal
+   * 1 og 2 i stereo.
+   *
+   * En THUNK og ikke en verdi: valget leses per pakke, så et nytt kanalpar
+   * slår inn på neste frame uten at strømmen startes på nytt — og en
+   * enhetsåpning til er nøyaktig det ingen meter i denne appen skal be om.
+   */
+  pick?: () => VuPick;
   /** dB-tall ved siden av stolpene. Av på nivå 1 — se toppen av fila. */
   showNumbers?: boolean;
   testId?: string;
@@ -83,6 +99,7 @@ interface Levels {
 
 export function VuMeter({
   deviceName,
+  pick,
   showNumbers = false,
   testId,
 }: VuMeterProps) {
@@ -97,13 +114,19 @@ export function VuMeter({
   const [feedState, setFeedState] = useState<VuFeedState>("idle");
   const wordRef = useRef<LevelWord>("nothing");
   const [readout, setReadout] = useState<{ l: number; r: number } | null>(null);
+  // Kanalvalget leses per pakke gjennom en ref, så et nytt par ikke river opp
+  // abonnementet — og dermed ikke starter enheten på nytt.
+  const pickRef = useRef<(() => VuPick) | undefined>(pick);
+  pickRef.current = pick;
 
   // ── Strømmen ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const release = acquireVuFeed({
       deviceName,
+      pick: () => pickRef.current?.() ?? DEFAULT_PICK,
       onLevels: (l, r, raw: VuLevels) => {
-        const peak = pickLR(raw.peak_dbfs, "stereo", 0, 1);
+        const chosen = pickRef.current?.() ?? DEFAULT_PICK;
+        const peak = pickLR(raw.peak_dbfs, chosen.mode, chosen.chL, chosen.chR);
         levels.current = { l, r, peakL: peak.l, peakR: peak.r };
         // Bare ORDET utløser en render, ikke pakken.
         const next = levelWordFor(peak.l, peak.r);

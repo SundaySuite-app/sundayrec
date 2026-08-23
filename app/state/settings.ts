@@ -101,6 +101,36 @@ export async function hydrateSettings(): Promise<void> {
 }
 
 /**
+ * La OS-et få rett om innloggingselementet.
+ *
+ * `launchAtLogin` er den ene innstillingen der basen kan ta feil: elementet
+ * kan fjernes for hånd i Systeminnstillinger, og en ominstallasjon eller en
+ * migrering kan miste det. Da lover en avkrysning at det planlagte opptaket
+ * overlever en omstart, og det gjør det ikke — en løgn som oppdages en søndag.
+ *
+ * `get_launch_at_login` spør OS-et. Er svaret et annet enn det lagrede, vinner
+ * OS-et og verdien rettes i minnet; ingen skrivning her, den neste ekte
+ * lagringen bærer den med seg (samme regel som `syncAutostartFromOs` i
+ * legacy-skallet). En probe vi ikke fikk kjørt er ikke bevis i noen retning,
+ * så en feil lar det lagrede stå.
+ */
+export async function syncLaunchAtLoginFromOs(): Promise<void> {
+  try {
+    const real = await window.api.getLaunchAtLogin?.();
+    if (typeof real !== "boolean") return;
+    if (real !== settings.peek().launchAtLogin) {
+      console.info(
+        "[settings] launch-at-login var ikke som lagret — OS-et vinner:",
+        real,
+      );
+      patchSettings({ launchAtLogin: real });
+    }
+  } catch {
+    /* OS-et kunne ikke spørres — la det lagrede stå */
+  }
+}
+
+/**
  * Skriv inn en delmengde. Erstatter objektet i stedet for å mutere det —
  * signalet varsler på identitet, og en mutasjon ville vært usynlig.
  */

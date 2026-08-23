@@ -28,8 +28,15 @@
  * poller `window.showPage` med 150 ms forsinkelse — den er laget for
  * skjermbilde-passene. Å gjøre det selv betyr at første frame allerede er
  * riktig side, i stedet for at brukeren ser TA OPP blinke forbi på vei til
- * OPPSETT. De to lander på samme rute, så den ene er en idempotent gjentakelse
- * av den andre.
+ * OPPSETT.
+ *
+ * ⚠️ De to lander på samme rute, men gjentakelsen er bare idempotent så lenge
+ * INGENTING navigerer i mellomtiden. Gjør noe det — et klikk i de 150 ms-ene,
+ * eller et e2e-spec som er raskere enn en frivillig — river shimmens
+ * gjentakelse skjermen tilbake til dyplenken, og brukeren står et sted hun
+ * ikke valgte. Derfor får shimmen en `navigate` som DROPPER nøyaktig den
+ * gjentakelsen (`isDeepLinkRepeat` under) og ingenting annet. Slottet finnes
+ * for akkurat denne typen: en vert som vet noe shimmen ikke kan vite.
  */
 
 import "./styles/base.css";
@@ -43,6 +50,7 @@ import {
   installGlobalNavigation,
   installTrayNavigation,
   navigate,
+  type NavigateOpts,
 } from "./router/router";
 import { Shell, Overlays } from "./Shell";
 import { loadAppVersion } from "./state/app-info";
@@ -55,8 +63,40 @@ import { loadRecordingCount } from "./state/recordings";
 import { hydrateSettings, settings } from "./state/settings";
 import { toast } from "./ui/toast";
 
+/** Dyplenken denne oppstarten kom med, eller `null`. */
+const deepLink = parseGoto(location.search);
+/** Har den allerede landet? (Av oss, eller av shimmens egen blokk.) */
+let deepLinkApplied = false;
+/**
+ * Hvor mange gjentakelser vi har lov til å slippe. ÉN, fordi shimmen gjentar
+ * nøyaktig én gang (`setTimeout(tryGoto, 150)`). En tidsbasert grense ville
+ * vært et tall å gjette; en engangsbillett er den samme grensen uten gjetting,
+ * og en senere `showPage("setup")` fra menylinjen kommer alltid fram.
+ */
+let repeatsToDrop = deepLink ? 1 : 0;
+
+/** Er dette PRESIS dyplenken — samme side, samme fane? */
+function matchesDeepLink(page: string, opts?: NavigateOpts): boolean {
+  if (!deepLink || page !== deepLink.page) return false;
+  return (opts?.tab ?? undefined) === (deepLink.tab ?? undefined);
+}
+
+/**
+ * `navigate` for shimmen — og for `window.showPage`, som shimmen bruker når
+ * dyplenken ikke har en fane. Alt slippes gjennom, unntatt ÉN gjentakelse av en
+ * dyplenke som allerede har landet. Se toppen av fila.
+ */
+function navigateFromShim(page: string, opts: NavigateOpts = {}): void {
+  if (deepLinkApplied && repeatsToDrop > 0 && matchesDeepLink(page, opts)) {
+    repeatsToDrop -= 1;
+    return;
+  }
+  navigate(page, opts);
+  if (matchesDeepLink(page, opts)) deepLinkApplied = true;
+}
+
 // 2. Skallets egne flater inn i shimmen, før noe kan feile.
-setShimNotifier({ toast, navigate, t });
+setShimNotifier({ toast, navigate: navigateFromShim, t });
 
 const host = document.getElementById("app");
 if (!host) {
@@ -83,7 +123,7 @@ render(<Shell probe={probe} />, host);
 render(<Overlays />, overlayHost);
 
 // 4. Kontraktene tray, dyplenker og harness.ts hviler på.
-installGlobalNavigation();
+installGlobalNavigation((id) => navigateFromShim(id));
 installTrayNavigation();
 installErrorHandlers();
 
@@ -107,11 +147,14 @@ async function boot(): Promise<void> {
   void loadRecordingCount();
 
   // 7.
-  const target = parseGoto(location.search);
-  if (target) {
+  if (deepLink) {
     // Ingen puls: denne veien finnes for rene skjermbilder, og en glødende
     // ramme ville vært i halvparten av dem.
-    navigate(target.page, { tab: target.tab, highlight: false });
+    // Rakk shimmen det først? Da ER gjentakelsen brukt opp, og billetten skal
+    // ikke bli liggende og spise et senere, ekte `showPage` til samme sted.
+    if (deepLinkApplied) repeatsToDrop = 0;
+    navigate(deepLink.page, { tab: deepLink.tab, highlight: false });
+    deepLinkApplied = true;
     return;
   }
 
