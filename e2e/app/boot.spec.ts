@@ -42,18 +42,11 @@ test.describe("app shell boot", () => {
       });
     });
 
-    // Through the harness, not a bare `page.goto`. S0's version was a bare
-    // goto, which worked while `app/` subscribed to nothing. It does now — and
-    // `window.api.on` reaches `__TAURI_INTERNALS__` DIRECTLY (api-shim, the
-    // `listen` branch), which outside Tauri does not exist. Supplying that
-    // runtime is precisely what `e2e/harness.ts` is for; see its comment on
-    // "the non-IPC half of the Tauri runtime". Fixtures still answer no
-    // command that this test asserts on.
-    //
-    // ⚠️ Consequence worth knowing: a plain `npm run dev:app` in a browser
-    // (no harness) logs four unhandled rejections from that same api-shim
-    // branch, because `on()` attaches no `.catch`. It is a legacy shim
-    // question, not an app/ one, and it does not exist under Tauri.
+    // Through the harness, so the fixture seam decides what the commands
+    // answer. It is no longer needed for the EVENTS: S1b gave api-shim's
+    // `on()` the `.catch` it never had, so a subscription that cannot reach
+    // `__TAURI_INTERNALS__` warns once instead of becoming an unhandled
+    // rejection. The bare-goto case is pinned separately, below.
     await boot(page, { fixtures: BOOT_FIXTURES, settings: {} });
 
     // `app.page.setup` in legacy/locales/no.json, looked up through `tDyn`.
@@ -106,7 +99,9 @@ test.describe("app shell foundation", () => {
       goto: "settings:audio",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
-    await expect(page.getByTestId("app-tab")).toHaveText("sound");
+    // Ruten som ATTRIBUTT: S1a viste den som synlig tekst fordi det ikke fantes
+    // noe annet å se. Nå står den der bare e2e ser den.
+    await expect(page.getByTestId("main")).toHaveAttribute("data-tab", "sound");
   });
 
   test("a retired tab id still lands somewhere real", async ({ page }) => {
@@ -119,8 +114,9 @@ test.describe("app shell foundation", () => {
       goto: "settings:notifications",
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
-    await expect(page.getByTestId("app-tab")).toHaveText("advanced");
-    await expect(page.getByTestId("app-anchor")).toHaveText("sharing");
+    const main = page.getByTestId("main");
+    await expect(main).toHaveAttribute("data-tab", "advanced");
+    await expect(main).toHaveAttribute("data-anchor", "sharing");
   });
 
   test("the seeded language decides what the volunteer reads", async ({
@@ -150,7 +146,10 @@ test.describe("app shell foundation", () => {
       settings: { onboardingDone: false },
     });
     await expect(page.getByTestId("app-heading")).toHaveText("Oppsett");
-    await expect(page.getByTestId("app-first-run")).toBeVisible();
+    await expect(page.getByTestId("main")).toHaveAttribute(
+      "data-first-run",
+      "true",
+    );
   });
 
   test("a settings read that failed is never shown as a fresh install", async ({
@@ -174,7 +173,58 @@ test.describe("app shell foundation", () => {
 
   test("a settled app opens on TA OPP", async ({ page }) => {
     await boot(page, { fixtures: BOOT_FIXTURES, settings: SETTLED_SETTINGS });
-    await expect(page.getByTestId("app-heading")).toHaveText("Ta opp");
-    await expect(page.getByTestId("app-first-run")).toHaveCount(0);
+    await expect(page.getByTestId("app-heading")).toHaveText("Opptak");
+    await expect(page.getByTestId("main")).not.toHaveAttribute(
+      "data-first-run",
+      "true",
+    );
+  });
+});
+
+// ── S1b: skallet våkner uten harness, og uten å rope ────────────────────────
+//
+// Den ene legacy-endringen S1b gjorde: `window.api.on()` i api-shim la aldri
+// en `.catch` på `listen(...)`, og `listen` går rett på `__TAURI_INTERNALS__`.
+// Uten en Tauri-runtime — altså i nøyaktig denne situasjonen, som også er
+// `npm run dev:app` — ble hvert abonnement en UHÅNDTERT avvisning. Fire røde
+// linjer på oppstart, i en konsoll folk skal lese for ekte problemer, og en
+// `unhandledrejection` som `app/state/global-error.ts` plikttro rapporterte
+// som en global feil før skallet var ferdig å våkne.
+//
+// Inne i Tauri avviser `listen` aldri, så den utsendte appen er uendret. Dette
+// er beviset for at det HAR endret seg her: en bar `page.goto`, ingen harness,
+// ingen fikstursøm — og ingenting logger en feil.
+test.describe("app shell boot without the harness", () => {
+  test("a plain browser boot logs no error and no unhandled rejection", async ({
+    page,
+  }) => {
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") consoleErrors.push(m.text());
+    });
+    page.on("pageerror", (e) => pageErrors.push(e.message));
+
+    await page.addInitScript(() => {
+      (window as any).__rejections = [];
+      window.addEventListener("unhandledrejection", (e: any) => {
+        (window as any).__rejections.push(
+          String(e.reason?.message ?? e.reason),
+        );
+      });
+    });
+
+    await page.goto("/");
+    // Skinnen er der uten en eneste fikstur: alt den trenger er innstillinger,
+    // og api-shimmen svarer med defaults når det ikke finnes en backend.
+    await expect(page.getByTestId("rail")).toBeVisible();
+    await expect(page.getByTestId("status-line")).toBeVisible();
+
+    const rejections = await page.evaluate(
+      () => (window as any).__rejections as string[],
+    );
+    expect(rejections, "en uhåndtert avvisning på oppstart").toEqual([]);
+    expect(pageErrors, "an uncaught error during boot").toEqual([]);
+    expect(consoleErrors, "something logged an error during boot").toEqual([]);
   });
 });

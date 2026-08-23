@@ -593,6 +593,41 @@ function rowToEntry(r: RecordingRow): Record<string, unknown> {
   };
 }
 
+/**
+ * `listen()` failed for a channel — say so ONCE, then stay quiet.
+ *
+ * `listen` from `@tauri-apps/api/event` reaches `__TAURI_INTERNALS__` DIRECTLY,
+ * so OUTSIDE Tauri (a plain `vite --mode app` browser, or any page without the
+ * e2e harness) every subscription rejects. Until now the `.then()` carried no
+ * `.catch`, which made each one an unhandled promise rejection: four of them on
+ * boot, in red, in a console people are supposed to be reading for real
+ * problems — and, since `app/state/global-error.ts` listens for
+ * `unhandledrejection`, a shell that reported a global error before it had
+ * finished waking up.
+ *
+ * Inside Tauri `listen` does not reject, so this changes NOTHING about the
+ * shipped app. The only visible difference is that a browser boot stops
+ * shouting, and that `window.api.on()` keeps its promise either way: it always
+ * returns an unsubscribe that is safe to call.
+ *
+ * Once per CHANNEL, not once per call: a component that mounts and unmounts
+ * twenty times would otherwise log twenty identical lines and bury the one
+ * channel that is genuinely missing an emitter.
+ */
+const listenFailedChannels = new Set<string>()
+function warnListenFailedOnce(channel: string, err: unknown): void {
+  if (listenFailedChannels.has(channel)) return
+  listenFailedChannels.add(channel)
+  // `warn`, not `error`: without a Tauri backend this is the EXPECTED state,
+  // not a failure — the same call `status/next-recording.ts` already makes.
+  console.warn(`[api-shim] listen("${channel}") feilet — ingen hendelser kommer fram`, err)
+}
+
+/** Test-only: forget which channels have already warned. */
+export function __resetListenWarnings(): void {
+  listenFailedChannels.clear()
+}
+
 const api: Record<string, unknown> = {
   // ── Observability (E2.4) ─────────────────────────────────────────────────
   // "Siste IPC-feil" for the diagnose surface. Synchronous and local: this is
@@ -1560,10 +1595,12 @@ const api: Record<string, unknown> = {
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
     const adapt = EVENT_ADAPTERS[channel];
-    void listen(evt, (e) => fn(adapt ? adapt(e.payload) : e.payload)).then((u) => {
-      if (cancelled) u();
-      else unlisten = u;
-    });
+    listen(evt, (e) => fn(adapt ? adapt(e.payload) : e.payload))
+      .then((u) => {
+        if (cancelled) u();
+        else unlisten = u;
+      })
+      .catch((err) => warnListenFailedOnce(channel, err));
     return () => {
       cancelled = true;
       unlisten?.();

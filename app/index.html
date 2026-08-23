@@ -23,6 +23,14 @@
   </head>
   <body>
     <div id="app"></div>
+    <!--
+      Dialogen og toastene bor HER, som søsken av #app og ikke inni det.
+      DialogHost setter `inert` på #app mens en dialog står åpen — det er sånn
+      resten av appen blir helt utilgjengelig, ikke bare grå — og en dialog som
+      lå inne i #app ville slått av seg selv. To monteringspunkter, to Preact-
+      trær, i main.tsx.
+    -->
+    <div id="overlays"></div>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

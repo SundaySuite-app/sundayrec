@@ -1,0 +1,42 @@
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+
+.good {
+  background: var(--good);
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+
+.warn {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.listen {
+  background: var(--gold);
+  box-shadow: 0 0 0 3px var(--gold-soft);
+}
+
+.neutral {
+  background: var(--ink-3);
+}
+
+.rec {
+  background: var(--rec);
+  box-shadow: 0 0 0 3px var(--rec-soft);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--rec-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 6px var(--rec-pulse);
+  }
+}

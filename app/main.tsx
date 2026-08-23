@@ -12,6 +12,9 @@
  *      kommando malt en toast inn i legacy-skallets elementtre, som ikke
  *      finnes her.
  *   3. `render` før `installGlobalNavigation`, så det finnes noe å navigere I.
+ *      TO trær: skallet i `#app`, dialogen og toastene i `#overlays`. De er
+ *      SØSKEN fordi DialogHost setter `inert` på `#app` mens den er åpen — en
+ *      dialog inne i `#app` ville slått av seg selv.
  *   4. `installGlobalNavigation` FØR alt asynkront: `window.showPage` er
  *      kontrakten `e2e/harness.ts` venter på før et spec får gjøre noe som
  *      helst, og den api-shimmens egen `?goto=`-blokk poller på.
@@ -29,6 +32,8 @@
  * av den andre.
  */
 
+import "./styles/base.css";
+
 import { setShimNotifier } from "@lib/api-shim";
 import { parseGoto } from "@lib/goto-core";
 import { render } from "preact";
@@ -39,11 +44,14 @@ import {
   installTrayNavigation,
   navigate,
 } from "./router/router";
-import { Shell } from "./Shell";
+import { Shell, Overlays } from "./Shell";
+import { loadAppVersion } from "./state/app-info";
+import { initDisk } from "./state/disk";
 import { installErrorHandlers } from "./state/global-error";
 import { initNextRecording } from "./state/next-recording";
 import { initPreroll } from "./state/preroll";
 import { initRecording } from "./state/recording";
+import { loadRecordingCount } from "./state/recordings";
 import { hydrateSettings, settings } from "./state/settings";
 import { toast } from "./ui/toast";
 
@@ -57,11 +65,22 @@ if (!host) {
   throw new Error('app/index.html mangler sitt <div id="app">-monteringspunkt');
 }
 
+const overlayHost = document.getElementById("overlays");
+if (!overlayHost) {
+  // Uten dette ville en bekreftelsesdialog aldri blitt vist, og
+  // `confirmDialog()` ville hengt for alltid — altså en app der en farlig
+  // handling stille ikke skjer. Høylytt er den eneste riktige feilmodusen.
+  throw new Error(
+    'app/index.html mangler sitt <div id="overlays">-monteringspunkt',
+  );
+}
+
 // TODO(S1b): `?probe=` forsvinner sammen med `app/dev/`.
 const probe = new URLSearchParams(location.search).get("probe");
 
 // 3.
 render(<Shell probe={probe} />, host);
+render(<Overlays />, overlayHost);
 
 // 4. Kontraktene tray, dyplenker og harness.ts hviler på.
 installGlobalNavigation();
@@ -80,6 +99,12 @@ async function boot(): Promise<void> {
   initRecording();
   initNextRecording();
   initPreroll();
+  initDisk();
+  // Begge er engangslesninger skinnen og Bibliotek viser: versjonen nederst i
+  // skinnen, og om biblioteket faktisk er tomt. Ingen `await` — en side som
+  // venter på et tall den kan vise «ikke lest ennå» for, venter uten grunn.
+  void loadAppVersion();
+  void loadRecordingCount();
 
   // 7.
   const target = parseGoto(location.search);

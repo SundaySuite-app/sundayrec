@@ -1,0 +1,63 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 18px var(--sp-5);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.description {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+/*
+ * Tonene legger et gjennomsiktig lag OVER flaten i stedet for å bytte
+ * bakgrunnsfargen. Da holder kortet seg i samme dybde som naboene sine —
+ * en full fargeflate leses som et annet slags element.
+ */
+.warn {
+  border-color: var(--warn-line);
+  background:
+    linear-gradient(0deg, var(--warn-soft), var(--warn-soft)), var(--surface);
+}
+
+.bad {
+  border-color: var(--bad-line);
+  background:
+    linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--surface);
+}
+
+.good {
+  border-color: var(--good-line);
+}
+
+.selected {
+  border-color: var(--gold-line);
+  background:
+    linear-gradient(0deg, var(--gold-soft), var(--gold-soft)), var(--surface);
+}

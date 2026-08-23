@@ -1,0 +1,30 @@
+.wrap {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  font-size: var(--fs-base);
+  color: var(--ink-2);
+}
+
+.track {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: var(--r-pill);
+  transition: width 0.2s linear;
+}
+
+.readout {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}

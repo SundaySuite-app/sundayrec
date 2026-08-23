@@ -128,6 +128,15 @@ jobs:
       - name: i18n plural groups complete in every locale
         run: npm run i18n-plurals
 
+      # Fargegate for `app/`: en farge finnes ÉN gang, i app/styles/tokens.css,
+      # og hver komponent-CSS bruker `var(--…)`. Legacy-skallet har en pen
+      # `:root`-blokk og over tusen hardkodede farger under den — resultatet er
+      # en app eieren ikke kan fargejustere ett sted. Ett funn feller gaten, fra
+      # dag én. Selvtest innebygd som mutasjonsvern. I `npm run check` og
+      # ci-local.sh også — gate-paritet er lov.
+      - name: app colours only via tokens
+        run: npm run css-tokens
+
       # docs/SMOKE-TEST.md's VERIFIED-BY pointers must resolve to tests that
       # still exist — a pointer at nothing claims coverage that does not exist.
       # In `npm run check` since E11; mirrored here so a PR can't skip it.

@@ -2,8 +2,63 @@
   "app": {
     "page": {
       "record": "Record",
-      "library": "Recordings",
+      "library": "Library",
       "setup": "Setup"
+    },
+    "rail": {
+      "label": "Places in the app",
+      "churchUnset": "Not set up yet"
+    },
+    "status": {
+      "ready": "All set",
+      "nosound": "Sound isn't connected",
+      "rec": "Recording",
+      "next": "Next recording {when}",
+      "lowdisk": "Running out of space"
+    },
+    "receipt": {
+      "saving": "Saving …",
+      "saved": "Saved ✓",
+      "failed": "Not saved"
+    },
+    "common": {
+      "recommended": "Recommended",
+      "dismiss": "Dismiss"
+    },
+    "dialog": {
+      "confirm": "Continue",
+      "cancel": "Cancel"
+    },
+    "vu": {
+      "hear": "We hear sound",
+      "nothing": "We hear nothing",
+      "loud": "Too loud"
+    },
+    "library": {
+      "empty": "No recordings yet",
+      "emptyDesc": "The first one shows up here once you've recorded.",
+      "goRecord": "Go to Record",
+      "stored": "Recordings on this computer"
+    },
+    "record": {
+      "noSource": "You haven't chosen where the sound comes from",
+      "noSourceDesc": "Choose the mixer — or the computer's own microphone if that's what you use.",
+      "chooseSound": "Choose sound"
+    },
+    "setup": {
+      "lede": "Five questions. Answer once, and you're ready every Sunday.",
+      "q1": "Which sound?",
+      "q2": "Where do recordings go?",
+      "q3": "Which quality?",
+      "q4": "Which church?",
+      "q5": "Who gets told if something goes wrong?",
+      "notSetUp": "Not set up",
+      "nobodyYet": "Nobody yet",
+      "quality": {
+        "mp3": "Good",
+        "flac": "Best",
+        "wav": "Uncompressed"
+      }
     }
   },
   "nav": {

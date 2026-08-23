@@ -1,0 +1,37 @@
+.empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: var(--sp-8) var(--sp-5);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  color: var(--ink-2);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.icon svg {
+  width: 40px;
+  height: 40px;
+}
+
+.title {
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.description {
+  font-size: var(--fs-base);
+  max-width: 46ch;
+}
+
+.action {
+  margin-top: var(--sp-2);
+}

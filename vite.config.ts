@@ -35,6 +35,17 @@ export default defineConfig(async ({ mode }) => {
     root: isApp ? "app" : "legacy/renderer",
     plugins: [],
 
+    // CSS Modules for the new shell. `camelCaseOnly` means a class written
+    // `.setting-row` in CSS is read as `styles.settingRow` in TSX and ONLY
+    // that — the un-converted key is not also exposed, so a component can
+    // never quietly depend on the kebab spelling and drift from its sibling.
+    // Declared in both modes because there is one config: `legacy/renderer`
+    // ships a single global `styles.css` and has no `*.module.css`, so this
+    // changes nothing for the shipped shell.
+    css: {
+      modules: { localsConvention: "camelCaseOnly" },
+    },
+
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./legacy"),

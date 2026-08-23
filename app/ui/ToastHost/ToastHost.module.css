@@ -1,0 +1,40 @@
+.stack {
+  position: fixed;
+  right: var(--sp-7);
+  bottom: var(--sp-6);
+  z-index: var(--z-toast);
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+  max-width: min(460px, calc(100vw - var(--sp-8)));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r);
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-toast);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
+}
+
+.success {
+  border-color: var(--good-line);
+}
+
+.warn {
+  border-color: var(--warn-line);
+}
+
+.error {
+  border-color: var(--bad-line);
+}

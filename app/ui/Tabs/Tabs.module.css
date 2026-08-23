@@ -1,0 +1,39 @@
+.tabs {
+  display: flex;
+  gap: 6px;
+  padding: var(--sp-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.on {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.done {
+  color: var(--good);
+}
+
+.on.done {
+  color: var(--gold);
+}

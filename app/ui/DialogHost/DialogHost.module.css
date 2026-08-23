@@ -1,0 +1,38 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+}
+
+.dialog {
+  width: min(460px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  padding: var(--sp-6) var(--sp-7);
+  box-shadow: var(--shadow-dialog);
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.message {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-md);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: var(--sp-5);
+}

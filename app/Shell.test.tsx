@@ -1,44 +1,121 @@
 import { render } from "preact-render-to-string";
 import { describe, expect, it } from "vitest";
 
-import { Shell } from "./Shell";
+import { Overlays, Shell } from "./Shell";
 import { navigate, route } from "./router/router";
 import { setLocale } from "./i18n";
+import { recordingCount } from "./state/recordings";
+import { patchSettings } from "./state/settings";
 
-// Small on purpose and load-bearing anyway: this is the only place inside the
-// unit gate that proves (a) `.tsx` compiles with no Babel preset — the
-// transform is tsconfig's `jsxImportSource: "preact"` — and (b) `@lib/*`
-// resolves to the legacy renderer, so the new shell reads the SAME seven
-// locale catalogues the shipped app does instead of a second copy.
+// Fortsatt det ene stedet i enhetsgaten som beviser (a) at `.tsx` kompilerer
+// uten et Babel-forvalg — transformen er tsconfigs `jsxImportSource: "preact"`
+// — og (b) at `@lib/*` når fram til legacy-rendereren, så det nye skallet
+// leser de SAMME sju katalogene den utsendte appen gjør.
+//
+// S1b legger til det som er nytt: at skinnen faktisk er der, og at hver
+// destinasjon viser det som er SANT i stedet for en plassholdertekst.
 describe("Shell", () => {
-  it("renders the page name from the catalogue, not from a literal", () => {
+  it("rendrer skinnen med sidenavnet fra katalogen, ikke fra en literal", () => {
     navigate("record");
     const html = render(<Shell />);
-    expect(html).toContain("Ta opp");
+    expect(html).toContain("Opptak");
     expect(html).toContain('data-testid="app-heading"');
+    expect(html).toContain('data-testid="nav-record"');
+    expect(html).toContain("data-tauri-drag-region");
   });
 
-  it("follows the route, and the language", async () => {
+  it("følger ruten, og språket", async () => {
     navigate("settings", { tab: "settings-audio" });
     expect(render(<Shell />)).toContain("Oppsett");
     await setLocale("en");
-    // If `@lib` ever stopped resolving, `t()` would return its empty fallback
-    // and this would be an empty <h1> — which is exactly what a silently
-    // broken alias looks like in the browser.
+    // Sluttet `@lib` å resolve, ville `t()` gitt tom tekst og dette vært en
+    // tom `<h1>` — som er nøyaktig hvordan en stille ødelagt alias ser ut.
     expect(render(<Shell />)).toContain("Setup");
     await setLocale("no");
   });
 
-  it("shows the inner tab the route resolved to", () => {
-    navigate("settings", { tab: "settings-audio" });
-    expect(render(<Shell />)).toContain("sound");
+  it("bærer ruten som attributter, ikke som synlig feilsøkingstekst", () => {
+    navigate("settings", { tab: "settings-video" });
+    const html = render(<Shell />);
+    expect(html).toContain('data-tab="addons"');
+    expect(html).toContain('data-anchor="camera"');
+    expect(route.value.page).toBe("setup");
   });
 
-  it("mounts the dev probe only when asked for", () => {
+  it("OPPTAK sier fra når ingen lydkilde er valgt — og peker på OPPSETT", () => {
+    navigate("record");
+    patchSettings({ deviceName: null, deviceId: null });
+    const html = render(<Shell />);
+    expect(html).toContain('data-testid="record-no-source"');
+    expect(html).toContain('data-testid="record-choose-sound"');
+  });
+
+  it("OPPTAK viser måleren når kilden ER valgt", () => {
+    navigate("record");
+    patchSettings({ deviceName: "Behringer X32", deviceId: "x32" });
+    const html = render(<Shell />);
+    expect(html).toContain('data-testid="record-listening"');
+    expect(html).toContain("Behringer X32");
+    expect(html).not.toContain('data-testid="record-no-source"');
+    patchSettings({ deviceName: null, deviceId: null });
+  });
+
+  it("BIBLIOTEK påstår ingenting før opptakene er talt", () => {
+    navigate("library");
+    recordingCount.value = null;
+    const html = render(<Shell />);
+    // Verken «ingen opptak» eller et antall: vi vet ikke ennå.
+    expect(html).not.toContain('data-testid="library-empty"');
+    expect(html).not.toContain('data-testid="library-stored"');
+  });
+
+  it("BIBLIOTEK viser tomtilstanden bare når det FAKTISK er tomt", () => {
+    navigate("library");
+    recordingCount.value = 0;
+    expect(render(<Shell />)).toContain('data-testid="library-empty"');
+
+    recordingCount.value = 3;
+    const withRows = render(<Shell />);
+    expect(withRows).toContain('data-testid="library-stored"');
+    expect(withRows).not.toContain('data-testid="library-empty"');
+    recordingCount.value = null;
+  });
+
+  it("OPPSETT viser de fem spørsmålene, med svaret som gjelder nå", () => {
+    navigate("setup");
+    patchSettings({
+      deviceName: "Behringer X32",
+      saveFolder: "/Users/x/SundayRec",
+      format: "mp3",
+      churchName: "",
+      emailOnError: false,
+      emailAddress: "",
+    });
+    const html = render(<Shell />);
+    for (const id of ["sound", "folder", "quality", "church", "alerts"]) {
+      expect(html).toContain(`data-testid="setup-row-${id}"`);
+    }
+    // Besvart ⇒ nøytral; ubesvart ⇒ gul. Den gule raden er hele grunnen til at
+    // noen oppdager den tomme innstillingen før en søndag.
+    expect(html).toMatch(
+      /data-tone="neutral"[^>]*data-testid="setup-row-sound"/,
+    );
+    expect(html).toMatch(/data-tone="warn"[^>]*data-testid="setup-row-church"/);
+    expect(html).toContain("Ingen ennå");
+    patchSettings({ deviceName: null, saveFolder: null });
+  });
+
+  it("sier fra når innstillingene ikke kunne leses", () => {
+    navigate("record");
+    expect(render(<Shell />)).not.toContain('data-testid="hydrate-error"');
+  });
+
+  it("Overlays er dialog- og toastverten, og ingenting når begge er tomme", () => {
+    expect(render(<Overlays />)).toBe("");
+  });
+
+  it("monterer utviklingsproben bare når den blir bedt om det", () => {
     navigate("record");
     expect(render(<Shell />)).not.toContain("setting-probe");
-    // The probe uses hooks, so it is only rendered where a renderer exists —
-    // e2e/app/settings-revert.spec.ts is what drives it.
-    expect(route.value.page).toBe("record");
   });
 });

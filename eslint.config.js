@@ -153,6 +153,15 @@ export default tseslint.config(
           message: "No fallback argument in app/: tn(key, count, params).",
         },
         {
+          // `class`, not `className`. Preact accepts both, which is exactly the
+          // problem: two spellings in one codebase means every grep for a class
+          // name misses half the hits, and a component copied from a React
+          // example brings the other spelling with it. One spelling, enforced.
+          selector: "JSXAttribute[name.name='className']",
+          message:
+            "Bruk `class`, ikke `className`. Preact tar imot begge, og to stavemåter i samme kodebase betyr at et søk etter en klasse alltid bommer på halvparten.",
+        },
+        {
           // Hardcoded prose in JSX. Deliberately coarse — three letters in a
           // row — so it catches sentences and labels without tripping on «—»,
           // numbers, units or single glyphs. The exact gate lands in S1.
