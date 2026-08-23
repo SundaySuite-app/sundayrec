@@ -190,7 +190,7 @@ pub async fn download_and_install(
 /// Relaunch the app so a staged update takes effect. `feature_disabled` here.
 #[cfg(not(feature = "updater"))]
 #[cfg_attr(not(feature = "updater"), allow(unused_variables))]
-pub fn relaunch(app: &AppHandle) -> AppResult<()> {
+pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
     let _ = app;
     Err(feature_disabled())
 }
@@ -337,7 +337,7 @@ pub async fn download_and_install(
 ///
 /// Only [`relaunch`] writes to it, so it compiles out with the feature.
 #[cfg(feature = "updater")]
-fn relaunch_log(app: &AppHandle, msg: &str) {
+fn relaunch_log<R: tauri::Runtime>(app: &tauri::AppHandle<R>, msg: &str) {
     use tauri::Manager;
     tracing::info!("update-relaunch: {msg}");
     let Ok(dir) = app.path().app_data_dir() else {
@@ -353,7 +353,80 @@ fn relaunch_log(app: &AppHandle, msg: &str) {
 }
 
 /// Relaunch the app so the staged update takes effect (the Electron
-/// `quitAndInstall`).
+/// `quitAndInstall`) — **through the same guard every other way out of the
+/// process goes through**.
+///
+/// ## The hole this closes
+///
+/// This function used to call `RecorderEngine::stop()` and kill the process on
+/// top of it. `stop()` only signals the supervisor, so «Start på nytt og
+/// installer» mid-service reached — with one click — exactly the outcome the
+/// close/quit guard exists to prevent: the concat, the delivery transcode and
+/// the history row all died with the process, and the recording's rescue fell
+/// back to the next launch's recovery scan.
+///
+/// The decision now comes from the pure
+/// [`sundayrec_core::window::relaunch_plan`], and the waiting from the same
+/// bounded wait the confirmed Cmd+Q uses ([`crate::window::arm_wait_then`]).
+///
+/// ## Why the order is "wait FIRST, restart after"
+///
+/// The quit's guard can hold an exit back after the fact (`prevent_exit` in the
+/// `ExitRequested` handler). A restart cannot be held back at all: tauri
+/// documents and implements `ExitRequestApi::prevent_exit` as a no-op when the
+/// code is `RESTART_EXIT_CODE` (2.11.5 `src/app.rs`), and `restart()` on the
+/// main thread skips the event outright. So there is no "ask, then reconsider":
+/// asking IS the restart. Everything that must happen before the process is
+/// replaced happens here, before [`relaunch_now`] is called at all.
+#[cfg(feature = "updater")]
+pub fn relaunch<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
+    use sundayrec_core::window::relaunch_plan;
+    use tauri::Manager;
+
+    relaunch_log(app, "invoked");
+    let state = app
+        .state::<crate::recorder::engine::RecorderEngine>()
+        .current_state();
+    let plan = relaunch_plan(state);
+    relaunch_log(app, &format!("recorder state {state:?} → plan {plan:?}"));
+
+    if plan.stops_the_capture() {
+        // The graceful stop: the supervisor finalises the container, delivers
+        // the file and writes the history row. Same call the confirmed quit
+        // makes, for the same reason.
+        app.state::<crate::recorder::engine::RecorderEngine>()
+            .stop();
+        relaunch_log(app, "live capture stopped — waiting for the file");
+    }
+
+    if !plan.waits_for_the_file() {
+        return relaunch_now(app);
+    }
+
+    match crate::window::arm_wait_then(app, crate::window::AfterWait::Relaunch) {
+        crate::window::WaitArm::Armed => {
+            relaunch_log(app, "restart armed behind the finalisation wait");
+            Ok(())
+        }
+        crate::window::WaitArm::AlreadyWaiting => {
+            // A confirmed quit is already waiting for this same file and ends in
+            // `app.exit(0)`. Restarting on top of it would race the exit for the
+            // finalisation we are both waiting for — and it costs nothing to
+            // stand down: the update is already STAGED on disk, so the very next
+            // launch is the new version anyway.
+            relaunch_log(
+                app,
+                "a quit is already waiting for the recording — not restarting; \
+                 the staged update applies on the next launch",
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Replace the process with the updated bundle. **No guard, no waiting** — the
+/// caller ([`relaunch`], or the wait it armed) has already established that
+/// nothing is left to lose.
 ///
 /// History (the "restart never came back / did nothing" saga):
 /// - 0.4.2: frontend never invoked relaunch at all.
@@ -369,10 +442,14 @@ fn relaunch_log(app: &AppHandle, msg: &str) {
 /// parent/child socket race, no reliance on tauri's process::restart.
 /// `destroy` is still called first so the single-instance lock can never
 /// outlive the dying instance. Non-macOS keeps `app.restart()`.
+///
+/// The lock destroy and the engine stops live HERE and not in [`relaunch`] on
+/// purpose: during the wait the app is a normal, fully alive instance — its
+/// single-instance lock still means what it says, and its meters still run.
 #[cfg(feature = "updater")]
-pub fn relaunch(app: &AppHandle) -> AppResult<()> {
+pub(crate) fn relaunch_now<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> AppResult<()> {
     use tauri::Manager;
-    relaunch_log(app, "invoked");
+    relaunch_log(app, "restarting now");
     tauri_plugin_single_instance::destroy(app);
     relaunch_log(app, "single-instance lock destroyed");
     app.state::<crate::recorder::engine::RecorderEngine>()
