@@ -79,7 +79,7 @@ describe("app i18n", () => {
 
   it("tDyn resolves a dynamic suffix under a static prefix", async () => {
     await setLocale("no");
-    expect(tDyn("app.page", "record")).toBe("Ta opp");
+    expect(tDyn("app.page", "record")).toBe("Opptak");
     await setLocale("en");
     expect(tDyn("app.page", "record")).toBe("Record");
     await setLocale("no");

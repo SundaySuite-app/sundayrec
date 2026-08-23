@@ -1,9 +1,64 @@
 {
   "app": {
     "page": {
-      "record": "Ta opp",
-      "library": "Opptakene",
+      "record": "Opptak",
+      "library": "Bibliotek",
       "setup": "Oppsett"
+    },
+    "rail": {
+      "label": "Steder i appen",
+      "churchUnset": "Ikke satt opp ennå"
+    },
+    "status": {
+      "ready": "Alt er klart",
+      "nosound": "Lyden er ikke koblet til",
+      "rec": "Tar opp",
+      "next": "Neste opptak {when}",
+      "lowdisk": "Lite plass igjen"
+    },
+    "receipt": {
+      "saving": "Lagrer …",
+      "saved": "Lagret ✓",
+      "failed": "Ikke lagret"
+    },
+    "common": {
+      "recommended": "Anbefalt",
+      "dismiss": "Lukk"
+    },
+    "dialog": {
+      "confirm": "Fortsett",
+      "cancel": "Avbryt"
+    },
+    "vu": {
+      "hear": "Vi hører lyd",
+      "nothing": "Vi hører ingenting",
+      "loud": "For høyt"
+    },
+    "library": {
+      "empty": "Ingen opptak ennå",
+      "emptyDesc": "Det første dukker opp her når du har tatt opp.",
+      "goRecord": "Gå til Opptak",
+      "stored": "Opptak på denne maskinen"
+    },
+    "record": {
+      "noSource": "Du har ikke valgt hvor lyden kommer fra",
+      "noSourceDesc": "Velg miksebordet — eller maskinens egen mikrofon hvis det er det dere bruker.",
+      "chooseSound": "Velg lyd"
+    },
+    "setup": {
+      "lede": "Fem spørsmål. Svar én gang, så er dere klare hver søndag.",
+      "q1": "Hvilken lyd?",
+      "q2": "Hvor skal opptakene?",
+      "q3": "Hvilken kvalitet?",
+      "q4": "Hvilken kirke?",
+      "q5": "Hvem får beskjed hvis noe går galt?",
+      "notSetUp": "Ikke satt opp",
+      "nobodyYet": "Ingen ennå",
+      "quality": {
+        "mp3": "God",
+        "flac": "Best",
+        "wav": "Ukomprimert"
+      }
     }
   },
   "nav": {
