@@ -660,7 +660,7 @@ mod tests {
             .expect("the 512 graph loads fine — that is exactly the problem");
         let mut wrong_state = zero_state();
         let mut wrong_max = f32::MIN;
-        for hop in speech.chunks_exact(VAD_HOP_SAMPLES) {
+        for hop in speech.as_chunks::<VAD_HOP_SAMPLES>().0 {
             let (p, next) = wrong_model
                 .run(hop, wrong_state, i64::from(VAD_SAMPLE_RATE))
                 .expect("no error — it just returns wrong numbers");
@@ -719,7 +719,7 @@ mod tests {
 
         let mut vad = SileroVad::load().unwrap();
         let mut padded = Vec::new();
-        for hop in speech.chunks_exact(VAD_HOP_SAMPLES) {
+        for hop in speech.as_chunks::<VAD_HOP_SAMPLES>().0 {
             let mut w = [0.0f32; VAD_WINDOW_SAMPLES];
             w[VAD_CONTEXT_SAMPLES..].copy_from_slice(hop);
             padded.push(vad.speech_probability(&w).unwrap());
@@ -802,8 +802,10 @@ mod tests {
         );
         let decoded: Vec<f32> = out
             .stdout
-            .chunks_exact(4)
-            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
             .collect();
         assert!(
             decoded.len() > VAD_SAMPLE_RATE as usize,
@@ -846,7 +848,7 @@ mod tests {
         let mut state_16k = zero_state();
         let mut state_8k = zero_state();
         let mut worst_delta = 0.0f32;
-        for hop in speech.chunks_exact(VAD_HOP_SAMPLES) {
+        for hop in speech.as_chunks::<VAD_HOP_SAMPLES>().0 {
             framer.fill_window(hop, &mut window).unwrap();
             let (p16, s16) = model.run(&window, state_16k, 16_000).unwrap();
             let (p8, s8) = model.run(&window, state_8k, 8_000).unwrap();
