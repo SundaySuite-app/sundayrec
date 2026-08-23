@@ -4,7 +4,7 @@ import type { EditorSegment } from "../legacy/bindings/EditorSegment";
 // The editor's fixtured recording — ONE recipe, read by both shells.
 //
 // It lived inside `e2e/editor.spec.ts` until P4a needed the same recording in
-// `e2e/app/editor.spec.ts`. A second copy would have been a second thing to
+// `e2e/editor.spec.ts`. A second copy would have been a second thing to
 // drift: the whole point of these fixtures is that they stand in for what the
 // BACKEND puts on the wire, so the two shells must be fed the same wire.
 

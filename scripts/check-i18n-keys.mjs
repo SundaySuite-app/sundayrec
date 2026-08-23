@@ -5,9 +5,10 @@
  *
  * ## Hvorfor en ny gate og ikke den gamle
  *
- * `check-i18n-fallbacks.mjs` holder `data-i18n`-reservetekstene i
- * `legacy/renderer/index.html` i takt med no.json. Det er en gate om HTML som
- * skrives to ganger. `app/` skriver ingenting to ganger: det finnes ingen
+ * `check-i18n-fallbacks.mjs` HOLDT `data-i18n`-reservetekstene i
+ * `legacy/renderer/index.html` i takt med no.json — en gate om HTML som skrives
+ * to ganger. Både gaten og fila er slettet i fase B, og det er denne gaten som
+ * dekker skallet nå. `app/` skriver ingenting to ganger: det finnes ingen
  * `data-i18n`, ingen reservetekst i markup, og ingen fallback-argument (ESLint
  * forbyr det, denne gaten måler det). Spørsmålet flytter seg dermed fra «er de
  * to skrivemåtene enige?» til «peker kallet på noe som faktisk finnes, og som

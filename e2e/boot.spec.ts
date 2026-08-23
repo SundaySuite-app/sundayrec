@@ -208,7 +208,7 @@ test.describe("app shell foundation", () => {
 // Den ene legacy-endringen S1b gjorde: `window.api.on()` i api-shim la aldri
 // en `.catch` på `listen(...)`, og `listen` går rett på `__TAURI_INTERNALS__`.
 // Uten en Tauri-runtime — altså i nøyaktig denne situasjonen, som også er
-// `npm run dev:app` — ble hvert abonnement en UHÅNDTERT avvisning. Fire røde
+// `npm run dev` — ble hvert abonnement en UHÅNDTERT avvisning. Fire røde
 // linjer på oppstart, i en konsoll folk skal lese for ekte problemer, og en
 // `unhandledrejection` som `app/state/global-error.ts` plikttro rapporterte
 // som en global feil før skallet var ferdig å våkne.

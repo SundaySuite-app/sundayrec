@@ -12,7 +12,7 @@
  *
  * En slik regel kan ikke bo i en komponent. Der er den én betingelse ingen
  * leser to ganger, og den er umulig å bevise uten å klikke. Her er den en ren
- * funksjon med en rad per tilstand — og `e2e/app/record.spec.ts` har en
+ * funksjon med en rad per tilstand — og `e2e/record.spec.ts` har en
  * mutasjonsprøve som fjerner sperren og forventer rødt.
  *
  * ## Tre tilstander, og hvorfor `null` ikke er den fjerde

@@ -3,9 +3,10 @@
  *
  * ## Hvorfor compiler-API og ikke regex
  *
- * De to GAMLE gatene (`check-i18n-fallbacks.mjs`, `check-i18n-hardcoded.mjs`)
- * leser `legacy/renderer/index.html` med regex, og det holder fordi HTML-en er
- * flat og maskinskrevet. `app/` er TSX: en nøkkel kan stå i en JSX-attributt, i
+ * De to GAMLE gatene (`check-i18n-fallbacks.mjs`, `check-i18n-hardcoded.mjs`,
+ * begge slettet i fase B) leste `legacy/renderer/index.html` med regex, og det
+ * holdt fordi HTML-en var flat og maskinskrevet. `app/` er TSX: en nøkkel kan
+ * stå i en JSX-attributt, i
  * et objektliteral, bak en template-streng, inni en nøstet callback. En regex
  * over det svarer med falske treff der det ikke er noe, og — verre — tier der
  * det er. Derfor vandrer disse gatene TypeScripts egen AST: samme parser som

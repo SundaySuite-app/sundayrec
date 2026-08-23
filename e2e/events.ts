@@ -28,7 +28,7 @@ import type { Page } from "@playwright/test";
  * Both hooks are installed by intercepting the ASSIGNMENT — `window.api` and
  * `window.__TAURI_INTERNALS__` do not exist yet when an init script runs, so
  * the assignment itself is the only place to get in. Same pattern as
- * `e2e/app/first-run.spec.ts`'s VU spy and `e2e/auto-update.spec.ts`'s
+ * `e2e/first-run.spec.ts`'s VU spy and `e2e/auto-update.spec.ts`'s
  * settings spy.
  *
  * Call BEFORE `boot()`: an init script only applies to navigations after it
