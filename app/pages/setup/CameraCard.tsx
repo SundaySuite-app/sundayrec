@@ -26,11 +26,8 @@ import { useEffect, useState } from "preact/hooks";
 import { t, tf } from "../../i18n";
 import { confirmIfRecordingImminent } from "../../settings/guards";
 import { loadVideoDevices, videoDevices } from "../../state/devices";
-import {
-  patchSettings,
-  saveSettingsDebounced,
-  settings,
-} from "../../state/settings";
+import { usePatch } from "../../settings/use-patch";
+import { settings } from "../../state/settings";
 import { BoundToggle } from "../../ui/Bound/Bound";
 import { Card } from "../../ui/Card/Card";
 import { EmptyState } from "../../ui/EmptyState/EmptyState";
@@ -38,8 +35,6 @@ import { Receipt } from "../../ui/Receipt/Receipt";
 import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
-import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import { useSetting } from "../../settings/use-setting";
 import styles from "./setup.module.css";
 
@@ -108,8 +103,11 @@ export function CameraCard() {
 function CameraPicker() {
   const s = settings.value;
   const devices = videoDevices.value ?? [];
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
+  // Samme lagringsmodell som resten: kvitteringen teller ned, og en feilet
+  // skrivning ruller tilbake — den håndlagde utgaven her gjorde ingen av
+  // delene, så et mislykket kamerabytte ble stående på skjermen som om det
+  // hadde landet.
+  const save = usePatch();
   const [capability, setCapability] = useState<string | null>(null);
 
   const current =
@@ -147,34 +145,22 @@ function CameraPicker() {
 
   async function choose(indexValue: string): Promise<void> {
     const device = devices.find((d) => String(d.index) === indexValue);
-    if (!device || busy) return;
-    setBusy(true);
-    setReceipt("saving");
-    try {
-      // Samme vakt som lydenheten, og av samme grunn: å bytte kamera fire
-      // minutter før gudstjenesten er endringen som stille koster opptaket.
-      const proceed = await confirmIfRecordingImminent(t("video.guardDevice"));
-      if (!proceed) {
-        setReceipt("idle");
-        return;
-      }
-      patchSettings({
-        videoDeviceName: device.name,
-        videoDeviceIndex: device.index,
-      });
-      const ok = await saveSettingsDebounced(120);
-      setReceipt(ok ? "saved" : "failed");
-      if (!ok) toast("error", t("general.saveFailed"));
-    } finally {
-      setBusy(false);
-    }
+    if (!device || save.busy) return;
+    await save.write(
+      { videoDeviceName: device.name, videoDeviceIndex: device.index },
+      {
+        // Samme vakt som lydenheten, og av samme grunn: å bytte kamera fire
+        // minutter før gudstjenesten er endringen som stille koster opptaket.
+        confirm: () => confirmIfRecordingImminent(t("video.guardDevice")),
+      },
+    );
   }
 
   return (
     <SettingRow
       label={t("app.setup.camera.pick")}
       description={capability ?? undefined}
-      receipt={receipt}
+      receipt={save.receipt}
       testId="camera-device"
     >
       {(ids) => (
@@ -185,7 +171,7 @@ function CameraPicker() {
             label: d.name,
           }))}
           onChange={(next) => void choose(next)}
-          disabled={busy || devices.length === 0}
+          disabled={save.busy || devices.length === 0}
           labelId={ids.labelId}
           describedBy={ids.describedBy}
           testId="camera-device-control-input"

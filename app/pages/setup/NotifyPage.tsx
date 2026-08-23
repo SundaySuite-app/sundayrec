@@ -37,6 +37,8 @@ import { emailBlockReason, type GateStatus } from "@lib/ui/feature-gate-core";
 
 import { locale, t, tf } from "../../i18n";
 import { useDraftForm } from "../../settings/use-draft-form";
+import { usePatch } from "../../settings/use-patch";
+import { useReceipt } from "../../settings/use-receipt";
 import { useSetting } from "../../settings/use-setting";
 import { emailFacts, refreshEmailFacts } from "../../state/email";
 import {
@@ -52,7 +54,6 @@ import { Select } from "../../ui/Select/Select";
 import { TextField } from "../../ui/TextField/TextField";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import { notifyGateStatus } from "./decisions-core";
 import { autoRecordOn } from "./schedule-core";
 import styles from "./setup.module.css";
@@ -74,27 +75,12 @@ export function NotifyPage() {
   }, []);
 
   // ── OS-varsler: én bryter, to nøkler ──────────────────────────────────────
+  // `usePatch` og ikke en håndlagd lagring: sekvensen (anvend → skriv →
+  // kvittering | rull tilbake) er den samme som `useSetting` kjører, og
+  // kvitteringen teller ned i stedet for å bli stående som «Lagret ✓» til
+  // siden forlates.
   const osOn = s.notifyStart || s.notifyStop;
-  const [osReceipt, setOsReceipt] = useState<ReceiptState>("idle");
-  const [osBusy, setOsBusy] = useState(false);
-
-  async function setOsNotify(next: boolean): Promise<void> {
-    if (osBusy) return;
-    setOsBusy(true);
-    setOsReceipt("saving");
-    try {
-      patchSettings({ notifyStart: next, notifyStop: next });
-      const ok = await saveSettingsDebounced(120);
-      setOsReceipt(ok ? "saved" : "failed");
-      if (!ok) {
-        // Rull tilbake: skjermen skal ikke stå og påstå noe basen ikke har.
-        patchSettings({ notifyStart: s.notifyStart, notifyStop: s.notifyStop });
-        toast("error", t("general.saveFailed"));
-      }
-    } finally {
-      setOsBusy(false);
-    }
-  }
+  const osNotify = usePatch();
 
   const emailOn = useSetting("emailOnError", {
     kind: "toggle",
@@ -112,14 +98,16 @@ export function NotifyPage() {
         <SettingRow
           label={t("app.setup.notify.os")}
           description={t("app.setup.notify.osDesc")}
-          receipt={osReceipt}
+          receipt={osNotify.receipt}
           testId="notify-os"
         >
           {(ids) => (
             <Toggle
               checked={osOn}
-              onChange={(next) => void setOsNotify(next)}
-              disabled={osBusy}
+              onChange={(next) =>
+                void osNotify.write({ notifyStart: next, notifyStop: next })
+              }
+              disabled={osNotify.busy}
               labelId={ids.labelId}
               describedBy={ids.describedBy}
               testId="notify-os-control-input"
@@ -211,7 +199,7 @@ export function NotifyPage() {
 function AddressCard({ gate }: { gate: GateStatus }) {
   const s = settings.value;
   const facts = emailFacts.value;
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
+  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
 
@@ -242,8 +230,8 @@ function AddressCard({ gate }: { gate: GateStatus }) {
       return;
     }
     setError(null);
-    setReceipt("saving");
-    setReceipt((await form.save()) ? "saved" : "failed");
+    showReceipt("saving");
+    showReceipt((await form.save()) ? "saved" : "failed");
   }
 
   async function sendTest(): Promise<void> {
@@ -289,7 +277,7 @@ function AddressCard({ gate }: { gate: GateStatus }) {
             invalid={invalid}
             onInput={(next) => {
               setError(null);
-              setReceipt("idle");
+              resetReceipt();
               form.set({ address: next });
             }}
             labelId={ids.labelId}
@@ -316,7 +304,7 @@ function AddressCard({ gate }: { gate: GateStatus }) {
           testId="notify-cancel"
           onClick={() => {
             setError(null);
-            setReceipt("idle");
+            resetReceipt();
             form.cancel();
           }}
         >

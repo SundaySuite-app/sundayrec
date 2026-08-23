@@ -13,6 +13,15 @@
  * kommer fra `use-setting-core.ts`, som er tabelltestet over hele sekvensen.
  * Denne fila er hooken rundt dem.
  *
+ * ## Ingen commit forsvinner stille
+ *
+ * Blir hooken bedt om å committe mens en commit går, KØES den og kjøres når
+ * den første er ferdig — med utkastet lest på nytt, så siste verdi er den som
+ * lander og kvitteres for. Overgangen er ren og tabelltestet
+ * (`stepCommitQueue`). Kontrollene låses ikke mens skrivningen går: et
+ * tekstfelt som slår seg av midt i en setning er en flate som straffer
+ * brukeren for å skrive fort, og køen gjør låsen unødvendig.
+ *
  * ## `resyncBoundSettings` finnes ikke
  *
  * Legacy måtte holde et eget «forrige verdi»-grunnlag per binding, og
@@ -27,7 +36,6 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import {
   coerceValue,
   planCommit,
-  SAVED_CHIP_MS,
   type ControlKind,
   type SettingValue,
 } from "@lib/ui/bind-setting-core";
@@ -41,9 +49,13 @@ import {
 } from "../state/settings";
 import { confirmDialog } from "../ui/dialog";
 import { toast as showToast } from "../ui/toast";
+import { useReceipt } from "./use-receipt";
 import {
+  IDLE_COMMIT_QUEUE,
   narrowToStored,
   runCommit,
+  stepCommitQueue,
+  type CommitQueue,
   type GuardDescriptor,
   type Receipt,
 } from "./use-setting-core";
@@ -120,15 +132,15 @@ export function useSetting<K extends ScalarSettingKey>(
   const value = settings.value[key] as SettingValue;
 
   const [draft, setDraft] = useState<SettingValue>(value);
-  const [receipt, setReceipt] = useState<Receipt>("idle");
+  const { receipt, show: showReceipt } = useReceipt();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const draftRef = useRef<SettingValue>(draft);
-  const busyRef = useRef(false);
+  // Køen, ikke et bart flagg — se `stepCommitQueue` i use-setting-core.ts.
+  const queue = useRef<CommitQueue>(IDLE_COMMIT_QUEUE);
   const editingRef = useRef(false);
   const commitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const chipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
@@ -147,71 +159,86 @@ export function useSetting<K extends ScalarSettingKey>(
     }
   }, [value]);
 
-  // Timere overlever ikke at kontrollen forsvinner.
+  // Timeren overlever ikke at kontrollen forsvinner. (Kvitteringens egen
+  // nedtelling ryddes av `useReceipt`.)
   useEffect(
     () => () => {
       if (commitTimer.current) clearTimeout(commitTimer.current);
-      if (chipTimer.current) clearTimeout(chipTimer.current);
     },
     [],
   );
 
+  /**
+   * Commit NÅ — og aldri stille tapt.
+   *
+   * Er en commit allerede i lufta, legges denne i køen og kjøres av den som
+   * går, med utkastet lest på nytt. Den gamle utgaven ryddet den ventende
+   * timeren FØR den sjekket `busy` og returnerte så tomhendt: redigeringen
+   * brukeren nettopp gjorde forsvant, og skjermen ble stående og påstå en
+   * verdi basen ikke hadde. Se `stepCommitQueue` i `use-setting-core.ts` for
+   * hvorfor køen og ikke bare en omstokket rekkefølge.
+   */
   const commit = useCallback(async (): Promise<void> => {
     if (commitTimer.current) {
       clearTimeout(commitTimer.current);
       commitTimer.current = null;
     }
-    if (busyRef.current) return;
-    busyRef.current = true;
+    const asked = stepCommitQueue(queue.current, "request");
+    queue.current = asked.next;
+    // Én som går tar denne med seg — den leser utkastet på nytt når den er
+    // ferdig, så det er alltid SISTE verdi som lander.
+    if (asked.action !== "run") return;
     setBusy(true);
-    const o = optsRef.current;
-    // Grunnlaget er den LAGREDE verdien, lest i det øyeblikket vi committer —
-    // ikke et hurtiglager fra da kontrollen ble koblet.
-    const previous = settings.peek()[key] as SettingValue;
 
     try {
-      await runCommit<Settings[K]>({
-        previous,
-        next: draftRef.current,
-        // Standarden smalner mot den LAGREDE typen — se `narrowToStored`. Et
-        // `<select>` leverer alltid en streng, og «30» der Rust venter `i32`
-        // avviser hele lagringen.
-        coerce:
-          o.coerce ?? ((raw) => narrowToStored(previous, raw) as Settings[K]),
-        validate: o.validate,
-        confirmIf: o.confirmIf,
-        confirm:
-          o.confirm ?? ((guard) => confirmDialog({ ...guard, danger: true })),
-        apply: (v) => patchSettings({ [key]: v } as Partial<Settings>),
-        persist: o.persist ?? (() => saveSettingsDebounced()),
-        revert: (prev) => {
-          patchSettings({ [key]: prev } as Partial<Settings>);
-          draftRef.current = prev;
-          setDraft(prev);
-        },
-        toast: o.toast ?? ((kind, msg) => showToast(kind, msg)),
-        saveFailedMessage: () => t("general.saveFailed"),
-        after: o.after,
-        onError: setError,
-        onReceipt: (next) => {
-          setReceipt(next);
-          if (chipTimer.current) clearTimeout(chipTimer.current);
-          // «Lagret ✓» er en kvittering, ikke en tilstand — den forsvinner.
-          // «Mislyktes» blir stående til noe skjer, for den er ikke lest ennå.
-          if (next === "saved") {
-            chipTimer.current = setTimeout(
-              () => setReceipt("idle"),
-              SAVED_CHIP_MS,
-            );
-          }
-        },
-      });
+      for (;;) {
+        const o = optsRef.current;
+        // Grunnlaget er den LAGREDE verdien, lest i det øyeblikket vi
+        // committer — ikke et hurtiglager fra da kontrollen ble koblet.
+        const previous = settings.peek()[key] as SettingValue;
+
+        await runCommit<Settings[K]>({
+          previous,
+          next: draftRef.current,
+          // Standarden smalner mot den LAGREDE typen — se `narrowToStored`. Et
+          // `<select>` leverer alltid en streng, og «30» der Rust venter `i32`
+          // avviser hele lagringen.
+          coerce:
+            o.coerce ?? ((raw) => narrowToStored(previous, raw) as Settings[K]),
+          validate: o.validate,
+          confirmIf: o.confirmIf,
+          confirm:
+            o.confirm ?? ((guard) => confirmDialog({ ...guard, danger: true })),
+          apply: (v) => patchSettings({ [key]: v } as Partial<Settings>),
+          persist: o.persist ?? (() => saveSettingsDebounced()),
+          revert: (prev) => {
+            patchSettings({ [key]: prev } as Partial<Settings>);
+            draftRef.current = prev;
+            setDraft(prev);
+          },
+          toast: o.toast ?? ((kind, msg) => showToast(kind, msg)),
+          saveFailedMessage: () => t("general.saveFailed"),
+          after: o.after,
+          onError: setError,
+          // «Lagret ✓» er en kvittering, ikke en tilstand — `useReceipt`
+          // teller den ned. «Mislyktes» blir stående til noe skjer, for den
+          // er ikke lest ennå.
+          onReceipt: showReceipt,
+        });
+
+        const settled = stepCommitQueue(queue.current, "settled");
+        queue.current = settled.next;
+        if (settled.action !== "run") break;
+      }
     } finally {
+      // Skulle `runCommit` kaste, står ikke køen igjen som «opptatt for
+      // alltid» — en kontroll som aldri kan committe igjen er verre enn den
+      // feilen som kastet.
+      queue.current = IDLE_COMMIT_QUEUE;
       editingRef.current = false;
-      busyRef.current = false;
       setBusy(false);
     }
-  }, [key]);
+  }, [key, showReceipt]);
 
   const set = useCallback(
     (next: SettingValue): void => {

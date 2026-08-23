@@ -38,13 +38,15 @@
  * Skjer i `window.api.saveSettings` etter hver skrivning, som for alt annet.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect } from "preact/hooks";
 
 import type { ScheduleSlot } from "@legacy/bindings/ScheduleSlot";
 
 import { t, tDyn, tf } from "../../i18n";
 import { navigate } from "../../router/router";
 import { useDraftForm } from "../../settings/use-draft-form";
+import { usePatch } from "../../settings/use-patch";
+import { useReceipt } from "../../settings/use-receipt";
 import {
   patchSettings,
   saveSettingsDebounced,
@@ -59,7 +61,6 @@ import { Select } from "../../ui/Select/Select";
 import { SettingRow } from "../../ui/SettingRow/SettingRow";
 import { Toggle } from "../../ui/Toggle/Toggle";
 import { toast } from "../../ui/toast";
-import type { Receipt as ReceiptState } from "../../settings/use-setting-core";
 import {
   autoRecordOn,
   DEFAULT_PLAN,
@@ -76,46 +77,34 @@ export function AutoRecordCard() {
   const slots = s.slots ?? [];
   const plan = planFromSlots(slots);
   const on = autoRecordOn(s);
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
-  const [busy, setBusy] = useState(false);
+  // Den delte lagringsmodellen: bryteren skriver TO nøkler (flagget og — når
+  // profilen ikke har en tid — den første slotten), så den kan ikke gå gjennom
+  // `useSetting`. `usePatch` gir den samme sekvensen, den samme
+  // tilbakerullingen og en kvittering som teller ned.
+  const save = usePatch();
 
   useEffect(() => {
     void syncLaunchAtLoginFromOs();
   }, []);
 
-  /** Skriv, og rull tilbake HELE endringen hvis basen sa nei. */
-  async function write(patch: {
-    autoRecordEnabled?: boolean;
-    slots?: ScheduleSlot[];
-  }): Promise<boolean> {
-    const before = { autoRecordEnabled: s.autoRecordEnabled, slots };
-    patchSettings(patch);
-    const ok = await saveSettingsDebounced(120);
-    if (!ok) {
-      patchSettings(before);
-      toast("error", t("general.saveFailed"));
-    }
-    return ok;
-  }
-
-  async function toggle(next: boolean): Promise<void> {
-    if (busy) return;
-    setBusy(true);
-    setReceipt("saving");
-    try {
-      // PÅ: arm flagget, og gi profilen en tid hvis den ikke har noen. En
-      // profil som HAR tider beholder dem nøyaktig som de sto.
-      // AV: bare flagget. Ingen dialog, fordi ingenting forsvinner.
-      const ok = next
-        ? await write({
+  /**
+   * PÅ: arm flagget, og gi profilen en tid hvis den ikke har noen. En profil
+   * som HAR tider beholder dem nøyaktig som de sto.
+   * AV: bare flagget. Ingen dialog, fordi ingenting forsvinner.
+   */
+  function toggle(next: boolean): void {
+    void save.write(
+      next
+        ? {
             autoRecordEnabled: true,
             slots: slots.length ? slots : slotsFromPlan(DEFAULT_PLAN, slots),
-          })
-        : await write({ autoRecordEnabled: false });
-      setReceipt(ok ? "saved" : "failed");
-    } finally {
-      setBusy(false);
-    }
+          }
+        : { autoRecordEnabled: false },
+      // Bryteren står på `autoRecordOn(s)` — flagget OG en tid — så et klikk
+      // som bare fyller inn den manglende tiden er en ekte endring selv om
+      // flagget allerede sto.
+      { changed: true },
+    );
   }
 
   return (
@@ -123,8 +112,8 @@ export function AutoRecordCard() {
       <div class={styles.addonHead}>
         <Toggle
           checked={on}
-          onChange={(next) => void toggle(next)}
-          disabled={busy}
+          onChange={toggle}
+          disabled={save.busy}
           labelId="setup-auto-label"
           testId="setup-auto-toggle"
         />
@@ -142,7 +131,7 @@ export function AutoRecordCard() {
               : t("app.setup.auto.desc")}
           </div>
         </div>
-        <Receipt state={receipt} testId="setup-auto-receipt" />
+        <Receipt state={save.receipt} testId="setup-auto-receipt" />
       </div>
 
       {on && plan ? (
@@ -190,7 +179,7 @@ function PlanEditor({
   plan: WeeklyPlan;
   slots: readonly ScheduleSlot[];
 }) {
-  const [receipt, setReceipt] = useState<ReceiptState>("idle");
+  const { receipt, show: showReceipt, reset: resetReceipt } = useReceipt();
 
   const form = useDraftForm<WeeklyPlan>(
     () => plan,
@@ -272,8 +261,8 @@ function PlanEditor({
           disabledReason={t("app.setup.auto.nothingToSave")}
           testId="auto-save"
           onClick={() => {
-            setReceipt("saving");
-            void form.save().then((ok) => setReceipt(ok ? "saved" : "failed"));
+            showReceipt("saving");
+            void form.save().then((ok) => showReceipt(ok ? "saved" : "failed"));
           }}
         >
           {t("app.setup.save")}
@@ -284,7 +273,7 @@ function PlanEditor({
           disabledReason={t("app.setup.auto.nothingToSave")}
           testId="auto-cancel"
           onClick={() => {
-            setReceipt("idle");
+            resetReceipt();
             form.cancel();
           }}
         >

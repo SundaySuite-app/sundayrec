@@ -190,3 +190,145 @@ export async function runCommit<T>(deps: CommitDeps<T>): Promise<CommitResult> {
   deps.after?.(value);
   return { outcome: "saved", error: null };
 }
+
+// ── Køen: ingen commit forsvinner stille ────────────────────────────────────
+//
+// `useSetting` kan bli bedt om å committe mens en commit allerede er i lufta:
+// et tekstfelt med etterslep armer en timer, brukeren skriver videre, og et
+// blur eller den neste timeren lander midt i skrivningen som går. Den gamle
+// hooken RYDDET den ventende timeren og returnerte så tomhendt hvis den var
+// opptatt — altså kastet den redigeringen brukeren nettopp gjorde, uten et ord.
+// «90» ble stående i basen mens skjermen sa «900», og de to var uenige helt til
+// noen lastet appen på nytt.
+//
+// Reparasjonen er en KØ og ikke bare en omstokking av rekkefølgen: å sjekke
+// `busy` før `clearTimeout` ville latt den armede timeren overleve ÉN gang, men
+// den neste landingen midt i en skrivning ville tapt den på nøyaktig samme måte.
+// Køen lover noe sterkere og enklere å si: blir det bedt om en commit mens en
+// går, kjøres den om igjen når den første er ferdig — og da leses utkastet på
+// nytt, så det er alltid SISTE verdi som lander og kvitteres for.
+//
+// Én plass i køen er nok. Tre redigeringer under samme skrivning er ikke tre
+// verdier som skal skrives etter hverandre; det er én verdi (den siste) som
+// skal skrives én gang.
+
+/** Om en commit går, og om en til er ønsket når den er ferdig. */
+export interface CommitQueue {
+  /** En commit er i lufta. */
+  busy: boolean;
+  /** Det kom en forespørsel til mens den gikk. */
+  queued: boolean;
+}
+
+/** Ingenting går, ingenting venter. */
+export const IDLE_COMMIT_QUEUE: CommitQueue = { busy: false, queued: false };
+
+/** Det som kan skje med køen. */
+export type CommitQueueEvent =
+  /** Noen ba om en commit (en timer landet, et blur, en Enter). */
+  | "request"
+  /** Den commiten som gikk er ferdig. */
+  | "settled";
+
+export interface CommitQueueStep {
+  next: CommitQueue;
+  /** `run` = kjør en commit nå (les utkastet på nytt først). `queue` = en går
+   *  allerede og tar denne med seg. `idle` = ingenting mer å gjøre. */
+  action: "run" | "queue" | "idle";
+}
+
+/**
+ * Køens hele avgjørelse, som en ren overgang.
+ *
+ * Rekkefølgen `request` → (`request`)* → `settled` → … er nettopp den slags som
+ * ser opplagt ut i en `useCallback` og er feil i det ene tilfellet ingen
+ * klikker seg fram til. Her er den en tabell.
+ */
+export function stepCommitQueue(
+  state: CommitQueue,
+  event: CommitQueueEvent,
+): CommitQueueStep {
+  if (event === "request") {
+    return state.busy
+      ? { next: { busy: true, queued: true }, action: "queue" }
+      : { next: { busy: true, queued: false }, action: "run" };
+  }
+  // `settled`: en ventende forespørsel blir den neste kjøringen, og køen tømmes
+  // — den nye kjøringen skal kunne legge noe i den igjen.
+  return state.queued
+    ? { next: { busy: true, queued: false }, action: "run" }
+    : { next: IDLE_COMMIT_QUEUE, action: "idle" };
+}
+
+// ── Den samme sekvensen for en skrivning som rører FLERE nøkler ──────────────
+//
+// `runCommit` eier én nøkkel, én forrige verdi og én kvittering. Noen valg er
+// ikke én nøkkel: enhetsvalget er `deviceId` + `deviceName` + `deviceChannels`,
+// opptaksmotoren er `classicFfmpegAudio` + `classicDirectshow`, og OS-varselet
+// er `notifyStart` + `notifyStop`. Tre skrivninger med tre kvitteringer ville
+// gitt et vindu der basen holder halve valget.
+//
+// Før dette hadde HVER av dem sin egen håndlagde lagringsmodell — patch, lagre,
+// kvittering, tilbakerulling, toast — skrevet litt forskjellig hver gang, og de
+// stedene som glemte tilbakerullingen lot skjermen påstå noe basen ikke hadde.
+// Så: samme sekvens, samme rekkefølge, ett sted.
+//
+//     vakt → anvend → skriv → kvittering | rull tilbake
+//
+// `validate` finnes ikke her: en patch har ingen ÉN verdi å validere, og en
+// vilkårlig predikatkrok ville vært en invitasjon til å legge beslutninger som
+// hører hjemme i en ren kjerne inn i en komponent.
+
+export interface PatchCommitDeps {
+  /** Er dette en reell endring? `false` = ingen skrivning, ingen kvittering,
+   *  ingen støy — samme regel som `isRealChange` gir `runCommit`. */
+  changed: boolean;
+  /** Spør først. Returner `false` for å avlyse. Ingen vakt = ingen spørsmål. */
+  confirm?: () => Promise<boolean>;
+  /** Skriv verdiene inn i innstillingene. */
+  apply: () => void;
+  /** Persister. `false` = det landet ikke. */
+  persist: () => Promise<boolean>;
+  /** Sett alt tilbake — etter avslått vakt og etter feilet skrivning. */
+  revert: () => void;
+  toast: (kind: "error", msg: string) => void;
+  saveFailedMessage: () => string;
+  /** Kjøres etter en vellykket lagring. En feil her rører ikke kvitteringen:
+   *  skrivningen LANDET, og det er det kvitteringen svarer på. */
+  after?: () => void | Promise<void>;
+  onReceipt?: (receipt: Receipt) => void;
+}
+
+/** Kjør én fler-nøkkel-skrivning gjennom hele sekvensen. */
+export async function runPatchCommit(
+  deps: PatchCommitDeps,
+): Promise<CommitOutcome> {
+  const receipt = (r: Receipt): void => deps.onReceipt?.(r);
+
+  if (!deps.changed) return "skipped";
+
+  if (deps.confirm) {
+    const ok = await deps.confirm();
+    if (!ok) {
+      // Ingen `apply` har skjedd ennå, men kallstedet kan ha satt en lokal
+      // utkastilstand (en valgt rad i en liste), og den skal tilbake.
+      deps.revert();
+      return "declined";
+    }
+  }
+
+  deps.apply();
+  receipt("saving");
+
+  const persisted = await deps.persist();
+  if (!persisted) {
+    deps.revert();
+    deps.toast("error", deps.saveFailedMessage());
+    receipt("failed");
+    return "failed";
+  }
+
+  receipt("saved");
+  await deps.after?.();
+  return "saved";
+}
