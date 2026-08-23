@@ -43,6 +43,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 
+import type { TelemetryConsent } from "@lib/../bindings/TelemetryConsent";
+
 import { t, tDyn } from "./i18n";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
 import { showTelemetryPreview } from "./pages/setup/advanced/TelemetryRow";
@@ -135,22 +137,24 @@ function RecordPlaceholder() {
  * Kortet forsvinner først når svaret FAKTISK er lagret (se `ConsentCard`).
  */
 function Consent() {
-  const [ask, setAsk] = useState(false);
+  const [consent, setConsent] = useState<TelemetryConsent | null>(null);
 
   useEffect(() => {
     void window.api
       .telemetryConsentGet()
-      .then((consent) => setAsk(consent?.needsPrompt === true))
+      .then(setConsent)
       // En probe vi ikke fikk kjørt er ikke en grunn til å spørre — et kort som
       // dukker opp fordi IPC-en glapp er et spørsmål brukeren ikke kan svare på.
-      .catch(() => setAsk(false));
+      .catch(() => setConsent(null));
   }, []);
 
-  if (!ask) return null;
+  if (consent?.needsPrompt !== true) return null;
   return (
     <ConsentCard
+      // `status` skiller det FØRSTE spørsmålet fra et gjentatt — se ConsentCard.
+      status={consent.status}
       onExplain={() => void showTelemetryPreview()}
-      onAnswered={() => setAsk(false)}
+      onAnswered={() => setConsent({ ...consent, needsPrompt: false })}
     />
   );
 }

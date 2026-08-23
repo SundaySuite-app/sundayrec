@@ -17,6 +17,20 @@
  * `telemetry-consent-copy-core.ts` har en test som forbyr «vi anbefaler» og
  * «vennligst» i teksten av nøyaktig samme grunn.
  *
+ * ## «Vi spør deg om igjen»
+ *
+ * `needsPrompt` er sann i TO tilfeller: ingen har svart ennå, og omfanget har
+ * blitt utvidet siden forrige svar — også for den som sa nei. De to er ikke det
+ * samme spørsmålet, og et kort som stilte det første til en som allerede har
+ * svart ville underslått hvorfor det kom tilbake.
+ *
+ * Hvilken av dem det er avgjøres av `promptCopyFor` i
+ * `@lib/telemetry-consent-copy-core` — den samme rene kjernen legacys
+ * oppstartskort bruker, med sin egen test som forbyr «vi anbefaler» og
+ * «vennligst» i teksten. Vi låner AVGJØRELSEN, ikke nøkkelen: en variabel med
+ * en hel katalognøkkel i ville vært usynlig for `check-i18n-keys.mjs`, så
+ * setningen slås opp med en literal.
+ *
  * ## Kortet forsvinner bare når svaret ER lagret
  *
  * `telemetry_consent_set` svarer `null` når IPC-en feilet, og da er spørsmålet
@@ -27,11 +41,19 @@
 
 import { useState } from "preact/hooks";
 
+import { FIRST_ASK, promptCopyFor } from "@lib/telemetry-consent-copy-core";
+import type { ConsentStatus } from "@lib/../bindings/ConsentStatus";
+
 import { t } from "../../i18n";
 import { Button } from "../Button/Button";
 import styles from "./ConsentCard.module.css";
 
 export interface ConsentCardProps {
+  /**
+   * Bakendens `consent.status`. Avgjør om dette er det FØRSTE spørsmålet eller
+   * et gjentatt — se toppen av fila. `undefined` behandles som første gang.
+   */
+  status?: ConsentStatus;
   /** «Hva sendes?» — verten eier forhåndsvisningen. */
   onExplain: () => void;
   /** Svaret er lagret hos bakenden. Verten skjuler kortet. */
@@ -40,6 +62,7 @@ export interface ConsentCardProps {
 }
 
 export function ConsentCard({
+  status,
   onExplain,
   onAnswered,
   testId = "consent-card",
@@ -70,6 +93,11 @@ export function ConsentCard({
       <p data-testid={`${testId}-description`} class={styles.description}>
         {t("app.consent.desc")}
       </p>
+      {promptCopyFor(status ?? "never-asked") === FIRST_ASK ? null : (
+        <p data-testid={`${testId}-reask`} class={styles.description}>
+          {t("onboarding.rePromptDesc")}
+        </p>
+      )}
       {failed ? (
         <p role="alert" data-testid={`${testId}-error`} class={styles.error}>
           {t("general.saveFailed")}

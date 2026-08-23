@@ -210,7 +210,12 @@ test.describe("telemetry preview", () => {
       fixtures: {
         ...BOOT_FIXTURES,
         telemetry_consent_get: {
-          status: "neverAsked",
+          // ⚠️ «never-asked», med bindestrek. `ConsentStatus` er
+          // `#[serde(rename_all = "kebab-case")]` i Rust, så det er den ENESTE
+          // formen bakenden noen gang sender. Legacy-spec-ene fikstureres med
+          // «neverAsked», som ingenting i prod produserer — den formen ville
+          // fått samtykkekortet til å tro at dette er et GJENTATT spørsmål.
+          status: "never-asked",
           version: 0,
           decidedAt: null,
           currentVersion: 2,

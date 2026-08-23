@@ -36,7 +36,12 @@ function consentSpy(): { fixtures: Fixtures } {
     fixtures: {
       ...BOOT_FIXTURES,
       telemetry_consent_get: {
-        status: "neverAsked",
+        // ⚠️ «never-asked», med bindestrek. `ConsentStatus` er
+        // `#[serde(rename_all = "kebab-case")]` i Rust, så det er den ENESTE
+        // formen bakenden noen gang sender. Legacy-spec-ene fikstureres med
+        // «neverAsked», som ingenting i prod produserer — den formen ville
+        // fått samtykkekortet til å tro at dette er et GJENTATT spørsmål.
+        status: "never-asked",
         version: 0,
         decidedAt: null,
         currentVersion: 2,
@@ -89,6 +94,65 @@ test.describe("onboarding", () => {
       settings: { onboardingDone: true },
     });
     await expect(page.getByTestId("first-run")).toBeHidden();
+  });
+
+  test("en dyplenke hopper over sekvensen, akkurat som i legacy", async ({
+    page,
+  }) => {
+    // Ikke en re-peking — dette er halvparten den gamle spec-en beskriver i
+    // toppen sin, men aldri påstår: `?goto=` tvinger `onboardingDone` sann
+    // inne i api-shimmen, så en dyplenket oppstart kan aldri kapres av
+    // første-gangs-porten. Skjermbilde-passene hviler på det.
+    await boot(page, {
+      fixtures: BOOT_FIXTURES,
+      settings: { onboardingDone: false },
+      goto: "settings:audio",
+    });
+    await expect(page.getByTestId("first-run")).toHaveCount(0);
+    await expect(page.getByTestId("main")).not.toHaveAttribute(
+      "data-first-run",
+      "true",
+    );
+    await expect(page.getByTestId("setup-sound")).toBeVisible();
+  });
+
+  test("et gjentatt spørsmål sier at det ER et gjentatt spørsmål", async ({
+    page,
+  }) => {
+    // `needsPrompt` er sann i TO tilfeller: ingen har svart ennå, OG omfanget
+    // har blitt utvidet siden forrige svar — også for den som sa nei.
+    // `promptCopyFor` i `telemetry-consent-copy-core` er den rene kjernen som
+    // skiller dem, og kortet låner avgjørelsen: et kort som stilte
+    // førstegangs-spørsmålet til en som allerede har svart ville underslått
+    // hvorfor det kom tilbake.
+    await boot(page, {
+      fixtures: {
+        ...BOOT_FIXTURES,
+        telemetry_consent_get: {
+          status: "denied",
+          version: 1,
+          decidedAt: 1_754_000_000_000,
+          currentVersion: 2,
+          needsPrompt: true,
+          active: false,
+        },
+      },
+      settings: { onboardingDone: true },
+      goto: "home",
+    });
+
+    await expect(page.getByTestId("consent-card-reask")).toContainText(
+      "svart på dette før",
+    );
+
+    // …og et FØRSTE spørsmål har ingen slik linje.
+    await boot(page, {
+      ...consentSpy(),
+      settings: { onboardingDone: true },
+      goto: "home",
+    });
+    await expect(page.getByTestId("consent-card")).toBeVisible();
+    await expect(page.getByTestId("consent-card-reask")).toHaveCount(0);
   });
 
   test("the consent step exists, and says what is and is not collected", async ({
@@ -179,7 +243,12 @@ test.describe("onboarding", () => {
       fixtures: {
         ...BOOT_FIXTURES,
         telemetry_consent_get: {
-          status: "neverAsked",
+          // ⚠️ «never-asked», med bindestrek. `ConsentStatus` er
+          // `#[serde(rename_all = "kebab-case")]` i Rust, så det er den ENESTE
+          // formen bakenden noen gang sender. Legacy-spec-ene fikstureres med
+          // «neverAsked», som ingenting i prod produserer — den formen ville
+          // fått samtykkekortet til å tro at dette er et GJENTATT spørsmål.
+          status: "never-asked",
           version: 0,
           decidedAt: null,
           currentVersion: 2,

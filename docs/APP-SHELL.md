@@ -973,3 +973,12 @@ og grønne.
 Nye: `e2e/app/advanced.spec.ts` (flagget beholder tiden, SMTP åpner gaten,
 opptaksradene skriver riktige typer) og `e2e/app/first-run.spec.ts` (porten,
 nødutgangen, den gule raden).
+
+⚠️ **En fikstur som lyver om bakenden.** `ConsentStatus` er
+`#[serde(rename_all = "kebab-case")]` i Rust, altså `"never-asked"` — men
+`e2e/{onboarding,telemetry-preview}.spec.ts` fikstureres med `"neverAsked"`,
+en form ingenting i prod produserer. Bare `promptCopyFor` forgrener seg på
+literalen, så konsekvensen er at legacy-specen viser oppstartskortets
+GJENTATT-tekst til en fersk installasjon. App-kopiene er rettet, med grunnen
+ved siden av; legacy-filene er urørt fordi de skal stå som de er til de
+slettes.
