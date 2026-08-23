@@ -1,0 +1,40 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 18px;
+  border-radius: var(--r);
+  font-weight: 600;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--fs-body);
+}
+
+.detail {
+  font-size: var(--fs-base);
+  font-weight: 400;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+
+.bad {
+  background: var(--bad-soft);
+  border: 1px solid var(--bad-line);
+}
+
+.warn {
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
+}

@@ -1,0 +1,100 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  border-radius: 10px;
+  padding: 9px var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+}
+
+.lg {
+  font-size: var(--fs-lg);
+  padding: 13px var(--sp-5);
+  border-radius: var(--r);
+}
+
+.block {
+  width: 100%;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/*
+ * Grunnen til at knappen er av. Lest av skjermlesere gjennom
+ * `aria-describedby`, usynlig for øyet — teksten står allerede i verktøytipset
+ * og som regel i kortet over knappen, og en tredje kopi ville vært støy.
+ *
+ * `clip-path` og ikke `display:none`: skjulte elementer leses ikke opp.
+ */
+.reason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Av: dempet, men fortsatt fokuserbar og fortsatt lesbar. */
+.off {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.off:hover {
+  filter: none;
+}
+
+.primary {
+  background: var(--gold);
+  border: 1px solid var(--gold);
+  color: var(--on-gold);
+}
+
+.secondary {
+  background: var(--raised);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--gold);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+/*
+ * Farlig: rød KANT, aldri rød fyll. Canvasens sett 7 — en destruktiv handling
+ * skal aldri være den knappen øyet lander på først, og en rød primærknapp er
+ * nøyaktig det.
+ */
+.danger {
+  background: transparent;
+  border: 1px solid var(--bad);
+  color: var(--bad);
+}
+
+/* Rødt fyll finnes ÉN gang i appen: knappen som starter opptaket. */
+.record {
+  background: var(--rec);
+  border: 1px solid var(--rec);
+  color: var(--on-rec);
+  font-size: 18px;
+  padding: 18px var(--sp-7);
+  border-radius: 14px;
+  box-shadow: var(--shadow-rec);
+}

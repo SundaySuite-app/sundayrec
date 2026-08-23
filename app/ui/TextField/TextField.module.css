@@ -1,0 +1,23 @@
+.input {
+  padding: 10px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: var(--fs-body);
+  min-width: 0;
+  width: 100%;
+  max-width: 320px;
+}
+
+.input::placeholder {
+  color: var(--ink-3);
+}
+
+.input:disabled {
+  opacity: 0.45;
+}
+
+.invalid {
+  border-color: var(--bad);
+}
