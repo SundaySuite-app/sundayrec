@@ -67,6 +67,20 @@ jobs:
           npm run format:check
           npm run typecheck
 
+      # The new Preact shell (app/) must build, AND the bundle must contain no
+      # dynamic code evaluation — the shipped CSP is `script-src 'self'`, so a
+      # transform that reached for it would produce a bundle that builds fine
+      # and is a blank window in WKWebView. This is the standing version of the
+      # S0 spike's proof; e2e/app/boot.spec.ts is the runtime half.
+      - name: App shell builds under the shipped CSP
+        run: |
+          npm run build:app
+          if grep -rqE 'eval\(|new[[:space:]]+Function' dist-app; then
+            echo "::error::dist-app contains dynamic code evaluation — the shipped CSP (script-src 'self') would block it. See docs/APP-SHELL.md."
+            grep -rnE 'eval\(|new[[:space:]]+Function' dist-app | head -20
+            exit 1
+          fi
+
       # Vitest: pure renderer logic (editor cut-plan/geometry, locale parity).
       - name: Frontend unit tests
         run: npm run test

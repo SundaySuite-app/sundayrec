@@ -33,40 +33,29 @@
  *
  * ## Shape
  *
- * `decidePreroll` is PURE — the whole "should the buffer be running?" question,
- * unit-tested with no IPC. `reconcilePreroll` is the thin shell that acts on it.
+ * Every DECISION is pure and lives in `preroll-lifecycle-core.ts`: whether the
+ * buffer should run (`decidePreroll`), what to do about that answer
+ * (`planReconcile` — apply now, nothing, or wait for the device to go quiet),
+ * and whether a recorder event means "live" (`liveFromRecordingState`). This
+ * file is the shell around them: the settings singleton, the timer, the chip
+ * subscribers and the IPC.
  */
 
 import { settings } from './state'
+import {
+  decidePreroll,
+  liveFromRecordingState,
+  planReconcile,
+  RESTART_SETTLE_MS,
+  type PrerollConditions,
+  type PrerollDecision,
+} from './preroll-lifecycle-core'
 
-/** Everything the decision depends on. */
-export interface PrerollConditions {
-  /** The advanced opt-in. Off ⇒ the buffer never runs, whatever else is true. */
-  enabled: boolean
-  /** `settings.preRollSeconds` — 0 means the feature is off. */
-  seconds: number
-  /** An input device is configured (the buffer has nothing to address without one). */
-  deviceKnown: boolean
-  /** A recording is in progress — the capture engine owns the mic, full stop. */
-  isRecording: boolean
-}
-
-/** What the shell should do about the buffer. */
-export type PrerollDecision = 'run' | 'stop'
-
-/**
- * Should the rolling buffer be running right now?
- *
- * `stop` is the safe answer and therefore the default for every doubt: the cost
- * of a wrong `stop` is a pre-roll clip nobody notices missing, while the cost of
- * a wrong `run` is a second owner on the microphone during a service.
- */
-export function decidePreroll(c: PrerollConditions): PrerollDecision {
-  if (!c.enabled) return 'stop'
-  if (!(c.seconds > 0)) return 'stop'
-  if (!c.deviceKnown) return 'stop'
-  if (c.isRecording) return 'stop'
-  return 'run'
+export {
+  decidePreroll,
+  RESTART_SETTLE_MS,
+  type PrerollConditions,
+  type PrerollDecision,
 }
 
 /** This module's own view of whether a recording is running, fed by the recorder
@@ -125,13 +114,6 @@ function publish(active: boolean): void {
   }
 }
 
-/** How long to wait before re-opening the buffer after a recording ended. The
- *  capture engine releases the device on its terminal state, but a real driver
- *  takes a moment; the overlay's own meter restart uses 3 s for exactly this
- *  reason, and re-grabbing the mic ahead of it is how format renegotiation
- *  bites. Stopping is never delayed. */
-const RESTART_SETTLE_MS = 3000
-
 let restartTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
@@ -146,12 +128,13 @@ let restartTimer: ReturnType<typeof setTimeout> | null = null
 export async function reconcilePreroll(force = false): Promise<void> {
   if (restartTimer) { clearTimeout(restartTimer); restartTimer = null }
   const decision = decidePreroll(currentConditions())
-  if (decision === applied && !force) return
+  const plan = planReconcile({ previous: applied, decision, force })
+  if (plan.action === 'none') return
+  applied = plan.applied
 
   // Coming back up after a recording: let the device go quiet first. A stop is
   // always immediate — yielding the microphone must never wait.
-  if (decision === 'run' && applied === 'stop') {
-    applied = decision
+  if (plan.action === 'defer-restart') {
     restartTimer = setTimeout(() => {
       restartTimer = null
       // Re-decide: three seconds is long enough for a new recording to start.
@@ -160,7 +143,6 @@ export async function reconcilePreroll(force = false): Promise<void> {
     return
   }
 
-  applied = decision
   await apply(decision)
 }
 
@@ -216,11 +198,9 @@ export function initPrerollLifecycle(): void {
   // rather than assuming "stop".
   window.api.on('recording-overlay-stop', (data: unknown) => {
     const st = (data as { state?: string } | undefined)?.state
-    if (st === 'preparing' || st === 'recording' || st === 'reconnecting' || st === 'stopping') {
-      setRecording(true)
-    } else if (st === 'stopped' || st === 'failed' || st === 'idle') {
-      setRecording(false)
-    }
+    // `null` = an unknown state, which must leave the current belief alone.
+    const live = liveFromRecordingState(st)
+    if (live !== null) setRecording(live)
   })
   window.api.on('recording-finished', () => setRecording(false))
   window.api.on('recording-error', () => setRecording(false))

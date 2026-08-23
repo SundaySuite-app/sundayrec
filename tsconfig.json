@@ -10,8 +10,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "paths": {
+      "@lib/*": ["./legacy/renderer/*"]
+    }
   },
-  "include": ["legacy", "e2e", "playwright.config.ts"],
-  "exclude": ["node_modules", "dist", "src-tauri"]
+  "include": ["legacy", "app", "e2e", "playwright.config.ts"],
+  "exclude": ["node_modules", "dist", "dist-app", "src-tauri"]
 }

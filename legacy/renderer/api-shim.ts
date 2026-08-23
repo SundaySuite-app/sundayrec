@@ -55,6 +55,11 @@ import {
   type FixtureGate,
   type FixtureMap,
 } from "./fixtures-core";
+import {
+  createNotifierSlot,
+  type ShimNotifier,
+} from "./shim-notifier-core";
+import { parseGoto } from "./goto-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -80,6 +85,37 @@ const PRIVACY_POLICY_URL = "https://github.com/SundaySuite-app/sundayrec/blob/ma
 // Everything the editor can ingest — audio OR video. The loader probes/decodes
 // per file, so the picker should be as accepting as possible.
 const MEDIA_EXT = [...AUDIO_EXT, ...VIDEO_EXT];
+
+// ── Host services (toast / navigate / translate) ────────────────────────────
+//
+// The shim needs three things from whatever shell sits on top of it: a way to
+// SAY something went wrong, a way to NAVIGATE (the `?goto=` hook), and a way to
+// TRANSLATE the copy for the first. Until «Frivilligen først» those were three
+// hard imports of the legacy renderer's own modules, which is fine while there
+// is one shell and wrong the moment there are two: the Preact shell in `app/`
+// has its own toast surface and its own router, and a shim that can only talk
+// to the old DOM would have to be forked to serve it.
+//
+// So they go through a slot whose DEFAULTS are exactly those legacy modules.
+// With nobody calling `setShimNotifier`, every call below resolves to the same
+// function it called before — the behaviour is unchanged by construction, not
+// by inspection. The slot itself (and the partial-override merge) is the pure,
+// unit-tested `shim-notifier-core`.
+const notifier = createNotifierSlot({
+  toast,
+  navigate: navigateTo,
+  t,
+});
+
+/**
+ * Install host-provided toast/navigate/translate services. Call it BEFORE the
+ * first backend call so an early failure is surfaced by the right shell; a
+ * partial override keeps the legacy default for whatever it leaves out, and
+ * `null` restores the defaults.
+ */
+export function setShimNotifier(override: Partial<ShimNotifier> | null): void {
+  notifier.set(override);
+}
 
 /** A native file/folder picker that returns the chosen path (or null), never
  *  throwing — a denied permission or cancel just yields null. */
@@ -226,9 +262,10 @@ async function call<T>(
     console.warn(`[api-shim] ${cmd} failed → fallback`, e);
     const surface = recordFailure(ipcFailures, cmd, ipcErrText(e), Date.now());
     if (surface && isTauri()) {
-      toast(
+      const n = notifier.current();
+      n.toast(
         "error",
-        `${t("error.ipcFailed", "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.")} (${cmd})`,
+        `${n.t("error.ipcFailed", "Noe i bakgrunnen svarte ikke, så denne visningen kan være ufullstendig.")} (${cmd})`,
       );
     }
     return fallback;
@@ -386,7 +423,7 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 // (`audio`) or fully qualified (`settings-audio`); retired ids from before the
 // 7→5 tab fold (`publish`, `notifications`) still work, because
 // navigateTo runs them through TAB_ALIASES.
-const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
+const VERIFY_GOTO = parseGoto(location.search);
 
 // The one-shot localStorage → sqlite migration. Storage side effects live in
 // `migrate-legacy-settings.ts` (the only module allowed near the legacy key —
@@ -397,9 +434,10 @@ const settingsMigration = migrateLegacySettingsOnce({
   invoke,
   onCorruptBlob: () => {
     if (!isTauri()) return;
-    toast(
+    const n = notifier.current();
+    n.toast(
       "error",
-      t(
+      n.t(
         "error.settingsMigrationCorrupt",
         "Innstillingene fra forrige versjon kunne ikke leses — appen starter med standardinnstillinger.",
       ),
@@ -430,9 +468,10 @@ async function loadSettingsFromBackend(): Promise<Settings> {
     // rejects by construction — same guard as E2.4's failure toast.
     if (isTauri() && !settingsLoadFailureToasted) {
       settingsLoadFailureToasted = true;
-      toast(
+      const n = notifier.current();
+      n.toast(
         "error",
-        t(
+        n.t(
           "error.settingsLoadFailed",
           "Kunne ikke lese innstillingene — viser standardinnstillinger. Endringer du gjør nå kan gå tapt.",
         ),
@@ -1636,13 +1675,9 @@ export {};
 // Verification navigation (only with `?goto=<page>[:<tab>]`): poll until main.ts
 // has installed window.showPage, then navigate. Inert without the query param.
 if (VERIFY_GOTO) {
-  const [gotoPage, rawTab] = VERIFY_GOTO.split(":");
-  // `settings:audio` and `settings:settings-audio` mean the same thing.
-  const gotoTab = rawTab
-    ? rawTab.startsWith(`${gotoPage}-`)
-      ? rawTab
-      : `${gotoPage}-${rawTab}`
-    : undefined;
+  // The page/tab normalisation lives in the pure `goto-core`; what remains here
+  // is the boot-time polling, which is DOM/timing and cannot be pure.
+  const { page: gotoPage, tab: gotoTab } = VERIFY_GOTO;
   const tryGoto = (): void => {
     const w = window as any;
     if (typeof w.showPage !== "function") {
@@ -1651,7 +1686,7 @@ if (VERIFY_GOTO) {
     }
     // No highlight pulse: this path exists to produce clean screenshots, and a
     // 4.4 s glow on the card would be in half of them.
-    if (gotoTab) navigateTo(gotoPage, { tab: gotoTab, highlight: false });
+    if (gotoTab) notifier.current().navigate(gotoPage, { tab: gotoTab, highlight: false });
     else w.showPage(gotoPage);
   };
   setTimeout(tryGoto, 150);
