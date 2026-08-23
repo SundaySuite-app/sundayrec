@@ -251,7 +251,7 @@
     "videoListError": "Erreur de chargement des caméras",
     "autostopFailed": "Impossible de modifier l'arrêt automatique. L'enregistrement continue — arrêtez-le manuellement si nécessaire.",
     "autostopIn": "Arrêt auto dans",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Annuler l'arrêt auto",
     "qrNoAudio": "Aucun son n'a été capté — le fichier est trop petit pour contenir quoi que ce soit.",
     "qrSilent": "L'enregistrement est silencieux — aucun signal. Vérifiez le périphérique et le gain.",

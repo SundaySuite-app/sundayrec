@@ -772,7 +772,7 @@
     "videoListError": "Error loading cameras",
     "autostopFailed": "Could not change the auto-stop. The recording continues — stop it manually if you need to.",
     "autostopIn": "Auto-stop in",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Cancel auto-stop",
     "qrNoAudio": "No audio was captured — the file is too small to hold anything.",
     "qrSilent": "The recording is silent — no signal. Check the device and the gain.",

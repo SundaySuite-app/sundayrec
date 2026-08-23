@@ -749,6 +749,21 @@ const api: Record<string, unknown> = {
   // was never coming instead of running its own teardown catch.
   stopRecordingNow: async () => invoke("stop_recording", undefined).then(() => true),
   // ── Auto-stop, owned by the recorder ───────────────────────────────────
+  //
+  // The overlay has always SHOWN the deadline («Stopper av seg selv om 12:04»)
+  // and never been able to move it: the two commands were registered in Rust,
+  // classified as unreachable in the reachability baseline, and had no door.
+  // `manualMaxMinutes` defaults to 0, so it only bit a rig that had turned the
+  // safety net ON — and then it bit in the middle of the service.
+  //
+  // WRITES, so rejection travels (same house rule as `stopRecordingNow`): the
+  // deadline the UI draws comes back from the engine on `recording://state`,
+  // and a fabricated success here would leave the countdown ticking towards a
+  // stop the user believes they cancelled.
+  recordingExtendAutostop: async (minutes: number) =>
+    invoke<void>("recording_extend_autostop", { minutes }),
+  recordingCancelAutostop: async () =>
+    invoke<void>("recording_cancel_autostop", undefined),
   // ── Pre-roll rolling buffer ────────────────────────────────────────────
   // `start_recording` has always harvested a pre-roll clip, but nothing ever
   // started the loop that produces one — so `preRollSeconds` captured nothing.

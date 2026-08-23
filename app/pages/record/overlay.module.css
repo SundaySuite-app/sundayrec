@@ -66,6 +66,13 @@
   font-size: var(--fs-sm);
 }
 
+.autostop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+
 .stop {
   min-width: 280px;
 }

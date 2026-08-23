@@ -71,6 +71,13 @@ declare global {
       getDiskSpace:        () => Promise<{ freeBytes: number | null }>
       startRecordingNow:   (opts: unknown) => Promise<{ ok?: boolean; error?: string }>
       stopRecordingNow:    () => Promise<boolean>
+      /** Push the running recording's auto-stop deadline out by `minutes`.
+       *  Adds to the live deadline, so it can never shorten it. Rejects on
+       *  failure — the overlay says so rather than pretending. */
+      recordingExtendAutostop: (minutes: number) => Promise<void>
+      /** Drop the auto-stop entirely: record until someone presses stop.
+       *  Rejects on failure, same reason. */
+      recordingCancelAutostop: () => Promise<void>
       /** Start the rolling pre-roll buffer. Resolves false when the backend
        *  declined (pre-roll off in its settings copy, or no device matched). */
       prerollStart?:       () => Promise<boolean>

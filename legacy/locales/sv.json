@@ -251,7 +251,7 @@
     "videoListError": "Fel vid inläsning av kameror",
     "autostopFailed": "Kunde inte ändra automatiskt stopp. Inspelningen fortsätter — stoppa manuellt om du behöver.",
     "autostopIn": "Autostopp om",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Avbryt autostopp",
     "qrNoAudio": "Inget ljud fångades — filen är för liten för att innehålla något.",
     "qrSilent": "Inspelningen är tyst — ingen signal. Kontrollera enhet och gain.",

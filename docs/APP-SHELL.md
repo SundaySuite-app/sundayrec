@@ -2332,10 +2332,14 @@ som ikke finnes lenger». De som er mer enn opprydding:
 - **Kamerabildet.** `recording_preview_frame` er unåbar. Overlegget har en
   brikke som NAVNGIR kameraet; ingenting viser at det kommer bilder, så et dødt
   kamera oppdages først når fila åpnes.
-- **«+30 min» / «Avbryt auto-stopp».** Overlegget sier fortsatt «Stopper av seg
-  selv om …», men fristen kan ikke skyves. `manualMaxMinutes` er 0 som standard,
-  så det rammer bare en rigg som har slått på sikkerhetsnettet — og da rammer
-  det midt i gudstjenesten.
+- ~~**«+30 min» / «Avbryt auto-stopp».**~~ **LUKKET** i granskningsrunden
+  (`fix/review-events`). Overlegget sa «Stopper av seg selv om …» og kunne ikke
+  flytte fristen; `manualMaxMinutes` er 0 som standard, så det rammet bare en
+  rigg som hadde slått PÅ sikkerhetsnettet — og da rammet det midt i
+  gudstjenesten. Knappene står nå under nedtellingen, og bare når det finnes en
+  frist. Steget er **15 minutter**, ikke 30: et lite steg man kan ta to ganger
+  er ærligere enn et stort man ikke kan ta tilbake. `recording_extend_autostop`
+  / `recording_cancel_autostop` er ute av unreachable-baselinen.
 - **Notat-redigering** (`recording_update_note`) — eiervalg, P3.
 - **Mastringspanelet** (`editor_master_apply` m.fl.) — erstattet av tre ord og
   mikseren.

@@ -251,7 +251,7 @@
     "videoListError": "Fejl ved indlæsning af kameraer",
     "autostopFailed": "Kunne ikke ændre automatisk stop. Optagelsen fortsætter — stop manuelt hvis du skal.",
     "autostopIn": "Autostop om",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Annullér autostop",
     "qrNoAudio": "Der blev ikke optaget lyd — filen er for lille til at indeholde noget.",
     "qrSilent": "Optagelsen er stille — intet signal. Tjek enhed og gain.",

@@ -261,7 +261,7 @@
     "videoListError": "Błąd ładowania kamer",
     "autostopFailed": "Nie udało się zmienić automatycznego zatrzymania. Nagrywanie trwa — zatrzymaj ręcznie w razie potrzeby.",
     "autostopIn": "Automatyczne zatrzymanie za",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Anuluj automatyczne zatrzymanie",
     "qrNoAudio": "Nie zarejestrowano dźwięku — plik jest za mały, aby cokolwiek zawierać.",
     "qrSilent": "Nagranie jest ciche — brak sygnału. Sprawdź urządzenie i wzmocnienie.",

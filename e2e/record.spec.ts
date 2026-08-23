@@ -632,3 +632,131 @@ test.describe("kvalitetsalarmens årsaker", () => {
     );
   });
 });
+
+test.describe("auto-stoppen kan skyves", () => {
+  // ⚠️ Nedtellingen var en KUNNGJØRING og ikke en kontroll. Overlegget har vist
+  // «Stopper av seg selv om …» hele tiden, mens `recording_extend_autostop` og
+  // `recording_cancel_autostop` sto registrert i Rust uten en eneste dør —
+  // klassifisert som unåbare i reachability-baselinen siden byttet.
+  // `manualMaxMinutes` er 0 som standard, så det rammet bare en rigg som hadde
+  // slått PÅ sikkerhetsnettet, og da rammet det midt i gudstjenesten.
+
+  const AUTOSTOP_SPIES: Fixtures = {
+    recording_extend_autostop: fn(`(a) => {
+      (window.__E2E_CALLS__ ||= {}).recording_extend_autostop =
+        ((window.__E2E_CALLS__.recording_extend_autostop || 0) + 1);
+      window.__E2E_EXTEND_MINUTES__ = a && a.minutes;
+      return null;
+    }`),
+    recording_cancel_autostop: fn(`() => {
+      (window.__E2E_CALLS__ ||= {}).recording_cancel_autostop =
+        ((window.__E2E_CALLS__.recording_cancel_autostop || 0) + 1);
+      return null;
+    }`),
+  };
+
+  /** Løft overlegget med en frist motoren har satt. */
+  async function liveWithDeadline(page: Page): Promise<void> {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 20 * 60_000,
+    });
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  }
+
+  test("knappene står bare når det FINNES en frist", async ({ page }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: { ...FIXTURES, ...AUTOSTOP_SPIES },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    // Et opptak uten auto-stopp: ingen nedtelling, og derfor heller ingen
+    // knapper å lure på midt i en gudstjeneste.
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: null,
+    });
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+    await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
+  });
+
+  test("«+ 15 min» når motoren, med minuttene som argument", async ({
+    page,
+  }) => {
+    await liveWithDeadline(page);
+    await expect(page.getByTestId("overlay-autostop")).toContainText(
+      "Stopper av seg selv",
+    );
+
+    await page.getByTestId("overlay-autostop-extend").click();
+
+    // MUTASJONSPRØVEN: fjern knappen (eller `recordingExtendAutostop` fra
+    // shimmen), og denne blir rød.
+    await expect
+      .poll(async () => (await calls(page)).recording_extend_autostop)
+      .toBe(1);
+    expect(
+      await page.evaluate(() => (window as any).__E2E_EXTEND_MINUTES__),
+    ).toBe(15);
+
+    // …og nedtellingen kommer fra MOTOREN, ikke fra en lokal gjetning: den nye
+    // fristen rir på neste tilstandsemit.
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 35 * 60_000,
+    });
+    await expect(page.getByTestId("overlay-autostop")).toContainText("34:5");
+  });
+
+  test("«Avbryt auto-stopp» tar nedtellingen bort helt", async ({ page }) => {
+    await liveWithDeadline(page);
+    await page.getByTestId("overlay-autostop-cancel").click();
+    await expect
+      .poll(async () => (await calls(page)).recording_cancel_autostop)
+      .toBe(1);
+
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: null,
+    });
+    await expect(page.getByTestId("overlay-autostop")).toHaveCount(0);
+    await expect(page.getByTestId("overlay-autostop-actions")).toHaveCount(0);
+    // Opptaket går fortsatt — det var fristen som ble avlyst, ikke økta.
+    await expect(page.getByTestId("recording-overlay")).toBeVisible();
+  });
+
+  test("en avvist kommando SIER det, i stedet for å late som", async ({
+    page,
+  }) => {
+    await spyEvents(page);
+    await boot(page, {
+      fixtures: {
+        ...FIXTURES,
+        recording_extend_autostop: fn(
+          "() => { throw new Error('recorder is not running') }",
+        ),
+      },
+      settings: CHOSEN,
+      goto: "home",
+    });
+    await emit(page, "recording-overlay-stop", {
+      state: "recording",
+      scheduled_stop_ms: Date.now() + 20 * 60_000,
+    });
+    await page.getByTestId("overlay-autostop-extend").click();
+
+    // En teller som fortsetter mot en stopp brukeren tror hun flyttet er
+    // nøyaktig løgnen shimmens «en write som feiler må AVVISE» finnes for.
+    await expect(page.getByTestId("toast-host")).toContainText(
+      "Kunne ikke endre auto-stopp",
+    );
+  });
+});

@@ -772,7 +772,7 @@
     "videoListError": "Feil ved lasting av kameraer",
     "autostopFailed": "Kunne ikke endre auto-stopp. Opptaket fortsetter — stopp manuelt hvis du må.",
     "autostopIn": "Auto-stopp om",
-    "extend30": "+ 30 min",
+    "extend15": "+ 15 min",
     "cancelAutostop": "Avbryt auto-stopp",
     "qrNoAudio": "Ingen lyd ble fanget — fila er for liten til å inneholde noe.",
     "qrSilent": "Opptaket er stille — ingen signal. Sjekk enhet og gain.",
