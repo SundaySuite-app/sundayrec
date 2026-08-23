@@ -14,9 +14,8 @@
  *
  * Derfor leser hver plassholder ekte tilstand i stedet for å påstå noe:
  *
- *   OPPTAK    ingen lydkilde valgt → kortet som sier det, og knappen til
- *             OPPSETT. Er kilden valgt, står den ekte VU-måleren der og
- *             svarer på «hører vi lyd?».
+ *   OPPTAK    ER bygget (P2): kilde, hørsel, Start, opptaksoverlegget,
+ *             stopp-bekreftelsen og kvitteringen. Se `app/pages/record/`.
  *   BIBLIOTEK antall opptak telles på ekte (`recordings_list`). Null →
  *             tomtilstanden. Flere → hvor de ligger. Aldri «ingen opptak» på
  *             en maskin som har tolv.
@@ -31,25 +30,34 @@
  * stedet appen er.
  *
  * Samtykkekortet hører til OPPTAK og ikke til sekvensen — canvasens sett 6
- * flyttet det ut med vilje. Det står her, over plassholderen, så P4 arver det
- * når den ekte opptakssiden bygges: kortet er ferdig, plassen er kjent.
+ * flyttet det ut med vilje. Det bor nå i `RecordPage`, der det hører hjemme.
  *
  * ## Overlays er søsken av `#app`
  *
  * `DialogHost` og `ToastHost` rendres i et EGET Preact-tre, inn i
  * `#overlays`. Grunnen står i DialogHost: verten setter `inert` på `#app`
  * mens en dialog er åpen, og en dialog inne i `#app` ville slått av seg selv.
+ *
+ * ## Menylinjens «Åpne opptaksmappen»
+ *
+ * Den ene tray-handlingen som ikke hører til noen side: den åpner en mappe i
+ * Finder og er ferdig. Den plukkes derfor opp her, i skallet, som alltid er
+ * montert — en side som må være vist før handlingen kan skje er nøyaktig
+ * antakelsen legacy-hookene brøt på.
  */
 
-import { useEffect, useState } from "preact/hooks";
-
-import type { TelemetryConsent } from "@lib/../bindings/TelemetryConsent";
+import { useEffect } from "preact/hooks";
 
 import { t, tDyn } from "./i18n";
+import { RecordPage } from "./pages/record/RecordPage";
 import { FirstRun, firstRunHeading } from "./pages/setup/FirstRun";
-import { showTelemetryPreview } from "./pages/setup/advanced/TelemetryRow";
 import { SetupPage, setupHeading } from "./pages/setup/SetupPage";
-import { navigate, route } from "./router/router";
+import {
+  consumePendingAction,
+  navigate,
+  pendingAction,
+  route,
+} from "./router/router";
 import { SettingProbe } from "./dev/setting-probe";
 import { recordingCount } from "./state/recordings";
 import { hydrateError, settings } from "./state/settings";
@@ -57,12 +65,10 @@ import { Banner } from "./ui/Banner/Banner";
 import { Button } from "./ui/Button/Button";
 import { Card } from "./ui/Card/Card";
 import { Chip } from "./ui/Chip/Chip";
-import { ConsentCard } from "./ui/ConsentCard/ConsentCard";
 import { DialogHost } from "./ui/DialogHost/DialogHost";
 import { EmptyState } from "./ui/EmptyState/EmptyState";
 import { PageShell } from "./ui/PageShell/PageShell";
 import { ToastHost } from "./ui/ToastHost/ToastHost";
-import { VuMeter } from "./ui/VuMeter/VuMeter";
 
 export interface ShellProps {
   /** `?probe=<navn>`. TODO(P): forsvinner med `app/dev/`. */
@@ -72,6 +78,7 @@ export interface ShellProps {
 export function Shell({ probe }: ShellProps) {
   const current = route.value;
   const failed = hydrateError.value;
+  useTrayFolder();
 
   const firstRun = current.firstRun === true;
 
@@ -95,7 +102,7 @@ export function Shell({ probe }: ShellProps) {
       ) : firstRun ? (
         <FirstRun />
       ) : current.page === "record" ? (
-        <RecordPlaceholder />
+        <RecordPage />
       ) : current.page === "library" ? (
         <LibraryPlaceholder />
       ) : (
@@ -115,80 +122,24 @@ export function Overlays() {
   );
 }
 
-// ── OPPTAK ──────────────────────────────────────────────────────────────────
-
-function RecordPlaceholder() {
-  const s = settings.value;
-  const source = s.deviceName ?? s.deviceId;
-
-  return (
-    <>
-      <Consent />
-      <Source source={source} />
-    </>
-  );
-}
-
 /**
- * Samtykkekortet, spurt ÉN gang.
+ * Menylinjens «Åpne opptaksmappen».
  *
- * `needsPrompt` er bakendens svar, ikke vårt: den er sann når ingen har svart
- * ennå, OG igjen den dagen omfanget utvides — også for den som sa nei sist.
- * Kortet forsvinner først når svaret FAKTISK er lagret (se `ConsentCard`).
+ * Handlingen trenger ingen side — den åpner en mappe og er ferdig — så den
+ * plukkes opp i skallet, som alltid er montert. Ruteren har allerede navigert
+ * til BIBLIOTEK, slik at man også SER opptakene man nettopp ba om å få se.
+ *
+ * Bare denne ene id-en tas imot her; de andre blir stående til flaten sin, og
+ * derfor `peek` på signalet før det tømmes.
  */
-function Consent() {
-  const [consent, setConsent] = useState<TelemetryConsent | null>(null);
-
+function useTrayFolder(): void {
+  const armed = pendingAction.value;
   useEffect(() => {
-    void window.api
-      .telemetryConsentGet()
-      .then(setConsent)
-      // En probe vi ikke fikk kjørt er ikke en grunn til å spørre — et kort som
-      // dukker opp fordi IPC-en glapp er et spørsmål brukeren ikke kan svare på.
-      .catch(() => setConsent(null));
-  }, []);
-
-  if (consent?.needsPrompt !== true) return null;
-  return (
-    <ConsentCard
-      // `status` skiller det FØRSTE spørsmålet fra et gjentatt — se ConsentCard.
-      status={consent.status}
-      onExplain={() => void showTelemetryPreview()}
-      onAnswered={() => setConsent({ ...consent, needsPrompt: false })}
-    />
-  );
-}
-
-function Source({ source }: { source: string | null }) {
-  const s = settings.value;
-
-  if (!source) {
-    return (
-      <Card
-        tone="warn"
-        testId="record-no-source"
-        title={t("app.record.noSource")}
-        description={t("app.record.noSourceDesc")}
-        actions={
-          <Button
-            variant="primary"
-            testId="record-choose-sound"
-            onClick={() => navigate("setup")}
-          >
-            {t("app.record.chooseSound")}
-          </Button>
-        }
-      />
-    );
-  }
-
-  // Kilden er valgt: da er «hører vi den?» det eneste spørsmålet som betyr
-  // noe, og måleren svarer på det på ekte.
-  return (
-    <Card testId="record-listening" description={source}>
-      <VuMeter deviceName={s.deviceName} testId="record-vu" />
-    </Card>
-  );
+    if (armed !== "open-recordings-folder") return;
+    consumePendingAction();
+    const folder = (settings.peek().saveFolder ?? "").trim();
+    if (folder) void window.api.openFolder(folder);
+  }, [armed]);
 }
 
 // ── BIBLIOTEK ───────────────────────────────────────────────────────────────
