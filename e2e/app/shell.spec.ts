@@ -185,7 +185,21 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     page,
   }) => {
     await boot(page, {
-      fixtures: BOOT_FIXTURES,
+      fixtures: {
+        ...BOOT_FIXTURES,
+        // Enheten FINNES: uten den ville spørsmål 1 vært «Finner ikke
+        // Behringer X32», som er en annen (og også riktig) påstand.
+        list_audio_devices: [
+          {
+            id: "x32",
+            name: "Behringer X32",
+            backend: "coreaudio",
+            inputChannels: 32,
+            sampleRates: [48000],
+            isDefault: true,
+          },
+        ],
+      },
       settings: {
         ...SOUND_CHOSEN,
         saveFolder: "/Users/frivillig/SundayRec",
@@ -194,7 +208,7 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
       },
       goto: "settings",
     });
-    for (const id of ["sound", "folder", "quality", "church", "alerts"]) {
+    for (const id of ["sound", "folder", "quality", "church", "notify"]) {
       await expect(page.getByTestId(`setup-row-${id}`)).toBeVisible();
     }
     await expect(page.getByTestId("setup-row-sound")).toHaveAttribute(
@@ -203,14 +217,21 @@ test.describe("de tre destinasjonene viser det som er sant", () => {
     );
     // Ingen får beskjed hvis noe går galt ⇒ gul. Det er hele grunnen til at
     // noen oppdager den tomme innstillingen før en søndag i stedet for etter.
-    await expect(page.getByTestId("setup-row-alerts")).toHaveAttribute(
+    await expect(page.getByTestId("setup-row-notify")).toHaveAttribute(
       "data-tone",
       "warn",
     );
-    // Og ingen «Endre»-knapp, fordi skjermen den skulle åpne ikke finnes ennå.
-    // En død knapp lærer en frivillig at knappene her ikke er til å stole på.
-    await expect(
-      page.getByTestId("setup-row-alerts").getByRole("button"),
-    ).toHaveCount(0);
+    // P1a: knappen finnes NÅ, og den gjør noe. Den sier «Sett opp» fordi det
+    // ikke står et svar — og den åpner skjermen som lar deg gi ett.
+    await expect(page.getByTestId("setup-row-notify-action")).toHaveText(
+      "Sett opp",
+    );
+    await page.getByTestId("setup-row-notify-action").click();
+    await expect(page.getByTestId("app-heading")).toHaveText(
+      "Hvem får beskjed hvis noe går galt?",
+    );
+    // …og veien tilbake er en ekte knapp, ikke bare skinnen.
+    await page.getByTestId("setup-back").click();
+    await expect(page.getByTestId("setup-lede")).toBeVisible();
   });
 });
