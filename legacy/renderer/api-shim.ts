@@ -59,6 +59,7 @@ import {
   createNotifierSlot,
   type ShimNotifier,
 } from "./shim-notifier-core";
+import { parseGoto } from "./goto-core";
 
 // Broad, VLC-like accept lists — the bundled ffmpeg demuxes all of these, and
 // the loader falls back to a full-fidelity AAC proxy (streamed from disk, same
@@ -422,7 +423,7 @@ const EVENT_ADAPTERS: Record<string, (p: unknown) => unknown> = {
 // (`audio`) or fully qualified (`settings-audio`); retired ids from before the
 // 7→5 tab fold (`publish`, `notifications`) still work, because
 // navigateTo runs them through TAB_ALIASES.
-const VERIFY_GOTO = new URLSearchParams(location.search).get("goto");
+const VERIFY_GOTO = parseGoto(location.search);
 
 // The one-shot localStorage → sqlite migration. Storage side effects live in
 // `migrate-legacy-settings.ts` (the only module allowed near the legacy key —
@@ -1674,13 +1675,9 @@ export {};
 // Verification navigation (only with `?goto=<page>[:<tab>]`): poll until main.ts
 // has installed window.showPage, then navigate. Inert without the query param.
 if (VERIFY_GOTO) {
-  const [gotoPage, rawTab] = VERIFY_GOTO.split(":");
-  // `settings:audio` and `settings:settings-audio` mean the same thing.
-  const gotoTab = rawTab
-    ? rawTab.startsWith(`${gotoPage}-`)
-      ? rawTab
-      : `${gotoPage}-${rawTab}`
-    : undefined;
+  // The page/tab normalisation lives in the pure `goto-core`; what remains here
+  // is the boot-time polling, which is DOM/timing and cannot be pure.
+  const { page: gotoPage, tab: gotoTab } = VERIFY_GOTO;
   const tryGoto = (): void => {
     const w = window as any;
     if (typeof w.showPage !== "function") {
